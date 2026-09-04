@@ -11,8 +11,16 @@ workspace = true
 
 [features]
 default = []
-sim = ["dep:async-task", "dep:spin"]
+alloc = []
+sim = ["alloc", "dep:async-task", "dep:futures-channel", "dep:slab", "dep:spin"]
 
 [dependencies]
 async-task = { version = "4.4", default-features = false, optional = true }
+futures-channel = { version = "0.3", default-features = false, features = ["alloc"], optional = true }
+slab = { version = "0.4", default-features = false, optional = true }
 spin = { version = "0.9", default-features = false, features = ["mutex", "spin_mutex"], optional = true }
+thiserror = { version = "2.0", default-features = false }
+zerocopy = "0.8"
+
+[dev-dependencies]
+tokio.workspace = true
