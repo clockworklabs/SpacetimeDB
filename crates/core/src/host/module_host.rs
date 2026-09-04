@@ -2703,16 +2703,40 @@ impl ModuleHost {
             };
         let procedure_name = name;
 
-        let guard_procedure_name = procedure_name.clone();
-        scopeguard::defer_on_unwind!({
-            log::error!("websocket procedure operation {guard_procedure_name} panicked");
-            (self.on_panic)();
-        });
-
         if let Err(err) = self.guard_closed() {
             return self.send_procedure_error(&procedure_name, timer, target, err.into());
         }
 
+        // Waiting for a free procedure instance must not happen on the caller's
+        // websocket receive loop: that loop handles one message at a time,
+        // so a full pool would stall every later message from the connection.
+        let module = self.clone();
+        tokio::spawn(async move {
+            let guard_procedure_name = procedure_name.clone();
+            scopeguard::defer_on_unwind!({
+                log::error!("websocket procedure operation {guard_procedure_name} panicked");
+                (module.on_panic)();
+            });
+
+            if let Err(err) = module
+                .run_procedure_from_pool(procedure_name, timer, params, target)
+                .await
+            {
+                log::warn!("failed to send procedure result: {err:#}");
+            }
+        });
+        Ok(())
+    }
+
+    /// Checks out a pooled procedure instance, runs `params` on it
+    /// and delivers the result (or the checkout error) to `target`.
+    async fn run_procedure_from_pool(
+        &self,
+        procedure_name: String,
+        timer: Option<Instant>,
+        params: CallProcedureParams,
+        target: ProcedureResultTarget,
+    ) -> Result<(), BroadcastError> {
         match &*self.inner {
             ModuleHostInner::Js(host) => {
                 let lease = match host.procedure_instances.get_instance().await {
