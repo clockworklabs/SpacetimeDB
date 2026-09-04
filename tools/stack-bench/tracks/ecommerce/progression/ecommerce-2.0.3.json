@@ -277,8 +277,8 @@
       ],
       "gradingGroups": [
         "ecommerce.progression.operations-access-specifications@1.0.0#operator-price-authorization",
-        "ecommerce.l2.price-history-features@2.0.2#price-cart-checkout",
-        "ecommerce.l2.price-history-features@2.0.2#price-history-exact",
+        "ecommerce.progression.price-history-specifications@1.0.0#price-cart-checkout",
+        "ecommerce.progression.price-history-specifications@1.0.0#price-history-exact",
         "ecommerce.l2.price-history-features@2.0.2#price-live-independent",
         "ecommerce.progression.price-accounting-specifications@1.0.0#price-accounting"
       ],
@@ -810,6 +810,10 @@
         "ecommerce.progression.automatic-reorder@2.0.1#access"
       ],
       "dependencies": [
+        {
+          "id": "purchasing",
+          "reason": "Purchases reduce stock and can cross reorder thresholds."
+        },
         {
           "id": "scheduled-restocks",
           "reason": "Rules create scheduled restocks."

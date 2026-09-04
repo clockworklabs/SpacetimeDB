@@ -53,10 +53,7 @@
       "criteria": [
         "5e"
       ],
-      "role": "feature",
-      "requiresFeatures": [
-        "ecommerce.feature.purchasing"
-      ]
+      "role": "feature"
     }
   ]
 }

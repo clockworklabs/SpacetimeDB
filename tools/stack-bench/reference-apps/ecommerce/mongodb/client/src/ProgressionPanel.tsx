@@ -276,7 +276,7 @@ function StaffTools({ user, state, items, orders, act, onRefreshItems }: any) {
         <span data-role="promotion-start">{entry.start}</span>
         <span data-role="promotion-end">{entry.end}</span>
         <span data-role="promotion-limit">{entry.limit}</span>
-        <span data-role="promotion-report">
+        <span data-role="promotion-report">{entry.code}
           <span data-role="promotion-redemptions">{entry.redemptions}</span>
           <span data-role="promotion-revenue">{Number(entry.revenue).toFixed(2)}</span>
         </span>

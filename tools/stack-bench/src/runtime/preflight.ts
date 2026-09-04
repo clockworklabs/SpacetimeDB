@@ -467,6 +467,24 @@ export function runPreflight(
   }
 
   if (dockerInfo) {
+    if (appliance && agent?.costLimit !== 'non-billable') {
+      try {
+        const dashboard = run('docker', ['compose', '-f', COMPOSE, 'ps', '--status', 'running',
+          '-q', 'dashboard']).split(/\r?\n/).map(value => value.trim()).filter(Boolean);
+        const dashboardPortListening = !probePort(7331).free;
+        const blockers = [
+          ...(dashboard.length ? ['the Compose dashboard service is running'] : []),
+          ...(dashboardPortListening ? ['TCP port 7331 is listening'] : []),
+        ];
+        add('admission.dashboard', blockers.length ? 'fail' : 'pass', blockers.length
+          ? blockers.join('; ')
+          : 'Compose dashboard service is stopped and TCP port 7331 is free',
+        blockers.length ? 'Stop the dashboard before starting the paid attempt.' : null);
+      } catch (error) {
+        add('admission.dashboard', 'fail', `Cannot verify dashboard isolation: ${errorMessage(error)}`,
+          'Stop the dashboard before starting the paid attempt.');
+      }
+    }
     try {
       imageId = parseImageId(run('docker', ['image', 'inspect', '--format', '{{.Id}}', request.image]));
       add('image.build', 'pass', `${request.image} -> ${imageId}`);

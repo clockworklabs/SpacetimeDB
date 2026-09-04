@@ -161,6 +161,14 @@
       ]
     },
     {
+      "path": "../packs/progression-price-history-specifications-1.0.0.json",
+      "id": "ecommerce.progression.price-history-specifications",
+      "version": "1.0.0",
+      "includeRoles": [
+        "guarantee"
+      ]
+    },
+    {
       "path": "../packs/l2-stock-transfers-features-1.0.1.json",
       "id": "ecommerce.l2.stock-transfers-features",
       "version": "1.0.1",

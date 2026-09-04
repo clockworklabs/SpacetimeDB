@@ -331,6 +331,43 @@ test('preflight fails before a paid run when the selected agent executable is ab
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('paid appliance preflight refuses a dashboard on the host network', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-dashboard-'));
+  try {
+    for (const scenario of [
+      { name: 'running dashboard service', agentAdapter: 'claude-code', dashboard: 'dashboard-id',
+        portFree: true, expected: 'fail' },
+      { name: 'listening dashboard port', agentAdapter: 'claude-code', dashboard: '',
+        portFree: false, expected: 'fail' },
+      { name: 'no dashboard', agentAdapter: 'claude-code', dashboard: '',
+        portFree: true, expected: 'pass' },
+      { name: 'model-free agent', agentAdapter: 'deterministic', dashboard: 'dashboard-id',
+        portFree: false, expected: undefined },
+    ] as const) {
+      const selected = request(root, ['--agent-adapter', scenario.agentAdapter,
+        '--image', EXACT_IMAGE]);
+      const report = runPreflight(selected, {
+        run: (file, args) => {
+          if (args[0] === 'info') return dockerInfo();
+          if (args[0] === 'compose') return args.includes('dashboard') ? scenario.dashboard : '2.40.0';
+          if (args[0] === 'ps') return '';
+          if (args[0] === 'image') return args.includes('{{.Os}}/{{.Architecture}}')
+            ? 'linux/amd64' : `${IMAGE_ID}\n`;
+          if (file === 'curl') return '200';
+          throw new Error(`unexpected docker command: ${args.join(' ')}`);
+        },
+        env: { STACK_BENCH_APPLIANCE: '1', STACK_BENCH_CONTROLLER_IMAGE: EXACT_IMAGE,
+          STACK_BENCH_NPM_REGISTRY: 'http://127.0.0.1:4873', ANTHROPIC_API_KEY: '<test-present>' },
+        home: root, now: Date.parse('2026-08-12T12:00:00.100Z'),
+        statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }), pidsOnPort: () => [],
+        probePort: port => ({ free: port === 7331 ? scenario.portFree : true }),
+      });
+      assert.equal(report.checks.find(check => check.id === 'admission.dashboard')?.status,
+        scenario.expected, scenario.name);
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('a rotating interactive credential cannot satisfy preflight', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-credential-'));
   try {

@@ -1,4 +1,4 @@
-import { GRADING_CAPABILITY_IDS } from '../../actions/action-contract.js';
+import type { GradingCapabilityId } from '../../actions/action-contract.js';
 import { createHttpGradingContext, httpNamedActionRequest } from '../stack-grading-operations.js';
 import { captureHostedDiagnostics, activateHosted } from '../hosted-lifecycle.js';
 import { mongoDbConnectionUrl, mongoDbSetupMetadata,
@@ -12,6 +12,21 @@ import { prepareMongoDbDatabase, proveMongoDbUse, resetMongoDb,
 import { MONGODB_ADAPTER_VERSION } from './mongodb-identity.js';
 import { controlHostedFor, defineStackAdapter } from '../stack-adapter-common.js';
 
+const MONGODB_GRADING_CAPABILITIES = [
+  'actors',
+  'application-files',
+  'application-lifecycle',
+  'backend-lifecycle',
+  'browser-interaction',
+  'browser-observation',
+  'clock',
+  'concurrency',
+  'database-write',
+  'named-actions',
+  'subprocess',
+  'transport-observation',
+] as const satisfies readonly GradingCapabilityId[];
+
 const mongodbAdapter = defineStackAdapter('mongodb', {
   activate: activateHosted,
   control: input => controlHostedFor('mongodb', mongoDbConnectionUrl, input),
@@ -22,7 +37,7 @@ const mongodbAdapter = defineStackAdapter('mongodb', {
   diagnostics: { capture: captureHostedDiagnostics },
   database: { prepare: prepareMongoDbDatabase, proveUse: proveMongoDbUse },
   grading: { context: createHttpGradingContext,
-    transport: 'http', capabilities: GRADING_CAPABILITY_IDS },
+    transport: 'http', capabilities: MONGODB_GRADING_CAPABILITIES },
   namedAction: { request: httpNamedActionRequest },
   teardown: { host: stopHostedHost },
   runPolicy: { resetEnabled: true, retainHostSupported: false,

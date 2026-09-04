@@ -1,14 +1,31 @@
 import assert from 'node:assert/strict';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 
 import { GRADING_CAPABILITY_IDS } from '../src/actions/action-contract.js';
+import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { createStackAdapterRegistry } from '../src/stacks/stack-adapter-contract.js';
 import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { stackAdapterVersion } from '../src/stacks/stack-identities.js';
 import { setSpacetimeStock } from '../src/stacks/backends/spacetime-operations.js';
 import { describesMissingStockInterface } from '../src/stacks/stock-interface.js';
 import type { Track } from '../src/composition/tracks.js';
+
+const FULL_GRADING_CAPABILITIES = [
+  'actors',
+  'application-files',
+  'application-lifecycle',
+  'backend-lifecycle',
+  'browser-interaction',
+  'browser-observation',
+  'clock',
+  'concurrency',
+  'database-write',
+  'named-actions',
+  'subprocess',
+  'transport-observation',
+];
 
 test('built-in adapters preserve the port grid and lease identity', () => {
   assert.deepEqual(STACK_ADAPTER_REGISTRY.ids, ['mongodb', 'postgres', 'spacetime', 'stub']);
@@ -175,7 +192,7 @@ test('every adapter declares what the grader can measure on it', () => {
     assert.equal(STACK_ADAPTER_REGISTRY.get(id).grading.transport, 'http');
   }
   for (const id of ['spacetime', 'postgres', 'mongodb'] as const) {
-    assert.deepEqual([...STACK_ADAPTER_REGISTRY.get(id).grading.capabilities], [...GRADING_CAPABILITY_IDS]);
+    assert.deepEqual([...STACK_ADAPTER_REGISTRY.get(id).grading.capabilities], FULL_GRADING_CAPABILITIES);
   }
   const stub = STACK_ADAPTER_REGISTRY.get('stub');
   const stubCapabilities: readonly string[] = stub.grading.capabilities;
@@ -183,6 +200,11 @@ test('every adapter declares what the grader can measure on it', () => {
     ['backend-lifecycle', 'database-write']);
   assert.equal('databaseWrite' in stub, false);
   assert.equal(stub.lifecycle.control, undefined);
+});
+
+test('the current ecommerce composition accepts every real adapter capability list', () => {
+  const plan = compileCampaignFile(join(STACK_BENCH_ROOT, 'appliance', 'campaign.example.json'));
+  assert.deepEqual(plan.stacks.map(stack => stack.id).sort(), ['mongodb', 'postgres', 'spacetime']);
 });
 
 test('registry rejects unknown, duplicate, and invalid adapter identities', () => {

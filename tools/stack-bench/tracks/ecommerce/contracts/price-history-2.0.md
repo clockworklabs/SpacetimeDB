@@ -9,8 +9,3 @@ JSON numbers or strings.
 For direct authorization actions, server-based stacks expose `POST /api/admin/price` and
 SpacetimeDB exposes `admin_change_price`. These calls use the same authorization and price rules as
 the visible application.
-
-The price-history checks also use `add-to-cart` inside an `item-card`, `cart-toggle`, `cart-total`,
-and `checkout-submit`. Use `orders-toggle`, `order-item`, and `order-total` to inspect the order
-created at checkout. Use `buy-now` inside an `item-card` to create a paid order before a price
-change.

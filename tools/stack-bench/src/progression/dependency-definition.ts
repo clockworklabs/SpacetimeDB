@@ -262,6 +262,31 @@ function compileGraphDefinition(input: unknown,
     }
   }
   assertAcyclic(nodesById as Map<string, CompiledProgressionNode>);
+  const ancestorsByNode = new Map<string, Set<string>>();
+  const ancestors = (nodeId: string): Set<string> => {
+    const existing = ancestorsByNode.get(nodeId);
+    if (existing) return existing;
+    const found = new Set<string>();
+    ancestorsByNode.set(nodeId, found);
+    for (const parentId of nodesById.get(nodeId)?.dependencies ?? []) {
+      const parent = parentId as string;
+      found.add(parent);
+      for (const ancestor of ancestors(parent)) found.add(ancestor);
+    }
+    return found;
+  };
+  for (const node of definition.nodes) {
+    for (const check of node.gradingChecks) {
+      if (check.role !== 'feature') continue;
+      for (const featureId of check.requiresFeatures ?? []) {
+        const owner = featureOwners.get(featureId)!;
+        if (owner !== node.id && !ancestors(node.id).has(owner)) {
+          fail(`${source}.nodes.${node.id}.gradingChecks.${check.id}.requiresFeatures`,
+            `feature check ${check.id} on ${node.id} cannot require ${featureId} owned by ${owner}`);
+        }
+      }
+    }
+  }
   const declaredLevels = new Map(definition.nodes
     .filter(node => node.level !== undefined).map(node => [node.id, node.level]));
   definition.nodes.forEach(node => { delete node.level; });

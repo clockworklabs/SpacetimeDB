@@ -400,26 +400,28 @@ function checkRequirementsAvailable(state: DependencyState,
   });
 }
 
-// A check that requires a feature owned by a failed or blocked node cannot
-// run until that node is repaired. A node none of whose checks can run is
-// blocked the same way a node with a failed parent is: nothing about it can
-// be measured, and grading it would produce a node with no checks.
-function brokenByRequirements(state: DependencyState, node: CompiledProgressionNode): boolean {
-  if (node.gradingChecks.length === 0) return false;
+function guaranteeRequirementsPass(state: DependencyState,
+  check: CompiledProgressionNode['gradingChecks'][number],
+  actual: ReadonlyMap<string, ReadonlyMap<string, CheckOutcome>>): boolean {
   const owners = featureOwners(state);
-  return node.gradingChecks.every(check => (check.requiresFeatures ?? []).some(featureId => {
+  return (check.requiresFeatures ?? []).every(featureId => {
     const ownerId = owners.get(featureId);
-    if (ownerId === undefined || ownerId === node.id) return false;
-    const status = getNodeState(state, ownerId).status;
-    return status === 'failed' || status === 'blocked';
-  }));
+    if (!ownerId) return false;
+    const owner = getDefinitionNode(state.definition, ownerId);
+    const outcomes = actual.get(ownerId);
+    const featureOutcomes = owner.gradingChecks.filter(item => item.role === 'feature')
+      .map(item => outcomes?.get(item.id));
+    if (featureOutcomes.includes('fail')) return false;
+    if (featureOutcomes.every(outcome => outcome === 'pass')) return true;
+    return isUsable(getNodeState(state, ownerId).status);
+  });
 }
 
 function brokenByParents(state: DependencyState, node: CompiledProgressionNode): boolean {
   return node.dependencies.some(parentId => {
     const status = getNodeState(state, parentId).status;
     return status === 'failed' || status === 'blocked';
-  }) || brokenByRequirements(state, node);
+  });
 }
 
 function selectionFor(state: DependencyState, nodeIds: string[],
@@ -900,8 +902,11 @@ function applyDependencyResult(inputState: DependencyState, inputResult: Depende
     getNodeState(state, nodeId).checks = Object.fromEntries(node.gradingChecks.map(check => {
       const outcome = outcomes.get(check.id);
       const prior = getNodeState(state, nodeId).checks[check.id] ?? null;
-      if (outcome === undefined) return [check.id, prior];
-      return [check.id, outcome === 'not-run' ? prior : outcome];
+      if (outcome === undefined || outcome === 'not-run') return [check.id, prior];
+      if (check.role === 'guarantee' && !guaranteeRequirementsPass(state, check, actual)) {
+        return [check.id, null];
+      }
+      return [check.id, outcome];
     })) as Record<string, StoredCheckOutcome>;
   }
   const failedPromptNodeIds = new Set<string>();

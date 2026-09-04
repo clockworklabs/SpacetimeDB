@@ -226,7 +226,7 @@ export function ProgressionPanel({
             <span data-role="promotion-start">{item.start}</span>
             <span data-role="promotion-end">{item.end}</span>
             <span data-role="promotion-limit">{item.limit}</span>
-            <span data-role="promotion-report"><span data-role="promotion-redemptions">{item.redemptions}</span> <span data-role="promotion-revenue">{item.revenue}</span></span>
+            <span data-role="promotion-report">{item.code} <span data-role="promotion-redemptions">{item.redemptions}</span> <span data-role="promotion-revenue">{item.revenue}</span></span>
           </div>)}
         </article>
         <article className="progression-card">

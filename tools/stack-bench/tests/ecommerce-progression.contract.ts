@@ -89,7 +89,7 @@ test('the ecommerce progression definition is complete and calculated from its d
   assert.deepEqual(requiredNode(byId, 'personalized-recommendations').dependencies,
     ['recommendations']);
   assert.deepEqual(requiredNode(byId, 'automatic-reorder').dependencies,
-    ['scheduled-restocks', 'staff-roles']);
+    ['purchasing', 'scheduled-restocks', 'staff-roles']);
   assert.deepEqual(requiredNode(byId, 'order-delivery').dependencies,
     ['fulfilment-queue', 'order-cancellation']);
   assert.deepEqual(requiredNode(byId, 'order-returns').dependencies,
@@ -419,9 +419,6 @@ test('cross-feature grading requirements stay separate from product dependencies
     }));
   }).sort();
   assert.deepEqual(deferred, [
-    'automatic-reorder:ecommerce.progression.automatic-reorder.automatic-reorder.502a:purchasing',
-    'automatic-reorder:ecommerce.progression.automatic-reorder.automatic-reorder.502b:purchasing',
-    'inventory-dashboard:ecommerce.inventory-operations.operational-views.5e:purchasing',
     'inventory-dashboard:ecommerce.spec.live-state.inventory-dashboard.5a:purchasing',
     'price-history:ecommerce.returns-pricing.price-history.4a:purchasing',
     'price-history:ecommerce.returns-pricing.price-history.4c:checkout',

@@ -1,4 +1,4 @@
-import { GRADING_CAPABILITY_IDS } from '../../actions/action-contract.js';
+import type { GradingCapabilityId } from '../../actions/action-contract.js';
 import { createSpacetimeGradingContext,
   spacetimeNamedActionRequest } from '../stack-grading-operations.js';
 import { activateSpacetime, controlSpacetime } from '../spacetime-lifecycle.js';
@@ -13,6 +13,21 @@ import { prepareSpacetimeDatabase, proveSpacetimeUse,
 import { SPACETIME_ADAPTER_VERSION } from './spacetime-identity.js';
 import { defineStackAdapter } from '../stack-adapter-common.js';
 import { requireLeasedSpacetime } from '../backend-reset-guard.js';
+
+const SPACETIME_GRADING_CAPABILITIES = [
+  'actors',
+  'application-files',
+  'application-lifecycle',
+  'backend-lifecycle',
+  'browser-interaction',
+  'browser-observation',
+  'clock',
+  'concurrency',
+  'database-write',
+  'named-actions',
+  'subprocess',
+  'transport-observation',
+] as const satisfies readonly GradingCapabilityId[];
 
 export const spacetimeAdapter = defineStackAdapter('spacetime', {
   activate: activateSpacetime,
@@ -35,7 +50,7 @@ export const spacetimeAdapter = defineStackAdapter('spacetime', {
   databaseWrite: { setStock: setSpacetimeStock },
   database: { prepare: prepareSpacetimeDatabase, proveUse: proveSpacetimeUse },
   grading: { context: createSpacetimeGradingContext,
-    transport: 'reducer', capabilities: GRADING_CAPABILITY_IDS },
+    transport: 'reducer', capabilities: SPACETIME_GRADING_CAPABILITIES },
   namedAction: { request: spacetimeNamedActionRequest },
   teardown: { host: stopSpacetimeHost },
   runPolicy: { resetEnabled: true, retainHostSupported: true,

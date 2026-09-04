@@ -22,7 +22,8 @@ interface FixtureNode {
   dependencies: Array<{ id: string; reason: string }>;
   featureRefs: string[];
   promptModules: string[];
-  gradingChecks: Array<{ id: string; points: number; role: 'feature' | 'guarantee' }>;
+  gradingChecks: Array<{ id: string; points: number; role: 'feature' | 'guarantee';
+    requiresFeatures?: string[] }>;
 }
 
 interface FixtureDefinition {
@@ -52,27 +53,11 @@ const node = (id: string, dependencies: string[], questline: string,
   })),
 });
 
-test('a node whose checks all require a failed node is blocked and not graded', () => {
+test('feature checks reject cross-branch prerequisites', () => {
   const definition = fixture();
-  definition.repair.budget = { total: 0 };
   definition.nodes.push(node('dashboard', ['search'], 'discovery', [1], ['ownership']));
-  let state = progressionEngine.initialize(definition);
-  state = progressionEngine.recordResult(state, grade(state, 'initial', {
-    accounts: 'pass', catalog: 'pass',
-  }));
-  state = progressionEngine.recordResult(state, grade(state, 'second', {
-    ownership: 'fail', search: 'pass',
-  }));
-  assert.equal(state.nodes.ownership!.status, 'failed');
-  assert.equal(state.nodes.recovery!.status, 'blocked');
-  assert.equal(state.nodes.dashboard!.status, 'blocked');
-  assert.equal(state.nodes.recommendations!.status, 'active');
-  const selection = grading(state);
-  assert.ok(!selection.nodeIds.includes('dashboard'));
-  assert.ok(selection.nodeIds.every(nodeId => selection.checks.some(check => check.nodeId === nodeId)));
-  assert.doesNotThrow(() => progressionEngine.recordResult(state, grade(state, 'third', {
-    recommendations: 'pass',
-  })));
+  assert.throws(() => compileDependencyMode(definition),
+    /feature check check\.dashboard\.1 on dashboard cannot require features\.ownership owned by ownership/);
 });
 
 const fixture = (): FixtureDefinition => ({
@@ -133,6 +118,75 @@ function repairedGrade(state: ProgressionState, attemptId: string,
   if (current.type !== 'repair') throw new Error('expected repair work');
   return { ...grade(state, attemptId, outcomes), completedRepair: true };
 }
+
+function guaranteeFixture(): FixtureDefinition {
+  const definition = fixture();
+  definition.workSelection = 'feature';
+  definition.nodes = [
+    node('owner', [], 'identity'),
+    node('other', [], 'discovery'),
+    node('descendant', ['owner'], 'identity'),
+  ];
+  definition.questlines = [
+    { id: 'identity', title: 'Identity' },
+    { id: 'discovery', title: 'Discovery' },
+  ];
+  definition.nodes[0]!.gradingChecks.push({
+    id: 'check.owner.guarantee', points: 1, role: 'guarantee',
+    requiresFeatures: ['features.other'],
+  });
+  return definition;
+}
+
+test('a deferred guarantee runs and remains repairable without blocking descendants', () => {
+  let state = progressionEngine.initialize(guaranteeFixture());
+  state = progressionEngine.recordResult(state, grade(state, 'owner', { owner: 'pass' }));
+  assert.equal(state.nodes.owner!.status, 'working');
+  assert.deepEqual(prompt(state).nodeIds, ['other']);
+
+  state = progressionEngine.recordResult(state, grade(state, 'other', {
+    owner: { 'check.owner.1': 'pass', 'check.owner.guarantee': 'fail' },
+    other: 'pass',
+  }));
+  assert.equal(state.nodes.owner!.status, 'working');
+  assert.equal(state.nodes.descendant!.status, 'active');
+  assert.deepEqual(action(state).repair.nodeIds, ['owner']);
+
+  state = progressionEngine.recordResult(state, repairedGrade(state, 'guarantee-repair', {
+    owner: { 'check.owner.1': 'pass', 'check.owner.guarantee': 'pass' },
+    other: 'pass',
+  }));
+  assert.equal(state.nodes.owner!.status, 'passed');
+  assert.deepEqual(prompt(state).nodeIds, ['descendant']);
+});
+
+test('a guarantee stays deferred when its same-pass prerequisite fails', () => {
+  const definition = guaranteeFixture();
+  definition.repair.budget = { total: 0 };
+  let state = progressionEngine.initialize(definition);
+  state = progressionEngine.recordResult(state, grade(state, 'owner', { owner: 'pass' }));
+  state = progressionEngine.recordResult(state, grade(state, 'other-fails', {
+    owner: { 'check.owner.1': 'pass', 'check.owner.guarantee': 'fail' },
+    other: 'fail',
+  }));
+  assert.equal(state.nodes.owner!.checks['check.owner.guarantee'], null);
+  assert.equal(state.nodes.owner!.status, 'working');
+  assert.equal(state.nodes.descendant!.status, 'active');
+  assert.deepEqual(prompt(state).nodeIds, ['descendant']);
+});
+
+test('a regressed prerequisite clears a guarantee result from an earlier pass', () => {
+  let state = progressionEngine.initialize(guaranteeFixture());
+  state = progressionEngine.recordResult(state, grade(state, 'owner', { owner: 'pass' }));
+  state = progressionEngine.recordResult(state, grade(state, 'other', {
+    owner: { 'check.owner.1': 'pass', 'check.owner.guarantee': 'pass' }, other: 'pass',
+  }));
+  state = progressionEngine.recordResult(state, grade(state, 'other-regresses', {
+    owner: { 'check.owner.1': 'pass', 'check.owner.guarantee': 'fail' },
+    other: 'fail', descendant: 'pass',
+  }));
+  assert.equal(state.nodes.owner!.checks['check.owner.guarantee'], null);
+});
 
 test('the graph compiles by depth, then declared order, and the order is identity', () => {
   const declared = compileDependencyMode(fixture());

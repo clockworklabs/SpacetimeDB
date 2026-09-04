@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.automatic-reorder", "version": "2.0.1", "state": "draft", "moduleType": "feature",
   "title": "Automatic reorder rules", "description": "Threshold rules schedule one pending restock.",
-  "requiresPacks": ["ecommerce.l3.scheduled-restocks-features", "ecommerce.progression.staff-roles"],
+  "requiresPacks": ["ecommerce.feature.purchasing", "ecommerce.l3.scheduled-restocks-features", "ecommerce.progression.staff-roles"],
   "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 90000 },
   "task": {

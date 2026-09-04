@@ -1,4 +1,4 @@
-import { GRADING_CAPABILITY_IDS } from '../../actions/action-contract.js';
+import type { GradingCapabilityId } from '../../actions/action-contract.js';
 import { createHttpGradingContext, httpNamedActionRequest } from '../stack-grading-operations.js';
 import { captureHostedDiagnostics, activateHosted } from '../hosted-lifecycle.js';
 import { postgresConnectionUrl, postgresSetupMetadata,
@@ -12,6 +12,21 @@ import { preparePostgresDatabase, provePostgresUse, resetPostgres,
 import { POSTGRES_ADAPTER_VERSION } from './postgres-identity.js';
 import { controlHostedFor, defineStackAdapter } from '../stack-adapter-common.js';
 
+const POSTGRES_GRADING_CAPABILITIES = [
+  'actors',
+  'application-files',
+  'application-lifecycle',
+  'backend-lifecycle',
+  'browser-interaction',
+  'browser-observation',
+  'clock',
+  'concurrency',
+  'database-write',
+  'named-actions',
+  'subprocess',
+  'transport-observation',
+] as const satisfies readonly GradingCapabilityId[];
+
 const postgresAdapter = defineStackAdapter('postgres', {
   activate: activateHosted,
   control: input => controlHostedFor('postgres', postgresConnectionUrl, input),
@@ -22,7 +37,7 @@ const postgresAdapter = defineStackAdapter('postgres', {
   diagnostics: { capture: captureHostedDiagnostics },
   database: { prepare: preparePostgresDatabase, proveUse: provePostgresUse },
   grading: { context: createHttpGradingContext,
-    transport: 'http', capabilities: GRADING_CAPABILITY_IDS },
+    transport: 'http', capabilities: POSTGRES_GRADING_CAPABILITIES },
   namedAction: { request: httpNamedActionRequest },
   teardown: { host: stopHostedHost },
   runPolicy: { resetEnabled: true, retainHostSupported: false,

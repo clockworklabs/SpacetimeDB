@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.l2.price-history-features", "stableId": "ecommerce.returns-pricing", "version": "2.0.2", "state": "draft", "moduleType": "feature",
-  "title": "Price history", "description": "Update product prices and retain a history of those changes.",
+  "title": "Price history", "description": "Administrators update prices and public prices update live.",
   "requiresPacks": ["ecommerce.progression.catalog-management"],
   "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 94000 },
@@ -9,8 +9,6 @@
     "contracts": [{ "id": "ecommerce.l2.price-hooks", "path": "contracts/price-history-2.0.md", "order": 2041, "modes": ["upgrade"] }]
   },
   "checks": [
-    { "id": "price-history-exact", "stableId": "price-history", "source": "scenarios/02-paid-price-history-1.4.0.json", "feature": 4, "criteria": ["4a"], "role": "feature", "requiresFeatures": ["ecommerce.feature.purchasing"] },
-    { "id": "price-live-independent", "stableId": "price-history", "source": "scenarios/02-live-price-1.4.0.json", "feature": 4, "criteria": ["4b"], "role": "feature" },
-    { "id": "price-cart-checkout", "stableId": "price-history", "source": "scenarios/progression-price-cart-checkout-1.0.0.json", "feature": 420, "criteria": ["4c"], "role": "feature", "requiresFeatures": ["ecommerce.feature.checkout"] }
+    { "id": "price-live-independent", "stableId": "price-history", "source": "scenarios/02-live-price-1.4.0.json", "feature": 4, "criteria": ["4b"], "role": "feature" }
   ]
 }

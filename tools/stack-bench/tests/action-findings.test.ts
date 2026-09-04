@@ -95,6 +95,13 @@ test('the catalog partitions into application failures and unmeasured outcomes',
   assert.equal(new Set(FINDING_KINDS).size, FINDING_KINDS.length);
   for (const kind of FAILED_FINDING_KINDS) assert.equal(findingStatus(SAMPLES[kind]), 'failed');
   for (const kind of INCONCLUSIVE_FINDING_KINDS) assert.equal(findingStatus(SAMPLES[kind]), 'inconclusive');
+  assert.equal(isFinding({ kind: 'control-not-ready', fields: { control: 'buy-now' } }), false);
+  assert.equal(isFinding({ kind: 'control-not-ready', fields: { control: 'buy-now',
+    actors: ['buyer'], extra: true } }), false);
+  assert.equal(isFinding({ kind: 'call-refused', fields: { action: 'buy', actor: 'buyer', status: 403,
+    operation: { reducer: null, path: '/api/buy', method: 1 } } }), false);
+  assert.equal(isFinding({ kind: 'control-not-ready', fields: { control: 'buy-now',
+    actors: ['buyer'] } }), true);
   assert.equal(isFinding({ kind: 'made-up', fields: {} }), false);
   assert.equal(isFinding({ kind: 'control-missing' }), false);
 });

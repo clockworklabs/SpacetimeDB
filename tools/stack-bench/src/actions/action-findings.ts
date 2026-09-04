@@ -210,10 +210,79 @@ export function renderFinding(value: Finding): string {
   return (renderers[value.kind] as (fields: unknown) => string)(value.fields);
 }
 
-export const findingSchema = z.strictObject({
-  kind: z.enum(FINDING_KINDS as [FindingKind, ...FindingKind[]]),
-  fields: z.record(z.string(), z.unknown()),
+const controlSchema = z.strictObject({ control: z.string() });
+const actorSchema = z.strictObject({ actor: z.string() });
+const actionSchema = z.strictObject({ action: z.string() });
+const statusSchema = z.strictObject({ status: z.number().nullable() });
+const detailSchema = z.strictObject({ detail: z.string().optional() });
+const operationSchema = z.strictObject({
+  reducer: z.string().nullable(),
+  path: z.string().nullable(),
+  method: z.string(),
 });
+const expectationSchema = z.strictObject({
+  equals: z.number().optional(),
+  atLeast: z.number().optional(),
+  atMost: z.number().optional(),
+});
+const targetSchema = z.enum(['app-server', 'backend-runtime']);
+
+export const findingSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('control-missing'), fields: controlSchema }),
+  z.strictObject({ kind: z.literal('control-present'), fields: controlSchema }),
+  z.strictObject({ kind: z.literal('control-available'), fields: z.strictObject({ control: z.string(), actor: z.string() }) }),
+  z.strictObject({ kind: z.literal('control-not-ready'), fields: z.strictObject({ control: z.string(), actors: z.array(z.string()) }) }),
+  z.strictObject({ kind: z.literal('control-blocked'), fields: z.strictObject({ control: z.string().optional(), detail: z.string().optional() }) }),
+  z.strictObject({ kind: z.literal('control-empty'), fields: controlSchema }),
+  z.strictObject({ kind: z.literal('control-unreadable'), fields: z.strictObject({ control: z.string(), actors: z.array(z.string()) }) }),
+  z.strictObject({ kind: z.literal('value-mismatch'), fields: controlSchema }),
+  z.strictObject({ kind: z.literal('text-unexpected'), fields: controlSchema }),
+  z.strictObject({ kind: z.literal('value-unstable'), fields: controlSchema }),
+  z.strictObject({ kind: z.literal('clients-disagree'), fields: z.strictObject({ control: z.string(), actors: z.array(z.string()) }) }),
+  z.strictObject({ kind: z.literal('number-missing'), fields: controlSchema }),
+  z.strictObject({ kind: z.literal('number-mismatch'), fields: z.strictObject({ control: z.string(), observed: z.number().nullable(), expected: expectationSchema }) }),
+  z.strictObject({ kind: z.literal('count-mismatch'), fields: z.strictObject({ control: z.string(), observed: z.number(), expected: z.number() }) }),
+  z.strictObject({ kind: z.literal('order-mismatch'), fields: z.strictObject({ control: z.string(), actors: z.array(z.string()).optional() }) }),
+  z.strictObject({ kind: z.literal('entries-missing'), fields: z.strictObject({ expected: z.number(), missing: z.number(), duplicated: z.number() }) }),
+  z.strictObject({ kind: z.literal('actors-with-control'), fields: z.strictObject({ control: z.string(), observed: z.number(), expected: z.number() }) }),
+  z.strictObject({ kind: z.literal('too-many-per-actor'), fields: z.strictObject({ control: z.string(), maxEach: z.number() }) }),
+  z.strictObject({ kind: z.literal('clicks-failed'), fields: z.strictObject({ control: z.string(), failed: z.number(), total: z.number(), detail: z.string().optional() }) }),
+  z.strictObject({ kind: z.literal('choice-missing'), fields: z.strictObject({ control: z.string().optional(), detail: z.string().optional() }) }),
+  z.strictObject({ kind: z.literal('page-timeout'), fields: z.strictObject({ control: z.string().optional(), detail: z.string().optional() }) }),
+  z.strictObject({ kind: z.literal('page-crashed'), fields: detailSchema }),
+  z.strictObject({ kind: z.literal('page-error'), fields: z.strictObject({ control: z.string().optional(), detail: z.string().optional() }) }),
+  z.strictObject({ kind: z.literal('app-control-failed'), fields: z.strictObject({ mode: z.string(), target: targetSchema, detail: z.string().optional() }) }),
+  z.strictObject({ kind: z.literal('script-failed'), fields: z.strictObject({ script: z.string(), detail: z.string().optional() }) }),
+  z.strictObject({ kind: z.literal('script-invalid'), fields: z.strictObject({ script: z.string() }) }),
+  z.strictObject({ kind: z.literal('action-failed'), fields: actionSchema }),
+  z.strictObject({ kind: z.literal('call-refused'), fields: z.strictObject({ action: z.string(), actor: z.string(), status: z.number().nullable(), operation: operationSchema.nullable() }) }),
+  z.strictObject({ kind: z.literal('call-accepted'), fields: z.strictObject({ action: z.string(), actor: z.string(), status: z.number().nullable(), required: z.enum(['refused', 'validation-refused']) }) }),
+  z.strictObject({ kind: z.literal('call-error'), fields: z.strictObject({ action: z.string(), actor: z.string(), status: z.number().nullable(), required: z.enum(['refused', 'validation-refused']), operation: operationSchema.nullable() }) }),
+  z.strictObject({ kind: z.literal('concurrent-calls-mismatch'), fields: z.strictObject({ action: z.string(), expected: z.number(), accepted: z.number(), fired: z.number(), detail: z.string().optional() }) }),
+  z.strictObject({ kind: z.literal('interface-missing'), fields: z.strictObject({ control: z.string(), action: z.string(), attribute: z.string() }) }),
+  z.strictObject({ kind: z.literal('interface-invalid'), fields: z.strictObject({ action: z.string(), attribute: z.string(), missing: z.array(z.string()).optional(), unexpected: z.array(z.string()).optional(), detail: z.string().optional() }) }),
+  z.strictObject({ kind: z.literal('replay-accepted'), fields: z.strictObject({ actor: z.string(), status: z.number().nullable(), action: z.string().optional() }) }),
+  z.strictObject({ kind: z.literal('replay-error'), fields: z.strictObject({ status: z.number().nullable(), action: z.string().optional() }) }),
+  z.strictObject({ kind: z.literal('forgery-accepted'), fields: z.strictObject({ status: z.number().nullable(), field: z.string() }) }),
+  z.strictObject({ kind: z.literal('forgery-error'), fields: statusSchema }),
+  z.strictObject({ kind: z.literal('message-delivered'), fields: actorSchema }),
+  z.strictObject({ kind: z.literal('stock-interface-missing'), fields: detailSchema }),
+  z.strictObject({ kind: z.literal('assertion-without-action'), fields: actionSchema }),
+  z.strictObject({ kind: z.literal('unknown-action'), fields: actionSchema }),
+  z.strictObject({ kind: z.literal('action-without-parameters'), fields: actionSchema }),
+  z.strictObject({ kind: z.literal('no-session'), fields: z.strictObject({ actor: z.string(), action: z.string().optional() }) }),
+  z.strictObject({ kind: z.literal('unresolved-action'), fields: z.strictObject({ action: z.string().optional() }) }),
+  z.strictObject({ kind: z.literal('replay-unavailable'), fields: z.strictObject({ actor: z.string(), detail: z.string().optional() }) }),
+  z.strictObject({ kind: z.literal('forgery-unverifiable'), fields: z.strictObject({ actor: z.string(), detail: z.string().optional() }) }),
+  z.strictObject({ kind: z.literal('not-observed'), fields: actorSchema }),
+  z.strictObject({ kind: z.literal('nothing-contended'), fields: detailSchema }),
+  z.strictObject({ kind: z.literal('no-backend-control'), fields: z.strictObject({ target: targetSchema }) }),
+  z.strictObject({ kind: z.literal('control-refused'), fields: z.strictObject({ target: targetSchema }) }),
+  z.strictObject({ kind: z.literal('database-write-failed'), fields: detailSchema }),
+  z.strictObject({ kind: z.literal('unsupported-backend'), fields: z.strictObject({ backend: z.string() }) }),
+  z.strictObject({ kind: z.literal('app-directory-unknown'), fields: z.strictObject({}) }),
+  z.strictObject({ kind: z.literal('invalid-input'), fields: detailSchema }),
+]);
 
 export function isFinding(value: unknown): value is Finding {
   return findingSchema.safeParse(value).success;
