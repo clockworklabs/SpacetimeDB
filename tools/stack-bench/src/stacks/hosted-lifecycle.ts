@@ -29,6 +29,11 @@ const isOwnedContainer = (value: unknown): value is BackendLeaseContainer =>
   value !== null && typeof value === 'object' && 'owned' in value && Boolean(value.owned);
 
 const DOCKER_TIMEOUT_MS = 120_000;
+// A start from clean source may install packages over the network before it
+// listens, so the budget is generous. A launch that has exited without leaving
+// a listener fails as soon as that is seen, not at the deadline.
+export const HOSTED_START_TIMEOUT_MS = 900_000;
+const START_LOG_LINES = 200;
 const CONTROL_DIR = CODING_CONTAINER_CONTROL_DIR;
 const { uid: APP_UID, gid: APP_GID } = CODING_CONTAINER_AGENT;
 
@@ -202,18 +207,41 @@ export async function controlHostedAppServer({ adapterId: stack, lease, app, por
       + 'attempt=$((attempt + 1)); sleep 0.05; done; '
       + `[ -s ${processRecord} ] || { echo "application process record was not created" >&2; exit 4; }`],
   { encoding: 'utf8', stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
-  try {
-    await waitFor(() => answers(url, { requireSuccess: true }),
-      180_000, `${stack} application to start`, abort);
-  } catch (cause) {
-    let detail = '';
+  const commandSucceeds = (args: string[]): boolean => {
     try {
-      detail = redactCredentials(exec('docker', ['exec', container.id, 'tail', '-n', '40', log],
-        { encoding: 'utf8', stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS }))
-        .trim().split(/\r?\n/).slice(-3).join(' | ').slice(0, 500);
+      exec('docker', args, { encoding: 'utf8', stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
+      return true;
+    } catch { return false; }
+  };
+  const launchedProcessAlive = () => commandSucceeds(['exec', container.id, 'sh', '-c',
+    `read pid rest < ${processRecord} && [ -d "/proc/$pid" ]`]);
+  const portHasListener = () => commandSucceeds(['exec', ...codingContainerAgentExecOptions(),
+    container.id, 'sh', '-c', `[ -n "$(lsof -ti tcp:${Number(port)} -sTCP:LISTEN)" ]`]);
+  // The launch log is the only account of why an application did not start.
+  // The error carries it whole; the message keeps the last lines.
+  const startFailure = (what: string, cause: unknown): Error => {
+    let startLog = '';
+    try {
+      startLog = redactCredentials(exec('docker',
+        ['exec', container.id, 'tail', '-n', String(START_LOG_LINES), log],
+        { encoding: 'utf8', stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS })).trim();
     } catch { /* the startup error remains useful without a log */ }
-    throw Object.assign(new Error(`${stack} application did not start${detail ? `: ${detail}` : ''}`, { cause }),
-      { code: 'generated_app_not_restartable' });
+    const detail = startLog.split(/\r?\n/).slice(-3).join(' | ').slice(0, 500);
+    return Object.assign(new Error(`${stack} application ${what}${detail ? `: ${detail}` : ''}`, { cause }),
+      { code: 'generated_app_not_restartable', startLog });
+  };
+  let exited = false;
+  try {
+    await waitFor(async () => {
+      if (await answers(url, { requireSuccess: true })) return true;
+      if (!launchedProcessAlive() && !portHasListener()) {
+        exited = true;
+        throw new Error(`${stack} application process exited`);
+      }
+      return false;
+    }, HOSTED_START_TIMEOUT_MS, `${stack} application to start`, abort);
+  } catch (cause) {
+    throw startFailure(exited ? `exited before it listened on port ${Number(port)}` : 'did not start', cause);
   }
   exec('docker', ['exec', ...codingContainerAgentExecOptions(), container.id, 'sh', '-c',
     `pids=$(lsof -ti tcp:${Number(port)} -sTCP:LISTEN | sort -u); `

@@ -8,7 +8,7 @@ import { captureApplicationDiagnostics, controlBackendRuntime, hostedStopScript,
   from '../src/runtime/backend-control.js';
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
-import { controlHostedAppServer, hostedLaunchCommand, hostedRecordedProcessStopScript }
+import { controlHostedAppServer, HOSTED_START_TIMEOUT_MS, hostedLaunchCommand, hostedRecordedProcessStopScript }
   from '../src/stacks/hosted-lifecycle.js';
 import type { TextCommandOptions } from '../src/runtime/command-executor.js';
 
@@ -247,5 +247,39 @@ test('SpacetimeDB application start uses the root contract independently of its 
     assert.match(launch.at(-1) ?? '', /\/proc\/\$\$\/stat/);
     assert.match(launch.at(-1) ?? '', /\(umask 077; printf/);
     assert.match(launch.at(-1) ?? '', /printf "%s %s\\n" "\$\$" "\$\{20\}"/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('hosted application start fails as soon as the launch exits without a listener and keeps its log', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-hosted-exit-'));
+  const id = 'b'.repeat(64);
+  writeFileSync(join(root, 'start.sh'), '#!/bin/sh\nexec app\n');
+  const log = ['[start.sh] Installing dependencies', 'npm ERR! network request failed',
+    'npm ERR! A complete log of this run can be found in: /home/developer/.npm/_logs/x.log'];
+  const exec = (_command: string, args: readonly string[]): string => {
+    if (args[0] === 'inspect') return `${id}\n`;
+    if (args[0] === 'exec' && args[2] === 'tail') return `${log.join('\n')}\n`;
+    const script = String(args.at(-1) ?? '');
+    if (/\/proc\/\$pid/.test(script) || /-sTCP:LISTEN\)"\s*\]/.test(script)) {
+      throw Object.assign(new Error('exit 1'), { status: 1 });
+    }
+    return '';
+  };
+  const startedAt = Date.now();
+  try {
+    await assert.rejects(controlHostedAppServer({
+      adapterId: 'postgres',
+      lease: { resources: { buildContainer: { name: 'leased-build', id, owned: true } } },
+      app: root,
+      port: 65533,
+      probe: '/',
+      mode: 'start',
+      exec,
+    }), error => error instanceof Error
+      && error.message.startsWith('postgres application exited before it listened on port 65533: ')
+      && error.message.includes('npm ERR! network request failed')
+      && 'code' in error && error.code === 'generated_app_not_restartable'
+      && 'startLog' in error && error.startLog === log.join('\n'));
+    assert.ok(Date.now() - startedAt < HOSTED_START_TIMEOUT_MS / 10);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

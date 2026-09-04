@@ -1350,6 +1350,14 @@ async function main() {
       ? requireProgressionState(progressionExecution?.state ?? null).attempts.length + 1 : null;
     const featureActionSuffix = featureActionSequence === null
       ? '' : `-action${String(featureActionSequence).padStart(3, '0')}`;
+    // A clean-source start that fails voids a grade. Its launch log is the
+    // only account of why, so it stays beside the run.
+    const keepStartLog = (error: unknown, label: string): void => {
+      const startLog = error !== null && typeof error === 'object' && 'startLog' in error
+        ? error.startLog : null;
+      if (typeof startLog !== 'string' || !startLog) return;
+      writeFileSync(join(outputDir, `${label}-start.log`), `${startLog}\n`);
+    };
     const restoreFeatureAcceptedSource = async (): Promise<void> => {
       if (featureActionSequence === null) return;
       const source = join(outputDir, 'source');
@@ -1439,6 +1447,7 @@ async function main() {
           await materializeAcceptedSource(args.seedFrom, appDir, applicationControl);
         } catch (error) {
           applicationFailure = materializationAppFailure(error);
+          keepStartLog(error, `${args.backend}-extension-l${level}`);
         }
       } else {
         resetAppToSource(args.seedFrom, appDir);
@@ -1634,6 +1643,7 @@ async function main() {
           await materializeAcceptedSource(sourcePath, appDir, applicationControl);
         } catch (error) {
           failure = materializationAppFailure(error);
+          keepStartLog(error, label);
         }
       } else {
         resetAppToSource(sourcePath, appDir);
@@ -1752,6 +1762,7 @@ async function main() {
     } catch (error) {
       if (firstBuildSource) {
         materializationOutcome = materializationAppFailure(error);
+        keepStartLog(error, `${args.backend}-l${level}${featureActionSuffix}`);
       }
       console.log(materializationOutcome
         ? `  !! ${materializationOutcome.reason}`
