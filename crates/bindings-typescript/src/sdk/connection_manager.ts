@@ -145,7 +145,9 @@ class ConnectionManagerImpl {
         clearTimeout(managed.reconnectTimer);
         managed.reconnectTimer = null;
         managed.reconnectAttempt = 0;
-        this.#reconnectManagedConnection(managed);
+        if (managed.builder) {
+          this.#buildManagedConnection(managed, managed.builder);
+        }
         continue;
       }
 
@@ -177,7 +179,9 @@ class ConnectionManagerImpl {
     connection.disconnect();
     this.#updateState(managed, { isActive: false });
     managed.reconnectAttempt = 0;
-    this.#reconnectManagedConnection(managed);
+    if (managed.builder) {
+      this.#buildManagedConnection(managed, managed.builder);
+    }
   }
 
   /** Generates a unique key for a connection based on URI and module name. */
@@ -290,19 +294,37 @@ class ConnectionManagerImpl {
     }
   }
 
-  /** Reconnect with the issued token. Explicit rebuilds use the caller's token. */
-  #reconnectManagedConnection(managed: ManagedConnection): void {
-    if (!managed.builder) return;
-    const token = managed.state.token;
-    if (token) managed.builder.withToken(token);
-    this.#buildManagedConnection(managed, managed.builder);
-  }
-
+  /**
+   * Builds a connection for `managed` from `builder`, adopting it as the
+   * entry's retained builder.
+   *
+   * `resumeSession` (the default) re-applies the session's current token to the
+   * builder first. This matters because the builder is a *long-lived template*:
+   * the application hands it over once, and every automatic rebuild — scheduled
+   * reconnect, resume-from-background, zombie-socket revival — reuses that same
+   * object. Its token, though, is a snapshot taken when the application built
+   * it, typically read out of storage at module load, before any session
+   * existed. Rebuilding from it verbatim would reconnect *anonymously* for any
+   * user whose token was issued during this page's lifetime, and the server
+   * would answer by minting a brand-new identity: a silent account switch, with
+   * no error raised on either side, curable only by a page reload.
+   *
+   * `state.token` is the token of the most recent connection (set below at
+   * build time, and again by `onConnect` when the server issues one), so
+   * re-applying it keeps every automatic rebuild on the same principal.
+   *
+   * Pass `resumeSession: false` when the caller is deliberately changing
+   * identity — see {@link rebuild} — so the builder's own token wins.
+   */
   #buildManagedConnection<T extends DbConnectionImpl<any>>(
     managed: ManagedConnection,
-    builder: DbConnectionBuilder<T>
+    builder: DbConnectionBuilder<T>,
+    { resumeSession = true }: { resumeSession?: boolean } = {}
   ): T {
     managed.builder = builder;
+    if (resumeSession && managed.state.token) {
+      builder.withToken(managed.state.token);
+    }
     const connection = builder.build();
     managed.connection = connection;
     this.#attachCallbacks(managed, builder);
@@ -353,7 +375,7 @@ class ConnectionManagerImpl {
         return;
       }
 
-      this.#reconnectManagedConnection(managed);
+      this.#buildManagedConnection(managed, managed.builder);
     }, delay);
   }
 
@@ -440,7 +462,12 @@ class ConnectionManagerImpl {
     managed.connection = undefined;
 
     try {
-      return this.#buildManagedConnection(managed, builder) as T;
+      // `resumeSession: false`: this is the one path that exists precisely to
+      // *change* identity, so the replacement builder's token must win over the
+      // outgoing session's.
+      return this.#buildManagedConnection(managed, builder, {
+        resumeSession: false,
+      }) as T;
     } catch (error) {
       // The old connection is already torn down, so a failed rebuild would
       // otherwise leave the pool reporting a stale "live" connection. Surface

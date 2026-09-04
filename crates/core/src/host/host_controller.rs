@@ -4,7 +4,7 @@ use super::v8::V8HeapMetrics;
 use super::wasmtime::{WasmMemoryBytesMetric, WasmtimeRuntime};
 use super::{Scheduler, UpdateDatabaseResult};
 use crate::client::{ClientActorId, ClientName};
-use crate::config::{V8Config, WasmConfig};
+use crate::config::{ModuleHttpConfig, V8Config, WasmConfig};
 use crate::database_logger::DatabaseLogger;
 use crate::db::persistence::PersistenceProvider;
 use crate::db::relational_db::{self, spawn_view_cleanup_loop, DiskSizeFn, RelationalDB, Txdata};
@@ -21,7 +21,10 @@ use crate::subscription::module_subscription_manager::{spawn_send_worker, Subscr
 use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use crate::util::asyncify;
 use crate::util::jobs::{AllocatedJobCore, JobCores};
-use crate::worker_metrics::{record_module_host_init_attempt, record_module_host_init_failure, WORKER_METRICS};
+use crate::worker_metrics::{
+    record_module_host_init_attempt, record_module_host_init_failure, record_module_host_unexpected_exit,
+    ModuleHostInitFailureCause, WORKER_METRICS,
+};
 use anyhow::{anyhow, bail, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
@@ -203,17 +206,19 @@ pub struct HostController {
 pub(crate) struct HostRuntimes {
     wasmtime: WasmtimeRuntime,
     v8: V8Runtime,
+    module_http: ModuleHttpConfig,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct HostRuntimeConfig {
     pub wasm: WasmConfig,
     pub v8: V8Config,
+    pub module_http: ModuleHttpConfig,
 }
 
 impl HostRuntimeConfig {
-    pub fn new(wasm: WasmConfig, v8: V8Config) -> Self {
-        Self { wasm, v8 }
+    pub fn new(wasm: WasmConfig, v8: V8Config, module_http: ModuleHttpConfig) -> Self {
+        Self { wasm, v8, module_http }
     }
 }
 
@@ -221,7 +226,12 @@ impl HostRuntimes {
     fn new(data_dir: Option<&ServerDataDir>, config: HostRuntimeConfig) -> Arc<Self> {
         let wasmtime = WasmtimeRuntime::new(data_dir, config.wasm);
         let v8 = V8Runtime::new(config.v8);
-        Arc::new(Self { wasmtime, v8 })
+        let module_http = config.module_http;
+        Arc::new(Self {
+            wasmtime,
+            v8,
+            module_http,
+        })
     }
 }
 
@@ -284,6 +294,32 @@ impl From<&EventStatus> for ReducerOutcome {
             EventStatus::OutOfEnergy => ReducerOutcome::BudgetExceeded,
         }
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+enum HostInitError {
+    #[error("init reducer ran out of energy")]
+    OutOfEnergy,
+}
+
+impl HostInitError {
+    fn metric_cause(error: &anyhow::Error) -> ModuleHostInitFailureCause {
+        if error
+            .downcast_ref::<Self>()
+            .is_some_and(|error| matches!(error, Self::OutOfEnergy))
+        {
+            ModuleHostInitFailureCause::OutOfEnergy
+        } else {
+            ModuleHostInitFailureCause::Other
+        }
+    }
+}
+
+fn validate_init_reducer_call_result(call_result: ReducerCallResult) -> anyhow::Result<()> {
+    if matches!(call_result.outcome, ReducerOutcome::BudgetExceeded) {
+        return Err(HostInitError::OutOfEnergy.into());
+    }
+    Result::from(call_result)
 }
 
 #[derive(Clone, Debug)]
@@ -534,6 +570,7 @@ impl HostController {
         // `HostController::clone` is fast,
         // as all of its fields are either `Copy` or wrapped in `Arc`.
         let this = self.clone();
+        let database_identity = database.database_identity;
 
         // `try_init_host` is not cancel safe, as it will spawn other async tasks
         // which hold a filesystem lock past when `try_init_host` returns or is cancelled.
@@ -566,7 +603,7 @@ impl HostController {
                     program,
                     policy,
                     this.energy_monitor.clone(),
-                    this.unregister_fn(replica_id),
+                    this.unregister_fn(replica_id, database_identity),
                     this.db_cores.take(),
                 )
                 .await?;
@@ -729,11 +766,14 @@ impl HostController {
     /// On-panic callback passed to [`ModuleHost`]s created by this controller.
     ///
     /// Removes the module with the given `replica_id` from this controller.
-    fn unregister_fn(&self, replica_id: u64) -> impl Fn() + Send + Sync + 'static + use<> {
+    fn unregister_fn(&self, replica_id: u64, database_identity: Identity) -> impl Fn() + Send + Sync + 'static + use<> {
         let hosts = Arc::downgrade(&self.hosts);
         move || {
-            if let Some(hosts) = hosts.upgrade() {
-                hosts.lock().remove(&replica_id);
+            let unregistered = hosts
+                .upgrade()
+                .is_some_and(|hosts| hosts.lock().remove(&replica_id).is_some());
+            if unregistered {
+                record_module_host_unexpected_exit(database_identity);
             }
         }
     }
@@ -762,7 +802,20 @@ impl HostController {
 
         Host::try_init(self, database, replica_id)
             .await
-            .inspect_err(|_| record_module_host_init_failure(database_identity))
+            .inspect_err(|error| {
+                let cause = HostInitError::metric_cause(error);
+                match cause {
+                    ModuleHostInitFailureCause::OutOfEnergy => {
+                        log::debug!(
+                            "failed to init replica {replica_id} for {database_identity} due to out of energy error from init reducer: {error}"
+                        );
+                    }
+                    ModuleHostInitFailureCause::Other => {
+                        log::warn!("failed to init replica {replica_id} for {database_identity}: {error:#}");
+                    }
+                }
+                record_module_host_init_failure(database_identity, cause)
+            })
             .with_context(|| format!("failed to init replica {} for {}", replica_id, database_identity))
     }
 }
@@ -779,6 +832,7 @@ async fn make_replica_ctx(
     relational_db: Arc<RelationalDB>,
     bsatn_rlb_pool: BsatnRowListBuilderPool,
     memory_observer: Arc<dyn MemoryObserver>,
+    module_http: ModuleHttpConfig,
 ) -> anyhow::Result<ReplicaContext> {
     let logger = match module_logs {
         Some(path) => asyncify(move || Arc::new(DatabaseLogger::open_today(path))).await,
@@ -814,6 +868,7 @@ async fn make_replica_ctx(
         logger,
         subscriptions,
         module_instance_memory_tracker,
+        module_http,
     })
 }
 
@@ -915,6 +970,7 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
             self.relational_db,
             self.bsatn_rlb_pool,
             self.memory_observer,
+            self.runtimes.module_http,
         )
         .await
         .map(Arc::new)?;
@@ -1042,6 +1098,7 @@ impl Host {
         database: Database,
         replica_id: u64,
     ) -> anyhow::Result<HostInit> {
+        let database_identity = database.database_identity;
         let HostController {
             data_dir,
             default_config: config,
@@ -1146,7 +1203,7 @@ impl Host {
                     database,
                     replica_id,
                     program,
-                    on_panic: host_controller.unregister_fn(replica_id),
+                    on_panic: host_controller.unregister_fn(replica_id, database_identity),
                     relational_db,
                     energy_monitor: energy_monitor.clone(),
                     memory_observer: memory_observer.clone(),
@@ -1176,7 +1233,7 @@ impl Host {
                     database: database.clone(),
                     replica_id,
                     program: program.clone(),
-                    on_panic: host_controller.unregister_fn(replica_id),
+                    on_panic: host_controller.unregister_fn(replica_id, database_identity),
                     relational_db: relational_db.clone(),
                     energy_monitor: energy_monitor.clone(),
                     memory_observer: memory_observer.clone(),
@@ -1200,7 +1257,7 @@ impl Host {
                             database,
                             replica_id,
                             program: program.clone(),
-                            on_panic: host_controller.unregister_fn(replica_id),
+                            on_panic: host_controller.unregister_fn(replica_id, database_identity),
                             relational_db: relational_db.clone(),
                             energy_monitor: energy_monitor.clone(),
                             memory_observer: memory_observer.clone(),
@@ -1229,7 +1286,7 @@ impl Host {
         if program_needs_init {
             let InitDatabaseResult { reducer, tx_offset } = launched.module_host.init_database(program).await?;
             if let Some(call_result) = reducer {
-                Result::from(call_result)?;
+                validate_init_reducer_call_result(call_result)?;
             }
             bootstrap_completion = Some(BootstrapCompletion::pending(
                 bootstrap_generation,
@@ -1615,4 +1672,38 @@ where
 
     let _ = WORKER_METRICS.v8_request_queue_length.remove_label_values(db);
     let _ = DB_METRICS.http_response_size_bytes.remove_label_values(db);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reducer_call_result(outcome: ReducerOutcome) -> ReducerCallResult {
+        ReducerCallResult {
+            outcome,
+            execution_budget_used: FunctionBudget::ZERO,
+            execution_duration: Duration::ZERO,
+        }
+    }
+
+    #[test]
+    fn init_reducer_budget_exceeded_maps_to_out_of_energy_cause() {
+        let error = validate_init_reducer_call_result(reducer_call_result(ReducerOutcome::BudgetExceeded))
+            .expect_err("budget exceeded init reducer should fail host init");
+
+        assert_eq!(
+            HostInitError::metric_cause(&error),
+            ModuleHostInitFailureCause::OutOfEnergy
+        );
+    }
+
+    #[test]
+    fn init_reducer_failure_maps_to_other_cause() {
+        let error = validate_init_reducer_call_result(reducer_call_result(ReducerOutcome::Failed(Box::new(
+            Box::from("init failed"),
+        ))))
+        .expect_err("failed init reducer should fail host init");
+
+        assert_eq!(HostInitError::metric_cause(&error), ModuleHostInitFailureCause::Other);
+    }
 }

@@ -313,7 +313,7 @@ where
             );
             stream.read_exact(&mut self.commit_buf.body).await?;
             // Decode the commit and verify its checksum.
-            let commit = StoredCommit::decode(self.commit_buf.as_reader())
+            let commit = StoredCommit::decode(&mut self.commit_buf.as_reader(bytes_written))
                 .inspect_err(|e| warn!("failed to decode commit: {e}"))?
                 .expect("commit decode cannot return `None` because we already decoded the header");
 
@@ -379,9 +379,9 @@ where
         if let Some(current_segment) = self.current_segment.take() {
             trace!("closing current segment on writer drop");
             tokio::spawn(
-                current_segment
-                    .close()
-                    .inspect_err(|e| warn!("error closing segment on drop: {e}")),
+                current_segment.close().inspect_err(|e| {
+                    error!("failed to flush commitlog segment while closing dropped stream writer: {e}")
+                }),
             );
         }
     }

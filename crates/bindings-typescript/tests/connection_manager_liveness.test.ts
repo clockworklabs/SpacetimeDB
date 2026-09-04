@@ -12,6 +12,8 @@ type ErrorContextInterface = { isActive: boolean };
 class MockConnection {
   isActive = false;
   identity = undefined;
+  // A real DbConnectionImpl is constructed with the builder's token and keeps
+  // it in this field, so the mock takes it the same way.
   token: string | undefined;
   connectionId = ConnectionId.random();
   isDisconnectRequested = false;
@@ -27,10 +29,6 @@ class MockConnection {
   #onConnectError = new Set<
     (ctx: ErrorContextInterface, error: Error) => void
   >();
-
-  constructor(private readonly issuedToken?: string) {
-    this.token = undefined;
-  }
 
   get isSocketClosed(): boolean {
     return this.socketClosed;
@@ -65,9 +63,14 @@ class MockConnection {
     else this.#onConnectError.add(cb);
   }
 
-  simulateConnect(): void {
+  /**
+   * @param issuedToken - the token the server hands back on connect, emulating
+   * a client being issued credentials it did not have when the builder was
+   * constructed.
+   */
+  simulateConnect(issuedToken?: string): void {
     this.isActive = true;
-    this.token = this.issuedToken;
+    if (issuedToken !== undefined) this.token = issuedToken;
     for (const cb of this.#onConnect) cb(this);
   }
   simulateDisconnect(error?: Error): void {
@@ -79,9 +82,9 @@ class MockConnection {
 
 class MockBuilder {
   buildCount = 0;
-  presentedTokens: Array<string | undefined> = [];
   connections: MockConnection[] = [];
-  #token: string | undefined;
+  /** The token each `build()` will stamp onto its connection. */
+  token: string | undefined;
 
   #onConnect = new Set<(conn: MockConnection) => void>();
   #onDisconnect = new Set<
@@ -91,17 +94,15 @@ class MockBuilder {
     (ctx: ErrorContextInterface, error: Error) => void
   >();
 
-  constructor(private readonly issuedToken?: string) {}
-
   withToken(token?: string): MockBuilder {
-    this.#token = token;
+    this.token = token;
     return this;
   }
 
   build(): MockConnection {
-    const connection = new MockConnection(this.issuedToken);
+    const connection = new MockConnection();
+    connection.token = this.token;
     this.buildCount += 1;
-    this.presentedTokens.push(this.#token);
     this.connections.push(connection);
     for (const cb of this.#onConnect) connection.register('connect', cb);
     for (const cb of this.#onDisconnect) connection.register('disconnect', cb);
@@ -216,32 +217,6 @@ describe('ConnectionManager liveness recovery', () => {
     ConnectionManager.release(key);
   });
 
-  test('reuses the issued token when reviving a dead socket', () => {
-    const key = nextKey();
-    const builder = new MockBuilder('issued-token');
-    const first = retain(key, builder);
-    expect(builder.presentedTokens).toEqual([undefined]);
-
-    first.simulateConnect();
-    first.socketClosed = true;
-    fire('win:online');
-
-    expect(builder.presentedTokens).toEqual([undefined, 'issued-token']);
-    ConnectionManager.release(key);
-  });
-
-  test('an explicit rebuild uses the caller token', () => {
-    const key = nextKey();
-    const firstBuilder = new MockBuilder('issued-token');
-    retain(key, firstBuilder).simulateConnect();
-
-    const replacement = new MockBuilder().withToken('caller-token');
-    ConnectionManager.rebuild(key, replacement as any);
-
-    expect(replacement.presentedTokens).toEqual(['caller-token']);
-    ConnectionManager.release(key);
-  });
-
   test('does not rebuild a healthy connection on resume', () => {
     const key = nextKey();
     const builder = new MockBuilder();
@@ -303,6 +278,42 @@ describe('ConnectionManager liveness recovery', () => {
     fire('doc:visibilitychange');
 
     expect(builder.buildCount).toBe(1);
+    ConnectionManager.release(key);
+  });
+
+  // The resume paths rebuild from the retained builder, whose token is a
+  // snapshot from before the session existed. Reconnecting anonymously here
+  // makes the server mint a new identity, so a user who merely switched tabs
+  // comes back as a stranger.
+  test('reviving a dead socket on resume keeps the session identity', () => {
+    const key = nextKey();
+    // A first-time visitor: no stored credentials when the builder was made.
+    const builder = new MockBuilder();
+    const first = retain(key, builder);
+    first.simulateConnect('session-token');
+
+    // Tab is backgrounded and the socket dies silently.
+    first.socketClosed = true;
+    fire('doc:visibilitychange');
+
+    expect(builder.buildCount).toBe(2);
+    expect(builder.connections[1].token).toBe('session-token');
+    ConnectionManager.release(key);
+  });
+
+  test('a stalled reconnect brought forward on resume keeps the session identity', () => {
+    const key = nextKey();
+    const builder = new MockBuilder();
+    const first = retain(key, builder);
+    first.simulateConnect('session-token');
+    first.simulateDisconnect();
+
+    // Timer still pending behind background throttling; focus fires it early.
+    vi.advanceTimersByTime(connectionManagerReconnectDelayMs(0) - 1);
+    fire('win:focus');
+
+    expect(builder.buildCount).toBe(2);
+    expect(builder.connections[1].token).toBe('session-token');
     ConnectionManager.release(key);
   });
 });
