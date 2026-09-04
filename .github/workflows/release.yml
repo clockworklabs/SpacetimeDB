@@ -475,3 +475,72 @@ jobs:
             --arg body "$body" \
             '{release_tag: $tag, release_url: $url, release_body: $body, dry_run: "false"}' \
           | gh workflow run tag-release.yml --repo clockworklabs/SpacetimeDB --ref master --json
+
+  notify-release-status:
+    needs:
+      - validate-release-invoker
+      - build-cargo-release
+      - release-crates
+      - release-csharp
+      - release-cpp
+      - release-npm
+      - release-docker
+      - update-mirror-latest-version
+      - publish-github-release
+    runs-on: spacetimedb-linux
+    if: ${{ always() }}
+    steps:
+      - name: Send Discord release status
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_RELEASE_ANNOUNCE_URL }}
+          RELEASE_TAG: ${{ github.event.inputs.release_tag }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          VALIDATE_RELEASE_INVOKER: ${{ needs.validate-release-invoker.result }}
+          BUILD_CARGO_RELEASE: ${{ needs.build-cargo-release.result }}
+          RELEASE_CRATES: ${{ needs.release-crates.result }}
+          RELEASE_CSHARP: ${{ needs.release-csharp.result }}
+          RELEASE_CPP: ${{ needs.release-cpp.result }}
+          RELEASE_NPM: ${{ needs.release-npm.result }}
+          RELEASE_DOCKER: ${{ needs.release-docker.result }}
+          UPDATE_MIRROR_LATEST_VERSION: ${{ needs.update-mirror-latest-version.result }}
+          PUBLISH_GITHUB_RELEASE: ${{ needs.publish-github-release.result }}
+        run: |
+          set -euo pipefail
+
+          status_emoji() {
+            case "$1" in
+              success) printf '✅' ;;
+              failure) printf '❌' ;;
+              cancelled) printf '⏹️' ;;
+              skipped) printf '⏭️' ;;
+              *) printf '❓' ;;
+            esac
+          }
+
+          add_status() {
+            local label="$1"
+            local result="$2"
+            message+=$'\n'
+            message+="$(status_emoji "$result") ${label}"
+          }
+
+          mode="live"
+          if [ "$DRY_RUN" = "true" ]; then
+            mode="dry-run"
+          fi
+
+          message="Release ${RELEASE_TAG} [${mode}]"
+          message+=$'\n'
+          message+="Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          add_status "Validate release invoker" "$VALIDATE_RELEASE_INVOKER"
+          add_status "Build cargo-release" "$BUILD_CARGO_RELEASE"
+          add_status "Crates" "$RELEASE_CRATES"
+          add_status "C#" "$RELEASE_CSHARP"
+          add_status "C++" "$RELEASE_CPP"
+          add_status "NPM" "$RELEASE_NPM"
+          add_status "Docker" "$RELEASE_DOCKER"
+          add_status "S3 mirror latest-version" "$UPDATE_MIRROR_LATEST_VERSION"
+          add_status "GitHub release" "$PUBLISH_GITHUB_RELEASE"
+
+          data="$(jq --null-input --arg msg "$message" '.content=$msg')"
+          curl --fail-with-body -X POST -H 'Content-Type: application/json' -d "$data" "$DISCORD_WEBHOOK_URL"
