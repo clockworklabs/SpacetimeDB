@@ -97,7 +97,8 @@ test('a campaign-bound task supplies the exact recipe when no explicit recipe ex
 test('completion validation rejects wrong identity and malformed usage', () => {
   const nativeRequest: AgentRequest = { ...request,
     adapterCostLimit: 'native', maxBudgetUsd: 1, pricing };
-  const receipt = { schemaVersion: 2, source: 'credential-broker', model: request.model,
+  const receipt = { schemaVersion: 3, source: 'credential-broker', exact: true, estimatedRequests: 0,
+    estimatedByReason: { 'no-usage': 0, 'response-aborted': 0, 'upstream-error': 0 }, model: request.model,
     maxBudgetUsd: 1, costUsd: 0.0018, cliCostUsd: 0.0018, calculatedCostUsd: 0.0018,
     usage: { input: 100, output: 100, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 },
     pricingRates: { input: 3, output: 15, cacheWrite5m: 3.75, cacheWrite1h: 6,

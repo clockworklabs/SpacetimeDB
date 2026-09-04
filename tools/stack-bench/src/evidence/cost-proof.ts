@@ -4,6 +4,7 @@ export interface CostReceiptEntry {
     reconciled?: boolean;
     error?: unknown;
     costUsd?: number;
+    exact?: boolean;
   };
   [key: string]: unknown;
 }
@@ -42,10 +43,14 @@ export interface CostLedgerRow {
   receiptCostUsd: number;
   differenceUsd: number;
   complete: boolean;
+  // False when a receipt charged a request its cost ceiling instead of exact
+  // provider usage; the row's cost is then an upper bound.
+  exact: boolean;
 }
 
 export interface CostLedger {
   complete: boolean;
+  exact: boolean;
   differenceUsd: number;
   receiptCostUsd: number;
   reportedCostUsd: number;
@@ -116,6 +121,7 @@ export function durableCostLedger(run: CostRun): CostLedger {
       receiptCostUsd,
       differenceUsd,
       complete: row.costComplete && receiptsComplete && Math.abs(differenceUsd) <= 0.0001,
+      exact: row.receipts.every(entry => entry?.receipt?.exact !== false),
     };
   });
   const reportedCostUsd = roundUsd(run.totals?.costUsd === undefined
@@ -130,6 +136,7 @@ export function durableCostLedger(run: CostRun): CostLedger {
     differenceUsd,
     complete: run.totals?.costComplete === true && rows.every(row => row.complete)
       && Math.abs(differenceUsd) <= 0.0001,
+    exact: rows.every(row => row.exact),
     rows,
   };
 }

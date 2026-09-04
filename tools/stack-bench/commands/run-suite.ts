@@ -91,7 +91,8 @@ type RunArguments = {
   bundleArtifactId: string;
 };
 type GradeCriterion = { id: string; stableKey?: string; serverCheck?: string; evidence?: CheckEvidence };
-type GradeFeature = { name: string; criteria: GradeCriterion[] };
+type GradeFeature = { name: string; criteria: GradeCriterion[];
+  cleanupEvidence?: { failures: Array<{ stage: string }> } };
 type GradePayload = { total: number; max: number; features: GradeFeature[];
   selection?: { checks?: RecipeCheck[] }; packRuntime?: PackRuntimeEvidence };
 type LintPayload = {
@@ -847,9 +848,15 @@ async function main() {
   const recordApplicationAbort = () => {
     bundle.totals = applicationFailureTotals(selection, declaredSuites);
   };
-  const freshenFailureMessage = () => lastResetOutcome?.phase === 'application-readiness'
-    ? `application did not become ready after database reset${lastResetFailure ? `: ${lastResetFailure}` : ''}`
-    : `database reset failed — scores would not be comparable${lastResetFailure ? `: ${lastResetFailure}` : ''}`;
+  const freshenFailureMessage = () => {
+    const detail = lastResetFailure ? `: ${lastResetFailure}` : '';
+    if (lastResetOutcome?.phase !== 'application-readiness') {
+      return `database reset failed — scores would not be comparable${detail}`;
+    }
+    return lastResetOutcome.kind === 'harness_failure'
+      ? `application server stopped by the grader was not restored${detail}`
+      : `application did not become ready after database reset${detail}`;
+  };
   const markRemainingNotRun = (reason: string): void => {
     if (!bundle.selection) return;
     const accounted = new Set([
@@ -874,6 +881,10 @@ async function main() {
   // Reset before each stateful check.
   let lastResetFailure: string | null = null;
   let lastResetOutcome: ResetOutcome = { kind: 'harness_failure', phase: 'database-reset' };
+  // Set when a grader stopped the application server and could not start it
+  // again. Until the harness starts it, the app cannot be blamed for being
+  // unreachable.
+  let applicationLeftStopped = false;
   const freshen = async () => {
     if (!args.reset) return true;
     const requiresReseed = STACK_ADAPTER_REGISTRY.get(args.backend).reset.requiresReseed;
@@ -900,8 +911,10 @@ async function main() {
       const ready = await waitForApplicationProbe(args.url);
       if (!ready.ok) {
         lastResetFailure = ready.detail;
-        lastResetOutcome = { kind: 'app_failure', phase: 'application-readiness',
-          appFailures: ['application-readiness'] };
+        lastResetOutcome = applicationLeftStopped
+          ? { kind: 'harness_failure', phase: 'application-readiness' }
+          : { kind: 'app_failure', phase: 'application-readiness',
+            appFailures: ['application-readiness'] };
         console.log(`FAILED (${ready.detail})`);
         return false;
       }
@@ -916,6 +929,7 @@ async function main() {
         // Do not give a background server an inherited pipe that keeps the
         // synchronous restart command open.
         await controlBackendRuntime(restartSpec, 'start');
+        applicationLeftStopped = false;
       } catch (err) {
         const failure: Failure = err instanceof Error ? err : new Error(String(err));
         lastResetOutcome = resetFailureOutcome(failure);
@@ -1093,6 +1107,10 @@ async function main() {
         throw error;
       }
       bundle.suites[suite.id] = r;
+      if (isGradePayload(r) && r.features.some(feature => feature.cleanupEvidence?.failures
+        .some(failure => failure.stage === 'application-restore'))) {
+        applicationLeftStopped = true;
+      }
       if (bundle.selection) {
         bundle.selection.reportedChecks.push(...selectedChecks.map(check => check.stableKey));
       }

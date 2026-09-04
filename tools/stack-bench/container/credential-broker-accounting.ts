@@ -7,7 +7,15 @@ import type { ClaudeUsage } from '../src/evidence/claude-usage-cost.js';
 import { validatePricingRates as validateSharedPricingRates } from '../src/evidence/pricing-authority.js';
 import { formatZodError } from '../src/zod-error.js';
 
-export const BROKER_LEDGER_SCHEMA_VERSION = 3;
+export const BROKER_LEDGER_SCHEMA_VERSION = 4;
+// Why a billable request was charged its cost ceiling instead of priced from
+// the provider's usage: a 2xx response without complete usage (an aborted or
+// errored stream, an oversized body), a response that broke off, or an
+// upstream connection that failed. The ceiling makes spend an upper bound.
+export const ESTIMATE_REASONS = ['no-usage', 'response-aborted', 'upstream-error'] as const;
+export type EstimateReason = typeof ESTIMATE_REASONS[number];
+export type EstimateCounts = Record<EstimateReason, number>;
+export const noEstimates = (): EstimateCounts => ({ 'no-usage': 0, 'response-aborted': 0, 'upstream-error': 0 });
 export const MAX_BROKER_OUTPUT_TOKENS = 128_000;
 export const CLAUDE_USAGE_FIELDS = ['input', 'output', 'cacheRead', 'cacheWrite5m', 'cacheWrite1h'] as const;
 const COST_TOLERANCE_USD = 0.0001;
@@ -39,6 +47,7 @@ export type BrokerLedger = {
   billableRequests: number;
   completedBillableRequests: number;
   estimatedBillableRequests: number;
+  estimatedByReason: EstimateCounts;
   spentUsd: number;
   reservedUsd: number;
   usage: ClaudeUsage;
@@ -46,8 +55,12 @@ export type BrokerLedger = {
   updatedAt: string;
 };
 
+// `costUsd` is what the broker charged: exact provider usage priced at the
+// receipt's rates, plus the cost ceiling of every estimated request. With
+// `exact` false it is an upper bound and `calculatedCostUsd`, priced from the
+// exact usage alone, a lower bound.
 export interface CredentialBrokerReceipt {
-  schemaVersion: 2;
+  schemaVersion: 3;
   source: 'credential-broker';
   model: string;
   maxBudgetUsd: number;
@@ -56,6 +69,9 @@ export interface CredentialBrokerReceipt {
   calculatedCostUsd: number | null;
   usage: ClaudeUsage | null;
   pricingRates: PricingRates | null;
+  exact: boolean;
+  estimatedRequests: number;
+  estimatedByReason: EstimateCounts;
   complete: boolean;
   reconciled: boolean;
   error: string | null;
@@ -103,6 +119,11 @@ const brokerLedgerSchema = z.strictObject({
   billableRequests: nonNegativeSafeInteger,
   completedBillableRequests: nonNegativeSafeInteger,
   estimatedBillableRequests: nonNegativeSafeInteger,
+  estimatedByReason: z.strictObject({
+    'no-usage': nonNegativeSafeInteger,
+    'response-aborted': nonNegativeSafeInteger,
+    'upstream-error': nonNegativeSafeInteger,
+  }),
   spentUsd: nonNegativeFinite,
   reservedUsd: nonNegativeFinite,
   usage: usageSchema,
@@ -187,6 +208,8 @@ function validateLedger(value: unknown,
   if (ledger.estimatedBillableRequests > ledger.completedBillableRequests) {
     fail('spend ledger estimated request count is invalid');
   }
+  const reasons = ESTIMATE_REASONS.reduce((sum, reason) => sum + ledger.estimatedByReason[reason], 0);
+  if (reasons !== ledger.estimatedBillableRequests) fail('spend ledger estimate reasons do not add up');
   const complete = ledger.reservedUsd === 0
     && ledger.completedBillableRequests === ledger.billableRequests;
   if (ledger.complete !== complete) fail('spend ledger completion state is invalid');
@@ -225,9 +248,8 @@ export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, max
   try { verifiedLedger = validateLedger(ledger, { model, maxBudgetUsd: receiptBudget }); }
   catch (error) { issue = errorMessage(error); }
   if (!issue && verifiedLedger?.complete !== true) issue = 'credential broker spend ledger is incomplete';
-  if (!issue && verifiedLedger?.estimatedBillableRequests !== 0) {
-    issue = 'credential broker contains billable requests without exact provider usage';
-  }
+  const estimatedRequests = verifiedLedger?.estimatedBillableRequests ?? 0;
+  const exact = verifiedLedger !== null && estimatedRequests === 0;
   try { verifiedRates = validatePricingRates(pricingRates); }
   catch (error) { if (!issue) issue = errorMessage(error); }
   try { cliUsage = normalizeClaudeUsage(isRecord(cliResult) ? cliResult.usage : undefined); }
@@ -244,11 +266,17 @@ export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, max
   if (!issue && (!Number.isFinite(cliCost) || cliCost < 0)) {
     issue = 'coding session did not return a usable cost receipt';
   }
-  if (!issue && calculatedCostUsd !== null && Math.abs(calculatedCostUsd - brokerCost) > toleranceUsd) {
+  // Exact spend must price back to the broker's figure. Estimated requests
+  // add their ceilings on top of the priced usage, so the priced usage can
+  // only fall below the broker's figure, never above it.
+  if (!issue && calculatedCostUsd !== null && exact && Math.abs(calculatedCostUsd - brokerCost) > toleranceUsd) {
     issue = `usage-priced spend $${calculatedCostUsd.toFixed(6)} does not match credential broker spend $${brokerCost.toFixed(6)}`;
   }
+  if (!issue && calculatedCostUsd !== null && !exact && calculatedCostUsd - brokerCost > toleranceUsd) {
+    issue = `usage-priced spend $${calculatedCostUsd.toFixed(6)} exceeds credential broker spend $${brokerCost.toFixed(6)}`;
+  }
   const receipt: CredentialBrokerReceipt = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     source: 'credential-broker',
     model,
     maxBudgetUsd: receiptBudget,
@@ -257,6 +285,9 @@ export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, max
     calculatedCostUsd: calculatedCostUsd === null ? null : Number(calculatedCostUsd.toFixed(6)),
     usage,
     pricingRates: verifiedRates,
+    exact,
+    estimatedRequests,
+    estimatedByReason: verifiedLedger ? structuredClone(verifiedLedger.estimatedByReason) : noEstimates(),
     complete: verifiedLedger?.complete === true,
     reconciled: issue === null,
     error: issue,

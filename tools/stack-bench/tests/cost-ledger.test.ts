@@ -19,6 +19,18 @@ test('cost ledger uses stored receipts and does not reprice usage', () => {
   assert.equal(ledger.receiptCostUsd, 3.5);
   assert.equal(ledger.differenceUsd, 0);
   assert.equal(ledger.complete, true);
+  assert.equal(ledger.exact, true);
+});
+
+test('cost ledger stays complete and marks itself inexact when a receipt charged a ceiling', () => {
+  const estimated = { invocation: 1, receipt: {
+    complete: true, reconciled: true, error: null, costUsd: 2, exact: false } };
+  const ledger = durableCostLedger({ id: 'run-estimated', totals: { costUsd: 2, costComplete: true },
+    levels: [{ level: 1, buildSessions: [{ costUsd: 2, costComplete: true,
+      costReceipts: [estimated] }] }] });
+  assert.equal(ledger.complete, true);
+  assert.equal(ledger.exact, false);
+  assert.deepEqual(ledger.rows.map(row => row.exact), [false]);
 });
 
 test('cost ledger rejects incomplete receipt proof', () => {

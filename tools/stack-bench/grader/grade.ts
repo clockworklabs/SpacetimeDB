@@ -125,8 +125,18 @@ type GradeRunContext = {
   lastCalls?: ConcurrentCallResult | null;
   defaultWithin?: number;
   nullControl: boolean;
+  // True while a scenario step has stopped the application server and no
+  // later step or restore has started it again.
+  applicationStopped?: boolean;
 };
 type ActionFailure = Error & { actionEvidence?: ActionEvidence; actionActor?: string | null };
+const APPLICATION_RESTORE_SETTLE_MS = 8000;
+const APPLICATION_RESTORE_TIMEOUT_MS = 60_000;
+class ApplicationNotRestored extends Error {
+  constructor(reason: string) {
+    super(`the application server stopped by the harness was not restored: ${reason}`);
+  }
+}
 type CheckFailure = {
   status: CheckEvidenceStatus;
   code: string;
@@ -509,12 +519,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
   return Object.freeze({
     actors: actorAccess,
     'application-files': Object.freeze({ root: ctx.appDir ?? null, expand: (value: unknown) => expand(value, ctx) }),
-    'application-lifecycle': createLifecycleCapability({
-      restartSpec: ctx.restartSpec,
-      target: 'app-server',
-      control: controlAppServer,
-      sleep: abortableSleep,
-    }),
+    'application-lifecycle': applicationLifecycle(ctx),
     'backend-lifecycle': createLifecycleCapability({
       restartSpec: ctx.restartSpec,
       target: 'backend-runtime',
@@ -535,6 +540,16 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
     'named-actions': namedActions,
     subprocess: Object.freeze({ sleep: abortableSleep }),
     'transport-observation': transportObservation,
+  });
+}
+
+function applicationLifecycle(ctx: GradeRunContext) {
+  return createLifecycleCapability({
+    restartSpec: ctx.restartSpec,
+    target: 'app-server',
+    control: controlAppServer,
+    sleep: abortableSleep,
+    onOperated: mode => { ctx.applicationStopped = mode === 'stop'; },
   });
 }
 
@@ -567,6 +582,10 @@ function classifyCheckFailure(error: unknown, fallbackActor: string | null = nul
       expected: actionEvidence.expected,
       retryable: actionEvidence.retryable,
     };
+  }
+  if (error instanceof ApplicationNotRestored) {
+    return { status: 'harness_failure', code: 'application_not_restored', actor: fallbackActor,
+      summary: error.message, finding: null, observation: null, expected: null, retryable: false };
   }
   const processFailure = harnessProcessFailure(error);
   if (processFailure) return { status: 'harness_failure', code: 'process_failure', actor: fallbackActor,
@@ -676,12 +695,27 @@ async function gradeFeature(browser: Browser, feature: CompiledFeature, args: Gr
     id: feature.id, name: feature.name, score: 0, max: featureMax,
     criteria: [], consoleErrors: [],
   };
+  const restoreFailures: GradeCleanupFailure[] = [];
   const closeAll = async () => {
-    const failures = await closeActorContexts([...contexts, ...extraContexts], {
+    const failures = [...restoreFailures, ...await closeActorContexts([...contexts, ...extraContexts], {
       trace: args.trace, media: args.media, slug,
-    });
+    })];
     if (failures.length) result.cleanupEvidence = { status: 'harness_failure', failures };
     return failures;
+  };
+  // A criterion that stops the application server owns it only for its own
+  // steps. Whatever the outcome, the server is running again before the next
+  // criterion; a restore the harness cannot complete is the harness's failure
+  // and every later criterion in the feature is unmeasured, not failed.
+  const restoreApplicationServer = async () => {
+    if (!ctx.applicationStopped || restoreFailures.length) return;
+    try {
+      await applicationLifecycle(ctx)
+        .operate('start', APPLICATION_RESTORE_SETTLE_MS, AbortSignal.timeout(APPLICATION_RESTORE_TIMEOUT_MS));
+    } catch (error) {
+      restoreFailures.push({ actor: null, stage: 'application-restore',
+        reason: keepReason(errorMessage(error)) });
+    }
   };
   const initializationStartedAtMs = evidenceNowMs();
   try {
@@ -790,6 +824,7 @@ async function gradeFeature(browser: Browser, feature: CompiledFeature, args: Gr
     ctx.actionEvidence = [];
     ctx.serverCheck = null;
     try {
+      if (restoreFailures.length) throw new ApplicationNotRestored(restoreFailures[0]!.reason);
       for (const step of criterion.steps) {
         activeActor = step.actor ?? activeActor;
         await annotate(actors.get(step.actor) ?? actors.values().next().value,
@@ -820,6 +855,7 @@ async function gradeFeature(browser: Browser, feature: CompiledFeature, args: Gr
         result.screenshots = [...(result.screenshots ?? []), ...criterionScreenshots];
       }
     }
+    await restoreApplicationServer();
     const evidence = buildCheckEvidence({ ctx, phase: 'assertion', startedAtMs: criterionStartedAtMs,
       failure, actor: activeActor, summary: detail, attachments: criterionScreenshots });
     result.criteria.push({ id: criterion.id, desc: criterion.desc, points: criterion.points,

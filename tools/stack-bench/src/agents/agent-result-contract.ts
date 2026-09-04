@@ -11,7 +11,7 @@ export const AGENT_COST_RECEIPT_TOLERANCE_USD = 0.0001;
 type UnknownRecord = Record<string, unknown>;
 
 export interface AgentCostReceipt {
-  schemaVersion: 2;
+  schemaVersion: 3;
   source: 'credential-broker';
   model: string;
   maxBudgetUsd: number;
@@ -20,6 +20,12 @@ export interface AgentCostReceipt {
   calculatedCostUsd: number | null;
   usage: ClaudeUsage | null;
   pricingRates: PricingRates | null;
+  // `costUsd` is exact provider usage priced at `pricingRates` when `exact`;
+  // otherwise it also carries the cost ceiling of every estimated request and
+  // is an upper bound.
+  exact: boolean;
+  estimatedRequests: number;
+  estimatedByReason: Record<'no-usage' | 'response-aborted' | 'upstream-error', number>;
   complete: boolean;
   reconciled: boolean;
   error: string | null;
@@ -109,8 +115,9 @@ const receiptUsageSchema = z.strictObject({
   cacheWrite1h: nonNegativeNumber,
   cacheRead: nonNegativeNumber,
 });
+const nonNegativeInteger = z.number().int().nonnegative();
 const receiptSchema = z.strictObject({
-  schemaVersion: z.literal(2),
+  schemaVersion: z.literal(3),
   source: z.literal('credential-broker'),
   model: z.string().min(1),
   maxBudgetUsd: z.number().finite().positive(),
@@ -119,6 +126,13 @@ const receiptSchema = z.strictObject({
   calculatedCostUsd: nonNegativeNumber.nullable(),
   usage: receiptUsageSchema.nullable(),
   pricingRates: receiptUsageSchema.nullable(),
+  exact: z.boolean(),
+  estimatedRequests: nonNegativeInteger,
+  estimatedByReason: z.strictObject({
+    'no-usage': nonNegativeInteger,
+    'response-aborted': nonNegativeInteger,
+    'upstream-error': nonNegativeInteger,
+  }),
   complete: z.boolean(),
   reconciled: z.boolean(),
   error: z.string().min(1).nullable(),

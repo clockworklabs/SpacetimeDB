@@ -14,10 +14,10 @@ import { createParser } from 'eventsource-parser';
 
 import { normalizeClaudeUsage } from '../src/evidence/claude-usage-cost.js';
 import type { ClaudeUsage } from '../src/evidence/claude-usage-cost.js';
-import { BROKER_LEDGER_SCHEMA_VERSION, CLAUDE_USAGE_FIELDS, priceNormalizedClaudeUsage,
+import { BROKER_LEDGER_SCHEMA_VERSION, CLAUDE_USAGE_FIELDS, noEstimates, priceNormalizedClaudeUsage,
   validateBrokerConfig,
   writeCredentialBrokerLedger } from './credential-broker-accounting.js';
-import type { BrokerConfig, PricingRates }
+import type { BrokerConfig, EstimateReason, PricingRates }
   from './credential-broker-accounting.js';
 
 const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
@@ -197,6 +197,7 @@ export function createCredentialBroker(configInput: unknown, {
   let billableRequests = 0;
   let completedBillableRequests = 0;
   let estimatedBillableRequests = 0;
+  const estimatedByReason = noEstimates();
   let spentUsd = 0;
   let reservedUsd = 0;
   const usageTotals: ClaudeUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 };
@@ -208,6 +209,7 @@ export function createCredentialBroker(configInput: unknown, {
     billableRequests,
     completedBillableRequests,
     estimatedBillableRequests,
+    estimatedByReason,
     spentUsd: Number(spentUsd.toFixed(6)),
     reservedUsd: Number(reservedUsd.toFixed(6)),
     usage: usageTotals,
@@ -288,14 +290,15 @@ export function createCredentialBroker(configInput: unknown, {
       reservedUsd = roundUsd(reservedUsd + costCeiling);
       recordLedger();
       let billableSettled = !billable;
-      const settleBillable = ({ usage = null, estimated = false }:
-        { usage?: ClaudeUsage | null; estimated?: boolean } = {}): void => {
+      const settleBillable = ({ usage = null, estimated = null }:
+        { usage?: ClaudeUsage | null; estimated?: EstimateReason | null } = {}): void => {
         if (billableSettled) return;
         billableSettled = true;
         reservedUsd = roundUsd(reservedUsd - costCeiling);
         completedBillableRequests += 1;
         if (estimated) {
           estimatedBillableRequests += 1;
+          estimatedByReason[estimated] += 1;
           spentUsd = roundUsd(spentUsd + costCeiling);
         } else if (usage) {
           spentUsd = roundUsd(spentUsd + priceNormalizedClaudeUsage(usage, config.pricingRates as PricingRates));
@@ -334,22 +337,22 @@ export function createCredentialBroker(configInput: unknown, {
             const usage = responseBytes <= maxRequestBytes
               ? responseUsage(Buffer.concat(responseChunks), upstreamResponse.headers['content-encoding'])
               : null;
-            if (!usage) settleBillable({ estimated: true });
+            if (!usage) settleBillable({ estimated: 'no-usage' });
             else try { settleBillable({ usage: normalizeClaudeUsage(usage) }); }
-            catch { settleBillable({ estimated: true }); }
+            catch { settleBillable({ estimated: 'no-usage' }); }
           } else {
             settleBillable();
           }
         });
         const settleAbortedResponse = () => {
-          settleBillable({ estimated: true });
+          settleBillable({ estimated: 'response-aborted' });
           if (responseOpen()) response.destroy();
         };
         upstreamResponse.once('aborted', settleAbortedResponse);
         upstreamResponse.once('error', settleAbortedResponse);
       });
       upstreamRequest.on('error', () => {
-        settleBillable({ estimated: true });
+        settleBillable({ estimated: 'upstream-error' });
         writeHead(502, { 'content-type': 'text/plain' });
         endResponse('upstream request failed');
       });
@@ -363,6 +366,7 @@ export function createCredentialBroker(configInput: unknown, {
   });
   return { server, stats: () => ({ acceptedRequests,
     billableRequests, completedBillableRequests, estimatedBillableRequests,
+    estimatedByReason: { ...estimatedByReason },
     spentUsd: Number(spentUsd.toFixed(6)), reservedUsd: Number(reservedUsd.toFixed(6)) }) };
 }
 

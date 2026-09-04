@@ -18,7 +18,8 @@ import { clearMissingBuildContainerLease,
   recoverStoppedBuildContainer } from '../container/recover-build-container.js';
 
 function brokerReceipt(costUsd: number, maxBudgetUsd: number = 10) {
-  return { schemaVersion: 2, source: 'credential-broker', model: 'test-model',
+  return { schemaVersion: 3, source: 'credential-broker', exact: true, estimatedRequests: 0,
+    estimatedByReason: { 'no-usage': 0, 'response-aborted': 0, 'upstream-error': 0 }, model: 'test-model',
     maxBudgetUsd, costUsd, cliCostUsd: costUsd, calculatedCostUsd: costUsd,
     usage: { input: 1, output: 1, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 },
     pricingRates: { input: 3, output: 15, cacheWrite5m: 3.75, cacheWrite1h: 6,

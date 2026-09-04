@@ -375,10 +375,13 @@ interface LifecycleCapabilityOptions {
   ) => Promise<unknown>;
   readonly restartSpec?: RuntimeControlSpec;
   readonly sleep: Sleep;
+  // Called after the control command completes, so the caller knows which
+  // state the harness left the target in.
+  readonly onOperated?: (mode: 'restart' | 'start' | 'stop') => void;
 }
 
 export function createLifecycleCapability({ restartSpec, target,
-  sleep, control
+  sleep, control, onOperated = () => {},
 }: LifecycleCapabilityOptions): LifecycleCapability {
   const application = target === 'app-server';
   return Object.freeze({
@@ -399,6 +402,7 @@ export function createLifecycleCapability({ restartSpec, target,
         fail('app-control-failed', { mode, target,
           detail: String(value.stdout || value.message || '').trim().slice(-200) });
       }
+      onOperated(mode);
       await sleep(settleMs, signal);
     },
   });

@@ -11,7 +11,8 @@ import type { AgentCostReceiptEntry, ValidatedAgentResult }
 import type { RunSessionRecord } from '../src/evidence/benchmark-run.js';
 
 function receipt(): AgentCostReceiptEntry[] {
-  return [{ invocation: 1, receipt: { schemaVersion: 2, source: 'credential-broker',
+  return [{ invocation: 1, receipt: { schemaVersion: 3, source: 'credential-broker', exact: true, estimatedRequests: 0,
+    estimatedByReason: { 'no-usage': 0, 'response-aborted': 0, 'upstream-error': 0 },
     model: 'test-model', maxBudgetUsd: 10, costUsd: 1, cliCostUsd: 1,
     calculatedCostUsd: 1, usage: { input: 1, output: 1, cacheWrite5m: 0,
       cacheWrite1h: 0, cacheRead: 0 }, pricingRates: { input: 1, output: 1,

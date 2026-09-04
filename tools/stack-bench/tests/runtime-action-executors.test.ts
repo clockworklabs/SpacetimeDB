@@ -128,13 +128,34 @@ test('lifecycle operations distinguish missing control, unsafe refusal, and succ
   assert.match(refused.summary ?? '', /was refused on this host/);
 
   const calls: Array<readonly [unknown, string]> = [];
+  const operated: Array<'restart' | 'start' | 'stop'> = [];
   const successful = createLifecycleCapability({ restartSpec,
     target: 'backend-runtime', sleep,
-    control: async (spec, mode) => { calls.push([spec, mode]); } });
+    control: async (spec, mode) => { calls.push([spec, mode]); },
+    onOperated: mode => operated.push(mode) });
   const passed = await run({ do: 'restartBackend', settleMs: 0 },
     services(new Map(), { backendLifecycle: successful }));
   assert.equal(passed.status, 'passed');
   assert.deepEqual(calls, [[restartSpec, 'restart']]);
+  assert.deepEqual(operated, ['restart']);
+});
+
+test('a lifecycle operation reports the state it left only when the control completed', async () => {
+  const operated: Array<'restart' | 'start' | 'stop'> = [];
+  const failing = createLifecycleCapability({ restartSpec, target: 'app-server', sleep,
+    control: async () => { throw Object.assign(new Error('exit 1'), { status: 1, stdout: 'port busy' }); },
+    onOperated: mode => operated.push(mode) });
+  const failed = await run({ do: 'stopAppServer', settleMs: 0 },
+    services(new Map(), { applicationLifecycle: failing }));
+  assert.equal(failed.status, 'failed');
+  assert.equal(operated.length, 0);
+
+  const working = createLifecycleCapability({ restartSpec, target: 'app-server', sleep,
+    control: async () => {}, onOperated: mode => operated.push(mode) });
+  const capabilities = services(new Map(), { applicationLifecycle: working });
+  assert.equal((await run({ do: 'stopAppServer', settleMs: 0 }, capabilities)).status, 'passed');
+  assert.equal((await run({ do: 'startAppServer', settleMs: 0 }, capabilities)).status, 'passed');
+  assert.deepEqual(operated, ['stop', 'start']);
 });
 
 test('a generated app server timing out is an application failure, not a harness failure', async () => {
