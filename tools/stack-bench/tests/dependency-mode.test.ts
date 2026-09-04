@@ -41,14 +41,38 @@ interface FixtureDefinition {
 }
 
 const node = (id: string, dependencies: string[], questline: string,
-  points: number[] = [1]): FixtureNode => ({
+  points: number[] = [1], requires: string[] = []): FixtureNode => ({
   id, title: id, questline,
   dependencies: dependencies.map(parent => ({ id: parent, reason: `${id} requires ${parent}` })),
   featureRefs: [`features.${id}@1.0.0`],
   promptModules: [`prompt.${id}@1.0.0`],
   gradingChecks: points.map((value, index) => ({
     id: `check.${id}.${index + 1}`, points: value, role: 'feature',
+    ...(requires.length ? { requiresFeatures: requires.map(feature => `features.${feature}`) } : {}),
   })),
+});
+
+test('a node whose checks all require a failed node is blocked and not graded', () => {
+  const definition = fixture();
+  definition.repair.budget = { total: 0 };
+  definition.nodes.push(node('dashboard', ['search'], 'discovery', [1], ['ownership']));
+  let state = progressionEngine.initialize(definition);
+  state = progressionEngine.recordResult(state, grade(state, 'initial', {
+    accounts: 'pass', catalog: 'pass',
+  }));
+  state = progressionEngine.recordResult(state, grade(state, 'second', {
+    ownership: 'fail', search: 'pass',
+  }));
+  assert.equal(state.nodes.ownership!.status, 'failed');
+  assert.equal(state.nodes.recovery!.status, 'blocked');
+  assert.equal(state.nodes.dashboard!.status, 'blocked');
+  assert.equal(state.nodes.recommendations!.status, 'active');
+  const selection = grading(state);
+  assert.ok(!selection.nodeIds.includes('dashboard'));
+  assert.ok(selection.nodeIds.every(nodeId => selection.checks.some(check => check.nodeId === nodeId)));
+  assert.doesNotThrow(() => progressionEngine.recordResult(state, grade(state, 'third', {
+    recommendations: 'pass',
+  })));
 });
 
 const fixture = (): FixtureDefinition => ({

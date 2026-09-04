@@ -383,17 +383,43 @@ function gradingNodeIds(state: DependencyState): string[] {
     compiledOrder(state, left) - compiledOrder(state, right));
 }
 
+function featureOwners(state: DependencyState): Map<string, string> {
+  return new Map(state.definition.nodes.flatMap(node => node.featureRefs.map(reference => [
+    reference.slice(0, reference.lastIndexOf('@')), node.id,
+  ] as const)));
+}
+
 function checkRequirementsAvailable(state: DependencyState,
   check: CompiledProgressionNode['gradingChecks'][number],
   promptNodeIds: ReadonlySet<string>): boolean {
-  const featureOwners = new Map(state.definition.nodes.flatMap(node => node.featureRefs.map(reference => [
-    reference.slice(0, reference.lastIndexOf('@')), node.id,
-  ] as const)));
+  const owners = featureOwners(state);
   return (check.requiresFeatures ?? []).every(featureId => {
-    const ownerId = featureOwners.get(featureId);
+    const ownerId = owners.get(featureId);
     return ownerId !== undefined
       && (promptNodeIds.has(ownerId) || isUsable(getNodeState(state, ownerId).status));
   });
+}
+
+// A check that requires a feature owned by a failed or blocked node cannot
+// run until that node is repaired. A node none of whose checks can run is
+// blocked the same way a node with a failed parent is: nothing about it can
+// be measured, and grading it would produce a node with no checks.
+function brokenByRequirements(state: DependencyState, node: CompiledProgressionNode): boolean {
+  if (node.gradingChecks.length === 0) return false;
+  const owners = featureOwners(state);
+  return node.gradingChecks.every(check => (check.requiresFeatures ?? []).some(featureId => {
+    const ownerId = owners.get(featureId);
+    if (ownerId === undefined || ownerId === node.id) return false;
+    const status = getNodeState(state, ownerId).status;
+    return status === 'failed' || status === 'blocked';
+  }));
+}
+
+function brokenByParents(state: DependencyState, node: CompiledProgressionNode): boolean {
+  return node.dependencies.some(parentId => {
+    const status = getNodeState(state, parentId).status;
+    return status === 'failed' || status === 'blocked';
+  }) || brokenByRequirements(state, node);
 }
 
 function selectionFor(state: DependencyState, nodeIds: string[],
@@ -412,15 +438,17 @@ function selectedPromptWork(state: DependencyState): DependencyPromptSelection {
 }
 
 function selectedGradingWork(state: DependencyState): DependencyGradingSelection {
-  const nodeIds = gradingNodeIds(state);
-  const selected = new Set(nodeIds);
+  const selected = new Set(gradingNodeIds(state));
   const promptNodeIds = new Set(selectedPromptNodeIds(state));
+  const checks = state.definition.nodes.filter(node => selected.has(node.id)).flatMap(node =>
+    node.gradingChecks.filter(check => state.definition.workSelection === 'all-at-once'
+      || checkRequirementsAvailable(state, check, promptNodeIds))
+      .map(check => ({ ...check, nodeId: node.id })));
+  // A node with no check that can run this round is not graded this round.
+  const graded = new Set(checks.map(check => check.nodeId));
   return {
-    nodeIds,
-    checks: state.definition.nodes.filter(node => selected.has(node.id)).flatMap(node =>
-      node.gradingChecks.filter(check => state.definition.workSelection === 'all-at-once'
-        || checkRequirementsAvailable(state, check, promptNodeIds))
-        .map(check => ({ ...check, nodeId: node.id }))),
+    nodeIds: [...selected].filter(nodeId => graded.has(nodeId)),
+    checks,
   };
 }
 
@@ -450,10 +478,7 @@ function updateNodeStatus(state: DependencyState, node: CompiledProgressionNode)
   if (nodeState.status === 'locked' && Object.values(nodeState.checks).every(value => value === null)) {
     return;
   }
-  if (state.definition.workSelection !== 'all-at-once' && node.dependencies.some(parentId => {
-    const status = getNodeState(state, parentId).status;
-    return status === 'failed' || status === 'blocked';
-  })) {
+  if (state.definition.workSelection !== 'all-at-once' && brokenByParents(state, node)) {
     nodeState.status = 'blocked';
     return;
   }
@@ -483,10 +508,7 @@ function blockBrokenDescendants(state: DependencyState): void {
   for (const node of state.definition.nodes) {
     const nodeState = getNodeState(state, node.id);
     if (nodeState.status === 'failed') continue;
-    if (node.dependencies.some(parentId => {
-      const status = getNodeState(state, parentId).status;
-      return status === 'failed' || status === 'blocked';
-    })) {
+    if (brokenByParents(state, node)) {
       nodeState.status = 'blocked';
       nodeState.exhaustedAtLevel = null;
       nodeState.exhaustionReason = null;
@@ -507,10 +529,7 @@ function openLevel(state: DependencyState, level: number): void {
       const nodeState = getNodeState(state, node.id);
       const dependenciesReady = node.dependencies.every(parentId =>
         isUsable(getNodeState(state, parentId).status));
-      const dependenciesFailed = node.dependencies.some(parentId => {
-        const status = getNodeState(state, parentId).status;
-        return status === 'failed' || status === 'blocked';
-      });
+      const dependenciesFailed = brokenByParents(state, node);
       const before = nodeState.status;
       if (dependenciesFailed) {
         nodeState.status = 'blocked';
