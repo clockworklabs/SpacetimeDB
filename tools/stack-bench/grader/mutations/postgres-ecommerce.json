@@ -1786,21 +1786,6 @@
           "replace": "    if (false && purchased.rowCount === 0) {"
         }
       ]
-    },
-    {
-      "id": "support-messages-are-sent-to-other-customers",
-      "scenario": "tracks/ecommerce/scenarios/progression-support-read-privacy.json",
-      "targets": [
-        "ecommerce.progression.support-privacy-specifications.private-message-delivery.619a"
-      ],
-      "desc": "A customer receives another customer's support message.",
-      "file": "server/src/progression.ts",
-      "edits": [
-        {
-          "find": "const where = account.isAdmin || account.isStaff ? \"TRUE\" : \"sc.account_id = $1\";\n  const values = account.isAdmin || account.isStaff ? [] : [account.id];",
-          "replace": "const where = \"TRUE\";\n  const values: unknown[] = [];"
-        }
-      ]
     }
   ]
 }

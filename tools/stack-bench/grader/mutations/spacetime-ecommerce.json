@@ -1860,21 +1860,6 @@
           "replace": "    // mutant: purchase eligibility is not checked"
         }
       ]
-    },
-    {
-      "id": "support-messages-are-sent-to-other-customers",
-      "scenario": "tracks/ecommerce/scenarios/progression-support-read-privacy.json",
-      "targets": [
-        "ecommerce.progression.support-privacy-specifications.private-message-delivery.619a"
-      ],
-      "desc": "A customer receives another customer's support message.",
-      "file": "backend/spacetimedb/src/index.ts",
-      "edits": [
-        {
-          "find": ".filter(row => isTicketCreator(sender, row.creatorIdentity.toHexString()) ||\n        !!actor && (actor.isAdmin || actor.isStaff || row.accountId === accountId))",
-          "replace": ".filter(() => true)"
-        }
-      ]
     }
   ]
 }

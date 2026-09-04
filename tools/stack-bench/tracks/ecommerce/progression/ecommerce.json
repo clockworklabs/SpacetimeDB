@@ -556,7 +556,6 @@
       ],
       "gradingGroups": [
         "ecommerce.progression.support-history#history",
-        "ecommerce.progression.support-privacy-specifications#private-message-delivery",
         "ecommerce.spec.access-control#support-history-privacy",
         "ecommerce.spec.state-durability#support-history-reload"
       ],

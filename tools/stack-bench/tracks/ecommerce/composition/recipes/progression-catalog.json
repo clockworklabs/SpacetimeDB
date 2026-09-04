@@ -403,13 +403,6 @@
       ]
     },
     {
-      "path": "../packs/progression-support-privacy-specifications.json",
-      "id": "ecommerce.progression.support-privacy-specifications",
-      "includeRoles": [
-        "guarantee"
-      ]
-    },
-    {
       "path": "../packs/progression-support-intake.json",
       "id": "ecommerce.progression.support-intake",
       "includeRoles": [

@@ -394,7 +394,7 @@ test('repair feedback is assembled from the authored sentence, the finding, and 
           deadlineMs: 5_000 }, attachments: [], sensitivity: [],
       } }],
     });
-    writeGrade(app, 'failed', 'unused', { feature: 'Support message privacy', criterion: '619a',
+    writeGrade(app, 'failed', 'unused', { feature: 'Customer support history', criterion: '612b',
       statedBy: 'a support message is visible only to its customer and to staff',
       consoleErrors: ['POST /api/support returned 500'], evidence });
 

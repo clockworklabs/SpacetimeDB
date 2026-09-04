@@ -181,19 +181,12 @@ test('every replayed request names a declared actor whose request it replays', (
   assert(replays > 0, 'the catalog must grade at least one replayed request');
 });
 
-test('privacy checks prove a server or transport boundary, not a hidden control', () => {
+test('review access is verified at the server boundary', () => {
   const review = requiredPack('ecommerce.progression.review-access-specifications');
   const [reviewCriterion] = selectedCriteria(review);
   assert(reviewCriterion);
   assert(reviewCriterion.steps.some(step => step.do === 'replayAs'));
   assert(reviewCriterion.steps.some(step => step.do === 'expectReplayRejected'));
-
-  const support = requiredPack('ecommerce.progression.support-privacy-specifications');
-  const [supportCriterion] = selectedCriteria(support);
-  assert(supportCriterion);
-  // A "not received" veto is only meaningful beside a positive control.
-  assert.deepEqual(supportCriterion.steps.map(step => step.do),
-    ['expectReceived', 'expectNotReceived']);
 });
 
 test('promotion rules use values a date input accepts', () => {

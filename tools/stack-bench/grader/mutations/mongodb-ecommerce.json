@@ -1760,21 +1760,6 @@
           "replace": "  if (false && !hasPurchased) {\n    return res.status(403).json({ error: \"You can only review items you have purchased\" });\n  }"
         }
       ]
-    },
-    {
-      "id": "support-messages-are-sent-to-other-customers",
-      "scenario": "tracks/ecommerce/scenarios/progression-support-read-privacy.json",
-      "targets": [
-        "ecommerce.progression.support-privacy-specifications.private-message-delivery.619a"
-      ],
-      "desc": "A customer receives another customer's support message.",
-      "file": "server/src/progression.ts",
-      "edits": [
-        {
-          "find": "const ticketFilter = isStaff ? {} : user ? { userId: user._id } : { _id: null };",
-          "replace": "const ticketFilter = isStaff ? {} : user ? {} : { _id: null };"
-        }
-      ]
     }
   ]
 }
