@@ -124,10 +124,9 @@ function recipeScenarioScopes(track: Track, recipeFile: string): Map<string, Sce
       const pack = packs.get(id);
       if (pack === undefined) return;
       for (const reference of pack.requiresPacks) {
-        const dependency = reference;
-        if (found.has(dependency)) continue;
-        found.add(dependency);
-        visit(dependency);
+        if (found.has(reference)) continue;
+        found.add(reference);
+        visit(reference);
       }
     };
     [...found].forEach(visit);

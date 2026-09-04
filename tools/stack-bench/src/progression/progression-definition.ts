@@ -418,13 +418,12 @@ export function compileProgressionDefinition(input: unknown,
         `must equal minimal product dependencies: ${expected.join(', ') || '(none)'}`);
     }
   }
-  const featureRefsById = new Map([...featureOwners.keys()].map(reference => [reference, reference]));
   for (const node of compiled.nodes) {
     for (const action of nodeNamedActions.get(node.id) ?? []) {
       const references = [
         ...node.featureRefs,
-        ...action.requiresFeatures.map(featureId => featureRefsById.get(featureId)
-          ?? fail(`${source}.nodes.${node.id}.gradingGroups`,
+        ...action.requiresFeatures.map(featureId => featureOwners.has(featureId) ? featureId
+          : fail(`${source}.nodes.${node.id}.gradingGroups`,
             `action ${action.id} requires feature ${featureId} with no graph owner`)),
       ];
       const contracts = [...new Set(references)].flatMap(reference => {

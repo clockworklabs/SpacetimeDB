@@ -125,11 +125,10 @@ export function agentRecipeIdentity(
   if (!object(bound) || typeof bound.id !== 'string' || !bound.id) {
     throw new Error('recipe-bound agent task has an invalid recipe identity');
   }
-  const identity = bound.id;
-  if (explicitRecipe && explicitRecipe !== identity) {
-    throw new Error(`agent recipe ${explicitRecipe} does not match bound task ${identity}`);
+  if (explicitRecipe && explicitRecipe !== bound.id) {
+    throw new Error(`agent recipe ${explicitRecipe} does not match bound task ${bound.id}`);
   }
-  return identity;
+  return bound.id;
 }
 
 export function agentRequestArgv(adapter: AgentAdapter, request: AgentRequest): string[] {

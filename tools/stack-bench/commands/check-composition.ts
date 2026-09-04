@@ -58,9 +58,8 @@ export function checkCompositions(
     }
     const plans = recipeFiles.map(file => compileRecipeFile(join(recipes, file), { trackRoot }));
     const selectionFiles = readdirSync(root).filter(file => file.endsWith('.json')).sort();
-    const selections = selectionFiles.map(file =>
-      compileRecipeSelectionFile(join(root, file), { trackRoot })).reduce(
-      (total, selection) => total + selection.entries.length, 0);
+    const selections = selectionFiles.reduce((total, file) => total
+      + compileRecipeSelectionFile(join(root, file), { trackRoot }).entries.length, 0);
     summary.push({ track: name, packs: packFiles.length, fixtures: fixtureFiles.length,
       recipes: plans.length, checks: plans.reduce((total, plan) => total + plan.checks.length, 0),
       selections });

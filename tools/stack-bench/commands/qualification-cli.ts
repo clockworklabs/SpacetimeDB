@@ -164,9 +164,8 @@ export function qualificationReadiness(trackName: string, level: number, recipe:
   }
   const output = join(stackBenchResultsRoot(STACK_BENCH_ROOT), 'qualification');
   const stacks = [...calibration.qualification.stacks].sort();
-  const qualificationLevel = level;
   const budgetEvidence = stacks.map(stack =>
-    `${output}/budget-input/${trackName}-l${qualificationLevel}-${stack}.json`);
+    `${output}/budget-input/${trackName}-l${level}-${stack}.json`);
   const budgetPreparationRequired = launchBlockers.some(item => item.code === 'pack_budget_unbounded');
   const recipeOption = ` --recipe ${binding.release.id}`;
   const featureCatalog = calibration.qualification.featureCatalog;
@@ -174,7 +173,7 @@ export function qualificationReadiness(trackName: string, level: number, recipe:
     ? ` --feature-catalog ${featureCatalog.id}` : '';
   const combinedReferenceEvidence = calibration.qualification.referenceRepetitions
     === calibration.qualification.mutationRepetitions;
-  const artifactStem = `${trackName}-l${qualificationLevel}-${binding.release.contentSha256.slice(0, 12)}`;
+  const artifactStem = `${trackName}-l${level}-${binding.release.contentSha256.slice(0, 12)}`;
   const artifactPaths = {
     references: Object.fromEntries(stacks.map(stack => [stack,
       `${output}/${artifactStem}-${stack}-reference.json`])),
@@ -211,9 +210,9 @@ export function qualificationReadiness(trackName: string, level: number, recipe:
       policy: PACK_BUDGET_POLICY,
       commands: budgetPreparationRequired ? [
         ...stacks.map((stack, index) =>
-          `qualify-reference --backend ${stack} --track ${trackName} --level ${qualificationLevel}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.referenceRepetitions} --out ${budgetEvidence[index]}`),
-        `pack-budget recommend --track ${trackName} --level ${qualificationLevel}${recipeOption} ${budgetEvidence
-          .map(path => `--evidence ${path}`).join(' ')} --out ${output}/${trackName}-l${qualificationLevel}-pack-budgets.json`,
+          `qualify-reference --backend ${stack} --track ${trackName} --level ${level}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.referenceRepetitions} --out ${budgetEvidence[index]}`),
+        `pack-budget recommend --track ${trackName} --level ${level}${recipeOption} ${budgetEvidence
+          .map(path => `--evidence ${path}`).join(' ')} --out ${output}/${trackName}-l${level}-pack-budgets.json`,
       ] : [],
     },
     requiredEvidence,
@@ -222,11 +221,11 @@ export function qualificationReadiness(trackName: string, level: number, recipe:
     commands: [
       ...stacks.flatMap(stack => [
         ...(!combinedReferenceEvidence ? [
-          `qualify-reference --backend ${stack} --track ${trackName} --level ${qualificationLevel}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.referenceRepetitions} --out ${artifactPaths.references[stack]}`,
+          `qualify-reference --backend ${stack} --track ${trackName} --level ${level}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.referenceRepetitions} --out ${artifactPaths.references[stack]}`,
         ] : []),
-        `qualify-reference --backend ${stack} --track ${trackName} --level ${qualificationLevel}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.mutationRepetitions} --mutations --full-mutations${mutationWorkerOption(calibration, stack)} --out ${artifactPaths.mutations[stack]}`,
+        `qualify-reference --backend ${stack} --track ${trackName} --level ${level}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.mutationRepetitions} --mutations --full-mutations${mutationWorkerOption(calibration, stack)} --out ${artifactPaths.mutations[stack]}`,
       ]),
-      `qualify-null --track ${trackName} --level ${qualificationLevel}${recipeOption} --out ${artifactPaths.null}`,
+      `qualify-null --track ${trackName} --level ${level}${recipeOption} --out ${artifactPaths.null}`,
     ],
     qualification: { ready: qualificationBlockers.length === 0, blockers: qualificationBlockers },
   };

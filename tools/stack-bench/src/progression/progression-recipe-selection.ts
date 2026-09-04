@@ -289,7 +289,6 @@ function resolveSelections(binding: RecipeBinding, definition: CompiledProgressi
     }
     const owner = binding.release.components.packs.find(module => module.id === check.packId);
     if (!owner) throw new Error(`progression check ${selected.id} has no recipe module owner`);
-    const ownerRef = owner.id;
     if (owner.moduleType === 'feature'
       && !gradingFeatures.some(item => item.id === owner.id)) {
       throw new Error(`progression check ${selected.id} belongs to an unselected feature`);
@@ -297,8 +296,8 @@ function resolveSelections(binding: RecipeBinding, definition: CompiledProgressi
     for (const featureId of check.requiresFeatures ?? []) {
       requiredGradingFeatureIds.add(featureId);
     }
-    if (owner.moduleType === 'specification' && !requestedRefs.has(ownerRef)) {
-      for (const ref of dependencyClosure(modules, [ownerRef], 'specification', {
+    if (owner.moduleType === 'specification' && !requestedRefs.has(owner.id)) {
+      for (const ref of dependencyClosure(modules, [owner.id], 'specification', {
         label: 'progression expected specification',
       })) {
         if (!requestedRefs.has(ref)) expectedSpecifications.add(ref);

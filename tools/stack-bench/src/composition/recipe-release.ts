@@ -707,11 +707,10 @@ export function validateRecipeRequest(requested: unknown): ResolvedRecipe | null
 }
 
 export function resolveRecipeRelease(track: Track, level: number,
-  requested: RecipeRequest | null = null, mode: 'sequential' | 'dependency' | null = null):
-  RecipeBinding | null {
+  requested: RecipeRequest | null = null): RecipeBinding | null {
   const alias = `L${Number(level)}`;
   const exact = validateRecipeRequest(requested);
-  const modes = mode ? [mode] : exact ? ['sequential', 'dependency'] as const : ['sequential'] as const;
+  const modes = exact ? ['sequential', 'dependency'] as const : ['sequential'] as const;
   const choices = modes.flatMap(selectionMode => {
     const path = join(track.dir, 'composition', `${selectionMode}.json`);
     if (!existsSync(path)) return [];

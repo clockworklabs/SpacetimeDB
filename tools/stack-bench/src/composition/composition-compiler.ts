@@ -752,7 +752,6 @@ export function compileRecipeFile(recipePath: string,
     if (selection.includeRoles.length === 0 && pack.moduleType === undefined) {
       fail(`${at}.includeRoles`, 'can be empty only for a module dependency');
     }
-    const ref = pack.id;
     for (const groupId of selection.includeCheckGroups ?? []) {
       const group = pack.checks.find(check => check.id === groupId);
       if (!group) {
@@ -762,19 +761,9 @@ export function compileRecipeFile(recipePath: string,
         fail(`${at}.includeCheckGroups`, `check group ${groupId} has excluded role ${group.role}`);
       }
     }
-    selectedByRef.set(ref, pack);
+    if (selectedByRef.has(pack.id)) fail(`${recipeSource}.packs`, `selects ${pack.id} twice`);
+    selectedByRef.set(pack.id, pack);
     selectedPacks.push({ selection, pack, path: packRef.relative });
-  }
-  // The recipe selects one direct source for each stable pack id.
-  const refById = new Map<string, string>();
-  for (const { pack } of selectedPacks) {
-    if (refById.has(pack.id)) fail(`${recipeSource}.packs`, `selects ${pack.id} twice`);
-    refById.set(pack.id, pack.id);
-  }
-  for (const { pack } of selectedPacks) {
-    pack.requiresPacks = pack.requiresPacks.map(required => refById.get(required)
-      ?? fail(`${pack.id}.requiresPacks`, `missing ${required}`));
-    pack.conflictsWith = pack.conflictsWith.map(conflict => refById.get(conflict) ?? conflict);
   }
   for (const { pack } of selectedPacks) {
     for (const required of pack.requiresPacks) {

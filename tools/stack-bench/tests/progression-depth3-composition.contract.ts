@@ -26,7 +26,7 @@ test('the first three progression depths are a valid prefix of the catalog', () 
 test('the progression recipe is one stable selection for every configured depth', () => {
   const track = loadTrack('ecommerce');
   const releases = [1, 2, 3].map(level => resolveRecipeRelease(track, level,
-    'ecommerce.progression-catalog', 'dependency'));
+    'ecommerce.progression-catalog'));
 
   assert(releases.every((binding): binding is NonNullable<typeof binding> => binding !== null));
   assert(releases.every(binding => binding.release.id === 'ecommerce.progression-catalog'));
