@@ -23,7 +23,7 @@ permissions:
   statuses: write
 
 concurrency:
-  group: pr-approval-check-${{ github.event.pull_request.number || github.sha }}
+  group: pr-approval-check-${{ github.run_id }} # Temporary small-runner saturation test.
   cancel-in-progress: false
 
 jobs:

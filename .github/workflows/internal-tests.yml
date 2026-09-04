@@ -13,7 +13,7 @@ on:
 run-name: Internal Tests [ref=${{ github.ref }}]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.run_id }} # Temporary small-runner saturation test.
   cancel-in-progress: false
 
 permissions:
