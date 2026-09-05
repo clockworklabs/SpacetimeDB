@@ -35,7 +35,7 @@ use derive_more::From;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use parking_lot::Mutex;
-use prometheus::{Histogram, HistogramTimer, IntGauge};
+use prometheus::{Histogram, HistogramTimer, IntCounter, IntGauge};
 use rustc_hash::FxHashMap;
 use scopeguard::ScopeGuard;
 use smallvec::SmallVec;
@@ -1286,6 +1286,42 @@ struct SharedJsMainInstanceManager {
 pub(in crate::host) struct InstanceManagerMetrics {
     module_instances: ModuleInstancesMetric,
     create_instance_time: CreateInstanceTimeMetric,
+    pool_timeouts: PoolTimeoutsMetric,
+}
+
+/// Handle on the `spacetime_procedure_instance_pool_timeouts_total` label for a particular database
+/// which calls `remove_label_values` to clean up on drop.
+#[derive(Clone)]
+struct PoolTimeoutsMetric {
+    inner: Arc<PoolTimeoutsMetricInner>,
+}
+
+struct PoolTimeoutsMetricInner {
+    metric: IntCounter,
+    host_type: HostType,
+    database_identity: Identity,
+}
+
+impl Drop for PoolTimeoutsMetricInner {
+    fn drop(&mut self) {
+        let _ = WORKER_METRICS
+            .procedure_instance_pool_timeouts
+            .remove_label_values(&self.database_identity, &self.host_type);
+    }
+}
+
+impl PoolTimeoutsMetric {
+    fn new(host_type: HostType, database_identity: Identity) -> Self {
+        Self {
+            inner: Arc::new(PoolTimeoutsMetricInner {
+                metric: WORKER_METRICS
+                    .procedure_instance_pool_timeouts
+                    .with_label_values(&database_identity, &host_type),
+                host_type,
+                database_identity,
+            }),
+        }
+    }
 }
 
 /// Handle on the `spacetime_module_create_instance_time_seconds` label for a particular database
@@ -1336,7 +1372,12 @@ impl InstanceManagerMetrics {
         Self {
             module_instances: ModuleInstancesMetric::new(host_type, database_identity),
             create_instance_time: CreateInstanceTimeMetric::new(host_type, database_identity),
+            pool_timeouts: PoolTimeoutsMetric::new(host_type, database_identity),
         }
+    }
+
+    fn track_pool_timeout(&self) {
+        self.pool_timeouts.inner.metric.inc();
     }
 
     pub(in crate::host) fn observe_instance_created(&self, duration: std::time::Duration) {
@@ -1464,7 +1505,10 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             let permit = match self.slot_timeout {
                 Some(timeout) => match tokio::time::timeout(timeout, acquire).await {
                     Ok(permit) => permit,
-                    Err(_elapsed) => return Err(InstancePoolTimeout(timeout)),
+                    Err(_elapsed) => {
+                        self.metrics.track_pool_timeout();
+                        return Err(InstancePoolTimeout(timeout));
+                    }
                 },
                 None => acquire.await,
             };
@@ -3747,6 +3791,7 @@ mod tests {
     use crate::db::relational_db::tests_utils::{insert, with_auto_commit, TestDB};
     use crate::messages::control_db::HostType;
     use crate::subscription::module_subscription_actor::ModuleSubscriptions;
+    use crate::worker_metrics::WORKER_METRICS;
     use spacetimedb_client_api_messages::websocket::{common::RowListLen as _, v1 as ws_v1, v2 as ws_v2};
     use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::{AlgebraicType, Identity};
@@ -3801,11 +3846,17 @@ mod tests {
             Some(timeout),
         );
 
+        let timeouts = WORKER_METRICS
+            .procedure_instance_pool_timeouts
+            .with_label_values(&Identity::ZERO, &HostType::Wasm);
+        let timeouts_before = timeouts.get();
+
         let held = pool
             .get_instance()
             .await
             .expect("the first checkout gets the only slot");
         assert_eq!(pool.get_instance().await.err(), Some(InstancePoolTimeout(timeout)));
+        assert_eq!(timeouts.get(), timeouts_before + 1);
 
         pool.return_instance(held);
         assert!(pool.get_instance().await.is_ok());

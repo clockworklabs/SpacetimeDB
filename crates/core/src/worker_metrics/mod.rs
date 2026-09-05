@@ -685,6 +685,11 @@ metrics_group!(
         #[buckets(0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 50, 100)]
         pub module_create_instance_time_seconds: HistogramVec,
 
+        #[name = spacetime_procedure_instance_pool_timeouts_total]
+        #[help = "Calls that gave up waiting for a free procedure instance (see `procedure-queue-timeout`)"]
+        #[labels(db: Identity, module_type: HostType)]
+        pub procedure_instance_pool_timeouts: IntCounterVec,
+
         #[name = spacetime_subscription_rows_examined]
         #[help = "Distribution of rows examined per subscription query"]
         #[labels(db: Identity, scan_type: str, table: str, unindexed_columns: str)]
