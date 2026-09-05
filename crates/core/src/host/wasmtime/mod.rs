@@ -187,6 +187,7 @@ impl WasmtimeRuntime {
             core,
             init_inst: Box::new(init_inst),
             procedure_instance_pool_size: self.config.procedure_instance_pool_size,
+            procedure_queue_timeout: self.config.procedure_queue_timeout,
         })
     }
 }
