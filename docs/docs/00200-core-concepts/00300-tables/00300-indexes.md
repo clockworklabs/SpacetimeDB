@@ -270,6 +270,10 @@ Multi-column indexes support:
 - **Prefix match**: Queries that specify the leftmost columns in order
 - **Range on trailing column**: A prefix of equality conditions followed by a range on the next column
 
+For indexes with three or more columns, the same rule applies: provide any leftmost prefix of exact
+values, optionally followed by a range on the next column. You cannot put a range in the middle and
+then continue with more exact values.
+
 A multi-column index on `(player_id, level)` accelerates these queries:
 - `player_id = 123` (prefix match on first column)
 - `player_id = 123 AND level = 5` (full match)
@@ -493,7 +497,7 @@ for (auto user : ctx.db[user_age].filter(range_to(uint8_t(18)))) {
 }
 ```
 
-Use range query functions: `range_inclusive()`, `range_from()`, `range_to()`, and `range_to_inclusive()`. Include `<spacetimedb/range_queries.h>` for full range query support.
+Use range query functions: `range_inclusive()`, `range_from()`, `range_to()`, `range_to_inclusive()`, and `range_full<T>()`. These helpers are included by `spacetimedb.h`; include `<spacetimedb/range_queries.h>` directly only when you are not using the umbrella header.
 
 </TabItem>
 </Tabs>

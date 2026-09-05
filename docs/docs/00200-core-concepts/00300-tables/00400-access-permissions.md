@@ -348,7 +348,7 @@ See the [Procedures documentation](../00200-functions/00400-procedures.md) for m
 
 ## Views - Read-Only Access
 
-[Views](../00200-functions/00500-views.md) receive a `ViewContext` or `AnonymousViewContext` which provides read-only access to all tables (both public and private). They can query and iterate tables, but cannot insert, update, or delete rows.
+[Views](../00200-functions/00500-views.md) receive a `ViewContext` or `AnonymousViewContext` which provides read-only access to all tables (both public and private). They can query tables through indexed lookups, but cannot scan full tables or insert, update, or delete rows.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -463,7 +463,7 @@ export const my_messages = spacetimedb.view(
 ```csharp
 using SpacetimeDB;
 
-public partial class Module 
+public static partial class Module
 {
     // Private table containing all messages
     [SpacetimeDB.Table(Accessor = "Message")]  // Private by default
@@ -490,8 +490,7 @@ public partial class Module
         sent.AddRange(received);
         return sent;
     }
-
-
+}
 ```
 
 </TabItem>
@@ -568,7 +567,7 @@ Use views to return a custom type that omits sensitive columns. The view reads f
 import {schema, t, table} from 'spacetimedb/server';
 
 // Private table with sensitive data
-const userAccount = table(
+const user_account = table(
   { name: 'user_account' },  // Private by default
   {
     id: t.u64().primaryKey().autoInc(),
@@ -581,7 +580,7 @@ const userAccount = table(
   }
 );
 
-const spacetimedb = schema({ userAccount });
+const spacetimedb = schema({ user_account });
 export default spacetimedb;
 
 // Public type without sensitive columns
@@ -597,7 +596,7 @@ export const myProfile = spacetimedb.view(
   t.option(publicUserProfile),
   (ctx) => {
     // Look up the caller's account by their identity (unique index)
-    const user = ctx.db.userAccount.identity.find(ctx.sender);
+    const user = ctx.db.user_account.identity.find(ctx.sender);
     if (!user) return null;
     return {
       id: user.id,
@@ -615,7 +614,7 @@ export const myProfile = spacetimedb.view(
 ```csharp
 using SpacetimeDB;
 
-public partial class Module
+public static partial class Module
 {
     // Private table with sensitive data
     [SpacetimeDB.Table(Accessor = "UserAccount")]  // Private by default
@@ -812,7 +811,7 @@ export const my_colleagues = spacetimedb.view(
 ```csharp
 using SpacetimeDB;
 
-public partial class Module
+public static partial class Module
 {
     // Private table with all employee data
     [SpacetimeDB.Table(Accessor = "Employee")]

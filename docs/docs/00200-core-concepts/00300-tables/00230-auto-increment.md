@@ -196,7 +196,7 @@ export const insert_user = spacetimedb.reducer({ name: t.string() }, (ctx, { nam
 <TabItem value="csharp" label="C#">
 
 ```csharp
-public partial class Module
+public static partial class Module
 {
     [SpacetimeDB.Table(Accessor = "User", Public = true)]
     public partial struct User
@@ -211,6 +211,7 @@ public partial class Module
     {
         ctx.Db.User.Insert(new User { UserId = 0, Name = name });
     }
+}
 ```
 
 </TabItem>
