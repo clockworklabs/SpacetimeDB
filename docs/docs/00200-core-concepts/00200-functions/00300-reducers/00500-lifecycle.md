@@ -191,9 +191,9 @@ export const onConnect = spacetimedb.clientConnected((ctx) => {
   
   // Initialize client session
   ctx.db.sessions.insert({
-    connection_id: connId,
+    connectionId: connId,
     identity: ctx.sender,
-    connected_at: ctx.timestamp
+    connectedAt: ctx.timestamp
   });
 });
 ```
@@ -309,7 +309,7 @@ export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
   }
   
   // Clean up client session
-  ctx.db.sessions.connection_id.delete(connId);
+  ctx.db.sessions.connectionId.delete(connId);
 });
 ```
 
