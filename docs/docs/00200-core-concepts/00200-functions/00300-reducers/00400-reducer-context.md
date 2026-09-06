@@ -324,7 +324,7 @@ Scheduled reducers and procedures are private by default in SpacetimeDB 2.x, so 
 ```typescript
 import { schema, table, t } from 'spacetimedb/server';
 
-const scheduled_task = table(
+const scheduledTask = table(
   { name: 'scheduled_task' },
   {
     taskId: t.u64().primaryKey().autoInc(),
@@ -333,12 +333,12 @@ const scheduled_task = table(
   }
 );
 
-const spacetimedb = schema({ scheduled_task });
+const spacetimedb = schema({ scheduledTask });
 export default spacetimedb;
 
 export const sendReminder = spacetimedb.reducer(
-  { onSchedule: scheduled_task },
-  { arg: scheduled_task.rowType },
+  { onSchedule: scheduledTask },
+  { arg: scheduledTask.rowType },
   (_ctx, { arg }) => {
     console.log(`Reminder: ${arg.message}`);
   }

@@ -558,7 +558,7 @@ import { ScheduleAt } from 'spacetimedb';
 import { schema, t, table } from 'spacetimedb/server';
 
 // Define a schedule table for the procedure
-const fetch_schedule = table(
+const fetchSchedule = table(
   { name: 'fetch_schedule' },
   {
     scheduledId: t.u64().primaryKey().autoInc(),
@@ -567,14 +567,14 @@ const fetch_schedule = table(
   }
 );
 
-const spacetimedb = schema({ fetch_schedule });
+const spacetimedb = schema({ fetchSchedule });
 export default spacetimedb;
 
 // The procedure to be scheduled, bound to the schedule table with `onSchedule`.
 // A scheduled procedure must return `t.unit()`.
 export const fetchExternalData = spacetimedb.procedure(
-  { onSchedule: fetch_schedule },
-  { arg: fetch_schedule.rowType },
+  { onSchedule: fetchSchedule },
+  { arg: fetchSchedule.rowType },
   t.unit(),
   (ctx, { arg }) => {
     const response = ctx.http.fetch(arg.url);
@@ -585,7 +585,7 @@ export const fetchExternalData = spacetimedb.procedure(
 
 // From a reducer, schedule the procedure by inserting into the schedule table
 export const queueFetch = spacetimedb.reducer({ url: t.string() }, (ctx, { url }) => {
-  ctx.db.fetch_schedule.insert({
+  ctx.db.fetchSchedule.insert({
     scheduledId: 0n,
     scheduledAt: ScheduleAt.interval(0n), // Run immediately
     url,

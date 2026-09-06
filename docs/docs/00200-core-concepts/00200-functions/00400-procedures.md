@@ -129,7 +129,7 @@ This means there's no `ctx.db` field to access the database.
 Instead, procedure code must manage transactions explicitly with `ProcedureCtx.withTx`.
 
 ```typescript
-const my_table = table(
+const myTable = table(
     { name: "my_table" },
     {
         a: t.u32(),
@@ -137,12 +137,12 @@ const my_table = table(
     },
 )
 
-const spacetimedb = schema({ my_table });
+const spacetimedb = schema({ myTable });
 export default spacetimedb;
 
 export const insertAValue = spacetimedb.procedure({ a: t.u32(), b: t.u32() }, t.unit(), (ctx, { a, b }) => {
     ctx.withTx(ctx => {
-        ctx.db.my_table.insert({ a, b });
+        ctx.db.myTable.insert({ a, b });
     });
     return {};
 })
@@ -329,7 +329,7 @@ export const maybeInsertAValue = spacetimedb.procedure({ a: t.u32(), b: t.string
         if (a < 10) {
             throw new SenderError("a is less than 10!");
         }
-        ctx.db.my_table.insert({ a, b });
+        ctx.db.myTable.insert({ a, b });
     });
 })
 ```
@@ -1191,7 +1191,7 @@ A common use case for procedures is integrating with external APIs like OpenAI's
 import { schema, t, table, SenderError } from 'spacetimedb/server';
 import { TimeDuration } from 'spacetimedb';
 
-const ai_message = table(
+const aiMessage = table(
   { name: 'ai_message', public: true },
   {
     user: t.identity(),
@@ -1201,7 +1201,7 @@ const ai_message = table(
   }
 );
 
-const spacetimedb = schema({ ai_message });
+const spacetimedb = schema({ aiMessage });
 export default spacetimedb;
 
 export const askAi = spacetimedb.procedure(
@@ -1236,7 +1236,7 @@ export const askAi = spacetimedb.procedure(
 
     // Store the conversation in the database
     ctx.withTx(txCtx => {
-      txCtx.db.ai_message.insert({
+      txCtx.db.aiMessage.insert({
         user: txCtx.sender,
         prompt,
         response: aiResponse,
