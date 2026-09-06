@@ -207,8 +207,11 @@ public static void OnConnect(ReducerContext ctx)
 {
     Log.Info($"Client connected: {ctx.Sender}");
     
-    // ctx.ConnectionId is guaranteed to be non-null
-    var connId = ctx.ConnectionId!.Value;
+    // ctx.ConnectionId is nullable in the API; unwrap it before use.
+    if (ctx.ConnectionId is not { } connId)
+    {
+        throw new Exception("client connection ID missing");
+    }
     
     // Initialize client session
     ctx.Db.Session.Insert(new Session
@@ -228,8 +231,8 @@ public static void OnConnect(ReducerContext ctx)
 pub fn on_connect(ctx: &ReducerContext) -> Result<(), String> {
     log::info!("Client connected: {}", ctx.sender());
     
-    // ctx.connection_id() is guaranteed to be Some(...)
-    let conn_id = ctx.connection_id().unwrap();
+    // ctx.connection_id() returns Option<ConnectionId>; unwrap it before use.
+    let conn_id = ctx.connection_id().ok_or("client connection ID missing")?;
     
     // Initialize client session
     ctx.db.sessions().try_insert(Session {
@@ -261,7 +264,10 @@ FIELD_PrimaryKey(sessions, connection_id);
 SPACETIMEDB_CLIENT_CONNECTED(on_connect, ReducerContext ctx) {
     LOG_INFO("Client connected: " + ctx.sender().to_string());
     
-    // ctx.connection_id is guaranteed to be present
+    // ctx.connection_id is optional; unwrap it before use.
+    if (!ctx.connection_id.has_value()) {
+        return Err("client connection ID missing");
+    }
     auto conn_id = ctx.connection_id.value();
     
     // Initialize client session
@@ -280,8 +286,8 @@ SPACETIMEDB_CLIENT_CONNECTED(on_connect, ReducerContext ctx) {
 
 The `client_connected` reducer:
 - Cannot take arguments beyond `ReducerContext`
-- Receives the connection ID for the connection being opened. In TypeScript,
-  `ctx.connectionId` is typed as nullable, so guard it before use.
+- Receives the connection ID for the connection being opened. The API exposes
+  it as nullable or optional, so guard or unwrap it before use.
 - Failure disconnects the client
 - Runs for each distinct connection (WebSocket, HTTP call)
 
@@ -316,8 +322,11 @@ public static void OnDisconnect(ReducerContext ctx)
 {
     Log.Info($"Client disconnected: {ctx.Sender}");
     
-    // ctx.ConnectionId is guaranteed to be non-null
-    var connId = ctx.ConnectionId!.Value;
+    // ctx.ConnectionId is nullable in the API; unwrap it before use.
+    if (ctx.ConnectionId is not { } connId)
+    {
+        throw new Exception("client connection ID missing");
+    }
     
     // Clean up client session
     ctx.Db.Session.ConnectionId.Delete(connId);
@@ -332,8 +341,8 @@ public static void OnDisconnect(ReducerContext ctx)
 pub fn on_disconnect(ctx: &ReducerContext) -> Result<(), String> {
     log::info!("Client disconnected: {}", ctx.sender());
     
-    // ctx.connection_id() is guaranteed to be Some(...)
-    let conn_id = ctx.connection_id().unwrap();
+    // ctx.connection_id() returns Option<ConnectionId>; unwrap it before use.
+    let conn_id = ctx.connection_id().ok_or("client connection ID missing")?;
     
     // Clean up client session
     ctx.db.sessions().connection_id().delete(&conn_id);
@@ -361,7 +370,10 @@ FIELD_PrimaryKey(sessions, connection_id);
 SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect, ReducerContext ctx) {
     LOG_INFO("Client disconnected: " + ctx.sender().to_string());
     
-    // ctx.connection_id is guaranteed to be present
+    // ctx.connection_id is optional; unwrap it before use.
+    if (!ctx.connection_id.has_value()) {
+        return Err("client connection ID missing");
+    }
     auto conn_id = ctx.connection_id.value();
     
     // Clean up client session
@@ -376,8 +388,8 @@ SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect, ReducerContext ctx) {
 
 The `client_disconnected` reducer:
 - Cannot take arguments beyond `ReducerContext`
-- Receives the connection ID for the connection being closed. In TypeScript,
-  `ctx.connectionId` is typed as nullable, so guard it before use.
+- Receives the connection ID for the connection being closed. The API exposes
+  it as nullable or optional, so guard or unwrap it before use.
 - Failure is logged but doesn't prevent disconnection
 - Runs when connection ends (close, timeout, error)
 
