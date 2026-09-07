@@ -71,19 +71,18 @@ impl PageMap {
 
     /// Change the allocated space, allocating or deallocating pages as needed.
     /// Changes the volatile state only.
-    fn set_len_volatile(&mut self, new_len: u64) {
-        Self::set_len(&mut self.volatile, new_len);
+    fn set_len_volatile(&mut self, old_len: u64, new_len: u64) {
+        Self::set_len(&mut self.volatile, old_len, new_len);
     }
 
-    /// Like [Self::set_len], but operate on the durable state only.
-    fn set_len_durable(&mut self, new_len: u64) {
-        Self::set_len(&mut self.durable, new_len);
+    /// Like [Self::set_len_volatile], but operate on the durable state only.
+    fn set_len_durable(&mut self, old_len: u64, new_len: u64) {
+        Self::set_len(&mut self.durable, old_len, new_len);
     }
 
-    fn set_len(page_map: &mut BTreeMap<PageIndex, Arc<Page>>, new_len: u64) {
+    fn set_len(page_map: &mut BTreeMap<PageIndex, Arc<Page>>, old_len: u64, new_len: u64) {
         use core::cmp::Ordering::*;
 
-        let old_len = page_map.len() as u64;
         match new_len.cmp(&old_len) {
             Equal => {}
             Greater => {
@@ -170,7 +169,9 @@ impl File {
         if !new_len.is_multiple_of(PAGE_SIZE_U64) {
             return Err(Error::UnalignedOffset);
         }
-        self.pages.lock().set_len_volatile(new_len);
+        self.pages
+            .lock()
+            .set_len_volatile(self.volatile_len.load(Ordering::Relaxed), new_len);
         self.volatile_len.store(new_len, Ordering::Relaxed);
 
         Ok(())
@@ -229,8 +230,8 @@ impl File {
                 }
                 Datasync::Length => {
                     let new_durable_len = self.volatile_len.load(Ordering::Relaxed);
-                    self.durable_len.store(new_durable_len, Ordering::Relaxed);
-                    self.pages.lock().set_len_durable(new_durable_len);
+                    let old_durable_len = self.durable_len.swap(new_durable_len, Ordering::Relaxed);
+                    self.pages.lock().set_len_durable(old_durable_len, new_durable_len);
                 }
             }
         }
