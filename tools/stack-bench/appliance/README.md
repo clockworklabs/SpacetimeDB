@@ -217,7 +217,8 @@ by dependency depth, then by `order`:
 When limits are combined, the tightest remaining limit wins, and the result
 names which one stopped a feature: `feature-repairs-exhausted`,
 `depth-repairs-exhausted`, `total-repairs-exhausted`, or `repeated-findings`
-when the same failures survived the configured number of repairs. A completed
+when the same failures survived the configured number of repairs. Set
+`mode.unchangedFailureLimit` to a positive integer to change that stop (default 3). A completed
 repair counts even when its grade did not finish; its source is kept beside
 the run and graded on resume before any further coding session. Sequential
 mode requires `batch` selection and one `total` limit.

@@ -64,7 +64,7 @@ const sequentialMode = {
 const dependencyMode = {
   id: 'dependency',
   validate(value: CampaignModeInput, { at }: { at: string }): CampaignModeInput {
-    const fields = new Set(['id', 'workSelection', 'retainPriorContracts']);
+    const fields = new Set(['id', 'workSelection', 'retainPriorContracts', 'unchangedFailureLimit']);
     for (const key of Object.keys(value)) {
       if (!fields.has(key)) fail(`${at}.${key} is unknown for dependency mode`);
     }
@@ -75,8 +75,13 @@ const dependencyMode = {
     if (value.retainPriorContracts !== undefined && typeof value.retainPriorContracts !== 'boolean') {
       fail(`${at}.retainPriorContracts must be boolean`);
     }
+    if (value.unchangedFailureLimit !== undefined && (typeof value.unchangedFailureLimit !== 'number'
+      || !Number.isSafeInteger(value.unchangedFailureLimit) || value.unchangedFailureLimit < 1)) {
+      fail(`${at}.unchangedFailureLimit must be a positive safe integer`);
+    }
     // Absence in a stored plan keeps its original prompt behavior and identity.
-    return { id: value.id, workSelection, ...(value.retainPriorContracts === undefined
+    return { id: value.id, workSelection, ...(value.unchangedFailureLimit === undefined
+      ? {} : { unchangedFailureLimit: value.unchangedFailureLimit }), ...(value.retainPriorContracts === undefined
       ? {} : { retainPriorContracts: value.retainPriorContracts }) };
   },
 };

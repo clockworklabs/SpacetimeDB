@@ -54,6 +54,7 @@ type DependencyPolicyInput = ProgressionInput<CompiledDependencyPolicyDefinition
 interface CampaignMode extends CampaignModeInput {
   workSelection?: DependencyWorkSelection;
   retainPriorContracts?: boolean;
+  unchangedFailureLimit?: number;
 }
 
 export interface CampaignStackSelection {
@@ -1024,6 +1025,7 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
     ? compileDependencyPolicyInput(definition.repair, featureCatalog!, {
       selectedLevels: definition.levels,
       workSelection: definition.mode.workSelection,
+      unchangedFailureLimit: definition.mode.unchangedFailureLimit,
       ...(definition.repair.order === 'shuffled'
         ? { nodeOrder: shuffledRepairOrder(featureCatalog!, definition.ordering.seed) } : {}),
     }) : null;

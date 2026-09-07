@@ -130,3 +130,19 @@ test('cost/completion thresholds are declared numeric campaign policy, not infer
   analysis.spendThresholdsUsd = [-1];
   assert.throws(() => validateCampaignDefinition(value), /spendThresholdsUsd/);
 });
+
+test('campaigns bind the repeated-finding stop independently of repair allowance', () => {
+  const value = manifest('campaign.ecommerce-progression-reference.json');
+  const baseline = compile(value);
+  const plan = compile({ ...value, repair: { selection: 'feature', budget: { perFeature: 5 } },
+    mode: { ...(value.mode as object), unchangedFailureLimit: 5 } });
+  assert.equal(baseline.dependencyPolicy?.definition.unchangedFailureLimit, 3);
+  assert.equal(plan.dependencyPolicy?.definition.unchangedFailureLimit, 5);
+  assert.deepEqual(plan.definition.repair.budget, { perFeature: 5 });
+  assert.notEqual(plan.dependencyPolicy?.identity.contentSha256, baseline.dependencyPolicy?.identity.contentSha256);
+  assert.deepEqual(validateCompiledCampaignPlan(plan), plan);
+  for (const unchangedFailureLimit of [0, -1, 1.5, '5', Number.MAX_SAFE_INTEGER + 1]) {
+    assert.throws(() => validateCampaignDefinition({ ...value,
+      mode: { ...(value.mode as object), unchangedFailureLimit } }), /unchangedFailureLimit/);
+  }
+});
