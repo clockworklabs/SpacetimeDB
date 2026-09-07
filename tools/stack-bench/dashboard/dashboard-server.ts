@@ -286,7 +286,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
         const size = existsSync(path) ? statSync(path).size : 0;
         if (!size) return json(response, 404, { error: 'Not found' });
         response.writeHead(200, { 'content-type': type, 'content-length': size,
-          'cache-control': file === 'index.html' ? 'no-store' : 'public, max-age=300' });
+          'cache-control': file === 'index.html' ? 'no-store' : 'no-cache' });
         createReadStream(path).pipe(response);
         return;
       }

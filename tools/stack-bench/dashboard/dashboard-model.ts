@@ -241,18 +241,19 @@ export function parseRunProgress(log: string, { repairs = 0, running = true, sta
   const latestIndex = Math.max(latestTotal?.index ?? -1, latestRound?.index ?? -1,
     latestGrading?.index ?? -1);
   let phase = status === 'pending' ? 'Waiting to start'
-    : running ? 'Building the generated app' : 'Finished';
+    : running ? 'Building the generated app'
+      : status === 'invalid' ? 'Stopped without a valid result' : 'Finished';
   const level = latestGrading?.level ?? null;
   const round = latestRound?.round ?? latestGrading?.round ?? 0;
   const budget = latestRound ? latestRound.budget : repairs;
   const target = latestRound?.target ? ` for ${latestRound.target}` : '';
   const of = (limit: number | null): string => limit === null ? '' : ` of ${limit}`;
   const stage = (value: number): string => dependency ? `depth ${value}` : `L${value}`;
-  if (latestIndex === latestGrading?.index) {
+  if (running && latestIndex === latestGrading?.index) {
     phase = latestGrading.round
       ? `Grading ${stage(latestGrading.level)} after repair ${round}${of(budget)}${target}`
       : `Grading the first ${stage(latestGrading.level)} build`;
-  } else if (latestIndex === latestRound?.index) {
+  } else if (running && latestIndex === latestRound?.index) {
     phase = latestRound.target
       ? `Repairing ${latestRound.target} · ${latestRound.round}${of(latestRound.budget)}`
       : `Repairing ${stage(latestGrading?.level ?? 1)} · round ${latestRound.round}${of(latestRound.budget)}`;

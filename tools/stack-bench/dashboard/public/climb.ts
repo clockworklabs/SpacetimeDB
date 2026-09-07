@@ -10,6 +10,10 @@ interface Plot {
   point: ClimbPoint;
 }
 
+function pointTitle(point: ClimbPoint): string {
+  return `<title>${point.score} / ${point.max} points${point.unaided ? ' · Before repair' : ''}</title>`;
+}
+
 function plot(series: readonly ClimbPoint[], left: number, right: number,
   top: number, bottom: number): Plot[] {
   const span = Math.max(1, series.length - 1);
@@ -31,7 +35,7 @@ export function climb(series: readonly ClimbPoint[], { warn = false, height = 36
   warn?: boolean;
   height?: number;
 } = {}): string {
-  if (!series.length) return '';
+  if (!series.length) return '<span class="chart-empty">Awaiting first grade</span>';
   const top = 4;
   const bottom = height - 4;
   const plots = plot(series, 8, 292, top, bottom);
@@ -40,19 +44,19 @@ export function climb(series: readonly ClimbPoint[], { warn = false, height = 36
   const last = plots.at(-1)!;
   const tone = warn ? ' warn' : '';
   const rings = plots.filter(item => item.point.unaided || item === first)
-    .map(item => `<circle class="first" cx="${item.x}" cy="${item.y}" r="3.2"/>`).join('');
-  return `<svg class="climb" viewBox="0 0 300 ${height}" preserveAspectRatio="none">`
+    .map(item => `<circle class="first" cx="${item.x}" cy="${item.y}" r="3.2">${pointTitle(item.point)}</circle>`).join('');
+  return `<svg class="climb" viewBox="0 0 300 ${height}" role="img" aria-label="Weighted score by completed grade" preserveAspectRatio="xMidYMid meet"><title>Weighted score by completed grade. Each grade can cover a different scope.</title>`
     + `<line class="grid" x1="0" y1="${top}" x2="300" y2="${top}"/>`
     + `<line class="grid" x1="0" y1="${bottom}" x2="300" y2="${bottom}"/>`
     + `<path class="area${tone}" d="M${first.x} ${bottom} ${line.slice(1)} L${last.x} ${bottom} Z"/>`
     + `<path class="line${tone}" d="${line}"/>${rings}`
-    + `<circle class="now${tone}" cx="${last.x}" cy="${last.y}" r="3.2"/></svg>`;
+    + `<circle class="now${tone}" cx="${last.x}" cy="${last.y}" r="3.2">${pointTitle(last.point)}</circle></svg>`;
 }
 
 // Full size: the same points with a band per depth or level, and a number at
 // the first, the best and the current grade.
 export function bigClimb(series: readonly ClimbPoint[], stage: (level: number) => string): string {
-  if (!series.length) return '';
+  if (!series.length) return '<p class="chart-empty">Awaiting first grade. The score history will appear here.</p>';
   const top = 10;
   const bottom = 130;
   const plots = plot(series, 100, 1010, top, bottom);
@@ -79,17 +83,18 @@ export function bigClimb(series: readonly ClimbPoint[], stage: (level: number) =
     `<text x="${item.x}" y="${item.y - 8 < top + 4 ? item.y + 16 : item.y - 8}" `
     + `text-anchor="middle" fill="${tone}">`
     + `${Math.round(item.point.max ? 100 * item.point.score / item.point.max : 0)}</text>`;
-  return `<svg class="bigclimb" viewBox="0 0 1060 170" preserveAspectRatio="none">${bands.join('')}`
+  return `<div class="chart-scroll" role="region" aria-label="Score history" tabindex="0"><svg class="bigclimb" viewBox="0 0 1060 170" role="img" aria-label="Weighted score by completed grade" preserveAspectRatio="xMidYMid meet"><title>Weighted score by completed grade. Each grade can cover a different scope.</title>${bands.join('')}`
     + [0, 50, 100].map(value => {
       const y = bottom - (bottom - top) * value / 100;
       return `<line class="g" x1="60" y1="${y}" x2="1050" y2="${y}"/>`
-        + `<text x="50" y="${y + 4}" text-anchor="end">${value}</text>`;
+        + `<text x="50" y="${y + 4}" text-anchor="end">${value}%</text>`;
     }).join('')
     + `<path class="a" d="M${first.x} ${bottom} ${line.slice(1)} L${last.x} ${bottom} Z"/>`
     + `<path class="l" d="${line}"/>`
     + plots.map(item => `<circle class="ev${item.point.unaided || item === first ? ' first' : ''}`
       + `${item === last ? ' now' : ''}" cx="${item.x}" cy="${item.y}" r="${
-        item.point.unaided || item === last ? 4.5 : 3.5}"/>`).join('')
+        item.point.unaided || item === last ? 4.5 : 3.5}">${pointTitle(item.point)}</circle>`).join('')
     + label(first, '#b6c0cf') + (best === first || best === last ? '' : label(best, '#b6c0cf'))
-    + (last === first ? '' : label(last, '#e6e9f0')) + '</svg>';
+    + (last === first ? '' : label(last, '#e6e9f0')) + '</svg></div>'
+    + '<p class="chart-caption">Weighted score by completed grade, from left to right. Each grade can cover a different scope. Points show completed grades, not elapsed time.</p>';
 }

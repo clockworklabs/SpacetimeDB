@@ -4,7 +4,7 @@
 import type { AttemptCheck, AttemptChecks, AttemptPackage, CampaignSheet, SheetAttempt, SheetStack }
   from '../../dashboard-views.js';
 import { bigClimb } from '../climb.js';
-import { DASH, duration, esc, spend, pct, phrase, ratio, stackLabel } from '../format.js';
+import { DASH, duration, elapsed, esc, metricHelp, spend, pct, phrase, ratio, stackLabel } from '../format.js';
 
 export type AttemptTab = 'checks' | 'screenshots' | 'files' | 'log';
 
@@ -32,7 +32,7 @@ function locate(sheet: CampaignSheet, attemptId: string): {
 }
 
 function checksTable(checks: AttemptChecks | null): string {
-  if (!checks) return '';
+  if (!checks?.checks.length) return '<p class="summary-note">No check results are recorded yet. Check the log for current work or an execution error.</p>';
   const features = new Map<string, AttemptCheck[]>();
   for (const check of checks.checks) {
     features.set(check.feature, [...features.get(check.feature) ?? [], check]);
@@ -60,6 +60,7 @@ function artifacts(evidence: AttemptPackage | null, key: string, visual: boolean
     visual ? execution.visuals : execution.artifacts.filter(item => item.kind !== 'visual'));
   const link = (id: string): string =>
     `/api/campaigns/${encodeURIComponent(key)}/artifacts/${encodeURIComponent(id)}`;
+  if (!items.length) return `<p class="summary-note">No ${visual ? 'screenshots' : 'files'} are available for this attempt.</p>`;
   if (visual) {
     return `<div class="shots">${items.map(item => {
       const source = link(item.id);
@@ -79,7 +80,7 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log }: At
     + `<b>${esc(tail)}</b></div>`;
   if (!found) {
     return `<div class="page">${crumbs(attemptId)}`
-      + '<div class="title"><h2>no attempt</h2></div></div>';
+      + '<div class="title"><h2>Attempt not found</h2></div></div>';
   }
   const { stack, attempt } = found;
   const name = `${stackLabel(stack.stack)} rep ${attempt.repetition}`;
@@ -92,15 +93,24 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log }: At
     log: attempt.status === 'running' ? 'live' : '',
   };
   const tabs = (['checks', 'screenshots', 'files', 'log'] as const).map(entry =>
-    `<a class="${entry === tab ? 'on' : ''}" href="?tab=${entry}">`
+    `<a class="${entry === tab ? 'on' : ''}"${entry === tab ? ' aria-current="page"' : ''} href="?tab=${entry}">`
     + `${entry[0]!.toUpperCase()}${entry.slice(1)}`
     + `${counts[entry] ? `<i>${esc(counts[entry])}</i>` : ''}</a>`).join('');
+  const help: Record<string, string> = {
+    Completion: 'Accepted checks passed out of every selected check, including checks not reached.',
+    'Weighted score': 'Points earned across the selected grading scope. This differs from the number of checks passed.',
+    Unaided: 'Recorded score before repair. A dash means no usable first-try evidence.',
+    Repairs: 'Completed repairs out of the planned allowance for this attempt. Per-feature limits still apply.',
+    Elapsed: 'Wall time for this execution. This is separate from measured run duration.',
+    Time: 'Recorded attempt duration. A dash means duration evidence is not yet available.',
+    Spend: 'Cost from recorded usage and the pinned price snapshot. Unknown is not zero; an upper bound starts with an inequality sign.',
+  };
   const figure = (label: string, text: string, tone = ''): string =>
-    `<div><span class="label">${esc(label)}</span><b class="${tone}">${text}</b></div>`;
+    `<div><div class="metric-label"><span class="label">${esc(label)}</span>${metricHelp(label, help[label])}</div><b class="${tone}">${text}</b></div>`;
   const stage = (level: number): string =>
     sheet.mode === 'dependency' ? `depth ${level}` : `L${level}`;
   const panel = tab === 'checks' ? checksTable(checks)
-    : tab === 'log' ? `<pre class="log">${esc(log)}</pre>`
+    : tab === 'log' ? (log ? `<pre class="log">${esc(log)}</pre>` : '<p class="summary-note">No log output is recorded yet.</p>')
       : artifacts(evidence, sheet.key, tab === 'screenshots');
   const issue = attempt.excluded
     ? `<div class="issue"><span class="label">Why this run was excluded</span>`
@@ -114,13 +124,16 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log }: At
   return `<div class="page">${crumbs(name)}`
     + `<div class="title"><h2>${esc(stackLabel(stack.stack))} `
     + `<span>rep ${attempt.repetition}</span></h2></div>`
-    + `<div class="figs">${figure('Score', pct(attempt.score), sheet.provisional ? 'prov' : '')}`
+    + (sheet.provisional ? '<p class="summary-note">Provisional results: qualification is incomplete.</p>' : '')
+    + `<div class="figs">${figure('Completion', attempt.completion ? ratio(attempt.completion.passed, attempt.completion.selected) : DASH)}`
+    + figure('Spend', spend(attempt.spend) + (attempt.spendPending ? ' (usage pending)' : ''))
+    + figure('Status', esc(phrase(attempt)), attempt.stalling ? 'now warn' : 'now')
+    + figure('Weighted score', pct(attempt.score), sheet.provisional ? 'prov' : '')
     + figure('Unaided', pct(attempt.unaided))
     + figure('Repairs', ratio(attempt.repairs.used, attempt.repairs.budget))
+    + figure('Elapsed', attempt.status === 'running' || attempt.executionCompletedAt
+      ? elapsed(attempt.executionStartedAt, attempt.executionCompletedAt) : DASH)
     + figure('Time', duration(attempt.timeSec))
-    + figure('Completion', attempt.completion ? ratio(attempt.completion.passed, attempt.completion.selected) : DASH)
-    + figure('Spend', spend(attempt.spend))
-    + figure('Now', esc(phrase(attempt)), attempt.stalling ? 'now warn' : 'now')
-    + `</div>${issue}${dependency}${bigClimb(attempt.climb, stage) || `<p class="v">${DASH}</p>`}`
+    + `</div>${issue}${dependency}<h3>Grade history</h3>${bigClimb(attempt.climb, stage)}`
     + `<div class="tabs">${tabs}</div>${panel}</div>`;
 }

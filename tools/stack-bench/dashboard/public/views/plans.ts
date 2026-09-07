@@ -46,12 +46,12 @@ export function topbar({ page, key, canStart, resumable, controllerOwner, error 
       + `<a href="${artifact('report/report.html')}">report</a>`
       + `<a href="${artifact('report/export-manifest.json')}">export manifest</a></div></details>` : '';
   const resume = resumable
-    ? '<form class="secret" data-run="resume"><input name="secret" type="password" aria-label="Operator secret" required>'
+    ? '<form class="secret" data-run="resume"><input name="secret" type="password" aria-label="Operator secret" placeholder="Operator secret" required>'
       + '<button class="btn" type="submit">Resume</button>'
       + (error ? `<span class="err">${esc(error)}</span>` : '') + '</form>' : '';
   const stop = canStart && controllerOwner
     ? `<form class="secret" data-run="stop"><input type="hidden" name="owner" value="${esc(controllerOwner)}">`
-      + '<input name="secret" type="password" aria-label="Operator secret" required>'
+      + '<input name="secret" type="password" aria-label="Operator secret" placeholder="Operator secret" required>'
       + '<button class="btn" type="submit">Stop</button>'
       + (error ? `<span class="err">${esc(error)}</span>` : '') + '</form>' : '';
   const nav = (on: boolean, label: string, href: string): string =>
@@ -95,6 +95,7 @@ function planRow(plan: DashboardPlan): string {
 
 function runForm(plans: readonly DashboardPlan[], form: RunForm): string {
   const frozen = plans.filter(plan => plan.state === 'frozen');
+  if (!frozen.length) return '<p class="summary-note">No frozen plans are available to start. Add a frozen campaign plan to the appliance plans directory.</p>';
   const options = [...new Set(frozen.map(plan => plan.mode ?? 'sequential'))]
     .map(mode => `<optgroup label="${esc(mode)}">${frozen
       .filter(plan => (plan.mode ?? 'sequential') === mode)
@@ -105,15 +106,17 @@ function runForm(plans: readonly DashboardPlan[], form: RunForm): string {
   return '<form class="runform" data-run="start">'
     + field('Plan', `<select name="plan" required>${options}</select>`)
     + field('Run name', `<input name="output" required pattern="${RUN_NAME}">`)
-    + field('Secret', '<input name="secret" type="password" required>')
+    + field('Operator secret', '<input name="secret" type="password" required>')
     + '<button class="btn primary" type="submit">Start a run</button>'
-    + (form.error ? `<div class="err">${esc(form.error)}</div>` : '') + '</form>';
+    + (form.error ? `<div class="err" role="alert">${esc(form.error)}</div>` : '') + '</form>';
 }
 
 export function plansPage({ plans, canStart, form }: {
   plans: readonly DashboardPlan[]; canStart: boolean; form: RunForm;
 }): string {
-  return `<div class="page">${canStart ? runForm(plans, form) : ''}`
+  return `<div class="page"><div class="title"><h2>Run plans</h2></div>`
+    + '<p class="summary-note">Review the plan and its limits before starting. Cost limits use the plan’s recorded pricing, not a live invoice.</p>'
+    + `${canStart ? runForm(plans, form) : ''}`
     + '<div class="tablewrap"><div class="wrap"><table class="runs plans"><thead><tr>'
     + HEADS.map(([label, kind]) => `<th class="${kind}">${label}</th>`).join('')
     + `</tr></thead><tbody>${plans.length ? plans.map(planRow).join('')

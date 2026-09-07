@@ -23,7 +23,7 @@ import { progressionEngine } from '../src/progression/progression-engine.js';
 import { readCampaignState } from '../src/campaigns/campaign-scheduler.js';
 import { readProgressionState } from '../src/progression/progression-state.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
-import { repairBudgetLimit } from '../src/progression/repair-plan.js';
+import { repairBudgetLimit, type RepairBudget } from '../src/progression/repair-plan.js';
 import { MAX_LOG_BYTES, contained, parseRunProgress, readTextTail,
   walkPublicExecutionArtifacts } from './dashboard-model.js';
 import type { DashboardArtifact } from './dashboard-model.js';
@@ -201,7 +201,7 @@ export interface SheetFacts {
   mode: string;
   workSelection: string | null;
   repairSelection: string | null;
-  repairBudget: number;
+  repairLimits: RepairBudget;
   agent: string | null;
   model: string | null;
   guidance: string | null;
@@ -235,7 +235,10 @@ export interface SheetAttempt {
   unaided: number | null;
   repairs: { used: number; budget: number };
   timeSec: number | null;
+  executionStartedAt: string | null;
+  executionCompletedAt: string | null;
   spend: CostEvidence;
+  spendPending: boolean;
   completion: CheckCompletion | null;
   variant: string;
   climb: ClimbPoint[];
@@ -257,14 +260,15 @@ export interface SheetQuestline {
 
 export interface SheetStack {
   stack: string;
+  selectedAttemptId: string | null;
   score: number | null;
   points: { score: number; max: number } | null;
   unaided: number | null;
   continued: boolean;
-  repairs: { used: number; budget: number };
   regressions: number;
   timeSec: number | null;
   spend: CostEvidence;
+  spendPending: boolean;
   completionRate: number | null;
   n: number;
   climb: ClimbPoint[];
@@ -309,10 +313,7 @@ function sheetFacts(plan: CompiledCampaignPlan): SheetFacts {
     mode: mode.id,
     workSelection: policy?.workSelection ?? mode.workSelection ?? null,
     repairSelection: policy?.repair.selection ?? plan.definition.repair.selection,
-    repairBudget: repairBudgetLimit(plan.definition.repair, {
-      features: plan.featureCatalog?.definition.nodes.length ?? 1,
-      depths: plan.definition.levels.length,
-    }),
+    repairLimits: plan.definition.repair.budget,
     agent: agent?.adapter ?? null,
     model: agent?.model ?? null,
     guidance: plan.attempts[0]?.guidance ?? null,
@@ -416,7 +417,10 @@ function sheetAttemptView(plan: CompiledCampaignPlan, state: CampaignAttemptStat
       unaided: percentage(metrics?.first ?? null),
       repairs: repairs ?? { used: metrics?.repairs ?? 0, budget: repairLimit },
       timeSec: metrics?.duration ?? null,
+      executionStartedAt: execution?.startedAt ?? null,
+      executionCompletedAt: execution?.completedAt ?? null,
       spend: inspected.spend,
+      spendPending: inspected.status === 'running' || inspected.status === 'pending',
       completion: inspected.completion,
       variant: inspected.variantLabel,
       climb: progress.series,
@@ -444,10 +448,6 @@ export function campaignSheet(resultsRoot: string, key: string,
   const comparison = compareCampaign<InspectedAttempt>({
     attempts: views.map(view => view.inspected) });
   const dependency = plan.definition.mode?.id === 'dependency';
-  const plannedRepairLimit = repairBudgetLimit(plan.definition.repair, {
-    features: plan.featureCatalog?.definition.nodes.length ?? 1,
-    depths: plan.definition.levels.length,
-  });
   const stacks = plan.stacks.map(stack => {
     const owned = views.filter(view => view.inspected.stack === stack.id);
     const row = comparison.rows.find(entry => entry.stack === stack.id);
@@ -455,19 +455,18 @@ export function campaignSheet(resultsRoot: string, key: string,
     // per-level rows — come from the newest attempt that actually ran.
     const latest = owned.findLast(view => view.inspected.execution !== null) ?? null;
     const lead = latest?.inspected ?? null;
-    const repairs = lead?.dependency ? dependencyRepairs(plan, lead.dependency) : null;
     const metrics = lead ? attemptMetrics(lead) : null;
     return {
       stack: stack.id,
+      selectedAttemptId: latest?.attempt.id ?? null,
       score: percentage(row?.final ?? null),
       points: dependency ? uniquePoints(lead?.dependency ?? null) : metrics?.raw.final ?? null,
       unaided: percentage(row?.first ?? null),
       continued: owned.some(view => view.attempt.continued),
-      repairs: repairs ?? { used: Math.round(row?.repairs ?? 0),
-        budget: plannedRepairLimit },
       regressions: Math.round(median(owned.map(view => attemptRegressions(view.inspected))) ?? 0),
       timeSec: row?.duration ?? null,
       spend: sumCostEvidence(owned.map(view => view.inspected.spend)),
+      spendPending: owned.some(view => view.attempt.spendPending),
         completionRate: new Set(owned.map(view => view.inspected.cohortKey)).size === 1
           && owned.every(view => view.inspected.completion?.rate != null)
         ? median(owned.flatMap(view => view.inspected.completion?.rate == null

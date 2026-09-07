@@ -23,6 +23,13 @@ export function stackLabel(stack: string): string {
   return STACK_LABEL[stack] ?? stack;
 }
 
+export function metricHelp(label: string, description: string | undefined): string {
+  if (!description) return '';
+  const id = `help-${label.toLowerCase().replaceAll(' ', '-')}`;
+  return `<button class="metric-help" type="button" popovertarget="${esc(id)}" aria-label="About ${esc(label)}" aria-describedby="${esc(id)}"><span aria-hidden="true">?</span></button>`
+    + `<div class="metric-tooltip" id="${esc(id)}" popover role="tooltip">${esc(description)}</div>`;
+}
+
 export function pct(value: number | null | undefined): string {
   return value == null ? DASH : `${Math.round(value)}%`;
 }
@@ -51,6 +58,16 @@ export function duration(seconds: number | null | undefined): string {
   if (seconds == null) return DASH;
   const minutes = Math.round(seconds / 60);
   return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+// Wall time for the current execution, separate from the measured run duration.
+export function elapsed(startedAt: string | null, completedAt: string | null,
+  now = Date.now()): string {
+  if (startedAt === null) return DASH;
+  const start = Date.parse(startedAt);
+  const end = completedAt === null ? now : Date.parse(completedAt);
+  return Number.isFinite(start) && Number.isFinite(end)
+    ? duration(Math.max(0, end - start) / 1000) : DASH;
 }
 
 export function since(value: string | null | undefined, now = Date.now()): string {

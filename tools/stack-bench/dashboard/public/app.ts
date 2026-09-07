@@ -8,7 +8,7 @@
 import type { AttemptChecks, AttemptPackage, CampaignProgression, CampaignSheet, OverviewEntry }
   from '../dashboard-views.js';
 import type { DashboardPlan } from '../dashboard-model.js';
-import { type QuestlineView, campaignPage, replayTimeline } from './views/campaign.js';
+import { type QuestlineView, campaignPage, replayTimeline, selectedProgression } from './views/campaign.js';
 import { type AttemptTab, attemptPage } from './views/attempt.js';
 import { type CampaignFilter, campaignsPage } from './views/campaigns.js';
 import { type Page, type RunForm, afterRun, plansPage, runName, topbar }
@@ -45,6 +45,7 @@ const state = {
 };
 let fallback = 0;
 let playing = 0;
+let submitting = false;
 
 function route(): Route {
   const url = new URL(location.href);
@@ -126,6 +127,7 @@ function page(current: Route): string {
 
 function sync(current: Element, next: Element): void {
   for (const name of [...current.getAttributeNames()]) {
+    if (current.tagName === 'DETAILS' && name === 'open') continue;
     if (!next.hasAttribute(name)) current.removeAttribute(name);
   }
   for (const name of next.getAttributeNames()) {
@@ -175,6 +177,12 @@ function render(): void {
     if (field.name !== 'secret' && field.name !== 'output') continue;
     const value = field.name === 'secret' ? state.form.secret : state.form.outputName;
     if (field.value !== value) field.value = value;
+  }
+  for (const form of document.querySelectorAll<HTMLFormElement>('form[data-run]')) {
+    form.setAttribute('aria-busy', String(submitting));
+    for (const button of form.querySelectorAll<HTMLButtonElement>('button[type=submit]')) {
+      button.disabled = submitting;
+    }
   }
 }
 
@@ -237,8 +245,9 @@ function go(href: string): void {
 function stepTo(offset: number): void {
   const current = route();
   const progression = state.progression.get(current.key) ?? null;
-  if (!progression) return;
-  const total = replayTimeline(progression).length;
+  const sheet = state.sheets.get(current.key);
+  if (!progression || !sheet) return;
+  const total = replayTimeline(selectedProgression(progression, sheet)).length;
   const next = Math.min(Math.max(0, current.step + offset), Math.max(0, total - 1));
   const url = new URL(location.href);
   url.searchParams.set('step', String(next));
@@ -292,27 +301,38 @@ document.addEventListener('click', event => {
 // Start and resume are the same request twice: the browser token, the operator
 // secret the operator just typed, and the plan the server re-reads itself.
 async function post(form: HTMLFormElement): Promise<void> {
+  if (submitting) return;
   const current = route();
   const data = new FormData(form);
   const action = form.dataset.run;
   const existing = action === 'resume' || action === 'stop';
   const output = existing ? current.key : String(data.get('output') ?? '');
-  const response = await fetch(existing
-    ? `/api/campaigns/${encodeURIComponent(current.key)}/${action}` : '/api/campaigns', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-stack-bench-token': state.csrfToken,
-      'x-stack-bench-control-secret': String(data.get('secret') ?? '') },
-    body: JSON.stringify(action === 'stop' ? { owner: data.get('owner') }
-      : existing ? {} : { planId: String(data.get('plan') ?? ''), outputName: output }),
-  });
-  if (response.ok) {
-    state.form = { ...state.form, secret: '', error: '' };
-    if (existing) return void load();
-    return go(`/c/${encodeURIComponent(output)}`);
-  }
-  const failure = await response.json().catch(() => ({})) as { error?: string };
-  state.form = afterRun(state.form, response.status, failure.error ?? '');
+  submitting = true;
   render();
+  try {
+    const response = await fetch(existing
+      ? `/api/campaigns/${encodeURIComponent(current.key)}/${action}` : '/api/campaigns', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-stack-bench-token': state.csrfToken,
+        'x-stack-bench-control-secret': String(data.get('secret') ?? '') },
+      body: JSON.stringify(action === 'stop' ? { owner: data.get('owner') }
+        : existing ? {} : { planId: String(data.get('plan') ?? ''), outputName: output }),
+    });
+    if (response.ok) {
+      state.form = { ...state.form, secret: '', error: '' };
+      if (existing) return void load();
+      return go(`/c/${encodeURIComponent(output)}`);
+    }
+    const failure = await response.json().catch(() => ({})) as { error?: string };
+    state.form = afterRun(state.form, response.status,
+      failure.error || `Request failed (HTTP ${response.status}). Check campaign status before retrying.`);
+  } catch {
+    state.form = { ...state.form,
+      error: 'Could not confirm the request. Check campaign status before retrying.' };
+  } finally {
+    submitting = false;
+    render();
+  }
 }
 
 document.addEventListener('submit', event => {
@@ -336,6 +356,8 @@ document.addEventListener('input', event => {
 
 document.addEventListener('keydown', event => {
   if (route().view !== 'replay') return;
+  if (event.target instanceof Element
+    && event.target.closest('input, textarea, select, button, summary, [contenteditable]')) return;
   if (event.key === 'ArrowRight') stepTo(1);
   else if (event.key === 'ArrowLeft') stepTo(-1);
   else if (event.key === ' ') {

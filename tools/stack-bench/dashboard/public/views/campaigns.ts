@@ -28,10 +28,10 @@ function lane(sheet: CampaignSheet, stack: string, attempt: SheetAttempt): strin
   const warn = attempt.stalling;
   return `<div class="lane" data-key="${esc(`${sheet.key}:${attempt.id}`)}">`
     + `<a class="who" href="/c/${encodeURIComponent(sheet.key)}/a/${encodeURIComponent(attempt.id)}"`
-    + ` title="${esc(`${attempt.variant} · repetition ${attempt.repetition}`)}">${esc(stackLabel(stack))} · ${attempt.repetition}</a>`
+    + ` title="${esc(`${attempt.variant} · repetition ${attempt.repetition}`)}">${esc(stackLabel(stack))} · Rep ${attempt.repetition}</a>`
     + `<span class="big${sheet.provisional ? ' prov' : ''}" title="Checks passed / all selected checks">`
     + `${pct(attempt.completion?.rate == null ? null : 100 * attempt.completion.rate)}</span>`
-    + `<span class="phase" title="${esc(attempt.variant)}">${spend(attempt.spend)} · ${esc(attempt.variant)}</span>`
+    + `<span class="phase" title="${esc(attempt.variant)}">${spend(attempt.spend) + (attempt.spendPending ? ' (usage pending)' : '')} · ${esc(attempt.variant)}</span>`
     + `<span class="phase${warn ? ' warn' : ''}">${esc(phrase(attempt))}</span></div>`;
 }
 
@@ -43,7 +43,7 @@ function live(sheet: CampaignSheet): string {
   });
   if (!lanes.length) return '';
   return `<div class="live" data-key="${esc(sheet.key)}"><div class="live-head">`
-    + `<b>${esc(sheet.title)}</b></div>${lanes.join('')}</div>`;
+    + `<b><a href="/c/${encodeURIComponent(sheet.key)}">${esc(sheet.title)}</a></b></div>${lanes.join('')}</div>`;
 }
 
 function stackCell(campaign: OverviewEntry, stack: string, best: number | null): string {
@@ -84,13 +84,14 @@ export function campaignsPage({ campaigns, sheets, filter }: {
 }): string {
   const shown = campaigns.filter(campaign => matches(campaign, filter));
   const chips = FILTERS.map(entry =>
-    `<a class="chip${entry.id === filter ? ' on' : ''}" href="/?filter=${entry.id}">`
+    `<a class="chip${entry.id === filter ? ' on' : ''}"${entry.id === filter ? ' aria-current="page"' : ''} href="/?filter=${entry.id}">`
     + `${entry.label} ${campaigns.filter(campaign => matches(campaign, entry.id)).length}</a>`).join('');
   const body = shown.length ? shown.map(row).join('')
-    : `<tr><td colspan="7">no campaigns</td></tr>`;
-  return `<div class="page">${sheets.map(live).join('')}`
+    : `<tr><td colspan="7">No campaigns match this filter.</td></tr>`;
+  return `<div class="page"><div class="title"><h2>Campaigns</h2></div>${sheets.map(live).join('')}`
+    + '<p class="summary-note">Live rows show completion and spend for each running attempt. The table shows median weighted scores from usable completed results. Provisional scores still need qualification. A dash means no usable score yet.</p>'
     + `<div class="tablewrap"><div class="toolbar">${chips}</div><div class="wrap">`
-    + '<table class="runs"><thead><tr><th>Campaign</th><th>Shape</th><th>Status</th>'
+    + '<table class="runs"><thead><tr><th>Campaign</th><th>Scope</th><th>Status</th>'
     + STACK_ORDER.map(stack => `<th class="stack">${esc(stackLabel(stack))}</th>`).join('')
     + `<th class="when">Updated</th></tr></thead><tbody>${body}</tbody></table></div></div></div>`;
 }

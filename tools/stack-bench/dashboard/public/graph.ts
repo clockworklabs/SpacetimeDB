@@ -13,8 +13,8 @@ export interface GraphStack {
 
 const DOT: Record<string, string> = { passed: 'p', active: 'a', working: 'a', failed: 'f',
   blocked: 'b', locked: 'o' };
-const COLUMN = 260;
-const NODE_W = 200;
+const COLUMN = 280;
+const NODE_W = 220;
 const ROW = 30;
 
 interface Placed {
@@ -24,6 +24,7 @@ interface Placed {
 }
 
 export function graph(view: CampaignProgression, stacks: readonly GraphStack[]): string {
+  if (!view.nodes.length) return '<p class="chart-empty">No feature graph is available.</p>';
   const depths = view.depths;
   const width = 150 + Math.max(1, depths.length) * COLUMN - 40;
   const placed = new Map<string, Placed>();
@@ -42,7 +43,7 @@ export function graph(view: CampaignProgression, stacks: readonly GraphStack[]):
         y: top + 8 + row * ROW, index: view.nodes.indexOf(node) });
     }
     const height = rows * ROW + 16;
-    bands.push(`<text class="band" x="8" y="${top + 24}">${esc(questline.title)}</text>`);
+    bands.push(`<text class="band" x="8" y="${top + 24}">${esc(questline.title.length > 19 ? `${questline.title.slice(0, 18)}…` : questline.title)}<title>${esc(questline.title)}</title></text>`);
     top += height;
     bands.push(`<line class="sep" x1="0" y1="${top}" x2="${width}" y2="${top}"/>`);
   }
@@ -77,6 +78,14 @@ export function graph(view: CampaignProgression, stacks: readonly GraphStack[]):
   });
   const columns = depths.map((depth, index) =>
     `<text class="col" x="${150 + index * COLUMN}" y="14">depth ${depth}</text>`).join('');
-  return `<svg class="dag" viewBox="0 0 ${width} ${top + 10}" role="img">`
-    + `${bands.join('')}${columns}${edges.join('')}${nodes.join('')}</svg>`;
+  const order = stacks.map(entry => stackLabel(entry.stack)).join(', ');
+  const description = view.nodes.map((node, index) => `${node.title}: ${stacks.map(entry =>
+    `${stackLabel(entry.stack)} ${statusWord(entry.statuses[index] ?? 'locked')}`).join(', ')}`).join('. ');
+  const key = [['p', 'Passed'], ['a', 'Active'], ['f', 'Failed'], ['b', 'Blocked'], ['o', 'Locked']]
+    .map(([tone, label]) => `<span><i class="dot ${tone}" aria-hidden="true"></i>${label}</span>`).join('');
+  return `<div class="graph-key"><p>Feature dots, left to right: ${esc(order)}.</p>${key}</div>`
+    + `<div class="graph-scroll" role="region" aria-label="Feature dependency graph" tabindex="0">`
+    + `<svg class="dag" width="${width}" viewBox="0 0 ${width} ${top + 10}" role="img" aria-label="Feature dependencies and stack status">`
+    + `<title>Feature dependencies and stack status</title><desc>${esc(description)}</desc>`
+    + `${bands.join('')}${columns}${edges.join('')}${nodes.join('')}</svg></div>`;
 }

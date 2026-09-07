@@ -725,7 +725,6 @@ test('the overview stays a summary and the sheet stays one campaign at appliance
 
   const sheet = campaignSheet(resultsRoot, 'fixture-run-0', { controllerActive });
   assert.equal(sheet.mode, 'sequential');
-  assert.equal(sheet.facts.repairBudget, 3);
   assert.equal(sheet.facts.timeLimitMinutes, 240);
   assert.equal(sheet.stacks.length, 3);
   const stack = sheet.stacks[0];
@@ -854,7 +853,6 @@ test('the sheet reports dependency submodes and questlines in definition order',
   assert.equal(sheet.mode, 'dependency');
   assert.equal(sheet.facts.workSelection, 'progressive');
   assert.equal(sheet.facts.repairSelection, 'feature');
-  assert.equal(sheet.facts.repairBudget, 0);
   assert.equal(sheet.facts.guidance, attemptPlan.guidance);
   const stack = sheet.stacks.find(item => item.questlines !== null);
   assert.ok(stack?.questlines);
@@ -864,7 +862,7 @@ test('the sheet reports dependency submodes and questlines in definition order',
   assert.ok(questline);
   assert.ok(questline.nodes.length > 0);
   assert.ok(questline.nodes.every(node => typeof node.status === 'string'));
-  assert.equal(stack.repairs.budget, 0);
+  assert.equal(stack.attempts.find(attempt => attempt.id === stack.selectedAttemptId)?.repairs.budget, 0);
   assert.equal(stack.regressions, 0);
   const bytes = Buffer.byteLength(JSON.stringify(sheet));
   assert.ok(bytes < 60 * 1024, `dependency sheet is ${bytes} bytes`);
@@ -1218,6 +1216,13 @@ test('the client renders controls, evidence links, and every supported page', ()
   ];
 
   for (const [name, html] of pages) assert.ok(html.length > 100, name);
+  for (const [, html] of pages) assert.doesNotMatch(html, /preserveAspectRatio="none"/);
+  const comparison = campaignPage({ sheet: { ...dependency,
+    facts: { ...dependency.facts, repairLimits: { perFeature: 5 } } },
+    progression, view: 'grid', step: 0 });
+  assert.match(comparison, /5 per feature/);
+  assert.match(comparison, /aria-label="About Total spend"/);
+  assert.match(comparison, /aria-label="Stack comparison" tabindex="0"/);
   const screenshots = pages.find(([name]) => name === 'attempt screenshots')?.[1] ?? '';
   assert.match(screenshots, /<button type="button" data-shot="[^"]+"/);
   assert.match(screenshots, /<dialog class="lightbox">/);
