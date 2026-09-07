@@ -82,11 +82,11 @@ const score = table(
     indexes: [{
       accessor: 'idx',
       algorithm: 'btree',
-      columns: ['player_id', 'level'],
+      columns: ['playerId', 'level'],
     }],
   },
   {
-    player_id: t.u64(),
+    playerId: t.u64(),
     level: t.u32(),
   }
 );
@@ -118,7 +118,7 @@ public partial struct Player
 
 // Multi-column index (use new[] for attribute params — collection expressions invalid in attributes)
 [SpacetimeDB.Table(Accessor = "Score")]
-[SpacetimeDB.Index.BTree(Accessor = "idx", Columns = new[] { "PlayerId", "Level" })]
+[SpacetimeDB.Index.BTree(Accessor = "Idx", Columns = new[] { "PlayerId", "Level" })]
 public partial struct Score
 {
     public ulong PlayerId;

@@ -117,16 +117,16 @@ const player = table(
     id: t.u32(),
     name: t.string(),
     // Game state
-    position_x: t.f32(),
-    position_y: t.f32(),
+    positionX: t.f32(),
+    positionY: t.f32(),
     health: t.u32(),
     // Statistics (rarely accessed)
-    total_kills: t.u32(),
-    total_deaths: t.u32(),
-    play_time_seconds: t.u64(),
+    totalKills: t.u32(),
+    totalDeaths: t.u32(),
+    playTimeSeconds: t.u64(),
     // Settings (rarely changed)
-    audio_volume: t.f32(),
-    graphics_quality: t.u8(),
+    audioVolume: t.f32(),
+    graphicsQuality: t.u8(),
   }
 );
 ```
@@ -218,9 +218,9 @@ const player = table(
 const playerState = table(
   { name: 'player_state' },
   {
-    player_id: t.u32().unique(),
-    position_x: t.f32(),
-    position_y: t.f32(),
+    playerId: t.u32().unique(),
+    positionX: t.f32(),
+    positionY: t.f32(),
     health: t.u32(),
   }
 );
@@ -228,19 +228,19 @@ const playerState = table(
 const playerStats = table(
   { name: 'player_stats' },
   {
-    player_id: t.u32().unique(),
-    total_kills: t.u32(),
-    total_deaths: t.u32(),
-    play_time_seconds: t.u64(),
+    playerId: t.u32().unique(),
+    totalKills: t.u32(),
+    totalDeaths: t.u32(),
+    playTimeSeconds: t.u64(),
   }
 );
 
 const playerSettings = table(
   { name: 'player_settings' },
   {
-    player_id: t.u32().unique(),
-    audio_volume: t.f32(),
-    graphics_quality: t.u8(),
+    playerId: t.u32().unique(),
+    audioVolume: t.f32(),
+    graphicsQuality: t.u8(),
   }
 );
 ```
@@ -388,8 +388,8 @@ Use the smallest integer type that fits your data range:
 ```typescript
 // If you only need 0-255, use u8 instead of u64
 level: t.u8(),           // Not t.u64()
-player_count: t.u16(),   // Not t.u64()
-entity_id: t.u32(),      // Not t.u64()
+playerCount: t.u16(),    // Not t.u64()
+entityId: t.u32(),       // Not t.u64()
 ```
 
 </TabItem>

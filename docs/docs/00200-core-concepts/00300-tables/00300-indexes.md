@@ -217,7 +217,7 @@ const user = table(
     name: 'user',
     public: true,
     indexes: [
-      { accessor: 'idx_age', algorithm: 'btree', columns: ['age'] },
+      { accessor: 'idxAge', algorithm: 'btree', columns: ['age'] },
     ],
   },
   {
@@ -233,7 +233,7 @@ const user = table(
 
 ```csharp
 [SpacetimeDB.Table(Accessor = "User", Public = true)]
-[SpacetimeDB.Index.BTree(Accessor = "idx_age", Columns = new[] { "Age" })]
+[SpacetimeDB.Index.BTree(Accessor = "IdxAge", Columns = new[] { "Age" })]
 public partial struct User
 {
     [SpacetimeDB.PrimaryKey]
@@ -290,11 +290,11 @@ const score = table(
     name: 'score',
     public: true,
     indexes: [
-      { accessor: 'by_player_and_level', algorithm: 'btree', columns: ['player_id', 'level'] },
+      { accessor: 'byPlayerAndLevel', algorithm: 'btree', columns: ['playerId', 'level'] },
     ],
   },
   {
-    player_id: t.u32(),
+    playerId: t.u32(),
     level: t.u32(),
     points: t.i64(),
   }
@@ -306,7 +306,7 @@ const score = table(
 
 ```csharp
 [SpacetimeDB.Table(Accessor = "Score", Public = true)]
-[SpacetimeDB.Index.BTree(Accessor = "by_player_and_level", Columns = new[] { "PlayerId", "Level" })]
+[SpacetimeDB.Index.BTree(Accessor = "ByPlayerAndLevel", Columns = new[] { "PlayerId", "Level" })]
 public partial struct Score
 {
     public uint PlayerId;
@@ -513,12 +513,12 @@ For multi-column indexes, pass a tuple of values. You can specify exact values f
 import { Range } from 'spacetimedb/server';
 
 // Find all scores for player 123 (prefix match on first column)
-for (const score of ctx.db.score.by_player_and_level.filter(123)) {
+for (const score of ctx.db.score.byPlayerAndLevel.filter(123)) {
   console.log(`Level ${score.level}: ${score.points} points`);
 }
 
 // Find scores for player 123 at levels 1-10 (inclusive)
-for (const score of ctx.db.score.by_player_and_level.filter([
+for (const score of ctx.db.score.byPlayerAndLevel.filter([
   123,
   new Range({ tag: 'included', value: 1 }, { tag: 'included', value: 10 })
 ])) {
@@ -526,7 +526,7 @@ for (const score of ctx.db.score.by_player_and_level.filter([
 }
 
 // Find the exact score for player 123 at level 5
-for (const score of ctx.db.score.by_player_and_level.filter([123, 5])) {
+for (const score of ctx.db.score.byPlayerAndLevel.filter([123, 5])) {
   console.log(`Points: ${score.points}`);
 }
 ```
@@ -536,7 +536,7 @@ for (const score of ctx.db.score.by_player_and_level.filter([123, 5])) {
 
 ```csharp
 // Find all scores for player 123
-foreach (var score in ctx.Db.Score.by_player_and_level.Filter(123u))
+foreach (var score in ctx.Db.Score.ByPlayerAndLevel.Filter(123u))
 {
     Log.Info($"Level {score.Level}: {score.Points} points");
 }
