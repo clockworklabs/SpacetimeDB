@@ -2097,8 +2097,9 @@ pub(crate) mod tests {
         let _ = datastore.rollback_mut_tx(tx);
         let mut tx = begin_mut_tx(&datastore);
         insert(&datastore, &mut tx, table_id, &row)?;
+        // The rolled-back insert did not consume the first auto-inc value.
         #[rustfmt::skip]
-        assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(2, "Foo", 18)]);
+        assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
     }
 
@@ -2353,7 +2354,8 @@ pub(crate) mod tests {
         let _ = datastore.rollback_mut_tx(tx);
         let mut tx = begin_mut_tx(&datastore);
         assert_eq!(tx.pending_schema_changes(), []);
-        insert_assert_and_remove(&mut tx, &zero, &product![2])?;
+        // The auto-inc value generated before the rollback remains available.
+        insert_assert_and_remove(&mut tx, &zero, &one)?;
 
         // Drop the seq and commit this time around. In the next tx, we witness that there's no seq.
         datastore.drop_sequence_mut_tx(&mut tx, seq_id)?;
@@ -3467,10 +3469,12 @@ pub(crate) mod tests {
             "Unexpected delete entries after altering the table"
         );
 
+        // The rolled-back migration did not consume 7, so the committed migration uses it
+        // after the two initial committed rows with IDs 5 and 6.
         let inserted_rows = [
             product![5u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
             product![6u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
-            product![8u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
+            product![7u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
         ];
 
         let new_entry = tx_data
