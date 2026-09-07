@@ -271,7 +271,6 @@ export interface SheetStack {
   spendPending: boolean;
   completionRate: number | null;
   n: number;
-  climb: ClimbPoint[];
   attempts: SheetAttempt[];
   levels: SheetLevel[] | null;
   questlines: SheetQuestline[] | null;
@@ -301,7 +300,6 @@ export interface CampaignSheet {
 interface SheetAttemptView {
   inspected: InspectedAttempt;
   attempt: SheetAttempt;
-  series: ClimbPoint[];
 }
 
 function sheetFacts(plan: CompiledCampaignPlan): SheetFacts {
@@ -402,7 +400,6 @@ function sheetAttemptView(plan: CompiledCampaignPlan, state: CampaignAttemptStat
   const repairs = inspected.dependency ? dependencyRepairs(plan, inspected.dependency) : null;
   return {
     inspected,
-    series: progress.series,
     attempt: {
       id: inspected.id,
       repetition: inspected.repetition,
@@ -472,7 +469,6 @@ export function campaignSheet(resultsRoot: string, key: string,
         ? median(owned.flatMap(view => view.inspected.completion?.rate == null
           ? [] : [view.inspected.completion.rate])) : null,
       n: row?.n ?? 0,
-      climb: latest?.series ?? [],
       attempts: owned.map(view => view.attempt),
       levels: dependency ? null : sheetLevels(lead),
       questlines: lead?.dependency ? sheetQuestlines(lead.dependency) : null,

@@ -76,15 +76,6 @@ a { color: var(--n1); }
 .lane .big.prov { color: var(--yellow); }
 .lane .phase { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lane .phase.warn { color: var(--yellow); }
-.climb { display: block; width: 100%; max-width: 360px; height: 36px; margin-inline: auto; }
-.climb .area { fill: var(--green-10); }
-.climb .area.warn { fill: var(--yellow-10); }
-.climb .line { fill: none; stroke: var(--green); stroke-width: 1.6; stroke-linejoin: round; }
-.climb .line.warn { stroke: var(--yellow); }
-.climb .first { fill: var(--shade6); stroke: var(--n3); stroke-width: 1.4; }
-.climb .now { fill: var(--green); }
-.climb .now.warn { fill: var(--yellow); }
-.climb .grid { stroke: var(--shade4); stroke-width: 1; }
 
 /* campaigns table */
 .tablewrap { border: 1px solid var(--shade4); border-radius: 4px; background: var(--shade6); overflow: hidden; }
@@ -137,20 +128,11 @@ table.plans td.name { color: var(--n1); font-weight: 600; }
 .sheet .v i, .checks .group i { color: var(--n4); font-style: normal; margin-left: 6px; }
 .sheet .big { min-height: 64px; color: var(--n1); font: 600 30px/1 var(--sans); letter-spacing: -.02em; }
 .sheet .big.prov { color: var(--yellow); }
-.sheet .chart { min-height: 64px; padding: 10px 16px; }
-.sheet .chart .climb { height: 44px; }
-.sheet .phase { padding-block: 8px; font-size: 13px; overflow-wrap: anywhere; }
-.sheet .phase.warn { color: var(--yellow); }
-.sheet .reasons { display: grid; gap: 5px; width: 100%; padding: 8px 0; }
-.sheet .reasons div { display: flex; gap: 8px; min-width: 0; }
-.sheet .reasons a { color: var(--yellow); white-space: nowrap; }
-.sheet .reasons span { overflow-wrap: anywhere; }
 .sheet .q { flex-wrap: wrap; min-height: 36px; padding-block: 6px; }
 .sheet .q.k { text-transform: none; letter-spacing: 0; font: 12.5px var(--sans); color: var(--n3); }
 .sheet .q .pct { margin-left: auto; color: var(--n4); font: 11.5px var(--mono); font-variant-numeric: tabular-nums; }
 .sheet .q .pct.full { color: var(--green); }
 
-.sheet .links a { padding-block: 8px; color: var(--n2); font: 12px var(--mono); text-decoration: none; margin-right: 14px; }
 .sheet > .wide { grid-column: 1 / -1; display: block; padding: 8px 8px 4px; border-left: 0; }
 .sheet > .span3 { grid-column: 2 / -1; }
 .evhead { display: flex; flex-wrap: wrap; gap: 0; padding: 0; }
@@ -284,3 +266,9 @@ table.plans td.name { color: var(--n1); font-weight: 600; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 .section-heading h3 { margin: 0; }
 .section-heading nav { display: flex; gap: 6px; }
+
+.explore { position: relative; }
+.explore summary { cursor: pointer; color: var(--n3); font-size: 12px; padding: 6px 0; }
+.explore nav { position: absolute; right: 0; z-index: 2; padding: 10px; border: 1px solid var(--shade1); border-radius: 4px; background: var(--shade5); }
+table.attempt-list .run-status { min-width: 220px; max-width: 360px; padding-block: 10px; white-space: normal; overflow-wrap: anywhere; }
+.run-status summary { cursor: pointer; color: var(--yellow); }

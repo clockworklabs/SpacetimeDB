@@ -31,28 +31,6 @@ function stepPath(plots: readonly Plot[]): string {
     `${path} L${item.x} ${plots[index]!.y} L${item.x} ${item.y}`, `M${head.x} ${head.y}`);
 }
 
-export function climb(series: readonly ClimbPoint[], { warn = false, height = 36 }: {
-  warn?: boolean;
-  height?: number;
-} = {}): string {
-  if (!series.length) return '<span class="chart-empty">Awaiting first grade</span>';
-  const top = 4;
-  const bottom = height - 4;
-  const plots = plot(series, 8, 292, top, bottom);
-  const line = stepPath(plots);
-  const first = plots[0]!;
-  const last = plots.at(-1)!;
-  const tone = warn ? ' warn' : '';
-  const rings = plots.filter(item => item.point.unaided || item === first)
-    .map(item => `<circle class="first" cx="${item.x}" cy="${item.y}" r="3.2">${pointTitle(item.point)}</circle>`).join('');
-  return `<svg class="climb" viewBox="0 0 300 ${height}" role="img" aria-label="Weighted score by completed grade" preserveAspectRatio="xMidYMid meet"><title>Weighted score by completed grade. Each grade can cover a different scope.</title>`
-    + `<line class="grid" x1="0" y1="${top}" x2="300" y2="${top}"/>`
-    + `<line class="grid" x1="0" y1="${bottom}" x2="300" y2="${bottom}"/>`
-    + `<path class="area${tone}" d="M${first.x} ${bottom} ${line.slice(1)} L${last.x} ${bottom} Z"/>`
-    + `<path class="line${tone}" d="${line}"/>${rings}`
-    + `<circle class="now${tone}" cx="${last.x}" cy="${last.y}" r="3.2">${pointTitle(last.point)}</circle></svg>`;
-}
-
 // Full size: the same points with a band per depth or level, and a number at
 // the first, the best and the current grade.
 export function bigClimb(series: readonly ClimbPoint[], stage: (level: number) => string): string {

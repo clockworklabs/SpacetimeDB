@@ -735,7 +735,7 @@ test('the overview stays a summary and the sheet stays one campaign at appliance
   assert.deepEqual(stack.levels?.map(level => level.level), [1]);
   assert.equal(stack.questlines, null);
   assert.equal(stack.attempts.length, 3);
-  assert.ok(stack.climb.length >= 2);
+  assert.ok(stack.attempts.some(attempt => attempt.climb.length >= 2));
   const sheetBytes = Buffer.byteLength(JSON.stringify(sheet));
   assert.ok(sheetBytes < 60 * 1024, `campaign sheet is ${sheetBytes} bytes`);
 });

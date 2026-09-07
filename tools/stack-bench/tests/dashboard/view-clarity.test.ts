@@ -24,16 +24,20 @@ test('campaign separates aggregate scores from selected evidence and explains pe
     stacks: [{ stack: 'spacetime', selectedAttemptId: attempt.id, score: 82, points: null,
       unaided: null, continued: false, regressions: 0,
       timeSec: null, spend: attempt.spend, spendPending: true, completionRate: null, n: 1,
-      climb: [], attempts: [attempt], levels: null,
+      attempts: [attempt], levels: null,
       questlines: [{ id: 'catalog', title: 'Catalog', score: 20, nodes: [] }] }],
   };
   const page = campaignPage({ sheet, progression: null, view: 'grid', step: 0 });
-  const selected = page.slice(page.indexOf('<h3>Selected repetition</h3>'));
+  const selected = page.slice(page.indexOf('<h3>Runs</h3>'));
   assert.match(page, /82%/);
   assert.match(selected, /20%/);
   assert.match(selected, /2<i>\/ 10<\/i>/);
   assert.doesNotMatch(selected, /82%|9<i>\/ 10|Questline average/);
   assert.match(page, /Usable results/);
+  assert.doesNotMatch(page, /<h3>Selected repetition<\/h3>/);
+  assert.ok(page.indexOf('<h3>Results</h3>') < page.indexOf('<h3>Runs</h3>'));
+  assert.match(page, /<summary>More comparison metrics<\/summary>/);
+  assert.match(page, /<summary>Explore · grid<\/summary>/);
   assert.match(page, /<nav aria-label="Feature progress view">/);
   assert.doesNotMatch(page.slice(0, page.indexOf('<section class="feature-progress"')), /\?questlines=/);
   assert.match(page, /popovertarget="help-completion"/);

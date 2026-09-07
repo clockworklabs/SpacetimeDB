@@ -1,10 +1,8 @@
-// One campaign is one sheet: stacks across in fixed order, facts down, one
-// value per cell. The questline rows are the grid; Graph and Replay replace
-// them with a full-width cell drawn by the shared graph renderer.
+// Results compare stacks. Runs expose individual evidence. Feature views use
+// the same selected attempt per stack, separate from aggregate results.
 
 import type { CampaignProgression, CampaignSheet, ProgressionStep, SheetAttempt, SheetStack }
   from '../../dashboard-views.js';
-import { climb } from '../climb.js';
 import { DASH, duration, elapsed, esc, metricLabel, spend, num, pct, phrase, ratio, stackLabel, statusWord } from '../format.js';
 import { STACK_ORDER } from '../metrics.js';
 import { graph } from '../graph.js';
@@ -72,13 +70,12 @@ function facts(sheet: CampaignSheet): string {
   if (sheet.mixedScope) cells.push(['Scope', 'mixed', 'attempts do not share one test plan']);
   const continued = sheet.stacks.filter(stack => stack.continued).length;
   if (continued) cells.push(['Continued', String(continued), '']);
-  const primary = new Set(['Mode', 'Depth', 'Levels', 'Repair budget', 'Repetitions', 'Model']);
-  const render = (items: typeof cells): string => `<div class="facts">${items.map(([label, value, hover]) =>
+
+  const rendered = `<div class="facts">${cells.map(([label, value, hover]) =>
     `<div><span class="label">${esc(label)}</span><b title="${esc(hover || value)}"`
     + `${label === 'Qualification' && value !== 'qualified' ? ' class="warn"' : ''}>`
     + `${esc(value)}</b></div>`).join('')}</div>`;
-  return render(cells.filter(([label]) => primary.has(label)))
-    + `<details class="technical"><summary>Configuration and provenance</summary>${render(cells.filter(([label]) => !primary.has(label)))}</details>`;
+  return `<details class="technical"><summary>Configuration and provenance</summary>${rendered}</details>`;
 }
 
 function questlineRows(sheet: CampaignSheet, stacks: readonly SheetStack[]): string {
@@ -199,8 +196,12 @@ function board({ sheet, progression, view, step }: CampaignPageInput,
   } else content = replay(selectedProgression(progression, sheet), step);
   return '<section class="feature-progress" aria-labelledby="feature-progress-title">'
     + '<div class="section-heading"><h3 id="feature-progress-title">Feature progress</h3>'
-    + (sheet.mode === 'dependency' ? `<nav aria-label="Feature progress view">${chips}</nav>` : '')
-    + '</div><p class="summary-note">Feature status for the selected repetition of each stack shown above.</p>'
+    + (sheet.mode === 'dependency' ? `<details class="explore"><summary>Explore · ${esc(view)}</summary><nav aria-label="Feature progress view">${chips}</nav></details>` : '')
+    + '</div><p class="summary-note">Latest started repetition per stack: '
+    + stacks.map(stack => {
+      const attempt = latest(stack);
+      return attempt ? `<a href="/c/${encodeURIComponent(sheet.key)}/a/${encodeURIComponent(attempt.id)}">${esc(stackLabel(stack.stack))} · Rep ${attempt.repetition}</a>` : `${esc(stackLabel(stack.stack))} · not started`;
+    }).join(' · ') + '.</p>'
     + content + '</section>';
 }
 
@@ -213,15 +214,11 @@ export function campaignPage(input: CampaignPageInput): string {
     Completion: 'Median checks passed divided by all selected checks, including checks not yet reached.',
     'Weighted score': 'Score weighted by check points. Final comparison values appear when usable attempts finish.',
     Unaided: 'Score before repair, based on the recorded first-try evidence.',
-    Repairs: 'Completed repairs for the selected repetition. The denominator is the maximum allowance across selected features for one attempt; it is not a shared campaign pool.',
     Regressions: 'Median regression count across recorded repetitions. A regression is a previously passing check that failed after a later change.',
     'Usable results': 'Completed attempts with usable comparison evidence. A completed process alone does not guarantee a usable result.',
     Excluded: 'Attempts omitted from comparison because their evidence is invalid or incomplete. Their cost is still included.',
-    Elapsed: 'Wall time for the selected execution, separate from measured run duration.',
     Time: 'Median duration of usable completed attempts. Live attempt status appears below.',
     'Total spend': 'Includes excluded attempts. Unknown means usage evidence is incomplete, not zero cost. Costs use the pinned price snapshot.',
-    'Grade history': 'One selected attempt’s grade history, not an average across repetitions. Grade scopes can differ. Open an attempt for details.',
-    Attempt: 'The latest repetition that started. Its charts, feature progress, repairs, and evidence are shown here. All repetitions are listed below.',
   };
   const row = (label: string, render: (stack: SheetStack) => string): string =>
     `<div class="k">${metricLabel(label, help[label])}</div>${cell(render)}`;
@@ -238,61 +235,33 @@ export function campaignPage(input: CampaignPageInput): string {
       + row('Excluded', stack =>
         value(num(stack.attempts.filter(attempt => attempt.excluded).length)))
     : '';
-  const evidence = row('Evidence', stack => {
-    const attempt = latest(stack);
-    if (!attempt) return `<div class="links">${DASH}</div>`;
-    const base = `/c/${encodeURIComponent(sheet.key)}/a/${encodeURIComponent(attempt.id)}`;
-    return `<div class="links">${['screenshots', 'files', 'log'].map(tab =>
-      `<a href="${base}?tab=${tab}">${tab}</a>`).join('')}</div>`;
-  });
-  const issues = stacks.some(stack => stack.attempts.some(attempt => attempt.excluded))
-    ? row('Excluded because', stack => {
-      const excluded = stack.attempts.filter(attempt => attempt.excluded);
-      return excluded.length ? `<div class="reasons">${excluded.map(attempt => {
-        const href = `/c/${encodeURIComponent(sheet.key)}/a/${encodeURIComponent(attempt.id)}`;
-        return `<div><a href="${href}">rep ${attempt.repetition}</a>`
-          + `<span title="${esc(attempt.excluded)}">${esc(attempt.excluded)}</span></div>`;
-      }).join('')}</div>` : value(DASH);
-    }) : '';
   return `<div class="page"><div class="crumbs"><a href="/">Campaigns</a> / `
     + `<b>${esc(sheet.key)}</b></div>`
     + `<div class="title"><h2>${esc(sheet.title)}</h2></div>`
     + `<p class="summary-note">${esc(statusWord(sheet.status))}${sheet.provisional ? ' - Provisional results: qualification is incomplete.' : ''}</p>${facts(sheet)}`
-    + '<p class="summary-note">Stack summaries combine repetitions. Completion includes all selected checks. Weighted scores use usable completed results. A dash means no usable value yet.</p>'
+    + '<h3>Results</h3><p class="summary-note">Completion is the median across repetitions. Spend includes every attempt, including excluded runs.</p>'
     + `<div class="sheet-scroll" role="region" aria-label="Stack comparison" tabindex="0"><div class="sheet"><div class="h"></div>${heads}`
-    + row('Completion', stack => `<div class="big${sheet.provisional ? ' prov' : ''}" title="Median checks passed / all selected checks">`
-      + `${pct(stack.completionRate === null ? null : 100 * stack.completionRate)}</div>`)
+    + row('Completion', stack => `<div class="big${sheet.provisional ? ' prov' : ''}">${pct(stack.completionRate === null ? null : 100 * stack.completionRate)}</div>`)
     + row('Total spend', stack => value(spend(stack.spend) + (stack.spendPending ? ' (usage pending)' : '')))
-    + row('Weighted score', stack => `<div class="v${sheet.provisional ? ' prov' : ''}">`
-      + `${pct(stack.score)}</div>`)
+    + repetitions + '</div></div>'
+    + '<details class="technical"><summary>More comparison metrics</summary><p class="summary-note">Weighted scores and duration use usable completed results. A dash means no usable value yet.</p>'
+    + `<div class="sheet-scroll"><div class="sheet"><div class="h"></div>${heads}`
+    + row('Weighted score', stack => value(pct(stack.score)))
     + row('Unaided', stack => value(pct(stack.unaided)))
     + row('Regressions', stack => value(num(stack.regressions)))
-    + row('Time', stack => value(duration(stack.timeSec)))
-    + repetitions + issues + '</div></div>'
-    + '<h3>Selected repetition</h3><p class="summary-note">Progress and evidence below come from one repetition per stack. They are not averages. Open any attempt in the table to inspect another repetition.</p>'
-    + `<div class="sheet-scroll" role="region" aria-label="Selected repetition" tabindex="0"><div class="sheet"><div class="h"></div>${heads}`
-    + row('Attempt', stack => {
-      const attempt = latest(stack);
-      return `<div><span class="phase${attempt?.stalling ? ' warn' : ''}">`
-        + `${attempt ? esc(`Rep ${attempt.repetition} · ${phrase(attempt)}`) : DASH}</span></div>`;
-    })
-    + row('Repairs', stack => {
-      const attempt = latest(stack);
-      return value(attempt ? ratio(attempt.repairs.used, attempt.repairs.budget) : DASH);
-    })
-    + row('Elapsed', stack => {
-      const attempt = latest(stack);
-      return value(attempt && (attempt.status === 'running' || attempt.executionCompletedAt)
-        ? elapsed(attempt.executionStartedAt, attempt.executionCompletedAt) : DASH);
-    })
-    + row('Grade history', stack => `<div class="chart">${climb(stack.climb, { height: 44 })}</div>`)
-    + evidence + '</div></div>' + board(input, stacks)
-    + '<h3>Attempts</h3><div class="tablewrap"><div class="wrap"><table class="runs"><thead><tr><th>Stack</th><th>Variant</th><th>Repetition</th>'
-    + '<th>Completion</th><th>Spend</th><th>Status</th></tr></thead><tbody>'
-    + stacks.flatMap(stack => stack.attempts.map(attempt => '<tr>'
-      + `<td><a href="/c/${encodeURIComponent(sheet.key)}/a/${encodeURIComponent(attempt.id)}">${esc(stackLabel(stack.stack))}</a></td>`
-      + `<td>${esc(attempt.variant)}</td><td>${attempt.repetition}</td>`
-      + `<td>${attempt.completion ? ratio(attempt.completion.passed, attempt.completion.selected) : DASH}</td>`
-      + `<td>${spend(attempt.spend) + (attempt.spendPending ? ' (usage pending)' : '')}</td><td>${attempt.excluded ? 'Excluded' : esc(statusWord(attempt.status))}${attempt.status === 'running' ? `<br>${esc(phrase(attempt))}` : ''}</td></tr>`)).join('')
-    + '</tbody></table></div></div></div>';
+    + row('Time', stack => value(duration(stack.timeSec))) + '</div></div></details>'
+    + '<h3>Runs</h3><p class="summary-note">One row per attempt. Open a run for grades, screenshots, files, and logs.</p>'
+    + '<div class="tablewrap"><div class="wrap"><table class="runs attempt-list"><thead><tr><th>Run</th><th>Completion</th><th>Spend</th><th>Repairs</th><th>Elapsed</th><th>Status</th></tr></thead><tbody>'
+    + stacks.flatMap(stack => stack.attempts.map(attempt => {
+      const href = `/c/${encodeURIComponent(sheet.key)}/a/${encodeURIComponent(attempt.id)}`;
+      return `<tr><td><a href="${href}" title="${esc(attempt.variant)}">${esc(stackLabel(stack.stack))} · Rep ${attempt.repetition}</a></td>`
+        + `<td>${attempt.completion ? ratio(attempt.completion.passed, attempt.completion.selected) : DASH}</td>`
+        + `<td>${spend(attempt.spend)}${attempt.spendPending ? ' (pending)' : ''}</td>`
+        + `<td>${ratio(attempt.repairs.used, attempt.repairs.budget)}</td>`
+        + `<td>${attempt.status === 'running' || attempt.executionCompletedAt ? elapsed(attempt.executionStartedAt, attempt.executionCompletedAt) : DASH}</td>`
+        + `<td class="run-status">${attempt.excluded
+          ? `<details><summary>Excluded · show reason</summary><p>${esc(attempt.excluded)}</p></details>`
+          : esc(phrase(attempt))}</td></tr>`;
+    })).join('')
+    + '</tbody></table></div></div>' + board(input, stacks) + '</div>';
 }
