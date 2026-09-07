@@ -2103,6 +2103,36 @@ pub(crate) mod tests {
         Ok(())
     }
 
+    #[test]
+    fn sequence_occasionally_skips_values_to_simulate_reallocation() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let mut schema = basic_table_schema_with_indices(basic_indices(), basic_constraints());
+        schema.primary_key = Some(0.into());
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        let mut previous_value = 0;
+
+        // Determined experimentally;
+        // the fixed seed we use for tests first hits a simulated reallocation point
+        // somewhere between rows 8192 and 16384.
+        const MAX_ROWS: u32 = 16384;
+
+        for row_number in 0..MAX_ROWS {
+            let row = product![0_u32, format!("row_{row_number}"), 0_u32];
+            let (_, row_ref) = insert(&datastore, &mut tx, table_id, &row)?;
+            let value = row_ref.read_col::<u32>(0).unwrap();
+            if value != previous_value + 1 {
+                return Ok(());
+            }
+            previous_value = value;
+        }
+
+        panic!("did not simulate a sequence reallocation after inserting {MAX_ROWS} rows");
+    }
+
     fn assert_st_indices(tx: &MutTxId, include_age: bool) -> ResultTest<()> {
         let seq_start = FIRST_NON_SYSTEM_ID;
         #[rustfmt::skip]
