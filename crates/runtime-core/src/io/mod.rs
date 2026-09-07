@@ -1,7 +1,7 @@
 mod buf;
 pub use buf::AlignedBytes;
 #[cfg(feature = "alloc")]
-pub use buf::{ErasedBox, ErasedBoxPtr};
+pub use buf::ErasedBox;
 
 mod error;
 pub use error::ErrorWith;

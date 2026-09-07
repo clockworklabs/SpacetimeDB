@@ -1,7 +1,7 @@
 use alloc::{boxed::Box, vec::Vec};
 
 use crate::{
-    io::{ErasedBoxPtr, SECTOR_SIZE},
+    io::{ErasedBox, SECTOR_SIZE},
     sim::io::{
         executor::{Cqe, Executing, FsyncEffect, InFlightInner, Operation, ReadSector, WriteSector},
         fs::{self, Datasync},
@@ -35,7 +35,7 @@ pub enum LinkKind {
 }
 
 pub struct Sqe<T> {
-    pub(super) inner: SqeInner,
+    pub(crate) inner: SqeInner,
     pub(super) link: Option<LinkKind>,
     pub(super) user_data: Option<T>,
 }
@@ -55,11 +55,11 @@ impl<T> Sqe<T> {
         self
     }
 
-    pub fn write(fd: fs::File, buf: ErasedBoxPtr, offset: u64) -> Self {
+    pub fn write(fd: fs::File, buf: ErasedBox, offset: u64) -> Self {
         Write { fd, buf, offset }.into()
     }
 
-    pub fn read(fd: fs::File, buf: ErasedBoxPtr, offset: u64) -> Self {
+    pub fn read(fd: fs::File, buf: ErasedBox, offset: u64) -> Self {
         Read { fd, buf, offset }.into()
     }
 
@@ -96,6 +96,20 @@ impl<T> Sqe<T> {
     pub fn noop() -> Self {
         SqeInner::Noop.into()
     }
+
+    /// Extract the [ErasedBox] buffer if the [Sqe] carries one.
+    pub(crate) fn into_buf(self) -> Option<ErasedBox> {
+        match self.inner {
+            SqeInner::Write(Write { buf, .. }) | SqeInner::Read(Read { buf, .. }) => Some(buf),
+            SqeInner::Open { .. }
+            | SqeInner::Create { .. }
+            | SqeInner::Stat { .. }
+            | SqeInner::Fallocate { .. }
+            | SqeInner::Fsync { .. }
+            | SqeInner::Fdatasync { .. }
+            | SqeInner::Noop => None,
+        }
+    }
 }
 
 impl<T, U: Into<SqeInner>> From<U> for Sqe<T> {
@@ -123,12 +137,14 @@ pub enum SqeInner {
 impl SqeInner {
     pub(super) fn cancel<T>(self, user_data: Option<T>) -> Cqe<T> {
         match self {
-            SqeInner::Write(..) => Cqe::Write {
+            SqeInner::Write(Write { buf, .. }) => Cqe::Write {
                 result: Err(Error::Cancelled),
+                buf,
                 user_data,
             },
-            SqeInner::Read(..) => Cqe::Read {
+            SqeInner::Read(Read { buf, .. }) => Cqe::Read {
                 result: Err(Error::Cancelled),
+                buf,
                 user_data,
             },
             SqeInner::Open(..) => Cqe::Open {
@@ -355,14 +371,14 @@ impl From<Fdatasync> for SqeInner {
 
 pub struct Write {
     pub fd: fs::File,
-    pub buf: ErasedBoxPtr,
+    pub buf: ErasedBox,
     pub offset: u64,
 }
 
 pub struct Read {
     pub fd: fs::File,
-    pub buf: ErasedBoxPtr,
     pub offset: u64,
+    pub buf: ErasedBox,
 }
 
 pub struct Open {

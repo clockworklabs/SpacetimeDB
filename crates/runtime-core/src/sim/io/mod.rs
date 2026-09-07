@@ -63,51 +63,42 @@ impl SimulatorIO {
     pub fn tick(&self, rng: &Rng, faults: &mut impl FaultInjector<usize>) -> bool {
         let mut executor = self.inner.executor.lock();
         let mut pending = self.inner.pending.lock();
-        let mut buffers = self.inner.buffers.lock();
 
         let mut progress = executor.tick(rng, faults);
         for cqe in executor.completed() {
             let completion = pending.remove(cqe.user_data().unwrap());
             match cqe {
-                Cqe::Write { result, .. } => {
-                    let CompletionHandle::Write { tx, buf_key } = completion else {
+                Cqe::Write { result, buf, .. } => {
+                    let CompletionHandle::Write { tx } = completion else {
                         unreachable!("invalid cqe / completion pairing")
                     };
-                    let erased_buf = buffers.remove(buf_key);
                     let result = match result {
-                        Ok(written) if written == erased_buf.len() => Ok(erased_buf),
+                        Ok(written) if written == buf.len() => Ok(buf),
                         Ok(written) => Err(ErrorWith {
                             error: Error::ShortWrite {
-                                expected: erased_buf.len(),
+                                expected: buf.len(),
                                 written,
                             },
-                            with: erased_buf,
+                            with: buf,
                         }),
-                        Err(error) => Err(ErrorWith {
-                            error,
-                            with: erased_buf,
-                        }),
+                        Err(error) => Err(ErrorWith { error, with: buf }),
                     };
                     let _ = tx.send(result);
                 }
-                Cqe::Read { result, .. } => {
-                    let CompletionHandle::Read { tx, buf_key } = completion else {
+                Cqe::Read { result, buf, .. } => {
+                    let CompletionHandle::Read { tx } = completion else {
                         unreachable!("invalid cqe / completion pairing")
                     };
-                    let erased_buf = buffers.remove(buf_key);
                     let result = match result {
-                        Ok(read) if read == erased_buf.len() => Ok(erased_buf),
+                        Ok(read) if read == buf.len() => Ok(buf),
                         Ok(read) => Err(ErrorWith {
                             error: Error::UnexpectedEof {
-                                expected: erased_buf.len(),
+                                expected: buf.len(),
                                 read,
                             },
-                            with: erased_buf,
+                            with: buf,
                         }),
-                        Err(error) => Err(ErrorWith {
-                            error,
-                            with: erased_buf,
-                        }),
+                        Err(error) => Err(ErrorWith { error, with: buf }),
                     };
                     let _ = tx.send(result);
                 }
@@ -187,8 +178,7 @@ impl SimulatorIO {
     fn submit_with<B: AlignedBytes + 'static>(
         &self,
         sqe: Sqe<usize>,
-        buf: ErasedBox,
-        completion_handle: impl FnOnce(CompletionSender<ErasedBox, ErrorWith<Error, ErasedBox>>, usize) -> CompletionHandle,
+        completion_handle: impl FnOnce(CompletionSender<ErasedBox, ErrorWith<Error, ErasedBox>>) -> CompletionHandle,
     ) -> Completion<Result<B, ErrorWith<Error, B>>> {
         let (tx, rx) = oneshot::channel();
 
@@ -197,15 +187,20 @@ impl SimulatorIO {
         let pending_entry = pending.vacant_entry();
 
         match executor.submit([sqe.attach(pending_entry.key())]) {
-            Err(_sqe) => tx
-                .send(Err(ErrorWith {
+            Err(mut sqe) => {
+                let buf = sqe
+                    .next()
+                    .expect("submitted one sqe therefore one must be returned on overflow")
+                    .into_buf()
+                    .expect("sqe must have been buffer-carrying");
+                tx.send(Err(ErrorWith {
                     error: Error::SubmissionQueueOverflow,
                     with: buf,
                 }))
-                .unwrap_or_else(|_| unreachable!("rx is alive")),
+                .unwrap_or_else(|_| unreachable!("rx is alive"))
+            }
             Ok(()) => {
-                let buf_key = self.inner.buffers.lock().insert(buf);
-                pending_entry.insert(completion_handle(tx, buf_key));
+                pending_entry.insert(completion_handle(tx));
             }
         }
 
@@ -216,7 +211,6 @@ impl SimulatorIO {
 struct SimulatorInner {
     executor: spin::Mutex<Executor<usize>>,
     pending: spin::Mutex<Slab<CompletionHandle>>,
-    buffers: Arc<spin::Mutex<Slab<ErasedBox>>>,
 }
 
 impl Default for SimulatorInner {
@@ -224,7 +218,6 @@ impl Default for SimulatorInner {
         Self {
             executor: spin::Mutex::new(Executor::new(<_>::default())),
             pending: <_>::default(),
-            buffers: <_>::default(),
         }
     }
 }
@@ -289,11 +282,9 @@ type CompletionSender<T, E> = oneshot::Sender<Result<T, E>>;
 enum CompletionHandle {
     Write {
         tx: CompletionSender<ErasedBox, ErrorWith<Error, ErasedBox>>,
-        buf_key: usize,
     },
     Read {
         tx: CompletionSender<ErasedBox, ErrorWith<Error, ErasedBox>>,
-        buf_key: usize,
     },
     Open {
         tx: CompletionSender<fs::File, Error>,
@@ -339,10 +330,8 @@ impl SpacetimeIO for SimulatorIO {
         buf: B,
         offset: u64,
     ) -> Self::Completion<Result<B, ErrorWith<Self::Error, B>>> {
-        let erased_buf = ErasedBox::from_aligned(buf);
-        let buf_ptr = erased_buf.as_ptr();
-        self.submit_with(Sqe::write(fd, buf_ptr, offset), erased_buf, |tx, buf_key| {
-            CompletionHandle::Write { tx, buf_key }
+        self.submit_with(Sqe::write(fd, ErasedBox::from_aligned(buf), offset), |tx| {
+            CompletionHandle::Write { tx }
         })
     }
 
@@ -352,10 +341,8 @@ impl SpacetimeIO for SimulatorIO {
         buf: B,
         offset: u64,
     ) -> Self::Completion<Result<B, ErrorWith<Self::Error, B>>> {
-        let erased_buf = ErasedBox::from_aligned(buf);
-        let buf_ptr = erased_buf.as_ptr();
-        self.submit_with(Sqe::read(fd, buf_ptr, offset), erased_buf, |tx, buf_key| {
-            CompletionHandle::Read { tx, buf_key }
+        self.submit_with(Sqe::read(fd, ErasedBox::from_aligned(buf), offset), |tx| {
+            CompletionHandle::Read { tx }
         })
     }
 
@@ -462,6 +449,6 @@ mod tests {
         buf.clear();
         let buf = rt.run(|io| io.read_exact_at(fd, buf, 0)).unwrap();
 
-        assert!(buf.0.iter().all(|&b| b == 22));
+        assert!(buf.0.iter().all(|&b| b == 22),);
     }
 }

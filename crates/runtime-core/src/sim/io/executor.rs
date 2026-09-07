@@ -9,7 +9,7 @@ use core::{mem, num::NonZeroUsize, result::Result};
 use slab::Slab;
 
 use crate::{
-    io::{ErasedBoxPtr, Statx, SECTOR_SIZE},
+    io::{ErasedBox, Statx, SECTOR_SIZE},
     sim::{
         io::{fs, Error, Instant},
         Rng,
@@ -58,10 +58,12 @@ pub struct ReadSector {
 pub enum Cqe<T> {
     Write {
         result: Result<usize, Error>,
+        buf: ErasedBox,
         user_data: Option<T>,
     },
     Read {
         result: Result<usize, Error>,
+        buf: ErasedBox,
         user_data: Option<T>,
     },
     Open {
@@ -484,9 +486,10 @@ impl<UserData> Executor<UserData> {
         if self.executing.is_empty() {
             return false;
         }
-        if let Some(op) = self.executing.remove(rng.index(self.executing.len())) {
+        let index = rng.index(self.executing.len());
+        if let Some(op) = self.executing.remove(index) {
             if let Some(delay) = self.execute(op, faults) {
-                self.executing.push_back(delay);
+                self.executing.insert(index, delay);
             }
             true
         } else {
@@ -571,7 +574,7 @@ impl<UserData> Executor<UserData> {
             let InFlight {
                 inner:
                     InFlightInner::Write {
-                        sqe: sqe::Write { mut buf, .. },
+                        sqe: sqe::Write { buf, .. },
                         op_count,
                         results,
                     },
@@ -589,7 +592,7 @@ impl<UserData> Executor<UserData> {
                 None => Ok(bytes_written),
             };
             let is_success = result.is_ok();
-            self.complete(Cqe::Write { result, user_data });
+            self.complete(Cqe::Write { result, buf, user_data });
             self.schedule_linked(sqe, is_success, blocked);
         }
     }
@@ -627,7 +630,7 @@ impl<UserData> Executor<UserData> {
             let InFlight {
                 inner:
                     InFlightInner::Read {
-                        sqe: sqe::Read { mut buf, .. },
+                        sqe: sqe::Read { buf, .. },
                         op_count,
                         results,
                     },
@@ -645,7 +648,7 @@ impl<UserData> Executor<UserData> {
                 None => Ok(bytes_read),
             };
             let is_success = result.is_ok();
-            self.complete(Cqe::Read { result, user_data });
+            self.complete(Cqe::Read { result, buf, user_data });
             self.schedule_linked(sqe, is_success, blocked);
         }
     }

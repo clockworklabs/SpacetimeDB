@@ -66,6 +66,7 @@ mod boxed {
     use crate::io::AlignedBytes;
 
     /// A type-erased [AlignedBytes] heap allocation.
+    #[derive(Debug)]
     pub struct ErasedBox {
         ptr: NonNull<u8>,
         len: usize,
@@ -109,11 +110,8 @@ mod boxed {
             boxed
         }
 
-        pub fn as_ptr(&self) -> ErasedBoxPtr {
-            ErasedBoxPtr {
-                ptr: self.ptr.as_ptr(),
-                len: self.len,
-            }
+        pub fn as_mut_ptr(&self) -> *mut u8 {
+            self.ptr.as_ptr()
         }
 
         pub fn len(&self) -> usize {
@@ -123,26 +121,19 @@ mod boxed {
         pub fn is_empty(&self) -> bool {
             self.len == 0
         }
+
+        pub fn as_bytes(&self) -> &[u8] {
+            unsafe { core::slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
+        }
+
+        pub fn as_bytes_mut(&mut self) -> &mut [u8] {
+            unsafe { core::slice::from_raw_parts_mut(self.ptr.as_ptr(), self.len) }
+        }
     }
 
     impl Drop for ErasedBox {
         fn drop(&mut self) {
             unsafe { alloc::alloc::dealloc(self.ptr.as_ptr(), self.layout) }
-        }
-    }
-
-    pub struct ErasedBoxPtr {
-        ptr: *mut u8,
-        len: usize,
-    }
-
-    impl ErasedBoxPtr {
-        pub fn as_bytes(&mut self) -> &[u8] {
-            unsafe { core::slice::from_raw_parts(self.ptr, self.len) }
-        }
-
-        pub fn as_bytes_mut(&mut self) -> &mut [u8] {
-            unsafe { core::slice::from_raw_parts_mut(self.ptr, self.len) }
         }
     }
 
@@ -183,4 +174,4 @@ mod boxed {
     }
 }
 #[cfg(feature = "alloc")]
-pub use boxed::{ErasedBox, ErasedBoxPtr};
+pub use boxed::ErasedBox;
