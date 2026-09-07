@@ -191,7 +191,7 @@ impl SqeInner {
                         sqe: sqe_id,
                         inner: Operation::WriteSector(WriteSector {
                             page_offset: first_sector + page,
-                            buf_offset: *offset as usize + (page * SECTOR_SIZE),
+                            buf_offset: page * SECTOR_SIZE,
                         }),
                     })
                     .collect::<Vec<_>>();
@@ -215,7 +215,7 @@ impl SqeInner {
                         sqe: sqe_id,
                         inner: Operation::ReadSector(ReadSector {
                             page_offset: first_sector + page,
-                            buf_offset: *offset as usize + (page * SECTOR_SIZE),
+                            buf_offset: page * SECTOR_SIZE,
                         }),
                     })
                     .collect::<Vec<_>>();
