@@ -37,6 +37,8 @@ test('campaign separates aggregate scores from selected evidence and explains pe
   assert.doesNotMatch(page, /<h3>Selected repetition<\/h3>/);
   assert.ok(page.indexOf('<h3>Results</h3>') < page.indexOf('<h3>Runs</h3>'));
   assert.match(page, /<summary>More comparison metrics<\/summary>/);
+  assert.doesNotMatch(page, /<summary>Configuration and provenance<\/summary>/);
+  assert.doesNotMatch(page, /class="label">Qualification/);
   assert.match(page, /<summary>Explore · grid<\/summary>/);
   assert.match(page, /<nav aria-label="Feature progress view">/);
   assert.doesNotMatch(page.slice(0, page.indexOf('<section class="feature-progress"')), /\?questlines=/);
@@ -56,7 +58,7 @@ test('campaign separates aggregate scores from selected evidence and explains pe
     nodes: [{ id: 'item', title: 'Item', questline: 'catalog', depth: 1, dependencies: [] }],
     stacks: [],
   };
-  sheet.stacks = ['spacetime', 'postgres', 'mongodb'].map(stack => ({
+  sheet.stacks = ['spacetime', 'postgres', 'mongodb', 'custom-sql', 'custom-kv'].map(stack => ({
     ...sheet.stacks[0]!, stack, selectedAttemptId: `${stack}-2`,
   }));
   progression.stacks = sheet.stacks.flatMap(stack => [1, 2, 3].map(repetition => ({
@@ -66,14 +68,19 @@ test('campaign separates aggregate scores from selected evidence and explains pe
       score: repetition === 2 ? 100 : 99, repairs: repetition === 2 ? 0 : 77 }],
   })));
   const selectedTracks = selectedProgression(progression, sheet);
-  assert.equal(selectedTracks.stacks.length, 3);
+  const gridPage = campaignPage({ sheet, progression, view: 'grid', step: 0 });
+  const comparison = gridPage.split('<table class="sheet">')[1]!.split('</table>')[0]!;
+  assert.equal((comparison.split('</thead>')[0]!.match(/scope="col"/g) ?? []).length, 6);
+  assert.match(comparison, /custom-sql/);
+  assert.match(comparison, /custom-kv/);
+  assert.equal(selectedTracks.stacks.length, 5);
   assert.ok(selectedTracks.stacks.every(track => track.attemptId.endsWith('-2')));
-  assert.equal(replayTimeline(selectedTracks).length, 3);
+  assert.equal(replayTimeline(selectedTracks).length, 5);
   for (const view of ['graph', 'replay'] as const) {
     const html = campaignPage({ sheet, progression, view, step: 99 });
     assert.doesNotMatch(html, /class="d f"|99%|>77</);
-    assert.equal((html.match(/class="d p"/g) ?? []).length, 3);
-    if (view === 'replay') assert.match(html, /3<i>\/ 3<\/i>/);
+    assert.equal((html.match(/class="d p"/g) ?? []).length, 5);
+    if (view === 'replay') assert.match(html, /5<i>\/ 5<\/i>/);
   }
 
 });

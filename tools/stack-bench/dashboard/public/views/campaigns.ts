@@ -3,7 +3,6 @@
 import type { CampaignSheet, OverviewCampaign, OverviewEntry, SheetAttempt }
   from '../../dashboard-views.js';
 import { DASH, esc, pct, phrase, shape, since, spend, stackLabel, statusWord } from '../format.js';
-import { STACK_ORDER } from '../metrics.js';
 
 export type CampaignFilter = 'all' | 'attention' | 'completed' | 'ready';
 
@@ -36,11 +35,9 @@ function lane(sheet: CampaignSheet, stack: string, attempt: SheetAttempt): strin
 }
 
 function live(sheet: CampaignSheet): string {
-  const lanes = STACK_ORDER.flatMap(stack => {
-    const owner = sheet.stacks.find(entry => entry.stack === stack);
-    return owner?.attempts.filter(item => item.status === 'running')
-      .map(attempt => lane(sheet, stack, attempt)) ?? [];
-  });
+  const lanes = sheet.stacks.flatMap(owner => owner.attempts
+    .filter(item => item.status === 'running')
+    .map(attempt => lane(sheet, owner.stack, attempt)));
   if (!lanes.length) return '';
   return `<div class="live" data-key="${esc(sheet.key)}"><div class="live-head">`
     + `<b><a href="/c/${encodeURIComponent(sheet.key)}">${esc(sheet.title)}</a></b></div>${lanes.join('')}</div>`;
@@ -61,10 +58,10 @@ function tone(status: string): string {
   return 'idle';
 }
 
-function row(campaign: OverviewEntry): string {
+function row(campaign: OverviewEntry, stacks: readonly string[]): string {
   const summary = readable(campaign) ? campaign : null;
   const best = summary && summary.status === 'completed' && !summary.provisional
-    ? STACK_ORDER.reduce<number | null>((top, stack) => {
+    ? stacks.reduce<number | null>((top, stack) => {
       const score = summary.scores[stack] ?? null;
       return score !== null && (top === null || score > top) ? score : top;
     }, null) : null;
@@ -73,7 +70,7 @@ function row(campaign: OverviewEntry): string {
     + `<td class="shape">${summary
       ? esc(shape(summary.mode, summary.levels, summary.repetitions)) : DASH}</td>`
     + `<td><span class="state ${tone(campaign.status)}">${esc(statusWord(campaign.status))}</span></td>`
-    + STACK_ORDER.map(stack => stackCell(campaign, stack, best)).join('')
+    + stacks.map(stack => stackCell(campaign, stack, best)).join('')
     + `<td class="when">${summary ? esc(since(summary.updatedAt)) : DASH}</td></tr>`;
 }
 
@@ -82,16 +79,20 @@ export function campaignsPage({ campaigns, sheets, filter }: {
   sheets: readonly CampaignSheet[];
   filter: CampaignFilter;
 }): string {
+  const stacks = [...new Set([
+    ...campaigns.flatMap(campaign => readable(campaign) ? Object.keys(campaign.scores) : []),
+    ...sheets.flatMap(sheet => sheet.stacks.map(entry => entry.stack)),
+  ])];
   const shown = campaigns.filter(campaign => matches(campaign, filter));
   const chips = FILTERS.map(entry =>
     `<a class="chip${entry.id === filter ? ' on' : ''}"${entry.id === filter ? ' aria-current="page"' : ''} href="/?filter=${entry.id}">`
     + `${entry.label} ${campaigns.filter(campaign => matches(campaign, entry.id)).length}</a>`).join('');
-  const body = shown.length ? shown.map(row).join('')
-    : `<tr><td colspan="7">No campaigns match this filter.</td></tr>`;
+  const body = shown.length ? shown.map(campaign => row(campaign, stacks)).join('')
+    : `<tr><td colspan="${4 + stacks.length}">No campaigns match this filter.</td></tr>`;
   return `<div class="page"><div class="title"><h2>Campaigns</h2></div>${sheets.map(live).join('')}`
     + '<p class="summary-note">Live rows show completion and spend for each running attempt. The table shows median weighted scores from usable completed results. Provisional scores still need qualification. A dash means no usable score yet.</p>'
     + `<div class="tablewrap"><div class="toolbar">${chips}</div><div class="wrap">`
     + '<table class="runs"><thead><tr><th>Campaign</th><th>Scope</th><th>Status</th>'
-    + STACK_ORDER.map(stack => `<th class="stack">${esc(stackLabel(stack))}</th>`).join('')
+    + stacks.map(stack => `<th class="stack">${esc(stackLabel(stack))}</th>`).join('')
     + `<th class="when">Updated</th></tr></thead><tbody>${body}</tbody></table></div></div></div>`;
 }

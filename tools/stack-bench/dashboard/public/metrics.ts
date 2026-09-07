@@ -7,7 +7,6 @@ import type { CheckCompletion } from '../../src/evidence/check-completion.js';
 // Stalling and Excluded are defined here and nowhere else, so the server-rendered
 // sheet and the browser read the same numbers from the same evidence.
 
-export const STACK_ORDER = ['spacetime', 'postgres', 'mongodb'];
 const EXCLUDED_OUTCOMES = new Set(['harness_failure', 'inconclusive', 'ungraded', 'contaminated']);
 const STALL_GRADES = 3;
 const SILENCE_MINUTES = 10;
@@ -158,7 +157,6 @@ export function compareCampaign<Attempt extends MetricAttempt>(campaign: {
     } else entry.pending += 1;
   }
   const rows = [...byStack.values()]
-    .sort((left, right) => STACK_ORDER.indexOf(left.stack) - STACK_ORDER.indexOf(right.stack))
     .map(entry => {
       const pick = (key: 'first' | 'final' | 'repairs' | 'spend' | 'duration'): number[] =>
         entry.runs.map(run => run.metrics[key]).filter((value): value is number => value !== null);

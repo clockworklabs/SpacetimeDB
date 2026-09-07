@@ -112,29 +112,24 @@ table.plans td.name { color: var(--n1); font-weight: 600; }
 .err { color: var(--red); font: 12.5px var(--sans); align-self: center; }
 
 /* campaign sheet: stacks across, facts down */
-.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 1px; margin: 0 0 16px; background: var(--shade4); border: 1px solid var(--shade4); border-radius: 4px; overflow: hidden; }
-.facts div { align-content: start; display: grid; gap: 5px; min-width: 0; padding: 9px 12px; background: var(--shade6); }
+.facts { display: flex; flex-wrap: wrap; gap: 1px; margin: 0 0 16px; background: var(--shade4); border: 1px solid var(--shade4); border-radius: 4px; overflow: hidden; }
+.facts div { flex: 1 1 168px; align-content: start; display: grid; gap: 5px; min-width: 0; padding: 9px 12px; background: var(--shade6); }
 .facts b { color: var(--n1); font: 500 12.5px var(--mono); overflow-wrap: anywhere; }
-.facts b.warn { color: var(--yellow); }
-.sheet { min-width: 820px; display: grid; grid-template-columns: 168px repeat(3, minmax(0, 1fr)); border: 1px solid var(--shade4); border-radius: 4px; background: var(--shade6); }
-.sheet > div { min-width: 0; display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 16px; border-top: 1px solid var(--shade4); border-left: 1px solid var(--shade4); }
-.sheet > div:nth-child(-n+4) { border-top: 0; }
-.sheet > .k, .sheet > .h:first-child { border-left: 0; }
-.sheet .k { flex-wrap: nowrap; color: var(--n4); font: 500 11.7px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
-.sheet .k > span { min-width: 0; }
-.sheet .h { min-height: 48px; color: var(--n1); font-size: 15px; font-weight: 600; gap: 10px; }
+.sheet { width: 100%; border-collapse: collapse; background: var(--shade6); }
+.sheet th, .sheet td { min-width: 185px; padding: 10px 16px; text-align: left; vertical-align: middle; border: 1px solid var(--shade4); }
+.sheet th:first-child { min-width: 168px; width: 168px; }
+.sheet .k { color: var(--n4); font: 500 11.7px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.sheet .h { height: 48px; color: var(--n1); font-size: 15px; font-weight: 600; }
 .sheet .h a { text-decoration: none; }
 .sheet .v { color: var(--n1); font: 13px var(--mono); font-variant-numeric: tabular-nums; }
 .sheet .v i, .checks .group i { color: var(--n4); font-style: normal; margin-left: 6px; }
-.sheet .big { min-height: 64px; color: var(--n1); font: 600 30px/1 var(--sans); letter-spacing: -.02em; }
+.sheet .big { color: var(--n1); font: 600 30px/1 var(--sans); letter-spacing: -.02em; }
 .sheet .big.prov { color: var(--yellow); }
-.sheet .q { flex-wrap: wrap; min-height: 36px; padding-block: 6px; }
-.sheet .q.k { text-transform: none; letter-spacing: 0; font: 12.5px var(--sans); color: var(--n3); }
+.sheet .q { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 36px; padding-block: 6px; }
+.sheet .q.k { display: table-cell; text-transform: none; letter-spacing: 0; font: 12.5px var(--sans); color: var(--n3); }
 .sheet .q .pct { margin-left: auto; color: var(--n4); font: 11.5px var(--mono); font-variant-numeric: tabular-nums; }
 .sheet .q .pct.full { color: var(--green); }
 
-.sheet > .wide { grid-column: 1 / -1; display: block; padding: 8px 8px 4px; border-left: 0; }
-.sheet > .span3 { grid-column: 2 / -1; }
 .evhead { display: flex; flex-wrap: wrap; gap: 0; padding: 0; }
 .evhead .ev { display: grid; gap: 5px; padding: 8px 16px; border-left: 1px solid var(--shade4); min-height: 48px; min-width: 130px; }
 .evhead .ev:first-child { border-left: 0; }
@@ -232,7 +227,6 @@ table.plans td.name { color: var(--n1); font-weight: 600; }
 .graph-key p { flex-basis: 100%; margin: 0; }
 .technical { margin-bottom: 16px; }
 .technical > summary { cursor: pointer; padding: 8px 0; color: var(--n3); }
-.technical .facts { margin-top: 8px; }
 /* Secondary help stays out of the layout and above scrolling containers. */
 .metric-help { padding: 4px 0; border: 0; background: transparent; text-align: left; cursor: help; }
 .metric-help:hover, .metric-help:focus-visible { color: var(--n1); }
@@ -256,7 +250,7 @@ table.plans td.name { color: var(--n1); font-weight: 600; }
   .sheet-scroll::before { content: 'Scroll horizontally to compare stacks'; display: block; padding: 6px 0; color: var(--n4); font-size: 12px; }
 }
 @media (max-width: 420px) {
-  .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .facts div { flex-basis: calc(50% - 1px); }
   .page { padding-inline: 12px; }
   .secret { flex-wrap: wrap; }
   .secret input { max-width: 100%; }

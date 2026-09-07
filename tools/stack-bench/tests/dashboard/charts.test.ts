@@ -17,3 +17,40 @@ test('an empty feature graph states that no graph is available', () => {
   assert.match(graph({ key: 'empty', depths: [], questlines: [], nodes: [], stacks: [] }, []),
     /No feature graph is available/);
 });
+
+for (const count of [1, 4, 6]) {
+  test(`feature graph fits all ${count} stack markers without overlapping labels or columns`, () => {
+    const html = graph({
+      key: 'dynamic-stacks', depths: [1, 2], stacks: [],
+      questlines: [{ id: 'shop', title: 'Shop', nodes: ['catalog', 'cart'] }],
+      nodes: [
+        { id: 'catalog', title: 'Product catalog', questline: 'shop', depth: 1, dependencies: [] },
+        { id: 'cart', title: 'Shopping cart', questline: 'shop', depth: 2, dependencies: ['catalog'] },
+      ],
+    }, Array.from({ length: count }, (_, index) => ({ stack: `stack-${index}`, statuses: ['passed', 'active'] })));
+    const groups = [...html.matchAll(/<g class="n">([\s\S]*?)<\/g>/g)];
+    assert.equal(groups.length, 2);
+    let previousRight = 0;
+    for (const group of groups) {
+      const rect = /<rect x="([\d.]+)" y="[\d.]+" width="([\d.]+)"/.exec(group[1]!);
+      assert.ok(rect);
+      const left = Number(rect[1]);
+      const right = left + Number(rect[2]);
+      assert.ok(left > previousRight, 'depth columns must not overlap');
+      const markers = [...group[1]!.matchAll(/<circle[^>]*cx="([\d.]+)"[^>]*r="([\d.]+)"/g)];
+      assert.equal(markers.length, count);
+      let previousMarkerRight = left + 170; // Space reserved for the truncated feature label.
+      for (const marker of markers) {
+        const center = Number(marker[1]);
+        const radius = Number(marker[2]);
+        assert.ok(center - radius > previousMarkerRight, 'markers must clear labels and preceding markers');
+        assert.ok(center + radius < right, 'markers must stay inside the feature node');
+        previousMarkerRight = center + radius;
+      }
+      previousRight = right;
+    }
+    const canvas = /viewBox="0 0 ([\d.]+)/.exec(html);
+    assert.ok(canvas && Number(canvas[1]) > previousRight, 'canvas must contain the final node');
+    for (let index = 0; index < count; index += 1) assert.match(html, new RegExp(`stack-${index}`));
+  });
+}

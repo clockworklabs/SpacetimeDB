@@ -13,8 +13,8 @@ export interface GraphStack {
 
 const DOT: Record<string, string> = { passed: 'p', active: 'a', working: 'a', failed: 'f',
   blocked: 'b', locked: 'o' };
-const COLUMN = 280;
-const NODE_W = 220;
+const DOT_START = 180;
+const DOT_SPACING = 14;
 const ROW = 30;
 
 interface Placed {
@@ -26,7 +26,9 @@ interface Placed {
 export function graph(view: CampaignProgression, stacks: readonly GraphStack[]): string {
   if (!view.nodes.length) return '<p class="chart-empty">No feature graph is available.</p>';
   const depths = view.depths;
-  const width = 150 + Math.max(1, depths.length) * COLUMN - 40;
+  const nodeWidth = DOT_START + Math.max(1, stacks.length) * DOT_SPACING;
+  const columnWidth = nodeWidth + 60;
+  const width = 150 + Math.max(1, depths.length) * columnWidth - 40;
   const placed = new Map<string, Placed>();
   const bands: string[] = [];
   let top = 20;
@@ -39,7 +41,7 @@ export function graph(view: CampaignProgression, stacks: readonly GraphStack[]):
       const row = used.get(node.depth) ?? 0;
       used.set(node.depth, row + 1);
       rows = Math.max(rows, row + 1);
-      placed.set(node.id, { x: 150 + Math.max(0, depths.indexOf(node.depth)) * COLUMN,
+      placed.set(node.id, { x: 150 + Math.max(0, depths.indexOf(node.depth)) * columnWidth,
         y: top + 8 + row * ROW, index: view.nodes.indexOf(node) });
     }
     const height = rows * ROW + 16;
@@ -58,8 +60,8 @@ export function graph(view: CampaignProgression, stacks: readonly GraphStack[]):
       const source = placed.get(id);
       if (!source) return [];
       const cut = failed(source.index) || blocked(target.index);
-      return [`<path class="e${cut ? ' cut' : ''}" d="M${source.x + NODE_W} ${source.y + 12}`
-        + ` C ${source.x + NODE_W + 40} ${source.y + 12}, ${target.x - 40} ${target.y + 12},`
+      return [`<path class="e${cut ? ' cut' : ''}" d="M${source.x + nodeWidth} ${source.y + 12}`
+        + ` C ${source.x + nodeWidth + 40} ${source.y + 12}, ${target.x - 40} ${target.y + 12},`
         + ` ${target.x} ${target.y + 12}"/>`];
     });
   });
@@ -68,16 +70,16 @@ export function graph(view: CampaignProgression, stacks: readonly GraphStack[]):
     if (!at) return '';
     const dots = stacks.map((entry, column) =>
       `<circle class="d ${DOT[entry.statuses[at.index] ?? 'locked'] ?? 'o'}" `
-      + `cx="${at.x + NODE_W - 40 + column * 14}" cy="${at.y + 12}" r="4"/>`).join('');
+      + `cx="${at.x + DOT_START + column * DOT_SPACING}" cy="${at.y + 12}" r="4"/>`).join('');
     const hover = stacks.map(entry =>
       `${stackLabel(entry.stack)} ${statusWord(entry.statuses[at.index] ?? 'locked')}`).join(' · ');
     return `<g class="n"><title>${esc(`${node.title} · ${hover}`)}</title>`
-      + `<rect x="${at.x}" y="${at.y}" width="${NODE_W}" height="24" rx="4"/>`
+      + `<rect x="${at.x}" y="${at.y}" width="${nodeWidth}" height="24" rx="4"/>`
       + `<text x="${at.x + 9}" y="${at.y + 16}">${esc(node.title.length > 22
         ? `${node.title.slice(0, 21)}…` : node.title)}</text>${dots}</g>`;
   });
   const columns = depths.map((depth, index) =>
-    `<text class="col" x="${150 + index * COLUMN}" y="14">depth ${depth}</text>`).join('');
+    `<text class="col" x="${150 + index * columnWidth}" y="14">depth ${depth}</text>`).join('');
   const order = stacks.map(entry => stackLabel(entry.stack)).join(', ');
   const description = view.nodes.map((node, index) => `${node.title}: ${stacks.map(entry =>
     `${stackLabel(entry.stack)} ${statusWord(entry.statuses[index] ?? 'locked')}`).join(', ')}`).join('. ');

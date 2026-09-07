@@ -4,7 +4,6 @@
 import type { CampaignProgression, CampaignSheet, ProgressionStep, SheetAttempt, SheetStack }
   from '../../dashboard-views.js';
 import { DASH, duration, elapsed, esc, metricLabel, spend, num, pct, phrase, ratio, stackLabel, statusWord } from '../format.js';
-import { STACK_ORDER } from '../metrics.js';
 import { graph } from '../graph.js';
 
 export type QuestlineView = 'grid' | 'graph' | 'replay';
@@ -27,10 +26,6 @@ const DOT: Record<string, string> = { passed: 'p', active: 'a', working: 'a', fa
 
 function short(value: string | null): string {
   return value ? value.slice(0, 12) : DASH;
-}
-
-function ordered(sheet: CampaignSheet): SheetStack[] {
-  return STACK_ORDER.flatMap(stack => sheet.stacks.filter(entry => entry.stack === stack));
 }
 
 function latest(stack: SheetStack): SheetAttempt | null {
@@ -65,17 +60,14 @@ function facts(sheet: CampaignSheet): string {
     ['Time limit', `${fact.timeLimitMinutes} min`, ''],
     ['Spend limit', fact.spendLimitUsd === null ? DASH
       : `$${fact.spendLimitUsd} per attempt`, ''],
-    ['Controller', short(fact.controllerImage), ''], ['Plan', short(fact.planSha256), ''],
-    ['Qualification', fact.grading, fact.gradingReasons.join(' · ')]);
+    ['Controller', short(fact.controllerImage), ''], ['Plan', short(fact.planSha256), '']);
   if (sheet.mixedScope) cells.push(['Scope', 'mixed', 'attempts do not share one test plan']);
   const continued = sheet.stacks.filter(stack => stack.continued).length;
   if (continued) cells.push(['Continued', String(continued), '']);
 
-  const rendered = `<div class="facts">${cells.map(([label, value, hover]) =>
-    `<div><span class="label">${esc(label)}</span><b title="${esc(hover || value)}"`
-    + `${label === 'Qualification' && value !== 'qualified' ? ' class="warn"' : ''}>`
+  return `<div class="facts">${cells.map(([label, value, hover]) =>
+    `<div><span class="label">${esc(label)}</span><b title="${esc(hover || value)}">`
     + `${esc(value)}</b></div>`).join('')}</div>`;
-  return `<details class="technical"><summary>Configuration and provenance</summary>${rendered}</details>`;
 }
 
 function questlineRows(sheet: CampaignSheet, stacks: readonly SheetStack[]): string {
@@ -86,13 +78,13 @@ function questlineRows(sheet: CampaignSheet, stacks: readonly SheetStack[]): str
       const dots = (owned?.nodes ?? []).map(node =>
         `<i class="dot ${DOT[node.status] ?? 'o'}" title="${esc(`${node.id}: ${statusWord(node.status)}`)}"></i>`).join('');
       const score = owned?.score ?? null;
-      return `<div class="q">${dots}<span class="pct${score === 100 ? ' full' : ''}">`
-        + `${pct(score)}</span></div>`;
+      return `<td><div class="q">${dots}<span class="pct${score === 100 ? ' full' : ''}">`
+        + `${pct(score)}</span></div></td>`;
     }).join('');
-    return `<div class="q k">${esc(questline.title)}</div>${cells}`;
+    return `<tr><th scope="row" class="q k">${esc(questline.title)}</th>${cells}</tr>`;
   }).join('');
   if (sheet.mode !== 'dependency') return '';
-  return rows || '<div class="wide summary-note">Feature progress appears after the first recorded grade.</div>';
+  return rows || `<tr><td colspan="${stacks.length + 1}" class="summary-note">Feature progress appears after the first recorded grade.</td></tr>`;
 }
 
 function levelRows(stacks: readonly SheetStack[]): string {
@@ -101,21 +93,20 @@ function levelRows(stacks: readonly SheetStack[]): string {
     const cells = stacks.map(stack => {
       const owned = stack.levels?.find(entry => entry.level === level.level) ?? null;
       const points = kind === 'unaided' ? owned?.unaided ?? null : owned?.score ?? null;
-      return `<div class="q"><span class="v">${points
-        ? ratio(points.score, points.max) : DASH}</span></div>`;
+      return `<td><div class="q"><span class="v">${points
+        ? ratio(points.score, points.max) : DASH}</span></div></td>`;
     }).join('');
-    return `<div class="q k">L${level.level} ${kind}</div>${cells}`;
+    return `<tr><th scope="row" class="q k">L${level.level} ${kind}</th>${cells}</tr>`;
   }).join('')).join('');
 }
 
 export function selectedProgression(progression: CampaignProgression, sheet: CampaignSheet): CampaignProgression {
-  return { ...progression, stacks: progression.stacks.filter(track =>
-    sheet.stacks.some(stack => stack.stack === track.stack && stack.selectedAttemptId === track.attemptId)) };
+  return { ...progression, stacks: sheet.stacks.flatMap(stack => progression.stacks.filter(track =>
+    stack.stack === track.stack && stack.selectedAttemptId === track.attemptId)) };
 }
 
 export function replayTimeline(progression: CampaignProgression): ReplayEvent[] {
-  const tracks = STACK_ORDER.flatMap(stack =>
-    progression.stacks.filter(track => track.stack === stack));
+  const tracks = progression.stacks;
   const depth = Math.max(0, ...tracks.map(track => track.steps.length));
   const events: ReplayEvent[] = [];
   for (let ordinal = 0; ordinal < depth; ordinal += 1) {
@@ -152,28 +143,25 @@ function replay(progression: CampaignProgression, cursor: number): string {
   // Drawn as one SVG per stack: the dashboard's policy allows no inline style,
   // and a marker's position is geometry, not decoration.
   const at = (index: number): number => 20 + 960 * index / span;
-  const rows = STACK_ORDER.flatMap(stack => progression.stacks
-    .filter(track => track.stack === stack)
-    .map(track => {
+  const rows = progression.stacks.map(track => {
       const marks = events.map((event, index) => event.stack !== track.stack ? '' :
         `<rect class="st ${marker(event.step, failedAt(event.step))}`
         + `${index > cursor ? ' dim' : ''}${index === cursor ? ' on' : ''}" `
         + `x="${at(index).toFixed(1)}" y="9" width="10" height="10" rx="2"/>`).join('');
-      return `<div class="k">${esc(stackLabel(track.stack))}</div><div class="replay span3">`
+      return `<tr><th scope="row" class="k">${esc(stackLabel(track.stack))}</th><td class="replay">`
         + '<svg class="strip" viewBox="0 0 1000 28">'
         + `<line class="cur" x1="${at(cursor).toFixed(1)}" y1="2" `
-        + `x2="${at(cursor).toFixed(1)}" y2="26"/>${marks}</svg></div>`;
-    })).join('');
-  const snapshot = STACK_ORDER.flatMap(stack => progression.stacks
-    .filter(track => track.stack === stack).map(track => {
+        + `x2="${at(cursor).toFixed(1)}" y2="26"/>${marks}</svg></td></tr>`;
+    }).join('');
+  const snapshot = progression.stacks.map(track => {
       const step = events.filter((event, index) =>
         event.stack === track.stack && index <= cursor).at(-1)?.step ?? null;
       return { stack: track.stack,
         statuses: step?.statuses ?? progression.nodes.map(() => 'locked') };
-    }));
+    });
   return `<div class="evhead">${head}</div>`
     + graph(progression, snapshot)
-    + `<div class="sheet-scroll"><div class="sheet">${rows}</div></div>`;
+    + `<div class="sheet-scroll"><table class="sheet"><tbody>${rows}</tbody></table></div>`;
 }
 
 function board({ sheet, progression, view, step }: CampaignPageInput,
@@ -181,17 +169,15 @@ function board({ sheet, progression, view, step }: CampaignPageInput,
   const chips = (['grid', 'graph', 'replay'] as const).map(entry =>
     `<a class="chip sm${entry === view ? ' on' : ''}"${entry === view ? ' aria-current="page"' : ''} href="?questlines=${entry}">`
     + `${entry[0]!.toUpperCase()}${entry.slice(1)}</a>`).join('');
-  const heading = stacks.map(stack => `<div class="h">${esc(stackLabel(stack.stack))}</div>`).join('');
-  const grid = (rows: string): string => `<div class="sheet-scroll" role="region" aria-label="Feature progress grid" tabindex="0"><div class="sheet"><div class="h">Feature</div>${heading}${rows}</div></div>`;
+  const heading = stacks.map(stack => `<th scope="col" class="h">${esc(stackLabel(stack.stack))}</th>`).join('');
+  const grid = (rows: string): string => `<div class="sheet-scroll" role="region" aria-label="Feature progress grid" tabindex="0"><table class="sheet"><thead><tr><th scope="col" class="h">Feature</th>${heading}</tr></thead><tbody>${rows}</tbody></table></div>`;
   let content: string;
   if (sheet.mode !== 'dependency') content = grid(levelRows(stacks));
   else if (view === 'grid' || !progression) content = grid(questlineRows(sheet, stacks));
   else if (view === 'graph') {
     const selected = selectedProgression(progression, sheet);
-    const snapshot = STACK_ORDER.flatMap(stack => selected.stacks
-      .filter(track => track.stack === stack)
-      .map(track => ({ stack: track.stack,
-        statuses: track.steps.at(-1)?.statuses ?? selected.nodes.map(() => 'locked') })));
+    const snapshot = selected.stacks.map(track => ({ stack: track.stack,
+        statuses: track.steps.at(-1)?.statuses ?? selected.nodes.map(() => 'locked') }));
     content = graph(selected, snapshot);
   } else content = replay(selectedProgression(progression, sheet), step);
   return '<section class="feature-progress" aria-labelledby="feature-progress-title">'
@@ -207,9 +193,9 @@ function board({ sheet, progression, view, step }: CampaignPageInput,
 
 export function campaignPage(input: CampaignPageInput): string {
   const sheet = input.sheet;
-  const stacks = ordered(sheet);
+  const stacks = sheet.stacks;
   const cell = (render: (stack: SheetStack) => string): string =>
-    stacks.map(stack => render(stack)).join('');
+    stacks.map(stack => `<td>${render(stack)}</td>`).join('');
   const help: Record<string, string> = {
     Completion: 'Median checks passed divided by all selected checks, including checks not yet reached.',
     'Weighted score': 'Score weighted by check points. Final comparison values appear when usable attempts finish.',
@@ -221,14 +207,14 @@ export function campaignPage(input: CampaignPageInput): string {
     'Total spend': 'Includes excluded attempts. Unknown means usage evidence is incomplete, not zero cost. Costs use the pinned price snapshot.',
   };
   const row = (label: string, render: (stack: SheetStack) => string): string =>
-    `<div class="k">${metricLabel(label, help[label])}</div>${cell(render)}`;
+    `<tr><th scope="row" class="k">${metricLabel(label, help[label])}</th>${cell(render)}</tr>`;
   const value = (text: string): string => `<div class="v">${text}</div>`;
   const heads = stacks.map(stack => {
     const attempt = latest(stack);
     const label = esc(stackLabel(stack.stack));
-    return `<div class="h">${attempt
+    return `<th scope="col" class="h">${attempt
       ? `<a href="/c/${encodeURIComponent(sheet.key)}/a/${encodeURIComponent(attempt.id)}">`
-        + `${label}</a>` : label}</div>`;
+        + `${label}</a>` : label}</th>`;
   }).join('');
   const repetitions = sheet.repetitions > 1
     ? row('Usable results', stack => value(ratio(stack.n, stack.attempts.length)))
@@ -238,18 +224,18 @@ export function campaignPage(input: CampaignPageInput): string {
   return `<div class="page"><div class="crumbs"><a href="/">Campaigns</a> / `
     + `<b>${esc(sheet.key)}</b></div>`
     + `<div class="title"><h2>${esc(sheet.title)}</h2></div>`
-    + `<p class="summary-note">${esc(statusWord(sheet.status))}${sheet.provisional ? ' - Provisional results: qualification is incomplete.' : ''}</p>${facts(sheet)}`
+    + `<p class="summary-note" title="${esc([sheet.facts.grading, ...sheet.facts.gradingReasons].join(' · '))}">${esc(statusWord(sheet.status))}${sheet.provisional ? ' - Provisional results: qualification is incomplete.' : ''}</p>${facts(sheet)}`
     + '<h3>Results</h3><p class="summary-note">Completion is the median across repetitions. Spend includes every attempt, including excluded runs.</p>'
-    + `<div class="sheet-scroll" role="region" aria-label="Stack comparison" tabindex="0"><div class="sheet"><div class="h"></div>${heads}`
+    + `<div class="sheet-scroll" role="region" aria-label="Stack comparison" tabindex="0"><table class="sheet"><thead><tr><th scope="col" class="h">Metric</th>${heads}</tr></thead><tbody>`
     + row('Completion', stack => `<div class="big${sheet.provisional ? ' prov' : ''}">${pct(stack.completionRate === null ? null : 100 * stack.completionRate)}</div>`)
     + row('Total spend', stack => value(spend(stack.spend) + (stack.spendPending ? ' (usage pending)' : '')))
-    + repetitions + '</div></div>'
+    + repetitions + '</tbody></table></div>'
     + '<details class="technical"><summary>More comparison metrics</summary><p class="summary-note">Weighted scores and duration use usable completed results. A dash means no usable value yet.</p>'
-    + `<div class="sheet-scroll"><div class="sheet"><div class="h"></div>${heads}`
+    + `<div class="sheet-scroll"><table class="sheet"><thead><tr><th scope="col" class="h">Metric</th>${heads}</tr></thead><tbody>`
     + row('Weighted score', stack => value(pct(stack.score)))
     + row('Unaided', stack => value(pct(stack.unaided)))
     + row('Regressions', stack => value(num(stack.regressions)))
-    + row('Time', stack => value(duration(stack.timeSec))) + '</div></div></details>'
+    + row('Time', stack => value(duration(stack.timeSec))) + '</tbody></table></div></details>'
     + '<h3>Runs</h3><p class="summary-note">One row per attempt. Open a run for grades, screenshots, files, and logs.</p>'
     + '<div class="tablewrap"><div class="wrap"><table class="runs attempt-list"><thead><tr><th>Run</th><th>Completion</th><th>Spend</th><th>Repairs</th><th>Elapsed</th><th>Status</th></tr></thead><tbody>'
     + stacks.flatMap(stack => stack.attempts.map(attempt => {
