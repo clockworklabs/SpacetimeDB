@@ -174,8 +174,9 @@ function replay(progression: CampaignProgression, cursor: number): string {
       return { stack: track.stack,
         statuses: step?.statuses ?? progression.nodes.map(() => 'locked') };
     }));
-  return `<div class="wide evhead">${head}</div>`
-    + `<div class="wide">${graph(progression, snapshot)}</div>${rows}`;
+  return `<div class="evhead">${head}</div>`
+    + graph(progression, snapshot)
+    + `<div class="sheet-scroll"><div class="sheet">${rows}</div></div>`;
 }
 
 function board({ sheet, progression, view, step }: CampaignPageInput,
@@ -183,18 +184,24 @@ function board({ sheet, progression, view, step }: CampaignPageInput,
   const chips = (['grid', 'graph', 'replay'] as const).map(entry =>
     `<a class="chip sm${entry === view ? ' on' : ''}"${entry === view ? ' aria-current="page"' : ''} href="?questlines=${entry}">`
     + `${entry[0]!.toUpperCase()}${entry.slice(1)}</a>`).join('');
-  const switcher = `<div class="k views">${chips}</div><div></div><div></div><div></div>`;
-  if (sheet.mode !== 'dependency') return levelRows(stacks);
-  if (view === 'grid' || !progression) return switcher + questlineRows(sheet, stacks);
-  progression = selectedProgression(progression, sheet);
-  if (view === 'graph') {
-    const snapshot = STACK_ORDER.flatMap(stack => progression.stacks
+  const heading = stacks.map(stack => `<div class="h">${esc(stackLabel(stack.stack))}</div>`).join('');
+  const grid = (rows: string): string => `<div class="sheet-scroll" role="region" aria-label="Feature progress grid" tabindex="0"><div class="sheet"><div class="h">Feature</div>${heading}${rows}</div></div>`;
+  let content: string;
+  if (sheet.mode !== 'dependency') content = grid(levelRows(stacks));
+  else if (view === 'grid' || !progression) content = grid(questlineRows(sheet, stacks));
+  else if (view === 'graph') {
+    const selected = selectedProgression(progression, sheet);
+    const snapshot = STACK_ORDER.flatMap(stack => selected.stacks
       .filter(track => track.stack === stack)
       .map(track => ({ stack: track.stack,
-        statuses: track.steps.at(-1)?.statuses ?? progression.nodes.map(() => 'locked') })));
-    return `${switcher}<div class="wide">${graph(progression, snapshot)}</div>`;
-  }
-  return switcher + replay(progression, step);
+        statuses: track.steps.at(-1)?.statuses ?? selected.nodes.map(() => 'locked') })));
+    content = graph(selected, snapshot);
+  } else content = replay(selectedProgression(progression, sheet), step);
+  return '<section class="feature-progress" aria-labelledby="feature-progress-title">'
+    + '<div class="section-heading"><h3 id="feature-progress-title">Feature progress</h3>'
+    + (sheet.mode === 'dependency' ? `<nav aria-label="Feature progress view">${chips}</nav>` : '')
+    + '</div><p class="summary-note">Feature status for the selected repetition of each stack shown above.</p>'
+    + content + '</section>';
 }
 
 export function campaignPage(input: CampaignPageInput): string {
@@ -261,8 +268,9 @@ export function campaignPage(input: CampaignPageInput): string {
     + row('Unaided', stack => value(pct(stack.unaided)))
     + row('Regressions', stack => value(num(stack.regressions)))
     + row('Time', stack => value(duration(stack.timeSec)))
-    + repetitions + issues
-    + '<div class="wide"><h3>Selected repetition</h3><p class="summary-note">Progress and evidence below come from one repetition per stack. They are not averages. Open any attempt in the table to inspect another repetition.</p></div>'
+    + repetitions + issues + '</div></div>'
+    + '<h3>Selected repetition</h3><p class="summary-note">Progress and evidence below come from one repetition per stack. They are not averages. Open any attempt in the table to inspect another repetition.</p>'
+    + `<div class="sheet-scroll" role="region" aria-label="Selected repetition" tabindex="0"><div class="sheet"><div class="h"></div>${heads}`
     + row('Attempt', stack => {
       const attempt = latest(stack);
       return `<div><span class="phase${attempt?.stalling ? ' warn' : ''}">`
@@ -278,7 +286,7 @@ export function campaignPage(input: CampaignPageInput): string {
         ? elapsed(attempt.executionStartedAt, attempt.executionCompletedAt) : DASH);
     })
     + row('Grade history', stack => `<div class="chart">${climb(stack.climb, { height: 44 })}</div>`)
-    + board(input, stacks) + evidence + '</div></div>'
+    + evidence + '</div></div>' + board(input, stacks)
     + '<h3>Attempts</h3><div class="tablewrap"><div class="wrap"><table class="runs"><thead><tr><th>Stack</th><th>Variant</th><th>Repetition</th>'
     + '<th>Completion</th><th>Spend</th><th>Status</th></tr></thead><tbody>'
     + stacks.flatMap(stack => stack.attempts.map(attempt => '<tr>'

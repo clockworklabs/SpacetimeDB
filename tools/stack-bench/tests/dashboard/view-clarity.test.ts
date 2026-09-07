@@ -34,6 +34,8 @@ test('campaign separates aggregate scores from selected evidence and explains pe
   assert.match(selected, /2<i>\/ 10<\/i>/);
   assert.doesNotMatch(selected, /82%|9<i>\/ 10|Questline average/);
   assert.match(page, /Usable results/);
+  assert.match(page, /<nav aria-label="Feature progress view">/);
+  assert.doesNotMatch(page.slice(0, page.indexOf('<section class="feature-progress"')), /\?questlines=/);
   assert.match(page, /popovertarget="help-completion"/);
   assert.match(page, /id="help-completion" popover role="tooltip"/);
   assert.doesNotMatch(page, /<details class="metric-help"/);

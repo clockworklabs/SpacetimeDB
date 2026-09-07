@@ -131,7 +131,6 @@ table.plans td.name { color: var(--n1); font-weight: 600; }
 .sheet > .k, .sheet > .h:first-child { border-left: 0; }
 .sheet .k { flex-wrap: nowrap; color: var(--n4); font: 500 11.7px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
 .sheet .k > span { min-width: 0; }
-.sheet .k.views { flex-wrap: wrap; gap: 8px; }
 .sheet .h { min-height: 48px; color: var(--n1); font-size: 15px; font-weight: 600; gap: 10px; }
 .sheet .h a { text-decoration: none; }
 .sheet .v { color: var(--n1); font: 13px var(--mono); font-variant-numeric: tabular-nums; }
@@ -154,9 +153,9 @@ table.plans td.name { color: var(--n1); font-weight: 600; }
 .sheet .links a { padding-block: 8px; color: var(--n2); font: 12px var(--mono); text-decoration: none; margin-right: 14px; }
 .sheet > .wide { grid-column: 1 / -1; display: block; padding: 8px 8px 4px; border-left: 0; }
 .sheet > .span3 { grid-column: 2 / -1; }
-.sheet > .evhead { display: flex; gap: 0; padding: 0; }
-.sheet .ev { display: grid; gap: 5px; padding: 8px 16px; border-left: 1px solid var(--shade4); min-height: 48px; min-width: 130px; }
-.sheet .ev:first-child { border-left: 0; }
+.evhead { display: flex; flex-wrap: wrap; gap: 0; padding: 0; }
+.evhead .ev { display: grid; gap: 5px; padding: 8px 16px; border-left: 1px solid var(--shade4); min-height: 48px; min-width: 130px; }
+.evhead .ev:first-child { border-left: 0; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--shade1); flex: 0 0 auto; }
 .dot.p { background: var(--green); }
 .dot.a { background: var(--blue); box-shadow: 0 0 0 2px var(--blue-25); }
@@ -280,3 +279,8 @@ table.plans td.name { color: var(--n1); font-weight: 600; }
   .secret { flex-wrap: wrap; }
   .secret input { max-width: 100%; }
 }
+
+.feature-progress { margin-block: 28px; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.section-heading h3 { margin: 0; }
+.section-heading nav { display: flex; gap: 6px; }
