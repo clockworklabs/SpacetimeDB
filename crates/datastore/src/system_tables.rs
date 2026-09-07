@@ -1335,9 +1335,6 @@ impl From<StSequenceRow> for SequenceSchema {
             table_id: sequence.table_id,
             col_pos: sequence.col_pos,
             start: sequence.start,
-            increment: sequence.increment,
-            min_value: sequence.min_value,
-            max_value: sequence.max_value,
         }
     }
 }

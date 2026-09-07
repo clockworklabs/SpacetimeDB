@@ -233,18 +233,14 @@ fn auto_migrate_database(
                     .ty
                     .clone();
 
-                // Convert `SequenceDef` min/max to `AlgebraicValue`s of the correct type.
+                // Convert `SequenceSchema` min/max to `AlgebraicValue`s of the correct type.
                 let min = ty
-                    .saturating_value_from_i128(sequence_def.min_value.unwrap_or(1))
+                    .saturating_value_from_i128(SequenceSchema::MIN_VALUE)
                     .ok_or_else(|| {
                         anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid min value")
                     })?;
 
-                let max = match sequence_def.max_value {
-                    Some(max) => ty.saturating_value_from_i128(max),
-                    None => ty.saturating_value_from_i128(i128::MAX),
-                }
-                .ok_or_else(|| {
+                let max = ty.saturating_value_from_i128(i128::MAX).ok_or_else(|| {
                     anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid max value")
                 })?;
 

@@ -258,20 +258,16 @@ pub struct RawSequenceDefV9 {
     /// This must be the unique `RawSequenceDef` for this column.
     pub column: ColId,
 
-    /// The value to start assigning to this column.
-    /// Will be incremented by 1 for each new row.
-    /// If not present, an arbitrary start point may be selected.
+    /// Deprecated; should be `None`.
     pub start: Option<i128>,
 
-    /// The minimum allowed value in this column.
-    /// If not present, no minimum.
+    /// Deprecated; should be `None`.
     pub min_value: Option<i128>,
 
-    /// The maximum allowed value in this column.
-    /// If not present, no maximum.
+    /// Deprecated; should be `None`.
     pub max_value: Option<i128>,
 
-    /// The increment used when updating the SequenceDef.
+    /// Deprecated; should be `1i128`.
     pub increment: i128,
 }
 

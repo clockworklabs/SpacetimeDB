@@ -1,9 +1,6 @@
-use super::{
-    committed_state::CommittedState, mut_tx::MutTxId, sequence::SequencesState, state_view::StateView, tx::TxId,
-    tx_state::TxState,
-};
+use super::{committed_state::CommittedState, mut_tx::MutTxId, state_view::StateView, tx::TxId, tx_state::TxState};
 use crate::execution_context::{Workload, WorkloadType};
-use crate::locking_tx_datastore::replay::{build_sequence_state, ErrorBehavior, Replay};
+use crate::locking_tx_datastore::replay::{ErrorBehavior, Replay};
 use crate::{
     db_metrics::DB_METRICS,
     error::{DatastoreError, TableError},
@@ -25,7 +22,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use core::ops::RangeBounds;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
@@ -57,7 +54,6 @@ pub type Result<T> = std::result::Result<T, DatastoreError>;
 /// Lock Acquisition Order:
 /// 1. `memory`
 /// 2. `committed_state`
-/// 3. `sequence_state`
 ///
 /// All locking mechanisms are encapsulated within the struct through local methods.
 #[derive(Clone)]
@@ -66,8 +62,6 @@ pub struct Locking {
     // TODO(cloutiertyler): This was made `pub` for the datastore split. This should be
     // made private again.
     pub committed_state: Arc<RwLock<CommittedState>>,
-    /// The state of sequence generation in this database.
-    pub(super) sequence_state: Arc<Mutex<SequencesState>>,
     /// The identity of this database.
     pub(crate) database_identity: Identity,
 }
@@ -76,14 +70,9 @@ impl MemoryUsage for Locking {
     fn heap_usage(&self) -> usize {
         let Self {
             committed_state,
-            sequence_state,
             database_identity,
         } = self;
-        std::mem::size_of_val(&**committed_state)
-            + committed_state.read().heap_usage()
-            + std::mem::size_of_val(&**sequence_state)
-            + sequence_state.lock().heap_usage()
-            + database_identity.heap_usage()
+        std::mem::size_of_val(&**committed_state) + committed_state.read().heap_usage() + database_identity.heap_usage()
     }
 }
 
@@ -91,7 +80,6 @@ impl Locking {
     pub fn new(database_identity: Identity, page_pool: PagePool) -> Self {
         Self {
             committed_state: Arc::new(RwLock::new(CommittedState::new(page_pool))),
-            sequence_state: <_>::default(),
             database_identity,
         }
     }
@@ -114,9 +102,6 @@ impl Locking {
 
         // Create the system tables and insert information about themselves into
         commit_state.bootstrap_system_tables(database_identity)?;
-        // The database tables are now initialized with the correct data.
-        // Now we have to build our in memory structures.
-        build_sequence_state(&datastore, &mut commit_state)?;
 
         // We don't want to build indexes here; we'll build those later,
         // in `rebuild_state_after_replay`.
@@ -202,11 +187,6 @@ impl Locking {
 
         // Double check that our in-memory system table ids match the on-disk schemas.
         // committed_state.assert_system_table_schemas_match()?;
-
-        // Set the sequence state. In practice we will end up doing this again after replaying
-        // the commit log, but we do it here too just to avoid having an incorrectly restored
-        // snapshot.
-        build_sequence_state(&datastore, &mut committed_state)?;
 
         // The next TX offset after restoring from a snapshot is one greater than the snapshotted offset.
         committed_state.next_tx_offset = tx_offset + 1;
@@ -979,12 +959,10 @@ impl MutTx for Locking {
 
         let timer = Instant::now();
         let committed_state_write_lock = self.committed_state.write_arc();
-        let sequence_state_lock = self.sequence_state.lock_arc();
         let lock_wait_time = timer.elapsed();
 
         MutTxId {
             committed_state_write_lock,
-            sequence_state_lock,
             tx_state: TxState::default(),
             lock_wait_time,
             read_sets: <_>::default(),
@@ -1015,12 +993,10 @@ impl Locking {
 
         let timer = Instant::now();
         let committed_state_write_lock = self.committed_state.try_write_arc()?;
-        let sequence_state_lock = self.sequence_state.try_lock_arc()?;
         let lock_wait_time = timer.elapsed();
 
         Some(MutTxId {
             committed_state_write_lock,
-            sequence_state_lock,
             tx_state: TxState::default(),
             lock_wait_time,
             read_sets: <_>::default(),
@@ -1324,10 +1300,7 @@ pub(crate) mod tests {
                 sequence_name: RawNamespacedIdentifier::new(value.name),
                 table_id: value.table.into(),
                 col_pos: value.col_pos.into(),
-                increment: 1,
                 start: value.start,
-                min_value: 1,
-                max_value: i128::MAX,
             }
         }
     }
@@ -1435,9 +1408,6 @@ pub(crate) mod tests {
             col_pos: 0.into(),
             sequence_name: "Foo_id_seq".into(),
             start: 1,
-            increment: 1,
-            min_value: 1,
-            max_value: i128::MAX,
         };
         user_public_table(
             map_array(basic_table_schema_cols()),
@@ -2325,9 +2295,6 @@ pub(crate) mod tests {
             col_pos: 0.into(),
             sequence_name: "seq".into(),
             start: 1,
-            increment: 1,
-            min_value: 1,
-            max_value: i128::MAX,
         };
         let seq_id = datastore.create_sequence_mut_tx(&mut tx, sequence.clone())?;
         assert_matches!(

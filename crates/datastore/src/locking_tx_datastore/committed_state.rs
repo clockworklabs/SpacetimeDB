@@ -1,7 +1,6 @@
 use super::{
     datastore::Result,
     delete_table::DeleteTable,
-    sequence::{Sequence, SequencesState},
     state_view::StateView,
     tx_state::{IndexIdMap, PendingSchemaChange, TxState},
     IterByColEqTx,
@@ -42,7 +41,7 @@ use spacetimedb_lib::{db::auth::StTableType, Identity};
 use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
-use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::schema::{SequenceSchema, TableSchema};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
@@ -367,9 +366,9 @@ impl CommittedState {
                 sequence_name: seq.sequence_name.clone(),
                 table_id: seq.table_id,
                 col_pos: seq.col_pos,
-                increment: seq.increment,
-                min_value: seq.min_value,
-                max_value: seq.max_value,
+                increment: SequenceSchema::INCREMENT,
+                min_value: SequenceSchema::MIN_VALUE,
+                max_value: SequenceSchema::MAX_VALUE,
                 start: seq.start,
                 // In practice, this means we will actually start at start - 1, since `allocated`
                 // overrides start, but we keep these fields set this way to match databases
@@ -418,31 +417,6 @@ impl CommittedState {
         }
 
         Ok(())
-    }
-
-    /// Builds the in-memory state of sequences from `st_sequence` system table.
-    /// The tables store the lasted allocated value, which tells us where to start generating.
-    pub(super) fn build_sequence_state(&mut self) -> Result<SequencesState> {
-        let mut sequence_state = SequencesState::default();
-        let st_sequences = self.tables.get(&ST_SEQUENCE_ID).unwrap();
-        for row_ref in st_sequences.scan_rows(&self.blob_store) {
-            let sequence = StSequenceRow::try_from(row_ref)?;
-            let seq = Sequence::new(sequence.clone().into(), Some(sequence.allocated));
-
-            // Clobber any existing in-memory `Sequence`.
-            // Such a value may exist because, when replaying without a snapshot,
-            // `build_sequence_state` is called twice:
-            // once when bootstrapping the empty datastore,
-            // and then again after replaying the commitlog.
-            // At this latter time, `sequence_state.get(seq.id())` for the system table sequences
-            // will return a sequence with incorrect `allocated`,
-            // as it will reflect the state after initializing the system tables,
-            // but before creating any user tables.
-            // The `sequence` we read out of `row_ref` above, and used to construct `seq`,
-            // will correctly reflect the state after creating user tables.
-            sequence_state.insert(seq);
-        }
-        Ok(sequence_state)
     }
 
     /// Returns an iterator doing a full table scan on `table_id`.
@@ -769,20 +743,16 @@ impl CommittedState {
     }
 
     /// Rolls back the changes immediately made to the committed state during a transaction.
-    pub(super) fn rollback(&mut self, seq_state: &mut SequencesState, tx_state: TxState) -> TxOffset {
+    pub(super) fn rollback(&mut self, tx_state: TxState) -> TxOffset {
         // Roll back the changes in the reverse order in which they were made
         // so that e.g., the last change is undone first.
         for change in tx_state.pending_schema_changes.into_iter().rev() {
-            self.rollback_pending_schema_change(seq_state, change);
+            self.rollback_pending_schema_change(change);
         }
         self.next_tx_offset.saturating_sub(1)
     }
 
-    fn rollback_pending_schema_change(
-        &mut self,
-        seq_state: &mut SequencesState,
-        change: PendingSchemaChange,
-    ) -> Option<()> {
+    fn rollback_pending_schema_change(&mut self, change: PendingSchemaChange) -> Option<()> {
         use PendingSchemaChange::*;
         match change {
             // An index was removed. Add it back.
@@ -923,16 +893,14 @@ impl CommittedState {
                 }
             }
             // A sequence was removed. Add it back.
-            SequenceRemoved(table_id, seq, schema) => {
+            SequenceRemoved(table_id, schema) => {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.update_sequence(schema));
-                seq_state.insert(seq);
             }
             // A sequence was added. Remove it.
             SequenceAdded(table_id, sequence_id) => {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.remove_sequence(sequence_id));
-                seq_state.remove(sequence_id);
             }
         }
 
