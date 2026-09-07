@@ -1,12 +1,12 @@
 use alloc::{boxed::Box, vec::Vec};
 
 use crate::{
-    io::{ErasedBox, SECTOR_SIZE},
-    sim::io::{
+    sim::{
         executor::{Cqe, Executing, FsyncEffect, InFlightInner, Operation, ReadSector, WriteSector},
         fs::{self, Datasync},
         Error,
     },
+    ErasedBox, SECTOR_SIZE,
 };
 
 /// Opaque identifier of a scheduled [Sqe].
@@ -41,11 +41,13 @@ pub struct Sqe<T> {
 }
 
 impl<T> Sqe<T> {
+    #[allow(unused)]
     pub fn link(mut self, kind: Option<LinkKind>) -> Self {
         self.link = kind;
         self
     }
 
+    #[allow(unused)]
     pub fn is_linked(&self) -> bool {
         self.link.is_some()
     }
@@ -93,6 +95,7 @@ impl<T> Sqe<T> {
         Fdatasync { fd }.into()
     }
 
+    #[allow(unused)]
     pub fn noop() -> Self {
         SqeInner::Noop.into()
     }

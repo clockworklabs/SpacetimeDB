@@ -1,6 +1,6 @@
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-use crate::io::SECTOR_SIZE;
+use crate::SECTOR_SIZE;
 
 /// Types that can be safely converted to and from sector-aligned byte slices.
 pub trait AlignedBytes: Sized {
@@ -58,12 +58,12 @@ impl<T: FromBytes + IntoBytes + KnownLayout + Immutable> AlignedBytes for T {
     }
 }
 
-#[cfg(feature = "alloc")]
+#[cfg(any(test, feature = "alloc"))]
 mod boxed {
     use alloc::boxed::Box;
     use core::{alloc::Layout, any::TypeId, ptr::NonNull};
 
-    use crate::io::AlignedBytes;
+    use super::AlignedBytes;
 
     /// A type-erased [AlignedBytes] heap allocation.
     #[derive(Debug)]
@@ -173,5 +173,5 @@ mod boxed {
         }
     }
 }
-#[cfg(feature = "alloc")]
+#[cfg(any(test, feature = "alloc"))]
 pub use boxed::ErasedBox;

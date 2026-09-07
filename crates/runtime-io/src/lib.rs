@@ -1,10 +1,18 @@
+#![no_std]
+
+#[cfg(any(test, feature = "alloc"))]
+extern crate alloc;
+
 mod buf;
 pub use buf::AlignedBytes;
-#[cfg(feature = "alloc")]
+#[cfg(any(test, feature = "alloc"))]
 pub use buf::ErasedBox;
 
 mod error;
 pub use error::ErrorWith;
+
+#[cfg(feature = "sim")]
+pub mod sim;
 
 /// Size in bytes of a disk sector.
 pub const SECTOR_SIZE: usize = 4096;

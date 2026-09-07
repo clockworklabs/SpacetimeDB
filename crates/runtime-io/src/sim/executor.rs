@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 use alloc::{
     boxed::Box,
     collections::{btree_map, BTreeMap, VecDeque},
@@ -9,18 +7,26 @@ use core::{mem, num::NonZeroUsize, result::Result};
 use slab::Slab;
 
 use crate::{
-    io::{ErasedBox, Statx, SECTOR_SIZE},
-    sim::{
-        io::{fs, Error, Instant},
-        Rng,
-    },
+    sim::{fs, Error},
+    ErasedBox, Statx, SECTOR_SIZE,
 };
 
-pub use crate::sim::io::fs::Datasync;
+pub use crate::sim::fs::Datasync;
 
 mod sqe;
 use sqe::SqeInner;
 pub use sqe::{LinkKind, Sqe, SqeId};
+
+pub trait TaskSelector {
+    /// Deterministically select zero or more tasks to advance.
+    ///
+    /// `task_count` is the number of currently outstanding tasks. The returned
+    /// iterator must return indexes in the range `0..task_count` and not yield
+    /// duplicate elements.
+    ///
+    /// Called once per [Executor::tick].
+    fn select_tasks(&self, task_count: usize) -> impl IntoIterator<Item = usize>;
+}
 
 // TODO: There is no difference between fsync and fdatasync as long as we don't
 // have an API to fsync the directory of a file after it was created.
@@ -234,45 +240,44 @@ impl<T, U> EitherOrBoth<T, U> {
 }
 
 pub trait FaultInjector<UserData> {
-    fn inject_write_sector_fault(&mut self, sqe: &InFlight<UserData>, op: WriteSector) -> Fault<WriteSector> {
+    fn inject_write_sector_fault(&mut self, _: &InFlight<UserData>, op: WriteSector) -> Fault<WriteSector> {
         Fault::Visible(Effect::Run(op))
     }
 
-    fn inject_read_sector_fault(&mut self, sqe: &InFlight<UserData>, op: ReadSector) -> Fault<ReadSector> {
+    fn inject_read_sector_fault(&mut self, _: &InFlight<UserData>, op: ReadSector) -> Fault<ReadSector> {
         Fault::Visible(Effect::Run(op))
     }
 
-    fn inject_open_fault(&mut self, sqe: &InFlight<UserData>) -> Fault<()> {
+    fn inject_open_fault(&mut self, _: &InFlight<UserData>) -> Fault<()> {
         Fault::Visible(Effect::Run(()))
     }
 
-    fn inject_create_fault(&mut self, sqe: &InFlight<UserData>) -> Fault<()> {
+    fn inject_create_fault(&mut self, _: &InFlight<UserData>) -> Fault<()> {
         Fault::Visible(Effect::Run(()))
     }
 
-    fn inject_stat_fault(&mut self, sqe: &InFlight<UserData>) -> Fault<()> {
+    fn inject_stat_fault(&mut self, _: &InFlight<UserData>) -> Fault<()> {
         Fault::Visible(Effect::Run(()))
     }
 
-    fn inject_fallocate_fault(&mut self, sqe: &InFlight<UserData>) -> Fault<()> {
+    fn inject_fallocate_fault(&mut self, _: &InFlight<UserData>) -> Fault<()> {
         Fault::Visible(Effect::Run(()))
     }
 
-    fn inject_fsync_fault(&mut self, sqe: &InFlight<UserData>, op: FsyncEffect) -> Fault<FsyncEffect> {
+    fn inject_fsync_fault(&mut self, _: &InFlight<UserData>, op: FsyncEffect) -> Fault<FsyncEffect> {
         Fault::Visible(Effect::Run(op))
     }
 
-    fn inject_fdatasync_fault(&mut self, sqe: &InFlight<UserData>, op: Datasync) -> Fault<Datasync> {
+    fn inject_fdatasync_fault(&mut self, _: &InFlight<UserData>, op: Datasync) -> Fault<Datasync> {
         Fault::Visible(Effect::Run(op))
     }
 
-    fn inject_noop_fault(&mut self, sqe: &InFlight<UserData>) -> Fault<()> {
+    fn inject_noop_fault(&mut self, _: &InFlight<UserData>) -> Fault<()> {
         Fault::Visible(Effect::Run(()))
     }
 }
 
-pub struct NoFaults;
-impl<UserData> FaultInjector<UserData> for NoFaults {}
+impl<UserData> FaultInjector<UserData> for () {}
 
 /// Completion queue overflow policy.
 ///
@@ -388,7 +393,7 @@ impl<UserData> Executor<UserData> {
         self.cq_overflow = OnCqOverflow::Drop;
         let executing = mem::take(&mut self.executing);
         for op in executing {
-            self.execute(op, faults);
+            self.execute_op(op, faults);
         }
         self.completions.clear();
         self.cq_overflow = cq_overflow_orig;
@@ -427,6 +432,7 @@ impl<UserData> Executor<UserData> {
     /// over the lifetime of this executor.
     ///
     /// Always zero if the executor was configured with [OnCqOverflow::Panic].
+    #[allow(unused)]
     pub fn dropped_completions(&self) -> usize {
         self.cq_dropped
     }
@@ -440,9 +446,9 @@ impl<UserData> Executor<UserData> {
     ///
     /// The operation to advance is chosen randomly using `rng`.
     /// The operation is subject to `faults`.
-    pub fn tick(&mut self, rng: &Rng, faults: &mut impl FaultInjector<UserData>) -> bool {
+    pub fn tick(&mut self, task_selector: &impl TaskSelector, faults: &mut impl FaultInjector<UserData>) -> bool {
         let mut progress = self.schedule();
-        progress |= self.execute_random(rng, faults);
+        progress |= self.execute(task_selector, faults);
         progress
     }
 
@@ -482,22 +488,19 @@ impl<UserData> Executor<UserData> {
         progress
     }
 
-    fn execute_random(&mut self, rng: &Rng, faults: &mut impl FaultInjector<UserData>) -> bool {
-        if self.executing.is_empty() {
-            return false;
-        }
-        let index = rng.index(self.executing.len());
-        if let Some(op) = self.executing.remove(index) {
-            if let Some(delay) = self.execute(op, faults) {
+    fn execute(&mut self, task_selector: &impl TaskSelector, faults: &mut impl FaultInjector<UserData>) -> bool {
+        let mut progress = false;
+        for index in task_selector.select_tasks(self.executing.len()) {
+            let op = self.executing.remove(index).expect("task index out of bounds");
+            if let Some(delay) = self.execute_op(op, faults) {
                 self.executing.insert(index, delay);
             }
-            true
-        } else {
-            false
+            progress |= true
         }
+        progress
     }
 
-    fn execute(&mut self, op: Executing, faults: &mut impl FaultInjector<UserData>) -> Option<Executing> {
+    fn execute_op(&mut self, op: Executing, faults: &mut impl FaultInjector<UserData>) -> Option<Executing> {
         op.traverse(|sqe, op| {
             let in_flight = self.in_flight.get(sqe.key()).expect("invalid sqe id");
             match op {
@@ -555,10 +558,10 @@ impl<UserData> Executor<UserData> {
             else {
                 unreachable!("invalid sqe: expected write")
             };
-            let mut run = |WriteSector {
-                               page_offset,
-                               buf_offset,
-                           }| {
+            let run = |WriteSector {
+                           page_offset,
+                           buf_offset,
+                       }| {
                 let bytes = buf.as_bytes();
                 let end = (buf_offset + SECTOR_SIZE).min(bytes.len());
 
@@ -611,10 +614,10 @@ impl<UserData> Executor<UserData> {
             else {
                 unreachable!("invalid sqe: expected read")
             };
-            let mut run = |ReadSector {
-                               page_offset,
-                               buf_offset,
-                           }| {
+            let run = |ReadSector {
+                           page_offset,
+                           buf_offset,
+                       }| {
                 let bytes = buf.as_bytes_mut();
                 let end = (buf_offset + SECTOR_SIZE).min(bytes.len());
 

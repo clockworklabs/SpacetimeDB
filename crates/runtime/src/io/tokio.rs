@@ -5,7 +5,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::{io, marker::PhantomData, rc::Rc, sync::Arc};
 
-use spacetimedb_runtime_core::io::{AlignedBytes, ErrorWith, SpacetimeIO, Statx};
+use spacetimedb_runtime_io::{AlignedBytes, ErrorWith, SpacetimeIO, Statx};
 use static_assertions::assert_not_impl_any;
 use tokio::runtime;
 

@@ -8,10 +8,7 @@ use core::{
 use futures_channel::oneshot;
 use slab::Slab;
 
-use crate::{
-    io::{AlignedBytes, ErasedBox, ErrorWith, SpacetimeIO, Statx},
-    sim::{io::executor::FaultInjector, Rng},
-};
+use crate::{AlignedBytes, ErasedBox, ErrorWith, SpacetimeIO, Statx};
 
 mod executor;
 use executor::{Cqe, Executor, Sqe};
@@ -19,7 +16,10 @@ use executor::{Cqe, Executor, Sqe};
 mod fs;
 pub use fs::File;
 
-pub use crate::io::SECTOR_SIZE;
+pub use crate::{
+    sim::executor::{FaultInjector, TaskSelector},
+    SECTOR_SIZE,
+};
 
 /// Simulated clock measurement.
 ///
@@ -60,11 +60,11 @@ pub struct SimulatorIO {
 }
 
 impl SimulatorIO {
-    pub fn tick(&self, rng: &Rng, faults: &mut impl FaultInjector<usize>) -> bool {
+    pub fn tick(&self, task_selector: &impl TaskSelector, faults: &mut impl FaultInjector<usize>) -> bool {
         let mut executor = self.inner.executor.lock();
         let mut pending = self.inner.pending.lock();
 
-        let mut progress = executor.tick(rng, faults);
+        let mut progress = executor.tick(task_selector, faults);
         for cqe in executor.completed() {
             let completion = pending.remove(cqe.user_data().unwrap());
             match cqe {
@@ -152,8 +152,28 @@ impl SimulatorIO {
         progress
     }
 
+    /// Simulate a power loss event.
+    ///
+    /// All submitted and executing operations are cancelled, and files reset to
+    /// their durable state. Completions that have not been signalled will be
+    /// dropped, too.
     pub fn power_loss(&self) {
         self.inner.executor.lock().power_loss();
+        self.inner.pending.lock().clear();
+    }
+
+    /// Simulate a restart event, i.e. process crash.
+    ///
+    /// Unlike [Self::power_loss], this will drive the currently executing
+    /// operations to completion, subject to fault injection.
+    ///
+    /// Submissions that were not yet scheduled are dropped. The file state
+    /// remains unchanged.
+    ///
+    /// Completions that were not signalled during shutdown are dropped.
+    pub fn restart(&self, faults: &mut impl FaultInjector<usize>) {
+        self.inner.executor.lock().restart(faults);
+        self.inner.pending.lock().clear();
     }
 
     fn submit<T>(
@@ -381,9 +401,15 @@ fn reify<T: AlignedBytes + 'static>(
 
 #[cfg(test)]
 mod tests {
-    use crate::sim::{io::executor::NoFaults, GlobalRng};
+    use spacetimedb_runtime_core::sim::Rng;
 
     use super::*;
+
+    impl TaskSelector for Rng {
+        fn select_tasks(&self, task_count: usize) -> impl IntoIterator<Item = usize> {
+            (task_count > 0).then(|| self.index(task_count))
+        }
+    }
 
     struct Runtime {
         rt: tokio::runtime::LocalRuntime,
@@ -398,13 +424,13 @@ mod tests {
                     .build_local(<_>::default())
                     .unwrap(),
                 io: SimulatorIO::default(),
-                rng: GlobalRng::new(0),
+                rng: Rng::new(0),
             }
         }
 
         fn run<T: 'static>(&self, f: impl FnOnce(&SimulatorIO) -> Completion<T>) -> T {
             let fut = self.rt.spawn_local(f(&self.io));
-            while self.io.tick(&self.rng, &mut NoFaults) {}
+            while self.io.tick(&self.rng, &mut ()) {}
             self.rt.block_on(fut).unwrap()
         }
 
@@ -453,6 +479,7 @@ mod tests {
         let fd = rt.run(|io| io.create_file("/data/test")).unwrap();
         let mut buf = rt
             .run(|io| io.write_all_at(fd.clone(), Buf([22; 2 * SECTOR_SIZE]), 0))
+            .map_err(ErrorWith::into_err)
             .unwrap();
         buf.clear();
         let buf = rt.run(|io| io.read_exact_at(fd, buf, 0)).unwrap();
