@@ -1636,11 +1636,13 @@ mod test {
         let stdb = stdb.reopen()?;
 
         // After replay, the allocation cursor should be preserved.
+        // We only care that the next value is strictly higher than all the previous ones,
+        // but we happen to get the value 4 here because we do not perform any sequence allocation batching.
         {
             let ids = insert_and_collect_ids(&stdb, product![0i64, 99u64].into())?;
             assert!(
-                ids.iter().last().unwrap() == &4097,
-                "expected id 4097 after reopen, got {ids:?}"
+                ids.iter().last().unwrap() == &4,
+                "expected id 4 after reopen, got {ids:?}"
             );
         }
 
