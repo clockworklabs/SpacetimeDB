@@ -10,6 +10,7 @@ use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_datastore::{locking_tx_datastore::datastore::TxMetrics, traits::TxData};
 
 mod durability;
+pub mod deployment;
 pub mod persistence;
 pub mod relational_db;
 pub mod snapshot;

@@ -237,6 +237,8 @@ pub enum LogReplayError {
 
 #[derive(Error, Debug)]
 pub enum NodesError {
+    #[error("hosted invocation rejected: {0}")]
+    HostedInvocationRejected(String),
     #[error("Failed to decode row: {0}")]
     DecodeRow(#[source] DecodeError),
     #[error("Failed to decode value: {0}")]

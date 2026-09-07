@@ -1,5 +1,7 @@
 use super::instrumentation::CallTimes;
 use super::*;
+use crate::auth::hosted_tokens::VerifiedHostedAuth;
+use crate::auth::invocation::check_hosted_admission;
 use crate::client::ClientActorId;
 use crate::database_logger;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
@@ -761,10 +763,28 @@ impl InstanceCommon {
             timestamp,
             caller_identity,
             caller_connection_id,
+            call_auth_flags,
+            hosted_auth,
             timer,
             procedure_id,
             args,
         } = params;
+
+        let admission = inst
+            .replica_ctx()
+            .relational_db()
+            .with_read_only(Workload::Internal, |tx| {
+                check_hosted_admission(tx, self.info.database_identity, hosted_auth.as_deref())
+            });
+        if let Err(err) = admission {
+            return (
+                CallProcedureReturn {
+                    result: Err(ProcedureCallError::InternalError(err.to_string())),
+                    tx_offset: None,
+                },
+                false,
+            );
+        }
 
         // We've already validated by this point that the procedure exists,
         // so it's fine to use the panicking `procedure_by_id`.
@@ -780,6 +800,8 @@ impl InstanceCommon {
             name: procedure_name.clone(),
             caller_identity,
             caller_connection_id,
+            call_auth_flags,
+            hosted_auth,
             timestamp,
             arg_bytes: args.get_bsatn().clone(),
         };
@@ -957,6 +979,8 @@ impl InstanceCommon {
             timestamp,
             caller_identity,
             caller_connection_id,
+            call_auth_flags,
+            hosted_auth,
             client,
             request_id,
             reducer_id,
@@ -980,12 +1004,41 @@ impl InstanceCommon {
             name: reducer_name,
             caller_identity: &caller_identity,
             caller_connection_id: &caller_connection_id,
+            call_auth_flags,
+            hosted_auth,
             timestamp,
             args: &args,
         };
 
         let workload = Workload::Reducer(ReducerContext::from(op.clone()));
         let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable, workload));
+        if let Err(err) = check_hosted_admission(&tx, info.database_identity, op.hosted_auth.as_deref()) {
+            let event = ModuleEvent {
+                timestamp,
+                caller_identity,
+                caller_connection_id: caller_connection_id_opt,
+                function_call: ModuleFunctionCall {
+                    reducer: Some(reducer_name.clone()),
+                    reducer_id,
+                    args,
+                },
+                status: EventStatus::FailedInternal(err.to_string()),
+                reducer_return_value: None,
+                energy_quanta_used: crate::energy::EnergyQuanta::ZERO,
+                host_execution_duration: Default::default(),
+                request_id,
+                timer,
+            };
+            let event = commit_and_broadcast_event(&info.subscriptions, client, event, tx).event;
+            return (
+                ReducerCallResult {
+                    outcome: ReducerOutcome::from(&event.status),
+                    energy_used: crate::energy::EnergyQuanta::ZERO,
+                    execution_duration: Default::default(),
+                },
+                false,
+            );
+        }
         let mut tx_slot = inst.tx_slot();
 
         let vm_metrics = self.vm_metrics.get_for_reducer_id(reducer_id);
@@ -1772,6 +1825,12 @@ pub trait InstanceOp {
     fn name(&self) -> &Identifier;
     fn timestamp(&self) -> Timestamp;
     fn call_type(&self) -> FuncCallType;
+    fn call_auth_flags(&self) -> u32 {
+        0
+    }
+    fn hosted_auth(&self) -> Option<&VerifiedHostedAuth> {
+        None
+    }
 }
 
 /// Describes a view call in a cheaply shareable way.
@@ -1842,12 +1901,20 @@ pub struct ReducerOp<'a> {
     pub name: &'a ReducerName,
     pub caller_identity: &'a Identity,
     pub caller_connection_id: &'a ConnectionId,
+    pub call_auth_flags: u32,
+    pub hosted_auth: Option<std::sync::Arc<VerifiedHostedAuth>>,
     pub timestamp: Timestamp,
     /// The arguments passed to the reducer.
     pub args: &'a ArgsTuple,
 }
 
 impl InstanceOp for ReducerOp<'_> {
+    fn call_auth_flags(&self) -> u32 {
+        self.call_auth_flags
+    }
+    fn hosted_auth(&self) -> Option<&VerifiedHostedAuth> {
+        self.hosted_auth.as_deref()
+    }
     fn name(&self) -> &Identifier {
         self.name.as_identifier()
     }
@@ -1866,6 +1933,8 @@ impl From<ReducerOp<'_>> for execution_context::ReducerContext {
             name,
             caller_identity,
             caller_connection_id,
+            call_auth_flags: _,
+            hosted_auth: _,
             timestamp,
             args,
         }: ReducerOp<'_>,
@@ -1887,11 +1956,19 @@ pub struct ProcedureOp {
     pub name: Identifier,
     pub caller_identity: Identity,
     pub caller_connection_id: ConnectionId,
+    pub call_auth_flags: u32,
+    pub hosted_auth: Option<std::sync::Arc<VerifiedHostedAuth>>,
     pub timestamp: Timestamp,
     pub arg_bytes: Bytes,
 }
 
 impl InstanceOp for ProcedureOp {
+    fn call_auth_flags(&self) -> u32 {
+        self.call_auth_flags
+    }
+    fn hosted_auth(&self) -> Option<&VerifiedHostedAuth> {
+        self.hosted_auth.as_deref()
+    }
     fn name(&self) -> &Identifier {
         &self.name
     }

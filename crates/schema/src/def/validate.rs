@@ -3,6 +3,7 @@
 use crate::error::ValidationErrors;
 
 pub mod v10;
+pub mod v11;
 pub mod v8;
 pub mod v9;
 

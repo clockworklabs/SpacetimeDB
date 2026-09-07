@@ -7,8 +7,8 @@ import {
 } from './algebraic_type';
 import type {
   CaseConversionPolicy,
-  RawModuleDefV10,
-  RawModuleDefV10Section,
+  RawModuleDefV11,
+  RawModuleDefV11Section,
   RawScopedTypeNameV10,
   RawTableDefV10,
 } from './autogen/types';
@@ -174,10 +174,10 @@ type CompoundTypeCache = Map<
 >;
 
 export type ModuleDef = {
-  [S in RawModuleDefV10Section as Uncapitalize<S['tag']>]: S['value'];
+  [S in RawModuleDefV11Section as Uncapitalize<S['tag']>]: S['value'];
 };
 
-type Section = RawModuleDefV10Section;
+type Section = RawModuleDefV11Section;
 
 export class ModuleContext {
   #compoundTypes: CompoundTypeCache = new Map();
@@ -197,6 +197,7 @@ export class ModuleContext {
     lifeCycleReducers: [],
     httpHandlers: [],
     httpRoutes: [],
+    capabilities: ['hosted_auth_v1'],
     caseConversionPolicy: { tag: 'SnakeCase' },
     explicitNames: {
       entries: [],
@@ -207,7 +208,7 @@ export class ModuleContext {
     return this.#moduleDef;
   }
 
-  rawModuleDefV10(): RawModuleDefV10 {
+  rawModuleDefV11(): RawModuleDefV11 {
     const sections: Section[] = [];
 
     const push = <T extends Section>(s: T | undefined) => {
@@ -217,6 +218,7 @@ export class ModuleContext {
     const module = this.#moduleDef;
 
     push(module.typespace && { tag: 'Typespace', value: module.typespace });
+    push({ tag: 'Capabilities', value: module.capabilities });
     push(module.types && { tag: 'Types', value: module.types });
     push(module.tables && { tag: 'Tables', value: module.tables });
     push(module.reducers && { tag: 'Reducers', value: module.reducers });

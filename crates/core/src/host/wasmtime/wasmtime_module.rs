@@ -55,7 +55,7 @@ impl WasmtimeModule {
         WasmtimeModule { module }
     }
 
-    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(10, 5);
+    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(10, 6);
 
     pub(super) fn link_imports(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::Result<()> {
         link_imports(linker, AsyncImportMode::SyncStub)
@@ -635,6 +635,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             store
                 .data_mut()
                 .start_funcall(reducer_name, args_bytes, op.timestamp, op.call_type());
+        store.data_mut().set_call_auth_flags(op.call_auth_flags);
+        store.data_mut().set_hosted_auth(op.hosted_auth.clone());
 
         let call_result = call_sync_typed_func(
             &self.call_reducer,
@@ -758,6 +760,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             store
                 .data_mut()
                 .start_funcall(op.name.clone(), op.arg_bytes, op.timestamp, FuncCallType::Procedure);
+        store.data_mut().set_call_auth_flags(op.call_auth_flags);
+        store.data_mut().set_hosted_auth(op.hosted_auth.clone());
 
         let Some(call_procedure) = self.call_procedure.as_ref() else {
             let res = module_host_actor::ProcedureExecuteResult {

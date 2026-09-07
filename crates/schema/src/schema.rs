@@ -773,7 +773,7 @@ impl TableSchema {
             .map(|(i, schema)| (ColId::from(i), schema))
             .map(|(col_pos, schema)| ColumnSchema { col_pos, ..schema })
             .collect();
-        let view_primary_key = (module_def.raw_module_def_version() == RawModuleDefVersion::V10)
+        let view_primary_key = (module_def.raw_module_def_version() != RawModuleDefVersion::V9OrEarlier)
             .then_some(*primary_key)
             .flatten();
 
@@ -914,7 +914,7 @@ impl TableSchema {
         };
 
         let mut constraints = vec![];
-        let view_primary_key = (module_def.raw_module_def_version() == RawModuleDefVersion::V10)
+        let view_primary_key = (module_def.raw_module_def_version() != RawModuleDefVersion::V9OrEarlier)
             .then_some(primary_key.map(|pk| ColId::from(meta_cols + pk.idx())))
             .flatten();
 

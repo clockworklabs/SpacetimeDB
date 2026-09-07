@@ -1489,6 +1489,7 @@ impl RelationalDB {
         self.with_auto_commit(Workload::Internal, |mut_tx| {
             self.clear_all_views(mut_tx)?;
             self.clear_table(mut_tx, ST_CONNECTION_CREDENTIALS_ID)?;
+            self.clear_table(mut_tx, spacetimedb_datastore::system_tables::ST_CONNECTION_AUTH_ID)?;
             self.clear_table(mut_tx, ST_CLIENT_ID)?;
             self.clear_table(mut_tx, ST_VIEW_SUB_ID)?;
             Ok(())

@@ -42,6 +42,7 @@ use spacetimedb_client_api_messages::name::{
     PrePublishResult, PrettyPrintStyle, PublishOp, PublishResult,
 };
 use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
+use spacetimedb_lib::db::raw_def::v11::RawModuleDefV11;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::http as st_http;
 use spacetimedb_lib::{sats, AlgebraicValue, Hash, ProductValue, Timestamp};
@@ -158,16 +159,19 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
 
     let (module, Database { owner_identity, .. }) = find_module_and_database(&worker_ctx, name_or_identity).await?;
 
+    let caller_auth: ConnectionAuthCtx = auth.into();
+    let caller = spacetimedb::auth::invocation::InvocationCaller::from(&caller_auth);
+
     // Call the database's `client_connected` reducer, if any.
     // If it fails or rejects the connection, bail.
     module
-        .call_identity_connected(auth.into(), connection_id)
+        .call_identity_connected(caller_auth, connection_id)
         .await
         .map_err(client_connected_error_to_response)?;
 
     let result = match module
         .call_reducer(
-            caller_identity,
+            caller.clone(),
             Some(connection_id),
             None,
             None,
@@ -181,7 +185,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         Err(ReducerCallError::NoSuchReducer | ReducerCallError::ScheduleReducerNotFound) => {
             // Not a reducer — try procedure instead
             match module
-                .call_procedure(caller_identity, Some(connection_id), None, &reducer, args)
+                .call_procedure(caller, Some(connection_id), None, &reducer, args)
                 .await
                 .result
             {
@@ -526,6 +530,8 @@ enum SchemaVersion {
     V9,
     #[serde(rename = "10")]
     V10,
+    #[serde(rename = "11")]
+    V11,
 }
 
 pub async fn schema<S>(
@@ -549,11 +555,17 @@ where
     let module_def = &module.info.module_def;
     let response_json = match version {
         SchemaVersion::V9 => {
-            let raw = RawModuleDefV9::from(module_def.as_ref().clone());
+            let raw = RawModuleDefV9::try_from(module_def.as_ref().clone())
+                .map_err(|err| bad_request(err.to_string().into()))?;
             axum::Json(sats::serde::SerdeWrapper(raw)).into_response()
         }
         SchemaVersion::V10 => {
-            let raw = RawModuleDefV10::from(module_def.as_ref().clone());
+            let raw = RawModuleDefV10::try_from(module_def.as_ref().clone())
+                .map_err(|err| bad_request(err.to_string().into()))?;
+            axum::Json(sats::serde::SerdeWrapper(raw)).into_response()
+        }
+        SchemaVersion::V11 => {
+            let raw = RawModuleDefV11::from(module_def.as_ref().clone());
             axum::Json(sats::serde::SerdeWrapper(raw)).into_response()
         }
     };
@@ -728,7 +740,7 @@ where
     // If it rejects the connection, bail before executing SQL.
     let module = host.module().await.map_err(log_and_500)?;
     module
-        .call_identity_connected(caller_auth, connection_id)
+        .call_identity_connected(caller_auth.clone(), connection_id)
         .await
         .map_err(client_connected_error_to_response)?;
 
@@ -737,6 +749,8 @@ where
             .authorize_sql(caller_identity, database.database_identity)
             .await?;
 
+        let sql_auth =
+            spacetimedb::auth::invocation::SqlCallAuth::authenticated(sql_auth, &caller_auth).map_err(log_and_500)?;
         host.exec_sql(
             sql_auth,
             database,

@@ -989,9 +989,10 @@ impl Host {
                 // the host type in `st_module` was always set to wasm.
                 // We now correctly use the host type from the database, but the
                 // module may in fact be a JS module.
-                // So if launching it as a wasm module fails, try JS instead.
-                // If this succeeds, the module is definitely a JS module, so
-                // attempt to repair `st_module` in this case.
+                // Retry JS only for an existing stored module whose database
+                // declaration explicitly identifies it as JS. A new publication
+                // or declared Wasm module must preserve its Wasm validation error.
+                // If the legacy retry succeeds, repair `st_module`.
                 //
                 // TODO: This code should eventually be removed once all
                 // databases have been repaired.
@@ -1015,6 +1016,9 @@ impl Host {
                 match launch_wasm_result {
                     Ok(program_and_module_host) => program_and_module_host,
                     Err(e) => {
+                        if program_needs_init || database.host_type != HostType::Js {
+                            return Err(e);
+                        }
                         warn!("failed to launch wasm module, trying js: {e:#}");
 
                         program.kind = ModuleKind::JS;
@@ -1041,7 +1045,9 @@ impl Host {
                                 .with_auto_commit(Workload::Internal, |tx| relational_db.update_program(tx, program));
                         }
 
-                        res?
+                        res.map_err(|js_error| {
+                            e.context(format!("legacy JS host-type repair also failed: {js_error:#}"))
+                        })?
                     }
                 }
             }
@@ -1246,7 +1252,10 @@ impl Host {
                 old_module.module_def.raw_module_def_version(),
                 module_def.raw_module_def_version()
             ),
-            (RawModuleDefVersion::V9OrEarlier, RawModuleDefVersion::V10)
+            (
+                RawModuleDefVersion::V9OrEarlier,
+                RawModuleDefVersion::V10 | RawModuleDefVersion::V11
+            )
         );
 
         let res = match ponder_migrate(&old_module.module_def, &module_def) {

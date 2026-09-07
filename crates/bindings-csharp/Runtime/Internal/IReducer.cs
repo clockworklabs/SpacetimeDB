@@ -18,7 +18,7 @@ public interface IReducerContext
 
 public interface IReducer
 {
-    RawReducerDefV10 MakeReducerDef(ITypeRegistrar registrar);
+    RawReducerDefV11 MakeReducerDef(ITypeRegistrar registrar);
 
     Lifecycle? Lifecycle { get; }
 

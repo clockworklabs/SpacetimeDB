@@ -135,6 +135,10 @@ IMPORT(Status, datastore_clear,
        (table_id, count));
 #undef SPACETIME_MODULE_VERSION
 
+#define SPACETIME_MODULE_VERSION "spacetime_10.6"
+IMPORT(uint32_t, get_call_auth_flags, (void), ());
+#undef SPACETIME_MODULE_VERSION
+
 #ifndef EXPERIMENTAL_WASM_AOT
 static MonoClass* ffi_class;
 

@@ -44,6 +44,8 @@ pub fn call_call_procedure(
         name: _,
         caller_identity: sender,
         caller_connection_id: connection_id,
+        call_auth_flags: _,
+        hosted_auth: _,
         timestamp,
         arg_bytes: procedure_args,
     } = op;

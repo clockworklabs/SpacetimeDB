@@ -7,12 +7,12 @@ use reqwest::Url;
 use serde_json::Value;
 use spacetimedb_client_api_messages::websocket::{common as ws_common, v1 as ws_v1, v2 as ws_v2, v3 as ws_v3};
 use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::de::serde::{DeserializeWrapper, SeedWrapper};
 use spacetimedb_lib::de::DeserializeSeed as BsatnDeserializeSeed;
 use spacetimedb_lib::sats::WithTypespace;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::{bsatn, AlgebraicType};
+use spacetimedb_schema::def::ModuleDef;
 use std::collections::VecDeque;
 use std::io;
 use std::time::Duration;
@@ -115,7 +115,7 @@ impl SubscribeConnection {
     }
 
     /// Wait for the initial subscription result and optionally print it.
-    async fn await_initial_update(&mut self, module_def: Option<&RawModuleDefV9>) -> Result<(), Error> {
+    async fn await_initial_update(&mut self, module_def: Option<&ModuleDef>) -> Result<(), Error> {
         match self {
             Self::V3 { ws, pending } => await_initial_update_v3(ws, pending, module_def).await,
             Self::V1 { ws } => await_initial_update_v1(ws, module_def).await,
@@ -123,11 +123,7 @@ impl SubscribeConnection {
     }
 
     /// Print transaction updates until the requested count is reached.
-    async fn consume_transaction_updates(
-        &mut self,
-        num: Option<u32>,
-        module_def: &RawModuleDefV9,
-    ) -> Result<(), Error> {
+    async fn consume_transaction_updates(&mut self, num: Option<u32>, module_def: &ModuleDef) -> Result<(), Error> {
         match self {
             Self::V3 { ws, pending } => consume_transaction_updates_v3(ws, pending, num, module_def).await,
             Self::V1 { ws } => consume_transaction_updates_v1(ws, num, module_def).await,
@@ -179,7 +175,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         database: resolved.database.clone(),
     };
     let api = ClientApi::new(conn);
-    let module_def = api.module_def().await?;
+    let module_def: ModuleDef = api.module_def().await?.try_into()?;
     let mut conn = connect_with_fallback(&api, confirmed).await?;
 
     let task = async {
@@ -398,7 +394,7 @@ fn parse_msg_json(msg: &WsMessage) -> Option<ws_v1::ServerMessage<ws_v1::JsonFor
 
 /// Await the initial v1 [`ws_v1::ServerMessage::InitialSubscription`].
 /// If `module_def` is `Some`, print a JSON representation to stdout.
-async fn await_initial_update_v1<S>(ws: &mut S, module_def: Option<&RawModuleDefV9>) -> Result<(), Error>
+async fn await_initial_update_v1<S>(ws: &mut S, module_def: Option<&ModuleDef>) -> Result<(), Error>
 where
     S: TryStream<Ok = WsMessage, Error = WsError> + Unpin,
 {
@@ -442,7 +438,7 @@ where
 async fn await_initial_update_v3<S>(
     ws: &mut S,
     pending: &mut VecDeque<ws_v2::ServerMessage>,
-    module_def: Option<&RawModuleDefV9>,
+    module_def: Option<&ModuleDef>,
 ) -> Result<(), Error>
 where
     S: TryStream<Ok = WsMessage, Error = WsError> + Unpin,
@@ -475,11 +471,7 @@ where
 
 /// Print `num` v1 [`ws_v1::ServerMessage::TransactionUpdate`] messages as JSON.
 /// If `num` is `None`, keep going indefinitely.
-async fn consume_transaction_updates_v1<S>(
-    ws: &mut S,
-    num: Option<u32>,
-    module_def: &RawModuleDefV9,
-) -> Result<(), Error>
+async fn consume_transaction_updates_v1<S>(ws: &mut S, num: Option<u32>, module_def: &ModuleDef) -> Result<(), Error>
 where
     S: TryStream<Ok = WsMessage, Error = WsError> + Unpin,
 {
@@ -526,7 +518,7 @@ async fn consume_transaction_updates_v3<S>(
     ws: &mut S,
     pending: &mut VecDeque<ws_v2::ServerMessage>,
     num: Option<u32>,
-    module_def: &RawModuleDefV9,
+    module_def: &ModuleDef,
 ) -> Result<(), Error>
 where
     S: TryStream<Ok = WsMessage, Error = WsError> + Unpin,
@@ -619,25 +611,19 @@ fn decode_server_payload(msg: Bytes, pending: &mut VecDeque<ws_v2::ServerMessage
 }
 
 /// Format a v1 database update using the legacy JSON row representation.
-fn format_output_json_v1(
-    msg: &ws_v1::DatabaseUpdate<ws_v1::JsonFormat>,
-    schema: &RawModuleDefV9,
-) -> Result<String, Error> {
+fn format_output_json_v1(msg: &ws_v1::DatabaseUpdate<ws_v1::JsonFormat>, schema: &ModuleDef) -> Result<String, Error> {
     let formatted = reformat_update_v1(msg, schema).map_err(|source| Error::Reformat { source })?;
     format_output_json_from_tables(&formatted)
 }
 
 /// Format initial v3 subscription rows using the CLI's existing JSON output shape.
-fn format_output_json_query_rows(msg: &ws_v2::QueryRows, schema: &RawModuleDefV9) -> Result<String, Error> {
+fn format_output_json_query_rows(msg: &ws_v2::QueryRows, schema: &ModuleDef) -> Result<String, Error> {
     let formatted = reformat_query_rows(msg, schema).map_err(|source| Error::Reformat { source })?;
     format_output_json_from_tables(&formatted)
 }
 
 /// Format a v3 transaction update using the CLI's existing JSON output shape.
-fn format_output_json_transaction_update(
-    msg: &ws_v2::TransactionUpdate,
-    schema: &RawModuleDefV9,
-) -> Result<String, Error> {
+fn format_output_json_transaction_update(msg: &ws_v2::TransactionUpdate, schema: &ModuleDef) -> Result<String, Error> {
     let formatted = reformat_transaction_update(msg, schema).map_err(|source| Error::Reformat { source })?;
     format_output_json_from_tables(&formatted)
 }
@@ -651,12 +637,12 @@ fn format_output_json_from_tables(formatted: &HashMap<&str, SubscriptionTable>) 
 /// Convert a v1 JSON-format database update to the normalized table output map.
 fn reformat_update_v1<'a>(
     msg: &'a ws_v1::DatabaseUpdate<ws_v1::JsonFormat>,
-    schema: &RawModuleDefV9,
+    schema: &ModuleDef,
 ) -> anyhow::Result<HashMap<&'a str, SubscriptionTable>> {
     msg.tables
         .iter()
         .map(|upd| {
-            let table_ty = schema.typespace.resolve(
+            let table_ty = schema.typespace().resolve(
                 schema
                     .type_ref_for_table_like(&upd.table_name)
                     .context("table not found in schema")?,
@@ -690,12 +676,12 @@ fn reformat_update_v1<'a>(
 /// Convert v3 initial subscription rows to the normalized table output map.
 fn reformat_query_rows<'a>(
     msg: &'a ws_v2::QueryRows,
-    schema: &RawModuleDefV9,
+    schema: &ModuleDef,
 ) -> anyhow::Result<HashMap<&'a str, SubscriptionTable>> {
     let mut formatted = HashMap::default();
 
     for table in &msg.tables {
-        let table_ty = schema.typespace.resolve(
+        let table_ty = schema.typespace().resolve(
             schema
                 .type_ref_for_table_like(&table.table)
                 .context("table not found in schema")?,
@@ -713,13 +699,13 @@ fn reformat_query_rows<'a>(
 /// Convert a v3 transaction update to the normalized table output map.
 fn reformat_transaction_update<'a>(
     msg: &'a ws_v2::TransactionUpdate,
-    schema: &RawModuleDefV9,
+    schema: &ModuleDef,
 ) -> anyhow::Result<HashMap<&'a str, SubscriptionTable>> {
     let mut formatted = HashMap::default();
 
     for query_set in &msg.query_sets {
         for table in &query_set.tables {
-            let table_ty = schema.typespace.resolve(
+            let table_ty = schema.typespace().resolve(
                 schema
                     .type_ref_for_table_like(&table.table_name)
                     .context("table not found in schema")?,

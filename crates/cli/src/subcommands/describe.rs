@@ -98,6 +98,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let api = ClientApi::new(conn);
 
     let module_def = api.module_def().await?;
+    let canonical = spacetimedb_schema::def::ModuleDef::try_from(module_def.clone())?;
 
     if json {
         fn sats_to_json<T: sats::Serialize>(v: &T) -> serde_json::Result<String> {
@@ -105,18 +106,21 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         }
         let json = match entity {
             Some((EntityType::Reducer, reducer_name)) => {
+                let source_name = &canonical
+                    .reducer(reducer_name)
+                    .context("no such reducer")?
+                    .accessor_name;
                 let reducer = module_def
-                    .reducers
-                    .iter()
-                    .find(|r| *r.name == *reducer_name)
+                    .reducers()
+                    .find(|r| *r.source_name == **source_name)
                     .context("no such reducer")?;
                 sats_to_json(reducer)?
             }
             Some((EntityType::Table, table_name)) => {
+                let source_name = &canonical.table(table_name).context("no such table")?.accessor_name;
                 let table = module_def
-                    .tables
-                    .iter()
-                    .find(|t| *t.name == *table_name)
+                    .tables()
+                    .find(|t| *t.source_name == **source_name)
                     .context("no such table")?;
                 sats_to_json(table)?
             }

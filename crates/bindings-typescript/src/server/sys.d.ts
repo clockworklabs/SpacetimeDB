@@ -123,3 +123,8 @@ declare module 'spacetime:sys@2.0' {
 declare module 'spacetime:sys@2.1' {
   export function datastore_clear(table_id: u32): u64;
 }
+
+declare module 'spacetime:sys@2.2' {
+  /** Verified invocation flags. Bit 0 is INTERNAL; JWT presence is independent. */
+  export function get_call_auth_flags(): number;
+}

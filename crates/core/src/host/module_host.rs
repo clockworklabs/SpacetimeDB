@@ -2,6 +2,8 @@ use super::{
     ArgsTuple, FunctionArgs, InvalidProcedureArguments, InvalidReducerArguments, ReducerCallResult, ReducerId,
     ReducerOutcome, Scheduler,
 };
+use crate::auth::hosted_tokens::VerifiedHostedAuth;
+use crate::auth::invocation::{check_hosted_admission, InvocationCaller, SqlCallAuth};
 use crate::client::messages::{OneOffQueryResponseMessage, ProcedureResultMessage, SerializableMessage};
 use crate::client::{ClientActorId, ClientConnectionSender, WsVersion};
 use crate::database_logger::{DatabaseLogger, LogLevel, Record};
@@ -690,6 +692,13 @@ pub fn call_identity_connected(
         stdb.report_mut_tx_metrics(reducer_name, metrics, None);
     });
 
+    let caller = InvocationCaller::from(&caller_auth);
+    let flags = caller
+        .flags_for(module.database_identity, &module.module_def)
+        .map_err(|e| ClientConnectedError::Rejected(e.to_string().into()))?;
+    check_hosted_admission(&*mut_tx, module.database_identity, caller.hosted.as_deref())
+        .map_err(|e| ClientConnectedError::Rejected(e.to_string().into()))?;
+
     mut_tx
         .insert_st_client(
             caller_auth.claims.identity,
@@ -699,13 +708,23 @@ pub fn call_identity_connected(
         .map_err(DBError::from)
         .map_err(Box::new)?;
 
+    if caller.hosted.is_some() {
+        crate::db::deployment::record_connection_auth(
+            &mut mut_tx,
+            caller_connection_id,
+            caller_auth.claims.identity,
+            flags,
+        )
+        .map_err(|err| ClientConnectedError::DBError(Box::new(DBError::Other(err.into()))))?;
+    }
+
     if let Some((reducer_id, reducer_def)) = reducer_lookup {
         // The module defined a lifecycle reducer to handle new connections.
         // Call this reducer.
         // If the call fails (as in, something unexpectedly goes wrong with guest execution),
         // abort the connection: we can't really recover.
         let tx = Some(ScopeGuard::into_inner(mut_tx));
-        let params = ModuleHost::call_reducer_params(
+        let mut params = ModuleHost::call_reducer_params(
             module,
             caller_auth.claims.identity,
             Some(caller_connection_id),
@@ -717,6 +736,8 @@ pub fn call_identity_connected(
             FunctionArgs::Nullary,
         )
         .map_err(ReducerCallError::from)?;
+        params.call_auth_flags = flags;
+        params.hosted_auth = caller.hosted;
         let (reducer_outcome, trapped) = call_reducer(tx, params);
         *trapped_slot = trapped;
 
@@ -761,6 +782,9 @@ pub struct CallReducerParams {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,
     pub caller_connection_id: ConnectionId,
+    /// Verified invocation authority. Bit 0 is internal; never client-decoded.
+    pub(crate) call_auth_flags: u32,
+    pub(crate) hosted_auth: Option<std::sync::Arc<VerifiedHostedAuth>>,
     pub client: Option<Arc<ClientConnectionSender>>,
     pub request_id: Option<RequestId>,
     pub timer: Option<Instant>,
@@ -781,6 +805,8 @@ impl CallReducerParams {
             timestamp,
             caller_identity,
             caller_connection_id: ConnectionId::ZERO,
+            call_auth_flags: 1,
+            hosted_auth: None,
             client: None,
             request_id: None,
             timer: None,
@@ -986,7 +1012,7 @@ impl ViewCommandErrorTarget {
 pub(in crate::host) struct SqlCommand {
     pub(in crate::host) db: Arc<RelationalDB>,
     pub(in crate::host) sql_text: String,
-    pub(in crate::host) auth: AuthCtx,
+    pub(in crate::host) auth: SqlCallAuth,
     pub(in crate::host) subs: Option<ModuleSubscriptions>,
 }
 
@@ -1093,6 +1119,8 @@ pub struct CallProcedureParams {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,
     pub caller_connection_id: ConnectionId,
+    pub(crate) call_auth_flags: u32,
+    pub(crate) hosted_auth: Option<std::sync::Arc<VerifiedHostedAuth>>,
     pub timer: Option<Instant>,
     pub procedure_id: ProcedureId,
     pub args: ArgsTuple,
@@ -1111,6 +1139,8 @@ impl CallProcedureParams {
             timestamp,
             caller_identity,
             caller_connection_id: ConnectionId::ZERO,
+            call_auth_flags: 1,
+            hosted_auth: None,
             timer: None,
             procedure_id,
             args,
@@ -2017,7 +2047,7 @@ impl ModuleHost {
     }
 
     /// Invokes the `client_disconnected` reducer, if present,
-    /// then deletes the client’s rows from `st_client` and `st_connection_credentials`.
+    /// then deletes the client's rows from `st_client`, `st_connection_credentials`, and `st_connection_auth`.
     /// If the reducer fails, the rows are still deleted.
     /// Calling this on an already-disconnected client is a no-op.
     pub fn call_identity_disconnected_inner(
@@ -2081,22 +2111,35 @@ impl ModuleHost {
             // The module defined a lifecycle reducer to handle disconnects. Call it.
             // If it succeeds, `WasmModuleInstance::call_reducer_with_tx` has already ensured
             // that `st_client` is updated appropriately.
+            let flags = crate::db::deployment::connection_auth_flags(&mut_tx, caller_connection_id, caller_identity)
+                .map_err(|err| {
+                    InvalidReducerArguments(InvalidFunctionArguments {
+                        err: err.into(),
+                        function_name: reducer_name.clone().into(),
+                    })
+                });
             let tx = Some(mut_tx);
-            let result = Self::call_reducer_params(
-                info,
-                caller_identity,
-                Some(caller_connection_id),
-                None,
-                None,
-                None,
-                reducer_id,
-                reducer_def,
-                FunctionArgs::Nullary,
-            )
-            .map(|params| {
-                let (res, trapped) = call_reducer(tx, params);
-                *trapped_slot = trapped;
-                res
+            let result = flags.and_then(|flags| {
+                Self::call_reducer_params(
+                    info,
+                    caller_identity,
+                    Some(caller_connection_id),
+                    None,
+                    None,
+                    None,
+                    reducer_id,
+                    reducer_def,
+                    FunctionArgs::Nullary,
+                )
+                .map(|mut params| {
+                    // This host event retains the connection's captured authority,
+                    // including after credential expiry, revocation, or host recovery.
+                    // It must not carry a live hosted proof that could block cleanup.
+                    params.call_auth_flags = flags;
+                    let (res, trapped) = call_reducer(tx, params);
+                    *trapped_slot = trapped;
+                    res
+                })
             });
 
             // If it failed, we still need to update `st_client`: the client's not coming back.
@@ -2188,6 +2231,8 @@ impl ModuleHost {
             timestamp: Timestamp::now(),
             caller_identity,
             caller_connection_id,
+            call_auth_flags: 0,
+            hosted_auth: None,
             client,
             request_id,
             timer,
@@ -2198,7 +2243,7 @@ impl ModuleHost {
 
     fn reducer_call_params<'a>(
         &'a self,
-        caller_identity: Identity,
+        caller: InvocationCaller,
         caller_connection_id: Option<ConnectionId>,
         client: Option<Arc<ClientConnectionSender>>,
         request_id: Option<RequestId>,
@@ -2206,6 +2251,10 @@ impl ModuleHost {
         reducer_name: &str,
         args: FunctionArgs,
     ) -> Result<(&'a ReducerDef, CallReducerParams), ReducerCallError> {
+        let flags = caller
+            .flags_for(self.info.database_identity, &self.info.module_def)
+            .map_err(|_| ReducerCallError::NoSuchReducer)?;
+        let caller_identity = caller.identity;
         let (reducer_id, reducer_def) = self
             .info
             .module_def
@@ -2215,24 +2264,27 @@ impl ModuleHost {
             return Err(ReducerCallError::LifecycleReducer(lifecycle));
         }
 
-        if reducer_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+        if !reducer_def
+            .visibility
+            .allows_invocation(flags & 1 != 0, self.is_database_owner(caller_identity))
+        {
             return Err(ReducerCallError::NoSuchReducer);
         }
 
-        Ok((
+        let mut params = Self::call_reducer_params(
+            &self.info,
+            caller_identity,
+            caller_connection_id,
+            client,
+            request_id,
+            timer,
+            reducer_id,
             reducer_def,
-            Self::call_reducer_params(
-                &self.info,
-                caller_identity,
-                caller_connection_id,
-                client,
-                request_id,
-                timer,
-                reducer_id,
-                reducer_def,
-                args,
-            )?,
-        ))
+            args,
+        )?;
+        params.call_auth_flags = flags;
+        params.hosted_auth = caller.hosted;
+        Ok((reducer_def, params))
     }
 
     async fn call_reducer_with_params(
@@ -2260,7 +2312,7 @@ impl ModuleHost {
 
     async fn with_reducer_call<R>(
         &self,
-        caller_identity: Identity,
+        caller: InvocationCaller,
         caller_connection_id: Option<ConnectionId>,
         client: Option<Arc<ClientConnectionSender>>,
         request_id: Option<RequestId>,
@@ -2271,7 +2323,7 @@ impl ModuleHost {
     ) -> Result<R, ReducerCallError> {
         let res = async {
             let (reducer_def, params) = self.reducer_call_params(
-                caller_identity,
+                caller,
                 caller_connection_id,
                 client,
                 request_id,
@@ -2296,7 +2348,7 @@ impl ModuleHost {
 
     pub async fn call_reducer(
         &self,
-        caller_identity: Identity,
+        caller: impl Into<InvocationCaller> + Send,
         caller_connection_id: Option<ConnectionId>,
         client: Option<Arc<ClientConnectionSender>>,
         request_id: Option<RequestId>,
@@ -2305,7 +2357,7 @@ impl ModuleHost {
         args: FunctionArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         self.with_reducer_call(
-            caller_identity,
+            caller.into(),
             caller_connection_id,
             client,
             request_id,
@@ -2319,7 +2371,7 @@ impl ModuleHost {
 
     pub async fn enqueue_reducer(
         &self,
-        caller_identity: Identity,
+        caller: impl Into<InvocationCaller> + Send,
         caller_connection_id: Option<ConnectionId>,
         client: Option<Arc<ClientConnectionSender>>,
         request_id: Option<RequestId>,
@@ -2328,7 +2380,7 @@ impl ModuleHost {
         args: FunctionArgs,
     ) -> Result<(), ReducerCallError> {
         self.with_reducer_call(
-            caller_identity,
+            caller.into(),
             caller_connection_id,
             client,
             request_id,
@@ -2471,10 +2523,15 @@ impl ModuleHost {
         &self,
         db: Arc<RelationalDB>,
         sql_text: String,
-        auth: AuthCtx,
+        auth: SqlCallAuth,
         subs: Option<ModuleSubscriptions>,
         head: &mut Vec<(RawIdentifier, AlgebraicType)>,
     ) -> Result<SqlResult, DBError> {
+        InvocationCaller {
+            identity: auth.caller(),
+            hosted: auth.hosted.clone(),
+        }
+        .flags_for(self.info.database_identity, &self.info.module_def)?;
         let cmd = SqlCommand {
             db,
             sql_text,
@@ -2490,15 +2547,14 @@ impl ModuleHost {
 
     pub async fn call_procedure(
         &self,
-        caller_identity: Identity,
+        caller: impl Into<InvocationCaller> + Send,
         caller_connection_id: Option<ConnectionId>,
         timer: Option<Instant>,
         procedure_name: &str,
         args: FunctionArgs,
     ) -> CallProcedureReturn {
         let res = async {
-            let call =
-                self.prepare_procedure_call(caller_identity, caller_connection_id, timer, procedure_name, args)?;
+            let call = self.prepare_procedure_call(caller.into(), caller_connection_id, timer, procedure_name, args)?;
             self.call_procedure_with_params(&call.name, call.params)
                 .await
                 .map_err(Into::into)
@@ -2514,7 +2570,7 @@ impl ModuleHost {
 
     pub(crate) async fn enqueue_procedure(
         &self,
-        caller_identity: Identity,
+        caller: impl Into<InvocationCaller> + Send,
         caller_connection_id: Option<ConnectionId>,
         timer: Option<Instant>,
         procedure_name: &str,
@@ -2522,7 +2578,7 @@ impl ModuleHost {
         target: ProcedureResultTarget,
     ) -> Result<(), BroadcastError> {
         let PreparedProcedureCall { name, params } =
-            match self.prepare_procedure_call(caller_identity, caller_connection_id, timer, procedure_name, args) {
+            match self.prepare_procedure_call(caller.into(), caller_connection_id, timer, procedure_name, args) {
                 Ok(value) => value,
                 Err(err) => {
                     return self.send_procedure_error(procedure_name, timer, target, err);
@@ -2697,14 +2753,14 @@ impl ModuleHost {
 
     fn prepare_procedure_call(
         &self,
-        caller_identity: Identity,
+        caller: InvocationCaller,
         caller_connection_id: Option<ConnectionId>,
         timer: Option<Instant>,
         procedure_name: &str,
         args: FunctionArgs,
     ) -> Result<PreparedProcedureCall, ProcedureCallError> {
         let (procedure_def, params) =
-            self.procedure_call_params(caller_identity, caller_connection_id, timer, procedure_name, args)?;
+            self.procedure_call_params(caller, caller_connection_id, timer, procedure_name, args)?;
         Ok(PreparedProcedureCall {
             name: procedure_def.name.to_string(),
             params,
@@ -2713,19 +2769,26 @@ impl ModuleHost {
 
     fn procedure_call_params<'a>(
         &'a self,
-        caller_identity: Identity,
+        caller: InvocationCaller,
         caller_connection_id: Option<ConnectionId>,
         timer: Option<Instant>,
         procedure_name: &str,
         args: FunctionArgs,
     ) -> Result<(&'a ProcedureDef, CallProcedureParams), ProcedureCallError> {
+        let flags = caller
+            .flags_for(self.info.database_identity, &self.info.module_def)
+            .map_err(|_| ProcedureCallError::NoSuchProcedure)?;
+        let caller_identity = caller.identity;
         let (procedure_id, procedure_def) = self
             .info
             .module_def
             .procedure_full(procedure_name)
             .ok_or(ProcedureCallError::NoSuchProcedure)?;
 
-        if procedure_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+        if !procedure_def
+            .visibility
+            .allows_invocation(flags & 1 != 0, self.is_database_owner(caller_identity))
+        {
             return Err(ProcedureCallError::NoSuchProcedure);
         }
 
@@ -2740,6 +2803,8 @@ impl ModuleHost {
                 timestamp: Timestamp::now(),
                 caller_identity,
                 caller_connection_id,
+                call_auth_flags: flags,
+                hosted_auth: caller.hosted,
                 timer,
                 procedure_id,
                 args,
@@ -3294,8 +3359,10 @@ impl ModuleHost {
             db.report_read_tx_metrics(reducer, tx_metrics);
         });
 
-        let result = Self::execute_one_off_query(&db, &tx, &auth, &query, &rlb_pool, |table_name, rows| {
-            ws_v1::OneOffTable { table_name, rows }
+        let result = check_hosted_admission(&*tx, db.database_identity(), client.auth.hosted.as_ref()).and_then(|()| {
+            Self::execute_one_off_query(&db, &tx, &auth, &query, &rlb_pool, |table_name, rows| {
+                ws_v1::OneOffTable { table_name, rows }
+            })
         });
 
         let total_host_execution_duration = timer.elapsed().into();
@@ -3373,10 +3440,11 @@ impl ModuleHost {
             db.report_read_tx_metrics(reducer, tx_metrics);
         });
 
-        let result =
+        let result = check_hosted_admission(&*tx, db.database_identity(), client.auth.hosted.as_ref()).and_then(|()| {
             Self::execute_one_off_query::<ws_v1::BsatnFormat, _>(&db, &tx, &auth, &query, &rlb_pool, |table, rows| {
                 ws_v2::SingleTableRows { table, rows }
-            });
+            })
+        });
 
         let (message, metrics) = match result {
             Ok((rows, metrics)) => {

@@ -885,6 +885,14 @@ pub mod raw {
         pub fn datastore_clear(table_id: TableId, out: *mut u64) -> u16;
     }
 
+    #[link(wasm_import_module = "spacetime_10.6")]
+    unsafe extern "C" {
+        /// Authentication flags for the active invocation. Bit 0 is INTERNAL.
+        /// Read at context construction; neither a missing connection ID nor JWT
+        /// claims imply internal authority. Unknown bits must be ignored.
+        pub fn get_call_auth_flags() -> u32;
+    }
+
     /// What strategy does the database index use?
     ///
     /// See also: <https://www.postgresql.org/docs/current/sql-createindex.html>
@@ -1660,4 +1668,11 @@ pub mod procedure {
             Some(errno) => panic!("{errno}"),
         }
     }
+}
+
+/// Read host-verified authentication flags for the active invocation.
+/// Bit 0 is INTERNAL; all other bits are reserved.
+pub fn get_call_auth_flags() -> u32 {
+    // SAFETY: no pointers or guest-provided values are passed to the host.
+    unsafe { raw::get_call_auth_flags() }
 }

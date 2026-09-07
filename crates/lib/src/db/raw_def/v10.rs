@@ -671,7 +671,7 @@ impl RawModuleDefV10Builder {
     }
 
     /// Get mutable access to the typespace section, creating it if missing.
-    fn typespace_mut(&mut self) -> &mut Typespace {
+    pub(super) fn typespace_mut(&mut self) -> &mut Typespace {
         let idx = self
             .module
             .sections
@@ -785,7 +785,7 @@ impl RawModuleDefV10Builder {
     }
 
     /// Get mutable access to the types section, creating it if missing.
-    fn types_mut(&mut self) -> &mut Vec<RawTypeDefV10> {
+    pub(super) fn types_mut(&mut self) -> &mut Vec<RawTypeDefV10> {
         let idx = self
             .module
             .sections

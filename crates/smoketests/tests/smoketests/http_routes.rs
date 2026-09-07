@@ -1172,7 +1172,7 @@ fn assert_http_routes_end_to_end(server_url: &str, identity: &str) {
     assert_eq!(resp.text().expect("missing route body"), NO_SUCH_ROUTE_BODY);
 
     let resp = client
-        .get(format!("{server_url}/v1/database/{identity}/schema?version=10"))
+        .get(format!("{server_url}/v1/database/{identity}/schema?version=11"))
         .header("authorization", "Bearer not-a-jwt")
         .send()
         .expect("schema request failed");

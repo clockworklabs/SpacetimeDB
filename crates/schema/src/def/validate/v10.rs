@@ -315,6 +315,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         procedures,
         http_handlers,
         http_routes,
+        capabilities: Default::default(),
         raw_module_def_version: RawModuleDefVersion::V10,
     })
 }
@@ -356,7 +357,7 @@ fn change_scheduled_functions_and_lifetimes_visibility(
 
     for red_def in reducers.iter_mut().map(|(_, r)| r) {
         if red_def.lifecycle.is_some() {
-            red_def.visibility = crate::def::FunctionVisibility::Private;
+            red_def.visibility = crate::def::FunctionVisibility::Internal;
         }
     }
 
@@ -1293,7 +1294,7 @@ mod tests {
             def.reducers[&check_deliveries_name].visibility,
             FunctionVisibility::Private,
         );
-        assert_eq!(def.reducers[&init_name].visibility, FunctionVisibility::Private);
+        assert_eq!(def.reducers[&init_name].visibility, FunctionVisibility::Internal);
         assert_eq!(
             def.reducers[&extra_reducer_name].visibility,
             FunctionVisibility::ClientCallable

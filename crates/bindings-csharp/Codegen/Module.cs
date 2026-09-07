@@ -1405,13 +1405,44 @@ record ViewDeclaration
 }
 
 /// <summary>
-/// Represents a reducer method declaration in a module.
+/// Validates a declared function visibility and maps it to the V11 schema.
 /// </summary>
+static class FunctionVisibilityDeclaration
+{
+    internal static string Resolve(
+        FunctionVisibility visibility,
+        bool lifecycle,
+        MethodDeclarationSyntax method,
+        DiagReporter diag
+    )
+    {
+        if (
+            (
+                lifecycle
+                && visibility is not (FunctionVisibility.Default or FunctionVisibility.Internal)
+            ) || !Enum.IsDefined(typeof(FunctionVisibility), visibility)
+        )
+        {
+            diag.Report(ErrorDescriptor.InvalidFunctionVisibility, method);
+            return "null";
+        }
+        return visibility switch
+        {
+            FunctionVisibility.Public =>
+                "SpacetimeDB.Internal.FunctionVisibilityV11.ClientCallable",
+            FunctionVisibility.Private => "SpacetimeDB.Internal.FunctionVisibilityV11.Private",
+            FunctionVisibility.Internal => "SpacetimeDB.Internal.FunctionVisibilityV11.Internal",
+            _ => "null",
+        };
+    }
+}
+
 record ReducerDeclaration
 {
     public readonly string Name;
     public readonly string? CanonicalName;
     public readonly ReducerKind Kind;
+    public readonly string DeclaredVisibility;
     public readonly string FullName;
     public readonly EquatableArray<MemberDeclaration> Args;
     public readonly Scope Scope;
@@ -1450,6 +1481,12 @@ record ReducerDeclaration
         }
 
         Kind = attr.Kind;
+        DeclaredVisibility = FunctionVisibilityDeclaration.Resolve(
+            attr.Visibility,
+            Kind != ReducerKind.UserDefined,
+            methodSyntax,
+            diag
+        );
         CanonicalName = attr.Name;
         FullName = SymbolToName(method);
         Args = new(
@@ -1475,10 +1512,10 @@ record ReducerDeclaration
              class {{Identifier}}: SpacetimeDB.Internal.IReducer {
                  {{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args)}}
 
-                 public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
+                 public SpacetimeDB.Internal.RawReducerDefV11 MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
                      SourceName: nameof({{Identifier}}),
                      Params: [{{MemberDeclaration.GenerateDefs(Args)}}],
-                     Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                     DeclaredVisibility: {{DeclaredVisibility}},
                      OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
                      ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
                  );
@@ -1535,6 +1572,7 @@ record ProcedureDeclaration
 {
     public readonly string Name;
     public readonly string? CanonicalName;
+    public readonly string DeclaredVisibility;
     public readonly string FullName;
     public readonly EquatableArray<MemberDeclaration> Args;
     public readonly Scope Scope;
@@ -1551,6 +1589,12 @@ record ProcedureDeclaration
         var methodSyntax = (MethodDeclarationSyntax)context.TargetNode;
         var method = (IMethodSymbol)context.TargetSymbol;
         var attr = context.Attributes.Single().ParseAs<ProcedureAttribute>();
+        DeclaredVisibility = FunctionVisibilityDeclaration.Resolve(
+            attr.Visibility,
+            false,
+            methodSyntax,
+            diag
+        );
 
         if (
             method.Parameters.FirstOrDefault()?.Type
@@ -1706,11 +1750,11 @@ record ProcedureDeclaration
             class {{{Identifier}}} : SpacetimeDB.Internal.IProcedure {
                 {{{classFields}}}
 
-                public SpacetimeDB.Internal.RawProcedureDefV10 MakeProcedureDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new(
+                public SpacetimeDB.Internal.RawProcedureDefV11 MakeProcedureDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new(
                     SourceName: nameof({{{Identifier}}}),
                     Params: [{{{MemberDeclaration.GenerateDefs(Args)}}}],
                     ReturnType: {{{returnTypeExpr}}},
-                    Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable
+                    DeclaredVisibility: {{{DeclaredVisibility}}}
                 );
 
                 public byte[] Invoke(BinaryReader reader, SpacetimeDB.Internal.IProcedureContext ctx) {

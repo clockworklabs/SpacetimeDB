@@ -3023,13 +3023,13 @@ static class ModuleRegistration
 {
     class __ReducerWithReservedPrefix : SpacetimeDB.Internal.IReducer
     {
-        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV11 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
                 SourceName: nameof(__ReducerWithReservedPrefix),
                 Params: [],
-                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                DeclaredVisibility: null,
                 OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
                 ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
             );
@@ -3046,13 +3046,13 @@ static class ModuleRegistration
     {
         private static readonly TestScheduleIssues.BSATN tableRW = new();
 
-        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV11 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
                 SourceName: nameof(DummyScheduledReducer),
                 Params: [new("table", tableRW.GetAlgebraicType(registrar))],
-                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                DeclaredVisibility: null,
                 OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
                 ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
             );
@@ -3070,13 +3070,13 @@ static class ModuleRegistration
 
     class OnReducerWithReservedPrefix : SpacetimeDB.Internal.IReducer
     {
-        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV11 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
                 SourceName: nameof(OnReducerWithReservedPrefix),
                 Params: [],
-                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                DeclaredVisibility: null,
                 OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
                 ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
             );
@@ -3091,13 +3091,13 @@ static class ModuleRegistration
 
     class TestDuplicateReducerKind1 : SpacetimeDB.Internal.IReducer
     {
-        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV11 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
                 SourceName: nameof(TestDuplicateReducerKind1),
                 Params: [],
-                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                DeclaredVisibility: null,
                 OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
                 ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
             );
@@ -3112,13 +3112,13 @@ static class ModuleRegistration
 
     class TestDuplicateReducerKind2 : SpacetimeDB.Internal.IReducer
     {
-        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV11 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
                 SourceName: nameof(TestDuplicateReducerKind2),
                 Params: [],
-                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                DeclaredVisibility: null,
                 OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
                 ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
             );
@@ -3133,13 +3133,13 @@ static class ModuleRegistration
 
     class TestDuplicateReducerName : SpacetimeDB.Internal.IReducer
     {
-        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV11 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
                 SourceName: nameof(TestDuplicateReducerName),
                 Params: [],
-                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                DeclaredVisibility: null,
                 OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
                 ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
             );
@@ -3154,13 +3154,13 @@ static class ModuleRegistration
 
     class TestReducerReturnType : SpacetimeDB.Internal.IReducer
     {
-        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV11 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
                 SourceName: nameof(TestReducerReturnType),
                 Params: [],
-                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                DeclaredVisibility: null,
                 OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
                 ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
             );
@@ -3175,13 +3175,13 @@ static class ModuleRegistration
 
     class TestReducerWithoutContext : SpacetimeDB.Internal.IReducer
     {
-        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV11 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
                 SourceName: nameof(TestReducerWithoutContext),
                 Params: [],
-                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                DeclaredVisibility: null,
                 OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
                 ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
             );

@@ -35,6 +35,8 @@ serde.workspace = true
 futures.workspace = true
 
 [dev-dependencies]
+spacetimedb-auth.workspace = true
+spacetimedb-datastore.workspace = true
 serial_test.workspace = true
 
 [lints]

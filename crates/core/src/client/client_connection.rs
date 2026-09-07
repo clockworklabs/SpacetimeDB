@@ -8,6 +8,7 @@ use std::task::{Context, Poll};
 use std::time::{Instant, SystemTime};
 
 use super::{message_handlers, ClientActorId, MessageHandleError, OutboundMessage};
+use crate::auth::{hosted_tokens::VerifiedHostedAuth, invocation::check_hosted_admission};
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use crate::host::module_host::{ClientConnectedError, ProcedureResultTarget};
@@ -23,6 +24,7 @@ use log::warn;
 use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_auth::identity::{ConnectionAuthCtx, SpacetimeIdentityClaims};
 use spacetimedb_client_api_messages::websocket::{common as ws_common, v1 as ws_v1, v2 as ws_v2};
+use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_durability::{DurableOffset, TxOffset};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -125,9 +127,29 @@ pub trait DurableOffsetSupply: Send {
     /// - `Ok(Some(DurableOffset))` otherwise
     ///
     fn durable_offset(&mut self) -> Result<Option<DurableOffset>, NoSuchModule>;
+
+    /// Recheck the authoritative target state, never a cached generation.
+    fn check_hosted_auth(
+        &mut self,
+        _proof: &VerifiedHostedAuth,
+    ) -> futures::future::BoxFuture<'static, anyhow::Result<()>> {
+        Box::pin(async { anyhow::bail!("hosted connection has no authoritative database state") })
+    }
 }
 
 impl DurableOffsetSupply for watch::Receiver<ModuleHost> {
+    fn check_hosted_auth(
+        &mut self,
+        proof: &VerifiedHostedAuth,
+    ) -> futures::future::BoxFuture<'static, anyhow::Result<()>> {
+        if self.has_changed().is_err() {
+            return Box::pin(async { Err(NoSuchModule.into()) });
+        }
+        let module = self.borrow().clone();
+        let mut db = module.relational_db().clone();
+        db.check_hosted_auth(proof)
+    }
+
     fn durable_offset(&mut self) -> Result<Option<DurableOffset>, NoSuchModule> {
         let module = if self.has_changed().map_err(|_| NoSuchModule)? {
             self.borrow_and_update()
@@ -140,6 +162,22 @@ impl DurableOffsetSupply for watch::Receiver<ModuleHost> {
 }
 
 impl DurableOffsetSupply for Arc<RelationalDB> {
+    fn check_hosted_auth(
+        &mut self,
+        proof: &VerifiedHostedAuth,
+    ) -> futures::future::BoxFuture<'static, anyhow::Result<()>> {
+        let db = self.clone();
+        let proof = proof.clone();
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                db.with_read_only(Workload::Internal, |tx| {
+                    check_hosted_admission(tx, db.database_identity(), Some(&proof))
+                })
+            })
+            .await?
+        })
+    }
+
     fn durable_offset(&mut self) -> Result<Option<DurableOffset>, NoSuchModule> {
         Ok(self.durable_tx_offset())
     }
@@ -157,6 +195,7 @@ pub struct ClientConnectionReceiver {
     channel: MeteredReceiver<ClientUpdate>,
     pending: Vec<ClientUpdate>,
     offset_supply: Box<dyn DurableOffsetSupply>,
+    hosted_sender: Option<std::sync::Weak<ClientConnectionSender>>,
 }
 
 impl ClientConnectionReceiver {
@@ -172,6 +211,7 @@ impl ClientConnectionReceiver {
             channel,
             pending: Vec::new(),
             offset_supply: Box::new(offset_supply),
+            hosted_sender: None,
         }
     }
 
@@ -214,6 +254,9 @@ impl ClientConnectionReceiver {
     /// These values are stored internally, so calling `recv_many` again will
     /// not lose data.
     pub async fn recv_many(&mut self, buf: &mut Vec<OutboundMessage>, max: usize) -> usize {
+        if !self.hosted_connection_is_valid().await {
+            return 0;
+        }
         // If there are no pending updates and the input channel has been closed,
         // no more messages can be received from this receiver.
         if max == 0 || (self.pending.is_empty() && self.channel.recv_many(&mut self.pending, max).await == 0) {
@@ -223,14 +266,14 @@ impl ClientConnectionReceiver {
         // If we don't have to wait for txns to be made durable,
         // drain the pending updates.
         if !self.confirmed_reads {
-            return self.drain_pending(buf, max);
+            return self.drain_pending(buf, max).await;
         }
 
         // If we do have to wait for txns to be made durable,
         // but the next client update doesn't have a tx offset,
         // there's no reason to wait - just send it.
         if !self.pending_update_has_offset() {
-            return self.drain_pending(buf, 1);
+            return self.drain_pending(buf, 1).await;
         }
 
         // Otherwise, grab the next offset that we should wait for.
@@ -243,12 +286,12 @@ impl ClientConnectionReceiver {
                     warn!("database went away while waiting for durable offset");
                     return 0;
                 }
-                self.drain_pending(buf, n)
+                self.drain_pending(buf, n).await
             }
             // Database shut down or crashed.
             Err(NoSuchModule) => 0,
             // In-memory database.
-            Ok(None) => self.drain_pending(buf, max),
+            Ok(None) => self.drain_pending(buf, max).await,
         }
     }
 
@@ -265,11 +308,38 @@ impl ClientConnectionReceiver {
     }
 
     /// Drain the pending [`ClientUpdate`]s, up to `max, into `buf`.
-    fn drain_pending(&mut self, buf: &mut Vec<OutboundMessage>, max: usize) -> usize {
+    async fn drain_pending(&mut self, buf: &mut Vec<OutboundMessage>, max: usize) -> usize {
+        // A queued update may predate revocation, and a confirmed-read wait may
+        // outlast the credential. Check again immediately before delivery.
+        if !self.hosted_connection_is_valid().await {
+            return 0;
+        }
         let n = self.pending.len().min(max);
         buf.reserve(n);
         buf.extend(self.pending.drain(..n).map(|u| u.message));
         n
+    }
+
+    async fn hosted_connection_is_valid(&mut self) -> bool {
+        let Some(sender) = &self.hosted_sender else { return true };
+        let valid = match sender.upgrade() {
+            Some(sender) => {
+                let valid = match &sender.auth.hosted {
+                    Some(proof) if !sender.is_cancelled() => self.offset_supply.check_hosted_auth(proof).await.is_ok(),
+                    _ => false,
+                };
+                if !valid {
+                    sender.cancel_hosted_connection();
+                }
+                valid
+            }
+            None => false,
+        };
+        if !valid {
+            self.pending.clear();
+            self.close();
+        }
+        valid
     }
 
     /// Does the next pending update have a tx offset?
@@ -354,6 +424,13 @@ pub enum ClientSendError {
 }
 
 impl ClientConnectionSender {
+    /// The fence installer awaits the returned task's completion before ack.
+    pub(crate) fn cancel_hosted_connection(&self) -> AbortHandle {
+        self.cancelled.store(true, Ordering::Release);
+        self.abort_handle.abort();
+        self.abort_handle.clone()
+    }
+
     pub fn dummy_with_channel(
         id: ClientActorId,
         config: ClientConfig,
@@ -423,6 +500,16 @@ impl ClientConnectionSender {
     }
 
     fn send(&self, message: ClientUpdate) -> Result<(), ClientSendError> {
+        // Do not acquire a database transaction here: broadcasts can already
+        // hold one. Durable fencing is checked at admission and delivery.
+        if self
+            .auth
+            .hosted
+            .as_ref()
+            .is_some_and(|proof| proof.check_at(SystemTime::now()).is_err())
+        {
+            self.cancel_hosted_connection();
+        }
         if self.cancelled.load(Relaxed) {
             return Err(ClientSendError::Cancelled);
         }
@@ -467,6 +554,66 @@ impl ClientConnectionSender {
             metrics.websocket_requests.inc();
         }
     }
+}
+
+/// Runs independently of the socket actor, so blocked writes and idle sockets
+/// cannot keep credentials alive. Expiry uses a monotonic deadline captured once.
+fn spawn_hosted_connection_watchdog(
+    sender: std::sync::Weak<ClientConnectionSender>,
+    mut supply: impl DurableOffsetSupply + 'static,
+    subscriptions: Option<crate::subscription::module_subscription_actor::ModuleSubscriptions>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let actor = sender.upgrade().map(|connection| connection.abort_handle.clone());
+        async {
+            let Some(connection) = sender.upgrade() else { return };
+            let Some(proof) = connection.auth.hosted.clone() else {
+                return;
+            };
+            let deadline =
+                tokio::time::Instant::now() + proof.expires_at().duration_since(SystemTime::now()).unwrap_or_default();
+            drop(connection);
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = tokio::time::sleep_until(deadline) => {
+                        if let Some(connection) = sender.upgrade() { connection.cancel_hosted_connection(); }
+                        return;
+                    }
+                    _ = interval.tick() => {}
+                }
+                let Some(connection) = sender.upgrade() else { return };
+                if connection.abort_handle.is_finished() || connection.is_cancelled() {
+                    return;
+                }
+                let checked = tokio::select! {
+                    biased;
+                    _ = tokio::time::sleep_until(deadline) => {
+                        connection.cancel_hosted_connection();
+                        return;
+                    }
+                    checked = supply.check_hosted_auth(&proof) => checked,
+                };
+                if checked.is_err() {
+                    connection.cancel_hosted_connection();
+                    return;
+                }
+            }
+        }
+        .await;
+        // Keep the registry entry until socket I/O has actually stopped. A
+        // concurrent target barrier must still find and await an aborted actor.
+        if let Some(actor) = actor {
+            while !actor.is_finished() {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        }
+        if let Some(subscriptions) = subscriptions {
+            subscriptions.unregister_hosted_connection(&sender);
+        }
+    })
 }
 
 #[derive(Clone)]
@@ -874,7 +1021,7 @@ impl ClientConnection {
         .abort_handle();
 
         let metrics = ClientConnectionMetrics::new(database_identity, config.protocol);
-        let receiver = ClientConnectionReceiver::new(
+        let mut receiver = ClientConnectionReceiver::new(
             config.confirmed_reads,
             MeteredReceiver::with_gauge(sendrx, metrics.sendtx_queue_size.clone()),
             module_rx.clone(),
@@ -889,6 +1036,18 @@ impl ClientConnection {
             cancelled: AtomicBool::new(false),
             metrics: Some(metrics),
         });
+        if sender.auth.hosted.is_some() {
+            receiver.hosted_sender = Some(Arc::downgrade(&sender));
+            if module.subscriptions().register_hosted_connection(&sender).is_err() {
+                sender.cancel_hosted_connection();
+            } else {
+                spawn_hosted_connection_watchdog(
+                    Arc::downgrade(&sender),
+                    module_rx.clone(),
+                    Some(module.subscriptions().clone()),
+                );
+            }
+        }
         let this = Self {
             sender,
             replica_id,
@@ -998,7 +1157,7 @@ impl ClientConnection {
 
         self.module()
             .call_reducer(
-                self.id.identity,
+                &self.sender.auth,
                 Some(self.id.connection_id),
                 caller,
                 Some(request_id),
@@ -1019,7 +1178,7 @@ impl ClientConnection {
     ) -> Result<crate::host::ReducerCallResult, ReducerCallError> {
         self.module()
             .call_reducer(
-                self.id.identity,
+                &self.sender.auth,
                 Some(self.id.connection_id),
                 Some(self.sender()),
                 Some(request_id),
@@ -1045,7 +1204,7 @@ impl ClientConnection {
 
         self.module()
             .enqueue_reducer(
-                self.id.identity,
+                &self.sender.auth,
                 Some(self.id.connection_id),
                 caller,
                 Some(request_id),
@@ -1066,7 +1225,7 @@ impl ClientConnection {
     ) -> Result<(), ReducerCallError> {
         self.module()
             .enqueue_reducer(
-                self.id.identity,
+                &self.sender.auth,
                 Some(self.id.connection_id),
                 Some(self.sender()),
                 Some(request_id),
@@ -1086,7 +1245,7 @@ impl ClientConnection {
     ) -> Result<(), BroadcastError> {
         self.module()
             .enqueue_procedure(
-                self.id.identity,
+                &self.sender.auth,
                 Some(self.id.connection_id),
                 Some(timer),
                 procedure,
@@ -1106,7 +1265,7 @@ impl ClientConnection {
     ) -> Result<(), BroadcastError> {
         self.module()
             .enqueue_procedure(
-                self.id.identity,
+                &self.sender.auth,
                 Some(self.id.connection_id),
                 Some(timer),
                 procedure,
@@ -1333,6 +1492,288 @@ mod tests {
 
     async fn assert_pending(f: &mut (impl Future<Output: fmt::Debug> + Unpin)) {
         assert_matches!(futures::poll!(f), Poll::Pending);
+    }
+
+    fn hosted_auth(db: &RelationalDB, lifetime: std::time::Duration) -> ConnectionAuthCtx {
+        use crate::auth::{
+            hosted_tokens::{sign_hosted_token, HostedTokenBinding, HostedTokenValidator},
+            JwtKeys,
+        };
+        let keys = JwtKeys::generate().unwrap();
+        let now = SystemTime::now();
+        let binding = HostedTokenBinding {
+            source_database: db.database_identity(),
+            target_database: db.database_identity(),
+            generation: 1,
+            grant_revision: 1,
+            lease_expires_at: now + std::time::Duration::from_secs(30),
+        };
+        let token = sign_hosted_token(&keys.private, "platform.test", &binding, now, now + lifetime, "test").unwrap();
+        HostedTokenValidator::new([("platform.test".into(), keys.public)])
+            .unwrap()
+            .validate_token(&token, db.database_identity(), now, |_, _, _| Some(binding))
+            .unwrap()
+            .into_connection_auth()
+            .unwrap()
+    }
+
+    fn set_fence(db: &RelationalDB, generation: u64, allowed: bool) {
+        use crate::db::deployment::install_container_fence;
+        use spacetimedb_datastore::system_tables::StContainerFenceRow;
+        db.with_auto_commit(Workload::ForTests, |tx| {
+            install_container_fence(
+                db,
+                tx,
+                &StContainerFenceRow {
+                    source_identity: db.database_identity().into(),
+                    generation,
+                    target_grant_revision: 1,
+                    target_set_hash: spacetimedb_lib::hash_bytes(b"targets"),
+                    allowed,
+                },
+            )
+        })
+        .unwrap();
+    }
+
+    fn hosted_client(
+        db: &RelationalDB,
+        supply: impl DurableOffsetSupply + 'static,
+        confirmed_reads: bool,
+        lifetime: std::time::Duration,
+    ) -> (
+        Arc<ClientConnectionSender>,
+        ClientConnectionReceiver,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let (mut sender, mut receiver) = ClientConnectionSender::dummy_with_channel(
+            ClientActorId::for_test(db.database_identity()),
+            ClientConfig {
+                confirmed_reads,
+                ..ClientConfig::for_test()
+            },
+            supply,
+        );
+        sender.auth = hosted_auth(db, lifetime);
+        let actor = tokio::spawn(std::future::pending());
+        sender.abort_handle = actor.abort_handle();
+        let sender = Arc::new(sender);
+        receiver.hosted_sender = Some(Arc::downgrade(&sender));
+        (sender, receiver, actor)
+    }
+
+    struct HostedConfirmedSupply {
+        db: Arc<RelationalDB>,
+        durable: FakeDurableOffset,
+        durability_requested: Arc<AtomicBool>,
+    }
+    impl DurableOffsetSupply for HostedConfirmedSupply {
+        fn durable_offset(&mut self) -> Result<Option<DurableOffset>, NoSuchModule> {
+            self.durability_requested.store(true, Ordering::Release);
+            self.durable.durable_offset()
+        }
+        fn check_hosted_auth(
+            &mut self,
+            proof: &VerifiedHostedAuth,
+        ) -> futures::future::BoxFuture<'static, anyhow::Result<()>> {
+            self.db.check_hosted_auth(proof)
+        }
+    }
+
+    #[tokio::test]
+    async fn hosted_queued_delivery_rechecks_committed_fence_and_preserves_ordinary_identity() {
+        let db = crate::db::relational_db::tests_utils::TestDB::in_memory().unwrap();
+        set_fence(&db, 1, true);
+        let (sender, mut receiver, actor) =
+            hosted_client(&db, db.db.clone(), false, std::time::Duration::from_secs(20));
+        sender.send_message(None, empty_tx_update()).unwrap();
+        set_fence(&db, 2, false);
+        assert_receiver_closed(receiver.recv()).await;
+        assert!(sender.is_cancelled());
+        assert!(actor.await.unwrap_err().is_cancelled());
+        let (ordinary, mut ordinary_rx) = default_client(db.db.clone());
+        ordinary.send_message(None, empty_tx_update()).unwrap();
+        assert_received_update(ordinary_rx.recv()).await;
+    }
+
+    #[tokio::test]
+    async fn hosted_confirmed_delivery_rechecks_fence_after_durability_wait() {
+        let db = crate::db::relational_db::tests_utils::TestDB::in_memory().unwrap();
+        set_fence(&db, 1, true);
+        let durable = FakeDurableOffset::new();
+        let durability_requested = Arc::new(AtomicBool::new(false));
+        let supply = HostedConfirmedSupply {
+            db: db.db.clone(),
+            durable: durable.clone(),
+            durability_requested: durability_requested.clone(),
+        };
+        let (sender, mut receiver, actor) = hosted_client(&db, supply, true, std::time::Duration::from_secs(20));
+        sender.send_message(Some(7), empty_tx_update()).unwrap();
+        let mut receiving = Box::pin(receiver.recv());
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while !durability_requested.load(Ordering::Acquire) {
+                assert_pending(&mut receiving).await;
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        set_fence(&db, 2, false);
+        durable.mark_durable_at(7);
+        assert_receiver_closed(receiving).await;
+        assert!(actor.await.unwrap_err().is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn hosted_idle_connection_expires_without_outbound_traffic() {
+        let db = crate::db::relational_db::tests_utils::TestDB::in_memory().unwrap();
+        set_fence(&db, 1, true);
+        let (sender, _receiver, actor) = hosted_client(&db, db.db.clone(), false, std::time::Duration::from_secs(2));
+        let watchdog = spawn_hosted_connection_watchdog(Arc::downgrade(&sender), db.db.clone(), None);
+        tokio::time::timeout(std::time::Duration::from_secs(3), watchdog)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(sender.is_cancelled());
+        assert!(actor.await.unwrap_err().is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn hosted_idle_connection_rechecks_durable_revocation() {
+        let db = crate::db::relational_db::tests_utils::TestDB::in_memory().unwrap();
+        set_fence(&db, 1, true);
+        let (sender, _receiver, actor) = hosted_client(&db, db.db.clone(), false, std::time::Duration::from_secs(20));
+        let watchdog = spawn_hosted_connection_watchdog(Arc::downgrade(&sender), db.db.clone(), None);
+        set_fence(&db, 2, false);
+        tokio::time::timeout(std::time::Duration::from_secs(2), watchdog)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(sender.is_cancelled());
+        assert!(actor.await.unwrap_err().is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn hosted_watchdog_ends_and_unregisters_after_socket_actor_finishes() {
+        use crate::subscription::module_subscription_actor::ModuleSubscriptions;
+        let db = crate::db::relational_db::tests_utils::TestDB::in_memory().unwrap();
+        set_fence(&db, 1, true);
+        let subscriptions = ModuleSubscriptions::for_test_enclosing_runtime(db.db.clone());
+        let (sender, _receiver, actor) = hosted_client(&db, db.db.clone(), false, std::time::Duration::from_secs(20));
+        subscriptions.register_hosted_connection(&sender).unwrap();
+        assert_eq!(subscriptions.hosted_connection_count(), 1);
+        let watchdog =
+            spawn_hosted_connection_watchdog(Arc::downgrade(&sender), db.db.clone(), Some(subscriptions.clone()));
+        actor.abort();
+        let _ = actor.await;
+        tokio::time::timeout(std::time::Duration::from_secs(2), watchdog)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(subscriptions.hosted_connection_count(), 0);
+        // The registry releases the entry even while another owner retains sender.
+        assert!(!sender.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn hosted_registry_retains_cancelled_actor_until_delivery_cleanup_finishes() {
+        use crate::subscription::module_subscription_actor::ModuleSubscriptions;
+        let db = crate::db::relational_db::tests_utils::TestDB::in_memory().unwrap();
+        set_fence(&db, 1, true);
+        let subscriptions = ModuleSubscriptions::for_test_enclosing_runtime(db.db.clone());
+        let (mut sender, _receiver) = default_client(db.db.clone());
+        sender.auth = hosted_auth(&db, std::time::Duration::from_secs(20));
+        let (release, blocked) = std::sync::mpsc::channel();
+        let (started, ready) = oneshot::channel();
+        // A started blocking task models cleanup that cannot complete merely
+        // because abort was requested. The barrier must retain its handle.
+        let actor = tokio::task::spawn_blocking(move || {
+            let _ = started.send(());
+            let _ = blocked.recv();
+        });
+        ready.await.unwrap();
+        sender.abort_handle = actor.abort_handle();
+        let sender = Arc::new(sender);
+        subscriptions.register_hosted_connection(&sender).unwrap();
+        let watchdog =
+            spawn_hosted_connection_watchdog(Arc::downgrade(&sender), db.db.clone(), Some(subscriptions.clone()));
+        set_fence(&db, 2, false);
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while !sender.is_cancelled() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(subscriptions.hosted_connection_count(), 1);
+        let handles = db.with_read_only(Workload::ForTests, |tx| {
+            subscriptions.cancel_invalid_hosted_connections(tx)
+        });
+        assert_eq!(handles.len(), 1);
+        assert!(!handles[0].is_finished());
+        release.send(()).unwrap();
+        actor.await.unwrap();
+        watchdog.await.unwrap();
+        assert!(handles[0].is_finished());
+        assert_eq!(subscriptions.hosted_connection_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn hosted_target_barrier_cancels_connections_without_subscriptions_and_waits_for_actor() {
+        use crate::db::deployment::install_container_fence;
+        use crate::subscription::module_subscription_actor::ModuleSubscriptions;
+        use spacetimedb_datastore::system_tables::StContainerFenceRow;
+        let db = crate::db::relational_db::tests_utils::TestDB::in_memory().unwrap();
+        set_fence(&db, 1, true);
+        let subscriptions = ModuleSubscriptions::for_test_enclosing_runtime(db.db.clone());
+        let (sender, _receiver, actor) = hosted_client(&db, db.db.clone(), false, std::time::Duration::from_secs(20));
+        subscriptions.register_hosted_connection(&sender).unwrap();
+        let handles = db
+            .with_auto_commit(Workload::ForTests, |tx| {
+                install_container_fence(
+                    &db,
+                    tx,
+                    &StContainerFenceRow {
+                        source_identity: db.database_identity().into(),
+                        generation: 2,
+                        target_grant_revision: 1,
+                        target_set_hash: spacetimedb_lib::hash_bytes(b"targets"),
+                        allowed: true,
+                    },
+                )?;
+                Ok::<_, anyhow::Error>(subscriptions.cancel_invalid_hosted_connections(tx))
+            })
+            .unwrap();
+        assert_eq!(handles.len(), 1);
+        assert!(actor.await.unwrap_err().is_cancelled());
+        assert!(handles[0].is_finished());
+        assert!(subscriptions.register_hosted_connection(&sender).is_err());
+    }
+
+    #[tokio::test]
+    async fn hosted_subscription_rejected_under_transaction_before_query_compilation() {
+        use crate::subscription::module_subscription_actor::ModuleSubscriptions;
+        let db = crate::db::relational_db::tests_utils::TestDB::in_memory().unwrap();
+        let subscriptions = ModuleSubscriptions::for_test_enclosing_runtime(db.db.clone());
+        let (sender, _receiver, actor) = hosted_client(&db, db.db.clone(), false, std::time::Duration::from_secs(20));
+        // There is deliberately no installed fence. The malformed SQL verifies
+        // authentication fails before query parsing or view materialization.
+        let result = subscriptions
+            .add_legacy_subscriber(
+                None,
+                sender.clone(),
+                AuthCtx::new(db.database_identity(), db.database_identity()),
+                ws_v1::Subscribe {
+                    query_strings: ["invalid SQL".into()].into(),
+                    request_id: 0,
+                },
+                Instant::now(),
+                None,
+            )
+            .await;
+        assert!(result.unwrap_err().to_string().contains("container"));
+        sender.cancel_hosted_connection();
+        let _ = actor.await;
     }
 
     fn default_client(

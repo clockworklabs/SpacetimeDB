@@ -519,13 +519,13 @@ static class ModuleRegistration
     {
         private static readonly SpacetimeDB.BSATN.I32 valueRW = new();
 
-        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV11 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
                 SourceName: nameof(DemoReducer),
                 Params: [new("value", valueRW.GetAlgebraicType(registrar))],
-                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                DeclaredVisibility: null,
                 OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
                 ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
             );
@@ -540,14 +540,14 @@ static class ModuleRegistration
 
     class DemoProcedure : SpacetimeDB.Internal.IProcedure
     {
-        public SpacetimeDB.Internal.RawProcedureDefV10 MakeProcedureDef(
+        public SpacetimeDB.Internal.RawProcedureDefV11 MakeProcedureDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
                 SourceName: nameof(DemoProcedure),
                 Params: [],
                 ReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
-                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable
+                DeclaredVisibility: null
             );
 
         public byte[] Invoke(BinaryReader reader, SpacetimeDB.Internal.IProcedureContext ctx)

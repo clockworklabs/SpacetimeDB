@@ -348,6 +348,71 @@ public static class GeneratorSnapshotTests
     }
 
     [Fact]
+    public static async Task ExplicitFunctionVisibilityCompilesAndRejectsExternalLifecycle()
+    {
+        var fixture = await Fixture.Compile("server");
+        const string source = """
+            using SpacetimeDB;
+            public static partial class VisibilityFunctions
+            {
+                [Reducer(Visibility = FunctionVisibility.Public)]
+                public static void PublicJob(ReducerContext ctx) {}
+                [Reducer(Visibility = FunctionVisibility.Private)]
+                public static void PrivateJob(ReducerContext ctx) {}
+                [Reducer(Visibility = FunctionVisibility.Internal)]
+                public static void InternalJob(ReducerContext ctx) {}
+                [Procedure(Visibility = FunctionVisibility.Internal)]
+                public static int InternalProcedure(ProcedureContext ctx) => 1;
+            }
+            """;
+        var parseOptions = new CSharpParseOptions(fixture.SampleCompilation.LanguageVersion);
+        var tree = CSharpSyntaxTree.ParseText(source, parseOptions);
+        var compilation = fixture.SampleCompilation.AddSyntaxTrees(tree);
+        var driver = CSharpGeneratorDriver.Create(
+            [
+                new SpacetimeDB.Codegen.Type().AsSourceGenerator(),
+                new SpacetimeDB.Codegen.Module().AsSourceGenerator(),
+            ],
+            parseOptions: parseOptions
+        );
+        var result = driver.RunGenerators(compilation).GetRunResult();
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Empty(GetCompilationErrors(compilation.AddSyntaxTrees(result.GeneratedTrees)));
+        var generated = string.Join("\n", result.GeneratedTrees.Select(t => t.ToString()));
+        Assert.Contains(
+            "DeclaredVisibility: SpacetimeDB.Internal.FunctionVisibilityV11.ClientCallable",
+            generated
+        );
+        Assert.Contains(
+            "DeclaredVisibility: SpacetimeDB.Internal.FunctionVisibilityV11.Private",
+            generated
+        );
+        Assert.Contains(
+            "DeclaredVisibility: SpacetimeDB.Internal.FunctionVisibilityV11.Internal",
+            generated
+        );
+
+        var invalid = CSharpSyntaxTree.ParseText(
+            """
+            using SpacetimeDB;
+            public static partial class BadVisibility
+            {
+                [Reducer(ReducerKind.Init, Visibility = FunctionVisibility.Public)]
+                public static void InvalidLifecycle(ReducerContext ctx) {}
+            }
+            """,
+            parseOptions
+        );
+        var rejected = driver
+            .RunGenerators(fixture.SampleCompilation.AddSyntaxTrees(invalid))
+            .GetRunResult();
+        Assert.Contains(
+            rejected.Diagnostics,
+            diagnostic => diagnostic.GetMessage().Contains("Lifecycle reducers only permit")
+        );
+    }
+
+    [Fact]
     public static async Task TestDiagnostics()
     {
         var fixture = await Fixture.Compile("diag");

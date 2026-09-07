@@ -7,15 +7,15 @@ using System.Runtime.InteropServices;
 using SpacetimeDB;
 using SpacetimeDB.BSATN;
 
-partial class RawModuleDefV10
+partial class RawModuleDefV11
 {
     private readonly Typespace typespace = new();
     private readonly List<RawTypeDefV10> typeDefs = [];
     private readonly List<RawTableDefV10> tableDefs = [];
     private readonly List<RawScheduleDefV10> scheduleDefs = [];
-    private readonly List<RawReducerDefV10> reducerDefs = [];
+    private readonly List<RawReducerDefV11> reducerDefs = [];
     private readonly List<RawLifeCycleReducerDefV10> lifecycleReducerDefs = [];
-    private readonly List<RawProcedureDefV10> procedureDefs = [];
+    private readonly List<RawProcedureDefV11> procedureDefs = [];
     private readonly List<RawHttpHandlerDefV10> httpHandlerDefs = [];
     private readonly List<RawHttpRouteDefV10> httpRouteDefs = [];
     private readonly List<RawViewDefV10> viewDefs = [];
@@ -53,19 +53,27 @@ partial class RawModuleDefV10
         return typeRef;
     }
 
-    internal void RegisterReducer(RawReducerDefV10 reducer, Lifecycle? lifecycle)
+    internal void RegisterReducer(RawReducerDefV11 reducer, Lifecycle? lifecycle)
     {
+        if (
+            lifecycle is not null
+            && reducer.DeclaredVisibility is not (null or FunctionVisibilityV11.Internal)
+        )
+        {
+            throw new InvalidOperationException(
+                "Lifecycle reducers only permit internal visibility"
+            );
+        }
         reducerDefs.Add(reducer);
         if (lifecycle is { } lifecycleSpec)
         {
             lifecycleReducerDefs.Add(
                 new RawLifeCycleReducerDefV10(lifecycleSpec, reducer.SourceName)
             );
-            reducer.Visibility = FunctionVisibility.Private;
         }
     }
 
-    internal void RegisterProcedure(RawProcedureDefV10 procedure) => procedureDefs.Add(procedure);
+    internal void RegisterProcedure(RawProcedureDefV11 procedure) => procedureDefs.Add(procedure);
 
     internal void RegisterHttpHandler(RawHttpHandlerDefV10 handler) => httpHandlerDefs.Add(handler);
 
@@ -109,7 +117,7 @@ partial class RawModuleDefV10
     internal void RegisterExplicitIndexName(string sourceName, string canonicalName) =>
         explicitNames.Add(new ExplicitNameEntry.Index(new NameMapping(sourceName, canonicalName)));
 
-    internal RawModuleDefV10 BuildModuleDefinition()
+    internal RawModuleDefV11 BuildModuleDefinition()
     {
         var builtTables = new List<RawTableDefV10>(tableDefs.Count);
         foreach (var table in tableDefs)
@@ -133,84 +141,64 @@ partial class RawModuleDefV10
             );
         }
 
-        var internalFunctions = lifecycleReducerDefs
-            .Select(l => l.FunctionName)
-            .Concat(scheduleDefs.Select(s => s.FunctionName))
-            .ToHashSet(StringComparer.Ordinal);
-
-        foreach (var reducer in reducerDefs)
+        var sections = new List<RawModuleDefV11Section>
         {
-            if (internalFunctions.Contains(reducer.SourceName))
-            {
-                reducer.Visibility = FunctionVisibility.Private;
-            }
-        }
-
-        foreach (var procedure in procedureDefs)
-        {
-            if (internalFunctions.Contains(procedure.SourceName))
-            {
-                procedure.Visibility = FunctionVisibility.Private;
-            }
-        }
-
-        var sections = new List<RawModuleDefV10Section>
-        {
-            new RawModuleDefV10Section.Typespace(typespace),
+            new RawModuleDefV11Section.Typespace(typespace),
+            new RawModuleDefV11Section.Capabilities(["hosted_auth_v1"]),
         };
 
         if (typeDefs.Count > 0)
         {
-            sections.Add(new RawModuleDefV10Section.Types(typeDefs));
+            sections.Add(new RawModuleDefV11Section.Types(typeDefs));
         }
         if (builtTables.Count > 0)
         {
-            sections.Add(new RawModuleDefV10Section.Tables(builtTables));
+            sections.Add(new RawModuleDefV11Section.Tables(builtTables));
         }
         if (reducerDefs.Count > 0)
         {
-            sections.Add(new RawModuleDefV10Section.Reducers(reducerDefs));
+            sections.Add(new RawModuleDefV11Section.Reducers(reducerDefs));
         }
         if (procedureDefs.Count > 0)
         {
-            sections.Add(new RawModuleDefV10Section.Procedures(procedureDefs));
+            sections.Add(new RawModuleDefV11Section.Procedures(procedureDefs));
         }
         if (httpHandlerDefs.Count > 0)
         {
-            sections.Add(new RawModuleDefV10Section.HttpHandlers(httpHandlerDefs));
+            sections.Add(new RawModuleDefV11Section.HttpHandlers(httpHandlerDefs));
         }
         if (httpRouteDefs.Count > 0)
         {
-            sections.Add(new RawModuleDefV10Section.HttpRoutes(httpRouteDefs));
+            sections.Add(new RawModuleDefV11Section.HttpRoutes(httpRouteDefs));
         }
         if (viewDefs.Count > 0)
         {
-            sections.Add(new RawModuleDefV10Section.Views(viewDefs));
+            sections.Add(new RawModuleDefV11Section.Views(viewDefs));
         }
         if (scheduleDefs.Count > 0)
         {
-            sections.Add(new RawModuleDefV10Section.Schedules(scheduleDefs));
+            sections.Add(new RawModuleDefV11Section.Schedules(scheduleDefs));
         }
         if (lifecycleReducerDefs.Count > 0)
         {
-            sections.Add(new RawModuleDefV10Section.LifeCycleReducers(lifecycleReducerDefs));
+            sections.Add(new RawModuleDefV11Section.LifeCycleReducers(lifecycleReducerDefs));
         }
         // TODO: Add sections for Event tables and Case conversion policy (mirrors Rust `raw_def/v10.rs` TODO).
         if (caseConversionPolicy is { } policy)
         {
-            sections.Add(new RawModuleDefV10Section.CaseConversionPolicy(policy));
+            sections.Add(new RawModuleDefV11Section.CaseConversionPolicy(policy));
         }
         if (explicitNames.Count > 0)
         {
             sections.Add(
-                new RawModuleDefV10Section.ExplicitNames(
+                new RawModuleDefV11Section.ExplicitNames(
                     new ExplicitNames(new List<ExplicitNameEntry>(explicitNames))
                 )
             );
         }
         if (rowLevelSecurityDefs.Count > 0)
         {
-            sections.Add(new RawModuleDefV10Section.RowLevelSecurity(rowLevelSecurityDefs));
+            sections.Add(new RawModuleDefV11Section.RowLevelSecurity(rowLevelSecurityDefs));
         }
 
         Sections = sections;
@@ -240,8 +228,8 @@ public static class Module
         {
             _ = new RawIndexAlgorithm.BTree(null!);
             _ = new RawConstraintDataV9.Unique(null!);
-            _ = new RawModuleDef.V10(null!);
-            _ = new RawModuleDefV10Section.Typespace(null!);
+            _ = new RawModuleDef.V11(null!);
+            _ = new RawModuleDefV11Section.Typespace(null!);
             _ = new ExplicitNameEntry.Table(null!);
             _ = new MiscModuleExport.TypeAlias(null!);
             _ = new RawMiscModuleExportV9.ColumnDefaultValue(null!);
@@ -250,7 +238,7 @@ public static class Module
         }
     }
 
-    private static readonly RawModuleDefV10 moduleDef = new();
+    private static readonly RawModuleDefV11 moduleDef = new();
 
     private static readonly List<IReducer> reducers = [];
     private static readonly List<IProcedure> procedures = [];
@@ -508,7 +496,7 @@ public static class Module
         try
         {
             var module = moduleDef.BuildModuleDefinition();
-            RawModuleDef versioned = new RawModuleDef.V10(module);
+            RawModuleDef versioned = new RawModuleDef.V11(module);
             var moduleBytes = IStructuralReadWrite.ToBytes(new RawModuleDef.BSATN(), versioned);
             description.Write(moduleBytes);
         }

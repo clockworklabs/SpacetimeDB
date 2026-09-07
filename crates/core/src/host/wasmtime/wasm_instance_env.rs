@@ -1544,6 +1544,23 @@ impl WasmInstanceEnv {
         })
     }
 
+    /// Returns host-verified invocation flags. Bit 0 is internal authority.
+    /// This does not read tables and is available outside transactions.
+    pub fn get_call_auth_flags(caller: Caller<'_, Self>) -> u32 {
+        caller.data().instance_env.get_call_auth_flags()
+    }
+
+    pub(crate) fn set_hosted_auth(
+        &mut self,
+        auth: Option<std::sync::Arc<crate::auth::hosted_tokens::VerifiedHostedAuth>>,
+    ) {
+        self.instance_env.set_hosted_auth(auth);
+    }
+
+    pub(crate) fn set_call_auth_flags(&mut self, flags: u32) {
+        self.instance_env.set_call_auth_flags(flags);
+    }
+
     /// Writes the identity of the module into `out = out_ptr[..32]`.
     ///
     /// # Traps

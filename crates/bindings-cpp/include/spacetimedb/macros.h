@@ -542,6 +542,15 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
 // VISIBILITY FILTER MACRO
 // =============================================================================
 
+// Apply to a registered reducer or procedure. Runs after function registration;
+// lifecycle reducers only accept Internal. Scheduling preserves this choice.
+#define SPACETIMEDB_FUNCTION_VISIBILITY(function_name, visibility) \
+    extern "C" __attribute__((export_name("__preinit__40_visibility_" #function_name))) \
+    void CONCAT(__spacetimedb_function_visibility_, function_name)() { \
+        ::SpacetimeDB::Internal::getV10Builder().SetFunctionVisibility( \
+            #function_name, ::SpacetimeDB::FunctionVisibility::visibility); \
+    }
+
 /**
  * @brief Set module case conversion policy using a fixed preinit registration symbol.
  *
@@ -782,4 +791,3 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
 
 
 #endif // SPACETIMEDB_MACROS_H
-

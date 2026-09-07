@@ -15,7 +15,7 @@
 //! After validation, a `ModuleDef` can be converted to the `*Schema` types in `crate::schema` for use in the database.
 //! (Eventually, we may unify these types...)
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Write};
 use std::hash::Hash;
 
@@ -36,6 +36,9 @@ use spacetimedb_lib::db::raw_def::v10::{
     RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section, RawProcedureDefV10, RawReducerDefV10,
     RawRowLevelSecurityDefV10, RawScheduleDefV10, RawScopedTypeNameV10, RawSequenceDefV10, RawTableDefV10,
     RawTypeDefV10, RawViewDefV10,
+};
+use spacetimedb_lib::db::raw_def::v11::{
+    RawModuleDefV11, RawModuleDefV11Section, RawProcedureDefV11, RawReducerDefV11,
 };
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIndexAlgorithm, RawIndexDefV9,
@@ -163,6 +166,9 @@ pub struct ModuleDef {
     /// was authored under.
     #[allow(unused)]
     raw_module_def_version: RawModuleDefVersion,
+
+    /// Validated module bindings capabilities. Legacy modules have none.
+    capabilities: BTreeSet<RawIdentifier>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -171,9 +177,19 @@ pub enum RawModuleDefVersion {
     V9OrEarlier,
     /// Represents [`RawModuleDefV10`].
     V10,
+    /// Explicit function visibility and contextual defaults.
+    V11,
 }
 
 impl ModuleDef {
+    pub fn supports_hosted_auth_v1(&self) -> bool {
+        self.capabilities.contains(&RawIdentifier::new("hosted_auth_v1"))
+    }
+
+    pub fn capabilities(&self) -> impl Iterator<Item = &RawIdentifier> {
+        self.capabilities.iter()
+    }
+
     /// The raw module definition version this module was authored under.
     pub fn raw_module_def_version(&self) -> RawModuleDefVersion {
         self.raw_module_def_version
@@ -182,6 +198,22 @@ impl ModuleDef {
     /// The tables of the module definition.
     pub fn tables(&self) -> impl Iterator<Item = &TableDef> {
         self.tables.values()
+    }
+
+    /// The row type of a table or view, addressed by its canonical name.
+    pub fn type_ref_for_table_like(&self, name: &str) -> Option<AlgebraicTypeRef> {
+        self.table(name)
+            .map(|table| table.product_type_ref)
+            .or_else(|| self.view(name).map(|view| view.product_type_ref))
+    }
+
+    /// Serialize without reinterpreting the definition's original version semantics.
+    pub fn into_raw(self) -> RawModuleDef {
+        match self.raw_module_def_version {
+            RawModuleDefVersion::V9OrEarlier => RawModuleDef::V9(self.try_into().expect("same-version conversion")),
+            RawModuleDefVersion::V10 => RawModuleDef::V10(self.try_into().expect("same-version conversion")),
+            RawModuleDefVersion::V11 => RawModuleDef::V11(self.into()),
+        }
     }
 
     /// The indexes of the module definition.
@@ -469,7 +501,8 @@ impl TryFrom<RawModuleDef> for ModuleDef {
             RawModuleDef::V8BackCompat(v8_mod) => Self::try_from(v8_mod),
             RawModuleDef::V9(v9_mod) => Self::try_from(v9_mod),
             RawModuleDef::V10(v10_mod) => Self::try_from(v10_mod),
-            _ => unimplemented!(),
+            RawModuleDef::V11(v11_mod) => Self::try_from(v11_mod),
+            _ => Err(crate::error::ValidationError::UnsupportedModuleVersion.into()),
         }
     }
 }
@@ -489,8 +522,14 @@ impl TryFrom<raw_def::v9::RawModuleDefV9> for ModuleDef {
         validate::v9::validate(v9_mod)
     }
 }
-impl From<ModuleDef> for RawModuleDefV9 {
-    fn from(val: ModuleDef) -> Self {
+impl TryFrom<ModuleDef> for RawModuleDefV9 {
+    type Error = SchemaConversionError;
+    fn try_from(val: ModuleDef) -> Result<Self, Self::Error> {
+        if val.raw_module_def_version != RawModuleDefVersion::V9OrEarlier {
+            return Err(SchemaConversionError {
+                target: RawModuleDefVersion::V9OrEarlier,
+            });
+        }
         let ModuleDef {
             tables,
             views,
@@ -506,6 +545,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
             http_handlers: _,
             http_routes: _,
             raw_module_def_version: _,
+            capabilities: _,
         } = val;
 
         // Extract column defaults from tables before consuming tables
@@ -524,18 +564,26 @@ impl From<ModuleDef> for RawModuleDefV9 {
             })
             .collect();
 
-        RawModuleDefV9 {
+        let raw_reducers = reducers
+            .into_values()
+            .map(TryInto::try_into)
+            .collect::<Result<_, _>>()?;
+        let raw_procedures = procedures
+            .into_values()
+            .map(TryInto::try_into)
+            .collect::<Result<Vec<RawMiscModuleExportV9>, _>>()?;
+        Ok(RawModuleDefV9 {
             tables: to_raw(tables),
-            reducers: reducers.into_iter().map(|(_, def)| def.into()).collect(),
+            reducers: raw_reducers,
             types: to_raw(types),
             misc_exports: column_defaults
                 .into_iter()
-                .chain(procedures.into_iter().map(|(_, def)| def.into()))
+                .chain(raw_procedures)
                 .chain(views.into_iter().map(|(_, def)| def.into()))
                 .collect(),
             typespace,
             row_level_security: row_level_security_raw.into_iter().map(|(_, def)| def).collect(),
-        }
+        })
     }
 }
 
@@ -547,8 +595,14 @@ impl TryFrom<raw_def::v10::RawModuleDefV10> for ModuleDef {
     }
 }
 
-impl From<ModuleDef> for RawModuleDefV10 {
-    fn from(val: ModuleDef) -> Self {
+impl TryFrom<ModuleDef> for RawModuleDefV10 {
+    type Error = SchemaConversionError;
+    fn try_from(val: ModuleDef) -> Result<Self, Self::Error> {
+        if val.raw_module_def_version != RawModuleDefVersion::V10 {
+            return Err(SchemaConversionError {
+                target: RawModuleDefVersion::V10,
+            });
+        }
         let ModuleDef {
             tables,
             views,
@@ -564,6 +618,7 @@ impl From<ModuleDef> for RawModuleDefV10 {
             http_handlers,
             http_routes,
             raw_module_def_version: _,
+            capabilities: _,
         } = val;
 
         let mut sections = Vec::new();
@@ -623,9 +678,9 @@ impl From<ModuleDef> for RawModuleDefV10 {
                     RawIdentifier::from(rd.accessor_name.clone()),
                     RawIdentifier::from(rd.name.clone()),
                 );
-                rd.into()
+                rd.try_into()
             })
-            .collect();
+            .collect::<Result<_, _>>()?;
         if !raw_reducers.is_empty() {
             sections.push(RawModuleDefV10Section::Reducers(raw_reducers));
         }
@@ -638,9 +693,9 @@ impl From<ModuleDef> for RawModuleDefV10 {
                     RawIdentifier::from(pd.accessor_name.clone()),
                     RawIdentifier::from(pd.name.clone()),
                 );
-                pd.into()
+                pd.try_into()
             })
-            .collect();
+            .collect::<Result<_, _>>()?;
         if !raw_procedures.is_empty() {
             sections.push(RawModuleDefV10Section::Procedures(raw_procedures));
         }
@@ -698,7 +753,173 @@ impl From<ModuleDef> for RawModuleDefV10 {
         // Always emit ExplicitNames so canonical names survive the round-trip.
         sections.push(RawModuleDefV10Section::ExplicitNames(explicit_names));
 
-        RawModuleDefV10 { sections }
+        Ok(RawModuleDefV10 { sections })
+    }
+}
+
+impl TryFrom<RawModuleDefV11> for ModuleDef {
+    type Error = ValidationErrors;
+    fn try_from(value: RawModuleDefV11) -> Result<Self, Self::Error> {
+        validate::v11::validate(value)
+    }
+}
+
+impl From<ModuleDef> for RawModuleDefV11 {
+    fn from(val: ModuleDef) -> Self {
+        let ModuleDef {
+            tables,
+            views,
+            reducers,
+            lifecycle_reducers,
+            types,
+            typespace,
+            stored_in_table_def: _,
+            typespace_for_generate: _,
+            refmap: _,
+            row_level_security_raw,
+            procedures,
+            http_handlers,
+            http_routes,
+            raw_module_def_version: _,
+            capabilities,
+        } = val;
+
+        let mut sections = Vec::new();
+        let mut explicit_names = ExplicitNames::default();
+
+        sections.push(RawModuleDefV11Section::Typespace(typespace));
+
+        // Extract lifecycle reducer names before consuming reducers.
+        let raw_lifecycle: Vec<RawLifeCycleReducerDefV10> = lifecycle_reducers
+            .into_iter()
+            .filter_map(|(lifecycle, reducer_id)| {
+                let id = reducer_id?;
+                let (name, _) = reducers.get_index(id.idx())?;
+                Some(RawLifeCycleReducerDefV10 {
+                    lifecycle_spec: lifecycle,
+                    function_name: name.clone().into(),
+                })
+            })
+            .collect();
+
+        let raw_types: Vec<RawTypeDefV10> = types.into_values().map(Into::into).collect();
+        if !raw_types.is_empty() {
+            sections.push(RawModuleDefV11Section::Types(raw_types));
+        }
+
+        // Collect schedules from tables (V10 stores them in a separate section).
+        // Also collect ExplicitNames for tables: accessor_name → source_name, name → canonical_name.
+        let mut schedules = Vec::new();
+        let raw_tables: Vec<RawTableDefV10> = tables
+            .into_values()
+            .map(|td| {
+                // Always emit name as ExplicitNames canonical_name.
+                explicit_names.insert_table(
+                    RawIdentifier::from(td.accessor_name.clone()),
+                    RawIdentifier::from(td.name.clone()),
+                );
+                if let Some(sched) = td.schedule.clone() {
+                    schedules.push(RawScheduleDefV10 {
+                        source_name: Some(sched.name.into()),
+                        table_name: td.name.clone().into(),
+                        schedule_at_col: sched.at_column,
+                        function_name: sched.function_name.into(),
+                    });
+                }
+                td.into()
+            })
+            .collect();
+        if !raw_tables.is_empty() {
+            sections.push(RawModuleDefV11Section::Tables(raw_tables));
+        }
+
+        // Collect ExplicitNames for reducers: accessor_name → source_name, name → canonical_name.
+        let raw_reducers: Vec<RawReducerDefV11> = reducers
+            .into_values()
+            .map(|rd| {
+                explicit_names.insert_function(
+                    RawIdentifier::from(rd.accessor_name.clone()),
+                    RawIdentifier::from(rd.name.clone()),
+                );
+                rd.into()
+            })
+            .collect();
+        if !raw_reducers.is_empty() {
+            sections.push(RawModuleDefV11Section::Reducers(raw_reducers));
+        }
+
+        // Collect ExplicitNames for procedures: accessor_name → source_name, name → canonical_name.
+        let raw_procedures: Vec<RawProcedureDefV11> = procedures
+            .into_values()
+            .map(|pd| {
+                explicit_names.insert_function(
+                    RawIdentifier::from(pd.accessor_name.clone()),
+                    RawIdentifier::from(pd.name.clone()),
+                );
+                pd.into()
+            })
+            .collect();
+        if !raw_procedures.is_empty() {
+            sections.push(RawModuleDefV11Section::Procedures(raw_procedures));
+        }
+
+        let raw_http_handlers: Vec<RawHttpHandlerDefV10> = http_handlers
+            .into_values()
+            .map(|hd| RawHttpHandlerDefV10 {
+                source_name: hd.accessor_name.into(),
+            })
+            .collect();
+        if !raw_http_handlers.is_empty() {
+            sections.push(RawModuleDefV11Section::HttpHandlers(raw_http_handlers));
+        }
+
+        if !http_routes.is_empty() {
+            let raw_http_routes: Vec<RawHttpRouteDefV10> = http_routes
+                .into_iter()
+                .map(|route| RawHttpRouteDefV10 {
+                    handler_function: route.handler_name.into(),
+                    method: route.method,
+                    path: RawIdentifier::new(route.path.as_ref()),
+                })
+                .collect();
+            sections.push(RawModuleDefV11Section::HttpRoutes(raw_http_routes));
+        }
+
+        // Collect ExplicitNames for views: accessor_name → source_name, name → canonical_name.
+        let raw_views: Vec<RawViewDefV10> = views
+            .into_values()
+            .map(|vd| {
+                explicit_names.insert_function(
+                    RawIdentifier::from(vd.accessor_name.clone()),
+                    RawIdentifier::from(vd.name.clone()),
+                );
+                vd.into()
+            })
+            .collect();
+        if !raw_views.is_empty() {
+            sections.push(RawModuleDefV11Section::Views(raw_views));
+        }
+
+        if !schedules.is_empty() {
+            sections.push(RawModuleDefV11Section::Schedules(schedules));
+        }
+
+        if !raw_lifecycle.is_empty() {
+            sections.push(RawModuleDefV11Section::LifeCycleReducers(raw_lifecycle));
+        }
+
+        let raw_rls: Vec<RawRowLevelSecurityDefV10> = row_level_security_raw.into_values().collect();
+        if !raw_rls.is_empty() {
+            sections.push(RawModuleDefV11Section::RowLevelSecurity(raw_rls));
+        }
+
+        // Always emit ExplicitNames so canonical names survive the round-trip.
+        sections.push(RawModuleDefV11Section::ExplicitNames(explicit_names));
+
+        if !capabilities.is_empty() {
+            sections.push(RawModuleDefV11Section::Capabilities(capabilities.into_iter().collect()));
+        }
+        RawModuleDefV11 { sections }
     }
 }
 
@@ -1710,9 +1931,36 @@ pub enum FunctionVisibility {
 
     /// Callable from client code.
     ClientCallable,
+
+    /// Callable only by a host-verified internal invocation.
+    Internal,
+}
+
+impl fmt::Display for FunctionVisibility {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Private => "Private",
+            Self::ClientCallable => "Public",
+            Self::Internal => "Internal",
+        })
+    }
 }
 
 impl FunctionVisibility {
+    pub fn is_client_callable(&self) -> bool {
+        matches!(self, Self::ClientCallable)
+    }
+    pub fn is_internal(&self) -> bool {
+        matches!(self, Self::Internal)
+    }
+    /// Lifecycle event dispatch is a separate restriction from this predicate.
+    pub fn allows_invocation(&self, is_internal: bool, is_authorized_private_caller: bool) -> bool {
+        match self {
+            Self::Internal => is_internal,
+            Self::Private => is_internal || is_authorized_private_caller,
+            Self::ClientCallable => true,
+        }
+    }
     pub fn is_private(&self) -> bool {
         matches!(self, FunctionVisibility::Private)
     }
@@ -1728,11 +1976,40 @@ impl From<RawFunctionVisibility> for FunctionVisibility {
     }
 }
 
-impl From<FunctionVisibility> for RawFunctionVisibility {
-    fn from(val: FunctionVisibility) -> Self {
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("schema cannot be represented as {target:?} without losing function visibility or source-version semantics; request schema version 11")]
+pub struct SchemaConversionError {
+    pub target: RawModuleDefVersion,
+}
+
+impl TryFrom<FunctionVisibility> for RawFunctionVisibility {
+    type Error = SchemaConversionError;
+    fn try_from(val: FunctionVisibility) -> Result<Self, Self::Error> {
         match val {
-            FunctionVisibility::Private => RawFunctionVisibility::Private,
-            FunctionVisibility::ClientCallable => RawFunctionVisibility::ClientCallable,
+            FunctionVisibility::Private => Ok(Self::Private),
+            FunctionVisibility::ClientCallable => Ok(Self::ClientCallable),
+            FunctionVisibility::Internal => Err(SchemaConversionError {
+                target: RawModuleDefVersion::V10,
+            }),
+        }
+    }
+}
+
+impl From<raw_def::v11::FunctionVisibility> for FunctionVisibility {
+    fn from(value: raw_def::v11::FunctionVisibility) -> Self {
+        match value {
+            raw_def::v11::FunctionVisibility::Private => Self::Private,
+            raw_def::v11::FunctionVisibility::ClientCallable => Self::ClientCallable,
+            raw_def::v11::FunctionVisibility::Internal => Self::Internal,
+        }
+    }
+}
+impl From<FunctionVisibility> for raw_def::v11::FunctionVisibility {
+    fn from(value: FunctionVisibility) -> Self {
+        match value {
+            FunctionVisibility::Private => Self::Private,
+            FunctionVisibility::ClientCallable => Self::ClientCallable,
+            FunctionVisibility::Internal => Self::Internal,
         }
     }
 }
@@ -1775,25 +2052,37 @@ pub struct ReducerDef {
     pub err_return_type: AlgebraicType,
 }
 
-impl From<ReducerDef> for RawReducerDefV9 {
-    fn from(val: ReducerDef) -> Self {
-        RawReducerDefV9 {
+impl TryFrom<ReducerDef> for RawReducerDefV9 {
+    type Error = SchemaConversionError;
+    fn try_from(val: ReducerDef) -> Result<Self, Self::Error> {
+        if val.lifecycle.is_none() && !val.visibility.is_client_callable() {
+            return Err(SchemaConversionError {
+                target: RawModuleDefVersion::V9OrEarlier,
+            });
+        }
+        Ok(RawReducerDefV9 {
             name: val.name.into(),
             params: val.params,
             lifecycle: val.lifecycle,
-        }
+        })
     }
 }
 
-impl From<ReducerDef> for RawReducerDefV10 {
-    fn from(val: ReducerDef) -> Self {
-        RawReducerDefV10 {
+impl TryFrom<ReducerDef> for RawReducerDefV10 {
+    type Error = SchemaConversionError;
+    fn try_from(val: ReducerDef) -> Result<Self, Self::Error> {
+        let visibility = if val.lifecycle.is_some() {
+            RawFunctionVisibility::Private
+        } else {
+            val.visibility.try_into()?
+        };
+        Ok(RawReducerDefV10 {
             source_name: val.accessor_name.into(),
             params: val.params,
-            visibility: val.visibility.into(),
+            visibility,
             ok_return_type: val.ok_return_type,
             err_return_type: val.err_return_type,
-        }
+        })
     }
 }
 
@@ -1853,30 +2142,38 @@ pub struct HttpRouteDef {
     pub path: Box<str>,
 }
 
-impl From<ProcedureDef> for RawProcedureDefV9 {
-    fn from(val: ProcedureDef) -> Self {
-        RawProcedureDefV9 {
+impl TryFrom<ProcedureDef> for RawProcedureDefV9 {
+    type Error = SchemaConversionError;
+    fn try_from(val: ProcedureDef) -> Result<Self, Self::Error> {
+        if !val.visibility.is_client_callable() {
+            return Err(SchemaConversionError {
+                target: RawModuleDefVersion::V9OrEarlier,
+            });
+        }
+        Ok(RawProcedureDefV9 {
             name: val.name.into(),
             params: val.params,
             return_type: val.return_type,
-        }
+        })
     }
 }
 
-impl From<ProcedureDef> for RawProcedureDefV10 {
-    fn from(val: ProcedureDef) -> Self {
-        RawProcedureDefV10 {
+impl TryFrom<ProcedureDef> for RawProcedureDefV10 {
+    type Error = SchemaConversionError;
+    fn try_from(val: ProcedureDef) -> Result<Self, Self::Error> {
+        Ok(RawProcedureDefV10 {
             source_name: val.accessor_name.into(),
             params: val.params,
             return_type: val.return_type,
-            visibility: val.visibility.into(),
-        }
+            visibility: val.visibility.try_into()?,
+        })
     }
 }
 
-impl From<ProcedureDef> for RawMiscModuleExportV9 {
-    fn from(def: ProcedureDef) -> Self {
-        Self::Procedure(def.into())
+impl TryFrom<ProcedureDef> for RawMiscModuleExportV9 {
+    type Error = SchemaConversionError;
+    fn try_from(def: ProcedureDef) -> Result<Self, Self::Error> {
+        Ok(Self::Procedure(def.try_into()?))
     }
 }
 
@@ -2142,5 +2439,27 @@ mod tests {
             .filter(|e| matches!(e, ValidationError::ColumnDefaultValueMalformed { .. }))
             .count()
             == 2))
+    }
+}
+
+impl From<ReducerDef> for RawReducerDefV11 {
+    fn from(value: ReducerDef) -> Self {
+        Self {
+            source_name: value.accessor_name.into(),
+            params: value.params,
+            declared_visibility: Some(value.visibility.into()),
+            ok_return_type: value.ok_return_type,
+            err_return_type: value.err_return_type,
+        }
+    }
+}
+impl From<ProcedureDef> for RawProcedureDefV11 {
+    fn from(value: ProcedureDef) -> Self {
+        Self {
+            source_name: value.accessor_name.into(),
+            params: value.params,
+            declared_visibility: Some(value.visibility.into()),
+            return_type: value.return_type,
+        }
     }
 }

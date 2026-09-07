@@ -2894,6 +2894,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "hosted-auth-test"
+version = "0.0.0"
+dependencies = [
+ "spacetimedb 2.3.0",
+]
+
+[[package]]
 name = "hostname"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8370,6 +8377,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-oci"
+version = "2.3.0"
+dependencies = [
+ "anyhow",
+ "flate2",
+ "serde",
+ "serde_json",
+ "sha2",
+ "spacetimedb-lib 2.3.0",
+ "tar",
+ "zstd",
+]
+
+[[package]]
 name = "spacetimedb-paths"
 version = "2.3.0"
 dependencies = [
@@ -8775,11 +8796,13 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
+ "spacetimedb-auth",
  "spacetimedb-cli",
  "spacetimedb-client-api",
  "spacetimedb-client-api-messages",
  "spacetimedb-core",
  "spacetimedb-data-structures",
+ "spacetimedb-datastore",
  "spacetimedb-lib 2.3.0",
  "spacetimedb-paths",
  "spacetimedb-schema",

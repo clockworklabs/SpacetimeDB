@@ -73,6 +73,7 @@ using ::identity;
 
 // ===== JWT =====
 using ::get_jwt;
+using ::get_call_auth_flags;
 
 // ===== Procedure Transactions =====
 #ifdef SPACETIMEDB_UNSTABLE_FEATURES

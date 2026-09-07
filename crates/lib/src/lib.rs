@@ -11,6 +11,8 @@ use std::any::TypeId;
 use std::collections::{btree_map, BTreeMap};
 
 pub mod connection_id;
+pub mod container;
+pub mod deployment;
 pub mod db;
 mod direct_index_key;
 pub mod error;
@@ -166,6 +168,7 @@ pub enum RawModuleDef {
     V8BackCompat(RawModuleDefV8),
     V9(db::raw_def::v9::RawModuleDefV9),
     V10(db::raw_def::v10::RawModuleDefV10),
+    V11(db::raw_def::v11::RawModuleDefV11),
     // TODO(jgilles): It would be nice to have a custom error message if this fails with an unknown variant,
     // but I'm not sure if that can be done via the Deserialize trait.
 }

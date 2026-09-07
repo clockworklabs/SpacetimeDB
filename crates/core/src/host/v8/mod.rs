@@ -899,7 +899,7 @@ enum JsProcedureWorkerRequest {
     },
 }
 
-static_assert_size!(CallReducerParams, 192);
+static_assert_size!(CallReducerParams, 208);
 
 fn send_worker_reply<T>(ctx: &str, reply_tx: JsReplyTx<T>, value: T) {
     if reply_tx.send(Ok(value)).is_err() {
@@ -1984,6 +1984,9 @@ where
         // Start the timer.
         // We'd like this tightly around `call`.
         env.start_funcall(op.name().clone(), op.timestamp(), op.call_type());
+        env.instance_env.set_call_auth_flags(op.call_auth_flags());
+        env.instance_env
+            .set_hosted_auth(op.hosted_auth().map(|proof| std::sync::Arc::new(proof.clone())));
 
         // Wrap the call in `TryCatch`.
         //
@@ -2113,6 +2116,8 @@ mod test {
                     name: &ReducerName::for_test("foobar"),
                     caller_identity: &Identity::ONE,
                     caller_connection_id: &ConnectionId::ZERO,
+                    call_auth_flags: 0,
+                    hosted_auth: None,
                     timestamp: Timestamp::from_micros_since_unix_epoch(24),
                     args: &ArgsTuple::nullary(),
                 };

@@ -442,6 +442,7 @@ macro_rules! abi_funcs {
             "spacetime_10.4"::datastore_delete_by_index_scan_point_bsatn,
 
             "spacetime_10.5"::datastore_clear,
+            "spacetime_10.6"::get_call_auth_flags,
         }
 
         $link_async! {
