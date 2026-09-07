@@ -128,12 +128,12 @@ pub enum InFlightInner {
     Write {
         sqe: sqe::Write,
         op_count: usize,
-        results: Vec<Result<(), Error>>,
+        results: Vec<Result<usize, Error>>,
     },
     Read {
         sqe: sqe::Read,
         op_count: usize,
-        results: Vec<Result<(), Error>>,
+        results: Vec<Result<usize, Error>>,
     },
     Open {
         sqe: sqe::Open,
@@ -585,7 +585,7 @@ impl<UserData> Executor<UserData> {
                 unreachable!("invalid sqe: expected write")
             };
             assert!(results.len() == op_count);
-            let bytes_written = results.iter().filter(|r| r.is_ok()).count() * SECTOR_SIZE;
+            let bytes_written = results.iter().filter_map(|r| r.as_ref().ok()).sum();
             // TODO: Propagate all errors?
             let result = match results.into_iter().find_map(Result::err) {
                 Some(error) => Err(error),
@@ -641,7 +641,7 @@ impl<UserData> Executor<UserData> {
                 unreachable!("invalid sqe: expected read")
             };
             assert!(results.len() == op_count);
-            let bytes_read = results.iter().filter(|r| r.is_ok()).count() * SECTOR_SIZE;
+            let bytes_read = results.iter().filter_map(|r| r.as_ref().ok()).sum();
             // TODO: Propagate all errors?
             let result = match results.into_iter().find_map(Result::err) {
                 Some(error) => Err(error),

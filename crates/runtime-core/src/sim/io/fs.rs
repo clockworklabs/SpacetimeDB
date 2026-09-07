@@ -178,9 +178,15 @@ impl File {
     }
 
     /// Read one complete page.
-    pub(super) fn read_page(&self, dst: &mut [u8], index: u64) -> Result<()> {
+    pub(super) fn read_page(&self, dst: &mut [u8], index: u64) -> Result<usize> {
         if dst.len() != PAGE_SIZE {
             return Err(Error::UnalignedBuffer);
+        }
+
+        let offset = index.checked_mul(PAGE_SIZE as u64).ok_or(Error::OffsetOverflow)?;
+        let len = self.volatile_len.load(Ordering::Relaxed);
+        if offset >= len {
+            return Ok(0);
         }
 
         match self.get_page(PageIndex(index)) {
@@ -192,26 +198,26 @@ impl File {
             }
         }
 
-        Ok(())
+        Ok(PAGE_SIZE)
     }
 
     /// Write one complete page.
-    pub(super) fn write_page(&self, src: &[u8], index: u64) -> Result<()> {
+    pub(super) fn write_page(&self, src: &[u8], index: u64) -> Result<usize> {
         if src.len() != PAGE_SIZE {
             return Err(Error::UnalignedBuffer);
         }
-
-        let page = self.get_or_allocate_page(PageIndex(index));
-        page.bytes.lock().copy_from_slice(src);
 
         let end = index
             .checked_add(1)
             .and_then(|pages| pages.checked_mul(PAGE_SIZE_U64))
             .ok_or(Error::OffsetOverflow)?;
 
+        let page = self.get_or_allocate_page(PageIndex(index));
+        page.bytes.lock().copy_from_slice(src);
+
         self.volatile_len.fetch_max(end, Ordering::Relaxed);
 
-        Ok(())
+        Ok(src.len())
     }
 
     /// Execute an `fdatasync(2)` operation as a series of [Datasync] effects.

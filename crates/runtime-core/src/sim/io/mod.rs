@@ -152,6 +152,10 @@ impl SimulatorIO {
         progress
     }
 
+    pub fn power_loss(&self) {
+        self.inner.executor.lock().power_loss();
+    }
+
     fn submit<T>(
         &self,
         sqe: Sqe<usize>,
@@ -403,6 +407,10 @@ mod tests {
             while self.io.tick(&self.rng, &mut NoFaults) {}
             self.rt.block_on(fut).unwrap()
         }
+
+        fn power_loss(&self) {
+            self.io.power_loss();
+        }
     }
 
     #[test]
@@ -413,15 +421,15 @@ mod tests {
 
     #[derive(Debug)]
     #[repr(C, align(4096))]
-    struct Buf([u8; 2 * SECTOR_SIZE]);
+    struct Buf<const N: usize>([u8; N]);
 
-    impl Buf {
+    impl<const N: usize> Buf<N> {
         fn clear(&mut self) {
             self.0.fill(0);
         }
     }
 
-    impl AlignedBytes for Buf {
+    impl<const N: usize> AlignedBytes for Buf<N> {
         fn as_bytes(&self) -> &[u8] {
             &self.0
         }
@@ -431,8 +439,8 @@ mod tests {
         }
 
         fn from_bytes(b: &[u8]) -> Self {
-            assert_eq!(b.len(), 2 * SECTOR_SIZE);
-            let mut buf = [0; 2 * SECTOR_SIZE];
+            assert_eq!(b.len(), N);
+            let mut buf = [0; N];
             buf.copy_from_slice(b);
             Self(buf)
         }
@@ -449,6 +457,99 @@ mod tests {
         buf.clear();
         let buf = rt.run(|io| io.read_exact_at(fd, buf, 0)).unwrap();
 
-        assert!(buf.0.iter().all(|&b| b == 22),);
+        assert_eq!(buf.0, [22; 2 * SECTOR_SIZE]);
+    }
+
+    #[test]
+    fn write_read_at_offset() {
+        let rt = Runtime::new();
+
+        let fd = rt.run(|io| io.create_file("/data/test")).unwrap();
+        let buf = {
+            let mut buf = Buf([0; SECTOR_SIZE]);
+            for i in 0usize..2 {
+                buf.0.fill((i + 1) as u8 * 2);
+                let offset = (i * SECTOR_SIZE) as u64;
+                buf = rt
+                    .run(|io| io.write_all_at(fd.clone(), buf, offset))
+                    .map_err(ErrorWith::into_err)
+                    .unwrap();
+            }
+
+            buf.clear();
+            buf
+        };
+        let buf = rt.run(|io| io.read_exact_at(fd, buf, SECTOR_SIZE as u64)).unwrap();
+
+        assert_eq!(buf.0, [4; SECTOR_SIZE]);
+    }
+
+    #[test]
+    fn preallocate() {
+        let rt = Runtime::new();
+
+        let fd = rt.run(|io| io.create_file("/data/test")).unwrap();
+        rt.run(|io| io.reserve(fd.clone(), 2 * SECTOR_SIZE as u64)).unwrap();
+
+        // Check that reserved space reads as zeroes.
+        let buf = rt
+            .run(|io| io.read_exact_at(fd.clone(), Buf([1; 2 * SECTOR_SIZE]), 0))
+            .unwrap();
+        assert_eq!(buf.0, [0; 2 * SECTOR_SIZE]);
+
+        // The length is reported as the preallocated length.
+        let stat = rt.run(|io| io.statx(fd.clone())).unwrap();
+        assert_eq!(stat.size, 2 * SECTOR_SIZE as u64);
+
+        // Overwriting the second sector works.
+        let buf = rt
+            .run(|io| io.write_all_at(fd.clone(), Buf([42; SECTOR_SIZE]), SECTOR_SIZE as u64))
+            .unwrap();
+        let buf = rt
+            .run(|io| io.read_exact_at(fd.clone(), buf, SECTOR_SIZE as u64))
+            .unwrap();
+        assert_eq!(buf.0, [42; SECTOR_SIZE]);
+        // The first sector still reads as zeroes.
+        let buf = rt.run(|io| io.read_exact_at(fd, buf, 0)).unwrap();
+        assert_eq!(buf.0, [0; SECTOR_SIZE]);
+    }
+
+    #[test]
+    fn open_succeeds_after_create() {
+        let rt = Runtime::new();
+
+        matches!(rt.run(|io| io.open_file("/data/test")), Err(Error::FileNotFound { .. }));
+        rt.run(|io| io.create_file("/data/test")).unwrap();
+        assert!(rt.run(|io| io.open_file("/data/test")).is_ok());
+    }
+
+    #[test]
+    fn unsynced_data_is_lost_after_power_loss() {
+        let rt = Runtime::new();
+
+        let fd = rt.run(|io| io.create_file("/data/test")).unwrap();
+        let mut buf = rt
+            .run(|io| io.write_all_at(fd.clone(), Buf([1; SECTOR_SIZE]), 0))
+            .map_err(ErrorWith::into_err)
+            .unwrap();
+        buf.clear();
+
+        rt.run(|io| io.fdatasync(fd.clone())).unwrap();
+
+        let mut buf = rt
+            .run(|io| io.write_all_at(fd.clone(), Buf([2; SECTOR_SIZE]), SECTOR_SIZE as u64))
+            .map_err(ErrorWith::into_err)
+            .unwrap();
+        buf.clear();
+
+        rt.power_loss();
+
+        let buf = rt.run(|io| io.read_exact_at(fd.clone(), buf, 0)).unwrap();
+        assert_eq!(buf.0, [1; SECTOR_SIZE]);
+        matches!(
+            rt.run(|io| io.read_exact_at(fd.clone(), buf, SECTOR_SIZE as u64))
+                .map_err(ErrorWith::into_err),
+            Err(Error::UnexpectedEof { .. })
+        );
     }
 }
