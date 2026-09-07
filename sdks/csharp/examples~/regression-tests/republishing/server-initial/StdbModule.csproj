@@ -16,7 +16,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SpacetimeDB.Runtime" Version="2.9.*" />
+    <PackageReference Include="SpacetimeDB.Runtime" Version="2.10.*" />
   </ItemGroup>
 
   <ItemGroup Condition="$(TargetFramework.StartsWith('net10.'))">
