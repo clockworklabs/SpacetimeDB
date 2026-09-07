@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 4,
+  "name": "Order support ownership boundary",
+  "features": [
+    {
+      "id": 614,
+      "name": "Order support ownership boundary",
+      "actors": ["owner", "other"],
+      "setup": [
+        { "do": "signUp", "actor": "owner", "name": "order-boundary-owner" },
+        { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
+        { "do": "click", "actor": "owner", "testid": "support-link" },
+        { "do": "fill", "actor": "owner", "testid": "support-subject", "text": "Owner order case" },
+        { "do": "fill", "actor": "owner", "testid": "support-message", "text": "This case belongs to the order owner." },
+        { "do": "click", "actor": "owner", "testid": "support-submit" },
+        { "do": "click", "actor": "owner", "testid": "support-order-option", "contains": "Desk Lamp", "in": { "testid": "support-ticket", "contains": "Owner order case" } },
+        { "do": "signUp", "actor": "other", "name": "order-boundary-other" },
+        { "do": "click", "actor": "other", "testid": "support-link" },
+        { "do": "fill", "actor": "other", "testid": "support-subject", "text": "Other order case" },
+        { "do": "fill", "actor": "other", "testid": "support-message", "text": "This is a separate case." },
+        { "do": "click", "actor": "other", "testid": "support-submit" }
+      ],
+      "criteria": [
+        {
+          "id": "614b",
+          "desc": "another customer cannot attach or inspect the owner's order",
+          "points": 2,
+          "statedBy": "A customer cannot attach or inspect another customer's order.",
+          "steps": [
+            { "do": "expect", "actor": "other", "testid": "support-order-option", "contains": "Desk Lamp", "absent": true },
+            {
+              "do": "callAction",
+              "actor": "other",
+              "from": "owner",
+              "action": "linkSupportOrder",
+              "authentication": "actor",
+              "input": { "testid": "support-link-order", "attribute": "data-action-input" },
+              "namedAction": {
+                "id": "linkSupportOrder",
+                "path": "/api/support/cases/{caseId}/order",
+                "method": "POST",
+                "reducer": "link_support_order",
+                "args": [0, 0],
+                "params": [
+                  { "name": "caseId", "in": "path", "placeholder": "{caseId}", "wireType": "u64" },
+                  { "name": "orderId", "in": "body", "wireType": "u64" }
+                ]
+              },
+              "settleMs": 1500
+            },
+            { "do": "expectActionOutcome", "actor": "other", "outcome": "refused" },
+            { "do": "expect", "actor": "other", "testid": "support-order", "in": { "testid": "support-ticket", "contains": "Other order case" }, "contains": "Desk Lamp", "absent": true },
+            { "do": "click", "actor": "owner", "testid": "support-order-option", "contains": "Desk Lamp", "in": { "testid": "support-ticket", "contains": "Owner order case" } },
+            { "do": "click", "actor": "owner", "testid": "support-link-order", "in": { "testid": "support-ticket", "contains": "Owner order case" } },
+            { "do": "expectElementCount", "actor": "owner", "testid": "support-order", "contains": "Desk Lamp", "equals": 1, "within": 10000 }
+          ]
+        }
+      ]
+    }
+  ]
+}

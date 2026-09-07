@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 2,
+  "name": "Ecommerce L2 live catalog price",
+  "note": "The signed-out live-price check owns its catalog state and does not share a mutation grade with unrelated workflows.",
+  "features": [
+    {
+      "id": 4,
+      "name": "Live catalog price",
+      "actors": ["admin", "visitor"],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "click", "actor": "admin", "testid": "admin-link" },
+        { "do": "fill", "actor": "visitor", "testid": "search-input", "text": "Air Purifier", "enter": true, "settleMs": 1500 }
+      ],
+      "criteria": [
+        {
+          "id": "4b",
+          "desc": "the new price reaches a signed-out visitor without a reload",
+          "points": 2,
+          "statedBy": "the storefront shows the new price immediately, to everyone",
+          "steps": [
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-price", "in": { "testid": "item-card", "contains": "Air Purifier" }, "atLeast": 2 },
+            { "do": "fill", "actor": "admin", "testid": "price-input", "text": "1.00", "in": { "testid": "admin-item-row", "contains": "Air Purifier" } },
+            { "do": "click", "actor": "admin", "testid": "price-submit", "in": { "testid": "admin-item-row", "contains": "Air Purifier" } },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-price", "in": { "testid": "item-card", "contains": "Air Purifier" }, "equals": 1, "within": 10000 }
+          ]
+        }
+      ]
+    }
+  ]
+}

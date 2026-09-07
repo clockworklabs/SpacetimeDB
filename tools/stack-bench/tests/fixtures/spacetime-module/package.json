@@ -1,0 +1,11 @@
+{
+  "name": "stack-bench-container-smoke-module",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "spacetimedb": "file:/deps/bindings-typescript"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3"
+  }
+}

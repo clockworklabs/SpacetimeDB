@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 4,
+  "name": "Owned order support link",
+  "features": [
+    {
+      "id": 614,
+      "name": "Owned order support link",
+      "actors": ["owner", "staff"],
+      "setup": [
+        { "do": "signUp", "actor": "owner", "name": "order-support-owner" },
+        { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
+        { "do": "click", "actor": "owner", "testid": "support-link" },
+        { "do": "fill", "actor": "owner", "testid": "support-subject", "text": "Owned order case" },
+        { "do": "fill", "actor": "owner", "testid": "support-message", "text": "Question about my Desk Lamp order." },
+        { "do": "click", "actor": "owner", "testid": "support-submit" }
+      ],
+      "criteria": [
+        {
+          "id": "614a",
+          "desc": "the customer can link their order and staff can inspect it",
+          "points": 3,
+          "statedBy": "A customer can attach one of their orders to a support case.",
+          "steps": [
+            { "do": "click", "actor": "owner", "testid": "support-order-option", "contains": "Desk Lamp", "in": { "testid": "support-ticket", "contains": "Owned order case" } },
+            { "do": "click", "actor": "owner", "testid": "support-link-order", "in": { "testid": "support-ticket", "contains": "Owned order case" } },
+            { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+            { "do": "click", "actor": "staff", "testid": "staff-link" },
+            { "do": "expect", "actor": "staff", "testid": "support-order", "in": { "testid": "support-ticket", "contains": "Owned order case" }, "contains": "Desk Lamp", "within": 10000 }
+          ]
+        }
+      ]
+    }
+  ]
+}

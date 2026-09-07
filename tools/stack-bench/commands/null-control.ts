@@ -1,0 +1,260 @@
+#!/usr/bin/env node
+// Grade the real validated production scenarios against a reachable app that
+// implements nothing. Every point-bearing criterion must conclusively fail.
+
+import { execFile } from 'node:child_process';
+import { createServer } from 'node:http';
+import type { Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, join, relative, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { parseArgs as parseNodeArgs } from 'node:util';
+import { readArtifactPayload, writeRunJson } from '../src/evidence/artifacts.js';
+import { calibrationQualificationIdentity, calibrationQualificationRelease,
+  resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
+import { qualificationScopeIdentity } from '../src/composition/qualification-scope.js';
+import { analyseNullReports } from '../src/evidence/null-control-analysis.js';
+import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
+import { resolveRecipeSelection } from '../src/composition/recipe-selection.js';
+import { isDeclaredLevel, listTracks, loadTrack, suitesFor } from '../src/composition/tracks.js';
+import { controllerRunner } from '../src/runtime/runner-environment.js';
+import type { CalibrationPlan } from '../src/composition/calibration-compiler.js';
+import type { RecipeBinding } from '../src/composition/recipe-release.js';
+import type { Track } from '../src/composition/tracks.js';
+
+import { STACK_BENCH_ROOT as ROOT, compiledEntrypoint } from '../src/package-root.js';
+const GRADE = compiledEntrypoint('grader', 'grade.js');
+const NULL_CONTROL_WORKERS = 4;
+
+interface NullControlArgs {
+  tracks: string[];
+  level: number | null;
+  recipe?: string;
+  out?: string;
+  audit: boolean;
+  parentAttemptId?: string;
+}
+
+export function parseNullControlArgs(argv: string[]): NullControlArgs {
+  const { values } = parseNodeArgs({ args: argv.slice(2), options: {
+    track: { type: 'string' }, level: { type: 'string' }, recipe: { type: 'string' },
+    out: { type: 'string' }, audit: { type: 'boolean' }, 'parent-attempt-id': { type: 'string' },
+  } });
+  const args: NullControlArgs = {
+    tracks: values.track?.split(',').filter(Boolean) ?? listTracks(),
+    level: values.level === undefined ? null : Number(values.level), audit: values.audit ?? false,
+    recipe: values.recipe, out: values.out, parentAttemptId: values['parent-attempt-id'],
+  };
+  if (args.level !== null && (!Number.isInteger(args.level) || args.level < 1)) {
+    throw new Error('--level must be a positive integer');
+  }
+  if (args.level !== null && args.tracks.length !== 1) {
+    throw new Error('--level requires exactly one --track');
+  }
+  if (args.recipe && args.level === null) throw new Error('--recipe requires --level');
+  return args;
+}
+
+function runGrade(argv: string[], timeoutMs = 300_000): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    execFile(process.execPath, [GRADE, ...argv], {
+      encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: timeoutMs,
+    }, (error, stdout, stderr) => {
+      if (error) {
+        error.message = `grader failed: ${error.message}\n${stdout}\n${stderr}`;
+        reject(error);
+      } else resolve({ stdout, stderr });
+    });
+  });
+}
+
+export function nullControlSuites(track: Track, selectedLevel: number | null = null,
+  binding: RecipeBinding | null = null) {
+  if (selectedLevel !== null && !isDeclaredLevel(track, selectedLevel)) {
+    throw new Error(`L${selectedLevel} is not declared for ${track.name}`);
+  }
+  if (binding) {
+    if (selectedLevel === null) throw new Error('recipe-bound null control requires one level');
+    if (!Array.isArray(binding.execution) || !binding.execution.length) {
+      throw new Error('recipe-bound null control requires a typed execution plan');
+    }
+    const executionIds = new Set();
+    const mappedKeys = new Set();
+    const suites = binding.execution.map(execution => {
+      if (executionIds.has(execution.id)) {
+        throw new Error(`recipe-bound null control repeats execution ${execution.id}`);
+      }
+      executionIds.add(execution.id);
+      const checks = binding.release.checkCatalog.filter(check => check.executionId === execution.id);
+      if (!checks.length) {
+        throw new Error(`recipe-bound null control execution ${execution.id} maps no checks`);
+      }
+      for (const check of checks) {
+        if (mappedKeys.has(check.stableKey)) {
+          throw new Error(`recipe-bound null control maps check ${check.stableKey} more than once`);
+        }
+        mappedKeys.add(check.stableKey);
+      }
+      return { id: execution.id, spec: resolve(track.dir, execution.source ?? ''),
+        level: selectedLevel, checks };
+    });
+    const missing = binding.release.checkCatalog
+      .filter(check => !mappedKeys.has(check.stableKey)).map(check => check.stableKey);
+    if (missing.length) {
+      throw new Error(`recipe-bound null control leaves checks unmapped: ${missing.join(', ')}`);
+    }
+    return suites;
+  }
+  const seen = new Set();
+  const suites = [];
+  const levels = selectedLevel === null
+    ? Array.from({ length: track.validatedThrough }, (_, index) => index + 1)
+    : [selectedLevel];
+  for (const level of levels) {
+    for (const suite of suitesFor(track, level)) {
+      if (seen.has(suite.spec)) continue;
+      seen.add(suite.spec);
+      suites.push({ ...suite, level });
+    }
+  }
+  return suites;
+}
+
+export function selectNullQualificationBinding(binding: RecipeBinding, calibration: CalibrationPlan): RecipeBinding {
+  const selected = calibrationQualificationRelease(calibration, binding.release, binding.execution);
+  return { ...binding, release: selected.release, execution: selected.execution };
+}
+
+export function createNullQualification(binding: RecipeBinding, calibration: CalibrationPlan) {
+  const selectedBinding = selectNullQualificationBinding(binding, calibration);
+  const selection = resolveRecipeSelection(selectedBinding.release, {
+    checkKeys: selectedBinding.release.checkCatalog.map(check => check.stableKey),
+  });
+  return {
+    binding: selectedBinding,
+    calibration,
+    identity: calibrationQualificationIdentity(calibration),
+    selectionSha256: selection.sha256,
+  };
+}
+
+async function listen(server: Server): Promise<number> {
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen({ port: 0, host: '127.0.0.1' }, () => resolve());
+  });
+  return (server.address() as AddressInfo).port;
+}
+
+async function main() {
+  const args = parseNullControlArgs(process.argv);
+  const nullAttemptId = `null-control-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  const work = mkdtempSync(join(tmpdir(), 'stack-bench-null-'));
+  const app = join(work, 'app');
+  const reportsDir = join(work, 'reports');
+  mkdirSync(app, { recursive: true });
+  mkdirSync(reportsDir, { recursive: true });
+
+  // Root navigation succeeds, proving the browser and server are healthy. All
+  // application/API behavior is absent: non-navigation requests get 404.
+  const server = createServer((request, response) => {
+    if (request.method === 'GET' && (request.url === '/' || request.headers.accept?.includes('text/html'))) {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end('<!doctype html><html><head><title>Null control</title></head><body></body></html>');
+    } else {
+      response.writeHead(404, { 'content-type': 'application/json' });
+      response.end('{"error":"not implemented"}');
+    }
+  });
+
+  const started = Date.now();
+  const suiteReports = [];
+  let qualification: ReturnType<typeof createNullQualification> | null = null;
+  try {
+    const port = await listen(server);
+    const url = `http://127.0.0.1:${port}`;
+    for (const trackName of args.tracks) {
+      const track = loadTrack(trackName);
+      let binding: RecipeBinding | null = null;
+      if (args.level !== null) {
+        binding = resolveRecipeRelease(track, args.level, args.recipe);
+        if (!binding) throw new Error(`${trackName} L${args.level} has no recipe release`);
+        const calibration = resolveCalibrationForRelease(binding.release,
+          { trackRoot: track.dir, stackBenchRoot: ROOT });
+        if (!calibration) throw new Error(`${trackName} L${args.level} has no calibration`);
+        qualification = createNullQualification(binding, calibration);
+        binding = qualification.binding;
+      }
+      const selectedSuites = nullControlSuites(track, args.level, binding);
+      const resolvedRecipe = binding?.release.id ?? args.recipe;
+      for (let index = 0; index < selectedSuites.length; index += NULL_CONTROL_WORKERS) {
+        const reports = await Promise.all(selectedSuites
+          .slice(index, index + NULL_CONTROL_WORKERS).map(async suite => {
+            const reportPath = join(reportsDir,
+              `${trackName}-l${suite.level}-${suite.id.replaceAll('@', '-')}.json`);
+            console.log(`${trackName} L${suite.level} ${suite.id} (${basename(suite.spec)})`);
+            await runGrade(['--url', url, '--level', String(suite.level), '--spec', suite.spec,
+              '--backend', 'postgres', '--track', trackName, '--app', app, '--out', reportPath,
+              '--null-control',
+              '--parent-attempt-id', nullAttemptId,
+              ...(resolvedRecipe ? ['--recipe', resolvedRecipe] : []),
+              ...(binding ? ['--expected-recipe-sha256', binding.release.contentSha256] : []),
+              ...(qualification ? ['--selection-sha256', qualification.selectionSha256] : []),
+              ...(('checks' in suite ? suite.checks : []) ?? [])
+                .flatMap(check => ['--selected-check', check.stableKey])]);
+            const report = readArtifactPayload(reportPath, { expectedKind: 'grade' });
+            console.log(`${suite.id}: ${report.total}/${report.max}`);
+            return { track: trackName, level: suite.level, id: suite.id,
+              scenario: relative(track.dir, suite.spec).replaceAll('\\', '/'), report };
+          }));
+        suiteReports.push(...reports);
+      }
+    }
+
+    const analysis = analyseNullReports(suiteReports);
+    const artifact = {
+      id: nullAttemptId,
+      kind: 'null_control',
+      startedAt: new Date(started).toISOString(),
+      completedAt: new Date().toISOString(),
+      parentAttemptId: args.parentAttemptId ?? null,
+      identities: qualification ? {
+        recipe: { id: qualification.binding.release.id,
+          sha256: qualification.binding.release.contentSha256 },
+        calibration: { id: qualification.identity.id,
+          sha256: qualification.identity.contentSha256 },
+      } : undefined,
+      durationMs: Date.now() - started,
+      runner: controllerRunner(),
+      ...(qualification ? { qualificationScope: qualificationScopeIdentity({
+        kind: 'null', release: qualification.binding.release, stackBenchRoot: ROOT,
+      }) } : {}),
+      tracks: args.tracks,
+      ...analysis,
+    };
+    const outputPath = resolve(args.out ?? join(ROOT, 'results', `${artifact.id}.json`));
+    writeRunJson(outputPath, artifact);
+    console.log(JSON.stringify({
+      id: artifact.id,
+      kind: artifact.kind,
+      durationMs: artifact.durationMs,
+      tracks: artifact.tracks,
+      ok: artifact.ok,
+      summary: artifact.summary,
+      artifact: outputPath,
+    }, null, 2));
+    if (!analysis.ok && !args.audit) process.exitCode = 1;
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+  main().catch(error => {
+    console.error(error.stack ?? error.message);
+    process.exitCode = 2;
+  });
+}

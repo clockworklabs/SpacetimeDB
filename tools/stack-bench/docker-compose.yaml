@@ -1,0 +1,49 @@
+# Databases for the Postgres and MongoDB backends.
+#
+# Development-only ports, container names and volumes keep this stack separate
+# from the appliance. The SpacetimeDB
+# backend needs no service here; run `spacetime start` for it.
+#
+#   docker compose -f tools/stack-bench/docker-compose.yaml up -d
+#
+name: stack-bench
+
+services:
+  postgres:
+    image: postgres:16@sha256:219341e4cedb06c8634f80af40851da3425b41b76603fd890272f58e37e139f7
+    container_name: stack-bench-dev-postgres
+    ports:
+      - "127.0.0.1:6532:5432"
+    environment:
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: local-app-password
+      POSTGRES_DB: app
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d app"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # Single node, no replica set: change streams would give MongoDB a push
+  # mechanism the Postgres backend does not have, and the comparison is about
+  # what an agent builds on a standard stack.
+  mongodb:
+    image: mongo:7@sha256:554a9bb1ec6e00c40ba078a41974a834d1a9a8ab1772645b69142afecc87f082
+    container_name: stack-bench-dev-mongodb
+    ports:
+      - "127.0.0.1:6537:27017"
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1})"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  pgdata:
+    name: stack-bench-dev-pgdata
+  mongodata:
+    name: stack-bench-dev-mongodata

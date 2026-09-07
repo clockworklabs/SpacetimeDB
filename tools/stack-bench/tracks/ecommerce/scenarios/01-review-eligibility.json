@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 1,
+  "name": "A review is a claim about a purchase",
+  "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
+  "note": "Every criterion receives all state it relies on from its feature setup. Security assertions include a working positive path where an empty or broken view could otherwise look secure.",
+  "features": [
+    {
+      "id": 108,
+      "name": "A review is a claim about a purchase",
+      "actors": ["owner", "stranger"],
+      "setup": [
+        { "do": "signUp", "actor": "owner", "name": "tam" },
+        { "do": "signUp", "actor": "stranger", "name": "uma" }
+      ],
+      "criteria": [
+        {
+          "id": "108a",
+          "desc": "someone who never bought the item cannot review it",
+          "points": 2,
+          "steps": [
+            { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Air Purifier" } },
+            { "do": "click", "actor": "owner", "testid": "orders-toggle" },
+            { "do": "expect", "actor": "owner", "testid": "order-item", "contains": "Air Purifier" },
+            { "do": "click", "actor": "owner", "testid": "overlay-close", "ifAvailable": true },
+            { "do": "click", "actor": "owner", "testid": "catalog-link", "ifAvailable": true },
+            { "do": "callAction", "actor": "owner", "from": "owner", "action": "submitReview", "namedAction": { "id": "submitReview", "path": "/api/items/:id/reviews", "method": "POST", "reducer": "submit_review", "args": [0, 4, "eligible review control"], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }, { "name": "rating", "in": "body" }, { "name": "comment", "in": "body" }] }, "input": { "testid": "item-card", "contains": "Air Purifier", "attribute": "data-buy-input" }, "settleMs": 1500 },
+            { "do": "expectActionOutcome", "actor": "owner", "outcome": "accepted" },
+            { "do": "openItem", "actor": "stranger", "item": "Air Purifier" },
+            { "do": "expect", "actor": "stranger", "testid": "review-item", "contains": "eligible review control" },
+            { "do": "callAction", "actor": "stranger", "from": "owner", "action": "submitReview", "namedAction": { "id": "submitReview", "path": "/api/items/:id/reviews", "method": "POST", "reducer": "submit_review", "args": [0, 4, "never bought this"], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }, { "name": "rating", "in": "body" }, { "name": "comment", "in": "body" }] }, "input": { "testid": "item-card", "contains": "Air Purifier", "attribute": "data-buy-input" }, "settleMs": 1500 },
+            { "do": "expectActionOutcome", "actor": "stranger", "outcome": "application-refused", "routeProvenBy": "owner" },
+            { "do": "reload", "actor": "stranger", "settleMs": 1500 },
+            { "do": "ensureSignedIn", "actor": "stranger", "name": "uma", "readyTestid": "current-user" },
+            { "do": "click", "actor": "stranger", "testid": "overlay-close", "ifAvailable": true },
+            { "do": "click", "actor": "stranger", "testid": "catalog-link", "ifAvailable": true },
+            { "do": "openItem", "actor": "stranger", "item": "Air Purifier" },
+            { "do": "expect", "actor": "stranger", "testid": "review-item", "contains": "eligible review control" },
+            { "do": "expect", "actor": "stranger", "testid": "review-item", "contains": "never bought this", "absent": true }
+          ],
+          "statedBy": "the server refuses a review from someone who has never ordered the item"
+        },
+        {
+          "id": "108b",
+          "desc": "buying the item earns the right to review it",
+          "points": 1,
+          "steps": [
+            { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" } },
+            { "do": "wait", "actor": "owner", "ms": 2000 },
+            { "do": "openItem", "actor": "owner", "item": "Keyboard" },
+            { "do": "fill", "actor": "owner", "testid": "review-rating", "text": "4" },
+            { "do": "fill", "actor": "owner", "testid": "review-input", "text": "bought and used it" },
+            { "do": "click", "actor": "owner", "testid": "review-submit" },
+            { "do": "expect", "actor": "owner", "testid": "review-item", "contains": "bought and used it", "within": 8000 }
+          ],
+          "statedBy": "a customer can review an item they bought"
+        }
+      ]
+    }
+  ]
+}

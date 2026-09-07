@@ -1,0 +1,1 @@
+export const SPACETIME_ADAPTER_VERSION = '1.3.0';

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 2,
+  "name": "Ecommerce L2 live fulfilment queue",
+  "note": "This scenario owns only the live queue check.",
+  "features": [
+    {
+      "id": 1,
+      "name": "Live fulfilment queue",
+      "actors": ["customer", "staff"],
+      "setup": [
+        { "do": "signUp", "actor": "customer", "name": "fq-live" },
+        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+        { "do": "click", "actor": "staff", "testid": "staff-link" }
+      ],
+      "criteria": [
+        {
+          "id": "1a",
+          "desc": "an order placed by a customer appears in the staff queue without a reload",
+          "points": 2,
+          "statedBy": "New orders appear in the queue without a reload",
+          "steps": [
+            { "do": "recordNumber", "actor": "staff", "testid": "queue-depth", "as": "depth-before" },
+            { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
+            { "do": "expect", "actor": "staff", "testid": "queue-item", "contains": "Desk Lamp", "within": 10000 },
+            { "do": "expectNumber", "actor": "staff", "testid": "queue-depth", "relativeTo": "depth-before", "plus": 1 }
+          ]
+        }
+      ]
+    }
+  ]
+}

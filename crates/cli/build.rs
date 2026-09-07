@@ -110,6 +110,7 @@ fn generate_template_files() {
 
     // Embed skill files from skills/*/SKILL.md
     let skills_dir = repo_root.join("skills");
+    println!("cargo:rerun-if-changed={}", skills_dir.display());
     let skill_names = discover_skill_names(&skills_dir);
 
     generated_code.push_str("pub fn get_skill(name: &str) -> Option<&'static str> {\n");

@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { brotliCompressSync, gzipSync } from 'node:zlib';
+
+import { transportFrameText } from '../grader/transport-frames.js';
+
+const message = 'subscription update with support-secret-619 inline';
+
+test('compressed SpacetimeDB frames decode to their message text', () => {
+  assert.equal(transportFrameText(Buffer.concat([Buffer.from([2]), gzipSync(message)])), message);
+  assert.equal(transportFrameText(Buffer.concat([Buffer.from([1]), brotliCompressSync(message)])),
+    message);
+  assert.equal(transportFrameText(Buffer.concat([Buffer.from([0]), Buffer.from(message)])),
+    `\u0000${message}`);
+});
+
+test('other frames keep their bytes', () => {
+  assert.equal(transportFrameText(message), message);
+  assert.equal(transportFrameText(Buffer.from(message)), message);
+  const socketIo = Buffer.from('2["chat",{"text":"hi"}]');
+  assert.equal(transportFrameText(socketIo), socketIo.toString('utf8'));
+  const notGzip = Buffer.from([2, 0x41, 0x42]);
+  assert.equal(transportFrameText(notGzip), notGzip.toString('utf8'));
+});

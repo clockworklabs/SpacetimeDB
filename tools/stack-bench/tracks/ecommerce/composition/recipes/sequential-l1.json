@@ -1,0 +1,318 @@
+{
+  "schemaVersion": 1,
+  "kind": "benchmark-recipe",
+  "id": "ecommerce.sequential-l1",
+  "title": "Ecommerce sequential L1",
+  "track": "ecommerce",
+  "sequence": {
+    "level": 1
+  },
+  "fixture": {
+    "path": "../fixtures/storefront.json",
+    "id": "ecommerce.storefront"
+  },
+  "task": {
+    "mode": "fresh",
+    "framing": {
+      "requirements": [
+        {
+          "id": "ecommerce.sequential-l1.framing",
+          "path": "prompts/modular/l1-framing.md",
+          "order": 0,
+          "modes": [
+            "fresh"
+          ]
+        }
+      ],
+      "contracts": [
+        {
+          "id": "ecommerce.sequential-l1.interface",
+          "path": "prompts/modular/l1-hooks.md",
+          "order": 1900,
+          "from": "## Public application interface",
+          "until": "## Catalog controls",
+          "modes": [
+            "fresh"
+          ]
+        },
+        {
+          "id": "ecommerce.sequential-l1.purchase-action-input",
+          "path": "prompts/modular/l1-action-inputs.md",
+          "order": 2210,
+          "from": "## Purchase action input",
+          "until": "## Cart quantity action input",
+          "modes": [
+            "fresh"
+          ],
+          "requiresFeatures": [
+            "ecommerce.feature.purchasing"
+          ]
+        },
+        {
+          "id": "ecommerce.sequential-l1.cart-action-input",
+          "path": "prompts/modular/l1-action-inputs.md",
+          "order": 2410,
+          "from": "## Cart quantity action input",
+          "until": "## Restock action input",
+          "modes": [
+            "fresh"
+          ],
+          "requiresFeatures": [
+            "ecommerce.feature.cart-checkout"
+          ]
+        },
+        {
+          "id": "ecommerce.sequential-l1.restock-action-input",
+          "path": "prompts/modular/l1-action-inputs.md",
+          "order": 2510,
+          "from": "## Restock action input",
+          "modes": [
+            "fresh"
+          ],
+          "requiresFeatures": [
+            "ecommerce.feature.warehouse-admin"
+          ]
+        },
+        {
+          "id": "ecommerce.sequential-l1.startup-probe",
+          "path": "prompts/fragments/startup-probe.md",
+          "order": 2600,
+          "modes": [
+            "fresh"
+          ],
+          "requiresFeatures": [
+            "ecommerce.feature.catalog-items"
+          ]
+        }
+      ]
+    }
+  },
+  "packs": [
+    {
+      "path": "../packs/feature-accounts.json",
+      "id": "ecommerce.feature.accounts",
+      "includeRoles": [
+        "feature"
+      ],
+      "includeCheckGroups": [
+        "account-create",
+        "account-duplicate",
+        "account-password",
+        "account-signout"
+      ]
+    },
+    {
+      "path": "../packs/feature-catalog-items.json",
+      "id": "ecommerce.feature.catalog-items",
+      "includeRoles": [
+        "feature"
+      ],
+      "includeCheckGroups": [
+        "values"
+      ]
+    },
+    {
+      "path": "../packs/feature-catalog-discovery.json",
+      "id": "ecommerce.feature.catalog-discovery",
+      "includeRoles": [
+        "feature"
+      ],
+      "includeCheckGroups": [
+        "ranking",
+        "search"
+      ]
+    },
+    {
+      "path": "../packs/feature-purchasing.json",
+      "id": "ecommerce.feature.purchasing",
+      "includeRoles": [
+        "feature"
+      ],
+      "includeCheckGroups": [
+        "purchase-order"
+      ]
+    },
+    {
+      "path": "../packs/feature-cart.json",
+      "id": "ecommerce.feature.cart",
+      "includeRoles": [
+        "feature"
+      ],
+      "includeCheckGroups": [
+        "cart"
+      ]
+    },
+    {
+      "path": "../packs/feature-checkout.json",
+      "id": "ecommerce.feature.checkout",
+      "includeRoles": [
+        "feature"
+      ],
+      "includeCheckGroups": [
+        "checkout"
+      ]
+    },
+    {
+      "path": "../packs/feature-reviews.json",
+      "id": "ecommerce.feature.reviews",
+      "includeRoles": [
+        "feature"
+      ],
+      "includeCheckGroups": [
+        "reviews"
+      ]
+    },
+    {
+      "path": "../packs/feature-warehouse-admin.json",
+      "id": "ecommerce.feature.warehouse-admin",
+      "includeRoles": [
+        "feature"
+      ],
+      "includeCheckGroups": [
+        "warehouse-view",
+        "admin-write"
+      ]
+    },
+    {
+      "path": "../packs/spec-access-control.json",
+      "id": "ecommerce.spec.access-control",
+      "includeRoles": [
+        "guarantee"
+      ],
+      "includeCheckGroups": [
+        "signed-out-purchase",
+        "purchase-session",
+        "purchase-attribution",
+        "order-ownership",
+        "review-eligibility",
+        "cart-boundary",
+        "warehouse-area-boundary"
+      ]
+    },
+    {
+      "path": "../packs/spec-state-durability.json",
+      "id": "ecommerce.spec.state-durability",
+      "includeRoles": [
+        "guarantee"
+      ],
+      "includeCheckGroups": [
+        "session-reload",
+        "cart-reload",
+        "account-state-reload",
+        "account-state-reconnect"
+      ]
+    },
+    {
+      "path": "../packs/spec-live-state.json",
+      "id": "ecommerce.spec.live-state",
+      "includeRoles": [
+        "guarantee"
+      ],
+      "includeCheckGroups": [
+        "ranking",
+        "purchase-stock",
+        "shared-cart",
+        "rating",
+        "open-list",
+        "warehouse-stock"
+      ]
+    },
+    {
+      "path": "../packs/spec-concurrency-safety.json",
+      "id": "ecommerce.spec.concurrency-safety",
+      "includeRoles": [
+        "guarantee"
+      ],
+      "includeCheckGroups": [
+        "stock-limit",
+        "last-unit",
+        "restock-race",
+        "duplicate-checkout"
+      ]
+    },
+    {
+      "path": "../packs/spec-transactional-integrity.json",
+      "id": "ecommerce.spec.transactional-integrity",
+      "includeRoles": [
+        "guarantee"
+      ],
+      "includeCheckGroups": [
+        "unique-review",
+        "server-price",
+        "books-balance"
+      ]
+    },
+    {
+      "path": "../packs/spec-external-data-sync.json",
+      "id": "ecommerce.spec.external-data-sync",
+      "includeRoles": [
+        "guarantee"
+      ],
+      "includeCheckGroups": [
+        "external-live",
+        "external-reload",
+        "external-server-restart",
+        "external-reconnect"
+      ]
+    },
+    {
+      "path": "../packs/progression-staff-access.json",
+      "id": "ecommerce.progression.staff-access",
+      "includeRoles": []
+    }
+  ],
+  "execution": "all-selected-sources",
+  "scoring": {
+    "mode": "explicit",
+    "weights": {
+      "ecommerce.feature.accounts.accounts.1a": 1,
+      "ecommerce.feature.accounts.accounts.1b": 1,
+      "ecommerce.feature.accounts.accounts.1c": 1,
+      "ecommerce.feature.accounts.accounts.1d": 1,
+      "ecommerce.spec.state-durability.session-reload.1e": 1,
+      "ecommerce.feature.catalog.catalog-values.2a": 1,
+      "ecommerce.feature.catalog.catalog-ranking.2b": 1,
+      "ecommerce.spec.live-state.ranking.2c": 1,
+      "ecommerce.feature.catalog.catalog-search.2d": 1,
+      "ecommerce.spec.access-control.signed-out-purchase.3a": 1,
+      "ecommerce.spec.live-state.purchase-stock.3b": 2,
+      "ecommerce.feature.purchasing.purchase-order.3c": 1,
+      "ecommerce.spec.concurrency-safety.stock-limit.3d": 2,
+      "ecommerce.feature.cart-checkout.cart.4a": 1,
+      "ecommerce.spec.state-durability.cart-reload.4b": 1,
+      "ecommerce.spec.live-state.shared-cart.4c": 2,
+      "ecommerce.feature.cart-checkout.cart.4d": 2,
+      "ecommerce.feature.reviews.reviews.6a": 2,
+      "ecommerce.spec.transactional-integrity.unique-review.6b": 1,
+      "ecommerce.spec.live-state.rating.6c": 1,
+      "ecommerce.spec.access-control.warehouse-area-boundary.7a": 1,
+      "ecommerce.feature.warehouse-admin.warehouse-view.7b": 1,
+      "ecommerce.spec.live-state.warehouse-stock.7c": 2,
+      "ecommerce.spec.access-control.purchase-session.101a": 2,
+      "ecommerce.spec.access-control.purchase-attribution.102a": 2,
+      "ecommerce.feature.warehouse-admin.admin-write.103a": 2,
+      "ecommerce.spec.transactional-integrity.server-price.104a": 2,
+      "ecommerce.spec.state-durability.account-state-recovery.105a": 1,
+      "ecommerce.spec.state-durability.account-state-recovery.105b": 1,
+      "ecommerce.spec.access-control.order-ownership.106a": 1,
+      "ecommerce.spec.transactional-integrity.books-balance.107a": 1,
+      "ecommerce.spec.transactional-integrity.books-balance.107b": 1,
+      "ecommerce.spec.access-control.review-eligibility.108a": 2,
+      "ecommerce.spec.access-control.review-eligibility.108b": 1,
+      "ecommerce.spec.access-control.cart-boundary.109a": 2,
+      "ecommerce.spec.access-control.cart-boundary.109b": 1,
+      "ecommerce.spec.concurrency-safety.last-unit.201a": 1,
+      "ecommerce.spec.concurrency-safety.last-unit.201b": 1,
+      "ecommerce.spec.concurrency-safety.last-unit.201c": 1,
+      "ecommerce.spec.concurrency-safety.restock-race.202-control": 0,
+      "ecommerce.spec.concurrency-safety.restock-race.202a": 1,
+      "ecommerce.spec.concurrency-safety.duplicate-checkout.203a": 1,
+      "ecommerce.spec.concurrency-safety.duplicate-checkout.203b": 1,
+      "ecommerce.spec.external-data-sync.external-stock.901a": 1,
+      "ecommerce.spec.external-data-sync.external-stock.901b": 0,
+      "ecommerce.spec.external-data-sync.external-stock.901c": 1,
+      "ecommerce.spec.external-data-sync.external-stock.901d": 1,
+      "ecommerce.spec.live-state.open-list.902a": 1
+    }
+  }
+}

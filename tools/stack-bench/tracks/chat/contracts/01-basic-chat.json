@@ -1,0 +1,277 @@
+{
+  "level": 1,
+  "track": "stack-bench",
+  "hooks": [
+    {
+      "id": "app-title",
+      "element": "the app's visible title, \"Chat\"",
+      "stage": "landing",
+      "check": "visible"
+    },
+    {
+      "id": "signup-username",
+      "element": "username input on the sign-up form",
+      "stage": "landing",
+      "check": "visible"
+    },
+    {
+      "id": "signup-password",
+      "element": "password input on the sign-up form",
+      "stage": "landing",
+      "check": "visible"
+    },
+    {
+      "id": "signup-submit",
+      "element": "button that creates the account",
+      "stage": "landing",
+      "check": "visible"
+    },
+    {
+      "id": "signin-toggle",
+      "element": "control that switches from the sign-up form to the sign-in form",
+      "stage": "landing",
+      "check": "attached"
+    },
+    {
+      "id": "signin-username",
+      "element": "username input on the sign-in form",
+      "stage": "landing",
+      "check": "attached",
+      "revealedBy": "signin-toggle"
+    },
+    {
+      "id": "signin-password",
+      "element": "password input on the sign-in form",
+      "stage": "landing",
+      "check": "attached",
+      "revealedBy": "signin-toggle"
+    },
+    {
+      "id": "signin-submit",
+      "element": "button that signs the user in with existing credentials",
+      "stage": "landing",
+      "check": "attached",
+      "revealedBy": "signin-toggle"
+    },
+    {
+      "id": "auth-error",
+      "element": "error message shown when sign-up or sign-in is rejected (taken username, wrong password)",
+      "stage": "scenario",
+      "note": "visible after a rejected sign-up or sign-in; must not appear on success"
+    },
+    {
+      "id": "current-user",
+      "element": "element displaying the signed-in account's username",
+      "stage": "main",
+      "check": "visible"
+    },
+    {
+      "id": "signout",
+      "element": "button that signs the current user out",
+      "stage": "main",
+      "check": "attached"
+    },
+    {
+      "id": "room-create",
+      "element": "control that starts creating a new room",
+      "stage": "main",
+      "check": "visible"
+    },
+    {
+      "id": "room-name-input",
+      "element": "text input for the new room's name",
+      "stage": "main",
+      "check": "attached",
+      "revealedBy": "room-create"
+    },
+    {
+      "id": "room-name-submit",
+      "element": "button that confirms room creation",
+      "stage": "main",
+      "check": "attached",
+      "revealedBy": "room-create"
+    },
+    {
+      "id": "room-list",
+      "element": "container listing the rooms",
+      "stage": "main",
+      "check": "attached"
+    },
+    {
+      "id": "room-item",
+      "element": "one entry per room inside the room list (repeated testid), containing the room name",
+      "stage": "main-after-create",
+      "check": "visible"
+    },
+    {
+      "id": "online-users",
+      "element": "container listing the usernames of users currently online",
+      "stage": "main",
+      "check": "attached",
+      "note": "container listing signed-in users"
+    },
+    {
+      "id": "online-user",
+      "element": "one entry per signed-in user (repeated testid), containing that user's username",
+      "stage": "scenario",
+      "note": "appears while that user is signed in, gone once they sign out"
+    },
+    {
+      "id": "message-input",
+      "element": "text input for composing a message; pressing Enter sends it",
+      "stage": "room",
+      "check": "visible"
+    },
+    {
+      "id": "message-list",
+      "element": "scrollable container holding the room's messages",
+      "stage": "room",
+      "check": "attached"
+    },
+    {
+      "id": "message-item",
+      "element": "one entry per message (repeated testid), containing the message text and its author's username",
+      "stage": "room-after-send",
+      "check": "visible"
+    },
+    {
+      "id": "leave-room",
+      "element": "button that leaves the current room",
+      "stage": "room",
+      "check": "attached"
+    },
+    {
+      "id": "send-error",
+      "element": "error shown when a message is rejected (empty, too long, or rate limited)",
+      "stage": "scenario",
+      "note": "visible after a rejected send; must not appear on a successful send"
+    },
+    {
+      "id": "typing-indicator",
+      "element": "the \"User is typing...\" text element",
+      "stage": "scenario",
+      "note": "visible while another user in the SAME room is typing; gone within 6s of inactivity"
+    },
+    {
+      "id": "read-receipt",
+      "element": "the \"Seen by ...\" element under a message, listing the account names that have seen it (never the sender)",
+      "stage": "scenario",
+      "note": "appears under a message after another user has viewed it"
+    },
+    {
+      "id": "unread-badge",
+      "element": "numeric unread-count badge on a room entry in the sidebar",
+      "stage": "scenario",
+      "note": "appears on a room entry that has unread messages for the current user; clears when that room is opened"
+    },
+    {
+      "id": "react-button",
+      "element": "control on a message that adds a reaction (an emoji picker trigger or a specific emoji button)",
+      "stage": "scenario",
+      "note": "present on each message; clicking it adds the current user's reaction"
+    },
+    {
+      "id": "reaction-count",
+      "element": "the numeric count shown beside an emoji on a message",
+      "stage": "scenario",
+      "note": "shows how many users reacted with that emoji; repeated per emoji per message"
+    },
+    {
+      "id": "pin-button",
+      "element": "control on a message that pins it",
+      "stage": "scenario",
+      "note": "present on each message"
+    },
+    {
+      "id": "pinned-item",
+      "element": "one entry per pinned message in the room's pinned list (repeated testid)",
+      "stage": "scenario",
+      "note": "the room's pinned messages, capped at three"
+    },
+    {
+      "id": "pin-error",
+      "element": "error shown when pinning is refused because the room already has three pinned messages",
+      "stage": "scenario",
+      "note": "visible after a rejected pin; must not appear on a successful one"
+    },
+    {
+      "id": "pinned-unpin",
+      "element": "control on a pinned entry that unpins it",
+      "stage": "scenario",
+      "note": "present on each pinned-item"
+    },
+    {
+      "id": "member-panel",
+      "element": "container listing the members of the current room",
+      "stage": "room",
+      "check": "attached"
+    },
+    {
+      "id": "member-item",
+      "element": "one entry per room member (repeated testid), containing that member's username",
+      "stage": "scenario",
+      "note": "appears for each member of the current room; gone once they leave or are removed"
+    },
+    {
+      "id": "member-owner",
+      "element": "marker on a member entry showing they own the room",
+      "stage": "scenario",
+      "note": "present on the owner's entry only"
+    },
+    {
+      "id": "member-remove",
+      "element": "control on a member entry that removes them from the room",
+      "stage": "scenario",
+      "note": "shown to owners only"
+    },
+    {
+      "id": "member-promote",
+      "element": "control on a member entry that promotes them to owner",
+      "stage": "scenario",
+      "note": "shown to owners only"
+    },
+    {
+      "id": "dm-start",
+      "element": "control on another user's entry that opens a direct conversation with them",
+      "stage": "scenario",
+      "note": "present on each other user listed as online, and on each member entry"
+    },
+    {
+      "id": "dm-list",
+      "element": "container listing the user's direct conversations",
+      "stage": "main",
+      "check": "attached"
+    },
+    {
+      "id": "dm-item",
+      "element": "one entry per direct conversation (repeated testid), naming the other participant",
+      "stage": "scenario",
+      "note": "appears once a direct conversation exists; visible only to its two participants"
+    },
+    {
+      "id": "permission-error",
+      "element": "error shown when the server refuses an action the user is not allowed to take",
+      "stage": "scenario",
+      "note": "visible after a refused unpin, removal, promotion, edit or delete"
+    },
+    {
+      "id": "message-edit",
+      "element": "control on a message that edits it",
+      "stage": "scenario",
+      "note": "shown on the author's own messages"
+    },
+    {
+      "id": "message-delete",
+      "element": "control on a message that deletes it",
+      "stage": "scenario",
+      "note": "shown on the author's own messages"
+    },
+    {
+      "id": "edited-marker",
+      "element": "marker showing a message has been edited",
+      "stage": "scenario",
+      "note": "appears on a message after it is edited"
+    }
+  ],
+  "note": "Level 1 is sequential's basic chat with accounts added. Hooks cover the sign-up and sign-in forms, rooms and messages, plus typing indicators, read receipts and unread counts."
+}

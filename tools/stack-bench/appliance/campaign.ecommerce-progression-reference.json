@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 8,
+  "kind": "campaign-manifest",
+  "id": "ecommerce-progression-reference",
+  "version": "2.0.1",
+  "state": "draft",
+  "title": "Ecommerce progression reference pilot",
+  "track": "ecommerce",
+  "mode": { "id": "dependency", "workSelection": "progressive" },
+  "repair": { "selection": "feature", "budget": { "total": 0 } },
+  "levels": [1, 2, 3, 4, 5, 6],
+  "featureCatalog": "progression/ecommerce.json",
+  "selection": {
+    "levels": [
+      { "level": 1, "recipe": "ecommerce.progression-catalog" },
+      { "level": 2, "recipe": "ecommerce.progression-catalog" },
+      { "level": 3, "recipe": "ecommerce.progression-catalog" },
+      { "level": 4, "recipe": "ecommerce.progression-catalog" },
+      { "level": 5, "recipe": "ecommerce.progression-catalog" },
+      { "level": 6, "recipe": "ecommerce.progression-catalog" }
+    ]
+  },
+  "stacks": [
+    { "id": "mongodb", "adapterVersion": "1.4.0" },
+    { "id": "postgres", "adapterVersion": "1.5.0" },
+    { "id": "spacetime", "adapterVersion": "1.3.0" }
+  ],
+  "agents": [
+    {
+      "adapter": "reference-fixture",
+      "adapterVersion": "1.4.0",
+      "model": "reference-fixture"
+    }
+  ],
+  "conditions": [
+    {
+      "id": "reference-pilot",
+      "guidanceProfile": "neutral",
+      "repairPolicy": "scored-only"
+    }
+  ],
+  "repetitions": 1,
+  "parallelism": 1,
+  "ordering": {
+    "method": "balanced-rotation",
+    "seed": "ecommerce-progression-reference-1"
+  },
+  "budgets": {
+    "attemptTimeoutMinutes": 180,
+    "maxCostUsdPerAttempt": null
+  },
+  "attemptPolicy": {
+    "retries": 0,
+    "retryOn": [],
+    "excludeFromAnalysis": [
+      "contaminated",
+      "harness_failure",
+      "inconclusive",
+      "ungraded"
+    ]
+  },
+  "runtime": {
+    "releaseManifestSha256": null,
+    "controllerImage": null,
+    "buildImage": null,
+    "platform": "linux/amd64"
+  },
+  "pricing": {
+    "currency": "USD",
+    "unit": "USD-per-million-tokens",
+    "capturedAt": "2026-08-25T00:00:00.000Z",
+    "source": "Reference fixtures make no provider calls.",
+    "models": {
+      "reference-fixture": {
+        "input": 0,
+        "output": 0,
+        "cacheWrite5m": 0,
+        "cacheWrite1h": 0,
+        "cacheRead": 0
+      }
+    }
+  },
+  "analysis": {
+    "primaryMetric": "finalScoreRate",
+    "secondaryMetrics": [
+      "firstBuildScoreRate",
+      "totalDurationMs",
+      "invalidAttemptRate"
+    ],
+    "dispersion": "median-iqr",
+    "invalidAttempts": "report-separately",
+    "missingData": "no-imputation",
+    "comparisonUnit": "stack-agent-condition-recipe"
+  }
+}

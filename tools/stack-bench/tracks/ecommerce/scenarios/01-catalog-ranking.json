@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Ecommerce L1 catalog ranking",
+  "note": "This scenario owns only the initial storefront ranking check.",
+  "features": [
+    {
+      "id": 2,
+      "name": "Public catalog ranking",
+      "actors": ["visitor"],
+      "setup": [],
+      "criteria": [
+        {
+          "id": "2b",
+          "desc": "the storefront shows the exact alphabetical top ten before any purchase",
+          "points": 1,
+          "statedBy": "Show the ten most-purchased items and break ties by item name",
+          "steps": [
+            {
+              "do": "expectSequence",
+              "actor": "visitor",
+              "testid": "item-name",
+              "in": { "testid": "item-list" },
+              "equals": [
+                "Air Purifier",
+                "Bluetooth Speaker",
+                "Coffee Grinder",
+                "Desk Lamp",
+                "Espresso Machine",
+                "Gaming Mouse",
+                "Headphones",
+                "Induction Cooktop",
+                "Keyboard",
+                "Laptop Stand"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

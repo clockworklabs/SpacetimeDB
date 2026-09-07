@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Support intake",
+  "features": [
+    {
+      "id": 610,
+      "name": "Support intake",
+      "actors": ["visitor"],
+      "setup": [],
+      "criteria": [
+        {
+          "id": "610a",
+          "desc": "a visitor can submit a support ticket and receives a reference",
+          "points": 2,
+          "statedBy": "Anyone can open a support ticket and receives a reference.",
+          "steps": [
+            { "do": "click", "actor": "visitor", "testid": "support-link" },
+            { "do": "fill", "actor": "visitor", "testid": "support-email", "text": "visitor@example.com" },
+            { "do": "fill", "actor": "visitor", "testid": "support-subject", "text": "Damaged package" },
+            { "do": "fill", "actor": "visitor", "testid": "support-message", "text": "The package arrived damaged." },
+            { "do": "click", "actor": "visitor", "testid": "support-submit" },
+            { "do": "expect", "actor": "visitor", "testid": "support-reference", "nonEmpty": true }
+          ]
+        }
+      ]
+    }
+  ]
+}
