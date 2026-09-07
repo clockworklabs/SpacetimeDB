@@ -4,7 +4,7 @@
 import type { AttemptCheck, AttemptChecks, AttemptPackage, CampaignSheet, SheetAttempt, SheetStack }
   from '../../dashboard-views.js';
 import { bigClimb } from '../climb.js';
-import { DASH, duration, elapsed, esc, metricHelp, spend, pct, phrase, ratio, stackLabel } from '../format.js';
+import { DASH, duration, elapsed, esc, metricLabel, spend, pct, phrase, ratio, stackLabel } from '../format.js';
 
 export type AttemptTab = 'checks' | 'screenshots' | 'files' | 'log';
 
@@ -106,7 +106,7 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log }: At
     Spend: 'Cost from recorded usage and the pinned price snapshot. Unknown is not zero; an upper bound starts with an inequality sign.',
   };
   const figure = (label: string, text: string, tone = ''): string =>
-    `<div><div class="metric-label"><span class="label">${esc(label)}</span>${metricHelp(label, help[label])}</div><b class="${tone}">${text}</b></div>`;
+    `<div><div class="metric-label">${metricLabel(label, help[label])}</div><b class="${tone}">${text}</b></div>`;
   const stage = (level: number): string =>
     sheet.mode === 'dependency' ? `depth ${level}` : `L${level}`;
   const panel = tab === 'checks' ? checksTable(checks)

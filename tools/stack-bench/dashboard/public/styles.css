@@ -253,8 +253,7 @@ table.plans td.name { color: var(--n1); font-weight: 600; }
 .technical > summary { cursor: pointer; padding: 8px 0; color: var(--n3); }
 .technical .facts { margin-top: 8px; }
 /* Secondary help stays out of the layout and above scrolling containers. */
-.metric-help { display: inline-grid; place-items: center; flex: 0 0 24px; width: 24px; height: 24px; padding: 0; border: 0; background: transparent; color: var(--n4); cursor: pointer; }
-.metric-help span { display: grid; place-items: center; width: 14px; height: 14px; border: 1px solid currentColor; border-radius: 50%; font: 10px/1 var(--sans); }
+.metric-help { padding: 4px 0; border: 0; background: transparent; text-align: left; cursor: help; }
 .metric-help:hover, .metric-help:focus-visible { color: var(--n1); }
 .metric-tooltip { position: fixed; inset: auto; position-area: top span-right; position-try-fallbacks: flip-block, flip-inline; margin: 6px; width: min(260px, calc(100vw - 24px)); padding: 10px 12px; border: 1px solid var(--shade1); border-radius: 4px; background: var(--shade5); color: var(--n2); font: 12px/1.5 var(--sans); letter-spacing: normal; text-transform: none; overflow-wrap: anywhere; }
 .btn:hover, .chip:hover, .nav a:hover, .tabs a:hover { color: var(--n1); background: var(--shade1); }

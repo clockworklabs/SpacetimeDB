@@ -5,7 +5,7 @@
 import type { CampaignProgression, CampaignSheet, ProgressionStep, SheetAttempt, SheetStack }
   from '../../dashboard-views.js';
 import { climb } from '../climb.js';
-import { DASH, duration, elapsed, esc, metricHelp, spend, num, pct, phrase, ratio, stackLabel, statusWord } from '../format.js';
+import { DASH, duration, elapsed, esc, metricLabel, spend, num, pct, phrase, ratio, stackLabel, statusWord } from '../format.js';
 import { STACK_ORDER } from '../metrics.js';
 import { graph } from '../graph.js';
 
@@ -217,7 +217,7 @@ export function campaignPage(input: CampaignPageInput): string {
     Attempt: 'The latest repetition that started. Its charts, feature progress, repairs, and evidence are shown here. All repetitions are listed below.',
   };
   const row = (label: string, render: (stack: SheetStack) => string): string =>
-    `<div class="k"><span>${esc(label)}</span>${metricHelp(label, help[label])}</div>${cell(render)}`;
+    `<div class="k">${metricLabel(label, help[label])}</div>${cell(render)}`;
   const value = (text: string): string => `<div class="v">${text}</div>`;
   const heads = stacks.map(stack => {
     const attempt = latest(stack);

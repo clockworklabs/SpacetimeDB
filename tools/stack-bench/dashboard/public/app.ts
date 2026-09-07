@@ -277,6 +277,24 @@ function subscribe(): void {
   });
 }
 
+let helpClose = 0;
+for (const type of ['pointerover', 'focusin']) document.addEventListener(type, event => {
+  if (!(event.target instanceof Element)) return;
+  if (!event.target.closest('.metric-help, .metric-tooltip')) return;
+  clearTimeout(helpClose);
+  const trigger = event.target.closest<HTMLButtonElement>('.metric-help');
+  trigger?.click();
+});
+for (const type of ['pointerout', 'focusout']) document.addEventListener(type, event => {
+  if (!(event.target instanceof Element)
+    || !event.target.closest('.metric-help, .metric-tooltip')) return;
+  clearTimeout(helpClose);
+  helpClose = window.setTimeout(() => {
+    if (document.querySelector('.metric-help:hover, .metric-help:focus, .metric-tooltip:hover')) return;
+    document.querySelector<HTMLElement>('.metric-tooltip:popover-open')?.hidePopover();
+  }, 150);
+});
+
 document.addEventListener('click', event => {
   if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey
     || event.shiftKey || event.altKey) return;

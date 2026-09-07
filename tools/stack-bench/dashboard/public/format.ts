@@ -23,10 +23,10 @@ export function stackLabel(stack: string): string {
   return STACK_LABEL[stack] ?? stack;
 }
 
-export function metricHelp(label: string, description: string | undefined): string {
-  if (!description) return '';
+export function metricLabel(label: string, description: string | undefined): string {
+  if (!description) return `<span class="label">${esc(label)}</span>`;
   const id = `help-${label.toLowerCase().replaceAll(' ', '-')}`;
-  return `<button class="metric-help" type="button" popovertarget="${esc(id)}" aria-label="About ${esc(label)}" aria-describedby="${esc(id)}"><span aria-hidden="true">?</span></button>`
+  return `<button class="metric-help label" type="button" popovertargetaction="show" popovertarget="${esc(id)}" aria-label="About ${esc(label)}" aria-describedby="${esc(id)}">${esc(label)}</button>`
     + `<div class="metric-tooltip" id="${esc(id)}" popover role="tooltip">${esc(description)}</div>`;
 }
 
