@@ -49,7 +49,7 @@ struct PageMap {
 
 impl PageMap {
     /// Reset the volatile to the durable state.
-    fn crash(&mut self) {
+    fn power_loss(&mut self) {
         self.volatile = self.durable.clone();
     }
 
@@ -58,9 +58,9 @@ impl PageMap {
         self.durable.insert(index, self.volatile.get(&index).cloned().unwrap());
     }
 
-    /// Get the page at `index` for reading. Uses the durable state.
+    /// Get the page at `index` for reading. Uses the volatile state.
     fn get_page(&self, index: PageIndex) -> Option<Arc<Page>> {
-        self.durable.get(&index).cloned()
+        self.volatile.get(&index).cloned()
     }
 
     /// Get the page at `index` for writing, or allocate a new page.
@@ -145,10 +145,10 @@ impl File {
     }
 
     /// Simulate a crash by resetting to the durable state.
-    pub(super) fn crash(&self) {
+    pub(super) fn power_loss(&self) {
         self.volatile_len
             .store(self.durable_len.load(Ordering::Relaxed), Ordering::Relaxed);
-        self.pages.lock().crash();
+        self.pages.lock().power_loss();
     }
 
     pub(super) fn len(&self) -> u64 {

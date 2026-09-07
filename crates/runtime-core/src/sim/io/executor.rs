@@ -360,7 +360,7 @@ impl<UserData> Executor<UserData> {
     /// All submitted and executing operations are cancelled, and files reset to
     /// their durable state. After this method returns, the completion queue is
     /// empty.
-    pub fn crash(&mut self) {
+    pub fn power_loss(&mut self) {
         self.submissions.clear();
         self.completions.clear();
         self.in_flight.clear();
@@ -368,7 +368,7 @@ impl<UserData> Executor<UserData> {
         self.cq_dropped = 0;
 
         for file in self.fstree.values_mut() {
-            file.crash();
+            file.power_loss();
         }
     }
 
