@@ -28,7 +28,8 @@ use spacetimedb::client::messages::{
 };
 use spacetimedb::client::{
     ClientActorId, ClientConfig, ClientConnection, ClientConnectionReceiver, DataMessage, MessageExecutionError,
-    MessageHandleError, MeteredReceiver, MeteredSender, OutboundMessage, Protocol, SessionId, WsVersion,
+    MessageHandleError, MeteredReceiver, MeteredSender, OutboundMessage, Protocol, SessionBusy, SessionId,
+    SessionReservation, WsVersion,
 };
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::NoSuchModule;
@@ -38,6 +39,7 @@ use spacetimedb::worker_metrics::{
     record_client_rejection, ClientDisconnectCause, ClientDisconnectRecorder, ClientRejectCause, WORKER_METRICS,
 };
 use spacetimedb::Identity;
+use spacetimedb_client_api_messages::websocket::common::SESSION_BUSY_CLOSE_CODE;
 use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_client_api_messages::websocket::v2 as ws_v2;
 use spacetimedb_client_api_messages::websocket::v3 as ws_v3;
@@ -89,10 +91,11 @@ pub struct SubscribeQueryParams {
     /// A client-generated identifier for a logical client session,
     /// stable across the reconnects of one client connection object.
     ///
-    /// When a connection supplies a session id already held by a live
-    /// connection of the same identity, the old connection is torn down before
-    /// this one runs `client_connected`, so the module never observes two live
-    /// connections for one session.
+    /// When a connection supplies a session id still held by a live
+    /// connection of the same identity, this connection is refused with
+    /// [`SESSION_BUSY_CLOSE_CODE`] and the old one is torn down. A retry
+    /// succeeds once the old connection's `client_disconnected` has run, so the
+    /// module never observes two live connections for one session.
     /// See [`spacetimedb::client::ClientSessionIndex`].
     ///
     /// Connections which do not supply one behave exactly as before.
@@ -269,7 +272,7 @@ where
     let ws_opts = ctx.websocket_options();
 
     tokio::spawn(async move {
-        let ws = match ws_upgrade.upgrade(ws_config).await {
+        let mut ws = match ws_upgrade.upgrade(ws_config).await {
             Ok(ws) => ws,
             Err(err) => {
                 record_client_rejection(db_identity, ClientRejectCause::WebsocketUpgradeError);
@@ -288,26 +291,25 @@ where
 
         log::debug!("websocket: New client connected from {client_log_string}");
 
-        // If this connection resumes a session which a live connection still
-        // holds, that connection is taken over: its actor is stopped and its
-        // module-side disconnect runs to completion before the claim returns.
-        // So the module observes `client_disconnected` for it strictly before
-        // `client_connected` for this one, and never two live connections for
-        // one session.
-        //
-        // The claim is held until this connection is established below, so a
-        // third connection resuming the same session must wait for this handover.
-        let session_claim = match session_id {
-            Some(session_id) => {
-                let module = module_rx.borrow().clone();
-                Some(
-                    sessions
-                        .claim_session(db_identity, client_id, session_id, async |superseded| {
-                            module.disconnect_client(superseded).await
-                        })
-                        .await,
-                )
-            }
+        // Reserved before `client_connected` so that no two connections of one
+        // session run it. Released by the actor's teardown after the
+        // module-side disconnect, so a retry finds `client_disconnected` run.
+        let session = match session_id {
+            Some(session_id) => match sessions.try_reserve(db_identity, client_id, session_id) {
+                Ok(reservation) => Some(reservation),
+                Err(SessionBusy) => {
+                    WORKER_METRICS.ws_clients_session_busy.with_label_values(&db_identity).inc();
+                    log::debug!("websocket: Refusing connection for {client_log_string}: session {session_id} is busy");
+                    let close = CloseFrame {
+                        code: CloseCode::from(SESSION_BUSY_CLOSE_CODE),
+                        reason: "session busy".into(),
+                    };
+                    if let Err(e) = ws.close(Some(close)).await {
+                        log::debug!("websocket: Error refusing connection for {client_log_string}: {e}");
+                    }
+                    return;
+                }
+            },
             None => None,
         };
 
@@ -348,16 +350,11 @@ where
             "websocket: Database accepted connection from {client_log_string}; spawning ws_client_actor and ClientConnection"
         );
 
-        // Release the session claim when the actor ends, including when it is aborted.
-        let session_guard = session_id.map(|session_id| {
-            let sessions = sessions.clone();
-            scopeguard::guard((), move |()| {
-                sessions.release_session(db_identity, client_id, session_id)
-            })
-        });
-        let actor = |client, receiver| async move {
-            let _session_guard = session_guard;
-            ws_client_actor(ws_opts, client, ws, receiver).await;
+        let actor = |client: ClientConnection, receiver| {
+            if let Some(session) = &session {
+                session.establish(&client.sender());
+            }
+            ws_client_actor(ws_opts, client, ws, receiver, session)
         };
         let client = ClientConnection::spawn(
             client_id,
@@ -370,12 +367,6 @@ where
             connected,
         )
         .await;
-
-        // Now that the actor exists, complete the handover by registering its
-        // sender, so that a later connection resuming this session can stop it.
-        if let Some(session_claim) = session_claim {
-            session_claim.attach_sender(&client.sender());
-        }
 
         // Send the client their identity token message as the first message
         // NOTE: We're adding this to the protocol because some client libraries are
@@ -581,15 +572,26 @@ async fn ws_client_actor(
     client: ClientConnection,
     ws: WebSocketStream,
     sendrx: ClientConnectionReceiver,
+    session: Option<SessionReservation>,
 ) {
-    // ensure that even if this task gets cancelled, we always cleanup the connection
-    let mut client = scopeguard::guard(client, |client| {
-        tokio::spawn(client.disconnect());
+    // Runs the module-side disconnect even if this task gets cancelled.
+    let mut client = scopeguard::guard((client, session), |(client, session)| {
+        tokio::spawn(ws_client_teardown(client, session));
     });
 
-    ws_client_actor_inner(&mut client, options, ws, sendrx).await;
+    ws_client_actor_inner(&mut client.0, options, ws, sendrx).await;
 
-    ScopeGuard::into_inner(client).disconnect().await;
+    let (client, session) = ScopeGuard::into_inner(client);
+    ws_client_teardown(client, session).await;
+}
+
+/// Run the module-side disconnect, then free the connection's session.
+///
+/// The session is released only after `client_disconnected` has run, so that
+/// a connection retrying for the same session observes it in order.
+async fn ws_client_teardown(client: ClientConnection, session: Option<SessionReservation>) {
+    client.disconnect().await;
+    drop(session);
 }
 
 async fn ws_client_actor_inner(

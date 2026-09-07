@@ -280,6 +280,11 @@ metrics_group!(
         #[labels(database_identity: Identity)]
         pub ws_clients_idle_timed_out: IntCounterVec,
 
+        #[name = spacetime_worker_ws_clients_session_busy_total]
+        #[help = "The cumulative number of ws connections refused because their session was still held by a connection being torn down"]
+        #[labels(database_identity: Identity)]
+        pub ws_clients_session_busy: IntCounterVec,
+
         // Compatibility counters above continue to be emitted for existing dashboards.
         // Accepted-client disconnection `cause` label values are:
         // client_close, idle_timeout, incoming_queue_full, outgoing_queue_full,

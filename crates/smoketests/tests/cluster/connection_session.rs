@@ -1,9 +1,12 @@
 //! Tests for connection replacement, the server side of SDK auto-reconnect.
 //!
 //! A reconnecting client supplies a stable `session_id`. When it reconnects
-//! before the server has noticed the old socket died, the new connection
-//! supersedes the old one. The old connection is torn down through the normal
-//! disconnect sequence before the new connection's `client_connected` runs.
+//! before the server has noticed the old socket died, the new connection is
+//! refused with `SESSION_BUSY_CLOSE_CODE` and the old one is torn down through
+//! the normal disconnect sequence. A retry succeeds once the old connection's
+//! `client_disconnected` has run.
+
+use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use futures::{SinkExt, StreamExt};
@@ -27,7 +30,25 @@ struct TestConnection {
 impl TestConnection {
     /// Open a connection, optionally supplying a `session_id`, and wait for the
     /// server's `InitialConnection` message.
+    ///
+    /// Retries while the server refuses the connection because its session
+    /// is still held by a connection being torn down.
     async fn open(test: &Smoketest, connection_id: &str, session_id: Option<&str>) -> Result<Self> {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(connection) = Self::open_once(test, connection_id, session_id).await? {
+                return Ok(connection);
+            }
+            if Instant::now() > deadline {
+                bail!("timed out retrying a connection refused as session busy");
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
+    /// Open a connection once. Returns `None` if the server refused it with
+    /// `SESSION_BUSY_CLOSE_CODE`.
+    async fn open_once(test: &Smoketest, connection_id: &str, session_id: Option<&str>) -> Result<Option<Self>> {
         let token = test.read_token()?;
         let host = test.server_host();
         let database = test
@@ -64,8 +85,8 @@ impl TestConnection {
             socket,
             connection_id: connection_id.to_string(),
         };
-        match connection.next_message().await? {
-            ws_v2::ServerMessage::InitialConnection(initial) => {
+        match connection.next_message().await {
+            Ok(ws_v2::ServerMessage::InitialConnection(initial)) => {
                 let established = initial.connection_id.to_hex().to_string();
                 if established != connection.connection_id {
                     bail!(
@@ -73,10 +94,12 @@ impl TestConnection {
                         connection.connection_id
                     );
                 }
+                Ok(Some(connection))
             }
-            other => bail!("expected InitialConnection, got {other:?}"),
+            Ok(other) => bail!("expected InitialConnection, got {other:?}"),
+            Err(err) if err.downcast_ref::<Closed>().is_some_and(|closed| closed.is_session_busy()) => Ok(None),
+            Err(err) => Err(err),
         }
-        Ok(connection)
     }
 
     /// Read the next server message, decoding the v3 framing, which packs one
@@ -99,7 +122,7 @@ impl TestConnection {
                     return Ok(bsatn::from_reader(&mut body)?);
                 }
                 Message::Ping(_) | Message::Pong(_) => continue,
-                Message::Close(frame) => bail!("websocket closed: {frame:?}"),
+                Message::Close(frame) => return Err(Closed(frame.map(|frame| frame.code.into())).into()),
                 other => bail!("unexpected websocket message: {other:?}"),
             }
         }
@@ -113,9 +136,9 @@ impl TestConnection {
 
     /// Whether the server still serves this connection.
     ///
-    /// A superseded connection's actor is stopped, so a request on it is never
-    /// answered. Note the server does not send a close frame. The peer's
-    /// socket stays half-open until it writes, which is what this does.
+    /// A stopped connection's actor never answers a request. The server does
+    /// not send a close frame, so the peer's socket stays half-open until it
+    /// writes, which is what this does.
     async fn is_still_served(&mut self) -> bool {
         if self
             .send(ws_v2::ClientMessage::Subscribe(ws_v2::Subscribe {
@@ -134,6 +157,24 @@ impl TestConnection {
         )
     }
 }
+
+/// The server closed the websocket, with the close code it sent, if any.
+#[derive(Debug)]
+struct Closed(Option<u16>);
+
+impl Closed {
+    fn is_session_busy(&self) -> bool {
+        self.0 == Some(ws_common::SESSION_BUSY_CLOSE_CODE)
+    }
+}
+
+impl std::fmt::Display for Closed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "websocket closed with code {:?}", self.0)
+    }
+}
+
+impl std::error::Error for Closed {}
 
 fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
@@ -179,9 +220,9 @@ const CONNECTION_C: &str = "00000000000000000000000000000c33";
 const SESSION: &str = "0000000000000000000000000000dead";
 const OTHER_SESSION: &str = "0000000000000000000000000000beef";
 
-/// A second connection with the same session id supersedes the first: the old
-/// connection is disconnected, and its `client_disconnected` runs strictly
-/// before the new connection's `client_connected`.
+/// A second connection with the same session id is refused while the first is
+/// still live, and the first is stopped. Its `client_disconnected` runs
+/// strictly before the retried connection's `client_connected`.
 #[test]
 fn test_reconnect_with_same_session_replaces_connection() {
     let test = Smoketest::builder().precompiled_module("connection-session").build();
@@ -193,14 +234,22 @@ fn test_reconnect_with_same_session_replaces_connection() {
         wait_for_log(&test, "connected", CONNECTION_A);
 
         // Reconnect with the same session before the server notices the drop.
-        let _second = TestConnection::open(&test, CONNECTION_B, Some(SESSION))
+        let refused = TestConnection::open_once(&test, CONNECTION_B, Some(SESSION))
             .await
             .expect("second connection failed");
+        assert!(
+            refused.is_none(),
+            "the reconnect should be refused while the first connection is live"
+        );
 
         assert!(
             !first.is_still_served().await,
-            "the superseded connection should no longer be served"
+            "the first connection should no longer be served"
         );
+
+        let _second = TestConnection::open(&test, CONNECTION_B, Some(SESSION))
+            .await
+            .expect("retried connection failed");
 
         let lines = wait_for_log(&test, "connected", CONNECTION_B);
         let connected_a = position_of(&lines, "connected", CONNECTION_A).expect("A never connected");
@@ -218,7 +267,7 @@ fn test_reconnect_with_same_session_replaces_connection() {
     });
 }
 
-/// A connection with a different session id does not supersede: both stay live.
+/// A connection with a different session id is not refused: both stay live.
 #[test]
 fn test_different_session_does_not_replace_connection() {
     let test = Smoketest::builder().precompiled_module("connection-session").build();
@@ -242,7 +291,7 @@ fn test_different_session_does_not_replace_connection() {
 }
 
 /// A connection which supplies no session id behaves exactly as before: it
-/// neither supersedes nor is superseded.
+/// neither refuses nor is stopped by a connection with a session id.
 #[test]
 fn test_connection_without_session_is_not_replaced() {
     let test = Smoketest::builder().precompiled_module("connection-session").build();
@@ -260,12 +309,12 @@ fn test_connection_without_session_is_not_replaced() {
 
         assert!(
             position_of(&lines, "disconnected", CONNECTION_A).is_none(),
-            "a connection without a session id should not be superseded: {lines:?}"
+            "a connection without a session id should not be stopped: {lines:?}"
         );
     });
 }
 
-/// Repeated reconnects each supersede only the connection immediately before
+/// Repeated reconnects each replace only the connection immediately before
 /// them, leaving exactly one live connection for the session.
 #[test]
 fn test_repeated_reconnects_leave_one_live_connection() {
@@ -281,18 +330,18 @@ fn test_repeated_reconnects_leave_one_live_connection() {
             .await
             .expect("second connection failed");
         wait_for_log(&test, "connected", CONNECTION_B);
-        assert!(!first.is_still_served().await, "A should have been superseded");
+        assert!(!first.is_still_served().await, "A should have been stopped");
 
         let mut third = TestConnection::open(&test, CONNECTION_C, Some(SESSION))
             .await
             .expect("third connection failed");
         wait_for_log(&test, "connected", CONNECTION_C);
-        assert!(!second.is_still_served().await, "B should have been superseded");
+        assert!(!second.is_still_served().await, "B should have been stopped");
 
         let lines = lifecycle_log(&test);
         assert!(
             position_of(&lines, "disconnected", CONNECTION_B).is_some(),
-            "B should have been superseded by C: {lines:?}"
+            "B should have been replaced by C: {lines:?}"
         );
         assert!(
             position_of(&lines, "disconnected", CONNECTION_C).is_none(),
@@ -315,7 +364,7 @@ fn test_repeated_reconnects_leave_one_live_connection() {
     });
 }
 
-/// A reconnect which repeats its predecessor's connection id still supersedes
+/// A reconnect which repeats its predecessor's connection id still replaces
 /// it. Connections are told apart by the server, not by the id a client sends,
 /// which a client is free to repeat.
 #[test]
@@ -335,7 +384,7 @@ fn test_reconnect_reusing_connection_id_replaces_connection() {
 
         assert!(
             !first.is_still_served().await,
-            "the superseded connection should no longer be served"
+            "the replaced connection should no longer be served"
         );
         assert!(
             second.is_still_served().await,

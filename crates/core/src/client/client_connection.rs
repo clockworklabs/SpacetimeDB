@@ -410,14 +410,10 @@ impl ClientConnectionSender {
 
     /// Stop this connection's websocket actor.
     ///
-    /// Used when a newer connection supersedes this one
+    /// Used when a newer connection arrives for this connection's session
     /// (see [`super::ClientSessionIndex`]), and when a client exceeds its
-    /// outgoing queue capacity.
-    ///
-    /// This only stops the actor. The module-side disconnect
-    /// ([`crate::host::ModuleHost::disconnect_client`]) is run separately by
-    /// the actor's teardown, or by the caller when it needs that teardown to
-    /// complete before some other work.
+    /// outgoing queue capacity. The actor's teardown runs the module-side
+    /// disconnect.
     pub fn kick(&self, cause: ClientDisconnectCause) {
         if let Some(metrics) = &self.metrics {
             metrics.disconnect_recorder.record(cause);

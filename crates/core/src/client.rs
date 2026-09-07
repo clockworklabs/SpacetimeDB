@@ -17,7 +17,7 @@ pub use client_connection::{
     WsVersion,
 };
 pub use client_connection_index::ClientActorIndex;
-pub use client_session_index::{ClientSessionIndex, SessionClaim, SessionId};
+pub use client_session_index::{ClientSessionIndex, SessionBusy, SessionId, SessionReservation};
 pub use message_handlers::MessageHandleError;
 pub use message_handlers_v1::MessageExecutionError;
 pub use messages::OutboundMessage;
