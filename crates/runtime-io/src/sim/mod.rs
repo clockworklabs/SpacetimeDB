@@ -3,7 +3,6 @@ use core::{
     pin::Pin,
     result::Result,
     task::{Context, Poll},
-    time::Duration,
 };
 use futures_channel::oneshot;
 use slab::Slab;
@@ -20,14 +19,6 @@ pub use crate::{
     sim::executor::{FaultInjector, TaskSelector},
     SECTOR_SIZE,
 };
-
-/// Simulated clock measurement.
-///
-/// In simulated time, an instant is actually a [Duration] since the time
-/// instance was instantiated. To avoid confusion, we use the name "instant" to
-/// convey that its semantics are that of the standard library type of the same
-/// name.
-pub type Instant = Duration;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

@@ -8241,6 +8241,20 @@ dependencies = [
 ]
 
 [[package]]
+ name = "spacetimedb-disk-storage"
+ version = "2.10.0"
+ dependencies = [
+  "arrayvec",
+  "async-stream",
+  "blake3",
+  "ethnum",
+  "futures-util",
+  "spacetimedb-runtime-io",
+  "thiserror 2.0.17",
+  "zerocopy",
+ ]
+
+ [[package]]
 name = "spacetimedb-dst-lib"
 version = "2.10.0"
 dependencies = [
