@@ -35,6 +35,8 @@ use crate::{
 };
 use core::{cell::RefCell, iter, ops::RangeBounds};
 use itertools::Either;
+use rand::Rng;
+use rand_xoshiro::Xoshiro128PlusPlus;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap};
 use spacetimedb_durability::TxOffset;
@@ -2031,7 +2033,7 @@ impl MutTxId {
     }
 
     pub fn get_next_sequence_value(&mut self, seq_id: SequenceId) -> Result<i128> {
-        get_next_sequence_value(&mut self.tx_state, &self.committed_state_write_lock, seq_id)
+        get_next_sequence_value(&mut self.tx_state, &mut self.committed_state_write_lock, seq_id)
     }
 }
 
@@ -2052,15 +2054,19 @@ const SEQUENCE_SIMULATED_ALLOCATION_CHUNK: u16 = 4096;
 /// We don't want users to depend on sequence values being strictly sequential,
 /// as we have in the past and may in the future used optimizations that would cause values to be skipped.
 /// To prevent this, [`get_next_sequence_value`] occasionally simulates a skip ahead.
-fn should_simulate_sequence_reallocation() -> bool {
+///
+/// The supplied `rng` should be the one in the committed state for this purpose,
+/// so that tests which rely on auto-inc sequences will be deterministic.
+/// See [`CommittedState::sequence_advance_simulate_reallocation_rng`].
+fn should_simulate_sequence_reallocation(rng: &mut Xoshiro128PlusPlus) -> bool {
     // Skip an average of once every 4096 values, the same as the chunk size.
     // Chosen completely arbitrarily.
-    rand::random::<u16>().is_multiple_of(SEQUENCE_SIMULATED_ALLOCATION_CHUNK)
+    rng.random::<u16>().is_multiple_of(SEQUENCE_SIMULATED_ALLOCATION_CHUNK)
 }
 
 fn get_next_sequence_value(
     tx_state: &mut TxState,
-    committed_state: &CommittedState,
+    committed_state: &mut CommittedState,
     seq_id: SequenceId,
 ) -> Result<i128> {
     // Allocate a new sequence value
@@ -2083,7 +2089,7 @@ fn get_next_sequence_value(
         // We don't want users to depend on sequence values being strictly sequential,
         // as we have in the past and may in the future used optimizations that would cause values to be skipped.
         // To prevent this, skip sequence values at a low rate.
-        if should_simulate_sequence_reallocation() {
+        if should_simulate_sequence_reallocation(&mut committed_state.sequence_advance_simulate_reallocation_rng) {
             // Simulate an event where you skip to the next block of 4096 values.
             // Do this by masking off the low 11 bits of the counter,
             // then incrementing the 12th bit,
@@ -3306,7 +3312,7 @@ impl MutTxId {
         table_id: TableId,
         row: &[u8],
     ) -> Result<(ColList, RowRefInsertion<'_>, InsertFlags)> {
-        insert::<GENERATE>(&mut self.tx_state, &self.committed_state_write_lock, table_id, row)
+        insert::<GENERATE>(&mut self.tx_state, &mut self.committed_state_write_lock, table_id, row)
     }
 }
 
@@ -3329,7 +3335,7 @@ impl MutTxId {
 /// - The "commit table for insertion" for further processing.
 fn insert_physically_maybe_generate<'a, const GENERATE: bool>(
     tx_state: &'a mut TxState,
-    committed_state: &'a CommittedState,
+    committed_state: &'a mut CommittedState,
     table_id: TableId,
     row: &[u8],
 ) -> Result<(
@@ -3339,12 +3345,11 @@ fn insert_physically_maybe_generate<'a, const GENERATE: bool>(
     TxTableForInsertion<'a>,
     CommitTableForInsertion<'a>,
 )> {
-    // Get commit table and friends.
-    let commit_parts = committed_state.get_table_and_blob_store(table_id)?;
-    let (commit_table, ..) = commit_parts;
-
     // Get the insert table, so we can write the row into it.
-    let (tx_table, tx_blob_store, _) = tx_state.get_table_and_blob_store_or_create_from(table_id, commit_table);
+    let (tx_table, tx_blob_store, _) = {
+        let (commit_table, ..) = committed_state.get_table_and_blob_store(table_id)?;
+        tx_state.get_table_and_blob_store_or_create_from(table_id, commit_table)
+    };
 
     // 1. Insert the physical row.
     let page_pool = &committed_state.page_pool;
@@ -3382,6 +3387,7 @@ fn insert_physically_maybe_generate<'a, const GENERATE: bool>(
         (tx_parts, ColList::empty())
     };
 
+    let commit_parts = committed_state.get_table_and_blob_store(table_id)?;
     Ok((tx_row_ptr, gen_cols, blob_bytes, tx_parts, commit_parts))
 }
 
@@ -3402,7 +3408,7 @@ fn insert_physically_maybe_generate<'a, const GENERATE: bool>(
 /// - any insert flags.
 pub(super) fn insert<'a, const GENERATE: bool>(
     tx_state: &'a mut TxState,
-    committed_state: &'a CommittedState,
+    committed_state: &'a mut CommittedState,
     table_id: TableId,
     row: &[u8],
 ) -> Result<(ColList, RowRefInsertion<'a>, InsertFlags)> {
@@ -3554,7 +3560,7 @@ impl MutTxId {
             (commit_table, commit_blob_store, _),
         ) = insert_physically_maybe_generate::<true>(
             &mut self.tx_state,
-            &self.committed_state_write_lock,
+            &mut self.committed_state_write_lock,
             table_id,
             row,
         )?;

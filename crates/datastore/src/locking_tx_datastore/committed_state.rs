@@ -35,6 +35,8 @@ use crate::{
 };
 use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
+use rand::SeedableRng;
+use rand_xoshiro::Xoshiro128PlusPlus;
 use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap, IntSet};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StTableType, Identity};
@@ -94,6 +96,17 @@ pub struct CommittedState {
     ///     - system tables: `st_view_sub`, `st_view_arg`
     ///     - Tables which back views.
     pub(super) ephemeral_tables: EphemeralTables,
+
+    /// RNG source for deciding when advancing a sequence should simulate a reallocation.
+    ///
+    /// We don't want users to depend on sequence values being strictly sequential,
+    /// as we have in the past and may in the future used optimizations that would cause values to be skipped.
+    /// To prevent this, [`get_next_sequence_value`](super::mut_tx::get_next_sequence_value) occasionally simulates a skip ahead.
+    ///
+    /// We use an explicit PRNG here rather than reading from the thread RNG because we'd like our tests to be deterministic.
+    ///
+    /// We chose Xoshiro128++ because it is fast and small, and we do not need a cryptographically secure PRNG for this purpose.
+    pub(super) sequence_advance_simulate_reallocation_rng: Xoshiro128PlusPlus,
 }
 
 impl CommittedState {
@@ -129,6 +142,9 @@ impl MemoryUsage for CommittedState {
             read_sets,
             view_instances,
             ephemeral_tables,
+            // Don't include the PRNG; it doesn't live on or use the heap,
+            // and it's easier to just ignore it here than to write a trait impl that returns zero.
+            sequence_advance_simulate_reallocation_rng: _,
         } = self;
         // NOTE(centril): We do not want to include the heap usage of `page_pool` as it's a shared resource.
         next_tx_offset.heap_usage()
@@ -210,6 +226,16 @@ impl CommittedState {
             page_pool,
             datastore_page_bytes: 0,
             ephemeral_tables: <_>::default(),
+            sequence_advance_simulate_reallocation_rng: {
+                #[cfg(test)]
+                {
+                    Xoshiro128PlusPlus::seed_from_u64(0)
+                }
+                #[cfg(not(test))]
+                {
+                    Xoshiro128PlusPlus::from_rng(&mut rand::rng())
+                }
+            },
         }
     }
 
