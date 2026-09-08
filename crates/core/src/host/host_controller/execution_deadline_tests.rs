@@ -348,3 +348,64 @@ async fn execution_deadline_bounds_startup_description_and_failed_update() {
         .await
         .unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn javascript_logging_handles_direct_startup_and_preserves_wrapped_call_locations() {
+    use futures::TryStreamExt as _;
+
+    let mut schema = RawModuleDefV10Builder::new();
+    schema.add_reducer("log", ProductType::unit());
+    let schema = spacetimedb_lib::bsatn::to_vec(&spacetimedb_lib::RawModuleDef::V10(schema.finish())).unwrap();
+    // Direct top-level logging has exactly one JS frame. It previously passed
+    // index1 to V8's unchecked GetFrame and could crash the entire host process.
+    let source = format!(
+        r#"import {{ register_hooks, console_log }} from "spacetime:sys@1.0";
+console_log(2, "direct-startup");
+function wrapped(message) {{ console_log(2, message); }}
+wrapped("wrapped-startup");
+register_hooks({{
+    __describe_module__: () => new Uint8Array({schema:?}),
+    __call_reducer__: () => {{
+        console_log(2, "direct-reducer");
+        wrapped("wrapped-reducer");
+        return {{ tag: "ok" }};
+    }},
+}});
+"#
+    );
+    let program = Program::from_bytes(ModuleKind::JS, source.into_bytes());
+    let (_directory, controller, database) = controller_fixture(0xed08, &program, config());
+    let module = controller
+        .get_or_launch_module_host(database.clone(), database.id)
+        .await
+        .unwrap();
+    assert!(call(&module, "log").await.is_ok());
+    let chunks: Vec<_> = module
+        .database_logger()
+        .tail(None, false)
+        .await
+        .unwrap()
+        .try_collect()
+        .await
+        .unwrap();
+    controller
+        .exit_module_host(database.id, Duration::from_secs(5))
+        .await
+        .unwrap();
+    let bytes = chunks.into_iter().flatten().collect::<Vec<_>>();
+    let records = String::from_utf8(bytes)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    for (message, line) in [
+        ("direct-startup", 2),
+        ("wrapped-startup", 4),
+        ("direct-reducer", 8),
+        ("wrapped-reducer", 9),
+    ] {
+        let record = records.iter().find(|record| record["message"] == message).unwrap();
+        assert_eq!(record["line_number"], line, "wrong call location for {message}");
+        assert!(record["filename"].as_str().is_some_and(|filename| !filename.is_empty()));
+    }
+}

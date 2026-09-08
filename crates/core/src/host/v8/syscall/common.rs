@@ -451,13 +451,19 @@ pub fn console_log<'scope>(
     let mut buf = scratch_buf::<128>();
     let msg = msg.to_rust_cow_lossy(scope, &mut buf);
 
-    let frame: Local<'_, v8::StackFrame> = v8::StackTrace::current_stack_trace(scope, 2)
-        .ok_or_else(exception_already_thrown)?
-        .get_frame(scope, 1)
-        .ok_or_else(exception_already_thrown)?;
+    let trace = v8::StackTrace::current_stack_trace(scope, 2).ok_or_else(exception_already_thrown)?;
+    // The normal bindings add a logging wrapper, but modules may call this
+    // syscall directly, including from top-level code. V8's GetFrame does not
+    // check the index in release builds, so never request an absent frame.
+    let frame = match trace.get_frame_count() {
+        0 => None,
+        1 => trace.get_frame(scope, 0),
+        _ => trace.get_frame(scope, 1),
+    };
+    let line_number = frame.map(|frame| frame.get_line_number() as u32);
     let mut buf = scratch_buf::<32>();
     let filename = frame
-        .get_script_name(scope)
+        .and_then(|frame| frame.get_script_name(scope))
         .map(|s| s.to_rust_cow_lossy(scope, &mut buf));
 
     let level = (level as u8).into();
@@ -471,7 +477,7 @@ pub fn console_log<'scope>(
         tracing::warn!(
             "{}:{} {msg}",
             filename.as_deref().unwrap_or("unknown"),
-            frame.get_line_number()
+            line_number.unwrap_or_default()
         );
     })?;
 
@@ -481,7 +487,7 @@ pub fn console_log<'scope>(
         ts: InstanceEnv::now_for_logging(),
         target: None,
         filename: filename.as_deref(),
-        line_number: Some(frame.get_line_number() as u32),
+        line_number,
         function,
         message: &msg,
     };
