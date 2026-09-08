@@ -15,7 +15,7 @@ import type { CampaignClaim, CampaignDirectory, CampaignExecutionResult, Campaig
 import type { CampaignExtensionSeed } from './campaign-scheduler.js';
 import { rescueSupervisedLease } from '../runtime/recovery.js';
 import { runBounded } from '../runtime/bounded-process.js';
-import { campaignTimeBudget, readTimeGrantRequests } from './campaign-time-grant.js';
+import { campaignTimeBudget, readTimeGrantRequests } from './campaign-scheduler.js';
 import { timeContinuationEligibility } from '../progression/live-progression.js';
 import type { BoundedProcessResult, RunBoundedOptions }
   from '../runtime/bounded-process.js';

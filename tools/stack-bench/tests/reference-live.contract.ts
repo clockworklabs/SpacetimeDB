@@ -784,7 +784,7 @@ test('bounded execution refuses to overwrite an existing process log', async () 
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('live deadline extension preserves the process and late grants cannot revive it', async () => {
+test('live deadline extension preserves the process and late grants cannot revive it', { timeout: 5_000 }, async () => {
   let polls = 0;
   const started = Date.now();
   const result = await runBounded(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
@@ -801,7 +801,7 @@ test('live deadline extension preserves the process and late grants cannot reviv
   const expired = await runBounded(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
     stdio: 'ignore', timeoutMs: 100,
     terminate: pid => process.kill(pid, 'SIGKILL'),
-    refreshTimeoutMs: (current, canExtend) => { late = !canExtend; return current + 1000; },
+    refreshTimeoutMs: (current, canExtend) => { late = !canExtend; return canExtend ? current : current + 1000; },
   });
   assert(late);
   assert(expired.timedOut);

@@ -1,11 +1,9 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { readCampaignState, scheduleTimeContinuation, timeGrantRequestSchema, timeGrantReceiptSchema, writeCampaignState } from './campaign-scheduler.js';
+import { readCampaignState, scheduleTimeContinuation, timeGrantRequestSchema, writeCampaignState } from './campaign-scheduler.js';
 export { timeGrantReceiptSchema } from './campaign-scheduler.js';
-import type { CampaignAttemptState } from './campaign-scheduler.js';
-import type { CompiledCampaignPlan } from './campaign-compiler.js';
 import { campaignProgressionOwner } from './campaign-compiler.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { ARTIFACT_FILE, readArtifactPayload } from '../evidence/artifacts.js';
@@ -16,44 +14,10 @@ import { publicRecoveryProvesCleanup, remainingAttemptCostBudget } from './campa
 
 const safeId = z.string().regex(/^[a-z0-9][a-z0-9.-]*$/);
 const minutes = z.number().int().positive().refine(n => Number.isSafeInteger(n * 60_000));
-export type TimeGrantReceipt = z.infer<typeof timeGrantReceiptSchema>;
-export interface CampaignTimeBudget {
-  originalMinutes: number; effectiveMinutes: number; consumedMs: number;
-  extensionCount: number; grants: TimeGrantReceipt[];
-  liveGrantSupported?: boolean;
-  continuation?: { eligible: boolean; reason?: string };
-  observedAt?: string;
-}
-
-export function campaignTimeBudget(plan: CompiledCampaignPlan, attempt: CampaignAttemptState,
-  now: number | string = Date.now()): CampaignTimeBudget {
-  const at = typeof now === 'string' ? Date.parse(now) : now;
-  const grants = attempt.timeGrants ?? [];
-  const accepted = grants.filter(g => g.disposition === 'accepted');
-  const originalMinutes = plan.definition.budgets.attemptTimeoutMinutes;
-  const effectiveMinutes = originalMinutes + accepted.reduce((n, g) => n + g.request.minutes, 0);
-  if (!Number.isSafeInteger(effectiveMinutes * 60_000)) throw new Error('time allowance overflow');
-  const consumedMs = attempt.executions.reduce((total, execution) => {
-    const start = Date.parse(execution.startedAt);
-    const end = execution.completedAt ? Date.parse(execution.completedAt)
-      : execution.status === 'running' ? at : NaN;
-    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
-      throw new Error(`execution ${execution.id} has unknown consumed time`);
-    }
-    return total + end - start;
-  }, 0);
-  return { originalMinutes, effectiveMinutes, consumedMs, extensionCount: accepted.length, grants,
-    observedAt: new Date(at).toISOString(),
-    liveGrantSupported: attempt.executions.at(-1)?.timeExtensionSupported === true };
-}
-
-export function readTimeGrantRequests(directory: string): TimeGrantReceipt['request'][] {
-  const path = campaignChildPath(directory, 'time-requests', 'time requests');
-  if (!existsSync(path)) return [];
-  return readdirSync(path).filter(name => name.endsWith('.json')).sort().map(name =>
-    timeGrantRequestSchema.parse(JSON.parse(readFileSync(
-      campaignChildPath(directory, join('time-requests', name), 'time request'), 'utf8'))));
-}
+export { campaignTimeBudget, readTimeGrantRequests } from './campaign-scheduler.js';
+export type { TimeGrantReceipt, CampaignTimeBudget } from './campaign-scheduler.js';
+import { campaignTimeBudget, readTimeGrantRequests } from './campaign-scheduler.js';
+import type { TimeGrantReceipt, CampaignTimeBudget } from './campaign-scheduler.js';
 
 export function readCampaignTimeBudget(directory: string, attemptId: string): CampaignTimeBudget {
   const { plan, state } = readCampaignState(directory, { requireCurrentInputs: false });
