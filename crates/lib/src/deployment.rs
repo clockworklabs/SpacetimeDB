@@ -12,12 +12,24 @@ pub mod manifest;
 
 pub const PUBLISH_PROTOCOL_VERSION: u32 = 1;
 pub const SYSTEM_EMPTY_MODULE_VERSION: u32 = 1;
+/// Immutable built-in program, also used by clients for authorized migration
+/// preflight. Replacing these bytes requires a new system-module version.
+pub const SYSTEM_EMPTY_MODULE_V1_BYTES: &[u8] = include_bytes!("deployment/system_empty_v1.wasm");
 /// Immutable Keccak-256 program identity of the version-1 bundled empty Wasm
 /// module. Control can verify initial program bytes without linking the host.
 pub const SYSTEM_EMPTY_MODULE_V1_PROGRAM_HASH: Hash = Hash::from_byte_array([
     0x08, 0x36, 0x50, 0x97, 0xd1, 0xef, 0x20, 0x26, 0x53, 0x61, 0x5f, 0x02, 0xcc, 0x46, 0xbe, 0x16, 0x08, 0x80, 0x44,
     0xc6, 0xb9, 0xcd, 0x96, 0x60, 0xe3, 0xa0, 0xf3, 0x36, 0xe4, 0x79, 0x18, 0xf0,
 ]);
+/// SHA-256 descriptor of the same immutable bundled version-1 bytes. Clients
+/// can name SystemEmpty in a prepared manifest without linking the host.
+pub const SYSTEM_EMPTY_MODULE_V1_ARTIFACT: manifest::ModuleArtifact = manifest::ModuleArtifact {
+    digest: crate::container::OciDigest::sha256([
+        0x90, 0x37, 0x89, 0x67, 0xf4, 0xf5, 0xdb, 0x99, 0x37, 0x30, 0xe3, 0x67, 0x11, 0x67, 0x1a, 0x94, 0xdc, 0x5e,
+        0xc6, 0x36, 0x75, 0xf6, 0x83, 0x60, 0xa2, 0x1d, 0xd1, 0x52, 0x4b, 0xcd, 0x7a, 0xa3,
+    ]),
+    size_bytes: 250,
+};
 pub const MAX_DEPLOYMENT_BYTES: usize = 256 * 1024;
 pub const PUBLISH_RETRY_WINDOW_MS: u64 = 7 * 24 * 60 * 60 * 1000;
 pub const MAX_OPERATION_CLOCK_SKEW_MS: u64 = 5 * 60 * 1000;

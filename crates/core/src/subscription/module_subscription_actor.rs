@@ -323,7 +323,7 @@ impl ModuleSubscriptions {
     /// database transaction before the registry lock serializes with fencing.
     pub(crate) fn register_hosted_connection(&self, sender: &Arc<ClientConnectionSender>) -> anyhow::Result<()> {
         self.relational_db.with_read_only(Workload::Internal, |tx| {
-            check_hosted_admission(tx, self.relational_db.database_identity(), sender.auth.hosted.as_ref())?;
+            check_hosted_admission(tx, &self.relational_db, sender.auth.hosted.as_ref())?;
             let mut connections = self.hosted_connections.write();
             connections.retain(|connection| connection.strong_count() != 0);
             connections.push(Arc::downgrade(sender));
@@ -351,13 +351,7 @@ impl ModuleSubscriptions {
             let Some(connection) = connection.upgrade() else {
                 return false;
             };
-            if check_hosted_admission(
-                tx,
-                self.relational_db.database_identity(),
-                connection.auth.hosted.as_ref(),
-            )
-            .is_err()
-            {
+            if check_hosted_admission(tx, &self.relational_db, connection.auth.hosted.as_ref()).is_err() {
                 cancelled.push(connection.cancel_hosted_connection());
             }
             true
@@ -686,11 +680,7 @@ impl ModuleSubscriptions {
         let hash_with_param = QueryHash::from_string(&sql, auth.caller(), true);
 
         let (mut_tx, _) = self.begin_mut_tx(Workload::Subscribe);
-        check_hosted_admission(
-            &*mut_tx,
-            self.relational_db.database_identity(),
-            sender.auth.hosted.as_ref(),
-        )?;
+        check_hosted_admission(&*mut_tx, &self.relational_db, sender.auth.hosted.as_ref())?;
 
         let existing_query = {
             let guard = self.subscriptions.read();
@@ -794,11 +784,7 @@ impl ModuleSubscriptions {
         };
 
         let (mut_tx, _) = self.begin_mut_tx(Workload::Unsubscribe);
-        check_hosted_admission(
-            &*mut_tx,
-            self.relational_db.database_identity(),
-            sender.auth.hosted.as_ref(),
-        )?;
+        check_hosted_admission(&*mut_tx, &self.relational_db, sender.auth.hosted.as_ref())?;
         let mut subscriptions = self.subscriptions.write();
 
         let queries = return_on_err!(
@@ -879,11 +865,7 @@ impl ModuleSubscriptions {
 
         // Always lock the db before the subscription lock to avoid deadlocks.
         let (mut_tx, _) = self.begin_mut_tx(Workload::Unsubscribe);
-        check_hosted_admission(
-            &*mut_tx,
-            self.relational_db.database_identity(),
-            sender.auth.hosted.as_ref(),
-        )?;
+        check_hosted_admission(&*mut_tx, &self.relational_db, sender.auth.hosted.as_ref())?;
 
         let removed_queries = {
             let _compile_timer = subscription_metrics.compilation_time.start_timer();
@@ -1001,11 +983,7 @@ impl ModuleSubscriptions {
 
         // Always lock the db before the subscription lock to avoid deadlocks.
         let (mut_tx, _) = self.begin_mut_tx(Workload::Unsubscribe);
-        check_hosted_admission(
-            &*mut_tx,
-            self.relational_db.database_identity(),
-            sender.auth.hosted.as_ref(),
-        )?;
+        check_hosted_admission(&*mut_tx, &self.relational_db, sender.auth.hosted.as_ref())?;
 
         let removed_queries = {
             let _compile_timer = subscription_metrics.compilation_time.start_timer();
@@ -1109,11 +1087,7 @@ impl ModuleSubscriptions {
 
         // We always get the db lock before the subscription lock to avoid deadlocks.
         let (mut_tx, _tx_offset) = self.begin_mut_tx(Workload::Subscribe);
-        check_hosted_admission(
-            &*mut_tx,
-            self.relational_db.database_identity(),
-            sender.auth.hosted.as_ref(),
-        )?;
+        check_hosted_admission(&*mut_tx, &self.relational_db, sender.auth.hosted.as_ref())?;
 
         let compile_timer = metrics.compilation_time.start_timer();
 

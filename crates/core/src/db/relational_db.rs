@@ -95,6 +95,7 @@ pub type ConnectedClients = HashSet<(Identity, ConnectionId)>;
 pub struct RelationalDB {
     database_identity: Identity,
     owner_identity: Identity,
+    hosted_admission: super::hosted_admission::HostedAdmission,
 
     inner: Locking,
     durability: Option<Arc<Durability>>,
@@ -160,6 +161,7 @@ impl RelationalDB {
 
             database_identity,
             owner_identity,
+            hosted_admission: Default::default(),
 
             row_count_fn: default_row_count_fn(database_identity),
             disk_size_fn,
@@ -167,6 +169,12 @@ impl RelationalDB {
             workload_type_to_exec_counters,
             metrics_recorder_queue,
         }
+    }
+
+    /// Transient container admission for this exact database open. The trusted
+    /// receiving host opens it only after reconciling current incoming fences.
+    pub fn hosted_admission(&self) -> &super::hosted_admission::HostedAdmission {
+        &self.hosted_admission
     }
 
     /// Open a database, which may or may not already exist.
@@ -339,8 +347,8 @@ impl RelationalDB {
 
     /// Shut down the database, without dropping it.
     ///
-    /// If the database is in-memory only, this does nothing.
-    /// Otherwise, it instructs the durability layer to shut down
+    /// Permanently closes hosted admission on this database object.
+    /// For a disk database, it also instructs the durability layer to shut down
     /// and waits until all outstanding transactions are reported as durable.
     ///
     /// After calling this method, calling [Self::commit_tx_downgrade] or
@@ -351,6 +359,9 @@ impl RelationalDB {
     ///
     /// Returns the durable [TxOffset] in a `Some` otherwise.
     pub async fn shutdown(&self) -> Option<TxOffset> {
+        // Idle module handles may retain this database after its writer stops.
+        // They must not retain admission or complete an earlier startup sweep.
+        self.hosted_admission.seal();
         if let Some(durability) = &self.durability {
             return durability.close().await;
         }

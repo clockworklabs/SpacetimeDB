@@ -94,7 +94,7 @@ fn run_inner<I: WasmInstance>(
     // We parse the sql statement in a mutable transaction.
     // If it turns out to be a query, we downgrade the tx.
     let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
-        check_hosted_admission(tx, db.database_identity(), auth.hosted.as_deref())?;
+        check_hosted_admission(tx, &db, auth.hosted.as_deref())?;
         let stmt = compile_sql_stmt(&sql_text, &SchemaViewer::new(tx, &auth), &auth)?;
         // Check mutation authority while the automatic rollback guard owns
         // the transaction, including rejected administrative statements.

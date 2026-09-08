@@ -13,6 +13,7 @@ pub mod container_environment;
 pub mod deployment;
 mod durability;
 pub mod environment;
+pub mod hosted_admission;
 pub mod persistence;
 pub mod relational_db;
 pub mod snapshot;

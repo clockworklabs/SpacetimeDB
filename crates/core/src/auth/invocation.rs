@@ -101,12 +101,16 @@ impl InvocationCaller {
 /// A check before queueing does not serialize with generation revocation.
 pub(crate) fn check_hosted_admission<S: StateView>(
     state: &S,
-    target: Identity,
+    database: &crate::db::relational_db::RelationalDB,
     proof: Option<&VerifiedHostedAuth>,
 ) -> anyhow::Result<()> {
     let Some(proof) = proof else { return Ok(()) };
     anyhow::ensure!(
-        proof.target_database() == target,
+        database.hosted_admission().is_open(),
+        "receiving database has not reconciled hosted admission"
+    );
+    anyhow::ensure!(
+        proof.target_database() == database.database_identity(),
         "hosted credential targets another database"
     );
     proof.check_at(SystemTime::now())?;

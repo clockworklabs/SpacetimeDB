@@ -38,6 +38,8 @@ pub enum DeploymentError {
     ContainerFenced,
     #[error("a conflicting or older container fence cannot replace current authority")]
     FenceConflict,
+    #[error("the receiving host fence revision is exhausted")]
+    FenceRevisionExhausted,
     #[error("deployment metadata is inconsistent")]
     CorruptMetadata,
     #[error(transparent)]
@@ -446,10 +448,76 @@ pub fn install_container_fence(
         if next.generation <= previous.generation || next.target_grant_revision < previous.target_grant_revision {
             return Err(DeploymentError::FenceConflict);
         }
+        db.hosted_admission()
+            .fences_changed()
+            .map_err(|_| DeploymentError::FenceRevisionExhausted)?;
         db.delete(tx, ST_CONTAINER_FENCE_ID, [pointer]);
+    } else {
+        db.hosted_admission()
+            .fences_changed()
+            .map_err(|_| DeploymentError::FenceRevisionExhausted)?;
     }
     tx.insert_via_serialize_bsatn(ST_CONTAINER_FENCE_ID, next)?;
     Ok(())
+}
+
+/// An exact denial of a previously observed allowed fence. Revision counters
+/// belong to this live database open, not to the durable generation namespace.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FenceDenial {
+    pub row: StContainerFenceRow,
+    pub revision_before: u64,
+    pub revision_after: u64,
+}
+
+/// Deny an orphan without lowering or inventing a control generation.
+///
+/// The trusted coordinator must establish the source's absence from current
+/// control inventory, then recheck that inventory revision while holding this
+/// same serializable transaction. This function does not confer authority to
+/// any external caller. Only the exact allowed tuple, or its already-denied
+/// form, is accepted. Ordinary installation cannot reopen this generation.
+pub fn deny_container_fence(
+    db: &RelationalDB,
+    tx: &mut MutTx,
+    expected: &StContainerFenceRow,
+) -> Result<FenceDenial, DeploymentError> {
+    if !expected.allowed || expected.generation == 0 {
+        return Err(DeploymentError::FenceConflict);
+    }
+    let key: AlgebraicValue = expected.source_identity.into();
+    let (pointer, current) = tx
+        .iter_by_col_eq(ST_CONTAINER_FENCE_ID, ColId(0), &key)?
+        .next()
+        .map(|row| StContainerFenceRow::try_from(row).map(|value| (row.pointer(), value)))
+        .transpose()?
+        .ok_or(DeploymentError::FenceConflict)?;
+    let denied = StContainerFenceRow {
+        allowed: false,
+        ..expected.clone()
+    };
+    let (revision_before, revision_after) = if current == denied {
+        let revision = db.hosted_admission().fence_revision();
+        (revision, revision)
+    } else {
+        if current != *expected {
+            return Err(DeploymentError::FenceConflict);
+        }
+        // The gate is closed before the row changes. A rollback still
+        // conservatively invalidates any concurrently progressing page scan.
+        let revisions = db
+            .hosted_admission()
+            .fences_changed()
+            .map_err(|_| DeploymentError::FenceRevisionExhausted)?;
+        db.delete(tx, ST_CONTAINER_FENCE_ID, [pointer]);
+        tx.insert_via_serialize_bsatn(ST_CONTAINER_FENCE_ID, &denied)?;
+        revisions
+    };
+    Ok(FenceDenial {
+        row: denied,
+        revision_before,
+        revision_after,
+    })
 }
 
 /// Called with verified hosted credentials inside every admitted transaction,

@@ -19,6 +19,15 @@ fn bundled_bytes_match_current_v10_schema_wire_format() {
     let program = program(VERSION_1).unwrap();
     assert_eq!(program.hash, hash_bytes(include_bytes!("v1.wasm")));
     assert_eq!(program.hash, VERSION_1_PROGRAM_HASH);
+    let artifact = spacetimedb_lib::deployment::SYSTEM_EMPTY_MODULE_V1_ARTIFACT;
+    assert_eq!(artifact.size_bytes, program.bytes.len() as u64);
+    assert_eq!(
+        artifact.digest.to_string(),
+        format!(
+            "sha256:{}",
+            include_str!("v1.sha256").split_whitespace().next().unwrap()
+        )
+    );
     assert!(matches_program(VERSION_1, &program));
 }
 

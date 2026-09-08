@@ -16,7 +16,7 @@ use std::sync::OnceLock;
 pub const VERSION_1: u32 = 1;
 pub use spacetimedb_lib::deployment::SYSTEM_EMPTY_MODULE_V1_PROGRAM_HASH as VERSION_1_PROGRAM_HASH;
 
-pub const VERSION_1_BYTES: &[u8] = include_bytes!("empty_module/v1.wasm");
+pub use spacetimedb_lib::deployment::SYSTEM_EMPTY_MODULE_V1_BYTES as VERSION_1_BYTES;
 
 /// Return the exact bundled program for a recognized system module version.
 /// Unknown versions fail closed instead of silently selecting the latest one.

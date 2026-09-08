@@ -319,7 +319,7 @@ impl InstanceEnv {
             return Err(NodesError::NotInTransaction);
         }
         self.relational_db().with_read_only(Workload::Internal, |tx| {
-            check_hosted_admission(tx, *self.database_identity(), self.hosted_auth.as_deref())
+            check_hosted_admission(tx, self.relational_db(), self.hosted_auth.as_deref())
                 .map_err(|err| NodesError::HostedInvocationRejected(err.to_string()))?;
             environment::get(tx, key).map_err(|err| NodesError::from(DBError::Other(err.into())))
         })
@@ -814,7 +814,7 @@ impl InstanceEnv {
         let tx = self
             .relational_db()
             .begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-        if let Err(err) = check_hosted_admission(&tx, *self.database_identity(), self.hosted_auth.as_deref()) {
+        if let Err(err) = check_hosted_admission(&tx, self.relational_db(), self.hosted_auth.as_deref()) {
             let _ = tx.rollback();
             return Err(NodesError::HostedInvocationRejected(err.to_string()));
         }
@@ -1522,6 +1522,7 @@ mod test {
         use spacetimedb_datastore::system_tables::StContainerFenceRow;
         use std::time::SystemTime;
         let db = relational_db()?;
+        db.hosted_admission().begin()?.complete()?;
         let (mut env, _runtime) = instance_env(db.clone())?;
         env.func_type = FuncCallType::Procedure;
         let keys = JwtKeys::generate()?;

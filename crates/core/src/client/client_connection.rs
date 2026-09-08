@@ -170,9 +170,7 @@ impl DurableOffsetSupply for Arc<RelationalDB> {
         let proof = proof.clone();
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
-                db.with_read_only(Workload::Internal, |tx| {
-                    check_hosted_admission(tx, db.database_identity(), Some(&proof))
-                })
+                db.with_read_only(Workload::Internal, |tx| check_hosted_admission(tx, &db, Some(&proof)))
             })
             .await?
         })
@@ -1495,6 +1493,11 @@ mod tests {
     }
 
     fn hosted_auth(db: &RelationalDB, lifetime: std::time::Duration) -> ConnectionAuthCtx {
+        // These fixtures model an already reconciled receiving host. Tests of
+        // startup closure explicitly close the gate after constructing it.
+        if !db.hosted_admission().is_open() {
+            db.hosted_admission().begin().unwrap().complete().unwrap();
+        }
         use crate::auth::{
             hosted_tokens::{sign_hosted_token, HostedTokenBinding, HostedTokenValidator},
             JwtKeys,
@@ -1588,6 +1591,22 @@ mod tests {
             hosted_client(&db, db.db.clone(), false, std::time::Duration::from_secs(20));
         sender.send_message(None, empty_tx_update()).unwrap();
         set_fence(&db, 2, false);
+        assert_receiver_closed(receiver.recv()).await;
+        assert!(sender.is_cancelled());
+        assert!(actor.await.unwrap_err().is_cancelled());
+        let (ordinary, mut ordinary_rx) = default_client(db.db.clone());
+        ordinary.send_message(None, empty_tx_update()).unwrap();
+        assert_received_update(ordinary_rx.recv()).await;
+    }
+
+    #[tokio::test]
+    async fn hosted_queued_delivery_rejects_closed_startup_gate_with_unchanged_fence() {
+        let db = crate::db::relational_db::tests_utils::TestDB::in_memory().unwrap();
+        set_fence(&db, 1, true);
+        let (sender, mut receiver, actor) =
+            hosted_client(&db, db.db.clone(), false, std::time::Duration::from_secs(20));
+        sender.send_message(None, empty_tx_update()).unwrap();
+        db.hosted_admission().close();
         assert_receiver_closed(receiver.recv()).await;
         assert!(sender.is_cancelled());
         assert!(actor.await.unwrap_err().is_cancelled());

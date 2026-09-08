@@ -112,13 +112,17 @@ fn transaction_admission_rechecks_persisted_fences_after_initial_authentication(
     let source = Identity::ONE;
     let auth = authenticate(source, target, SystemTime::now());
     let proof = auth.hosted.as_ref();
+    let wrong_target = authenticate(source, Identity::from_u256(99u64.into()), SystemTime::now());
+    db.hosted_admission().begin().unwrap().complete().unwrap();
     let caller = InvocationCaller::from(&auth);
     assert_eq!(caller.flags_for(target, &module(true)).unwrap(), 0);
     db.with_auto_commit(Workload::ForTests, |tx| -> anyhow::Result<()> {
-        assert!(check_hosted_admission(tx, target, proof).is_err());
+        assert!(check_hosted_admission(tx, &db, proof).is_err());
         install_container_fence(&db, tx, &fence(source, 3, 7, true))?;
-        check_hosted_admission(tx, target, proof)?;
-        assert!(check_hosted_admission(tx, Identity::from_u256(99u64.into()), proof).is_err());
+        assert!(!db.hosted_admission().is_open());
+        db.hosted_admission().begin()?.complete()?;
+        check_hosted_admission(tx, &db, proof)?;
+        assert!(check_hosted_admission(tx, &db, wrong_target.hosted.as_ref()).is_err());
         Ok(())
     })
     .unwrap();
@@ -129,14 +133,41 @@ fn transaction_admission_rechecks_persisted_fences_after_initial_authentication(
     })
     .unwrap();
     db.with_auto_commit(Workload::ForTests, |tx| -> anyhow::Result<()> {
-        assert!(check_hosted_admission(tx, target, proof).is_err());
-        check_hosted_admission(tx, target, None)?;
+        assert!(check_hosted_admission(tx, &db, proof).is_err());
+        check_hosted_admission(tx, &db, None)?;
         // Another generation does not reactivate a copied credential.
         install_container_fence(&db, tx, &fence(source, 5, 9, true))?;
-        assert!(check_hosted_admission(tx, target, proof).is_err());
+        assert!(check_hosted_admission(tx, &db, proof).is_err());
         Ok(())
     })
     .unwrap();
+}
+
+#[test]
+fn reopened_database_requires_a_fresh_sweep_despite_a_replayed_allowed_fence() {
+    let db = TestDB::durable().unwrap();
+    let source = Identity::ONE;
+    let target = db.database_identity();
+    let auth = authenticate(source, target, SystemTime::now());
+    db.with_auto_commit(Workload::ForTests, |tx| {
+        install_container_fence(&db, tx, &fence(source, 3, 7, true))
+    })
+    .unwrap();
+    let old_sweep = db.hosted_admission().begin().unwrap();
+    let db = db.reopen().unwrap();
+    // Shutdown seals the old object, including any late coordinator ticket.
+    assert!(old_sweep.complete().is_err());
+    assert!(!db.hosted_admission().is_open());
+    db.with_read_only(Workload::ForTests, |tx| {
+        crate::db::deployment::check_container_fence(tx, source, 3, 7).unwrap();
+        let error = check_hosted_admission(tx, &db, auth.hosted.as_ref()).unwrap_err();
+        assert!(error.to_string().contains("has not reconciled"));
+        check_hosted_admission(tx, &db, None).unwrap();
+    });
+    db.hosted_admission().begin().unwrap().complete().unwrap();
+    db.with_read_only(Workload::ForTests, |tx| {
+        check_hosted_admission(tx, &db, auth.hosted.as_ref()).unwrap();
+    });
 }
 
 #[test]
@@ -144,13 +175,25 @@ fn expired_verified_proof_is_rejected_at_both_call_and_transaction_admission() {
     let db = TestDB::in_memory().unwrap();
     let target = db.database_identity();
     let source = Identity::ONE;
+    db.hosted_admission().begin().unwrap().complete().unwrap();
     // Valid when received, expired before execution, without sleeps or forged proofs.
     let auth = authenticate(source, target, SystemTime::now() - Duration::from_secs(60));
     assert!(InvocationCaller::from(&auth).flags_for(target, &module(true)).is_err());
     db.with_auto_commit(Workload::ForTests, |tx| -> anyhow::Result<()> {
         install_container_fence(&db, tx, &fence(source, 3, 7, true))?;
-        assert!(check_hosted_admission(tx, target, auth.hosted.as_ref()).is_err());
+        assert!(check_hosted_admission(tx, &db, auth.hosted.as_ref()).is_err());
         Ok(())
     })
     .unwrap();
+}
+
+#[tokio::test]
+async fn shutdown_seals_hosted_admission_even_for_retained_memory_database_handles() {
+    let db = TestDB::in_memory().unwrap();
+    let pending = db.hosted_admission().begin().unwrap();
+    assert_eq!(db.shutdown().await, None);
+    assert!(pending.complete().is_err());
+    assert!(!db.hosted_admission().is_open());
+    assert!(db.hosted_admission().begin().is_err());
+    assert_eq!(db.shutdown().await, None);
 }

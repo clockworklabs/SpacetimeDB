@@ -11,6 +11,7 @@ use spacetimedb_schema::def::deserialize::{ArgsSeed, FunctionDef};
 use spacetimedb_schema::def::ModuleDef;
 
 pub mod container_environment;
+pub mod container_fence;
 mod disk_storage;
 pub mod empty_module;
 mod host_controller;

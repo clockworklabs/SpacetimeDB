@@ -867,7 +867,7 @@ impl InstanceCommon {
             .replica_ctx()
             .relational_db()
             .with_read_only(Workload::Internal, |tx| {
-                check_hosted_admission(tx, self.info.database_identity, hosted_auth.as_deref())
+                check_hosted_admission(tx, inst.replica_ctx().relational_db(), hosted_auth.as_deref())
             });
         if let Err(err) = admission {
             return (
@@ -1105,7 +1105,7 @@ impl InstanceCommon {
 
         let workload = Workload::Reducer(ReducerContext::from(op.clone()));
         let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable, workload));
-        if let Err(err) = check_hosted_admission(&tx, info.database_identity, op.hosted_auth.as_deref()) {
+        if let Err(err) = check_hosted_admission(&tx, stdb, op.hosted_auth.as_deref()) {
             let event = ModuleEvent {
                 timestamp,
                 caller_identity,

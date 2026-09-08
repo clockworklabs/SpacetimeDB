@@ -745,7 +745,7 @@ pub fn call_identity_connected(
     let flags = caller
         .flags_for(module.database_identity, &module.module_def)
         .map_err(|e| ClientConnectedError::Rejected(e.to_string().into()))?;
-    check_hosted_admission(&*mut_tx, module.database_identity, caller.hosted.as_deref())
+    check_hosted_admission(&*mut_tx, stdb, caller.hosted.as_deref())
         .map_err(|e| ClientConnectedError::Rejected(e.to_string().into()))?;
 
     mut_tx
@@ -3539,7 +3539,7 @@ impl ModuleHost {
             db.report_read_tx_metrics(reducer, tx_metrics);
         });
 
-        let result = check_hosted_admission(&*tx, db.database_identity(), client.auth.hosted.as_ref()).and_then(|()| {
+        let result = check_hosted_admission(&*tx, &db, client.auth.hosted.as_ref()).and_then(|()| {
             Self::execute_one_off_query(&db, &tx, &auth, &query, &rlb_pool, |table_name, rows| {
                 ws_v1::OneOffTable { table_name, rows }
             })
@@ -3620,7 +3620,7 @@ impl ModuleHost {
             db.report_read_tx_metrics(reducer, tx_metrics);
         });
 
-        let result = check_hosted_admission(&*tx, db.database_identity(), client.auth.hosted.as_ref()).and_then(|()| {
+        let result = check_hosted_admission(&*tx, &db, client.auth.hosted.as_ref()).and_then(|()| {
             Self::execute_one_off_query::<ws_v1::BsatnFormat, _>(&db, &tx, &auth, &query, &rlb_pool, |table, rows| {
                 ws_v2::SingleTableRows { table, rows }
             })
