@@ -4,7 +4,7 @@
 // here so it can be replaced without changing the public cron API.
 declare module 'spacetime:sys@2.0' {
   export function volatile_nonatomic_schedule_immediate(
-    reducer_name: string,
+    reducerName: string,
     args: Uint8Array
   ): void;
 }

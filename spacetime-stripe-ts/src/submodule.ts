@@ -11,7 +11,7 @@ export {
 export * from './submodule/operations/billing';
 export * from './submodule/operations/queries';
 export {
-  handle_stripe_webhook,
+  handleStripeWebhook,
   stripe_webhook_handler,
 } from './submodule/operations/webhook';
 

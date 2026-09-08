@@ -155,7 +155,7 @@ trusted application context.
 - `ingest_stripe_webhook(eventId, eventType, livemode, payloadJson, signatureHeader)`: idempotent
 - `replay_webhook_event(eventId)`: re-applies a stored event
 - `get_webhook_event_count()`: observability
-- `stripe_webhook_handler` and `handle_stripe_webhook` support direct host HTTP
+- `stripe_webhook_handler` and `handleStripeWebhook` support direct host HTTP
   routing.
 - `upsert_customer`, `upsert_subscription`, `update_payment_customer`, and
   `update_subscription_quantity_internal` apply trusted synchronization data.

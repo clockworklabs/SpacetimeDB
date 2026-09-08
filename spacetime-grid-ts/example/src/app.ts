@@ -61,7 +61,7 @@ declare global {
         originY: number,
         maxCost: number
       ) => Promise<ReachableCell[]>;
-      AI_BOT_USER_ID: string;
+      aiBotUserId: string;
     };
   }
 }
@@ -471,7 +471,7 @@ async function main(): Promise<void> {
   };
 
   window.grid = {
-    AI_BOT_USER_ID: 'ai-bot-001',
+    aiBotUserId: 'ai-bot-001',
     createMatch: async vsAi => requireConn().procedures.createMatch({ vsAi }),
     joinMatch: async matchId => {
       await requireConn().procedures.joinMatch({ matchId });

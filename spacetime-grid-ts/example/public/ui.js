@@ -351,7 +351,7 @@ function renderLobby() {
     const seats = seatsForMatch(m.matchId);
     const hostUid = seats[0];
     const oppUid = seats[1];
-    const isVsAi = oppUid === window.grid.AI_BOT_USER_ID;
+    const isVsAi = oppUid === window.grid.aiBotUserId;
     const hostName = displayName(actorById(hostUid), hostUid);
     const oppName = isVsAi
       ? 'Alien Hive'
@@ -430,7 +430,7 @@ function renderMatch() {
     mySeatIdx !== undefined &&
     Number(mySeatIdx) === m.currentSeatIdx;
 
-  const isVsAi = seats[1] === window.grid.AI_BOT_USER_ID;
+  const isVsAi = seats[1] === window.grid.aiBotUserId;
   $('match-title').textContent =
     `Sector ${m.matchId}${isVsAi ? ' · solo' : ''}`;
   $('match-subtitle').textContent = `, turn ${m.turnNumber}`;
@@ -578,22 +578,22 @@ function drawBoard(grid, entities, cells, units, match, myUserId) {
   const canvas = $('board-canvas');
   // Canvas only needs to hold the hex-shape bounding box (computed at
   // module load from HEX_RADIUS). Out-of-hex axial cells aren't drawn.
-  const W = Math.ceil(HEX_MAX_X - HEX_MIN_X + 2 * PAD);
-  const H = Math.ceil(HEX_MAX_Y - HEX_MIN_Y + 2 * PAD);
-  canvas.width = W;
-  canvas.height = H;
+  const width = Math.ceil(HEX_MAX_X - HEX_MIN_X + 2 * PAD);
+  const height = Math.ceil(HEX_MAX_Y - HEX_MIN_Y + 2 * PAD);
+  canvas.width = width;
+  canvas.height = height;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle =
     getComputedStyle(document.body).getPropertyValue('--color-shade7').trim() ||
     '#0b1114';
-  ctx.fillRect(0, 0, W, H);
+  ctx.fillRect(0, 0, width, height);
   const starSeed = (grid.width * 31 + grid.height) | 0;
   let s = starSeed;
   for (let i = 0; i < 60; i++) {
     s = (s * 1664525 + 1013904223) >>> 0;
-    const sx = ((s % 1000) / 1000) * W;
+    const sx = ((s % 1000) / 1000) * width;
     s = (s * 1664525 + 1013904223) >>> 0;
-    const sy = ((s % 1000) / 1000) * H;
+    const sy = ((s % 1000) / 1000) * height;
     s = (s * 1664525 + 1013904223) >>> 0;
     const a = 0.12 + ((s % 1000) / 1000) * 0.25;
     ctx.fillStyle = `rgba(160, 180, 200, ${a})`;

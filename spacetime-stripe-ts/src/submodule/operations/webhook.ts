@@ -21,7 +21,7 @@ function jsonResponse(status: number, body: unknown): SyncResponse {
   });
 }
 
-export function handle_stripe_webhook(
+export function handleStripeWebhook(
   ctx: HandlerContext<typeof spacetimedb.schemaType>,
   req: StdbRequest
 ): SyncResponse {
@@ -106,6 +106,5 @@ export function handle_stripe_webhook(
   }
 }
 
-export const stripe_webhook_handler = spacetimedb.httpHandler(
-  handle_stripe_webhook
-);
+export const stripe_webhook_handler =
+  spacetimedb.httpHandler(handleStripeWebhook);

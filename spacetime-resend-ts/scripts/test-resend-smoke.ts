@@ -177,9 +177,9 @@ function emailStatus(rowText: string): string {
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   // Unique run id so re-runs don't collide on idempotent webhook IDs.
-  const RUN = Date.now().toString(36);
-  const evt = (suffix: string) => `evt_${RUN}_${suffix}`;
-  const em = (suffix: string) => `em_${RUN}_${suffix}`;
+  const runId = Date.now().toString(36);
+  const evt = (suffix: string) => `evt_${runId}_${suffix}`;
+  const em = (suffix: string) => `em_${runId}_${suffix}`;
 
   if (!opts.skipBuildPublish) {
     step('spacetime build');

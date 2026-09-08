@@ -129,10 +129,10 @@ const OPPONENT_SPAWNS = [
 // Deterministic-ish terrain seed (uses match createdAt micros). Cheap PRNG.
 function rng(seed: bigint) {
   let state = seed === 0n ? 1n : seed;
-  const M = 0xffffffffn;
+  const UINT32_MASK = 0xffffffffn;
   return (): number => {
-    state = (state * 1103515245n + 12345n) & M;
-    return Number(state) / Number(M);
+    state = (state * 1103515245n + 12345n) & UINT32_MASK;
+    return Number(state) / Number(UINT32_MASK);
   };
 }
 

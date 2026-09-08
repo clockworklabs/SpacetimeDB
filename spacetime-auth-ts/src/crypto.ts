@@ -127,15 +127,19 @@ export function hashPassword(
 export function verifyPassword(password: string, encoded: string): boolean {
   const parts = encoded.split('$');
   if (parts.length !== 6 || parts[0] !== 'scrypt') return false;
-  const N = parseInt(parts[1], 10);
+  const scryptCost = parseInt(parts[1], 10);
   const r = parseInt(parts[2], 10);
   const p = parseInt(parts[3], 10);
-  if (!Number.isFinite(N) || !Number.isFinite(r) || !Number.isFinite(p))
+  if (
+    !Number.isFinite(scryptCost) ||
+    !Number.isFinite(r) ||
+    !Number.isFinite(p)
+  )
     return false;
   const salt = b64decode(parts[4]);
   const expected = b64decode(parts[5]);
   const actual = scrypt(textEncoder.encode(password), salt, {
-    N,
+    N: scryptCost,
     r,
     p,
     dkLen: expected.length,

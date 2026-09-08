@@ -182,7 +182,7 @@ function llmReply(opts: {
   const finish =
     opts.finish ??
     (opts.toolCalls && opts.toolCalls.length > 0 ? 'tool_calls' : 'stop');
-  const tool_calls = opts.toolCalls?.map(c => ({
+  const toolCalls = opts.toolCalls?.map(c => ({
     id: c.id,
     type: 'function',
     function: { name: c.name, arguments: JSON.stringify(c.args) },
@@ -197,7 +197,7 @@ function llmReply(opts: {
           finish_reason: finish,
           message: {
             content: opts.content ?? null,
-            tool_calls,
+            tool_calls: toolCalls,
           },
         },
       ],

@@ -63,7 +63,7 @@ export default spacetimedb;
 type Schema = InferSchema<typeof spacetimedb>;
 type Tx = ReducerCtx<Schema>;
 
-const FolderRow = folder.rowType;
+const folderRow = folder.rowType;
 
 function senderError(message: string): never {
   throw new SenderError(message);
@@ -174,7 +174,7 @@ function renameOwnedFile(
 
 export const myFolders = spacetimedb.view(
   { name: 'my_folders', public: true },
-  t.array(FolderRow),
+  t.array(folderRow),
   (ctx: ViewCtx<Schema>) => {
     const owner = ownerUserId(ctx);
     return [...ctx.db.folder.ownerUserId.filter(owner)].sort((a, b) =>

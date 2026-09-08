@@ -1,9 +1,9 @@
 import { Router, SyncResponse } from 'spacetimedb/server';
-import { handle_stripe_webhook } from '@spacetimedb/stripe/submodule';
+import { handleStripeWebhook } from '@spacetimedb/stripe/submodule';
 import { spacetimedb } from './schema';
 
 export const stripe_webhook_handler = spacetimedb.httpHandler((ctx, req) =>
-  handle_stripe_webhook(ctx.as.stripe, req)
+  handleStripeWebhook(ctx.as.stripe, req)
 );
 
 export const health = spacetimedb.httpHandler((ctx, _req) => {
