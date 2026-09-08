@@ -11,8 +11,9 @@ import type { DependencyProgress } from '../src/campaigns/campaign-inspection.js
 import type { GradeBundlePayload } from '../src/evidence/benchmark-run.js';
 import { sumCostEvidence } from '../src/evidence/cost-proof.js';
 import type { CostEvidence } from '../src/evidence/cost-proof.js';
+import { scoreDependencyState } from '../src/progression/dependency-score.js';
 import type { CheckCompletion } from '../src/evidence/check-completion.js';
-import { ARTIFACT_FILE, readArtifactPayload } from '../src/evidence/artifacts.js';
+import { ARTIFACT_FILE, readArtifact, readArtifactPayload } from '../src/evidence/artifacts.js';
 import { CAMPAIGN_FILE } from '../src/campaigns/campaign-path.js';
 import { campaignFacts, inspectCampaignAttempt } from '../src/campaigns/campaign-inspection.js';
 import { campaignLockIsActive, readCampaignLock } from '../src/campaigns/campaign-lock.js';
@@ -705,6 +706,8 @@ export interface ProgressionCatalogNode {
 
 export interface ProgressionStep {
   sequence: number;
+  completedAt?: string | null;
+  completion?: number | null;
   action: 'build' | 'repair' | 'grant';
   targets: string[];
   // Node status after the event, index-aligned with `nodes`.
@@ -741,7 +744,7 @@ function progressionSnapshot(state: ProgressionState, nodeIds: readonly string[]
   };
 }
 
-function progressionSteps(state: DependencyState, nodeIds: readonly string[]): ProgressionStep[] {
+function progressionSteps(state: DependencyState, nodeIds: readonly string[], times: Map<string, string | null>): ProgressionStep[] {
   let replay = progressionEngine.initialize(state.definition);
   return state.events.map(event => {
     const action = progressionEngine.nextAction(replay);
@@ -755,7 +758,9 @@ function progressionSteps(state: DependencyState, nodeIds: readonly string[]): P
     const repair = action.type === 'repair';
     replay = progressionEngine.recordResult(replay, event.result);
     return { sequence: event.sequence, action: repair ? 'repair' as const : 'build' as const,
-      targets, ...progressionSnapshot(replay, nodeIds) };
+      targets, ...progressionSnapshot(replay, nodeIds),
+      completedAt: event.result.evidence ? times.get(event.result.evidence.id) ?? null : null,
+      completion: scoreDependencyState(replay as DependencyState).completion.rate };
   });
 }
 
@@ -790,9 +795,19 @@ export function campaignProgression(resultsRoot: string, key: string): CampaignP
       dependencyPolicyIdentity: plan.dependencyPolicy.identity,
       owner: campaignProgressionOwner(plan, attempt.plan, { workspace: true }),
     });
+    const executionDirectory = contained(directory, execution.output, 'campaign execution');
+    const times = new Map<string, string | null>();
+    for (const grade of gradeDirectories(executionDirectory)) {
+      const bundlePath = join(executionDirectory, grade.id, ARTIFACT_FILE.gradeBundle);
+      if (!existsSync(bundlePath)) continue;
+      try {
+        const bundle = readArtifact(bundlePath, { expectedKind: 'grade_bundle' });
+        times.set(bundle.id, bundle.timestamps.completedAt);
+      } catch { /* Missing or invalid evidence must not invent a chart timestamp. */ }
+    }
     stacks.push({ stack: attempt.plan.stack, attemptId: attempt.plan.id,
       updatedAt: new Date(statSync(path).mtimeMs).toISOString(),
-      steps: progressionSteps(stored.state as DependencyState, nodeIds) });
+      steps: progressionSteps(stored.state as DependencyState, nodeIds, times) });
   }
   const view: CampaignProgression = {
     key: basename(resolve(directory)),

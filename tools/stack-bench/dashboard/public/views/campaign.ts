@@ -4,6 +4,7 @@
 import type { CampaignProgression, CampaignSheet, ProgressionStep, SheetAttempt, SheetStack }
   from '../../dashboard-views.js';
 import { DASH, duration, executionClock, esc, metricLabel, spend, num, pct, phrase, ratio, stackLabel, statusWord } from '../format.js';
+import { progressChart } from '../progress-chart.js';
 import { graph } from '../graph.js';
 
 export type QuestlineView = 'grid' | 'graph' | 'replay';
@@ -231,6 +232,7 @@ export function campaignPage(input: CampaignPageInput): string {
     + repetitions
     + row('Total spend', stack => value(spend(stack.spend) + (stack.spendPending ? ' (so far)' : '')))
     + '</tbody></table></div>'
+    + (sheet.mode === 'dependency' ? progressChart(sheet, input.progression) : '')
     + '<h3>Runs</h3>'
     + '<div class="tablewrap"><div class="wrap"><table class="runs attempt-list"><thead><tr><th>Run</th><th>Completion</th><th>Spend</th><th>Repairs</th><th>Elapsed</th><th>Status</th></tr></thead><tbody>'
     + stacks.flatMap(stack => stack.attempts.map(attempt => {

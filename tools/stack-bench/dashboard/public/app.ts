@@ -279,8 +279,7 @@ async function loadData(version: number): Promise<void> {
   if (version !== loadVersion) return;
   if (sheet) state.sheets.set(current.key, sheet);
   render();
-  if (sheet?.mode === 'dependency' && current.view !== 'grid'
-    && !state.progression.has(current.key)) {
+  if (sheet?.mode === 'dependency' && !current.attempt) {
     const progression = await read<CampaignProgression>(
       `/api/campaigns/${encodeURIComponent(current.key)}/progression`);
     if (version !== loadVersion) return;

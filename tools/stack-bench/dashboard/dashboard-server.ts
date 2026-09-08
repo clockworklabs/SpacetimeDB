@@ -35,6 +35,7 @@ const STATIC = new Map<string, readonly [file: string, contentType: string]>([
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/climb.js', ['climb.js', 'text/javascript; charset=utf-8']],
   ['/format.js', ['format.js', 'text/javascript; charset=utf-8']],
+  ['/progress-chart.js', ['progress-chart.js', 'text/javascript; charset=utf-8']],
   ['/graph.js', ['graph.js', 'text/javascript; charset=utf-8']],
   ['/metrics.js', ['metrics.js', 'text/javascript; charset=utf-8']],
   // Shared with the CLI so a state has one name on every surface.

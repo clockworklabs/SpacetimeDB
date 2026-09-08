@@ -54,3 +54,21 @@ for (const count of [1, 4, 6]) {
     for (let index = 0; index < count; index += 1) assert.match(html, new RegExp(`stack-${index}`));
   });
 }
+
+import { progressChart } from '../../dashboard/public/progress-chart.js';
+import type { CampaignSheet, CampaignProgression } from '../../dashboard/dashboard-views.js';
+
+test('time chart uses measured elapsed time, preserves regressions, and labels excluded runs', () => {
+  const sheet = { key: 'test', stacks: [{ stack: 'postgres', attempts: [{ id: 'a', repetition: 1,
+    executionStartedAt: '2026-09-08T00:00:00Z', excluded: 'Provider failure' }] }] } as CampaignSheet;
+  const progression = { stacks: [{ stack: 'postgres', attemptId: 'a', steps: [
+    { completedAt: null, completion: 1 },
+    { completedAt: '2026-09-08T00:01:00Z', completion: 0.75 },
+    { completedAt: '2026-09-08T00:02:00Z', completion: 0.5 },
+  ] }] } as CampaignProgression;
+  const html = progressChart(sheet, progression);
+  assert.match(html, /M498 70 H948 V110/);
+  assert.match(html, /Rep 1 · 50% · Excluded/);
+  assert.doesNotMatch(html, /NaN|Infinity/);
+  assert.match(progressChart(sheet, null), /Awaiting first timed grade/);
+});

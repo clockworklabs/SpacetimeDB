@@ -284,3 +284,9 @@ main[aria-busy="true"]:not(:has(.loading))::before { content: ''; position: fixe
 .time-grant { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin: 1rem 0; }
 .time-grant label { display: flex; align-items: center; gap: .5rem; }
 .time-grant input[type="number"] { width: 6rem; }
+
+.progress-chart { display: block; width: 100%; min-width: 520px; max-height: 300px; }
+.progress-chart text { fill: var(--n3); font: 12px var(--sans); }
+.progress-grid { stroke: var(--n3); opacity: .15; }
+.progress-legend { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 4px 0 24px; font-size: 12px; }
+.progress-legend a { text-decoration: none; }
