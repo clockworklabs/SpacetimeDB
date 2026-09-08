@@ -205,7 +205,7 @@ export function campaignPage(input: CampaignPageInput): string {
     Excluded: 'Attempts omitted from comparison because their evidence is invalid or incomplete. Their costs appear only in total spend and individual run details.',
     Time: 'Median duration of usable completed attempts. Live attempt status appears below.',
     'Cost per valid run': 'Mean cost of completed runs with valid comparison results. Excludes invalid and unfinished runs. Valid does not mean every check passed. All included runs must have exact cost evidence and the same comparison scope.',
-    'Total spend': 'Includes excluded attempts. During a run, saved session costs update as evidence arrives; the current session is not yet included. Unknown means usage evidence is incomplete, not zero cost. Costs use the pinned price snapshot.',
+    'Total spend': 'Includes excluded attempts. During a run, this includes only saved cost receipts. Work since the last checkpoint can include an unfinished depth and is not yet counted. Unknown is not zero. Costs use the pinned price snapshot.',
   };
   const row = (label: string, render: (stack: SheetStack) => string): string =>
     `<tr><th scope="row" class="k">${metricLabel(label, help[label])}</th>${cell(render)}</tr>`;
@@ -233,7 +233,7 @@ export function campaignPage(input: CampaignPageInput): string {
     + row('Regressions', stack => value(num(stack.regressions)))
     + row('Time', stack => value(duration(stack.timeSec)))
     + repetitions
-    + row('Total spend', stack => value(spend(stack.spend) + (stack.spendPending ? ' (recorded so far)' : '')))
+    + row('Total spend', stack => value(spend(stack.spend) + (stack.spendPending ? ' (so far)' : '')))
     + '</tbody></table></div>'
     + '<h3>Runs</h3><p class="summary-note">One row per attempt. Open a run for grades, screenshots, files, and logs.</p>'
     + '<div class="tablewrap"><div class="wrap"><table class="runs attempt-list"><thead><tr><th>Run</th><th>Completion</th><th>Spend</th><th>Repairs</th><th>Elapsed</th><th>Status</th></tr></thead><tbody>'
@@ -241,7 +241,7 @@ export function campaignPage(input: CampaignPageInput): string {
       const href = `/c/${encodeURIComponent(sheet.key)}/a/${encodeURIComponent(attempt.id)}`;
       return `<tr><td><a href="${href}" title="${esc(attempt.variant)}">${esc(stackLabel(stack.stack))} · Rep ${attempt.repetition}</a></td>`
         + `<td>${attempt.completion ? ratio(attempt.completion.passed, attempt.completion.selected) : DASH}</td>`
-        + `<td title="Recorded session costs update when session evidence is saved. The current session is not included until then.">${spend(attempt.spend)}${attempt.spendPending ? ' (recorded so far)' : ''}</td>`
+        + `<td title="Saved cost receipts only. Work since the last checkpoint, including an unfinished depth, is not yet counted.">${spend(attempt.spend)}${attempt.spendPending ? ' (so far)' : ''}</td>`
         + `<td>${ratio(attempt.repairs.used, attempt.repairs.budget)}</td>`
         + `<td>${attempt.status === 'running' || attempt.executionCompletedAt ? executionClock(attempt.executionStartedAt, attempt.executionCompletedAt) : DASH}</td>`
         + `<td class="run-status">${attempt.excluded

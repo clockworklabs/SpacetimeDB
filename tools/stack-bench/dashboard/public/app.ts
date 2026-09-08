@@ -178,7 +178,7 @@ function render(): void {
   const next = document.createElement('body');
   next.innerHTML = `${chrome(current)}<main aria-busy="${loading}">`
     + (state.readError ? `<div class="page err" role="alert">${esc(state.readError)} <button type="button" data-retry>Retry</button></div>` : '')
-    + (loading ? '<div class="page loading" role="status">Loading page…</div>' : page(current))
+    + (loading ? `<div class="page loading" role="status">Loading ${current.plans ? 'plans' : current.attempt ? 'run details' : current.key ? 'campaign' : 'campaigns'}…</div>` : page(current))
     + '</main>';
   patch(root, next);
   // The secret and the run name live in the tab, never in the markup.

@@ -270,8 +270,10 @@ table.attempt-list th:nth-child(5) { width: 14%; }
 table.attempt-list td { white-space: normal; overflow-wrap: anywhere; }
 table.attempt-list .run-status { padding-block: 10px; }
 .run-status summary { cursor: pointer; color: var(--yellow); }
-.loading { display: flex; align-items: center; gap: 12px; min-height: 140px; color: var(--n3); }
-.loading::before { content: ''; width: 16px; height: 16px; border: 2px solid var(--shade1); border-top-color: var(--green); border-radius: 50%; animation: loading-spin 1s linear infinite; }
-@keyframes loading-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .loading::before { animation: none; } }
+.loading { color: var(--n4); font-size: 13px; }
+.loading::before { content: ''; display: block; width: min(420px, 65%); height: 24px; margin: 20px 0 16px; border-radius: 4px; background: var(--shade4); }
+.loading::after { content: ''; display: block; height: 280px; margin-top: 28px; border: 1px solid var(--shade4); border-radius: 4px; background: repeating-linear-gradient(to bottom, var(--shade5) 0 39px, var(--shade4) 39px 40px); }
+main[aria-busy="true"]::before { content: ''; position: fixed; top: 0; left: 0; width: 30%; height: 2px; z-index: 10; background: var(--green); animation: loading-progress 1.4s ease-in-out infinite; }
+@keyframes loading-progress { from { transform: translateX(-100%); } to { transform: translateX(334%); } }
+@media (prefers-reduced-motion: reduce) { main[aria-busy="true"]::before { animation: none; width: 100%; } }
 [data-started-at] { font-variant-numeric: tabular-nums; white-space: nowrap; }
