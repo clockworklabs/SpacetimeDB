@@ -358,6 +358,11 @@ export function buildRecipeRelease(recipePath: string, {
   const absoluteRecipe = realpathSync(resolve(recipePath));
   const root = realpathSync(resolve(trackRoot ?? dirname(dirname(dirname(absoluteRecipe)))));
   const plan = compileRecipeFile(absoluteRecipe, { trackRoot: root });
+  return buildCompiledRecipeRelease(absoluteRecipe, root, plan);
+}
+
+function buildCompiledRecipeRelease(absoluteRecipe: string, root: string,
+  plan: CompiledRecipePlan): RecipeRelease {
   const rawRecipe = readDefinitionJson(absoluteRecipe, 'recipe');
   const trackManifestPath = join(root, TRACK_MANIFEST_FILE);
   const trackManifest = compileTrackManifest(
@@ -731,7 +736,7 @@ export function resolveRecipeRelease(track: Track, level: number,
   if (plan.recipe.sequence?.level && plan.recipe.sequence.level > 1) {
     assertSequentialBase(plan, catalog, track, level);
   }
-  const release = buildRecipeRelease(recipePath, { trackRoot: track.dir });
+  const release = buildCompiledRecipeRelease(realpathSync(recipePath), realpathSync(track.dir), plan);
   if (exact?.contentSha256 && release.contentSha256 !== exact.contentSha256) {
     throw new Error(`${exact.id} content changed: expected ${exact.contentSha256}, resolved ${release.contentSha256}`);
   }

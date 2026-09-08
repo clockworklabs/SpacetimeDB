@@ -65,6 +65,13 @@ test('level selection uses stable IDs and may pin the compiled content', () => {
     /unknown field/);
 });
 
+test('repeated depth aliases resolve the same release as direct compilation', () => {
+  const track = loadTrack('ecommerce');
+  const selected = requireRecipeRelease(track, 3, 'ecommerce.progression-catalog');
+  assert.deepEqual(selected.release,
+    buildRecipeRelease(selected.recipePath, { trackRoot: track.dir }));
+});
+
 test('a recipe binding emits only its selected grade artifact', () => {
   const track = loadTrack('ecommerce');
   const binding = requireRecipeRelease(track, 2);

@@ -1119,10 +1119,15 @@ export function compileRecipeSelectionFile(catalogPath: string,
   const source = relative(root, absoluteCatalog).replaceAll('\\', '/');
   const catalog = compileRecipeSelectionDefinition(
     readDefinitionJson(absoluteCatalog, 'recipe selection'), { source });
+  const plans = new Map<string, CompiledRecipePlan>();
   const entries = catalog.entries.map((entry, index) => {
     const at = `${source}.entries[${index}].recipe`;
     const ref = contained(compositionRoot, dirname(absoluteCatalog), entry.recipe.path, `${at}.path`);
-    const plan = compileRecipeFile(ref.absolute, { trackRoot: root });
+    let plan = plans.get(ref.absolute);
+    if (!plan) {
+      plan = compileRecipeFile(ref.absolute, { trackRoot: root });
+      plans.set(ref.absolute, plan);
+    }
     if (plan.recipe.id !== entry.recipe.id) {
       fail(at, `expected ${entry.recipe.id}, found ${plan.recipe.id}`);
     }
