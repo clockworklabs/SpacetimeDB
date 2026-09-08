@@ -510,7 +510,7 @@ export const getMySchemaViaHttp = spacetimedb.procedure(t.string(), ctx => {
   const module_identity = ctx.databaseIdentity;
   try {
     const response = ctx.http.fetch(
-      `http://localhost:3000/v1/database/${module_identity}/schema?version=11`
+      `http://localhost:3000/v1/database/${module_identity}/schema?version=10`
     );
     return response.text();
   } catch (e) {

@@ -24,7 +24,7 @@ functions also admit the owner, and public functions admit any client.
 independent of connection and JWT presence, so an internal call can have a JWT.
 JWT identity is the verified sender supplied by the host. Procedures preserve
 this authentication in `with_tx` and `try_with_tx`. Newly compiled modules emit
-schema V11 and advertise `hosted_auth_v1`, requiring a compatible host.
+schema V10 and advertise `hosted_auth_v1`, requiring a compatible host.
 
 ## Current State
 

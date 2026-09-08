@@ -5,10 +5,7 @@ import {
   type Deserializer,
   type Serializer,
 } from '../lib/algebraic_type';
-import {
-  declaredVisibility,
-  type FunctionVisibility,
-} from './function_visibility';
+import { rawVisibility, type FunctionVisibility } from './function_visibility';
 import BinaryReader from '../lib/binary_reader';
 import BinaryWriter from '../lib/binary_writer';
 import type { ConnectionId } from '../lib/connection_id';
@@ -130,7 +127,7 @@ function registerProcedure<
     sourceName: exportName,
     params: paramsType,
     returnType,
-    declaredVisibility: declaredVisibility(opts?.visibility),
+    visibility: rawVisibility(opts?.visibility),
   });
 
   if (opts?.name != null) {

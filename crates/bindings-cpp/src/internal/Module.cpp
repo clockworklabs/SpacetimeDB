@@ -5,7 +5,7 @@
 #include "spacetimedb/internal/Module.h"
 #include "spacetimedb/internal/buffer_pool.h"
 #include "spacetimedb/internal/autogen/RawModuleDef.g.h"
-#include "spacetimedb/internal/autogen/RawModuleDefV11.g.h"
+#include "spacetimedb/internal/autogen/RawModuleDefV10.g.h"
 #include "spacetimedb/internal/autogen/RawTypeDefV10.g.h"
 #include "spacetimedb/internal/v9_builder.h"
 #include "spacetimedb/internal/v10_builder.h"
@@ -373,9 +373,9 @@ void __preinit__99_validate_types() {
 
 
 std::vector<uint8_t> Internal::Module::SerializeModuleDef() {
-    RawModuleDefV11 v11_module = getV10Builder().BuildModuleDef();
+    RawModuleDefV10 v10_module = getV10Builder().BuildModuleDef();
     RawModuleDef versioned_module;
-    versioned_module.set<3>(std::move(v11_module));
+    versioned_module.set<2>(std::move(v10_module));
 
     std::vector<uint8_t> buffer;
     bsatn::Writer writer(buffer);
@@ -383,7 +383,7 @@ std::vector<uint8_t> Internal::Module::SerializeModuleDef() {
     return buffer;
 }
 
-// FFI export - V11 serialization
+// FFI export - V10 serialization
 void Internal::Module::__describe_module__(BytesSink sink) {
     // The preinit functions should have already been called by SpacetimeDB
     // Including our validation preinit which checks for recursive types

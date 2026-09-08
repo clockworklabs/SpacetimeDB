@@ -45,15 +45,15 @@ fn concrete_module_actions_preserve_wire_tags_and_export_distinct_names() {
     expected.extend(bsatn::to_vec(&module).unwrap());
     assert_eq!(bsatn::to_vec(&ModuleAction::Set(module)).unwrap(), expected);
 
-    use crate::db::raw_def::v11::{RawModuleDefV11Builder, RawModuleDefV11Section};
-    let mut builder = RawModuleDefV11Builder::new();
+    use crate::db::raw_def::v10::{RawModuleDefV10Builder, RawModuleDefV10Section};
+    let mut builder = RawModuleDefV10Builder::new();
     builder.add_type::<PublishEnvelope>();
     let raw = builder.finish();
     let names: Vec<_> = raw
         .sections
         .iter()
         .filter_map(|section| match section {
-            RawModuleDefV11Section::Types(types) => Some(types),
+            RawModuleDefV10Section::Types(types) => Some(types),
             _ => None,
         })
         .flatten()

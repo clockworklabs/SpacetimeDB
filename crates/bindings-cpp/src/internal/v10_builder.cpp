@@ -2,10 +2,10 @@
 #include "spacetimedb/internal/autogen/AlgebraicType.g.h"
 #include "spacetimedb/internal/autogen/ProductType.g.h"
 #include "spacetimedb/internal/autogen/ProductTypeElement.g.h"
-#include "spacetimedb/internal/autogen/RawModuleDefV11Section.g.h"
+#include "spacetimedb/internal/autogen/RawModuleDefV10Section.g.h"
 #include "spacetimedb/internal/autogen/RawTypeDefV10.g.h"
 #include "spacetimedb/internal/autogen/RawScopedTypeNameV10.g.h"
-#include "spacetimedb/internal/autogen/FunctionVisibilityV11.g.h"
+#include "spacetimedb/internal/autogen/FunctionVisibility.g.h"
 #include "spacetimedb/internal/autogen/ExplicitNames.g.h"
 #include "spacetimedb/router.h"
 #include <algorithm>
@@ -120,7 +120,7 @@ void V10Builder::UpsertLifecycleReducer(const RawLifeCycleReducerDefV10& lifecyc
     }
 }
 
-void V10Builder::UpsertReducer(const RawReducerDefV11& reducer) {
+void V10Builder::UpsertReducer(const RawReducerDefV10& reducer) {
     auto it = std::find_if(reducers_.begin(), reducers_.end(), [&](const auto& existing) {
         return existing.source_name == reducer.source_name;
     });
@@ -131,7 +131,7 @@ void V10Builder::UpsertReducer(const RawReducerDefV11& reducer) {
     }
 }
 
-void V10Builder::UpsertProcedure(const RawProcedureDefV11& procedure) {
+void V10Builder::UpsertProcedure(const RawProcedureDefV10& procedure) {
     auto it = std::find_if(procedures_.begin(), procedures_.end(), [&](const auto& existing) {
         return existing.source_name == procedure.source_name;
     });
@@ -210,107 +210,107 @@ RawConstraintDefV10 V10Builder::CreateUniqueConstraint(const std::string& table_
 }
 
 void V10Builder::SetFunctionVisibility(const std::string& name, ::SpacetimeDB::FunctionVisibility visibility) {
-    FunctionVisibilityV11 declared;
+    FunctionVisibility declared;
     switch (visibility) {
-        case ::SpacetimeDB::FunctionVisibility::Public: declared = FunctionVisibilityV11::ClientCallable; break;
-        case ::SpacetimeDB::FunctionVisibility::Private: declared = FunctionVisibilityV11::Private; break;
-        case ::SpacetimeDB::FunctionVisibility::Internal: declared = FunctionVisibilityV11::Internal; break;
+        case ::SpacetimeDB::FunctionVisibility::Public: declared = FunctionVisibility::ExplicitClientCallable; break;
+        case ::SpacetimeDB::FunctionVisibility::Private: declared = FunctionVisibility::Private; break;
+        case ::SpacetimeDB::FunctionVisibility::Internal: declared = FunctionVisibility::Internal; break;
         default:
             SetConstraintRegistrationError("INVALID_FUNCTION_VISIBILITY", "function='" + name + "'");
             return;
     }
     for (const auto& lifecycle : lifecycle_reducers_) {
-        if (lifecycle.function_name == name && declared != FunctionVisibilityV11::Internal) {
+        if (lifecycle.function_name == name && declared != FunctionVisibility::Internal) {
             SetConstraintRegistrationError("INVALID_LIFECYCLE_VISIBILITY", "function='" + name + "' must be Internal");
             return;
         }
     }
     for (auto& reducer : reducers_) {
-        if (reducer.source_name == name) { reducer.declared_visibility = declared; return; }
+        if (reducer.source_name == name) { reducer.visibility = declared; return; }
     }
     for (auto& procedure : procedures_) {
-        if (procedure.source_name == name) { procedure.declared_visibility = declared; return; }
+        if (procedure.source_name == name) { procedure.visibility = declared; return; }
     }
     SetConstraintRegistrationError("UNKNOWN_FUNCTION_VISIBILITY", "function='" + name + "' is not a reducer or procedure");
 }
 
-RawModuleDefV11 V10Builder::BuildModuleDef() const {
-    RawModuleDefV11 v11_module;
+RawModuleDefV10 V10Builder::BuildModuleDef() const {
+    RawModuleDefV10 v10_module;
 
     std::vector<RawTypeDefV10> types = types_;
 
-    std::vector<RawReducerDefV11> reducers = reducers_;
-    std::vector<RawProcedureDefV11> procedures = procedures_;
+    std::vector<RawReducerDefV10> reducers = reducers_;
+    std::vector<RawProcedureDefV10> procedures = procedures_;
 
-    RawModuleDefV11Section section_typespace;
+    RawModuleDefV10Section section_typespace;
     section_typespace.set<0>(typespace_);
-    v11_module.sections.push_back(section_typespace);
-    RawModuleDefV11Section capabilities;
+    v10_module.sections.push_back(section_typespace);
+    RawModuleDefV10Section capabilities;
     capabilities.set<13>(std::vector<std::string>{"hosted_auth_v1"});
-    v11_module.sections.push_back(std::move(capabilities));
+    v10_module.sections.push_back(std::move(capabilities));
 
     if (!types.empty()) {
-        RawModuleDefV11Section section_types;
+        RawModuleDefV10Section section_types;
         section_types.set<1>(std::move(types));
-        v11_module.sections.push_back(std::move(section_types));
+        v10_module.sections.push_back(std::move(section_types));
     }
     if (!tables_.empty()) {
-        RawModuleDefV11Section section_tables;
+        RawModuleDefV10Section section_tables;
         section_tables.set<2>(tables_);
-        v11_module.sections.push_back(std::move(section_tables));
+        v10_module.sections.push_back(std::move(section_tables));
     }
     if (!reducers.empty()) {
-        RawModuleDefV11Section section_reducers;
+        RawModuleDefV10Section section_reducers;
         section_reducers.set<3>(std::move(reducers));
-        v11_module.sections.push_back(std::move(section_reducers));
+        v10_module.sections.push_back(std::move(section_reducers));
     }
     if (!procedures.empty()) {
-        RawModuleDefV11Section section_procedures;
+        RawModuleDefV10Section section_procedures;
         section_procedures.set<4>(std::move(procedures));
-        v11_module.sections.push_back(std::move(section_procedures));
+        v10_module.sections.push_back(std::move(section_procedures));
     }
     if (!views_.empty()) {
-        RawModuleDefV11Section section_views;
+        RawModuleDefV10Section section_views;
         section_views.set<5>(views_);
-        v11_module.sections.push_back(std::move(section_views));
+        v10_module.sections.push_back(std::move(section_views));
     }
     if (!schedules_.empty()) {
-        RawModuleDefV11Section section_schedules;
+        RawModuleDefV10Section section_schedules;
         section_schedules.set<6>(schedules_);
-        v11_module.sections.push_back(std::move(section_schedules));
+        v10_module.sections.push_back(std::move(section_schedules));
     }
     if (!lifecycle_reducers_.empty()) {
-        RawModuleDefV11Section section_lifecycle;
+        RawModuleDefV10Section section_lifecycle;
         section_lifecycle.set<7>(lifecycle_reducers_);
-        v11_module.sections.push_back(std::move(section_lifecycle));
+        v10_module.sections.push_back(std::move(section_lifecycle));
     }
     if (case_conversion_policy_.has_value()) {
-        RawModuleDefV11Section section_case_policy;
+        RawModuleDefV10Section section_case_policy;
         section_case_policy.set<9>(case_conversion_policy_.value());
-        v11_module.sections.push_back(std::move(section_case_policy));
+        v10_module.sections.push_back(std::move(section_case_policy));
     }
     if (!explicit_names_.empty()) {
-        RawModuleDefV11Section section_explicit_names;
+        RawModuleDefV10Section section_explicit_names;
         section_explicit_names.set<10>(ExplicitNames{explicit_names_});
-        v11_module.sections.push_back(std::move(section_explicit_names));
+        v10_module.sections.push_back(std::move(section_explicit_names));
     }
     if (!http_handlers_.empty()) {
-        RawModuleDefV11Section section_http_handlers;
+        RawModuleDefV10Section section_http_handlers;
         section_http_handlers.set<11>(http_handlers_);
-        v11_module.sections.push_back(std::move(section_http_handlers));
+        v10_module.sections.push_back(std::move(section_http_handlers));
     }
     if (!http_routes_.empty()) {
-        RawModuleDefV11Section section_http_routes;
+        RawModuleDefV10Section section_http_routes;
         section_http_routes.set<12>(http_routes_);
-        v11_module.sections.push_back(std::move(section_http_routes));
+        v10_module.sections.push_back(std::move(section_http_routes));
     }
     if (!row_level_security_.empty()) {
-        RawModuleDefV11Section section_rls;
+        RawModuleDefV10Section section_rls;
         section_rls.set<8>(row_level_security_);
-        v11_module.sections.push_back(std::move(section_rls));
+        v10_module.sections.push_back(std::move(section_rls));
     }
 
-    return v11_module;
+    return v10_module;
 }
 
 } // namespace Internal

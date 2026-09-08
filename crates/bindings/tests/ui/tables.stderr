@@ -210,7 +210,7 @@ error[E0277]: `&'a Alpha` cannot appear as an argument to an index filtering ope
    = help: the following other types implement trait `FilterableValue`:
              &ConnectionId
              &ContainerMode
-             &FunctionVisibilityV11
+             &FunctionVisibility
              &Identity
              &Lifecycle
              &PortExposure
@@ -242,7 +242,7 @@ help: the trait `FilterableValue` is not implemented for `Alpha`
    = help: the following other types implement trait `FilterableValue`:
              &ConnectionId
              &ContainerMode
-             &FunctionVisibilityV11
+             &FunctionVisibility
              &Identity
              &Lifecycle
              &PortExposure

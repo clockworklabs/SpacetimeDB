@@ -383,7 +383,7 @@ class ModuleHooksImpl implements ModuleHooks {
     const writer = new BinaryWriter(128);
     RawModuleDef.serialize(
       writer,
-      RawModuleDef.V11(this.#schema.rawModuleDefV11())
+      RawModuleDef.V10(this.#schema.rawModuleDefV10())
     );
     return writer.getBuffer();
   }

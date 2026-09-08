@@ -42,7 +42,6 @@ use spacetimedb_client_api_messages::name::{
     PrePublishResult, PrettyPrintStyle, PublishOp, PublishResult,
 };
 use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
-use spacetimedb_lib::db::raw_def::v11::RawModuleDefV11;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::http as st_http;
 use spacetimedb_lib::{sats, AlgebraicValue, Hash, ProductValue, Timestamp};
@@ -530,8 +529,6 @@ enum SchemaVersion {
     V9,
     #[serde(rename = "10")]
     V10,
-    #[serde(rename = "11")]
-    V11,
 }
 
 pub async fn schema<S>(
@@ -560,12 +557,7 @@ where
             axum::Json(sats::serde::SerdeWrapper(raw)).into_response()
         }
         SchemaVersion::V10 => {
-            let raw = RawModuleDefV10::try_from(module_def.as_ref().clone())
-                .map_err(|err| bad_request(err.to_string().into()))?;
-            axum::Json(sats::serde::SerdeWrapper(raw)).into_response()
-        }
-        SchemaVersion::V11 => {
-            let raw = RawModuleDefV11::from(module_def.as_ref().clone());
+            let raw = RawModuleDefV10::from(module_def.as_ref().clone());
             axum::Json(sats::serde::SerdeWrapper(raw)).into_response()
         }
     };

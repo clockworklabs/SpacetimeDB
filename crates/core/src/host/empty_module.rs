@@ -1,7 +1,7 @@
 //! Versioned built-in module for a database published with only a container.
 //!
 //! This is a real Wasm program, not an empty byte string. It declares an empty
-//! V11 user schema and hosted_auth_v1, so normal database initialization, system
+//! V10 user schema and hosted_auth_v1, so normal database initialization, system
 //! tables, subscriptions, and later migration use the existing host machinery.
 //! Its required reducer ABI entry point traps because no reducer is declared.
 //!

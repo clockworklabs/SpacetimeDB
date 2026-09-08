@@ -7,8 +7,8 @@ import {
 } from './algebraic_type';
 import type {
   CaseConversionPolicy,
-  RawModuleDefV11,
-  RawModuleDefV11Section,
+  RawModuleDefV10,
+  RawModuleDefV10Section,
   RawScopedTypeNameV10,
   RawTableDefV10,
 } from './autogen/types';
@@ -174,10 +174,10 @@ type CompoundTypeCache = Map<
 >;
 
 export type ModuleDef = {
-  [S in RawModuleDefV11Section as Uncapitalize<S['tag']>]: S['value'];
+  [S in RawModuleDefV10Section as Uncapitalize<S['tag']>]: S['value'];
 };
 
-type Section = RawModuleDefV11Section;
+type Section = RawModuleDefV10Section;
 
 export class ModuleContext {
   #compoundTypes: CompoundTypeCache = new Map();
@@ -208,7 +208,7 @@ export class ModuleContext {
     return this.#moduleDef;
   }
 
-  rawModuleDefV11(): RawModuleDefV11 {
+  rawModuleDefV10(): RawModuleDefV10 {
     const sections: Section[] = [];
 
     const push = <T extends Section>(s: T | undefined) => {

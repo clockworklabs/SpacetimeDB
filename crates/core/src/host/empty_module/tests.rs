@@ -2,17 +2,17 @@ use super::*;
 use crate::{host::extract_schema, messages::control_db::HostType};
 use spacetimedb_lib::{
     bsatn,
-    db::raw_def::v11::{RawModuleDefV11, RawModuleDefV11Section},
+    db::raw_def::v10::{RawModuleDefV10, RawModuleDefV10Section},
     RawModuleDef,
 };
 use spacetimedb_schema::def::RawModuleDefVersion;
 
 #[test]
-fn bundled_bytes_match_current_v11_schema_wire_format() {
-    let expected = RawModuleDef::V11(RawModuleDefV11 {
+fn bundled_bytes_match_current_v10_schema_wire_format() {
+    let expected = RawModuleDef::V10(RawModuleDefV10 {
         sections: vec![
-            RawModuleDefV11Section::Typespace(Default::default()),
-            RawModuleDefV11Section::Capabilities(vec!["hosted_auth_v1".into()]),
+            RawModuleDefV10Section::Typespace(Default::default()),
+            RawModuleDefV10Section::Capabilities(vec!["hosted_auth_v1".into()]),
         ],
     });
     assert_eq!(bsatn::to_vec(&expected).unwrap(), include_bytes!("v1.schema.bsatn"));
@@ -42,11 +42,11 @@ fn recognition_requires_exact_version_kind_hash_and_bytes() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn actual_wasm_host_loads_the_bundled_empty_v11_schema() {
+async fn actual_wasm_host_loads_the_bundled_empty_v10_schema() {
     let module = extract_schema(program(VERSION_1).unwrap().bytes, HostType::Wasm)
         .await
         .unwrap();
-    assert_eq!(module.raw_module_def_version(), RawModuleDefVersion::V11);
+    assert_eq!(module.raw_module_def_version(), RawModuleDefVersion::V10);
     assert!(module.supports_hosted_auth_v1());
     assert!(module.tables().next().is_none());
     assert!(module.reducers().next().is_none());

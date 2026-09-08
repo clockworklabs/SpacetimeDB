@@ -21,11 +21,11 @@
 #include "autogen/SumType.g.h"
 #include "autogen/ProductType.g.h"
 #include "autogen/ProductTypeElement.g.h"
-#include "autogen/RawModuleDefV11.g.h"
+#include "autogen/RawModuleDefV10.g.h"
 #include "autogen/Typespace.g.h"
 #include "autogen/RawTableDefV10.g.h"
-#include "autogen/RawReducerDefV11.g.h"
-#include "autogen/RawProcedureDefV11.g.h"
+#include "autogen/RawReducerDefV10.g.h"
+#include "autogen/RawProcedureDefV10.g.h"
 #include "autogen/RawViewDefV10.g.h"
 #include "autogen/RawScheduleDefV10.g.h"
 #include "autogen/RawLifeCycleReducerDefV10.g.h"
@@ -48,7 +48,7 @@ void fail_reducer(std::string message);
 
 namespace Internal {
 
-// The historical facade name is retained; newly compiled modules serialize V11.
+// Builds the V10 module definition with explicit function visibility.
 class V10Builder {
 public:
     V10Builder() = default;
@@ -384,10 +384,10 @@ public:
             }(std::make_index_sequence<traits::arity - 1>{}, params, param_names, type_reg);
         }
 
-        RawReducerDefV11 reducer_def{
+        RawReducerDefV10 reducer_def{
             reducer_name,
             std::move(params),
-            std::nullopt,
+            FunctionVisibility::ClientCallable,
             MakeUnitAlgebraicType(),
             MakeStringAlgebraicType(),
         };
@@ -434,10 +434,10 @@ public:
         }
         RegisterReducerHandler(reducer_name, handler, lifecycle);
 
-        RawReducerDefV11 reducer_def{
+        RawReducerDefV10 reducer_def{
             reducer_name,
             ProductType{},
-            std::nullopt,
+            FunctionVisibility::Internal,
             MakeUnitAlgebraicType(),
             MakeStringAlgebraicType(),
         };
@@ -581,11 +581,11 @@ public:
             }(std::make_index_sequence<traits::arity - 1>{}, params, param_names, type_reg);
         }
 
-        RawProcedureDefV11 procedure_def{
+        RawProcedureDefV10 procedure_def{
             procedure_name,
             std::move(params),
-            std::nullopt,
             return_type,
+            FunctionVisibility::ClientCallable,
         };
         UpsertProcedure(procedure_def);
     }
@@ -628,15 +628,15 @@ public:
     void SetFunctionVisibility(const std::string& source_name, ::SpacetimeDB::FunctionVisibility visibility);
     void RegisterExplicitIndexName(const std::string& source_name, const std::string& canonical_name);
 
-    RawModuleDefV11 BuildModuleDef() const;
+    RawModuleDefV10 BuildModuleDef() const;
     Typespace& GetTypespace() { return typespace_; }
     const Typespace& GetTypespace() const { return typespace_; }
     std::vector<RawTypeDefV10>& GetTypeDefs() { return types_; }
     const std::vector<RawTypeDefV10>& GetTypeDefs() const { return types_; }
     std::vector<RawTableDefV10>& GetTables() { return tables_; }
     const std::vector<RawTableDefV10>& GetTables() const { return tables_; }
-    std::vector<RawReducerDefV11>& GetReducers() { return reducers_; }
-    const std::vector<RawReducerDefV11>& GetReducers() const { return reducers_; }
+    std::vector<RawReducerDefV10>& GetReducers() { return reducers_; }
+    const std::vector<RawReducerDefV10>& GetReducers() const { return reducers_; }
     const std::optional<CaseConversionPolicy>& GetCaseConversionPolicy() const { return case_conversion_policy_; }
     const std::vector<ExplicitNameEntry>& GetExplicitNames() const { return explicit_names_; }
     const std::vector<RawHttpHandlerDefV10>& GetHttpHandlers() const { return http_handlers_; }
@@ -648,8 +648,8 @@ private:
     }
     void UpsertTable(const RawTableDefV10& table);
     void UpsertLifecycleReducer(const RawLifeCycleReducerDefV10& lifecycle);
-    void UpsertReducer(const RawReducerDefV11& reducer);
-    void UpsertProcedure(const RawProcedureDefV11& procedure);
+    void UpsertReducer(const RawReducerDefV10& reducer);
+    void UpsertProcedure(const RawProcedureDefV10& procedure);
     void UpsertView(const RawViewDefV10& view);
     void UpsertHttpHandler(const RawHttpHandlerDefV10& handler);
     RawIndexDefV10 CreateBTreeIndex(const std::string& table_name,
@@ -667,8 +667,8 @@ private:
     std::vector<ExplicitNameEntry> explicit_names_;
     std::unordered_map<std::string, std::vector<RawColumnDefaultValueV10>> column_defaults_by_table_;
     std::vector<RawTableDefV10> tables_;
-    std::vector<RawReducerDefV11> reducers_;
-    std::vector<RawProcedureDefV11> procedures_;
+    std::vector<RawReducerDefV10> reducers_;
+    std::vector<RawProcedureDefV10> procedures_;
     std::vector<RawViewDefV10> views_;
     std::vector<RawHttpHandlerDefV10> http_handlers_;
     std::vector<RawHttpRouteDefV10> http_routes_;

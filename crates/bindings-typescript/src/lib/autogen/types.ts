@@ -76,16 +76,10 @@ export type ExplicitNames = __Infer<typeof ExplicitNames>;
 export const FunctionVisibility = __t.enum('FunctionVisibility', {
   Private: __t.unit(),
   ClientCallable: __t.unit(),
+  Internal: __t.unit(),
+  ExplicitClientCallable: __t.unit(),
 });
 export type FunctionVisibility = __Infer<typeof FunctionVisibility>;
-
-// The tagged union or sum type for the algebraic type `FunctionVisibilityV11`.
-export const FunctionVisibilityV11 = __t.enum('FunctionVisibilityV11', {
-  Private: __t.unit(),
-  ClientCallable: __t.unit(),
-  Internal: __t.unit(),
-});
-export type FunctionVisibilityV11 = __Infer<typeof FunctionVisibilityV11>;
 
 export const HttpHeaderPair = __t.object('HttpHeaderPair', {
   name: __t.string(),
@@ -344,9 +338,6 @@ export const RawModuleDef = __t.enum('RawModuleDef', {
   get V10() {
     return RawModuleDefV10;
   },
-  get V11() {
-    return RawModuleDefV11;
-  },
 });
 export type RawModuleDef = __Infer<typeof RawModuleDef>;
 
@@ -398,60 +389,9 @@ export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
   get HttpRoutes() {
     return __t.array(RawHttpRouteDefV10);
   },
-});
-export type RawModuleDefV10Section = __Infer<typeof RawModuleDefV10Section>;
-
-export const RawModuleDefV11 = __t.object('RawModuleDefV11', {
-  get sections() {
-    return __t.array(RawModuleDefV11Section);
-  },
-});
-export type RawModuleDefV11 = __Infer<typeof RawModuleDefV11>;
-
-// The tagged union or sum type for the algebraic type `RawModuleDefV11Section`.
-export const RawModuleDefV11Section = __t.enum('RawModuleDefV11Section', {
-  get Typespace() {
-    return Typespace;
-  },
-  get Types() {
-    return __t.array(RawTypeDefV10);
-  },
-  get Tables() {
-    return __t.array(RawTableDefV10);
-  },
-  get Reducers() {
-    return __t.array(RawReducerDefV11);
-  },
-  get Procedures() {
-    return __t.array(RawProcedureDefV11);
-  },
-  get Views() {
-    return __t.array(RawViewDefV10);
-  },
-  get Schedules() {
-    return __t.array(RawScheduleDefV10);
-  },
-  get LifeCycleReducers() {
-    return __t.array(RawLifeCycleReducerDefV10);
-  },
-  get RowLevelSecurity() {
-    return __t.array(RawRowLevelSecurityDefV9);
-  },
-  get CaseConversionPolicy() {
-    return CaseConversionPolicy;
-  },
-  get ExplicitNames() {
-    return ExplicitNames;
-  },
-  get HttpHandlers() {
-    return __t.array(RawHttpHandlerDefV10);
-  },
-  get HttpRoutes() {
-    return __t.array(RawHttpRouteDefV10);
-  },
   Capabilities: __t.array(__t.string()),
 });
-export type RawModuleDefV11Section = __Infer<typeof RawModuleDefV11Section>;
+export type RawModuleDefV10Section = __Infer<typeof RawModuleDefV10Section>;
 
 export const RawModuleDefV8 = __t.object('RawModuleDefV8', {
   get typespace() {
@@ -505,20 +445,6 @@ export const RawProcedureDefV10 = __t.object('RawProcedureDefV10', {
 });
 export type RawProcedureDefV10 = __Infer<typeof RawProcedureDefV10>;
 
-export const RawProcedureDefV11 = __t.object('RawProcedureDefV11', {
-  sourceName: __t.string(),
-  get params() {
-    return ProductType;
-  },
-  get declaredVisibility() {
-    return __t.option(FunctionVisibilityV11);
-  },
-  get returnType() {
-    return AlgebraicType;
-  },
-});
-export type RawProcedureDefV11 = __Infer<typeof RawProcedureDefV11>;
-
 export const RawProcedureDefV9 = __t.object('RawProcedureDefV9', {
   name: __t.string(),
   get params() {
@@ -546,23 +472,6 @@ export const RawReducerDefV10 = __t.object('RawReducerDefV10', {
   },
 });
 export type RawReducerDefV10 = __Infer<typeof RawReducerDefV10>;
-
-export const RawReducerDefV11 = __t.object('RawReducerDefV11', {
-  sourceName: __t.string(),
-  get params() {
-    return ProductType;
-  },
-  get declaredVisibility() {
-    return __t.option(FunctionVisibilityV11);
-  },
-  get okReturnType() {
-    return AlgebraicType;
-  },
-  get errReturnType() {
-    return AlgebraicType;
-  },
-});
-export type RawReducerDefV11 = __Infer<typeof RawReducerDefV11>;
 
 export const RawReducerDefV9 = __t.object('RawReducerDefV9', {
   name: __t.string(),

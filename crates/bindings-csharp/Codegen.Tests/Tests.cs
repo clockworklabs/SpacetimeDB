@@ -380,17 +380,11 @@ public static class GeneratorSnapshotTests
         Assert.Empty(GetCompilationErrors(compilation.AddSyntaxTrees(result.GeneratedTrees)));
         var generated = string.Join("\n", result.GeneratedTrees.Select(t => t.ToString()));
         Assert.Contains(
-            "DeclaredVisibility: SpacetimeDB.Internal.FunctionVisibilityV11.ClientCallable",
+            "Visibility: SpacetimeDB.Internal.FunctionVisibility.ExplicitClientCallable",
             generated
         );
-        Assert.Contains(
-            "DeclaredVisibility: SpacetimeDB.Internal.FunctionVisibilityV11.Private",
-            generated
-        );
-        Assert.Contains(
-            "DeclaredVisibility: SpacetimeDB.Internal.FunctionVisibilityV11.Internal",
-            generated
-        );
+        Assert.Contains("Visibility: SpacetimeDB.Internal.FunctionVisibility.Private", generated);
+        Assert.Contains("Visibility: SpacetimeDB.Internal.FunctionVisibility.Internal", generated);
 
         var invalid = CSharpSyntaxTree.ParseText(
             """

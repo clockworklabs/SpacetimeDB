@@ -6,14 +6,28 @@ using SpacetimeDB.Internal;
 public class FunctionVisibilityTests
 {
     [Theory]
-    [InlineData(null)]
-    [InlineData(FunctionVisibilityV11.ClientCallable)]
-    [InlineData(FunctionVisibilityV11.Private)]
-    [InlineData(FunctionVisibilityV11.Internal)]
-    public void SchedulingPreservesDeclaredVisibility(FunctionVisibilityV11? visibility)
+    [InlineData(FunctionVisibility.Private, 0)]
+    [InlineData(FunctionVisibility.ClientCallable, 1)]
+    [InlineData(FunctionVisibility.Internal, 2)]
+    [InlineData(FunctionVisibility.ExplicitClientCallable, 3)]
+    public void V10RetainsVisibilityEnumEncoding(FunctionVisibility visibility, byte tag)
     {
-        var module = new RawModuleDefV11();
-        var reducer = new RawReducerDefV11(
+        var bytes = IStructuralReadWrite.ToBytes(
+            new SpacetimeDB.BSATN.Enum<FunctionVisibility>(),
+            visibility
+        );
+        Assert.Equal(new byte[] { tag }, bytes);
+    }
+
+    [Theory]
+    [InlineData(FunctionVisibility.ExplicitClientCallable)]
+    [InlineData(FunctionVisibility.ClientCallable)]
+    [InlineData(FunctionVisibility.Private)]
+    [InlineData(FunctionVisibility.Internal)]
+    public void SchedulingPreservesVisibility(FunctionVisibility visibility)
+    {
+        var module = new RawModuleDefV10();
+        var reducer = new RawReducerDefV10(
             "run_job",
             [],
             visibility,
@@ -26,21 +40,21 @@ public class FunctionVisibilityTests
             new RawScheduleDefV10(null, "jobs", 0, "run_job")
         );
         var raw = module.BuildModuleDefinition();
-        var reducers = Assert.Single(raw.Sections.OfType<RawModuleDefV11Section.Reducers>());
-        Assert.Equal(visibility, Assert.Single(reducers.Reducers_).DeclaredVisibility);
+        var reducers = Assert.Single(raw.Sections.OfType<RawModuleDefV10Section.Reducers>());
+        Assert.Equal(visibility, Assert.Single(reducers.Reducers_).Visibility);
         var capabilities = Assert.Single(
-            raw.Sections.OfType<RawModuleDefV11Section.Capabilities>()
+            raw.Sections.OfType<RawModuleDefV10Section.Capabilities>()
         );
         Assert.Contains("hosted_auth_v1", capabilities.Capabilities_);
     }
 
     [Theory]
-    [InlineData(FunctionVisibilityV11.ClientCallable)]
-    [InlineData(FunctionVisibilityV11.Private)]
-    public void LifecycleRejectsExternalVisibility(FunctionVisibilityV11 visibility)
+    [InlineData(FunctionVisibility.ClientCallable)]
+    [InlineData(FunctionVisibility.ExplicitClientCallable)]
+    public void LifecycleRejectsExternalVisibility(FunctionVisibility visibility)
     {
-        var module = new RawModuleDefV11();
-        var reducer = new RawReducerDefV11(
+        var module = new RawModuleDefV10();
+        var reducer = new RawReducerDefV10(
             "initialize",
             [],
             visibility,

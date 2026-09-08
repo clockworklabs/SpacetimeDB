@@ -71,9 +71,50 @@ impl From<CaseConversionPolicy> for ValidationCase {
         }
     }
 }
-/// Validate a `RawModuleDefV9` and convert it into a `ModuleDef`,
+/// Validate a `RawModuleDefV10` and convert it into a `ModuleDef`,
 /// or return a stream of errors if the definition is invalid.
 pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
+    let mut seen_capabilities = false;
+    let mut capabilities = std::collections::BTreeSet::new();
+    for section in &def.sections {
+        if let RawModuleDefV10Section::Capabilities(names) = section {
+            if seen_capabilities {
+                return Err(ValidationError::DuplicateModuleSection {
+                    section: "Capabilities".into(),
+                }
+                .into());
+            }
+            seen_capabilities = true;
+            if names.len() > 32 {
+                return Err(ValidationError::InvalidModuleCapabilities.into());
+            }
+            for name in names {
+                if name.is_empty()
+                    || name.len() > 64
+                    || !name
+                        .bytes()
+                        .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+                    || !capabilities.insert(name.clone())
+                {
+                    return Err(ValidationError::InvalidModuleCapabilities.into());
+                }
+            }
+        }
+    }
+    // Retain the raw distinction until schedules are attached. Tag 1 has the
+    // historical contextual default; tag 3 is an explicit public declaration.
+    let raw_visibility: HashMap<_, _> = def
+        .reducers()
+        .into_iter()
+        .flatten()
+        .map(|function| (function.source_name.clone(), function.visibility))
+        .chain(
+            def.procedures()
+                .into_iter()
+                .flatten()
+                .map(|function| (function.source_name.clone(), function.visibility)),
+        )
+        .collect();
     let mut typespace = def.typespace().cloned().unwrap_or_else(|| Typespace::EMPTY.clone());
     let known_type_definitions = def.types().into_iter().flatten().map(|def| def.ty);
     let case_policy = def.case_conversion_policy().into();
@@ -270,7 +311,12 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 attach_schedules_to_tables(&mut tables, schedules)?;
 
                 check_scheduled_functions_exist(&mut tables, &reducers, &procedures)?;
-                change_scheduled_functions_and_lifetimes_visibility(&tables, &mut reducers, &mut procedures)?;
+                change_scheduled_functions_and_lifetimes_visibility(
+                    &tables,
+                    &mut reducers,
+                    &mut procedures,
+                    &raw_visibility,
+                )?;
                 assign_query_view_primary_keys(&tables, &mut views);
 
                 Ok((tables, types, reducers, procedures, views, http_handlers_and_routes))
@@ -315,17 +361,18 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         procedures,
         http_handlers,
         http_routes,
-        capabilities: Default::default(),
+        capabilities,
         raw_module_def_version: RawModuleDefVersion::V10,
     })
 }
 
-/// Change the visibility of scheduled functions and lifecycle reducers to Internal.
-///
+/// Apply historical schedule defaults only to the original ClientCallable tag.
+/// Lifecycle reducers always retain their separate host-event restriction.
 fn change_scheduled_functions_and_lifetimes_visibility(
     tables: &HashMap<Identifier, TableDef>,
     reducers: &mut IndexMap<Identifier, ReducerDef>,
     procedures: &mut IndexMap<Identifier, ProcedureDef>,
+    raw_visibility: &HashMap<RawIdentifier, RawFunctionVisibility>,
 ) -> Result<()> {
     for sched_def in tables.iter().filter_map(|(_, t)| t.schedule.as_ref()) {
         match sched_def.function_kind {
@@ -337,7 +384,12 @@ fn change_scheduled_functions_and_lifetimes_visibility(
                     }
                 })?;
 
-                def.visibility = crate::def::FunctionVisibility::Private;
+                if matches!(
+                    raw_visibility.get(&RawIdentifier::from(def.accessor_name.clone())),
+                    Some(RawFunctionVisibility::ClientCallable)
+                ) {
+                    def.visibility = crate::def::FunctionVisibility::Private;
+                }
             }
 
             FunctionKind::Procedure => {
@@ -348,7 +400,12 @@ fn change_scheduled_functions_and_lifetimes_visibility(
                     }
                 })?;
 
-                def.visibility = crate::def::FunctionVisibility::Private;
+                if matches!(
+                    raw_visibility.get(&RawIdentifier::from(def.accessor_name.clone())),
+                    Some(RawFunctionVisibility::ClientCallable)
+                ) {
+                    def.visibility = crate::def::FunctionVisibility::Private;
+                }
             }
 
             FunctionKind::Unknown => {}
@@ -357,6 +414,15 @@ fn change_scheduled_functions_and_lifetimes_visibility(
 
     for red_def in reducers.iter_mut().map(|(_, r)| r) {
         if red_def.lifecycle.is_some() {
+            if matches!(
+                raw_visibility.get(&RawIdentifier::from(red_def.accessor_name.clone())),
+                Some(RawFunctionVisibility::ExplicitClientCallable)
+            ) {
+                return Err(ValidationError::InvalidLifecycleVisibility {
+                    function: red_def.accessor_name.clone().into(),
+                }
+                .into());
+            }
             red_def.visibility = crate::def::FunctionVisibility::Internal;
         }
     }
@@ -2426,5 +2492,279 @@ mod tests {
         assert_eq!(view.accessor_name, id("PersonAtLevel2"));
         assert_eq!(view.return_columns[0].view_name, id("Level2Person"));
         assert_eq!(view.param_columns[0].view_name, id("Level2Person"));
+    }
+}
+
+#[cfg(test)]
+mod visibility_tests {
+    use super::*;
+    use crate::def::FunctionVisibility;
+    use spacetimedb_lib::db::raw_def::v10;
+    use spacetimedb_lib::{db::raw_def::v9, RawModuleDef, ScheduleAt};
+    use spacetimedb_sats::{AlgebraicType, ProductType};
+    use v10::{FunctionVisibility as Declared, RawModuleDefV10Builder};
+
+    fn scheduled_module(visibility: Option<Declared>, procedure: bool) -> ModuleDef {
+        let mut builder = RawModuleDefV10Builder::new();
+        let at = builder.add_type::<ScheduleAt>();
+        let row = builder
+            .build_table_with_new_type(
+                "Jobs",
+                ProductType::from([("id", AlgebraicType::U64), ("at", at)]),
+                true,
+            )
+            .with_auto_inc_primary_key(0)
+            .with_index_no_accessor_name(v9::btree(0), "jobs_id_idx")
+            .finish();
+        let params = ProductType::from([("job", AlgebraicType::Ref(row))]);
+        if procedure {
+            builder.add_procedure_with_visibility("run_job", params, AlgebraicType::unit(), visibility);
+        } else {
+            builder.add_reducer_with_visibility("run_job", params, visibility);
+        }
+        builder.add_schedule("Jobs", 1, "run_job");
+        builder.finish().try_into().unwrap()
+    }
+
+    #[test]
+    fn explicit_scheduled_visibility_overrides_the_private_default() {
+        for procedure in [false, true] {
+            for (selection, expected) in [
+                (None, FunctionVisibility::Private),
+                (Some(Declared::Private), FunctionVisibility::Private),
+                (Some(Declared::Internal), FunctionVisibility::Internal),
+                (Some(Declared::ClientCallable), FunctionVisibility::ClientCallable),
+            ] {
+                let module = scheduled_module(selection, procedure);
+                let visibility = if procedure {
+                    &module.procedure("run_job").unwrap().visibility
+                } else {
+                    &module.reducer("run_job").unwrap().visibility
+                };
+                assert_eq!(visibility, &expected);
+                assert_eq!(module.raw_module_def_version(), RawModuleDefVersion::V10);
+            }
+        }
+    }
+
+    #[test]
+    fn ordinary_defaults_and_lifecycle_restrictions() {
+        let mut builder = RawModuleDefV10Builder::new();
+        builder.add_reducer("ordinary", ProductType::unit());
+        builder.add_procedure("ordinary_procedure", ProductType::unit(), AlgebraicType::unit());
+        builder.add_lifecycle_reducer(v9::Lifecycle::Init, "initialize", ProductType::unit());
+        let module: ModuleDef = builder.finish().try_into().unwrap();
+        assert!(module.reducer("ordinary").unwrap().visibility.is_client_callable());
+        assert!(module
+            .procedure("ordinary_procedure")
+            .unwrap()
+            .visibility
+            .is_client_callable());
+        assert!(module.reducer("initialize").unwrap().visibility.is_internal());
+        let exported: RawModuleDefV10 = module.into();
+        assert!(exported
+            .reducers()
+            .into_iter()
+            .flatten()
+            .all(|function| matches!(function.visibility, Declared::ClientCallable | Declared::Private)));
+        assert!(exported
+            .procedures()
+            .into_iter()
+            .flatten()
+            .all(|function| matches!(function.visibility, Declared::ClientCallable)));
+        for selection in [Declared::ClientCallable, Declared::ExplicitClientCallable] {
+            let mut builder = RawModuleDefV10Builder::new();
+            builder.add_lifecycle_reducer_with_visibility(
+                v9::Lifecycle::Init,
+                "initialize",
+                ProductType::unit(),
+                Some(selection),
+            );
+            assert!(ModuleDef::try_from(builder.finish())
+                .unwrap_err()
+                .to_string()
+                .contains("must have Internal visibility"));
+        }
+        let mut builder = RawModuleDefV10Builder::new();
+        builder.add_lifecycle_reducer_with_visibility(
+            v9::Lifecycle::Init,
+            "initialize",
+            ProductType::unit(),
+            Some(Declared::Internal),
+        );
+        assert!(ModuleDef::try_from(builder.finish()).is_ok());
+    }
+
+    #[test]
+    fn duplicate_definitions_sections_and_lifecycles_are_rejected() {
+        let mut builder = RawModuleDefV10Builder::new();
+        builder.add_reducer("same", ProductType::unit());
+        builder.add_procedure("same", ProductType::unit(), AlgebraicType::unit());
+        assert!(ModuleDef::try_from(builder.finish()).is_err());
+        let raw = v10::RawModuleDefV10 {
+            sections: vec![
+                v10::RawModuleDefV10Section::Capabilities(vec![]),
+                v10::RawModuleDefV10Section::Capabilities(vec![]),
+            ],
+        };
+        assert!(ModuleDef::try_from(raw)
+            .unwrap_err()
+            .to_string()
+            .contains("repeated V10 section"));
+        let mut builder = RawModuleDefV10Builder::new();
+        builder.add_lifecycle_reducer(v9::Lifecycle::Init, "a", ProductType::unit());
+        builder.add_lifecycle_reducer(v9::Lifecycle::Init, "b", ProductType::unit());
+        assert!(ModuleDef::try_from(builder.finish()).is_err());
+    }
+
+    #[test]
+    fn resolved_v10_roundtrips_without_reapplying_defaults_and_rejects_v9_exports() {
+        for procedure in [false, true] {
+            for selection in [
+                None,
+                Some(Declared::Private),
+                Some(Declared::Internal),
+                Some(Declared::ClientCallable),
+            ] {
+                let module = scheduled_module(selection, procedure);
+                assert!(v9::RawModuleDefV9::try_from(module.clone()).is_err());
+                let RawModuleDef::V10(raw) = module.clone().into_raw() else {
+                    panic!("lost source version")
+                };
+                if matches!(selection, Some(Declared::ClientCallable)) {
+                    assert!(raw
+                        .reducers()
+                        .into_iter()
+                        .flatten()
+                        .map(|function| &function.visibility)
+                        .chain(
+                            raw.procedures()
+                                .into_iter()
+                                .flatten()
+                                .map(|function| &function.visibility)
+                        )
+                        .all(|visibility| matches!(visibility, Declared::ExplicitClientCallable)));
+                }
+                let bytes = spacetimedb_lib::bsatn::to_vec(&RawModuleDef::V10(raw)).unwrap();
+                let roundtrip: RawModuleDef = spacetimedb_lib::bsatn::from_slice(&bytes).unwrap();
+                let roundtrip: ModuleDef = roundtrip.try_into().unwrap();
+                if procedure {
+                    assert_eq!(
+                        roundtrip.procedure("run_job").unwrap().visibility,
+                        module.procedure("run_job").unwrap().visibility
+                    );
+                } else {
+                    assert_eq!(
+                        roundtrip.reducer("run_job").unwrap().visibility,
+                        module.reducer("run_job").unwrap().visibility
+                    );
+                }
+                assert_eq!(roundtrip.raw_module_def_version(), RawModuleDefVersion::V10);
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_v9_schedules_stay_public_and_v10_schedules_stay_private() {
+        let mut builder = v9::RawModuleDefV9Builder::new();
+        let at = builder.add_type::<ScheduleAt>();
+        let row = builder
+            .build_table_with_new_type(
+                "jobs",
+                ProductType::from([("id", AlgebraicType::U64), ("at", at)]),
+                true,
+            )
+            .with_auto_inc_primary_key(0)
+            .with_index(v9::btree(0), "jobs_id_idx")
+            .with_schedule("run_job", 1)
+            .finish();
+        builder.add_reducer("run_job", ProductType::from([("job", row.into())]), None);
+        let v9: ModuleDef = builder.finish().try_into().unwrap();
+        assert!(v9.reducer("run_job").unwrap().visibility.is_client_callable());
+        let upgraded: RawModuleDefV10 = v9.clone().into();
+        assert!(matches!(
+            upgraded.reducers().unwrap()[0].visibility,
+            Declared::ExplicitClientCallable
+        ));
+        let upgraded: ModuleDef = upgraded.try_into().unwrap();
+        assert!(upgraded.reducer("run_job").unwrap().visibility.is_client_callable());
+        assert!(matches!(v9.into_raw(), RawModuleDef::V9(_)));
+
+        let mut builder = v10::RawModuleDefV10Builder::new();
+        let at = builder.add_type::<ScheduleAt>();
+        let row = builder
+            .build_table_with_new_type(
+                "jobs",
+                ProductType::from([("id", AlgebraicType::U64), ("at", at)]),
+                true,
+            )
+            .with_auto_inc_primary_key(0)
+            .with_index_no_accessor_name(v9::btree(0), "jobs_id_idx")
+            .finish();
+        builder.add_reducer("run_job", ProductType::from([("job", row.into())]));
+        builder.add_schedule("jobs", 1, "run_job");
+        let v10: ModuleDef = builder.finish().try_into().unwrap();
+        assert!(v10.reducer("run_job").unwrap().visibility.is_private());
+        assert!(matches!(v10.into_raw(), RawModuleDef::V10(_)));
+    }
+
+    #[test]
+    fn capabilities_are_explicit_bounded_and_preserved() {
+        let bare: ModuleDef = RawModuleDefV10Builder::new().finish().try_into().unwrap();
+        assert!(!bare.supports_hosted_auth_v1());
+        let mut builder = RawModuleDefV10Builder::new();
+        builder.add_capability("hosted_auth_v1");
+        let module: ModuleDef = builder.finish().try_into().unwrap();
+        assert!(module.supports_hosted_auth_v1());
+        let reloaded: ModuleDef = module.into_raw().try_into().unwrap();
+        assert!(reloaded.supports_hosted_auth_v1());
+        for names in [
+            vec!["".to_string()],
+            vec!["Uppercase".to_string()],
+            vec!["with-dash".to_string()],
+            vec!["a".repeat(65)],
+            vec!["duplicate".to_string(); 2],
+            (0..33).map(|i| format!("cap_{i}")).collect(),
+        ] {
+            let mut builder = RawModuleDefV10Builder::new();
+            for name in names {
+                builder.add_capability(name);
+            }
+            assert!(ModuleDef::try_from(builder.finish()).is_err());
+        }
+    }
+
+    #[test]
+    fn narrowing_function_visibility_is_a_reported_client_break() {
+        let module = |visibility| {
+            let mut builder = RawModuleDefV10Builder::new();
+            builder.add_reducer_with_visibility("run_now", ProductType::unit(), Some(visibility));
+            ModuleDef::try_from(builder.finish()).unwrap()
+        };
+        let public = module(Declared::ClientCallable);
+        let internal = module(Declared::Internal);
+        let plan = crate::auto_migrate::ponder_migrate(&public, &internal).unwrap();
+        assert!(plan.breaks_client());
+        let display = plan
+            .pretty_print(crate::auto_migrate::PrettyPrintStyle::NoColor)
+            .unwrap();
+        assert!(display.contains("run_now"));
+        assert!(display.contains("Internal"));
+        assert!(!crate::auto_migrate::ponder_migrate(&internal, &public)
+            .unwrap()
+            .breaks_client());
+    }
+
+    #[test]
+    fn visibility_authority_is_cumulative_without_elevating_the_owner() {
+        for (visibility, external, owner, internal) in [
+            (FunctionVisibility::Internal, false, false, true),
+            (FunctionVisibility::Private, false, true, true),
+            (FunctionVisibility::ClientCallable, true, true, true),
+        ] {
+            assert_eq!(visibility.allows_invocation(false, false), external);
+            assert_eq!(visibility.allows_invocation(false, true), owner);
+            assert_eq!(visibility.allows_invocation(true, false), internal);
+        }
     }
 }

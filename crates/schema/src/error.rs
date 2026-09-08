@@ -28,7 +28,7 @@ pub enum ValidationError {
     InvalidModuleCapabilities,
     #[error("lifecycle reducer `{function}` must have Internal visibility")]
     InvalidLifecycleVisibility { function: RawIdentifier },
-    #[error("module contains repeated V11 section `{section}`")]
+    #[error("module contains repeated V10 section `{section}`")]
     DuplicateModuleSection { section: String },
     #[error("name `{name}` is used for multiple entities")]
     DuplicateName { name: RawIdentifier },

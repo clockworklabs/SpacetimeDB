@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Reproduce the version-1 system empty module using only Python's standard library.
 
-The binary has one page of memory, a V11 schema describer, and a reducer entry
+The binary has one page of memory, a V10 schema describer, and a reducer entry
 point which always traps. There are no declared user tables or functions.
 
 Equivalent code (the data payload below is BSATN, not WebAssembly encoding):
@@ -53,10 +53,10 @@ def function_type(params, results):
 
 def generate():
     u32 = lambda value: struct.pack("<I", value)
-    # RawModuleDef::V11 (sum tag 3), two V11 sections:
+    # RawModuleDef::V10 (sum tag 2), two V10 sections:
     # Typespace (tag 0, empty vector) and Capabilities (tag 13, one RawIdentifier).
     capability = b"hosted_auth_v1"
-    schema = b"\x03" + u32(2) + b"\x00" + u32(0) + b"\x0d" + u32(1) + u32(len(capability)) + capability
+    schema = b"\x02" + u32(2) + b"\x00" + u32(0) + b"\x0d" + u32(1) + u32(len(capability)) + capability
     i32, i64 = b"\x7f", b"\x7e"
     types = vector([
         function_type([i32, i32, i32], [i32]),

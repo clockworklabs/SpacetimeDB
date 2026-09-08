@@ -1,9 +1,6 @@
 import { AlgebraicType } from '../lib/algebraic_type';
 import { type Lifecycle } from '../lib/autogen/types';
-import {
-  declaredVisibility,
-  type FunctionVisibility,
-} from './function_visibility';
+import { rawVisibility, type FunctionVisibility } from './function_visibility';
 import type { ParamsObj, Reducer } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
 import { RowBuilder, type RowObj } from '../lib/type_builders';
@@ -90,8 +87,8 @@ export function registerReducer(
   ctx.moduleDef.reducers.push({
     sourceName: exportName,
     params: paramsType,
-    // Preserve omission so the host can apply the scheduled private default.
-    declaredVisibility: declaredVisibility(opts?.visibility),
+    // Keep the legacy default distinct from an explicit public declaration.
+    visibility: rawVisibility(opts?.visibility),
     //Hardcoded for now - reducers do not return values yet
     okReturnType: AlgebraicType.Product({ elements: [] }),
     errReturnType: AlgebraicType.String,

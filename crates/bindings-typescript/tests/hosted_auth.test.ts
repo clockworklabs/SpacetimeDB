@@ -34,7 +34,14 @@ import { Timestamp } from '../src/lib/timestamp';
 import { schema, exportContext, registerExport } from '../src/server/schema';
 import { callProcedure } from '../src/server/procedures';
 import { t } from '../src/lib/type_builders';
-import { RawModuleDef } from '../src/lib/autogen/types';
+import {
+  AlgebraicType,
+  FunctionVisibility,
+  ProductType,
+  RawModuleDef,
+  RawModuleDefV10Section,
+  RawReducerDefV10,
+} from '../src/lib/autogen/types';
 import BinaryReader from '../src/lib/binary_reader';
 import BinaryWriter from '../src/lib/binary_writer';
 
@@ -136,7 +143,52 @@ describe('verified invocation authentication', () => {
   });
 });
 
-describe('V11 explicit function visibility', () => {
+describe('V10 explicit function visibility', () => {
+  it('preserves existing visibility tags and appends the new variants and capability section', () => {
+    const legacyVisibility = t.enum('LegacyFunctionVisibility', {
+      Private: t.unit(),
+      ClientCallable: t.unit(),
+    });
+    const variants = [
+      FunctionVisibility.Private,
+      FunctionVisibility.ClientCallable,
+      FunctionVisibility.Internal,
+      FunctionVisibility.ExplicitClientCallable,
+    ];
+    for (const [tag, visibility] of variants.entries()) {
+      const writer = new BinaryWriter(8);
+      FunctionVisibility.serialize(writer, visibility);
+      expect([...writer.getBuffer()]).toEqual([tag]);
+      const reader = new BinaryReader(writer.getBuffer());
+      if (tag < 2) {
+        expect(legacyVisibility.deserialize(reader).tag).toBe(visibility.tag);
+      }
+    }
+    const writer = new BinaryWriter(8);
+    RawModuleDefV10Section.serialize(writer, {
+      tag: 'Capabilities',
+      value: [],
+    });
+    expect([...writer.getBuffer()]).toEqual([13, 0, 0, 0, 0]);
+  });
+
+  it('retains the V10 reducer field layout without an optional visibility wrapper', () => {
+    const module = schema({});
+    const reducer = module.reducer({ visibility: 'public' }, () => {});
+    const inner = reducer[exportContext]!;
+    reducer[registerExport](inner, 'public_reducer');
+    const definition = inner.moduleDef.reducers[0];
+    const writer = new BinaryWriter(128);
+    RawReducerDefV10.serialize(writer, definition);
+    const expected = new BinaryWriter(128);
+    expected.writeString(definition.sourceName);
+    ProductType.serialize(expected, definition.params);
+    expected.writeByte(3);
+    AlgebraicType.serialize(expected, definition.okReturnType);
+    AlgebraicType.serialize(expected, definition.errReturnType);
+    expect(writer.getBuffer()).toEqual(expected.getBuffer());
+  });
+
   it('serializes omission separately from explicit visibility and advertises hosted auth', () => {
     const module = schema({});
     const omitted = module.reducer(() => {});
@@ -157,33 +209,48 @@ describe('V11 explicit function visibility', () => {
     }
     // Being scheduled must not erase a public choice or manufacture an explicit
     // choice for the default. The host resolves the latter to Private.
-    inner.moduleDef.schedules.push({
-      sourceName: undefined,
-      tableName: 'jobs',
-      scheduleAtCol: 0,
-      functionName: 'explicitlyPublic',
-    });
-    const raw = RawModuleDef.V11(inner.rawModuleDefV11());
+    for (const name of [
+      'omitted',
+      'explicitlyPublic',
+      'privateReducer',
+      'internalReducer',
+    ]) {
+      inner.moduleDef.schedules.push({
+        sourceName: undefined,
+        tableName: `jobs_${name}`,
+        scheduleAtCol: 0,
+        functionName: name,
+      });
+    }
+    const raw = RawModuleDef.V10(inner.rawModuleDefV10());
     const writer = new BinaryWriter(128);
     RawModuleDef.serialize(writer, raw);
-    expect(writer.getBuffer()[0]).toBe(3);
+    expect(writer.getBuffer()[0]).toBe(2);
     const decoded = RawModuleDef.deserialize(
       new BinaryReader(writer.getBuffer())
     );
     const roundTrip = new BinaryWriter(128);
     RawModuleDef.serialize(roundTrip, decoded);
     expect(roundTrip.getBuffer()).toEqual(writer.getBuffer());
-    expect(decoded.tag).toBe('V11');
-    if (decoded.tag !== 'V11') throw new Error('Expected V11');
+    expect(decoded.tag).toBe('V10');
+    if (decoded.tag !== 'V10') throw new Error('Expected V10');
     const reducers = decoded.value.sections.find(
       section => section.tag === 'Reducers'
     );
+    expect(reducers?.value.map(reducer => reducer.visibility.tag)).toEqual([
+      'ClientCallable',
+      'ExplicitClientCallable',
+      'Private',
+      'Internal',
+    ]);
     expect(
-      reducers?.value.map(reducer => reducer.declaredVisibility?.tag)
-    ).toEqual([undefined, 'ClientCallable', 'Private', 'Internal']);
-    expect(
-      inner.moduleDef.reducers.map(reducer => reducer.declaredVisibility?.tag)
-    ).toEqual([undefined, 'ClientCallable', 'Private', 'Internal']);
+      inner.moduleDef.reducers.map(reducer => reducer.visibility.tag)
+    ).toEqual([
+      'ClientCallable',
+      'ExplicitClientCallable',
+      'Private',
+      'Internal',
+    ]);
     expect(inner.moduleDef.capabilities).toEqual(['hosted_auth_v1']);
   });
 
@@ -199,9 +266,7 @@ describe('V11 explicit function visibility', () => {
     proc[registerExport](inner, 'source_name');
     reducer[registerExport](inner, 'accept_visibility');
     expect(inner.moduleDef.procedures[0].sourceName).toBe('source_name');
-    expect(inner.moduleDef.procedures[0].declaredVisibility?.tag).toBe(
-      'Internal'
-    );
+    expect(inner.moduleDef.procedures[0].visibility.tag).toBe('Internal');
     expect(inner.moduleDef.explicitNames.entries).toContainEqual({
       tag: 'Function',
       value: { sourceName: 'source_name', canonicalName: 'public_name' },
@@ -211,16 +276,30 @@ describe('V11 explicit function visibility', () => {
     );
   });
 
-  it('rejects externally callable lifecycle declarations', () => {
-    const module = schema({});
-    const invalid = module.init({ visibility: 'private' }, () => {});
-    expect(() =>
-      invalid[registerExport](invalid[exportContext]!, 'invalid_init')
-    ).toThrow('Lifecycle reducers only support internal visibility');
-    const valid = module.init({ visibility: 'internal' }, () => {});
-    valid[registerExport](valid[exportContext]!, 'valid_init');
-    expect(
-      valid[exportContext]!.moduleDef.reducers[0].declaredVisibility?.tag
-    ).toBe('Internal');
-  });
+  it.each(['private', 'public'] as const)(
+    'rejects explicit %s lifecycle declarations',
+    visibility => {
+      const module = schema({});
+      const invalid = module.init({ visibility }, () => {});
+      expect(() =>
+        invalid[registerExport](invalid[exportContext]!, 'invalid_init')
+      ).toThrow('Lifecycle reducers only support internal visibility');
+    }
+  );
+
+  it.each([undefined, 'internal'] as const)(
+    'preserves permitted lifecycle declaration %s for host event dispatch',
+    visibility => {
+      const module = schema({});
+      const valid = module.init({ visibility }, () => {});
+      valid[registerExport](valid[exportContext]!, 'valid_init');
+      const inner = valid[exportContext]!;
+      expect(inner.moduleDef.reducers[0].visibility.tag).toBe(
+        visibility === undefined ? 'ClientCallable' : 'Internal'
+      );
+      expect(inner.moduleDef.lifeCycleReducers).toEqual([
+        { lifecycleSpec: { tag: 'Init' }, functionName: 'valid_init' },
+      ]);
+    }
+  );
 });

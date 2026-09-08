@@ -378,14 +378,12 @@ impl ModuleSubscriptions {
         match version {
             RawModuleDefVersion::V9OrEarlier => 0,
             RawModuleDefVersion::V10 => 1,
-            RawModuleDefVersion::V11 => 2,
         }
     }
 
     fn decode_module_def_version(version: u8) -> RawModuleDefVersion {
         match version {
             1 => RawModuleDefVersion::V10,
-            2 => RawModuleDefVersion::V11,
             0 => RawModuleDefVersion::V9OrEarlier,
             _ => unreachable!("invalid stored module definition version"),
         }

@@ -31,26 +31,32 @@ fn public_procedure(_ctx: &mut ProcedureContext) -> u64 {
 }
 
 fn main() {
-    assert_eq!(
+    assert!(matches!(
         internal_reducer::DECLARED_VISIBILITY,
         Some(FunctionVisibility::Internal)
-    );
-    assert_eq!(private_reducer::DECLARED_VISIBILITY, Some(FunctionVisibility::Private));
-    assert_eq!(
+    ));
+    assert!(matches!(
+        private_reducer::DECLARED_VISIBILITY,
+        Some(FunctionVisibility::Private)
+    ));
+    assert!(matches!(
         public_reducer::DECLARED_VISIBILITY,
         Some(FunctionVisibility::ClientCallable)
-    );
-    assert_eq!(initialize::DECLARED_VISIBILITY, Some(FunctionVisibility::Internal));
-    assert_eq!(
+    ));
+    assert!(matches!(
+        initialize::DECLARED_VISIBILITY,
+        Some(FunctionVisibility::Internal)
+    ));
+    assert!(matches!(
         internal_procedure::DECLARED_VISIBILITY,
         Some(FunctionVisibility::Internal)
-    );
-    assert_eq!(
+    ));
+    assert!(matches!(
         private_procedure::DECLARED_VISIBILITY,
         Some(FunctionVisibility::Private)
-    );
-    assert_eq!(
+    ));
+    assert!(matches!(
         public_procedure::DECLARED_VISIBILITY,
         Some(FunctionVisibility::ClientCallable)
-    );
+    ));
 }

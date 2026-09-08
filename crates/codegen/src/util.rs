@@ -216,14 +216,14 @@ pub fn iter_types(module: &ModuleDef) -> impl Iterator<Item = &TypeDef> {
 mod visibility_tests {
     use super::*;
     use spacetimedb_lib::db::raw_def::{
-        v11::{FunctionVisibility, RawModuleDefV11Builder},
+        v10::{FunctionVisibility, RawModuleDefV10Builder},
         v9::Lifecycle,
     };
     use spacetimedb_lib::{AlgebraicType, ProductType};
 
     #[test]
     fn public_codegen_excludes_internal_private_and_every_lifecycle() {
-        let mut builder = RawModuleDefV11Builder::new();
+        let mut builder = RawModuleDefV10Builder::new();
         builder.add_reducer("ordinary", ProductType::unit());
         for (name, visibility) in [
             ("public_function", FunctionVisibility::ClientCallable),

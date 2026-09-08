@@ -6,12 +6,12 @@ use crate::db::relational_db::tests_utils::TestDB;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::system_tables::StContainerFenceRow;
 use spacetimedb_lib::db::auth::StAccess;
-use spacetimedb_lib::db::raw_def::v11::RawModuleDefV11Builder;
+use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
 use spacetimedb_lib::identity::AuthCtx;
 use std::time::Duration;
 
 fn module(hosted_auth: bool) -> ModuleDef {
-    let mut builder = RawModuleDefV11Builder::new();
+    let mut builder = RawModuleDefV10Builder::new();
     if hosted_auth {
         builder.add_capability("hosted_auth_v1");
     }

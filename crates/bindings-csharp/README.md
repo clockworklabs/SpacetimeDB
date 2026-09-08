@@ -25,7 +25,7 @@ public static void ProcessJobs(ReducerContext ctx) { }
 `ctx.SenderAuth.IsInternal` comes from the host's invocation authority. It is
 independent of connection and JWT presence, so an internal call can have a JWT.
 JWT identity is the verified sender supplied by the host. Newly compiled modules
-emit schema V11 and advertise `hosted_auth_v1`, requiring a compatible host.
+emit schema V10 and advertise `hosted_auth_v1`, requiring a compatible host.
 
 These projects contain the SpacetimeDB SATS typesystem, codegen and runtime bindings for SpacetimeDB WebAssembly modules. It also contains serialization code for SpacetimeDB C# clients.
 

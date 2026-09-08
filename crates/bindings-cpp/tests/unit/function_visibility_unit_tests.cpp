@@ -24,14 +24,14 @@ TEST_CASE(visibility_macro_applies_after_function_registration) {
         if (section.get_tag() != 3) continue;
         for (const auto& reducer : section.get<3>()) {
             if (reducer.source_name != "visibility_macro_target") continue;
-            ASSERT_EQ(FunctionVisibilityV11::Internal, *reducer.declared_visibility);
+            ASSERT_EQ(SpacetimeDB::Internal::FunctionVisibility::Internal, reducer.visibility);
             found = true;
         }
     }
     ASSERT_TRUE(found);
 }
 
-TEST_CASE(v11_retains_explicit_visibility_and_schedule_default_omission) {
+TEST_CASE(v10_retains_explicit_visibility_and_schedule_default) {
     V10Builder builder;
     builder.RegisterReducer("omitted", &noop, {});
     builder.RegisterReducer("public", &noop, {});
@@ -46,24 +46,24 @@ TEST_CASE(v11_retains_explicit_visibility_and_schedule_default_omission) {
     builder.SetFunctionVisibility("procedure", SpacetimeDB::FunctionVisibility::Internal);
 
     RawModuleDef versioned;
-    versioned.set<3>(builder.BuildModuleDef());
+    versioned.set<2>(builder.BuildModuleDef());
     std::vector<uint8_t> bytes;
     bsatn::Writer writer(bytes);
     bsatn::serialize(writer, versioned);
-    ASSERT_EQ(uint8_t{3}, bytes.at(0));
-    ASSERT_EQ(uint8_t{3}, versioned.get_tag());
+    ASSERT_EQ(uint8_t{2}, bytes.at(0));
+    ASSERT_EQ(uint8_t{2}, versioned.get_tag());
     bool saw_reducers = false, saw_procedure = false, saw_capability = false;
-    for (const auto& section : versioned.get<3>().sections) {
+    for (const auto& section : versioned.get<2>().sections) {
         if (section.get_tag() == 3) {
             const auto& reducers = section.get<3>();
             ASSERT_EQ(size_t{4}, reducers.size());
-            ASSERT_TRUE(!reducers[0].declared_visibility.has_value());
-            ASSERT_EQ(FunctionVisibilityV11::ClientCallable, *reducers[1].declared_visibility);
-            ASSERT_EQ(FunctionVisibilityV11::Private, *reducers[2].declared_visibility);
-            ASSERT_EQ(FunctionVisibilityV11::Internal, *reducers[3].declared_visibility);
+            ASSERT_EQ(SpacetimeDB::Internal::FunctionVisibility::ClientCallable, reducers[0].visibility);
+            ASSERT_EQ(SpacetimeDB::Internal::FunctionVisibility::ExplicitClientCallable, reducers[1].visibility);
+            ASSERT_EQ(SpacetimeDB::Internal::FunctionVisibility::Private, reducers[2].visibility);
+            ASSERT_EQ(SpacetimeDB::Internal::FunctionVisibility::Internal, reducers[3].visibility);
             saw_reducers = true;
         } else if (section.get_tag() == 4) {
-            ASSERT_EQ(FunctionVisibilityV11::Internal, *section.get<4>().at(0).declared_visibility);
+            ASSERT_EQ(SpacetimeDB::Internal::FunctionVisibility::Internal, section.get<4>().at(0).visibility);
             saw_procedure = true;
         } else if (section.get_tag() == 13) {
             ASSERT_EQ(std::vector<std::string>{"hosted_auth_v1"}, section.get<13>());
@@ -71,4 +71,28 @@ TEST_CASE(v11_retains_explicit_visibility_and_schedule_default_omission) {
         }
     }
     ASSERT_TRUE(saw_reducers && saw_procedure && saw_capability);
+}
+
+TEST_CASE(v10_visibility_extends_enum_without_changing_reducer_field_layout) {
+    V10Builder builder;
+    builder.RegisterReducer("r", &noop, {});
+    auto reducer = builder.GetReducers().at(0);
+    for (uint8_t tag = 0; tag <= 3; ++tag) {
+        reducer.visibility = static_cast<SpacetimeDB::Internal::FunctionVisibility>(tag);
+        std::vector<uint8_t> bytes;
+        bsatn::Writer writer(bytes);
+        bsatn::serialize(writer, reducer);
+        const std::vector<uint8_t> expected{1, 0, 0, 0, 'r', 0, 0, 0, 0, tag, 2, 0, 0, 0, 0, 4};
+        ASSERT_EQ(expected, bytes);
+        const RawProcedureDefV10 procedure_def{
+            "p", ProductType{}, reducer.ok_return_type, reducer.visibility,
+        };
+        std::vector<uint8_t> procedure_bytes;
+        bsatn::Writer procedure_writer(procedure_bytes);
+        bsatn::serialize(procedure_writer, procedure_def);
+        const std::vector<uint8_t> expected_procedure{
+            1, 0, 0, 0, 'p', 0, 0, 0, 0, 2, 0, 0, 0, 0, tag,
+        };
+        ASSERT_EQ(expected_procedure, procedure_bytes);
+    }
 }

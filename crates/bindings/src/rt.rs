@@ -1,13 +1,14 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
-pub use spacetimedb_lib::db::raw_def::v11::FunctionVisibility;
-use spacetimedb_lib::db::raw_def::v11::RawModuleDefV11Builder;
+pub use spacetimedb_lib::db::raw_def::v10::FunctionVisibility;
 
 use crate::query_builder::{FromWhere, HasCols, LeftSemiJoin, RawQuery, RightSemiJoin, Table as QbTable};
 use crate::table::IndexAlgo;
 use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, ViewContext};
 use spacetimedb_lib::bsatn::EncodeError;
-use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, ExplicitNames as RawExplicitNames};
+use spacetimedb_lib::db::raw_def::v10::{
+    CaseConversionPolicy, ExplicitNames as RawExplicitNames, RawModuleDefV10Builder,
+};
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableType, ViewResultHeader};
 use spacetimedb_lib::de::{self, Deserialize, DeserializeOwned, Error as _, SeqProductAccess};
@@ -941,7 +942,7 @@ pub fn register_case_conversion_policy(policy: CaseConversionPolicy) {
 #[derive(Default)]
 pub struct ModuleBuilder {
     /// The module definition.
-    inner: RawModuleDefV11Builder,
+    inner: RawModuleDefV10Builder,
     /// The reducers of the module.
     reducers: Vec<ReducerFn>,
     /// The procedures of the module.
@@ -1010,7 +1011,7 @@ extern "C" fn __describe_module__(description: BytesSink) {
 
     // Serialize the module to bsatn.
     let module_def = module.inner.finish();
-    let module_def = RawModuleDef::V11(module_def);
+    let module_def = RawModuleDef::V10(module_def);
     let bytes = bsatn::to_vec(&module_def).expect("unable to serialize typespace");
 
     // Write the sets of reducers, procedures and views.

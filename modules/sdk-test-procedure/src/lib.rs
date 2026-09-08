@@ -44,7 +44,7 @@ fn will_panic(_ctx: &mut ProcedureContext) {
 fn read_my_schema(ctx: &mut ProcedureContext) -> String {
     let module_identity = ctx.identity();
     match ctx.http.get(format!(
-        "http://localhost:3000/v1/database/{module_identity}/schema?version=11"
+        "http://localhost:3000/v1/database/{module_identity}/schema?version=10"
     )) {
         Ok(result) => result.into_body().into_string_lossy(),
         Err(e) => panic!("{e}"),

@@ -32,8 +32,9 @@ admit the owner, and public functions admit any client. `ctx.senderAuth.isIntern
 captures the host's invocation authority independently of connection and JWT
 presence, so an internal call can have a JWT. `ctx.senderAuth.jwt.identity` is the
 verified sender supplied by the host. Procedure transactions preserve this
-authentication. Newly compiled modules emit schema V11 and advertise
-`hosted_auth_v1`, requiring a compatible host.
+authentication. Newly compiled modules retain schema V10 and advertise
+`hosted_auth_v1`. The extended visibility values and capability section require
+a compatible host; older V10 definitions retain their existing defaults.
 
 #### Client SDK
 

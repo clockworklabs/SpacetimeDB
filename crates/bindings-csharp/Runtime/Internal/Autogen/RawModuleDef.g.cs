@@ -11,7 +11,6 @@ namespace SpacetimeDB.Internal
     public partial record RawModuleDef : SpacetimeDB.TaggedEnum<(
         RawModuleDefV8 V8BackCompat,
         RawModuleDefV9 V9,
-        RawModuleDefV10 V10,
-        RawModuleDefV11 V11
+        RawModuleDefV10 V10
     )>;
 }

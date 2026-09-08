@@ -112,6 +112,8 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
                     .accessor_name;
                 let reducer = module_def
                     .reducers()
+                    .into_iter()
+                    .flatten()
                     .find(|r| *r.source_name == **source_name)
                     .context("no such reducer")?;
                 sats_to_json(reducer)?
@@ -120,6 +122,8 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
                 let source_name = &canonical.table(table_name).context("no such table")?.accessor_name;
                 let table = module_def
                     .tables()
+                    .into_iter()
+                    .flatten()
                     .find(|t| *t.source_name == **source_name)
                     .context("no such table")?;
                 sats_to_json(table)?
