@@ -149,9 +149,10 @@ function appendDiagnosticStderr(state: BrokerProcessState, chunk: string, secret
 }
 
 export async function startCredentialBroker(selectedAuth: ContainerAuth, { networkMode, deadlineMs,
-  model, maxOutputTokens = MAX_BROKER_OUTPUT_TOKENS, maxBudgetUsd = null, pricingRates = null,
+  model, providerRoute, maxOutputTokens = MAX_BROKER_OUTPUT_TOKENS, maxBudgetUsd = null, pricingRates = null,
   env = process.env, docker }: { networkMode: string; deadlineMs: number; model: string;
   maxOutputTokens?: number; maxBudgetUsd?: number | null; pricingRates?: PricingRates | null;
+  providerRoute?: string;
   env?: NodeJS.ProcessEnv; docker?: CredentialBrokerDockerOptions }): Promise<CredentialBroker> {
   if (!['bridge', 'host'].includes(networkMode)
     && (!docker || networkMode !== `container:${docker.networkContainerId}`)) fail('network mode is invalid');
@@ -179,7 +180,8 @@ export async function startCredentialBroker(selectedAuth: ContainerAuth, { netwo
     const ledgerPath = join(root, 'spend-ledger.json');
     const sessionToken = randomBytes(32).toString('hex');
     const listenHost = docker || networkMode === 'host' ? '127.0.0.1' : '0.0.0.0';
-    const config = validateBrokerConfig({ mode: selectedAuth.mode, credential, sessionToken, readyPath,
+    const config = validateBrokerConfig({ provider: selectedAuth.provider, providerRoute, accountId: selectedAuth.accountId,
+      mode: selectedAuth.mode, credential, sessionToken, readyPath,
       ...(docker ? {} : { parentPid: process.pid }),
       expiresAt: Date.now() + deadlineMs + 60_000, listenHost, ledgerPath,
       model, maxOutputTokens, maxBudgetUsd, pricingRates });

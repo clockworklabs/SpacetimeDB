@@ -201,7 +201,8 @@ test('throttle waits back off, resume the paid session, and do not spend interru
       calls.push(request);
       if (calls.length <= 2) {
         return JSON.stringify({ is_error: true, terminal_reason: 'api_error',
-          api_error_status: 429, session_id: 'paid-session', total_cost_usd: 0.001 });
+          api_error_status: 429, session_id: 'paid-session', total_cost_usd: 0.001,
+          stack_bench_cost_receipt: brokerReceipt(0.001) });
       }
       return JSON.stringify({ is_error: false, session_id: 'paid-session',
         total_cost_usd: 2, num_turns: 3, usage: {} });
@@ -218,24 +219,14 @@ test('throttle waits back off, resume the paid session, and do not spend interru
   assert.match(required(logs[0], 'throttle log'), /provider throttled \(status 429\)/);
 });
 
-test('a throttle before any session restarts from the existing files after waiting', () => {
-  const calls: CodingSessionInvocation[] = [];
-  const waits: number[] = [];
+test('provider failure without native identity cannot restart the task', () => {
+  let calls = 0;
   const coding = runCodingSessionWithRetries({ prompt: 'full original prompt', model: 'test-model', retryLimit: 0,
-    sleep: ms => waits.push(ms), log: () => {},
-    invoke(request) {
-      calls.push(request);
-      if (calls.length === 1) {
-        return JSON.stringify({ is_error: true, terminal_reason: 'api_error',
-          api_error_status: 429 });
-      }
-      return JSON.stringify({ is_error: false, session_id: 'fresh', total_cost_usd: 1,
-        num_turns: 1, usage: {} });
-    } });
-  assert.equal(coding.spawnError, null);
-  assert.deepEqual(waits, [60_000]);
-  assert.equal(required(calls[1], 'restarted invocation').resumeSession, null);
-  assert.match(required(calls[1], 'restarted invocation').input, /Continue this task from the existing files/);
+    sleep: () => { throw new Error('must not wait'); }, log: () => {},
+    invoke() { calls++; return JSON.stringify({ is_error: true, terminal_reason: 'api_error',
+      api_error_status: 429, total_cost_usd: 0, stack_bench_cost_receipt: brokerReceipt(0) }); } });
+  assert.equal(calls, 1);
+  assert.match(required(coding.spawnError, 'missing session'), /native session identity/);
 });
 
 test('an unbroken throttle stops at the wait budget with a throttle-specific failure', () => {
@@ -246,7 +237,8 @@ test('an unbroken throttle stops at the wait budget with a throttle-specific fai
     invoke() {
       calls += 1;
       return JSON.stringify({ is_error: true, terminal_reason: 'api_error',
-        api_error_status: 429, session_id: 'paid-session',
+        api_error_status: 429, session_id: 'paid-session', total_cost_usd: 0,
+        stack_bench_cost_receipt: brokerReceipt(0),
         result: 'API Error: Request rejected (429)' });
     } });
   // 60s + 120s fit inside five minutes; the 300s third wait would exceed it.
@@ -265,12 +257,89 @@ test('a stable throttle offset spreads concurrent retries without changing retry
     invoke() {
       calls += 1;
       return calls === 1
-        ? JSON.stringify({ is_error: true, terminal_reason: 'api_error', api_error_status: 429 })
+        ? JSON.stringify({ is_error: true, terminal_reason: 'api_error', api_error_status: 429,
+          session_id: 'paid-session', total_cost_usd: 0, stack_bench_cost_receipt: brokerReceipt(0) })
         : JSON.stringify({ is_error: false, session_id: 'done', usage: {} });
     } });
   assert.deepEqual(waits, [77_000]);
   assert.deepEqual(coding.throttle,
     { waits: 1, waitedMs: 77_000, maxWaitMs: 15 * 60_000, jitterMs: 17_000 });
+});
+
+test('operator continuation keeps the action and candidate, persists each charge once, and resumes natively', () => {
+  const saved: number[] = [];
+  const calls: CodingSessionInvocation[] = [];
+  const candidate = { source: 'unfinished edit', database: 'current row', repairCount: 1 };
+  const coding = runCodingSessionWithRetries({ prompt: 'original task', model: 'test-model',
+    retryLimit: 0, maxBudgetUsd: 10, throttleMaxWaitMs: 0,
+    onInvocation: record => { saved.push(record.invocation); },
+    sleep: () => { throw new Error('quota does not use automatic backoff'); },
+    waitForProvider: request => {
+      assert.deepEqual(saved, Array.from({ length: calls.length }, (_, index) => index + 1));
+      assert.equal(request.sessionId, 'native-session');
+      assert.deepEqual(candidate, { source: 'unfinished edit', database: 'current row', repairCount: 1 });
+      return { requestId: `operator-${request.invocation}`, generation: `wait-${request.invocation}` };
+    },
+    invoke(request) {
+      calls.push(request);
+      const rejected = calls.length < 3;
+      return JSON.stringify({ is_error: rejected, session_id: 'native-session', total_cost_usd: 0.5,
+        stack_bench_cost_receipt: brokerReceipt(0.5, request.maxBudgetUsd!),
+        ...(rejected ? { stack_bench_provider_failure: {
+          category: calls.length === 1 ? 'quota' : 'rate-limit', status: 429,
+          code: calls.length === 1 ? 'insufficient_quota' : 'rate_limit_exceeded' } } : {}),
+        usage: { input_tokens: 1, output_tokens: 1 } });
+    } });
+  assert.equal(coding.spawnError, null);
+  assert.deepEqual(saved, [1, 2, 3]);
+  assert.deepEqual(calls.map(call => call.maxBudgetUsd), [10, 9.5, 9]);
+  assert.deepEqual(calls.map(call => call.input), ['original task', 'Continue.', 'Continue.']);
+  assert.ok(calls.slice(1).every(call => call.resumeSession === 'native-session' && !call.recoverStoppedContainer));
+  assert.equal(coding.result.total_cost_usd, 1.5);
+  assert.equal(coding.result.stack_bench_cost_receipts.length, 3);
+  assert.deepEqual(coding.providerWaits?.map(wait => wait.disposition), ['continued', 'continued']);
+});
+
+test('persistence failure and rejected native validation retain paid evidence without another invocation', () => {
+  for (const persistFails of [true, false]) {
+    let calls = 0;
+    const coding = runCodingSessionWithRetries({ prompt: 'task', model: 'test-model', retryLimit: 0,
+      onInvocation: () => { if (persistFails) throw new Error('receipt disk unavailable'); },
+      waitForProvider: () => { throw new Error('native session changed'); },
+      invoke: () => { calls++; return JSON.stringify({ is_error: true, session_id: 'native',
+        total_cost_usd: 0.5, stack_bench_cost_receipt: brokerReceipt(0.5),
+        stack_bench_provider_failure: { category: 'authentication', status: 401, code: 'expired' } }); } });
+    assert.equal(calls, 1);
+    assert.equal(coding.result.total_cost_usd, 0.5);
+    assert.match(coding.spawnError!, persistFails ? /receipt disk unavailable/ : /native session changed/);
+  }
+});
+
+test('structured transport, permanent request and broker budget failures never enter operator waiting', () => {
+  for (const category of ['transport', 'request', 'broker-budget']) {
+    let calls = 0;
+    const coding = runCodingSessionWithRetries({ prompt: 'task', model: 'test-model', retryLimit: 3,
+      waitForProvider: () => { throw new Error('must not wait'); },
+      invoke: () => { calls++; return JSON.stringify({ is_error: true, session_id: 'native',
+        total_cost_usd: 0.5, stack_bench_cost_receipt: brokerReceipt(0.5),
+        stack_bench_provider_failure: { category, status: 429, code: null } }); } });
+    assert.equal(calls, 1);
+    assert.match(coding.spawnError!, /not eligible for continuation/);
+    assert.deepEqual(coding.providerWaits, []);
+  }
+});
+
+test('a CLI-only 429 never authorizes manual waiting without a broker-confirmed rejection', () => {
+  let waits = 0;
+  const coding = runCodingSessionWithRetries({ prompt: 'task', model: 'test-model', retryLimit: 0,
+    throttleMaxWaitMs: 0, waitForProvider: () => { waits++; return true; },
+    invoke: () => JSON.stringify({ is_error: true, session_id: 'native',
+      terminal_reason: 'api_error', api_error_status: 429,
+      total_cost_usd: 0.5, stack_bench_cost_receipt: brokerReceipt(0.5) }) });
+  assert.equal(waits, 0);
+  assert.deepEqual(coding.providerWaits, []);
+  assert.match(coding.spawnError!, /provider stayed throttled/);
+  assert.equal(coding.result.total_cost_usd, 0.5);
 });
 
 test('only a non-OOM forced exit is eligible for container recovery', () => {
@@ -353,7 +422,7 @@ test('the retry loop resumes in place and deducts the failed call from the cost 
   assert.equal(required(calls[0], 'first invocation').maxBudgetUsd, 10);
   assert.equal(required(calls[1], 'second invocation').resumeSession, sessionId);
   assert.equal(required(calls[1], 'second invocation').maxBudgetUsd, 6.5);
-  assert.match(required(calls[1], 'second invocation').input, /Continue the same task/);
+  assert.equal(required(calls[1], 'second invocation').input, 'Continue.');
   assert.equal(required(coding.interruptions[0], 'provider interruption').kind, 'provider-api-error');
 });
 

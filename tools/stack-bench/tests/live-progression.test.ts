@@ -7,7 +7,7 @@ import test from 'node:test';
 
 import { loadTrack } from '../src/composition/tracks.js';
 import { requireRecipeRelease as resolveRecipeRelease } from '../src/composition/recipe-release.js';
-import { artifactPayload, createArtifact, emptyArtifactIdentities, writeArtifact }
+import { artifactPayload, createArtifact, emptyArtifactIdentities, readArtifact, writeArtifact }
   from '../src/evidence/artifacts.js';
 import { createCheckEvidence } from '../src/evidence/check-evidence.js';
 import type { CheckEvidenceStatus } from '../src/evidence/check-evidence.js';
@@ -16,7 +16,8 @@ import { compileDependencyPolicyInput, compileFeatureCatalogInput, compileProgre
   from '../src/progression/progression-definition.js';
 import type { ProgressionInput } from '../src/progression/progression-definition.js';
 import { createLiveProgressionExecution, type LiveProgressionExecution,
-  type LiveProgressionStatus }
+  type LiveProgressionStatus, clearTimeContinuationBoundary,
+  commitTimeContinuationBoundary, timeContinuationEligibility }
   from '../src/progression/live-progression.js';
 import { auditProgressionReferenceRun }
   from '../src/progression/progression-reference-audit.js';
@@ -26,6 +27,10 @@ import type { ProgressionRecipeAction, ProgressionRecipeSelections }
 import type { ProgressionState } from '../src/progression/progression-state.js';
 import type { ProgressionNodeState } from '../src/progression/progression-state.js';
 import { validateCampaignRun } from '../src/campaigns/campaign-run-validation.js';
+import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
+import { createCampaignState, claimNextAttempt, finishCampaignExecution,
+  scheduleTimeContinuation } from '../src/campaigns/campaign-scheduler.js';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import type { RepairPlanInput } from '../src/progression/repair-plan.js';
 import { progressionEngine } from '../src/progression/progression-engine.js';
 import { synchronizeProgressionSummary } from '../commands/bench.js';
@@ -539,20 +544,76 @@ test('an interrupted execution restores the saved source and resumes the next gr
     assert.equal(next.level, 2);
     writeArtifact(join(firstOutput, 'run.json'), {
       ...runArtifact,
-      payload: { ...runArtifact.payload, progressionStatus: first.status() },
+      payload: { ...runArtifact.payload, progressionStatus: first.status(),
+        totals: { costUsd: 1.25, costComplete: true } },
     });
+    assert.equal(timeContinuationEligibility(firstOutput).eligible, false);
+    commitTimeContinuationBoundary(firstOutput, executionState(first), 1);
+    assert.equal(timeContinuationEligibility(firstOutput).eligible, true);
+    const savedRun = readArtifact<Record<string, unknown>>(join(firstOutput, 'run.json'));
+    savedRun.payload.backendLease = { state: 'released' };
+    savedRun.payload.backendDiagnostics = { captured: true };
+    writeArtifact(join(firstOutput, 'run.json'), savedRun);
+    assert.equal(timeContinuationEligibility(firstOutput).eligible, true);
+    savedRun.payload.totals = { costUsd: 1.5, costComplete: true };
+    writeArtifact(join(firstOutput, 'run.json'), savedRun);
+    assert.equal(timeContinuationEligibility(firstOutput).eligible, false);
+    savedRun.payload.totals = { costUsd: 1.25, costComplete: true };
+    writeArtifact(join(firstOutput, 'run.json'), savedRun);
+    // Same-depth snapshots cannot preserve the active level's session ledger.
+    commitTimeContinuationBoundary(firstOutput, executionState(first), 2);
+    assert.equal(timeContinuationEligibility(firstOutput).eligible, false);
+    commitTimeContinuationBoundary(firstOutput, executionState(first), 1);
+    const sourcePath = join(firstOutput, 'source', 'index.js');
+    const sourceBytes = readFileSync(sourcePath);
+    writeFileSync(sourcePath, 'changed');
+    assert.equal(timeContinuationEligibility(firstOutput).eligible, false);
+    writeFileSync(sourcePath, sourceBytes);
+    assert.equal(timeContinuationEligibility(firstOutput).eligible, true);
+    // Invalidate before newer work, even if that work never returns a receipt.
+    clearTimeContinuationBoundary(firstOutput);
+    assert.equal(timeContinuationEligibility(firstOutput).eligible, false);
+    commitTimeContinuationBoundary(firstOutput, executionState(first), 1);
+    const proof = timeContinuationEligibility(firstOutput);
+    assert(proof.eligible);
+    const campaign = compileCampaignFile(join(STACK_BENCH_ROOT, 'tests', 'fixtures',
+      'campaign.deterministic.json'));
+    const scheduled = createCampaignState(campaign);
+    const target = scheduled.attempts[0]!;
+    target.plan.mode = { id: 'dependency', version: '3.2.0' };
+    const started = claimNextAttempt(scheduled, { admissionId: 'boundary-test' });
+    assert(started.claim);
+    const stopped = finishCampaignExecution(started.state, started.claim.executionId,
+      { exitCode: 1, timedOut: true });
+    const oldExecution = structuredClone(stopped.attempts[0]!.executions[0]!);
+    const added = scheduleTimeContinuation(stopped, target.plan.id, {
+      request: { campaignSha256: campaign.contentSha256, attemptId: target.plan.id,
+        executionId: started.claim.executionId, grantId: 'more-time', minutes: 60,
+        requestedAt: new Date().toISOString() },
+      disposition: 'accepted', acceptedAt: new Date().toISOString(),
+      previousMinutes: campaign.definition.budgets.attemptTimeoutMinutes,
+      effectiveMinutes: campaign.definition.budgets.attemptTimeoutMinutes + 60,
+    }, proof.stateSha256);
+    const continuation = claimNextAttempt(added, { admissionId: 'boundary-resume' });
+    assert(continuation.claim);
+    assert.equal(continuation.claim.resumeFrom, oldExecution.output);
+    assert.deepEqual(continuation.claim.priorOutputs, [oldExecution.output]);
+    assert.equal(continuation.state.attempts[0]!.executions[0]!.outcome, 'timed_out');
+    assert.equal(continuation.state.attempts[0]!.executions.length, 2);
     writeFileSync(join(firstApp, 'index.js'), 'export const interrupted = true;\n');
 
     const resumed = createLiveProgressionExecution({ progression, ...split, owner,
       statePath: join(secondOutput, 'progression-state.json'), runId: 'run-2',
       outputDir: secondOutput, appDir: secondApp, track: owner.attempt.track,
-      backend: owner.attempt.stack, identities, resumeFrom: firstOutput,
+      backend: owner.attempt.stack, identities, resumeFrom: proof.resumeFrom,
       recipeBindings: new Map([[1, binding], [2, binding]]),
       getRunArtifact: () => { throw new Error('grading is not part of this resume check'); } });
     const restored = resumed.initialize();
     assert.equal(restored.resumed, true);
     assert.equal(restored.action.type, 'build');
     assert.equal(restored.action.level, 2);
+    assert.deepEqual(restored.action, next);
+    assert.equal(restored.priorRun?.payload.totals?.costUsd, 1.25);
     const restoredAction = workAction(restored.action);
     assert(object(restoredAction.prompt));
     assert.deepEqual(restoredAction.prompt.nodeIds, ['purchasing']);

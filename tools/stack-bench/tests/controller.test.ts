@@ -76,6 +76,23 @@ test('controller image starts the compiled entry point', () => {
 });
 
 test('controller selects exactly one explicit agent credential mode', () => {
+  const openai = controllerChildEnvironment({ STACK_BENCH_AGENT_AUTH: 'openai-api-key',
+    STACK_BENCH_OPENAI_API_KEY_FILE: '/private/openai', ANTHROPIC_API_KEY: 'ambient',
+    CODEX_AUTH_FILE: '/ambient/auth', STACK_BENCH_AGENT_API_KEY: 'ambient' });
+  assert.equal(openai.OPENAI_API_KEY_FILE, '/private/openai');
+  assert.equal(openai.CODEX_AUTH_FILE, undefined);
+  assert.equal(openai.ANTHROPIC_API_KEY, undefined);
+  assert.equal(openai.STACK_BENCH_AGENT_API_KEY, undefined);
+  const routed = controllerChildEnvironment({ STACK_BENCH_AGENT_AUTH: 'openrouter-api-key',
+    STACK_BENCH_OPENROUTER_API_KEY_FILE: '/private/openrouter', OPENAI_API_KEY: 'ambient',
+    CODEX_AUTH_FILE: '/ambient/account' });
+  assert.equal(routed.OPENROUTER_API_KEY_FILE, '/private/openrouter');
+  assert.equal(routed.OPENAI_API_KEY, undefined);
+  assert.equal(routed.CODEX_AUTH_FILE, undefined);
+  const account = controllerChildEnvironment({ STACK_BENCH_AGENT_AUTH: 'openai-account',
+    STACK_BENCH_CODEX_AUTH_FILE: '/private/auth', OPENAI_API_KEY: 'ambient' });
+  assert.equal(account.CODEX_AUTH_FILE, '/private/auth');
+  assert.equal(account.OPENAI_API_KEY, undefined);
   assert.throws(() => controllerChildEnvironment({}),
     /requires STACK_BENCH_CLAUDE_OAUTH_TOKEN_FILE/);
   const subscription = controllerChildEnvironment({ STACK_BENCH_AGENT_AUTH: 'subscription-token',

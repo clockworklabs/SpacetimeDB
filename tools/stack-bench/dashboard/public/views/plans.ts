@@ -3,7 +3,7 @@
 // Resume exist only where the server accepts them. Only a frozen plan runs.
 
 import type { DashboardPlan } from '../../dashboard-model.js';
-import { DASH, esc, money, num } from '../format.js';
+import { DASH, duration, esc, money, num } from '../format.js';
 
 export type Page = 'campaigns' | 'plans' | 'campaign';
 
@@ -84,7 +84,7 @@ function planRow(plan: DashboardPlan): string {
     + cell(stacks.length ? num(stacks.length) : DASH, stacks.join(' · '))
     + cell(num(plan.attempts)) + cell(num(plan.parallelism))
     + cell(plan.repairBudget === undefined ? DASH : num(plan.repairBudget))
-    + cell(budgets ? `${budgets.attemptTimeoutMinutes} min` : DASH)
+    + cell(budgets ? duration(budgets.attemptTimeoutMinutes * 60) : DASH)
     + cell(budgets ? money(budgets.maxCostUsdPerAttempt) : DASH)
     + cell(budgets?.maxCostUsdPerAttempt != null && plan.attempts != null
       ? money(budgets.maxCostUsdPerAttempt * plan.attempts) : DASH,

@@ -34,6 +34,8 @@ export interface ProgressionOwner {
     stack: string;
     agentAdapter: string;
     model: string;
+    providerRoute?: string;
+    maxOutputTokens?: number;
     conditionSha256: string;
   };
   workspace?: { appDirectory: string };
@@ -201,6 +203,8 @@ const progressionOwnerSchema = z.strictObject({
     stack: z.string().min(1),
     agentAdapter: z.string().min(1),
     model: z.string().min(1),
+    providerRoute: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/).optional(),
+    maxOutputTokens: z.number().int().positive().optional(),
     conditionSha256: hashSchema,
   }),
   workspace: z.strictObject({ appDirectory: z.string().min(1) }).optional(),

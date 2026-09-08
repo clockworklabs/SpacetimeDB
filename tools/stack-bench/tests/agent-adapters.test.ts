@@ -19,11 +19,11 @@ const pricing: PricingAuthority = { unit: 'USD-per-million-tokens', rates: {
 
 test('built-in agent adapters are statically registered and content identified', () => {
   assert.deepEqual(AGENT_ADAPTER_REGISTRY.ids,
-    ['claude-code', 'deterministic', 'fault-injection', 'reference-fixture']);
+    ['claude-code', 'codex', 'deterministic', 'fault-injection', 'openrouter', 'reference-fixture']);
   for (const id of AGENT_ADAPTER_REGISTRY.ids) {
     const identity = agentAdapterIdentity(AGENT_ADAPTER_REGISTRY.get(id));
     assert.equal(identity.id, id);
-    const expectedVersion = id === 'claude-code' ? '1.17.2'
+    const expectedVersion = ['codex', 'openrouter'].includes(id) ? '1.0.0' : id === 'claude-code' ? '1.17.2'
       : id === 'reference-fixture' ? '1.4.0'
       : id === 'deterministic' ? '1.3.0' : '1.2.0';
     assert.equal(identity.version, expectedVersion);
@@ -46,6 +46,18 @@ test('built-in agent adapters are statically registered and content identified',
 });
 
 test('requests are normalized and unsupported modes fail before launch', () => {
+  const codex = AGENT_ADAPTER_REGISTRY.get('codex');
+  assert.equal(codex.provider, 'openai');
+  assert.deepEqual(agentRequestArgv(codex, request).slice(1, 3), ['--provider', 'openai']);
+  assert.equal(codex.entrypoint, AGENT_ADAPTER_REGISTRY.get('claude-code').entrypoint);
+  const routed = AGENT_ADAPTER_REGISTRY.get('openrouter');
+  assert.equal(routed.entrypoint, codex.entrypoint);
+  assert.deepEqual(routed.requiredExecutables, codex.requiredExecutables);
+  assert.equal(routed.apiKeyEnvironmentVariable, 'OPENROUTER_API_KEY');
+  const routedArgs = agentRequestArgv(routed, { ...request, providerRoute: 'openai', maxOutputTokens: 8192 });
+  assert.deepEqual(routedArgs.slice(1, 3), ['--provider', 'openrouter']);
+  assert.equal(routedArgs[routedArgs.indexOf('--provider-route') + 1], 'openai');
+  assert.equal(routedArgs[routedArgs.indexOf('--max-output-tokens') + 1], '8192');
   const deterministic = AGENT_ADAPTER_REGISTRY.get('deterministic');
   assert.deepEqual(agentRequestArgv(deterministic, request).slice(1, 7),
     ['--mode', 'build', '--backend', 'stub', '--level', '1']);
@@ -119,6 +131,24 @@ test('completion validation rejects wrong identity and malformed usage', () => {
   assert.deepEqual(normalized.costReceipts, valid.costReceipts);
   assert.deepEqual(normalized.setup.resources, valid.setup.resources);
   assert.equal(normalized.costComplete, true);
+  // Codex reports tokens, not dollar charges; the broker is the cost authority.
+  assert.equal(validateAgentResult({ ...valid, costReceipts: [{ invocation: 1,
+    receipt: { ...receipt, cliCostUsd: null } }] }, nativeRequest).costComplete, true);
+  const routedRequest = { ...nativeRequest, providerRoute: 'openai' };
+  const routedReceipt = { ...receipt, costSource: 'provider-reported', provider: 'openrouter',
+    providerRoute: 'openai', providerReportedCostUsd: receipt.costUsd,
+    upstreamProviders: ['OpenAI'], cliCostUsd: null, calculatedCostUsd: null };
+  const routedResult = { ...valid, costReceipts: [{ invocation: 1, receipt: routedReceipt }] };
+  assert.equal(validateAgentResult(routedResult, routedRequest).costComplete, true);
+  assert.throws(() => validateAgentResult(routedResult, { ...routedRequest, providerRoute: 'other' }),
+    /provider route/);
+  assert.throws(() => validateAgentResult({ ...routedResult, costReceipts: [{ invocation: 1,
+    receipt: { ...routedReceipt, providerReportedCostUsd: 0 } }] }, routedRequest), /cost evidence/);
+  const noLedger = validateAgentResult({ ...routedResult, ok: false, costReceipts: [{ invocation: 1,
+    receipt: { ...routedReceipt, providerRoute: undefined, providerReportedCostUsd: undefined,
+      upstreamProviders: undefined, exact: false, complete: false, reconciled: false,
+      error: 'ledger unavailable' } }] }, routedRequest);
+  assert.equal(noLedger.costComplete, false);
   assert.throws(() => validateAgentResult({ ...valid, appDir: 'C:\\other' }, nativeRequest), /appDir/);
   assert.throws(() => validateAgentResult({ ...valid, usage: { ...valid.usage, input: -1 } }, nativeRequest),
     /usage.input/);

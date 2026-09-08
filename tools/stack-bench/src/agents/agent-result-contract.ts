@@ -1,7 +1,6 @@
 import { pricingRatesEqual, validatePricingAuthority }
   from '../evidence/pricing-authority.js';
-import type { PricingRates } from '../evidence/pricing-authority.js';
-import type { ClaudeUsage } from '../evidence/claude-usage-cost.js';
+import type { CredentialBrokerReceipt } from '../../container/credential-broker-accounting.js';
 import { formatZodError } from '../zod-error.js';
 import type { AgentMode, AgentRequest } from './agent-adapter-contract.js';
 import { z } from 'zod';
@@ -10,26 +9,7 @@ export const AGENT_COST_RECEIPT_TOLERANCE_USD = 0.0001;
 
 type UnknownRecord = Record<string, unknown>;
 
-export interface AgentCostReceipt {
-  schemaVersion: 3;
-  source: 'credential-broker';
-  model: string;
-  maxBudgetUsd: number;
-  costUsd: number;
-  cliCostUsd: number | null;
-  calculatedCostUsd: number | null;
-  usage: ClaudeUsage | null;
-  pricingRates: PricingRates | null;
-  // `costUsd` is exact provider usage priced at `pricingRates` when `exact`;
-  // otherwise it also carries the cost ceiling of every estimated request and
-  // is an upper bound.
-  exact: boolean;
-  estimatedRequests: number;
-  estimatedByReason: Record<'no-usage' | 'response-aborted' | 'upstream-error', number>;
-  complete: boolean;
-  reconciled: boolean;
-  error: string | null;
-}
+export type AgentCostReceipt = CredentialBrokerReceipt;
 
 export interface AgentCostReceiptEntry {
   invocation: number;
@@ -117,6 +97,11 @@ const receiptUsageSchema = z.strictObject({
 });
 const nonNegativeInteger = z.number().int().nonnegative();
 const receiptSchema = z.strictObject({
+  costSource: z.literal('provider-reported').optional(),
+  provider: z.literal('openrouter').optional(),
+  providerRoute: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/).optional(),
+  providerReportedCostUsd: nonNegativeNumber.optional(),
+  upstreamProviders: z.array(z.string().min(1)).optional(),
   schemaVersion: z.literal(3),
   source: z.literal('credential-broker'),
   model: z.string().min(1),
@@ -195,9 +180,20 @@ export function validateAgentCostReceipt(value: unknown, model: string, at: stri
   if (receipt.model !== model || receipt.reconciled !== (receipt.error === null)) {
     throw new Error(`${at} is invalid`);
   }
+  const reported = receipt.costSource === 'provider-reported';
+  if (reported ? receipt.provider !== 'openrouter' || receipt.calculatedCostUsd !== null
+    || (receipt.reconciled && (!receipt.providerRoute
+      || receipt.providerReportedCostUsd === undefined || !receipt.upstreamProviders))
+    || (receipt.providerReportedCostUsd !== undefined
+      && (receipt.providerReportedCostUsd > receipt.costUsd + AGENT_COST_RECEIPT_TOLERANCE_USD
+      || (receipt.exact && Math.abs(receipt.providerReportedCostUsd - receipt.costUsd) > AGENT_COST_RECEIPT_TOLERANCE_USD)))
+    : receipt.provider !== undefined || receipt.providerRoute !== undefined
+      || receipt.providerReportedCostUsd !== undefined || receipt.upstreamProviders !== undefined) {
+    throw new Error(`${at} has inconsistent provider cost evidence`);
+  }
   if (receipt.reconciled && (!receipt.complete || receipt.usage === null
-    || receipt.pricingRates === null || receipt.cliCostUsd === null
-    || receipt.calculatedCostUsd === null)) {
+    || receipt.pricingRates === null
+    || (!reported && receipt.calculatedCostUsd === null))) {
     throw new Error(`${at} is incomplete`);
   }
   return receipt;
@@ -241,6 +237,9 @@ export function validateAgentResult(value: unknown, request: AgentRequest): Vali
   const costUsd = result.costUsd;
   const costReceipts = validateCostReceipts(
     result.costReceipts === undefined ? [] : result.costReceipts, request.model);
+  if (costReceipts.some(({ receipt }) => receipt.reconciled && receipt.providerRoute !== request.providerRoute)) {
+    throw new Error('agent result provider route does not match the request');
+  }
   const pricing = request.pricing == null ? null
     : validatePricingAuthority(request.pricing, { at: 'agent request pricing' });
   const cappedNative = request.adapterCostLimit === 'native' && request.maxBudgetUsd != null;

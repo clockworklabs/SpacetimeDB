@@ -1,6 +1,7 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 
+import { validateProviderRoute, validateProviderOutputLimit } from '../agents/agent-adapter-contract.js';
 import { agentAdapterIdentity, AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.js';
 import type { AgentAdapterIdentity } from '../agents/agent-adapters.js';
 import { resolveCalibrationForRelease } from '../composition/calibration-compiler.js';
@@ -67,6 +68,8 @@ export interface CampaignAgentSelection {
   adapter: string;
   adapterVersion: string;
   model: string;
+  providerRoute?: string;
+  maxOutputTokens?: number;
 }
 
 export interface CampaignLevelSelection {
@@ -232,6 +235,8 @@ export interface CampaignAttemptPlan extends UnknownRecord {
   id: string;
   stack: string;
   model: string;
+  providerRoute?: string;
+  maxOutputTokens?: number;
   guidance: string;
   repetition: number;
   order: number;
@@ -255,6 +260,8 @@ interface ProgressionAttempt {
   stack: string;
   agentAdapter: string;
   model: string;
+  providerRoute?: string;
+  maxOutputTokens?: number;
   condition: { contentSha256: string };
 }
 
@@ -269,6 +276,8 @@ export function campaignProgressionOwner(plan: ProgressionCampaign, attempt: Pro
       stack: attempt.stack,
       agentAdapter: attempt.agentAdapter,
       model: attempt.model,
+      ...(attempt.providerRoute ? { providerRoute: attempt.providerRoute } : {}),
+      ...(attempt.maxOutputTokens ? { maxOutputTokens: attempt.maxOutputTokens } : {}),
       conditionSha256: attempt.condition.contentSha256,
     },
     ...(workspace ? { workspace: { appDirectory: 'source' } } : {}),
@@ -341,7 +350,7 @@ const MODULAR_SELECTION_FIELDS = new Set(['levels']);
 const MODULAR_LEVEL_FIELDS = new Set(['level', 'recipe', 'features', 'checks']);
 const PROGRESSION_LEVEL_FIELDS = new Set(['level', 'recipe']);
 const STACK_FIELDS = new Set(['id', 'adapterVersion', 'repetitions']);
-const AGENT_FIELDS = new Set(['adapter', 'adapterVersion', 'model']);
+const AGENT_FIELDS = new Set(['adapter', 'adapterVersion', 'model', 'providerRoute', 'maxOutputTokens']);
 const ORDERING_FIELDS = new Set(['method', 'seed']);
 const BUDGET_FIELDS = new Set(['attemptTimeoutMinutes', 'maxCostUsdPerAttempt']);
 const ATTEMPT_POLICY_FIELDS = new Set(['retries', 'retryOn', 'excludeFromAnalysis']);
@@ -531,6 +540,9 @@ export function validateCampaignDefinition(input: unknown,
     identifier(agent.adapter, `${at}.adapter`);
     version(agent.adapterVersion, `${at}.adapterVersion`);
     string(agent.model, `${at}.model`);
+    const provider = AGENT_ADAPTER_REGISTRY.get(agent.adapter as string).provider;
+    validateProviderRoute(provider, agent.providerRoute);
+    validateProviderOutputLimit(provider, agent.maxOutputTokens);
     return agent as unknown as CampaignAgentSelection;
   }, { nonEmpty: true, sort: true });
   const agentKeys = value.agents.map(agent => canonicalDefinitionJson(agent));
@@ -753,7 +765,9 @@ function expandAttempts(definition: CampaignDefinition, requestedLevels: number[
   const conditions = agents.flatMap((agent, agentIndex) => studyConditions.flatMap(
     (condition, conditionIndex) => stacks.map(stack => ({
       agent, agentIndex, condition, conditionIndex, stack,
-      key: canonicalDefinitionJson({ agent: { adapter: agent.adapter, model: agent.model },
+      key: canonicalDefinitionJson({ agent: { adapter: agent.adapter, model: agent.model,
+        ...(agent.providerRoute ? { providerRoute: agent.providerRoute } : {}),
+        ...(agent.maxOutputTokens ? { maxOutputTokens: agent.maxOutputTokens } : {}) },
         condition: condition.contentSha256, stack: stack.id }),
     })))).sort((left, right) => {
     const leftHash = sha256(`${definition.ordering.seed}\0${left.key}`);
@@ -772,6 +786,8 @@ function expandAttempts(definition: CampaignDefinition, requestedLevels: number[
         stack: stack.id,
         agentAdapter: agent.adapter,
         model: agent.model,
+        ...(agent.providerRoute ? { providerRoute: agent.providerRoute } : {}),
+        ...(agent.maxOutputTokens ? { maxOutputTokens: agent.maxOutputTokens } : {}),
         pricing: { unit: definition.pricing.unit,
           rates: definition.pricing.models[agent.model]! },
         condition,

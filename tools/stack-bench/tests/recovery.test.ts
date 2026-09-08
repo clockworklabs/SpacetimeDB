@@ -58,6 +58,8 @@ test('authenticated recovery releases exact lease resources and removes private 
     const recovery = readArtifactPayload(join(f.output, 'recovery.json'),
       { expectedKind: 'recovery' });
     assert.equal(recovery.status, 'clean');
+    assert.equal(recovery.ownershipMarkerSha256,
+      recoveryPlan(f.lease).ownershipMarkerSha256);
     assert.equal(JSON.stringify(recovery).includes(f.lease.ownershipToken), false);
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });

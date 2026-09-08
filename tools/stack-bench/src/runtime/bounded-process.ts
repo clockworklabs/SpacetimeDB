@@ -30,6 +30,8 @@ export interface RunBoundedOptions {
   env?: NodeJS.ProcessEnv;
   stdio?: 'inherit' | 'ignore';
   timeoutMs: number;
+  /** Owner may increase the total allowance. Called before each deadline check. */
+  refreshTimeoutMs?: (current: number, canExtend: boolean) => number;
   logs?: { stdout: string; stderr: string; maxBytes?: number } | null;
   signal?: AbortSignal | null;
 }
@@ -55,7 +57,8 @@ function openCapture(path: string): CaptureState {
 
 export function runBounded(command: string, argv: readonly string[],
   { cwd = process.cwd(), env = process.env, stdio = 'inherit', timeoutMs,
-    terminate = killTree, logs = null, signal = null, gracefulCancellationMs = 0 }:
+    terminate = killTree, logs = null, signal = null, gracefulCancellationMs = 0,
+    refreshTimeoutMs }:
     RunBoundedOptions & {
       terminate?: (pid: number) => void; gracefulCancellationMs?: number;
     }): Promise<BoundedProcessResult> {
@@ -147,15 +150,40 @@ export function runBounded(command: string, argv: readonly string[],
       if (signal.aborted) cancel();
       else signal.addEventListener('abort', cancel, { once: true });
     }
-    const deadline = Date.now() + timeoutMs;
+    const startedAt = Date.now();
+    let deadline = startedAt + timeoutMs;
+    let timer: NodeJS.Timeout;
+    const refresh = (): void => {
+      if (!refreshTimeoutMs) return;
+      try {
+        const allowed = !timedOut && !cancelled && !captureError && Date.now() < deadline;
+        const next = refreshTimeoutMs(timeoutMs, allowed);
+        if (!Number.isSafeInteger(next) || next < timeoutMs
+          || !Number.isSafeInteger(startedAt + next)) throw new Error('invalid extended process timeout');
+        if (allowed && next > timeoutMs) {
+          timeoutMs = next;
+          deadline = startedAt + next;
+        }
+      } catch (error) {
+        captureError = error instanceof Error ? error : new Error(String(error));
+        stop();
+      }
+    };
     const expire = (): void => {
+      refresh();
+      if (captureError || cancelled) return;
+      if (Date.now() < deadline && !captureError && !cancelled) {
+        timer = setTimeout(expire, Math.min(deadline - Date.now(), 2_147_483_647));
+        return;
+      }
       if (timedOut) return;
       timedOut = true;
       stop();
     };
-    const timer = setTimeout(expire, timeoutMs);
+    timer = setTimeout(expire, Math.min(timeoutMs, 2_147_483_647));
     // Monotonic timers can pause during host sleep. Enforce the wall deadline on resume too.
     const wallTimer = setInterval(() => {
+      refresh();
       if (Date.now() >= deadline) expire();
     }, 1_000);
     wallTimer.unref();

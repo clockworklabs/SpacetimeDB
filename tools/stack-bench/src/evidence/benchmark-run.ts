@@ -229,6 +229,8 @@ export interface BenchmarkRunRecord {
   track: string;
   backend: string;
   model: string;
+  providerRoute?: string;
+  maxOutputTokens?: number;
   pricing: unknown;
   guidance: string;
   condition: unknown;

@@ -52,6 +52,8 @@ interface GradeBundlePayload {
 interface BenchmarkRunPayload {
   backend?: string;
   model?: string;
+  providerRoute?: string;
+  maxOutputTokens?: number;
   condition?: { contentSha256?: string };
   progressionOwner?: unknown;
   featureCatalog?: unknown;
@@ -192,6 +194,8 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
     'dependencyPolicyIdentity');
   mismatch(run.payload.backend !== validatedOwner.attempt.stack, 'run.backend');
   mismatch(run.payload.model !== validatedOwner.attempt.model, 'run.model');
+  mismatch(run.payload.providerRoute !== validatedOwner.attempt.providerRoute, 'run.providerRoute');
+  mismatch(run.payload.maxOutputTokens !== validatedOwner.attempt.maxOutputTokens, 'run.maxOutputTokens');
   mismatch(run.payload.condition?.contentSha256 !== validatedOwner.attempt.conditionSha256, 'run.condition');
   mismatch(canonicalDefinitionJson(run.payload.progressionOwner)
     !== canonicalDefinitionJson(campaignOwner), 'run.progressionOwner');

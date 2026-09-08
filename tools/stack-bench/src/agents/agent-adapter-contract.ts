@@ -1,3 +1,4 @@
+import { MAX_BROKER_OUTPUT_TOKENS } from '../../container/credential-broker-accounting.js';
 import { validatePricingAuthority } from '../evidence/pricing-authority.js';
 import { isExactSemanticVersion } from '../semantic-version.js';
 import { formatZodError } from '../zod-error.js';
@@ -20,6 +21,8 @@ export interface AgentRequest {
   track: string;
   runIndex: number;
   model: string;
+  providerRoute?: string;
+  maxOutputTokens?: number;
   guidance: string;
   adapterCostLimit?: AgentCostLimit;
   maxBudgetUsd?: number | null;
@@ -46,6 +49,7 @@ const agentAdapterSchema = z.strictObject({
   id: z.string().regex(ID),
   version: z.string().refine(isExactSemanticVersion),
   entrypoint: z.string().min(1),
+  provider: z.string().regex(ID).nullable().default(null),
   modes: z.array(z.enum(['build', 'upgrade', 'resume', 'fix'])).min(1).refine(unique),
   deadlineMs: z.number().int().min(1_000),
   defaultModel: z.string().min(1),
@@ -113,17 +117,44 @@ export function agentRecipeIdentity(
   return bound.id;
 }
 
+export function validateProviderRoute(provider: string | null, route: unknown): string | undefined {
+  if (provider !== 'openrouter') {
+    if (route !== undefined) throw new Error('providerRoute is only supported by the openrouter adapter');
+    return undefined;
+  }
+  if (typeof route !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(route)) {
+    throw new Error('providerRoute must name one OpenRouter provider endpoint');
+  }
+  return route;
+}
+
+export function validateProviderOutputLimit(provider: string | null, limit: unknown): number | undefined {
+  if (provider !== 'openrouter') {
+    if (limit !== undefined) throw new Error('maxOutputTokens is only supported by the openrouter adapter');
+    return undefined;
+  }
+  if (typeof limit !== 'number' || !Number.isSafeInteger(limit)
+    || limit < 1 || limit > MAX_BROKER_OUTPUT_TOKENS) {
+    throw new Error(`maxOutputTokens must be an integer from 1 to ${MAX_BROKER_OUTPUT_TOKENS}`);
+  }
+  return limit;
+}
+
 export function agentRequestArgv(adapter: AgentAdapter, request: AgentRequest): string[] {
+  const providerRoute = validateProviderRoute(adapter.provider, request.providerRoute);
+  const maxOutputTokens = validateProviderOutputLimit(adapter.provider, request.maxOutputTokens);
   if (!adapter.modes.includes(request.mode)) {
     throw new Error(`agent adapter ${adapter.id} does not support mode ${request.mode}`);
   }
   if (request.maxBudgetUsd != null && adapter.costLimit === 'unsupported') {
     throw new Error(`agent adapter ${adapter.id} cannot enforce a cost limit`);
   }
-  return [adapter.entrypoint, '--mode', request.mode, '--backend', request.backend,
+  return [adapter.entrypoint, ...(adapter.provider ? ['--provider', adapter.provider] : []), '--mode', request.mode, '--backend', request.backend,
     '--level', String(request.level), '--app', request.app, '--track', request.track,
     '--run-index', String(request.runIndex), '--model', request.model,
     '--guidance', request.guidance,
+    ...(providerRoute ? ['--provider-route', providerRoute] : []),
+    ...(maxOutputTokens ? ['--max-output-tokens', String(maxOutputTokens)] : []),
     ...(request.recipe ? ['--recipe', request.recipe] : []),
     ...(request.guidanceDocument
       ? ['--guidance-document-json', JSON.stringify(request.guidanceDocument)] : []),

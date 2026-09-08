@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { closeSync, fsyncSync, linkSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, fsyncSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -154,16 +154,17 @@ function syncDirectory(root: string): void {
   try { fsyncSync(fd); } finally { closeSync(fd); }
 }
 
-function publish(path: string, record: unknown): void {
+export function writeCampaignRecord(path: string, record: unknown, immutable = true): void {
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const temporary = `${path}.${randomUUID()}.tmp`;
-  const fd = openSync(temporary, 'wx', 0o600);
   try {
-    writeFileSync(fd, `${JSON.stringify(record)}\n`);
-    fsyncSync(fd);
-  } finally { closeSync(fd); }
-  try { linkSync(temporary, path); }
+    const fd = openSync(temporary, 'wx', 0o600);
+    try { writeFileSync(fd, `${JSON.stringify(record)}\n`); fsyncSync(fd); }
+    finally { closeSync(fd); }
+    if (immutable) linkSync(temporary, path); else renameSync(temporary, path);
+    syncDirectory(dirname(path));
+  }
   finally { rmSync(temporary, { force: true }); }
-  syncDirectory(dirname(path));
 }
 
 // Pure transaction for portable record tests. Production always calls under flock.
@@ -178,7 +179,7 @@ export function campaignLockTransaction(input: CampaignLockTransaction,
       || existing.campaignSha256 !== input.campaign.contentSha256) fail('cancellation campaign does not match owner');
     const cancellation = `${path}.cancel`;
     // Repeated Stop requests for one owner are idempotent.
-    try { publish(cancellation, { ...input, version: 1 }); }
+    try { writeCampaignRecord(cancellation, { ...input, version: 1 }); }
     catch (error) { if (errorCode(error) !== 'EEXIST') throw error; }
     return true;
   }
@@ -204,7 +205,7 @@ export function campaignLockTransaction(input: CampaignLockTransaction,
     rmSync(path);
   }
   rmSync(`${path}.cancel`, { force: true });
-  publish(path, expected);
+  writeCampaignRecord(path, expected);
   return true;
 }
 

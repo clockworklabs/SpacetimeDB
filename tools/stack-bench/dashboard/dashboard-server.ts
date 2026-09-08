@@ -21,6 +21,7 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { stackBenchResultsRoot } from '../src/runtime/operational-paths.js';
 import { controllerRuntimeCommand } from '../appliance/controller.js';
 import { requestCampaignCancellation } from '../src/campaigns/campaign-lock.js';
+import { readCampaignTimeBudget, requestCampaignTimeGrant } from '../src/campaigns/campaign-time-grant.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 
 const DASHBOARD_ROOT = dirname(fileURLToPath(import.meta.url));
@@ -317,6 +318,32 @@ export function createDashboardServer(options: DashboardServerOptions) {
           if (!listeners.size) stopEvents();
         });
         return;
+      }
+      const timeRoute = url.pathname.match(/^\/api\/campaigns\/([^/]+)\/attempts\/([^/]+)\/time$/);
+      if (timeRoute && (request.method === 'GET' || request.method === 'POST')) {
+        const key = decodeURIComponent(timeRoute[1] ?? '');
+        if (!SAFE_NAME.test(key)) return json(response, 400, { error: 'The campaign name is invalid.' });
+        const directory = contained(campaignsRoot, key, 'campaign');
+        const attemptId = decodeURIComponent(timeRoute[2] ?? '');
+        if (request.method === 'GET') return json(response, 200, readCampaignTimeBudget(directory, attemptId));
+        if (!allowLaunch) return json(response, 503, { error: 'Run controls are available inside the Stack Bench appliance.' });
+        if (!controlAuthorized(request, request.headers.host, token, controlSecret)) {
+          return json(response, 403, { error: 'The time request is not authorized.' });
+        }
+        const input = await body(request) as { minutes?: unknown; grantId?: unknown } | null;
+        if (!input || typeof input.minutes !== 'number' || !Number.isSafeInteger(input.minutes * 60_000)
+          || !Number.isInteger(input.minutes) || input.minutes <= 0 || typeof input.grantId !== 'string') {
+          return json(response, 400, { error: 'Positive whole minutes and a grant ID are required.' });
+        }
+        try {
+          const receipt = requestCampaignTimeGrant(directory, {
+            attemptId, grantId: input.grantId, minutes: input.minutes,
+          });
+          return json(response, receipt.disposition === 'rejected' ? 409 : 202,
+            receipt.disposition === 'rejected' ? { ...receipt, error: receipt.reason } : receipt);
+        } catch (error) {
+          return json(response, 409, { error: errorMessage(error) });
+        }
       }
       const stopRoute = url.pathname.match(/^\/api\/campaigns\/([^/]+)\/stop$/);
       if (request.method === 'POST' && stopRoute) {

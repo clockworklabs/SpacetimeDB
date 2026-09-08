@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,9 +11,13 @@ import { compileCampaignFile, validateCampaignDefinition }
   from '../src/campaigns/campaign-compiler.js';
 import { addCampaignExtensions, claimNextAttempt, classifyCampaignExecution, createCampaignState,
   finishCampaignExecution, markInterruptedExecution, scheduleDependencyContinuation,
+  initializeCampaignDirectory, writeCampaignState,
   validateCampaignState }
   from '../src/campaigns/campaign-scheduler.js';
 import type { CampaignClaim, CampaignState } from '../src/campaigns/campaign-scheduler.js';
+import { campaignTimeBudget, requestCampaignTimeGrant, readCampaignTimeBudget }
+  from '../src/campaigns/campaign-time-grant.js';
+import { campaignLockTransaction, controllerInstance } from '../src/campaigns/campaign-lock.js';
 
 test('incomplete dependency measurement is excluded without hiding provider failures', () => {
   const run = { progressionStatus: { phase: 'active' }, outcome: { kind: 'app_failure' } };
@@ -33,6 +38,41 @@ const initialState = createCampaignState(compiledExample,
   { now: '2026-08-12T00:00:00.000Z' });
 const plan = () => structuredClone(compiledExample);
 const prepared = () => structuredClone(initialState);
+
+test('time grants are idempotent requests and retain cumulative elapsed time', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'campaign-time-grant-'));
+  try {
+    const initialized = initializeCampaignDirectory(plan(), directory);
+    const claimed = claimNextAttempt(initialized.state, { admissionId: 'test-admission' });
+    assert(claimed.claim);
+    writeCampaignState(initialized.paths.state, initialized.plan, claimed.state);
+    campaignLockTransaction({ operation: 'acquire', lock: { path: join(directory, '.campaign.lock.json'),
+      token: 'test', record: { version: 2, campaignId: initialized.plan.id,
+        campaignSha256: initialized.plan.contentSha256, ownerPid: process.pid,
+        ownerInstance: controllerInstance(), ownershipMarkerSha256: createHash('sha256').update('test').digest('hex'),
+        acquiredAt: new Date().toISOString() } } });
+    const request = { attemptId: claimed.claim.attempt.id, grantId: 'extra-time', minutes: 60 };
+    const result = requestCampaignTimeGrant(directory, request);
+    assert.equal(result.disposition, 'pending');
+    assert.deepEqual(requestCampaignTimeGrant(directory, request), result);
+    assert.throws(() => requestCampaignTimeGrant(directory, { ...request, minutes: 61 }), /different content/);
+    assert.throws(() => requestCampaignTimeGrant(directory, { ...request, minutes: Number.MAX_SAFE_INTEGER }));
+    assert.equal(readCampaignTimeBudget(directory, request.attemptId).grants.length, 1);
+    const attempt = claimed.state.attempts.find(a => a.plan.id === request.attemptId)!;
+    const original = plan().definition.budgets.attemptTimeoutMinutes;
+    attempt.timeGrants = [{ ...result, disposition: 'accepted', acceptedAt: new Date().toISOString(),
+      previousMinutes: original, effectiveMinutes: original + 60 }];
+    const start = Date.parse(attempt.executions[0]!.startedAt);
+    const budget = campaignTimeBudget(plan(), attempt, start + 5000);
+    assert.equal(budget.effectiveMinutes, original + 60);
+    assert.equal(budget.consumedMs, 5000);
+    assert.equal(budget.extensionCount, 1);
+    attempt.executions[0]!.timeExtensionSupported = false;
+    claimed.state.updatedAt = new Date().toISOString();
+    writeCampaignState(initialized.paths.state, initialized.plan, claimed.state);
+    assert.throws(() => requestCampaignTimeGrant(directory, { ...request, grantId: 'unsupported' }), /does not support/);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
 
 function attemptAt(state: CampaignState, index = 0) {
   const attempt = state.attempts[index];

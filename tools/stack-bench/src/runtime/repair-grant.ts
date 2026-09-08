@@ -58,6 +58,8 @@ interface RepairParentPayload extends Record<string, unknown> {
   track: string;
   backend: string;
   model: string;
+  providerRoute?: string;
+  maxOutputTokens?: number;
   guidance: unknown;
   condition?: RepairCondition | null;
   selectionRequest?: unknown;
@@ -95,6 +97,8 @@ export interface RepairConfiguration {
   runIndex: number;
   agentAdapter: string;
   model: string;
+  providerRoute?: string;
+  maxOutputTokens?: number;
   guidance: unknown;
   guidanceDocument: unknown;
   condition: RepairCondition | null;
@@ -330,6 +334,8 @@ export function inspectRepairParent(parentDirectory: string,
       runIndex,
       agentAdapter,
       model: parent.model,
+      ...(parent.providerRoute ? { providerRoute: parent.providerRoute } : {}),
+      ...(parent.maxOutputTokens ? { maxOutputTokens: parent.maxOutputTokens } : {}),
       guidance: parent.guidance,
       guidanceDocument,
       condition: parent.condition ?? null,

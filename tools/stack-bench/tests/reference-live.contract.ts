@@ -784,6 +784,38 @@ test('bounded execution refuses to overwrite an existing process log', async () 
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('live deadline extension preserves the process and late grants cannot revive it', async () => {
+  let polls = 0;
+  const started = Date.now();
+  const result = await runBounded(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
+    stdio: 'ignore', timeoutMs: 1400,
+    terminate: pid => process.kill(pid, 'SIGKILL'),
+    refreshTimeoutMs: (current, canExtend) => {
+      polls++;
+      return canExtend && polls === 1 ? 2000 : current;
+    },
+  });
+  assert.equal(result.timedOut, true);
+  assert(Date.now() - started >= 1950);
+  let late = false;
+  const expired = await runBounded(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
+    stdio: 'ignore', timeoutMs: 100,
+    terminate: pid => process.kill(pid, 'SIGKILL'),
+    refreshTimeoutMs: (current, canExtend) => { late = !canExtend; return current + 1000; },
+  });
+  assert(late);
+  assert(expired.timedOut);
+});
+
+test('deadline refresh failures remain harness errors rather than timeouts', async () => {
+  const result = await runBounded(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
+    stdio: 'ignore', timeoutMs: 3000, terminate: pid => process.kill(pid, 'SIGKILL'),
+    refreshTimeoutMs: () => { throw new Error('grant receipt write failed'); },
+  });
+  assert.equal(result.timedOut, false);
+  assert.match(result.error!.message, /receipt write failed/);
+});
+
 test('supervisor accepts a deleted private lease only with matching released evidence', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-supervisor-evidence-'));
   try {

@@ -363,6 +363,30 @@ test('preflight fails before a paid run when the selected agent executable is ab
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('expired OpenAI account credentials fail preflight without exposing the token', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-codex-'));
+  try {
+    const credential = join(root, 'auth.json');
+    const token = 'header.eyJleHAiOjF9.signature';
+    writeFileSync(credential, JSON.stringify({ auth_mode: 'chatgpt',
+      tokens: { access_token: token, account_id: 'account' } }));
+    const selected = parsePreflightArgs(['node', 'preflight.js', '--backend', 'stub',
+      '--track', 'loop', '--levels', '1', '--agent-adapter', 'codex', '--results-dir', root]);
+    const report = runPreflight(selected, { run: (_file, args) => {
+      if (args[0] === 'info') return dockerInfo();
+      if (args[0] === 'compose') return '2.40.0';
+      if (args[0] === 'ps') return '';
+      if (args[0] === 'image') return args[3] === '{{.Os}}/{{.Architecture}}' ? 'linux/amd64' : `${IMAGE_ID}\n`;
+      throw new Error('unexpected Docker command');
+    }, env: { CODEX_AUTH_FILE: credential }, home: root,
+    statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }), pidsOnPort: () => [],
+    probePort: () => ({ free: true }) });
+    assert.equal(requiredCheck(report, 'agent.credentials').status, 'fail');
+    assert.match(requiredCheck(report, 'agent.credentials').summary, /expired/);
+    assert.doesNotMatch(JSON.stringify(report), new RegExp(token));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('a rotating interactive credential cannot satisfy preflight', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-credential-'));
   try {
@@ -601,4 +625,36 @@ test('loopback port proof detects a listener without relying on process visibili
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
   assert.deepEqual(probeLoopbackPort(address.port), { free: false });
+});
+
+test('OpenRouter preflight requires its own key and a pinned route without revealing secrets', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-openrouter-'));
+  try {
+    const keyFile = join(root, 'key');
+    writeFileSync(keyFile, 'private-router-key');
+    const selected = request(root, ['--agent-adapter', 'openrouter', '--provider-route', 'openai',
+      '--max-output-tokens', '8192']);
+    const options = { run: (_file: string, args: string[]) => {
+      if (args[0] === 'info') return dockerInfo();
+      if (args[0] === 'compose') return '2.40.0';
+      if (args[0] === 'ps') return '';
+      if (args[0] === 'image') return args[3] === '{{.Os}}/{{.Architecture}}' ? 'linux/amd64' : `${IMAGE_ID}\n`;
+      throw new Error('unexpected Docker command');
+    }, home: root, statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }),
+    pidsOnPort: () => [], probePort: () => ({ free: true }) };
+    for (const [env, expected] of [
+      [{ OPENROUTER_API_KEY_FILE: keyFile }, 'pass'],
+      [{ OPENAI_API_KEY: 'private-other-key' }, 'fail'],
+      [{ OPENROUTER_API_KEY_FILE: keyFile, OPENROUTER_API_KEY: 'private-duplicate' }, 'fail'],
+    ] as const) {
+      const report = runPreflight(selected, { ...options, env });
+      assert.equal(requiredCheck(report, 'agent.credentials').status, expected);
+      assert.doesNotMatch(JSON.stringify(report), /private-router-key|private-other-key|private-duplicate/);
+    }
+    const missingRoute = runPreflight({ ...selected, providerRoute: undefined },
+      { ...options, env: { OPENROUTER_API_KEY_FILE: keyFile } });
+    assert.equal(missingRoute.ok, false);
+    assert(missingRoute.checks.some(check => check.status === 'fail'
+      && check.summary.includes('providerRoute')));
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

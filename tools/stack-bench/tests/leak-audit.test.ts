@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -8,10 +8,82 @@ import { runAuditNetworkContext } from '../commands/bench.js';
 import { createBackendLease } from '../src/runtime/backend-lease.js';
 import { loadTrack } from '../src/composition/tracks.js';
 import { auditTranscript, networkTargetsFromBash, pathsFromBash } from '../commands/leak-audit.js';
+import { archiveTranscripts, transcriptDirectories } from '../src/agents/transcript-archive.js';
+import { codexTranscriptDirectory } from '../src/agents/codex-protocol.js';
 
 test('Bash reader extraction keeps absolute file arguments', () => {
   assert.deepEqual(pathsFromBash('cat /app/src/main.ts; rg secret /outside/notes.md'),
     ['/app/src/main.ts', '/outside/notes.md']);
+});
+
+test('Codex tool events use the shared restricted access and refusal audit', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-codex-audit-'));
+  const transcript = join(root, 'session.events.jsonl');
+  try {
+    const events = [
+      { type: 'stack_bench_context', cwd: '/app' },
+      { type: 'item.completed', item: { id: 'read', type: 'command_execution',
+        command: "/bin/bash -lc 'cat /tools/stack-bench/grader/grade.ts'",
+        status: 'completed', exit_code: 0, aggregated_output: 'private contents' } },
+      { type: 'item.completed', item: { id: 'net', type: 'command_execution',
+        command: 'curl http://host.docker.internal:7331/api/overview',
+        status: 'completed', exit_code: 0, aggregated_output: '{}' } },
+      { type: 'item.completed', item: { id: 'edit', type: 'file_change',
+        status: 'completed', changes: [{ path: '/app/src/../stack-bench/bundle.json', kind: 'update' }] } },
+      { type: 'item.completed', item: { id: 'refused', type: 'file_change',
+        status: 'failed', changes: [{ path: '/tools/stack-bench/grader/grade.ts', kind: 'update' }] } },
+      { type: 'item.started', item: { id: 'cut', type: 'command_execution',
+        command: 'cat /tools/stack-bench/scenarios/test.json', status: 'in_progress' } },
+    ];
+    writeFileSync(transcript, events.map(event => JSON.stringify(event)).join('\n'));
+    const audit = auditTranscript(transcript, 'C:/host/app');
+    assert.equal(audit.cwd, '/app');
+    assert.deepEqual(audit.hits.map(hit => hit.path), [
+      '/tools/stack-bench/grader/grade.ts', 'host.docker.internal:7331',
+      '/app/stack-bench/bundle.json', '/tools/stack-bench/scenarios/test.json',
+    ]);
+    assert.equal(audit.hits.at(-1)?.unresolved, true);
+    assert.equal(audit.refused.length, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('failed Codex commands retain partial reads but refuse empty output', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-codex-refusal-'));
+  const transcript = join(root, 'session.events.jsonl');
+  try {
+    writeFileSync(transcript, ['partial', 'empty'].map(id => JSON.stringify({
+      cwd: '/app', type: 'item.completed', item: { id, type: 'command_execution',
+        command: 'cat /tools/stack-bench/grader/grade.ts; false', status: 'failed',
+        exit_code: 1, aggregated_output: id === 'partial' ? 'private contents' : '' },
+    })).join('\n'));
+    const audit = auditTranscript(transcript, '/app');
+    assert.equal(audit.hits.length, 1);
+    assert.equal(audit.refused.length, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Codex archive copies controller events and excludes native session files', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-codex-archive-'));
+  const store = codexTranscriptDirectory(root);
+  assert(!existsSync(store));
+  try {
+    mkdirSync(join(store, 'sessions'), { recursive: true });
+    writeFileSync(join(store, 'run.events.jsonl'), '{}\n');
+    writeFileSync(join(store, 'sessions', 'agent.events.jsonl'), '{}\n');
+    const output = join(root, 'archive');
+    assert.deepEqual(transcriptDirectories(root, join(root, 'no-claude')), [store]);
+    const result = archiveTranscripts(root, 'attempt', output, join(root, 'no-claude'));
+    assert.equal(result.copied, 1);
+    assert(existsSync(join(output, 'attempt', 'run.events.jsonl')));
+    assert(!existsSync(join(output, 'attempt', 'sessions__agent.events.jsonl')));
+  } finally {
+    rmSync(store, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('a completed external Bash read contaminates the transcript', () => {

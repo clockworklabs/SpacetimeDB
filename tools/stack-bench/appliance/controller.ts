@@ -90,26 +90,26 @@ export function resolveControllerCommand(argv: string[]): ResolvedControllerComm
 export function controllerChildEnvironment(source: NodeJS.ProcessEnv = process.env,
   { requireAgentAuth = true }: { requireAgentAuth?: boolean } = {}): NodeJS.ProcessEnv {
   const env = { ...source };
-  delete env.ANTHROPIC_API_KEY;
-  delete env.ANTHROPIC_API_KEY_FILE;
-  delete env.CLAUDE_CODE_OAUTH_TOKEN;
-  delete env.CLAUDE_CODE_OAUTH_TOKEN_FILE;
+  const modes: Record<string, readonly [string, string]> = {
+    'subscription-token': ['STACK_BENCH_CLAUDE_OAUTH_TOKEN_FILE', 'CLAUDE_CODE_OAUTH_TOKEN_FILE'],
+    'api-key': ['STACK_BENCH_ANTHROPIC_API_KEY_FILE', 'ANTHROPIC_API_KEY_FILE'],
+    'openrouter-api-key': ['STACK_BENCH_OPENROUTER_API_KEY_FILE', 'OPENROUTER_API_KEY_FILE'],
+    'openai-api-key': ['STACK_BENCH_OPENAI_API_KEY_FILE', 'OPENAI_API_KEY_FILE'],
+    'openai-account': ['STACK_BENCH_CODEX_AUTH_FILE', 'CODEX_AUTH_FILE'],
+  };
+  for (const [, variable] of Object.values(modes)) {
+    delete env[variable];
+    delete env[variable.replace(/_FILE$/, '')];
+  }
+  delete env.STACK_BENCH_AGENT_API_KEY;
   if (!requireAgentAuth) return env;
   const mode = source.STACK_BENCH_AGENT_AUTH ?? 'subscription-token';
-  if (!['subscription-token', 'api-key'].includes(mode)) {
-    throw new Error('STACK_BENCH_AGENT_AUTH must be subscription-token or api-key');
-  }
-  if (mode === 'api-key') {
-    const path = source.STACK_BENCH_ANTHROPIC_API_KEY_FILE?.trim();
-    if (!path) throw new Error('api-key auth requires STACK_BENCH_ANTHROPIC_API_KEY_FILE');
-    env.ANTHROPIC_API_KEY_FILE = path;
-  } else {
-    const path = source.STACK_BENCH_CLAUDE_OAUTH_TOKEN_FILE?.trim();
-    if (!path) {
-      throw new Error('subscription-token auth requires STACK_BENCH_CLAUDE_OAUTH_TOKEN_FILE');
-    }
-    env.CLAUDE_CODE_OAUTH_TOKEN_FILE = path;
-  }
+  const selected = Object.hasOwn(modes, mode) ? modes[mode] : undefined;
+  if (!selected) throw new Error(`STACK_BENCH_AGENT_AUTH must be ${Object.keys(modes).join(' or ')}`);
+  const [sourceName, variable] = selected;
+  const path = source[sourceName]?.trim();
+  if (!path) throw new Error(`${mode} auth requires ${sourceName}`);
+  env[variable] = path;
   return env;
 }
 
@@ -158,6 +158,7 @@ function help(): void {
     + '  campaign report <dir>            write the JSON and HTML report\n'
     + '  campaign audit <dir>             check a finished reference campaign against its promises\n'
     + '  campaign grant-repairs <dir> --attempt <id> --level <n> --repairs <n>  add repair budget\n'
+    + '  campaign grant-time <dir> --attempt <id> --grant-id <id> --minutes <n>  add time\n'
     + '  campaign reconcile <plan> --out <dir>  clean up after an interruption and prove it\n'
     + '  campaign modes                   list the campaign modes this controller knows\n'
     + '  dashboard [--port N]             serve the local dashboard\n'

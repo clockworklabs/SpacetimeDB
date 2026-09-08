@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { campaignProviderContinuationContext } from '../src/campaigns/campaign-provider-continuation.js';
 import { execFile, execFileSync } from 'node:child_process';
 import type { ChildProcess, ExecFileSyncOptionsWithStringEncoding } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync, cpSync, rmSync, readdirSync, realpathSync, lstatSync } from 'node:fs';
@@ -31,7 +32,7 @@ import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest }
   from '../src/composition/recipe-selection.js';
 import { criterionEvidence, evidencePassed } from '../src/evidence/check-evidence.js';
 import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
-import { agentRecipeIdentity, agentRequestArgv } from '../src/agents/agent-adapter-contract.js';
+import { agentRecipeIdentity, agentRequestArgv, validateProviderRoute, validateProviderOutputLimit } from '../src/agents/agent-adapter-contract.js';
 import { agentSessionFailure, validateAgentResult }
   from '../src/agents/agent-result-contract.js';
 import { AGENT_ADAPTER_REGISTRY, agentAdapterIdentity } from '../src/agents/agent-adapters.js';
@@ -65,7 +66,8 @@ import { dependencyLevelRepairRecords, dependencyRepairBudget, dependencyRepairR
 import { resolveProgressionRecipeAction, resolveProgressionRecipeLevelSelection,
   resolveProgressionRepairTarget, validateProgressionCampaignLevelScope }
   from '../src/progression/progression-recipe-selection.js';
-import { createLiveProgressionExecution }
+import { createLiveProgressionExecution, clearTimeContinuationBoundary,
+  commitTimeContinuationBoundary }
   from '../src/progression/live-progression.js';
 import type { CampaignSelection } from '../src/campaigns/campaign-compiler.js';
 import { gradingRunTimeoutMs, selectedGradingSourceCount }
@@ -584,13 +586,14 @@ function runAgent(
     recipe: agentRecipeIdentity(args.recipe, recipeTask),
     guidanceDocument: args.guidanceDocument,
     credentialAliases: args.condition?.guidance?.credentialAliases ?? {},
-    recipeTask, pricing: args.pricing,
+    recipeTask, pricing: args.pricing, providerRoute: args.providerRoute, maxOutputTokens: args.maxOutputTokens,
     maxBudgetUsd: remainingBudget, adapterCostLimit: adapter.costLimit };
   const argv = agentRequestArgv(adapter, request);
   if (args.apiKey && !adapter.apiKeyEnvironmentVariable) {
     throw new Error(`agent adapter ${adapter.id} does not accept an API key`);
   }
   const env = { ...process.env };
+  if (args.apiKeyFile) env.STACK_BENCH_AGENT_API_KEY_FILE = args.apiKeyFile;
   if (args.apiKey) {
     const credentialName = adapter.apiKeyEnvironmentVariable;
     if (!credentialName) throw new Error(`agent adapter ${adapter.id} does not accept an API key`);
@@ -598,7 +601,9 @@ function runAgent(
   }
   return new Promise((resolveRun, rejectRun) => {
     const child = execFile('node', argv, {
-      encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: adapter.deadlineMs,
+      encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
+      // The authenticated campaign supervisor owns the full wait deadline and time grants.
+      timeout: campaignProviderContinuationContext(env) ? 0 : adapter.deadlineMs,
       env,
     },
       (error, stdout, stderr) => {
@@ -888,6 +893,8 @@ async function main() {
       runIndex: parent.payload.backendLease.runIndex,
       levels: String(declared.level), levelList: [declared.level], recipe: declared.recipe.id,
       agentAdapter: parent.identities.agentAdapter!.id, model: parent.payload.model,
+      providerRoute: parent.payload.providerRoute,
+      maxOutputTokens: parent.payload.maxOutputTokens,
       featureIds: requested.features, checkKeys: args.checkKeys.length ? args.checkKeys : requested.checks,
       requestedSpecifications: requested.specifications?.requested ?? [],
       expectedSpecifications: requested.specifications?.expected ?? [],
@@ -936,6 +943,8 @@ async function main() {
       runIndex: config.runIndex,
       agentAdapter: config.agentAdapter,
       model: config.model,
+      providerRoute: config.providerRoute,
+      maxOutputTokens: config.maxOutputTokens,
       guidance: config.guidance,
       guidanceDocument: config.guidanceDocument,
       condition: config.condition,
@@ -959,6 +968,8 @@ async function main() {
   const stackAdapter = STACK_ADAPTER_REGISTRY.get(args.backend);
   const materializeCodingOutput = stackAdapter.id !== 'stub';
   const agentAdapter = AGENT_ADAPTER_REGISTRY.get(args.agentAdapter);
+  args.providerRoute = validateProviderRoute(agentAdapter.provider, args.providerRoute);
+  args.maxOutputTokens = validateProviderOutputLimit(agentAdapter.provider, args.maxOutputTokens);
   // Credential aliases keep the fixture passwords out of an agent's prompt,
   // so grading expects the aliases. A reference fixture is the fixture itself,
   // seeded with the real credentials, and is graded with them.
@@ -1124,6 +1135,8 @@ async function main() {
     const preflight = args.backend === 'stub' ? null : runPreflight({
       backends: [stackAdapter.id], track: args.track, levels: args.levels,
       levelList: args.levelList, runIndex: args.runIndex, agentAdapter: args.agentAdapter,
+      providerRoute: args.providerRoute,
+      maxOutputTokens: args.maxOutputTokens,
       modelFree: regrade !== null,
       guidance: args.guidance,
       recipe: args.recipe,
@@ -1468,6 +1481,8 @@ async function main() {
     }),
     mode: args.runMode ?? { id: args.progression ? 'dependency' : 'sequential' },
     track: args.track, backend: args.backend, model: args.model,
+    ...(args.providerRoute ? { providerRoute: args.providerRoute } : {}),
+    ...(args.maxOutputTokens ? { maxOutputTokens: args.maxOutputTokens } : {}),
     pricing: args.pricing,
     guidance: args.guidance, condition: args.condition ?? null,
     skills: args.skills ?? [],
@@ -1655,6 +1670,8 @@ async function main() {
   };
 
   for (let levelIndex = 0; levelIndex < args.levelList.length; levelIndex += 1) {
+    // A previous checkpoint cannot cover a newer session or partial grade.
+    clearTimeContinuationBoundary(outputDir);
     const level = args.levelList[levelIndex]!;
     const t0 = Date.now();
     const continuing = Boolean(args.repairGrant);
@@ -2888,7 +2905,12 @@ async function main() {
       }
     }
     if (progressionState) synchronizeProgressionSummary(run, progressionState);
+    finalizeRunTotals(run, started, { costComplete: runCostComplete });
+    run.outcome = aggregateRunOutcome(run.levels);
     writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
+    if (progressionState && runCostComplete) {
+      commitTimeContinuationBoundary(outputDir, progressionState, level);
+    }
     const blockedLevels = args.levelList.filter(candidate => candidate > level);
     if (args.progression) {
       const progressionState = requireProgressionState(progressionExecution?.state ?? null);

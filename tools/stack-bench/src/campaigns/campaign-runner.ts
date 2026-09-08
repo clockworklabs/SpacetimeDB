@@ -15,6 +15,8 @@ import type { CampaignClaim, CampaignDirectory, CampaignExecutionResult, Campaig
 import type { CampaignExtensionSeed } from './campaign-scheduler.js';
 import { rescueSupervisedLease } from '../runtime/recovery.js';
 import { runBounded } from '../runtime/bounded-process.js';
+import { campaignTimeBudget, readTimeGrantRequests } from './campaign-time-grant.js';
+import { timeContinuationEligibility } from '../progression/live-progression.js';
 import type { BoundedProcessResult, RunBoundedOptions }
   from '../runtime/bounded-process.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
@@ -39,6 +41,7 @@ const finite = (value: unknown): value is number =>
 
 interface RecoveryArtifact extends UnknownRecord {
   runId?: string;
+  ownershipMarkerSha256?: string;
   status?: string;
   backend?: string;
   cleanup?: { succeeded?: boolean; retained?: boolean };
@@ -300,7 +303,7 @@ export function inspectCampaign(directory: string, {
     state: assertAdmissionReferences(current.plan, current.paths.root, current.state, allowRelocatedEvidence) };
 }
 
-function publicRecoveryProvesCleanup(output: string, backend: string, attemptId: string,
+export function publicRecoveryProvesCleanup(output: string, backend: string, attemptId: string,
   executionId: string, currentRun: BenchmarkRun | null = null): boolean {
   const runPath = join(output, ARTIFACT_FILE.run);
   const processPath = join(output, ARTIFACT_FILE.process);
@@ -315,8 +318,7 @@ function publicRecoveryProvesCleanup(output: string, backend: string, attemptId:
       || run.backend !== backend
       || run.artifactEnvelope?.attempt?.parentId !== attemptId
       || run.backendLease?.runId !== run.id
-      || run.backendLease?.backend !== backend
-      || run.backendLease?.state !== 'released') return false;
+      || run.backendLease?.backend !== backend) return false;
     const processArtifact = readArtifact<CampaignProcessArtifact>(processPath, {
       expectedKind: 'campaign_process', expectedId: `${executionId}-process`,
     });
@@ -327,6 +329,11 @@ function publicRecoveryProvesCleanup(output: string, backend: string, attemptId:
       expectedKind: 'recovery', expectedId: `${run.id}-recovery`,
     });
     const recovery = artifact.payload;
+    // External authenticated cleanup cannot rewrite the interrupted run. Its
+    // ownership marker binds the release to that run's original lease instead.
+    if (run.backendLease.state !== 'released'
+      && (!run.backendLease.ownership?.markerSha256
+        || recovery.ownershipMarkerSha256 !== run.backendLease.ownership.markerSha256)) return false;
     if (artifact.attempt.id !== `${run.id}-recovery`
       || artifact.attempt.parentId !== run.id) return false;
     return recovery.status === 'clean'
@@ -442,10 +449,42 @@ export async function executeCampaign(campaignFile: string, directory: string,
         join('.private', `${claim.executionId}.supervisor.json`), 'supervisor state');
       let processResult: RunnerProcessResult;
       try {
+        const previous = state.attempts.find(a => a.plan.id === claim.attempt.id)!.executions.at(-2);
+        if (previous?.timeContinuation) {
+          const proof = timeContinuationEligibility(contained(initialized.paths.root, previous.output, 'time continuation'));
+          if (!proof.eligible) throw new Error(proof.reason);
+          if (proof.stateSha256 !== previous.timeContinuation.stateSha256) throw new Error('continuation checkpoint changed');
+        }
         const delegationEnv = reservation ? delegateCampaignReservation(reservation,
           initialized.paths.root, { campaignSha256: plan.contentSha256, admissionId: admission.id,
             executionId: claim.executionId, output, backend: claim.attempt.stack, runIndex: claim.runIndex }) : {};
         const remainingBudget = remainingAttemptCostBudget(plan, claim, initialized.paths.root);
+        const attemptState = () => state.attempts.find(a => a.plan.id === claim.attempt.id)!;
+        const previousMs = campaignTimeBudget(plan, { ...attemptState(),
+          executions: attemptState().executions.filter(e => e.id !== claim.executionId) }).consumedMs;
+        const timeoutMs = campaignTimeBudget(plan, attemptState()).effectiveMinutes * 60_000 - previousMs;
+        if (timeoutMs <= 0) throw new Error('attempt has no remaining duration allowance');
+        const refreshTimeoutMs = (current: number, canExtend: boolean): number => {
+          const attempt = attemptState();
+          for (const request of readTimeGrantRequests(initialized.paths.root)
+            .filter(r => r.attemptId === claim.attempt.id)) {
+            if (attempt.timeGrants?.some(g => g.request.grantId === request.grantId)) continue;
+            const previousMinutes = campaignTimeBudget(plan, attempt).effectiveMinutes;
+            const effectiveMinutes = previousMinutes + request.minutes;
+            const reason = request.campaignSha256 !== plan.contentSha256 ? 'campaign identity changed'
+              : request.executionId !== claim.executionId ? 'execution is no longer current'
+                : !canExtend || signal?.aborted ? 'execution deadline or cancellation already reached'
+                  : !Number.isSafeInteger(effectiveMinutes * 60_000 + Date.now()) ? 'time allowance overflow' : null;
+            attempt.timeGrants ??= [];
+            attempt.timeGrants.push(reason ? { request, disposition: 'rejected', reason }
+              : { request, disposition: 'accepted', acceptedAt: new Date().toISOString(),
+                previousMinutes, effectiveMinutes });
+            // Persist acceptance before the process observes the new deadline.
+            state.updatedAt = new Date().toISOString();
+            writeCampaignState(initialized.paths.state, plan, state);
+          }
+          return Math.max(current, campaignTimeBudget(plan, attempt).effectiveMinutes * 60_000 - previousMs);
+        };
         processResult = await execute(process.execPath,
         attemptArgv(plan, claim.attempt, output, claim.runIndex, initialized.paths.plan,
           claim.attempt.mode?.id !== 'dependency' || claim.resumeFrom === null ? null
@@ -455,12 +494,17 @@ export async function executeCampaign(campaignFile: string, directory: string,
           cwd: ROOT,
           env: { ...campaignSlotEnvironment(executionEnv, claim.attempt.stack, claim.runIndex),
             ...delegationEnv,
+            STACK_BENCH_PROVIDER_WAIT_CONTEXT: JSON.stringify({ directory: initialized.paths.root,
+              campaignSha256: plan.contentSha256, attemptId: claim.attempt.id,
+              executionId: claim.executionId, ownershipMarkerSha256: lock.record.ownershipMarkerSha256,
+              root: join(output, 'provider-waits') }),
             STACK_BENCH_SUPERVISOR_STATE: supervisorState },
           stdio: 'inherit',
           logs: { stdout: join(output, 'process.stdout.log'), stderr: join(output, 'process.stderr.log') },
-          timeoutMs: plan.definition.budgets.attemptTimeoutMinutes * 60_000,
+          timeoutMs, refreshTimeoutMs,
           signal,
         });
+        refreshTimeoutMs(timeoutMs, false);
         processResult.buildImage = executionEnv.STACK_BENCH_IMAGE;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

@@ -121,7 +121,8 @@ export function inspectBuildContainer(name: string, {
   const config = isRecord(inspected.Config) ? inspected.Config : {};
   const hostConfig = isRecord(inspected.HostConfig) ? inspected.HostConfig : {};
   const state = isRecord(inspected.State) ? inspected.State : {};
-  const sensitiveTargets = new Set([LEGACY_SUBSCRIPTION_TOKEN_TARGET, '/root/.claude/.credentials.json']);
+  const sensitiveTargets = new Set([LEGACY_SUBSCRIPTION_TOKEN_TARGET, '/root/.claude/.credentials.json',
+    '/root/.codex/auth.json', '/home/developer/.codex/auth.json']);
   const capabilities = (values: unknown): string[] => stringArray(values).map(value => value.replace(/^CAP_/, ''));
   const tmpfs = isRecord(hostConfig.Tmpfs)
     ? Object.fromEntries(Object.entries(hostConfig.Tmpfs)
@@ -149,7 +150,7 @@ export function inspectBuildContainer(name: string, {
       readOnly: mount.RW !== true,
     })),
     unsafeCredentialExposure: mounts.some(mount => sensitiveTargets.has(String(mount.Destination)))
-      || stringArray(config.Env).some(value => /^(?:ANTHROPIC_API_KEY|CLAUDE_CODE_OAUTH_TOKEN)=/.test(value)),
+      || stringArray(config.Env).some(value => /^(?:ANTHROPIC_API_KEY|CLAUDE_CODE_OAUTH_TOKEN|OPENAI_API_KEY|OPENROUTER_API_KEY|CODEX_AUTH_FILE)=/.test(value)),
   };
 }
 

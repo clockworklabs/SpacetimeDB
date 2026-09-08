@@ -87,7 +87,7 @@ const SECRET_KEYS = new Set([
   'apikey', 'authorization', 'credential', 'credentials', 'leasetoken', 'ownershiptoken',
   'password', 'secret',
 ]);
-const BENCHMARK_RUN_PAYLOAD_FIELDS = new Set(['status', 'mode', 'track', 'backend', 'model', 'guidance',
+const BENCHMARK_RUN_PAYLOAD_FIELDS = new Set(['status', 'mode', 'track', 'backend', 'model', 'providerRoute', 'maxOutputTokens', 'guidance',
   'condition', 'stack', 'setup', 'backendLease', 'backendDiagnostics', 'validation', 'levels',
   'contaminated', 'contamination', 'mutationControl', 'totals', 'outcome', 'selectionRequest',
   'skills', 'runtime', 'pricing', 'featureCatalog', 'dependencyPolicy', 'progressionOwner', 'progressionStatus',
@@ -135,7 +135,7 @@ const PAYLOAD_FIELDS = Object.freeze({
     'runner', 'qualificationScope', 'mutationControl', 'runs', 'stable', 'sameImage', 'sameHarness',
     'harnessSha256', 'qualifiedCheckKeys', 'featureCatalog', 'diagnostic', 'ok']),
   recovery: new Set(['schemaVersion', 'status', 'runId', 'backend', 'reason', 'cleanup',
-    'resources', 'instructions']),
+    'resources', 'instructions', 'ownershipMarkerSha256']),
   source_checkpoint: new Set(['schemaVersion', 'track', 'backend', 'level', 'source',
     'repair', 'outcome', 'selectionSha256']),
 });
@@ -701,6 +701,11 @@ function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
   }
   if (kind === 'recovery') {
     if (payload.schemaVersion !== 1) fail('recovery payload.schemaVersion must be 1');
+    if (payload.ownershipMarkerSha256 !== undefined
+      && (typeof payload.ownershipMarkerSha256 !== 'string'
+        || !/^[a-f0-9]{64}$/.test(payload.ownershipMarkerSha256))) {
+      fail('recovery payload.ownershipMarkerSha256 is invalid');
+    }
     if (!['clean', 'retained', 'quarantined'].includes(String(payload.status))) {
       fail('recovery payload.status is invalid');
     }

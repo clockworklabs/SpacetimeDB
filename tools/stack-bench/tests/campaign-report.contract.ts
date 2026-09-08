@@ -21,6 +21,7 @@ import { hashDirectory, sha256 } from '../src/evidence/provenance.js';
 import { readCampaignAdmission, validateCampaignAdmission } from '../src/campaigns/campaign-admission.js';
 import { claimNextAttempt, createCampaignState, finishCampaignExecution,
   initializeCampaignDirectory, writeCampaignState } from '../src/campaigns/campaign-scheduler.js';
+import { assessStoppedProviderContinuation, providerWaitSummary } from '../src/agents/provider-continuation-audit.js';
 
 const projectRoot = STACK_BENCH_ROOT;
 const example = join(projectRoot, 'tests', 'fixtures', 'campaign.deterministic.json');
@@ -198,6 +199,33 @@ test('all-execution spend includes invalid work and never counts resumed inherit
   assert.equal(attempt.executions[1]?.usage.repair.costUsd, 1.5);
 });
 
+test('time grants retain one efficacy result and expose the changed allowance', () => {
+  const plan = examplePlan();
+  const claimed = claimNextAttempt(createCampaignState(plan, { now: created }),
+    { now: created, admissionId: 'time-admission' });
+  assert(claimed.claim);
+  const evidence = run('extended', claimed.claim.attempt);
+  const state = finishCampaignExecution(claimed.state, claimed.claim.executionId,
+    { exitCode: 0, run: evidence }, { now: '2026-08-12T00:02:00.000Z' });
+  const target = state.attempts.find(attempt => attempt.plan.id === claimed.claim!.attempt.id)!;
+  const original = plan.definition.budgets.attemptTimeoutMinutes;
+  target.timeGrants = [{ request: { campaignSha256: plan.contentSha256,
+    attemptId: target.plan.id, executionId: claimed.claim.executionId,
+    grantId: 'extra-time', minutes: 120, requestedAt: created }, disposition: 'accepted',
+    acceptedAt: created, previousMinutes: original, effectiveMinutes: original + 120 }];
+  const report = buildCampaignReport(plan, state, () => evidence);
+  const result = report.attempts.find(attempt => attempt.id === target.plan.id)!;
+  assert.equal(result.status, 'completed');
+  assert.equal(report.summary.completedAttempts, 1);
+  assert.equal(result.executions.length, 1);
+  assert.equal(result.metrics?.totalCostUsd, 2);
+  assert.equal(result.timeBudget?.effectiveMinutes, original + 120);
+  assert.equal(result.timeBudget?.consumedMs, 120_000);
+  assert.equal(result.timeBudget?.extensionCount, 1);
+  assert.equal(plan.definition.budgets.attemptTimeoutMinutes, original);
+  assert.match(campaignReportCsv(report)['attempts.csv']!, /effectiveTimeLimitMinutes/);
+});
+
 test('bounded and unknown cost remain explicit through report validation and HTML', () => {
   const plan = examplePlan();
   const claimed = claimNextAttempt(createCampaignState(plan, { now: created }), { now: created, admissionId: 'cost-admission' });
@@ -226,6 +254,51 @@ test('bounded and unknown cost remain explicit through report validation and HTM
   assert.equal(measured.metrics?.finalScoreRate, 0.8);
   assert.equal(measured.metrics?.totalCostUsd, null);
   assert.match(renderCampaignHtml(missing), /Unknown/);
+});
+
+test('historical zero-usage actions remain ineligible and keep earlier bounded costs', () => {
+  const plan = examplePlan();
+  const claimed = claimNextAttempt(createCampaignState(plan, { now: created }),
+    { now: created, admissionId: 'provider-admission' });
+  assert(claimed.claim);
+  const evidence = run('provider-stopped', claimed.claim.attempt, { cost: 3 });
+  evidence.levels![0]!.buildSessions = [costSession(3, false)];
+  const stopped = costSession(0);
+  stopped.usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+  stopped.providerMetadata = { failureCode: 'provider-throttle-exhausted', invocations: 4,
+    providerWaits: [{ waitedMs: 1000, disposition: 'continued' }, { waitedMs: 2000, disposition: 'stopped' }] };
+  stopped.costReceipts = Array.from({ length: 4 }, (_, index) => ({ invocation: index + 1,
+    receipt: { costUsd: 0, complete: true, reconciled: true, error: null, exact: true,
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 } } }));
+  evidence.levels![0]!.repairSessions = [stopped];
+  const state = finishCampaignExecution(claimed.state, claimed.claim.executionId,
+    { exitCode: 1, run: evidence }, { now: created });
+  const report = buildCampaignReport(plan, state, () => evidence);
+  const execution = report.attempts.find(attempt => attempt.executions.length)!.executions[0]!;
+  assert.equal(execution.providerContinuation?.work, 'zero-usage-candidate');
+  assert.equal(execution.providerContinuation?.eligible, false);
+  assert.deepEqual(execution.providerContinuation?.runCost, { status: 'upper-bound', costUsd: 3 });
+  assert.deepEqual(execution.providerWaits, { waits: 2, waitedMs: 3000, continued: 1, stopped: 1 });
+  assert.equal(providerWaitSummary({ ...evidence, progressionResume: { inheritedLevels: [1] } }), null);
+  assert.match(renderCampaignHtml(report), /Provider continuation ineligible/);
+  assert.match(campaignReportCsv(report)['executions.csv']!, /zero-usage-candidate/);
+  assert.deepEqual(validateCampaignReport(report), report);
+  const interrupted = buildCampaignReport(plan, state, () => { throw new Error('no final run'); },
+    () => ({ waits: 1, waitedMs: 25, continued: 0, stopped: 0, waiting: 1, durationKind: 'lower-bound' }));
+  const interruptedExecution = interrupted.attempts.find(attempt => attempt.executions.length)!.executions[0]!;
+  assert.equal(interruptedExecution.providerWaits?.waiting, 1);
+  assert.match(renderCampaignHtml(interrupted), /provider waits 1, at least/);
+  assert.deepEqual(validateCampaignReport(interrupted), interrupted);
+
+  // A zero final retry does not erase paid work in an earlier invocation.
+  stopped.usage.output = 1;
+  assert.equal(assessStoppedProviderContinuation(evidence)?.work, 'paid');
+  stopped.usage.output = 0;
+  stopped.costReceipts.pop();
+  assert.equal(assessStoppedProviderContinuation(evidence)?.work, 'unknown');
+  stopped.costReceipts = [];
+  assert.equal(assessStoppedProviderContinuation(evidence)?.work, 'unknown');
+  assert.equal(assessStoppedProviderContinuation({ levels: [] }), null);
 });
 
 test('campaign metrics do not treat incomplete cost as comparable evidence', () => {

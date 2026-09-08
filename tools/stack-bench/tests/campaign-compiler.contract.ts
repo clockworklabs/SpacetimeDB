@@ -10,6 +10,7 @@ import { campaignIdentity, compileCampaignFile, validateCampaignDefinition,
 import { attemptArgv } from '../src/campaigns/campaign-runner.js';
 import { writeArtifact } from '../src/evidence/artifacts.js';
 import { parseBenchArguments } from '../commands/bench-arguments.js';
+import { campaignComparisonKey } from '../src/campaigns/campaign-report.js';
 
 const APPLIANCE = resolve(STACK_BENCH_ROOT, 'appliance');
 
@@ -117,7 +118,6 @@ test('campaign identities change when a campaign choice changes', () => {
   assert.notEqual(second.contentSha256, first.contentSha256);
 });
 
-
 test('cost/completion thresholds are declared numeric campaign policy, not inferred from results', () => {
   const value = manifest('campaign.example.json');
   const analysis = value.analysis as Record<string, unknown>;
@@ -145,4 +145,41 @@ test('campaigns bind the repeated-finding stop independently of repair allowance
     assert.throws(() => validateCampaignDefinition({ ...value,
       mode: { ...(value.mode as object), unchangedFailureLimit } }), /unchangedFailureLimit/);
   }
+});
+
+test('OpenRouter fixes one provider route in the campaign and attempt identity', () => {
+  const value = manifest('campaign.example.json');
+  const rates = Object.values((value.pricing as { models: Record<string, unknown> }).models)[0];
+  value.pricing = { ...(value.pricing as object), models: { 'openai/gpt-5.3-codex': rates } };
+  const selection = { adapter: 'openrouter', adapterVersion: '1.0.0',
+    model: 'openai/gpt-5.3-codex', providerRoute: 'openai', maxOutputTokens: 8192 };
+  value.agents = [selection];
+  const first = compile(value);
+  assert(first.attempts.every(attempt => attempt.providerRoute === 'openai'
+    && attempt.maxOutputTokens === 8192));
+  for (const maxOutputTokens of [undefined, 0, 128001, 1.5]) {
+    assert.throws(() => validateCampaignDefinition({ ...value,
+      agents: [{ ...selection, maxOutputTokens }] }), /maxOutputTokens/);
+  }
+  assert.deepEqual(validateCompiledCampaignPlan(first), first);
+  const changed = compile({ ...value, agents: [{ ...selection, providerRoute: 'another-provider' }] });
+  assert.notEqual(first.contentSha256, changed.contentSha256);
+  assert.notEqual(campaignComparisonKey(first.attempts[0]!), campaignComparisonKey(changed.attempts[0]!));
+  const directory = mkdtempSync(join(tmpdir(), 'stack-bench-provider-settings-'));
+  try {
+    const path = join(directory, 'plan.json');
+    writeArtifact(path, { kind: 'campaign_plan', id: first.id, payload: first });
+    const argv = attemptArgv(first, first.attempts[0]!, join(directory, 'out'), 0, path);
+    const parsed = parseBenchArguments(['node', ...argv]);
+    assert.equal(parsed.providerRoute, selection.providerRoute);
+    assert.equal(parsed.maxOutputTokens, selection.maxOutputTokens);
+    assert.throws(() => parseBenchArguments(['node', ...argv, '--provider-route', 'other']),
+      /campaign|cannot/);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+  assert.throws(() => validateCampaignDefinition({ ...value,
+    agents: [{ ...selection, providerRoute: undefined }] }), /providerRoute/);
+  assert.throws(() => validateCampaignDefinition({ ...value,
+    agents: [{ ...selection, providerRoute: 'openai,other' }] }), /providerRoute/);
+  assert.throws(() => validateCampaignDefinition({ ...value,
+    agents: [{ ...selection, adapter: 'codex' }] }), /providerRoute/);
 });

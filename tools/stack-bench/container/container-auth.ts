@@ -6,6 +6,8 @@ export const SUBSCRIPTION_TOKEN_ENVIRONMENT = 'CLAUDE_CODE_OAUTH_TOKEN';
 export const LEGACY_SUBSCRIPTION_TOKEN_TARGET = '/run/secrets/claude-code-oauth-token';
 
 export type ContainerAuth = {
+  provider?: 'anthropic' | 'openai' | 'openrouter';
+  accountId?: string;
   mode: 'api-key' | 'subscription-token';
   credential: string;
 };
@@ -13,6 +15,7 @@ export type ContainerAuth = {
 type ReadTextFile = (path: PathLike | number, encoding: BufferEncoding) => string;
 
 export interface ResolveContainerAuthOptions {
+  provider?: 'anthropic' | 'openai' | 'openrouter';
   apiKey?: string;
   env?: NodeJS.ProcessEnv;
   credentialsPath?: string;
@@ -20,8 +23,38 @@ export interface ResolveContainerAuthOptions {
   read?: ReadTextFile;
 }
 
-export function resolveContainerAuth({ apiKey = '', env = process.env, credentialsPath,
+export function resolveContainerAuth({ provider = 'anthropic', apiKey = '', env = process.env, credentialsPath,
   exists = existsSync, read = readFileSync as ReadTextFile }: ResolveContainerAuthOptions = {}): ContainerAuth {
+  if (provider === 'openrouter') {
+    if (!apiKey) throw new Error('OpenRouter requires an API key');
+    return { provider, mode: 'api-key', credential: apiKey };
+  }
+  if (provider === 'openai') {
+    const authFile = env.CODEX_AUTH_FILE?.trim();
+    if (apiKey && authFile) throw new Error('use only one of OpenAI API-key and account authentication');
+    if (apiKey) return { provider, mode: 'api-key', credential: apiKey };
+    if (!authFile) throw new Error('OpenAI requires an API key or an explicit CODEX_AUTH_FILE');
+    if (!isAbsolute(authFile)) throw new Error('CODEX_AUTH_FILE must be an absolute path');
+    if (!exists(authFile)) throw new Error('CODEX_AUTH_FILE does not exist');
+    let auth: { auth_mode?: string; OPENAI_API_KEY?: unknown;
+      tokens?: { access_token?: unknown; account_id?: unknown } };
+    try { auth = JSON.parse(read(authFile, 'utf8')); }
+    catch { throw new Error('CODEX_AUTH_FILE must contain valid Codex login JSON'); }
+    if (!auth || auth.OPENAI_API_KEY || auth.auth_mode !== 'chatgpt'
+      || typeof auth.tokens?.access_token !== 'string' || !auth.tokens.access_token.trim()
+      || typeof auth.tokens.account_id !== 'string' || !auth.tokens.account_id.trim()) {
+      throw new Error('CODEX_AUTH_FILE must contain ChatGPT account login tokens, not an API key');
+    }
+    let expiry: unknown;
+    try { expiry = JSON.parse(Buffer.from(auth.tokens.access_token.split('.')[1]!, 'base64url').toString()).exp; }
+    catch { throw new Error('Codex account access token has no valid expiry; log in again'); }
+    if (typeof expiry !== 'number' || !Number.isFinite(expiry) || expiry * 1000 <= Date.now()) {
+      throw new Error('Codex account access token is expired; log in again and replace CODEX_AUTH_FILE');
+    }
+    // Each broker uses an access-token snapshot. It never rotates shared refresh tokens.
+    return { provider, mode: 'subscription-token', credential: auth.tokens.access_token,
+      accountId: auth.tokens.account_id };
+  }
   const token = String(env[SUBSCRIPTION_TOKEN_ENVIRONMENT] ?? '').trim();
   const tokenFileValue = String(env[`${SUBSCRIPTION_TOKEN_ENVIRONMENT}_FILE`] ?? '').trim();
   if (token && tokenFileValue) {

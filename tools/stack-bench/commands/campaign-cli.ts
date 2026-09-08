@@ -11,6 +11,9 @@ import { inspectCampaignSummary } from '../src/campaigns/campaign-inspection.js'
 import { exportCampaignReport, generateCampaignReport } from '../src/campaigns/campaign-report.js';
 import { grantCampaignDependencyRepairs }
   from '../src/campaigns/campaign-progression-grant.js';
+import { requestCampaignTimeGrant } from '../src/campaigns/campaign-time-grant.js';
+import { readCampaignProviderContinuationStatus, requestCampaignProviderContinuation }
+  from '../src/campaigns/campaign-provider-continuation.js';
 import { auditProgressionReferenceCampaign, formatProgressionReferenceCampaignAudit }
   from '../src/campaigns/progression-reference-campaign-audit.js';
 import type { ReferenceCampaignAudit }
@@ -64,6 +67,9 @@ interface ResumeCampaign {
 type ReferenceCampaignAuditFunction = (directory: string) => ReferenceCampaignAudit | null;
 
 export type CampaignArgs =
+  | { command: 'continue-provider'; directory: string; attemptId: string; requestId: string }
+  | { command: 'continuation-status'; directory: string; attemptId: string; json: boolean }
+  | { command: 'grant-time'; directory: string; attemptId: string; grantId: string; minutes: number }
   | { command: 'modes' }
   | { command: 'validate'; path: string }
   | { command: 'show'; path: string }
@@ -138,6 +144,25 @@ export function validateResumeCampaign(path: string, directory: string): ResumeC
 
 export function parseCampaignArgs(argv: string[]): CampaignArgs {
   const [command, path, ...rest] = argv.slice(2);
+  if ((command === 'continue-provider' || command === 'continuation-status') && path) {
+    const options = new Map<string, string>();
+    let json = false;
+    for (let i = 0; i < rest.length; i++) {
+      const flag = rest[i]!;
+      if (flag === '--json' && command === 'continuation-status' && !json) { json = true; continue; }
+      if (!['--attempt', ...(command === 'continue-provider' ? ['--request-id'] : [])].includes(flag)
+        || options.has(flag) || !rest[i + 1] || rest[i + 1]!.startsWith('--')) {
+        throw new Error('invalid provider continuation options');
+      }
+      options.set(flag, rest[++i]!);
+    }
+    const attemptId = options.get('--attempt');
+    if (!attemptId) throw new Error('provider continuation requires --attempt');
+    if (command === 'continuation-status') return { command, directory: resolve(path), attemptId, json };
+    const requestId = options.get('--request-id');
+    if (!requestId) throw new Error('continue-provider requires --request-id');
+    return { command, directory: resolve(path), attemptId, requestId };
+  }
   if (command === 'modes' && path === undefined) return { command };
   if (isOneOf(command, ['validate', 'show']) && path && rest.length === 0) {
     return { command, path: resolve(path) };
@@ -151,6 +176,22 @@ export function parseCampaignArgs(argv: string[]): CampaignArgs {
   }
   if (command === 'export' && path && rest.length === 2 && rest[0] === '--out' && rest[1]) {
     return { command, directory: resolve(path), output: resolve(rest[1]) };
+  }
+  if (command === 'grant-time' && path) {
+    const options = new Map<string, string>();
+    for (let i = 0; i < rest.length; i += 2) {
+      const flag = rest[i]; const value = rest[i + 1];
+      if (!flag || !['--attempt', '--grant-id', '--minutes'].includes(flag)
+        || !value || options.has(flag)) throw new Error('invalid grant-time options');
+      options.set(flag, value);
+    }
+    const minutes = Number(options.get('--minutes'));
+    if (!options.get('--attempt') || !options.get('--grant-id')
+      || !Number.isSafeInteger(minutes * 60_000) || !Number.isInteger(minutes) || minutes <= 0) {
+      throw new Error('grant-time requires --attempt, --grant-id, --minutes <positive integer>');
+    }
+    return { command, directory: resolve(path), attemptId: options.get('--attempt')!,
+      grantId: options.get('--grant-id')!, minutes };
   }
   if (command === 'grant-repairs' && path) {
     const values: { attemptId?: string; grantId?: string; level?: number; repairs?: number;
@@ -199,7 +240,10 @@ export function parseCampaignArgs(argv: string[]): CampaignArgs {
     + '| extend <campaign.json> --from <campaign-directory> --depth <N> --out <directory> '
     + '| status <directory> [--full] | inspect|report|audit|stop <directory> | export <directory> --out <new-directory> '
     + '| grant-repairs <directory> --attempt <id> --grant-id <id> --level <N> '
-    + '--feature <id> [--feature <id> ...] --repairs <N>');
+    + '--feature <id> [--feature <id> ...] --repairs <N> '
+    + '| grant-time <directory> --attempt <id> --grant-id <id> --minutes <N> '
+    + '| continue-provider <directory> --attempt <id> --request-id <id> '
+    + '| continuation-status <directory> --attempt <id> [--json]');
 }
 
 async function main() {
@@ -245,6 +289,21 @@ async function main() {
     if (report === null) throw new Error('campaign has no dependency reference attempts to audit');
     console.log(formatProgressionReferenceCampaignAudit(report));
     if (!report.ok) process.exitCode = 1;
+    return;
+  }
+  if (args.command === 'continuation-status') {
+    const status = readCampaignProviderContinuationStatus(args.directory, args.attemptId);
+    console.log(args.json ? JSON.stringify(status, null, 2)
+      : status.eligible ? 'Waiting: eligible for provider continuation.' : `Ineligible: ${status.reason}`);
+    return;
+  }
+  if (args.command === 'continue-provider') {
+    console.log(JSON.stringify(requestCampaignProviderContinuation(args.directory, args), null, 2));
+    return;
+  }
+  if (args.command === 'grant-time') {
+    console.log(JSON.stringify(requestCampaignTimeGrant(args.directory, {
+      attemptId: args.attemptId, grantId: args.grantId, minutes: args.minutes }), null, 2));
     return;
   }
   if (args.command === 'grant-repairs') {

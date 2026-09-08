@@ -1,5 +1,7 @@
-import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { closeSync, cpSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync,
+  readdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
+import { writeCampaignRecord } from '../campaigns/campaign-lock.js';
 
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import type { RecipeBinding } from '../composition/recipe-release.js';
@@ -114,6 +116,96 @@ export interface LiveProgressionExecution {
 }
 
 type StoredProgression = ReturnType<typeof readProgressionState>;
+
+const TIME_BOUNDARY = 'continuation-boundary.json';
+
+function continuationRunSha256(root: string): string {
+  const run = readArtifact<Record<string, unknown>>(join(root, ARTIFACT_FILE.run),
+    { expectedKind: 'benchmark_run' });
+  // Cleanup records change after interruption; recovery verifies them separately.
+  delete run.payload.backendLease;
+  delete run.payload.backendDiagnostics;
+  return sha256(canonicalDefinitionJson(run));
+}
+
+function syncBoundaryDirectory(root: string): void {
+  // Paid execution uses Linux. Windows only runs portable source checks.
+  if (process.platform === 'win32') return;
+  const fd = openSync(root, 'r');
+  try { fsyncSync(fd); } finally { closeSync(fd); }
+}
+
+/** Invalidate before any new action, including grading and runtime changes. */
+export function clearTimeContinuationBoundary(root: string): void {
+  if (!existsSync(join(root, TIME_BOUNDARY))) return;
+  rmSync(join(root, TIME_BOUNDARY), { force: true });
+  syncBoundaryDirectory(root);
+}
+
+export type TimeContinuationEligibility =
+  | { eligible: true; resumeFrom: string; stateSha256: string }
+  | { eligible: false; reason: string };
+
+/** Only a fully serialized depth boundary is supported. Session replay is not. */
+export function timeContinuationEligibility(root: string): TimeContinuationEligibility {
+  try {
+    const markerPath = join(root, TIME_BOUNDARY);
+    if (!existsSync(markerPath)) return { eligible: false,
+      reason: 'No committed between-depth boundary; interrupted coding or grading cannot be restored.' };
+    const marker: unknown = JSON.parse(readFileSync(markerPath, 'utf8'));
+    if (!object(marker) || marker.schemaVersion !== 1
+      || marker.runSha256 !== continuationRunSha256(root)
+      || marker.progressionSha256 !== sha256(readFileSync(join(root, ARTIFACT_FILE.progressionState)))) {
+      throw new Error('Continuation boundary does not match the latest saved execution.');
+    }
+    const run = readArtifact<BenchmarkRunPayload>(join(root, ARTIFACT_FILE.run),
+      { expectedKind: 'benchmark_run' });
+    const saved = readArtifact<Record<string, unknown>>(join(root, ARTIFACT_FILE.progressionState),
+      { expectedKind: 'progression_state' });
+    if (run.payload.totals?.costComplete !== true
+      || typeof run.payload.totals.costUsd !== 'number'
+      || !Number.isFinite(run.payload.totals.costUsd)) {
+      throw new Error('Continuation requires complete prior session costs.');
+    }
+    if (run.identities.engine?.sha256 !== currentEngineIdentity().sha256
+      || saved.identities.engine?.sha256 !== currentEngineIdentity().sha256) {
+      throw new Error('Continuation requires the original harness executable.');
+    }
+    const binding = resumeBinding(saved.payload.resume);
+    const owner = workspaceOwner(saved.payload.owner);
+    if (binding.source.directory !== owner.workspace.appDirectory) {
+      throw new Error('Continuation source does not match its owner.');
+    }
+    const source = resolve(root, binding.source.directory);
+    const rel = relative(resolve(root), source);
+    if (!rel || rel === '..' || rel.startsWith(`..${sep}`)) {
+      throw new Error('Continuation source escapes its execution.');
+    }
+    rejectSymlinks(source, 'continuation source');
+    const actual = hashDirectory(source);
+    if (actual.sha256 !== binding.source.sha256 || actual.files.length !== binding.source.files) {
+      throw new Error('Continuation source changed after its boundary.');
+    }
+    if (typeof saved.payload.stateSha256 !== 'string') throw new Error('Missing progression identity.');
+    return { eligible: true, resumeFrom: resolve(root), stateSha256: saved.payload.stateSha256 };
+  } catch (error) {
+    return { eligible: false, reason: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** Publish last, after the matching run and progression records are durable. */
+export function commitTimeContinuationBoundary(root: string, state: ProgressionState,
+  completedLevel: number): void {
+  clearTimeContinuationBoundary(root);
+  const action = progressionEngine.nextAction(state);
+  if (action.type === 'terminal' || action.type !== 'build' || action.level <= completedLevel
+    || state.attempts.at(-1)?.outcome !== 'conclusive') return;
+  const path = join(root, TIME_BOUNDARY);
+  writeCampaignRecord(path, { schemaVersion: 1,
+    runSha256: continuationRunSha256(root),
+    progressionSha256: sha256(readFileSync(join(root, ARTIFACT_FILE.progressionState))),
+  }, false);
+}
 
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -266,6 +358,8 @@ export function createLiveProgressionExecution(
         !== canonicalDefinitionJson(dependencyPolicyIdentity)
       || artifact.payload.backend !== owner.attempt.stack
       || artifact.payload.model !== owner.attempt.model
+      || artifact.payload.providerRoute !== owner.attempt.providerRoute
+      || artifact.payload.maxOutputTokens !== owner.attempt.maxOutputTokens
       || artifact.payload.condition?.contentSha256 !== owner.attempt.conditionSha256
       || artifact.payload.progressionStatus?.phase !== runState.phase
       || artifact.payload.progressionStatus?.level !== runState.level

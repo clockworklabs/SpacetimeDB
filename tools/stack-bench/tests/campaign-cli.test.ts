@@ -7,6 +7,25 @@ import { auditCompletedReferenceCampaign, campaignStateSummary, parseCampaignArg
 
 const argv = (...args: string[]): string[] => ['node', 'campaign-cli.js', ...args];
 
+test('provider continuation controls require explicit attempt and request identity', () => {
+  assert.deepEqual(parseCampaignArgs(argv('continue-provider', './run', '--attempt', 'one', '--request-id', 'retry-1')),
+    { command: 'continue-provider', directory: resolve('./run'), attemptId: 'one', requestId: 'retry-1' });
+  assert.deepEqual(parseCampaignArgs(argv('continuation-status', './run', '--attempt', 'one', '--json')),
+    { command: 'continuation-status', directory: resolve('./run'), attemptId: 'one', json: true });
+  assert.throws(() => parseCampaignArgs(argv('continue-provider', './run', '--attempt', 'one')), /request-id/);
+  assert.throws(() => parseCampaignArgs(argv('continuation-status', './run', '--attempt', 'one', '--json', '--json')), /invalid/);
+});
+
+test('grant-time parses one explicit positive duration increase', () => {
+  assert.deepEqual(parseCampaignArgs(argv('grant-time', './run', '--attempt', 'one',
+    '--grant-id', 'more-time', '--minutes', '120')), { command: 'grant-time',
+    directory: resolve('./run'), attemptId: 'one', grantId: 'more-time', minutes: 120 });
+  for (const value of ['0', '-1', '1.5', 'Infinity', '9007199254740991']) {
+    assert.throws(() => parseCampaignArgs(argv('grant-time', './run', '--attempt', 'one',
+      '--grant-id', 'more-time', '--minutes', value)), /positive integer/);
+  }
+});
+
 test('campaign CLI separates read-only, execution, and status commands', () => {
   assert.equal(parseCampaignArgs(argv('modes')).command, 'modes');
   assert.equal(parseCampaignArgs(argv('show', './campaign.json')).command, 'show');

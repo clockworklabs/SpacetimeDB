@@ -3,6 +3,7 @@
 
 import type { AttemptCheck, AttemptChecks, AttemptPackage, CampaignSheet, SheetAttempt, SheetStack }
   from '../../dashboard-views.js';
+import type { readCampaignTimeBudget } from '../../../src/campaigns/campaign-time-grant.js';
 import { bigClimb } from '../climb.js';
 import { DASH, duration, executionClock, esc, metricLabel, spend, pct, phrase, ratio, stackLabel } from '../format.js';
 
@@ -15,6 +16,9 @@ export interface AttemptPageInput {
   checks: AttemptChecks | null;
   evidence: AttemptPackage | null;
   log: string;
+  timeBudget?: ReturnType<typeof readCampaignTimeBudget> | null;
+  canControl?: boolean;
+  controlError?: string;
 }
 
 const GLYPH: Record<string, string> = { pass: '<span class="p">✓</span>',
@@ -73,7 +77,8 @@ function artifacts(evidence: AttemptPackage | null, key: string, visual: boolean
     `<a href="${link(item.id)}">${esc(item.path)}</a>`).join('')}</div>`;
 }
 
-export function attemptPage({ sheet, attemptId, tab, checks, evidence, log }: AttemptPageInput): string {
+export function attemptPage({ sheet, attemptId, tab, checks, evidence, log,
+  timeBudget, canControl = false, controlError = '' }: AttemptPageInput): string {
   const found = locate(sheet, attemptId);
   const crumbs = (tail: string): string => `<div class="crumbs"><a href="/">Campaigns</a> / `
     + `<a href="/c/${encodeURIComponent(sheet.key)}">${esc(sheet.title)}</a> / `
@@ -83,6 +88,29 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log }: At
       + '<div class="title"><h2>Attempt not found</h2></div></div>';
   }
   const { stack, attempt } = found;
+  const clock = timeBudget?.observedAt
+    ? executionClock(new Date(Date.parse(timeBudget.observedAt) - timeBudget.consumedMs).toISOString(),
+      attempt.status === 'running' ? null : timeBudget.observedAt)
+    : executionClock(attempt.executionStartedAt, attempt.executionCompletedAt);
+  const latestGrant = timeBudget?.grants.slice().sort((a, b) =>
+    a.request.requestedAt.localeCompare(b.request.requestedAt)).at(-1);
+  const pending = timeBudget?.grants.some(grant => grant.disposition === 'pending') ?? false;
+  const resumeWithTime = attempt.status !== 'running' && timeBudget?.continuation?.eligible === true;
+  const timeControls = canControl && timeBudget && (resumeWithTime || (attempt.status === 'running' && timeBudget.liveGrantSupported))
+    ? `<form class="time-grant secret" data-run="grant-time" data-resume="${resumeWithTime}">`
+      + '<label>Add minutes <input name="minutes" type="number" min="1" step="1" value="120" required></label>'
+      + '<input name="secret" type="password" aria-label="Operator secret" placeholder="Operator secret" autocomplete="off" required>'
+      + `<button class="btn" type="submit"${pending ? ' disabled' : ''}>${pending ? 'Awaiting controller' : resumeWithTime ? 'Add time and resume' : 'Add time'}</button>`
+      + `<output data-time-base="${timeBudget.effectiveMinutes}">Limit after request: ${duration((timeBudget.effectiveMinutes + 120) * 60)}</output>`
+      + `<span class="summary-note">${resumeWithTime ? 'Continues from the verified checkpoint.' : 'Keeps the agent running.'} Cost and repair limits stay fixed.</span></form>`
+    : canControl && attempt.status === 'running' && timeBudget?.liveGrantSupported === false
+      ? '<p class="summary-note">This controller does not support live time extensions.</p>'
+      : canControl && timeBudget?.continuation?.reason
+        ? `<p class="summary-note">Cannot resume: ${esc(timeBudget.continuation.reason)}</p>` : '';
+  const grantStatus = latestGrant ? `<p class="summary-note" role="status">${esc(
+    latestGrant.disposition === 'pending' ? 'Time request pending. The limit has not changed yet.'
+      : latestGrant.disposition === 'accepted' ? `Time added. Limit: ${duration(timeBudget!.effectiveMinutes * 60)}.`
+        : `Time request rejected: ${latestGrant.reason ?? 'See the grant evidence.'}`)}</p>` : '';
   const name = `${stackLabel(stack.stack)} rep ${attempt.repetition}`;
   const counts: Record<AttemptTab, string> = {
     checks: checks ? String(checks.checks.length) : '',
@@ -101,7 +129,8 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log }: At
     'Weighted score': 'Points earned across the selected grading scope. This differs from the number of checks passed.',
     Unaided: 'Recorded score before repair. A dash means no usable first-try evidence.',
     Repairs: 'Completed repairs out of the planned allowance for this attempt. Per-feature limits still apply.',
-    Elapsed: 'Wall time for this execution. This is separate from measured run duration.',
+    Elapsed: 'Consumed time across executions / effective time limit. Includes coding, grading, repairs, and host sleep. Time between executions is excluded.'
+      + (timeBudget ? ` Original limit: ${duration(timeBudget.originalMinutes * 60)}. Accepted extensions: ${timeBudget.extensionCount}.` : ''),
     Time: 'Recorded attempt duration. A dash means duration evidence is not yet available.',
     Spend: 'Cost from saved receipts and the pinned price snapshot. Work since the last checkpoint can include an unfinished depth and is not yet counted. Unknown is not zero; an upper bound starts with an inequality sign.',
   };
@@ -132,8 +161,9 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log }: At
     + figure('Unaided', pct(attempt.unaided))
     + figure('Repairs', ratio(attempt.repairs.used, attempt.repairs.budget))
     + figure('Elapsed', attempt.status === 'running' || attempt.executionCompletedAt
-      ? executionClock(attempt.executionStartedAt, attempt.executionCompletedAt) : DASH)
+      ? clock
+        + ` / ${duration((timeBudget?.effectiveMinutes ?? sheet.facts.timeLimitMinutes) * 60)}` : DASH)
     + figure('Time', duration(attempt.timeSec))
-    + `</div>${issue}${dependency}<h3>Grade history</h3>${bigClimb(attempt.climb, stage)}`
+    + `</div>${timeControls}${grantStatus}${controlError ? `<p class="err" role="alert">${esc(controlError)}</p>` : ''}${issue}${dependency}<h3>Grade history</h3>${bigClimb(attempt.climb, stage)}`
     + `<div class="tabs">${tabs}</div>${panel}</div>`;
 }

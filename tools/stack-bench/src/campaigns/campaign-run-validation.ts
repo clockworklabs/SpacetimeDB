@@ -127,7 +127,8 @@ export interface BenchmarkRun extends Partial<Pick<BenchmarkRunRecord,
   } };
   runtime?: { buildImage?: string | null };
   totals?: { score?: number; max?: number; costUsd?: number | null; costComplete?: boolean };
-  backendLease?: { runId?: string; backend?: string; state?: string };
+  backendLease?: { runId?: string; backend?: string; state?: string;
+    ownership?: { markerSha256?: string } };
   contaminated?: boolean;
   contamination?: { verdict?: string };
 }
@@ -147,6 +148,8 @@ interface CampaignValidationAttempt {
   id: string;
   stack: string;
   model: string;
+  providerRoute?: string;
+  maxOutputTokens?: number;
   guidance: string;
   levels: number[];
   agentAdapter: string;
@@ -171,7 +174,7 @@ interface CampaignValidationPlan {
     budgets: { maxCostUsdPerAttempt: number | null };
   };
   identities: { engine: { sha256: string | null } };
-  agents: Array<{ adapter: string; model: string; costLimit: string;
+  agents: Array<{ adapter: string; model: string; providerRoute?: string; maxOutputTokens?: number; costLimit: string;
     identity: { sha256: string | null } }>;
   stacks: Array<{ id: string; version: string | null }>;
   conditions: ValidationCondition[];
@@ -342,7 +345,8 @@ export function validateCampaignRun(plan: CampaignValidationPlan, attempt: Campa
   if (!record(input)) throw new Error('campaign run must be an object');
   const run = input as BenchmarkRun;
   const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter
-    && item.model === attempt.model);
+    && item.model === attempt.model && item.providerRoute === attempt.providerRoute
+    && item.maxOutputTokens === attempt.maxOutputTokens);
   const condition = plan.conditions.find(item =>
     item.contentSha256 === attempt.condition?.contentSha256);
   const expectedLevels = [...attempt.levels].sort((a, b) => a - b);
@@ -391,6 +395,8 @@ export function validateCampaignRun(plan: CampaignValidationPlan, attempt: Campa
   mismatch(run.track !== plan.definition.track, 'track');
   mismatch(run.backend !== attempt.stack, 'backend');
   mismatch(run.model !== attempt.model, 'model');
+  mismatch(run.providerRoute !== attempt.providerRoute, 'providerRoute');
+  mismatch(run.maxOutputTokens !== attempt.maxOutputTokens, 'maxOutputTokens');
   mismatch(canonicalDefinitionJson(run.pricing ?? null)
     !== canonicalDefinitionJson(attempt.pricing ?? null), 'pricing');
   mismatch(run.guidance !== attempt.guidance, 'guidance');

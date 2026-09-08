@@ -59,6 +59,29 @@ test('campaign separates aggregate scores from selected evidence and explains pe
     assert.doesNotMatch(detail, /<details class="metric-help"/);
     assert.ok(detail.indexOf('About Completion') < detail.indexOf('About Weighted score'));
   }
+  const grantInput = { sheet, attemptId: attempt.id, tab: 'checks' as const,
+    checks: null, evidence: null, log: '', canControl: true };
+  const request = { campaignSha256: 'a'.repeat(64), attemptId: attempt.id,
+    executionId: 'execution-1', grantId: 'extension-1', minutes: 120, requestedAt: '2026-09-07T00:00:00.000Z' };
+  const budget = { originalMinutes: 240, effectiveMinutes: 240, consumedMs: 0, liveGrantSupported: true,
+    extensionCount: 0, grants: [{ request, disposition: 'pending' as const }] };
+  const pending = attemptPage({ ...grantInput, timeBudget: budget });
+  assert.match(pending, /disabled>Awaiting controller/);
+  assert.match(pending, /limit has not changed yet/);
+  const accepted = attemptPage({ ...grantInput, timeBudget: { ...budget,
+    effectiveMinutes: 360, extensionCount: 1,
+    grants: [{ request, disposition: 'accepted', effectiveMinutes: 360 }] } });
+  assert.match(accepted, /Time added. Limit: 6h 0m/);
+  assert.match(accepted, /name="minutes" type="number" min="1" step="1"/);
+  assert.doesNotMatch(attemptPage({ ...grantInput, canControl: false }), /data-run="grant-time"/);
+  attempt.status = 'invalid';
+  assert.doesNotMatch(attemptPage(grantInput), /data-run="grant-time"/);
+  assert.match(attemptPage({ ...grantInput, timeBudget: { ...budget, grants: [],
+    continuation: { eligible: true } } }), /Add time and resume/);
+  assert.match(attemptPage({ ...grantInput, timeBudget: { ...budget, grants: [],
+    continuation: { eligible: false, reason: 'Coding session was interrupted.' } } }),
+  /Cannot resume: Coding session was interrupted/);
+  attempt.status = 'running';
   const progression: CampaignProgression = {
     key: sheet.key, depths: [1], questlines: [{ id: 'catalog', title: 'Catalog', nodes: ['item'] }],
     nodes: [{ id: 'item', title: 'Item', questline: 'catalog', depth: 1, dependencies: [] }],

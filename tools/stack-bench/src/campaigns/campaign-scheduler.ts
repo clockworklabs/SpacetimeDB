@@ -10,6 +10,7 @@ import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { RUN_INDEX_CAP } from '../composition/tracks.js';
 import { formatZodError } from '../zod-error.js';
 import { CAMPAIGN_FILE } from './campaign-path.js';
+import type { TimeGrantReceipt } from './campaign-time-grant.js';
 
 export const CAMPAIGN_STATE_SCHEMA_VERSION = 2;
 type AttemptStatus = 'pending' | 'running' | 'completed' | 'invalid';
@@ -57,6 +58,8 @@ export interface CampaignExtensionSeed {
 }
 
 export interface CampaignExecution {
+  timeExtensionSupported?: boolean;
+  timeContinuation?: { grantId: string; stateSha256: string };
   id: string;
   ordinal: number;
   status: string;
@@ -73,6 +76,7 @@ export interface CampaignExecution {
 }
 
 export interface CampaignAttemptState {
+  timeGrants?: TimeGrantReceipt[];
   plan: CampaignAttemptPlan;
   status: string;
   executions: CampaignExecution[];
@@ -141,6 +145,17 @@ const fail = (message: string): never => { throw new Error(`invalid campaign sta
 
 const timestampSchema = z.string().refine(value => !Number.isNaN(Date.parse(value)),
   'must be an ISO timestamp');
+export const timeGrantRequestSchema = z.strictObject({
+  campaignSha256: z.string().regex(HASH), attemptId: z.string().regex(SAFE_ID),
+  executionId: z.string().regex(SAFE_ID), grantId: z.string().regex(SAFE_ID),
+  minutes: z.number().int().positive().refine(n => Number.isSafeInteger(n * 60_000)),
+  requestedAt: z.string().datetime(),
+});
+export const timeGrantReceiptSchema = z.strictObject({
+  request: timeGrantRequestSchema, disposition: z.enum(['pending', 'accepted', 'rejected']),
+  acceptedAt: z.string().datetime().optional(), previousMinutes: z.number().nonnegative().optional(),
+  effectiveMinutes: z.number().positive().optional(), reason: z.string().optional(),
+});
 const retrySchema = z.strictObject({
   requested: z.boolean(),
   transient: z.boolean(),
@@ -197,6 +212,9 @@ const executionSchema = z.strictObject({
   runIndex: z.number().int(),
   retry: retrySchema.nullable().optional(),
   continuation: continuationSchema.optional(),
+  timeExtensionSupported: z.boolean().optional(),
+  timeContinuation: z.strictObject({ grantId: z.string().regex(SAFE_ID),
+    stateSha256: z.string().regex(HASH) }).optional(),
 });
 const campaignStateSchema = z.strictObject({
   schemaVersion: z.literal(CAMPAIGN_STATE_SCHEMA_VERSION),
@@ -211,6 +229,7 @@ const campaignStateSchema = z.strictObject({
     status: z.enum(['pending', 'running', 'completed', 'invalid']),
     executions: z.array(executionSchema),
     extension: extensionSeedSchema.optional(),
+    timeGrants: z.array(timeGrantReceiptSchema).optional(),
   })).min(1),
   summary: z.strictObject({
     total: z.number().int(),
@@ -260,6 +279,21 @@ export function validateCampaignState(input: unknown): CampaignState {
     if (!SAFE_ID.test(attempt.plan.id)) fail(`${at}.plan.id is not a safe path component`);
     if (ids.has(attempt.plan.id)) fail(`${at}.plan.id duplicates ${attempt.plan.id}`);
     ids.add(attempt.plan.id);
+    const grantIds = new Set<string>();
+    for (const grant of attempt.timeGrants ?? []) {
+      const request = grant.request;
+      if (request.campaignSha256 !== state.campaignSha256 || request.attemptId !== attempt.plan.id
+        || !attempt.executions.some(e => e.id === request.executionId)
+        || grantIds.has(request.grantId) || grant.disposition === 'pending') fail(`${at} has an invalid time grant binding`);
+      grantIds.add(request.grantId);
+      if (grant.disposition === 'accepted' && (!grant.acceptedAt
+        || Date.parse(grant.acceptedAt) > Date.parse(state.updatedAt)
+        || Date.parse(grant.acceptedAt) < Date.parse(request.requestedAt)
+        || !Number.isSafeInteger((grant.effectiveMinutes ?? NaN) * 60_000)
+        || grant.effectiveMinutes !== (grant.previousMinutes ?? NaN) + request.minutes)) {
+        fail(`${at} has an invalid accepted time allowance`);
+      }
+    }
     if (attempt.extension !== undefined) {
       const extensionAt = `${at}.extension`;
       if (attempt.plan.mode?.id !== 'dependency') {
@@ -277,6 +311,12 @@ export function validateCampaignState(input: unknown): CampaignState {
     let previousCompletedAt = null;
     for (const [executionIndex, execution] of attempt.executions.entries()) {
       const executionAt = `${at}.executions[${executionIndex}]`;
+      if (execution.timeContinuation && (attempt.plan.mode?.id !== 'dependency'
+        || execution.outcome !== 'timed_out'
+        || !attempt.timeGrants?.some(g => g.disposition === 'accepted'
+          && g.request.executionId === execution.id && g.request.grantId === execution.timeContinuation!.grantId))) {
+        fail(`${executionAt} has an unbound time continuation`);
+      }
       if (!Number.isInteger(execution.runIndex) || execution.runIndex < 0
         || execution.runIndex > RUN_INDEX_CAP) fail(`${executionAt}.runIndex is invalid`);
       if (execution.ordinal !== executionIndex + 1) fail(`${executionAt}.ordinal is not contiguous`);
@@ -431,6 +471,7 @@ export function claimNextAttempt(input: CampaignState,
   if (!attempt) return { state, claim: null, capacityFull: false };
   const previous = attempt.executions.at(-1) ?? null;
   const resumeFrom = previous?.continuation?.resumeFrom
+    ?? (previous?.timeContinuation ? previous.output : null)
     ?? (previous?.retry?.scheduled === true ? previous.output : null);
   const priorOutputs = attempt.executions.map(execution => execution.output);
   const ordinal = attempt.executions.length + 1;
@@ -438,6 +479,7 @@ export function claimNextAttempt(input: CampaignState,
   const output = `attempts/${attempt.plan.id}/execution-${ordinal}`;
   attempt.status = 'running';
   attempt.executions.push({ id, ordinal, status: 'running', output, startedAt: now,
+    timeExtensionSupported: true,
     completedAt: null, exitCode: null, outcome: null, reason: null, retry: null,
     admissionId: exactAdmissionId, runIndex });
   return { state: recalculate(state, now),
@@ -459,6 +501,28 @@ export function addCampaignExtensions(input: unknown,
     attempt.extension = structuredClone(extension);
   }
   return recalculate(state, now);
+}
+
+export function scheduleTimeContinuation(input: unknown, attemptId: string,
+  receipt: TimeGrantReceipt, stateSha256: string): CampaignState {
+  const state = validateCampaignState(input);
+  timeGrantReceiptSchema.parse(receipt);
+  if (receipt.disposition !== 'accepted' || !receipt.acceptedAt
+    || receipt.request.attemptId !== attemptId || receipt.request.campaignSha256 !== state.campaignSha256
+    || !HASH.test(stateSha256)) throw new Error('invalid time continuation receipt');
+  if (state.attempts.some(a => a.status === 'running')) throw new Error('campaign still has running work');
+  const attempt = state.attempts.find(a => a.plan.id === attemptId);
+  const execution = attempt?.executions.at(-1);
+  if (!attempt || attempt.plan.mode?.id !== 'dependency' || execution?.outcome !== 'timed_out'
+    || execution.id !== receipt.request.executionId || execution.timeContinuation
+    || attempt.timeGrants?.some(g => g.request.grantId === receipt.request.grantId)) {
+    throw new Error('time continuation requires the latest unextended timed-out dependency execution');
+  }
+  attempt.timeGrants ??= [];
+  attempt.timeGrants.push(receipt);
+  execution.timeContinuation = { grantId: receipt.request.grantId, stateSha256 };
+  attempt.status = 'pending';
+  return validateCampaignState(recalculate(state, receipt.acceptedAt!));
 }
 
 export function scheduleDependencyContinuation(input: unknown, attemptId: string,
@@ -614,6 +678,14 @@ function assertStateMatchesPlan(state: CampaignState, plan: CompiledCampaignPlan
   const planned = canonicalDefinitionJson(plan.attempts);
   const materialized = canonicalDefinitionJson(state.attempts.map(attempt => attempt.plan));
   if (planned !== materialized) throw new Error('campaign state attempt plan does not match the compiled campaign');
+  for (const attempt of state.attempts) {
+    let allowance = plan.definition.budgets.attemptTimeoutMinutes;
+    for (const grant of attempt.timeGrants ?? []) {
+      if (grant.disposition !== 'accepted') continue;
+      if (grant.previousMinutes !== allowance) throw new Error('time grant allowance does not match prior grants');
+      allowance += grant.request.minutes;
+    }
+  }
   return state;
 }
 

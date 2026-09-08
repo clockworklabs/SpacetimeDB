@@ -33,6 +33,8 @@ interface CampaignAdmissionCheck {
 
 interface CampaignAdmissionReportRequest extends UnknownRecord {
   agentAdapter: string;
+  providerRoute?: string;
+  maxOutputTokens?: number;
   runIndex: number;
   backends: string[];
   image: unknown;
@@ -66,6 +68,8 @@ export interface CampaignAdmissionPreflightRequest extends UnknownRecord {
   runIndex: number;
   parallelism: number;
   agentAdapter: string;
+  providerRoute?: string;
+  maxOutputTokens?: number;
   guidance: string;
   agentSkills: string[];
   packIds: string[];
@@ -95,7 +99,7 @@ interface CampaignAdmissionPlan {
     levels: unknown;
     selection: { packs?: unknown; checks?: unknown };
   };
-  agents: Array<{ adapter: string; model: string; identity: unknown }>;
+  agents: Array<{ adapter: string; model: string; providerRoute?: string; maxOutputTokens?: number; identity: unknown }>;
   conditions: unknown;
   stacks: Array<{ id: string }>;
   summary: { parallelism: number };
@@ -114,6 +118,8 @@ const admissionReportSchema = z.looseObject({
   ok: z.boolean(),
   request: z.looseObject({
     agentAdapter: z.string(),
+    providerRoute: z.string().optional(),
+    maxOutputTokens: z.number().int().positive().optional(),
     runIndex: z.number(),
     backends: z.array(z.string()),
     image: z.unknown(),
@@ -143,6 +149,14 @@ function validReport(value: unknown): value is CampaignAdmissionReport {
     && parsed.data.ok === !checks.some(check => check.status === 'fail');
 }
 
+function admissionSelections(agents: CampaignAdmissionPlan['agents']) {
+  return [...new Map(agents.map(({ adapter, providerRoute, maxOutputTokens }) => {
+    const selection = { adapter, ...(providerRoute ? { providerRoute } : {}),
+      ...(maxOutputTokens ? { maxOutputTokens } : {}) };
+    return [canonicalDefinitionJson(selection), selection] as const;
+  })).entries()].sort(([left], [right]) => left.localeCompare(right)).map(([, selection]) => selection);
+}
+
 export function validateCampaignAdmission(
   input: unknown,
   plan: CampaignAdmissionPlan,
@@ -159,29 +173,32 @@ export function validateCampaignAdmission(
     throw new Error('campaign admission runtime does not match the compiled plan');
   }
   const expectedAgents = plan.agents.map(agent => ({ adapter: agent.adapter, model: agent.model,
-    identity: agent.identity }));
+    ...(agent.providerRoute ? { providerRoute: agent.providerRoute } : {}),
+    ...(agent.maxOutputTokens ? { maxOutputTokens: agent.maxOutputTokens } : {}), identity: agent.identity }));
   if (canonicalDefinitionJson(admission.agents) !== canonicalDefinitionJson(expectedAgents)) {
     throw new Error('campaign admission agents do not match the compiled plan');
   }
   if (canonicalDefinitionJson(admission.conditions) !== canonicalDefinitionJson(plan.conditions)) {
     throw new Error('campaign admission conditions do not match the compiled plan');
   }
-  const adapters = [...new Set(plan.agents.map(agent => agent.adapter))].sort();
+  const selections = admissionSelections(plan.agents);
   const runIndices = [...new Set(admission.reports.map(report => report.request.runIndex))]
     .sort((a, b) => a - b);
   if (runIndices.length !== plan.summary.parallelism
     || runIndices.some(index => !Number.isInteger(index) || index < 0 || index > RUN_INDEX_CAP)) {
     throw new Error('campaign admission run slots are incomplete or invalid');
   }
-  if (admission.reports.length !== adapters.length * plan.summary.parallelism) {
+  if (admission.reports.length !== selections.length * plan.summary.parallelism) {
     throw new Error('campaign admission reports are incomplete');
   }
   const expectedBackends = plan.stacks.map(stack => stack.id);
   const expectedResultsDir = resolve(directory);
   const recordedResultsDir = admission.reports[0]?.request.resultsDir;
-  for (const adapter of adapters) {
+  for (const { adapter, providerRoute, maxOutputTokens } of selections) {
     for (const runIndex of runIndices) {
       const matches = admission.reports.filter(report => report.request.agentAdapter === adapter
+        && report.request.providerRoute === providerRoute
+        && report.request.maxOutputTokens === maxOutputTokens
         && report.request.runIndex === runIndex);
       if (matches.length !== 1) {
         throw new Error(`campaign admission must contain one ${adapter} report for run slot ${runIndex}`);
@@ -510,6 +527,8 @@ function resourceFreeAdmissionReport(request: CampaignAdmissionPreflightRequest,
       runIndex: request.runIndex,
       parallelism: request.parallelism,
       agentAdapter: request.agentAdapter,
+      ...(request.providerRoute ? { providerRoute: request.providerRoute } : {}),
+      ...(request.maxOutputTokens ? { maxOutputTokens: request.maxOutputTokens } : {}),
       guidance: request.guidance,
       packs: request.packIds,
       checks: request.checkKeys,
@@ -548,7 +567,7 @@ export function runCampaignAdmission(plan: CompiledCampaignPlan, directory: stri
   try {
   const guidanceModes = [...new Set(plan.conditions.map(condition => condition.guidance.mode))];
   const agentSkills = [...new Set(plan.attempts.flatMap(attempt => attempt.skills))].sort();
-  for (const adapter of [...new Set(plan.agents.map(agent => agent.adapter))].sort()) {
+  for (const { adapter, providerRoute, maxOutputTokens } of admissionSelections(plan.agents)) {
     for (const runIndex of runIndices) {
       const request: CampaignAdmissionPreflightRequest = {
         backends: plan.stacks.map(stack => stack.id),
@@ -558,6 +577,8 @@ export function runCampaignAdmission(plan: CompiledCampaignPlan, directory: stri
         runIndex,
         parallelism: plan.summary.parallelism,
         agentAdapter: adapter,
+        ...(providerRoute ? { providerRoute } : {}),
+        ...(maxOutputTokens ? { maxOutputTokens } : {}),
         guidance: guidanceModes.length === 1 ? guidanceModes[0]! : 'mixed',
         agentSkills,
         packIds: plan.definition.selection.packs ?? [],
@@ -580,7 +601,8 @@ export function runCampaignAdmission(plan: CompiledCampaignPlan, directory: stri
     ok: reports.every(report => report.ok),
     runtime: plan.definition.runtime,
     agents: plan.agents.map(agent => ({ adapter: agent.adapter, model: agent.model,
-      identity: agent.identity })),
+      ...(agent.providerRoute ? { providerRoute: agent.providerRoute } : {}),
+      ...(agent.maxOutputTokens ? { maxOutputTokens: agent.maxOutputTokens } : {}), identity: agent.identity })),
     conditions: plan.conditions,
     reports }, plan, directory);
   const path = contained(directory, join('admissions', `${id}.json`), 'campaign admission');

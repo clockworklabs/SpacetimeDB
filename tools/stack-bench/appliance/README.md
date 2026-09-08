@@ -96,6 +96,82 @@ Run the remaining commands from `tools/stack-bench`. Compose uses the state
 volume's results directory as its working directory, so `plans/...` and
 `campaigns/...` refer to durable state inside Docker.
 
+### OpenAI credentials
+
+Select the `codex` agent adapter and an explicit billing mode in `operator.env`:
+
+- `STACK_BENCH_AGENT_AUTH=openai-api-key` uses
+  `STACK_BENCH_OPENAI_API_KEY_FILE`. Store the key with `set-secret openai_api_key`.
+- `STACK_BENCH_AGENT_AUTH=openai-account` uses `STACK_BENCH_CODEX_AUTH_FILE`.
+  Use `codex login` with file credential storage, then send only its `auth.json`
+  through standard input to `set-secret codex_auth`. Do not copy your Codex home.
+
+Setup writes the two file paths below the state volume's `secrets` directory.
+Use the same Docker `set-secret` command shown above with the selected secret name.
+API usage and account plan usage are separate billing modes. There is no fallback
+from an account to an API key. See the [official authentication documentation](https://learn.chatgpt.com/docs/auth).
+
+Account mode takes an access-token snapshot in the trusted controller. Neither
+the login file nor its refresh token reaches generated commands. This version
+does not refresh account tokens. An expired token fails before coding starts;
+expiry during a request stops that request as a provider failure. Log in again
+and replace the stored file before another attempt.
+OpenAI receipts use observed tokens and the plan's frozen rates. They are a
+comparison cost, not an account-plan invoice. Use rates that cover the selected
+model and context range. The initial broker supports text and local function
+or custom tools. It rejects hosted tools, images, remote files, stored prompts,
+and server-side conversation references because these need other cost bounds.
+
+Rebuild the build image to include the pinned Codex CLI before using this adapter.
+The local mock check verified the CLI request and usage stream, not live account
+access. The pinned CLI reports missing model metadata and uses fallback settings
+for the selected model. Confirm those settings in a qualification run before
+using this adapter for a published comparison.
+
+Account mode supports `gpt-5.3-codex`, `gpt-5.4`, and `gpt-5.4-2026-03-05`.
+The broker reserves each request against the documented 128,000-token output
+bound. Unknown account models fail before a provider request. API mode uses an
+explicit `max_output_tokens` limit. Both modes still require explicit campaign
+pricing. See the [GPT-5.3-Codex model limits](https://developers.openai.com/api/docs/models/gpt-5.3-codex)
+and [GPT-5.4 model limits](https://developers.openai.com/api/docs/models/gpt-5.4).
+
+### OpenRouter credentials and routing
+
+Select the `openrouter` adapter. It uses the same Codex coding runtime as the
+`codex` adapter. Store its API key with `set-secret openrouter_api_key`, then set
+`STACK_BENCH_AGENT_AUTH=openrouter-api-key` and
+`STACK_BENCH_OPENROUTER_API_KEY_FILE` in `operator.env`.
+
+Each campaign agent selection must fix `model`, `providerRoute`, and `maxOutputTokens`, for example:
+
+```json
+{ "adapter": "openrouter", "adapterVersion": "1.0.0",
+  "model": "openai/gpt-5.3-codex", "providerRoute": "openai", "maxOutputTokens": 8192 }
+```
+
+The example identifies a model and route; it is not live qualification evidence.
+Use a model with Responses API and local tool support. The broker fixes one provider route, disables fallback, and rejects route changes
+during continuation. A base provider slug can include several endpoint variants;
+use a specific endpoint slug when that distinction matters. Receipts retain the
+provider reported by OpenRouter.
+See [OpenRouter routing](https://openrouter.ai/docs/guides/routing/provider-selection)
+and the [Responses API](https://openrouter.ai/docs/api/reference/responses/overview).
+
+Use `--agent-adapter openrouter --provider-route openai --max-output-tokens 8192`
+for standalone preflight.
+Preflight checks local setup and credentials without a provider request.
+
+Set the output token limit within the selected model endpoint's documented cap
+and the broker's 128,000-token safety cap. This is a per-request bound.
+Declare token price ceilings and a cost limit in the campaign. The broker sets
+routing price limits, rejects request fees, and records reported `usage.cost`.
+These receipts are OpenRouter charges, not costs inferred from token counts.
+Missing cost evidence cannot produce an exact receipt. API key billing is the
+supported mode; account subscriptions and BYOK are not supported.
+Rebuild the coding and controller images before use. Mock tests do not prove
+live model access or model quality; qualify the selected model and endpoint
+before publishing comparisons.
+
 ## Validate the appliance
 
 Run commands from `tools/stack-bench` on the runner.
@@ -309,6 +385,59 @@ failure. Automatic retries are limited by the manifest
 explicit operator action.
 
 ## Resume and repair
+
+For a live provider wait, inspect the current execution:
+
+```sh
+campaign continuation-status <directory> --attempt <id> --json
+campaign continue-provider <directory> --attempt <id> --request-id <unique-id>
+```
+
+Use these commands through the controller, as with other campaign commands.
+The second command authorizes one continuation of the current waiting session.
+Fix the provider account first. Reusing a request ID for the same wait is
+idempotent. An ID from an earlier wait cannot authorize a later wait.
+
+The wait keeps the app, database, candidate source, native session, and parallel
+slot. Database clocks and background processes still run. Waiting consumes the
+existing time allowance; `grant-time` can extend it separately. Continuation does
+not add repairs, increase the cost limit, or change the provider, model, billing
+mode, or task. All invocation receipts, wait events, and acceptance records stay
+under the execution's `provider-waits` directory.
+Reports read these events even when a killed process has no final agent result.
+If no wait-end event exists, the last heartbeat gives a lower bound on wait time.
+
+The command works only while the original controller and execution remain live.
+Cancellation, timeout, stale heartbeat, lost resources, or failed native-session
+validation ends eligibility. A stopped historical execution cannot be restored
+by this command. The current candidate is not graded during a provider wait.
+
+Add time to a running attempt without restarting its agent:
+
+```sh
+campaign grant-time <campaign-directory> --attempt <attempt-id> --grant-id <unique-id> --minutes 120
+```
+
+This adds two hours to the existing limit. It does not change the frozen plan,
+cost limit, or repair allowance. Reuse the same grant ID and minutes after an
+uncertain response; a new ID requests more time. The request is pending until
+the owning controller accepts it. The attempt page shows the effective limit
+and the request status. Its **Add time** control uses the same operation.
+
+Only controllers built with time-grant support can accept live requests.
+Do not replace a running controller to install this feature. A time grant does
+not restart an expired attempt by itself. A stopped attempt can receive a grant
+only at a verified completed-depth checkpoint, before the next build starts.
+Interrupted coding and grading are not supported. Use the existing
+`campaign resume <campaign.json> --out <campaign-directory>` command after the
+grant. The dashboard combines these steps with **Add time and resume** only for
+an eligible checkpoint. It shows the reason when continuation is not safe.
+Source files alone do not restore an interrupted agent.
+
+The initial limit comes from `budgets.attemptTimeoutMinutes` in the frozen
+plan. The Plans table shows it in hours and minutes. It includes coding,
+grading, repairs, and host sleep. Grant records retain the original limit and
+each accepted extension; adding time alone does not invalidate efficacy data.
 
 If the controller stopped while an attempt remained live, reconcile ownership
 before any resume:

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import type { ExecFileSyncOptionsWithStringEncoding } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, realpathSync,
@@ -36,11 +37,16 @@ import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { dockerMountArguments } from '../src/runtime/container-mount.js';
 import { normalizePromptText, readAgentSkillDocuments, selectAgentSkills } from '../src/agents/agent-materials.js';
 import { codingSessionFailure, DEFAULT_THROTTLE_MAX_WAIT_MS, providerSessionFailure,
-  runCodingSessionWithRetries } from '../src/agents/coding-session-retry.js';
+  runCodingSessionWithRetries, PROVIDER_CONTINUATION_MESSAGE } from '../src/agents/coding-session-retry.js';
+import { captureNativeContinuation } from '../src/agents/provider-native-continuation.js';
+import { campaignProviderContinuationContext, persistCampaignProviderInvocation,
+  waitForCampaignProviderContinuation } from '../src/campaigns/campaign-provider-continuation.js';
 import type { CodingSessionRetryResult } from '../src/agents/coding-session-retry.js';
 import { AGENT_PROCESS_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.js';
 import { assertNewOrEmptyDirectory } from '../src/runtime/path-safety.js';
-import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.js';
+import { resolveContainerAuth } from '../container/container-auth.js';
+import { CODING_PROVIDERS, parseCodingProvider } from '../container/coding-providers.js';
+import { validateProviderRoute, validateProviderOutputLimit } from '../src/agents/agent-adapter-contract.js';
 import { PRICING_UNIT, validatePricingAuthority }
   from '../src/evidence/pricing-authority.js';
 import type { PricingAuthority } from '../src/evidence/pricing-authority.js';
@@ -65,6 +71,9 @@ type RecipeTaskRequest = Parameters<typeof resolveBoundRecipeTaskRequest>[1] & {
 type AgentMode = 'build' | 'upgrade' | 'fix' | 'resume';
 
 interface AgentArgs {
+  provider: keyof typeof CODING_PROVIDERS;
+  providerRoute?: string;
+  maxOutputTokens?: number;
   mode: AgentMode;
   backend: string;
   app: string;
@@ -263,9 +272,9 @@ function bindingsIdentity(pkgDir: string): { package: string; sourceSha256: stri
 
 // The CLI version inside the build image. Read by running it, not by trusting
 // the tag: the image is pinned by ARG and a tag can be moved.
-function imageCliVersion(image: string): string {
+function imageCliVersion(image: string, executable: string): string {
   try {
-    return execFileSync('docker', ['run', '--rm', '--entrypoint', 'claude', image, '--version'],
+    return execFileSync('docker', ['run', '--rm', '--entrypoint', executable, image, '--version'],
       { encoding: 'utf8', stdio: 'pipe', env: { ...process.env, MSYS_NO_PATHCONV: '1' },
         timeout: CONTROL_COMMAND_TIMEOUT_MS }).trim();
   } catch { return 'unknown'; }
@@ -293,15 +302,15 @@ function containerImage(name: string): { reference: string; imageId: string | nu
 function ambientEnv(): Record<string, string | undefined> {
   const seen: Record<string, string | undefined> = {};
   for (const [k, v] of Object.entries(process.env)) {
-    if (!/^(CLAUDE|ANTHROPIC|MAX_THINKING|DISABLE_AUTOUPDATER|FORCE_PROMPT)/.test(k)) continue;
+    if (!/^(CLAUDE|ANTHROPIC|OPENAI|OPENROUTER|CODEX|MAX_THINKING|DISABLE_AUTOUPDATER|FORCE_PROMPT)/.test(k)) continue;
     // Never record a credential, only that one was present.
-    seen[k] = /KEY|TOKEN|SECRET/i.test(k) ? '<redacted, present>' : v;
+    seen[k] = /KEY|TOKEN|SECRET|AUTH/i.test(k) ? '<redacted, present>' : v;
   }
   return seen;
 }
 
 export function parseAgentArgs(argv: readonly string[]): AgentArgs {
-  const strings = ['mode', 'track', 'backend', 'level', 'app', 'run-index', 'model',
+  const strings = ['provider', 'provider-route', 'max-output-tokens', 'mode', 'track', 'backend', 'level', 'app', 'run-index', 'model',
     'pricing-json', 'guidance', 'guidance-document-json', 'credential-aliases-json',
     'recipe', 'recipe-task-json', 'thinking', 'max-budget-usd', 'skills', 'skills-json',
     'skill-identity-json', 'api-key'] as const;
@@ -329,6 +338,15 @@ export function parseAgentArgs(argv: readonly string[]): AgentArgs {
   if (!Number.isSafeInteger(runIndex) || runIndex < 0) {
     throw new Error('--run-index must be a non-negative integer');
   }
+  const provider = parseCodingProvider(values.provider ?? 'anthropic');
+  const codingProvider = CODING_PROVIDERS[provider];
+  if (codingProvider.requiresBudget && !values.model) throw new Error(`--model is required for ${provider}`);
+  if (codingProvider.executable !== 'claude' && values.thinking) {
+    throw new Error(`${provider} uses STACK_BENCH_EFFORT, not --thinking`);
+  }
+  const providerRoute = validateProviderRoute(provider, values['provider-route']);
+  const maxOutputTokens = validateProviderOutputLimit(provider,
+    values['max-output-tokens'] === undefined ? undefined : Number(values['max-output-tokens']));
   const model = values.model ?? 'claude-sonnet-5';
   const maxBudgetUsd = values['max-budget-usd'] === undefined
     ? undefined : Number(values['max-budget-usd']);
@@ -344,12 +362,13 @@ export function parseAgentArgs(argv: readonly string[]): AgentArgs {
   let pricing = values['pricing-json'] === undefined
     ? undefined : validatePricingAuthority(JSON.parse(values['pricing-json']), { at: '--pricing-json' });
   if (pricing === undefined && maxBudgetUsd !== undefined) {
-    const rates = claudeRatesForModel(model);
+    const rates = CODING_PROVIDERS[provider].rates(model);
     if (!rates) throw new Error(`no default pricing is recorded for model ${model}`);
     pricing = validatePricingAuthority({ unit: PRICING_UNIT, rates },
       { at: 'default pricing' });
   }
-  return { mode, backend, app, level, runIndex, model,
+  return { provider, ...(providerRoute ? { providerRoute } : {}), mode, backend, app, level, runIndex, model,
+    ...(maxOutputTokens ? { maxOutputTokens } : {}),
     guidance: parseGuidanceMode(values.guidance ?? 'prescribed'),
     track: values.track ?? DEFAULT_TRACK, pricing: pricing ?? null,
     ...(values['guidance-document-json'] ? {
@@ -689,6 +708,20 @@ export function agentRecipeRequest(explicitRecipe: string | null = null,
 
 // The coding container must not contain the controller or grading inputs.
 
+export function refreshCodingInvocationCredentials({ provider, apiKey, keyFile,
+  expectedMode, env = process.env }: { provider: keyof typeof CODING_PROVIDERS;
+    apiKey?: string; keyFile?: string; expectedMode: string | null; env?: NodeJS.ProcessEnv }) {
+  const credential = keyFile ? readFileSync(keyFile, 'utf8').trim()
+    : apiKey ?? env[CODING_PROVIDERS[provider].apiKeyEnvironment] ?? '';
+  if (keyFile && !credential) throw new Error('selected API key file is empty');
+  const auth = resolveContainerAuth({ provider, apiKey: credential, env,
+    credentialsPath: CODING_PROVIDERS[provider].credentialPath });
+  if (expectedMode !== null && expectedMode !== auth.mode) {
+    throw new Error('provider billing mode changed during the coding action');
+  }
+  return { mode: auth.mode, env: { ...env, STACK_BENCH_AGENT_API_KEY: credential } };
+}
+
 async function main() {
   const args = parseAgentArgs(process.argv);
   const track = loadTrack(args.track);
@@ -768,26 +801,62 @@ async function main() {
   // stable offset keeps retries reproducible while spreading them over 45s.
   const throttleJitterMs = parseInt(sha256(Buffer.from(
     `${args.backend}:${args.runIndex}:${args.level}:${args.mode}`)).slice(0, 8), 16) % 45_001;
+  const selectedKeyFile = process.env.STACK_BENCH_AGENT_API_KEY_FILE
+    ?? process.env.STACK_BENCH_API_KEY_FILE
+    ?? process.env[`${CODING_PROVIDERS[args.provider].apiKeyEnvironment}_FILE`];
+  let selectedAuthMode: string | null = null;
+  const invocationEnvironment = (baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv => {
+    const refreshed = refreshCodingInvocationCredentials({ provider: args.provider, apiKey: args.apiKey,
+      keyFile: selectedKeyFile, expectedMode: selectedAuthMode, env: baseEnv });
+    selectedAuthMode = refreshed.mode;
+    return refreshed.env;
+  };
+  const actionId = randomUUID();
+  const continuationContext = campaignProviderContinuationContext();
+  const continuationIdentity = { actionId, mode: args.mode, level: args.level, model: args.model,
+    provider: args.provider, providerRoute: args.providerRoute, imageId: imageIdentity.id, provenance, pricing: args.pricing,
+    maxOutputTokens: args.maxOutputTokens,
+    guidance: args.guidance, skillIdentity: args.skillIdentity,
+    continuationMessage: PROVIDER_CONTINUATION_MESSAGE };
   let coding: CodingSessionRetryResult;
   try {
     // Send prompts through stdin to avoid the Windows command-line limit.
     const cliEnv = { ...process.env,
       // Absent unless deliberately overridden — see THINKING_TOKENS above.
-      ...((args.thinking ?? THINKING_TOKENS)
+      ...(args.provider === 'anthropic' && (args.thinking ?? THINKING_TOKENS)
         ? { MAX_THINKING_TOKENS: String(args.thinking ?? THINKING_TOKENS) }
         : {}),
       // Keep the CLI fixed across the campaign.
-      DISABLE_AUTOUPDATER: '1',
+      ...(args.provider === 'anthropic' ? { DISABLE_AUTOUPDATER: '1',
       // Pin cache lifetime so run order cannot change cost.
-      FORCE_PROMPT_CACHING_5M: '1' };
+      FORCE_PROMPT_CACHING_5M: '1' } : {}) };
 
     coding = runCodingSessionWithRetries({ prompt, model: args.model, retryLimit,
       maxBudgetUsd: args.maxBudgetUsd,
       throttleMaxWaitMs: throttleMaxWaitMinutes * 60_000,
       throttleJitterMs,
+      onInvocation: record => persistCampaignProviderInvocation({
+        evidence: { ...continuationIdentity, ...record, billingMode: selectedAuthMode } }),
+      waitForProvider: continuationContext ? request => {
+        const nativeOptions = { appDir: args.app, provider: args.provider,
+          sessionId: request.sessionId, model: args.model, imageId: imageIdentity.id, env: process.env };
+        const nativeIdentity = captureNativeContinuation(nativeOptions);
+        return waitForCampaignProviderContinuation({
+          evidence: { ...continuationIdentity, ...request, nativeIdentity, billingMode: selectedAuthMode },
+          validate: phase => {
+            const env = phase === 'continue' ? invocationEnvironment() : process.env;
+            if (captureNativeContinuation({ ...nativeOptions, env }) !== nativeIdentity) {
+              throw new Error('native provider session or runtime changed during provider wait');
+            }
+          },
+        });
+      } : undefined,
       invoke: ({ input, maxBudgetUsd, resumeSession, recoverStoppedContainer }) =>
         execFileSync(process.execPath, [
           compiledEntrypoint('container', 'run-build.js'),
+          '--provider', args.provider,
+          ...(args.providerRoute ? ['--provider-route', args.providerRoute] : []),
+          ...(args.maxOutputTokens ? ['--max-output-tokens', String(args.maxOutputTokens)] : []),
           '--app', args.app,
           '--backend', args.backend,
           '--image', imageIdentity.id,
@@ -802,7 +871,7 @@ async function main() {
           ...(resumeSession ? ['--resume-session', resumeSession] : []),
           ...(recoverStoppedContainer ? ['--recover-stopped-container'] : []),
         ], { input, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024,
-          env: { ...cliEnv, ...(args.apiKey ? { STACK_BENCH_AGENT_API_KEY: args.apiKey } : {}) },
+          env: invocationEnvironment(cliEnv),
           timeout: AGENT_PROCESS_TIMEOUT_MS }),
     });
   } catch (err: unknown) {
@@ -841,23 +910,24 @@ async function main() {
     model: args.model,
     guidance: args.guidance,
     setup: {
-      thinkingTokens: (args.thinking ?? THINKING_TOKENS) ? Number(args.thinking ?? THINKING_TOKENS) : 'cli default',
-      permissionMode: 'acceptEdits',
+      provider: args.provider,
+      ...(args.providerRoute ? { providerRoute: args.providerRoute } : {}),
+      ...(args.maxOutputTokens ? { maxOutputTokens: args.maxOutputTokens } : {}),
+      thinkingTokens: args.provider !== 'anthropic' ? null : (args.thinking ?? THINKING_TOKENS) ? Number(args.thinking ?? THINKING_TOKENS) : 'cli default',
+      permissionMode: args.provider === 'anthropic' ? 'acceptEdits' : 'container-isolated',
       effort: EFFORT,
       skills: selectedSkills,
-      cacheTier: '5m',
+      cacheTier: args.provider === 'anthropic' ? '5m' : 'provider-managed',
       autoUpdater: 'disabled',
       codingInterruptionRetries: { limit: retryLimit,
         used: interruptions.filter(item => item.kind !== 'provider-throttled').length },
       providerThrottle: { maxWaitMinutes: throttleMaxWaitMinutes,
         waits: throttle?.waits ?? 0, waitedMs: throttle?.waitedMs ?? 0,
         jitterMs: throttle?.jitterMs ?? throttleJitterMs },
-      cliVersion: imageCliVersion(imageIdentity.id),
+      cliVersion: imageCliVersion(imageIdentity.id, CODING_PROVIDERS[args.provider].executable),
       isolation: { mode: 'container', image: imageIdentity.reference,
         imageId: imageIdentity.id, hostAlias: HOST_ADDR },
-      auth: (args.apiKey ?? process.env.ANTHROPIC_API_KEY) ? 'api-key'
-        : (process.env.CLAUDE_CODE_OAUTH_TOKEN || process.env.CLAUDE_CODE_OAUTH_TOKEN_FILE)
-          ? 'subscription-token' : 'not-selected',
+      auth: selectedAuthMode ?? 'not-selected',
       ...(isRecord(setupMetadata) ? setupMetadata : {}),
       env: ambientEnv(),
       node: { orchestrator: process.version, codingContainer: imageNodeVersion(imageIdentity.id) },
@@ -873,7 +943,8 @@ async function main() {
     turns,
     promptBytes: Buffer.byteLength(prompt),
     tokensPerTurn: turns ? Math.round((input + output + cacheWrite + cacheRead) / turns) : null,
-    thinking: combinedThinkingVolume(args.app, sessionResults.map(item => item.session_id)),
+    thinking: args.provider === 'anthropic'
+      ? combinedThinkingVolume(args.app, sessionResults.map(item => item.session_id)) : null,
     durationMs: Date.now() - started,
     sessionId: result.session_id ?? null,
     ok: !failed && result.is_error === false,
@@ -889,10 +960,12 @@ async function main() {
         waits: throttle?.waits ?? 0,
       } : null,
       interruptions, invocations: sessionResults.length,
+      providerWaits: coding.providerWaits ?? [],
       terminalRecovery: isRecord(result) ? result.terminal_recovery ?? null : null,
       credentialBroker: result.stack_bench_credential_broker ?? null,
       sessionIds: [...new Set(sessionResults.map(item => item.session_id).filter(Boolean))],
-      models: transcriptModels(args.app, sessionResults.map(item => item.session_id)) },
+      models: args.provider === 'anthropic'
+        ? transcriptModels(args.app, sessionResults.map(item => item.session_id)) : [] },
   };
   console.log(JSON.stringify(out));
 }

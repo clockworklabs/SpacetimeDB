@@ -277,3 +277,6 @@ main[aria-busy="true"]::before { content: ''; position: fixed; top: 0; left: 0; 
 @keyframes loading-progress { from { transform: translateX(-100%); } to { transform: translateX(334%); } }
 @media (prefers-reduced-motion: reduce) { main[aria-busy="true"]::before { animation: none; width: 100%; } }
 [data-started-at] { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.time-grant { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin: 1rem 0; }
+.time-grant label { display: flex; align-items: center; gap: .5rem; }
+.time-grant input[type="number"] { width: 6rem; }

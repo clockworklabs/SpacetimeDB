@@ -1,10 +1,12 @@
+import type { ProviderFailure } from './provider-failure.js';
 import { sleepSync } from '../runtime/platform.js';
 import { AGENT_COST_RECEIPT_TOLERANCE_USD, validateAgentCostReceipt }
   from './agent-result-contract.js';
 
 type UnknownRecord = Record<string, unknown>;
 
-interface CodingSessionResult {
+export interface CodingSessionResult {
+  stack_bench_provider_failure?: ProviderFailure;
   api_error_status?: number | null;
   terminal_reason?: string;
   result?: string;
@@ -39,7 +41,8 @@ interface CodingProcessDiagnostic {
 
 interface ProviderSessionFailure {
   code: 'provider-throttle' | 'provider-api-error' | 'credential-broker-unavailable'
-    | 'provider-connection-error' | 'provider-session-error';
+    | 'provider-connection-error' | 'provider-session-error' | 'provider-quota'
+    | 'provider-authentication' | 'provider-request-error' | 'broker-budget';
   status: number | null;
 }
 
@@ -73,7 +76,34 @@ export interface CodingSessionInvocation {
   invocation: number;
 }
 
+export interface CodingInvocationRecord extends CodingSessionInvocation {
+  result: CodingSessionResult | null;
+  raw: string;
+  processFailure: string | null;
+}
+export interface ProviderWaitRequest {
+  invocation: number;
+  sessionId: string;
+  failure: ProviderFailure;
+  result: CodingSessionResult;
+  costUsd: number;
+  remainingBudgetUsd: number | null;
+}
+export interface ProviderWaitRecord {
+  invocation: number;
+  sessionId: string;
+  category: ProviderFailure['category'];
+  waitedMs: number;
+  disposition: 'continued' | 'stopped';
+  requestId?: string;
+  generation?: string;
+  error?: string;
+}
+
 interface CodingSessionRetryOptions {
+  onInvocation?: (record: CodingInvocationRecord) => void;
+  waitForProvider?: (request: ProviderWaitRequest) => boolean | { requestId: string; generation: string } | null;
+
   invoke: (invocation: CodingSessionInvocation) => unknown;
   prompt: string;
   model: string;
@@ -98,6 +128,7 @@ interface AggregatedCodingSessionResult extends CodingSessionResult {
 }
 
 export interface CodingSessionRetryResult {
+  providerWaits?: ProviderWaitRecord[];
   raw: string;
   spawnError: string | null;
   sessionResults: CodingSessionResult[];
@@ -127,6 +158,13 @@ export const DEFAULT_THROTTLE_MAX_WAIT_MS = 15 * 60_000;
 export function providerSessionFailure(
   result: CodingSessionResult | null | undefined,
 ): ProviderSessionFailure | null {
+  const failure = result?.stack_bench_provider_failure;
+  if (failure) {
+    const codes = { 'rate-limit': 'provider-throttle', quota: 'provider-quota',
+      authentication: 'provider-authentication', transport: 'provider-connection-error',
+      request: 'provider-request-error', 'broker-budget': 'broker-budget' } as const;
+    return { code: codes[failure.category], status: failure.status };
+  }
   const status = result?.api_error_status ?? null;
   if (result?.terminal_reason === 'api_error' && status !== null
     && THROTTLE_STATUSES.has(status)) {
@@ -152,6 +190,12 @@ export function providerSessionFailure(
 
 function codingSessionResult(value: unknown): CodingSessionResult | null {
   if (!object(value)) return null;
+  if (value.stack_bench_provider_failure !== undefined) {
+    const failure = value.stack_bench_provider_failure;
+    if (!object(failure) || !['rate-limit', 'quota', 'authentication', 'transport', 'request', 'broker-budget']
+      .includes(String(failure.category)) || !(failure.status === null || Number.isInteger(failure.status))
+      || !(failure.code === null || typeof failure.code === 'string')) return null;
+  }
   if (value.api_error_status !== undefined && value.api_error_status !== null
     && typeof value.api_error_status !== 'number') return null;
   for (const key of ['terminal_reason', 'result', 'session_id'] as const) {
@@ -222,15 +266,17 @@ export function codingSessionInterruption(
   error: CodingProcessError | null,
   result: CodingSessionResult | null,
 ): CodingSessionInterruption | null {
-  const apiStatus = result?.api_error_status ?? null;
-  if (result?.terminal_reason === 'api_error' && apiStatus !== null
-    && THROTTLE_STATUSES.has(apiStatus)) {
+  const classified = providerSessionFailure(result);
+  const apiStatus = classified?.status ?? result?.api_error_status ?? null;
+  if (result?.stack_bench_provider_failure
+    && classified?.code !== 'provider-throttle') return null;
+  if (classified?.code === 'provider-throttle') {
     // A throttled first request has no session yet; a null resumeSession makes
     // the retry restart from the existing files instead of resuming.
     return { kind: 'provider-throttled',
-      resumeSession: typeof result.session_id === 'string' && result.session_id
+      resumeSession: typeof result?.session_id === 'string' && result.session_id
         ? result.session_id : null,
-      recoverStoppedContainer: false, terminalReason: 'api_error',
+      recoverStoppedContainer: false, terminalReason: result?.terminal_reason ?? 'api_error',
       providerStatus: apiStatus };
   }
   if (result?.terminal_reason === 'api_error' && apiStatus !== null
@@ -312,7 +358,10 @@ export function codingSessionFailure(error: CodingProcessError): string {
     + `${stderrTail ? `\ninner stderr tail:\n${stderrTail}` : ''}`;
 }
 
+export const PROVIDER_CONTINUATION_MESSAGE = 'Continue.';
+
 export function runCodingSessionWithRetries({ invoke, prompt, model, retryLimit, maxBudgetUsd = null,
+  onInvocation, waitForProvider,
   throttleMaxWaitMs = DEFAULT_THROTTLE_MAX_WAIT_MS, throttleJitterMs = 0,
   sleep = sleepSync, log = null }: CodingSessionRetryOptions): CodingSessionRetryResult {
   if (typeof invoke !== 'function') throw new Error('coding session invoke function is required');
@@ -331,6 +380,7 @@ export function runCodingSessionWithRetries({ invoke, prompt, model, retryLimit,
   let spawnError: string | null = null;
   const sessionResults: CodingSessionResult[] = [];
   const interruptions: RecordedCodingSessionInterruption[] = [];
+  const providerWaits: ProviderWaitRecord[] = [];
   let resumeSession: string | null = null;
   let recoverStoppedContainer = false;
   // Track interruption attempts and throttle time separately.
@@ -347,8 +397,7 @@ export function runCodingSessionWithRetries({ invoke, prompt, model, retryLimit,
       break;
     }
     const input = resumeSession
-      ? 'The provider interrupted the previous response. Continue the same task from the existing files. '
-        + 'Verify the application is running and finish with the completion marker requested earlier.'
+      ? PROVIDER_CONTINUATION_MESSAGE
       : invocation === 0 ? prompt
         : 'A prior coding process was terminated. Continue this task from the existing files; do not start over.\n\n'
           + prompt;
@@ -362,9 +411,63 @@ export function runCodingSessionWithRetries({ invoke, prompt, model, retryLimit,
     }
     const result = parseCodingSessionResult(raw);
     if (result) sessionResults.push(result);
+    try {
+      onInvocation?.({ invocation: invocation + 1, input, resumeSession,
+        maxBudgetUsd: invocationBudget, recoverStoppedContainer, result, raw,
+        processFailure: error ? codingSessionFailure(error) : null });
+    } catch (persistenceError) {
+      spawnError = `coding invocation persistence failed: ${String(persistenceError)}`;
+      break;
+    }
     if (!error && result?.is_error === false) break;
     const interruption = codingSessionInterruption(error, result);
     const receiptCostUsd = completeBrokerReceiptCost(result, model);
+    const providerFailure = providerSessionFailure(result);
+    const requiresProviderResume = providerFailure && ['provider-throttle', 'provider-quota',
+      'provider-authentication', 'provider-api-error', 'provider-connection-error'].includes(providerFailure.code);
+    if (requiresProviderResume && (receiptCostUsd === null || !result?.session_id
+      || sessionResults.some(item => completeBrokerReceiptCost(item, model) === null))) {
+      if (interruption) interruptions.push({ ...interruption, invocation: invocation + 1,
+        sessionId: result?.session_id ?? null, costUsd: receiptCostUsd });
+      spawnError = 'provider continuation is disabled without a complete reconciled broker cost receipt for every invocation and native session identity';
+      break;
+    }
+    const waitForOperator = (): boolean => {
+      if (!waitForProvider || !result?.session_id || receiptCostUsd === null) return false;
+      const failure = result.stack_bench_provider_failure;
+      if (!failure || !['rate-limit', 'quota', 'authentication'].includes(failure.category)) return false;
+      const started = Date.now();
+      const record: ProviderWaitRecord = { invocation: invocation + 1, sessionId: result.session_id,
+        category: failure.category, waitedMs: 0, disposition: 'stopped' };
+      providerWaits.push(record);
+      try {
+        const remainingBudgetUsd = invocationBudget === null ? null
+          : Number((invocationBudget - receiptCostUsd).toFixed(6));
+        if (remainingBudgetUsd !== null && remainingBudgetUsd <= 0) return false;
+        const accepted = waitForProvider({ invocation: invocation + 1,
+          sessionId: result.session_id, failure, result, costUsd: receiptCostUsd, remainingBudgetUsd });
+        if (!accepted) return false;
+        if (typeof accepted === 'object') Object.assign(record, accepted);
+        record.disposition = 'continued';
+        resumeSession = result.session_id;
+        recoverStoppedContainer = false;
+        return true;
+      } catch (waitError) {
+        record.error = String(waitError);
+        spawnError = `provider continuation stopped: ${String(waitError)}`;
+        return false;
+      } finally { record.waitedMs = Date.now() - started; }
+    };
+    if (providerFailure?.code === 'provider-quota' || providerFailure?.code === 'provider-authentication') {
+      if (waitForOperator()) continue;
+      spawnError ??= `provider continuation unavailable (${providerFailure.code})`;
+      break;
+    }
+    if (result?.stack_bench_provider_failure && ['transport', 'request', 'broker-budget']
+      .includes(result.stack_bench_provider_failure.category)) {
+      spawnError = `provider failure is not eligible for continuation (${result.stack_bench_provider_failure.category})`;
+      break;
+    }
     if (interruption?.kind === 'credential-broker-unavailable') {
       interruptions.push({ ...interruption, invocation: invocation + 1,
         sessionId: result?.session_id ?? null, costUsd: receiptCostUsd });
@@ -383,7 +486,8 @@ export function runCodingSessionWithRetries({ invoke, prompt, model, retryLimit,
       const delay = THROTTLE_DELAYS_MS[
         Math.min(throttleWaits, THROTTLE_DELAYS_MS.length - 1)]! + throttleJitterMs;
       if (throttleWaitedMs + delay > throttleMaxWaitMs) {
-        spawnError = `provider stayed throttled (status ${interruption.providerStatus}) after `
+        if (waitForOperator()) continue;
+        spawnError ??= `provider stayed throttled (status ${interruption.providerStatus}) after `
           + `${Math.round(throttleWaitedMs / 60_000)} minutes of waiting across `
           + `${throttleWaits} retry attempt(s)`;
         break;
@@ -417,7 +521,7 @@ export function runCodingSessionWithRetries({ invoke, prompt, model, retryLimit,
     resumeSession = interruption.resumeSession;
     recoverStoppedContainer = interruption.recoverStoppedContainer;
   }
-  return { raw, spawnError, sessionResults, interruptions,
+  return { raw, spawnError, sessionResults, interruptions, providerWaits,
     throttle: { waits: throttleWaits, waitedMs: throttleWaitedMs,
       maxWaitMs: throttleMaxWaitMs, jitterMs: throttleJitterMs },
     result: aggregateCodingSessionResults(sessionResults) };

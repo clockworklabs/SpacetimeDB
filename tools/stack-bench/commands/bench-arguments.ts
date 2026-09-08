@@ -2,7 +2,7 @@ import { dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { readArtifact } from '../src/evidence/artifacts.js';
 import { DEFAULT_TRACK, RUN_INDEX_CAP } from '../src/composition/tracks.js';
-import { validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.js';
+import { campaignProgressionOwner, validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.js';
 import type { CampaignAttemptPlan, CampaignSelection }
   from '../src/campaigns/campaign-compiler.js';
 import { readCampaignAdmission }
@@ -30,6 +30,8 @@ export interface BenchArguments {
   levelsProvided: boolean;
   levelList: number[];
   model: string | null;
+  providerRoute?: string;
+  maxOutputTokens?: number;
   agentAdapter: string;
   pricing?: PricingAuthority | null;
   repairs: number;
@@ -102,7 +104,7 @@ interface BenchCliOptions extends Partial<BenchArguments> {
 
 function parseCli(argv: readonly string[]): BenchCliOptions {
   const strings = ['backend', 'track', 'levels', 'campaign-file', 'campaign-attempt-id',
-    'campaign-admission-id', 'progression-resume-from', 'recipe', 'model', 'pricing-json',
+    'campaign-admission-id', 'progression-resume-from', 'recipe', 'model', 'provider-route', 'max-output-tokens', 'pricing-json',
     'repairs', 'max-stalled-repairs', 'max-budget-usd', 'run-index', 'out', 'app', 'url',
     'agent-adapter', 'guidance', 'task-mode', 'skills', 'mutations',
     'mutation-shard-index', 'mutation-shard-count', 'mutation-resume-from',
@@ -129,7 +131,7 @@ function parseCli(argv: readonly string[]): BenchCliOptions {
     const value = parsed[key] as string[] | undefined;
     if (value) parsed[key] = value.flatMap(item => item.split(',').filter(Boolean));
   }
-  for (const key of ['repairs', 'maxStalledRepairs', 'maxBudgetUsd', 'mutationShardIndex',
+  for (const key of ['repairs', 'maxStalledRepairs', 'maxBudgetUsd', 'maxOutputTokens', 'mutationShardIndex',
     'mutationShardCount', 'mutationMaxRuntimeMinutes', 'repairLevel', 'gradeLevel', 'seedThrough']) {
     if (typeof parsed[key] === 'string') parsed[key] = Number(parsed[key]);
   }
@@ -310,6 +312,14 @@ function bindCampaign(args: BenchArguments): void {
   args.backend = attempt.stack;
   args.track = plan.definition.track;
   args.model = attempt.model;
+  if (args.providerRoute !== undefined && args.providerRoute !== attempt.providerRoute) {
+    throw new Error('--provider-route differs from the compiled campaign');
+  }
+  args.providerRoute = attempt.providerRoute;
+  if (args.maxOutputTokens !== undefined && args.maxOutputTokens !== attempt.maxOutputTokens) {
+    throw new Error('--max-output-tokens differs from the compiled campaign');
+  }
+  args.maxOutputTokens = attempt.maxOutputTokens;
   args.agentAdapter = attempt.agentAdapter;
   args.pricing = validatePricingAuthority(attempt.pricing, { at: 'compiled campaign pricing' });
   args.guidance = parseGuidanceMode(attempt.guidance);
@@ -346,10 +356,6 @@ function bindCampaign(args: BenchArguments): void {
     args.dependencyPolicy = plan.dependencyPolicy;
     args.progression = compileProgressionInput(dependencyRuntimeDefinition(
       args.featureCatalog, args.dependencyPolicy));
-    args.progressionOwner = { schemaVersion: 1,
-      campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
-      attempt: { id: attempt.id, track: plan.definition.track, stack: attempt.stack,
-        agentAdapter: attempt.agentAdapter, model: attempt.model,
-        conditionSha256: attempt.condition.contentSha256 } };
+    args.progressionOwner = { ...campaignProgressionOwner(plan, attempt) };
   }
 }

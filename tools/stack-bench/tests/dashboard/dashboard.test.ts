@@ -1149,6 +1149,23 @@ test('cost and completion keep unknown spend and the full selected scope visible
   assert.match(attemptPage(input), /count without an accepted outcome is unavailable/);
 });
 
+test('time controls require authorization and validate minutes before requesting a grant', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-time-'));
+  const { server } = createDashboardServer({ resultsRoot: root, plansRoot: join(root, 'plans'),
+    allowLaunch: true, token: 'time-token', controlSecret: 'time-control-secret-value-1234567890' });
+  const origin = await listenOrigin(server);
+  t.after(() => { server.close(); rmSync(root, { recursive: true, force: true }); });
+  const send = (secret: string, minutes: number) => fetch(`${origin}/api/campaigns/time-run/attempts/attempt-1/time`, {
+    method: 'POST', headers: { origin, 'content-type': 'application/json',
+      'x-stack-bench-token': 'time-token', 'x-stack-bench-control-secret': secret },
+    body: JSON.stringify({ grantId: 'time-1', minutes }),
+  });
+  assert.equal((await send('wrong', 120)).status, 403);
+  for (const minutes of [0, -1, 1.5, Number.MAX_SAFE_INTEGER]) {
+    assert.equal((await send('time-control-secret-value-1234567890', minutes)).status, 400);
+  }
+});
+
 test('Stop requires the operator secret and cannot cancel a successor controller',
   { skip: process.platform !== 'linux' ? 'native campaign control is tested in the Linux appliance' : false }, async t => {
     const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-stop-'));

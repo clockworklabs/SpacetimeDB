@@ -7,6 +7,8 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
 import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.js';
+import { resolveContainerAuth } from '../../container/container-auth.js';
+import { validateProviderRoute, validateProviderOutputLimit } from '../agents/agent-adapter-contract.js';
 import type { AgentAdapter } from '../agents/agent-adapter-contract.js';
 import { resolveDefaultGuidanceForStack } from '../campaigns/condition-compiler.js';
 import type { RequestedScope } from '../campaigns/condition-compiler.js';
@@ -50,6 +52,8 @@ export interface PreflightRequest {
   runIndex: number;
   parallelism?: number;
   agentAdapter: string;
+  providerRoute?: string;
+  maxOutputTokens?: number;
   modelFree?: boolean;
   guidance: string;
   packIds: string[];
@@ -197,6 +201,20 @@ function credentialReady(
   exists: (path: string) => boolean,
 ): CredentialStatus {
   const environment = adapter.apiKeyEnvironmentVariable;
+  if (adapter.provider === 'openai' || adapter.provider === 'openrouter') {
+    try {
+      const keyFile = environment ? env[`${environment}_FILE`]?.trim() : undefined;
+      const directKey = environment ? env[environment]?.trim() : undefined;
+      if (directKey && keyFile) throw new Error('Select only one API key source');
+      const auth = resolveContainerAuth({ provider: adapter.provider, env,
+        apiKey: directKey ?? (keyFile ? readFileSync(keyFile, 'utf8').trim() : ''),
+        exists: path => exists(String(path)) });
+      return { ok: true, kind: auth.mode === 'api-key' ? 'api-key' : 'account-token-snapshot',
+        source: auth.mode === 'api-key' ? `selected:${environment}` : 'secret-file:CODEX_AUTH_FILE' };
+    } catch (error) {
+      return { ok: false, source: null, reason: error instanceof Error ? error.message : 'Invalid provider credentials' };
+    }
+  }
   let apiKey = null;
   if (environment && env[environment]) {
     apiKey = { ok: true, kind: 'api-key', source: `environment:${environment}` };
@@ -296,6 +314,10 @@ export function runPreflight(
 
   try {
     agent = request.modelFree ? undefined : AGENT_ADAPTER_REGISTRY.get(request.agentAdapter);
+    if (agent) {
+      validateProviderRoute(agent.provider, request.providerRoute);
+      validateProviderOutputLimit(agent.provider, request.maxOutputTokens);
+    }
     for (const backend of request.backends) STACK_ADAPTER_REGISTRY.get(backend);
     if (!listTracks({ includeInternal: true }).includes(request.track)) {
       throw new Error(`unknown track ${JSON.stringify(request.track)}`);
@@ -742,7 +764,9 @@ export function runPreflight(
     generatedAt: new Date(startedAt).toISOString(),
     request: { backends: request.backends, track: request.track, levels: request.levelList,
       runIndex: request.runIndex, parallelism: request.parallelism ?? 1,
-      agentAdapter: request.agentAdapter, guidance: request.guidance, packs: request.packIds,
+      agentAdapter: request.agentAdapter,
+      ...(request.providerRoute ? { providerRoute: request.providerRoute } : {}),
+      ...(request.maxOutputTokens ? { maxOutputTokens: request.maxOutputTokens } : {}), guidance: request.guidance, packs: request.packIds,
       checks: request.checkKeys, recipe: request.recipe ?? null,
       requestedScopeCount: request.requestedScopes?.length ?? 0,
       image: request.image, resultsDir: request.resultsDir,

@@ -65,6 +65,8 @@ controller manages Docker through its socket; coding agents do not receive it.
 
 Campaign execution and paid or subscription-backed model work run through the
 Linux appliance. Portable source checks remain available for development.
+Paid adapters share the coding runner and cost controls. Select Claude, OpenAI,
+or OpenRouter through the [appliance credential guide](appliance/README.md#openai-credentials).
 Current grading profiles are provisional until their qualification gates pass.
 
 ## Ownership
@@ -131,3 +133,17 @@ artifacts, uses these.
   a session spent.
 - **lease**: the record of which containers, ports, database, and locks an
   attempt owns, so cleanup and recovery act only on those.
+
+### Adding a coding agent
+
+Register the agent in `src/agents/agent-adapters.ts`. Claude and Codex use the
+same `commands/agent.ts` prompt and grading path. Their CLI arguments, process
+handling, and result parsing live in `container/coding-providers.ts`; their
+trusted API forwarding and usage parsing live in `container/broker-protocols.ts`.
+Add a provider there when its protocol differs. Keep authentication in
+`container/container-auth.ts`, outside the coding container.
+
+A new provider must supply normalized token usage, preserve its tool transcript
+for the shared audit, and enforce the plan's cost bound. Test it with a local
+mock upstream before a paid run. Do not copy the container runner or add
+provider conditions to prompts, grading, or campaign scheduling.

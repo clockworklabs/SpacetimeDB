@@ -105,6 +105,13 @@ test('secret input is restricted to named private files and never needs a shell 
   try {
     assert.throws(() => writeStateSecret('../other', 'secret', root), /secret name/);
     assert.throws(() => writeStateSecret('anthropic_api_key', 'a\nb', root), /one non-empty line/);
+    assert.throws(() => writeStateSecret('codex_auth', '{invalid', root), /valid JSON/);
+    writeStateSecret('codex_auth', '{\n  "auth_mode": "chatgpt"\n}', root);
+    assert.equal(readFileSync(join(root, 'secrets', 'codex_auth'), 'utf8'), '{"auth_mode":"chatgpt"}\n');
+    writeStateSecret('openrouter_api_key', 'test-openrouter', root);
+    assert.equal(readFileSync(join(root, 'secrets', 'openrouter_api_key'), 'utf8'), 'test-openrouter\n');
+    writeStateSecret('openai_api_key', 'test-openai', root);
+    assert.equal(readFileSync(join(root, 'secrets', 'openai_api_key'), 'utf8'), 'test-openai\n');
     writeStateSecret('anthropic_api_key', '  test-key\n', root);
     const path = join(root, 'secrets', 'anthropic_api_key');
     assert.equal(readFileSync(path, 'utf8'), 'test-key\n');

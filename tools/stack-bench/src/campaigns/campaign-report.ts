@@ -13,6 +13,8 @@ import { campaignGradingQualification } from './campaign-compiler.js';
 import type { CampaignAttemptPlan, CampaignGradingQualification,
   CompiledCampaignPlan } from './campaign-compiler.js';
 import type { CampaignExecution, CampaignState } from './campaign-scheduler.js';
+import { campaignTimeBudget, timeGrantReceiptSchema } from './campaign-time-grant.js';
+import type { CampaignTimeBudget } from './campaign-time-grant.js';
 import { classifyCampaignExecution } from './campaign-scheduler.js';
 import type { RunOutcome } from '../evidence/outcomes.js';
 import { runCostEvidence, sessionCostEvidence, sumCostEvidence } from '../evidence/cost-proof.js';
@@ -24,6 +26,11 @@ import type { CheckCompletion, CheckStatus } from '../evidence/check-completion.
 import { CAMPAIGN_FILE, campaignChildPath } from './campaign-path.js';
 import type { BenchmarkRunRecord, GradeBundleSelection, RunLevelRecord, RunTotals }
   from '../evidence/benchmark-run.js';
+import { assessStoppedProviderContinuation, providerWaitSummary }
+  from '../agents/provider-continuation-audit.js';
+import type { HistoricalProviderContinuation, ProviderWaitSummary }
+  from '../agents/provider-continuation-audit.js';
+import { readCampaignProviderWaitHistory } from './campaign-provider-continuation.js';
 
 export const CAMPAIGN_REPORT_SCHEMA_VERSION = 7;
 
@@ -136,7 +143,7 @@ export interface CampaignRunObservationSummary {
 interface CampaignReportCondition {
   key: string;
   stack: string;
-  agent: { adapter: string; model: string };
+  agent: { adapter: string; model: string; providerRoute?: string; maxOutputTokens?: number };
   condition: { id: string; contentSha256: string; requested?: {
     levels?: Array<{ level: number; selection?: RunSelection }> } };
   sample: {
@@ -166,6 +173,8 @@ interface CampaignReportExecution {
   metrics?: Record<string, number | null> | null;
   cost: CostEvidence;
   usage: ExecutionUsage;
+  providerContinuation?: HistoricalProviderContinuation | null;
+  providerWaits?: ProviderWaitSummary | null;
   [key: string]: unknown;
 }
 
@@ -178,6 +187,7 @@ export type CampaignSpend = CostEvidence & {
 
 interface CampaignReportAttempt extends CampaignAttemptPlan {
   status: string;
+  timeBudget?: CampaignTimeBudget;
   executions: CampaignReportExecution[];
   metrics: Record<string, number | null> | null;
   firstBuildObservations: CampaignRunObservationSummary | null;
@@ -482,7 +492,9 @@ export function campaignCohortKey(attempt: CampaignAttemptPlan): string {
 /** The condition includes the declared guidance for every stack, including its skills. */
 export function campaignComparisonKey(attempt: CampaignAttemptPlan): string {
   return canonicalDefinitionJson({ agentAdapter: attempt.agentAdapter,
-    model: attempt.model, condition: attempt.condition?.contentSha256, mode: attempt.mode,
+    model: attempt.model, ...(attempt.providerRoute ? { providerRoute: attempt.providerRoute } : {}),
+    ...(attempt.maxOutputTokens ? { maxOutputTokens: attempt.maxOutputTokens } : {}),
+    condition: attempt.condition?.contentSha256, mode: attempt.mode,
     guidance: attempt.guidance, levels: attempt.levels, pricing: attempt.pricing,
     featureCatalog: attempt.featureCatalog ?? null, dependencyPolicy: attempt.dependencyPolicy ?? null }).trim();
 }
@@ -514,7 +526,9 @@ CampaignReportCondition[] {
     return {
       key: sha256(key),
       stack: attempts[0]!.stack,
-      agent: { adapter: attempts[0]!.agentAdapter, model: attempts[0]!.model },
+      agent: { adapter: attempts[0]!.agentAdapter, model: attempts[0]!.model,
+        ...(attempts[0]!.providerRoute ? { providerRoute: attempts[0]!.providerRoute } : {}),
+        ...(attempts[0]!.maxOutputTokens ? { maxOutputTokens: attempts[0]!.maxOutputTokens } : {}) },
       condition: {
         id: attempts[0]!.condition.id,
         contentSha256: attempts[0]!.condition.contentSha256,
@@ -740,6 +754,18 @@ export function validateCampaignReport(input: unknown): CampaignReport {
       throw new Error(`campaign report.attempts[${index}] is invalid`);
     }
     completionSchema.parse(attempt.completion);
+    if (attempt.timeBudget) {
+      const budget = attempt.timeBudget;
+      for (const grant of budget.grants) timeGrantReceiptSchema.parse(grant);
+      const accepted = budget.grants.filter(grant => grant.disposition === 'accepted');
+      if (!Number.isSafeInteger(budget.originalMinutes) || budget.originalMinutes <= 0
+        || !Number.isSafeInteger(budget.consumedMs) || budget.consumedMs < 0
+        || budget.extensionCount !== accepted.length
+        || budget.effectiveMinutes !== budget.originalMinutes
+          + accepted.reduce((sum, grant) => sum + grant.request.minutes, 0)) {
+        throw new Error(`campaign report.attempts[${index}].timeBudget is invalid`);
+      }
+    }
     for (const checkpoint of attempt.curve.checkpoints) checkpointSchema.parse(checkpoint);
     if (canonicalDefinitionJson(attempt.curve) !== canonicalDefinitionJson(completionCurve(
       attempt.curve.checkpoints, report.policy.spendThresholdsUsd ?? [],
@@ -756,6 +782,24 @@ export function validateCampaignReport(input: unknown): CampaignReport {
         throw new Error(`campaign report.attempts[${index}].executions[${executionIndex}] is invalid`);
       }
       costEvidenceSchema.parse(execution.cost);
+      if (execution.providerContinuation) {
+        const assessment = execution.providerContinuation;
+        if (assessment.eligible !== false || !['paid', 'zero-usage-candidate', 'unknown'].includes(assessment.work)
+          || typeof assessment.reason !== 'string' || !assessment.reason) {
+          throw new Error('Invalid historical provider continuation assessment');
+        }
+        costEvidenceSchema.parse(assessment.sessionCost);
+        costEvidenceSchema.parse(assessment.runCost);
+      }
+      if (execution.providerWaits) {
+        const waits = execution.providerWaits;
+        if (![waits.waits, waits.waitedMs, waits.continued, waits.stopped, waits.waiting ?? 0]
+          .every(value => Number.isSafeInteger(value) && value >= 0)
+          || waits.waits !== waits.continued + waits.stopped + (waits.waiting ?? 0)
+          || (waits.durationKind !== undefined && !['exact', 'lower-bound'].includes(waits.durationKind))) {
+          throw new Error('Invalid provider wait summary');
+        }
+      }
       for (const kind of ['build', 'repair', 'resume'] as const) costEvidenceSchema.parse(execution.usage[kind]);
       for (const key of ['input', 'output', 'cacheWrite', 'cacheRead'] as const) {
         const value = execution.usage[key];
@@ -791,6 +835,7 @@ export function validateCampaignReport(input: unknown): CampaignReport {
 
 export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignState,
   readRun: (attempt: CampaignAttemptPlan, execution: CampaignExecution) => BenchmarkRun,
+  readProviderWaits?: (attempt: CampaignAttemptPlan, execution: CampaignExecution) => ProviderWaitSummary | null,
 ): CampaignReport {
   if (state.campaignSha256 !== plan.contentSha256) throw new Error('report state does not match campaign plan');
   const rows: CampaignReportAttempt[] = [];
@@ -824,6 +869,9 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
         admissionEvidence: `admissions/${execution.admissionId}.json`,
         cost: runCostEvidence(run, 'execution'),
         usage: executionUsage(run),
+        providerContinuation: ['running', 'pending'].includes(execution.status)
+          ? null : assessStoppedProviderContinuation(run),
+        providerWaits: readProviderWaits?.(attempt.plan, execution) ?? providerWaitSummary(run),
         evidence: run
           ? `${execution.output}/${ARTIFACT_FILE.run}` : CAMPAIGN_FILE.state,
         metrics: run ? campaignRunMetrics(run) : null,
@@ -875,6 +923,9 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
     }) ?? [];
     rows.push({ ...attempt.plan, status: attempt.status === 'completed' && latest?.status === 'invalid'
       ? 'invalid' : attempt.status, executions,
+      ...(attempt.timeGrants?.length ? {
+        timeBudget: campaignTimeBudget(plan, attempt, Date.parse(state.updatedAt)),
+      } : {}),
       metrics, completion, groups, spend: executionSpend(executions),
       curve: completionCurve(checkpoints, plan.definition.analysis.spendThresholdsUsd ?? [],
         plan.definition.analysis.completionTargets ?? []),
@@ -916,6 +967,10 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
         ? ['Reference-fixture attempts use hand-written apps and make no model calls. They do not measure model implementation ability or comparative token efficiency.'] : []),
       'Observed specifications are diagnostic, contribute zero score, and are never shown to repairs.',
       'Invalid executions are excluded from outcome metrics; their measured spend remains in total spend.',
+      ...(rows.some(attempt => attempt.executions.some(execution => execution.providerWaits))
+        ? ['Provider wait continued counts mean accepted operator requests, not completed model work.'] : []),
+      ...(rows.some(attempt => attempt.timeBudget?.extensionCount)
+        ? ['Time extensions are recorded per logical attempt. They do not alone invalidate efficacy results; extended attempts do not represent the original fixed-time limit.'] : []),
       'Outcome classifications come from recorded artifacts. Review notes do not change them. Do not publish affected comparisons after a grader defect is confirmed until corrected grading evidence is available.',
       'The report makes no causal claim beyond the declared campaign design.',
     ],
@@ -939,7 +994,7 @@ export function renderCampaignHtml(report: CampaignReport,
     ? 'Final score' : report.policy.primaryMetric === 'firstBuildScoreRate'
       ? 'First-build score' : report.policy.primaryMetric;
   const rows = report.conditions.map(condition => `<tr><td>${escape(condition.stack)}</td>`
-    + `<td>${escape(condition.agent.adapter)} / ${escape(condition.agent.model)}</td>`
+    + `<td>${escape(condition.agent.adapter)} / ${escape(condition.agent.model)}${condition.agent.providerRoute ? ` / ${escape(condition.agent.providerRoute)}` : ''}</td>`
     + `<td>${escape(condition.condition.id)}</td>`
     + `<td>${condition.sample.completedAttempts}/${condition.sample.plannedAttempts}</td>`
     + `<td>${condition.sample.invalidExecutions}/${condition.sample.executions}</td>`
@@ -976,7 +1031,7 @@ export function renderCampaignHtml(report: CampaignReport,
     firstBuildObservations: NonNullable<CampaignReportCondition['firstBuildObservations']>;
   } => condition.firstBuildObservations !== null)
     .map(condition => `<tr><td>${escape(condition.stack)}</td>`
-      + `<td>${escape(condition.agent.adapter)} / ${escape(condition.agent.model)}</td>`
+      + `<td>${escape(condition.agent.adapter)} / ${escape(condition.agent.model)}${condition.agent.providerRoute ? ` / ${escape(condition.agent.providerRoute)}` : ''}</td>`
       + `<td>${escape(condition.condition.id)}</td>`
       + `<td>${condition.firstBuildObservations.sample.measuredAttempts}/${condition.firstBuildObservations.sample.selectedAttempts}</td>`
       + `<td>${escape(formatRate(condition.firstBuildObservations.metrics.passRate.center))}`
@@ -1012,7 +1067,10 @@ export function renderCampaignHtml(report: CampaignReport,
           : 'Not separable from shared coding sessions'}</td></tr>`).join('') + '</tbody></table>' : '')
     + '<ul>' + attempt.executions.map(execution => `<li>${escape(execution.id)}: ${escape(formatCostEvidence(execution.cost))}`
       + ` · build ${escape(formatCostEvidence(execution.usage.build))}, repair ${escape(formatCostEvidence(execution.usage.repair))}, resume ${escape(formatCostEvidence(execution.usage.resume))}`
-      + ` · input ${escape(execution.usage.input ?? 'unknown')}, output ${escape(execution.usage.output ?? 'unknown')}, cache read ${escape(execution.usage.cacheRead ?? 'unknown')}, cache write ${escape(execution.usage.cacheWrite ?? 'unknown')}</li>`).join('')
+      + ` · input ${escape(execution.usage.input ?? 'unknown')}, output ${escape(execution.usage.output ?? 'unknown')}, cache read ${escape(execution.usage.cacheRead ?? 'unknown')}, cache write ${escape(execution.usage.cacheWrite ?? 'unknown')}`
+      + (execution.providerWaits ? ` · provider waits ${execution.providerWaits.waits}, ${execution.providerWaits.durationKind === 'lower-bound' ? 'at least ' : ''}${escape(formatDurationMs(execution.providerWaits.waitedMs))}, continued ${execution.providerWaits.continued}, stopped ${execution.providerWaits.stopped}, unclosed ${execution.providerWaits.waiting ?? 0}` : '')
+      + (execution.providerContinuation ? `<p>Provider continuation ineligible (${escape(execution.providerContinuation.work)}): ${escape(execution.providerContinuation.reason)}</p>` : '')
+      + '</li>').join('')
     + '</ul></section>').join('');
   return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(report.campaign.title)}</title><style>body{font:16px system-ui;max-width:1100px;margin:40px auto;padding:0 20px;color:#17202a}code{font-size:.85em}table{border-collapse:collapse;width:100%}th,td{padding:.65rem;border-bottom:1px solid #ccd;text-align:left}.meta{color:#566} .warn{background:#fff4cf;padding:1rem}</style></head><body><h1>${escape(report.campaign.title)}</h1><p class="meta">Campaign <code>${escape(report.campaign.id)}</code> · ${escape(report.campaign.sha256)} · status ${escape(report.summary.campaignStatus)}</p>${qualificationWarning}<p>This report shows exactly what ran: ${report.summary.completedAttempts} completed of ${report.summary.plannedAttempts} planned attempts, with ${report.summary.invalidExecutions} invalid execution(s) retained.</p><h2>Conditions</h2><table><thead><tr><th>Stack</th><th>Agent / model</th><th>Study condition</th><th>Completed</th><th>Invalid executions</th><th>${escape(primaryLabel)}</th></tr></thead><tbody>${rows}</tbody></table>${treatmentSection}${observationSection}<h2>Cost and measured completion</h2>${curves}<h2>Scope</h2><pre>${escape(JSON.stringify(report.scope, null, 2))}</pre><h2>Attempts and raw evidence</h2><ul>${report.attempts.map(attempt => `<li><strong>${escape(attempt.id)}</strong> — ${escape(attempt.status)}${attempt.executions.map(execution => ` · <a href="${escape(`${evidencePrefix}/${execution.evidence}`)}">${escape(execution.id)}</a> (${escape(execution.outcome ?? execution.status)}) · <a href="${escape(`${evidencePrefix}/${execution.admissionEvidence}`)}">admission</a>${(execution.firstBuildObservations?.levels ?? []).filter(level => level.artifact).map(level => ` · <a href="${escape(`${evidencePrefix}/${execution.evidence.slice(0, -ARTIFACT_FILE.run.length)}${level.artifact}`)}">L${escape(level.level)} observations</a>`).join('')}`).join('')}</li>`).join('')}</ul><div class="warn"><strong>Limitations</strong><ul>${report.limitations.map(item => `<li>${escape(item)}</li>`).join('')}</ul></div><p class="meta">Report identity: <code>${escape(report.contentSha256)}</code></p></body></html>\n`;
 }
@@ -1040,7 +1098,7 @@ export function generateCampaignReport(directory: string,
       throw new Error(`invalid execution ${execution.id} cost evidence belongs to another attempt`);
     }
     return run as BenchmarkRun;
-  });
+  }, (attempt, execution) => readCampaignProviderWaitHistory(paths.root, attempt.id, execution.id));
   mkdirSync(output, { recursive: true });
   const reportPath = join(output, CAMPAIGN_FILE.reportJson);
   writeArtifact(reportPath, { kind: 'campaign_report', id: `${plan.id}-report-${report.contentSha256.slice(0, 16)}`,
@@ -1111,7 +1169,8 @@ export function campaignReportCsv(report: CampaignReport): Record<string, string
         'attempt', 'stack', 'model', 'repetition', 'status', 'selectedChecks', 'diagnosticPassedChecks',
         'diagnosticFailedChecks', 'diagnosticBlockedChecks', 'diagnosticUnmeasuredChecks', 'checkCompletionRate', 'weightedScoreRate',
         'outcomeCostUsd', 'outcomeCostUpperBoundUsd', 'allExecutionCostStatus', 'allExecutionCostUsd',
-        'sumOfAvailableExactCostsAndUpperBoundsUsd', 'unknownExecutions', 'boundedExecutions', 'totalTokens', 'durationMs'],
+        'sumOfAvailableExactCostsAndUpperBoundsUsd', 'unknownExecutions', 'boundedExecutions', 'totalTokens', 'durationMs',
+        'originalTimeLimitMinutes', 'effectiveTimeLimitMinutes', 'consumedExecutionMs', 'timeExtensions', 'providerRoute', 'maxOutputTokens'],
       ...report.attempts.map(attempt => [report.campaign.id, report.campaign.sha256,
         attempt.condition.id, attempt.condition.contentSha256, attempt.agentAdapter, attempt.levels.join(';'),
         attempt.id, attempt.stack, attempt.model, attempt.repetition,
@@ -1120,16 +1179,23 @@ export function campaignReportCsv(report: CampaignReport): Record<string, string
         attempt.metrics?.finalScoreRate, attempt.metrics?.totalCostUsd,
         attempt.metrics?.totalCostUpperBoundUsd, attempt.spend.status, attempt.spend.costUsd,
         attempt.spend.knownCostUsd, attempt.spend.unknownExecutions, attempt.spend.boundedExecutions,
-        attempt.metrics?.totalTokens, attempt.metrics?.totalDurationMs]),
+        attempt.metrics?.totalTokens, attempt.metrics?.totalDurationMs,
+        attempt.timeBudget?.originalMinutes, attempt.timeBudget?.effectiveMinutes,
+        attempt.timeBudget?.consumedMs, attempt.timeBudget?.extensionCount, attempt.providerRoute, attempt.maxOutputTokens]),
     ]),
     'executions.csv': csv([
       ['attempt', 'execution', 'stack', 'status', 'outcome', 'recordedStatus', 'recordedOutcome', 'costStatus', 'costUsd',
-        'inputTokens', 'outputTokens', 'cacheWriteTokens', 'cacheReadTokens', 'evidence', 'admissionEvidence'],
+        'inputTokens', 'outputTokens', 'cacheWriteTokens', 'cacheReadTokens', 'evidence', 'admissionEvidence',
+        'providerWaits', 'providerWaitMs', 'providerContinued', 'providerStopped', 'providerUnclosed', 'providerWaitDurationKind', 'providerContinuationWork', 'providerContinuationReason'],
       ...report.attempts.flatMap(attempt => attempt.executions.map(execution => [attempt.id,
         execution.id, attempt.stack, execution.status, execution.outcome,
         execution.recordedStatus ?? execution.status, execution.recordedOutcome ?? execution.outcome, execution.cost.status,
         execution.cost.costUsd, execution.usage.input, execution.usage.output, execution.usage.cacheWrite,
-        execution.usage.cacheRead, execution.evidence, execution.admissionEvidence])),
+        execution.usage.cacheRead, execution.evidence, execution.admissionEvidence,
+        execution.providerWaits?.waits, execution.providerWaits?.waitedMs,
+        execution.providerWaits?.continued, execution.providerWaits?.stopped,
+        execution.providerWaits?.waiting, execution.providerWaits?.durationKind,
+        execution.providerContinuation?.work, execution.providerContinuation?.reason])),
     ]),
   };
 }

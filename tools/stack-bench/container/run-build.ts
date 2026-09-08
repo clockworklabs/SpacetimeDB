@@ -3,8 +3,7 @@
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
-import { join, resolve, dirname } from 'node:path';
-import { homedir } from 'node:os';
+import { resolve, dirname } from 'node:path';
 import { parseArgs } from 'node:util';
 import { leaseFromEnv, updateBackendLease } from '../src/runtime/backend-lease.js';
 import { resolveContainerImage } from '../src/runtime/container-image.js';
@@ -33,12 +32,10 @@ import { CODING_CONTAINER_AGENT, CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_CON
   codingContainerAgentEnvironment, codingContainerTranscriptHandoffCommands,
   codingContainerWorkspaceHandoffCommands }
   from '../src/runtime/coding-container-policy.js';
-import { runTranscriptAwareProcess }
-  from '../src/agents/claude-terminal-recovery.js';
-import { containerClaudeTranscriptReader } from './claude-transcript-reader.js';
-import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.js';
 import { PRICING_UNIT, validatePricingAuthority }
   from '../src/evidence/pricing-authority.js';
+import { CODING_PROVIDERS, parseCodingProvider } from './coding-providers.js';
+import { validateProviderRoute, validateProviderOutputLimit } from '../src/agents/agent-adapter-contract.js';
 import { REPOSITORY_ROOT } from '../src/package-root.js';
 
 function errorMessage(error: unknown): string {
@@ -47,7 +44,9 @@ function errorMessage(error: unknown): string {
 
 const { values } = parseArgs({ args: process.argv.slice(2), options: {
   app: { type: 'string' }, backend: { type: 'string' }, 'prepare-only': { type: 'boolean' },
-  image: { type: 'string' }, effort: { type: 'string' }, model: { type: 'string' },
+  provider: { type: 'string' }, image: { type: 'string' }, effort: { type: 'string' }, model: { type: 'string' },
+  'provider-route': { type: 'string' },
+  'max-output-tokens': { type: 'string' },
   'max-budget-usd': { type: 'string' }, 'pricing-json': { type: 'string' },
   'resume-session': { type: 'string' }, 'recover-stopped-container': { type: 'boolean' },
   'completion-marker': { type: 'string' }, ports: { type: 'string' },
@@ -60,6 +59,11 @@ if (!backend) { console.error('run-build.js: --backend is required'); process.ex
 let adapter;
 try { adapter = STACK_ADAPTER_REGISTRY.get(backend); }
 catch (error) { console.error(`run-build.js: ${errorMessage(error)}`); process.exit(2); }
+const provider = parseCodingProvider(values.provider ?? 'anthropic');
+const providerRoute = validateProviderRoute(provider, values['provider-route']);
+const maxOutputTokens = validateProviderOutputLimit(provider,
+  values['max-output-tokens'] === undefined ? undefined : Number(values['max-output-tokens']));
+const codingProvider = CODING_PROVIDERS[provider];
 const prepareOnly = values['prepare-only'] ?? false;
 const DOCKER_TIMEOUT_MS = 120_000;
 const DOCKER_PROBE_TIMEOUT_MS = 10_000;
@@ -94,6 +98,9 @@ if (!prepareOnly && (!effort || !model)) {
   process.exit(2);
 }
 const maxBudgetUsd = values['max-budget-usd'] ?? null;
+if (!prepareOnly && codingProvider.requiresBudget && maxBudgetUsd === null) {
+  throw new Error('this coding provider requires --max-budget-usd and explicit pricing');
+}
 if (maxBudgetUsd !== null && (!Number.isFinite(Number(maxBudgetUsd)) || Number(maxBudgetUsd) <= 0)) {
   console.error('run-build.js: --max-budget-usd must be a positive number');
   process.exit(2);
@@ -104,7 +111,7 @@ try {
   if (supplied !== null) {
     pricing = validatePricingAuthority(JSON.parse(supplied), { at: '--pricing-json' });
   } else if (maxBudgetUsd !== null) {
-    const rates = claudeRatesForModel(model);
+    const rates = codingProvider.rates(model);
     if (!rates) throw new Error(`no default pricing is recorded for model ${model}`);
     pricing = validatePricingAuthority({ unit: PRICING_UNIT, rates },
       { at: 'default pricing' });
@@ -136,17 +143,17 @@ const containerPlan = adapter.buildContainer.plan({
 // Auth is resolved in the controller. A short-lived broker forwards model API
 // requests later. The coding container never receives the long-lived provider
 // credential or a credential file.
-const apiKey = process.env.STACK_BENCH_AGENT_API_KEY ?? process.env.ANTHROPIC_API_KEY ?? '';
-const creds = join(homedir(), '.claude', '.credentials.json');
+const apiKey = process.env.STACK_BENCH_AGENT_API_KEY
+  ?? process.env[codingProvider.apiKeyEnvironment] ?? '';
 let auth = null;
 if (!prepareOnly) {
-  try { auth = resolveContainerAuth({ apiKey, env: process.env, credentialsPath: creds }); }
+  try { auth = resolveContainerAuth({ provider, apiKey, env: process.env, credentialsPath: codingProvider.credentialPath }); }
   catch (error) { console.error(`run-build.js: ${errorMessage(error)}`); process.exit(2); }
 }
 
 // Persist this run's transcript without exposing other local sessions.
-const projects = prepareOnly ? null : join(homedir(), '.claude', 'projects',
-  resolve(appDir).replace(/[\\/:]/g, '-').toLowerCase());
+const projects = prepareOnly ? null : codingProvider.projects(appDir);
+const containerTranscripts = codingProvider.containerTranscripts;
 function ensureAgentDirectory(directory: string): void {
   mkdirSync(directory, { recursive: true,
     mode: process.env.STACK_BENCH_APPLIANCE === '1' ? 0o700 : 0o777 });
@@ -189,7 +196,7 @@ const hasRequiredIsolation = (container: NonNullable<ReturnType<typeof inspectBu
 const expectedMounts: ContainerMount[] = [
   { kind: 'bind' as const, source: resolve(appDir), target: CODING_CONTAINER_APP_ROOT, readOnly: false },
   ...(projects ? [{ kind: 'bind' as const, source: projects,
-    target: `${AGENT_HOME}/.claude/projects/-app`, readOnly: false }] : []),
+    target: containerTranscripts, readOnly: false }] : []),
   ...containerPlan.mounts,
 ];
 
@@ -292,7 +299,7 @@ if (!existing) {
   }
   create.push('--network', expectedNetworkMode);
   create.push(...dockerHostGatewayArguments(expectedNetworkMode));
-  if (projects) create.push('-v', `${projects}:${AGENT_HOME}/.claude/projects/-app`);
+  if (projects) create.push('-v', `${projects}:${containerTranscripts}`);
   // The selected adapter owns every stack-specific mount. Giving a treatment
   // another stack's artifacts would violate the "only artifacts under test"
   // boundary.
@@ -457,12 +464,12 @@ if (process.env.STACK_BENCH_APPLIANCE === '1') {
 }
 
 // A nested transcript mount makes Docker create its parent directories as
-// root. Confirm that Claude can create its private session state before a
+// root. Confirm that the coding runner can create its private session state before a
 // provider request can spend money.
 const homeProbe = spawnSync('docker', [
   'exec', '--user', `${AGENT_UID}:${AGENT_GID}`, '-e', `HOME=${AGENT_HOME}`,
   containerName, 'sh', '-c',
-  'umask 077; mkdir -p "$HOME/.claude/session-env" && test -w "$HOME/.claude/session-env"',
+  'umask 077; mkdir -p "$1" && test -w "$1"', 'home-probe', dirname(containerTranscripts),
 ], { encoding: 'utf8', env: dockerEnv, timeout: DOCKER_PROBE_TIMEOUT_MS });
 if (homeProbe.status !== 0) {
   console.error(`run-build.js: agent home is not writable in ${containerName}`);
@@ -479,41 +486,23 @@ if (prepareOnly) {
 
 const args = ['exec', '-i', '--user', `${AGENT_UID}:${AGENT_GID}`, '-w', CODING_CONTAINER_APP_ROOT];
 
-args.push('-e', `HOME=${AGENT_ENVIRONMENT.HOME}`, '-e', `USER=${AGENT_ENVIRONMENT.USER}`,
-  '-e', 'DISABLE_AUTOUPDATER=1', '-e', 'FORCE_PROMPT_CACHING_5M=1');
+args.push('-e', `HOME=${AGENT_ENVIRONMENT.HOME}`, '-e', `USER=${AGENT_ENVIRONMENT.USER}`);
 const leasedEnvironment = leasedDatabaseEnvironment(adapter, {
   database: leaseContext.lease.resources.database, networkMode: expectedNetworkMode, lease: leaseContext.lease,
 });
 for (const [key, value] of Object.entries(leasedEnvironment)) args.push('-e', `${key}=${value}`);
 const dockerExecEnv: NodeJS.ProcessEnv = { ...process.env, MSYS_NO_PATHCONV: '1' };
 if (!projects) throw new Error('transcript directory is unavailable');
-const transcriptReader = containerClaudeTranscriptReader(containerId, projects, dockerExecEnv);
-const transcriptSnapshot = transcriptReader.snapshot();
 // Forward only benchmark-owned environment settings.
-if (process.env.MAX_THINKING_TOKENS) {
+if (provider === 'anthropic' && process.env.MAX_THINKING_TOKENS) {
   args.push('-e', `MAX_THINKING_TOKENS=${process.env.MAX_THINKING_TOKENS}`);
 }
 
-const claudeArgs = [
-  '--print', '--output-format', 'json',
-  // Isolate the session from project memory, plugins, and integrations.
-  '--bare',
-  '--permission-mode', 'acceptEdits',
-  '--settings', JSON.stringify({ permissions: { allow: ['Bash'] } }),
-  '--effort', effort,
-  '--model', model,
-  ...(maxBudgetUsd !== null ? ['--max-budget-usd', maxBudgetUsd] : []),
-  // The app is the only directory a session may reach; inside the container
-  // that is all there is, but the flag is kept so host and container runs are
-  // configured identically.
-  '--add-dir', CODING_CONTAINER_APP_ROOT,
-  ...(resumeSession !== null ? ['--resume', resumeSession] : []),
-];
 // Record the exact remote PID. Killing the local `docker exec` client does not
-// guarantee that Claude stops inside the long-lived build container.
+// guarantee that the coding runner stops inside the long-lived build container.
 const invocationToken = randomBytes(16).toString('hex');
 const processRecord = `${CODING_CONTAINER_PROCESS_IDENTITY.recordPrefix}${invocationToken}.pid`;
-const claudeWrapper = 'umask 022; record="$1"; shift; '
+const sessionWrapper = 'umask 022; record="$1"; shift; '
   + 'start="$(awk \'{print $22}\' /proc/$$/stat)" || exit 1; '
   + 'printf \'%s %s\\n\' "$$" "$start" > "$record"; exec "$@"';
 
@@ -533,6 +522,7 @@ try {
   })() : undefined;
   credentialBroker = await startCredentialBroker(auth,
     { networkMode: expectedNetworkMode, deadlineMs: CODING_SESSION_TIMEOUT_MS, model,
+      providerRoute, maxOutputTokens,
       docker,
       maxBudgetUsd: maxBudgetUsd === null ? null : Number(maxBudgetUsd),
       pricingRates: maxBudgetUsd === null ? null : pricing!.rates });
@@ -541,17 +531,19 @@ try {
   process.exit(2);
 }
 if (!credentialBroker) throw new Error('credential broker is unavailable');
-dockerExecEnv.ANTHROPIC_AUTH_TOKEN = credentialBroker.sessionToken;
-args.push('-e', 'ANTHROPIC_AUTH_TOKEN', '-e', `ANTHROPIC_BASE_URL=${credentialBroker.baseUrl}`,
-  containerName, 'sh', '-c', claudeWrapper, CODING_CONTAINER_PROCESS_IDENTITY.sessionLabel,
+const tokenEnvironment = codingProvider.tokenEnvironment;
+dockerExecEnv[tokenEnvironment] = credentialBroker.sessionToken;
+args.push('-e', tokenEnvironment, ...codingProvider.environment(credentialBroker.baseUrl).flatMap(value => ['-e', value]),
+  containerName, 'sh', '-c', sessionWrapper, CODING_CONTAINER_PROCESS_IDENTITY.sessionLabel,
   processRecord,
-  'claude', ...claudeArgs);
+  codingProvider.executable, ...codingProvider.args({ model, effort, baseUrl: credentialBroker.baseUrl,
+    resumeSession, maxBudgetUsd }));
 
 // MSYS_NO_PATHCONV: Git Bash rewrites container-side paths like /app into
 // Windows paths (C:/Program Files/Git/app) and every mount silently lands
 // somewhere wrong.
 const promptInput = process.stdin.isTTY ? '' : readFileSync(0, 'utf8');
-function signalClaude(signal: 'TERM' | 'KILL') {
+function signalSession(signal: 'TERM' | 'KILL') {
   const script = 'record="$1"; signal="$2"; test -r "$record" || exit 4; '
     + 'read -r pid expected < "$record"; '
     + 'current="$(awk \'{print $22}\' "/proc/$pid/stat" 2>/dev/null)" || exit 5; '
@@ -561,17 +553,17 @@ function signalClaude(signal: 'TERM' | 'KILL') {
     encoding: 'utf8', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
   });
 }
-function terminateClaude(child: { kill(signal?: NodeJS.Signals): boolean }): void {
-  const term = signalClaude('TERM');
+function terminateSession(child: { kill(signal?: NodeJS.Signals): boolean }): void {
+  const term = signalSession('TERM');
   if (term.status !== 0) child.kill('SIGTERM');
   const force = setTimeout(() => {
-    signalClaude('KILL');
+    signalSession('KILL');
     child.kill('SIGKILL');
   }, 5_000);
   force.unref();
 }
 
-let res: Awaited<ReturnType<typeof runTranscriptAwareProcess>> | undefined;
+let res: Awaited<ReturnType<typeof codingProvider.run>> | undefined;
 let sessionError: unknown = null;
 let brokerLedger = null;
 let brokerDiagnostics = null;
@@ -584,21 +576,10 @@ const runCleanupCommand = (description: string, command: readonly string[]): voi
     || result.error?.message || `exit ${result.status}`).trim()}`);
 };
 try {
-  res = await runTranscriptAwareProcess({ command: 'docker', args,
-    input: promptInput,
-    maxBuffer: 256 * 1024 * 1024,
-    env: dockerExecEnv,
-    timeoutMs: CODING_SESSION_TIMEOUT_MS,
-    transcriptDirectory: projects,
-    transcriptSnapshot,
-    transcriptReader,
-    pollMs: 1_000,
-    marker: completionMarker as string,
-    model,
-    pricingRates: pricing?.rates ?? null,
-    resumeSession: resumeSession ?? undefined,
-    terminate: terminateClaude,
-  });
+  res = await codingProvider.run({ command: 'docker', args, input: promptInput,
+    env: dockerExecEnv, timeoutMs: CODING_SESSION_TIMEOUT_MS, terminate: terminateSession,
+    projects, containerId, marker: completionMarker as string, model,
+    pricingRates: pricing?.rates ?? null, resumeSession });
 } catch (error) {
   sessionError = error;
 } finally {
@@ -612,7 +593,7 @@ try {
       return next;
     });
   }
-  for (const command of codingContainerTranscriptHandoffCommands(CONTROLLER_GID)) {
+  for (const command of codingContainerTranscriptHandoffCommands(CONTROLLER_GID, containerTranscripts)) {
     runCleanupCommand('transcript handoff', command);
   }
   const handoff = process.env.STACK_BENCH_APPLIANCE === '1'
@@ -636,14 +617,8 @@ if (cleanupErrors.length) {
     + `run-build.js: container cleanup failed: ${cleanupErrors.join('; ')}\n`;
 }
 
-let cliResult = null;
-const stdout = String(res.stdout ?? '').trim();
-try { cliResult = JSON.parse(stdout); }
-catch {
-  for (const line of stdout.split(/\r?\n/).reverse()) {
-    try { cliResult = JSON.parse(line); break; } catch { /* Keep looking. */ }
-  }
-}
+const cliResult = codingProvider.result(String(res.stdout ?? '').trim(), appDir, invocationToken);
+if (cliResult) cliResult.stack_bench_auth_mode = auth.mode;
 const memory = spawnSync('docker', ['exec', containerName, 'sh', '-c',
   'for f in memory.events memory.current memory.peak memory.max; do '
     + 'p="/sys/fs/cgroup/$f"; if test -r "$p"; then echo "[$f]"; cat "$p"; fi; done'], {
@@ -658,6 +633,7 @@ const resources = {
 if (maxBudgetUsd !== null) {
   const reconciled = reconcileCredentialBrokerReceipt({
     ledger: brokerLedger,
+    provider,
     cliResult,
     model,
     maxBudgetUsd: Number(maxBudgetUsd),

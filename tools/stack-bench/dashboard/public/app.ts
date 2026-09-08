@@ -8,12 +8,13 @@
 import type { AttemptChecks, AttemptPackage, CampaignProgression, CampaignSheet, OverviewEntry }
   from '../dashboard-views.js';
 import type { DashboardPlan } from '../dashboard-model.js';
+import type { readCampaignTimeBudget } from '../../src/campaigns/campaign-time-grant.js';
 import { type QuestlineView, campaignPage, replayTimeline, selectedProgression } from './views/campaign.js';
 import { type AttemptTab, attemptPage } from './views/attempt.js';
 import { type CampaignFilter, campaignsPage } from './views/campaigns.js';
 import { type Page, type RunForm, afterRun, plansPage, runName, topbar }
   from './views/plans.js';
-import { elapsed, esc } from './format.js';
+import { duration, elapsed, esc } from './format.js';
 
 const FALLBACK_MS = 15_000;
 const TABS: readonly AttemptTab[] = ['checks', 'screenshots', 'files', 'log'];
@@ -41,6 +42,9 @@ const state = {
   progression: new Map<string, CampaignProgression | null>(),
   checks: new Map<string, AttemptChecks>(),
   evidence: new Map<string, AttemptPackage>(),
+  timeBudgets: new Map<string, ReturnType<typeof readCampaignTimeBudget>>(),
+  timeGrantIds: new Map<string, string>(),
+  timeGrantMinutes: '120',
   log: { attempt: '', text: '', offset: 0 },
 };
 let fallback = 0;
@@ -125,6 +129,8 @@ function page(current: Route): string {
     + `<b>${esc(current.key)}</b></div></div>`;
   if (current.attempt) {
     return attemptPage({ sheet, attemptId: current.attempt, tab: current.tab,
+      timeBudget: state.timeBudgets.get(current.attempt), canControl: state.canStart,
+      controlError: state.form.error,
       checks: state.checks.get(current.attempt) ?? null,
       evidence: state.evidence.get(current.attempt) ?? null,
       log: state.log.attempt === current.attempt ? state.log.text : '' });
@@ -172,6 +178,13 @@ function patch(current: Element, next: Element): void {
   });
 }
 
+function updateTimeTotal(field: HTMLInputElement): void {
+  const total = field.form?.querySelector<HTMLOutputElement>('[data-time-base]');
+  if (total) total.textContent = field.validity.valid
+    ? `Limit after request: ${duration((Number(total.dataset.timeBase) + field.valueAsNumber) * 60)}`
+    : 'Enter positive whole minutes.';
+}
+
 function render(): void {
   const current = route();
   const root = document.body;
@@ -183,6 +196,10 @@ function render(): void {
   patch(root, next);
   // The secret and the run name live in the tab, never in the markup.
   for (const field of document.querySelectorAll<HTMLInputElement>('form[data-run] input')) {
+    if (field.name === 'minutes') {
+      field.value = state.timeGrantMinutes;
+      updateTimeTotal(field);
+    }
     if (field.name !== 'secret' && field.name !== 'output') continue;
     const value = field.name === 'secret' ? state.form.secret : state.form.outputName;
     if (field.value !== value) field.value = value;
@@ -190,7 +207,8 @@ function render(): void {
   for (const form of document.querySelectorAll<HTMLFormElement>('form[data-run]')) {
     form.setAttribute('aria-busy', String(submitting));
     for (const button of form.querySelectorAll<HTMLButtonElement>('button[type=submit]')) {
-      button.disabled = submitting;
+      button.disabled = submitting || (form.dataset.run === 'grant-time'
+        && (state.timeBudgets.get(current.attempt)?.grants.some(grant => grant.disposition === 'pending') ?? false));
     }
   }
 }
@@ -256,6 +274,13 @@ async function loadData(version: number): Promise<void> {
     render();
   }
   if (!current.attempt) return;
+  const timeBudget = await read<ReturnType<typeof readCampaignTimeBudget>>(attemptUrl(current, 'time'));
+  if (version !== loadVersion) return;
+  if (timeBudget) {
+    state.timeBudgets.set(current.attempt, timeBudget);
+    if (timeBudget.grants.some(grant => grant.request.grantId === state.timeGrantIds.get(current.attempt)
+      && grant.disposition !== 'pending')) state.timeGrantIds.delete(current.attempt);
+  }
   if (current.tab === 'checks' && !state.checks.has(current.attempt)) {
     const checks = await read<AttemptChecks>(attemptUrl(current, 'checks'));
     if (checks) state.checks.set(current.attempt, checks);
@@ -359,19 +384,34 @@ async function post(form: HTMLFormElement): Promise<void> {
   const current = route();
   const data = new FormData(form);
   const action = form.dataset.run;
-  const existing = action === 'resume' || action === 'stop';
+  const resumeWithTime = action === 'grant-time' && form.dataset.resume === 'true';
+  const existing = action === 'resume' || action === 'stop' || action === 'grant-time';
   const output = existing ? current.key : String(data.get('output') ?? '');
+  // Retain the ID after an uncertain response, so retry cannot add time twice.
+  if (action === 'grant-time' && !state.timeGrantIds.has(current.attempt)) {
+    state.timeGrantIds.set(current.attempt, crypto.randomUUID());
+  }
+  const grantId = state.timeGrantIds.get(current.attempt);
   submitting = true;
   render();
+  let timeAccepted = false;
   try {
-    const response = await fetch(existing
+    let response = await fetch(action === 'grant-time' ? attemptUrl(current, 'time') : existing
       ? `/api/campaigns/${encodeURIComponent(current.key)}/${action}` : '/api/campaigns', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-stack-bench-token': state.csrfToken,
         'x-stack-bench-control-secret': String(data.get('secret') ?? '') },
-      body: JSON.stringify(action === 'stop' ? { owner: data.get('owner') }
+      body: JSON.stringify(action === 'grant-time' ? { grantId, minutes: Number(data.get('minutes')) }
+        : action === 'stop' ? { owner: data.get('owner') }
         : existing ? {} : { planId: String(data.get('plan') ?? ''), outputName: output }),
     });
+    if (response.ok && resumeWithTime) {
+      timeAccepted = true;
+      response = await fetch(`/api/campaigns/${encodeURIComponent(current.key)}/resume`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-stack-bench-token': state.csrfToken,
+          'x-stack-bench-control-secret': String(data.get('secret') ?? '') }, body: '{}',
+      });
+    }
     if (response.ok) {
       state.form = { ...state.form, secret: '', error: '' };
       if (existing) return void load();
@@ -379,10 +419,12 @@ async function post(form: HTMLFormElement): Promise<void> {
     }
     const failure = await response.json().catch(() => ({})) as { error?: string };
     state.form = afterRun(state.form, response.status,
-      failure.error || `Request failed (HTTP ${response.status}). Check campaign status before retrying.`);
+      (timeAccepted ? 'Time was added, but resume failed. ' : '')
+      + (failure.error || `Request failed (HTTP ${response.status}). Check campaign status before retrying.`));
   } catch {
     state.form = { ...state.form,
-      error: 'Could not confirm the request. Check campaign status before retrying.' };
+      error: (timeAccepted ? 'Time was added. Could not confirm resume. ' : 'Could not confirm the request. ')
+        + 'Check campaign status before retrying.' };
   } finally {
     submitting = false;
     render();
@@ -399,6 +441,10 @@ document.addEventListener('submit', event => {
 // The form's fields are the state; picking a plan renames the output with it.
 document.addEventListener('input', event => {
   const field = event.target as HTMLInputElement;
+  if (field.name === 'minutes') {
+    state.timeGrantMinutes = field.value;
+    updateTimeTotal(field);
+  }
   if (field.name === 'secret') state.form = { ...state.form, secret: field.value };
   else if (field.name === 'output') state.form = { ...state.form, outputName: field.value };
   else if (field.name === 'plan') {

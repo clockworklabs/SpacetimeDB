@@ -1,3 +1,4 @@
+import type { ProviderFailure } from '../src/agents/provider-failure.js';
 import { randomBytes } from 'node:crypto';
 import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { z } from 'zod';
@@ -25,6 +26,9 @@ export type BrokerMode = 'api-key' | 'subscription-token';
 export type PricingRates = ReturnType<typeof validateSharedPricingRates>;
 
 export type BrokerConfig = {
+  provider?: 'anthropic' | 'openai' | 'openrouter';
+  accountId?: string;
+  providerRoute?: string;
   mode: BrokerMode;
   credential: string;
   sessionToken: string;
@@ -40,6 +44,12 @@ export type BrokerConfig = {
 };
 
 export type BrokerLedger = {
+  provider?: 'openrouter';
+  providerRoute?: string;
+  providerReportedCostUsd?: number;
+  upstreamProviders?: string[];
+  providerIntegrityError?: string;
+  providerFailure?: ProviderFailure | null;
   schemaVersion: number;
   model: string;
   maxBudgetUsd: number | null;
@@ -60,6 +70,11 @@ export type BrokerLedger = {
 // `exact` false it is an upper bound and `calculatedCostUsd`, priced from the
 // exact usage alone, a lower bound.
 export interface CredentialBrokerReceipt {
+  costSource?: 'provider-reported';
+  provider?: 'openrouter';
+  providerRoute?: string;
+  providerReportedCostUsd?: number;
+  upstreamProviders?: string[];
   schemaVersion: 3;
   source: 'credential-broker';
   model: string;
@@ -94,6 +109,9 @@ const usageSchema = z.strictObject({
   cacheWrite1h: nonNegativeSafeInteger,
 });
 const brokerConfigSchema = z.strictObject({
+  provider: z.enum(['anthropic', 'openai', 'openrouter']).optional(),
+  accountId: z.string().min(1).optional(),
+  providerRoute: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,127}$/).optional(),
   mode: z.enum(['api-key', 'subscription-token']),
   credential: z.string().min(16),
   sessionToken: z.string().min(16),
@@ -107,11 +125,27 @@ const brokerConfigSchema = z.strictObject({
   maxBudgetUsd: positiveFinite.nullable().optional(),
   pricingRates: z.unknown().optional(),
 }).superRefine((value, context) => {
+  if (value.provider === 'openrouter' && (value.mode !== 'api-key' || !value.providerRoute || value.maxBudgetUsd == null)) {
+    context.addIssue({ code: 'custom', message: 'OpenRouter requires API-key auth, providerRoute, and a spend budget' });
+  }
+  if (value.provider !== 'openrouter' && value.providerRoute !== undefined) {
+    context.addIssue({ code: 'custom', path: ['providerRoute'], message: 'only OpenRouter uses providerRoute' });
+  }
   if (value.expiresAt !== undefined && value.expiresAt <= Date.now()) {
     context.addIssue({ code: 'custom', path: ['expiresAt'], message: 'must be in the future' });
   }
 });
 const brokerLedgerSchema = z.strictObject({
+  provider: z.literal('openrouter').optional(),
+  providerRoute: z.string().min(1).optional(),
+  providerReportedCostUsd: nonNegativeFinite.optional(),
+  upstreamProviders: z.array(z.string().min(1).max(128)).optional(),
+  providerIntegrityError: z.string().max(200).optional(),
+  providerFailure: z.strictObject({
+    category: z.enum(['rate-limit', 'quota', 'authentication', 'transport', 'request', 'broker-budget']),
+    status: z.number().int().min(100).max(599).nullable(),
+    code: z.string().regex(/^[a-zA-Z0-9_.-]{1,100}$/).nullable(),
+  }).nullable().optional(),
   schemaVersion: z.literal(BROKER_LEDGER_SCHEMA_VERSION),
   model: z.string().min(1),
   maxBudgetUsd: positiveFinite.nullable(),
@@ -213,6 +247,10 @@ function validateLedger(value: unknown,
   const complete = ledger.reservedUsd === 0
     && ledger.completedBillableRequests === ledger.billableRequests;
   if (ledger.complete !== complete) fail('spend ledger completion state is invalid');
+  if (ledger.provider === 'openrouter' && (!ledger.providerRoute || ledger.providerReportedCostUsd === undefined
+    || !ledger.upstreamProviders || ledger.providerReportedCostUsd > ledger.spentUsd + COST_TOLERANCE_USD)) {
+    fail('OpenRouter spend ledger lacks valid cost and routing provenance');
+  }
   return ledger;
 }
 
@@ -231,7 +269,8 @@ export function readCredentialBrokerLedger(path: string,
 }
 
 export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, maxBudgetUsd,
-  pricingRates, brokerDiagnostics = null, toleranceUsd = COST_TOLERANCE_USD }: {
+  pricingRates, provider = 'anthropic', brokerDiagnostics = null, toleranceUsd = COST_TOLERANCE_USD }: {
+  provider?: 'anthropic' | 'openai' | 'openrouter';
   ledger: unknown; cliResult: unknown; model: unknown; maxBudgetUsd: unknown; pricingRates: unknown;
   brokerDiagnostics?: unknown; toleranceUsd?: number;
 }): { ok: boolean; result: CredentialBrokerResult; receipt: CredentialBrokerReceipt } {
@@ -258,13 +297,16 @@ export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, max
   if (!issue && exact && cliUsage && usage && !brokerCoversCliUsage(usage, cliUsage)) {
     issue = 'credential broker usage is lower than CLI usage totals';
   }
-  try { if (verifiedRates && usage) calculatedCostUsd = priceNormalizedClaudeUsage(usage, verifiedRates); }
+  if (!issue && provider === 'openrouter' && verifiedLedger?.provider !== 'openrouter') issue = 'OpenRouter spend ledger lacks provenance';
+  if (!issue && verifiedLedger?.providerIntegrityError) issue = verifiedLedger.providerIntegrityError;
+  try { if (provider !== 'openrouter' && verifiedRates && usage) calculatedCostUsd = priceNormalizedClaudeUsage(usage, verifiedRates); }
   catch (error) { if (!issue) issue = errorMessage(error); }
   const brokerCost = verifiedLedger
-    ? Math.min(receiptBudget, verifiedLedger.spentUsd + verifiedLedger.reservedUsd) : receiptBudget;
+    ? provider === 'openrouter' ? verifiedLedger.spentUsd + verifiedLedger.reservedUsd
+      : Math.min(receiptBudget, verifiedLedger.spentUsd + verifiedLedger.reservedUsd) : receiptBudget;
   // Estimated requests contribute ceilings, not observed tokens. Require those
   // ceilings to cover every usage component seen by either recorder.
-  if (!issue && !exact && verifiedRates && usage && cliUsage) {
+  if (!issue && provider !== 'openrouter' && !exact && verifiedRates && usage && cliUsage) {
     const observedUsage = { ...usage };
     for (const field of CLAUDE_USAGE_FIELDS) {
       observedUsage[field] = Math.max(usage[field], cliUsage[field]);
@@ -274,7 +316,8 @@ export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, max
     }
   }
   const cliCost = Number(isRecord(cliResult) ? cliResult.total_cost_usd : undefined);
-  if (!issue && (!Number.isFinite(cliCost) || cliCost < 0)) {
+  if (!issue && (provider === 'anthropic' || (isRecord(cliResult) && cliResult.total_cost_usd !== undefined))
+    && (!Number.isFinite(cliCost) || cliCost < 0)) {
     issue = 'coding session did not return a usable cost receipt';
   }
   // Exact spend must price back to the broker's figure. Estimated requests
@@ -283,7 +326,13 @@ export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, max
   if (!issue && calculatedCostUsd !== null && exact && Math.abs(calculatedCostUsd - brokerCost) > toleranceUsd) {
     issue = `usage-priced spend $${calculatedCostUsd.toFixed(6)} does not match credential broker spend $${brokerCost.toFixed(6)}`;
   }
+  if (!issue && provider === 'openrouter' && brokerCost > receiptBudget + toleranceUsd) {
+    issue = 'OpenRouter reported spend exceeds the session budget';
+  }
   const receipt: CredentialBrokerReceipt = {
+    ...(provider === 'openrouter' ? { costSource: 'provider-reported' as const, provider,
+      providerRoute: verifiedLedger?.providerRoute, providerReportedCostUsd: verifiedLedger?.providerReportedCostUsd,
+      upstreamProviders: verifiedLedger?.upstreamProviders } : {}),
     schemaVersion: 3,
     source: 'credential-broker',
     model,
@@ -306,6 +355,8 @@ export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, max
     total_cost_usd: receipt.costUsd,
     stack_bench_cost_receipt: receipt,
   };
+  delete result.stack_bench_provider_failure;
+  if (verifiedLedger?.providerFailure) result.stack_bench_provider_failure = verifiedLedger.providerFailure;
   if (usage) result.usage = rawUsage(usage);
   if (brokerDiagnostics) result.stack_bench_credential_broker = structuredClone(brokerDiagnostics);
   if (issue) {

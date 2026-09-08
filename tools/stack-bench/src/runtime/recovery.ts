@@ -23,6 +23,7 @@ export interface SupervisorState {
 
 export interface RecoveryPlan {
   schemaVersion: 1;
+  ownershipMarkerSha256: string;
   status: 'clean' | 'retained' | 'quarantined';
   runId: string;
   backend: string;
@@ -171,6 +172,7 @@ export function recoveryPlan(
     'Use the private supervisor state to perform authenticated cleanup when inspection is complete.',
   ] : ['No recovery action is required.'];
   return { schemaVersion: 1, status, runId: publicLease.runId, backend: publicLease.backend,
+    ownershipMarkerSha256: publicLease.ownership.markerSha256,
     reason: reason ? String(reason).split(/\r?\n/, 1).join('').slice(0, 1024) : null,
     cleanup: { succeeded: Boolean(cleanupSucceeded), retained: Boolean(retained) },
     resources, instructions };

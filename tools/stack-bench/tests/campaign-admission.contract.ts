@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { runCampaignAdmission }
+import { runCampaignAdmission, validateCampaignAdmission }
   from '../src/campaigns/campaign-admission.js';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import type { CampaignAdmissionPreflightRequest }
@@ -18,6 +18,8 @@ const passingPreflight = (request: CampaignAdmissionPreflightRequest) => ({
   request: { backends: request.backends, track: request.track, levels: request.levelList,
     runIndex: request.runIndex, parallelism: request.parallelism,
     agentAdapter: request.agentAdapter,
+    ...(request.providerRoute ? { providerRoute: request.providerRoute } : {}),
+    ...(request.maxOutputTokens ? { maxOutputTokens: request.maxOutputTokens } : {}),
     packs: request.packIds, checks: request.checkKeys, image: request.image,
     resultsDir: request.resultsDir, smoke: request.smoke },
   ok: true,
@@ -99,4 +101,37 @@ test('campaign admission selects a free run slot', { skip: process.platform !== 
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('admission requires a distinct report for each provider route and rejects substituted routes', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-route-admission-'));
+  try {
+    const plan = compileCampaignFile(join(STACK_BENCH_ROOT, 'tests', 'fixtures',
+      'campaign.deterministic.json'));
+    const agent = plan.agents[0]!;
+    plan.agents = ['openai', 'azure'].map(providerRoute => ({ ...agent,
+      adapter: 'openrouter', providerRoute, maxOutputTokens: 8192 }));
+    const payload = { schemaVersion: 1, campaignId: plan.id, campaignSha256: plan.contentSha256,
+      createdAt, ok: true, runtime: plan.definition.runtime, conditions: plan.conditions,
+      agents: plan.agents.map(({ adapter, model, providerRoute, maxOutputTokens, identity }) =>
+        ({ adapter, model, providerRoute, maxOutputTokens, identity })),
+      reports: plan.agents.flatMap(({ adapter, providerRoute, maxOutputTokens }) =>
+        Array.from({ length: plan.summary.parallelism }, (_, runIndex) => ({
+          schemaVersion: 1, ok: true, checks: [], summary: { passed: 0, failed: 0, warnings: 0 },
+          request: { agentAdapter: adapter, providerRoute, maxOutputTokens, runIndex,
+            backends: plan.stacks.map(stack => stack.id), track: plan.definition.track,
+            levels: plan.definition.levels, parallelism: plan.summary.parallelism,
+            packs: plan.definition.selection.packs ?? [], checks: plan.definition.selection.checks ?? [],
+            smoke: false, image: plan.definition.runtime.buildImage, resultsDir: root },
+        }))) };
+    assert.deepEqual(validateCampaignAdmission(payload, plan, root), payload);
+    const missing = { ...payload, reports: payload.reports.slice(1) };
+    assert.throws(() => validateCampaignAdmission(missing, plan, root), /incomplete/);
+    const changedLimit = structuredClone(payload);
+    changedLimit.reports[0]!.request.maxOutputTokens = 1;
+    assert.throws(() => validateCampaignAdmission(changedLimit, plan, root), /must contain one/);
+    const substituted = structuredClone(payload);
+    substituted.reports[0]!.request.providerRoute = 'another-provider';
+    assert.throws(() => validateCampaignAdmission(substituted, plan, root), /must contain one/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

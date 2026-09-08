@@ -22,6 +22,8 @@ export function parsePreflightArgs(
     'run-index': { type: 'string' },
     parallelism: { type: 'string' },
     'agent-adapter': { type: 'string' },
+    'provider-route': { type: 'string' },
+    'max-output-tokens': { type: 'string' },
     guidance: { type: 'string' },
     pack: { type: 'string', multiple: true },
     check: { type: 'string', multiple: true },
@@ -43,6 +45,8 @@ export function parsePreflightArgs(
   if (values['run-index'] !== undefined) request.runIndex = Number(values['run-index']);
   if (values.parallelism !== undefined) request.parallelism = Number(values.parallelism);
   if (values['agent-adapter'] !== undefined) request.agentAdapter = values['agent-adapter'];
+  if (values['provider-route'] !== undefined) request.providerRoute = values['provider-route'];
+  if (values['max-output-tokens'] !== undefined) request.maxOutputTokens = Number(values['max-output-tokens']);
   if (values.guidance !== undefined) request.guidance = values.guidance;
   request.packIds = (values.pack ?? []).flatMap(splitList);
   request.checkKeys = (values.check ?? []).flatMap(splitList);

@@ -72,8 +72,9 @@ interface BrokerReady {
 }
 
 type BrokerTestConfig = Partial<Pick<BrokerConfig,
-  'ledgerPath' | 'maxBudgetUsd' | 'pricingRates' | 'maxOutputTokens'>> & {
+  'ledgerPath' | 'maxBudgetUsd' | 'pricingRates' | 'maxOutputTokens' | 'provider' | 'providerRoute' | 'accountId' | 'model'>> & {
     upstreamBody?: string | Buffer;
+    upstreamStatus?: number;
     upstreamHeaders?: OutgoingHttpHeaders;
   };
 
@@ -128,7 +129,7 @@ function send(port: number, { method = 'POST', path = '/v1/messages', headers = 
 
 async function withBroker(mode: BrokerMode, body: (context: BrokerTestContext) => Promise<void>,
   config: BrokerTestConfig = {}): Promise<void> {
-  const { upstreamBody = '{"ok":true}', upstreamHeaders = {}, ...brokerConfig } = config;
+  const { upstreamBody = '{"ok":true}', upstreamStatus = 200, upstreamHeaders = {}, ...brokerConfig } = config;
   const seen: SeenRequest[] = [];
   const upstreamServer = createServer((request, response) => {
     const chunks: Buffer[] = [];
@@ -136,7 +137,7 @@ async function withBroker(mode: BrokerMode, body: (context: BrokerTestContext) =
     request.on('end', () => {
       seen.push({ method: request.method, url: request.url, headers: request.headers,
         body: Buffer.concat(chunks).toString('utf8') });
-      response.writeHead(200, { 'content-type': 'application/json', ...upstreamHeaders });
+      response.writeHead(upstreamStatus, { 'content-type': 'application/json', ...upstreamHeaders });
       response.end(upstreamBody);
     });
   });
@@ -277,6 +278,8 @@ for (const mode of ['api-key', 'subscription-token'] satisfies BrokerMode[]) {
 }
 
 test('credential broker enforces request size and count limits', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'broker-local-limit-'));
+  const ledgerPath = join(root, 'ledger.json');
   const seen: string[] = [];
   const upstreamServer = createServer((request, response) => {
     request.resume();
@@ -288,7 +291,7 @@ test('credential broker enforces request size and count limits', async () => {
   });
   const upstreamPort = await listen(upstreamServer);
   const sessionToken = 'session-token-value-1234567890';
-  const { server } = createCredentialBroker({ mode: 'api-key',
+  const { server } = createCredentialBroker({ mode: 'api-key', ledgerPath,
     credential: 'provider-secret-value-1234567890', sessionToken,
     model: 'test-model', maxOutputTokens: 4096 }, {
     requestUpstream: httpRequest,
@@ -305,9 +308,12 @@ test('credential broker enforces request size and count limits', async () => {
     assert.equal((await send(brokerPort, { headers,
       body: '{"model":"test-model","max_tokens":1}' })).status, 429);
     assert.deepEqual(seen, ['/v1/messages']);
+    assert.deepEqual(readCredentialBrokerLedger(ledgerPath).providerFailure,
+      { category: 'request', status: 429, code: 'broker-request-limit' });
   } finally {
     await close(server);
     await close(upstreamServer);
+    rmSync(root, { recursive: true, force: true });
   }
 });
 
@@ -450,7 +456,7 @@ test('credential broker estimates a settled request without exact provider usage
         cliResult: { type: 'result', is_error: false, total_cost_usd: 0, usage: ZERO_RAW_USAGE },
         model: 'test-model', maxBudgetUsd: 1, pricingRates: PRICING_RATES });
       assert.equal(reconciled.receipt.error, null);
-      assert.equal(reconciled.ok, true);
+      assert.equal(reconciled.ok, true, reconciled.receipt.error ?? undefined);
       assert.equal(reconciled.receipt.reconciled, true);
       assert.equal(reconciled.receipt.exact, false);
       assert.equal(reconciled.receipt.estimatedRequests, 1);
@@ -487,7 +493,7 @@ test('credential broker estimates a cleanly ended provider error stream', async 
       const reconciled = reconcileCredentialBrokerReceipt({ ledger,
         cliResult: { type: 'result', is_error: true, total_cost_usd: 0, usage: ZERO_RAW_USAGE },
         model: 'test-model', maxBudgetUsd: 1, pricingRates: PRICING_RATES });
-      assert.equal(reconciled.ok, true);
+      assert.equal(reconciled.ok, true, reconciled.receipt.error ?? undefined);
       assert.equal(reconciled.receipt.exact, false);
       assert.equal(reconciled.receipt.error, null);
     }, { ledgerPath, maxBudgetUsd: 1, pricingRates: PRICING_RATES,
@@ -524,7 +530,7 @@ test('streamed provider usage produces a reconciled campaign-priced receipt', as
           usage: { input_tokens: 100, output_tokens: 100, cache_read_input_tokens: 50,
             cache_creation_input_tokens: 30 } },
         model: 'test-model', maxBudgetUsd: 1, pricingRates: PRICING_RATES });
-      assert.equal(reconciled.ok, true);
+      assert.equal(reconciled.ok, true, reconciled.receipt.error ?? undefined);
       assert.equal(reconciled.receipt.costUsd, 0.00195);
       assert.equal(reconciled.receipt.calculatedCostUsd, 0.00195);
       assert.equal(reconciled.receipt.cliCostUsd, 0.002925);
@@ -545,7 +551,7 @@ test('campaign pricing is authoritative when CLI pricing differs', () => {
     cliResult: { type: 'result', is_error: false, total_cost_usd: 0.0054,
       usage: { ...ONE_REQUEST_USAGE, input_tokens: 200, output_tokens: 200 } },
     model: 'test-model', maxBudgetUsd: 1, pricingRates: PRICING_RATES });
-  assert.equal(reconciled.ok, true);
+  assert.equal(reconciled.ok, true, reconciled.receipt.error ?? undefined);
   assert.equal(reconciled.result.is_error, false);
   assert.equal(reconciled.result.total_cost_usd, 0.0036);
   assert.equal(reconciled.receipt.source, 'credential-broker');
@@ -568,7 +574,7 @@ test('broker retains cache write classes that the CLI summary combines', () => {
     model: 'claude-sonnet-5', maxBudgetUsd: 50,
     pricingRates: { input: 2, output: 10, cacheWrite5m: 2.5,
       cacheWrite1h: 4, cacheRead: 0.2 } });
-  assert.equal(reconciled.ok, true);
+  assert.equal(reconciled.ok, true, reconciled.receipt.error ?? undefined);
   assert.equal(reconciled.receipt.costUsd, 1.686071);
   assert.equal(reconciled.receipt.calculatedCostUsd, 1.686071);
   assert.equal(reconciled.receipt.cliCostUsd, 2.529107);
@@ -609,7 +615,7 @@ test('matching broker and CLI receipts preserve a successful result', () => {
     cliResult: { type: 'result', is_error: false, total_cost_usd: 0.00195,
       usage: DETAILED_USAGE },
     model: 'test-model', maxBudgetUsd: 1, pricingRates: PRICING_RATES });
-  assert.equal(reconciled.ok, true);
+  assert.equal(reconciled.ok, true, reconciled.receipt.error ?? undefined);
   assert.equal(reconciled.result.is_error, false);
   assert.equal(reconciled.result.total_cost_usd, 0.00195);
   assert.equal(reconciled.result.stack_bench_cost_receipt.reconciled, true);
@@ -632,7 +638,7 @@ test('receipt reconciliation accepts provider usage that includes CLI-omitted ca
     cliResult: { type: 'result', is_error: false, total_cost_usd: 0.00351,
       usage: ONE_REQUEST_USAGE },
   model: 'test-model', maxBudgetUsd: 1, pricingRates: PRICING_RATES });
-  assert.equal(reconciled.ok, true);
+  assert.equal(reconciled.ok, true, reconciled.receipt.error ?? undefined);
   assert.equal(reconciled.receipt.costUsd, 0.00201);
   assert.deepEqual(reconciled.result.usage, {
     input_tokens: 120, output_tokens: 110, cache_read_input_tokens: 0,
@@ -701,7 +707,7 @@ test('real paid-session usage reconciles to broker totals', () => {
     model: 'claude-sonnet-5', maxBudgetUsd: 50,
     pricingRates: { input: 2, output: 10, cacheWrite5m: 2.5,
       cacheWrite1h: 4, cacheRead: 0.2 } });
-  assert.equal(reconciled.ok, true);
+  assert.equal(reconciled.ok, true, reconciled.receipt.error ?? undefined);
   assert.equal(reconciled.receipt.costUsd, 2.665346);
   assert.ok(reconciled.result.usage);
   assert.equal(reconciled.result.usage.input_tokens, 2647);
@@ -943,4 +949,154 @@ test('credential broker forces termination and records typed shutdown errors', a
     { type: 'ledger-read-error', phase: 'final', message: 'ledger unavailable' },
   ]);
   assert.deepEqual(readdirSync(root), []);
+});
+
+
+test('OpenAI broker isolates credentials, bounds requests and reconciles cached usage without CLI dollars', async () => {
+  assert.throws(() => createCredentialBroker({ provider: 'openai', mode: 'subscription-token',
+    accountId: 'account', model: 'constructor', maxOutputTokens: 4096,
+    credential: 'provider-secret-value-1234567890', sessionToken: 'session-token-value-1234567890' }),
+  /no verified output-token bound/);
+  const root = mkdtempSync(join(tmpdir(), 'openai-broker-'));
+  const ledgerPath = join(root, 'ledger.json');
+  const rates = { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite5m: 0, cacheWrite1h: 0 };
+  const usage = { input_tokens: 100, output_tokens: 10, input_tokens_details: { cached_tokens: 80 } };
+  try {
+    await withBroker('api-key', async ({ brokerPort, sessionToken, credential, seen }) => {
+      const request = { path: '/v1/responses', headers: { authorization: `Bearer ${sessionToken}`,
+        'chatgpt-account-id': 'spoofed', 'openai-project': 'spoofed' },
+      body: JSON.stringify({ model: 'test-model', input: 'hello' }) };
+      assert.equal((await send(brokerPort, request)).status, 200);
+      assert.equal(seen[0]!.headers.authorization, `Bearer ${credential}`);
+      assert.equal(seen[0]!.headers['x-api-key'], undefined);
+      assert.equal(seen[0]!.headers['chatgpt-account-id'], undefined);
+      assert.equal(seen[0]!.headers['openai-project'], undefined);
+      assert.equal(JSON.parse(seen[0]!.body).max_output_tokens, 4096);
+      assert.equal((await send(brokerPort, { ...request,
+        body: JSON.stringify({ model: 'test-model', tools: [{ type: 'web_search' }] }) })).status, 400);
+      assert.equal((await send(brokerPort, { ...request,
+        body: JSON.stringify({ model: 'test-model', input: [{ type: 'item_reference', id: 'hidden-input' }] }) })).status, 400);
+      assert.equal(seen.length, 1);
+      const ledger = readCredentialBrokerLedger(ledgerPath);
+      assert.deepEqual(ledger.usage, { input: 20, output: 10, cacheRead: 80, cacheWrite5m: 0, cacheWrite1h: 0 });
+      const reconciled = reconcileCredentialBrokerReceipt({ ledger, provider: 'openai',
+        cliResult: { usage: { input_tokens: 20, output_tokens: 10, cache_read_input_tokens: 80, cache_creation_input_tokens: 0 } },
+        model: 'test-model', maxBudgetUsd: 10, pricingRates: rates });
+      assert.equal(reconciled.ok, true, reconciled.receipt.error ?? undefined);
+      assert.equal(reconciled.receipt.cliCostUsd, null);
+      assert.equal(reconciled.receipt.costUsd, 0.000189);
+    }, { provider: 'openai', ledgerPath, pricingRates: rates, maxBudgetUsd: 10,
+      upstreamBody: `event: response.completed\ndata: ${JSON.stringify({ type: 'response.completed', response: { usage } })}\n\n` });
+    await withBroker('subscription-token', async ({ brokerPort, sessionToken, seen, stats }) => {
+      assert.equal((await send(brokerPort, { path: '/v1/responses',
+        headers: { authorization: `Bearer ${sessionToken}`, 'chatgpt-account-id': 'spoofed' },
+        body: JSON.stringify({ model: 'gpt-5.3-codex', input: 'hello' }) })).status, 200);
+      assert.equal(seen[0]!.url, '/backend-api/codex/responses');
+      assert.equal(seen[0]!.headers['chatgpt-account-id'], 'trusted-account');
+      assert.equal(JSON.parse(seen[0]!.body).max_output_tokens, undefined);
+      assert.equal(stats().estimatedBillableRequests, 1);
+      assert.equal(readCredentialBrokerLedger(ledgerPath).providerFailure?.category, 'transport');
+      assert.ok(stats().spentUsd >= 128_000 * rates.output / 1e6);
+    }, { provider: 'openai', ledgerPath, accountId: 'trusted-account', model: 'gpt-5.3-codex',
+      pricingRates: rates, maxBudgetUsd: 10,
+      upstreamBody: 'event: response.created\ndata: {"type":"response.created"}\n\n' });
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+
+test('broker persists structured quota rejection without recording secret error text', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'provider-quota-'));
+  const ledgerPath = join(root, 'ledger.json');
+  try {
+    await withBroker('api-key', async ({ brokerPort, sessionToken }) => {
+      assert.equal((await send(brokerPort, { headers: { authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify({ model: 'test-model', max_tokens: 10 }) })).status, 429);
+      const ledger = readCredentialBrokerLedger(ledgerPath);
+      assert.deepEqual(ledger.providerFailure, { category: 'quota', status: 429, code: 'insufficient_quota' });
+      assert.equal(ledger.spentUsd, 0);
+      assert.equal(ledger.complete, true);
+      assert.ok(!readFileSync(ledgerPath, 'utf8').includes('do-not-record'));
+    }, { ledgerPath, maxBudgetUsd: 1, pricingRates: PRICING_RATES, upstreamStatus: 429,
+      upstreamBody: JSON.stringify({ error: { code: 'insufficient_quota', message: 'do-not-record' } }) });
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+
+test('OpenRouter broker freezes routing and records reported cost, not reservation pricing', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'openrouter-broker-'));
+  const ledgerPath = join(root, 'ledger.json');
+  const model = 'openai/test-model';
+  const rates = { input: 3, output: 15, cacheRead: 0.3, cacheWrite5m: 6, cacheWrite1h: 6 };
+  for (const invalid of [{ providerRoute: undefined }, { mode: 'subscription-token' },
+    { maxBudgetUsd: undefined }, { model: 'openrouter/auto' }, { model: 'openai/test:nitro' }]) {
+    assert.throws(() => createCredentialBroker({ provider: 'openrouter', mode: 'api-key', providerRoute: 'openai',
+      credential: 'provider-secret-value-1234567890', sessionToken: 'session-token-value-1234567890',
+      model, maxOutputTokens: 4096, maxBudgetUsd: 10, pricingRates: rates, ...invalid }), /OpenRouter/);
+  }
+  const response = { object: 'response', status: 'completed', model,
+    usage: { input_tokens: 100, output_tokens: 10, input_tokens_details: { cached_tokens: 80 }, cost: 0.001 },
+    openrouter_metadata: { requested: model, strategy: 'direct', attempt: 1, is_byok: false,
+      endpoints: { available: [{ model, provider: 'OpenAI', selected: true }] } } };
+  try {
+    await withBroker('api-key', async ({ brokerPort, sessionToken, credential, seen }) => {
+      // Request fields observed from the pinned Codex runner, without its prompt.
+      const input = [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hello' }] }];
+      const tools = [{ type: 'function', name: 'exec_command', parameters: { type: 'object', properties: {} } }];
+      const request = { path: '/v1/responses', headers: { authorization: `Bearer ${sessionToken}`,
+        'x-openrouter-provider': 'spoofed', 'x-api-key': 'spoofed', 'x-openrouter-metadata': 'disabled' },
+      body: JSON.stringify({ model, instructions: 'Use the workspace.', input, tools,
+        tool_choice: 'auto', parallel_tool_calls: true, reasoning: { effort: 'low', summary: 'auto' },
+        store: false, stream: true, include: ['reasoning.encrypted_content'],
+        prompt_cache_key: 'native-session', client_metadata: {} }) };
+      for (const override of [{ provider: { allow_fallbacks: true } }, { models: ['other/model'] },
+        { plugins: [{ id: 'web' }] }, { transforms: ['middle-out'] }, { preset: 'spoofed' }, { modalities: ['image'] }, { truncation: 'auto' }]) {
+        assert.equal((await send(brokerPort, { ...request, body: JSON.stringify({ model, ...override }) })).status, 400);
+      }
+      assert.equal((await send(brokerPort, request)).status, 200);
+      assert.equal(seen.length, 1);
+      assert.equal(seen[0]!.url, '/api/v1/responses');
+      assert.equal(seen[0]!.headers.authorization, `Bearer ${credential}`);
+      assert.equal(seen[0]!.headers['x-api-key'], undefined);
+      assert.equal(seen[0]!.headers['x-openrouter-provider'], undefined);
+      assert.equal(seen[0]!.headers['x-openrouter-metadata'], 'enabled');
+      const forwarded = JSON.parse(seen[0]!.body);
+      assert.deepEqual(forwarded.input, input);
+      assert.deepEqual(forwarded.tools, tools);
+      assert.deepEqual(forwarded.provider, { only: ['openai'], order: ['openai'], allow_fallbacks: false,
+        require_parameters: true, max_price: { prompt: 3, completion: 15, request: 0 } });
+      assert.equal(forwarded.max_output_tokens, 4096);
+      assert.deepEqual(forwarded.transforms, []);
+      assert.deepEqual(forwarded.plugins, []);
+      const ledger = readCredentialBrokerLedger(ledgerPath);
+      assert.equal(ledger.spentUsd, 0.001);
+      assert.equal(ledger.providerReportedCostUsd, 0.001);
+      assert.deepEqual(ledger.upstreamProviders, ['OpenAI']);
+      const reconciled = reconcileCredentialBrokerReceipt({ ledger, provider: 'openrouter',
+        cliResult: { usage: ZERO_RAW_USAGE }, model, maxBudgetUsd: 10, pricingRates: rates });
+      assert.equal(reconciled.ok, true, reconciled.receipt.error ?? undefined);
+      assert.equal(reconciled.receipt.costSource, 'provider-reported');
+      assert.equal(reconciled.receipt.calculatedCostUsd, null);
+      assert.equal(reconciled.receipt.costUsd, 0.001);
+      assert.equal(reconciled.receipt.exact, true);
+    }, { provider: 'openrouter', providerRoute: 'openai', model, ledgerPath, pricingRates: rates, maxBudgetUsd: 10,
+      upstreamBody: `data: ${JSON.stringify({ type: 'response.completed', response })}\n\n` });
+    for (const changed of [ { usage: { ...response.usage, cost: undefined } },
+      { openrouter_metadata: { ...response.openrouter_metadata, is_byok: true } },
+      { openrouter_metadata: { ...response.openrouter_metadata, attempt: 2 } },
+      { model: 'other/model' }, { usage: { ...response.usage, cost: 11 } } ]) {
+      await withBroker('api-key', async ({ brokerPort, sessionToken, seen }) => {
+        const request = { path: '/v1/responses', headers: { authorization: `Bearer ${sessionToken}` },
+          body: JSON.stringify({ model, input: 'hello' }) };
+        assert.equal((await send(brokerPort, request)).status, 200);
+        assert.equal((await send(brokerPort, request)).status, 502);
+        assert.equal(seen.length, 1);
+        const ledger = readCredentialBrokerLedger(ledgerPath);
+        const receipt = reconcileCredentialBrokerReceipt({ ledger, provider: 'openrouter',
+          cliResult: { usage: ZERO_RAW_USAGE }, model, maxBudgetUsd: 10, pricingRates: rates });
+        assert.equal(receipt.ok, false);
+        if (changed.usage?.cost === 11) assert.equal(receipt.receipt.costUsd, 11, 'never clip actual spend');
+      }, { provider: 'openrouter', providerRoute: 'openai', model, ledgerPath, pricingRates: rates, maxBudgetUsd: 10,
+        upstreamBody: JSON.stringify({ ...response, ...changed }) });
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

@@ -14,6 +14,7 @@ import { sha256 } from '../evidence/provenance.js';
 import { compiledEntrypoint } from '../package-root.js';
 
 interface AdapterOptions {
+  provider?: string | null;
   modes?: AgentMode[];
   apiKeyEnvironmentVariable?: string | null;
   credentialEnvironmentVariables?: string[];
@@ -39,14 +40,14 @@ const CLAUDE_SUBSCRIPTION_STATUS_COMMAND = ['node', '-e',
   + "let s=null;try{s=JSON.parse(r.stdout)}catch{};"
   + "process.exit(r.status===0&&s?.loggedIn===true&&['claude.ai','oauth_token'].includes(s?.authMethod)?0:1)"];
 const adapter = (id: string, entrypoint: string, defaultModel: string,
-  { modes = ['build', 'upgrade', 'resume', 'fix'], apiKeyEnvironmentVariable = null,
+  { provider = null, modes = ['build', 'upgrade', 'resume', 'fix'], apiKeyEnvironmentVariable = null,
     credentialEnvironmentVariables = [], credentialFiles = [], outboundDestinations = [],
     requiredExecutables = [],
     credentialStatusCommand = null, usesStackSkills = false, gradesWithFixtureCredentials = false,
     costLimit = 'unsupported', version = '1.0.0',
     deadlineMs = 75 * 60_000 }: AdapterOptions = {}): AgentAdapter => ({
   schemaVersion: AGENT_ADAPTER_SCHEMA_VERSION,
-  id, version, entrypoint: compiledEntrypoint(...entrypoint.split(sep)), modes, defaultModel,
+  id, version, provider, entrypoint: compiledEntrypoint(...entrypoint.split(sep)), modes, defaultModel,
   apiKeyEnvironmentVariable, credentialEnvironmentVariables, credentialFiles,
   outboundDestinations, requiredExecutables, credentialStatusCommand, usesStackSkills,
   gradesWithFixtureCredentials, costLimit,
@@ -55,7 +56,7 @@ const adapter = (id: string, entrypoint: string, defaultModel: string,
 
 export const AGENT_ADAPTER_REGISTRY = createAgentAdapterRegistry([
   adapter('claude-code', join('commands', 'agent.js'), 'claude-sonnet-5',
-    { apiKeyEnvironmentVariable: 'ANTHROPIC_API_KEY',
+    { provider: 'anthropic', apiKeyEnvironmentVariable: 'ANTHROPIC_API_KEY',
       credentialEnvironmentVariables: ['CLAUDE_CODE_OAUTH_TOKEN'],
       costLimit: 'native',
       outboundDestinations: ['https://api.anthropic.com'], requiredExecutables: ['claude'],
@@ -66,6 +67,17 @@ export const AGENT_ADAPTER_REGISTRY = createAgentAdapterRegistry([
       usesStackSkills: true, version: '1.17.2',
       // Claude can wait through an account throttle. Local adapters keep the
       // shorter default deadline because they have no provider wait state.
+      deadlineMs: AGENT_PROCESS_TIMEOUT_MS + DEFAULT_THROTTLE_MAX_WAIT_MS + 10 * 60_000 }),
+  adapter('codex', join('commands', 'agent.js'), 'gpt-5.3-codex',
+    { provider: 'openai', apiKeyEnvironmentVariable: 'OPENAI_API_KEY',
+      credentialEnvironmentVariables: ['CODEX_AUTH'],
+      outboundDestinations: ['https://api.openai.com', 'https://chatgpt.com'],
+      requiredExecutables: ['codex'], usesStackSkills: true, costLimit: 'native',
+      deadlineMs: AGENT_PROCESS_TIMEOUT_MS + DEFAULT_THROTTLE_MAX_WAIT_MS + 10 * 60_000 }),
+  adapter('openrouter', join('commands', 'agent.js'), 'openai/gpt-5.3-codex',
+    { provider: 'openrouter', apiKeyEnvironmentVariable: 'OPENROUTER_API_KEY',
+      outboundDestinations: ['https://openrouter.ai'],
+      requiredExecutables: ['codex'], usesStackSkills: true, costLimit: 'native',
       deadlineMs: AGENT_PROCESS_TIMEOUT_MS + DEFAULT_THROTTLE_MAX_WAIT_MS + 10 * 60_000 }),
   adapter('deterministic', join('tests', 'fixtures', 'repair-agent.js'), 'deterministic',
     { costLimit: 'non-billable', version: '1.3.0' }),
@@ -82,7 +94,7 @@ export function agentAdapterIdentity(value: AgentAdapter): AgentAdapterIdentity 
     version: value.version,
     sha256: sha256(Buffer.concat([
       Buffer.from(`${JSON.stringify({ schemaVersion: value.schemaVersion, id: value.id,
-        version: value.version, modes: value.modes, deadlineMs: value.deadlineMs,
+        version: value.version, provider: value.provider, modes: value.modes, deadlineMs: value.deadlineMs,
         defaultModel: value.defaultModel,
         costLimit: value.costLimit,
         apiKeyEnvironmentVariable: value.apiKeyEnvironmentVariable,

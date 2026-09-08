@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import test from 'node:test';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { readCampaignTimeBudget, requestCampaignTimeGrant } from '../src/campaigns/campaign-time-grant.js';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan }
   from '../src/campaigns/campaign-compiler.js';
@@ -15,7 +16,7 @@ import { runCampaignAdmission } from '../src/campaigns/campaign-admission.js';
 import { campaignChildPath } from '../src/campaigns/campaign-path.js';
 import { attemptArgv, campaignRetryAuthority,
   executeCampaign, reconcileCampaign,
-  processFailureDetail, remainingAttemptCostBudget } from '../src/campaigns/campaign-runner.js';
+  processFailureDetail, publicRecoveryProvesCleanup, remainingAttemptCostBudget } from '../src/campaigns/campaign-runner.js';
 import { expectedDependencyRunOutcomeKind, validateCampaignRun }
   from '../src/campaigns/campaign-run-validation.js';
 import { createCheckEvidence } from '../src/evidence/check-evidence.js';
@@ -279,6 +280,10 @@ test('campaign validation accepts only an explicit pass-before-next-level applic
   levels: [{ level: 1, selection: plannedSelection(attempt, 1) }],
   outcome: { kind: 'harness_failure', reason: 'provider-session-error' } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
+  for (const changedSettings of [{ providerRoute: 'other' }, { maxOutputTokens: 1 }]) {
+    assert.throws(() => validateCampaignRun(plan, attempt, { ...run, ...changedSettings },
+      { buildImage: 'test-build-image' }), /does not match.*(?:providerRoute|maxOutputTokens)/);
+  }
   assert.throws(() => validateCampaignRun(plan, attempt,
     { ...run, mode: { id: 'dependency', version: '3.2.0' } },
     { buildImage: 'test-build-image' }), /does not match.*mode/);
@@ -883,7 +888,7 @@ test('model-free campaign execution checkpoints an authorized retry and every co
     assert.equal(state.summary.completed, 9);
     assert.equal(state.summary.executions, 10);
     assert.deepEqual(state.attempts[0]!.executions.map(item => item.status), ['invalid', 'completed']);
-    assert.equal(calls.every(call => call.options.timeoutMs === 240 * 60_000), true);
+    assert.equal(calls.every(call => call.options.timeoutMs > 0 && call.options.timeoutMs <= 240 * 60_000), true);
     const processArtifact = readArtifact(join(root,
       state.attempts[0]!.executions[0]!.output, 'process.json'),
       { expectedKind: 'campaign_process' });
@@ -900,11 +905,21 @@ test('campaign cancellation stops new claims and reaches the active process tree
     const state = await executeCampaign(example, root, { mode: 'model-free-trial',
       signal: cancellation.signal,
       admit: () => ({ id: 'cancel-admission', payload: { ok: true }, runIndices: [0] }),
-      execute: async (_command, _argv, options) => {
+      execute: async (_command, argv, options) => {
         calls += 1;
         assert.equal(options.signal?.aborted, false);
+        const attemptId = argv[argv.indexOf('--campaign-attempt-id') + 1]!;
+        const request = { attemptId, grantId: 'live-extra', minutes: 60 };
+        assert.equal(requestCampaignTimeGrant(root, request).disposition, 'pending');
+        assert.equal(options.refreshTimeoutMs!(options.timeoutMs, true), options.timeoutMs + 60 * 60_000);
+        assert.equal(readCampaignTimeBudget(root, attemptId).extensionCount, 1,
+          'owner persisted acceptance before exposing the new deadline');
+        assert.equal(requestCampaignTimeGrant(root, request).disposition, 'accepted');
         cancellation.abort();
         assert.equal(options.signal?.aborted, true);
+        requestCampaignTimeGrant(root, { ...request, grantId: 'after-cancel' });
+        options.refreshTimeoutMs!(options.timeoutMs + 60 * 60_000, false);
+        assert.equal(readCampaignTimeBudget(root, attemptId).grants.at(-1)!.disposition, 'rejected');
         return { code: null, signal: 'SIGTERM', timedOut: false, cancelled: true };
       },
     });
@@ -1127,6 +1142,20 @@ test('reconciliation accepts the clean public proof left by authenticated recove
     });
     assert.equal(state.attempts[0]!.status, 'invalid');
     assert.equal(state.attempts[0]!.executions[0]!.outcome, 'scheduler_interrupted');
+    const interrupted = readArtifact<{ backendLease: { state: string; ownership?: { markerSha256: string } } }>(join(output, 'run.json'));
+    interrupted.payload.backendLease.state = 'acquired';
+    interrupted.payload.backendLease.ownership = { markerSha256: 'a'.repeat(64) };
+    writeArtifact(join(output, 'run.json'), interrupted);
+    const original = readFileSync(join(output, 'run.json'), 'utf8');
+    assert.equal(publicRecoveryProvesCleanup(output, attempt.plan.stack, attempt.plan.id, execution.id), false);
+    const recovered = readArtifact<{ ownershipMarkerSha256?: string }>(join(output, 'recovery.json'));
+    recovered.payload.ownershipMarkerSha256 = 'b'.repeat(64);
+    writeArtifact(join(output, 'recovery.json'), recovered);
+    assert.equal(publicRecoveryProvesCleanup(output, attempt.plan.stack, attempt.plan.id, execution.id), false);
+    recovered.payload.ownershipMarkerSha256 = 'a'.repeat(64);
+    writeArtifact(join(output, 'recovery.json'), recovered);
+    assert.equal(publicRecoveryProvesCleanup(output, attempt.plan.stack, attempt.plan.id, execution.id), true);
+    assert.equal(readFileSync(join(output, 'run.json'), 'utf8'), original);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

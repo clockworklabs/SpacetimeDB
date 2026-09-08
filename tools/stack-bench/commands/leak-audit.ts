@@ -1,22 +1,14 @@
 #!/usr/bin/env node
 // Use the recorded cwd as the app boundary; transcript folder names are not authority.
 
-import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { readdirSync, readFileSync, existsSync } from 'node:fs';
+import { join, posix, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { CODING_CONTAINER_APP_ROOT } from '../src/runtime/coding-container-policy.js';
-
-// --dir is exclusive. --app resolves its matching CLI transcript directory.
-function transcriptsFor(appDir: string): string[] {
-  const base = join(homedir(), '.claude', 'projects');
-  if (!existsSync(base)) return [];
-  const want = resolve(appDir).replace(/[\\/:]/g, '-').toLowerCase();
-  return readdirSync(base)
-    .filter(d => d.toLowerCase() === want || d.toLowerCase() === want.replace(/^-+/, ''))
-    .map(d => join(base, d));
-}
+import { transcriptDirectories } from '../src/agents/transcript-archive.js';
+import { codexTranscriptDirectory } from '../src/agents/codex-protocol.js';
 
 const norm = (value: unknown): string => String(value ?? '')
   .replace(/\\/g, '/').replace(/^["']|["']$/g, '').toLowerCase();
@@ -146,6 +138,35 @@ interface TranscriptContent {
   input?: { file_path?: string; path?: string; pattern?: string; command?: string };
 }
 
+// Feed both CLIs through the same path, network, and refusal checks.
+function transcriptContent(event: Record<string, unknown>): TranscriptContent[] {
+  const message = event.message as { content?: TranscriptContent[] } | undefined;
+  if (Array.isArray(message?.content)) return message.content;
+  if (event.type !== 'item.started' && event.type !== 'item.completed') return [];
+  const item = event.item as { id?: string; type?: string; command?: string;
+    aggregated_output?: string; exit_code?: number; status?: string;
+    changes?: { path: string }[] } | undefined;
+  if (!item?.id) return [];
+  const content: TranscriptContent[] = [];
+  if (item.type === 'command_execution') {
+    // Codex records the shell launcher around the command.
+    const command = (item.command ?? '').replace(/^(?:\/\S+\/)?(?:bash|sh|zsh)\s+-[a-z]*c\s+(['"])([\s\S]*)\1$/, '$2');
+    content.push({ type: 'tool_use', id: item.id, name: 'Bash', input: { command } });
+  } else if (item.type === 'file_change') {
+    for (const [index, change] of (item.changes ?? []).entries()) {
+      content.push({ type: 'tool_use', id: `${item.id}:${index}`, name: 'Edit',
+        input: { file_path: change.path } });
+    }
+  }
+  if (event.type === 'item.completed') {
+    // Output can contain a successful read before a later command fails.
+    const blocked = item.status === 'failed' && !item.aggregated_output?.trim();
+    for (const call of [...content]) content.push({ type: 'tool_result',
+      tool_use_id: call.id, is_error: blocked });
+  }
+  return content;
+}
+
 export function auditTranscript(file: string, boundary: string | null,
   { ownEndpoints = [], isolatedLoopback = false }: AuditNetworkContext = {}): TranscriptAudit {
   const endpoints = new Set(ownEndpoints.map(endpoint => {
@@ -162,10 +183,9 @@ export function auditTranscript(file: string, boundary: string | null,
   let fileTool = 0, bashReads = 0;
 
   for (const line of lines) {
-    let event: { message?: { content?: TranscriptContent[] } };
+    let event: Record<string, unknown>;
     try { event = JSON.parse(line) as typeof event; } catch { continue; }
-    const c = event.message?.content;
-    if (!Array.isArray(c)) continue;
+    const c = transcriptContent(event);
     for (const p of c) {
       if (p.type === 'tool_result' && p.tool_use_id && pending.has(p.tool_use_id)) {
         const completed = pending.get(p.tool_use_id ?? '');
@@ -179,7 +199,7 @@ export function auditTranscript(file: string, boundary: string | null,
       }
       if (p.type !== 'tool_use') continue;
       const cand = [];
-      if (/^(Read|Grep|Glob|NotebookRead)$/.test(p.name ?? '')) {
+      if (/^(Read|Grep|Glob|NotebookRead|Edit)$/.test(p.name ?? '')) {
         fileTool++;
         cand.push(p.input?.file_path ?? p.input?.path ?? p.input?.pattern ?? '');
       } else if (p.name === 'Bash') {
@@ -204,9 +224,10 @@ export function auditTranscript(file: string, boundary: string | null,
           && n.includes(cwd.replace(/[\\/:]/g, '-'))) continue;
         const absolute = /^[a-z]:/.test(n) || n.startsWith('/');
         if (!absolute && cwd) n = `${cwd}/${n.replace(/^\.\//, '')}`;
+        n = posix.normalize(n);
         const privateHarnessPath = cwd
           && (n === `${cwd}/stack-bench` || n.startsWith(`${cwd}/stack-bench/`));
-        if (!privateHarnessPath && !absolute) continue;
+        if (!privateHarnessPath && !absolute && !cwd) continue;
         if (!privateHarnessPath && cwd && (n === cwd || n.startsWith(`${cwd}/`))) continue;
         paths.push(n);
       }
@@ -235,7 +256,7 @@ function main(): void {
   const requestedApp = values.app;
   const requestedDirectory = values.dir;
   if (requestedApp && requestedDirectory) throw new Error('--app and --dir cannot be used together');
-  const roots = requestedApp ? transcriptsFor(requestedApp)
+  const roots = requestedApp ? transcriptDirectories(requestedApp)
     : requestedDirectory ? [resolve(requestedDirectory)]
     : [join(homedir(), '.claude', 'projects')];
   // When the caller names the app directory, that is the boundary. Do not
@@ -250,11 +271,15 @@ for (const root of roots) {
     if (!d) continue;
     for (const e of readdirSync(d, { withFileTypes: true })) {
       const p = join(d, e.name);
-      if (e.isDirectory()) { if (!/node_modules/.test(p)) stack.push(p); continue; }
+      if (e.isDirectory()) {
+        // Codex native rollouts are agent-writable; audit controller event logs only.
+        if (!/node_modules/.test(p)
+          && !(requestedApp && root === codexTranscriptDirectory(requestedApp))) stack.push(p);
+        continue;
+      }
       if (!/\.jsonl$/.test(e.name)) continue;
       // Include transcripts from the main session and its subagents.
-      if (!/transcript|^agent-|^[0-9a-f-]{36}\.jsonl$/.test(e.name)) continue;
-      if (statSync(p).size < 2000) continue;
+      if (!/transcript|^agent-|^[0-9a-f-]{36}\.jsonl$|\.events\.jsonl$/.test(e.name)) continue;
       results.push({ ...auditTranscript(p, appBoundary, { ownEndpoints,
         isolatedLoopback: values['isolated-loopback'] === true }), root });
     }

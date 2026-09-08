@@ -25,9 +25,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # changes the thing under test between one backend and the next. Override at
 # build time to move deliberately rather than by drift.
 ARG CLAUDE_VERSION=2.1.226
+ARG CODEX_VERSION=0.153.4
 ENV DISABLE_AUTOUPDATER=1
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_VERSION} \
     && claude --version
+RUN npm install -g @openai/codex@${CODEX_VERSION} && codex --version
 
 # The coding session can change the app and its own temporary state. It does
 # not run as root, so it cannot change the system or harness control files.
