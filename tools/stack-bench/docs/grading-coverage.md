@@ -58,6 +58,15 @@ blocked descendants; blocked checks are not independent observed failures.
 
 ### Replay a saved dependency candidate
 
+Grading bundles include optional `phaseTimings` for application stop, database reset,
+application start, readiness probes, and grader execution. Durations use a monotonic
+clock and include failed operations. `suite: null` identifies preparation before
+the scenario loop. `threw` records an exception, not whether a check passed; an
+operation can return a failed result without throwing. The grader duration includes
+its child process and evidence handling, so do not add it to the child grade duration.
+The process log records final bundle writing and source verification separately.
+These timings are diagnostics and do not change scores or timeout budgets.
+
 Use the existing `run` command with `--grade-from`, an explicit `--grade-level`,
 one or more `--check` IDs, and a fresh `--out` directory outside the original
 execution. The depth selects that depth's saved first-build candidate. It does

@@ -114,7 +114,7 @@ const PAYLOAD_FIELDS = Object.freeze({
     'total', 'max', 'features', 'environment', 'inconclusive', 'selection', 'packRuntime']),
   grade_bundle: new Set(['definitionSchemaVersion', 'recipeRelease', 'calibration', 'label', 'track',
     'backend', 'url', 'app', 'level', 'suites', 'totals', 'code', 'error', 'outcome', 'provenance',
-    'actions', 'selection', 'packRuntime', 'observation', 'source']),
+    'actions', 'selection', 'packRuntime', 'observation', 'source', 'phaseTimings']),
   mutation_control: new Set(['durationMs', 'app', 'mutations', 'manifestStatus', 'fixtureSha256',
     'spec', 'backend', 'track', 'shard', 'ok', 'outcome', 'baseline', 'summary', 'results',
     'checkpoint', 'gradeReports', 'priorMutationControl']),
@@ -613,6 +613,18 @@ function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
     return validateGradePayload(payload);
   }
   if (kind === 'grade_bundle') {
+    if (payload.phaseTimings !== undefined) {
+      if (!Array.isArray(payload.phaseTimings)) fail('grade_bundle phaseTimings must be an array');
+      for (const timing of payload.phaseTimings) {
+        if (!isObject(timing) || typeof timing.phase !== 'string' || !timing.phase
+          || (timing.suite !== null && typeof timing.suite !== 'string')
+          || typeof timing.durationMs !== 'number' || !Number.isFinite(timing.durationMs)
+          || timing.durationMs < 0 || typeof timing.threw !== 'boolean'
+          || Object.keys(timing).some(key => !['phase', 'suite', 'durationMs', 'threw'].includes(key))) {
+          fail('grade_bundle phaseTimings entry is invalid');
+        }
+      }
+    }
     objectWhenPresent('suites'); objectWhenPresent('totals');
     if (payload.outcome !== undefined) validateRunOutcome(payload.outcome,
       'grade_bundle payload.outcome');

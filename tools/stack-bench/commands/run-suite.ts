@@ -3,6 +3,8 @@
 import { execFile, execFileSync } from 'node:child_process';
 import type { ExecFileException, ExecFileSyncOptionsWithStringEncoding } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
+import { measurePhase, type PhaseTiming } from '../src/evidence/phase-timing.js';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -136,6 +138,7 @@ type Bundle = {
   provenance?: DatabaseProvenance & { runtime?: RuntimeProvenance };
   actions?: ActionsPayload | null;
   packRuntime?: AggregatedPackRuntimeEvidence;
+  phaseTimings: PhaseTiming[];
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -821,13 +824,14 @@ async function main() {
     label: args.label, track: args.track, backend: args.backend, url: args.url, app: args.app,
     level: Number(args.level), observation: args.observation,
     ...(args.sourceSha256 ? { source: { sha256: args.sourceSha256 } } : {}),
-    suites: {}, totals: {},
+    suites: {}, totals: {}, phaseTimings: [],
     selection: selection ? { ...selection, attemptedChecks: [], reportedChecks: [], notRun: [] } : null,
   };
   const selectedPackIds = new Set(selection?.checks.map(check => check.packId) ?? []);
   const selectedPackDefinitions = recipeBinding?.plan.packs
     .filter(pack => selectedPackIds.has(pack.id)) ?? [];
   const writeBundle = () => {
+    const writeStarted = performance.now();
     if (args.sourceSha256) {
       const current = hashAppSource(args.app);
       if (current.sha256 !== args.sourceSha256) {
@@ -836,7 +840,7 @@ async function main() {
           reason: bundle.error };
       }
     }
-    return writeArtifact(join(args.out, ARTIFACT_FILE.gradeBundle), {
+    const result = writeArtifact(join(args.out, ARTIFACT_FILE.gradeBundle), {
       kind: 'grade_bundle',
       id: bundleArtifactId,
       attempt: { id: bundleArtifactId, parentId: args.parentAttemptId ?? null },
@@ -848,6 +852,8 @@ async function main() {
       }),
       payload: bundle,
     });
+    console.log(`  evidence write and source verification ... ${(performance.now() - writeStarted).toFixed(1)}ms`);
+    return result;
   };
   const recordApplicationAbort = () => {
     bundle.totals = applicationFailureTotals(selection, declaredSuites);
@@ -889,6 +895,9 @@ async function main() {
   // again. Until the harness starts it, the app cannot be blamed for being
   // unreachable.
   let applicationLeftStopped = false;
+  let timingSuite: string | null = null;
+  const measure = <T>(phase: string, work: () => T | Promise<T>) =>
+    measurePhase(bundle.phaseTimings, phase, timingSuite, work);
   const freshen = async () => {
     if (!args.reset) return true;
     const requiresReseed = STACK_ADAPTER_REGISTRY.get(args.backend).reset.requiresReseed;
@@ -896,7 +905,7 @@ async function main() {
     if (track.reseedOnReset && restartSpec && requiresReseed) {
       process.stdout.write('  stop application ... ');
       try {
-        await controlBackendRuntime(restartSpec, 'stop');
+        await measure('stop', () => controlBackendRuntime(restartSpec, 'stop'));
         console.log('ok');
       } catch (error) {
         const failure: Failure = error instanceof Error ? error : new Error(String(error));
@@ -906,13 +915,13 @@ async function main() {
         return false;
       }
     }
-    const reset = resetDatabase(args);
+    const reset = await measure('reset', () => resetDatabase(args));
     lastResetFailure = reset.detail;
     lastResetOutcome = reset.outcome ?? { kind: 'harness_failure', phase: 'database-reset' };
     if (!reset.ok) return false;
     // Do not grade until the reset application is reachable.
     const waitUntilReady = async () => {
-      const ready = await waitForApplicationProbe(args.url);
+      const ready = await measure('readiness', () => waitForApplicationProbe(args.url));
       if (!ready.ok) {
         lastResetFailure = ready.detail;
         lastResetOutcome = applicationLeftStopped
@@ -932,7 +941,7 @@ async function main() {
       try {
         // Do not give a background server an inherited pipe that keeps the
         // synchronous restart command open.
-        await controlBackendRuntime(restartSpec, 'start');
+        await measure('start', () => controlBackendRuntime(restartSpec, 'start'));
         applicationLeftStopped = false;
       } catch (err) {
         const failure: Failure = err instanceof Error ? err : new Error(String(err));
@@ -1081,6 +1090,7 @@ async function main() {
       args.browserWsEndpoint = browserServer.wsEndpoint();
     }
     for (const suite of declaredSuites) {
+      timingSuite = suite.id;
       const selectedChecks = selection?.checks.filter(check => check.executionId === suite.id) ?? [];
       if (selection && selectedChecks.length === 0) {
         console.log(`  ${suite.id.padEnd(10)} ... not selected`);
@@ -1101,7 +1111,7 @@ async function main() {
       }
       let r;
       try {
-        r = await gradeSuite(args, suite, track, recipeBinding, bundleArtifactId, selectedChecks);
+        r = await measure('grader', () => gradeSuite(args, suite, track, recipeBinding, bundleArtifactId, selectedChecks));
       } catch (error) {
         markRemainingNotRun(`run aborted after ${suite.id} grader failure`);
         bundle.error = error instanceof Error ? error.message : String(error);
