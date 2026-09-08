@@ -20,6 +20,15 @@ test('live spend validates recorded sessions without treating them as final exec
   run.levels[1]!.repairSessions![0]!.costComplete = false;
   assert.equal(recordedExecutionSpend(run).status, 'unknown');
   assert.equal(recordedExecutionSpend({}).status, 'unknown');
+  assert.deepEqual(recordedExecutionSpend({ ...run, checkpoints: [
+    { executionCost: { status: 'exact', costUsd: 12 } },
+  ] }), { status: 'exact', costUsd: 12 }, 'active-level checkpoints include repairs missing from completed levels');
+  assert.deepEqual(recordedExecutionSpend({ ...run, checkpoints: [
+    { executionCost: { status: 'upper-bound', costUsd: 15 } },
+  ] }), { status: 'upper-bound', costUsd: 15 });
+  assert.equal(recordedExecutionSpend({ ...run, checkpoints: [
+    { executionCost: { status: 'unknown', costUsd: null } },
+  ] }).status, 'unknown');
 });
 
 test('cost per valid run uses only completed comparable runs with complete exact costs', () => {

@@ -203,7 +203,7 @@ export function campaignPage(input: CampaignPageInput): string {
     Excluded: 'Attempts omitted from comparison because their evidence is invalid or incomplete. Their costs appear only in total spend and individual run details.',
     Time: 'Median duration of usable completed attempts. Live attempt status appears below.',
     'Cost per valid run': 'Mean cost of completed runs with valid comparison results. Excludes invalid and unfinished runs. Valid does not mean every check passed. All included runs must have exact cost evidence and the same comparison scope.',
-    'Total spend': 'Includes excluded attempts. During a run, this includes only saved cost receipts. Work since the last checkpoint can include an unfinished depth and is not yet counted. Unknown is not zero. Costs use the pinned price snapshot.',
+    'Total spend': 'Includes excluded attempts. During a run, this includes only saved cost receipts. Includes saved repair checkpoints in the active depth. Work since the last checkpoint is not yet counted. Unknown is not zero. Costs use the pinned price snapshot.',
   };
   const row = (label: string, render: (stack: SheetStack) => string): string =>
     `<tr><th scope="row" class="k">${metricLabel(label, help[label])}</th>${cell(render)}</tr>`;
@@ -240,7 +240,7 @@ export function campaignPage(input: CampaignPageInput): string {
       const href = `/c/${encodeURIComponent(sheet.key)}/a/${encodeURIComponent(attempt.id)}`;
       return `<tr><td><a href="${href}" title="${esc(attempt.variant)}">${esc(stackLabel(stack.stack))} · Rep ${attempt.repetition}</a></td>`
         + `<td>${attempt.completion ? ratio(attempt.completion.passed, attempt.completion.selected) : DASH}</td>`
-        + `<td title="Saved cost receipts only. Work since the last checkpoint, including an unfinished depth, is not yet counted.">${spend(attempt.spend)}${attempt.spendPending ? ' (so far)' : ''}</td>`
+        + `<td title="Saved cost receipts through the latest grade checkpoint, including repairs. Work since that checkpoint is not yet counted.">${spend(attempt.spend)}${attempt.spendPending ? ' (so far)' : ''}</td>`
         + `<td>${ratio(attempt.repairs.used, attempt.repairs.budget)}</td>`
         + `<td>${attempt.status === 'running' || attempt.executionCompletedAt ? executionClock(attempt.executionStartedAt, attempt.executionCompletedAt) : DASH}</td>`
         + `<td class="run-status">${attempt.excluded

@@ -11,7 +11,7 @@ import { compileProgressionInput, dependencyRuntimeDefinition }
 import type { DependencyEvent, DependencyState } from '../progression/dependency-mode.js';
 import { campaignCohortKey, campaignComparisonKey, executionSpend } from './campaign-report.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
-import type { RunCheckpoint } from '../evidence/run-checkpoints.js';
+import { costEvidenceSchema, type RunCheckpoint } from '../evidence/run-checkpoints.js';
 import { campaignGradingQualification, campaignProgressionOwner } from './campaign-compiler.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
 import type { DependencyPromptSelection } from '../progression/dependency-mode.js';
@@ -403,9 +403,13 @@ export function dependencyProgress(plan: CompiledCampaignPlan, attempt: Campaign
   }
 }
 
-/** Display-only recorded sessions. This is not a complete execution cost. */
-export function recordedExecutionSpend(run: CostRun): CostEvidence {
+/** Display-only checkpoint or recorded sessions. This is not a final execution cost. */
+export function recordedExecutionSpend(run: CostRun & {
+  checkpoints?: Array<Pick<RunCheckpoint, 'executionCost'>>;
+}): CostEvidence {
   try {
+    const checkpoint = run.checkpoints?.at(-1);
+    if (checkpoint) return costEvidenceSchema.parse(checkpoint.executionCost);
     const inherited = new Set(run.progressionResume?.inheritedLevels ?? []);
     const sessions = (run.levels ?? []).filter(level => !inherited.has(level.level))
       .flatMap(level => [...(level.buildSessions ?? []), ...(level.repairSessions ?? []),

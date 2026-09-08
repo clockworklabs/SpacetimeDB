@@ -22,8 +22,8 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
   });
   const label = metric === 'cost' ? 'Cost' : 'Completion';
   const description = metric === 'cost'
-    ? 'Cumulative cost per run at saved grade checkpoints. Includes repairs and excluded runs. Subscription costs use the pinned API-equivalent price snapshot, not invoice charges. Unknown costs are not plotted; upper bounds are labelled. Time starts at the current execution.'
-    : 'Checks passed out of all selected checks at each saved grade. Zero marks run start before any checks pass. Each line is one repetition; elapsed time starts at that run. Excluded runs are labelled. Lines can fall after regressions.';
+    ? 'Cumulative cost per run at saved grade checkpoints. Includes repairs and excluded runs. Subscription costs use the pinned API-equivalent price snapshot, not invoice charges. Unknown costs are not plotted; upper bounds are labelled. Time starts at the current execution. Lines connect recorded observations; intermediate values are not measured.'
+    : 'Checks passed out of all selected checks at each saved grade. Zero marks run start before any checks pass. Each line is one repetition; elapsed time starts at that run. Excluded runs are labelled. Lines can fall after regressions. Lines connect recorded observations; intermediate values are not measured.';
   const heading = `<div class="section-heading progress-heading"><h3 title="${description}">${label} over time</h3><nav aria-label="Chart metric">`
     + (['completion', 'cost'] as const).map(option => `<a class="chip sm${metric === option ? ' on' : ''}"${metric === option ? ' aria-current="page"' : ''} href="?questlines=${encodeURIComponent(view)}&amp;chart=${option}">${option === 'cost' ? 'Cost' : 'Completion'}</a>`).join('') + '</nav></div>';
   if (!tracks.length) return heading + `<p class="chart-empty">${metric === 'cost' ? 'Awaiting first timed cost receipt.' : 'Awaiting first timed grade.'}</p>`;
@@ -43,7 +43,7 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
     // Saved observations are not continuous measurements. Stop at the last receipt.
     let path = '';
     const marks = points.map((point, index) => {
-      path += index ? ` H${x(point.elapsed)} V${y(point.value)}` : `M${x(point.elapsed)} ${y(point.value)}`;
+      path += index ? ` L${x(point.elapsed)} ${y(point.value)}` : `M${x(point.elapsed)} ${y(point.value)}`;
       return `<circle cx="${x(point.elapsed)}" cy="${y(point.value)}" r="3" fill="${color(stack)}"><title>${esc(stackLabel(stack))} · Rep ${attempt.repetition}: ${valueLabel(point.value, point.upper)} at ${esc(duration(point.elapsed))}${index === 0 ? (metric === 'cost' ? ' · Run start; no recorded cost' : ' · Run start; no checks graded') : ''}${attempt.excluded ? ' · Excluded' : ''}</title></circle>`;
     }).join('');
     return `<g><path d="${path}" fill="none" stroke="${color(stack)}" stroke-width="2"${attempt.repetition > 1 ? ' stroke-dasharray="6 4"' : ''}/>${marks}</g>`;

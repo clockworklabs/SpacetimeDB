@@ -67,7 +67,7 @@ test('time chart uses measured elapsed time, preserves regressions, and labels e
     { completedAt: '2026-09-08T00:02:00Z', completion: 0.5 },
   ] }] } as CampaignProgression;
   const html = progressChart(sheet, progression);
-  assert.match(html, /M48 190 H498 V70 H948 V110/);
+  assert.match(html, /M48 190 L498 70 L948 110/);
   assert.match(html, /Run start; no checks graded/);
   assert.match(html, /Rep 1 · 50% · Excluded/);
   assert.doesNotMatch(html, /NaN|Infinity/);
@@ -85,7 +85,7 @@ test('cost chart uses cumulative checkpoint costs, labels bounds, and omits unkn
     { completedAt: '2026-09-08T00:02:00Z', cost: { status: 'upper-bound', costUsd: 4 } },
   ] }] } as CampaignProgression;
   const html = progressChart(sheet, progression, 'cost', 'graph');
-  assert.match(html, /M80 190 H514 V110 H948 V30/);
+  assert.match(html, /M80 190 L514 110 L948 30/);
   assert.match(html, /Rep 1 · ≤\$4.00/);
   assert.match(html, /Run start; no recorded cost/);
   assert.match(html, /questlines=graph&amp;chart=completion/);
