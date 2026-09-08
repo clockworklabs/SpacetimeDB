@@ -65,6 +65,7 @@ async fn invocation_flags_are_host_owned_and_internal_visibility_is_enforced() {
         HostRuntimeConfig::default(),
         Arc::new(storage),
         Arc::new(NullEnergyMonitor),
+        Arc::new(()),
         Arc::new(LocalPersistenceProvider::new(data)),
         JobCores::without_pinned_cores(),
     );
@@ -74,6 +75,7 @@ async fn invocation_flags_are_host_owned_and_internal_visibility_is_enforced() {
         owner_identity: Identity::ONE,
         host_type: HostType::Js,
         initial_program: program.hash,
+        bootstrap_generation: 0,
     };
     // The init reducer itself asserts flags=1, so successful construction also
     // verifies the real host-to-JS syscall path for a trusted lifecycle call.
