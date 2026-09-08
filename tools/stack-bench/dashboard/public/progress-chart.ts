@@ -34,8 +34,8 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
   const left = metric === 'cost' ? 80 : 48;
   const x = (seconds: number) => left + (948 - left) * seconds / maximum;
   const y = (value: number) => 190 - 160 * value / ceiling;
-  // Use SpacetimeDB's purple accent to distinguish it from MongoDB green.
-  const brandColors: Record<string, string> = { spacetime: '#a880ff', mongodb: '#00ed64', postgres: '#336791' };
+  // Distinct brand greens; chart colors identify stacks, not pass/fail status.
+  const brandColors: Record<string, string> = { spacetime: '#4cf490', mongodb: '#13aa52', postgres: '#336791' };
   const color = (stack: string) => brandColors[stack]
     ?? `hsl(${Array.from(stack).reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) % 360, 0)},65%,65%)`;
   const grid = [0, 0.25, 0.5, 0.75, 1].map(part => part * ceiling).map(value =>

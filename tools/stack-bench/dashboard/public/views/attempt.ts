@@ -161,7 +161,7 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log, tran
     + `<div class="figs">${figure('Completion', attempt.completion ? ratio(attempt.completion.passed, attempt.completion.selected) : DASH)}`
     + figure('Spend', spend(attempt.spend) + (attempt.spendPending ? ' (so far)' : ''))
     + figure('Status', esc(phrase(attempt)), attempt.stalling ? 'now warn' : 'now')
-    + figure('Weighted score', pct(attempt.score), sheet.provisional ? 'prov' : '')
+    + figure('Weighted score', pct(attempt.score))
     + figure('Unaided', pct(attempt.unaided))
     + figure('Repairs', ratio(attempt.repairs.used, attempt.repairs.budget))
     + figure('Elapsed', attempt.status === 'running' || attempt.executionCompletedAt

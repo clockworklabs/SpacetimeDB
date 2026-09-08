@@ -30,7 +30,7 @@ function lane(sheet: CampaignSheet, stack: string, attempt: SheetAttempt): strin
     + `${esc(stackLabel(stack))} <span class="lane-repetition">· Rep ${attempt.repetition}</span></a>`
     + `<div class="lane-variant">${esc(attempt.variant)}</div></div>`
     + `<div class="lane-metric" title="Checks passed / all selected checks"><span class="lane-label">Completion</span>`
-    + `<span class="big${sheet.provisional ? ' prov' : ''}">${pct(attempt.completion?.rate == null ? null : 100 * attempt.completion.rate)}</span></div>`
+    + `<span class="big">${pct(attempt.completion?.rate == null ? null : 100 * attempt.completion.rate)}</span></div>`
     + `<div class="lane-metric" title="API-equivalent cost from recorded usage. Pending usage is not zero cost."><span class="lane-label">Cost</span>`
     + `<span>${attempt.spendPending && attempt.spend.status === 'unknown' ? 'Pending' : spend(attempt.spend)}${attempt.spendPending && attempt.spend.status !== 'unknown' ? ' (partial)' : ''}</span></div>`
     + `<span class="phase${warn ? ' warn' : ''}">${esc(phrase(attempt))}</span></div>`;
@@ -49,7 +49,7 @@ function stackCell(campaign: OverviewEntry, stack: string, best: number | null):
   const score = readable(campaign) ? campaign.scores[stack] ?? null : null;
   if (score === null) return `<td class="stack na">${DASH}</td>`;
   const value = best !== null && score === best ? `<u>${pct(score)}</u>` : pct(score);
-  return `<td class="stack${readable(campaign) && campaign.provisional ? ' prov' : ''}">`
+  return `<td class="stack">`
     + `${value}</td>`;
 }
 

@@ -221,10 +221,10 @@ export function campaignPage(input: CampaignPageInput): string {
   return `<div class="page"><div class="crumbs"><a href="/">Campaigns</a> / `
     + `<b>${esc(sheet.key)}</b></div>`
     + `<div class="title"><h2>${esc(sheet.title)}</h2>`
-    + `<span class="state" title="${esc([statusWord(sheet.status), sheet.facts.grading, ...sheet.facts.gradingReasons].join(' · '))}">${sheet.provisional ? 'Provisional' : esc(statusWord(sheet.status))}</span></div>${facts(sheet)}`
+    + `<span class="state${sheet.provisional ? ' warn' : ''}" title="${esc([statusWord(sheet.status), sheet.facts.grading, ...sheet.facts.gradingReasons].join(' · '))}">${sheet.provisional ? 'Provisional' : esc(statusWord(sheet.status))}</span></div>${facts(sheet)}`
     + '<h3>Results</h3>'
     + `<div class="sheet-scroll" role="region" aria-label="Stack comparison" tabindex="0"><table class="sheet"><thead><tr><th scope="col" class="h">Metric</th>${heads}</tr></thead><tbody>`
-    + row('Completion', stack => `<div class="big${sheet.provisional ? ' prov' : ''}">${pct(stack.completionRate === null ? null : 100 * stack.completionRate)}</div>`)
+    + row('Completion', stack => `<div class="big">${pct(stack.completionRate === null ? null : 100 * stack.completionRate)}</div>`)
     + row('Cost per valid run', stack => value(stack.costPerValidRun === null ? (stack.n ? 'Unknown' : 'Awaiting valid runs') : `$${stack.costPerValidRun.toFixed(2)}`))
     + row('Weighted score', stack => value(pct(stack.score)))
     + row('Unaided', stack => value(pct(stack.unaided)))
