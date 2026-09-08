@@ -1079,7 +1079,6 @@ pub(crate) mod tests {
     use super::*;
     use crate::error::IndexError;
     use crate::locking_tx_datastore::tx_state::PendingSchemaChange;
-    use crate::system_tables::ST_ENV_ID;
     use crate::system_tables::{
         system_tables, StColumnRow, StConnectionCredentialsFields, StConstraintData, StConstraintFields,
         StConstraintRow, StEventTableFields, StIndexAlgorithm, StIndexFields, StIndexRow, StRowLevelSecurityFields,
@@ -1092,6 +1091,10 @@ pub(crate) mod tests {
         ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_NAME, ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME, ST_VIEW_ARG_ID,
         ST_VIEW_ARG_NAME, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_NAME, ST_VIEW_ID, ST_VIEW_NAME, ST_VIEW_PARAM_ID,
         ST_VIEW_PARAM_NAME, ST_VIEW_SUB_ID, ST_VIEW_SUB_NAME,
+    };
+    use crate::system_tables::{
+        ST_CONNECTION_AUTH_ID, ST_CONTAINER_ENVIRONMENT_ID, ST_CONTAINER_FENCE_ID, ST_DEPLOYMENT_ID,
+        ST_DEPLOYMENT_OPERATION_ID, ST_ENV_ID, ST_PUBLISH_FENCE_ID,
     };
     use crate::traits::{IsolationLevel, MutTx};
     use crate::Result;
@@ -1560,6 +1563,12 @@ pub(crate) mod tests {
             TableRow { id: ST_INDEX_ACCESSOR_ID.into(), name: ST_INDEX_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
             TableRow { id: ST_COLUMN_ACCESSOR_ID.into(), name: ST_COLUMN_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
             TableRow { id: ST_ENV_ID.into(), name: "st_env", ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
+            TableRow { id: ST_DEPLOYMENT_ID.into(), name: "st_deployment", ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
+            TableRow { id: ST_PUBLISH_FENCE_ID.into(), name: "st_publish_fence", ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
+            TableRow { id: ST_DEPLOYMENT_OPERATION_ID.into(), name: "st_deployment_operation", ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
+            TableRow { id: ST_CONTAINER_FENCE_ID.into(), name: "st_container_fence", ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
+            TableRow { id: ST_CONNECTION_AUTH_ID.into(), name: "st_connection_auth", ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
+            TableRow { id: ST_CONTAINER_ENVIRONMENT_ID.into(), name: "st_container_environment", ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
 
         ]));
         #[rustfmt::skip]
@@ -1659,6 +1668,28 @@ pub(crate) mod tests {
             ColRow { table: ST_COLUMN_ACCESSOR_ID.into(), pos: 2, name: "accessor_name", ty: AlgebraicType::String },
             ColRow { table: ST_ENV_ID.into(), pos: 0, name: "key", ty: AlgebraicType::String },
             ColRow { table: ST_ENV_ID.into(), pos: 1, name: "value", ty: AlgebraicType::String },
+            ColRow { table: ST_DEPLOYMENT_ID.into(), pos: 0, name: "key", ty: AlgebraicType::U8 },
+            ColRow { table: ST_DEPLOYMENT_ID.into(), pos: 1, name: "revision", ty: AlgebraicType::U256 },
+            ColRow { table: ST_DEPLOYMENT_ID.into(), pos: 2, name: "last_operation_id", ty: AlgebraicType::U128 },
+            ColRow { table: ST_DEPLOYMENT_ID.into(), pos: 3, name: "payload", ty: AlgebraicType::bytes() },
+            ColRow { table: ST_PUBLISH_FENCE_ID.into(), pos: 0, name: "key", ty: AlgebraicType::U8 },
+            ColRow { table: ST_PUBLISH_FENCE_ID.into(), pos: 1, name: "publication_epoch", ty: AlgebraicType::U64 },
+            ColRow { table: ST_PUBLISH_FENCE_ID.into(), pos: 2, name: "operation_id", ty: AlgebraicType::U128 },
+            ColRow { table: ST_DEPLOYMENT_OPERATION_ID.into(), pos: 0, name: "operation_id", ty: AlgebraicType::U128 },
+            ColRow { table: ST_DEPLOYMENT_OPERATION_ID.into(), pos: 1, name: "previous_revision", ty: AlgebraicType::option(AlgebraicType::U256) },
+            ColRow { table: ST_DEPLOYMENT_OPERATION_ID.into(), pos: 2, name: "committed_revision", ty: AlgebraicType::U256 },
+            ColRow { table: ST_DEPLOYMENT_OPERATION_ID.into(), pos: 3, name: "commit_result", ty: AlgebraicType::bytes() },
+            ColRow { table: ST_DEPLOYMENT_OPERATION_ID.into(), pos: 4, name: "expires_at", ty: AlgebraicType::I64 },
+            ColRow { table: ST_CONTAINER_FENCE_ID.into(), pos: 0, name: "source_identity", ty: AlgebraicType::U256 },
+            ColRow { table: ST_CONTAINER_FENCE_ID.into(), pos: 1, name: "generation", ty: AlgebraicType::U64 },
+            ColRow { table: ST_CONTAINER_FENCE_ID.into(), pos: 2, name: "target_grant_revision", ty: AlgebraicType::U64 },
+            ColRow { table: ST_CONTAINER_FENCE_ID.into(), pos: 3, name: "target_set_hash", ty: AlgebraicType::U256 },
+            ColRow { table: ST_CONTAINER_FENCE_ID.into(), pos: 4, name: "allowed", ty: AlgebraicType::Bool },
+            ColRow { table: ST_CONNECTION_AUTH_ID.into(), pos: 0, name: "connection_id", ty: AlgebraicType::U128 },
+            ColRow { table: ST_CONNECTION_AUTH_ID.into(), pos: 1, name: "sender_identity", ty: AlgebraicType::U256 },
+            ColRow { table: ST_CONNECTION_AUTH_ID.into(), pos: 2, name: "call_auth_flags", ty: AlgebraicType::U32 },
+            ColRow { table: ST_CONTAINER_ENVIRONMENT_ID.into(), pos: 0, name: "generation", ty: AlgebraicType::U64 },
+            ColRow { table: ST_CONTAINER_ENVIRONMENT_ID.into(), pos: 1, name: "payload", ty: AlgebraicType::bytes() },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
@@ -1692,6 +1723,12 @@ pub(crate) mod tests {
             IndexRow { id: 28, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 1], name: "st_column_accessor_table_name_col_name_idx_btree", },
             IndexRow { id: 29, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 2], name: "st_column_accessor_table_name_accessor_name_idx_btree", },
             IndexRow { id: 30, table: ST_ENV_ID.into(), col: col_list![0], name: "st_env_key_idx_btree", },
+            IndexRow { id: 31, table: ST_DEPLOYMENT_ID.into(), col: col_list![0], name: "st_deployment_key_idx_btree", },
+            IndexRow { id: 32, table: ST_PUBLISH_FENCE_ID.into(), col: col_list![0], name: "st_publish_fence_key_idx_btree", },
+            IndexRow { id: 33, table: ST_DEPLOYMENT_OPERATION_ID.into(), col: col_list![0], name: "st_deployment_operation_operation_id_idx_btree", },
+            IndexRow { id: 34, table: ST_CONTAINER_FENCE_ID.into(), col: col_list![0], name: "st_container_fence_source_identity_idx_btree", },
+            IndexRow { id: 35, table: ST_CONNECTION_AUTH_ID.into(), col: col_list![0], name: "st_connection_auth_connection_id_idx_btree", },
+            IndexRow { id: 36, table: ST_CONTAINER_ENVIRONMENT_ID.into(), col: col_list![0], name: "st_container_environment_generation_idx_btree", },
         ]));
         let start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
         #[rustfmt::skip]
@@ -1738,6 +1775,12 @@ pub(crate) mod tests {
             ConstraintRow { constraint_id: 24, table_id: ST_COLUMN_ACCESSOR_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_column_accessor_table_name_col_name_key", },
             ConstraintRow { constraint_id: 25, table_id: ST_COLUMN_ACCESSOR_ID.into(), unique_columns: col_list![0, 2], constraint_name: "st_column_accessor_table_name_accessor_name_key", },
             ConstraintRow { constraint_id: 26, table_id: ST_ENV_ID.into(), unique_columns: col_list![0], constraint_name: "st_env_key_key", },
+            ConstraintRow { constraint_id: 27, table_id: ST_DEPLOYMENT_ID.into(), unique_columns: col_list![0], constraint_name: "st_deployment_key_key", },
+            ConstraintRow { constraint_id: 28, table_id: ST_PUBLISH_FENCE_ID.into(), unique_columns: col_list![0], constraint_name: "st_publish_fence_key_key", },
+            ConstraintRow { constraint_id: 29, table_id: ST_DEPLOYMENT_OPERATION_ID.into(), unique_columns: col_list![0], constraint_name: "st_deployment_operation_operation_id_key", },
+            ConstraintRow { constraint_id: 30, table_id: ST_CONTAINER_FENCE_ID.into(), unique_columns: col_list![0], constraint_name: "st_container_fence_source_identity_key", },
+            ConstraintRow { constraint_id: 31, table_id: ST_CONNECTION_AUTH_ID.into(), unique_columns: col_list![0], constraint_name: "st_connection_auth_connection_id_key", },
+            ConstraintRow { constraint_id: 32, table_id: ST_CONTAINER_ENVIRONMENT_ID.into(), unique_columns: col_list![0], constraint_name: "st_container_environment_generation_key", },
             ]));
 
         // Verify we get back the tables correctly with the proper ids...
@@ -2172,6 +2215,12 @@ pub(crate) mod tests {
             IndexRow { id: 28, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 1], name: "st_column_accessor_table_name_col_name_idx_btree", },
             IndexRow { id: 29, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 2], name: "st_column_accessor_table_name_accessor_name_idx_btree", },
             IndexRow { id: 30, table: ST_ENV_ID.into(), col: col_list![0], name: "st_env_key_idx_btree", },
+            IndexRow { id: 31, table: ST_DEPLOYMENT_ID.into(), col: col_list![0], name: "st_deployment_key_idx_btree", },
+            IndexRow { id: 32, table: ST_PUBLISH_FENCE_ID.into(), col: col_list![0], name: "st_publish_fence_key_idx_btree", },
+            IndexRow { id: 33, table: ST_DEPLOYMENT_OPERATION_ID.into(), col: col_list![0], name: "st_deployment_operation_operation_id_idx_btree", },
+            IndexRow { id: 34, table: ST_CONTAINER_FENCE_ID.into(), col: col_list![0], name: "st_container_fence_source_identity_idx_btree", },
+            IndexRow { id: 35, table: ST_CONNECTION_AUTH_ID.into(), col: col_list![0], name: "st_connection_auth_connection_id_idx_btree", },
+            IndexRow { id: 36, table: ST_CONTAINER_ENVIRONMENT_ID.into(), col: col_list![0], name: "st_container_environment_generation_idx_btree", },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree",  },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree",  },

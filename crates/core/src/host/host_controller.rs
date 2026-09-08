@@ -6,6 +6,7 @@ use super::{Scheduler, UpdateDatabaseResult};
 use crate::client::{ClientActorId, ClientName};
 use crate::config::{ModuleHttpConfig, V8Config, WasmConfig};
 use crate::database_logger::DatabaseLogger;
+use crate::db::deployment::DeploymentCommit;
 use crate::db::persistence::PersistenceProvider;
 use crate::db::relational_db::{self, spawn_view_cleanup_loop, DiskSizeFn, RelationalDB, Txdata};
 use crate::db::{self, spawn_tx_metrics_recorder};
@@ -28,12 +29,14 @@ use crate::worker_metrics::{
 use anyhow::{anyhow, bail, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
+use futures::FutureExt as _;
 use log::{info, trace, warn};
+#[cfg(test)]
 use parking_lot::Mutex;
 use scopeguard::{defer, guard};
 use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_data_structures::error_stream::ErrorStream;
-use spacetimedb_data_structures::map::{IntMap, IntSet};
+use spacetimedb_data_structures::map::IntSet;
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::Workload;
@@ -51,12 +54,8 @@ use std::future::Future;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{watch, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock as AsyncRwLock};
-use tokio::time::error::Elapsed;
-use tokio::time::{interval_at, timeout, Instant};
-
-#[cfg(test)]
-mod invocation_flags_tests;
+use tokio::sync::{watch, RwLock as AsyncRwLock};
+use tokio::time::{timeout, Instant};
 
 // TODO:
 //
@@ -73,14 +72,36 @@ const IN_MEMORY_DATABASE_LOGGER_MAX_SIZE: u64 = 0x1_000_000;
 /// A shared mutable cell containing a module host and associated database.
 type HostCell = Arc<AsyncRwLock<Option<Host>>>;
 
-/// The registry of all running hosts.
-type Hosts = Arc<Mutex<IntMap<u64, HostCell>>>;
+mod lifecycle;
+mod registry;
+use registry::{Hosts, Registration};
+
+#[cfg(test)]
+mod lifecycle_tests;
+
+#[cfg(test)]
+mod deployment_tests;
+
+#[cfg(test)]
+mod execution_deadline_tests;
+
+#[cfg(test)]
+static FAIL_NEXT_DEPLOYMENT_ACTIVATION: Mutex<std::collections::BTreeSet<Identity>> =
+    Mutex::new(std::collections::BTreeSet::new());
 
 pub type ExternalDurability = (Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn);
 
 #[async_trait]
 pub trait ExternalStorage: Send + Sync + 'static {
     async fn lookup(&self, program_hash: Hash) -> anyhow::Result<Option<Box<[u8]>>>;
+
+    /// Resolve the authorized initial deployment from the same control
+    /// transaction that created the database. A failed lookup must return an
+    /// error, never None: None is reserved for legacy module-only databases.
+    /// Called only when no initialized program exists in the user database.
+    async fn initial_deployment(&self, _database: &Database) -> anyhow::Result<Option<DeploymentCommit>> {
+        Ok(None)
+    }
 }
 #[async_trait]
 impl<F, Fut> ExternalStorage for F
@@ -490,14 +511,14 @@ impl HostController {
         // Note that `tokio::spawn` only cancels its tasks when the runtime shuts down,
         // at which point we won't be calling `try_init_host` again anyways.
         let rx = tokio::spawn(async move {
-            let initialized = this.try_init_host(database, replica_id).await?;
+            let initialized = this.try_init_host(database, replica_id, &guard).await?;
             let HostInit {
                 host,
                 bootstrap_completion,
             } = initialized;
 
             let rx = host.module.subscribe();
-            *guard = Some(host);
+            guard.install(host);
 
             Ok::<_, anyhow::Error>((rx, bootstrap_completion))
         })
@@ -557,6 +578,23 @@ impl HostController {
         program_bytes: Box<[u8]>,
         policy: MigrationPolicy,
     ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.update_module_host_with_deployment(database, host_type, replica_id, program_bytes, policy, None)
+            .await
+    }
+
+    /// Authorized coordinator entry point. The deployment and its operation
+    /// receipt are committed in the module migration transaction. Process
+    /// startup and the control database mirror remain separate reconciliation.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_module_host_with_deployment(
+        &self,
+        database: Database,
+        host_type: HostType,
+        replica_id: u64,
+        program_bytes: Box<[u8]>,
+        policy: MigrationPolicy,
+        deployment: Option<DeploymentCommit>,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
         let program = Program::from_bytes(host_type.into(), program_bytes);
         trace!(
             "update module host {}/{}: genesis={} update-to={}",
@@ -593,27 +631,57 @@ impl HostController {
             let mut host = match guard.take() {
                 None => {
                     trace!("host not running, try_init");
-                    this.try_init_host(database, replica_id).await?.host
+                    this.try_init_host(database, replica_id, &guard).await?.host
                 }
                 Some(host) => {
                     trace!("host found, updating");
                     host
                 }
             };
-            let update_result = host
-                .update_module(
-                    this.runtimes.clone(),
-                    program,
-                    policy,
-                    this.energy_monitor.clone(),
-                    this.unregister_fn(replica_id, database_identity),
-                    this.db_cores.take(),
-                )
-                .await?;
+            let mut database_committed = false;
+            let registration = guard.registration();
+            let update_result = std::panic::AssertUnwindSafe(host.update_module(
+                this.runtimes.clone(),
+                program,
+                policy,
+                deployment,
+                this.energy_monitor.clone(),
+                this.unregister_fn(registration.clone(), database_identity),
+                registration,
+                this.db_cores.take(),
+                &mut database_committed,
+            ))
+            .catch_unwind()
+            .await;
+            let update_result = match update_result {
+                Ok(result) => result,
+                Err(panic) => {
+                    if let Err(error) = lifecycle::close_host(host).await {
+                        if matches!(error, lifecycle::CloseFailure::WriterUnconfirmed) {
+                            guard.quarantine();
+                        }
+                        return Err(error.into());
+                    }
+                    std::panic::resume_unwind(panic);
+                }
+            };
 
-            *guard = Some(host);
+            if update_result.is_err() && database_committed {
+                // Schema/program/receipt already committed. The previous
+                // executable cannot be retained after activation failure.
+                // Close clients/scheduler and reconstruct from stored program
+                // on the next leader lookup or reconciliation attempt.
+                if let Err(error) = lifecycle::close_host(host).await {
+                    if matches!(error, lifecycle::CloseFailure::WriterUnconfirmed) {
+                        guard.quarantine();
+                    }
+                    return Err(error.into());
+                }
+            } else {
+                guard.install(host);
+            }
 
-            Ok::<_, anyhow::Error>(update_result)
+            update_result
         })
         .await??;
 
@@ -658,58 +726,22 @@ impl HostController {
 
     /// Release all resources of the [`ModuleHost`] identified by `replica_id`,
     /// and deregister it from the controller.
+    ///
+    /// A timeout returns an error while the owned close continues. Only success
+    /// confirms the configured storage writer has completed shutdown.
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn exit_module_host(&self, replica_id: u64, timeout: Duration) -> Result<(), anyhow::Error> {
-        let Some(lock) = self.hosts.lock().remove(&replica_id) else {
+        let Some(request) = registry::close(&self.hosts, replica_id) else {
             return Ok(());
         };
-        // To debug the potential deadlock issue reported in
-        // https://github.com/clockworklabs/SpacetimeDBPrivate/issues/2337
-        // we'll log a warning every 5s if we can't acquire an exclusive lock.
-        let start = Instant::now();
-        let mut t = interval_at(start + Duration::from_secs(5), Duration::from_secs(5));
-        let warn_blocked = tokio::spawn(async move {
-            loop {
-                t.tick().await;
-                warn!(
-                    "blocked waiting to exit module for replica {} since {}s",
-                    replica_id,
-                    start.elapsed().as_secs_f32()
-                );
-            }
-        });
-        defer!(warn_blocked.abort());
-
-        let shutdown = tokio::time::timeout(timeout, async {
-            let mut guard = lock.write_owned().await;
-            let Some(host) = guard.take() else {
-                return;
-            };
-            let module = host.module.borrow().clone();
-            let info = module.info();
-
-            let database_identity = info.database_identity;
-            let table_names = info.module_def.tables().map(|t| t.name.deref());
-
-            // Ensure we clear the metrics even if the future is cancelled.
-            defer!(remove_database_gauges(&database_identity, table_names));
-
-            info!("replica={replica_id} database={database_identity} exiting module");
-            module.exit().await;
-            info!("replica={replica_id} database={database_identity} exiting database");
-            module.relational_db().shutdown().await;
-            info!("replica={replica_id} database={database_identity} module host exited");
-        })
-        .await;
-
-        if shutdown.is_err() {
-            warn!(
-                "replica={replica_id} shutdown timed out after {}s",
-                start.elapsed().as_secs_f32()
-            );
+        if let Some(owner) = request.owner {
+            // The close owns its registry pin independently of this waiter.
+            // Cancellation or timeout cannot release a still-running writer.
+            tokio::spawn(owner.run());
         }
-
-        Ok(())
+        tokio::time::timeout(timeout, request.completion.wait())
+            .await
+            .map_err(|_| anyhow!("replica {replica_id} shutdown is still pending after {timeout:?}"))?
     }
 
     /// Get the [`ModuleHost`] identified by `replica_id` or return an error
@@ -766,45 +798,47 @@ impl HostController {
         self.hosts.lock().keys().copied().collect()
     }
 
-    /// On-panic callback passed to [`ModuleHost`]s created by this controller.
-    ///
-    /// Removes the module with the given `replica_id` from this controller.
-    fn unregister_fn(&self, replica_id: u64, database_identity: Identity) -> impl Fn() + Send + Sync + 'static + use<> {
-        let hosts = Arc::downgrade(&self.hosts);
+    /// On-panic callbacks are scoped to one installed executable and cell.
+    /// A stale callback cannot unregister an updated or reopened database.
+    fn unregister_fn(
+        &self,
+        registration: Registration,
+        database_identity: Identity,
+    ) -> impl Fn() + Send + Sync + 'static + use<> {
+        let runtime = tokio::runtime::Handle::current();
         move || {
-            let unregistered = hosts
-                .upgrade()
-                .is_some_and(|hosts| hosts.lock().remove(&replica_id).is_some());
-            if unregistered {
+            if let Some(request) = registration.close_if_current()
+                && let Some(owner) = request.owner
+            {
                 record_module_host_unexpected_exit(database_identity);
+                runtime.spawn(owner.run());
             }
         }
     }
 
-    /// Acquire a write lock on the [HostCell] for `replica_id`.
-    ///
-    /// This will time out after 5s to aid debugging of
-    /// https://github.com/clockworklabs/SpacetimeDBPrivate/issues/2337
-    async fn acquire_write_lock(&self, replica_id: u64) -> Result<OwnedRwLockWriteGuard<Option<Host>>, Elapsed> {
-        let lock = self.hosts.lock().entry(replica_id).or_default().clone();
-        timeout(Duration::from_secs(5), lock.write_owned()).await
+    /// The total wait includes any ongoing close and cell reacquisition.
+    async fn acquire_write_lock(&self, replica_id: u64) -> anyhow::Result<registry::WriteGuard> {
+        timeout(Duration::from_secs(5), registry::Pin::write(&self.hosts, replica_id)).await?
     }
 
-    /// Acquire a read lock on the [HostCell] for `replica_id`.
-    ///
-    /// This will time out after 5s to aid debugging of
-    /// https://github.com/clockworklabs/SpacetimeDBPrivate/issues/2337
-    async fn acquire_read_lock(&self, replica_id: u64) -> Result<OwnedRwLockReadGuard<Option<Host>>, Elapsed> {
-        let lock = self.hosts.lock().entry(replica_id).or_default().clone();
-        timeout(Duration::from_secs(5), lock.read_owned()).await
+    async fn acquire_read_lock(&self, replica_id: u64) -> anyhow::Result<registry::ReadGuard> {
+        timeout(Duration::from_secs(5), registry::Pin::read(&self.hosts, replica_id)).await?
     }
 
-    async fn try_init_host(&self, database: Database, replica_id: u64) -> anyhow::Result<HostInit> {
+    async fn try_init_host(
+        &self,
+        database: Database,
+        replica_id: u64,
+        guard: &registry::WriteGuard,
+    ) -> anyhow::Result<HostInit> {
         let database_identity = database.database_identity;
         record_module_host_init_attempt(database_identity);
 
-        Host::try_init(self, database, replica_id)
-            .await
+        let result = Host::try_init(self, database, replica_id, guard.registration()).await;
+        if result.as_ref().is_err_and(lifecycle::writer_unconfirmed) {
+            guard.quarantine();
+        }
+        result
             .inspect_err(|error| {
                 let cause = HostInitError::metric_cause(error);
                 match cause {
@@ -1033,36 +1067,31 @@ fn repair_stale_view_backing_tables_on_launch(launched: &LaunchedModule) -> anyh
 /// If the `db` is not initialized yet (i.e. its program hash is `None`),
 /// return an error.
 ///
-/// Otherwise, if `db.program_hash` matches the given `program_hash`, do
-/// nothing and return an empty `UpdateDatabaseResult`.
-///
-/// Otherwise, invoke `module.update_database` and return the result.
+/// Admission, including unchanged programs and idempotent deployment retries,
+/// is serialized inside the migration transaction.
 async fn update_module(
     db: &RelationalDB,
     module: &ModuleHost,
     program: Program,
     old_module_info: Arc<ModuleInfo>,
     policy: MigrationPolicy,
+    deployment: Option<DeploymentCommit>,
 ) -> anyhow::Result<UpdateDatabaseResult> {
     let addr = db.database_identity();
     match stored_program_hash(db)? {
         None => Err(anyhow!("database `{addr}` not yet initialized")),
         Some(stored) => {
-            let res = if stored == program.hash {
-                info!("database `{}` up to date with program `{}`", addr, program.hash);
-                UpdateDatabaseResult::NoUpdateNeeded
-            } else {
-                info!("updating `{}` from {} to {}", addr, stored, program.hash);
-                module.update_database(program, old_module_info, policy).await?
-            };
-
-            Ok(res)
+            info!("publishing `{}` from {} to {}", addr, stored, program.hash);
+            module
+                .update_database_with_deployment(program, old_module_info, policy, deployment)
+                .await
         }
     }
 }
 
 /// Encapsulates a database, associated module, and auxiliary state.
 struct Host {
+    registration: Registration,
     /// The [`ModuleHost`], providing the callable reducer API.
     ///
     /// Modules may be updated via [`Host::update_module`].
@@ -1088,18 +1117,23 @@ struct Host {
     /// Handle to the task responsible for cleaning up old views.
     /// The task is aborted when [`Host`] is dropped.
     view_cleanup_task: AbortHandle,
+
+    // Runtime that owns this host and its physical shutdown.
+    runtime: spacetimedb_runtime::Handle,
 }
 
 impl Host {
     /// Attempt to instantiate a [`Host`] from persistent storage.
     ///
-    /// Note that this does **not** run module initialization routines, but may
-    /// create on-disk artifacts if the host / database did not exist.
+    /// This executes the stored module and initializes a new database when
+    /// necessary. It may create on-disk artifacts. Retained cleanup uses the
+    /// separate metadata-only open path instead.
     #[tracing::instrument(level = "debug", skip_all)]
     async fn try_init(
         host_controller: &HostController,
         database: Database,
         replica_id: u64,
+        registration: Registration,
     ) -> anyhow::Result<HostInit> {
         let database_identity = database.database_identity;
         let HostController {
@@ -1108,8 +1142,6 @@ impl Host {
             program_storage,
             energy_monitor,
             runtimes,
-            persistence,
-            page_pool,
             bsatn_rlb_pool,
             memory_observer,
             ..
@@ -1119,234 +1151,230 @@ impl Host {
         let (tx_metrics_queue, tx_metrics_recorder_task) = spawn_tx_metrics_recorder(&runtime);
         let tx_metrics_recorder_task = guard(tx_metrics_recorder_task, |task| task.abort());
 
-        let (db, connected_clients) = match config.storage {
-            db::Storage::Memory => RelationalDB::open(
-                database.database_identity,
-                database.owner_identity,
-                EmptyHistory::new(),
-                None,
-                Some(tx_metrics_queue),
-                page_pool.clone(),
-            )?,
-            db::Storage::Disk => {
-                // Replay from the local state.
-                let history = relational_db::local_history(&replica_dir, &runtime).await?;
-                let persistence_db = db::persistence::Database {
-                    id: database.id,
-                    database_identity: database.database_identity,
-                    owner_identity: database.owner_identity,
-                };
-                let persistence = persistence.persistence(&persistence_db, replica_id).await?;
-                // Loading a database from persistent storage involves heavy
-                // blocking I/O. `asyncify` to avoid blocking the async worker.
-                let (db, clients) = asyncify({
-                    let database_identity = database.database_identity;
-                    let owner_identity = database.owner_identity;
-                    let page_pool = page_pool.clone();
-                    move || {
-                        RelationalDB::open(
-                            database_identity,
-                            owner_identity,
-                            history,
-                            Some(persistence),
-                            Some(tx_metrics_queue),
-                            page_pool,
-                        )
-                    }
-                })
-                .await
-                // Make sure we log the source chain of the error
-                // as a single line, with the help of `anyhow`.
-                .map_err(anyhow::Error::from)
-                .inspect_err(|e| {
-                    tracing::error!(
-                        database = %database.database_identity,
-                        replica = replica_id,
-                        "Failed to open database: {e:#}"
-                    );
-                })?;
-
-                (db, clients)
-            }
-        };
-        let db = db.with_memory_observer(memory_observer.clone());
-        let (mut program, program_needs_init) = match db.program()? {
-            // Launch module with program from existing database.
-            Some(program) => {
-                info!(
-                    "loaded program {} from the database host-type={}",
-                    program.hash,
-                    HostType::from(program.kind)
-                );
-                (program, false)
-            }
-            // Database is empty, load program from external storage and run
-            // initialization.
-            None => {
-                info!(
-                    "loading program {} from external storage host-type={}",
-                    database.initial_program, database.host_type
-                );
-                let program_bytes = load_program(program_storage, database.initial_program).await?;
-                let program = Program {
-                    hash: database.initial_program,
-                    bytes: program_bytes,
-                    kind: database.host_type.into(),
-                };
-                (program, true)
-            }
-        };
+        let (db, connected_clients, joined) =
+            lifecycle::open_database(host_controller, &database, replica_id, Some(tx_metrics_queue), &runtime).await?;
         let bootstrap_generation = database.bootstrap_generation;
         let mut bootstrap_completion = Some(BootstrapCompletion::durable(bootstrap_generation));
-
-        let relational_db = Arc::new(db);
-        let (program, launched) = match HostType::from(program.kind) {
-            HostType::Js => {
-                ModuleLauncher {
-                    database,
-                    replica_id,
-                    program,
-                    on_panic: host_controller.unregister_fn(replica_id, database_identity),
-                    relational_db,
-                    energy_monitor: energy_monitor.clone(),
-                    memory_observer: memory_observer.clone(),
-                    module_logs: match config.storage {
-                        db::Storage::Memory => None,
-                        db::Storage::Disk => Some(replica_dir.module_logs()),
-                    },
-                    runtimes: runtimes.clone(),
-                    core: host_controller.db_cores.take(),
-                    bsatn_rlb_pool: bsatn_rlb_pool.clone(),
+        let initialized = std::panic::AssertUnwindSafe(async {
+            let (mut program, program_needs_init, initial_deployment) = match db.program()? {
+                // Launch module with program from existing database.
+                Some(program) => {
+                    info!(
+                        "loaded program {} from the database host-type={}",
+                        program.hash,
+                        HostType::from(program.kind)
+                    );
+                    (program, false, None)
                 }
-                .launch_module()
-                .await?
-            }
-            HostType::Wasm => {
-                // Prior to https://github.com/clockworklabs/SpacetimeDB/pull/4549
-                // the host type in `st_module` was always set to wasm.
-                // We now correctly use the host type from the database, but the
-                // module may in fact be a JS module.
-                // So if launching it as a wasm module fails, try JS instead.
-                // If this succeeds, the module is definitely a JS module, so
-                // attempt to repair `st_module` in this case.
-                //
-                // TODO: This code should eventually be removed once all
-                // databases have been repaired.
-                let launch_wasm_result = ModuleLauncher {
-                    database: database.clone(),
-                    replica_id,
-                    program: program.clone(),
-                    on_panic: host_controller.unregister_fn(replica_id, database_identity),
-                    relational_db: relational_db.clone(),
-                    energy_monitor: energy_monitor.clone(),
-                    memory_observer: memory_observer.clone(),
-                    module_logs: match config.storage {
-                        db::Storage::Memory => None,
-                        db::Storage::Disk => Some(replica_dir.clone().module_logs()),
-                    },
-                    runtimes: runtimes.clone(),
-                    core: host_controller.db_cores.take(),
-                    bsatn_rlb_pool: bsatn_rlb_pool.clone(),
+                // Database is empty, load program from external storage and run
+                // initialization.
+                None => {
+                    info!(
+                        "loading program {} from external storage host-type={}",
+                        database.initial_program, database.host_type
+                    );
+                    let initial_deployment = program_storage.initial_deployment(&database).await?;
+                    let program_bytes = load_program(program_storage, database.initial_program).await?;
+                    let program = Program {
+                        hash: database.initial_program,
+                        bytes: program_bytes,
+                        kind: database.host_type.into(),
+                    };
+                    (program, true, initial_deployment)
                 }
-                .launch_module()
-                .await;
-                match launch_wasm_result {
-                    Ok(program_and_module_host) => program_and_module_host,
-                    Err(e) => {
-                        warn!("failed to launch wasm module, trying js: {e:#}");
+            };
 
-                        program.kind = ModuleKind::JS;
-                        let res = ModuleLauncher {
-                            database,
-                            replica_id,
-                            program: program.clone(),
-                            on_panic: host_controller.unregister_fn(replica_id, database_identity),
-                            relational_db: relational_db.clone(),
-                            energy_monitor: energy_monitor.clone(),
-                            memory_observer: memory_observer.clone(),
-                            module_logs: match config.storage {
-                                db::Storage::Memory => None,
-                                db::Storage::Disk => Some(replica_dir.module_logs()),
-                            },
-                            runtimes: runtimes.clone(),
-                            core: host_controller.db_cores.take(),
-                            bsatn_rlb_pool: bsatn_rlb_pool.clone(),
+            let relational_db = db.clone();
+            let (program, launched) = match HostType::from(program.kind) {
+                HostType::Js => {
+                    ModuleLauncher {
+                        database,
+                        replica_id,
+                        program,
+                        on_panic: host_controller.unregister_fn(registration.clone(), database_identity),
+                        relational_db,
+                        energy_monitor: energy_monitor.clone(),
+                        memory_observer: memory_observer.clone(),
+                        module_logs: match config.storage {
+                            db::Storage::Memory => None,
+                            db::Storage::Disk => Some(replica_dir.module_logs()),
+                        },
+                        runtimes: runtimes.clone(),
+                        core: host_controller.db_cores.take(),
+                        bsatn_rlb_pool: bsatn_rlb_pool.clone(),
+                    }
+                    .launch_module()
+                    .await?
+                }
+                HostType::Wasm => {
+                    // Prior to https://github.com/clockworklabs/SpacetimeDB/pull/4549
+                    // the host type in `st_module` was always set to wasm.
+                    // We now correctly use the host type from the database, but the
+                    // module may in fact be a JS module.
+                    // Retry JS only for an existing stored module whose database
+                    // declaration explicitly identifies it as JS. A new publication
+                    // or declared Wasm module must preserve its Wasm validation error.
+                    // If the legacy retry succeeds, repair `st_module`.
+                    //
+                    // TODO: This code should eventually be removed once all
+                    // databases have been repaired.
+                    let launch_wasm_result = ModuleLauncher {
+                        database: database.clone(),
+                        replica_id,
+                        program: program.clone(),
+                        on_panic: host_controller.unregister_fn(registration.clone(), database_identity),
+                        relational_db: relational_db.clone(),
+                        energy_monitor: energy_monitor.clone(),
+                        memory_observer: memory_observer.clone(),
+                        module_logs: match config.storage {
+                            db::Storage::Memory => None,
+                            db::Storage::Disk => Some(replica_dir.clone().module_logs()),
+                        },
+                        runtimes: runtimes.clone(),
+                        core: host_controller.db_cores.take(),
+                        bsatn_rlb_pool: bsatn_rlb_pool.clone(),
+                    }
+                    .launch_module()
+                    .await;
+                    match launch_wasm_result {
+                        Ok(program_and_module_host) => program_and_module_host,
+                        Err(e) => {
+                            if program_needs_init || database.host_type != HostType::Js {
+                                return Err(e);
+                            }
+                            warn!("failed to launch wasm module, trying js: {e:#}");
+
+                            program.kind = ModuleKind::JS;
+                            let res = ModuleLauncher {
+                                database,
+                                replica_id,
+                                program: program.clone(),
+                                on_panic: host_controller.unregister_fn(registration.clone(), database_identity),
+                                relational_db: relational_db.clone(),
+                                energy_monitor: energy_monitor.clone(),
+                                memory_observer: memory_observer.clone(),
+                                module_logs: match config.storage {
+                                    db::Storage::Memory => None,
+                                    db::Storage::Disk => Some(replica_dir.module_logs()),
+                                },
+                                runtimes: runtimes.clone(),
+                                core: host_controller.db_cores.take(),
+                                bsatn_rlb_pool: bsatn_rlb_pool.clone(),
+                            }
+                            .launch_module()
+                            .await;
+
+                            if res.is_ok() {
+                                let _ = relational_db.with_auto_commit(Workload::Internal, |tx| {
+                                    relational_db.update_program(tx, program)
+                                });
+                            }
+
+                            res.map_err(|js_error| {
+                                e.context(format!("legacy JS host-type repair also failed: {js_error:#}"))
+                            })?
                         }
-                        .launch_module()
-                        .await;
-
-                        if res.is_ok() {
-                            let _ = relational_db
-                                .with_auto_commit(Workload::Internal, |tx| relational_db.update_program(tx, program));
-                        }
-
-                        res?
                     }
                 }
+            };
+
+            if program_needs_init {
+                let InitDatabaseResult { reducer, tx_offset } = launched
+                    .module_host
+                    .init_database_with_deployment(program, initial_deployment)
+                    .await?;
+                if let Some(call_result) = reducer {
+                    validate_init_reducer_call_result(call_result)?;
+                }
+                bootstrap_completion = Some(BootstrapCompletion::pending(
+                    bootstrap_generation,
+                    tx_offset,
+                    launched.module_host.durable_tx_offset(),
+                ));
+            } else {
+                repair_stale_view_backing_tables_on_launch(&launched)?;
+                drop(program)
             }
-        };
 
-        if program_needs_init {
-            let InitDatabaseResult { reducer, tx_offset } = launched.module_host.init_database(program).await?;
-            if let Some(call_result) = reducer {
-                validate_init_reducer_call_result(call_result)?;
-            }
-            bootstrap_completion = Some(BootstrapCompletion::pending(
-                bootstrap_generation,
-                tx_offset,
-                launched.module_host.durable_tx_offset(),
-            ));
-        } else {
-            repair_stale_view_backing_tables_on_launch(&launched)?;
-            drop(program)
-        }
-
-        let LaunchedModule {
-            replica_ctx,
-            module_host,
-            scheduler,
-            scheduler_starter,
-        } = launched;
-
-        // Disconnect dangling clients.
-        // No need to clear view tables here since we do it in `clear_all_clients`.
-        for (identity, connection_id) in connected_clients {
-            module_host
-                .call_identity_disconnected(identity, connection_id)
-                .await
-                .with_context(|| {
-                    format!(
-                        "Error calling disconnect for {} {} on {}",
-                        identity, connection_id, replica_ctx.database_identity
-                    )
-                })?;
-        }
-        // We should have no clients left, but we do this just in case.
-        // This should only matter if we crashed with something in st_client_credentials,
-        // then restarted with an older version of the code that doesn't use st_client_credentials.
-        // That case would cause some permanently dangling st_client_credentials.
-        // Since we have no clients on startup, this should be safe to do regardless.
-        module_host.clear_all_clients().await?;
-
-        scheduler_starter.start(&module_host)?;
-        let disk_metrics_recorder_task: spacetimedb_runtime::AbortHandle =
-            tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle().into();
-        let view_cleanup_task = spawn_view_cleanup_loop(replica_ctx.relational_db().clone(), &runtime);
-
-        let module = watch::Sender::new(module_host);
-        let tx_metrics_recorder_task = scopeguard::ScopeGuard::into_inner(tx_metrics_recorder_task);
-
-        Ok(HostInit {
-            host: Host {
-                module,
+            let LaunchedModule {
                 replica_ctx,
+                module_host,
                 scheduler,
-                disk_metrics_recorder_task,
-                tx_metrics_recorder_task,
-                view_cleanup_task,
-            },
-            bootstrap_completion,
+                scheduler_starter,
+            } = launched;
+
+            // Disconnect dangling clients.
+            // No need to clear view tables here since we do it in `clear_all_clients`.
+            for (identity, connection_id) in connected_clients {
+                module_host
+                    .call_identity_disconnected(identity, connection_id)
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "Error calling disconnect for {} {} on {}",
+                            identity, connection_id, replica_ctx.database_identity
+                        )
+                    })?;
+            }
+            // We should have no clients left, but we do this just in case.
+            // This should only matter if we crashed with something in st_client_credentials,
+            // then restarted with an older version of the code that doesn't use st_client_credentials.
+            // That case would cause some permanently dangling st_client_credentials.
+            // Since we have no clients on startup, this should be safe to do regardless.
+            module_host.clear_all_clients().await?;
+
+            // Scheduled work can run before this Host is installed in its cell.
+            // Its callback must already identify this executable; the close
+            // owner will wait for our pinned guard before taking the Host.
+            registration.activate();
+            scheduler_starter.start(&module_host)?;
+            #[cfg(test)]
+            if lifecycle::PANIC_CALLBACK_AT_INITIAL_SCHEDULER_START
+                .lock()
+                .remove(&replica_ctx.database_identity)
+            {
+                host_controller.unregister_fn(registration.clone(), database_identity)();
+            }
+            let disk_metrics_recorder_task: AbortHandle =
+                tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle().into();
+            let view_cleanup_task = spawn_view_cleanup_loop(replica_ctx.relational_db().clone(), &runtime);
+
+            let module = watch::Sender::new(module_host);
+
+            let tx_metrics_recorder_task = scopeguard::ScopeGuard::into_inner(tx_metrics_recorder_task);
+            Ok(HostInit {
+                host: Host {
+                    registration,
+                    runtime: runtime.clone(),
+                    module,
+                    replica_ctx,
+                    scheduler,
+                    disk_metrics_recorder_task,
+                    tx_metrics_recorder_task,
+                    view_cleanup_task,
+                },
+                bootstrap_completion,
+            })
         })
+        .catch_unwind()
+        .await;
+        match initialized {
+            Ok(Ok(host)) => Ok(host),
+            Ok(Err(error)) => {
+                if let Some(joined) = joined {
+                    joined.join().await?;
+                }
+                drop(db);
+                Err(error)
+            }
+            Err(panic) => {
+                if let Some(joined) = joined {
+                    joined.join().await?;
+                }
+                drop(db);
+                std::panic::resume_unwind(panic)
+            }
+        }
     }
 
     /// Construct an in-memory instance of `database` running `program`.
@@ -1414,9 +1442,12 @@ impl Host {
         runtimes: Arc<HostRuntimes>,
         program: Program,
         policy: MigrationPolicy,
+        deployment: Option<DeploymentCommit>,
         energy_monitor: Arc<dyn EnergyMonitor>,
         on_panic: impl Fn() + Send + Sync + 'static,
+        registration: Registration,
         core: AllocatedJobCore,
+        database_committed: &mut bool,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.replica_ctx;
         let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db().clone());
@@ -1435,43 +1466,72 @@ impl Host {
         // Get the old module info to diff against when building a migration plan.
         let old_module_info = self.module.borrow().info.clone();
 
-        let update_result =
-            update_module(replica_ctx.relational_db(), &module, program, old_module_info, policy).await?;
+        let update_result = update_module(
+            replica_ctx.relational_db(),
+            &module,
+            program,
+            old_module_info,
+            policy,
+            deployment,
+        )
+        .await?;
+
+        *database_committed = matches!(
+            update_result,
+            UpdateDatabaseResult::UpdatePerformed { .. }
+                | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect { .. }
+        );
+
+        #[cfg(test)]
+        if *database_committed
+            && FAIL_NEXT_DEPLOYMENT_ACTIVATION
+                .lock()
+                .remove(&replica_ctx.database_identity)
+        {
+            bail!("injected scheduler activation failure after deployment commit");
+        }
 
         // Only replace the module + scheduler if the update succeeded.
         // Otherwise, we want the database to continue running with the old state.
         match update_result {
             UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed { .. } => {
-                self.scheduler = scheduler;
+                registration.activate();
                 scheduler_starter.start(&module)?;
+                self.scheduler = scheduler;
+                self.registration = registration.clone();
                 let old_module = self.module.send_replace(module);
                 old_module.exit().await;
             }
 
             // In this case, we need to disconnect all clients connected to the old module
             UpdateDatabaseResult::UpdatePerformedWithClientDisconnect { .. } => {
+                self.registration = registration;
+                self.registration.activate();
                 // Replace the module first, so that new clients get the new module.
                 let old_watcher = std::mem::replace(&mut self.module, watch::Sender::new(module.clone()));
+                let old_module = old_watcher.borrow().clone();
 
                 // Disconnect all clients connected to the old module.
-                let connected_clients = replica_ctx.relational_db().connected_clients()?;
-                for (identity, connection_id) in connected_clients {
-                    let client_actor_id = ClientActorId {
-                        identity,
-                        connection_id,
-                        name: ClientName(0),
-                    };
-                    //NOTE: This will call disconnect reducer of the new module, not the old one.
-                    //It makes sense, as relationaldb is already updated to the new module.
-                    module.disconnect_client(client_actor_id).await;
+                let activation = async {
+                    let connected_clients = replica_ctx.relational_db().connected_clients()?;
+                    for (identity, connection_id) in connected_clients {
+                        let client_actor_id = ClientActorId {
+                            identity,
+                            connection_id,
+                            name: ClientName(0),
+                        };
+                        // Disconnect uses the newly committed module.
+                        module.disconnect_client(client_actor_id).await;
+                    }
+                    scheduler_starter.start(&module)?;
+                    Ok::<_, anyhow::Error>(())
                 }
-
-                self.scheduler = scheduler;
-                scheduler_starter.start(&module)?;
+                .await;
                 // exit the old module, drop the `old_watcher` afterwards,
                 // which will signal websocket clients that the module is gone.
-                let old_module = old_watcher.borrow().clone();
                 old_module.exit().await;
+                activation?;
+                self.scheduler = scheduler;
             }
             _ => {}
         }
@@ -1710,3 +1770,6 @@ mod tests {
         assert_eq!(HostInitError::metric_cause(&error), ModuleHostInitFailureCause::Other);
     }
 }
+
+#[cfg(test)]
+mod invocation_flags_tests;

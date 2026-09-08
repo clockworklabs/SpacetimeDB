@@ -32,6 +32,10 @@ async fn main() -> anyhow::Result<ExitCode> {
     let matches = get_command().get_matches();
     let (cmd, subcommand_args) = matches.subcommand().unwrap();
 
+    if let Some(result) = exec_local_subcommand(cmd, subcommand_args).await {
+        return result;
+    }
+
     let root_dir = matches.get_one::<RootDir>("root_dir");
     let paths = match root_dir {
         Some(dir) => SpacetimePaths::from_root_dir(dir),
@@ -134,4 +138,15 @@ Commands:
 {subcommands}
 "#,
         )
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn managed_publish_help_passes_entrypoint_validation() {
+        let help = super::get_command()
+            .try_get_matches_from(["spacetime", "publish", "--help"])
+            .unwrap_err();
+        assert_eq!(help.kind(), clap::error::ErrorKind::DisplayHelp);
+    }
 }

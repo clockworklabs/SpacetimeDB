@@ -38,6 +38,7 @@ spacetimedb-memory-usage = { workspace = true, optional = true }
 spacetimedb-metrics = { workspace = true, optional = true }
 
 anyhow.workspace = true
+thiserror.workspace = true
 derive_more.workspace = true
 hex.workspace = true
 serde = { workspace = true, optional = true }

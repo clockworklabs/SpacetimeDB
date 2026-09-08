@@ -958,6 +958,10 @@ fn determine_publish_configs<'a>(
     }
 
     if !publish_configs.is_empty() {
+        anyhow::ensure!(
+            publish_configs.iter().all(|target| target.container().is_none()),
+            "spacetime dev does not yet run container targets; use spacetime publish for managed publication"
+        );
         return Ok(publish_configs);
     }
 

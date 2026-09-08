@@ -20,6 +20,8 @@ use crate::util::{add_auth_header_opt, get_auth_header, strip_verbatim_prefix, A
 use crate::util::{decode_identity, y_or_n};
 use crate::{build, common_args};
 
+mod managed;
+
 /// Individual prompts that `--yes` can suppress. `All` is a shorthand for every category below.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 #[clap(rename_all = "kebab-case")]
@@ -84,7 +86,7 @@ fn yes_flags_from_args(args: &ArgMatches) -> YesFlags {
 
 /// Build the CommandSchema for publish command
 pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, anyhow::Error> {
-    CommandSchemaBuilder::new()
+    managed::exclude_args(CommandSchemaBuilder::new())
         .key(Key::new("database").from_clap("name|identity").required())
         .key(Key::new("server"))
         .key(Key::new("module_path").module_specific())
@@ -173,7 +175,7 @@ pub fn get_filtered_publish_configs<'a>(
     let configs: Vec<CommandConfig> = filtered_targets
         .into_iter()
         .map(|target| {
-            let config = CommandConfig::new(schema, target.fields, args)?;
+            let config = CommandConfig::new(schema, target.fields, args)?.with_container(target.container);
             config.validate()?;
             Ok(config)
         })
@@ -191,7 +193,7 @@ pub fn get_filtered_publish_configs<'a>(
 }
 
 pub fn cli() -> clap::Command {
-    clap::Command::new("publish")
+    managed::add_args(clap::Command::new("publish")
         .about("Create and update a SpacetimeDB database")
         .arg(common_args::clear_database())
         .arg(
@@ -319,7 +321,7 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
                 .help("Use NativeAOT-LLVM compilation for C# modules (experimental, Windows only)")
         )
         .arg(common_args::dotnet_version())
-        .after_help("Run `spacetime help publish` for more detailed information.")
+        .after_help("Run `spacetime help publish` for more detailed information."))
 }
 
 fn confirm_and_clear(
@@ -381,6 +383,9 @@ pub async fn exec_with_options(
     quiet_config: bool,
     pre_loaded_config: Option<&LoadedConfig>,
 ) -> Result<(), anyhow::Error> {
+    if args.get_one::<PathBuf>("resume_publication").is_some() {
+        return managed::resume(&mut config, args, yes_flags_from_args(args)).await;
+    }
     // Build schema
     let cmd = cli();
     let schema = build_publish_schema(&cmd)?;
@@ -468,6 +473,15 @@ pub async fn exec_from_entry(
     execute_publish_configs(&mut config, vec![command_config], true, config_dir, clear_database, yes).await
 }
 
+fn dotnet_version_from_config(command_config: &CommandConfig<'_>) -> anyhow::Result<Option<u8>> {
+    if command_config.is_from_cli("dotnet_version") {
+        Ok(command_config.get_one::<u8>("dotnet_version")?)
+    } else {
+        let dotnet_version = command_config.get_one::<String>("dotnet_version")?;
+        parse_optional_dotnet_version(dotnet_version.as_deref())
+    }
+}
+
 async fn execute_publish_configs<'a>(
     config: &mut Config,
     publish_configs: Vec<CommandConfig<'a>>,
@@ -496,6 +510,43 @@ async fn execute_publish_configs<'a>(
             })
         };
 
+        managed::validate_target_options(&command_config)?;
+        let database_host = config.get_host_url(server)?;
+        let build_options = command_config
+            .get_one::<String>("build_options")?
+            .unwrap_or_else(String::new);
+        let num_replicas = command_config.get_one::<u8>("num_replicas")?;
+        let force_break_clients = command_config.get_one::<bool>("break_clients")?.unwrap_or(false);
+        let parent_opt = command_config.get_one::<String>("parent")?;
+        let parent = parent_opt.as_deref();
+        let org_opt = command_config.get_one::<String>("organization")?;
+        let org = org_opt.as_deref();
+        let native_aot = command_config.get_one::<bool>("native_aot")?.unwrap_or(false);
+        let dotnet_version = dotnet_version_from_config(&command_config)?;
+
+        // If the user didn't specify an identity and we didn't specify an anonymous identity, then
+        // we want to use the default identity
+        // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
+        //  easily create a new identity with an email
+        let auth_header = get_auth_header(config, anon_identity, server, !yes.skip_login).await?;
+
+        let (name_or_identity, parent) = validate_name_and_parent(name_or_identity, parent)?;
+
+        if managed::try_execute(
+            &command_config,
+            config_dir,
+            &database_host,
+            &auth_header,
+            name_or_identity,
+            parent,
+            clear_database,
+            yes,
+        )
+        .await?
+        {
+            continue;
+        }
+
         if using_config {
             if let Some(path_to_project) = path_to_project.as_ref() {
                 println!(
@@ -510,31 +561,6 @@ async fn execute_publish_configs<'a>(
                 );
             }
         }
-        let database_host = config.get_host_url(server)?;
-        let build_options = command_config
-            .get_one::<String>("build_options")?
-            .unwrap_or_else(String::new);
-        let num_replicas = command_config.get_one::<u8>("num_replicas")?;
-        let force_break_clients = command_config.get_one::<bool>("break_clients")?.unwrap_or(false);
-        let parent_opt = command_config.get_one::<String>("parent")?;
-        let parent = parent_opt.as_deref();
-        let org_opt = command_config.get_one::<String>("organization")?;
-        let org = org_opt.as_deref();
-        let native_aot = command_config.get_one::<bool>("native_aot")?.unwrap_or(false);
-        let dotnet_version = if command_config.is_from_cli("dotnet_version") {
-            command_config.get_one::<u8>("dotnet_version")?
-        } else {
-            let dotnet_version = command_config.get_one::<String>("dotnet_version")?;
-            parse_optional_dotnet_version(dotnet_version.as_deref())?
-        };
-
-        // If the user didn't specify an identity and we didn't specify an anonymous identity, then
-        // we want to use the default identity
-        // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
-        //  easily create a new identity with an email
-        let auth_header = get_auth_header(config, anon_identity, server, !yes.skip_login).await?;
-
-        let (name_or_identity, parent) = validate_name_and_parent(name_or_identity, parent)?;
 
         if let Some(path_to_project) = path_to_project.as_ref()
             && !path_to_project.exists()
@@ -1282,6 +1308,40 @@ mod tests {
             .unwrap();
 
         assert_eq!(matches.get_one::<u8>("dotnet_version").copied(), Some(10));
+    }
+
+    #[test]
+    fn managed_publish_preserves_dotnet_selection_and_selective_yes() {
+        let command = cli();
+        let schema = build_publish_schema(&command).unwrap();
+        let args = command
+            .try_get_matches_from([
+                "publish",
+                "--managed",
+                "--dotnet-version",
+                "10",
+                "--yes=remote,skip-login",
+                "--server",
+                "http://127.0.0.1:1",
+                "test-db",
+            ])
+            .unwrap();
+        let target = CommandConfig::new(&schema, HashMap::new(), &args).unwrap();
+        target.validate().unwrap();
+        assert!(args.get_flag("managed"));
+        assert_eq!(dotnet_version_from_config(&target).unwrap(), Some(10));
+        let yes = yes_flags_from_args(&args);
+        assert!(yes.publish_to_remote && yes.skip_login);
+        assert!(!yes.migrate_major_version && !yes.break_clients && !yes.delete_data);
+
+        let args = cli().get_matches_from(["publish", "--managed", "test-db"]);
+        let target = CommandConfig::new(
+            &schema,
+            HashMap::from([("dotnet_version".into(), serde_json::json!("10"))]),
+            &args,
+        )
+        .unwrap();
+        assert_eq!(dotnet_version_from_config(&target).unwrap(), Some(10));
     }
 
     #[test]

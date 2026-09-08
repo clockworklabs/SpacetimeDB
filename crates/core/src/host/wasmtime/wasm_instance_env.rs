@@ -338,14 +338,6 @@ impl WasmInstanceEnv {
         self.bytes_sinks.remove(&sink).unwrap_or_default()
     }
 
-    pub fn get_call_auth_flags(caller: Caller<'_, Self>) -> u32 {
-        caller.data().instance_env.get_call_auth_flags()
-    }
-
-    pub(crate) fn set_call_auth_flags(&mut self, flags: u32) {
-        self.instance_env.set_call_auth_flags(flags);
-    }
-
     /// Signal to this `WasmInstanceEnv` that a reducer or procedure call is beginning.
     ///
     /// Returns the handle used by reducers and procedures to read from `args`
@@ -1591,34 +1583,6 @@ impl WasmInstanceEnv {
         })
     }
 
-    /// Read an environment value as a nullable BytesSource. Zero means missing;
-    /// a present empty string always receives a nonzero, consumable source.
-    pub fn env_get(
-        caller: Caller<'_, Self>,
-        key: WasmPtr<u8>,
-        key_len: u32,
-        target_ptr: WasmPtr<u32>,
-    ) -> RtResult<u32> {
-        Self::cvt_ret(caller, AbiCall::EnvGet, target_ptr, |caller| {
-            if key_len == 0 || key_len > spacetimedb_lib::environment::MAX_ENV_KEY_BYTES as u32 {
-                return Err(crate::error::NodesError::InvalidEnvironmentKey.into());
-            }
-            let (mem, env) = Self::mem_env(caller);
-            let key = mem.deref_str(key, key_len)?;
-            match env.instance_env.env_get(key)? {
-                None => Ok(0),
-                Some(value) => {
-                    // These buffers live on the host heap until consumed or the
-                    // invocation ends. Bound retained reads from hand-written Wasm.
-                    if env.bytes_sources.len() >= MAX_OUTSTANDING_ENV_SOURCES {
-                        return Err(crate::error::NodesError::EnvironmentSourceLimit.into());
-                    }
-                    Ok(env.create_present_bytes_source(bytes::Bytes::from(value))?.0)
-                }
-            }
-        })
-    }
-
     /// Finds the JWT payload associated with `connection_id`.
     /// A `[ByteSourceId]` for the payload will be written to `target_ptr`.
     /// If nothing is found for the connection, `[ByteSourceId::INVALID]` (zero) is written to `target_ptr`.
@@ -1659,6 +1623,51 @@ impl WasmInstanceEnv {
             let source_id = env.create_bytes_source(b)?;
             Ok(source_id.0)
         })
+    }
+
+    /// Read an environment value as a nullable BytesSource. Zero means missing;
+    /// a present empty string always receives a nonzero, consumable source.
+    pub fn env_get(
+        caller: Caller<'_, Self>,
+        key: WasmPtr<u8>,
+        key_len: u32,
+        target_ptr: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::EnvGet, target_ptr, |caller| {
+            if key_len == 0 || key_len > spacetimedb_lib::environment::MAX_ENV_KEY_BYTES as u32 {
+                return Err(crate::error::NodesError::InvalidEnvironmentKey.into());
+            }
+            let (mem, env) = Self::mem_env(caller);
+            let key = mem.deref_str(key, key_len)?;
+            match env.instance_env.env_get(key)? {
+                None => Ok(0),
+                Some(value) => {
+                    // These buffers live on the host heap until consumed or the
+                    // invocation ends. Bound retained reads from hand-written Wasm.
+                    if env.bytes_sources.len() >= MAX_OUTSTANDING_ENV_SOURCES {
+                        return Err(crate::error::NodesError::EnvironmentSourceLimit.into());
+                    }
+                    Ok(env.create_present_bytes_source(bytes::Bytes::from(value))?.0)
+                }
+            }
+        })
+    }
+
+    /// Returns host-verified invocation flags. Bit 0 is internal authority.
+    /// This does not read tables and is available outside transactions.
+    pub fn get_call_auth_flags(caller: Caller<'_, Self>) -> u32 {
+        caller.data().instance_env.get_call_auth_flags()
+    }
+
+    pub(crate) fn set_hosted_auth(
+        &mut self,
+        auth: Option<std::sync::Arc<crate::auth::hosted_tokens::VerifiedHostedAuth>>,
+    ) {
+        self.instance_env.set_hosted_auth(auth);
+    }
+
+    pub(crate) fn set_call_auth_flags(&mut self, flags: u32) {
+        self.instance_env.set_call_auth_flags(flags);
     }
 
     /// Writes the identity of the module into `out = out_ptr[..32]`.

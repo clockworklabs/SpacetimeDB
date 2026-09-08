@@ -359,6 +359,9 @@ impl CommittedState {
         self.create_table(ST_COLUMN_ACCESSOR_ID, schemas[ST_COLUMN_ACCESSOR_IDX].clone());
         let env = crate::system_tables::st_env_schema();
         self.create_table(env.table_id, env.into());
+        for schema in crate::system_tables::deployment_system_schemas() {
+            self.create_table(schema.table_id, schema.into());
+        }
 
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store, pool) =

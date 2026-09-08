@@ -55,6 +55,15 @@ pub trait NodeDelegate: Send + Sync {
 
     type JwtAuthProviderT: auth::JwtAuthProvider;
     fn jwt_auth_provider(&self) -> &Self::JwtAuthProviderT;
+    /// Authenticate a platform-issued hosted credential for the exact resolved
+    /// database in this request. Editions without container hosting fail closed.
+    async fn authenticate_hosted_token(
+        &self,
+        _token: &str,
+        _target: Identity,
+    ) -> anyhow::Result<spacetimedb::auth::hosted_tokens::VerifiedHostedAuth> {
+        anyhow::bail!("Hosted database credentials are not enabled on this server")
+    }
     /// Return the leader [`Host`] of `database_id`.
     ///
     /// The [`Host`] is spawned implicitly if not already running.
@@ -136,7 +145,7 @@ impl Host {
 
     pub async fn exec_sql(
         &self,
-        auth: AuthCtx,
+        auth: impl Into<spacetimedb::auth::invocation::SqlCallAuth>,
         _database: Database,
         confirmed_read: bool,
         body: String,
@@ -204,6 +213,28 @@ impl Host {
     ) -> anyhow::Result<UpdateDatabaseResult> {
         self.host_controller
             .update_module_host(database, host_type, self.replica_id, program_bytes, policy)
+            .await
+    }
+
+    /// Used only by an authenticated publication coordinator after control
+    /// admission and quiescing. This does not authorize or start a container.
+    pub async fn update_with_deployment(
+        &self,
+        database: Database,
+        host_type: HostType,
+        program_bytes: Box<[u8]>,
+        policy: MigrationPolicy,
+        deployment: spacetimedb::db::deployment::DeploymentCommit,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.host_controller
+            .update_module_host_with_deployment(
+                database,
+                host_type,
+                self.replica_id,
+                program_bytes,
+                policy,
+                Some(deployment),
+            )
             .await
     }
 }
@@ -492,6 +523,14 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
 
     fn jwt_auth_provider(&self) -> &Self::JwtAuthProviderT {
         (**self).jwt_auth_provider()
+    }
+
+    async fn authenticate_hosted_token(
+        &self,
+        token: &str,
+        target: Identity,
+    ) -> anyhow::Result<spacetimedb::auth::hosted_tokens::VerifiedHostedAuth> {
+        (**self).authenticate_hosted_token(token, target).await
     }
 
     async fn leader(&self, database_id: u64) -> Result<Host, Self::GetLeaderHostError> {

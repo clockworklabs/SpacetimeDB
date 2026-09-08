@@ -67,6 +67,12 @@ pub struct ModuleHandle {
 }
 
 impl ModuleHandle {
+    /// Access the real standalone control/host environment for integration
+    /// tests that publish, migrate, or recover the running module.
+    pub fn environment(&self) -> &StandaloneEnv {
+        &self.env
+    }
+
     async fn call_reducer_result(&self, reducer: &str, args: FunctionArgs) -> anyhow::Result<ReducerCallResult> {
         let result = self
             .client

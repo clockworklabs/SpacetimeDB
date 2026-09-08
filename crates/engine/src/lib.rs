@@ -1,5 +1,6 @@
 pub(crate) mod durability;
 pub mod error;
+pub mod hosted_admission;
 pub mod metrics;
 pub mod persistence;
 pub mod relational_db;

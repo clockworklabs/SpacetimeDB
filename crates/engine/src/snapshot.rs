@@ -7,7 +7,11 @@ use std::{
 };
 
 use anyhow::Context as _;
-use futures::{channel::mpsc, StreamExt as _};
+use futures::{
+    channel::mpsc,
+    future::{BoxFuture, Shared},
+    FutureExt as _, StreamExt as _,
+};
 use log::{info, warn};
 use parking_lot::RwLock;
 use prometheus::{Histogram, IntGauge};
@@ -62,6 +66,7 @@ pub struct SnapshotWorker {
     snapshot_created: watch::Sender<Option<TxOffset>>,
     request_snapshot: mpsc::UnboundedSender<Request>,
     snapshot_repository: Arc<DynSnapshotRepo>,
+    completion: Shared<BoxFuture<'static, Result<(), Arc<str>>>>,
 }
 
 impl SnapshotWorker {
@@ -89,18 +94,30 @@ impl SnapshotWorker {
                 rt: rt.clone(),
             }),
         };
-        rt.spawn(actor.run());
+        let task = rt.spawn(actor.run());
+        let completion = async move { task.await.map_err(|error| Arc::<str>::from(error.to_string())) }
+            .boxed()
+            .shared();
 
         Self {
             snapshot_created,
             request_snapshot: request_tx,
             snapshot_repository,
+            completion,
         }
     }
 
     /// Create a new [SnapshotWorker] on the current Tokio runtime.
     pub fn new_tokio_current(snapshot_repository: Arc<DynSnapshotRepo>, compression: Compression) -> Self {
         Self::new(snapshot_repository, compression, Handle::tokio_current())
+    }
+
+    /// Permanently close snapshot admission and join all previously accepted
+    /// snapshot and compression I/O. All clones observe the same completion.
+    /// Cancelling a waiter does not cancel the worker or its blocking I/O.
+    pub async fn shutdown(&self) -> Result<(), Arc<str>> {
+        self.request_snapshot.close_channel();
+        self.completion.clone().await
     }
 
     /// Finish the initialization of [Self] by passing a [SnapshotDatabaseState],
@@ -384,5 +401,65 @@ impl Compressor {
                 range, database_identity, elapsed
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+    use spacetimedb_datastore::{
+        execution_context::Workload,
+        system_tables::{StEnvRow, ST_ENV_ID},
+        traits::{IsolationLevel, MutTx as _},
+    };
+    use spacetimedb_paths::{server::SnapshotsPath, FromPathUnchecked};
+    use spacetimedb_snapshot::SnapshotRepository;
+    use spacetimedb_table::page_pool::PagePool;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn terminal_shutdown_drains_accepted_snapshot_after_waiter_cancellation() {
+        let dir = tempfile::tempdir().unwrap();
+        let repository = Arc::new(
+            SnapshotRepository::open(SnapshotsPath::from_path_unchecked(dir.path()), Identity::ONE, 1).unwrap(),
+        );
+        let datastore = Locking::bootstrap(Identity::ONE, PagePool::new_for_test()).unwrap();
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        tx.insert_via_serialize_bsatn(
+            ST_ENV_ID,
+            &StEnvRow {
+                key: "PERSISTED".into(),
+                value: "snapshot drain".into(),
+            },
+        )
+        .unwrap();
+        datastore.commit_mut_tx(tx).unwrap();
+        let worker = SnapshotWorker::new_tokio_current(repository.clone(), Compression::Enabled);
+        worker.set_state(datastore.committed_state.clone());
+        let state = datastore.committed_state.write_arc();
+        worker.request_snapshot();
+        let mut first = tokio::spawn({
+            let worker = worker.clone();
+            async move { worker.shutdown().await }
+        });
+        assert!(tokio::time::timeout(Duration::from_millis(50), &mut first)
+            .await
+            .is_err());
+        first.abort();
+        assert!(first.await.unwrap_err().is_cancelled());
+        let mut second = tokio::spawn({
+            let worker = worker.clone();
+            async move { worker.shutdown().await }
+        });
+        assert!(tokio::time::timeout(Duration::from_millis(50), &mut second)
+            .await
+            .is_err());
+        assert!(worker.request_snapshot.unbounded_send(Request::TakeSnapshot).is_err());
+        assert_eq!(repository.latest_snapshot().unwrap(), None);
+        drop(state);
+        second.await.unwrap().unwrap();
+        worker.shutdown().await.unwrap();
+        assert_eq!(repository.latest_snapshot().unwrap(), Some(0));
+        let snapshot = repository.read_snapshot(0, &PagePool::new_for_test()).unwrap();
+        assert_eq!(snapshot.tx_offset, 0);
     }
 }

@@ -165,13 +165,14 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
 
     let caller_auth: ConnectionAuthCtx = auth.into();
 
+    let caller = spacetimedb::auth::invocation::InvocationCaller::from(&caller_auth);
     let owner_identity = database.owner_identity;
     let module = find_database_module(&worker_ctx, &database).await?;
 
-    let fut = async move |module: ModuleHost, caller_identity: Identity, connection_id: ConnectionId| {
+    let fut = async move |module: ModuleHost, _caller_identity: Identity, connection_id: ConnectionId| {
         let result = match module
             .call_reducer(
-                caller_identity,
+                caller.clone(),
                 Some(connection_id),
                 None,
                 None,
@@ -185,7 +186,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
             Err(ReducerCallError::NoSuchReducer | ReducerCallError::ScheduleReducerNotFound) => {
                 // Not a reducer — try procedure instead
                 match module
-                    .call_procedure(caller_identity, Some(connection_id), None, &reducer, args)
+                    .call_procedure(caller, Some(connection_id), None, &reducer, args)
                     .await
                     .result
                 {
@@ -741,11 +742,14 @@ where
     let host = find_database_leader(&worker_ctx, &database).await?;
 
     let module = host.module().await.map_err(log_and_500)?;
+    let sql_caller_auth = caller_auth.clone();
     let fut = async move |_module: ModuleHost, caller_identity: Identity, _connection_id: ConnectionId| {
         let sql_auth = worker_ctx
             .authorize_sql(caller_identity, database.database_identity)
             .await?;
 
+        let sql_auth = spacetimedb::auth::invocation::SqlCallAuth::authenticated(sql_auth, &sql_caller_auth)
+            .map_err(log_and_500)?;
         host.exec_sql(
             sql_auth,
             database,
@@ -1067,6 +1071,11 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
             | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect {
                 tx_offset,
                 durable_offset,
+            }
+            | UpdateDatabaseResult::DeploymentAlreadyCommitted {
+                tx_offset,
+                durable_offset,
+                ..
             },
         ) => {
             timeout(confirmation_timeout.min(MAX_UPDATE_CONFIRMATION_TIMEOUT), async {

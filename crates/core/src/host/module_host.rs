@@ -2,9 +2,12 @@ use super::{
     ArgsTuple, FunctionArgs, InvalidProcedureArguments, InvalidReducerArguments, ReducerCallResult,
     ReducerCallResultWithTxOffset, ReducerId, ReducerOutcome, Scheduler,
 };
+use crate::auth::hosted_tokens::VerifiedHostedAuth;
+use crate::auth::invocation::{check_hosted_admission, InvocationCaller, SqlCallAuth};
 use crate::client::messages::{OneOffQueryResponseMessage, ProcedureResultMessage, SerializableMessage};
 use crate::client::{ClientActorId, ClientConnectionSender, WsVersion};
 use crate::database_logger::{DatabaseLogger, LogLevel, Record};
+use crate::db::deployment::{self, CommitAdmission, DeploymentCommit, PublishResult as DeploymentPublishResult};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::db::sql::ast::SchemaViewer;
 use crate::error::DBError;
@@ -73,10 +76,15 @@ use spacetimedb_schema::table_name::TableName;
 use std::collections::VecDeque;
 use std::fmt;
 use std::num::NonZeroUsize;
-use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
+
+#[cfg(test)]
+mod drain_tests;
+mod operations;
+use operations::ModuleOperations;
+pub(in crate::host) use operations::OperationLease;
 
 #[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
@@ -472,6 +480,7 @@ impl WasmtimeModuleHost {
         label: &str,
         on_panic: Arc<dyn Fn() + Send + Sync>,
         timer_guard: CallTimerGuard,
+        operation: OperationLease,
         arg: A,
         wasm: impl FnOnce(A, &mut ModuleInstance) + Send + 'static,
     ) where
@@ -479,6 +488,7 @@ impl WasmtimeModuleHost {
     {
         let label = label.to_owned();
         self.executor.enqueue_sync_job(move |state| {
+            let _operation = operation;
             scopeguard::defer_on_unwind!({
                 log::error!("wasm main operation {label} panicked");
                 on_panic();
@@ -496,15 +506,20 @@ impl WasmtimeModuleHost {
         label: &str,
         on_panic: Arc<dyn Fn() + Send + Sync>,
         timer_guard: CallTimerGuard,
+        operation: OperationLease,
         arg: A,
         wasm: impl AsyncFnOnce(A, &mut ModuleInstance) + Send + 'static,
     ) where
         A: Send + 'static,
     {
         let instance_manager = self.procedure_instances.clone();
-        let ModuleInstanceLease { instance, slot } = instance_manager.get_instance().await;
+        let ModuleInstanceLease { instance, slot } = instance_manager
+            .get_instance(Some(operation.clone()))
+            .await
+            .unwrap_or_else(|never| match never {});
         let label = label.to_owned();
         self.executor.enqueue_async_job(async move || {
+            let _operation = operation;
             scopeguard::defer_on_unwind!({
                 log::error!("wasm procedure {label} panicked");
                 on_panic();
@@ -527,7 +542,8 @@ struct V8ModuleHost {
 /// A module; used as a bound on `InstanceManager`.
 trait GenericModule {
     type Instance: GenericModuleInstance;
-    async fn create_instance(&self) -> Self::Instance;
+    type CreationError;
+    async fn create_instance(&self, operation: Option<OperationLease>) -> Result<Self::Instance, Self::CreationError>;
     fn host_type(&self) -> HostType;
 }
 
@@ -557,8 +573,10 @@ impl<T: GenericModuleInstance + ?Sized> GenericModuleInstance for Box<T> {
 
 impl GenericModule for Arc<super::wasmtime::Module> {
     type Instance = Box<super::wasmtime::ModuleInstance>;
-    async fn create_instance(&self) -> Self::Instance {
-        Box::new((**self).create_instance())
+    type CreationError = std::convert::Infallible;
+    async fn create_instance(&self, operation: Option<OperationLease>) -> Result<Self::Instance, Self::CreationError> {
+        let _operation = operation;
+        Ok(Box::new((**self).create_instance()))
     }
     fn host_type(&self) -> HostType {
         HostType::Wasm
@@ -567,8 +585,10 @@ impl GenericModule for Arc<super::wasmtime::Module> {
 
 impl GenericModule for Arc<super::wasmtime::ProcedureModule> {
     type Instance = Box<super::wasmtime::ModuleInstance>;
-    async fn create_instance(&self) -> Self::Instance {
-        Box::new((**self).create_instance())
+    type CreationError = std::convert::Infallible;
+    async fn create_instance(&self, operation: Option<OperationLease>) -> Result<Self::Instance, Self::CreationError> {
+        let _operation = operation;
+        Ok(Box::new((**self).create_instance()))
     }
     fn host_type(&self) -> HostType {
         HostType::Wasm
@@ -577,8 +597,9 @@ impl GenericModule for Arc<super::wasmtime::ProcedureModule> {
 
 impl GenericModule for super::v8::JsModule {
     type Instance = super::v8::JsProcedureInstance;
-    async fn create_instance(&self) -> Self::Instance {
-        self.create_instance().await
+    type CreationError = anyhow::Error;
+    async fn create_instance(&self, operation: Option<OperationLease>) -> Result<Self::Instance, Self::CreationError> {
+        self.create_instance_for_operation(operation).await
     }
     fn host_type(&self) -> HostType {
         HostType::Js
@@ -607,18 +628,33 @@ fn extract_trapped<T, E>(res: Result<(T, bool), E>) -> (Result<T, E>, bool) {
 pub(crate) fn init_database(
     replica_ctx: &ReplicaContext,
     module_def: &ModuleDef,
+    module_hash: Hash,
     program: Program,
+    deployment: Option<DeploymentCommit>,
     call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResultWithTxOffset, bool),
 ) -> (anyhow::Result<InitDatabaseResult>, bool) {
-    extract_trapped(init_database_inner(replica_ctx, module_def, program, call_reducer))
+    extract_trapped(init_database_inner(
+        replica_ctx,
+        module_def,
+        module_hash,
+        program,
+        deployment,
+        call_reducer,
+    ))
 }
 
 fn init_database_inner(
     replica_ctx: &ReplicaContext,
     module_def: &ModuleDef,
+    module_hash: Hash,
     program: Program,
+    deployment: Option<DeploymentCommit>,
     call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResultWithTxOffset, bool),
 ) -> anyhow::Result<(InitDatabaseResult, bool)> {
+    anyhow::ensure!(
+        module_hash == program.hash && spacetimedb_lib::hash_bytes(&program.bytes) == program.hash,
+        "program does not match the instantiated module"
+    );
     log::debug!("init database");
     let timestamp = Timestamp::now();
     let stdb = replica_ctx.relational_db();
@@ -627,6 +663,34 @@ fn init_database_inner(
 
     let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
     let auth_ctx = AuthCtx::for_current(owner_identity);
+    let (tx, admission) = stdb.with_auto_rollback(tx, |tx| {
+        if let Some(request) = &deployment {
+            deployment::validate_deployment_program(request, &program, module_def)?;
+            // New databases install the bootstrap fence, schema, program and
+            // receipt in this one transaction. An interrupted initialization
+            // cannot leave a successful partial deployment behind.
+            use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+            use spacetimedb_datastore::system_tables::ST_MODULE_ID;
+            if tx.iter(ST_MODULE_ID)?.next().is_none() {
+                deployment::install_publication_fence(tx, request.publication_epoch, request.operation_id)?;
+            }
+            deployment::check_deployment_commit(tx, request, timestamp, &Default::default())
+        } else {
+            deployment::require_unmanaged_publication(tx)?;
+            Ok(CommitAdmission::Ready)
+        }
+    })?;
+    if matches!(admission, CommitAdmission::AlreadyCommitted(_)) {
+        let (offset, metrics, reducer) = stdb.rollback_mut_tx(tx);
+        stdb.report_mut_tx_metrics(reducer, metrics, None);
+        return Ok((
+            InitDatabaseResult {
+                reducer: None,
+                tx_offset: from_tx_offset(offset),
+            },
+            false,
+        ));
+    }
     let (tx, ()) = stdb
         .with_auto_rollback(tx, |tx| {
             // Create all in-memory tables defined by the module (including submodules),
@@ -675,6 +739,10 @@ fn init_database_inner(
             }
 
             stdb.set_initialized(tx, program)?;
+
+            if let Some(request) = &deployment {
+                deployment::record_deployment_commit(tx, request, timestamp, &Default::default())?;
+            }
 
             anyhow::Ok(())
         })
@@ -741,6 +809,13 @@ pub fn call_identity_connected(
         stdb.report_mut_tx_metrics(reducer_name, metrics, None);
     });
 
+    let caller = InvocationCaller::from(&caller_auth);
+    let flags = caller
+        .flags_for(module.database_identity, &module.module_def)
+        .map_err(|e| ClientConnectedError::Rejected(e.to_string().into()))?;
+    check_hosted_admission(&*mut_tx, stdb, caller.hosted.as_deref())
+        .map_err(|e| ClientConnectedError::Rejected(e.to_string().into()))?;
+
     mut_tx
         .insert_st_client(
             caller_auth.claims.identity,
@@ -750,13 +825,23 @@ pub fn call_identity_connected(
         .map_err(DBError::from)
         .map_err(Box::new)?;
 
+    if caller.hosted.is_some() {
+        crate::db::deployment::record_connection_auth(
+            &mut mut_tx,
+            caller_connection_id,
+            caller_auth.claims.identity,
+            flags,
+        )
+        .map_err(|err| ClientConnectedError::DBError(Box::new(DBError::Other(err.into()))))?;
+    }
+
     if let Some((reducer_id, reducer_def)) = reducer_lookup {
         // The module defined a lifecycle reducer to handle new connections.
         // Call this reducer.
         // If the call fails (as in, something unexpectedly goes wrong with guest execution),
         // abort the connection: we can't really recover.
         let tx = Some(ScopeGuard::into_inner(mut_tx));
-        let params = ModuleHost::call_reducer_params(
+        let mut params = ModuleHost::call_reducer_params(
             &module.module_def,
             caller_auth.claims.identity,
             Some(caller_connection_id),
@@ -768,6 +853,8 @@ pub fn call_identity_connected(
             FunctionArgs::Nullary,
         )
         .map_err(ReducerCallError::from)?;
+        params.call_auth_flags = flags;
+        params.hosted_auth = caller.hosted;
         let (reducer_outcome, trapped) = call_reducer(tx, params);
         *trapped_slot = trapped;
 
@@ -812,7 +899,9 @@ pub struct CallReducerParams {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,
     pub caller_connection_id: ConnectionId,
+    /// Verified invocation authority. Bit 0 is internal; never client-decoded.
     pub(crate) call_auth_flags: u32,
+    pub(crate) hosted_auth: Option<std::sync::Arc<VerifiedHostedAuth>>,
     pub client: Option<Arc<ClientConnectionSender>>,
     pub request_id: Option<RequestId>,
     pub timer: Option<Instant>,
@@ -834,6 +923,7 @@ impl CallReducerParams {
             caller_identity,
             caller_connection_id: ConnectionId::ZERO,
             call_auth_flags: 1,
+            hosted_auth: None,
             client: None,
             request_id: None,
             timer: None,
@@ -1039,7 +1129,7 @@ impl ViewCommandErrorTarget {
 pub(in crate::host) struct SqlCommand {
     pub(in crate::host) db: Arc<RelationalDB>,
     pub(in crate::host) sql_text: String,
-    pub(in crate::host) auth: AuthCtx,
+    pub(in crate::host) auth: SqlCallAuth,
     pub(in crate::host) subs: Option<ModuleSubscriptions>,
 }
 
@@ -1214,6 +1304,7 @@ pub struct CallProcedureParams {
     pub caller_identity: Identity,
     pub caller_connection_id: ConnectionId,
     pub(crate) call_auth_flags: u32,
+    pub(crate) hosted_auth: Option<std::sync::Arc<VerifiedHostedAuth>>,
     pub timer: Option<Instant>,
     pub procedure_id: ProcedureId,
     pub args: ArgsTuple,
@@ -1233,6 +1324,7 @@ impl CallProcedureParams {
             caller_identity,
             caller_connection_id: ConnectionId::ZERO,
             call_auth_flags: 1,
+            hosted_auth: None,
             timer: None,
             procedure_id,
             args,
@@ -1264,7 +1356,7 @@ struct ModuleInstanceManager<M: GenericModule> {
 
 struct ModuleInstanceLease<I> {
     instance: I,
-    slot: Option<OwnedSemaphorePermit>,
+    slot: Option<Arc<OwnedSemaphorePermit>>,
 }
 
 /// Holds the single shared instance used by the JS main execution path.
@@ -1437,22 +1529,18 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
         }
     }
 
-    async fn with_instance<R>(&self, f: impl AsyncFnOnce(M::Instance) -> (R, M::Instance)) -> R {
-        let ModuleInstanceLease { instance, slot } = self.get_instance().await;
-        let (res, instance) = f(instance).await;
-        self.return_instance(ModuleInstanceLease { instance, slot });
-        res
-    }
-
-    async fn get_instance(&self) -> ModuleInstanceLease<M::Instance> {
+    async fn get_instance(
+        &self,
+        operation: Option<OperationLease>,
+    ) -> Result<ModuleInstanceLease<M::Instance>, M::CreationError> {
         let slot = if let Some(instance_slots) = &self.instance_slots {
-            Some(
+            Some(Arc::new(
                 instance_slots
                     .clone()
                     .acquire_owned()
                     .await
                     .expect("module instance slot semaphore should not close"),
-            )
+            ))
         } else {
             None
         };
@@ -1465,13 +1553,16 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             instance
         } else {
             let start_time = std::time::Instant::now();
-            let res = self.module.create_instance().await;
+            let res = self
+                .module
+                .create_instance(operation.map(|operation| operation.with_pool_slot(slot.clone())))
+                .await?;
             let elapsed_time = start_time.elapsed();
             self.metrics.observe_instance_created(elapsed_time);
             res
         };
 
-        ModuleInstanceLease { instance, slot }
+        Ok(ModuleInstanceLease { instance, slot })
     }
 
     fn return_instance(&self, lease: ModuleInstanceLease<M::Instance>) {
@@ -1510,10 +1601,10 @@ pub struct ModuleHost {
     /// Called whenever a reducer call on this host panics.
     on_panic: Arc<dyn Fn() + Send + Sync + 'static>,
 
-    /// Marks whether this module has been closed by [`Self::exit`].
-    ///
-    /// When this is true, most operations will fail with [`NoSuchModule`].
-    closed: Arc<AtomicBool>,
+    /// Shared admission and physical-operation drainage for this module.
+    /// [`Self::exit`] closes admission, rejects new work with [`NoSuchModule`],
+    /// and waits for accepted executor jobs, including cancelled callers.
+    operations: Arc<ModuleOperations>,
 }
 
 impl fmt::Debug for ModuleHost {
@@ -1529,12 +1620,19 @@ pub struct WeakModuleHost {
     info: Arc<ModuleInfo>,
     inner: Weak<ModuleHostInner>,
     on_panic: Weak<dyn Fn() + Send + Sync + 'static>,
-    closed: Weak<AtomicBool>,
+    operations: Weak<ModuleOperations>,
 }
 
 #[derive(Debug)]
 pub enum UpdateDatabaseResult {
     NoUpdateNeeded,
+    /// A prior successful commit is returned without replacing the current
+    /// module, which may already be newer than this retried publication.
+    DeploymentAlreadyCommitted {
+        result: DeploymentPublishResult,
+        tx_offset: TransactionOffset,
+        durable_offset: Option<DurableOffset>,
+    },
     UpdatePerformed {
         /// The transaction offset of the successful database update.
         tx_offset: TransactionOffset,
@@ -1559,6 +1657,7 @@ impl UpdateDatabaseResult {
             self,
             UpdateDatabaseResult::UpdatePerformed { .. }
                 | UpdateDatabaseResult::NoUpdateNeeded
+                | UpdateDatabaseResult::DeploymentAlreadyCommitted { .. }
                 | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect { .. }
         )
     }
@@ -1567,6 +1666,45 @@ impl UpdateDatabaseResult {
 #[derive(thiserror::Error, Debug)]
 #[error("no such module")]
 pub struct NoSuchModule;
+
+#[derive(thiserror::Error, Debug)]
+enum PooledCallError {
+    #[error(transparent)]
+    NoSuchModule(#[from] NoSuchModule),
+    #[error("module instance startup failed: {0}")]
+    Startup(anyhow::Error),
+}
+
+impl From<PooledCallError> for ProcedureCallError {
+    fn from(error: PooledCallError) -> Self {
+        match error {
+            PooledCallError::NoSuchModule(error) => Self::NoSuchModule(error),
+            PooledCallError::Startup(error) => {
+                Self::InternalError(format!("module instance startup failed: {error:#}"))
+            }
+        }
+    }
+}
+
+impl From<PooledCallError> for HttpHandlerCallError {
+    fn from(error: PooledCallError) -> Self {
+        match error {
+            PooledCallError::NoSuchModule(error) => Self::NoSuchModule(error),
+            PooledCallError::Startup(error) => {
+                Self::InternalError(format!("module instance startup failed: {error:#}"))
+            }
+        }
+    }
+}
+
+impl From<PooledCallError> for CallScheduledFunctionError {
+    fn from(error: PooledCallError) -> Self {
+        match error {
+            PooledCallError::NoSuchModule(error) => Self::NoSuchModule(error),
+            PooledCallError::Startup(error) => Self::InstanceStartup(error),
+        }
+    }
+}
 
 #[derive(thiserror::Error, Debug)]
 pub enum ReducerCallError {
@@ -1826,7 +1964,7 @@ impl ModuleHost {
             info,
             inner,
             on_panic,
-            closed: Arc::new(AtomicBool::new(false)),
+            operations: Arc::new(ModuleOperations::default()),
         }
     }
 
@@ -1843,20 +1981,6 @@ impl ModuleHost {
     #[inline]
     pub fn is_js(&self) -> bool {
         matches!(&*self.inner, ModuleHostInner::Js(_))
-    }
-
-    fn is_marked_closed(&self) -> bool {
-        // `self.closed` isn't used for any synchronization, it's just a shared flag,
-        // so `Ordering::Relaxed` is sufficient.
-        self.closed.load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    fn guard_closed(&self) -> Result<(), NoSuchModule> {
-        if self.is_marked_closed() {
-            Err(NoSuchModule)
-        } else {
-            Ok(())
-        }
     }
 
     fn start_call_timer(&self, label: &str) -> CallTimerGuard {
@@ -1896,7 +2020,7 @@ impl ModuleHost {
         R: Send + 'static,
         A: Send + 'static,
     {
-        self.guard_closed()?;
+        let operation = self.operations.begin()?;
         let timer_guard = self.start_call_timer(label);
 
         scopeguard::defer_on_unwind!({
@@ -1909,6 +2033,7 @@ impl ModuleHost {
                 let executor = host.executor.clone();
                 executor
                     .run_sync_job(move |state| {
+                        let _operation = operation;
                         state.with_instance(move |inst| {
                             drop(timer_guard);
                             wasm(arg, inst)
@@ -1919,7 +2044,7 @@ impl ModuleHost {
             ModuleHostInner::Js(host) => {
                 drop(timer_guard);
                 host.main_instance
-                    .with_instance(|inst| async move { js(arg, &inst).await })
+                    .with_instance(|inst| async move { js(arg, &inst.with_operation(operation)).await })
                     .await
             }
         })
@@ -1935,12 +2060,12 @@ impl ModuleHost {
         arg: A,
         wasm: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
         js: impl AsyncFnOnce(A, &JsProcedureInstance) -> R,
-    ) -> Result<R, NoSuchModule>
+    ) -> Result<R, PooledCallError>
     where
         R: Send + 'static,
         A: Send + 'static,
     {
-        self.guard_closed()?;
+        let operation = self.operations.begin()?;
         let timer_guard = self.start_call_timer(label);
 
         scopeguard::defer_on_unwind!({
@@ -1951,27 +2076,35 @@ impl ModuleHost {
         Ok(match &*self.inner {
             ModuleHostInner::Wasm(host) => {
                 let executor = host.executor.clone();
-                let instance_manager = host.procedure_instances.clone();
-                instance_manager
-                    .with_instance(async move |mut inst| {
-                        executor
-                            .run_async_job(async move || {
-                                drop(timer_guard);
-                                let res = wasm(arg, &mut inst).await;
-                                (res, inst)
-                            })
-                            .await
+                let manager = host.procedure_instances.clone();
+                let ModuleInstanceLease { mut instance, slot } = manager
+                    .get_instance(Some(operation.clone()))
+                    .await
+                    .unwrap_or_else(|never| match never {});
+                let operation = operation.with_pool_slot(slot);
+                executor
+                    .run_async_job(async move || {
+                        let _operation = operation;
+                        drop(timer_guard);
+                        let result = wasm(arg, &mut instance).await;
+                        manager.return_instance(ModuleInstanceLease { instance, slot: None });
+                        result
                     })
                     .await
             }
             ModuleHostInner::Js(host) => {
-                host.procedure_instances
-                    .with_instance(async |inst| {
-                        drop(timer_guard);
-                        let res = js(arg, &inst).await;
-                        (res, inst)
-                    })
+                let mut lease = host
+                    .procedure_instances
+                    .get_instance(Some(operation.clone()))
                     .await
+                    .map_err(PooledCallError::Startup)?;
+                lease
+                    .instance
+                    .set_operation(Some(operation.with_pool_slot(lease.slot.take())));
+                drop(timer_guard);
+                let result = js(arg, &lease.instance).await;
+                self.return_js_procedure_instance(lease);
+                result
             }
         })
     }
@@ -1982,7 +2115,7 @@ impl ModuleHost {
         label: &str,
         arg: A,
         js: impl FnOnce(A, JsMainInstance, JsFatalHook) -> JsFut,
-        wasm: impl FnOnce(A, &WasmtimeModuleHost, JsFatalHook, CallTimerGuard) -> Result<(), NoSuchModule>,
+        wasm: impl FnOnce(A, &WasmtimeModuleHost, JsFatalHook, CallTimerGuard, OperationLease) -> Result<(), NoSuchModule>,
     ) -> Result<(), NoSuchModule>
     where
         A: Send + 'static,
@@ -1994,21 +2127,20 @@ impl ModuleHost {
             (self.on_panic)();
         });
 
+        let operation = self.operations.begin()?;
         match &*self.inner {
             ModuleHostInner::Js(js_host) => {
-                self.guard_closed()?;
                 let on_panic = self.on_panic.clone();
                 js_host
                     .main_instance
-                    .with_instance(|inst| js(arg, inst, on_panic))
+                    .with_instance(|inst| js(arg, inst.with_operation(operation), on_panic))
                     .await;
                 Ok(())
             }
             ModuleHostInner::Wasm(wasm_host) => {
-                self.guard_closed()?;
                 let timer_guard = self.start_call_timer(label);
                 let on_panic = self.on_panic.clone();
-                wasm(arg, wasm_host, on_panic, timer_guard)
+                wasm(arg, wasm_host, on_panic, timer_guard, operation)
             }
         }
     }
@@ -2025,12 +2157,13 @@ impl ModuleHost {
             label,
             (cmd, metric),
             |(cmd, metric), inst, on_panic| async move { inst.enqueue_call_view(cmd, metric, on_panic).await },
-            move |(cmd, metric), wasm_host, on_panic, timer_guard| {
+            move |(cmd, metric), wasm_host, on_panic, timer_guard, operation| {
                 let info = wasm_host.module.info();
                 wasm_host.enqueue_with_main_instance(
                     label,
                     on_panic,
                     timer_guard,
+                    operation,
                     (cmd, metric),
                     move |(cmd, metric), inst| {
                         let result = inst.call_view(cmd);
@@ -2130,7 +2263,7 @@ impl ModuleHost {
     }
 
     /// Invokes the `client_disconnected` reducer, if present,
-    /// then deletes the client’s rows from `st_client` and `st_connection_credentials`.
+    /// then deletes the client's rows from `st_client`, `st_connection_credentials`, and `st_connection_auth`.
     /// If the reducer fails, the rows are still deleted.
     /// Calling this on an already-disconnected client is a no-op.
     pub fn call_identity_disconnected_inner(
@@ -2196,22 +2329,35 @@ impl ModuleHost {
             // The module defined a lifecycle reducer to handle disconnects. Call it.
             // If it succeeds, `WasmModuleInstance::call_reducer_with_tx` has already ensured
             // that `st_client` is updated appropriately.
+            let flags = crate::db::deployment::connection_auth_flags(&mut_tx, caller_connection_id, caller_identity)
+                .map_err(|err| {
+                    InvalidReducerArguments(InvalidFunctionArguments {
+                        err: err.into(),
+                        function_name: reducer_name.clone().into(),
+                    })
+                });
             let tx = Some(mut_tx);
-            let result = Self::call_reducer_params(
-                &info.module_def,
-                caller_identity,
-                Some(caller_connection_id),
-                None,
-                None,
-                None,
-                reducer_id,
-                reducer_def,
-                FunctionArgs::Nullary,
-            )
-            .map(|params| {
-                let (res, trapped) = call_reducer(tx, params);
-                *trapped_slot = trapped;
-                res
+            let result = flags.and_then(|flags| {
+                Self::call_reducer_params(
+                    &info.module_def,
+                    caller_identity,
+                    Some(caller_connection_id),
+                    None,
+                    None,
+                    None,
+                    reducer_id,
+                    reducer_def,
+                    FunctionArgs::Nullary,
+                )
+                .map(|mut params| {
+                    // This host event retains the connection's captured authority,
+                    // including after credential expiry, revocation, or host recovery.
+                    // It must not carry a live hosted proof that could block cleanup.
+                    params.call_auth_flags = flags;
+                    let (res, trapped) = call_reducer(tx, params);
+                    *trapped_slot = trapped;
+                    res
+                })
             });
 
             // If it failed, we still need to update `st_client`: the client's not coming back.
@@ -2304,6 +2450,7 @@ impl ModuleHost {
             caller_identity,
             caller_connection_id,
             call_auth_flags: 0,
+            hosted_auth: None,
             client,
             request_id,
             timer,
@@ -2314,7 +2461,7 @@ impl ModuleHost {
 
     fn reducer_call_params<'a>(
         &'a self,
-        caller_identity: Identity,
+        caller: InvocationCaller,
         caller_connection_id: Option<ConnectionId>,
         client: Option<Arc<ClientConnectionSender>>,
         request_id: Option<RequestId>,
@@ -2322,6 +2469,10 @@ impl ModuleHost {
         reducer_name: &str,
         args: FunctionArgs,
     ) -> Result<(&'a ReducerDef, CallReducerParams), ReducerCallError> {
+        let flags = caller
+            .flags_for(self.info.database_identity, &self.info.module_def)
+            .map_err(|_| ReducerCallError::NoSuchReducer)?;
+        let caller_identity = caller.identity;
         let (reducer_id, reducer_def, owning_def) = self
             .info
             .module_def
@@ -2333,25 +2484,25 @@ impl ModuleHost {
 
         if !reducer_def
             .visibility
-            .allows_invocation(false, self.is_database_owner(caller_identity))
+            .allows_invocation(flags & 1 != 0, self.is_database_owner(caller_identity))
         {
             return Err(ReducerCallError::NoSuchReducer);
         }
 
-        Ok((
+        let mut params = Self::call_reducer_params(
+            owning_def,
+            caller_identity,
+            caller_connection_id,
+            client,
+            request_id,
+            timer,
+            reducer_id,
             reducer_def,
-            Self::call_reducer_params(
-                owning_def,
-                caller_identity,
-                caller_connection_id,
-                client,
-                request_id,
-                timer,
-                reducer_id,
-                reducer_def,
-                args,
-            )?,
-        ))
+            args,
+        )?;
+        params.call_auth_flags = flags;
+        params.hosted_auth = caller.hosted;
+        Ok((reducer_def, params))
     }
 
     async fn call_reducer_with_params(
@@ -2379,7 +2530,7 @@ impl ModuleHost {
 
     async fn with_reducer_call<R>(
         &self,
-        caller_identity: Identity,
+        caller: InvocationCaller,
         caller_connection_id: Option<ConnectionId>,
         client: Option<Arc<ClientConnectionSender>>,
         request_id: Option<RequestId>,
@@ -2390,7 +2541,7 @@ impl ModuleHost {
     ) -> Result<R, ReducerCallError> {
         let res = async {
             let (reducer_def, params) = self.reducer_call_params(
-                caller_identity,
+                caller,
                 caller_connection_id,
                 client,
                 request_id,
@@ -2415,7 +2566,7 @@ impl ModuleHost {
 
     pub async fn call_reducer(
         &self,
-        caller_identity: Identity,
+        caller: impl Into<InvocationCaller> + Send,
         caller_connection_id: Option<ConnectionId>,
         client: Option<Arc<ClientConnectionSender>>,
         request_id: Option<RequestId>,
@@ -2424,7 +2575,7 @@ impl ModuleHost {
         args: FunctionArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         self.with_reducer_call(
-            caller_identity,
+            caller.into(),
             caller_connection_id,
             client,
             request_id,
@@ -2438,7 +2589,7 @@ impl ModuleHost {
 
     pub async fn enqueue_reducer(
         &self,
-        caller_identity: Identity,
+        caller: impl Into<InvocationCaller> + Send,
         caller_connection_id: Option<ConnectionId>,
         client: Option<Arc<ClientConnectionSender>>,
         request_id: Option<RequestId>,
@@ -2447,7 +2598,7 @@ impl ModuleHost {
         args: FunctionArgs,
     ) -> Result<(), ReducerCallError> {
         self.with_reducer_call(
-            caller_identity,
+            caller.into(),
             caller_connection_id,
             client,
             request_id,
@@ -2461,11 +2612,12 @@ impl ModuleHost {
                     reducer_name,
                     call.params,
                     |params, inst, on_panic| async move { inst.enqueue_reducer(params, on_panic).await },
-                    move |params, wasm_host, on_panic, timer_guard| {
+                    move |params, wasm_host, on_panic, timer_guard, operation| {
                         wasm_host.enqueue_with_main_instance(
                             &reducer_label,
                             on_panic,
                             timer_guard,
+                            operation,
                             params,
                             move |params, inst| {
                                 let _ = inst.call_reducer(params);
@@ -2590,10 +2742,15 @@ impl ModuleHost {
         &self,
         db: Arc<RelationalDB>,
         sql_text: String,
-        auth: AuthCtx,
+        auth: SqlCallAuth,
         subs: Option<ModuleSubscriptions>,
         head: &mut Vec<(RawIdentifier, AlgebraicType)>,
     ) -> Result<SqlResult, DBError> {
+        InvocationCaller {
+            identity: auth.caller(),
+            hosted: auth.hosted.clone(),
+        }
+        .flags_for(self.info.database_identity, &self.info.module_def)?;
         let cmd = SqlCommand {
             db,
             sql_text,
@@ -2609,18 +2766,15 @@ impl ModuleHost {
 
     pub async fn call_procedure(
         &self,
-        caller_identity: Identity,
+        caller: impl Into<InvocationCaller> + Send,
         caller_connection_id: Option<ConnectionId>,
         timer: Option<Instant>,
         procedure_name: &str,
         args: FunctionArgs,
     ) -> CallProcedureReturn {
         let res = async {
-            let call =
-                self.prepare_procedure_call(caller_identity, caller_connection_id, timer, procedure_name, args)?;
-            self.call_procedure_with_params(&call.name, call.params)
-                .await
-                .map_err(Into::into)
+            let call = self.prepare_procedure_call(caller.into(), caller_connection_id, timer, procedure_name, args)?;
+            self.call_procedure_with_params(&call.name, call.params).await
         }
         .await;
 
@@ -2633,7 +2787,7 @@ impl ModuleHost {
 
     pub(crate) async fn enqueue_procedure(
         &self,
-        caller_identity: Identity,
+        caller: impl Into<InvocationCaller> + Send,
         caller_connection_id: Option<ConnectionId>,
         timer: Option<Instant>,
         procedure_name: &str,
@@ -2641,7 +2795,7 @@ impl ModuleHost {
         target: ProcedureResultTarget,
     ) -> Result<(), BroadcastError> {
         let PreparedProcedureCall { name, params } =
-            match self.prepare_procedure_call(caller_identity, caller_connection_id, timer, procedure_name, args) {
+            match self.prepare_procedure_call(caller.into(), caller_connection_id, timer, procedure_name, args) {
                 Ok(value) => value,
                 Err(err) => {
                     return self.send_procedure_error(procedure_name, timer, target, err);
@@ -2655,14 +2809,39 @@ impl ModuleHost {
             (self.on_panic)();
         });
 
-        if let Err(err) = self.guard_closed() {
-            return self.send_procedure_error(&procedure_name, timer, target, err.into());
-        }
+        let operation = match self.operations.begin() {
+            Ok(operation) => operation,
+            Err(err) => return self.send_procedure_error(&procedure_name, timer, target, err.into()),
+        };
 
         match &*self.inner {
             ModuleHostInner::Js(host) => {
-                let lease = host.procedure_instances.get_instance().await;
-                let call = lease.instance.enqueue_procedure(params).await;
+                let mut lease = match host.procedure_instances.get_instance(Some(operation.clone())).await {
+                    Ok(lease) => lease,
+                    Err(error) => {
+                        return self.send_procedure_error(
+                            &procedure_name,
+                            timer,
+                            target,
+                            PooledCallError::Startup(error).into(),
+                        );
+                    }
+                };
+                lease
+                    .instance
+                    .set_operation(Some(operation.with_pool_slot(lease.slot.take())));
+                let call = match lease.instance.enqueue_procedure(params).await {
+                    Ok(call) => call,
+                    Err(error) => {
+                        self.return_js_procedure_instance(lease);
+                        return self.send_procedure_error(
+                            &procedure_name,
+                            timer,
+                            target,
+                            ProcedureCallError::InternalError(error.to_string()),
+                        );
+                    }
+                };
                 let module = self.clone();
                 tokio::spawn(async move {
                     match call.receive().await {
@@ -2670,6 +2849,16 @@ impl ModuleHost {
                             if let Err(err) = module.log_and_send_procedure_result(&procedure_name, timer, target, ret)
                             {
                                 log::warn!("failed to send procedure result: {err:#}");
+                            }
+                        }
+                        JsProcedureCallCompletion::StartupFailed(error) => {
+                            if let Err(error) = module.send_procedure_error(
+                                &procedure_name,
+                                timer,
+                                target,
+                                ProcedureCallError::InternalError(error.to_string()),
+                            ) {
+                                log::warn!("failed to send procedure startup error: {error:#}");
                             }
                         }
                         JsProcedureCallCompletion::Panicked | JsProcedureCallCompletion::WorkerExited => {
@@ -2692,6 +2881,7 @@ impl ModuleHost {
                         &procedure_name,
                         on_panic,
                         timer_guard,
+                        operation,
                         params,
                         async move |params, inst| {
                             let ret = inst.call_procedure(params).await;
@@ -2711,10 +2901,11 @@ impl ModuleHost {
         }
     }
 
-    fn return_js_procedure_instance(&self, lease: ModuleInstanceLease<JsProcedureInstance>) {
+    fn return_js_procedure_instance(&self, mut lease: ModuleInstanceLease<JsProcedureInstance>) {
         let ModuleHostInner::Js(host) = &*self.inner else {
             return;
         };
+        lease.instance.set_operation(None);
         host.procedure_instances.return_instance(lease);
     }
 
@@ -2816,14 +3007,14 @@ impl ModuleHost {
 
     fn prepare_procedure_call(
         &self,
-        caller_identity: Identity,
+        caller: InvocationCaller,
         caller_connection_id: Option<ConnectionId>,
         timer: Option<Instant>,
         procedure_name: &str,
         args: FunctionArgs,
     ) -> Result<PreparedProcedureCall, ProcedureCallError> {
         let (procedure_def, params) =
-            self.procedure_call_params(caller_identity, caller_connection_id, timer, procedure_name, args)?;
+            self.procedure_call_params(caller, caller_connection_id, timer, procedure_name, args)?;
         Ok(PreparedProcedureCall {
             name: procedure_def.name.to_string(),
             params,
@@ -2832,12 +3023,16 @@ impl ModuleHost {
 
     fn procedure_call_params<'a>(
         &'a self,
-        caller_identity: Identity,
+        caller: InvocationCaller,
         caller_connection_id: Option<ConnectionId>,
         timer: Option<Instant>,
         procedure_name: &str,
         args: FunctionArgs,
     ) -> Result<(&'a ProcedureDef, CallProcedureParams), ProcedureCallError> {
+        let flags = caller
+            .flags_for(self.info.database_identity, &self.info.module_def)
+            .map_err(|_| ProcedureCallError::NoSuchProcedure)?;
+        let caller_identity = caller.identity;
         let (procedure_id, procedure_def, owning_def) = self
             .info
             .module_def
@@ -2846,7 +3041,7 @@ impl ModuleHost {
 
         if !procedure_def
             .visibility
-            .allows_invocation(false, self.is_database_owner(caller_identity))
+            .allows_invocation(flags & 1 != 0, self.is_database_owner(caller_identity))
         {
             return Err(ProcedureCallError::NoSuchProcedure);
         }
@@ -2862,7 +3057,8 @@ impl ModuleHost {
                 timestamp: Timestamp::now(),
                 caller_identity,
                 caller_connection_id,
-                call_auth_flags: 0,
+                call_auth_flags: flags,
+                hosted_auth: caller.hosted,
                 timer,
                 procedure_id,
                 args,
@@ -2879,7 +3075,7 @@ impl ModuleHost {
         &self,
         name: &str,
         params: CallProcedureParams,
-    ) -> Result<CallProcedureReturn, NoSuchModule> {
+    ) -> Result<CallProcedureReturn, ProcedureCallError> {
         call_pooled_instance!(
             self,
             name,
@@ -2887,6 +3083,7 @@ impl ModuleHost {
             |params, inst| inst.call_procedure(params).await,
             |params, inst| inst.call_procedure(params).await,
         )
+        .map_err(Into::into)
     }
 
     pub async fn call_http_handler(
@@ -2937,10 +3134,13 @@ impl ModuleHost {
             self,
             "scheduled procedure",
             params,
-            |params, inst| inst.call_scheduled_procedure(params).await,
-            |params, inst| inst.call_scheduled_procedure(params).await,
+            |params, inst| Ok(inst.call_scheduled_procedure(params).await),
+            |params, inst| inst
+                .call_scheduled_procedure(params)
+                .await
+                .map_err(|error| CallScheduledFunctionError::InstanceStartup(error.into())),
         )
-        .map_err(Into::into)
+        .map_err(CallScheduledFunctionError::from)?
     }
 
     /// Materializes the views return by the `view_collector`, if not already materialized,
@@ -3193,14 +3393,49 @@ impl ModuleHost {
     }
 
     pub async fn init_database(&self, program: Program) -> Result<InitDatabaseResult, InitDatabaseError> {
-        call_instance!(
+        self.init_database_with_deployment(program, None).await
+    }
+
+    /// Host-only initialization following an authorized, durable control intent.
+    /// A new database installs its bootstrap fence in the initialization
+    /// transaction. Successful deployment initialization waits for durability
+    /// before its scheduler or container can be activated.
+    pub async fn init_database_with_deployment(
+        &self,
+        program: Program,
+        deployment: Option<DeploymentCommit>,
+    ) -> Result<InitDatabaseResult, InitDatabaseError> {
+        let confirm_deployment = deployment.is_some();
+        let result = call_instance!(
             self,
             "<init_database>",
-            program,
-            |p, inst| inst.init_database(p),
-            |p, inst| inst.init_database(p).await,
+            (program, deployment),
+            |(p, d), inst| inst.init_database(p, d),
+            |(p, d), inst| inst.init_database(p, d).await,
         )?
-        .map_err(InitDatabaseError::Other)
+        .map_err(InitDatabaseError::Other)?;
+        if confirm_deployment
+            && result.reducer.as_ref().is_none_or(|result| result.is_ok())
+            && let Some(mut durability) = self.relational_db().durable_tx_offset()
+        {
+            // A read barrier after init includes its receipt even when the
+            // module has no init reducer. Do not block the async worker on
+            // the datastore lock while capturing that barrier.
+            let db = self.relational_db().clone();
+            let offset = tokio::task::spawn_blocking(move || {
+                let tx = db.begin_tx(Workload::Internal);
+                let (offset, metrics, reducer) = db.release_tx(tx);
+                db.report_read_tx_metrics(reducer, metrics);
+                offset
+            })
+            .await
+            .map_err(|error| InitDatabaseError::Other(error.into()))?;
+            durability
+                .wait_for(offset)
+                .await
+                .map_err(|error| InitDatabaseError::Other(error.into()))?;
+        }
+        Ok(result)
     }
 
     pub async fn update_database(
@@ -3209,24 +3444,39 @@ impl ModuleHost {
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        self.update_database_with_deployment(program, old_module_info, policy, None)
+            .await
+    }
+
+    /// Commit the prepared deployment in the same transaction as migration.
+    pub async fn update_database_with_deployment(
+        &self,
+        program: Program,
+        old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
+        deployment: Option<DeploymentCommit>,
+    ) -> Result<UpdateDatabaseResult, anyhow::Error> {
         call_instance!(
             self,
             "<update_database>",
-            (program, old_module_info, policy),
-            |(a, b, c), inst| inst.update_database(a, b, c),
-            |(a, b, c), inst| inst.update_database(a, b, c).await,
+            (program, old_module_info, policy, deployment),
+            |(a, b, c, d), inst| inst.update_database(a, b, c, d),
+            |(a, b, c, d), inst| inst.update_database(a, b, c, d).await,
         )?
     }
 
     pub async fn exit(&self) {
-        // As in `Self::marked_closed`, `Relaxed` is sufficient because we're not synchronizing any external state.
-        self.closed.store(true, std::sync::atomic::Ordering::Relaxed);
+        // Admission and closure share one lock. Already admitted work retains
+        // its lease inside the physical executor after cancellation of a caller.
+        self.operations.close();
         self.scheduler().close();
         self.exited().await;
     }
 
     pub async fn exited(&self) {
         self.scheduler().closed().await;
+        self.operations.close();
+        self.operations.drained().await;
     }
 
     pub fn inject_logs(&self, log_level: LogLevel, function_name: &str, message: &str) {
@@ -3299,11 +3549,12 @@ impl ModuleHost {
             label,
             request,
             |request, inst, on_panic| async move { inst.enqueue_one_off_query(request, on_panic).await },
-            move |request, wasm_host, on_panic, timer_guard| {
+            move |request, wasm_host, on_panic, timer_guard, operation| {
                 let executor = wasm_host.executor.clone();
                 let info = wasm_host.module.info();
                 let label = label.to_owned();
                 executor.enqueue_sync_job(move |_| {
+                    let _operation = operation;
                     scopeguard::defer_on_unwind!({
                         log::error!("websocket one-off query operation {label} panicked");
                         on_panic();
@@ -3456,8 +3707,10 @@ impl ModuleHost {
             db.report_read_tx_metrics(reducer, tx_metrics);
         });
 
-        let result = Self::execute_one_off_query(&db, &tx, &auth, &query, &rlb_pool, |table_name, rows| {
-            ws_v1::OneOffTable { table_name, rows }
+        let result = check_hosted_admission(&*tx, &db, client.auth.hosted.as_ref()).and_then(|()| {
+            Self::execute_one_off_query(&db, &tx, &auth, &query, &rlb_pool, |table_name, rows| {
+                ws_v1::OneOffTable { table_name, rows }
+            })
         });
 
         let total_host_execution_duration = timer.elapsed().into();
@@ -3535,10 +3788,11 @@ impl ModuleHost {
             db.report_read_tx_metrics(reducer, tx_metrics);
         });
 
-        let result =
+        let result = check_hosted_admission(&*tx, &db, client.auth.hosted.as_ref()).and_then(|()| {
             Self::execute_one_off_query::<ws_v1::BsatnFormat, _>(&db, &tx, &auth, &query, &rlb_pool, |table, rows| {
                 ws_v2::SingleTableRows { table, rows }
-            });
+            })
+        });
 
         let (message, metrics) = match result {
             Ok((rows, metrics)) => {
@@ -3576,6 +3830,7 @@ impl ModuleHost {
     /// for tables without primary keys. It is only used in the benchmarks.
     /// Note: this doesn't drop the table, it just clears it!
     pub fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
+        let _operation = self.operations.begin()?;
         let db = self.relational_db();
 
         db.with_auto_commit(Workload::Internal, |tx| {
@@ -3597,7 +3852,7 @@ impl ModuleHost {
             info: self.info.clone(),
             inner: Arc::downgrade(&self.inner),
             on_panic: Arc::downgrade(&self.on_panic),
-            closed: Arc::downgrade(&self.closed),
+            operations: Arc::downgrade(&self.operations),
         }
     }
 
@@ -3636,12 +3891,12 @@ impl WeakModuleHost {
     pub fn upgrade(&self) -> Option<ModuleHost> {
         let inner = self.inner.upgrade()?;
         let on_panic = self.on_panic.upgrade()?;
-        let closed = self.closed.upgrade()?;
+        let operations = self.operations.upgrade()?;
         Some(ModuleHost {
             info: self.info.clone(),
             inner,
             on_panic,
-            closed,
+            operations,
         })
     }
 }
