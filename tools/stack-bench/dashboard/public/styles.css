@@ -275,9 +275,11 @@ table.attempt-list td { white-space: normal; overflow-wrap: anywhere; }
 table.attempt-list .run-status { padding-block: 10px; }
 .run-status summary { cursor: pointer; color: var(--yellow); }
 .loading { display: flex; align-items: center; gap: 12px; min-height: 96px; color: var(--n2); font-size: 14px; }
-main[aria-busy="true"]::before { content: ''; position: fixed; top: 0; left: 0; width: 30%; height: 2px; z-index: 10; background: var(--green); animation: loading-progress 1.4s ease-in-out infinite; }
+.loading::before { content: ''; width: 16px; height: 16px; flex-shrink: 0; border: 2px solid var(--shade1); border-top-color: var(--green); border-radius: 50%; animation: loading-spin .8s linear infinite; }
+@keyframes loading-spin { to { transform: rotate(360deg); } }
+main[aria-busy="true"]:not(:has(.loading))::before { content: ''; position: fixed; top: 0; left: 0; width: 30%; height: 2px; z-index: 10; background: var(--green); animation: loading-progress 1.4s ease-in-out infinite; }
 @keyframes loading-progress { from { transform: translateX(-100%); } to { transform: translateX(334%); } }
-@media (prefers-reduced-motion: reduce) { main[aria-busy="true"]::before { animation: none; } }
+@media (prefers-reduced-motion: reduce) { main[aria-busy="true"]:not(:has(.loading))::before, .loading::before { animation: none; } }
 [data-started-at] { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .time-grant { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin: 1rem 0; }
 .time-grant label { display: flex; align-items: center; gap: .5rem; }

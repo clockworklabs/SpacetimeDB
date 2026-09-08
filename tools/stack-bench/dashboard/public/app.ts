@@ -120,13 +120,15 @@ function chrome(current: Route): string {
 function page(current: Route): string {
   const sheet = state.sheets.get(current.key) ?? null;
   if (current.plans) {
-    return plansPage({ plans: state.plans, canStart: state.canStart, form: state.form });
+    return plansPage({ plans: state.plans, canStart: state.canStart, form: state.form,
+      loading: loading && !state.plansLoaded });
   }
   if (!current.key) {
     const running = state.overview.filter(campaign => campaign.status === 'running')
       .map(campaign => state.sheets.get(campaign.key))
       .filter((entry): entry is CampaignSheet => entry !== undefined);
-    return campaignsPage({ campaigns: state.overview, sheets: running, filter: current.filter });
+    return campaignsPage({ campaigns: state.overview, sheets: running, filter: current.filter,
+      loading: loading && !state.overviewLoaded });
   }
   if (!sheet) return `<div class="page"><div class="crumbs"><a href="/">Campaigns</a> / `
     + `<b>${esc(current.key)}</b></div></div>`;
@@ -196,7 +198,7 @@ function render(): void {
     ? state.sheets.has(current.key) : state.overviewLoaded;
   next.innerHTML = `${chrome(current)}<main aria-busy="${loading}">`
     + (state.readError ? `<div class="page err" role="alert">${esc(state.readError)} <button type="button" data-retry>Retry</button></div>` : '')
-    + (loading && !ready ? `<div class="page"><div class="title"><h2>${current.plans ? 'Run plans' : current.attempt ? 'Run details' : current.key ? 'Campaign' : 'Campaigns'}</h2></div>`
+    + (loading && !ready && current.key ? `<div class="page"><div class="title"><h2>${current.attempt ? 'Run details' : 'Campaign'}</h2></div>`
       + '<div class="loading" role="status">Loading…</div></div>' : page(current))
     + '</main>';
   patch(root, next);

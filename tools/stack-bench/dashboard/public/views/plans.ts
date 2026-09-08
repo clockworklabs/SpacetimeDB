@@ -113,14 +113,16 @@ function runForm(plans: readonly DashboardPlan[], form: RunForm): string {
     + (form.error ? `<div class="err" role="alert">${esc(form.error)}</div>` : '') + '</form>';
 }
 
-export function plansPage({ plans, canStart, form }: {
-  plans: readonly DashboardPlan[]; canStart: boolean; form: RunForm;
+export function plansPage({ plans, canStart, form, loading = false }: {
+  plans: readonly DashboardPlan[]; canStart: boolean; form: RunForm; loading?: boolean;
 }): string {
   return `<div class="page"><div class="title"><h2>Run plans</h2></div>`
     + '<p class="summary-note">Review the plan and its limits before starting. Cost limits use the plan’s recorded pricing, not a live invoice.</p>'
-    + `${canStart ? runForm(plans, form) : ''}`
+    + `${canStart && !loading ? runForm(plans, form) : ''}`
     + '<div class="tablewrap"><div class="wrap"><table class="runs plans"><thead><tr>'
     + HEADS.map(([label, kind]) => `<th class="${kind}">${label}</th>`).join('')
-    + `</tr></thead><tbody>${plans.length ? plans.map(planRow).join('')
-      : `<tr><td colspan="${HEADS.length}">no plans</td></tr>`}</tbody></table></div></div></div>`;
+    + `</tr></thead><tbody>${loading
+      ? `<tr><td colspan="${HEADS.length}"><div class="loading" role="status">Loading plans…</div></td></tr>`
+      : plans.length ? plans.map(planRow).join('')
+      : `<tr><td colspan="${HEADS.length}">No plans</td></tr>`}</tbody></table></div></div></div>`;
 }

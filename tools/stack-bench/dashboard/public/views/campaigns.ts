@@ -76,10 +76,11 @@ function row(campaign: OverviewEntry, stacks: readonly string[]): string {
     + `<td class="when">${summary ? esc(since(summary.updatedAt)) : DASH}</td></tr>`;
 }
 
-export function campaignsPage({ campaigns, sheets, filter }: {
+export function campaignsPage({ campaigns, sheets, filter, loading = false }: {
   campaigns: readonly OverviewEntry[];
   sheets: readonly CampaignSheet[];
   filter: CampaignFilter;
+  loading?: boolean;
 }): string {
   const stacks = [...new Set([
     ...campaigns.flatMap(campaign => readable(campaign) ? Object.keys(campaign.scores) : []),
@@ -88,8 +89,9 @@ export function campaignsPage({ campaigns, sheets, filter }: {
   const shown = campaigns.filter(campaign => matches(campaign, filter));
   const chips = FILTERS.map(entry =>
     `<a class="chip${entry.id === filter ? ' on' : ''}"${entry.id === filter ? ' aria-current="page"' : ''} href="/?filter=${entry.id}">`
-    + `${entry.label} ${campaigns.filter(campaign => matches(campaign, entry.id)).length}</a>`).join('');
-  const body = shown.length ? shown.map(campaign => row(campaign, stacks)).join('')
+    + `${entry.label}${loading ? '' : ` ${campaigns.filter(campaign => matches(campaign, entry.id)).length}`}</a>`).join('');
+  const body = loading ? `<tr><td colspan="${4 + stacks.length}"><div class="loading" role="status">Loading campaigns…</div></td></tr>`
+    : shown.length ? shown.map(campaign => row(campaign, stacks)).join('')
     : `<tr><td colspan="${4 + stacks.length}">No campaigns match this filter.</td></tr>`;
   return `<div class="page"><div class="title"><h2>Campaigns</h2></div>${sheets.map(live).join('')}`
     + '<p class="summary-note">Live rows show completion and spend for each running attempt. The table shows median weighted scores from usable completed results. Provisional scores still need qualification. A dash means no usable score yet.</p>'
