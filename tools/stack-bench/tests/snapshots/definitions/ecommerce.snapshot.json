@@ -2868,7 +2868,7 @@
                 "id": "901a",
                 "note": "WITHHELD until proven against a mutant (backoffice-writes-via-server) and a real failing build. The script is the app's own scripts/backoffice.mjs, required by the spec to write to the database without the web server's help — the way a cron job or another team's service would.",
                 "points": 0,
-                "statedBy": "when data changes by a path its server never saw",
+                "statedBy": "The storefront reflects current database values after changes made outside the application server.",
                 "steps": [
                   {
                     "do": "dbSetStock",

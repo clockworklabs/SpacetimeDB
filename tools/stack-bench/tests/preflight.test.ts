@@ -456,8 +456,8 @@ test('preflight fails before launch when a stack default skill document is absen
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-materials-'));
   try {
     for (const [guidance, missing, skills] of [
-      ['prescribed', 'typescript-server', ['typescript-server', 'typescript-client']],
-      ['neutral', 'typescript-client', ['typescript-server', 'typescript-client']],
+      ['prescribed', 'typescript-server', ['typescript-server', 'typescript-client', 'cli']],
+      ['neutral', 'typescript-client', ['typescript-server', 'typescript-client', 'cli']],
     ] as const) {
       const selected = parsePreflightArgs(['node', 'preflight.js', '--backend', 'spacetime',
         '--track', 'ecommerce', '--levels', '1', '--agent-adapter', 'claude-code',

@@ -185,6 +185,8 @@ test('dependency repair feedback contains only checks selected for that feature'
     const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
     assert.match(repair, /Accounts|account ownership failed/);
     assert.match(repair, /Earlier work/);
+    assert.match(repair, /Preserve earlier fixes/);
+    assert.doesNotMatch(repair, /Earlier changes did not fix/);
     assert.doesNotMatch(repair, /remaining:/);
     assert.doesNotMatch(repair, /Catalog|catalog search failed/);
     assert.doesNotMatch(repair, /check\.catalog\.search/);
@@ -366,8 +368,10 @@ test('repair feedback states clean authority without exposing scoring history', 
     const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
     assert.match(repair, /clean database reset and a fresh/);
     assert.match(repair, /Earlier work/);
+    assert.match(repair, /Preserve earlier fixes/);
+    assert.doesNotMatch(repair, /Earlier changes did not fix/);
     assert.doesNotMatch(repair, /Round|4\/6|accounts\/owner|score/i);
-    assert.match(repair, /existing local state/);
+    assert.match(repair, /existing local[\s\n]+state/);
     assert.equal(readFileSync(archive, 'utf8'), repair);
   } finally {
     rmSync(root, { recursive: true, force: true });

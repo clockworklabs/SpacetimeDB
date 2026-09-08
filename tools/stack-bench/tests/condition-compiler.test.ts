@@ -48,7 +48,7 @@ test('the prescribed condition binds independent guidance, repair, and document 
   assert.ok(spacetimeSkills);
   assert.ok(mongodbSkills);
   assert.deepEqual(spacetimeSkills.ids,
-    ['typescript-server', 'typescript-client']);
+    ['typescript-server', 'typescript-client', 'cli']);
   assert.deepEqual(mongodbSkills.ids, []);
   assert.deepEqual(condition.guidance.credentialAliases, {
     'stackbench-admin-2026': 'store-admin-2026',
@@ -82,7 +82,7 @@ test('neutral guidance uses current stack documents, skills, and credential alia
   const profile = resolveGuidanceProfile('neutral', ['mongodb', 'postgres', 'spacetime']);
   assert.equal(profile.material.designAdvice, false);
   assert.deepEqual(Object.keys(profile.documents), ['mongodb', 'postgres', 'spacetime']);
-  assert.deepEqual(profile.skills.spacetime?.ids, ['typescript-server', 'typescript-client']);
+  assert.deepEqual(profile.skills.spacetime?.ids, ['typescript-server', 'typescript-client', 'cli']);
   assert.deepEqual(profile.credentialAliases, {
     'stackbench-admin-2026': 'store-admin-2026',
     'stackbench-customer-2026': 'store-customer-2026',

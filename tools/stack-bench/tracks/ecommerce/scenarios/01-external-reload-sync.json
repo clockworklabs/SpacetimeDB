@@ -44,7 +44,7 @@
               "within": 10000
             }
           ],
-          "statedBy": "when data changes by a path its server never saw"
+          "statedBy": "The storefront reflects current database values after changes made outside the application server."
         }
       ]
     }

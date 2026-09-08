@@ -61,7 +61,7 @@ export const spacetimeAdapter = defineStackAdapter('spacetime', {
   agent: {
     connectionUrl: (_input: { dbPort: number; database: string; hostUrl(url: string): string }) => noConnectionUrl(),
     minimalGuidanceSupported: false,
-    defaultSkills: ['typescript-server', 'typescript-client'],
+    defaultSkills: ['typescript-server', 'typescript-client', 'cli'],
     linuxCliRequired: true,
     setupMetadata: spacetimeSetupMetadata,
     serverDirectory: 'backend',

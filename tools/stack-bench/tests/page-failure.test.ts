@@ -45,3 +45,15 @@ test('scoped failures expose the parent control without probe text or raw errors
     assert(pageFailure(message, 'admin-location-row').message.includes('inside the admin-location-row control'));
   }
 });
+
+
+test('alternative controls are not reported as nested controls', () => {
+  for (const operation of ['or', 'and']) {
+    const message = `locator.waitFor: Timeout waiting for locator('[data-role="signup-username"]').${operation}(locator('[data-role="signup-toggle"]'))`;
+    const failure = pageFailure(message);
+    assert.doesNotMatch(failure.message, /inside|signup-toggle|signup-username/);
+    const finding = findingOf(message);
+    assert.equal(finding.kind, 'page-timeout');
+    if (finding.kind === 'page-timeout') assert.equal(finding.fields.scope, undefined);
+  }
+});

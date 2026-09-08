@@ -271,9 +271,8 @@ export function createBugReport(args: ReportBugsArgs): number {
 
   if (!args.regressionContext && args.history.length) {
     lines.push('## Earlier work', '');
-    lines.push('Earlier changes did not fix the current problems. Use the current source as',
-      'the starting point. Do not repeat an earlier approach only because it appeared',
-      'to work with existing local state.', '');
+    lines.push('Use the current source as the starting point. Preserve earlier fixes while',
+      'addressing the remaining problems below.', '');
   }
 
   if (behavioral.length) {

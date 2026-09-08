@@ -646,11 +646,12 @@ function isExpectedBrowserFailure(error: unknown): boolean {
 // The one place raw browser text is read: a Playwright error becomes a
 // finding by its shape. The text itself travels only as human detail.
 export function pageFailure(message: string, scope?: string): ActionApplicationFailure {
-  // A scoped locator names its container first and the awaited control last.
+  // Alternative/intersection locators do not establish a parent-child scope.
   const controls = [...new Set([...message.matchAll(/data-(?:testid|role)="([a-zA-Z0-9_-]+)"/g)]
     .map(match => match[1]))];
-  const control = controls.at(-1);
-  scope ??= controls.length > 1 ? controls.at(-2) : undefined;
+  const combined = /\.(?:or|and)\(/.test(message);
+  const control = combined ? undefined : controls.at(-1);
+  scope ??= !combined && controls.length > 1 ? controls.at(-2) : undefined;
   const named = { ...(control ? { control } : {}), ...(scope ? { scope } : {}) };
   const value = /Page crashed/i.test(message) ? finding('page-crashed', { detail: message })
     : /selectOption/i.test(message) ? finding('choice-missing', { ...named, detail: message })
