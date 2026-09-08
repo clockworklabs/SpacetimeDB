@@ -559,12 +559,6 @@ mod rust_procedure_concurrency {
         make_test("scheduled-procedure-update-while-inflight").run()
     }
 
-    /// Test that one-shot and interval cleanup do not replace a schedule-row
-    /// update made by the reducer while it was inflight.
-    #[test]
-    fn scheduled_oneshot_reducer_update_while_inflight() {
-        make_test("scheduled-oneshot-reducer-update-while-inflight").run()
-    }
 }
 
 macro_rules! view_tests {

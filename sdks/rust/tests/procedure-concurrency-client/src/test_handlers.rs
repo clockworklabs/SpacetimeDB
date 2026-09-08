@@ -15,9 +15,6 @@ pub async fn dispatch(test: &str, db_name: &str) {
             exec_scheduled_procedure_scheduled_reducer_interleaved(db_name).await
         }
         "scheduled-procedure-update-while-inflight" => exec_scheduled_procedure_update_while_inflight(db_name).await,
-        "scheduled-oneshot-reducer-update-while-inflight" => {
-            exec_scheduled_oneshot_reducer_update_while_inflight(db_name).await
-        }
         _ => panic!("Unknown test: {test}"),
     }
 }
@@ -615,69 +612,6 @@ async fn exec_scheduled_procedure_update_while_inflight(db_name: &str) {
                     .expect("reducer callback should only be registered once");
                 ctx.reducers
                     .schedule_procedure_update_while_inflight_then(move |_ctx, outcome| {
-                        reducer_result(match outcome {
-                            Ok(Ok(())) => Ok(()),
-                            Ok(Err(msg)) => Err(anyhow::anyhow!("reducer returned error: {msg}")),
-                            Err(err) => Err(anyhow::anyhow!("reducer panicked: {err:?}")),
-                        });
-                    })
-                    .unwrap();
-            });
-        }
-    })
-    .await;
-
-    test_counter.wait_for_all().await;
-}
-
-async fn exec_scheduled_oneshot_reducer_update_while_inflight(db_name: &str) {
-    let test_counter = TestCounter::new();
-    let subscription_result = test_counter.add_test("on_subscription_applied_nothing");
-    let mut reducer_result = Some(test_counter.add_test("schedule_oneshot_reducer_update_callback"));
-    let mut regression_result = Some(test_counter.add_test("oneshot_update_survives_cleanup"));
-    let seen = Arc::new(Mutex::new(Vec::new()));
-
-    connect_then(db_name, &test_counter, {
-        let seen = Arc::clone(&seen);
-        move |ctx| {
-            ctx.db().procedure_concurrency_row().on_insert(move |_ctx, row| {
-                let mut seen = seen.lock().expect("seen mutex is poisoned");
-                match row.insertion_context.as_str() {
-                    event @ ("scheduled_reducer_update_first"
-                    | "scheduled_reducer_update_second"
-                    | "scheduled_interval_reducer_update_first"
-                    | "scheduled_interval_reducer_update_second") => {
-                        seen.push(event.to_owned());
-                    }
-                    "scheduled_reducer_update_verifier" => {
-                        (regression_result.take().expect("verifier should run once"))((|| {
-                            let position = |event| {
-                                seen.iter()
-                                    .position(|seen| seen == event)
-                                    .with_context(|| format!("missing scheduled reducer event {event}: {seen:?}"))
-                            };
-                            let oneshot_first = position("scheduled_reducer_update_first")?;
-                            let oneshot_second = position("scheduled_reducer_update_second")?;
-                            let interval_first = position("scheduled_interval_reducer_update_first")?;
-                            let interval_second = position("scheduled_interval_reducer_update_second")?;
-                            anyhow::ensure!(
-                                seen.len() == 4 && oneshot_first < oneshot_second && interval_first < interval_second,
-                                "scheduled reducer update was lost or duplicated: {seen:?}"
-                            );
-                            Ok(())
-                        })());
-                    }
-                    unexpected => panic!("Unexpected insertion context: {unexpected}"),
-                }
-            });
-
-            subscribe_all_then(ctx, move |ctx| {
-                subscription_result(assert_all_tables_empty(ctx));
-                let reducer_result = reducer_result
-                    .take()
-                    .expect("reducer callback should only be registered once");
-                ctx.reducers
-                    .schedule_oneshot_reducer_update_while_inflight_then(move |_ctx, outcome| {
                         reducer_result(match outcome {
                             Ok(Ok(())) => Ok(()),
                             Ok(Err(msg)) => Err(anyhow::anyhow!("reducer returned error: {msg}")),

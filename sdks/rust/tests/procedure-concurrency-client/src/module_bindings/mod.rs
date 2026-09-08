@@ -12,7 +12,6 @@ pub mod procedure_concurrency_row_table;
 pub mod procedure_concurrency_row_type;
 pub mod procedure_schedule_reducer_between_inserts_procedure;
 pub mod procedure_sleep_between_inserts_procedure;
-pub mod schedule_oneshot_reducer_update_while_inflight_reducer;
 pub mod schedule_procedure_then_reducer_reducer;
 pub mod schedule_procedure_update_while_inflight_reducer;
 pub mod scheduled_procedure_row_table;
@@ -27,7 +26,6 @@ pub use procedure_concurrency_row_table::*;
 pub use procedure_concurrency_row_type::ProcedureConcurrencyRow;
 pub use procedure_schedule_reducer_between_inserts_procedure::procedure_schedule_reducer_between_inserts;
 pub use procedure_sleep_between_inserts_procedure::procedure_sleep_between_inserts;
-pub use schedule_oneshot_reducer_update_while_inflight_reducer::schedule_oneshot_reducer_update_while_inflight;
 pub use schedule_procedure_then_reducer_reducer::schedule_procedure_then_reducer;
 pub use schedule_procedure_update_while_inflight_reducer::schedule_procedure_update_while_inflight;
 pub use scheduled_procedure_row_table::*;
@@ -46,7 +44,6 @@ pub use scheduled_reducer_row_type::ScheduledReducerRow;
 pub enum Reducer {
     InsertReducerRow,
     InsertScheduledReducer { schedule: ScheduledReducerRow },
-    ScheduleOneshotReducerUpdateWhileInflight,
     ScheduleProcedureThenReducer,
     ScheduleProcedureUpdateWhileInflight,
 }
@@ -60,7 +57,6 @@ impl __sdk::Reducer for Reducer {
         match self {
             Reducer::InsertReducerRow => "insert_reducer_row",
             Reducer::InsertScheduledReducer { .. } => "insert_scheduled_reducer",
-            Reducer::ScheduleOneshotReducerUpdateWhileInflight => "schedule_oneshot_reducer_update_while_inflight",
             Reducer::ScheduleProcedureThenReducer => "schedule_procedure_then_reducer",
             Reducer::ScheduleProcedureUpdateWhileInflight => "schedule_procedure_update_while_inflight",
             _ => unreachable!(),
@@ -69,21 +65,20 @@ impl __sdk::Reducer for Reducer {
     #[allow(clippy::clone_on_copy)]
     fn args_bsatn(&self) -> Result<Vec<u8>, __sats::bsatn::EncodeError> {
         match self {
-                        Reducer::InsertReducerRow => __sats::bsatn::to_vec(&insert_reducer_row_reducer::InsertReducerRowArgs {
-                }),
-Reducer::InsertScheduledReducer{
-                schedule,
-}             => __sats::bsatn::to_vec(&insert_scheduled_reducer_reducer::InsertScheduledReducerArgs {
-                schedule: schedule.clone(),
-}),
-            Reducer::ScheduleOneshotReducerUpdateWhileInflight => __sats::bsatn::to_vec(&schedule_oneshot_reducer_update_while_inflight_reducer::ScheduleOneshotReducerUpdateWhileInflightArgs {
-                }),
-Reducer::ScheduleProcedureThenReducer => __sats::bsatn::to_vec(&schedule_procedure_then_reducer_reducer::ScheduleProcedureThenReducerArgs {
-                }),
-Reducer::ScheduleProcedureUpdateWhileInflight => __sats::bsatn::to_vec(&schedule_procedure_update_while_inflight_reducer::ScheduleProcedureUpdateWhileInflightArgs {
-                }),
-_ => unreachable!(),
-}
+            Reducer::InsertReducerRow => __sats::bsatn::to_vec(&insert_reducer_row_reducer::InsertReducerRowArgs {}),
+            Reducer::InsertScheduledReducer { schedule } => {
+                __sats::bsatn::to_vec(&insert_scheduled_reducer_reducer::InsertScheduledReducerArgs {
+                    schedule: schedule.clone(),
+                })
+            }
+            Reducer::ScheduleProcedureThenReducer => {
+                __sats::bsatn::to_vec(&schedule_procedure_then_reducer_reducer::ScheduleProcedureThenReducerArgs {})
+            }
+            Reducer::ScheduleProcedureUpdateWhileInflight => __sats::bsatn::to_vec(
+                &schedule_procedure_update_while_inflight_reducer::ScheduleProcedureUpdateWhileInflightArgs {},
+            ),
+            _ => unreachable!(),
+        }
     }
 }
 

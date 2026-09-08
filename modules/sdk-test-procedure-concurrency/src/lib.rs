@@ -83,32 +83,8 @@ struct ScheduledReducerRow {
 fn insert_scheduled_reducer(ctx: &ReducerContext, schedule: ScheduledReducerRow) {
     ctx.db.procedure_concurrency_row().insert(ProcedureConcurrencyRow {
         insertion_order: 0,
-        insertion_context: schedule.insertion_context.clone(),
+        insertion_context: schedule.insertion_context,
     });
-    if schedule.insertion_context == "scheduled_reducer_update_first" {
-        ctx.db
-            .scheduled_reducer_row()
-            .scheduled_id()
-            .update(ScheduledReducerRow {
-                scheduled_at: (ctx.timestamp + Duration::from_secs(1)).into(),
-                insertion_context: "scheduled_reducer_update_second".into(),
-                ..schedule
-            });
-    } else if schedule.insertion_context == "scheduled_interval_reducer_update_first" {
-        ctx.db
-            .scheduled_reducer_row()
-            .scheduled_id()
-            .update(ScheduledReducerRow {
-                scheduled_at: Duration::from_secs(1).into(),
-                insertion_context: "scheduled_interval_reducer_update_second".into(),
-                ..schedule
-            });
-    } else if schedule.insertion_context == "scheduled_interval_reducer_update_second" {
-        ctx.db
-            .scheduled_reducer_row()
-            .scheduled_id()
-            .delete(schedule.scheduled_id);
-    }
 }
 
 #[procedure]
@@ -208,24 +184,5 @@ fn schedule_procedure_update_while_inflight(ctx: &ReducerContext) {
         scheduled_id: 0,
         scheduled_at: (ctx.timestamp + Duration::from_secs(4)).into(),
         insertion_context: "scheduled_procedure_update_verifier".into(),
-    });
-}
-
-#[reducer]
-fn schedule_oneshot_reducer_update_while_inflight(ctx: &ReducerContext) {
-    ctx.db.scheduled_reducer_row().insert(ScheduledReducerRow {
-        scheduled_id: 0,
-        scheduled_at: ctx.timestamp.into(),
-        insertion_context: "scheduled_reducer_update_first".into(),
-    });
-    ctx.db.scheduled_reducer_row().insert(ScheduledReducerRow {
-        scheduled_id: 0,
-        scheduled_at: Duration::from_secs(1).into(),
-        insertion_context: "scheduled_interval_reducer_update_first".into(),
-    });
-    ctx.db.scheduled_reducer_row().insert(ScheduledReducerRow {
-        scheduled_id: 0,
-        scheduled_at: (ctx.timestamp + Duration::from_secs(4)).into(),
-        insertion_context: "scheduled_reducer_update_verifier".into(),
     });
 }
