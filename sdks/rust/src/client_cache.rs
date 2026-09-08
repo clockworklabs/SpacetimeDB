@@ -2,6 +2,9 @@
 //!
 //! This module is internal, and may incompatibly change without warning.
 
+#[cfg(test)]
+mod uuid_tests;
+
 use crate::callbacks::CallbackId;
 use crate::db_connection::{debug_log, PendingMutation, SharedCell};
 use crate::spacetime_module::{InModule, SpacetimeModule, TableUpdate, WithBsatn};

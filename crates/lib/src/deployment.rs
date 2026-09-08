@@ -6,6 +6,8 @@
 use crate::container::{ContainerAction, ContainerSpec, ContainerSpecLimits, ContainerValidationError};
 use crate::{bsatn, hash_bytes, Hash, SpacetimeType, Uuid};
 
+#[cfg(feature = "serde")]
+pub mod api;
 pub mod manifest;
 
 pub const PUBLISH_PROTOCOL_VERSION: u32 = 1;

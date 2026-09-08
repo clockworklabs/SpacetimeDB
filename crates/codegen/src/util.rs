@@ -85,7 +85,10 @@ pub(super) fn type_ref_name(module: &ModuleDef, typeref: AlgebraicTypeRef) -> St
 pub(super) fn is_type_filterable(typespace: &TypespaceForGenerate, ty: &AlgebraicTypeUse) -> bool {
     match ty {
         AlgebraicTypeUse::Primitive(prim) => !matches!(prim, PrimitiveType::F32 | PrimitiveType::F64),
-        AlgebraicTypeUse::String | AlgebraicTypeUse::Identity | AlgebraicTypeUse::ConnectionId => true,
+        AlgebraicTypeUse::String
+        | AlgebraicTypeUse::Identity
+        | AlgebraicTypeUse::ConnectionId
+        | AlgebraicTypeUse::Uuid => true,
         // Sum types with all unit variants:
         AlgebraicTypeUse::Never => true,
         AlgebraicTypeUse::Option(inner) => matches!(&**inner, AlgebraicTypeUse::Unit),
