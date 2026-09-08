@@ -159,7 +159,7 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log, tran
     + `<span>rep ${attempt.repetition}</span></h2></div>`
     + (sheet.provisional ? '<p class="summary-note">Provisional results: qualification is incomplete.</p>' : '')
     + `<div class="figs">${figure('Completion', attempt.completion ? ratio(attempt.completion.passed, attempt.completion.selected) : DASH)}`
-    + figure('Spend', spend(attempt.spend) + (attempt.spendPending ? ' (so far)' : ''))
+    + figure('Spend', spend(attempt.spend, attempt.spendPending))
     + figure('Status', esc(phrase(attempt)), attempt.stalling ? 'now warn' : 'now')
     + figure('Weighted score', pct(attempt.score))
     + figure('Unaided', pct(attempt.unaided))

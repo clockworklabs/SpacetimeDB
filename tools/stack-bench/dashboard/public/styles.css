@@ -302,3 +302,8 @@ main[aria-busy="true"]:not(:has(.loading))::before { content: ''; position: fixe
   .progress-chart { min-width: 640px; }
   .progress-chart text { font-size: 20px; }
 }
+
+.spend-pending { display: inline-block; width: 6px; height: 6px; vertical-align: middle; margin-left: 3px; }
+.dot.a, .dag .d.a { animation: activity-pulse 2.8s ease-in-out infinite; }
+@keyframes activity-pulse { 50% { opacity: .4; } }
+@media (prefers-reduced-motion: reduce) { .dot.a, .dag .d.a { animation: none; } }

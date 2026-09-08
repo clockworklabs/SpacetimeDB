@@ -49,9 +49,10 @@ export function money(value: number | null | undefined): string {
   return `$${value.toFixed(2)}`;
 }
 
-export function spend(value: CostEvidence): string {
-  return value.status === 'unknown' ? 'Unknown'
-    : `${value.status === 'upper-bound' ? '≤' : ''}${money(value.costUsd)}`;
+export function spend(value: CostEvidence, pending = false): string {
+  return (value.status === 'unknown' ? 'Unknown'
+    : `${value.status === 'upper-bound' ? '≤' : ''}${money(value.costUsd)}`)
+    + (pending ? ' <span class="spend-pending dot a" role="img" aria-label="Cost still updating" title="Cost still updating"></span>' : '');
 }
 
 export function duration(seconds: number | null | undefined): string {

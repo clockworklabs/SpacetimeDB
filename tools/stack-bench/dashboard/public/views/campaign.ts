@@ -231,7 +231,7 @@ export function campaignPage(input: CampaignPageInput): string {
     + row('Regressions', stack => value(num(stack.regressions)))
     + row('Time', stack => value(duration(stack.timeSec)))
     + repetitions
-    + row('Total spend', stack => value(spend(stack.spend) + (stack.spendPending ? ' (so far)' : '')))
+    + row('Total spend', stack => value(spend(stack.spend, stack.spendPending)))
     + '</tbody></table></div>'
     + (sheet.mode === 'dependency' ? progressChart(sheet, input.progression, input.chart, input.view) : '')
     + '<h3>Runs</h3>'
@@ -240,7 +240,7 @@ export function campaignPage(input: CampaignPageInput): string {
       const href = `/c/${encodeURIComponent(sheet.key)}/a/${encodeURIComponent(attempt.id)}`;
       return `<tr><td><a href="${href}" title="${esc(attempt.variant)}">${esc(stackLabel(stack.stack))} · Rep ${attempt.repetition}</a></td>`
         + `<td>${attempt.completion ? ratio(attempt.completion.passed, attempt.completion.selected) : DASH}</td>`
-        + `<td title="Saved cost receipts through the latest grade checkpoint, including repairs. Work since that checkpoint is not yet counted.">${spend(attempt.spend)}${attempt.spendPending ? ' (so far)' : ''}</td>`
+        + `<td title="Saved cost receipts through the latest grade checkpoint, including repairs. Work since that checkpoint is not yet counted.">${spend(attempt.spend, attempt.spendPending)}</td>`
         + `<td>${ratio(attempt.repairs.used, attempt.repairs.budget)}</td>`
         + `<td>${attempt.status === 'running' || attempt.executionCompletedAt ? executionClock(attempt.executionStartedAt, attempt.executionCompletedAt) : DASH}</td>`
         + `<td class="run-status">${attempt.excluded

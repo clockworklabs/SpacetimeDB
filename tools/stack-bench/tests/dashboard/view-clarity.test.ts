@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { spend } from '../../dashboard/public/format.js';
 import type { CampaignProgression, CampaignSheet, SheetAttempt } from '../../dashboard/dashboard-views.js';
 import { campaignPage, replayTimeline, selectedProgression } from '../../dashboard/public/views/campaign.js';
 import { attemptPage } from '../../dashboard/public/views/attempt.js';
@@ -130,4 +131,11 @@ test('campaign separates aggregate scores from selected evidence and explains pe
     if (view === 'replay') assert.match(html, /5<i>\/ 5<\/i>/);
   }
 
+});
+
+test('pending cost has an accessible activity dot without changing the amount', () => {
+  const unknown = { status: 'unknown' as const, costUsd: null };
+  assert.equal(spend(unknown), 'Unknown');
+  assert.match(spend(unknown, true), /Unknown.*aria-label="Cost still updating"/);
+  assert.doesNotMatch(spend(unknown, true), /so far|partial/);
 });
