@@ -120,6 +120,11 @@ async function main() {
 
     cpSync(FIXTURE, join(app, 'spacetimedb'), { recursive: true });
     const agentExec = ['exec', ...codingContainerAgentExecOptions()];
+    const browserDom = execFileSync('docker', [...agentExec, containerName, 'chromium',
+      '--headless', '--no-sandbox', '--disable-dev-shm-usage', '--dump-dom',
+      'data:text/html,<script>document.write(6*7)</script>'],
+    { encoding: 'utf8', stdio: 'pipe', timeout: 30_000 });
+    if (!browserDom.includes('42')) throw new Error('agent browser did not execute JavaScript');
     const cliAccess = execFileSync('docker', [...agentExec, containerName, 'sh', '-c',
       `stat -c '%a %U %G' ${CODING_CONTAINER_SPACETIME_CLI}; test -x ${CODING_CONTAINER_SPACETIME_CLI}`],
     { encoding: 'utf8', stdio: 'pipe' });

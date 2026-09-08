@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { type ConclusiveResult, type DependencyGradingSelection,
+import { dependencyRepairStopReason, type ConclusiveResult, type DependencyGradingSelection,
   type DependencyPromptSelection } from '../src/progression/dependency-mode.js';
 import { compileDependencyMode } from '../src/progression/dependency-definition.js';
 import type { DependencyScore } from '../src/progression/dependency-score.js';
@@ -704,4 +704,12 @@ test('score keeps blocked points and averages questlines equally', () => {
   assert.equal(score.questlines.find(item => item.id === 'identity')!.passedPoints, 5);
   assert.equal(score.questlines.find(item => item.id === 'discovery')!.blockedPoints, 2);
   assert.equal(score.questlineAveragePercentage, 50);
+});
+
+test('repair stop summaries distinguish unchanged findings from budget limits', () => {
+  assert.equal(dependencyRepairStopReason([]), null);
+  assert.equal(dependencyRepairStopReason([{ exhaustionReason: null }]), null);
+  assert.equal(dependencyRepairStopReason([{ exhaustionReason: 'repeated-findings' }]), 'repeated-findings');
+  assert.equal(dependencyRepairStopReason([{ exhaustionReason: 'repeated-findings' },
+    { exhaustionReason: 'feature-repairs-exhausted' }]), 'feature-repairs-exhausted');
 });

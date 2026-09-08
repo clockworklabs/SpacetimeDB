@@ -34,6 +34,8 @@ export type Finding = { [K in FindingKind]: { readonly kind: K; readonly fields:
 type Renderers<Fields> = { readonly [K in keyof Fields]: (fields: Fields[K]) => string };
 
 const control = (name: string): string => `the ${name} control`;
+const scopedControl = (f: { control?: string; scope?: string }): string =>
+  `${f.control ? control(f.control) : 'a control'}${f.scope ? ` inside the ${f.scope} control` : ''}`;
 const names = (values: readonly string[]): string => values.join(', ');
 const http = (status: number | null): string => status ? `HTTP ${status}` : 'no server response';
 const operation = (value: Operation | null): string => {
@@ -55,7 +57,7 @@ export const FAILED_FINDINGS: Renderers<FailedFindingFields> = {
   'control-present': f => `${control(f.control)} was shown when it must not be`,
   'control-available': f => `${control(f.control)} stayed available to ${f.actor}`,
   'control-not-ready': f => `${control(f.control)} never became usable for ${names(f.actors)}`,
-  'control-blocked': f => `${f.control ? control(f.control) : 'a control'} is covered by another element`,
+  'control-blocked': f => `${scopedControl(f)} is covered by another element`,
   'control-empty': f => `${control(f.control)} is empty`,
   'control-unreadable': f => `${control(f.control)} is missing or unreadable for ${names(f.actors)}`,
   'value-mismatch': f => `${control(f.control)} does not show the required value`,
@@ -73,9 +75,9 @@ export const FAILED_FINDINGS: Renderers<FailedFindingFields> = {
   'actors-with-control': f => `${f.observed} actor(s) hold ${control(f.control)}, expected ${f.expected}`,
   'too-many-per-actor': f => `an actor holds more than ${f.maxEach} of ${control(f.control)}`,
   'clicks-failed': f => `${f.failed} of ${f.total} simultaneous clicks on ${control(f.control)} did not go through`,
-  'choice-missing': f => `${f.control ? control(f.control) : 'a control'} did not offer the required choice`,
+  'choice-missing': f => `${scopedControl(f)} did not offer the required choice`,
   'page-timeout': f => f.control
-    ? `${control(f.control)} did not become available in time`
+    ? `${scopedControl(f)} did not become available in time`
     : 'the page did not respond in time',
   'page-crashed': () => 'the page crashed',
   'page-error': f => `${f.control ? control(f.control) : 'the page'} did not behave as required`,
@@ -163,7 +165,7 @@ export const findingSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('control-present'), fields: controlSchema }),
   z.strictObject({ kind: z.literal('control-available'), fields: z.strictObject({ control: z.string(), actor: z.string() }) }),
   z.strictObject({ kind: z.literal('control-not-ready'), fields: z.strictObject({ control: z.string(), actors: z.array(z.string()) }) }),
-  z.strictObject({ kind: z.literal('control-blocked'), fields: z.strictObject({ control: z.string().optional(), detail: z.string().optional() }) }),
+  z.strictObject({ kind: z.literal('control-blocked'), fields: z.strictObject({ control: z.string().optional(), scope: z.string().optional(), detail: z.string().optional() }) }),
   z.strictObject({ kind: z.literal('control-empty'), fields: controlSchema }),
   z.strictObject({ kind: z.literal('control-unreadable'), fields: z.strictObject({ control: z.string(), actors: z.array(z.string()) }) }),
   z.strictObject({ kind: z.literal('value-mismatch'), fields: controlSchema }),
@@ -178,10 +180,10 @@ export const findingSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('actors-with-control'), fields: z.strictObject({ control: z.string(), observed: z.number(), expected: z.number() }) }),
   z.strictObject({ kind: z.literal('too-many-per-actor'), fields: z.strictObject({ control: z.string(), maxEach: z.number() }) }),
   z.strictObject({ kind: z.literal('clicks-failed'), fields: z.strictObject({ control: z.string(), failed: z.number(), total: z.number(), detail: z.string().optional() }) }),
-  z.strictObject({ kind: z.literal('choice-missing'), fields: z.strictObject({ control: z.string().optional(), detail: z.string().optional() }) }),
-  z.strictObject({ kind: z.literal('page-timeout'), fields: z.strictObject({ control: z.string().optional(), detail: z.string().optional() }) }),
+  z.strictObject({ kind: z.literal('choice-missing'), fields: z.strictObject({ control: z.string().optional(), scope: z.string().optional(), detail: z.string().optional() }) }),
+  z.strictObject({ kind: z.literal('page-timeout'), fields: z.strictObject({ control: z.string().optional(), scope: z.string().optional(), detail: z.string().optional() }) }),
   z.strictObject({ kind: z.literal('page-crashed'), fields: detailSchema }),
-  z.strictObject({ kind: z.literal('page-error'), fields: z.strictObject({ control: z.string().optional(), detail: z.string().optional() }) }),
+  z.strictObject({ kind: z.literal('page-error'), fields: z.strictObject({ control: z.string().optional(), scope: z.string().optional(), detail: z.string().optional() }) }),
   z.strictObject({ kind: z.literal('app-control-failed'), fields: z.strictObject({ mode: z.string(), target: targetSchema, detail: z.string().optional() }) }),
   z.strictObject({ kind: z.literal('script-failed'), fields: z.strictObject({ script: z.string(), detail: z.string().optional() }) }),
   z.strictObject({ kind: z.literal('script-invalid'), fields: z.strictObject({ script: z.string() }) }),

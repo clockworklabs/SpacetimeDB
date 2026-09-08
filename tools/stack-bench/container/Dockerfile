@@ -18,8 +18,11 @@ FROM node:22-slim@sha256:f86be15afa9a8277608e141ce2a8aa55d3d9c40845921b8511f4fb7
 # without restarting anything, which is worse than failing. None of lsof, fuser,
 # ss or netstat is present in node:22-slim.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git curl ca-certificates procps lsof \
+      git curl ca-certificates procps lsof chromium \
     && rm -rf /var/lib/apt/lists/*
+
+# Browser testing uses the system browser; no downloads into the agent home are needed.
+ENV CHROME_BIN=/usr/bin/chromium
 
 # Pinned, and the auto-updater disabled: a CLI that updates itself mid-series
 # changes the thing under test between one backend and the next. Override at

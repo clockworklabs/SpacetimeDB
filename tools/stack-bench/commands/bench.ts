@@ -61,7 +61,7 @@ import { mutationControlArgv, mutationControlTimeoutMs, pristineMutationBaseline
   from '../src/evidence/mutation-control.js';
 import type { MutationControlArgs } from '../src/evidence/mutation-control.js';
 import { progressionEngine } from '../src/progression/progression-engine.js';
-import { dependencyLevelRepairRecords, dependencyRepairBudget, dependencyRepairRecords }
+import { dependencyLevelRepairRecords, dependencyRepairBudget, dependencyRepairRecords, dependencyRepairStopReason }
   from '../src/progression/dependency-mode.js';
 import { resolveProgressionRecipeAction, resolveProgressionRecipeLevelSelection,
   resolveProgressionRepairTarget, validateProgressionCampaignLevelScope }
@@ -2775,10 +2775,13 @@ async function main() {
     const repairLimit = progressionExecution
       ? Math.max(priorRepairs + repairs, progressionRepairLimit)
       : args.repairs;
+    const progressionStopReason = progressionNext?.type !== 'repair'
+      ? dependencyRepairStopReason(nodeRepairs ?? []) : null;
     const repairBudgetExhausted = progressionExecution
-      ? finalBundleOutcome.kind === 'app_failure'
-        && progressionNext?.type !== 'repair'
+      ? finalBundleOutcome.kind === 'app_failure' && progressionStopReason !== null
+        && progressionStopReason !== 'repeated-findings'
       : priorRepairs + repairs >= args.repairs;
+    repairStopReason ??= progressionStopReason;
     const repairStatus: RepairStatus = repairStopReason === 'no-source-change' ? 'incomplete'
       : !graded ? 'ungraded'
       : finalBundleOutcome.kind === 'passed' ? (repairs > 0 ? 'corrected' : 'not-needed')

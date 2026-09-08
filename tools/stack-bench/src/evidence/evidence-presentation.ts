@@ -52,7 +52,9 @@ export function formatLevelSummary(level: LevelSummaryInput): string {
     ? level.durationSec : Math.round((level.durationMs ?? 0) / 1000);
   const status = level.error
     ? `stopped: ${level.error.replaceAll('-', ' ')}`
-    : level.repair?.status?.replaceAll('-', ' ') ?? 'complete';
+    : level.repair?.status === 'incomplete' && level.repair.stopReason
+      ? `stopped: ${level.repair.stopReason.replaceAll('-', ' ')}`
+      : level.repair?.status?.replaceAll('-', ' ') ?? 'complete';
   return `L${level.level}: ${score} | ${repairLabel} | $${totalCost.toFixed(2)} total`
     + ` ($${(level.repairCostUsd ?? 0).toFixed(2)} repairs) | ${status} | ${durationSec}s`;
 }

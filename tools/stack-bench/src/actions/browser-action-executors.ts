@@ -641,10 +641,13 @@ function isExpectedBrowserFailure(error: unknown): boolean {
 
 // The one place raw browser text is read: a Playwright error becomes a
 // finding by its shape. The text itself travels only as human detail.
-export function pageFailure(message: string): ActionApplicationFailure {
+export function pageFailure(message: string, scope?: string): ActionApplicationFailure {
   // A scoped locator names its container first and the awaited control last.
-  const control = [...message.matchAll(/data-(?:testid|role)="([^"]+)"/g)].at(-1)?.[1];
-  const named = control ? { control } : {};
+  const controls = [...new Set([...message.matchAll(/data-(?:testid|role)="([a-zA-Z0-9_-]+)"/g)]
+    .map(match => match[1]))];
+  const control = controls.at(-1);
+  scope ??= controls.length > 1 ? controls.at(-2) : undefined;
+  const named = { ...(control ? { control } : {}), ...(scope ? { scope } : {}) };
   const value = /Page crashed/i.test(message) ? finding('page-crashed', { detail: message })
     : /selectOption/i.test(message) ? finding('choice-missing', { ...named, detail: message })
     : /intercepts pointer events/i.test(message) ? finding('control-blocked', { ...named, detail: message })
@@ -655,13 +658,14 @@ export function pageFailure(message: string): ActionApplicationFailure {
 
 export function browserApplicationBoundary<Arguments, Result>(
   implementation: (arguments_: Arguments) => Result | Promise<Result>,
+  scopeOf?: (arguments_: Arguments) => string | undefined,
 ): (arguments_: Arguments) => Promise<Result> {
   return async (args: Arguments): Promise<Result> => {
     try {
       return await implementation(args);
     } catch (error) {
       if (errorField(error, 'classification') || harnessBrowserFailure(error)) throw error;
-      if (isExpectedBrowserFailure(error)) throw pageFailure(String(errorField(error, 'message') ?? error));
+      if (isExpectedBrowserFailure(error)) throw pageFailure(String(errorField(error, 'message') ?? error), scopeOf?.(args));
       throw error;
     }
   };
@@ -670,7 +674,11 @@ export function browserApplicationBoundary<Arguments, Result>(
 function contractBrowserAction<Input, Result>(
   implementation: (arguments_: BrowserArguments<Input>) => Result | Promise<Result>,
 ): ActionImplementation {
-  const bounded = browserApplicationBoundary(implementation);
+  const bounded = browserApplicationBoundary(implementation, ({ input }) => {
+    const scope = errorField(input, 'in');
+    const testid = errorField(scope, 'testid');
+    return typeof testid === 'string' ? testid : undefined;
+  });
   return actionImplementation(bounded);
 }
 

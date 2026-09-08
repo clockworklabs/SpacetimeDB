@@ -168,6 +168,13 @@ export function dependencyLevelRepairRecords(state: DependencyRepairState, level
   return dependencyRepairRecords(state, level, repaired);
 }
 
+// A stopped feature can have an unchanged-finding limit without using its repair budget.
+export function dependencyRepairStopReason(records: readonly { exhaustionReason: string | null }[]): string | null {
+  return records.find(node => node.exhaustionReason && node.exhaustionReason !== 'repeated-findings')
+    ?.exhaustionReason ?? records.find(node => node.exhaustionReason === 'repeated-findings')
+    ?.exhaustionReason ?? null;
+}
+
 export function dependencyRepairRecords(
   state: DependencyRepairState,
   level: number,

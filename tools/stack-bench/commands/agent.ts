@@ -612,6 +612,9 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
     'The environment can run /app/start.sh again with APP_WARM_START=1. '
       + 'When dependencies are current, reuse them instead of installing them again.',
     '',
+    'Chromium is installed at /usr/bin/chromium (CHROME_BIN). '
+      + 'Use that executable with --no-sandbox in this isolated container; no browser download is needed.',
+    '',
     '## Stack',
     '',
     agentVisibleContractText(backendDoc(args, p, track), args.credentialAliases,

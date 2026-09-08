@@ -29,6 +29,10 @@ harness failures, and incomplete measurements remain separate.
   manifest's `repair` object targets one failed feature or all current
   failures and sets the repair budget.
 
+`mode.unchangedFailureLimit` controls early stopping independently of the repair budget.
+The initial failure counts as one observation. To allow all five repairs per feature,
+set this limit to `7`; a limit of `3` can stop after two unchanged repairs.
+
 New dependency plans retain previously disclosed interface contracts in upgrade
 prompts by default. Set `mode.retainPriorContracts` to `false` to opt out.
 Set `repair.budget.total` to `0` for a study with no repairs. Feature

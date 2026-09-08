@@ -526,3 +526,11 @@ test('dependency grading uses its exact action scope without a second regression
     track, 'attempt');
   assert.equal(argv.includes('--regression-checks-json'), false);
 });
+
+
+test('level summary names early stopping without claiming budget exhaustion', () => {
+  const summary = formatLevelSummary({ level: 2, graded: true, score: 65, max: 70,
+    repair: { status: 'incomplete', stopReason: 'repeated-findings', used: 2, limit: 5 } });
+  assert(summary.includes('stopped: repeated findings'));
+  assert(!summary.includes('budget exhausted'));
+});
