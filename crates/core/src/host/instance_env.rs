@@ -1,4 +1,6 @@
 use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
+use crate::auth::hosted_tokens::VerifiedHostedAuth;
+use crate::auth::invocation::check_hosted_admission;
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
@@ -18,6 +20,7 @@ use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, IndexScanPointOrRange, MutTxId};
+use spacetimedb_datastore::system_tables::{is_module_restricted_index, is_module_restricted_table};
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::{http as st_http, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
@@ -49,6 +52,10 @@ pub struct InstanceEnv {
     pub func_type: FuncCallType,
     /// The name of the last, including current, function to be executed by this environment.
     pub func_name: Option<Identifier>,
+    /// Set by trusted host dispatch for this invocation, independently of JWTs
+    /// and connection IDs. Cleared before each new function call.
+    call_auth_flags: u32,
+    hosted_auth: Option<std::sync::Arc<VerifiedHostedAuth>>,
     /// Are we in an anonymous tx context?
     in_anon_tx: bool,
     /// A procedure's last known transaction offset.
@@ -235,6 +242,8 @@ impl InstanceEnv {
             // run a function
             func_type: FuncCallType::Reducer,
             func_name: None,
+            call_auth_flags: 0,
+            hosted_auth: None,
             in_anon_tx: false,
             procedure_last_tx_offset: None,
         }
@@ -251,6 +260,20 @@ impl InstanceEnv {
         self.start_instant = Instant::now();
         self.func_type = func_type;
         self.func_name = Some(name);
+        self.call_auth_flags = 0;
+        self.hosted_auth = None;
+    }
+
+    pub(crate) fn set_call_auth_flags(&mut self, flags: u32) {
+        self.call_auth_flags = flags;
+    }
+
+    pub(crate) fn set_hosted_auth(&mut self, auth: Option<std::sync::Arc<VerifiedHostedAuth>>) {
+        self.hosted_auth = auth;
+    }
+
+    pub(crate) fn get_call_auth_flags(&self) -> u32 {
+        self.call_auth_flags
     }
 
     /// Returns the name of the most recent reducer to be run in this environment,
@@ -281,9 +304,37 @@ impl InstanceEnv {
         self.replica_ctx.relational_db()
     }
 
+    /// Dedicated read-only environment access. Missing reads also register a
+    /// dependency so a later insert refreshes a view that observed absence.
+    pub(crate) fn env_get(&self, key: &str) -> Result<Option<String>, NodesError> {
+        use crate::db::environment;
+        use spacetimedb_datastore::system_tables::ST_ENV_ID;
+        spacetimedb_lib::environment::validate_key(key).map_err(|_| NodesError::InvalidEnvironmentKey)?;
+        let read = |state: &_| environment::get(state, key).map_err(|err| NodesError::from(DBError::Other(err.into())));
+        if let Ok(mut tx) = self.get_tx() {
+            tx.record_table_scan(&self.func_type, ST_ENV_ID);
+            return read(&*tx);
+        }
+        if !matches!(self.func_type, FuncCallType::Procedure) {
+            return Err(NodesError::NotInTransaction);
+        }
+        self.relational_db().with_read_only(Workload::Internal, |tx| {
+            check_hosted_admission(tx, self.relational_db(), self.hosted_auth.as_deref())
+                .map_err(|err| NodesError::HostedInvocationRejected(err.to_string()))?;
+            environment::get(tx, key).map_err(|err| NodesError::from(DBError::Other(err.into())))
+        })
+    }
+
     pub(crate) fn get_jwt_payload(&self, connection_id: ConnectionId) -> Result<Option<String>, NodesError> {
-        let tx = &mut *self.get_tx()?;
-        Ok(tx.get_jwt_payload(connection_id).map_err(DBError::from)?)
+        if let Ok(tx) = self.get_tx() {
+            return Ok(tx.get_jwt_payload(connection_id).map_err(DBError::from)?);
+        }
+        // Procedures may inspect authentication before opening their first
+        // transaction. Use a short read transaction without manufacturing an
+        // internal caller or dropping the real connection's JWT.
+        Ok(self.relational_db().with_read_only(Workload::Internal, |tx| {
+            tx.get_jwt_payload(connection_id).map_err(DBError::from)
+        })?)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -355,9 +406,20 @@ impl InstanceEnv {
         count
     }
 
+    /// Engine-owned deployment/authentication records and environment values
+    /// are reachable only through their dedicated host interfaces.
+    fn require_module_table(table_id: TableId) -> Result<(), NodesError> {
+        if is_module_restricted_table(table_id) {
+            Err(NodesError::TableNotFound)
+        } else {
+            Ok(())
+        }
+    }
+
     pub fn insert(&self, table_id: TableId, buffer: &mut [u8]) -> Result<usize, NodesError> {
         let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
+        Self::require_module_table(table_id)?;
 
         let (row_len, row_ptr, insert_flags) = stdb
             .insert(tx, table_id, buffer)
@@ -436,6 +498,7 @@ impl InstanceEnv {
     pub fn update(&self, table_id: TableId, index_id: IndexId, buffer: &mut [u8]) -> Result<usize, NodesError> {
         let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
+        Self::require_module_table(table_id)?;
 
         let (row_len, row_ptr, update_flags) = stdb
             .update(tx, table_id, index_id, buffer)
@@ -479,6 +542,7 @@ impl InstanceEnv {
 
         // Find all rows in the table to delete.
         let (table_id, _, iter) = stdb.index_scan_point(tx, index_id, point)?;
+        Self::require_module_table(table_id)?;
         // Re. `SmallVec`, `delete_by_field` only cares about 1 element, so optimize for that.
         let rows_to_delete = iter.map(|row_ref| row_ref.pointer()).collect::<SmallVec<[_; 1]>>();
 
@@ -499,6 +563,7 @@ impl InstanceEnv {
 
         // Find all rows in the table to delete.
         let (table_id, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+        Self::require_module_table(table_id)?;
         // Re. `SmallVec`, `delete_by_field` only cares about 1 element, so optimize for that.
         let rows_to_delete = match iter {
             IndexScanPointOrRange::Point(_, iter) => iter.map(|row_ref| row_ref.pointer()).collect(),
@@ -540,6 +605,7 @@ impl InstanceEnv {
     pub fn datastore_delete_all_by_eq_bsatn(&self, table_id: TableId, relation: &[u8]) -> Result<u32, NodesError> {
         let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
+        Self::require_module_table(table_id)?;
 
         // Track the number of bytes coming from the caller
         tx.metrics.bytes_scanned += relation.len();
@@ -563,6 +629,7 @@ impl InstanceEnv {
     pub fn clear(&self, table_id: TableId) -> Result<u64, NodesError> {
         let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
+        Self::require_module_table(table_id)?;
 
         let rows_deleted = stdb.clear_table(tx, table_id).map_err(NodesError::from)?;
 
@@ -584,6 +651,7 @@ impl InstanceEnv {
 
         // Query the table id from the name.
         stdb.table_id_from_name_mut(tx, table_name)?
+            .filter(|id| !is_module_restricted_table(*id))
             .ok_or(NodesError::TableNotFound)
     }
 
@@ -598,6 +666,7 @@ impl InstanceEnv {
 
         // Query the index id from the name.
         stdb.index_id_from_name_mut(tx, index_name)?
+            .filter(|id| !is_module_restricted_index(*id))
             .ok_or(NodesError::IndexNotFound)
     }
 
@@ -609,6 +678,7 @@ impl InstanceEnv {
     pub fn datastore_table_row_count(&self, table_id: TableId) -> Result<u64, NodesError> {
         let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
+        Self::require_module_table(table_id)?;
 
         // Query the row count for id.
         stdb.table_row_count_mut(tx, table_id)
@@ -625,6 +695,7 @@ impl InstanceEnv {
         table_id: TableId,
     ) -> Result<Vec<Vec<u8>>, NodesError> {
         let tx = &mut *self.get_tx()?;
+        Self::require_module_table(table_id)?;
 
         // Open the iterator.
         let iter = self.relational_db().iter_mut(tx, table_id)?;
@@ -652,6 +723,7 @@ impl InstanceEnv {
 
         // Open index iterator
         let (table_id, point, iter) = self.relational_db().index_scan_point(tx, index_id, point)?;
+        Self::require_module_table(table_id)?;
 
         // Scan the index and serialize rows to BSATN.
         let (chunks, rows_scanned, bytes_scanned) = ChunkedWriter::collect_iter(pool, iter);
@@ -682,6 +754,7 @@ impl InstanceEnv {
         let (table_id, iter) =
             self.relational_db()
                 .index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+        Self::require_module_table(table_id)?;
 
         // Scan the index and serialize rows to BSATN.
         let (point, (chunks, rows_scanned, bytes_scanned)) = match iter {
@@ -741,6 +814,10 @@ impl InstanceEnv {
         let tx = self
             .relational_db()
             .begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        if let Err(err) = check_hosted_admission(&tx, self.relational_db(), self.hosted_auth.as_deref()) {
+            let _ = tx.rollback();
+            return Err(NodesError::HostedInvocationRejected(err.to_string()));
+        }
         self.tx.set_raw(tx);
         self.in_anon_tx = true;
 
@@ -1399,12 +1476,204 @@ mod test {
         Ok(db)
     }
 
+    #[test]
+    fn environment_reads_use_active_transaction_and_track_missing_view_dependency() -> Result<()> {
+        use crate::db::environment;
+        use spacetimedb_datastore::locking_tx_datastore::ViewCallInfo;
+        use spacetimedb_datastore::system_tables::ST_ENV_ID;
+        use spacetimedb_primitives::{ViewFnPtr, ViewId};
+        let db = relational_db()?;
+        let (mut env, _runtime) = instance_env(db.clone())?;
+        assert!(matches!(env.env_get("A"), Err(NodesError::NotInTransaction)));
+        env.func_type = FuncCallType::Procedure;
+        assert_eq!(env.env_get("A")?, None);
+        let mut tx = begin_mut_tx(&db);
+        environment::set(&db, &mut tx, "A", "uncommitted")?;
+        env.tx.set_raw(tx);
+        assert_eq!(env.env_get("A")?.as_deref(), Some("uncommitted"));
+        let view = ViewCallInfo {
+            view_id: ViewId(88),
+            table_id: ST_ENV_ID,
+            fn_ptr: ViewFnPtr(0),
+            sender: None,
+        };
+        env.func_type = FuncCallType::View(view.clone());
+        assert_eq!(env.env_get("MISSING")?, None);
+        let tx = env.tx.take()?;
+        db.commit_tx(tx)?;
+        let mut tx = begin_mut_tx(&db);
+        environment::set(&db, &mut tx, "MISSING", "")?;
+        assert!(tx.views_for_refresh().any(|dependency| dependency == &view));
+        let (_, metrics, reducer) = db.rollback_mut_tx(tx);
+        db.report_mut_tx_metrics(reducer, metrics, None);
+        env.func_type = FuncCallType::Procedure;
+        assert_eq!(env.env_get("MISSING")?, None);
+        assert!(matches!(env.env_get("A=B"), Err(NodesError::InvalidEnvironmentKey)));
+        Ok(())
+    }
+
+    #[test]
+    fn procedure_environment_snapshot_rechecks_durable_fence_and_expiry() -> Result<()> {
+        use crate::auth::{
+            hosted_tokens::{sign_hosted_token, HostedTokenBinding, HostedTokenValidator},
+            JwtKeys,
+        };
+        use crate::db::{deployment::install_container_fence, environment};
+        use spacetimedb_datastore::system_tables::StContainerFenceRow;
+        use std::time::SystemTime;
+        let db = relational_db()?;
+        db.hosted_admission().begin()?.complete()?;
+        let (mut env, _runtime) = instance_env(db.clone())?;
+        env.func_type = FuncCallType::Procedure;
+        let keys = JwtKeys::generate()?;
+        let validator = HostedTokenValidator::new([("platform.test".into(), keys.public)])?;
+        let mint = |issued: SystemTime| -> Result<_> {
+            let binding = HostedTokenBinding {
+                source_database: db.database_identity(),
+                target_database: db.database_identity(),
+                generation: 1,
+                grant_revision: 1,
+                lease_expires_at: issued + Duration::from_secs(30),
+            };
+            let token = sign_hosted_token(
+                &keys.private,
+                "platform.test",
+                &binding,
+                issued,
+                issued + Duration::from_secs(20),
+                "env-test",
+            )?;
+            Ok(Arc::new(validator.validate_token(
+                &token,
+                db.database_identity(),
+                issued,
+                |_, _, _| Some(binding),
+            )?))
+        };
+        let fence = |generation, allowed| StContainerFenceRow {
+            source_identity: db.database_identity().into(),
+            generation,
+            target_grant_revision: generation,
+            target_set_hash: Hash::ZERO,
+            allowed,
+        };
+        db.with_auto_commit(Workload::ForTests, |tx| -> Result<()> {
+            install_container_fence(&db, tx, &fence(1, true))?;
+            environment::set(&db, tx, "VALUE", "available")?;
+            Ok(())
+        })?;
+        env.set_hosted_auth(Some(mint(SystemTime::now())?));
+        assert_eq!(env.env_get("VALUE")?.as_deref(), Some("available"));
+        env.set_hosted_auth(Some(mint(SystemTime::now() - Duration::from_secs(60))?));
+        assert!(matches!(
+            env.env_get("VALUE"),
+            Err(NodesError::HostedInvocationRejected(_))
+        ));
+        env.set_hosted_auth(Some(mint(SystemTime::now())?));
+        db.with_auto_commit(Workload::ForTests, |tx| {
+            install_container_fence(&db, tx, &fence(2, false))
+        })?;
+        assert!(matches!(
+            env.env_get("VALUE"),
+            Err(NodesError::HostedInvocationRejected(_))
+        ));
+        env.set_hosted_auth(None);
+        assert_eq!(env.env_get("VALUE")?.as_deref(), Some("available"));
+        Ok(())
+    }
+
     /// Generate a `ProductValue` for use in [create_table_with_index]
     fn product_row(i: usize) -> ProductValue {
         let str = i.to_string();
         let str = str.repeat(i);
         let id = i as u64;
         product!(id, str)
+    }
+
+    #[test]
+    fn module_cannot_access_hosted_system_records_by_guessed_ids() -> Result<()> {
+        use spacetimedb_datastore::system_tables::{
+            ST_CONNECTION_AUTH_ID, ST_CONTAINER_ENVIRONMENT_ID, ST_CONTAINER_FENCE_ID, ST_DEPLOYMENT_ID,
+            ST_DEPLOYMENT_OPERATION_ID, ST_ENV_ID, ST_PUBLISH_FENCE_ID,
+        };
+        let db = relational_db()?;
+        let (env, _runtime) = instance_env(db.clone())?;
+        let mut slot = env.tx.clone();
+        let protected = [
+            (ST_ENV_ID, "st_env", to_vec("TOKEN")?),
+            (ST_DEPLOYMENT_ID, "st_deployment", to_vec(&0u8)?),
+            (ST_PUBLISH_FENCE_ID, "st_publish_fence", to_vec(&0u8)?),
+            (ST_DEPLOYMENT_OPERATION_ID, "st_deployment_operation", to_vec(&0u128)?),
+            (ST_CONNECTION_AUTH_ID, "st_connection_auth", to_vec(&0u128)?),
+            (ST_CONTAINER_ENVIRONMENT_ID, "st_container_environment", to_vec(&0u64)?),
+            (
+                ST_CONTAINER_FENCE_ID,
+                "st_container_fence",
+                to_vec(&spacetimedb_sats::u256::ZERO)?,
+            ),
+        ];
+        let tx = begin_mut_tx(&db);
+        let (tx, result) = slot.set(tx, || -> Result<()> {
+            for (table, name, point) in &protected {
+                // Host lookup remains available, independently of module lookup.
+                let (index, index_name) = {
+                    let tx = env.get_tx()?;
+                    let schema = db.schema_for_table_mut(&tx, *table)?;
+                    let index = &schema.indexes[0];
+                    (index.index_id, index.index_name.to_string())
+                };
+                assert!(matches!(env.table_id_from_name(name), Err(NodesError::TableNotFound)));
+                assert!(matches!(
+                    env.index_id_from_name(&index_name),
+                    Err(NodesError::IndexNotFound)
+                ));
+                assert!(matches!(env.insert(*table, &mut []), Err(NodesError::TableNotFound)));
+                assert!(matches!(
+                    env.update(*table, index, &mut []),
+                    Err(NodesError::TableNotFound)
+                ));
+                assert!(matches!(env.clear(*table), Err(NodesError::TableNotFound)));
+                assert!(matches!(
+                    env.datastore_table_row_count(*table),
+                    Err(NodesError::TableNotFound)
+                ));
+                assert!(matches!(
+                    env.datastore_table_scan_bsatn_chunks(&mut ChunkPool::default(), *table),
+                    Err(NodesError::TableNotFound)
+                ));
+                assert!(matches!(
+                    env.datastore_delete_all_by_eq_bsatn(*table, &[]),
+                    Err(NodesError::TableNotFound)
+                ));
+                assert!(matches!(
+                    env.datastore_index_scan_point_bsatn_chunks(&mut ChunkPool::default(), index, point),
+                    Err(NodesError::TableNotFound)
+                ));
+                assert!(matches!(
+                    env.datastore_delete_by_index_scan_point_bsatn(index, point),
+                    Err(NodesError::TableNotFound)
+                ));
+                let bound = to_vec(&Bound::<AlgebraicValue>::Unbounded)?;
+                assert!(matches!(
+                    env.datastore_index_scan_range_bsatn_chunks(
+                        &mut ChunkPool::default(),
+                        index,
+                        &[],
+                        0.into(),
+                        &bound,
+                        &bound
+                    ),
+                    Err(NodesError::TableNotFound)
+                ));
+                assert!(matches!(
+                    env.datastore_delete_by_index_scan_range_bsatn(index, &[], 0.into(), &bound, &bound),
+                    Err(NodesError::TableNotFound)
+                ));
+            }
+            Ok(())
+        });
+        let _ = db.rollback_mut_tx(tx);
+        result
     }
 
     /// Generate a BSATN encoded row for use in [create_table_with_index]

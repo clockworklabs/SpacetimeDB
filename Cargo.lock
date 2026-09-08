@@ -2106,6 +2106,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "environment-test"
+version = "0.0.0"
+dependencies = [
+ "spacetimedb 2.3.0",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2891,6 +2898,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "589533453244b0995c858700322199b2becb13b627df2851f64a2775d024abcf"
 dependencies = [
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "hosted-auth-test"
+version = "0.0.0"
+dependencies = [
+ "spacetimedb 2.3.0",
 ]
 
 [[package]]
@@ -7806,6 +7820,7 @@ name = "spacetimedb-cli"
 version = "2.3.0"
 dependencies = [
  "anyhow",
+ "axum",
  "base64 0.21.7",
  "bytes",
  "cargo_metadata",
@@ -7843,10 +7858,12 @@ dependencies = [
  "rolldown_common",
  "rolldown_error",
  "rolldown_utils",
+ "rustix 1.1.2",
  "rustyline",
  "serde",
  "serde_json",
  "serde_with",
+ "sha2",
  "slab",
  "spacetimedb-auth",
  "spacetimedb-client-api-messages",
@@ -7855,6 +7872,7 @@ dependencies = [
  "spacetimedb-fs-utils",
  "spacetimedb-jsonwebtoken",
  "spacetimedb-lib 2.3.0",
+ "spacetimedb-oci",
  "spacetimedb-paths",
  "spacetimedb-primitives 2.3.0",
  "spacetimedb-schema",
@@ -7869,9 +7887,12 @@ dependencies = [
  "tikv-jemallocator",
  "tokio",
  "tokio-tungstenite 0.27.0",
+ "tokio-util",
  "toml 0.8.23",
  "toml_edit 0.22.27",
  "tracing",
+ "url",
+ "uuid",
  "walkdir",
  "wasmbin",
  "webbrowser",
@@ -8370,6 +8391,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-oci"
+version = "2.3.0"
+dependencies = [
+ "anyhow",
+ "flate2",
+ "serde",
+ "serde_json",
+ "sha2",
+ "spacetimedb-lib 2.3.0",
+ "tar",
+ "zstd",
+]
+
+[[package]]
 name = "spacetimedb-paths"
 version = "2.3.0"
 dependencies = [
@@ -8775,11 +8810,13 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
+ "spacetimedb-auth",
  "spacetimedb-cli",
  "spacetimedb-client-api",
  "spacetimedb-client-api-messages",
  "spacetimedb-core",
  "spacetimedb-data-structures",
+ "spacetimedb-datastore",
  "spacetimedb-lib 2.3.0",
  "spacetimedb-paths",
  "spacetimedb-schema",
@@ -10236,6 +10273,7 @@ checksum = "2f87b8aa10b915a06587d0dec516c282ff295b475d94abf425d62b57710070a2"
 dependencies = [
  "getrandom 0.3.4",
  "js-sys",
+ "serde",
  "wasm-bindgen",
 ]
 

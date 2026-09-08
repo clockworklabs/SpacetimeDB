@@ -13,6 +13,7 @@
 #include <cstdio>
 #include "../bsatn/bsatn.h"
 #include "../database.h"
+#include "../function_visibility.h"
 #include "autogen/CaseConversionPolicy.g.h"
 #include "autogen/ExplicitNameEntry.g.h"
 #include "autogen/NameMapping.g.h"
@@ -47,6 +48,7 @@ void fail_reducer(std::string message);
 
 namespace Internal {
 
+// Builds the V10 module definition with explicit function visibility.
 class V10Builder {
 public:
     V10Builder() = default;
@@ -435,7 +437,7 @@ public:
         RawReducerDefV10 reducer_def{
             reducer_name,
             ProductType{},
-            FunctionVisibility::Private,
+            FunctionVisibility::Internal,
             MakeUnitAlgebraicType(),
             MakeStringAlgebraicType(),
         };
@@ -623,6 +625,7 @@ public:
 
     void RegisterExplicitTableName(const std::string& source_name, const std::string& canonical_name);
     void RegisterExplicitFunctionName(const std::string& source_name, const std::string& canonical_name);
+    void SetFunctionVisibility(const std::string& source_name, ::SpacetimeDB::FunctionVisibility visibility);
     void RegisterExplicitIndexName(const std::string& source_name, const std::string& canonical_name);
 
     RawModuleDefV10 BuildModuleDef() const;

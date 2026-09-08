@@ -885,6 +885,25 @@ pub mod raw {
         pub fn datastore_clear(table_id: TableId, out: *mut u64) -> u16;
     }
 
+    #[link(wasm_import_module = "spacetime_10.6")]
+    unsafe extern "C" {
+        /// Authentication flags for the active invocation. Bit 0 is INTERNAL.
+        /// Read at context construction; neither a missing connection ID nor JWT
+        /// claims imply internal authority. Unknown bits must be ignored.
+        pub fn get_call_auth_flags() -> u32;
+    }
+
+    #[link(wasm_import_module = "spacetime_10.7")]
+    unsafe extern "C" {
+        /// Read a UTF-8 environment value. Writes INVALID for a missing key;
+        /// present empty strings have a valid BytesSource. Returns ordinary errno.
+        /// Invalid keys return HOST_CALL_FAILURE. NO_SPACE means 256 byte
+        /// sources remain unconsumed; consume a source before retrying.
+        /// Calls outside a reducer/view
+        /// transaction or procedure return NOT_IN_TRANSACTION.
+        pub fn env_get(key: *const u8, key_len: usize, out: *mut BytesSource) -> u16;
+    }
+
     /// What strategy does the database index use?
     ///
     /// See also: <https://www.postgresql.org/docs/current/sql-createindex.html>
@@ -1496,6 +1515,14 @@ pub fn get_jwt(connection_id: [u8; 16]) -> Option<raw::BytesSource> {
     }
 }
 
+/// Read a database environment value without exposing the system table.
+#[inline]
+pub fn env_get(key: &str) -> Option<raw::BytesSource> {
+    let source = unsafe { call(|out| raw::env_get(key.as_ptr(), key.len(), out)) }
+        .unwrap_or_else(|errno: Errno| panic!("Error reading environment: {errno}"));
+    (source != raw::BytesSource::INVALID).then_some(source)
+}
+
 pub struct RowIter {
     raw: raw::RowIter,
 }
@@ -1660,4 +1687,11 @@ pub mod procedure {
             Some(errno) => panic!("{errno}"),
         }
     }
+}
+
+/// Read host-verified authentication flags for the active invocation.
+/// Bit 0 is INTERNAL; all other bits are reserved.
+pub fn get_call_auth_flags() -> u32 {
+    // SAFETY: no pointers or guest-provided values are passed to the host.
+    unsafe { raw::get_call_auth_flags() }
 }

@@ -39,3 +39,45 @@ declare_tests! {
     test_codegen_typescript => TypeScript,
     test_codegen_rust => Rust,
 }
+
+#[test]
+fn rust_uuid_primary_and_unique_keys_generate_registered_lookup_accessors() {
+    use spacetimedb_lib::{
+        db::raw_def::{v10::RawModuleDefV10Builder, v9::btree},
+        AlgebraicType,
+    };
+
+    let mut builder = RawModuleDefV10Builder::new();
+    builder
+        .build_table_with_new_type(
+            "uuid_rows",
+            [
+                ("id", AlgebraicType::uuid()),
+                ("alias", AlgebraicType::uuid()),
+                ("sequence", AlgebraicType::U64),
+            ],
+            true,
+        )
+        .with_primary_key(0)
+        .with_unique_constraint(0)
+        .with_index(btree(0), "uuid_rows_id_idx", "id")
+        .with_unique_constraint(1)
+        .with_index(btree(1), "uuid_rows_alias_idx", "alias")
+        .with_unique_constraint(2)
+        .with_index(btree(2), "uuid_rows_sequence_idx", "sequence")
+        .finish();
+    let module = ModuleDef::try_from(builder.finish()).unwrap();
+    let table = generate(&module, &Rust, &CodegenOptions::default())
+        .into_iter()
+        .find(|file| file.filename == "uuid_rows_table.rs")
+        .unwrap()
+        .code;
+    for column in ["id", "alias"] {
+        assert!(table.contains(&format!("pub fn {column}(&self)")));
+        assert!(table.contains(&format!(
+            "add_unique_constraint::<__sdk::Uuid>({column:?}, |row| &row.{column})"
+        )));
+    }
+    assert!(table.contains("pub fn find(&self, col_val: &__sdk::Uuid) -> Option<UuidRows>"));
+    assert!(table.contains("add_unique_constraint::<u64>(\"sequence\", |row| &row.sequence)"));
+}

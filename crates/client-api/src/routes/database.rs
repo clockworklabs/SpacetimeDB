@@ -158,16 +158,19 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
 
     let (module, Database { owner_identity, .. }) = find_module_and_database(&worker_ctx, name_or_identity).await?;
 
+    let caller_auth: ConnectionAuthCtx = auth.into();
+    let caller = spacetimedb::auth::invocation::InvocationCaller::from(&caller_auth);
+
     // Call the database's `client_connected` reducer, if any.
     // If it fails or rejects the connection, bail.
     module
-        .call_identity_connected(auth.into(), connection_id)
+        .call_identity_connected(caller_auth, connection_id)
         .await
         .map_err(client_connected_error_to_response)?;
 
     let result = match module
         .call_reducer(
-            caller_identity,
+            caller.clone(),
             Some(connection_id),
             None,
             None,
@@ -181,7 +184,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         Err(ReducerCallError::NoSuchReducer | ReducerCallError::ScheduleReducerNotFound) => {
             // Not a reducer — try procedure instead
             match module
-                .call_procedure(caller_identity, Some(connection_id), None, &reducer, args)
+                .call_procedure(caller, Some(connection_id), None, &reducer, args)
                 .await
                 .result
             {
@@ -549,7 +552,8 @@ where
     let module_def = &module.info.module_def;
     let response_json = match version {
         SchemaVersion::V9 => {
-            let raw = RawModuleDefV9::from(module_def.as_ref().clone());
+            let raw = RawModuleDefV9::try_from(module_def.as_ref().clone())
+                .map_err(|err| bad_request(err.to_string().into()))?;
             axum::Json(sats::serde::SerdeWrapper(raw)).into_response()
         }
         SchemaVersion::V10 => {
@@ -728,7 +732,7 @@ where
     // If it rejects the connection, bail before executing SQL.
     let module = host.module().await.map_err(log_and_500)?;
     module
-        .call_identity_connected(caller_auth, connection_id)
+        .call_identity_connected(caller_auth.clone(), connection_id)
         .await
         .map_err(client_connected_error_to_response)?;
 
@@ -737,6 +741,8 @@ where
             .authorize_sql(caller_identity, database.database_identity)
             .await?;
 
+        let sql_auth =
+            spacetimedb::auth::invocation::SqlCallAuth::authenticated(sql_auth, &caller_auth).map_err(log_and_500)?;
         host.exec_sql(
             sql_auth,
             database,
@@ -1067,6 +1073,11 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
             | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect {
                 tx_offset,
                 durable_offset,
+            }
+            | UpdateDatabaseResult::DeploymentAlreadyCommitted {
+                tx_offset,
+                durable_offset,
+                ..
             },
         ) => {
             timeout(confirmation_timeout.min(MAX_UPDATE_CONFIRMATION_TIMEOUT), async {

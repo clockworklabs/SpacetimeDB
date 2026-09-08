@@ -7,10 +7,20 @@ use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::Identity;
 use std::time::SystemTime;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ConnectionAuthCtx {
     pub claims: SpacetimeIdentityClaims,
     pub jwt_payload: Box<str>,
+    pub hosted: Option<crate::hosted::VerifiedHostedAuth>,
+}
+
+impl std::fmt::Debug for ConnectionAuthCtx {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConnectionAuthCtx")
+            .field("identity", &self.claims.identity)
+            .field("hosted", &self.hosted)
+            .finish_non_exhaustive()
+    }
 }
 
 impl TryFrom<SpacetimeIdentityClaims> for ConnectionAuthCtx {
@@ -20,6 +30,7 @@ impl TryFrom<SpacetimeIdentityClaims> for ConnectionAuthCtx {
         Ok(ConnectionAuthCtx {
             claims,
             jwt_payload: payload.into(),
+            hosted: None,
         })
     }
 }
@@ -98,6 +109,15 @@ impl TryInto<SpacetimeIdentityClaims> for IncomingClaims {
     type Error = anyhow::Error;
 
     fn try_into(self) -> anyhow::Result<SpacetimeIdentityClaims> {
+        if self
+            .extra
+            .as_ref()
+            .and_then(|extra| extra.get("kind"))
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(crate::hosted::is_reserved_hosted_kind)
+        {
+            anyhow::bail!("hosted credentials require dedicated target-bound validation");
+        }
         // The issuer and subject must be less than 128 bytes.
         if self.issuer.len() > 128 {
             return Err(anyhow::anyhow!("Issuer too long: {:?}", self.issuer));

@@ -495,6 +495,8 @@ pub(super) fn call_call_reducer(
         name: _,
         caller_identity: sender,
         caller_connection_id: conn_id,
+        call_auth_flags: _,
+        hosted_auth: _,
         timestamp,
         args: reducer_args,
     } = op;

@@ -95,6 +95,10 @@ pub enum RawModuleDefV10Section {
 
     /// HTTP route definitions.
     HttpRoutes(Vec<RawHttpRouteDefV10>),
+
+    /// Module bindings capabilities, independent of function visibility.
+    /// Older hosts reject this section instead of silently ignoring its requirements.
+    Capabilities(Vec<RawIdentifier>),
 }
 
 #[derive(Debug, Clone, SpacetimeType)]
@@ -317,6 +321,9 @@ pub struct RawReducerDefV10 {
 }
 
 /// The visibility of a function (reducer or procedure).
+///
+/// New variants MUST be appended to preserve existing BSATN tags. Older hosts
+/// reject unknown tags, so new restrictions cannot be silently discarded.
 #[derive(Debug, Copy, Clone, SpacetimeType)]
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
@@ -326,11 +333,31 @@ pub enum FunctionVisibility {
     /// Still callable by the module owner, collaborators,
     /// and internal module code.
     ///
-    /// Enabled for lifecycle reducers and scheduled functions by default.
+    /// The default for scheduled functions. Older lifecycle definitions also use
+    /// this tag; lifecycle assignments always enforce host-event-only invocation.
     Private,
 
-    /// Callable from client code.
+    /// Callable from client code, with the historical contextual defaults.
+    /// Scheduled functions become Private; lifecycle reducers remain host event handlers.
     ClientCallable,
+
+    /// Callable only by a host-verified internal invocation.
+    Internal,
+
+    /// Explicitly callable from client code, including when scheduled.
+    /// This separate tag preserves the meaning of existing ClientCallable definitions.
+    ExplicitClientCallable,
+}
+
+impl FunctionVisibility {
+    /// Encode a source declaration without changing historical contextual defaults.
+    pub fn from_declaration(declared: Option<Self>, default: Self) -> Self {
+        match declared {
+            Some(Self::ClientCallable | Self::ExplicitClientCallable) => Self::ExplicitClientCallable,
+            Some(visibility) => visibility,
+            None => default,
+        }
+    }
 }
 
 /// A schedule definition.
@@ -1027,10 +1054,20 @@ impl RawModuleDefV10Builder {
     /// This is because `SpacetimeType` is not implemented for `ReducerContext`,
     /// so it can never act like an ordinary argument.)
     pub fn add_reducer(&mut self, source_name: impl Into<RawIdentifier>, params: ProductType) {
+        self.add_reducer_with_visibility(source_name, params, None);
+    }
+
+    /// Add a reducer with an optional explicit visibility declaration.
+    pub fn add_reducer_with_visibility(
+        &mut self,
+        source_name: impl Into<RawIdentifier>,
+        params: ProductType,
+        visibility: Option<FunctionVisibility>,
+    ) {
         self.reducers_mut().push(RawReducerDefV10 {
             source_name: source_name.into(),
             params,
-            visibility: FunctionVisibility::ClientCallable,
+            visibility: FunctionVisibility::from_declaration(visibility, FunctionVisibility::ClientCallable),
             ok_return_type: reducer_default_ok_return_type(),
             err_return_type: reducer_default_err_return_type(),
         });
@@ -1052,11 +1089,22 @@ impl RawModuleDefV10Builder {
         params: ProductType,
         return_type: AlgebraicType,
     ) {
+        self.add_procedure_with_visibility(source_name, params, return_type, None);
+    }
+
+    /// Add a procedure with an optional explicit visibility declaration.
+    pub fn add_procedure_with_visibility(
+        &mut self,
+        source_name: impl Into<RawIdentifier>,
+        params: ProductType,
+        return_type: AlgebraicType,
+        visibility: Option<FunctionVisibility>,
+    ) {
         self.procedures_mut().push(RawProcedureDefV10 {
             source_name: source_name.into(),
             params,
             return_type,
-            visibility: FunctionVisibility::ClientCallable,
+            visibility: FunctionVisibility::from_declaration(visibility, FunctionVisibility::ClientCallable),
         })
     }
 
@@ -1089,6 +1137,19 @@ impl RawModuleDefV10Builder {
         function_name: impl Into<RawIdentifier>,
         params: ProductType,
     ) {
+        self.add_lifecycle_reducer_with_visibility(lifecycle_spec, function_name, params, None);
+    }
+
+    /// Add a lifecycle reducer with an optional visibility declaration.
+    /// Source bindings must reject explicit Private or public lifecycle annotations.
+    /// The raw Private tag remains accepted for compatibility with existing modules.
+    pub fn add_lifecycle_reducer_with_visibility(
+        &mut self,
+        lifecycle_spec: Lifecycle,
+        function_name: impl Into<RawIdentifier>,
+        params: ProductType,
+        visibility: Option<FunctionVisibility>,
+    ) {
         let function_name = function_name.into();
         self.lifecycle_reducers_mut().push(RawLifeCycleReducerDefV10 {
             lifecycle_spec,
@@ -1098,7 +1159,7 @@ impl RawModuleDefV10Builder {
         self.reducers_mut().push(RawReducerDefV10 {
             source_name: function_name,
             params,
-            visibility: FunctionVisibility::Private,
+            visibility: FunctionVisibility::from_declaration(visibility, FunctionVisibility::Private),
             ok_return_type: reducer_default_ok_return_type(),
             err_return_type: reducer_default_err_return_type(),
         });
@@ -1122,6 +1183,22 @@ impl RawModuleDefV10Builder {
             schedule_at_col: column.into(),
             function_name: function.into(),
         });
+    }
+
+    /// Declare a module bindings capability.
+    pub fn add_capability(&mut self, capability: impl Into<RawIdentifier>) {
+        if let Some(RawModuleDefV10Section::Capabilities(names)) = self
+            .module
+            .sections
+            .iter_mut()
+            .find(|section| matches!(section, RawModuleDefV10Section::Capabilities(_)))
+        {
+            names.push(capability.into());
+        } else {
+            self.module
+                .sections
+                .push(RawModuleDefV10Section::Capabilities(vec![capability.into()]));
+        }
     }
 
     /// Add a row-level security policy to the module.
@@ -1404,5 +1481,143 @@ impl RawTableDefBuilderV10<'_> {
             .iter()
             .position(|x| x.has_name(column.as_ref()))
             .map(|i| ColId(i as u16))
+    }
+}
+
+#[cfg(test)]
+mod compatibility_tests {
+    use super::*;
+    use crate::{bsatn, RawModuleDef};
+
+    // Frozen pre-extension wire types. Do not replace the visibility, function,
+    // or section definitions below with their current counterparts.
+    #[derive(SpacetimeType)]
+    #[sats(crate = crate)]
+    enum LegacyVisibility {
+        Private,
+        ClientCallable,
+    }
+
+    #[derive(SpacetimeType)]
+    #[sats(crate = crate)]
+    struct LegacyReducer {
+        source_name: RawIdentifier,
+        params: ProductType,
+        visibility: LegacyVisibility,
+        ok_return_type: AlgebraicType,
+        err_return_type: AlgebraicType,
+    }
+
+    #[derive(SpacetimeType)]
+    #[sats(crate = crate)]
+    struct LegacyProcedure {
+        source_name: RawIdentifier,
+        params: ProductType,
+        return_type: AlgebraicType,
+        visibility: LegacyVisibility,
+    }
+
+    #[derive(SpacetimeType)]
+    #[sats(crate = crate)]
+    enum LegacySection {
+        Typespace(Typespace),
+        Types(Vec<RawTypeDefV10>),
+        Tables(Vec<RawTableDefV10>),
+        Reducers(Vec<LegacyReducer>),
+        Procedures(Vec<LegacyProcedure>),
+        Views(Vec<RawViewDefV10>),
+        Schedules(Vec<RawScheduleDefV10>),
+        LifeCycleReducers(Vec<RawLifeCycleReducerDefV10>),
+        RowLevelSecurity(Vec<RawRowLevelSecurityDefV10>),
+        CaseConversionPolicy(CaseConversionPolicy),
+        ExplicitNames(ExplicitNames),
+        HttpHandlers(Vec<RawHttpHandlerDefV10>),
+        HttpRoutes(Vec<RawHttpRouteDefV10>),
+    }
+
+    #[derive(SpacetimeType)]
+    #[sats(crate = crate)]
+    struct LegacyV10 {
+        sections: Vec<LegacySection>,
+    }
+
+    #[derive(SpacetimeType)]
+    #[sats(crate = crate)]
+    enum LegacyModule {
+        V8BackCompat(crate::RawModuleDefV8),
+        V9(super::super::v9::RawModuleDefV9),
+        V10(LegacyV10),
+    }
+
+    #[test]
+    fn existing_v10_wire_tags_and_function_products_are_unchanged() {
+        for (visibility, expected) in [
+            (FunctionVisibility::Private, 0),
+            (FunctionVisibility::ClientCallable, 1),
+            (FunctionVisibility::Internal, 2),
+            (FunctionVisibility::ExplicitClientCallable, 3),
+        ] {
+            assert_eq!(bsatn::to_vec(&visibility).unwrap(), [expected]);
+        }
+        let legacy = LegacyModule::V10(LegacyV10 {
+            sections: vec![
+                LegacySection::Reducers(vec![LegacyReducer {
+                    source_name: "run".into(),
+                    params: ProductType::unit(),
+                    visibility: LegacyVisibility::ClientCallable,
+                    ok_return_type: reducer_default_ok_return_type(),
+                    err_return_type: reducer_default_err_return_type(),
+                }]),
+                LegacySection::Procedures(vec![LegacyProcedure {
+                    source_name: "read".into(),
+                    params: ProductType::unit(),
+                    return_type: AlgebraicType::U64,
+                    visibility: LegacyVisibility::Private,
+                }]),
+            ],
+        });
+        let bytes = bsatn::to_vec(&legacy).unwrap();
+        assert_eq!(bytes[0], 2);
+        let current: RawModuleDef = bsatn::from_slice(&bytes).unwrap();
+        assert_eq!(bsatn::to_vec(&current).unwrap(), bytes);
+        let frozen: LegacyModule = bsatn::from_slice(&bsatn::to_vec(&current).unwrap()).unwrap();
+        assert_eq!(bsatn::to_vec(&frozen).unwrap(), bytes);
+
+        assert_eq!(
+            bsatn::to_vec(&RawModuleDefV10Section::HttpRoutes(vec![])).unwrap(),
+            [12, 0, 0, 0, 0]
+        );
+        assert_eq!(
+            bsatn::to_vec(&RawModuleDefV10Section::Capabilities(vec![])).unwrap(),
+            [13, 0, 0, 0, 0]
+        );
+    }
+
+    #[test]
+    fn older_hosts_reject_new_visibility_and_capabilities() {
+        for visibility in [FunctionVisibility::Internal, FunctionVisibility::ExplicitClientCallable] {
+            for procedure in [false, true] {
+                let mut builder = RawModuleDefV10Builder::new();
+                if procedure {
+                    builder.add_procedure_with_visibility(
+                        "run",
+                        ProductType::unit(),
+                        AlgebraicType::unit(),
+                        Some(visibility),
+                    );
+                } else {
+                    builder.add_reducer_with_visibility("run", ProductType::unit(), Some(visibility));
+                }
+                let bytes = bsatn::to_vec(&RawModuleDef::V10(builder.finish())).unwrap();
+                assert_eq!(bytes[0], 2);
+                assert!(bsatn::from_slice::<LegacyModule>(&bytes).is_err());
+                assert!(bsatn::from_slice::<RawModuleDef>(&bytes).is_ok());
+            }
+        }
+        let mut builder = RawModuleDefV10Builder::new();
+        builder.add_capability("hosted_auth_v1");
+        let bytes = bsatn::to_vec(&RawModuleDef::V10(builder.finish())).unwrap();
+        assert!(bsatn::from_slice::<LegacyModule>(&bytes).is_err());
+        assert!(bsatn::from_slice::<RawModuleDef>(&bytes).is_ok());
     }
 }

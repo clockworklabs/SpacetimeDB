@@ -19,6 +19,8 @@ use crate::util::{add_auth_header_opt, get_auth_header, strip_verbatim_prefix, A
 use crate::util::{decode_identity, y_or_n};
 use crate::{build, common_args};
 
+mod managed;
+
 /// Individual prompts that `--yes` can suppress. `All` is a shorthand for every category below.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 #[clap(rename_all = "kebab-case")]
@@ -83,7 +85,7 @@ fn yes_flags_from_args(args: &ArgMatches) -> YesFlags {
 
 /// Build the CommandSchema for publish command
 pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, anyhow::Error> {
-    CommandSchemaBuilder::new()
+    managed::exclude_args(CommandSchemaBuilder::new())
         .key(Key::new("database").from_clap("name|identity").required())
         .key(Key::new("server"))
         .key(Key::new("module_path").module_specific())
@@ -171,7 +173,7 @@ pub fn get_filtered_publish_configs<'a>(
     let configs: Vec<CommandConfig> = filtered_targets
         .into_iter()
         .map(|target| {
-            let config = CommandConfig::new(schema, target.fields, args)?;
+            let config = CommandConfig::new(schema, target.fields, args)?.with_container(target.container);
             config.validate()?;
             Ok(config)
         })
@@ -189,7 +191,7 @@ pub fn get_filtered_publish_configs<'a>(
 }
 
 pub fn cli() -> clap::Command {
-    clap::Command::new("publish")
+    managed::add_args(clap::Command::new("publish")
         .about("Create and update a SpacetimeDB database")
         .arg(
             common_args::clear_database()
@@ -319,7 +321,7 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
                 .action(SetTrue)
                 .help("Use NativeAOT-LLVM compilation for C# modules (experimental, Windows only)")
         )
-        .after_help("Run `spacetime help publish` for more detailed information.")
+        .after_help("Run `spacetime help publish` for more detailed information."))
 }
 
 fn confirm_and_clear(
@@ -381,6 +383,9 @@ pub async fn exec_with_options(
     quiet_config: bool,
     pre_loaded_config: Option<&LoadedConfig>,
 ) -> Result<(), anyhow::Error> {
+    if args.get_one::<PathBuf>("resume_publication").is_some() {
+        return managed::resume(&mut config, args, yes_flags_from_args(args)).await;
+    }
     // Build schema
     let cmd = cli();
     let schema = build_publish_schema(&cmd)?;
@@ -496,20 +501,7 @@ async fn execute_publish_configs<'a>(
             })
         };
 
-        if using_config {
-            if let Some(path_to_project) = path_to_project.as_ref() {
-                println!(
-                    "Publishing module {} to database '{}'",
-                    strip_verbatim_prefix(path_to_project).display(),
-                    name_or_identity.unwrap()
-                );
-            } else {
-                println!(
-                    "Publishing precompiled module to database '{}'",
-                    name_or_identity.unwrap()
-                );
-            }
-        }
+        managed::validate_target_options(&command_config)?;
         let database_host = config.get_host_url(server)?;
         let build_options = command_config
             .get_one::<String>("build_options")?
@@ -529,6 +521,36 @@ async fn execute_publish_configs<'a>(
         let auth_header = get_auth_header(config, anon_identity, server, !yes.skip_login).await?;
 
         let (name_or_identity, parent) = validate_name_and_parent(name_or_identity, parent)?;
+
+        if managed::try_execute(
+            &command_config,
+            config_dir,
+            &database_host,
+            &auth_header,
+            name_or_identity,
+            parent,
+            clear_database,
+            yes,
+        )
+        .await?
+        {
+            continue;
+        }
+
+        if using_config {
+            if let Some(path_to_project) = path_to_project.as_ref() {
+                println!(
+                    "Publishing module {} to database '{}'",
+                    strip_verbatim_prefix(path_to_project).display(),
+                    name_or_identity.unwrap()
+                );
+            } else {
+                println!(
+                    "Publishing precompiled module to database '{}'",
+                    name_or_identity.unwrap()
+                );
+            }
+        }
 
         if let Some(path_to_project) = path_to_project.as_ref()
             && !path_to_project.exists()

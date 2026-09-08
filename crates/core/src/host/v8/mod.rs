@@ -58,6 +58,7 @@ use self::error::{
     catch_exception, exception_already_thrown, log_traceback, ErrorOrException, ExcResult, ExceptionThrown,
     PinTryCatch, Throwable,
 };
+use self::execution_deadline::{ExecutionDeadline, ExecutionTimedOut};
 use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
 use self::syscall::{
@@ -74,6 +75,7 @@ use crate::client::{ClientActorId, MeteredUnboundedReceiver, MeteredUnboundedSen
 use crate::config::{V8Config, V8HeapPolicyConfig};
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
+use crate::host::module_host::OperationLease;
 use crate::host::module_host::{
     call_identity_connected, init_database, ClientConnectedError, HttpHandlerCallError, OneOffQueryRequest, SqlCommand,
     SqlCommandResult, ViewCommand, ViewCommandMetric, ViewCommandResult,
@@ -86,6 +88,7 @@ use crate::host::wasm_common::module_host_actor::{
     ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp, WasmInstance,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
+use crate::host::ProcedureCallError;
 use crate::host::{ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
@@ -110,8 +113,8 @@ use std::cell::Cell;
 use std::num::NonZeroUsize;
 use std::os::raw::c_void;
 use std::panic::{self, AssertUnwindSafe};
-use std::sync::{Arc, LazyLock};
-use std::time::Instant;
+use std::sync::{Arc, LazyLock, OnceLock};
+use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
 use v8::script_compiler::{compile_module, Source};
 use v8::{
@@ -123,6 +126,7 @@ mod budget;
 mod builtins;
 mod de;
 mod error;
+mod execution_deadline;
 mod from_value;
 mod ser;
 mod string;
@@ -154,6 +158,7 @@ impl V8Runtime {
         program_bytes: &[u8],
         core: AllocatedJobCore,
     ) -> anyhow::Result<ModuleWithInstance> {
+        self.config.validate_execution_timeout()?;
         V8_RUNTIME_GLOBAL
             .make_actor(mcc, program_bytes, core, self.config)
             .await
@@ -256,6 +261,7 @@ impl V8RuntimeInner {
             load_balance_guard.clone(),
             core_pinner.clone(),
             heap_policy,
+            config.execution_timeout,
             metrics.clone(),
         )
         .await?;
@@ -266,6 +272,7 @@ impl V8RuntimeInner {
             core_pinner,
             procedure_instance_pool_size: config.procedure_instance_pool_size,
             heap_policy: config.heap_policy,
+            execution_timeout: config.execution_timeout,
             metrics,
         };
 
@@ -281,6 +288,7 @@ pub struct JsModule {
     core_pinner: CorePinner,
     procedure_instance_pool_size: NonZeroUsize,
     heap_policy: V8HeapPolicyConfig,
+    execution_timeout: Duration,
     metrics: InstanceManagerMetrics,
 }
 
@@ -305,7 +313,10 @@ impl JsModule {
         self.procedure_instance_pool_size
     }
 
-    async fn create_procedure_instance(&self) -> JsProcedureInstance {
+    async fn create_procedure_instance(
+        &self,
+        operation: Option<OperationLease>,
+    ) -> anyhow::Result<JsProcedureInstance> {
         let program = self.program.clone();
         let common = self.common.clone();
         let load_balance_guard = self.load_balance_guard.clone();
@@ -320,15 +331,23 @@ impl JsModule {
             load_balance_guard,
             core_pinner,
             heap_policy,
+            self.execution_timeout,
             metrics,
+            operation,
         )
-        .await
-        .expect("`spawn_procedure_instance_worker` should succeed when passed `ModuleCommon`");
-        instance
+        .await?;
+        Ok(instance)
     }
 
-    pub async fn create_instance(&self) -> JsProcedureInstance {
-        self.create_procedure_instance().await
+    pub(in crate::host) async fn create_instance_for_operation(
+        &self,
+        operation: Option<OperationLease>,
+    ) -> anyhow::Result<JsProcedureInstance> {
+        self.create_procedure_instance(operation).await
+    }
+
+    pub async fn create_instance(&self) -> anyhow::Result<JsProcedureInstance> {
+        self.create_procedure_instance(None).await
     }
 }
 
@@ -461,7 +480,8 @@ impl JsInstanceEnv {
 /// and friends.
 #[derive(Clone)]
 pub struct JsMainInstance {
-    tx: MeteredUnboundedSender<JsMainWorkerRequest>,
+    tx: MeteredUnboundedSender<PhysicalRequest<JsMainWorkerRequest>>,
+    operation: Option<OperationLease>,
 }
 
 /// A procedure instance for a [`JsModule`].
@@ -469,16 +489,48 @@ pub struct JsMainInstance {
 /// Procedure instances are checked out exclusively from the procedure pool and
 /// only execute procedure-style requests.
 pub struct JsProcedureInstance {
-    tx: mpsc::Sender<JsProcedureWorkerRequest>,
+    tx: mpsc::Sender<PhysicalRequest<JsProcedureWorkerRequest>>,
+    operation: Option<OperationLease>,
+    startup_failure: ProcedureStartupStatus,
+}
+
+// Set only when a replacement generation fails before receiving another
+// request. Publishing before closing the receiver proves queued calls did not
+// execute. Unexplained worker exits and actual Rust panics remain fatal.
+type ProcedureStartupStatus = Arc<OnceLock<JsProcedureStartupError>>;
+
+#[derive(Clone, Debug, thiserror::Error)]
+#[error("procedure isolate startup failed: {0}")]
+pub(in crate::host) struct JsProcedureStartupError(Arc<str>);
+
+struct PhysicalRequest<R> {
+    request: R,
+    operation: Option<OperationLease>,
 }
 
 impl JsMainInstance {
+    pub(in crate::host) fn with_operation(mut self, operation: OperationLease) -> Self {
+        self.operation = Some(operation);
+        self
+    }
+
     async fn request<R: JsMainRequest>(&self, request: R) -> R::Response {
-        send_js_unbounded_request(R::CTX, &self.tx, |reply_tx| request.into_worker_request(reply_tx)).await
+        send_js_unbounded_request(R::CTX, &self.tx, |reply_tx| PhysicalRequest {
+            request: request.into_worker_request(reply_tx),
+            operation: self.operation.clone(),
+        })
+        .await
     }
 
     async fn send_detached_request(&self, ctx: &'static str, request: JsMainWorkerRequest) {
-        if self.tx.send(request).is_err() {
+        if self
+            .tx
+            .send(PhysicalRequest {
+                request,
+                operation: self.operation.clone(),
+            })
+            .is_err()
+        {
             panic!("JS worker exited before accepting `{ctx}`");
         }
     }
@@ -488,11 +540,13 @@ impl JsMainInstance {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        deployment: Option<crate::db::deployment::DeploymentCommit>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         self.request(UpdateDatabaseRequest {
             program,
             old_module_info,
             policy,
+            deployment,
         })
         .await
     }
@@ -548,8 +602,12 @@ impl JsMainInstance {
         self.request(DisconnectClientRequest { client_id }).await
     }
 
-    pub async fn init_database(&self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
-        self.request(InitDatabaseRequest { program }).await
+    pub async fn init_database(
+        &self,
+        program: Program,
+        deployment: Option<crate::db::deployment::DeploymentCommit>,
+    ) -> anyhow::Result<Option<ReducerCallResult>> {
+        self.request(InitDatabaseRequest { program, deployment }).await
     }
 
     pub async fn call_view(&self, cmd: ViewCommand) -> ViewCommandResult {
@@ -633,6 +691,7 @@ js_main_request! {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        deployment: Option<crate::db::deployment::DeploymentCommit>,
     } => "update_database", anyhow::Result<UpdateDatabaseResult>, UpdateDatabase
 }
 
@@ -675,6 +734,7 @@ js_main_request! {
 js_main_request! {
     InitDatabaseRequest {
         program: Program,
+        deployment: Option<crate::db::deployment::DeploymentCommit>,
     } => "init_database", anyhow::Result<Option<ReducerCallResult>>, InitDatabase
 }
 
@@ -691,16 +751,24 @@ js_main_request! {
 }
 
 impl JsProcedureInstance {
+    pub(in crate::host) fn set_operation(&mut self, operation: Option<OperationLease>) {
+        self.operation = operation;
+    }
+
     pub(in crate::host) fn is_closed(&self) -> bool {
-        self.tx.is_closed()
+        self.startup_failure.get().is_some() || self.tx.is_closed()
     }
 
     async fn send_request<T>(
         &self,
         ctx: &'static str,
         request: impl FnOnce(JsReplyTx<T>) -> JsProcedureWorkerRequest,
-    ) -> T {
-        send_js_request(ctx, &self.tx, request).await
+    ) -> Result<T, JsProcedureStartupError> {
+        send_js_request(ctx, &self.tx, &self.startup_failure, |reply_tx| PhysicalRequest {
+            request: request(reply_tx),
+            operation: self.operation.clone(),
+        })
+        .await
     }
 
     pub async fn call_procedure(&self, params: CallProcedureParams) -> CallProcedureReturn {
@@ -709,6 +777,10 @@ impl JsProcedureInstance {
             params,
         })
         .await
+        .unwrap_or_else(|error| CallProcedureReturn {
+            result: Err(ProcedureCallError::InternalError(error.to_string())),
+            tx_offset: None,
+        })
     }
 
     pub async fn call_http_handler(
@@ -719,25 +791,38 @@ impl JsProcedureInstance {
             JsProcedureWorkerRequest::CallHttpHandler { reply_tx, params }
         })
         .await
+        .map_err(|error| HttpHandlerCallError::InternalError(error.to_string()))?
     }
 
-    pub(in crate::host) async fn enqueue_procedure(&self, params: CallProcedureParams) -> JsProcedureCall {
+    pub(in crate::host) async fn enqueue_procedure(
+        &self,
+        params: CallProcedureParams,
+    ) -> Result<JsProcedureCall, JsProcedureStartupError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         if self
             .tx
-            .send(JsProcedureWorkerRequest::CallProcedure { reply_tx, params })
+            .send(PhysicalRequest {
+                request: JsProcedureWorkerRequest::CallProcedure { reply_tx, params },
+                operation: self.operation.clone(),
+            })
             .await
             .is_err()
         {
+            if let Some(error) = self.startup_failure.get() {
+                return Err(error.clone());
+            }
             panic!("JS worker exited before accepting `call_procedure`");
         }
-        JsProcedureCall { reply_rx }
+        Ok(JsProcedureCall {
+            reply_rx,
+            startup_failure: self.startup_failure.clone(),
+        })
     }
 
     pub(in crate::host) async fn call_scheduled_procedure(
         &self,
         params: ScheduledFunctionParams,
-    ) -> CallScheduledFunctionResult {
+    ) -> Result<CallScheduledFunctionResult, JsProcedureStartupError> {
         self.send_request("scheduled_procedure", |reply_tx| {
             JsProcedureWorkerRequest::ScheduledProcedure { reply_tx, params }
         })
@@ -748,26 +833,33 @@ impl JsProcedureInstance {
 async fn send_js_request<Req, T>(
     ctx: &'static str,
     tx: &mpsc::Sender<Req>,
+    startup_failure: &ProcedureStartupStatus,
     request: impl FnOnce(JsReplyTx<T>) -> Req,
-) -> T
+) -> Result<T, JsProcedureStartupError>
 where
     Req: Send + 'static,
 {
     let (reply_tx, reply_rx) = oneshot::channel();
     if tx.send(request(reply_tx)).await.is_err() {
+        if let Some(error) = startup_failure.get() {
+            return Err(error.clone());
+        }
         panic!("JS worker exited before accepting `{ctx}`");
     }
     match reply_rx.await {
-        Ok(Ok(value)) => value,
+        Ok(Ok(value)) => Ok(value),
         Ok(Err(panic)) => panic::resume_unwind(panic),
-        Err(_) => panic!("JS worker exited before replying to `{ctx}`"),
+        Err(_) => match startup_failure.get() {
+            Some(error) => Err(error.clone()),
+            None => panic!("JS worker exited before replying to `{ctx}`"),
+        },
     }
 }
 
-async fn send_js_unbounded_request<T>(
+async fn send_js_unbounded_request<Req, T>(
     ctx: &'static str,
-    tx: &MeteredUnboundedSender<JsMainWorkerRequest>,
-    request: impl FnOnce(JsReplyTx<T>) -> JsMainWorkerRequest,
+    tx: &MeteredUnboundedSender<Req>,
+    request: impl FnOnce(JsReplyTx<T>) -> Req,
 ) -> T {
     let (reply_tx, reply_rx) = oneshot::channel();
     if tx.send(request(reply_tx)).is_err() {
@@ -787,11 +879,13 @@ pub(in crate::host) type JsFatalHook = Arc<dyn Fn() + Send + Sync + 'static>;
 
 pub(in crate::host) struct JsProcedureCall {
     reply_rx: oneshot::Receiver<JsReply<CallProcedureReturn>>,
+    startup_failure: ProcedureStartupStatus,
 }
 
 pub(in crate::host) enum JsProcedureCallCompletion {
     Completed(CallProcedureReturn),
     Panicked,
+    StartupFailed(JsProcedureStartupError),
     WorkerExited,
 }
 
@@ -800,7 +894,10 @@ impl JsProcedureCall {
         match self.reply_rx.await {
             Ok(Ok(ret)) => JsProcedureCallCompletion::Completed(ret),
             Ok(Err(_panic)) => JsProcedureCallCompletion::Panicked,
-            Err(_) => JsProcedureCallCompletion::WorkerExited,
+            Err(_) => match self.startup_failure.get() {
+                Some(error) => JsProcedureCallCompletion::StartupFailed(error.clone()),
+                None => JsProcedureCallCompletion::WorkerExited,
+            },
         }
     }
 }
@@ -817,6 +914,7 @@ enum JsMainWorkerRequest {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        deployment: Option<crate::db::deployment::DeploymentCommit>,
     },
     /// See [`JsMainInstance::call_reducer`].
     CallReducer {
@@ -877,6 +975,7 @@ enum JsMainWorkerRequest {
     InitDatabase {
         reply_tx: JsReplyTx<anyhow::Result<Option<ReducerCallResult>>>,
         program: Program,
+        deployment: Option<crate::db::deployment::DeploymentCommit>,
     },
 }
 
@@ -899,7 +998,7 @@ enum JsProcedureWorkerRequest {
     },
 }
 
-static_assert_size!(CallReducerParams, 192);
+static_assert_size!(CallReducerParams, 208);
 
 fn send_worker_reply<T>(ctx: &str, reply_tx: JsReplyTx<T>, value: T) {
     if reply_tx.send(Ok(value)).is_err() {
@@ -1186,7 +1285,9 @@ fn startup_instance_worker<'scope>(
     scope: &mut PinScope<'scope, '_>,
     program: Arc<str>,
     module_or_mcc: Either<ModuleCommon, ModuleCreationContext>,
+    execution_timeout: Duration,
 ) -> anyhow::Result<(HookFunctions<'scope>, ModuleCommon)> {
+    let deadline = ExecutionDeadline::start(scope.thread_safe_handle(), execution_timeout)?;
     let hook_functions = catch_exception(scope, |scope| {
         // Start-up the user's module.
         let exports_obj = eval_user_module(scope, &program)?;
@@ -1195,13 +1296,19 @@ fn startup_instance_worker<'scope>(
         let hooks =
             get_hooks(scope, exports_obj)?.ok_or_else(|| anyhow::anyhow!("must export schema as default export"))?;
         Ok(hooks)
-    })?;
+    });
+    let expired = deadline.finish();
+    scope.cancel_terminate_execution();
+    if expired {
+        return Err(ExecutionTimedOut.into());
+    }
+    let hook_functions = hook_functions?;
 
     // If we don't have a module, make one.
     let module_common = match module_or_mcc {
         Either::Left(module_common) => module_common,
         Either::Right(mcc) => {
-            let def = extract_description(scope, &hook_functions, &mcc.replica_ctx)?;
+            let def = extract_description(scope, &hook_functions, &mcc.replica_ctx, execution_timeout)?;
 
             // Validate and create a common module from the raw definition.
             build_common_module_from_raw(mcc, def)?
@@ -1264,6 +1371,7 @@ async fn spawn_main_instance_worker(
     load_balance_guard: Arc<LoadBalanceOnDropGuard>,
     core_pinner: CorePinner,
     heap_policy: V8HeapPolicyConfig,
+    execution_timeout: Duration,
     metrics: InstanceManagerMetrics,
 ) -> anyhow::Result<(ModuleCommon, JsMainInstance)> {
     spawn_instance_worker::<MainJsWorker>(
@@ -1272,18 +1380,23 @@ async fn spawn_main_instance_worker(
         load_balance_guard,
         core_pinner,
         heap_policy,
+        execution_timeout,
         metrics,
+        None,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn spawn_procedure_instance_worker(
     program: Arc<str>,
     module_or_mcc: Either<ModuleCommon, ModuleCreationContext>,
     load_balance_guard: Arc<LoadBalanceOnDropGuard>,
     core_pinner: CorePinner,
     heap_policy: V8HeapPolicyConfig,
+    execution_timeout: Duration,
     metrics: InstanceManagerMetrics,
+    operation: Option<OperationLease>,
 ) -> anyhow::Result<(ModuleCommon, JsProcedureInstance)> {
     spawn_instance_worker::<ProcedureJsWorker>(
         program,
@@ -1291,7 +1404,9 @@ async fn spawn_procedure_instance_worker(
         load_balance_guard,
         core_pinner,
         heap_policy,
+        execution_timeout,
         metrics,
+        operation,
     )
     .await
 }
@@ -1310,9 +1425,9 @@ trait JsWorkerSpec {
 
     fn channel(database_identity: &Identity) -> (Self::Sender, Self::Receiver);
 
-    fn make_instance(tx: Self::Sender) -> Self::Instance;
+    fn make_instance(tx: Self::Sender, startup_failure: ProcedureStartupStatus) -> Self::Instance;
 
-    fn blocking_recv(rx: &mut Self::Receiver) -> Option<Self::Request>;
+    fn blocking_recv(rx: &mut Self::Receiver) -> Option<PhysicalRequest<Self::Request>>;
 
     fn handle_request(
         request: Self::Request,
@@ -1326,8 +1441,8 @@ trait JsWorkerSpec {
 impl JsWorkerSpec for MainJsWorker {
     type Request = JsMainWorkerRequest;
     type Instance = JsMainInstance;
-    type Sender = MeteredUnboundedSender<Self::Request>;
-    type Receiver = MeteredUnboundedReceiver<Self::Request>;
+    type Sender = MeteredUnboundedSender<PhysicalRequest<Self::Request>>;
+    type Receiver = MeteredUnboundedReceiver<PhysicalRequest<Self::Request>>;
 
     const KIND: JsWorkerKind = JsWorkerKind::Main;
 
@@ -1342,11 +1457,11 @@ impl JsWorkerSpec for MainJsWorker {
         )
     }
 
-    fn make_instance(tx: Self::Sender) -> Self::Instance {
-        JsMainInstance { tx }
+    fn make_instance(tx: Self::Sender, _startup_failure: ProcedureStartupStatus) -> Self::Instance {
+        JsMainInstance { tx, operation: None }
     }
 
-    fn blocking_recv(rx: &mut Self::Receiver) -> Option<Self::Request> {
+    fn blocking_recv(rx: &mut Self::Receiver) -> Option<PhysicalRequest<Self::Request>> {
         rx.blocking_recv()
     }
 
@@ -1364,8 +1479,8 @@ impl JsWorkerSpec for MainJsWorker {
 impl JsWorkerSpec for ProcedureJsWorker {
     type Request = JsProcedureWorkerRequest;
     type Instance = JsProcedureInstance;
-    type Sender = mpsc::Sender<Self::Request>;
-    type Receiver = mpsc::Receiver<Self::Request>;
+    type Sender = mpsc::Sender<PhysicalRequest<Self::Request>>;
+    type Receiver = mpsc::Receiver<PhysicalRequest<Self::Request>>;
 
     const KIND: JsWorkerKind = JsWorkerKind::Procedure;
 
@@ -1373,11 +1488,15 @@ impl JsWorkerSpec for ProcedureJsWorker {
         mpsc::channel(JS_PROCEDURE_INSTANCE_QUEUE_CAPACITY)
     }
 
-    fn make_instance(tx: Self::Sender) -> Self::Instance {
-        JsProcedureInstance { tx }
+    fn make_instance(tx: Self::Sender, startup_failure: ProcedureStartupStatus) -> Self::Instance {
+        JsProcedureInstance {
+            tx,
+            startup_failure,
+            operation: None,
+        }
     }
 
-    fn blocking_recv(rx: &mut Self::Receiver) -> Option<Self::Request> {
+    fn blocking_recv(rx: &mut Self::Receiver) -> Option<PhysicalRequest<Self::Request>> {
         rx.blocking_recv()
     }
 
@@ -1407,8 +1526,9 @@ fn handle_main_worker_request(
             program,
             old_module_info,
             policy,
+            deployment,
         } => handle_worker_request("update_database", reply_tx, || {
-            let res = instance_common.update_database(program, old_module_info, policy, inst);
+            let res = instance_common.update_database(program, old_module_info, policy, deployment, inst);
             (res, false)
         }),
         JsMainWorkerRequest::CallReducer { reply_tx, params } => {
@@ -1496,14 +1616,22 @@ fn handle_main_worker_request(
                 (res, trapped)
             })
         }
-        JsMainWorkerRequest::InitDatabase { reply_tx, program } => {
-            handle_worker_request("init_database", reply_tx, || {
-                let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
-                let (res, trapped): (Result<Option<ReducerCallResult>, anyhow::Error>, bool) =
-                    init_database(replica_ctx, &info.module_def, program, call_reducer);
-                (res, trapped)
-            })
-        }
+        JsMainWorkerRequest::InitDatabase {
+            reply_tx,
+            program,
+            deployment,
+        } => handle_worker_request("init_database", reply_tx, || {
+            let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+            let (res, trapped): (Result<Option<ReducerCallResult>, anyhow::Error>, bool) = init_database(
+                replica_ctx,
+                &info.module_def,
+                info.module_hash,
+                program,
+                deployment,
+                call_reducer,
+            );
+            (res, trapped)
+        }),
     }
 }
 
@@ -1569,21 +1697,24 @@ fn spawn_v8_worker_thread(worker_kind: JsWorkerKind, database_identity: Identity
 /// Spawns an instance worker for `program` and returns on success the
 /// corresponding instance handle that talks to the worker.
 ///
-/// When [`ModuleCommon`] is passed, it's assumed that this program has already
-/// been validated. In that case, `Ok(_)` should be returned.
+/// When [`ModuleCommon`] is passed, the program has already been validated.
+/// Starting another isolate can still fail, including its execution deadline.
 ///
 /// Otherwise, when [`ModuleCreationContext`] is passed, this is the first time
 /// both the module and instance are created.
 ///
 /// `load_balance_guard` and `core_pinner` should both be from the same
 /// [`AllocatedJobCore`], and are used to manage the core pinning of this thread.
+#[allow(clippy::too_many_arguments)]
 async fn spawn_instance_worker<W>(
     program: Arc<str>,
     module_or_mcc: Either<ModuleCommon, ModuleCreationContext>,
     load_balance_guard: Arc<LoadBalanceOnDropGuard>,
     mut core_pinner: CorePinner,
     heap_policy: V8HeapPolicyConfig,
+    execution_timeout: Duration,
     instance_metrics: InstanceManagerMetrics,
+    operation: Option<OperationLease>,
 ) -> anyhow::Result<(ModuleCommon, W::Instance)>
 where
     W: JsWorkerSpec + 'static,
@@ -1596,6 +1727,8 @@ where
         Either::Right(mcc) => mcc.replica_ctx.database_identity,
     };
     let (request_tx, mut request_rx) = W::channel(&database_identity);
+    let startup_failure = ProcedureStartupStatus::default();
+    let worker_startup_failure = startup_failure.clone();
 
     let rt = tokio::runtime::Handle::current();
 
@@ -1608,6 +1741,7 @@ where
         let mut startup_result_tx = Some(result_tx);
         let mut module_common_for_recreate = None::<ModuleCommon>;
 
+        let mut physical_operation = operation;
         'worker: loop {
             let replacing_instance = module_common_for_recreate.is_some();
             let generation_start_time = replacing_instance.then(Instant::now);
@@ -1640,7 +1774,7 @@ where
                         .expect("our builtin code shouldn't error");
 
                     // Setup the JS module, find call_reducer, and maybe build the module.
-                    startup_instance_worker(scope, program.clone(), generation_module_or_mcc)
+                    startup_instance_worker(scope, program.clone(), generation_module_or_mcc, execution_timeout)
                 }));
 
                 let (hooks, module_common) = match startup_result {
@@ -1663,6 +1797,7 @@ where
                                 log::error!("startup result receiver disconnected");
                             }
                         } else {
+                            let _ = worker_startup_failure.set(JsProcedureStartupError(format!("{err:#}").into()));
                             log::error!("failed to restart JS worker: {err:#}");
                         }
                         return;
@@ -1707,6 +1842,7 @@ where
                         .v8_heap_limit_hit
                         .with_label_values(&info.database_identity),
                     initial_heap_limit: heap_policy.heap_limit_bytes,
+                    execution_timeout,
                 };
                 let _initial_heap_stats = sample_heap_stats(inst.scope, &mut heap_metrics);
 
@@ -1714,9 +1850,11 @@ where
                 //
                 // The loop is terminated when the last worker instance handle is dropped.
                 // This will cause channels, scopes, and the isolate to be cleaned up.
+                physical_operation.take();
                 let mut requests_since_heap_check = 0u64;
                 let mut last_heap_check_at = Instant::now();
-                while let Some(request) = W::blocking_recv(&mut request_rx) {
+                while let Some(PhysicalRequest { request, operation }) = W::blocking_recv(&mut request_rx) {
+                    physical_operation = operation;
                     core_pinner.pin_if_changed();
 
                     let mut outcome =
@@ -1747,7 +1885,9 @@ where
                     }
 
                     match outcome {
-                        WorkerRequestOutcome::Continue => {}
+                        WorkerRequestOutcome::Continue => {
+                            physical_operation.take();
+                        }
                         WorkerRequestOutcome::RecreateInstance => {
                             instance_metrics.track_instance_removed();
                             continue 'worker;
@@ -1763,7 +1903,7 @@ where
     // Get the module, if any, and get any setup errors from the worker.
     let res: Result<ModuleCommon, anyhow::Error> = result_rx.await.expect("should have a sender");
     res.map(|opt_mc| {
-        let inst = W::make_instance(request_tx);
+        let inst = W::make_instance(request_tx, startup_failure);
         (opt_mc, inst)
     })
 }
@@ -1853,11 +1993,12 @@ struct V8Instance<'a, 'scope, 'isolate> {
     /// Metric for the number of times the v8 heap limit has been hit.
     heap_limit_hit_metric: &'a IntCounter,
     initial_heap_limit: usize,
+    execution_timeout: Duration,
 }
 
 impl WasmInstance for V8Instance<'_, '_, '_> {
     fn extract_descriptions(&mut self) -> Result<RawModuleDef, DescribeError> {
-        extract_description(self.scope, self.hooks, self.replica_ctx)
+        extract_description(self.scope, self.hooks, self.replica_ctx, self.execution_timeout)
     }
 
     fn replica_ctx(&self) -> &Arc<ReplicaContext> {
@@ -1978,12 +2119,14 @@ where
         // are released when the reducer/view/procedure returns.
         v8::scope!(let scope, scope);
 
-        // TODO(v8): Start the budget timeout and long-running logger.
         let env = env_on_isolate_unwrap(scope);
 
         // Start the timer.
         // We'd like this tightly around `call`.
         env.start_funcall(op.name().clone(), op.timestamp(), op.call_type());
+        env.instance_env.set_call_auth_flags(op.call_auth_flags());
+        env.instance_env
+            .set_hosted_auth(op.hosted_auth().map(|proof| std::sync::Arc::new(proof.clone())));
 
         // Wrap the call in `TryCatch`.
         //
@@ -1992,7 +2135,12 @@ where
         // opened by the caller before entering `common_call`.
         v8::tc_scope!(let scope, scope);
 
-        let call_result = call(scope, inst.hooks, op).map_err(|mut e| {
+        let deadline = ExecutionDeadline::start(scope.thread_safe_handle(), inst.execution_timeout);
+        let mut call_result = match &deadline {
+            Ok(_) => call(scope, inst.hooks, op),
+            Err(error) => Err(anyhow::anyhow!("cannot start JavaScript execution deadline: {error}").into()),
+        }
+        .map_err(|mut e| {
             if let ErrorOrException::Exception(_) = e {
                 // If we're terminating execution, don't try to check `instanceof`.
                 if scope.can_continue()
@@ -2012,10 +2160,7 @@ where
                 // We can continue.
                 ExecutionError::Recoverable(e.unwrap_or_else(Into::into))
             } else if scope.has_terminated() {
-                // We can continue if we do `Isolate::cancel_terminate_execution`.
-                // Must be called *after* we check `has_terminated()`, or else it will
-                // cause it to return `false`.
-                scope.cancel_terminate_execution();
+                // Reset only after synchronizing with this invocation's timer.
                 let e = e.unwrap_or_else(|unknown| termination_error.unwrap_or_else(|| unknown.into()));
                 ExecutionError::Recoverable(e)
             } else {
@@ -2023,6 +2168,14 @@ where
                 ExecutionError::Trap(e.unwrap_or_else(Into::into))
             }
         });
+
+        // The timer also covers exception inspection, which can execute user
+        // getters or Symbol.hasInstance. Synchronizing with it before resetting prevents a
+        // delayed timer from terminating the next invocation of this isolate.
+        if deadline.is_ok_and(ExecutionDeadline::finish) {
+            // Even a call that returned at the exact boundary must roll back.
+            call_result = Err(ExecutionError::Recoverable(ExecutionTimedOut.into()));
+        }
 
         // Ensure there's no lingering termination request.
         termination_flag.clear();
@@ -2064,14 +2217,22 @@ fn extract_description<'scope>(
     scope: &mut PinScope<'scope, '_>,
     hooks: &HookFunctions<'_>,
     replica_ctx: &ReplicaContext,
+    execution_timeout: Duration,
 ) -> Result<RawModuleDef, DescribeError> {
     run_describer(
         |a, b, c| log_traceback(replica_ctx, a, b, c),
         || {
-            Ok(catch_exception(scope, |scope| {
+            let deadline = ExecutionDeadline::start(scope.thread_safe_handle(), execution_timeout)?;
+            let result = catch_exception(scope, |scope| {
                 let def = call_describe_module(scope, hooks)?;
                 Ok(def)
-            })?)
+            });
+            let expired = deadline.finish();
+            scope.cancel_terminate_execution();
+            if expired {
+                return Err(ExecutionTimedOut.into());
+            }
+            Ok(result?)
         },
     )
 }
@@ -2113,6 +2274,8 @@ mod test {
                     name: &ReducerName::for_test("foobar"),
                     caller_identity: &Identity::ONE,
                     caller_connection_id: &ConnectionId::ZERO,
+                    call_auth_flags: 0,
+                    hosted_auth: None,
                     timestamp: Timestamp::from_micros_since_unix_epoch(24),
                     args: &ArgsTuple::nullary(),
                 };

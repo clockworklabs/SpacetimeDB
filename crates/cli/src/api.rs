@@ -4,7 +4,7 @@ use std::ops::Add;
 use reqwest::{header, Client, RequestBuilder};
 use serde::Deserialize;
 
-use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
+use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::Identity;
 
@@ -61,11 +61,11 @@ impl ClientApi {
     }
 
     /// Reads the `ModuleDef` from the `schema` endpoint.
-    pub async fn module_def(&self) -> anyhow::Result<RawModuleDefV9> {
+    pub async fn module_def(&self) -> anyhow::Result<RawModuleDefV10> {
         let res = self
             .client
             .get(self.con.db_uri("schema"))
-            .query(&[("version", "9")])
+            .query(&[("version", "10")])
             .send()
             .await?;
         let DeserializeWrapper(module_def) = res.json_or_error().await?;

@@ -14,12 +14,10 @@ public sealed class AuthCtx
     }
 
     /// <summary>
-    /// Create an AuthCtx for an internal call, with no JWT.
+    /// Capture verified invocation authority independently from lazy JWT loading.
     /// </summary>
-    private static AuthCtx Internal()
-    {
-        return new AuthCtx(isInternal: true, jwtFactory: () => null);
-    }
+    internal static AuthCtx FromVerifiedCall(uint callAuthFlags, Func<JwtClaims?> jwtFactory) =>
+        new(isInternal: (callAuthFlags & 1) != 0, jwtFactory);
 
     /// <summary>
     /// Create an AuthCtx by looking up the credentials for a connection id in system tables.
@@ -29,20 +27,27 @@ public sealed class AuthCtx
     /// </summary>
     public static AuthCtx BuildFromSystemTables(ConnectionId? connectionId, Identity identity)
     {
+        // Read synchronously while this invocation is active. Neither connection
+        // presence nor token claims determine internal authority.
+        var callAuthFlags = SpacetimeDB.Internal.FFI.get_call_auth_flags();
         if (connectionId == null)
         {
-            return Internal();
+            return FromVerifiedCall(callAuthFlags, () => null);
         }
-        return FromConnectionId(connectionId.Value, identity);
+        return FromConnectionId(connectionId.Value, identity, callAuthFlags);
     }
 
     /// <summary>
     /// Create an AuthCtx that reads JWT for a given connection ID.
     /// </summary>
-    private static AuthCtx FromConnectionId(ConnectionId connectionId, Identity identity)
+    private static AuthCtx FromConnectionId(
+        ConnectionId connectionId,
+        Identity identity,
+        uint callAuthFlags
+    )
     {
-        return new AuthCtx(
-            isInternal: false,
+        return FromVerifiedCall(
+            callAuthFlags,
             jwtFactory: () =>
             {
                 var result = SpacetimeDB.Internal.FFI.get_jwt(ref connectionId, out var source);
@@ -59,23 +64,18 @@ public sealed class AuthCtx
     }
 
     /// <summary>
-    /// True if this reducer was spawned from inside the database.
+    /// True if the host verified internal authority for this invocation.
     /// </summary>
     public bool IsInternal => _isInternal;
 
     /// <summary>
     /// Check if there is a JWT present.
-    /// If IsInternal is true, this will be false.
+    /// Independent of IsInternal. An internal call may also have a JWT.
     /// </summary>
     public bool HasJwt
     {
         get
         {
-            if (_isInternal)
-            {
-                return false;
-            }
-
             // At this point we do load the bytes.
             return _jwtLazy.Value != null;
         }

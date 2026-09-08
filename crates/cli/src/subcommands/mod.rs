@@ -1,5 +1,6 @@
 pub mod build;
 pub mod call;
+pub mod container;
 pub mod db_arg_resolution;
 pub mod delete;
 pub mod describe;
@@ -14,7 +15,6 @@ pub mod logs;
 pub mod publish;
 pub mod repl;
 pub mod server;
-pub mod sidecar;
 pub mod sql;
 pub mod start;
 pub mod subscribe;

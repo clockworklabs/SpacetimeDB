@@ -277,7 +277,11 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
       case 2: {
         let arg1;
         [arg1, fn] = args;
-        if (typeof arg1.name === 'string') opts = arg1 as ReducerOpts;
+        if (
+          typeof arg1.name === 'string' ||
+          typeof arg1.visibility === 'string'
+        )
+          opts = arg1 as ReducerOpts;
         else params = arg1 as Params;
         break;
       }
@@ -461,22 +465,22 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     params: Params,
     ret: Ret,
     fn: ProcedureFn<S, Params, Ret>
-  ): ProcedureFn<S, Params, Ret>;
+  ): ProcedureExport<S, Params, Ret>;
   procedure<Ret extends TypeBuilder<any, any>>(
     ret: Ret,
     fn: ProcedureFn<S, {}, Ret>
-  ): ProcedureFn<S, {}, Ret>;
+  ): ProcedureExport<S, {}, Ret>;
   procedure<Params extends ParamsObj, Ret extends TypeBuilder<any, any>>(
     opts: ProcedureOpts,
     params: Params,
     ret: Ret,
     fn: ProcedureFn<S, Params, Ret>
-  ): ProcedureFn<S, Params, Ret>;
+  ): ProcedureExport<S, Params, Ret>;
   procedure<Ret extends TypeBuilder<any, any>>(
     opts: ProcedureOpts,
     ret: Ret,
     fn: ProcedureFn<S, {}, Ret>
-  ): ProcedureFn<S, {}, Ret>;
+  ): ProcedureExport<S, {}, Ret>;
   procedure<Params extends ParamsObj, Ret extends TypeBuilder<any, any>>(
     ...args:
       | [Params, Ret, ProcedureFn<S, Params, Ret>]
@@ -495,7 +499,11 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
       case 3: {
         let arg1;
         [arg1, ret, fn] = args;
-        if (typeof arg1.name === 'string') opts = arg1 as ProcedureOpts;
+        if (
+          typeof arg1.name === 'string' ||
+          typeof arg1.visibility === 'string'
+        )
+          opts = arg1 as ProcedureOpts;
         else params = arg1 as Params;
         break;
       }

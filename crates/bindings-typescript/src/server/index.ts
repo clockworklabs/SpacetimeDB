@@ -10,6 +10,7 @@ export { table } from '../lib/table';
 export { SenderError, SpacetimeHostError, errors } from './errors';
 export type { Reducer, ReducerCtx, JwtClaims, AuthCtx } from '../lib/reducers';
 export type { ReducerExport } from './reducers';
+export type { FunctionVisibility } from './function_visibility';
 export { type DbView } from './db_view';
 export * from './query';
 export type {
@@ -35,3 +36,5 @@ export {
 export type { HandlerContext, HttpHandlerExport } from './http';
 
 import './polyfills'; // Ensure polyfills are loaded
+
+export type { Environment } from './environment';

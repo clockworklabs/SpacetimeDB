@@ -10,7 +10,10 @@ use spacetimedb_lib::ProductValue;
 use spacetimedb_schema::def::deserialize::{ArgsSeed, FunctionDef};
 use spacetimedb_schema::def::ModuleDef;
 
+pub mod container_environment;
+pub mod container_fence;
 mod disk_storage;
+pub mod empty_module;
 mod host_controller;
 mod module_common;
 #[allow(clippy::too_many_arguments)]
@@ -187,6 +190,8 @@ pub enum AbiCall {
     Identity,
     JwtLength,
     GetJwt,
+    GetCallAuthFlags,
+    EnvGet,
 
     VolatileNonatomicScheduleImmediate,
 

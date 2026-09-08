@@ -1,15 +1,16 @@
+import { environment, type Environment } from './environment';
 import {
   AlgebraicType,
   ProductType,
   type Deserializer,
   type Serializer,
 } from '../lib/algebraic_type';
-import { FunctionVisibility } from '../lib/autogen/types';
+import { rawVisibility, type FunctionVisibility } from './function_visibility';
 import BinaryReader from '../lib/binary_reader';
 import BinaryWriter from '../lib/binary_writer';
 import type { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
-import type { ParamsObj, ReducerCtx } from '../lib/reducers';
+import type { AuthCtx, ParamsObj, ReducerCtx } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
 import { Timestamp } from '../lib/timestamp';
 import {
@@ -22,7 +23,13 @@ import { Uuid } from '../lib/uuid';
 import { httpClient, type HttpClient } from './http_internal';
 import type { DbView } from './db_view';
 import { makeRandom, type Random } from './rng';
-import { callUserFunction, ReducerCtxImpl, runWithTx, sys } from './runtime';
+import {
+  AuthCtxImpl,
+  callUserFunction,
+  ReducerCtxImpl,
+  runWithTx,
+  sys,
+} from './runtime';
 import {
   exportContext,
   registerExport,
@@ -47,16 +54,14 @@ export function makeProcedureExport<
   ret: Ret,
   fn: ProcedureFn<S, Params, Ret>
 ): ProcedureExport<S, Params, Ret> {
-  const name = opts?.name;
-
   const procedureExport: ProcedureExport<S, Params, Ret> = (...args) =>
     fn(...args);
   procedureExport[exportContext] = ctx;
   procedureExport[registerExport] = (ctx, exportName) => {
-    registerProcedure(ctx, name ?? exportName, params, ret, fn);
+    registerProcedure(ctx, exportName, params, ret, fn, opts);
     ctx.functionExports.set(
       procedureExport as ProcedureExport<any, any, any>,
-      name ?? exportName
+      exportName
     );
   };
 
@@ -70,16 +75,20 @@ export type ProcedureFn<
 > = (ctx: ProcedureCtx<S>, args: InferTypeOfRow<Params>) => Infer<Ret>;
 
 export interface ProcedureOpts {
-  name: string;
+  name?: string;
+  /** Defaults to public, or private when scheduled. */
+  visibility?: FunctionVisibility;
 }
 
 export interface ProcedureCtx<S extends UntypedSchemaDef> {
+  readonly env: Environment;
   readonly sender: Identity;
   readonly databaseIdentity: Identity;
   /** @deprecated Use `databaseIdentity` instead. */
   readonly identity: Identity;
   readonly timestamp: Timestamp;
   readonly connectionId: ConnectionId | null;
+  readonly senderAuth: AuthCtx;
   readonly http: HttpClient;
   readonly random: Random;
   withTx<T>(body: (ctx: TransactionCtx<S>) => T): T;
@@ -90,12 +99,6 @@ export interface ProcedureCtx<S extends UntypedSchemaDef> {
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface TransactionCtx<S extends UntypedSchemaDef>
   extends ReducerCtx<S> {}
-
-type ITransactionCtx<S extends UntypedSchemaDef> = TransactionCtx<S>;
-
-const TransactionCtxImpl = class TransactionCtx<S extends UntypedSchemaDef>
-  extends ReducerCtxImpl<S>
-  implements ITransactionCtx<S> {};
 
 function registerProcedure<
   S extends UntypedSchemaDef,
@@ -124,7 +127,7 @@ function registerProcedure<
     sourceName: exportName,
     params: paramsType,
     returnType,
-    visibility: FunctionVisibility.ClientCallable,
+    visibility: rawVisibility(opts?.visibility),
   });
 
   if (opts?.name != null) {
@@ -187,6 +190,8 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   #uuidCounter: { value: 0 } | undefined;
   #random: Random | undefined;
   #dbView: () => DbView<any>;
+  readonly senderAuth: AuthCtx;
+  readonly env = environment;
 
   constructor(
     readonly sender: Identity,
@@ -195,6 +200,11 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
     dbView: () => DbView<any>
   ) {
     this.#dbView = dbView;
+    this.senderAuth = AuthCtxImpl.fromSystemTables(
+      connectionId,
+      sender,
+      sys.get_call_auth_flags()
+    );
   }
 
   get databaseIdentity() {
@@ -216,11 +226,12 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   withTx<T>(body: (ctx: TransactionCtx<S>) => T): T {
     return runWithTx(
       timestamp =>
-        new TransactionCtxImpl(
+        new ReducerCtxImpl(
           this.sender,
           timestamp,
           this.connectionId,
-          this.#dbView()
+          this.#dbView(),
+          this.senderAuth
         ) as TransactionCtx<S>,
       body
     );

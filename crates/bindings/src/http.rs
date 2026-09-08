@@ -7,7 +7,7 @@
 
 use crate::{
     rt::{read_bytes_source_as, read_bytes_source_into},
-    try_with_tx, with_tx, IterBuf, StdbRng, Timestamp, TxContext,
+    try_with_tx, with_tx, AuthCtx, IterBuf, StdbRng, Timestamp, TxContext,
 };
 use bytes::Bytes;
 #[cfg(feature = "rand")]
@@ -88,6 +88,7 @@ pub struct HandlerContext {
 
     /// Methods for performing HTTP requests.
     pub http: HttpClient,
+    sender_auth: AuthCtx,
 
     #[cfg(feature = "rand08")]
     pub(crate) rng: OnceCell<StdbRng>,
@@ -103,6 +104,7 @@ impl HandlerContext {
         Self {
             timestamp,
             http: HttpClient {},
+            sender_auth: AuthCtx::from_invocation(Identity::ZERO, None),
             #[cfg(feature = "rand08")]
             rng: OnceCell::new(),
             #[cfg(feature = "rand")]
@@ -117,12 +119,12 @@ impl HandlerContext {
 
     /// Acquire a mutable transaction and execute `body` with read-write access.
     pub fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
-        with_tx(body)
+        with_tx(Identity::ZERO, None, &self.sender_auth, body)
     }
 
     /// Acquire a mutable transaction and execute `body` with read-write access.
     pub fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
-        try_with_tx(body)
+        try_with_tx(Identity::ZERO, None, &self.sender_auth, body)
     }
 
     /// Create a new random [`Uuid`] `v4` using the built-in RNG.

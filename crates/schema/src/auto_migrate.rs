@@ -204,6 +204,24 @@ pub struct AutoMigratePlan<'def> {
 }
 
 impl AutoMigratePlan<'_> {
+    /// Function authority changes are part of the published API comparison.
+    pub fn function_visibility_changes(
+        &self,
+    ) -> impl Iterator<Item = (&str, &FunctionVisibility, &FunctionVisibility)> {
+        let reducers = self
+            .old
+            .reducers()
+            .filter(|old| old.lifecycle.is_none())
+            .filter_map(|old| {
+                let new = self.new.reducer(&*old.name)?;
+                (old.visibility != new.visibility).then_some((&*old.name, &old.visibility, &new.visibility))
+            });
+        let procedures = self.old.procedures().filter_map(|old| {
+            let new = self.new.procedure(&*old.name)?;
+            (old.visibility != new.visibility).then_some((&*old.name, &old.visibility, &new.visibility))
+        });
+        reducers.chain(procedures)
+    }
     fn any_step(&self, f: impl Fn(&AutoMigrateStep) -> bool) -> bool {
         self.steps.iter().any(f)
     }
@@ -466,6 +484,15 @@ pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> 
         steps: Vec::new(),
         prechecks: Vec::new(),
     };
+
+    let restricts_function_access = plan.function_visibility_changes().any(|(_, old, new)| {
+        [false, true]
+            .into_iter()
+            .any(|owner| old.allows_invocation(false, owner) && !new.allows_invocation(false, owner))
+    });
+    if restricts_function_access {
+        plan.ensure_disconnect_all_users();
+    }
 
     let views_ok = auto_migrate_views(&mut plan);
     let tables_ok = auto_migrate_tables(&mut plan);

@@ -17,6 +17,8 @@
 #include <type_traits>
 #include <memory>
 
+#include <spacetimedb/environment.h>
+
 namespace SpacetimeDB {
 
 /**
@@ -57,8 +59,10 @@ struct ProcedureContext {
 private:
     // Caller's identity - who invoked this procedure
     Identity sender_;
+    AuthCtx sender_auth_ = AuthCtx::internal();
 
 public:
+    Environment env;
     // Timestamp when the procedure was invoked
     Timestamp timestamp;
 
@@ -84,7 +88,11 @@ public:
     ProcedureContext() = default;
     
     ProcedureContext(Identity s, Timestamp t, ConnectionId conn_id)
-        : sender_(s), timestamp(t), connection_id(conn_id) {}
+        : sender_(s), sender_auth_(AuthCtx::from_connection_id_opt(
+              conn_id.id.low == 0 && conn_id.id.high == 0 ? std::nullopt : std::optional<ConnectionId>(conn_id), s)),
+          timestamp(t), connection_id(conn_id) {}
+
+    const AuthCtx& sender_auth() const { return sender_auth_; }
 
     Identity sender() const {
         return sender_;
@@ -100,7 +108,7 @@ public:
      * @code
      * auto module_id = ctx.database_identity();
      * std::string url = "http://localhost:3000/v1/database/" + 
-     *                   module_id.to_hex() + "/schema?version=9";
+     *                   module_id.to_hex_string() + "/schema?version=10";
      * @endcode
      */
     Identity database_identity() const {
@@ -200,8 +208,9 @@ public:
         auto make_reducer_ctx = [this](Timestamp tx_timestamp) {
             return ReducerContext(
                 sender(),
-                std::optional<ConnectionId>(connection_id),
-                tx_timestamp
+                connection_id.id.low == 0 && connection_id.id.high == 0 ? std::nullopt : std::optional<ConnectionId>(connection_id),
+                tx_timestamp,
+                sender_auth_
             );
         };
         return Internal::with_tx(make_reducer_ctx, body);
@@ -232,8 +241,9 @@ public:
         auto make_reducer_ctx = [this](Timestamp tx_timestamp) {
             return ReducerContext(
                 sender(),
-                std::optional<ConnectionId>(connection_id),
-                tx_timestamp
+                connection_id.id.low == 0 && connection_id.id.high == 0 ? std::nullopt : std::optional<ConnectionId>(connection_id),
+                tx_timestamp,
+                sender_auth_
             );
         };
         return Internal::try_with_tx(make_reducer_ctx, body);

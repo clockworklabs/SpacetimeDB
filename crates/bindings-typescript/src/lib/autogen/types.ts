@@ -76,6 +76,8 @@ export type ExplicitNames = __Infer<typeof ExplicitNames>;
 export const FunctionVisibility = __t.enum('FunctionVisibility', {
   Private: __t.unit(),
   ClientCallable: __t.unit(),
+  Internal: __t.unit(),
+  ExplicitClientCallable: __t.unit(),
 });
 export type FunctionVisibility = __Infer<typeof FunctionVisibility>;
 
@@ -387,6 +389,7 @@ export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
   get HttpRoutes() {
     return __t.array(RawHttpRouteDefV10);
   },
+  Capabilities: __t.array(__t.string()),
 });
 export type RawModuleDefV10Section = __Infer<typeof RawModuleDefV10Section>;
 

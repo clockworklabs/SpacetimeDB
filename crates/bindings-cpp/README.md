@@ -2,6 +2,30 @@
 
 The SpacetimeDB C++ Module Library provides a modern C++20 API for building SpacetimeDB modules that run inside the database as WebAssembly.
 
+## Function visibility and invocation authentication
+
+Apply `SPACETIMEDB_FUNCTION_VISIBILITY(name, Public)`, `Private`, or `Internal`
+to a reducer or procedure after its definition:
+
+```cpp
+SPACETIMEDB_REDUCER(process_jobs, ReducerContext ctx) {
+    return Ok();
+}
+SPACETIMEDB_FUNCTION_VISIBILITY(process_jobs, Internal);
+```
+
+Omission means public for ordinary functions and private for scheduled functions.
+An explicit choice is preserved when the function is scheduled. Lifecycle
+reducers permit only omission or `Internal` and can only run for their host
+lifecycle event. Internal functions require verified internal authority. Private
+functions also admit the owner, and public functions admit any client.
+
+`ctx.sender_auth().is_internal()` captures the host's invocation authority. It is
+independent of connection and JWT presence, so an internal call can have a JWT.
+JWT identity is the verified sender supplied by the host. Procedures preserve
+this authentication in `with_tx` and `try_with_tx`. Newly compiled modules emit
+schema V10 and advertise `hosted_auth_v1`, requiring a compatible host.
+
 ## Current State
 
 This library provides a production-ready C++ bindings for SpacetimeDB with complete type system support:
@@ -274,4 +298,3 @@ See the `modules/*-cpp/src/` directory for example modules:
 ## Contributing
 
 This library is part of the SpacetimeDB project. Please see the main repository for contribution guidelines.
-

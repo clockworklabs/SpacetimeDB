@@ -333,4 +333,13 @@ internal static class ErrorDescriptor
                 $"HTTP handler method {method.Identifier} must be non-generic and take exactly two parameters.",
             method => method.ParameterList
         );
+
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> InvalidFunctionVisibility =
+        new(
+            group,
+            "Invalid function visibility",
+            _ =>
+                $"Visibility must be Default, Public, Private, or Internal. Lifecycle reducers only permit Default or Internal.",
+            method => method.Identifier
+        );
 }

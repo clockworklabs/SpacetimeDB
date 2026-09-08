@@ -510,7 +510,7 @@ export const getMySchemaViaHttp = spacetimedb.procedure(t.string(), ctx => {
   const module_identity = ctx.databaseIdentity;
   try {
     const response = ctx.http.fetch(
-      `http://localhost:3000/v1/database/${module_identity}/schema?version=9`
+      `http://localhost:3000/v1/database/${module_identity}/schema?version=10`
     );
     return response.text();
   } catch (e) {
@@ -520,3 +520,26 @@ export const getMySchemaViaHttp = spacetimedb.procedure(t.string(), ctx => {
     throw e;
   }
 });
+
+// Dedicated environment ABI integration exercised by crates/testing.
+export const expect_environment = spacetimedb.reducer(
+  { key: t.string(), expected: t.option(t.string()) },
+  (ctx, { key, expected }) => {
+    if (ctx.env.get(key) !== (expected ?? null)) {
+      throw new Error('environment value mismatch');
+    }
+  }
+);
+export const read_environment = spacetimedb.procedure(
+  { key: t.string() },
+  t.option(t.string()),
+  (ctx, { key }) => {
+    const outside = ctx.env.get(key);
+    ctx.withTx(tx => {
+      if (tx.env.get(key) !== outside) {
+        throw new Error('transaction environment value mismatch');
+      }
+    });
+    return outside ?? undefined;
+  }
+);

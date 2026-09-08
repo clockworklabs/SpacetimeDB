@@ -209,13 +209,13 @@ error[E0277]: `&'a Alpha` cannot appear as an argument to an index filtering ope
    = note: The allowed set of types are limited to integers, bool, strings, `Identity`, `Uuid`, `Timestamp`, `ConnectionId`, `Hash` and no-payload enums which derive `SpacetimeType`,
    = help: the following other types implement trait `FilterableValue`:
              &ConnectionId
+             &ContainerMode
              &FunctionVisibility
              &Identity
              &Lifecycle
-             &TableAccess
-             &TableType
-             &bool
-             &ethnum::int::I256
+             &PortExposure
+             &PortProtocol
+             &RestartPolicy
            and $N others
 note: required by a bound in `UniqueColumn::<Tbl, <Col as spacetimedb::table::Column>::ColType, Col>::find`
   --> src/table.rs
@@ -241,13 +241,13 @@ help: the trait `FilterableValue` is not implemented for `Alpha`
    | ^^^^^^^^^^^^
    = help: the following other types implement trait `FilterableValue`:
              &ConnectionId
+             &ContainerMode
              &FunctionVisibility
              &Identity
              &Lifecycle
-             &TableAccess
-             &TableType
-             &bool
-             &ethnum::int::I256
+             &PortExposure
+             &PortProtocol
+             &RestartPolicy
            and $N others
    = note: required for `Alpha` to implement `IndexScanRangeBounds<(Alpha,), SingleBound>`
 note: required by a bound in `RangedIndex::<Tbl, IndexType, Idx>::filter`

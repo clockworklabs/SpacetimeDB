@@ -27,6 +27,7 @@ spacetimedb-codegen.workspace = true
 spacetimedb-data-structures.workspace = true
 spacetimedb-fs-utils.workspace = true
 spacetimedb-lib.workspace = true
+spacetimedb-oci = { path = "../oci" }
 spacetimedb-paths.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-schema.workspace = true
@@ -65,6 +66,8 @@ syntect.workspace = true
 tabled.workspace = true
 tar.workspace = true
 tempfile.workspace = true
+sha2 = "0.10"
+tokio-util.workspace = true
 termcolor.workspace = true
 termtree.workspace = true
 thiserror.workspace = true
@@ -73,6 +76,8 @@ tokio-tungstenite.workspace = true
 toml.workspace = true
 toml_edit.workspace = true
 tracing = { workspace = true, features = ["release_max_level_off"] }
+url.workspace = true
+uuid = { workspace = true, features = ["std", "serde", "v7"] }
 walkdir.workspace = true
 wasmbin.workspace = true
 webbrowser.workspace = true
@@ -91,12 +96,16 @@ notify.workspace = true
 path-clean = "1.0.1"
 
 [dev-dependencies]
+axum.workspace = true
 pretty_assertions.workspace = true
 fs_extra.workspace = true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { workspace = true }
 tikv-jemalloc-ctl = { workspace = true }
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+rustix = { version = "1", features = ["fs", "process"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = ["Win32_System_Console"] }

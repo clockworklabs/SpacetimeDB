@@ -169,6 +169,37 @@ pub(super) fn sys_v2_1<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
     )
 }
 
+/// Invocation authentication is independent of transaction or connection state.
+pub(super) fn sys_v2_2<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
+    create_synthetic_module!(
+        scope,
+        "spacetime:sys@2.2",
+        (with_sys_result, AbiCall::GetCallAuthFlags, get_call_auth_flags),
+    )
+}
+
+pub(super) fn sys_v2_3<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
+    create_synthetic_module!(scope, "spacetime:sys@2.3", (with_sys_result, AbiCall::EnvGet, env_get),)
+}
+
+fn env_get<'s>(
+    scope: &mut PinScope<'s, '_>,
+    args: FunctionCallbackArguments<'s>,
+) -> SysCallResult<Local<'s, v8::Value>> {
+    let key: String = deserialize_js(scope, args.get(0))?;
+    match get_env(scope)?.instance_env.env_get(&key)? {
+        Some(value) => Ok(value
+            .into_string(scope)
+            .map_err(|_| RangeError("environment value could not be represented").throw(scope))?
+            .into()),
+        None => Ok(v8::null(scope).into()),
+    }
+}
+
+fn get_call_auth_flags(scope: &mut PinScope<'_, '_>, _args: FunctionCallbackArguments<'_>) -> SysCallResult<u32> {
+    Ok(get_env(scope)?.instance_env.get_call_auth_flags())
+}
+
 /// Registers a function in `module`
 /// where the function has `name` and does `body`.
 fn register_module_fun(
@@ -449,6 +480,8 @@ pub(super) fn call_call_reducer<'scope>(
         name: _,
         caller_identity: sender,
         caller_connection_id: conn_id,
+        call_auth_flags: _,
+        hosted_auth: _,
         timestamp,
         args: reducer_args,
     } = op;

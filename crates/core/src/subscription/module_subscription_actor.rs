@@ -7,6 +7,7 @@ use super::module_subscription_manager::{
 use super::query::compile_query_with_hashes;
 use super::tx::DeltaTx;
 use super::{collect_table_update, TableUpdateType};
+use crate::auth::invocation::check_hosted_admission;
 use crate::client::messages::{
     ProcedureResultMessage, SerializableMessage, SubscriptionData, SubscriptionError, SubscriptionMessage,
     SubscriptionResult, SubscriptionRows, SubscriptionUpdateMessage, TransactionUpdateMessage,
@@ -32,6 +33,7 @@ use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
 use spacetimedb_datastore::traits::{IsolationLevel, TxData};
 use spacetimedb_durability::TxOffset;
@@ -66,6 +68,7 @@ pub struct ModuleSubscriptions {
     stats: Arc<SubscriptionGauges>,
     metrics: Arc<SubscriptionMetricsForWorkloads>,
     module_def_version: Arc<AtomicU8>,
+    hosted_connections: Arc<RwLock<Vec<std::sync::Weak<ClientConnectionSender>>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -305,6 +308,7 @@ impl ModuleSubscriptions {
         Self {
             relational_db,
             subscriptions,
+            hosted_connections: Arc::new(RwLock::new(Vec::new())),
             broadcast_queue,
             stats,
             metrics,
@@ -313,6 +317,46 @@ impl ModuleSubscriptions {
                 RawModuleDefVersion::V9OrEarlier,
             ))),
         }
+    }
+
+    /// Register every hosted socket, even if it has no subscriptions. Taking the
+    /// database transaction before the registry lock serializes with fencing.
+    pub(crate) fn register_hosted_connection(&self, sender: &Arc<ClientConnectionSender>) -> anyhow::Result<()> {
+        self.relational_db.with_read_only(Workload::Internal, |tx| {
+            check_hosted_admission(tx, &self.relational_db, sender.auth.hosted.as_ref())?;
+            let mut connections = self.hosted_connections.write();
+            connections.retain(|connection| connection.strong_count() != 0);
+            connections.push(Arc::downgrade(sender));
+            Ok(())
+        })
+    }
+
+    pub(crate) fn unregister_hosted_connection(&self, sender: &std::sync::Weak<ClientConnectionSender>) {
+        self.hosted_connections
+            .write()
+            .retain(|connection| connection.strong_count() != 0 && !connection.ptr_eq(sender));
+    }
+
+    #[cfg(test)]
+    pub(crate) fn hosted_connection_count(&self) -> usize {
+        self.hosted_connections.read().len()
+    }
+
+    /// Call with the transaction containing the new target fence. After its
+    /// durable commit, await every returned actor's completion before acking the
+    /// fence barrier. This also cancels socket batches already dequeued for I/O.
+    pub fn cancel_invalid_hosted_connections<S: StateView>(&self, tx: &S) -> Vec<tokio::task::AbortHandle> {
+        let mut cancelled = Vec::new();
+        self.hosted_connections.write().retain(|connection| {
+            let Some(connection) = connection.upgrade() else {
+                return false;
+            };
+            if check_hosted_admission(tx, &self.relational_db, connection.auth.hosted.as_ref()).is_err() {
+                cancelled.push(connection.cancel_hosted_connection());
+            }
+            true
+        });
+        cancelled
     }
 
     pub fn set_module_def_version(&self, version: RawModuleDefVersion) {
@@ -334,7 +378,8 @@ impl ModuleSubscriptions {
     fn decode_module_def_version(version: u8) -> RawModuleDefVersion {
         match version {
             1 => RawModuleDefVersion::V10,
-            _ => RawModuleDefVersion::V9OrEarlier,
+            0 => RawModuleDefVersion::V9OrEarlier,
+            _ => unreachable!("invalid stored module definition version"),
         }
     }
 
@@ -635,6 +680,7 @@ impl ModuleSubscriptions {
         let hash_with_param = QueryHash::from_string(&sql, auth.caller(), true);
 
         let (mut_tx, _) = self.begin_mut_tx(Workload::Subscribe);
+        check_hosted_admission(&*mut_tx, &self.relational_db, sender.auth.hosted.as_ref())?;
 
         let existing_query = {
             let guard = self.subscriptions.read();
@@ -737,6 +783,8 @@ impl ModuleSubscriptions {
             )
         };
 
+        let (mut_tx, _) = self.begin_mut_tx(Workload::Unsubscribe);
+        check_hosted_admission(&*mut_tx, &self.relational_db, sender.auth.hosted.as_ref())?;
         let mut subscriptions = self.subscriptions.write();
 
         let queries = return_on_err!(
@@ -753,7 +801,8 @@ impl ModuleSubscriptions {
             return Ok(None);
         };
 
-        let (mut tx, tx_offset) = self.unsubscribe_views(query, auth.caller())?;
+        let mut_tx = ScopeGuard::<MutTxId, _>::into_inner(mut_tx);
+        let (mut tx, tx_offset) = self.unsubscribe_views_and_downgrade_tx(mut_tx, query, auth.caller())?;
 
         let (table_rows, metrics) = return_on_err_with_sql!(
             self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth, TableUpdateType::Unsubscribe),
@@ -816,6 +865,7 @@ impl ModuleSubscriptions {
 
         // Always lock the db before the subscription lock to avoid deadlocks.
         let (mut_tx, _) = self.begin_mut_tx(Workload::Unsubscribe);
+        check_hosted_admission(&*mut_tx, &self.relational_db, sender.auth.hosted.as_ref())?;
 
         let removed_queries = {
             let _compile_timer = subscription_metrics.compilation_time.start_timer();
@@ -933,6 +983,7 @@ impl ModuleSubscriptions {
 
         // Always lock the db before the subscription lock to avoid deadlocks.
         let (mut_tx, _) = self.begin_mut_tx(Workload::Unsubscribe);
+        check_hosted_admission(&*mut_tx, &self.relational_db, sender.auth.hosted.as_ref())?;
 
         let removed_queries = {
             let _compile_timer = subscription_metrics.compilation_time.start_timer();
@@ -1013,7 +1064,7 @@ impl ModuleSubscriptions {
     #[allow(clippy::type_complexity)]
     fn compile_queries(
         &self,
-        sender: Identity,
+        sender: &ClientConnectionSender,
         auth: AuthCtx,
         queries: &[Box<str>],
         num_queries: usize,
@@ -1029,13 +1080,14 @@ impl ModuleSubscriptions {
                 subscribe_to_all_tables = true;
                 continue;
             }
-            let hash = QueryHash::from_string(sql, sender, false);
-            let hash_with_param = QueryHash::from_string(sql, sender, true);
+            let hash = QueryHash::from_string(sql, sender.id.identity, false);
+            let hash_with_param = QueryHash::from_string(sql, sender.id.identity, true);
             query_hashes.push((sql, hash, hash_with_param));
         }
 
         // We always get the db lock before the subscription lock to avoid deadlocks.
         let (mut_tx, _tx_offset) = self.begin_mut_tx(Workload::Subscribe);
+        check_hosted_admission(&*mut_tx, &self.relational_db, sender.auth.hosted.as_ref())?;
 
         let compile_timer = metrics.compilation_time.start_timer();
 
@@ -1276,13 +1328,7 @@ impl ModuleSubscriptions {
         subscription_metrics.num_queries_subscribed.inc_by(num_queries as _);
 
         let (queries, auth, mut_tx, _compile_timer) = return_on_err!(
-            self.compile_queries(
-                sender.id.identity,
-                auth,
-                &request.query_strings,
-                num_queries,
-                subscription_metrics
-            ),
+            self.compile_queries(&sender, auth, &request.query_strings, num_queries, subscription_metrics),
             send_err_msg,
             (None, false)
         );
@@ -1367,13 +1413,7 @@ impl ModuleSubscriptions {
         subscription_metrics.num_queries_subscribed.inc_by(num_queries as _);
 
         let (queries, auth, mut_tx, compile_timer) = return_on_err!(
-            self.compile_queries(
-                sender.id.identity,
-                auth,
-                &request.query_strings,
-                num_queries,
-                subscription_metrics
-            ),
+            self.compile_queries(&sender, auth, &request.query_strings, num_queries, subscription_metrics),
             send_err_msg,
             (None, false)
         );
@@ -1522,7 +1562,7 @@ impl ModuleSubscriptions {
         subscription_metrics.num_queries_subscribed.inc_by(num_queries as _);
 
         let (queries, auth, mut_tx, compile_timer) = self.compile_queries(
-            sender.id.identity,
+            &sender,
             auth,
             &subscription.query_strings,
             num_queries,
@@ -1669,7 +1709,7 @@ impl ModuleSubscriptions {
         // We'll later ensure tx is released/cleaned up once out of scope.
         let (read_tx, tx_data, tx_metrics_mut) = match &mut event.status {
             EventStatus::Committed(db_update) => {
-                let (tx_data, tx_metrics, read_tx) = stdb.commit_tx_downgrade(tx, Workload::Update);
+                let (tx_data, tx_metrics, read_tx) = stdb.commit_tx_downgrade(tx, Workload::Update)?;
                 *db_update = DatabaseUpdate::from_writes(&tx_data);
                 (read_tx, tx_data, tx_metrics)
             }
@@ -1777,7 +1817,7 @@ impl ModuleSubscriptions {
         sender: Identity,
     ) -> Result<(TxGuard<impl FnOnce(TxId) + '_>, TransactionOffset), DBError> {
         Self::_unsubscribe_views(&mut tx, view_collector, sender)?;
-        let (tx_data, tx_metrics_mut, tx) = self.relational_db.commit_tx_downgrade(tx, Workload::Unsubscribe);
+        let (tx_data, tx_metrics_mut, tx) = self.relational_db.commit_tx_downgrade(tx, Workload::Unsubscribe)?;
         let opts = GuardTxOptions::from_mut(tx_data, tx_metrics_mut);
         Ok(self.guard_tx(tx, opts))
     }
@@ -1812,7 +1852,7 @@ impl ModuleSubscriptions {
             (tx, trapped) = ModuleHost::materialize_views(tx, instance, view_collector, sender, Workload::Subscribe)?;
         };
 
-        let (tx_data, tx_metrics_mut, tx) = self.relational_db.commit_tx_downgrade(tx, Workload::Subscribe);
+        let (tx_data, tx_metrics_mut, tx) = self.relational_db.commit_tx_downgrade(tx, Workload::Subscribe)?;
 
         let opts = GuardTxOptions::from_mut(tx_data, tx_metrics_mut);
         let (a, b) = self.guard_tx(tx, opts);
