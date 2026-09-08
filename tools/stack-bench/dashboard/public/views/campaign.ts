@@ -228,14 +228,13 @@ export function campaignPage(input: CampaignPageInput): string {
     + `<div class="sheet-scroll" role="region" aria-label="Stack comparison" tabindex="0"><table class="sheet"><thead><tr><th scope="col" class="h">Metric</th>${heads}</tr></thead><tbody>`
     + row('Completion', stack => `<div class="big${sheet.provisional ? ' prov' : ''}">${pct(stack.completionRate === null ? null : 100 * stack.completionRate)}</div>`)
     + row('Cost per valid run', stack => value(stack.costPerValidRun === null ? (stack.n ? 'Unknown' : 'Awaiting valid runs') : `$${stack.costPerValidRun.toFixed(2)}`))
-    + repetitions + '</tbody></table></div>'
-    + '<details class="technical"><summary>More comparison metrics</summary><p class="summary-note">Weighted scores and duration use usable completed results. A dash means no usable value yet.</p>'
-    + `<div class="sheet-scroll"><table class="sheet"><thead><tr><th scope="col" class="h">Metric</th>${heads}</tr></thead><tbody>`
-    + row('Total spend', stack => value(spend(stack.spend) + (stack.spendPending ? ' (usage pending)' : '')))
     + row('Weighted score', stack => value(pct(stack.score)))
     + row('Unaided', stack => value(pct(stack.unaided)))
     + row('Regressions', stack => value(num(stack.regressions)))
-    + row('Time', stack => value(duration(stack.timeSec))) + '</tbody></table></div></details>'
+    + row('Time', stack => value(duration(stack.timeSec)))
+    + repetitions
+    + row('Total spend', stack => value(spend(stack.spend) + (stack.spendPending ? ' (usage pending)' : '')))
+    + '</tbody></table></div>'
     + '<h3>Runs</h3><p class="summary-note">One row per attempt. Open a run for grades, screenshots, files, and logs.</p>'
     + '<div class="tablewrap"><div class="wrap"><table class="runs attempt-list"><thead><tr><th>Run</th><th>Completion</th><th>Spend</th><th>Repairs</th><th>Elapsed</th><th>Status</th></tr></thead><tbody>'
     + stacks.flatMap(stack => stack.attempts.map(attempt => {

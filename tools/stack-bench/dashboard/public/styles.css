@@ -225,8 +225,6 @@ table.plans td.name { color: var(--n1); font-weight: 600; }
 .graph-key { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 8px; font-size: 12px; }
 .graph-key span { display: inline-flex; align-items: center; gap: 6px; }
 .graph-key p { flex-basis: 100%; margin: 0; }
-.technical { margin-bottom: 16px; }
-.technical > summary { cursor: pointer; padding: 8px 0; color: var(--n3); }
 /* Secondary help stays out of the layout and above scrolling containers. */
 .metric-help { padding: 4px 0; border: 0; background: transparent; text-align: left; cursor: help; }
 .metric-help:hover, .metric-help:focus-visible { color: var(--n1); }
