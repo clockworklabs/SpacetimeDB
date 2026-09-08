@@ -836,7 +836,6 @@ jobs:
       SDK_TEST_CLIENT_DIR: sdk-test-clients/native
     steps: &sdk-test-partition-steps
       - *set-cargo-target-dir
-      - *configure-sccache
 
       - &set-spacetime-bin
         name: Set SpacetimeDB binary path
@@ -891,8 +890,6 @@ jobs:
             -- \
             --partition hash:${{ matrix.partition }}/${{ env.PARTITION_COUNT }} \
             -E 'not test(/unreal/)'
-
-      - *show-sccache-stats
 
   sdk_tests_browser:
     needs: [upload-build-artifacts-linux, sdk_test_prepare_browser]
