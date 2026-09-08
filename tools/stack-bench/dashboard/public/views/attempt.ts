@@ -1,3 +1,4 @@
+import type { TranscriptPage } from '../../dashboard-transcript.js';
 // One attempt: figures, the climb at full size, and the evidence behind tabs.
 // Each tab is a link, so what is open survives a reload and a back button.
 
@@ -7,7 +8,7 @@ import type { readCampaignTimeBudget } from '../../../src/campaigns/campaign-tim
 import { bigClimb } from '../climb.js';
 import { DASH, duration, executionClock, esc, metricLabel, spend, pct, phrase, ratio, stackLabel } from '../format.js';
 
-export type AttemptTab = 'checks' | 'screenshots' | 'files' | 'log';
+export type AttemptTab = 'checks' | 'screenshots' | 'files' | 'log' | 'transcript';
 
 export interface AttemptPageInput {
   sheet: CampaignSheet;
@@ -16,6 +17,7 @@ export interface AttemptPageInput {
   checks: AttemptChecks | null;
   evidence: AttemptPackage | null;
   log: string;
+  transcript?: TranscriptPage | null;
   timeBudget?: ReturnType<typeof readCampaignTimeBudget> | null;
   canControl?: boolean;
   controlError?: string;
@@ -77,7 +79,7 @@ function artifacts(evidence: AttemptPackage | null, key: string, visual: boolean
     `<a href="${link(item.id)}">${esc(item.path)}</a>`).join('')}</div>`;
 }
 
-export function attemptPage({ sheet, attemptId, tab, checks, evidence, log,
+export function attemptPage({ sheet, attemptId, tab, checks, evidence, log, transcript,
   timeBudget, canControl = false, controlError = '' }: AttemptPageInput): string {
   const found = locate(sheet, attemptId);
   const crumbs = (tail: string): string => `<div class="crumbs"><a href="/">Campaigns</a> / `
@@ -118,9 +120,10 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log,
       ? String(evidence.executions.reduce((total, item) => total + item.visuals.length, 0)) : '',
     files: evidence ? String(evidence.executions.reduce((total, item) =>
       total + item.artifacts.filter(entry => entry.kind !== 'visual').length, 0)) : '',
+    transcript: attempt.status === 'running' ? 'live' : '',
     log: attempt.status === 'running' ? 'live' : '',
   };
-  const tabs = (['checks', 'screenshots', 'files', 'log'] as const).map(entry =>
+  const tabs = (['checks', 'transcript', 'screenshots', 'files', 'log'] as const).map(entry =>
     `<a class="${entry === tab ? 'on' : ''}"${entry === tab ? ' aria-current="page"' : ''} href="?tab=${entry}">`
     + `${entry[0]!.toUpperCase()}${entry.slice(1)}`
     + `${counts[entry] ? `<i>${esc(counts[entry])}</i>` : ''}</a>`).join('');
@@ -138,7 +141,8 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log,
     `<div><div class="metric-label">${metricLabel(label, help[label])}</div><b class="${tone}">${text}</b></div>`;
   const stage = (level: number): string =>
     sheet.mode === 'dependency' ? `depth ${level}` : `L${level}`;
-  const panel = tab === 'checks' ? checksTable(checks)
+  const panel = tab === 'transcript' ? transcriptPanel(transcript)
+    : tab === 'checks' ? checksTable(checks)
     : tab === 'log' ? (log ? `<pre class="log">${esc(log)}</pre>` : '<p class="summary-note">No log output is recorded yet.</p>')
       : artifacts(evidence, sheet.key, tab === 'screenshots');
   const issue = attempt.excluded
@@ -166,4 +170,20 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log,
     + figure('Time', duration(attempt.timeSec))
     + `</div>${timeControls}${grantStatus}${controlError ? `<p class="err" role="alert">${esc(controlError)}</p>` : ''}${issue}${dependency}<h3>Grade history</h3>${bigClimb(attempt.climb, stage)}`
     + `<div class="tabs">${tabs}</div>${panel}</div>`;
+}
+
+function transcriptPanel(page?: TranscriptPage | null): string {
+  if (!page) return '<div class="loading" role="status">Loading transcript…</div>';
+  if (!page.sessions.length) return '<p class="summary-note">No transcript is available for this run yet.</p>';
+  return '<div class="transcript-controls"><label>Session <select data-transcript-session aria-label="Transcript session">'
+    + page.sessions.map(session => `<option value="${esc(session.id)}"${session.id === page.session ? ' selected' : ''}>${esc(session.label)}</option>`).join('')
+    + '</select></label>'
+    + (page.before === null ? '' : `<button data-transcript-before="${page.before}">Earlier</button>`)
+    + '<button data-transcript-latest title="Show the newest messages. Live updates pause while you read earlier messages.">Latest</button></div>'
+    + (page.skipped ? '<p class="summary-note">Some malformed transcript records could not be displayed.</p>' : '')
+    + '<div class="transcript" tabindex="0" aria-label="Agent transcript">'
+    + page.messages.map(message => message.tool
+      ? `<details data-key="${esc(message.id)}"><summary>${esc(message.role)}</summary><pre>${esc(message.text)}</pre></details>`
+      : `<article data-key="${esc(message.id)}"><strong>${esc(message.role)}</strong><pre>${esc(message.text)}</pre></article>`).join('')
+    + '</div>';
 }

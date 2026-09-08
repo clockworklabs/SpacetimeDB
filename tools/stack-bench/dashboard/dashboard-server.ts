@@ -13,7 +13,7 @@ import { contained, discoverPlans, readCampaignArtifactBody,
   readJsonLines, resolveCampaignArtifact, summarizeCampaign,
 } from './dashboard-model.js';
 import type { DashboardPlan } from './dashboard-model.js';
-import { attemptChecks, attemptLogSlice, attemptPackage, campaignProgression, campaignSheet,
+import { attemptTranscript, attemptChecks, attemptLogSlice, attemptPackage, campaignProgression, campaignSheet,
   overviewSummary } from './dashboard-views.js';
 import { watchCampaigns } from './dashboard-events.js';
 import type { CampaignChange, CampaignWatcher } from './dashboard-events.js';
@@ -450,7 +450,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
         if (!existsSync(contained(campaignsRoot, key, 'campaign'))) {
           return json(response, 404, { error: 'Not found' });
         }
-        const attemptRoute = rest.match(/^attempts\/([^/]+)\/(checks|package|log)$/);
+        const attemptRoute = rest.match(/^attempts\/([^/]+)\/(checks|package|log|transcript)$/);
         const attemptId = attemptRoute ? decodeURIComponent(attemptRoute[1] ?? '') : '';
         if (attemptRoute && !SAFE_NAME.test(attemptId)) {
           return json(response, 400, { error: 'The attempt name is invalid.' });
@@ -466,6 +466,14 @@ export function createDashboardServer(options: DashboardServerOptions) {
             return progression
               ? json(response, 200, progression)
               : json(response, 404, { error: 'Progression is recorded for dependency campaigns only.' });
+          }
+          if (attemptRoute?.[2] === 'transcript') {
+            const before = url.searchParams.get('before');
+            if (before !== null && (!/^\d+$/.test(before) || !Number.isSafeInteger(Number(before)))) {
+              return json(response, 400, { error: 'Invalid transcript offset' });
+            }
+            return json(response, 200, attemptTranscript(resultsRoot, key, attemptId,
+              url.searchParams.get('session') ?? '', before === null ? undefined : Number(before)));
           }
           if (attemptRoute?.[2] === 'checks') {
             return json(response, 200, attemptChecks(resultsRoot, key, attemptId));

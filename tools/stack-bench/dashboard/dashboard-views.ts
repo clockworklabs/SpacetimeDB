@@ -1,3 +1,4 @@
+import { readAttemptTranscript } from './dashboard-transcript.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { sha256 } from '../src/evidence/provenance.js';
 import { closeSync, existsSync, fstatSync, openSync, readSync, readdirSync, statSync }
@@ -823,4 +824,14 @@ export function campaignProgression(resultsRoot: string, key: string): CampaignP
   };
   progressionCache.set(directory, { fingerprint, view });
   return view;
+}
+
+export function attemptTranscript(resultsRoot: string, key: string, attemptId: string,
+  session: string, before?: number) {
+  const directory = campaignDirectory(resultsRoot, key);
+  const attempt = attemptState(directory, attemptId);
+  return readAttemptTranscript(attempt.executions.map((execution, index) => ({
+    directory: contained(directory, execution.output, 'campaign execution'),
+    label: `Execution ${index + 1}`,
+  })), attempt.plan.agentAdapter, session, before);
 }

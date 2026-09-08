@@ -91,6 +91,14 @@ test('campaign separates aggregate scores from selected evidence and explains pe
   assert.match(attemptPage({ ...grantInput, timeBudget: { ...budget, grants: [],
     continuation: { eligible: false, reason: 'Coding session was interrupted.' } } }),
   /Cannot resume: Coding session was interrupted/);
+  const transcriptHtml = attemptPage({ ...grantInput, tab: 'transcript', transcript: {
+    sessions: [{ id: 'one', label: 'Session 1' }], session: 'one', before: 100, skipped: 0,
+    messages: [{ id: 'm1', role: 'assistant', text: '<script>alert(1)</script>', tool: false },
+      { id: 'm2', role: 'Bash', text: 'echo hello', tool: true }],
+  } });
+  assert.match(transcriptHtml, /&lt;script&gt;/);
+  assert.doesNotMatch(transcriptHtml, /<script>|<details[^>]*open/);
+  assert.match(transcriptHtml, /data-transcript-before="100"/);
   attempt.status = 'running';
   const progression: CampaignProgression = {
     key: sheet.key, depths: [1], questlines: [{ id: 'catalog', title: 'Catalog', nodes: ['item'] }],

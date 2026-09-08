@@ -13,7 +13,7 @@ if (name === '') {
   const files = fs.readdirSync(root, { recursive: true, withFileTypes: true })
     .filter(entry => entry.isFile() && entry.name.endsWith('.jsonl'))
     .map(entry => path.join(entry.parentPath, entry.name))
-    .map(file => [path.relative(root, file), fs.statSync(file).size]);
+    .map(file => [path.relative(root, file), fs.statSync(file).size, fs.statSync(file).mtimeMs]);
   process.stdout.write(JSON.stringify(files));
 } else {
   const file = path.resolve(root, name), resolvedRoot = fs.realpathSync(root);

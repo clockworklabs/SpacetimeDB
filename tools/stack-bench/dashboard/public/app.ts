@@ -1,5 +1,7 @@
 /// <reference lib="dom" />
 /// <reference lib="dom.iterable" />
+import type { TranscriptPage } from '../dashboard-transcript.js';
+
 
 // The client: real paths, one event stream, and keyed reconciliation so a
 // refresh does not move what the pointer is on. Every view is a pure function
@@ -17,7 +19,7 @@ import { type Page, type RunForm, afterRun, plansPage, runName, topbar }
 import { duration, elapsed, esc } from './format.js';
 
 const FALLBACK_MS = 15_000;
-const TABS: readonly AttemptTab[] = ['checks', 'screenshots', 'files', 'log'];
+const TABS: readonly AttemptTab[] = ['checks', 'transcript', 'screenshots', 'files', 'log'];
 const VIEWS: readonly QuestlineView[] = ['grid', 'graph', 'replay'];
 const FILTERS: readonly CampaignFilter[] = ['all', 'attention', 'completed', 'ready'];
 
@@ -47,6 +49,7 @@ const state = {
   timeBudgets: new Map<string, ReturnType<typeof readCampaignTimeBudget>>(),
   timeGrantIds: new Map<string, string>(),
   timeGrantMinutes: '120',
+  transcript: { attempt: '', session: '', before: undefined as number | undefined, page: null as TranscriptPage | null },
   log: { attempt: '', text: '', offset: 0 },
 };
 let fallback = 0;
@@ -136,6 +139,7 @@ function page(current: Route): string {
     return attemptPage({ sheet, attemptId: current.attempt, tab: current.tab,
       timeBudget: state.timeBudgets.get(current.attempt), canControl: state.canStart,
       controlError: state.form.error,
+      transcript: state.transcript.attempt === current.attempt ? state.transcript.page : null,
       checks: state.checks.get(current.attempt) ?? null,
       evidence: state.evidence.get(current.attempt) ?? null,
       log: state.log.attempt === current.attempt ? state.log.text : '' });
@@ -201,7 +205,16 @@ function render(): void {
     + (loading && !ready && current.key ? `<div class="page"><div class="title"><h2>${current.attempt ? 'Run details' : 'Campaign'}</h2></div>`
       + '<div class="loading" role="status">Loading…</div></div>' : page(current))
     + '</main>';
+  const transcript = root.querySelector<HTMLElement>('.transcript');
+  const scroll = transcript?.scrollTop ?? 0;
+  const follow = !transcript || transcript.scrollHeight - scroll - transcript.clientHeight < 40;
+  const openTools = [...root.querySelectorAll<HTMLDetailsElement>('.transcript details[open]')].map(el => el.dataset.key);
   patch(root, next);
+  const updated = root.querySelector<HTMLElement>('.transcript');
+  if (updated) {
+    for (const tool of updated.querySelectorAll<HTMLDetailsElement>('details')) tool.open = openTools.includes(tool.dataset.key);
+    updated.scrollTop = follow ? updated.scrollHeight : scroll;
+  }
   // The secret and the run name live in the tab, never in the markup.
   for (const field of document.querySelectorAll<HTMLInputElement>('form[data-run] input')) {
     if (field.name === 'minutes') {
@@ -301,6 +314,8 @@ async function loadData(version: number): Promise<void> {
     && !state.evidence.has(current.attempt)) {
     const evidence = await read<AttemptPackage>(attemptUrl(current, 'package'));
     if (evidence) state.evidence.set(current.attempt, evidence);
+  } else if (current.tab === 'transcript') {
+    await readTranscript();
   } else if (current.tab === 'log') {
     await readLog(current);
   }
@@ -495,3 +510,44 @@ window.setInterval(() => {
 window.addEventListener('popstate', () => void load(true));
 subscribe();
 void load(true);
+
+let transcriptLoading = false;
+async function readTranscript(force = false): Promise<void> {
+  const current = route();
+  if (current.tab !== 'transcript' || !current.attempt || transcriptLoading) return;
+  if (state.transcript.attempt !== current.attempt) state.transcript = {
+    attempt: current.attempt, session: '', before: undefined, page: null };
+  const pane = document.querySelector<HTMLElement>('.transcript');
+  if (!force && state.transcript.page && pane
+    && pane.scrollHeight - pane.scrollTop - pane.clientHeight >= 40) return;
+  const selected = state.transcript;
+  transcriptLoading = true;
+  try {
+    const query = new URLSearchParams({ session: selected.session });
+    if (selected.before !== undefined) query.set('before', String(selected.before));
+    const page = await read<TranscriptPage>(attemptUrl(current, `transcript?${query}`));
+    if (page && state.transcript === selected) selected.page = page;
+  } finally { transcriptLoading = false; }
+}
+setInterval(() => {
+  if (route().tab === 'transcript' && state.transcript.before === undefined) void readTranscript().then(render);
+}, 5000);
+document.addEventListener('change', event => {
+  const target = event.target;
+  if (target instanceof HTMLSelectElement && target.matches('[data-transcript-session]')) {
+    state.transcript = { ...state.transcript, session: target.value, before: undefined };
+    void readTranscript(true).then(render);
+  }
+});
+document.addEventListener('click', event => {
+  const target = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-transcript-before], [data-transcript-latest]') : null;
+  if (!target) return;
+  state.transcript = { ...state.transcript,
+    session: state.transcript.page?.session ?? '',
+    before: target.hasAttribute('data-transcript-before') ? Number(target.dataset.transcriptBefore) : undefined };
+  void readTranscript(true).then(() => {
+    render();
+    const pane = document.querySelector<HTMLElement>('.transcript');
+    if (pane && target.hasAttribute('data-transcript-latest')) pane.scrollTop = pane.scrollHeight;
+  });
+});
