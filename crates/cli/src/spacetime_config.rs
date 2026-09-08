@@ -108,6 +108,9 @@ pub enum CommandConfigError {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct SpacetimeConfig {
+    /// Container declaration belongs only to this database, never its children.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub container: Option<crate::container::config::ContainerConfig>,
     /// Configuration for the dev command. Root-level only, not inherited.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dev: Option<DevConfig>,
@@ -144,6 +147,7 @@ pub struct DevConfig {
 /// Contains all fields needed for both publish and generate operations.
 #[derive(Debug, Clone)]
 pub struct FlatTarget {
+    pub container: Option<crate::container::config::ContainerConfig>,
     /// All entity-level fields (database, module-path, server, etc.)
     pub fields: HashMap<String, Value>,
     /// Name of the config file from which this target's `database` value was merged.
@@ -201,6 +205,7 @@ impl SpacetimeConfig {
         let effective_generate = self.generate.clone();
 
         let target = FlatTarget {
+            container: self.container.clone(),
             fields: fields.clone(),
             source_config: self.source_config.clone(),
             generate: effective_generate,

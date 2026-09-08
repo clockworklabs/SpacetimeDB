@@ -171,6 +171,8 @@ pub fn get_filtered_publish_configs<'a>(
     let configs: Vec<CommandConfig> = filtered_targets
         .into_iter()
         .map(|target| {
+            anyhow::ensure!(target.container.is_none(),
+                "This CLI does not yet publish container declarations. Use `spacetime container build` to prepare the image; managed publication support is required before publishing this target.");
             let config = CommandConfig::new(schema, target.fields, args)?;
             config.validate()?;
             Ok(config)
