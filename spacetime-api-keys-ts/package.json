@@ -1,0 +1,68 @@
+{
+  "name": "@spacetimedb/api-keys",
+  "description": "API key issuance, verification, rotation, and usage tracking for SpacetimeDB TypeScript modules.",
+  "version": "0.1.0",
+  "license": "BUSL-1.1",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./submodule": {
+      "types": "./src/submodule.ts",
+      "default": "./src/submodule.ts"
+    }
+  },
+  "files": [
+    "src",
+    "LICENSE.txt",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clockworklabs/SpacetimeDB.git",
+    "directory": "spacetime-api-keys-ts"
+  },
+  "homepage": "https://github.com/clockworklabs/SpacetimeDB/tree/master/spacetime-api-keys-ts#readme",
+  "bugs": {
+    "url": "https://github.com/clockworklabs/SpacetimeDB/issues"
+  },
+  "keywords": [
+    "spacetimedb",
+    "api-keys",
+    "authentication",
+    "typescript"
+  ],
+  "scripts": {
+    "build": "spacetime build",
+    "format": "prettier . --write --ignore-path ../.prettierignore",
+    "lint": "eslint . && prettier . --check --ignore-path ../.prettierignore",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx scripts/test.ts",
+    "spacetime:generate": "spacetime generate --lang typescript --out-dir ts-codegen",
+    "publish:module": "spacetime publish",
+    "publish:local": "spacetime publish --server local --yes spacetime-api-keys",
+    "publish:local:reset": "spacetime publish --server local --yes --delete-data=always spacetime-api-keys"
+  },
+  "dependencies": {
+    "@spacetimedb/crypto": "workspace:^"
+  },
+  "peerDependencies": {
+    "spacetimedb": "workspace:^"
+  },
+  "devDependencies": {
+    "eslint": "^9.17.0",
+    "prettier": "^3.3.3",
+    "@types/node": "^22.10.2",
+    "spacetimedb": "workspace:*",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

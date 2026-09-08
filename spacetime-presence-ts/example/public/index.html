@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A SpacetimeDB chat example with authentication, presence, typing indicators, rooms, and unread counts."
+    />
+    <title>SpacetimeDB Chat</title>
+    <link rel="stylesheet" href="./app.css" />
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./chat.css" />
+  </head>
+  <body>
+    <div id="bootSplash" class="boot-splash">
+      <svg viewBox="0 0 497 332" width="84" height="56" aria-hidden="true">
+        <path
+          d="M316 166c0 37.3-30.2 67.5-67.5 67.5S181 203.3 181 166s30.2-67.5 67.5-67.5S316 128.7 316 166z"
+          stroke="currentColor"
+          stroke-width="5"
+          fill="none"
+        />
+        <path
+          d="M270 246c-40-3-79-21-96-48l-26 7c19 52 75 81 130 67s89-69 80-123l-27 7c6 40-19 79-61 90z"
+          fill="currentColor"
+        />
+        <path
+          d="M227 86c40-11 81 11 96 48l27-7c-19-52-75-81-130-67s-89 69-80 124l27-7c-6-40 19-79 60-91z"
+          fill="currentColor"
+        />
+      </svg>
+      <span class="boot-splash-label">SpacetimeDB Chat</span>
+    </div>
+
+    <div class="app signed-out loading">
+      <main class="shell signed-out">
+        <section class="anon-view">
+          <div class="anon-body">
+            <div id="auth-panel"></div>
+          </div>
+        </section>
+
+        <aside class="rail">
+          <button
+            id="homeBtn"
+            class="rail-icon rail-home"
+            type="button"
+            title="SpacetimeDB Chat"
+          >
+            <svg
+              viewBox="0 0 497 332"
+              width="28"
+              height="20"
+              aria-hidden="true"
+            >
+              <path
+                d="M316 166c0 37.3-30.2 67.5-67.5 67.5S181 203.3 181 166s30.2-67.5 67.5-67.5S316 128.7 316 166z"
+                stroke="currentColor"
+                stroke-width="5"
+                fill="none"
+              />
+              <path
+                d="M270 246c-40-3-79-21-96-48l-26 7c19 52 75 81 130 67s89-69 80-123l-27 7c6 40-19 79-61 90z"
+                fill="currentColor"
+              />
+              <path
+                d="M227 86c40-11 81 11 96 48l27-7c-19-52-75-81-130-67s-89 69-80 124l27-7c-6-40 19-79 60-91z"
+                fill="currentColor"
+              />
+            </svg>
+          </button>
+          <div class="rail-divider"></div>
+          <ul id="serverRail" class="rail-list"></ul>
+          <button
+            id="createServerBtn"
+            class="rail-create"
+            type="button"
+            title="Create server"
+            aria-label="Create server"
+          >
+            +
+          </button>
+        </aside>
+
+        <section class="sidebar">
+          <header class="sidebar-head" id="sidebarHead">
+            <div class="sidebar-head-text" id="serverHeadBtn">
+              <span class="workspace-name" id="activeServerName"
+                >SpacetimeDB</span
+              >
+              <svg
+                class="workspace-chevron"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                width="18"
+                height="18"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </div>
+            <div id="serverMenu" class="server-menu" hidden>
+              <button type="button" data-srv-action="rename">
+                Rename server
+              </button>
+              <button type="button" data-srv-action="delete" class="danger">
+                Delete server
+              </button>
+              <button type="button" data-srv-action="leave">
+                Leave server
+              </button>
+            </div>
+          </header>
+
+          <div class="channels-scroll">
+            <ul id="roomList" class="rooms"></ul>
+          </div>
+
+          <footer class="user-panel">
+            <button id="openAuthBtn" class="btn primary block">Sign In</button>
+            <div id="openUserMenuBtn" class="user-bar hidden">
+              <div class="user-bar-info">
+                <span id="userAvatar" class="user-avatar"></span>
+                <div class="user-bar-text">
+                  <span id="userBarName" class="user-bar-name"></span>
+                  <span class="user-bar-status">Online</span>
+                </div>
+              </div>
+              <div class="user-bar-actions">
+                <button
+                  class="head-icon"
+                  id="userSettingsCog"
+                  title="User Settings"
+                  aria-label="Settings"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    width="18"
+                    height="18"
+                  >
+                    <circle cx="12" cy="12" r="3" />
+                    <path
+                      d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </footer>
+        </section>
+
+        <div class="chat-column">
+          <header class="channel-header">
+            <div class="channel-header-left">
+              <span id="channelHashIcon" class="channel-hash-lg">#</span>
+              <span id="roomTitle" class="channel-name"></span>
+            </div>
+            <div class="channel-header-right">
+              <button
+                id="togglePinnedBtn"
+                class="head-icon"
+                title="Pinned messages"
+                aria-label="Pinned"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  width="20"
+                  height="20"
+                >
+                  <path
+                    d="M16 9V4h1a1 1 0 0 0 0-2H7a1 1 0 0 0 0 2h1v5l-3 3v2h6v6h2v-6h6v-2z"
+                  />
+                </svg>
+              </button>
+              <button
+                id="toggleMembersBtn"
+                class="head-icon"
+                title="Members"
+                aria-label="Toggle members"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  width="20"
+                  height="20"
+                >
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+              </button>
+              <form id="searchForm" class="channel-search">
+                <input
+                  id="searchInput"
+                  type="text"
+                  aria-label="Search messages"
+                  placeholder="Search"
+                  maxlength="200"
+                />
+                <button type="submit" class="search-submit" aria-label="Search">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    width="14"
+                    height="14"
+                  >
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
+                </button>
+              </form>
+            </div>
+          </header>
+          <div class="chat-body">
+            <section class="main">
+              <div id="messageScroll" class="message-scroll">
+                <ul id="messageList" class="messages"></ul>
+              </div>
+              <div id="pinnedPanel" class="header-overlay" hidden>
+                <header class="overlay-head">
+                  <span>Pinned Messages</span>
+                  <button
+                    class="overlay-close"
+                    id="closePinnedBtn"
+                    aria-label="Close"
+                  >
+                    ×
+                  </button>
+                </header>
+                <ul id="pinnedList" class="overlay-list"></ul>
+              </div>
+              <div id="searchPanel" class="header-overlay" hidden>
+                <header class="overlay-head">
+                  <span id="searchHead">Search results</span>
+                  <button
+                    class="overlay-close"
+                    id="closeSearchBtn"
+                    aria-label="Close"
+                  >
+                    ×
+                  </button>
+                </header>
+                <ul id="searchList" class="overlay-list"></ul>
+              </div>
+              <div id="threadPanel" class="header-overlay thread-panel" hidden>
+                <header class="overlay-head">
+                  <span id="threadHead">Thread</span>
+                  <button
+                    class="overlay-close"
+                    id="closeThreadBtn"
+                    aria-label="Close"
+                  >
+                    ×
+                  </button>
+                </header>
+                <div id="threadRoot" class="thread-root"></div>
+                <ul id="threadList" class="thread-messages"></ul>
+                <form id="threadComposer" class="thread-composer">
+                  <input
+                    id="threadInput"
+                    type="text"
+                    aria-label="Thread reply"
+                    maxlength="2000"
+                    placeholder="Reply in thread"
+                  />
+                  <button type="submit" class="btn primary">Send</button>
+                </form>
+              </div>
+              <div id="typingLine" class="typing"></div>
+              <div
+                id="pendingAttachments"
+                class="pending-attachments"
+                hidden
+              ></div>
+              <div id="replyPreview" class="composer-reply hidden">
+                <span
+                  id="replyPreviewLabel"
+                  class="composer-reply-label"
+                ></span>
+                <span id="replyPreviewText" class="composer-reply-text"></span>
+                <button
+                  type="button"
+                  id="cancelReplyBtn"
+                  class="composer-reply-cancel"
+                  title="Cancel reply"
+                  aria-label="Cancel reply"
+                >
+                  x
+                </button>
+              </div>
+              <div
+                id="composerRateLimit"
+                class="composer-rate-limit"
+                hidden
+              ></div>
+              <div id="composerRow" class="composer">
+                <input
+                  id="attachInput"
+                  type="file"
+                  aria-label="Attach files"
+                  multiple
+                  hidden
+                />
+                <button
+                  type="button"
+                  id="attachBtn"
+                  class="composer-attach"
+                  title="Attach files"
+                  aria-label="Attach files"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    width="18"
+                    height="18"
+                  >
+                    <path
+                      d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"
+                    />
+                  </svg>
+                </button>
+                <input
+                  id="messageInput"
+                  aria-label="Message"
+                  placeholder="Message"
+                  maxlength="2000"
+                />
+                <button
+                  type="button"
+                  id="sendBtn"
+                  class="composer-send"
+                  title="Send"
+                  aria-label="Send"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    width="16"
+                    height="16"
+                  >
+                    <path d="M2 21l21-9L2 3v7l15 2-15 2z" />
+                  </svg>
+                </button>
+              </div>
+            </section>
+
+            <aside class="members" id="membersPanel">
+              <span id="memberCount" hidden></span>
+              <div class="member-scroll">
+                <ul id="memberList" class="member-list"></ul>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <div
+      id="createServerModal"
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="createServerTitle"
+    >
+      <section class="modal-card">
+        <header class="modal-head">
+          <h3 id="createServerTitle">Create server</h3>
+          <button id="closeCreateServerBtn" class="btn tiny ghost">
+            Close
+          </button>
+        </header>
+        <div class="modal-body">
+          <input
+            id="serverNameInput"
+            aria-label="Server name"
+            placeholder="server name"
+            maxlength="64"
+          />
+          <div class="modal-actions">
+            <button id="createServerSubmitBtn" class="btn primary">
+              Create
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div
+      id="renameServerModal"
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="renameServerTitle"
+    >
+      <section class="modal-card">
+        <header class="modal-head">
+          <h3 id="renameServerTitle">Rename server</h3>
+          <button id="closeRenameServerBtn" class="btn tiny ghost">
+            Close
+          </button>
+        </header>
+        <div class="modal-body">
+          <input
+            id="renameServerInput"
+            aria-label="Server name"
+            placeholder="server name"
+            maxlength="64"
+          />
+          <div class="modal-actions">
+            <button id="renameServerSubmitBtn" class="btn primary">Save</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div
+      id="createRoomModal"
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="createRoomTitle"
+    >
+      <section class="modal-card">
+        <header class="modal-head">
+          <h3 id="createRoomTitle">Create channel</h3>
+          <button id="closeCreateRoomBtn" class="btn tiny ghost">Close</button>
+        </header>
+        <div class="modal-body">
+          <input
+            id="roomName"
+            aria-label="Channel name"
+            placeholder="channel-name"
+            maxlength="64"
+          />
+          <input
+            id="roomCategory"
+            aria-label="Channel category"
+            placeholder="category (optional)"
+            maxlength="64"
+          />
+          <select id="roomPrivacy" aria-label="Channel privacy">
+            <option value="public">public</option>
+            <option value="private">private</option>
+          </select>
+          <div class="modal-actions">
+            <button id="createRoomBtn" class="btn primary">Create</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div
+      id="channelSettingsModal"
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="channelSettingsTitle"
+    >
+      <section class="modal-card">
+        <header class="modal-head">
+          <h3 id="channelSettingsTitle">Channel settings</h3>
+          <button id="closeChannelSettingsBtn" class="btn tiny ghost">
+            Close
+          </button>
+        </header>
+        <div class="modal-body">
+          <input
+            id="csName"
+            aria-label="Channel name"
+            placeholder="channel-name"
+            maxlength="64"
+          />
+          <input
+            id="csCategory"
+            aria-label="Channel category"
+            placeholder="category (optional)"
+            maxlength="64"
+          />
+          <select id="csPrivacy" aria-label="Channel privacy">
+            <option value="public">public</option>
+            <option value="private">private</option>
+          </select>
+          <div class="modal-actions">
+            <button id="csSaveBtn" class="btn primary">Save</button>
+            <button id="csDeleteBtn" class="btn danger">Delete channel</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div id="userMenu" class="user-menu" hidden>
+      <div class="user-menu-row">
+        <label for="displayName">Display name</label>
+        <input id="displayName" placeholder="display name" maxlength="32" />
+      </div>
+      <div class="user-menu-row">
+        <label for="status">Status</label>
+        <select id="status">
+          <option value="online">online</option>
+          <option value="away">away</option>
+          <option value="dnd">dnd</option>
+          <option value="invisible">invisible</option>
+        </select>
+      </div>
+      <button id="saveProfileBtn" class="btn block">Save</button>
+      <div class="user-menu-sep"></div>
+      <button id="authLogoutBtn" class="btn block danger">Logout</button>
+    </div>
+
+    <div
+      id="imageLightbox"
+      class="image-lightbox"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Image preview"
+    >
+      <button
+        id="imageLightboxClose"
+        class="image-lightbox-close"
+        type="button"
+        aria-label="Close image preview"
+      >
+        x
+      </button>
+      <figure class="image-lightbox-frame">
+        <img id="imageLightboxImg" alt="" />
+        <figcaption
+          id="imageLightboxCaption"
+          class="image-lightbox-caption"
+        ></figcaption>
+      </figure>
+    </div>
+
+    <script type="module" src="/app.js"></script>
+    <script type="module" src="./ui.js"></script>
+  </body>
+</html>
