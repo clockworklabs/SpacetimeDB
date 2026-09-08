@@ -285,6 +285,7 @@ main[aria-busy="true"]:not(:has(.loading))::before { content: ''; position: fixe
 .time-grant label { display: flex; align-items: center; gap: .5rem; }
 .time-grant input[type="number"] { width: 6rem; }
 
+.progress-heading { margin: 24px 0 8px; }
 .progress-chart { display: block; width: 100%; min-width: 520px; max-height: 300px; }
 .progress-chart text { fill: var(--n3); font: 12px var(--sans); }
 .progress-grid { stroke: var(--n3); opacity: .15; }

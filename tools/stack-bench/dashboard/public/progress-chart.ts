@@ -24,7 +24,7 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
   const description = metric === 'cost'
     ? 'Cumulative cost per run at saved grade checkpoints. Includes repairs and excluded runs. Subscription costs use the pinned API-equivalent price snapshot, not invoice charges. Unknown costs are not plotted; upper bounds are labelled. Time starts at the current execution.'
     : 'Checks passed out of all selected checks at each saved grade. Zero marks run start before any checks pass. Each line is one repetition; elapsed time starts at that run. Excluded runs are labelled. Lines can fall after regressions.';
-  const heading = `<div class="section-heading"><h3 title="${description}">${label} over time</h3><nav aria-label="Chart metric">`
+  const heading = `<div class="section-heading progress-heading"><h3 title="${description}">${label} over time</h3><nav aria-label="Chart metric">`
     + (['completion', 'cost'] as const).map(option => `<a class="chip sm${metric === option ? ' on' : ''}"${metric === option ? ' aria-current="page"' : ''} href="?questlines=${encodeURIComponent(view)}&amp;chart=${option}">${option === 'cost' ? 'Cost' : 'Completion'}</a>`).join('') + '</nav></div>';
   if (!tracks.length) return heading + `<p class="chart-empty">${metric === 'cost' ? 'Awaiting first timed cost receipt.' : 'Awaiting first timed grade.'}</p>`;
   const ceiling = metric === 'cost' ? Math.max(0.01, ...tracks.flatMap(track => track.points.map(point => point.value))) : 100;
