@@ -72,7 +72,7 @@ test('time chart uses measured elapsed time, preserves regressions, and labels e
   assert.match(html, /Rep 1 · 50% · Excluded/);
   assert.doesNotMatch(html, /NaN|Infinity/);
   assert.match(progressChart(sheet, null), /Awaiting first timed grade/);
-  for (const [stack, color] of Object.entries({ spacetime: '#4cf490', mongodb: '#13aa52', postgres: '#336791' })) {
+  for (const [stack, color] of Object.entries({ spacetime: '#4cf490', mongodb: '#b45af2', postgres: '#336791' })) {
     sheet.stacks[0]!.stack = stack;
     progression.stacks[0]!.stack = stack;
     assert.ok(progressChart(sheet, progression).includes(`stroke="${color}"`));
