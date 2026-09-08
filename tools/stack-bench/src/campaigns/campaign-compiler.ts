@@ -188,6 +188,7 @@ interface BindingRecord {
 
 interface ResolvedCalibration {
   id: string;
+  selection: { alias: string };
   contentSha256: string;
   qualificationSha256: string;
   qualification: {
@@ -316,7 +317,7 @@ export interface CompiledCampaignPlan {
 }
 
 export type CalibrationResolver = (release: RecipeRelease, options: {
-  trackRoot: string; stackBenchRoot: string;
+  trackRoot: string; stackBenchRoot: string; alias: string;
 }) => ResolvedCalibration | null;
 
 export type RecipeResolver = (
@@ -839,7 +840,7 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
     const selectedTask = modular ? null : createRecipeTaskRequest(binding, {
       packIds: definition.selection.packs, checkKeys: definition.selection.checks });
     const calibration = calibrationResolver(binding.release, {
-      trackRoot: track.dir, stackBenchRoot: resolve(stackBenchRoot),
+      trackRoot: track.dir, stackBenchRoot: resolve(stackBenchRoot), alias: `L${level}`,
     });
     const publicBinding: PublicBinding = {
       level,
@@ -876,11 +877,15 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
   if (featureCatalog) {
     for (const record of bindingRecords) {
       const qualifiedCatalog = record.calibration?.qualification.featureCatalog;
-      if (qualifiedCatalog && (qualifiedCatalog.id !== resolvedFeatureCatalog!.identity.id
-        || qualifiedCatalog.contentSha256 !== resolvedFeatureCatalog!.identity.contentSha256)) {
+      if (!qualifiedCatalog) continue;
+      const qualifiedLevel = Number(record.calibration!.selection.alias.slice(1));
+      const expectedCatalog = selectFeatureCatalogLevels(resolvedFeatureCatalog,
+        progressionLevels(resolvedFeatureCatalog).filter(level => level <= qualifiedLevel));
+      if (qualifiedCatalog.id !== expectedCatalog.identity.id
+        || qualifiedCatalog.contentSha256 !== expectedCatalog.identity.contentSha256) {
         fail('featureCatalog', `L${record.level} calibration qualifies `
           + `${qualifiedCatalog.id} at ${qualifiedCatalog.contentSha256}, not `
-          + `${resolvedFeatureCatalog!.identity.id} at ${resolvedFeatureCatalog!.identity.contentSha256}`);
+          + `${expectedCatalog.identity.id} at ${expectedCatalog.identity.contentSha256}`);
       }
     }
   }

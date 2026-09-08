@@ -47,6 +47,10 @@ test('dependency campaigns bind a graph and feature catalog by stable ID and con
   assert.match(plan.featureCatalog.identity.contentSha256, /^[a-f0-9]{64}$/);
   assert.match(plan.dependencyPolicy.identity.contentSha256, /^[a-f0-9]{64}$/);
   assert.equal(plan.featureCatalog.identity.id, 'ecommerce.questlines');
+  assert.equal(plan.bindings.find(binding => binding.level === 1)?.calibration, null);
+  assert.equal(plan.bindings.find(binding => binding.level === 2)?.calibration?.id,
+    'ecommerce.dependency-l2-calibration');
+  assert.equal(plan.bindings.find(binding => binding.level === 3)?.calibration, null);
   assert(plan.attempts.every(attempt => attempt.featureCatalog?.contentSha256
     === plan.featureCatalog?.identity.contentSha256));
   assert(plan.attempts.every(attempt => attempt.dependencyPolicy?.contentSha256
