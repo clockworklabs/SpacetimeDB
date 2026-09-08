@@ -625,8 +625,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         self.store.data().instance_env().tx.clone()
     }
 
-    fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
-        self.store.data_mut().set_module_def(module_def);
+    fn set_module_def(&mut self, module_def: Arc<ModuleDef>, module_hash: spacetimedb_lib::Hash) {
+        self.store.data_mut().set_module_def(module_def, module_hash);
     }
 
     #[tracing::instrument(level = "trace", skip_all)]

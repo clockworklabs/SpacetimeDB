@@ -167,7 +167,13 @@ describe('V10 explicit function visibility', () => {
       tag: 'Capabilities',
       value: [],
     });
-    expect([...writer.getBuffer()]).toEqual([15, 0, 0, 0, 0]);
+    expect([...writer.getBuffer()]).toEqual([16, 0, 0, 0, 0]);
+    const environmentWriter = new BinaryWriter(8);
+    RawModuleDefV10Section.serialize(environmentWriter, {
+      tag: 'Environment',
+      value: [],
+    });
+    expect([...environmentWriter.getBuffer()]).toEqual([15, 0, 0, 0, 0]);
   });
 
   it('retains the V10 reducer field layout without an optional visibility wrapper', () => {

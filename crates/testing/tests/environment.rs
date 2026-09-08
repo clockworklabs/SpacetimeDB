@@ -1,14 +1,20 @@
-//! Actual module calls exercise environment ABI, bindings, and snapshot semantics.
+//! Actual publication and module calls exercise configuration atomicity and ABI enforcement.
 use serial_test::serial;
+use spacetimedb::client::{messages::SerializableMessage, OutboundMessage};
 use spacetimedb::host::{FunctionArgs, ModuleHost};
+use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, sats::product, AlgebraicValue, Identity};
-use spacetimedb_testing::modules::{CompilationMode, CompiledModule, DEFAULT_CONFIG};
+use spacetimedb_testing::modules::{CompilationMode, CompiledModule, ModuleHandle, DEFAULT_CONFIG};
+use std::collections::BTreeMap;
+use std::time::Duration;
 
-async fn sql(module: &ModuleHost, statement: String) -> Vec<spacetimedb_lib::ProductValue> {
+type Values = BTreeMap<String, String>;
+
+async fn sql(module: &ModuleHost, statement: &str) -> Vec<spacetimedb_lib::ProductValue> {
     spacetimedb::sql::execute::run(
         module.relational_db().clone(),
-        statement,
+        statement.to_string(),
         AuthCtx::for_current(Identity::ZERO),
         Some(module.info.subscriptions.clone()),
         Some(module.clone()),
@@ -19,13 +25,190 @@ async fn sql(module: &ModuleHost, statement: String) -> Vec<spacetimedb_lib::Pro
     .rows
 }
 
-async fn set_environment(module: &ModuleHost, key: &str, value: &str) {
-    sql(module, format!("SET env.{key} = '{}'", value.replace('\'', "''"))).await;
+async fn publish(handle: &ModuleHandle, values: &Values) -> ModuleHost {
+    let result = handle.republish_environment(values.clone()).await.unwrap();
+    assert!(result.was_successful(), "configuration publication failed");
+    handle.client.module()
+}
+
+async fn read(module: &ModuleHost, key: &str) -> AlgebraicValue {
+    module
+        .call_procedure(
+            Identity::ZERO,
+            None,
+            None,
+            "read_environment",
+            FunctionArgs::Bsatn(bsatn::to_vec(&product![key]).unwrap().into()),
+        )
+        .await
+        .result
+        .unwrap()
+        .return_val
+}
+
+async fn next_message(handle: &mut ModuleHandle) -> OutboundMessage {
+    tokio::time::timeout(Duration::from_secs(10), handle.recv_message())
+        .await
+        .expect("timed out waiting for environment subscription update")
+        .expect("environment subscription disconnected")
+}
+
+async fn expect_view_update(handle: &mut ModuleHandle) {
+    let message = next_message(handle).await;
+    assert!(matches!(message, OutboundMessage::V1(SerializableMessage::TxUpdate(_))));
+    // Replacing the one-row view must send both the old row's deletion and
+    // the new row's insertion to an already connected subscriber.
+    assert_eq!(message.num_rows(), Some(2));
+}
+
+async fn check_submodule_scope(handle: &mut ModuleHandle, values: &mut Values) {
+    values.insert("EMPTY".into(), "root-visible".into());
+    let module = publish(handle, values).await;
+    assert!(module.info.module_def.reducer_by_name("lib.env_read_reducer").is_some());
+    let child = module
+        .call_reducer(
+            Identity::ZERO,
+            None,
+            None,
+            None,
+            None,
+            "lib.env_read_reducer",
+            FunctionArgs::Nullary,
+        )
+        .await;
+    assert!(child.is_err() || child.unwrap().outcome.into_result().is_err());
+    for procedure in ["lib.env_read_procedure", "lib.env_read_in_tx"] {
+        assert!(module.info.module_def.procedure_by_name(procedure).is_some());
+        let result = module
+            .call_procedure(Identity::ZERO, None, None, procedure, FunctionArgs::Nullary)
+            .await;
+        assert!(result.result.is_err(), "submodule procedure read the root environment");
+    }
+    for view in ["lib.env_read_view", "lib.env_read_sql_view", "env_read_root_sql_view"] {
+        assert!(module.info.module_def.view_by_name_with_module(view).is_some());
+        let result = spacetimedb::sql::execute::run(
+            module.relational_db().clone(),
+            format!("SELECT * FROM {view}"),
+            AuthCtx::for_current(Identity::ZERO),
+            Some(module.info.subscriptions.clone()),
+            Some(module.clone()),
+            &mut vec![],
+        )
+        .await;
+        let error = format!(
+            "{:#}",
+            result.expect_err("view bypassed the environment read interface")
+        );
+        assert!(!error.contains("not found"), "view failed before dispatch: {error}");
+        // A valid view and a forbidden view share one actual subscription
+        // request. It must fail as a whole, without an initial-success message.
+        let request_id = 880;
+        let subscribe = ws_v1::ClientMessage::<bytes::Bytes>::Subscribe(ws_v1::Subscribe {
+            query_strings: ["SELECT * FROM my_player".into(), format!("SELECT * FROM {view}").into()].into(),
+            request_id,
+        });
+        let _ = handle.send(bsatn::to_vec(&subscribe).unwrap()).await;
+        let message = next_message(handle).await;
+        let OutboundMessage::V1(SerializableMessage::Subscription(message)) = message else {
+            panic!("failed view subscription returned a success or unexpected message: {message:?}");
+        };
+        assert_eq!(message.request_id, Some(request_id));
+        let spacetimedb::client::messages::SubscriptionResult::Error(error) = message.result else {
+            panic!("forbidden view subscription returned rows");
+        };
+        assert!(!error.message.is_empty());
+        assert!(!error.message.contains("not found"));
+    }
+    // HTTP routes are root entries today. Calling an exported child callback
+    // as an ordinary helper retains that root entry's authority.
+    assert_eq!(
+        &handle.call_http_route_get("/env-child").await.unwrap()[..],
+        b"root-visible"
+    );
+}
+
+// SQL, subscription materialization, and ordinary reducers all use the same
+// main Wasmtime instance. The fixture view sets a guest-global marker and traps;
+// the next reducer checks the marker is absent in the replacement instance.
+async fn check_wasm_trap_disposal(handle: &mut ModuleHandle) {
+    let module = handle.client.module();
+    let view = "SELECT * FROM environment_trap";
+    let result = spacetimedb::sql::execute::run(
+        module.relational_db().clone(),
+        view.to_string(),
+        AuthCtx::for_current(Identity::ZERO),
+        Some(module.info.subscriptions.clone()),
+        Some(module.clone()),
+        &mut vec![],
+    )
+    .await;
+    let error = format!("{:#}", result.expect_err("trapped view returned SQL success"));
+    assert!(!error.contains("not found"), "view failed before dispatch: {error}");
+    expect_clean_wasm_instance(&module).await;
+
+    // Keep the existing successful ENV-view subscription while adding this
+    // separate query. The failing request must report an error, not rows.
+    let request_id = 890;
+    let subscribe = ws_v1::ClientMessage::<bytes::Bytes>::SubscribeSingle(ws_v1::SubscribeSingle {
+        query: view.into(),
+        request_id,
+        query_id: ws_v1::QueryId::new(890),
+    });
+    let _ = handle.send(bsatn::to_vec(&subscribe).unwrap()).await;
+    let message = next_message(handle).await;
+    let OutboundMessage::V1(SerializableMessage::Subscription(message)) = message else {
+        panic!("trapped view subscription returned success or an unexpected message: {message:?}");
+    };
+    assert_eq!(message.request_id, Some(request_id));
+    let spacetimedb::client::messages::SubscriptionResult::Error(error) = message.result else {
+        panic!("trapped view subscription returned rows");
+    };
+    assert!(!error.message.is_empty());
+    assert!(!error.message.contains("not found"));
+    expect_clean_wasm_instance(&module).await;
+}
+
+async fn expect_clean_wasm_instance(module: &ModuleHost) {
+    module
+        .call_reducer(
+            Identity::ZERO,
+            None,
+            None,
+            None,
+            None,
+            "expect_environment",
+            FunctionArgs::Bsatn(bsatn::to_vec(&product!["MISSING", None::<String>]).unwrap().into()),
+        )
+        .await
+        .unwrap()
+        .outcome
+        .into_result()
+        .unwrap();
 }
 
 fn exercise_fixture(name: &str) {
-    CompiledModule::compile(name, CompilationMode::Debug).with_module_async(DEFAULT_CONFIG, |handle| async move {
-        let module = handle.client.module();
+    let initial = if name == "environment-test" {
+        Values::from([
+            ("REQUIRED".into(), "initial-required".into()),
+            ("MODE".into(), "ready".into()),
+        ])
+    } else {
+        Values::new()
+    };
+    // NativeAOT's WebAssembly compiler requires a supported compiler host.
+    // Allow this one fixture to consume the exact artifact built there while
+    // exercising all normal publication and runtime paths below.
+    let artifact = (name == "module-test-cs")
+        .then(|| std::env::var_os("SPACETIMEDB_ENV_CSHARP_MODULE"))
+        .flatten();
+    let compiled = match artifact {
+        Some(path) => {
+            CompiledModule::from_artifact(name, spacetimedb::messages::control_db::HostType::Wasm, path.into())
+        }
+        None => CompiledModule::compile(name, CompilationMode::Debug),
+    };
+    compiled.with_module_async_with_environment(DEFAULT_CONFIG, initial.clone(), |mut handle| async move {
+        let mut values = initial;
         for (key, expected) in [
             ("MISSING", None),
             ("EMPTY", Some("".to_string())),
@@ -34,9 +217,9 @@ fn exercise_fixture(name: &str) {
             ("MAXIMUM", Some("é".repeat(4096))),
         ] {
             if let Some(value) = &expected {
-                set_environment(&module, key, value).await;
+                values.insert(key.into(), value.clone());
             }
-            let args = product![key, expected.clone()];
+            let module = publish(&handle, &values).await;
             let result = module
                 .call_reducer(
                     Identity::ZERO,
@@ -45,46 +228,46 @@ fn exercise_fixture(name: &str) {
                     None,
                     None,
                     "expect_environment",
-                    FunctionArgs::Bsatn(bsatn::to_vec(&args).unwrap().into()),
+                    FunctionArgs::Bsatn(bsatn::to_vec(&product![key, expected.clone()]).unwrap().into()),
                 )
-                .await;
-            let result = result
-                .map_err(anyhow::Error::from)
-                .and_then(|r| r.outcome.into_result());
-            assert!(
-                result.is_ok(),
-                "{name} {key}: {result:?}; module log: {}",
-                handle.read_log(None).await
-            );
-            let read = || FunctionArgs::Bsatn(bsatn::to_vec(&product![key]).unwrap().into());
-            let result = module
-                .call_procedure(Identity::ZERO, None, None, "read_environment", read())
                 .await
-                .result
-                .unwrap()
-                .return_val;
-            assert_eq!(result, AlgebraicValue::from(expected.clone()));
+                .unwrap();
+            result.outcome.into_result().unwrap();
+            assert_eq!(read(&module, key).await, AlgebraicValue::from(expected.clone()));
             if expected.is_some() {
-                set_environment(&module, key, "updated").await;
-                let result = module
-                    .call_procedure(Identity::ZERO, None, None, "read_environment", read())
-                    .await
-                    .result
-                    .unwrap()
-                    .return_val;
-                assert_eq!(result, AlgebraicValue::from(Some("updated".to_string())));
-                sql(&module, format!("DELETE env.{key}")).await;
-                let result = module
-                    .call_procedure(Identity::ZERO, None, None, "read_environment", read())
-                    .await
-                    .result
-                    .unwrap()
-                    .return_val;
-                assert_eq!(result, AlgebraicValue::from(None::<String>));
+                values.insert(key.into(), "updated".into());
+                let module = publish(&handle, &values).await;
+                assert_eq!(
+                    read(&module, key).await,
+                    AlgebraicValue::from(Some("updated".to_string()))
+                );
+                values.remove(key);
+                let module = publish(&handle, &values).await;
+                assert_eq!(read(&module, key).await, AlgebraicValue::from(None::<String>));
             }
         }
         if name == "environment-test" {
-            set_environment(&module, "HANDLER", "handler snapshot").await;
+            // Required values cannot be inherited from the previous publish,
+            // and an invalid literal cannot replace the previous configuration.
+            for invalid in [
+                Values::new(),
+                Values::from([
+                    ("REQUIRED".into(), "initial-required".into()),
+                    ("MODE".into(), "invalid-secret-marker".into()),
+                ]),
+            ] {
+                let result = handle.republish_environment(invalid).await;
+                assert!(result.as_ref().is_err() || !result.as_ref().unwrap().was_successful());
+                assert_eq!(
+                    read(&handle.client.module(), "REQUIRED").await,
+                    AlgebraicValue::from(Some("initial-required".to_string()))
+                );
+            }
+            // A same-module publish does not run init again. Its new required
+            // value deliberately differs from the value init asserted.
+            values.insert("REQUIRED".into(), "republished".into());
+            values.insert("HANDLER".into(), "handler snapshot".into());
+            let module = publish(&handle, &values).await;
             let (_, body) = module
                 .call_http_handler(
                     module.info.module_def.http_handler_ids_and_defs().next().unwrap().0,
@@ -100,23 +283,39 @@ fn exercise_fixture(name: &str) {
                 .await
                 .unwrap();
             assert_eq!(&body[..], b"handler snapshot");
-            // This view first reads a missing key. Its dependency must survive
-            // absence, and normal SQL mutations must invalidate its cached row.
-            let read_view = || "SELECT * FROM environment_value".to_string();
-            assert_eq!(sql(&module, read_view()).await, vec![product![None::<String>]]);
-            set_environment(&module, "WATCHED", "first").await;
+            let view = "SELECT * FROM environment_value";
+            assert_eq!(sql(&module, view).await, vec![product![None::<String>]]);
+            let subscribe = ws_v1::ClientMessage::<bytes::Bytes>::Subscribe(ws_v1::Subscribe {
+                query_strings: [view.into()].into(),
+                request_id: 71,
+            });
+            handle.send(bsatn::to_vec(&subscribe).unwrap()).await.unwrap();
+            let initial_update = next_message(&mut handle).await;
+            assert!(matches!(
+                initial_update,
+                OutboundMessage::V1(SerializableMessage::Subscribe(_))
+            ));
+            assert_eq!(initial_update.num_rows(), Some(1));
+            for value in ["first", "second"] {
+                values.insert("WATCHED".into(), value.into());
+                let module = publish(&handle, &values).await;
+                assert_eq!(sql(&module, view).await, vec![product![Some(value.to_string())]]);
+                expect_view_update(&mut handle).await;
+            }
+            let mut invalid = values.clone();
+            invalid.insert("WATCHED".into(), "fail-view".into());
+            let failed = handle.republish_environment(invalid).await;
+            assert!(failed.as_ref().is_err() || !failed.as_ref().unwrap().was_successful());
             assert_eq!(
-                sql(&module, read_view()).await,
-                vec![product![Some("first".to_string())]]
-            );
-            set_environment(&module, "WATCHED", "second").await;
-            assert_eq!(
-                sql(&module, read_view()).await,
+                sql(&handle.client.module(), view).await,
                 vec![product![Some("second".to_string())]]
             );
-            sql(&module, "DELETE env.WATCHED".into()).await;
-            assert_eq!(sql(&module, read_view()).await, vec![product![None::<String>]]);
-            set_environment(&module, "LIMIT", &"x".repeat(8192)).await;
+            values.remove("WATCHED");
+            let module = publish(&handle, &values).await;
+            assert_eq!(sql(&module, view).await, vec![product![None::<String>]]);
+            expect_view_update(&mut handle).await;
+            values.insert("LIMIT".into(), "x".repeat(8192));
+            let module = publish(&handle, &values).await;
             for _ in 0..2 {
                 module
                     .call_reducer(
@@ -134,44 +333,153 @@ fn exercise_fixture(name: &str) {
                     .into_result()
                     .unwrap();
             }
+            check_wasm_trap_disposal(&mut handle).await;
         }
-        let args = product!["A=B", None::<String>];
-        let result = module
-            .call_reducer(
-                Identity::ZERO,
-                None,
-                None,
-                None,
-                None,
-                "expect_environment",
-                FunctionArgs::Bsatn(bsatn::to_vec(&args).unwrap().into()),
-            )
-            .await;
-        module.exit().await;
-        assert!(result.is_err() || result.unwrap().outcome.into_result().is_err());
+        if name == "module-test-ts" {
+            check_submodule_scope(&mut handle, &mut values).await;
+        }
+        for key in ["UNDECLARED", "A=B"] {
+            let result = handle
+                .client
+                .module()
+                .call_reducer(
+                    Identity::ZERO,
+                    None,
+                    None,
+                    None,
+                    None,
+                    "expect_environment",
+                    FunctionArgs::Bsatn(bsatn::to_vec(&product![key, None::<String>]).unwrap().into()),
+                )
+                .await;
+            assert!(result.is_err() || result.unwrap().outcome.into_result().is_err());
+        }
     });
 }
 
 #[test]
 #[serial]
-fn rust_environment_reads_are_not_cached_and_preserve_missing_empty_utf8_and_nul() {
+fn rust_environment_publish_is_atomic_and_reads_follow_declared_configuration() {
     exercise_fixture("environment-test");
 }
 
 #[test]
 #[serial]
-fn typescript_environment_reads_are_not_cached_and_preserve_missing_empty_utf8_and_nul() {
+fn typescript_environment_publish_and_checked_reads() {
     exercise_fixture("module-test-ts");
 }
 
 #[test]
 #[serial]
-fn cpp_environment_reads_are_not_cached_and_preserve_missing_empty_utf8_and_nul() {
+fn cpp_environment_publish_and_checked_reads() {
     exercise_fixture("module-test-cpp");
 }
 
 #[test]
 #[serial]
-fn csharp_environment_reads_are_not_cached_and_preserve_missing_empty_utf8_and_nul() {
+fn csharp_environment_publish_and_checked_reads() {
     exercise_fixture("module-test-cs");
+}
+
+#[cfg(feature = "allow_loopback_http_for_tests")]
+#[test]
+#[serial]
+fn suspended_procedure_cannot_read_environment_from_a_replacement_program() {
+    use anyhow::Context as _;
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+    let initial = Values::from([
+        ("REQUIRED".into(), "initial-required".into()),
+        ("MODE".into(), "ready".into()),
+    ]);
+    CompiledModule::compile("environment-test", CompilationMode::Debug).with_module_async_with_environment(
+        DEFAULT_CONFIG,
+        initial.clone(),
+        |handle| async move {
+            for explicit_tx in [false, true] {
+                let old = handle.client.module();
+                let program = old.relational_db().program().unwrap().unwrap();
+                let old_hash = program.hash;
+                let mut replacement = program.bytes.to_vec();
+                // A valid custom section changes the exact program hash without
+                // changing the schema or behavior of this real Wasm module.
+                replacement.extend_from_slice(&[0, 3, 1, b'e', u8::from(explicit_tx)]);
+                let values = Values::from([
+                    ("REQUIRED".into(), "new-program-value".into()),
+                    ("MODE".into(), "ready".into()),
+                ]);
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let url = format!("http://{}/hold", listener.local_addr().unwrap());
+                let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+                let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+                let mut server = tokio::spawn(async move {
+                    let (mut stream, _) = tokio::time::timeout(Duration::from_secs(10), listener.accept()).await??;
+                    let mut request = Vec::new();
+                    while !request.ends_with(b"\r\n\r\n") {
+                        anyhow::ensure!(request.len() < 4096, "test request exceeded its header bound");
+                        request.push(tokio::time::timeout(Duration::from_secs(10), stream.read_u8()).await??);
+                    }
+                    entered_tx
+                        .send(())
+                        .map_err(|_| anyhow::anyhow!("test coordinator closed"))?;
+                    tokio::time::timeout(Duration::from_secs(20), release_rx).await??;
+                    stream
+                        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                        .await?;
+                    stream.shutdown().await?;
+                    anyhow::Ok(())
+                });
+                let call = old.call_procedure(
+                    Identity::ZERO,
+                    None,
+                    None,
+                    "read_environment_after_http",
+                    FunctionArgs::Bsatn(bsatn::to_vec(&product![url, explicit_tx]).unwrap().into()),
+                );
+                let publish_while_suspended = async {
+                    tokio::time::timeout(Duration::from_secs(10), entered_rx)
+                        .await
+                        .context("procedure never reached owned HTTP barrier")??;
+                    let publish = handle.republish_program(replacement.into(), program.kind.into(), values);
+                    let release_after_commit = async {
+                        tokio::time::timeout(Duration::from_secs(20), async {
+                            loop {
+                                if old.relational_db().program()?.unwrap().hash != old_hash {
+                                    return anyhow::Ok(());
+                                }
+                                tokio::time::sleep(Duration::from_millis(5)).await;
+                            }
+                        })
+                        .await
+                        .context("replacement program did not commit while procedure was suspended")??;
+                        release_tx.send(()).map_err(|_| anyhow::anyhow!("HTTP barrier closed"))
+                    };
+                    // Drive publication even when it waits for the old procedure
+                    // to finish; release only after the new program is committed.
+                    let (published, released) = tokio::join!(publish, release_after_commit);
+                    released?;
+                    anyhow::ensure!(published?.was_successful(), "replacement publication failed");
+                    anyhow::Ok(())
+                };
+                let (result, coordinated) = tokio::join!(call, publish_while_suspended);
+                let server_result = match tokio::time::timeout(Duration::from_secs(35), &mut server).await {
+                    Ok(result) => result.unwrap(),
+                    Err(_) => {
+                        server.abort();
+                        let _ = server.await;
+                        Err(anyhow::anyhow!("owned HTTP test server did not finish"))
+                    }
+                };
+                // Join the owned listener and publication before reporting any
+                // assertion failure, so failure cannot leave a live test host.
+                coordinated.unwrap();
+                server_result.unwrap();
+                assert!(result.result.is_err(), "old procedure read the replacement environment");
+                assert_eq!(
+                    read(&handle.client.module(), "REQUIRED").await,
+                    AlgebraicValue::from(Some("new-program-value".to_string()))
+                );
+            }
+        },
+    );
 }

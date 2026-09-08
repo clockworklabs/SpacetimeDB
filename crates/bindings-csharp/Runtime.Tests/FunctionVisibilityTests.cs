@@ -42,10 +42,33 @@ public class FunctionVisibilityTests
         var raw = module.BuildModuleDefinition();
         var reducers = Assert.Single(raw.Sections.OfType<RawModuleDefV10Section.Reducers>());
         Assert.Equal(visibility, Assert.Single(reducers.Reducers_).Visibility);
+        Assert.Empty(
+            Assert.Single(raw.Sections.OfType<RawModuleDefV10Section.Environment>()).Environment_
+        );
         var capabilities = Assert.Single(
             raw.Sections.OfType<RawModuleDefV10Section.Capabilities>()
         );
         Assert.Contains("hosted_auth_v1", capabilities.Capabilities_);
+    }
+
+    [Fact]
+    public void EnvironmentAndCapabilitiesUseDistinctAppendedV10WireTags()
+    {
+        var serializer = new RawModuleDefV10Section.BSATN();
+        Assert.Equal(
+            new byte[] { 15, 0, 0, 0, 0 },
+            IStructuralReadWrite.ToBytes<RawModuleDefV10Section.BSATN, RawModuleDefV10Section>(
+                serializer,
+                new RawModuleDefV10Section.Environment([])
+            )
+        );
+        Assert.Equal(
+            new byte[] { 16, 0, 0, 0, 0 },
+            IStructuralReadWrite.ToBytes<RawModuleDefV10Section.BSATN, RawModuleDefV10Section>(
+                serializer,
+                new RawModuleDefV10Section.Capabilities([])
+            )
+        );
     }
 
     [Theory]

@@ -30,6 +30,14 @@ pub enum ValidationError {
     InvalidLifecycleVisibility { function: RawIdentifier },
     #[error("module contains repeated V10 section `{section}`")]
     DuplicateModuleSection { section: String },
+    #[error("module has repeated environment sections")]
+    RepeatedEnvironmentSection,
+    #[error("invalid environment declaration: {error}")]
+    Environment {
+        error: spacetimedb_lib::environment::EnvironmentSchemaError,
+    },
+    #[error("submodule {namespace:?} cannot declare environment variables")]
+    EnvironmentInSubmodule { namespace: String },
     #[error("name `{name}` is used for multiple entities")]
     DuplicateName { name: RawIdentifier },
     #[error("name `{name}` is used for multiple types")]

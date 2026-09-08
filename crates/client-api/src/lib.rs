@@ -206,6 +206,26 @@ impl Host {
             .update_module_host(database, host_type, self.replica_id, program_bytes, policy)
             .await
     }
+
+    pub async fn update_with_environment(
+        &self,
+        database: Database,
+        host_type: HostType,
+        program_bytes: Box<[u8]>,
+        policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.host_controller
+            .update_module_host_with_environment(
+                database,
+                host_type,
+                self.replica_id,
+                program_bytes,
+                policy,
+                environment,
+            )
+            .await
+    }
 }
 /// Parameters for publishing a database.
 ///
@@ -215,6 +235,8 @@ pub struct DatabaseDef {
     pub database_identity: Identity,
     /// The compiled program of the database module.
     pub program_bytes: Bytes,
+    /// Complete publish input, never persisted in the public Database record.
+    pub environment: std::collections::BTreeMap<String, String>,
     /// The desired number of replicas the database shall have.
     ///
     /// If `None`, the edition default is used.
@@ -232,6 +254,7 @@ pub struct DatabaseDef {
 pub struct DatabaseResetDef {
     pub database_identity: Identity,
     pub program_bytes: Option<Bytes>,
+    pub environment: std::collections::BTreeMap<String, String>,
     pub num_replicas: Option<NonZeroU8>,
     pub host_type: Option<HostType>,
 }

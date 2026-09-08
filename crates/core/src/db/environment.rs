@@ -1,15 +1,16 @@
 //! Dedicated access to the private environment store.
 //!
-//! Mutation callers must authorize owner/admin access before calling these
-//! helpers and commit through the normal module transaction machinery so
-//! dependent views refresh. Helpers never acquire a second transaction.
+//! Publishing replaces the complete environment inside the program transaction.
+//! Helpers never acquire a second transaction or expose individual mutation APIs.
 
 use super::relational_db::{MutTx, RelationalDB};
 use crate::error::DBError;
 use spacetimedb_datastore::error::DatastoreError;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::system_tables::{StEnvFields, StEnvRow, ST_ENV_ID};
-use spacetimedb_lib::environment::{validate_key, validate_value, EnvironmentValidationError, MAX_ENV_VARS};
+use spacetimedb_lib::environment::{
+    validate_key, EnvironmentSchema, EnvironmentSchemaError, EnvironmentValidationError,
+};
 use spacetimedb_sats::AlgebraicValue;
 use std::collections::BTreeMap;
 
@@ -17,6 +18,8 @@ use std::collections::BTreeMap;
 pub enum EnvironmentError {
     #[error(transparent)]
     Validation(#[from] EnvironmentValidationError),
+    #[error(transparent)]
+    Schema(#[from] EnvironmentSchemaError),
     #[error(transparent)]
     Datastore(#[from] DatastoreError),
     #[error(transparent)]
@@ -43,29 +46,37 @@ pub fn snapshot(state: &impl StateView) -> Result<BTreeMap<String, String>, Envi
         .collect()
 }
 
-/// Insert or replace one key. Validation occurs before any mutation.
-pub fn set(db: &RelationalDB, tx: &mut MutTx, key: &str, value: &str) -> Result<(), EnvironmentError> {
-    validate_key(key)?;
-    validate_value(value)?;
-    let previous = get(tx, key)?;
-    if previous.is_none() && tx.table_row_count(ST_ENV_ID).unwrap_or(0) >= MAX_ENV_VARS as u64 {
-        return Err(EnvironmentValidationError::TooManyVariables.into());
+/// Apply a complete publish configuration in the caller's program transaction.
+/// Validate every input before modifying any row, even if the caller chooses to
+/// recover from a validation error and commit other transaction work.
+pub fn replace(
+    db: &RelationalDB,
+    tx: &mut MutTx,
+    schema: &EnvironmentSchema,
+    values: &BTreeMap<String, String>,
+) -> Result<(), EnvironmentError> {
+    schema.validate_values(values)?;
+    let previous = snapshot(tx)?;
+    for (key, value) in &previous {
+        if values.get(key) != Some(value) {
+            delete(db, tx, key)?;
+        }
     }
-    if previous.as_deref() == Some(value) {
-        return Ok(());
+    for (key, value) in values {
+        if previous.get(key) != Some(value) {
+            tx.insert_via_serialize_bsatn(
+                ST_ENV_ID,
+                &StEnvRow {
+                    key: key.clone(),
+                    value: value.clone(),
+                },
+            )?;
+        }
     }
-    delete(db, tx, key)?;
-    tx.insert_via_serialize_bsatn(
-        ST_ENV_ID,
-        &StEnvRow {
-            key: key.into(),
-            value: value.into(),
-        },
-    )?;
     Ok(())
 }
 
-pub fn delete(db: &RelationalDB, tx: &mut MutTx, key: &str) -> Result<bool, EnvironmentError> {
+fn delete(db: &RelationalDB, tx: &mut MutTx, key: &str) -> Result<bool, EnvironmentError> {
     validate_key(key)?;
     let pointer = tx
         .iter_by_col_eq(ST_ENV_ID, StEnvFields::Key, &AlgebraicValue::String(key.into()))?
@@ -83,49 +94,73 @@ mod tests {
     use super::*;
     use crate::db::relational_db::tests_utils::TestDB;
     use spacetimedb_datastore::execution_context::Workload;
+    use spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration};
 
-    #[test]
-    fn missing_empty_nul_update_and_rollback() {
-        let db = TestDB::in_memory().unwrap();
-        db.with_auto_commit(Workload::ForTests, |tx| -> Result<(), EnvironmentError> {
-            assert_eq!(get(tx, "EMPTY")?, None);
-            set(&db, tx, "EMPTY", "")?;
-            set(&db, tx, "NUL", "a\0b")?;
-            assert_eq!(get(tx, "EMPTY")?, Some(String::new()));
-            assert_eq!(get(tx, "NUL")?, Some("a\0b".into()));
-            Ok(())
-        })
-        .unwrap();
-        let result = db.with_auto_commit(Workload::ForTests, |tx| -> Result<(), EnvironmentError> {
-            set(&db, tx, "EMPTY", "changed")?;
-            delete(&db, tx, "NUL")?;
-            Err(EnvironmentValidationError::InvalidKey.into())
-        });
-        assert!(result.is_err());
-        db.with_read_only(Workload::ForTests, |tx| {
-            assert_eq!(
-                snapshot(tx).unwrap(),
-                BTreeMap::from([("EMPTY".into(), "".into()), ("NUL".into(), "a\0b".into())])
-            );
-        });
+    fn schema() -> EnvironmentSchema {
+        EnvironmentSchema::new(vec![
+            EnvironmentDeclaration {
+                name: "REQUIRED".into(),
+                constraint: EnvironmentConstraint::AnyString,
+                optional: false,
+            },
+            EnvironmentDeclaration {
+                name: "OPTIONAL".into(),
+                constraint: EnvironmentConstraint::AnyString,
+                optional: true,
+            },
+        ])
+        .unwrap()
     }
 
     #[test]
-    fn capacity_and_value_limits_precede_mutation() {
+    fn replacement_preserves_empty_and_nul_and_removes_omitted_values() {
         let db = TestDB::in_memory().unwrap();
+        let initial = BTreeMap::from([("REQUIRED".into(), "".into()), ("OPTIONAL".into(), "a\0b".into())]);
+        db.with_auto_commit(Workload::ForTests, |tx| replace(&db, tx, &schema(), &initial))
+            .unwrap();
+        db.with_read_only(Workload::ForTests, |tx| assert_eq!(snapshot(tx).unwrap(), initial));
+        let next = BTreeMap::from([("REQUIRED".into(), "new".into())]);
+        db.with_auto_commit(Workload::ForTests, |tx| replace(&db, tx, &schema(), &next))
+            .unwrap();
+        db.with_read_only(Workload::ForTests, |tx| assert_eq!(snapshot(tx).unwrap(), next));
+        db.with_auto_commit(Workload::ForTests, |tx| {
+            replace(&db, tx, &EnvironmentSchema::default(), &BTreeMap::new())
+        })
+        .unwrap();
+        db.with_read_only(Workload::ForTests, |tx| assert!(snapshot(tx).unwrap().is_empty()));
+    }
+
+    #[test]
+    fn invalid_complete_input_does_not_reuse_stored_values_or_mutate() {
+        let db = TestDB::in_memory().unwrap();
+        let initial = BTreeMap::from([("REQUIRED".into(), "old".into()), ("OPTIONAL".into(), "keep".into())]);
         db.with_auto_commit(Workload::ForTests, |tx| -> Result<(), EnvironmentError> {
-            for i in 0..MAX_ENV_VARS {
-                set(&db, tx, &format!("K{i}"), "")?;
+            replace(&db, tx, &schema(), &initial)?;
+            for invalid in [
+                BTreeMap::new(),
+                BTreeMap::from([
+                    ("REQUIRED".into(), "new".into()),
+                    ("UNKNOWN".into(), "secret-marker".into()),
+                ]),
+                BTreeMap::from([("REQUIRED".into(), "x".repeat(8193))]),
+            ] {
+                assert!(replace(&db, tx, &schema(), &invalid).is_err());
+                assert_eq!(snapshot(tx)?, initial);
             }
-            assert!(set(&db, tx, "EXTRA", "").is_err());
-            set(&db, tx, "K0", "updated")?;
-            assert!(set(&db, tx, "K0", &"x".repeat(8193)).is_err());
-            assert_eq!(get(tx, "K0")?.as_deref(), Some("updated"));
-            assert!(delete(&db, tx, "K1")?);
-            assert!(!delete(&db, tx, "MISSING")?);
-            set(&db, tx, "EXTRA", "")?;
             Ok(())
         })
         .unwrap();
+        let failed_publish = db.with_auto_commit(Workload::ForTests, |tx| -> Result<(), EnvironmentError> {
+            replace(
+                &db,
+                tx,
+                &schema(),
+                &BTreeMap::from([("REQUIRED".into(), "updated".into())]),
+            )?;
+            // Simulate a later failure in the same publish transaction.
+            Err(EnvironmentValidationError::InvalidKey.into())
+        });
+        assert!(failed_publish.is_err());
+        db.with_read_only(Workload::ForTests, |tx| assert_eq!(snapshot(tx).unwrap(), initial));
     }
 }

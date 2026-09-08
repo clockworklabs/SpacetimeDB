@@ -27,8 +27,9 @@
 #include "RawScheduleDefV10.g.h"
 #include "RawViewPrimaryKeyDefV10.g.h"
 #include "RawHttpHandlerDefV10.g.h"
+#include "EnvironmentDeclaration.g.h"
 
 namespace SpacetimeDB::Internal {
 
-SPACETIMEDB_INTERNAL_TAGGED_ENUM(RawModuleDefV10Section, SpacetimeDB::Internal::Typespace, std::vector<SpacetimeDB::Internal::RawTypeDefV10>, std::vector<SpacetimeDB::Internal::RawTableDefV10>, std::vector<SpacetimeDB::Internal::RawReducerDefV10>, std::vector<SpacetimeDB::Internal::RawProcedureDefV10>, std::vector<SpacetimeDB::Internal::RawViewDefV10>, std::vector<SpacetimeDB::Internal::RawScheduleDefV10>, std::vector<SpacetimeDB::Internal::RawLifeCycleReducerDefV10>, std::vector<SpacetimeDB::Internal::RawRowLevelSecurityDefV9>, SpacetimeDB::Internal::CaseConversionPolicy, SpacetimeDB::Internal::ExplicitNames, std::vector<SpacetimeDB::Internal::RawHttpHandlerDefV10>, std::vector<SpacetimeDB::Internal::RawHttpRouteDefV10>, std::vector<SpacetimeDB::Internal::RawViewPrimaryKeyDefV10>, std::vector<SpacetimeDB::Internal::RawSubmoduleV10>, std::vector<std::string>)
+SPACETIMEDB_INTERNAL_TAGGED_ENUM(RawModuleDefV10Section, SpacetimeDB::Internal::Typespace, std::vector<SpacetimeDB::Internal::RawTypeDefV10>, std::vector<SpacetimeDB::Internal::RawTableDefV10>, std::vector<SpacetimeDB::Internal::RawReducerDefV10>, std::vector<SpacetimeDB::Internal::RawProcedureDefV10>, std::vector<SpacetimeDB::Internal::RawViewDefV10>, std::vector<SpacetimeDB::Internal::RawScheduleDefV10>, std::vector<SpacetimeDB::Internal::RawLifeCycleReducerDefV10>, std::vector<SpacetimeDB::Internal::RawRowLevelSecurityDefV9>, SpacetimeDB::Internal::CaseConversionPolicy, SpacetimeDB::Internal::ExplicitNames, std::vector<SpacetimeDB::Internal::RawHttpHandlerDefV10>, std::vector<SpacetimeDB::Internal::RawHttpRouteDefV10>, std::vector<SpacetimeDB::Internal::RawViewPrimaryKeyDefV10>, std::vector<SpacetimeDB::Internal::RawSubmoduleV10>, std::vector<SpacetimeDB::Internal::EnvironmentDeclaration>, std::vector<std::string>)
 } // namespace SpacetimeDB::Internal

@@ -25,7 +25,7 @@ use crate::worker_metrics::{
     record_module_host_init_attempt, record_module_host_init_failure, record_module_host_unexpected_exit,
     ModuleHostInitFailureCause, WORKER_METRICS,
 };
-use anyhow::{anyhow, bail, Context};
+use anyhow::{bail, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
@@ -94,6 +94,14 @@ where
 }
 
 pub type ProgramStorage = Arc<dyn ExternalStorage>;
+
+/// Private complete configuration for a not-yet-initialized database generation.
+/// Implementations must verify the exact persisted database identity, program and
+/// bootstrap generation. This source is never consulted during ordinary reopen.
+#[async_trait]
+pub trait InitialEnvironmentSource: Send + Sync {
+    async fn load(&self, database: &Database) -> anyhow::Result<std::collections::BTreeMap<String, String>>;
+}
 
 /// A launched module host plus any pending controldb program-bootstrap completion work.
 pub struct ModuleHostWithBootstrap {
@@ -190,6 +198,7 @@ pub struct HostController {
     default_config: db::Config,
     /// The [`ProgramStorage`] to query when instantiating a module.
     program_storage: ProgramStorage,
+    initial_environment_source: Option<Arc<dyn InitialEnvironmentSource>>,
     /// The [`EnergyMonitor`] used by this controller.
     energy_monitor: Arc<dyn EnergyMonitor>,
     /// The [`MemoryObserver`] used by this controller.
@@ -360,6 +369,7 @@ impl HostController {
             hosts: <_>::default(),
             default_config,
             program_storage,
+            initial_environment_source: None,
             energy_monitor,
             memory_observer,
             persistence,
@@ -369,6 +379,12 @@ impl HostController {
             bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
             db_cores,
         }
+    }
+
+    /// Install the private bootstrap input source before this controller is shared.
+    pub fn with_initial_environment_source(mut self, source: Arc<dyn InitialEnvironmentSource>) -> Self {
+        self.initial_environment_source = Some(source);
+        self
     }
 
     /// Replace the [`ProgramStorage`] used by this controller.
@@ -517,6 +533,16 @@ impl HostController {
     /// This is not necessary during hotswap publishes,
     /// as the automigration planner and executor accomplish the same validity checks.
     pub async fn check_module_validity(&self, database: Database, program: Program) -> anyhow::Result<Arc<ModuleInfo>> {
+        self.check_module_validity_with_environment(database, program, Default::default())
+            .await
+    }
+
+    pub async fn check_module_validity_with_environment(
+        &self,
+        database: Database,
+        program: Program,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> anyhow::Result<Arc<ModuleInfo>> {
         let (program, launched) = Host::try_init_in_memory_to_check(
             &self.runtimes,
             self.page_pool.clone(),
@@ -532,12 +558,20 @@ impl HostController {
         )
         .await?;
 
-        let InitDatabaseResult { reducer, .. } = launched.module_host.init_database(program).await?;
+        let result = launched
+            .module_host
+            .init_database_with_environment(program, environment)
+            .await;
+        let info = launched.module_host.info.clone();
+        // Validation never starts scheduled work. Release its receiver before
+        // waiting for scheduler closure, including when initialization failed.
+        drop(launched.scheduler_starter);
+        launched.module_host.exit().await;
+        let InitDatabaseResult { reducer, .. } = result?;
         if let Some(call_result) = reducer {
             Result::from(call_result)?;
         }
-
-        Ok(launched.module_host.info)
+        Ok(info)
     }
 
     /// Update the [`ModuleHost`] identified by `replica_id` to the given
@@ -556,6 +590,27 @@ impl HostController {
         replica_id: u64,
         program_bytes: Box<[u8]>,
         policy: MigrationPolicy,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.update_module_host_with_environment(
+            database,
+            host_type,
+            replica_id,
+            program_bytes,
+            policy,
+            Default::default(),
+        )
+        .await
+    }
+
+    #[tracing::instrument(level = "trace", skip_all, err)]
+    pub async fn update_module_host_with_environment(
+        &self,
+        database: Database,
+        host_type: HostType,
+        replica_id: u64,
+        program_bytes: Box<[u8]>,
+        policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let program = Program::from_bytes(host_type.into(), program_bytes);
         trace!(
@@ -608,12 +663,14 @@ impl HostController {
                     this.energy_monitor.clone(),
                     this.unregister_fn(replica_id, database_identity),
                     this.db_cores.take(),
+                    environment,
                 )
-                .await?;
+                .await;
 
+            // Rejected publication leaves the existing host usable. Restore it
+            // before propagating validation or migration failure to the caller.
             *guard = Some(host);
-
-            Ok::<_, anyhow::Error>(update_result)
+            update_result
         })
         .await??;
 
@@ -660,6 +717,25 @@ impl HostController {
     /// and deregister it from the controller.
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn exit_module_host(&self, replica_id: u64, timeout: Duration) -> Result<(), anyhow::Error> {
+        let start = Instant::now();
+        if tokio::time::timeout(timeout, self.exit_module_host_and_join(replica_id))
+            .await
+            .is_err()
+        {
+            warn!(
+                "replica={replica_id} shutdown timed out after {}s",
+                start.elapsed().as_secs_f32()
+            );
+        }
+        Ok(())
+    }
+
+    /// Wait for actual module and database closure, without treating an elapsed
+    /// request deadline as completion. The caller must retain this future and
+    /// exclude new launch admission until it returns, including if its own
+    /// request waiter is cancelled.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub async fn exit_module_host_and_join(&self, replica_id: u64) -> Result<(), anyhow::Error> {
         let Some(lock) = self.hosts.lock().remove(&replica_id) else {
             return Ok(());
         };
@@ -680,35 +756,24 @@ impl HostController {
         });
         defer!(warn_blocked.abort());
 
-        let shutdown = tokio::time::timeout(timeout, async {
-            let mut guard = lock.write_owned().await;
-            let Some(host) = guard.take() else {
-                return;
-            };
-            let module = host.module.borrow().clone();
-            let info = module.info();
+        let mut guard = lock.write_owned().await;
+        let Some(host) = guard.take() else {
+            return Ok(());
+        };
+        let module = host.module.borrow().clone();
+        let info = module.info();
 
-            let database_identity = info.database_identity;
-            let table_names = info.module_def.tables().map(|t| t.name.deref());
+        let database_identity = info.database_identity;
+        let table_names = info.module_def.tables().map(|t| t.name.deref());
 
-            // Ensure we clear the metrics even if the future is cancelled.
-            defer!(remove_database_gauges(&database_identity, table_names));
+        // Ensure we clear the metrics even if the future is cancelled.
+        defer!(remove_database_gauges(&database_identity, table_names));
 
-            info!("replica={replica_id} database={database_identity} exiting module");
-            module.exit().await;
-            info!("replica={replica_id} database={database_identity} exiting database");
-            module.relational_db().shutdown().await;
-            info!("replica={replica_id} database={database_identity} module host exited");
-        })
-        .await;
-
-        if shutdown.is_err() {
-            warn!(
-                "replica={replica_id} shutdown timed out after {}s",
-                start.elapsed().as_secs_f32()
-            );
-        }
-
+        info!("replica={replica_id} database={database_identity} exiting module");
+        module.exit().await;
+        info!("replica={replica_id} database={database_identity} exiting database");
+        module.relational_db().shutdown().await;
+        info!("replica={replica_id} database={database_identity} module host exited");
         Ok(())
     }
 
@@ -1033,32 +1098,25 @@ fn repair_stale_view_backing_tables_on_launch(launched: &LaunchedModule) -> anyh
 /// If the `db` is not initialized yet (i.e. its program hash is `None`),
 /// return an error.
 ///
-/// Otherwise, if `db.program_hash` matches the given `program_hash`, do
-/// nothing and return an empty `UpdateDatabaseResult`.
-///
-/// Otherwise, invoke `module.update_database` and return the result.
+/// Otherwise publish the complete environment with the module, including when
+/// its program hash is unchanged.
 async fn update_module(
     db: &RelationalDB,
     module: &ModuleHost,
     program: Program,
     old_module_info: Arc<ModuleInfo>,
     policy: MigrationPolicy,
+    environment: std::collections::BTreeMap<String, String>,
 ) -> anyhow::Result<UpdateDatabaseResult> {
     let addr = db.database_identity();
-    match stored_program_hash(db)? {
-        None => Err(anyhow!("database `{addr}` not yet initialized")),
-        Some(stored) => {
-            let res = if stored == program.hash {
-                info!("database `{}` up to date with program `{}`", addr, program.hash);
-                UpdateDatabaseResult::NoUpdateNeeded
-            } else {
-                info!("updating `{}` from {} to {}", addr, stored, program.hash);
-                module.update_database(program, old_module_info, policy).await?
-            };
-
-            Ok(res)
-        }
-    }
+    let Some(stored) = stored_program_hash(db)? else {
+        bail!("database `{addr}` not yet initialized");
+    };
+    info!("publishing `{}` from {} to {}", addr, stored, program.hash);
+    // Even an unchanged program publishes a complete replacement environment.
+    module
+        .update_database_with_environment(program, old_module_info, policy, environment)
+        .await
 }
 
 /// Encapsulates a database, associated module, and auxiliary state.
@@ -1197,6 +1255,14 @@ impl Host {
             }
         };
         let bootstrap_generation = database.bootstrap_generation;
+        let initial_environment = if program_needs_init {
+            match &host_controller.initial_environment_source {
+                Some(source) => source.load(&database).await?,
+                None => Default::default(),
+            }
+        } else {
+            Default::default()
+        };
         let mut bootstrap_completion = Some(BootstrapCompletion::durable(bootstrap_generation));
 
         let relational_db = Arc::new(db);
@@ -1287,7 +1353,10 @@ impl Host {
         };
 
         if program_needs_init {
-            let InitDatabaseResult { reducer, tx_offset } = launched.module_host.init_database(program).await?;
+            let InitDatabaseResult { reducer, tx_offset } = launched
+                .module_host
+                .init_database_with_environment(program, initial_environment)
+                .await?;
             if let Some(call_result) = reducer {
                 validate_init_reducer_call_result(call_result)?;
             }
@@ -1417,6 +1486,7 @@ impl Host {
         energy_monitor: Arc<dyn EnergyMonitor>,
         on_panic: impl Fn() + Send + Sync + 'static,
         core: AllocatedJobCore,
+        environment: std::collections::BTreeMap<String, String>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.replica_ctx;
         let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db().clone());
@@ -1435,8 +1505,25 @@ impl Host {
         // Get the old module info to diff against when building a migration plan.
         let old_module_info = self.module.borrow().info.clone();
 
-        let update_result =
-            update_module(replica_ctx.relational_db(), &module, program, old_module_info, policy).await?;
+        let update_result = match update_module(
+            replica_ctx.relational_db(),
+            &module,
+            program,
+            old_module_info,
+            policy,
+            environment,
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(error) => {
+                // This candidate was never installed or scheduled. Close its
+                // receiver first so cleanup cannot wait on an unstarted actor.
+                drop(scheduler_starter);
+                module.exit().await;
+                return Err(error);
+            }
+        };
 
         // Only replace the module + scheduler if the update succeeded.
         // Otherwise, we want the database to continue running with the old state.
@@ -1473,7 +1560,10 @@ impl Host {
                 let old_module = old_watcher.borrow().clone();
                 old_module.exit().await;
             }
-            _ => {}
+            _ => {
+                drop(scheduler_starter);
+                module.exit().await;
+            }
         }
 
         Ok(update_result)
@@ -1680,6 +1770,42 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn positive_close_stays_pending_past_a_waiter_deadline_until_host_ownership_is_released() {
+        use crate::db::persistence::LocalPersistenceProvider;
+        use spacetimedb_paths::FromPathUnchecked;
+        let temp = tempfile::tempdir().unwrap();
+        let directory = Arc::new(ServerDataDir::from_path_unchecked(temp.path().to_owned()));
+        let controller = HostController::new(
+            directory.clone(),
+            db::Config {
+                storage: db::Storage::Memory,
+                page_pool_max_size: None,
+            },
+            HostRuntimeConfig::new(WasmConfig::default(), V8Config::default(), ModuleHttpConfig::default()),
+            Arc::new(|_| std::future::ready(anyhow::Ok(None))),
+            Arc::new(NullEnergyMonitor),
+            Arc::new(()),
+            Arc::new(LocalPersistenceProvider::new(directory)),
+            JobCores::without_pinned_cores(),
+        );
+        let cell = Arc::new(AsyncRwLock::new(None));
+        controller.hosts.lock().insert(17, cell.clone());
+        let accepted_reader = cell.clone().read_owned().await;
+        let mut close = tokio::spawn(async move { controller.exit_module_host_and_join(17).await });
+        assert!(tokio::time::timeout(Duration::from_millis(30), &mut close)
+            .await
+            .is_err());
+        // A deadline on the observer did not complete or discard the owned close.
+        assert!(!close.is_finished());
+        drop(accepted_reader);
+        tokio::time::timeout(Duration::from_secs(5), close)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+    }
 
     fn reducer_call_result(outcome: ReducerOutcome) -> ReducerCallResult {
         ReducerCallResult {

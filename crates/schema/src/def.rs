@@ -181,6 +181,9 @@ pub struct ModuleDef {
     submodules: IndexMap<Identifier, ModuleDef>,
     /// Validated module bindings capabilities. Legacy modules have none.
     capabilities: BTreeSet<RawIdentifier>,
+
+    environment: spacetimedb_lib::environment::EnvironmentSchema,
+    environment_declared: bool,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -198,6 +201,16 @@ impl ModuleDef {
 
     pub fn capabilities(&self) -> impl Iterator<Item = &RawIdentifier> {
         self.capabilities.iter()
+    }
+
+    /// The validated root environment schema. Legacy modules have an empty schema.
+    pub fn environment(&self) -> &spacetimedb_lib::environment::EnvironmentSchema {
+        &self.environment
+    }
+
+    /// Whether the raw module explicitly required environment support.
+    pub fn environment_declared(&self) -> bool {
+        self.environment_declared
     }
 
     /// The raw module definition version this module was authored under.
@@ -848,15 +861,27 @@ impl ModuleDef {
 
     /// Look up a procuedure by its id, returning `None` if it doesn't exist.
     pub fn get_procedure_by_id(&self, id: ProcedureId) -> Option<&ProcedureDef> {
+        self.get_procedure_by_id_with_module(id).map(|(_, def, _)| def)
+    }
+
+    /// Resolve a flattened wire ID to its host-qualified name, definition and
+    /// owning module. Procedure definitions store local names and type refs.
+    pub fn get_procedure_by_id_with_module(
+        &self,
+        id: ProcedureId,
+    ) -> Option<(NamespacedIdentifier, &ProcedureDef, &ModuleDef)> {
         let idx = id.idx();
         if idx < self.procedures.len() {
-            return self.procedures.get_index(idx).map(|(_, def)| def);
+            return self
+                .procedures
+                .get_index(idx)
+                .map(|(_, def)| (self.path.join(def.name.clone()), def, self));
         }
         let mut offset = self.procedures.len();
         for submodule in self.submodules.values() {
             let count = submodule.procedure_count();
             if idx < offset + count {
-                return submodule.get_procedure_by_id(ProcedureId::from(idx - offset));
+                return submodule.get_procedure_by_id_with_module(ProcedureId::from(idx - offset));
             }
             offset += count;
         }
@@ -1015,6 +1040,8 @@ impl TryFrom<ModuleDef> for RawModuleDefV9 {
             raw_module_def_version: _,
             submodules: _,
             capabilities: _,
+            environment: _,
+            environment_declared: _,
         } = val;
 
         // Extract column defaults from tables before consuming tables
@@ -1084,9 +1111,14 @@ impl From<ModuleDef> for RawModuleDefV10 {
             raw_module_def_version: _,
             submodules,
             capabilities,
+            environment,
+            environment_declared,
         } = val;
 
         let mut sections = Vec::new();
+        if environment_declared {
+            sections.push(RawModuleDefV10Section::Environment(environment.into_declarations()));
+        }
         let mut explicit_names = ExplicitNames::default();
 
         sections.push(RawModuleDefV10Section::Typespace(typespace));

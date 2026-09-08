@@ -31,12 +31,6 @@ use super::{
 pub enum Statement {
     Select(ProjectList),
     DML(DML),
-    Environment(EnvironmentWrite),
-}
-
-pub struct EnvironmentWrite {
-    pub key: Box<str>,
-    pub value: Option<Box<str>>,
 }
 
 pub enum DML {
@@ -460,21 +454,6 @@ pub fn parse_and_type_sql(sql: &str, tx: &impl SchemaView, _auth: &AuthCtx) -> T
         SqlAst::Update(update) => Ok(Statement::DML(DML::Update(type_update(update, tx)?))),
         SqlAst::Set(set) => Ok(Statement::DML(DML::Insert(type_and_rewrite_set(set, tx)?))),
         SqlAst::Show(show) => Ok(Statement::Select(type_and_rewrite_show(show, tx)?)),
-        SqlAst::Environment(environment) => {
-            // Resolve through the normal private-table visibility check.
-            tx.schema("st_env").ok_or_else(|| Unresolved::table("st_env"))?;
-            let key = &*environment.key.0;
-            spacetimedb_lib::environment::validate_key(key)?;
-            let value = match environment.value {
-                None => None,
-                Some(SqlLiteral::Str(value)) => {
-                    spacetimedb_lib::environment::validate_value(&value)?;
-                    Some(value)
-                }
-                Some(_) => return Err(TypingError::EnvironmentValueType),
-            };
-            Ok(Statement::Environment(EnvironmentWrite { key: key.into(), value }))
-        }
     }
 }
 
