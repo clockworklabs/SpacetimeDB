@@ -41,30 +41,44 @@ pub async fn read(
     db: Arc<RelationalDB>,
     receipt: EnvironmentSnapshotReceipt,
 ) -> Result<DurableEnvironmentValues, EnvironmentSnapshotError> {
+    read_with_capacity(db, receipt, OPERATIONS.clone()).await
+}
+
+async fn read_with_capacity(
+    db: Arc<RelationalDB>,
+    receipt: EnvironmentSnapshotReceipt,
+    capacity: Arc<Semaphore>,
+) -> Result<DurableEnvironmentValues, EnvironmentSnapshotError> {
     let mut durability = db
         .durable_tx_offset()
         .ok_or(EnvironmentSnapshotError::DurabilityUnavailable)?;
-    let permit = OPERATIONS
-        .clone()
+    let permit = capacity
         .try_acquire_owned()
         .map_err(|_| EnvironmentSnapshotError::Capacity)?;
-    let (_permit, durable_through, receipt) = tokio::task::spawn_blocking(move || {
-        let tx = db.begin_tx(Workload::Internal);
-        let result = storage::read(&db, &tx, &receipt);
-        let (offset, metrics, reducer) = db.release_tx(tx);
-        db.report_read_tx_metrics(reducer, metrics);
-        result.map(|result| (permit, offset, result))
+    tokio::spawn(async move {
+        let _permit = permit;
+        let action_db = db.clone();
+        let (durable_through, receipt) = tokio::task::spawn_blocking(move || {
+            let tx = action_db.begin_tx(Workload::Internal);
+            let result = storage::read(&action_db, &tx, &receipt);
+            let (offset, metrics, reducer) = action_db.release_tx(tx);
+            action_db.report_read_tx_metrics(reducer, metrics);
+            result.map(|result| (offset, result))
+        })
+        .await
+        .map_err(|_| EnvironmentSnapshotError::Storage)??;
+        durability
+            .wait_for(durable_through)
+            .await
+            .map_err(|_| EnvironmentSnapshotError::DurabilityFailed)?;
+        drop(db);
+        Ok(Durable {
+            receipt,
+            durable_through,
+        })
     })
     .await
-    .map_err(|_| EnvironmentSnapshotError::Storage)??;
-    durability
-        .wait_for(durable_through)
-        .await
-        .map_err(|_| EnvironmentSnapshotError::DurabilityFailed)?;
-    Ok(Durable {
-        receipt,
-        durable_through,
-    })
+    .map_err(|_| EnvironmentSnapshotError::Storage)?
 }
 
 pub async fn close(
@@ -97,27 +111,40 @@ async fn mutate_with_capacity<T: Send + 'static>(
     let permit = capacity
         .try_acquire_owned()
         .map_err(|_| EnvironmentSnapshotError::Capacity)?;
-    let (_permit, durable_through, receipt) = tokio::task::spawn_blocking(move || {
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-        let (tx, result) = db.with_auto_rollback(tx, action)?;
-        let (offset, data, metrics, reducer) = db
-            .commit_tx(tx)
-            .map_err(|_| EnvironmentSnapshotError::Storage)?
-            .ok_or(EnvironmentSnapshotError::Storage)?;
-        db.report_mut_tx_metrics(reducer, metrics, Some(data));
-        Ok::<_, EnvironmentSnapshotError>((permit, offset, result))
+    // A cancelled waiter drops only this JoinHandle. The actual operation
+    // keeps its database and finite slot until commit and durability finish.
+    tokio::spawn(async move {
+        let _permit = permit;
+        let action_db = db.clone();
+        let (durable_through, receipt) = tokio::task::spawn_blocking(move || {
+            let tx = action_db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+            let (tx, result) = action_db.with_auto_rollback(tx, action)?;
+            let (offset, data, metrics, reducer) = action_db
+                .commit_tx(tx)
+                .map_err(|_| EnvironmentSnapshotError::Storage)?
+                .ok_or(EnvironmentSnapshotError::Storage)?;
+            action_db.report_mut_tx_metrics(reducer, metrics, Some(data));
+            Ok::<_, EnvironmentSnapshotError>((offset, result))
+        })
+        .await
+        .map_err(|_| EnvironmentSnapshotError::Storage)??;
+        durability
+            .wait_for(durable_through)
+            .await
+            .map_err(|_| EnvironmentSnapshotError::DurabilityFailed)?;
+        drop(db);
+        Ok(Durable {
+            receipt,
+            durable_through,
+        })
     })
     .await
-    .map_err(|_| EnvironmentSnapshotError::Storage)??;
-    durability
-        .wait_for(durable_through)
-        .await
-        .map_err(|_| EnvironmentSnapshotError::DurabilityFailed)?;
-    Ok(Durable {
-        receipt,
-        durable_through,
-    })
+    .map_err(|_| EnvironmentSnapshotError::Storage)?
 }
+
+#[cfg(test)]
+#[path = "container_environment/durability_tests.rs"]
+mod durability_tests;
 
 #[cfg(test)]
 mod tests {
