@@ -47,12 +47,8 @@ export function campaignTimeBudget(plan: CompiledCampaignPlan, attempt: Campaign
     liveGrantSupported: attempt.executions.at(-1)?.timeExtensionSupported === true };
 }
 
-function requestsPath(directory: string): string {
-  return campaignChildPath(directory, 'time-requests', 'time requests');
-}
-
 export function readTimeGrantRequests(directory: string): TimeGrantReceipt['request'][] {
-  const path = requestsPath(directory);
+  const path = campaignChildPath(directory, 'time-requests', 'time requests');
   if (!existsSync(path)) return [];
   return readdirSync(path).filter(name => name.endsWith('.json')).sort().map(name =>
     timeGrantRequestSchema.parse(JSON.parse(readFileSync(
