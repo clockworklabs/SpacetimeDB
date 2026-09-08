@@ -11,7 +11,7 @@ use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, EncodingKey, H
 use serde::{Deserialize, Serialize};
 use spacetimedb_lib::Identity;
 use std::fmt;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub const HOSTED_TOKEN_KIND: &str = "spacetimedb_hosted_v1";
 pub const HOSTED_TOKEN_TYPE: &str = "spacetimedb-hosted+jwt";
@@ -58,6 +58,8 @@ pub struct HostedTokenBinding {
 #[derive(Clone)]
 pub struct VerifiedHostedAuth {
     claims: HostedTokenClaims,
+    // Local lifetime state only. Never serialized into signed claims.
+    monotonic_deadline: Instant,
 }
 
 impl fmt::Debug for VerifiedHostedAuth {
@@ -103,9 +105,55 @@ impl VerifiedHostedAuth {
 
     /// Expiry has no positive leeway. This does not replace generation/grant fencing.
     pub fn check_at(&self, now: SystemTime) -> anyhow::Result<()> {
+        self.check_at_clocks(now, Instant::now())
+    }
+
+    fn check_at_clocks(&self, now: SystemTime, monotonic_now: Instant) -> anyhow::Result<()> {
         ensure!(now >= self.issued_at(), "hosted credential is not yet valid");
-        ensure!(now < self.expires_at(), "hosted credential expired");
+        ensure!(
+            now < self.expires_at() && monotonic_now < self.monotonic_deadline,
+            "hosted credential expired"
+        );
         Ok(())
+    }
+
+    /// Cap the local lifetime using a fresh authority confirmation. The caller
+    /// records `confirmation_started` before sending the request and obtains
+    /// `confirmed_time` from the successful authoritative response. Charging the
+    /// entire round trip against the signed remaining lifetime is conservative.
+    /// Neither a receiving clock behind authority nor a later confirmation can
+    /// extend this proof. The original signed claims are preserved exactly.
+    pub fn constrain_expiration(
+        mut self,
+        confirmed_time: SystemTime,
+        confirmation_started: Instant,
+    ) -> anyhow::Result<Self> {
+        let now = Instant::now();
+        ensure!(confirmation_started <= now, "invalid hosted confirmation clock");
+        self.check_at_clocks(confirmed_time, now)?;
+        let remaining = self.expires_at().duration_since(confirmed_time)?;
+        let confirmed_deadline = confirmation_started
+            .checked_add(remaining)
+            .context("hosted confirmation deadline overflow")?;
+        self.monotonic_deadline = self.monotonic_deadline.min(confirmed_deadline);
+        self.check_at_clocks(confirmed_time, now)?;
+        Ok(self)
+    }
+
+    /// Remaining connection lifetime, bounded by both signed wall-clock expiry
+    /// and the already captured local deadline. Repeated calls never reset it.
+    pub fn remaining_lifetime(&self, now: SystemTime) -> Duration {
+        self.remaining_lifetime_at_clocks(now, Instant::now())
+    }
+
+    fn remaining_lifetime_at_clocks(&self, now: SystemTime, monotonic_now: Instant) -> Duration {
+        if self.check_at_clocks(now, monotonic_now).is_err() {
+            return Duration::ZERO;
+        }
+        self.expires_at()
+            .duration_since(now)
+            .unwrap_or_default()
+            .min(self.monotonic_deadline.saturating_duration_since(monotonic_now))
     }
 
     pub fn into_connection_auth(self) -> anyhow::Result<ConnectionAuthCtx> {
@@ -206,6 +254,7 @@ pub fn verify_hosted_token(
     binding: &HostedTokenBinding,
     now: SystemTime,
 ) -> anyhow::Result<VerifiedHostedAuth> {
+    let verification_started = Instant::now();
     ensure!(token.len() <= MAX_HOSTED_TOKEN_BYTES, "hosted credential too large");
     let header = decode_header(token)?;
     ensure!(header.alg == Algorithm::ES256, "hosted credential requires ES256");
@@ -222,7 +271,16 @@ pub fn verify_hosted_token(
     validation.validate_exp = false;
     let claims = decode::<HostedTokenClaims>(token, public_key, &validation)?.claims;
     validate_claims(&claims, trusted_issuer, binding, now)?;
-    Ok(VerifiedHostedAuth { claims })
+    let remaining = (UNIX_EPOCH + Duration::from_secs(claims.expires_at)).duration_since(now)?;
+    let monotonic_deadline = verification_started
+        .checked_add(remaining)
+        .context("hosted credential deadline overflow")?;
+    let proof = VerifiedHostedAuth {
+        claims,
+        monotonic_deadline,
+    };
+    proof.check_at(now)?;
+    Ok(proof)
 }
 
 /// Mint from the broker's authoritative binding, with no guest-selected sender or generation.
@@ -339,3 +397,7 @@ mod identity_hex {
         Identity::from_hex(value).map_err(serde::de::Error::custom)
     }
 }
+
+#[cfg(test)]
+#[path = "hosted/expiration_tests.rs"]
+mod expiration_tests;

@@ -568,8 +568,7 @@ fn spawn_hosted_connection_watchdog(
             let Some(proof) = connection.auth.hosted.clone() else {
                 return;
             };
-            let deadline =
-                tokio::time::Instant::now() + proof.expires_at().duration_since(SystemTime::now()).unwrap_or_default();
+            let deadline = tokio::time::Instant::now() + proof.remaining_lifetime(SystemTime::now());
             drop(connection);
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -1650,6 +1649,51 @@ mod tests {
         let (sender, _receiver, actor) = hosted_client(&db, db.db.clone(), false, std::time::Duration::from_secs(2));
         let watchdog = spawn_hosted_connection_watchdog(Arc::downgrade(&sender), db.db.clone(), None);
         tokio::time::timeout(std::time::Duration::from_secs(3), watchdog)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(sender.is_cancelled());
+        assert!(actor.await.unwrap_err().is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn hosted_connection_uses_confirmed_expiry_while_authority_read_is_blocked() {
+        struct BlockedAuthority;
+        impl DurableOffsetSupply for BlockedAuthority {
+            fn durable_offset(&mut self) -> Result<Option<DurableOffset>, NoSuchModule> {
+                Ok(None)
+            }
+
+            fn check_hosted_auth(
+                &mut self,
+                _: &VerifiedHostedAuth,
+            ) -> futures::future::BoxFuture<'static, anyhow::Result<()>> {
+                Box::pin(std::future::pending())
+            }
+        }
+
+        let db = crate::db::relational_db::tests_utils::TestDB::in_memory().unwrap();
+        set_fence(&db, 1, true);
+        let (mut sender, _receiver) = ClientConnectionSender::dummy_with_channel(
+            ClientActorId::for_test(db.database_identity()),
+            ClientConfig::for_test(),
+            db.db.clone(),
+        );
+        let proof = hosted_auth(&db, std::time::Duration::from_secs(20)).hosted.unwrap();
+        let confirmed_time = proof.expires_at() - std::time::Duration::from_secs(5);
+        // Authority is ahead of the receiving wall clock. Almost all of the
+        // five remaining seconds elapsed while its confirmation was in flight.
+        let started = std::time::Instant::now() - std::time::Duration::from_millis(4_900);
+        sender.auth = proof
+            .constrain_expiration(confirmed_time, started)
+            .unwrap()
+            .into_connection_auth()
+            .unwrap();
+        let actor = tokio::spawn(std::future::pending::<()>());
+        sender.abort_handle = actor.abort_handle();
+        let sender = Arc::new(sender);
+        let watchdog = spawn_hosted_connection_watchdog(Arc::downgrade(&sender), BlockedAuthority, None);
+        tokio::time::timeout(std::time::Duration::from_secs(2), watchdog)
             .await
             .unwrap()
             .unwrap();
