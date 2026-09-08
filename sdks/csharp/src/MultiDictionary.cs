@@ -328,7 +328,7 @@ namespace SpacetimeDB
         /// Raise a debug assertion failure in debug mode, otherwise just warn and keep going.
         /// </summary>
         /// <param name="message"></param>
-        private void PseudoThrow(string message)
+        private static void PseudoThrow(string message)
         {
             Log.Warn(message);
             Debug.Assert(false, message);
