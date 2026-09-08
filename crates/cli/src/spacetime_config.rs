@@ -258,6 +258,8 @@ pub struct CommandConfig<'a> {
     config_values: HashMap<String, Value>,
     /// CLI arguments
     matches: &'a ArgMatches,
+    /// A declaration belongs to this exact target and never inherits.
+    container: Option<crate::container::config::ContainerConfig>,
 }
 
 /// Schema that defines the contract between CLI arguments and config file keys.
@@ -704,7 +706,21 @@ impl<'a> CommandConfig<'a> {
             schema,
             config_values: normalized_values,
             matches,
+            container: None,
         })
+    }
+
+    pub fn with_container(mut self, container: Option<crate::container::config::ContainerConfig>) -> Self {
+        self.container = container;
+        self
+    }
+
+    pub fn container(&self) -> Option<&crate::container::config::ContainerConfig> {
+        self.container.as_ref()
+    }
+
+    pub(crate) fn matches(&self) -> &ArgMatches {
+        self.matches
     }
 
     /// Get a single value from the config as a specific type.

@@ -11,7 +11,7 @@ fn platform() -> ImagePlatform {
         architecture: "amd64".into(),
     }
 }
-fn declaration(image: serde_json::Value) -> ContainerConfig {
+pub(crate) fn declaration(image: serde_json::Value) -> ContainerConfig {
     serde_json::from_value(json!({"image":image,"resources":{"cpu_millicores":100,"memory_bytes":67108864,"scratch_bytes":1048576,"pids_max":32}})).unwrap()
 }
 fn blob(layout: &Path, bytes: &[u8], media: &str) -> Descriptor {
@@ -34,7 +34,7 @@ fn blob(layout: &Path, bytes: &[u8], media: &str) -> Descriptor {
         artifact_type: None,
     }
 }
-fn fixture(layout: &Path) -> Descriptor {
+pub(crate) fn fixture(layout: &Path) -> Descriptor {
     let mut archive = tar::Builder::new(Vec::new());
     let mut header = tar::Header::new_gnu();
     header.set_size(4);
@@ -460,7 +460,7 @@ fn container_build_command_requires_explicit_platform_and_output() {
 }
 
 #[test]
-fn legacy_publish_rejects_container_targets_without_affecting_plain_children() {
+fn publish_preserves_container_target_metadata_without_affecting_plain_children() {
     use crate::subcommands::publish::{build_publish_schema, get_filtered_publish_configs};
     let config: SpacetimeConfig = serde_json::from_value(json!({
         "database":"container-db", "container":declaration(json!({"build":{}})),
@@ -471,10 +471,9 @@ fn legacy_publish_rejects_container_targets_without_affecting_plain_children() {
     let schema = build_publish_schema(&command).unwrap();
     for selected in ["container-db", "*"] {
         let args = command.clone().try_get_matches_from(["publish", selected]).unwrap();
-        let error = get_filtered_publish_configs(&config, &command, &schema, &args)
-            .unwrap_err()
-            .to_string();
-        assert!(error.contains("does not yet publish container"));
+        let targets = get_filtered_publish_configs(&config, &command, &schema, &args).unwrap();
+        assert!(targets[0].container().is_some());
+        assert!(targets.iter().skip(1).all(|target| target.container().is_none()));
     }
     let args = command
         .clone()

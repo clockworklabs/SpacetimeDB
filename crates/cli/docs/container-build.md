@@ -9,10 +9,8 @@ The command is dispatched before saved CLI server settings or credentials are
 opened; only project configuration and explicitly selected build credentials
 are read.
 
-This slice implements local preparation. Managed publication and container
-lifecycle commands are separate integration work. The existing `publish` command
-rejects a selected container declaration so it cannot silently publish only the
-module.
+The same verified preparation feeds managed `publish`, described below.
+Container lifecycle commands remain separate integration work.
 
 ## Configuration
 
@@ -147,3 +145,82 @@ Tests use generated local OCI fixtures and fake tool invocations, including an
 owned shell fixture for process cleanup. They do not execute Docker, BuildKit,
 Railpack, Skopeo, or any server operation. Actual supported-builder acceptance
 remains a separate integration check.
+
+## Managed publication
+
+`spacetime publish` publishes a selected target's container declaration through
+managed publication. Select the image platform explicitly. Server selection uses
+the normal CLI URL, configured alias, or default:
+
+```sh
+spacetime publish my-db --server https://your-test-server.example \
+  --container-platform linux/amd64 \
+  --artifact-endpoint https://your-test-artifacts.example
+```
+
+The URLs above are placeholders. Managed transport requires HTTPS for remote
+servers and also supports HTTP loopback servers. The CLI does not send the publisher's Bearer credential to an
+advertised artifact origin unless it is the same origin as the selected server
+or the exact URL is explicitly approved with `--artifact-endpoint`. It does not
+follow HTTP redirects or inherit HTTP proxy settings for managed publication.
+Image registry credentials remain separate and require `--registry-auth-file`.
+
+A target with a container declaration and no module source preserves its existing
+module. A new container-only database uses the immutable versioned empty module.
+An explicit `module-path`, `bin-path`, or `js-path` replaces the module. An omitted
+container preserves it; `--remove-container` removes it. `--remove-module` selects
+the empty module and runs the existing authorized migration preflight. A selected
+container declaration conflicts with `--remove-container`, and a configured
+module source conflicts with `--remove-module`. Manual migrations and data-clear
+publication are rejected. Precompiled NativeAOT modules can use `--bin-path`;
+managed source compilation with `--native-aot` is not yet supported.
+
+Ordinary module-only publications use the legacy path. When deployment inspection
+finds an existing managed revision, module-only updates use managed publication
+with `ContainerAction::Keep`. `--managed` explicitly selects managed publication
+for a new module-only deployment. A managed error never falls back to a raw
+module publication. Existing databases use their exact current deployment
+revision as a compare-and-set precondition.
+
+New managed databases first reserve a server-generated Identity under the
+publisher and creation options. A caller cannot select an unreserved new Identity.
+`--parent` resolves an accessible existing database; `--organization` currently
+requires the organization's Identity. Requested database naming runs separately
+after activation. If naming fails or its response is lost, the command reports
+the successfully created Identity and does not repeat publication or overwrite
+names on a later resume.
+
+Before staging artifacts, the CLI saves a private operation directory under
+`.spacetime/publications/` beside the project configuration, or the explicit
+`--publication-state-dir`. The directory retains exact request bytes, immutable
+module/OCI artifacts and upload receipts. It contains no publisher credential or
+resolved database environment values. Image blobs can contain environment
+values baked into the image, so treat the directory as private build output.
+
+If a request fails or the command is interrupted, use the printed directory:
+
+```sh
+spacetime publish --resume-publication .spacetime/publications/OPERATION_UUID \
+  --server https://your-test-server.example \
+  --artifact-endpoint https://your-test-artifacts.example
+```
+
+Resume authenticates the original publisher and server, observes accepted state,
+and reuses the exact operation bytes. It does not read `spacetime.json`, rebuild,
+or resolve a changed image tag. Ambiguous uploads query the same upload receipt
+before continuing. If current database-read access was revoked, resume uses the
+exact stored PUT to recover the original publisher's admitted result before
+requiring local artifacts. A lost publication response never creates a second
+operation. The coordinator PUT has a bounded 30-minute timeout covering its
+separate schema, image, storage, and confirmation steps; interruption retains
+the journal while the outcome is uncertain. Exact public PUT replay remains
+limited to the operation's seven-day retry window; server-side recovery has its
+own durable lifetime.
+The default activation wait is 60 seconds; `--publication-wait 0` returns after
+the first confirmed status, and a pending status prints its resume instruction.
+Keep the directory while an outcome is uncertain; a confirmed terminal operation
+can be removed locally when its artifacts are no longer needed.
+
+Container declarations remain local to their exact database target. They do not
+inherit to nested targets. `spacetime dev` currently rejects selected container
+targets because it does not yet supervise their local runtime.

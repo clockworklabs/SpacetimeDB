@@ -2,9 +2,10 @@
 pub mod config;
 pub mod oci;
 pub mod process;
+pub mod publish;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 use anyhow::{ensure, Context, Result};
 use config::{ContainerConfig, ImageSource, SourceBuild};
