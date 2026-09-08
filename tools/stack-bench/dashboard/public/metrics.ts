@@ -56,6 +56,7 @@ export interface ComparisonEntry<Attempt extends MetricAttempt> {
 export type ComparisonRow<Attempt extends MetricAttempt> = ComparisonEntry<Attempt> & {
   n: number; scopes: string[]; first: number | null; final: number | null;
   repairs: number | null; spend: number | null; duration: number | null;
+  costPerValidRun: number | null;
   firstRange: { min: number; max: number } | null;
   spendRange: { min: number; max: number } | null;
   durationRange: { min: number; max: number } | null;
@@ -172,6 +173,8 @@ export function compareCampaign<Attempt extends MetricAttempt>(campaign: {
         final: scopes.length === 1 ? median(pick('final')) : null,
         repairs: scopes.length === 1 ? median(pick('repairs')) : null,
         spend: scopes.length === 1 ? median(spend) : null, spendRange: scopes.length === 1 ? range(spend) : null,
+        costPerValidRun: scopes.length === 1 && spend.length > 0 && spend.length === entry.runs.length
+          ? spend.reduce((total, cost) => total + cost, 0) / spend.length : null,
         duration: scopes.length === 1 ? median(duration) : null,
         durationRange: scopes.length === 1 ? range(duration) : null };
     });

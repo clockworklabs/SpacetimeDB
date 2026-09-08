@@ -201,9 +201,10 @@ export function campaignPage(input: CampaignPageInput): string {
     'Weighted score': 'Score weighted by check points. Final comparison values appear when usable attempts finish.',
     Unaided: 'Score before repair, based on the recorded first-try evidence.',
     Regressions: 'Median regression count across recorded repetitions. A regression is a previously passing check that failed after a later change.',
-    'Usable results': 'Completed attempts with usable comparison evidence. A completed process alone does not guarantee a usable result.',
-    Excluded: 'Attempts omitted from comparison because their evidence is invalid or incomplete. Their cost is still included.',
+    'Valid runs': 'Completed attempts with usable comparison evidence. A completed process alone does not guarantee a usable result.',
+    Excluded: 'Attempts omitted from comparison because their evidence is invalid or incomplete. Their costs appear only in total spend and individual run details.',
     Time: 'Median duration of usable completed attempts. Live attempt status appears below.',
+    'Cost per valid run': 'Mean cost of completed runs with valid comparison results. Excludes invalid and unfinished runs. Valid does not mean every check passed. All included runs must have exact cost evidence and the same comparison scope.',
     'Total spend': 'Includes excluded attempts. Unknown means usage evidence is incomplete, not zero cost. Costs use the pinned price snapshot.',
   };
   const row = (label: string, render: (stack: SheetStack) => string): string =>
@@ -216,22 +217,21 @@ export function campaignPage(input: CampaignPageInput): string {
       ? `<a href="/c/${encodeURIComponent(sheet.key)}/a/${encodeURIComponent(attempt.id)}">`
         + `${label}</a>` : label}</th>`;
   }).join('');
-  const repetitions = sheet.repetitions > 1
-    ? row('Usable results', stack => value(ratio(stack.n, stack.attempts.length)))
+  const repetitions = row('Valid runs', stack => value(ratio(stack.n, stack.attempts.length)))
       + row('Excluded', stack =>
-        value(num(stack.attempts.filter(attempt => attempt.excluded).length)))
-    : '';
+        value(num(stack.attempts.filter(attempt => attempt.excluded).length)));
   return `<div class="page"><div class="crumbs"><a href="/">Campaigns</a> / `
     + `<b>${esc(sheet.key)}</b></div>`
     + `<div class="title"><h2>${esc(sheet.title)}</h2></div>`
     + `<p class="summary-note" title="${esc([sheet.facts.grading, ...sheet.facts.gradingReasons].join(' · '))}">${esc(statusWord(sheet.status))}${sheet.provisional ? ' - Provisional results: qualification is incomplete.' : ''}</p>${facts(sheet)}`
-    + '<h3>Results</h3><p class="summary-note">Completion is the median across repetitions. Spend includes every attempt, including excluded runs.</p>'
+    + '<h3>Results</h3><p class="summary-note">Completion is the median across repetitions. Cost is the mean per valid completed run.</p>'
     + `<div class="sheet-scroll" role="region" aria-label="Stack comparison" tabindex="0"><table class="sheet"><thead><tr><th scope="col" class="h">Metric</th>${heads}</tr></thead><tbody>`
     + row('Completion', stack => `<div class="big${sheet.provisional ? ' prov' : ''}">${pct(stack.completionRate === null ? null : 100 * stack.completionRate)}</div>`)
-    + row('Total spend', stack => value(spend(stack.spend) + (stack.spendPending ? ' (usage pending)' : '')))
+    + row('Cost per valid run', stack => value(stack.costPerValidRun === null ? (stack.n ? 'Unknown' : 'Awaiting valid runs') : `$${stack.costPerValidRun.toFixed(2)}`))
     + repetitions + '</tbody></table></div>'
     + '<details class="technical"><summary>More comparison metrics</summary><p class="summary-note">Weighted scores and duration use usable completed results. A dash means no usable value yet.</p>'
     + `<div class="sheet-scroll"><table class="sheet"><thead><tr><th scope="col" class="h">Metric</th>${heads}</tr></thead><tbody>`
+    + row('Total spend', stack => value(spend(stack.spend) + (stack.spendPending ? ' (usage pending)' : '')))
     + row('Weighted score', stack => value(pct(stack.score)))
     + row('Unaided', stack => value(pct(stack.unaided)))
     + row('Regressions', stack => value(num(stack.regressions)))

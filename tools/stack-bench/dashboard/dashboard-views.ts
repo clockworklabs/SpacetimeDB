@@ -260,6 +260,7 @@ export interface SheetQuestline {
 
 export interface SheetStack {
   stack: string;
+  costPerValidRun: number | null;
   selectedAttemptId: string | null;
   score: number | null;
   points: { score: number; max: number } | null;
@@ -455,6 +456,7 @@ export function campaignSheet(resultsRoot: string, key: string,
     const metrics = lead ? attemptMetrics(lead) : null;
     return {
       stack: stack.id,
+      costPerValidRun: row?.costPerValidRun ?? null,
       selectedAttemptId: latest?.attempt.id ?? null,
       score: percentage(row?.final ?? null),
       points: dependency ? uniquePoints(lead?.dependency ?? null) : metrics?.raw.final ?? null,

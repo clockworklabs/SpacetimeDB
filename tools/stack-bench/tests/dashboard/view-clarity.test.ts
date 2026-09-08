@@ -21,7 +21,7 @@ test('campaign separates aggregate scores from selected evidence and explains pe
       repairLimits: { perFeature: 5 }, agent: null, model: null,
       guidance: 'neutral', recipes: [], timeLimitMinutes: 240, spendLimitUsd: 50,
       controllerImage: null, buildImage: null, planSha256: 'example', grading: 'pending', gradingReasons: [] },
-    stacks: [{ stack: 'spacetime', selectedAttemptId: attempt.id, score: 82, points: null,
+    stacks: [{ stack: 'spacetime', costPerValidRun: 6, selectedAttemptId: attempt.id, score: 82, points: null,
       unaided: null, continued: false, regressions: 0,
       timeSec: null, spend: attempt.spend, spendPending: true, completionRate: null, n: 1,
       attempts: [attempt], levels: null,
@@ -33,7 +33,11 @@ test('campaign separates aggregate scores from selected evidence and explains pe
   assert.match(selected, /20%/);
   assert.match(selected, /2<i>\/ 10<\/i>/);
   assert.doesNotMatch(selected, /82%|9<i>\/ 10|Questline average/);
-  assert.match(page, /Usable results/);
+  assert.match(page, /Valid runs/);
+  const headline = page.slice(0, page.indexOf('<summary>More comparison metrics'));
+  assert.match(headline, /Cost per valid run/);
+  assert.match(headline, /\$6\.00/);
+  assert.doesNotMatch(headline, /Total spend/);
   assert.doesNotMatch(page, /<h3>Selected repetition<\/h3>/);
   assert.ok(page.indexOf('<h3>Results</h3>') < page.indexOf('<h3>Runs</h3>'));
   assert.match(page, /<summary>More comparison metrics<\/summary>/);
