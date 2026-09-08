@@ -336,7 +336,7 @@ impl PublisherClient {
         database: Identity,
         status: &UploadStatus,
     ) -> Result<UploadStatus> {
-        let next: UploadStatus = json(
+        let completed: ObjectRef = json(
             self.request(
                 Method::POST,
                 route(
@@ -356,8 +356,14 @@ impl PublisherClient {
             "artifact upload completion",
         )
         .await?;
+        // The completion endpoint confirms the immutable object, rather than
+        // returning session status. The route already binds the original UUID;
+        // retain that session only after checking the exact digest and size.
+        ensure!(completed == status.object, "artifact completion descriptor changed");
+        let mut next = status.clone();
+        next.offset = completed.size;
+        next.complete = true;
         next.validate(status.object, Some(status.id))?;
-        ensure!(next.complete, "artifact completion not confirmed");
         Ok(next)
     }
 }

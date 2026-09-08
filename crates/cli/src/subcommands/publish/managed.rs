@@ -137,9 +137,23 @@ pub(super) fn add_args(mut command: Command) -> Command {
                 .value_name("NAME=FILE")
                 .help("Build secret file, separate from runtime env_keys"),
         );
-    for tool in ["buildctl", "railpack", "skopeo"] {
+    for (tool, help) in [
+        (
+            "buildctl",
+            "Path to the buildctl executable for Dockerfile or Railpack builds",
+        ),
+        (
+            "railpack",
+            "Path to the Railpack executable for explicitly selected Railpack builds",
+        ),
+        (
+            "skopeo",
+            "Path to the skopeo executable for copying prebuilt OCI images",
+        ),
+    ] {
         command = command.arg(
             Arg::new(tool)
+                .help(help)
                 .long(tool)
                 .default_value(tool)
                 .value_parser(clap::value_parser!(PathBuf)),

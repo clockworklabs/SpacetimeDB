@@ -139,3 +139,14 @@ Commands:
 "#,
         )
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn managed_publish_help_passes_entrypoint_validation() {
+        let help = super::get_command()
+            .try_get_matches_from(["spacetime", "publish", "--help"])
+            .unwrap_err();
+        assert_eq!(help.kind(), clap::error::ErrorKind::DisplayHelp);
+    }
+}

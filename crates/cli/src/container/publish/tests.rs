@@ -31,11 +31,13 @@ pub(crate) fn database() -> Identity {
 pub(crate) struct Behavior {
     pub permission: bool,
     pub lose_append: bool,
+    pub lose_completion: bool,
     pub lose_submit_after_commit: bool,
     pub lose_submit_before_commit: bool,
     pub lose_reservation: bool,
     pub stale: bool,
     pub bad_receipt: bool,
+    pub bad_completion: bool,
     pub bad_status: bool,
     pub wrong_reservation: bool,
     pub deny_preflight: bool,
@@ -319,6 +321,16 @@ async fn handler(
             status.complete = true;
         }
         let mut response = status.clone();
+        if path.ends_with("/complete") {
+            if std::mem::take(&mut state.lose_completion) {
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+            let mut object = response.object;
+            if state.bad_completion {
+                object.size += 1;
+            }
+            return Json(object).into_response();
+        }
         if method == Method::PATCH && std::mem::take(&mut state.lose_append) {
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
@@ -425,6 +437,48 @@ async fn mismatched_reservation_or_upload_receipt_never_reaches_admission() {
         fixture.close().await;
     }
 }
+#[tokio::test]
+async fn completion_descriptor_must_match_before_admission() {
+    let fixture = Fixture::new().await;
+    fixture.state.lock().unwrap().bad_completion = true;
+    let directory = tempfile::tempdir().unwrap();
+    let mut journal = journal(directory.path(), fixture.record(true, false));
+    let error = run_now(&fixture.client(), &mut journal).await.unwrap_err();
+    assert!(error.to_string().contains("completion descriptor changed"));
+    assert!(fixture.state.lock().unwrap().submits.is_empty());
+    assert!(!journal.record.submitted);
+    fixture.state.lock().unwrap().bad_completion = false;
+    assert!(matches!(
+        run_now(&fixture.client(), &mut journal).await.unwrap(),
+        Outcome::Complete(_)
+    ));
+    let status = journal.record.uploads[0].session.as_ref().unwrap();
+    assert!(status.complete);
+    assert_eq!(status.offset, status.object.size);
+    fixture.close().await;
+}
+
+#[tokio::test]
+async fn lost_completion_response_observes_the_same_complete_session() {
+    let fixture = Fixture::new().await;
+    fixture.state.lock().unwrap().lose_completion = true;
+    let directory = tempfile::tempdir().unwrap();
+    let mut journal = journal(directory.path(), fixture.record(true, false));
+    assert!(matches!(
+        run_now(&fixture.client(), &mut journal).await.unwrap(),
+        Outcome::Complete(_)
+    ));
+    let session = journal.record.uploads[0].session.as_ref().unwrap();
+    assert!(session.complete);
+    {
+        let state = fixture.state.lock().unwrap();
+        assert_eq!(state.begin_count, 1);
+        assert_eq!(state.uploads.len(), 1);
+        assert!(state.uploads[&session.id].0.complete);
+    }
+    fixture.close().await;
+}
+
 #[tokio::test]
 async fn wrong_publication_scope_and_denied_upload_are_not_accepted() {
     for denied in [true, false] {
