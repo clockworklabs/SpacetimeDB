@@ -552,11 +552,18 @@ mod rust_procedure_concurrency {
         make_test("scheduled-procedure-scheduled-reducer-interleaved").run()
     }
 
-    /// Test that an interval update made while its procedure is running wins over
-    /// the stale reschedule computed by the original invocation.
+    /// Test that an update made while its procedure is running fires at its
+    /// scheduled time and is not replaced by the original invocation.
     #[test]
     fn scheduled_procedure_update_while_inflight() {
         make_test("scheduled-procedure-update-while-inflight").run()
+    }
+
+    /// Test that one-shot and interval cleanup do not replace a schedule-row
+    /// update made by the reducer while it was inflight.
+    #[test]
+    fn scheduled_oneshot_reducer_update_while_inflight() {
+        make_test("scheduled-oneshot-reducer-update-while-inflight").run()
     }
 }
 

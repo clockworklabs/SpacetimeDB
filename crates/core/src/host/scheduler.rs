@@ -12,14 +12,13 @@ use core::time::Duration;
 use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
-use rustc_hash::FxHashMap;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
 use spacetimedb_datastore::execution_context::{ExecutionContext, ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::system_tables::{StScheduledFields, ST_SCHEDULED_ID};
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::scheduler::ScheduleAt;
-use spacetimedb_lib::{Identity, TimeDuration, Timestamp};
+use spacetimedb_lib::{hash_bytes, Hash, Identity, TimeDuration, Timestamp};
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::bsatn::ToBsatn as _;
 use spacetimedb_sats::AlgebraicValue;
@@ -28,7 +27,7 @@ use std::panic;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
-use tokio_util::time::delay_queue::{self, DelayQueue, Expired};
+use tokio_util::time::delay_queue::{DelayQueue, Expired};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct ScheduledFunctionId {
@@ -57,6 +56,7 @@ enum SchedulerMessage {
     Schedule {
         id: ScheduledFunctionId,
         function_name: Arc<str>,
+        row_hash: Hash,
         /// The timestamp we'll tell the reducer it is.
         effective_at: Timestamp,
         /// The actual instant we're scheduling for.
@@ -90,8 +90,6 @@ impl SchedulerStarter {
     // time to make it better right now.
     pub fn start(mut self, module_host: &ModuleHost) -> anyhow::Result<()> {
         let mut queue: DelayQueue<QueueItem> = DelayQueue::new();
-        let mut key_map = FxHashMap::default();
-
         let tx = self.db.begin_tx(Workload::Internal);
 
         // Draining rx before processing schedules from the DB to ensure there are no in-flight messages,
@@ -119,6 +117,7 @@ impl SchedulerStarter {
             // Insert each entry (row) in the scheduled table into `queue`.
             for scheduled_row in self.db.iter(&tx, table_id)? {
                 let (schedule_id, schedule_at) = get_schedule_from_row(&scheduled_row, id_column, at_column)?;
+                let row_hash = scheduled_row_hash(&scheduled_row)?;
                 // calculate duration left to call the scheduled reducer
                 let duration = schedule_at.to_duration_from(now_ts);
                 let at = schedule_at.to_timestamp_from(now_ts);
@@ -128,24 +127,15 @@ impl SchedulerStarter {
                     id_column,
                     at_column,
                 };
-                let key = queue.insert_at(
+                queue.insert_at(
                     QueueItem::Id {
                         id,
                         function_name: function_name.clone(),
                         at,
+                        row_hash,
                     },
                     now_instant + duration,
                 );
-
-                // This should never happen as duplicate entries should be gated by unique
-                // constraint violation in scheduled tables.
-                if key_map.insert(id, ScheduledEntry::Queued { key }).is_some() {
-                    return Err(anyhow!(
-                        "Duplicate key found in scheduler queue: table_id {}, schedule_id {}",
-                        id.table_id,
-                        id.schedule_id
-                    ));
-                }
             }
         }
 
@@ -153,7 +143,6 @@ impl SchedulerStarter {
             SchedulerActor {
                 rx: self.rx,
                 queue,
-                key_map,
                 inflight_calls: FuturesUnordered::new(),
                 database_identity: module_host.info().database_identity,
                 module_host: module_host.downgrade(),
@@ -220,6 +209,7 @@ impl Scheduler {
         id_column: ColId,
         at_column: ColId,
         function_name: Arc<str>,
+        row_hash: Hash,
         fn_start: Timestamp,
     ) -> Result<(), ScheduleError> {
         // if `Timestamp::now()` is properly monotonic, use it; otherwise, use
@@ -254,6 +244,7 @@ impl Scheduler {
                 at_column,
             },
             function_name,
+            row_hash,
             effective_at,
             real_at,
         }));
@@ -280,23 +271,14 @@ impl Scheduler {
 struct SchedulerActor {
     rx: mpsc::UnboundedReceiver<MsgOrExit<SchedulerMessage>>,
     queue: DelayQueue<QueueItem>,
-    key_map: FxHashMap<ScheduledFunctionId, ScheduledEntry>,
     inflight_calls: FuturesUnordered<ScheduledFunctionFuture>,
     database_identity: Identity,
     module_host: WeakModuleHost,
 }
 
-enum ScheduledEntry {
-    // Still present in DelayQueue; row updates remove it before queuing
-    // the replacement.
-    Queued { key: delay_queue::Key },
-    // Already expired and running; keep the latest row update until completion
-    // so an older interval result cannot replace newer row state.
-    Inflight { pending_update: Option<NewScheduleRequest> },
-}
-
 struct NewScheduleRequest {
     function_name: Arc<str>,
+    row_hash: Hash,
     effective_at: Timestamp,
     real_at: Instant,
 }
@@ -307,6 +289,7 @@ enum QueueItem {
         id: ScheduledFunctionId,
         function_name: Arc<str>,
         at: Timestamp,
+        row_hash: Hash,
     },
     VolatileNonatomicImmediate {
         function_name: String,
@@ -357,7 +340,7 @@ pub(crate) enum CallScheduledFunctionError {
 }
 
 #[cfg(target_pointer_width = "64")]
-spacetimedb_table::static_assert_size!(QueueItem, 64);
+spacetimedb_table::static_assert_size!(QueueItem, 72);
 
 impl SchedulerActor {
     async fn run(mut self) {
@@ -380,9 +363,7 @@ impl SchedulerActor {
                     self.handle_queued(scheduled);
                 },
                 Some(completion) = self.inflight_calls.next(), if !self.inflight_calls.is_empty() => {
-                    if let Err(err) = self.handle_completion(completion) {
-                        log::error!("failed to handle scheduled function completion: {err:#}");
-                    }
+                    self.handle_completion(completion);
                 }
             }
         }
@@ -393,12 +374,14 @@ impl SchedulerActor {
             SchedulerMessage::Schedule {
                 id,
                 function_name,
+                row_hash,
                 effective_at,
                 real_at,
             } => self.handle_schedule(
                 id,
                 NewScheduleRequest {
                     function_name,
+                    row_hash,
                     effective_at,
                     real_at,
                 },
@@ -413,62 +396,25 @@ impl SchedulerActor {
     }
 
     fn handle_schedule(&mut self, id: ScheduledFunctionId, schedule: NewScheduleRequest) {
-        match self.key_map.remove(&id) {
-            // if `schedule` is queued, update it.
-            Some(ScheduledEntry::Queued { key }) => {
-                self.queue.remove(&key);
-                self.insert_queued(id, schedule);
-            }
-            // If already inflight, just store the update request
-            Some(ScheduledEntry::Inflight { .. }) => {
-                self.key_map.insert(
-                    id,
-                    ScheduledEntry::Inflight {
-                        pending_update: Some(schedule),
-                    },
-                );
-            }
-            None => self.insert_queued(id, schedule),
-        }
+        self.insert_queued(id, schedule);
     }
 
     fn insert_queued(&mut self, id: ScheduledFunctionId, schedule: NewScheduleRequest) {
-        let key = self.queue.insert_at(
+        self.queue.insert_at(
             QueueItem::Id {
                 id,
                 function_name: schedule.function_name,
                 at: schedule.effective_at,
+                row_hash: schedule.row_hash,
             },
             schedule.real_at,
         );
-        self.key_map.insert(id, ScheduledEntry::Queued { key });
     }
 
     fn handle_queued(&mut self, expired: Expired<QueueItem>) {
-        let key = expired.key();
         let item = expired.into_inner();
-        let item_id = match &item {
-            QueueItem::Id { id, .. } => Some(*id),
-            QueueItem::VolatileNonatomicImmediate { .. } => None,
-        };
-        if let Some(id) = item_id {
-            match self.key_map.get(&id) {
-                //Transition from `ScheduledEntry::Queued` to `ScheduledEntry::Inflight`.
-                Some(ScheduledEntry::Queued { key: queued_key }) if *queued_key == key => {
-                    self.key_map
-                        .insert(id, ScheduledEntry::Inflight { pending_update: None });
-                }
-                _ => {
-                    tracing::error!("Expired Scheduled entry already in flight {:?}", id);
-                    return;
-                }
-            }
-        }
 
         let Some(module_host) = self.module_host.upgrade() else {
-            if let Some(id) = item_id {
-                self.key_map.remove(&id);
-            }
             return;
         };
 
@@ -476,22 +422,15 @@ impl SchedulerActor {
         self.update_active_calls_metric();
     }
 
-    fn handle_completion(&mut self, completion: ScheduledFunctionCompletion) -> anyhow::Result<()> {
+    fn handle_completion(&mut self, completion: ScheduledFunctionCompletion) {
         self.update_active_calls_metric();
         let ScheduledFunctionCompletion { item, result } = completion;
-        let allow_interval_reschedule = match self.clear_queue(&item)? {
-            CompletionAction::NoUpdate => true,
-            CompletionAction::QueuePendingUpdate(id, schedule) => {
-                self.insert_queued(id, schedule);
-                false
-            }
-        };
 
         let result = match result {
             Ok(result) => result,
             Err(_) => {
                 log::error!("scheduled function panicked");
-                return Ok(());
+                return;
             }
         };
 
@@ -505,13 +444,18 @@ impl SchedulerActor {
             Ok(CallScheduledFunctionResult {
                 reschedule: Some(Reschedule { at_ts, at_real }),
             }) => {
-                if let QueueItem::Id { id, function_name, .. } = item
-                    && allow_interval_reschedule
+                if let QueueItem::Id {
+                    id,
+                    function_name,
+                    row_hash,
+                    ..
+                } = item
                 {
                     self.insert_queued(
                         id,
                         NewScheduleRequest {
                             function_name,
+                            row_hash,
                             effective_at: at_ts,
                             real_at: at_real,
                         },
@@ -519,31 +463,6 @@ impl SchedulerActor {
                 }
             }
         }
-        Ok(())
-    }
-
-    // Clears the active entry and decides which schedule, if any, should be queued next.
-    fn clear_queue(&mut self, item: &QueueItem) -> anyhow::Result<CompletionAction> {
-        let QueueItem::Id { id, .. } = item else {
-            return Ok(CompletionAction::NoUpdate);
-        };
-        match self.key_map.get(id) {
-            Some(ScheduledEntry::Queued { .. }) => {
-                return Err(anyhow!("scheduled function {id:?} completed while not inflight"));
-            }
-            None => {
-                return Err(anyhow!("scheduled function {id:?} completed without a scheduler entry"));
-            }
-            Some(ScheduledEntry::Inflight { .. }) => {}
-        }
-
-        let ScheduledEntry::Inflight { pending_update } = self.key_map.remove(id).unwrap() else {
-            unreachable!()
-        };
-        Ok(match pending_update {
-            None => CompletionAction::NoUpdate,
-            Some(schedule) => CompletionAction::QueuePendingUpdate(*id, schedule),
-        })
     }
 
     fn update_active_calls_metric(&self) {
@@ -552,13 +471,6 @@ impl SchedulerActor {
             .with_label_values(&self.database_identity)
             .set(self.inflight_calls.len() as i64);
     }
-}
-
-enum CompletionAction {
-    // No row update arrived while this call was active.
-    NoUpdate,
-    // A newer row update arrived; queue it and suppress this call's interval result.
-    QueuePendingUpdate(ScheduledFunctionId, NewScheduleRequest),
 }
 
 fn call_scheduled_function(module_host: ModuleHost, item: QueueItem) -> ScheduledFunctionFuture {
@@ -596,6 +508,7 @@ struct Reschedule {
 struct ScheduledInvocation {
     function_name: Arc<str>,
     intended_at: Timestamp,
+    row_hash: Hash,
 }
 
 enum ScheduledProcedureStep {
@@ -667,7 +580,7 @@ fn prepare_scheduled_procedure_call(
     inst: &mut impl WasmInstance,
 ) -> ScheduledProcedureStep {
     let ScheduledFunctionParams(item) = params;
-    let timing = scheduled_invocation_for_item(&item);
+    let invocation = scheduled_invocation_for_item(&item);
     let id = scheduled_item_id(&item);
     let db = &**module_info.relational_db();
     let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
@@ -685,24 +598,28 @@ fn prepare_scheduled_procedure_call(
             // or its arguments do not match the current function definition.
             // TODO: Use a typed error to log internal failures at error! and stale/invalid schedules at warn! or lower.
             log::error!("could not determine scheduled procedure or its parameters: {err:#}");
-            let reschedule = id.and_then(|id| {
-                let reschedule_from = timing
-                    .as_ref()
-                    .map(|timing| timing.intended_at)
-                    .unwrap_or_else(Timestamp::now);
-                delete_scheduled_function_row(module_info, db, id, Some(tx), reschedule_from, inst_common, inst)
+            let reschedule = id.zip(invocation.as_ref()).and_then(|(id, invocation)| {
+                delete_scheduled_function_row(module_info, db, id, Some(tx), invocation, inst_common, inst)
             });
             return ScheduledProcedureStep::Done(CallScheduledFunctionResult { reschedule }, false);
         }
     };
 
-    let intended_at = timing.as_ref().map_or(timestamp, |timing| timing.intended_at);
+    let intended_at = invocation
+        .as_ref()
+        .map_or(timestamp, |invocation| invocation.intended_at);
 
     // For scheduled procedures, it's incorrect to retry them if execution aborts midway,
     // so we must remove the schedule row before executing.
-    let reschedule =
-        id.and_then(|id| delete_scheduled_function_row(module_info, db, id, Some(tx), intended_at, inst_common, inst));
-    let delay = timing.map(|timing| (timing.function_name, scheduled_function_delay(timestamp, intended_at)));
+    let reschedule = id.zip(invocation.as_ref()).and_then(|(id, invocation)| {
+        delete_scheduled_function_row(module_info, db, id, Some(tx), invocation, inst_common, inst)
+    });
+    let delay = invocation.map(|invocation| {
+        (
+            invocation.function_name,
+            scheduled_function_delay(timestamp, intended_at),
+        )
+    });
     ScheduledProcedureStep::Procedure {
         params: Box::new(params),
         reschedule,
@@ -717,7 +634,7 @@ fn call_scheduled_reducer_until_done(
     inst: &mut impl WasmInstance,
 ) -> (CallScheduledFunctionResult, bool) {
     let ScheduledFunctionParams(item) = params;
-    let timing = scheduled_invocation_for_item(&item);
+    let invocation = scheduled_invocation_for_item(&item);
     let id = scheduled_item_id(&item);
     let db = &**module_info.relational_db();
     let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
@@ -735,25 +652,21 @@ fn call_scheduled_reducer_until_done(
             // or its arguments do not match the current function definition.
             // TODO: Use a typed error to log internal failures at error! and stale/invalid schedules at warn! or lower.
             log::error!("could not determine scheduled reducer or its parameters: {err:#}");
-            let reschedule = id.and_then(|id| {
-                // Prefer to reschedule interval schedules from the requested time, ignoring any delays or jitter.
-                // If you reschedule from `Timestamp::now`, delays will accumulate.
-                let reschedule_from = timing
-                    .as_ref()
-                    .map(|timing| timing.intended_at)
-                    .unwrap_or_else(Timestamp::now);
-                delete_scheduled_function_row(module_info, db, id, Some(tx), reschedule_from, inst_common, inst)
+            let reschedule = id.zip(invocation.as_ref()).and_then(|(id, invocation)| {
+                delete_scheduled_function_row(module_info, db, id, Some(tx), invocation, inst_common, inst)
             });
             return (CallScheduledFunctionResult { reschedule }, false);
         }
     };
 
-    let intended_at = timing.as_ref().map_or(timestamp, |timing| timing.intended_at);
-    if let Some(timing) = timing.as_ref() {
+    let intended_at = invocation
+        .as_ref()
+        .map_or(timestamp, |invocation| invocation.intended_at);
+    if let Some(invocation) = invocation.as_ref() {
         let delay = scheduled_function_delay(timestamp, intended_at);
-        record_scheduled_function_delay(module_info, &timing.function_name, delay);
+        record_scheduled_function_delay(module_info, &invocation.function_name, delay);
     }
-    call_scheduled_reducer_with_tx(module_info, db, id, tx, intended_at, params, inst_common, inst)
+    call_scheduled_reducer_with_tx(module_info, db, id, tx, invocation.as_ref(), params, inst_common, inst)
 }
 
 fn scheduled_item_id(item: &QueueItem) -> Option<ScheduledFunctionId> {
@@ -765,9 +678,15 @@ fn scheduled_item_id(item: &QueueItem) -> Option<ScheduledFunctionId> {
 
 fn scheduled_invocation_for_item(item: &QueueItem) -> Option<ScheduledInvocation> {
     match item {
-        QueueItem::Id { function_name, at, .. } => Some(ScheduledInvocation {
+        QueueItem::Id {
+            function_name,
+            at,
+            row_hash,
+            ..
+        } => Some(ScheduledInvocation {
             function_name: function_name.clone(),
             intended_at: *at,
+            row_hash: *row_hash,
         }),
         QueueItem::VolatileNonatomicImmediate { .. } => None,
     }
@@ -801,7 +720,7 @@ fn call_scheduled_reducer_with_tx(
     db: &RelationalDB,
     id: Option<ScheduledFunctionId>,
     mut tx: MutTxId,
-    reschedule_from: Timestamp,
+    invocation: Option<&ScheduledInvocation>,
     params: CallReducerParams,
     inst_common: &mut InstanceCommon,
     inst: &mut impl WasmInstance,
@@ -831,8 +750,9 @@ fn call_scheduled_reducer_with_tx(
     let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
         inst_common.call_reducer_with_tx(Some(tx), params, inst)
     }));
-    let reschedule =
-        id.and_then(|id| delete_scheduled_function_row(module_info, db, id, None, reschedule_from, inst_common, inst));
+    let reschedule = id.zip(invocation).and_then(|(id, invocation)| {
+        delete_scheduled_function_row(module_info, db, id, None, invocation, inst_common, inst)
+    });
     // Currently, we drop the return value from the function call. In the future,
     // we might want to handle it somehow.
     let trapped = match result {
@@ -853,16 +773,17 @@ fn delete_scheduled_function_row(
     db: &RelationalDB,
     id: ScheduledFunctionId,
     tx: Option<MutTxId>,
-    reschedule_from: Timestamp,
+    invocation: &ScheduledInvocation,
     inst_common: &mut InstanceCommon,
     inst: &mut impl WasmInstance,
 ) -> Option<Reschedule> {
     let tx = tx.unwrap_or_else(|| db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal));
-    let schedule_at = delete_scheduled_function_row_with_tx(module_info, db, tx, id, inst_common, inst)?;
+    let schedule_at = delete_scheduled_function_row_with_tx(module_info, db, tx, id, invocation, inst_common, inst)?;
     let ScheduleAt::Interval(dur) = schedule_at else {
         return None;
     };
-    Some(next_interval_reschedule(reschedule_from, dur))
+    // Reschedule from the requested time so delays and jitter do not accumulate.
+    Some(next_interval_reschedule(invocation.intended_at, dur))
 }
 
 fn next_interval_reschedule(last_intended_at: Timestamp, interval: TimeDuration) -> Reschedule {
@@ -911,12 +832,21 @@ fn delete_scheduled_function_row_with_tx(
     db: &RelationalDB,
     mut tx: MutTxId,
     id: ScheduledFunctionId,
+    invocation: &ScheduledInvocation,
     inst_common: &mut InstanceCommon,
     inst: &mut impl WasmInstance,
 ) -> Option<ScheduleAt> {
     if let Ok(Some(schedule_row)) = get_schedule_row_mut(&tx, db, id) {
         match read_schedule_at(&schedule_row, id.at_column) {
             Ok(schedule_at) => {
+                match scheduled_row_hash(&schedule_row) {
+                    Ok(actual) if actual == invocation.row_hash => {}
+                    Ok(_) => return None,
+                    Err(err) => {
+                        log::error!("failed to hash scheduled row {id:?} before cleanup: {err:#}");
+                        return None;
+                    }
+                }
                 // If the schedule is an interval, we handle it as a repeated schedule
                 if let ScheduleAt::Interval(_) = schedule_at {
                     return Some(schedule_at);
@@ -1011,13 +941,20 @@ fn call_params_for_queued_item<T>(
 ) -> anyhow::Result<Option<(Timestamp, Instant, T)>> {
     Ok(Some(match item {
         QueueItem::Id {
-            id, function_name, at, ..
+            id,
+            function_name,
+            at,
+            row_hash,
         } => {
             let Some(schedule_row) = get_schedule_row_mut(tx, db, id)? else {
                 // If the row is not found, it means the schedule is cancelled by the user.
                 return Ok(None);
             };
-            let fun_args = FunctionArgs::Bsatn(schedule_row.to_bsatn_vec()?.into());
+            let row = schedule_row.to_bsatn_vec()?;
+            if hash_bytes(&row) != row_hash {
+                return Ok(None);
+            }
+            let fun_args = FunctionArgs::Bsatn(row.into());
             function_to_call_params(module, &function_name, fun_args, Some(at))?
         }
         QueueItem::VolatileNonatomicImmediate { function_name, args } => {
@@ -1098,6 +1035,10 @@ pub fn get_schedule_from_row(
     let schedule_at = read_schedule_at(row, at_column)?;
 
     Ok((schedule_id, schedule_at))
+}
+
+pub(super) fn scheduled_row_hash(row: &RowRef<'_>) -> anyhow::Result<Hash> {
+    Ok(hash_bytes(row.to_bsatn_vec()?))
 }
 
 fn read_schedule_at(row: &RowRef<'_>, at_column: ColId) -> anyhow::Result<ScheduleAt> {
