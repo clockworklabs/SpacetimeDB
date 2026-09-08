@@ -554,7 +554,14 @@ async fn subprocess_exit_cancellation_caller_drop_and_output_overflow_reap_befor
     let root = tempfile::tempdir().unwrap();
     // These scripts exercise only owned local subprocesses. No Docker, server,
     // network, saved configuration, or user credentials are involved.
-    for mode in ["exit", "cancel", "drop", "overflow", "timeout"] {
+    for mode in [
+        "exit",
+        "exit_without_descendants",
+        "cancel",
+        "drop",
+        "overflow",
+        "timeout",
+    ] {
         let workspace = Arc::new(
             tempfile::Builder::new()
                 .prefix("fake-tool-")
@@ -565,6 +572,7 @@ async fn subprocess_exit_cancellation_caller_drop_and_output_overflow_reap_befor
         let pid_file = root.path().join(format!("{mode}.pid"));
         let script = match mode {
             "exit" => "echo $$ > \"$1\"; sleep 60 & exit 0",
+            "exit_without_descendants" => "echo $$ > \"$1\"; exit 0",
             "overflow" => "echo $$ > \"$1\"; yes x",
             _ => "echo $$ > \"$1\"; sleep 60 & wait",
         };
@@ -608,7 +616,7 @@ async fn subprocess_exit_cancellation_caller_drop_and_output_overflow_reap_befor
                 .await
                 .unwrap()
                 .unwrap();
-            assert_eq!(result.is_ok(), mode == "exit");
+            assert_eq!(result.is_ok(), matches!(mode, "exit" | "exit_without_descendants"));
         }
         tokio::time::timeout(Duration::from_secs(3), async {
             while path.exists() {

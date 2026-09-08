@@ -74,6 +74,8 @@ mod local {
             if let Some(pid) = self.0.take() {
                 match rustix::process::kill_process_group(pid, rustix::process::Signal::KILL) {
                     Ok(()) | Err(rustix::io::Errno::SRCH) => (),
+                    #[cfg(target_os = "macos")]
+                    Err(rustix::io::Errno::PERM) if exited_leader_is_sole_member(pid) => (),
                     Err(error) => return Err(error.into()),
                 }
             }
@@ -100,6 +102,44 @@ mod local {
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn exited_leader_is_sole_member(pid: Pid) -> bool {
+        // XNU excludes zombies from killpg's eligible processes, and reports
+        // EPERM when only an unreaped leader remains. Do not generalize EPERM:
+        // prove this exact child has exited and its group contains only it.
+        // WNOWAIT keeps the PID/PGID pinned across the bounded inventory.
+        if !matches!(
+            rustix::process::waitid(
+                rustix::process::WaitId::Pid(pid),
+                WaitIdOptions::EXITED | WaitIdOptions::NOWAIT | WaitIdOptions::NOHANG,
+            ),
+            Ok(Some(_))
+        ) {
+            return false;
+        }
+        #[link(name = "proc")]
+        unsafe extern "C" {
+            fn proc_listpgrppids(
+                pgrpid: std::ffi::c_int,
+                buffer: *mut std::ffi::c_void,
+                buffersize: std::ffi::c_int,
+            ) -> std::ffi::c_int;
+        }
+        // libproc returns the number of PIDs copied, including zombies. Two
+        // slots distinguish the sole leader from any extra/truncated members.
+        let mut members = [0i32; 2];
+        // SAFETY: writable aligned storage and its exact byte size are passed;
+        // the group ID belongs to the still-unreaped child observed above.
+        let count = unsafe {
+            proc_listpgrppids(
+                pid.as_raw_pid(),
+                members.as_mut_ptr().cast(),
+                std::mem::size_of_val(&members) as std::ffi::c_int,
+            )
+        };
+        count == 1 && members[0] == pid.as_raw_pid()
     }
     impl Drop for ProcessGroup {
         fn drop(&mut self) {
