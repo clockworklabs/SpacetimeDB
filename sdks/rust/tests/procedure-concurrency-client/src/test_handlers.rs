@@ -14,6 +14,7 @@ pub async fn dispatch(test: &str, db_name: &str) {
         "scheduled-procedure-scheduled-reducer-interleaved" => {
             exec_scheduled_procedure_scheduled_reducer_interleaved(db_name).await
         }
+        "scheduled-procedure-update-while-inflight" => exec_scheduled_procedure_update_while_inflight(db_name).await,
         _ => panic!("Unknown test: {test}"),
     }
 }
@@ -557,6 +558,64 @@ async fn exec_scheduled_procedure_scheduled_reducer_interleaved(db_name: &str) {
                             Err(internal_error) => Err(anyhow::anyhow!(
                                 "`schedule_procedure_then_reducer` reducer panicked: {internal_error:?}"
                             )),
+                        });
+                    })
+                    .unwrap();
+            });
+        }
+    })
+    .await;
+
+    test_counter.wait_for_all().await;
+}
+
+async fn exec_scheduled_procedure_update_while_inflight(db_name: &str) {
+    let test_counter = TestCounter::new();
+    let subscription_result = test_counter.add_test("on_subscription_applied_nothing");
+    let mut reducer_result = Some(test_counter.add_test("schedule_procedure_update_while_inflight_callback"));
+    let mut regression_result = Some(test_counter.add_test("updated_schedule_wins"));
+    let seen = Arc::new(Mutex::new(Vec::new()));
+
+    connect_then(db_name, &test_counter, {
+        let seen = Arc::clone(&seen);
+        move |ctx| {
+            ctx.db().procedure_concurrency_row().on_insert(move |_ctx, row| {
+                let mut seen = seen.lock().expect("seen mutex is poisoned");
+                match row.insertion_context.as_str() {
+                    event @ ("scheduled_procedure_update_first_before"
+                    | "scheduled_procedure_update_first_after"
+                    | "scheduled_procedure_update_second_before"
+                    | "scheduled_procedure_update_second_after") => seen.push(event.to_owned()),
+                    "scheduled_procedure_update_verifier" => {
+                        (regression_result.take().expect("verifier should run once"))((|| {
+                            anyhow::ensure!(
+                                seen.as_slice()
+                                    == [
+                                        "scheduled_procedure_update_first_before",
+                                        "scheduled_procedure_update_first_after",
+                                        "scheduled_procedure_update_second_before",
+                                        "scheduled_procedure_update_second_after",
+                                    ],
+                                "updated procedure ran concurrently with the inflight procedure: {seen:?}"
+                            );
+                            Ok(())
+                        })());
+                    }
+                    unexpected => panic!("Unexpected insertion context: {unexpected}"),
+                }
+            });
+
+            subscribe_all_then(ctx, move |ctx| {
+                subscription_result(assert_all_tables_empty(ctx));
+                let reducer_result = reducer_result
+                    .take()
+                    .expect("reducer callback should only be registered once");
+                ctx.reducers
+                    .schedule_procedure_update_while_inflight_then(move |_ctx, outcome| {
+                        reducer_result(match outcome {
+                            Ok(Ok(())) => Ok(()),
+                            Ok(Err(msg)) => Err(anyhow::anyhow!("reducer returned error: {msg}")),
+                            Err(err) => Err(anyhow::anyhow!("reducer panicked: {err:?}")),
                         });
                     })
                     .unwrap();

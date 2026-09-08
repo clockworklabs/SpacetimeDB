@@ -551,6 +551,13 @@ mod rust_procedure_concurrency {
     fn scheduled_procedure_scheduled_reducer_interleaved() {
         make_test("scheduled-procedure-scheduled-reducer-interleaved").run()
     }
+
+    /// Test that an interval update made while its procedure is running wins over
+    /// the stale reschedule computed by the original invocation.
+    #[test]
+    fn scheduled_procedure_update_while_inflight() {
+        make_test("scheduled-procedure-update-while-inflight").run()
+    }
 }
 
 macro_rules! view_tests {

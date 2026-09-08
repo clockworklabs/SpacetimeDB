@@ -116,15 +116,42 @@ struct ScheduledProcedureRow {
     #[auto_inc]
     scheduled_id: u64,
     scheduled_at: ScheduleAt,
+    run: u8,
 }
 
 #[procedure]
-fn scheduled_procedure_sleep_between_inserts(ctx: &mut ProcedureContext, _schedule: ScheduledProcedureRow) {
-    ctx.with_tx(|ctx| insert_procedure_concurrency_row(ctx, "scheduled_procedure_before"));
+fn scheduled_procedure_sleep_between_inserts(ctx: &mut ProcedureContext, schedule: ScheduledProcedureRow) {
+    let (before, after, sleep) = match schedule.run {
+        1 => (
+            "scheduled_procedure_update_first_before",
+            "scheduled_procedure_update_first_after",
+            2,
+        ),
+        2 => (
+            "scheduled_procedure_update_second_before",
+            "scheduled_procedure_update_second_after",
+            0,
+        ),
+        _ => ("scheduled_procedure_before", "scheduled_procedure_after", 10),
+    };
+
+    ctx.with_tx(|ctx| insert_procedure_concurrency_row(ctx, before));
+    if schedule.run == 1 {
+        ctx.with_tx(|ctx| {
+            ctx.db
+                .scheduled_procedure_row()
+                .scheduled_id()
+                .update(ScheduledProcedureRow {
+                    scheduled_at: (ctx.timestamp + Duration::from_secs(1)).into(),
+                    run: 2,
+                    ..schedule
+                });
+        });
+    }
     // Sleep long enough for the later scheduled reducer to run while this
     // procedure is still suspended.
-    ctx.sleep_until(ctx.timestamp + Duration::from_secs(10));
-    ctx.with_tx(|ctx| insert_procedure_concurrency_row(ctx, "scheduled_procedure_after"));
+    ctx.sleep_until(ctx.timestamp + Duration::from_secs(sleep));
+    ctx.with_tx(|ctx| insert_procedure_concurrency_row(ctx, after));
 }
 
 #[reducer]
@@ -132,6 +159,7 @@ fn schedule_procedure_then_reducer(ctx: &ReducerContext) {
     ctx.db.scheduled_procedure_row().insert(ScheduledProcedureRow {
         scheduled_id: 0,
         scheduled_at: ctx.timestamp.into(),
+        run: 0,
     });
     ctx.db.scheduled_reducer_row().insert(ScheduledReducerRow {
         scheduled_id: 0,
@@ -142,5 +170,19 @@ fn schedule_procedure_then_reducer(ctx: &ReducerContext) {
         scheduled_id: 0,
         scheduled_at: (ctx.timestamp + Duration::from_secs(3)).into(),
         insertion_context: "scheduled_reducer_2".into(),
+    });
+}
+
+#[reducer]
+fn schedule_procedure_update_while_inflight(ctx: &ReducerContext) {
+    ctx.db.scheduled_procedure_row().insert(ScheduledProcedureRow {
+        scheduled_id: 0,
+        scheduled_at: Duration::from_secs(1).into(),
+        run: 1,
+    });
+    ctx.db.scheduled_reducer_row().insert(ScheduledReducerRow {
+        scheduled_id: 0,
+        scheduled_at: (ctx.timestamp + Duration::from_secs(4)).into(),
+        insertion_context: "scheduled_procedure_update_verifier".into(),
     });
 }

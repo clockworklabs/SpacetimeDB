@@ -30,7 +30,7 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 use tokio_util::time::delay_queue::{self, DelayQueue, Expired};
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct ScheduledFunctionId {
     /// The ID of the table whose rows hold the scheduled reducers or procedures.
     /// This table should have an entry in `ST_SCHEDULED`.
@@ -154,7 +154,7 @@ impl SchedulerStarter {
                 rx: self.rx,
                 queue,
                 key_map,
-                active_calls: FuturesUnordered::new(),
+                inflight_calls: FuturesUnordered::new(),
                 database_identity: module_host.info().database_identity,
                 module_host: module_host.downgrade(),
             }
@@ -281,7 +281,7 @@ struct SchedulerActor {
     rx: mpsc::UnboundedReceiver<MsgOrExit<SchedulerMessage>>,
     queue: DelayQueue<QueueItem>,
     key_map: FxHashMap<ScheduledFunctionId, ScheduledEntry>,
-    active_calls: FuturesUnordered<ScheduledFunctionFuture>,
+    inflight_calls: FuturesUnordered<ScheduledFunctionFuture>,
     database_identity: Identity,
     module_host: WeakModuleHost,
 }
@@ -292,10 +292,10 @@ enum ScheduledEntry {
     Queued { key: delay_queue::Key },
     // Already expired and running; keep the latest row update until completion
     // so an older interval result cannot replace newer row state.
-    Active { pending_update: Option<ScheduleRequest> },
+    Inflight { pending_update: Option<NewScheduleRequest> },
 }
 
-struct ScheduleRequest {
+struct NewScheduleRequest {
     function_name: Arc<str>,
     effective_at: Timestamp,
     real_at: Instant,
@@ -364,7 +364,7 @@ impl SchedulerActor {
         let mut closing = false;
         self.update_active_calls_metric();
         loop {
-            if closing && self.active_calls.is_empty() {
+            if closing && self.inflight_calls.is_empty() {
                 self.update_active_calls_metric();
                 break;
             }
@@ -379,8 +379,10 @@ impl SchedulerActor {
                 Some(scheduled) = self.queue.next(), if !closing => {
                     self.handle_queued(scheduled);
                 },
-                Some(completion) = self.active_calls.next(), if !self.active_calls.is_empty() => {
-                    self.handle_completion(completion);
+                Some(completion) = self.inflight_calls.next(), if !self.inflight_calls.is_empty() => {
+                    if let Err(err) = self.handle_completion(completion) {
+                        log::error!("failed to handle scheduled function completion: {err:#}");
+                    }
                 }
             }
         }
@@ -395,7 +397,7 @@ impl SchedulerActor {
                 real_at,
             } => self.handle_schedule(
                 id,
-                ScheduleRequest {
+                NewScheduleRequest {
                     function_name,
                     effective_at,
                     real_at,
@@ -410,16 +412,18 @@ impl SchedulerActor {
         }
     }
 
-    fn handle_schedule(&mut self, id: ScheduledFunctionId, schedule: ScheduleRequest) {
+    fn handle_schedule(&mut self, id: ScheduledFunctionId, schedule: NewScheduleRequest) {
         match self.key_map.remove(&id) {
+            // if `schedule` is queued, update it.
             Some(ScheduledEntry::Queued { key }) => {
                 self.queue.remove(&key);
                 self.insert_queued(id, schedule);
             }
-            Some(ScheduledEntry::Active { .. }) => {
+            // If already inflight, just store the update request
+            Some(ScheduledEntry::Inflight { .. }) => {
                 self.key_map.insert(
                     id,
-                    ScheduledEntry::Active {
+                    ScheduledEntry::Inflight {
                         pending_update: Some(schedule),
                     },
                 );
@@ -428,7 +432,7 @@ impl SchedulerActor {
         }
     }
 
-    fn insert_queued(&mut self, id: ScheduledFunctionId, schedule: ScheduleRequest) {
+    fn insert_queued(&mut self, id: ScheduledFunctionId, schedule: NewScheduleRequest) {
         let key = self.queue.insert_at(
             QueueItem::Id {
                 id,
@@ -449,10 +453,15 @@ impl SchedulerActor {
         };
         if let Some(id) = item_id {
             match self.key_map.get(&id) {
+                //Transition from `ScheduledEntry::Queued` to `ScheduledEntry::Inflight`.
                 Some(ScheduledEntry::Queued { key: queued_key }) if *queued_key == key => {
-                    self.key_map.insert(id, ScheduledEntry::Active { pending_update: None });
+                    self.key_map
+                        .insert(id, ScheduledEntry::Inflight { pending_update: None });
                 }
-                _ => return,
+                _ => {
+                    tracing::error!("Expired Scheduled entry already in flight {:?}", id);
+                    return;
+                }
             }
         }
 
@@ -463,27 +472,26 @@ impl SchedulerActor {
             return;
         };
 
-        self.active_calls.push(call_scheduled_function(module_host, item));
+        self.inflight_calls.push(call_scheduled_function(module_host, item));
         self.update_active_calls_metric();
     }
 
-    fn handle_completion(&mut self, completion: ScheduledFunctionCompletion) {
+    fn handle_completion(&mut self, completion: ScheduledFunctionCompletion) -> anyhow::Result<()> {
         self.update_active_calls_metric();
         let ScheduledFunctionCompletion { item, result } = completion;
-        let allow_interval_reschedule = match self.finish_active_call(&item) {
-            CompletionAction::AllowIntervalReschedule => true,
+        let allow_interval_reschedule = match self.clear_queue(&item)? {
+            CompletionAction::NoUpdate => true,
             CompletionAction::QueuePendingUpdate(id, schedule) => {
                 self.insert_queued(id, schedule);
                 false
             }
-            CompletionAction::IgnoreIntervalReschedule => false,
         };
 
         let result = match result {
             Ok(result) => result,
             Err(_) => {
                 log::error!("scheduled function panicked");
-                return;
+                return Ok(());
             }
         };
 
@@ -502,7 +510,7 @@ impl SchedulerActor {
                 {
                     self.insert_queued(
                         id,
-                        ScheduleRequest {
+                        NewScheduleRequest {
                             function_name,
                             effective_at: at_ts,
                             real_at: at_real,
@@ -511,41 +519,46 @@ impl SchedulerActor {
                 }
             }
         }
+        Ok(())
     }
 
     // Clears the active entry and decides which schedule, if any, should be queued next.
-    fn finish_active_call(&mut self, item: &QueueItem) -> CompletionAction {
+    fn clear_queue(&mut self, item: &QueueItem) -> anyhow::Result<CompletionAction> {
         let QueueItem::Id { id, .. } = item else {
-            return CompletionAction::AllowIntervalReschedule;
+            return Ok(CompletionAction::NoUpdate);
         };
-        match self.key_map.remove(id) {
-            Some(ScheduledEntry::Active { pending_update: None }) => CompletionAction::AllowIntervalReschedule,
-            Some(ScheduledEntry::Active {
-                pending_update: Some(schedule),
-            }) => CompletionAction::QueuePendingUpdate(*id, schedule),
-            Some(entry) => {
-                self.key_map.insert(*id, entry);
-                CompletionAction::IgnoreIntervalReschedule
+        match self.key_map.get(id) {
+            Some(ScheduledEntry::Queued { .. }) => {
+                return Err(anyhow!("scheduled function {id:?} completed while not inflight"));
             }
-            None => CompletionAction::IgnoreIntervalReschedule,
+            None => {
+                return Err(anyhow!("scheduled function {id:?} completed without a scheduler entry"));
+            }
+            Some(ScheduledEntry::Inflight { .. }) => {}
         }
+
+        let ScheduledEntry::Inflight { pending_update } = self.key_map.remove(id).unwrap() else {
+            unreachable!()
+        };
+        Ok(match pending_update {
+            None => CompletionAction::NoUpdate,
+            Some(schedule) => CompletionAction::QueuePendingUpdate(*id, schedule),
+        })
     }
 
     fn update_active_calls_metric(&self) {
         WORKER_METRICS
             .scheduler_active_scheduled_functions
             .with_label_values(&self.database_identity)
-            .set(self.active_calls.len() as i64);
+            .set(self.inflight_calls.len() as i64);
     }
 }
 
 enum CompletionAction {
     // No row update arrived while this call was active.
-    AllowIntervalReschedule,
+    NoUpdate,
     // A newer row update arrived; queue it and suppress this call's interval result.
-    QueuePendingUpdate(ScheduledFunctionId, ScheduleRequest),
-    // The active entry was already removed or replaced.
-    IgnoreIntervalReschedule,
+    QueuePendingUpdate(ScheduledFunctionId, NewScheduleRequest),
 }
 
 fn call_scheduled_function(module_host: ModuleHost, item: QueueItem) -> ScheduledFunctionFuture {
