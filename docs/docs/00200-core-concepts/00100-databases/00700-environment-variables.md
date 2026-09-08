@@ -126,13 +126,13 @@ SPACETIMEDB_ENV(
 )
 ```
 
-In `CMakeLists.txt`, set the header path **before** adding the SpacetimeDB SDK directory:
+In `CMakeLists.txt`, set the header path **before** adding the SpacetimeDB module library directory:
 
 ```cmake
 set(SPACETIMEDB_ENV_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/environment.h")
 ```
 
-The SDK's CMake target includes this declaration consistently in the SDK and module source files that use the context type. Including it manually in just one source file is insufficient.
+The library's CMake target includes this declaration consistently in the library and module source files that use the context type. Including it manually in just one source file is insufficient.
 
 Inside a reducer or procedure, read values from its context:
 
