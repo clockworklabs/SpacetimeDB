@@ -169,7 +169,7 @@ function board({ sheet, progression, view, step }: CampaignPageInput,
   const chips = (['grid', 'graph', 'replay'] as const).map(entry =>
     `<a class="chip sm${entry === view ? ' on' : ''}"${entry === view ? ' aria-current="page"' : ''} href="?questlines=${entry}">`
     + `${entry[0]!.toUpperCase()}${entry.slice(1)}</a>`).join('');
-  const heading = stacks.map(stack => `<th scope="col" class="h">${esc(stackLabel(stack.stack))}</th>`).join('');
+  const heading = stacks.map(stack => `<th scope="col" class="h" title="${latest(stack) ? `Rep ${latest(stack)!.repetition}` : 'Not started'}">${esc(stackLabel(stack.stack))}</th>`).join('');
   const grid = (rows: string): string => `<div class="sheet-scroll" role="region" aria-label="Feature progress grid" tabindex="0"><table class="sheet"><thead><tr><th scope="col" class="h">Feature</th>${heading}</tr></thead><tbody>${rows}</tbody></table></div>`;
   let content: string;
   if (sheet.mode !== 'dependency') content = grid(levelRows(stacks));
@@ -181,13 +181,9 @@ function board({ sheet, progression, view, step }: CampaignPageInput,
     content = graph(selected, snapshot);
   } else content = replay(selectedProgression(progression, sheet), step);
   return '<section class="feature-progress" aria-labelledby="feature-progress-title">'
-    + '<div class="section-heading"><h3 id="feature-progress-title">Feature progress</h3>'
+    + '<div class="section-heading"><h3 id="feature-progress-title" title="Latest started repetition per stack">Feature progress</h3>'
     + (sheet.mode === 'dependency' ? `<details class="explore"><summary>Explore · ${esc(view)}</summary><nav aria-label="Feature progress view">${chips}</nav></details>` : '')
-    + '</div><p class="summary-note">Latest started repetition per stack: '
-    + stacks.map(stack => {
-      const attempt = latest(stack);
-      return attempt ? `<a href="/c/${encodeURIComponent(sheet.key)}/a/${encodeURIComponent(attempt.id)}">${esc(stackLabel(stack.stack))} · Rep ${attempt.repetition}</a>` : `${esc(stackLabel(stack.stack))} · not started`;
-    }).join(' · ') + '.</p>'
+    + '</div>'
     + content + '</section>';
 }
 
@@ -222,9 +218,9 @@ export function campaignPage(input: CampaignPageInput): string {
         value(num(stack.attempts.filter(attempt => attempt.excluded).length)));
   return `<div class="page"><div class="crumbs"><a href="/">Campaigns</a> / `
     + `<b>${esc(sheet.key)}</b></div>`
-    + `<div class="title"><h2>${esc(sheet.title)}</h2></div>`
-    + `<p class="summary-note" title="${esc([sheet.facts.grading, ...sheet.facts.gradingReasons].join(' · '))}">${esc(statusWord(sheet.status))}${sheet.provisional ? ' - Provisional results: qualification is incomplete.' : ''}</p>${facts(sheet)}`
-    + '<h3>Results</h3><p class="summary-note">Completion is the median across repetitions. Cost is the mean per valid completed run.</p>'
+    + `<div class="title"><h2>${esc(sheet.title)}</h2>`
+    + `<span class="state" title="${esc([statusWord(sheet.status), sheet.facts.grading, ...sheet.facts.gradingReasons].join(' · '))}">${sheet.provisional ? 'Provisional' : esc(statusWord(sheet.status))}</span></div>${facts(sheet)}`
+    + '<h3>Results</h3>'
     + `<div class="sheet-scroll" role="region" aria-label="Stack comparison" tabindex="0"><table class="sheet"><thead><tr><th scope="col" class="h">Metric</th>${heads}</tr></thead><tbody>`
     + row('Completion', stack => `<div class="big${sheet.provisional ? ' prov' : ''}">${pct(stack.completionRate === null ? null : 100 * stack.completionRate)}</div>`)
     + row('Cost per valid run', stack => value(stack.costPerValidRun === null ? (stack.n ? 'Unknown' : 'Awaiting valid runs') : `$${stack.costPerValidRun.toFixed(2)}`))
@@ -235,7 +231,7 @@ export function campaignPage(input: CampaignPageInput): string {
     + repetitions
     + row('Total spend', stack => value(spend(stack.spend) + (stack.spendPending ? ' (so far)' : '')))
     + '</tbody></table></div>'
-    + '<h3>Runs</h3><p class="summary-note">One row per attempt. Open a run for grades, screenshots, files, and logs.</p>'
+    + '<h3>Runs</h3>'
     + '<div class="tablewrap"><div class="wrap"><table class="runs attempt-list"><thead><tr><th>Run</th><th>Completion</th><th>Spend</th><th>Repairs</th><th>Elapsed</th><th>Status</th></tr></thead><tbody>'
     + stacks.flatMap(stack => stack.attempts.map(attempt => {
       const href = `/c/${encodeURIComponent(sheet.key)}/a/${encodeURIComponent(attempt.id)}`;

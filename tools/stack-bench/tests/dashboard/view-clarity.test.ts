@@ -3,6 +3,16 @@ import test from 'node:test';
 import type { CampaignProgression, CampaignSheet, SheetAttempt } from '../../dashboard/dashboard-views.js';
 import { campaignPage, replayTimeline, selectedProgression } from '../../dashboard/public/views/campaign.js';
 import { attemptPage } from '../../dashboard/public/views/attempt.js';
+import { topbar } from '../../dashboard/public/views/plans.js';
+
+test('report links appear only for files present in the campaign', () => {
+  const input = { page: 'campaign' as const, key: 'example', canStart: false, resumable: false, error: '' };
+  assert.doesNotMatch(topbar(input), />report<|>export manifest</);
+  const reportFiles = ['report/report.html'];
+  assert.match(topbar({ ...input, reportFiles }), />report</);
+  assert.doesNotMatch(topbar({ ...input, reportFiles }), />export manifest</);
+  assert.match(topbar({ ...input, reportFiles: [...reportFiles, 'report/export-manifest.json'] }), />export manifest</);
+});
 
 // Distinct aggregate and selected values catch accidental cross-repetition labels.
 test('campaign separates aggregate scores from selected evidence and explains pending tabs', () => {

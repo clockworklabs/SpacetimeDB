@@ -110,6 +110,7 @@ function chrome(current: Route): string {
   const page: Page = current.plans ? 'plans'
     : current.key && !current.attempt ? 'campaign' : 'campaigns';
   return topbar({ page, key: current.key, canStart: state.canStart, error: state.form.error,
+    reportFiles: sheet?.reportFiles,
     controllerOwner: page === 'campaign' ? sheet?.controllerOwner : null,
     resumable: state.canStart && page === 'campaign' && (sheet?.resumable ?? false) });
 }

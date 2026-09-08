@@ -35,16 +35,18 @@ export function afterRun(form: RunForm, status: number, error: string): RunForm 
   return { ...form, secret: status === 403 ? '' : form.secret, error };
 }
 
-export function topbar({ page, key, canStart, resumable, controllerOwner, error }: {
+export function topbar({ page, key, canStart, resumable, controllerOwner, error, reportFiles = [] }: {
   page: Page; key: string; canStart: boolean; resumable: boolean; controllerOwner?: string | null; error: string;
+  reportFiles?: string[];
 }): string {
   const artifact = (path: string): string => `/api/campaigns/${encodeURIComponent(key)}/artifacts/`
     + btoa(path).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   const files = page === 'campaign'
     ? '<details class="files"><summary class="btn">Files</summary><div>'
       + `<a href="${artifact('plan.json')}">plan</a><a href="${artifact('state.json')}">state</a>`
-      + `<a href="${artifact('report/report.html')}">report</a>`
-      + `<a href="${artifact('report/export-manifest.json')}">export manifest</a></div></details>` : '';
+      + (reportFiles.includes('report/report.html') ? `<a href="${artifact('report/report.html')}">report</a>` : '')
+      + (reportFiles.includes('report/export-manifest.json') ? `<a href="${artifact('report/export-manifest.json')}">export manifest</a>` : '')
+      + '</div></details>' : '';
   const resume = resumable
     ? '<form class="secret" data-run="resume"><input name="secret" type="password" aria-label="Operator secret" placeholder="Operator secret" required>'
       + '<button class="btn" type="submit">Resume</button>'

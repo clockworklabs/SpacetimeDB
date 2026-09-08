@@ -292,6 +292,7 @@ export interface CampaignSheet {
   // operator can restart; the server checks the same three facts again.
   resumable: boolean;
   controllerOwner?: string | null;
+  reportFiles?: string[];
   createdAt: string;
   updatedAt: string;
   facts: SheetFacts;
@@ -433,7 +434,8 @@ const sheetCache = new Map<string, { fingerprint: string; sheet: CampaignSheet }
 export function campaignSheet(resultsRoot: string, key: string,
   { controllerActive = campaignLockIsActive }: ViewOptions = {}): CampaignSheet {
   const directory = campaignDirectory(resultsRoot, key);
-  const fingerprint = campaignFingerprint(directory, [CAMPAIGN_FILE.plan, CAMPAIGN_FILE.state],
+  const reportPaths = ['report/report.html', 'report/export-manifest.json'];
+  const fingerprint = campaignFingerprint(directory, [CAMPAIGN_FILE.plan, CAMPAIGN_FILE.state, ...reportPaths],
     [ARTIFACT_FILE.run, ARTIFACT_FILE.progressionState, LOG_FILE]);
   const { plan, state } = readCampaignState(directory, { requireCurrentInputs: false });
   const interrupted = controllerInterrupted(controllerActive, directory, plan, state.status);
@@ -489,6 +491,7 @@ export function campaignSheet(resultsRoot: string, key: string,
     executions: state.summary.executions,
     resumable: dependency && state.status === 'prepared' && state.summary.executions > 0,
     controllerOwner: interrupted ? null : controllerOwner,
+    reportFiles: reportPaths.filter(path => existsSync(join(directory, path)) && statSync(join(directory, path)).isFile()),
     createdAt: state.createdAt,
     updatedAt: state.updatedAt,
     facts: sheetFacts(plan),
