@@ -88,7 +88,23 @@ fn run_inner<I: WasmInstance>(
     // We parse the sql statement in a mutable transaction.
     // If it turns out to be a query, we downgrade the tx.
     let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
-        compile_sql_stmt(&sql_text, &SchemaViewer::new(tx, &auth), &auth)
+        let stmt = compile_sql_stmt(&sql_text, &SchemaViewer::new(tx, &auth), &auth)?;
+        // Check mutation authority while the automatic rollback guard owns
+        // the transaction, including rejected administrative statements.
+        if matches!(&stmt, Statement::DML(_) | Statement::Environment(_)) && !auth.has_write_access() {
+            return Err(anyhow!(
+                "Caller {} is not authorized to run SQL mutations",
+                auth.caller()
+            ));
+        }
+        if let Statement::DML(dml) = &stmt
+            && dml.table_id() == spacetimedb_datastore::system_tables::ST_ENV_ID
+        {
+            return Err(anyhow!(
+                "Use SET env.KEY or DELETE env.KEY to modify database environment variables"
+            ));
+        }
+        Ok(stmt)
     })?;
 
     let mut metrics = ExecutionMetrics::default();
@@ -141,14 +157,21 @@ fn run_inner<I: WasmInstance>(
                 trapped,
             ))
         }
-        Statement::DML(stmt) => {
-            // An extra layer of auth is required for DML
-            if !auth.has_write_access() {
-                return Err(anyhow!("Caller {} is not authorized to run SQL DML statements", auth.caller()).into());
-            }
-
+        stmt @ (Statement::DML(_) | Statement::Environment(_)) => {
             // Evaluate the mutation
-            let (mut tx, _) = db.with_auto_rollback(tx, |tx| execute_dml_stmt(&auth, stmt, tx, &mut metrics))?;
+            let (mut tx, _) = db.with_auto_rollback(tx, |tx| -> anyhow::Result<()> {
+                match stmt {
+                    Statement::DML(stmt) => execute_dml_stmt(&auth, stmt, tx, &mut metrics)?,
+                    Statement::Environment(environment) => match environment.value {
+                        Some(value) => crate::db::environment::set(&db, tx, &environment.key, &value)?,
+                        None => {
+                            crate::db::environment::delete(&db, tx, &environment.key)?;
+                        }
+                    },
+                    Statement::Select(_) => unreachable!(),
+                }
+                Ok(())
+            })?;
 
             // Update transaction metrics
             tx.metrics.merge(metrics);
@@ -242,6 +265,76 @@ pub(crate) mod tests {
     use spacetimedb_schema::identifier::Identifier;
     use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
     use spacetimedb_schema::table_name::TableName;
+
+    #[test]
+    fn environment_sql_enforces_permissions_escaping_limits_and_rollback() {
+        use spacetimedb_lib::identity::SqlPermission;
+        let db = TestDB::in_memory().unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let owner = AuthCtx::for_current(Identity::ZERO);
+        let viewer = AuthCtx::with_permissions(
+            Identity::ONE,
+            Arc::new(|permission| matches!(permission, SqlPermission::Read(_))),
+        );
+        let outsider = AuthCtx::new(Identity::ZERO, Identity::ONE);
+        let execute = |statement: &str, auth: AuthCtx| {
+            runtime.block_on(run(db.clone(), statement.to_string(), auth, None, None, &mut vec![]))
+        };
+        let value = "it's \\quoted;\nUTF-8 é\0tail";
+        execute(
+            &format!(
+                "/* prefix */ SET env.Mixed_Key = '{}'; -- suffix",
+                value.replace('\'', "''")
+            ),
+            owner.clone(),
+        )
+        .unwrap();
+        execute("SET env.EMPTY TO ''", owner.clone()).unwrap();
+        let rows = execute("SELECT value FROM st_env WHERE key = 'Mixed_Key'", viewer.clone())
+            .unwrap()
+            .rows;
+        assert_eq!(rows, vec![product![value]]);
+        assert!(execute("SELECT * FROM st_env", outsider.clone()).is_err());
+        for auth in [viewer, outsider] {
+            assert!(execute("SET env.Mixed_Key = 'forbidden'", auth.clone()).is_err());
+            assert!(execute("DELETE env.Mixed_Key", auth).is_err());
+        }
+        for statement in [
+            "SET env.EMPTY = 5".to_string(),
+            "SET env.\"BAD-KEY\" = 'value'".to_string(),
+            format!("SET env.EMPTY = '{}'", "x".repeat(8193)),
+            "SET env.EMPTY = 'changed'; DELETE env.Mixed_Key".to_string(),
+            "DELETE env.Mixed_Key WHERE true".to_string(),
+            "INSERT INTO st_env (key, value) VALUES ('BYPASS', 'value')".to_string(),
+            "UPDATE st_env SET value = 'bypass'".to_string(),
+            "DELETE FROM st_env".to_string(),
+        ] {
+            assert!(
+                execute(&statement, owner.clone()).is_err(),
+                "unexpectedly accepted {statement}"
+            );
+        }
+        // Every rejected path released its transaction and preserved old data.
+        assert_eq!(
+            execute("SELECT value FROM st_env WHERE key = 'EMPTY'", owner.clone())
+                .unwrap()
+                .rows,
+            vec![product![""]]
+        );
+        assert_eq!(
+            execute("SELECT value FROM st_env WHERE key = 'Mixed_Key'", owner.clone())
+                .unwrap()
+                .rows,
+            vec![product![value]]
+        );
+        execute("SET env.EMPTY = 'updated'", owner.clone()).unwrap();
+        execute("DELETE env.EMPTY", owner.clone()).unwrap();
+        execute("DELETE env.EMPTY", owner.clone()).unwrap();
+        assert!(execute("SELECT value FROM st_env WHERE key = 'EMPTY'", owner)
+            .unwrap()
+            .rows
+            .is_empty());
+    }
 
     /// Short-cut for simplify test execution
     pub(crate) fn run_for_testing(db: &Arc<RelationalDB>, sql_text: &str) -> Result<Vec<ProductValue>, DBError> {

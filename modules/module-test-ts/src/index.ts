@@ -552,3 +552,26 @@ export const libHello = spacetimedb.httpHandler((ctx, req) => {
 export const router = spacetimedb.httpRouter(
   new Router().get('/get', getSimple).get('/lib-hello', libHello)
 );
+
+// Dedicated environment ABI integration exercised by crates/testing.
+export const expect_environment = spacetimedb.reducer(
+  { key: t.string(), expected: t.option(t.string()) },
+  (ctx, { key, expected }) => {
+    if (ctx.env.get(key) !== (expected ?? null)) {
+      throw new Error('environment value mismatch');
+    }
+  }
+);
+export const read_environment = spacetimedb.procedure(
+  { key: t.string() },
+  t.option(t.string()),
+  (ctx, { key }) => {
+    const outside = ctx.env.get(key);
+    ctx.withTx(tx => {
+      if (tx.env.get(key) !== outside) {
+        throw new Error('transaction environment value mismatch');
+      }
+    });
+    return outside ?? undefined;
+  }
+);

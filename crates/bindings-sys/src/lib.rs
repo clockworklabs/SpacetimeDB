@@ -883,6 +883,18 @@ pub mod raw {
         pub fn datastore_clear(table_id: TableId, out: *mut u64) -> u16;
     }
 
+    // ABI10.6 is reserved for the separate invocation-authority extension.
+    #[link(wasm_import_module = "spacetime_10.7")]
+    unsafe extern "C" {
+        /// Read a UTF-8 environment value. Writes INVALID for a missing key;
+        /// present empty strings have a valid BytesSource. Returns ordinary errno.
+        /// Invalid keys return HOST_CALL_FAILURE. NO_SPACE means 256 byte
+        /// sources remain unconsumed; consume a source before retrying.
+        /// Calls outside a reducer/view
+        /// transaction or procedure return NOT_IN_TRANSACTION.
+        pub fn env_get(key: *const u8, key_len: usize, out: *mut BytesSource) -> u16;
+    }
+
     /// What strategy does the database index use?
     ///
     /// See also: <https://www.postgresql.org/docs/current/sql-createindex.html>
@@ -1491,6 +1503,14 @@ pub fn get_jwt(connection_id: [u8; 16]) -> Option<raw::BytesSource> {
     } else {
         Some(source)
     }
+}
+
+/// Read a database environment value without exposing the system table.
+#[inline]
+pub fn env_get(key: &str) -> Option<raw::BytesSource> {
+    let source = unsafe { call(|out| raw::env_get(key.as_ptr(), key.len(), out)) }
+        .unwrap_or_else(|errno: Errno| panic!("Error reading environment: {errno}"));
+    (source != raw::BytesSource::INVALID).then_some(source)
 }
 
 pub struct RowIter {

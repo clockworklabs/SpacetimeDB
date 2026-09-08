@@ -1,3 +1,4 @@
+import { environment } from './environment';
 import * as _syscalls2_0 from 'spacetime:sys@2.0';
 import * as _syscalls2_1 from 'spacetime:sys@2.1';
 
@@ -246,6 +247,7 @@ export const ReducerCtxImpl = class ReducerCtx<
   timestamp: Timestamp;
   connectionId: ConnectionId | null;
   db: DbView<SchemaDef>;
+  readonly env = environment;
   as: AliasViews<SchemaDef>;
 
   constructor(
@@ -627,6 +629,7 @@ class ModuleHooksImpl implements ModuleHooks {
     const { fn, deserializeParams, serializeReturn, returnTypeBaseSize } =
       viewFns![localId!];
     const ctx: ViewCtx<any> = freeze({
+      env: environment,
       sender: new Identity(sender),
       db: dbView!,
       from: from!,
@@ -677,6 +680,7 @@ class ModuleHooksImpl implements ModuleHooks {
     const { fn, deserializeParams, serializeReturn, returnTypeBaseSize } =
       anonViewFns![localId!];
     const ctx: AnonymousViewCtx<any> = freeze({
+      env: environment,
       db: dbView!,
       from: from!,
     });
@@ -773,6 +777,7 @@ const BINARY_READER = new BinaryReader(new Uint8Array());
 class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
   implements HandlerContext<S>
 {
+  readonly env = environment;
   #identity: Identity | undefined;
   #uuidCounter: { value: number } | undefined;
   #random: Random | undefined;

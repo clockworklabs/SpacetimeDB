@@ -1,3 +1,4 @@
+import type { Environment } from '../lib/environment';
 import type { Identity } from '../lib/identity';
 import type {
   HttpMethod,
@@ -219,6 +220,7 @@ export type HandlerAliasViews<SchemaDef extends UntypedSchemaDef> =
     : {};
 
 export interface HandlerContext<S extends UntypedSchemaDef = UntypedSchemaDef> {
+  readonly env: Environment;
   readonly timestamp: Timestamp;
   readonly http: HttpClient;
   readonly identity: Identity;

@@ -146,7 +146,8 @@ impl Host {
             .await
             .map_err(|_| (StatusCode::NOT_FOUND, "module not found".to_string()))?;
 
-        tracing::debug!(sql = body);
+        // Environment SQL contains values; routine request logs must omit them.
+        tracing::debug!(sql_bytes = body.len(), "executing SQL");
         let mut header = vec![];
         let sql_start = std::time::Instant::now();
         let sql_span = tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty,);
@@ -164,8 +165,8 @@ impl Host {
         )
         .await
         .map_err(|e| {
-            // TODO: Review log level after user SQL errors can be distinguished from internal database failures.
-            log::warn!("{e}");
+            // Parser diagnostics can quote values. Return them only to the caller.
+            log::warn!("SQL request rejected");
             (StatusCode::BAD_REQUEST, e.to_string())
         })?;
 

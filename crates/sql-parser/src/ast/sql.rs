@@ -19,6 +19,15 @@ pub enum SqlAst {
     Set(SqlSet),
     /// SHOW var
     Show(SqlShow),
+    /// Administrative environment mutation, distinct from generic table DML.
+    Environment(SqlEnvironment),
+}
+
+#[derive(Debug)]
+pub struct SqlEnvironment {
+    pub key: SqlIdent,
+    /// None is DELETE; a string literal, including empty, is SET.
+    pub value: Option<SqlLiteral>,
 }
 
 impl SqlAst {

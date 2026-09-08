@@ -720,3 +720,15 @@ SPACETIMEDB_HTTP_HANDLER(get_simple, HandlerContext ctx, HttpRequest request) {
 SPACETIMEDB_HTTP_ROUTER(router) {
     return Router().get("/get", get_simple);
 }
+
+SPACETIMEDB_REDUCER(expect_environment, ReducerContext ctx, std::string key, std::optional<std::string> expected) {
+    if (ctx.env.get(key) != expected) LOG_PANIC("environment value mismatch");
+    return Ok();
+}
+SPACETIMEDB_PROCEDURE(std::optional<std::string>, read_environment, ProcedureContext ctx, std::string key) {
+    const auto outside = ctx.env.get(key);
+    ctx.with_tx([&](TxContext& tx) {
+        if (tx.env.get(key) != outside) LOG_PANIC("transaction environment value mismatch");
+    });
+    return outside;
+}

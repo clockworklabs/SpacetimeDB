@@ -133,11 +133,13 @@ use sqlparser::{
         Value, Values,
     },
     dialect::PostgreSqlDialect,
+    keywords::Keyword,
     parser::Parser,
+    tokenizer::Token,
 };
 
 use crate::ast::{
-    sql::{SqlAst, SqlDelete, SqlInsert, SqlSelect, SqlSet, SqlShow, SqlUpdate, SqlValues},
+    sql::{SqlAst, SqlDelete, SqlEnvironment, SqlInsert, SqlSelect, SqlSet, SqlShow, SqlUpdate, SqlValues},
     SqlIdent,
 };
 
@@ -148,7 +150,36 @@ use super::{
 
 /// Parse a SQL string
 pub fn parse_sql(sql: &str) -> SqlParseResult<SqlAst> {
-    let mut stmts = Parser::parse_sql(&PostgreSqlDialect {}, sql)?;
+    // DELETE env.KEY is a SpacetimeDB administrative statement, not the
+    // PostgreSQL DELETE FROM grammar. Use the same tokenizer and expression
+    // parser, including comments and SQL string escaping, for this extension.
+    let mut parser = Parser::new(&PostgreSqlDialect {}).try_with_sql(sql)?;
+    let verb = parser.peek_token().token;
+    let environment_prefix = matches!(parser.peek_nth_token(1).token,
+        Token::Word(word) if word.quote_style.is_none() && word.value.eq_ignore_ascii_case("env"))
+        && parser.peek_nth_token(2).token == Token::Period;
+    if environment_prefix
+        && matches!(&verb, Token::Word(word) if matches!(word.keyword, Keyword::SET | Keyword::DELETE))
+    {
+        parser.next_token();
+        parser.next_token();
+        parser.next_token();
+        let key = SqlIdent(parser.parse_identifier()?.value.into());
+        let value = if matches!(verb, Token::Word(word) if word.keyword == Keyword::SET) {
+            if !parser.parse_keyword(Keyword::TO) {
+                parser.expect_token(&Token::Eq)?;
+            }
+            Some(parse_literal_expr(parser.parse_expr()?, SqlUnsupported::Assignment)?)
+        } else {
+            None
+        };
+        let _ = parser.consume_token(&Token::SemiColon);
+        if parser.peek_token().token != Token::EOF {
+            return Err(SqlUnsupported::MultiStatement.into());
+        }
+        return Ok(SqlAst::Environment(SqlEnvironment { key, value }));
+    }
+    let mut stmts = parser.parse_statements()?;
     if stmts.len() > 1 {
         return Err(SqlUnsupported::MultiStatement.into());
     }

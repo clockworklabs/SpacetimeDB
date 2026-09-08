@@ -919,10 +919,29 @@ pub use spacetimedb_bindings_macro::view;
 pub struct QueryBuilder {}
 pub use query_builder::{Query, RawQuery};
 
+/// Read-only access to this database's environment store.
+///
+/// Reads use the current transaction. In a procedure outside a transaction,
+/// each read uses a short snapshot; use `with_tx` to read related keys together.
+/// Values are stored in plaintext and may be read by database collaborators.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Environment {
+    _private: (),
+}
+
+impl Environment {
+    /// Return None for a missing key and Some("") for a present empty value.
+    /// Keys must be POSIX environment names of at most 256 bytes.
+    pub fn get(&self, key: &str) -> Option<String> {
+        rt::env_get(key)
+    }
+}
+
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
 /// The other is [`ViewContext`].
 /// Use this type if the view does not depend on the caller's identity.
 pub struct AnonymousViewContext {
+    pub env: Environment,
     pub db: LocalReadOnly,
     pub from: QueryBuilder,
 }
@@ -930,6 +949,7 @@ pub struct AnonymousViewContext {
 impl Default for AnonymousViewContext {
     fn default() -> Self {
         Self {
+            env: Environment::default(),
             db: LocalReadOnly {},
             from: QueryBuilder {},
         }
@@ -939,6 +959,7 @@ impl Default for AnonymousViewContext {
 /// The other is [`AnonymousViewContext`].
 /// Use this type if the view depends on the caller's identity.
 pub struct ViewContext {
+    pub env: Environment,
     sender: Identity,
     pub db: LocalReadOnly,
     pub from: QueryBuilder,
@@ -948,6 +969,7 @@ impl ViewContext {
     pub fn new(sender: Identity) -> Self {
         Self {
             sender,
+            env: Environment::default(),
             db: LocalReadOnly {},
             from: QueryBuilder {},
         }
@@ -978,6 +1000,8 @@ impl ViewContext {
 /// Implements the `DbContext` trait for accessing views into a database.
 #[non_exhaustive]
 pub struct ReducerContext {
+    /// Read-only access to the database environment in this transaction.
+    pub env: Environment,
     /// The `Identity` of the client that invoked the reducer.
     sender: Identity,
 
@@ -1042,6 +1066,7 @@ impl ReducerContext {
     #[doc(hidden)]
     pub fn __dummy() -> Self {
         Self {
+            env: Environment::default(),
             db: Local {},
             sender: Identity::__dummy(),
             timestamp: Timestamp::UNIX_EPOCH,
@@ -1057,6 +1082,7 @@ impl ReducerContext {
     #[doc(hidden)]
     fn new(db: Local, sender: Identity, connection_id: Option<ConnectionId>, timestamp: Timestamp) -> Self {
         Self {
+            env: Environment::default(),
             db,
             sender,
             timestamp,
@@ -1254,6 +1280,8 @@ fn with_tx<T>(body: impl Fn(&TxContext) -> T, identity: Identity, connection_id:
 /// and exposes methods for running transactions and performing side-effecting operations.
 #[non_exhaustive]
 pub struct ProcedureContext {
+    /// Read-only access to the database environment.
+    pub env: Environment,
     /// The `Identity` of the client that invoked the procedure.
     sender: Identity,
 
@@ -1285,6 +1313,7 @@ impl ProcedureContext {
             sender,
             timestamp,
             connection_id,
+            env: Environment::default(),
             http: http::HttpClient {},
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),

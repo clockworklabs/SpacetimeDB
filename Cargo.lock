@@ -2299,6 +2299,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "environment-test"
+version = "0.0.0"
+dependencies = [
+ "spacetimedb 2.10.0",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

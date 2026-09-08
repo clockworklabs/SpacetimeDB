@@ -362,6 +362,8 @@ pub fn err_to_errno(err: NodesError) -> Result<(NonZeroU16, Option<String>), Nod
         NodesError::DecodeRow(_) => errno::BSATN_DECODE_ERROR,
         NodesError::DecodeValue(_) => errno::BSATN_DECODE_ERROR,
         NodesError::TableNotFound => errno::NO_SUCH_TABLE,
+        NodesError::InvalidEnvironmentKey => errno::HOST_CALL_FAILURE,
+        NodesError::EnvironmentSourceLimit => errno::NO_SPACE,
         NodesError::IndexNotFound => errno::NO_SUCH_INDEX,
         NodesError::IndexNotUnique => errno::INDEX_NOT_UNIQUE,
         NodesError::IndexRowNotFound => errno::NO_SUCH_ROW,
@@ -442,6 +444,8 @@ macro_rules! abi_funcs {
             "spacetime_10.4"::datastore_delete_by_index_scan_point_bsatn,
 
             "spacetime_10.5"::datastore_clear,
+            // ABI10.6 is reserved for invocation authority.
+            "spacetime_10.7"::env_get,
         }
 
         $link_async! {
