@@ -1,0 +1,85 @@
+{
+  "name": "@spacetimedb/auth",
+  "description": "Password, OAuth, session, JWT, and profile primitives for SpacetimeDB TypeScript modules.",
+  "version": "0.1.0",
+  "license": "BUSL-1.1",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./tables": {
+      "types": "./src/tables.ts",
+      "default": "./src/tables.ts"
+    },
+    "./handlers": {
+      "types": "./src/handlers/index.ts",
+      "default": "./src/handlers/index.ts"
+    },
+    "./crypto": {
+      "types": "./src/crypto.ts",
+      "default": "./src/crypto.ts"
+    },
+    "./jwt": {
+      "types": "./src/jwt.ts",
+      "default": "./src/jwt.ts"
+    },
+    "./keys": {
+      "types": "./src/keys.ts",
+      "default": "./src/keys.ts"
+    },
+    "./submodule": {
+      "types": "./src/submodule.ts",
+      "default": "./src/submodule.ts"
+    }
+  },
+  "files": [
+    "src",
+    "LICENSE.txt",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clockworklabs/SpacetimeDB.git",
+    "directory": "spacetime-auth-ts"
+  },
+  "homepage": "https://github.com/clockworklabs/SpacetimeDB/tree/master/spacetime-auth-ts#readme",
+  "bugs": {
+    "url": "https://github.com/clockworklabs/SpacetimeDB/issues"
+  },
+  "keywords": [
+    "spacetimedb",
+    "authentication",
+    "oauth",
+    "typescript"
+  ],
+  "scripts": {
+    "format": "prettier . --write --ignore-path ../.prettierignore",
+    "lint": "eslint . && prettier . --check --ignore-path ../.prettierignore",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx scripts/test.ts"
+  },
+  "dependencies": {
+    "@spacetimedb/rate-limit": "workspace:^",
+    "@noble/curves": "^2.2.0",
+    "@noble/hashes": "^1.4.0"
+  },
+  "peerDependencies": {
+    "spacetimedb": "workspace:^"
+  },
+  "devDependencies": {
+    "eslint": "^9.17.0",
+    "prettier": "^3.3.3",
+    "@types/node": "^22.10.2",
+    "spacetimedb": "workspace:*",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
