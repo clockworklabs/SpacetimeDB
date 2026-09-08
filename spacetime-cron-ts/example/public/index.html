@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="A live dashboard for calendar and interval jobs powered by @spacetimedb/cron."
+    />
+    <title>SpacetimeDB Cron</title>
+    <link rel="icon" href="/assets/logo.svg" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <a
+          class="brand"
+          href="https://spacetimedb.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="SpacetimeDB home"
+        >
+          <img src="/assets/logo.svg" alt="" />
+          <span class="brand-name">SpacetimeDB</span>
+          <span class="brand-product">Cron</span>
+        </a>
+        <div class="topbar-actions">
+          <span class="connection" id="connection" data-state="connecting">
+            <span class="connection-dot" aria-hidden="true"></span>
+            <span id="conn">Connecting</span>
+          </span>
+          <button
+            class="button button-primary"
+            id="open-scheduler"
+            type="button"
+            disabled
+          >
+            <span aria-hidden="true">+</span>
+            Schedule job
+          </button>
+        </div>
+      </header>
+
+      <section class="summary" aria-label="Cron summary">
+        <article class="summary-card">
+          <span class="summary-icon summary-icon-blue" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <rect x="3" y="5" width="18" height="16" rx="3"></rect>
+              <path d="M8 3v4M16 3v4M3 10h18M8 14h3M8 17h6"></path>
+            </svg>
+          </span>
+          <div>
+            <strong id="stat-jobs">0</strong>
+            <span>Configured jobs</span>
+          </div>
+        </article>
+        <article class="summary-card">
+          <span class="summary-icon summary-icon-green" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="9"></circle>
+              <path d="m8 12 2.6 2.6L16.5 9"></path>
+            </svg>
+          </span>
+          <div>
+            <strong id="stat-healthy">0</strong>
+            <span>Healthy schedules</span>
+          </div>
+        </article>
+        <article class="summary-card">
+          <span class="summary-icon summary-icon-violet" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M5 19 19 5M10 5h9v9"></path>
+            </svg>
+          </span>
+          <div>
+            <strong id="stat-fires">0</strong>
+            <span>Total dispatches</span>
+          </div>
+        </article>
+      </section>
+
+      <section class="workspace" aria-label="Cron state">
+        <article class="panel panel-jobs">
+          <header class="panel-header">
+            <div>
+              <p class="panel-kicker">Configured jobs</p>
+              <h2>
+                Schedules
+                <span class="count" id="job-count">0</span>
+              </h2>
+            </div>
+            <span class="live-label">
+              <span aria-hidden="true"></span>
+              Live state
+            </span>
+          </header>
+          <div class="panel-body">
+            <div class="empty-state" id="jobs-empty">
+              <span class="empty-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="9"></circle>
+                  <path d="M12 7v5l3 2"></path>
+                </svg>
+              </span>
+              <h3>No jobs scheduled</h3>
+              <p>Choose a preset or configure a schedule below.</p>
+            </div>
+            <ul class="job-list" id="jobs" hidden></ul>
+          </div>
+        </article>
+
+        <div class="workspace-side">
+          <article class="panel">
+            <header class="panel-header panel-header-compact">
+              <div>
+                <p class="panel-kicker">Execution history</p>
+                <h2>
+                  Recent runs
+                  <span class="count" id="run-count">0</span>
+                </h2>
+              </div>
+            </header>
+            <div class="panel-body panel-body-compact">
+              <div class="empty-state empty-state-small" id="runs-empty">
+                <span class="empty-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M20 7v5h-5M4 17v-5h5"></path>
+                    <path
+                      d="M6.1 8.5A7 7 0 0 1 18.7 7M17.9 15.5A7 7 0 0 1 5.3 17"
+                    ></path>
+                  </svg>
+                </span>
+                <p>Runs will appear after a job fires.</p>
+              </div>
+              <ul class="event-list" id="runs" hidden></ul>
+            </div>
+          </article>
+
+          <article class="panel">
+            <header class="panel-header panel-header-compact">
+              <div>
+                <p class="panel-kicker">Application output</p>
+                <h2>
+                  Activity
+                  <span class="count" id="activity-count">0</span>
+                </h2>
+              </div>
+            </header>
+            <div class="panel-body panel-body-compact">
+              <div class="empty-state empty-state-small" id="activity-empty">
+                <span class="empty-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <rect x="4" y="4" width="6" height="6" rx="1"></rect>
+                    <rect x="14" y="4" width="6" height="6" rx="1"></rect>
+                    <rect x="4" y="14" width="6" height="6" rx="1"></rect>
+                    <rect x="14" y="14" width="6" height="6" rx="1"></rect>
+                  </svg>
+                </span>
+                <p>Handler output will appear here.</p>
+              </div>
+              <ul class="event-list" id="activity" hidden></ul>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section
+        class="scheduler"
+        id="scheduler"
+        aria-labelledby="scheduler-title"
+      >
+        <div class="scheduler-intro">
+          <p class="eyebrow">Try the API</p>
+          <h2 id="scheduler-title">Schedule a job</h2>
+          <p>
+            Configure one of the example handlers with a calendar expression or
+            a fixed interval. Scheduling the same job again replaces its current
+            configuration.
+          </p>
+          <div class="presets" aria-label="Schedule presets">
+            <button class="preset" type="button" data-preset="ten-seconds">
+              <span>Every 10 seconds</span>
+              <code>*/10 * * * * *</code>
+            </button>
+            <button class="preset" type="button" data-preset="weekday">
+              <span>Weekdays at 9 AM</span>
+              <code>0 9 * * 1-5</code>
+            </button>
+            <button class="preset" type="button" data-preset="five-minutes">
+              <span>Every 5 minutes</span>
+              <code>interval 300s</code>
+            </button>
+          </div>
+        </div>
+
+        <form class="schedule-form" id="schedule-form">
+          <div class="field-grid">
+            <label class="field">
+              <span>Job</span>
+              <select id="job-name">
+                <option value="digest">Digest</option>
+                <option value="cleanup">Cleanup</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Schedule type</span>
+              <select id="spec-kind">
+                <option value="cron">Cron expression</option>
+                <option value="every">Fixed interval</option>
+              </select>
+            </label>
+            <label class="field field-wide">
+              <span id="spec-expr-label">Expression</span>
+              <input
+                id="spec-expr"
+                value="*/10 * * * * *"
+                placeholder="*/10 * * * * *"
+                autocomplete="off"
+              />
+              <small id="spec-help">Six fields include seconds.</small>
+            </label>
+            <label class="field" id="spec-tz-wrap">
+              <span>Time zone</span>
+              <input id="spec-tz" value="UTC" autocomplete="off" />
+            </label>
+            <label class="field" id="cleanup-keep-wrap" hidden>
+              <span>Rows to keep</span>
+              <input
+                id="cleanup-keep"
+                type="number"
+                min="1"
+                max="1000"
+                value="25"
+              />
+            </label>
+          </div>
+          <div class="form-actions">
+            <p class="form-status" id="form-status" role="status"></p>
+            <button
+              class="button button-primary"
+              id="btn-schedule"
+              type="submit"
+              disabled
+            >
+              Schedule job
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <footer class="footer">
+        <span>Built on</span>
+        <img src="/assets/logo.svg" alt="" />
+        <a
+          href="https://spacetimedb.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          >SpacetimeDB</a
+        >
+        <span class="footer-divider" aria-hidden="true"></span>
+        <a
+          href="https://github.com/clockworklabs/SpacetimeDB"
+          target="_blank"
+          rel="noopener noreferrer"
+          >View source</a
+        >
+      </footer>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
