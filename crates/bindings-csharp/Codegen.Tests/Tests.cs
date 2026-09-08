@@ -365,7 +365,7 @@ public static class GeneratorSnapshotTests
                 public static int InternalProcedure(ProcedureContext ctx) => 1;
             }
             """;
-        var parseOptions = new CSharpParseOptions(fixture.SampleCompilation.LanguageVersion);
+        var parseOptions = fixture.ParseOptions;
         var tree = CSharpSyntaxTree.ParseText(source, parseOptions);
         var compilation = fixture.SampleCompilation.AddSyntaxTrees(tree);
         var driver = CSharpGeneratorDriver.Create(

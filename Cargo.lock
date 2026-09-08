@@ -2302,7 +2302,7 @@ dependencies = [
 name = "environment-test"
 version = "0.0.0"
 dependencies = [
- "spacetimedb 2.10.0",
+ "spacetimedb",
 ]
 
 [[package]]
