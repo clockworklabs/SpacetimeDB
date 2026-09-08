@@ -229,8 +229,8 @@ impl AutoMigratePlan<'_> {
             .all_reducers_with_prefix()
             .into_iter()
             .filter(|(_, _, old)| old.lifecycle.is_none())
-            .filter_map(|(prefix, _, old)| {
-                let name = format!("{prefix}{}", old.name);
+            .filter_map(|(_, _, old)| {
+                let name = old.name.to_string();
                 let (_, new) = self.new.reducer_by_name(&name)?;
                 (old.visibility != new.visibility).then_some((name, &old.visibility, &new.visibility))
             });

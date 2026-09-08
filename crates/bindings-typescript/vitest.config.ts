@@ -16,7 +16,15 @@ export default defineConfig({
       { find: 'spacetime:sys@2.1', replacement: sysMock },
       {
         find: 'spacetime:sys@2.2',
-        replacement: fileURLToPath(new URL('./tests/__mocks__/spacetime-auth.ts', import.meta.url)),
+        replacement: fileURLToPath(
+          new URL('./tests/__mocks__/spacetime-auth.ts', import.meta.url)
+        ),
+      },
+      {
+        find: 'spacetime:sys@2.3',
+        replacement: fileURLToPath(
+          new URL('./tests/__mocks__/spacetime-environment.ts', import.meta.url)
+        ),
       },
     ],
   },
