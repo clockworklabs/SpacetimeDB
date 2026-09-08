@@ -34,6 +34,8 @@ interface Route {
 const state = {
   overview: [] as OverviewEntry[],
   plans: [] as DashboardPlan[],
+  overviewLoaded: false,
+  plansLoaded: false,
   canStart: false,
   csrfToken: '',
   readError: '',
@@ -190,9 +192,12 @@ function render(): void {
   const current = route();
   const root = document.body;
   const next = document.createElement('body');
+  const ready = current.plans ? state.plansLoaded : current.key
+    ? state.sheets.has(current.key) : state.overviewLoaded;
   next.innerHTML = `${chrome(current)}<main aria-busy="${loading}">`
     + (state.readError ? `<div class="page err" role="alert">${esc(state.readError)} <button type="button" data-retry>Retry</button></div>` : '')
-    + (loading ? `<div class="page loading" role="status">Loading ${current.plans ? 'plans' : current.attempt ? 'run details' : current.key ? 'campaign' : 'campaigns'}…</div>` : page(current))
+    + (loading && !ready ? `<div class="page"><div class="title"><h2>${current.plans ? 'Run plans' : current.attempt ? 'Run details' : current.key ? 'Campaign' : 'Campaigns'}</h2></div>`
+      + '<div class="loading" role="status">Loading…</div></div>' : page(current))
     + '</main>';
   patch(root, next);
   // The secret and the run name live in the tab, never in the markup.
@@ -234,18 +239,24 @@ async function load(navigation = false): Promise<void> {
 
 async function loadData(version: number): Promise<void> {
   const current = route();
-  if (!current.key || !state.csrfToken) {
+  const plansRequest = current.plans ? read<DashboardPlan[]>('/api/plans').then(plans => {
+    if (plans && version === loadVersion) {
+      state.plans = plans;
+      state.plansLoaded = true;
+      render();
+    }
+  }) : null;
+  if ((!current.key && !current.plans) || !state.csrfToken) {
     const overview = await read<{ campaigns: OverviewEntry[]; canStart: boolean;
       csrfToken: string; }>('/api/overview');
     if (version !== loadVersion) return;
-    if (overview) Object.assign(state, { overview: overview.campaigns,
+    if (overview) Object.assign(state, { overview: overview.campaigns, overviewLoaded: true,
       canStart: overview.canStart, csrfToken: overview.csrfToken });
     render();
   }
   if (current.plans) {
-    const plans = await read<DashboardPlan[]>('/api/plans');
+    await plansRequest;
     if (version !== loadVersion) return;
-    if (plans) state.plans = plans;
     const first = state.plans.find(plan => plan.state === 'frozen');
     if (first && !state.form.planId) {
       state.form = { ...state.form, planId: first.id, outputName: runName(first.id, new Date()) };
