@@ -133,6 +133,10 @@ pub struct DmlOnView {
 #[derive(Error, Debug)]
 pub enum TypingError {
     #[error(transparent)]
+    Environment(#[from] spacetimedb_lib::environment::EnvironmentValidationError),
+    #[error("environment values must be SQL string literals")]
+    EnvironmentValueType,
+    #[error(transparent)]
     Unsupported(#[from] Unsupported),
     #[error(transparent)]
     Unresolved(#[from] Unresolved),

@@ -155,7 +155,9 @@ impl Host {
             .await
             .map_err(|_| (StatusCode::NOT_FOUND, "module not found".to_string()))?;
 
-        tracing::info!(sql = body);
+        // Administrative SQL may contain environment values. The commitlog
+        // retains the table mutation, but routine request logs must not copy it.
+        tracing::info!(sql_bytes = body.len(), "executing SQL");
         let mut header = vec![];
         let sql_start = std::time::Instant::now();
         let sql_span = tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty,);
@@ -173,7 +175,9 @@ impl Host {
         )
         .await
         .map_err(|e| {
-            log::warn!("{e}");
+            // Parser diagnostics can quote an environment value. Return the
+            // diagnostic to its caller without duplicating it in server logs.
+            log::warn!("SQL request rejected");
             (StatusCode::BAD_REQUEST, e.to_string())
         })?;
 
