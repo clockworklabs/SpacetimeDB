@@ -67,7 +67,8 @@ test('time chart uses measured elapsed time, preserves regressions, and labels e
     { completedAt: '2026-09-08T00:02:00Z', completion: 0.5 },
   ] }] } as CampaignProgression;
   const html = progressChart(sheet, progression);
-  assert.match(html, /M498 70 H948 V110/);
+  assert.match(html, /M48 190 H498 V70 H948 V110/);
+  assert.match(html, /Run start; no checks graded/);
   assert.match(html, /Rep 1 · 50% · Excluded/);
   assert.doesNotMatch(html, /NaN|Infinity/);
   assert.match(progressChart(sheet, null), /Awaiting first timed grade/);

@@ -12,10 +12,10 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
       return Number.isFinite(elapsed) && elapsed >= 0 && step.completion != null
         ? [{ elapsed, completion: step.completion * 100 }] : [];
     }).sort((a, b) => a.elapsed - b.elapsed);
-    const points = [...new Map(observations.map(point => [point.elapsed, point])).values()];
-    return points.length ? [{ stack: track.stack, attempt, points }] : [];
+    const points = [{ elapsed: 0, completion: 0 }, ...observations];
+    return observations.length ? [{ stack: track.stack, attempt, points }] : [];
   });
-  const heading = '<h3 title="Checks passed out of all selected checks at each saved grade. Each line is one repetition; elapsed time starts at that run. Excluded runs are labelled. Lines can fall after regressions.">Completion over time</h3>';
+  const heading = '<h3 title="Checks passed out of all selected checks at each saved grade. Zero marks run start before any checks pass. Each line is one repetition; elapsed time starts at that run. Excluded runs are labelled. Lines can fall after regressions.">Completion over time</h3>';
   if (!tracks.length) return heading + '<p class="chart-empty">Awaiting first timed grade.</p>';
   const maximum = Math.max(60, ...tracks.flatMap(track => track.points.map(point => point.elapsed)));
   const x = (seconds: number) => 48 + 900 * seconds / maximum;
@@ -30,7 +30,7 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
     let path = '';
     const marks = points.map((point, index) => {
       path += index ? ` H${x(point.elapsed)} V${y(point.completion)}` : `M${x(point.elapsed)} ${y(point.completion)}`;
-      return `<circle cx="${x(point.elapsed)}" cy="${y(point.completion)}" r="3" fill="${color(stack)}"><title>${esc(stackLabel(stack))} · Rep ${attempt.repetition}: ${point.completion.toFixed(1)}% at ${esc(duration(point.elapsed))}${attempt.excluded ? ' · Excluded' : ''}</title></circle>`;
+      return `<circle cx="${x(point.elapsed)}" cy="${y(point.completion)}" r="3" fill="${color(stack)}"><title>${esc(stackLabel(stack))} · Rep ${attempt.repetition}: ${point.completion.toFixed(1)}% at ${esc(duration(point.elapsed))}${index === 0 ? ' � Run start; no checks graded' : ''}${attempt.excluded ? ' · Excluded' : ''}</title></circle>`;
     }).join('');
     return `<g><path d="${path}" fill="none" stroke="${color(stack)}" stroke-width="2"${attempt.repetition > 1 ? ' stroke-dasharray="6 4"' : ''}/>${marks}</g>`;
   }).join('');

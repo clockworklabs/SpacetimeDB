@@ -1,3 +1,5 @@
+import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
+import { sha256 } from '../src/evidence/provenance.js';
 import { closeSync, existsSync, fstatSync, openSync, readSync, readdirSync, statSync }
   from 'node:fs';
 import { basename, join, resolve } from 'node:path';
@@ -759,7 +761,7 @@ function progressionSteps(state: DependencyState, nodeIds: readonly string[], ti
     replay = progressionEngine.recordResult(replay, event.result);
     return { sequence: event.sequence, action: repair ? 'repair' as const : 'build' as const,
       targets, ...progressionSnapshot(replay, nodeIds),
-      completedAt: event.result.evidence ? times.get(event.result.evidence.id) ?? null : null,
+      completedAt: event.result.evidence ? times.get(`${event.result.evidence.id}:${event.result.evidence.sha256}`) ?? null : null,
       completion: scoreDependencyState(replay as DependencyState).completion.rate };
   });
 }
@@ -802,7 +804,7 @@ export function campaignProgression(resultsRoot: string, key: string): CampaignP
       if (!existsSync(bundlePath)) continue;
       try {
         const bundle = readArtifact(bundlePath, { expectedKind: 'grade_bundle' });
-        times.set(bundle.id, bundle.timestamps.completedAt);
+        times.set(`${bundle.id}:${sha256(canonicalDefinitionJson(bundle))}`, bundle.timestamps.completedAt);
       } catch { /* Missing or invalid evidence must not invent a chart timestamp. */ }
     }
     stacks.push({ stack: attempt.plan.stack, attemptId: attempt.plan.id,

@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { after, before } from 'node:test';
 
-import { emptyArtifactIdentities, writeArtifact } from '../../src/evidence/artifacts.js';
+import { ARTIFACT_FILE, emptyArtifactIdentities, writeArtifact } from '../../src/evidence/artifacts.js';
 import { compileCampaignFile } from '../../src/campaigns/campaign-compiler.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan } from '../../src/campaigns/campaign-compiler.js';
 import { campaignComparisonKey } from '../../src/campaigns/campaign-report.js';
@@ -1060,6 +1060,21 @@ test('the progression view replays the graph once per stack within its budget', 
   for (const claim of claims) {
     const output = join(directory, claim.output);
     mkdirSync(join(output, 'source'), { recursive: true });
+    let timedState = progressionEngine.initialize(progression.definition);
+    for (const [index, event] of dependencyProgressionEvidence(plan, claim.attempt).events.entries()) {
+      if (!event.result) continue;
+      const completedAt = new Date(Date.parse(now) + (index + 1) * 60_000).toISOString();
+      // Repair observations can share an ID; the evidence digest identifies the version.
+      const artifact = writeArtifact(join(output, 'progression',
+        `attempt-${String(index + 1).padStart(3, '0')}`, ARTIFACT_FILE.gradeBundle), {
+        kind: 'grade_bundle', id: 'shared-grade-id',
+        timestamps: { startedAt: now, completedAt }, payload: { suites: {} },
+      });
+      timedState = progressionEngine.recordResult(timedState, { ...event.result,
+        runId: claim.attempt.id, attemptId: `${claim.attempt.id}-progression-${index + 1}`,
+        evidence: { kind: 'grade_bundle', id: artifact.id,
+          sha256: sha256(canonicalDefinitionJson(artifact)) } });
+    }
     writeProgressionState(join(output, 'progression-state.json'), {
       progression,
       featureCatalogIdentity: plan.featureCatalog.identity,
@@ -1070,7 +1085,7 @@ test('the progression view replays the graph once per stack within its budget', 
           stack: claim.attempt.stack, agentAdapter: claim.attempt.agentAdapter,
           model: claim.attempt.model, conditionSha256: claim.attempt.condition.contentSha256 },
         workspace: { appDirectory: 'source' } },
-      state: dependencyProgressionEvidence(plan, claim.attempt) });
+      state: timedState });
   }
 
   const view = campaignProgression(resultsRoot, 'progression-run');
@@ -1081,7 +1096,9 @@ test('the progression view replays the graph once per stack within its budget', 
   assert.equal(view.stacks.length, claims.length);
   const track = view.stacks[0];
   assert.ok(track);
-  assert.ok(track.steps.length > 0);
+  assert.ok(track.steps.length > 1);
+  assert.deepEqual(track.steps.map(step => step.completedAt), track.steps.map((_, index) =>
+    new Date(Date.parse(now) + (index + 1) * 60_000).toISOString()));
   assert.ok(track.steps.every(step => step.statuses.length === view.nodes.length));
   assert.ok(track.steps.some(step => step.action === 'build'));
   assert.equal(track.steps.some(step => step.action === 'repair'), false);
