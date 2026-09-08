@@ -74,6 +74,7 @@ using ::identity;
 // ===== JWT =====
 using ::get_jwt;
 using ::env_get;
+using ::get_call_auth_flags;
 
 // ===== Procedure Transactions =====
 using ::procedure_start_mut_tx;

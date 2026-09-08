@@ -56,13 +56,23 @@ partial class RawModuleDefV10
 
     internal void RegisterReducer(RawReducerDefV10 reducer, Lifecycle? lifecycle)
     {
+        // Private is the legacy V10 lifecycle encoding. The source generator rejects
+        // explicit Private/Public lifecycle annotations and emits Internal by default.
+        if (
+            lifecycle is not null
+            && reducer.Visibility is not (FunctionVisibility.Private or FunctionVisibility.Internal)
+        )
+        {
+            throw new InvalidOperationException(
+                "Lifecycle reducers only permit internal visibility"
+            );
+        }
         reducerDefs.Add(reducer);
         if (lifecycle is { } lifecycleSpec)
         {
             lifecycleReducerDefs.Add(
                 new RawLifeCycleReducerDefV10(lifecycleSpec, reducer.SourceName)
             );
-            reducer.Visibility = FunctionVisibility.Private;
         }
     }
 
@@ -138,30 +148,10 @@ partial class RawModuleDefV10
             );
         }
 
-        var internalFunctions = lifecycleReducerDefs
-            .Select(l => l.FunctionName)
-            .Concat(scheduleDefs.Select(s => s.FunctionName))
-            .ToHashSet(StringComparer.Ordinal);
-
-        foreach (var reducer in reducerDefs)
-        {
-            if (internalFunctions.Contains(reducer.SourceName))
-            {
-                reducer.Visibility = FunctionVisibility.Private;
-            }
-        }
-
-        foreach (var procedure in procedureDefs)
-        {
-            if (internalFunctions.Contains(procedure.SourceName))
-            {
-                procedure.Visibility = FunctionVisibility.Private;
-            }
-        }
-
         var sections = new List<RawModuleDefV10Section>
         {
             new RawModuleDefV10Section.Typespace(typespace),
+            new RawModuleDefV10Section.Capabilities(["hosted_auth_v1"]),
         };
 
         if (typeDefs.Count > 0)

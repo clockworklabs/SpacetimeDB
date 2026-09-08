@@ -15,8 +15,8 @@ namespace SpacetimeDB {
  * This class provides lazy parsing of JWT claims, parsing specific fields
  * on demand. It follows the same pattern as the Rust and C# implementations.
  * 
- * The Identity is provided in the constructor because computing it requires
- * Blake3 hashing, which is done on the host side.
+ * The Identity is the verified sender supplied by the host. Token claims
+ * cannot override it, including for hosted container credentials.
  */
 class JwtClaims {
 private:
@@ -36,11 +36,10 @@ public:
     /**
      * @brief Constructs a JwtClaims from a JWT payload and its associated Identity.
      * 
-     * The Identity must be provided because computing it requires Blake3 hashing,
-     * which is performed on the host side.
+     * The Identity must be the verified sender supplied by the host.
      * 
      * @param jwt_payload The raw JWT payload (JSON claims)
-     * @param identity The identity derived from the JWT's issuer and subject
+     * @param identity The verified sender Identity
      */
     JwtClaims(std::string jwt_payload, Identity identity);
 
@@ -71,8 +70,7 @@ public:
     /**
      * @brief Returns the identity for these credentials.
      * 
-     * The identity is based on the 'iss' and 'sub' claims and is computed
-     * using Blake3 hashing on the host side.
+     * This is the verified sender supplied by the host, independently of claims.
      * 
      * @return The identity
      */

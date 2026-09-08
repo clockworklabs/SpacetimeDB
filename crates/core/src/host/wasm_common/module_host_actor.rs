@@ -782,6 +782,7 @@ impl InstanceCommon {
             timestamp,
             caller_identity,
             caller_connection_id,
+            call_auth_flags,
             timer,
             procedure_id,
             args,
@@ -801,6 +802,7 @@ impl InstanceCommon {
             name: procedure_name.clone().into(),
             caller_identity,
             caller_connection_id,
+            call_auth_flags,
             timestamp,
             arg_bytes: args.get_bsatn().clone(),
         };
@@ -965,6 +967,7 @@ impl InstanceCommon {
             timestamp,
             caller_identity,
             caller_connection_id,
+            call_auth_flags,
             client,
             request_id,
             reducer_id,
@@ -988,6 +991,7 @@ impl InstanceCommon {
             name: reducer_name,
             caller_identity: &caller_identity,
             caller_connection_id: &caller_connection_id,
+            call_auth_flags,
             timestamp,
             args: &args,
         };
@@ -1853,6 +1857,9 @@ pub trait InstanceOp {
     fn name(&self) -> &NamespacedIdentifier;
     fn timestamp(&self) -> Timestamp;
     fn call_type(&self) -> FuncCallType;
+    fn call_auth_flags(&self) -> u32 {
+        0
+    }
 }
 
 /// Describes a view call in a cheaply shareable way.
@@ -1913,6 +1920,7 @@ pub struct ReducerOp<'a> {
     pub name: &'a ReducerName,
     pub caller_identity: &'a Identity,
     pub caller_connection_id: &'a ConnectionId,
+    pub call_auth_flags: u32,
     pub timestamp: Timestamp,
     /// The arguments passed to the reducer.
     pub args: &'a ArgsTuple,
@@ -1928,6 +1936,9 @@ impl InstanceOp for ReducerOp<'_> {
     fn call_type(&self) -> FuncCallType {
         FuncCallType::Reducer
     }
+    fn call_auth_flags(&self) -> u32 {
+        self.call_auth_flags
+    }
 }
 
 impl From<ReducerOp<'_>> for execution_context::ReducerContext {
@@ -1937,6 +1948,7 @@ impl From<ReducerOp<'_>> for execution_context::ReducerContext {
             name,
             caller_identity,
             caller_connection_id,
+            call_auth_flags: _,
             timestamp,
             args,
         }: ReducerOp<'_>,
@@ -1958,6 +1970,7 @@ pub struct ProcedureOp {
     pub name: NamespacedIdentifier,
     pub caller_identity: Identity,
     pub caller_connection_id: ConnectionId,
+    pub call_auth_flags: u32,
     pub timestamp: Timestamp,
     pub arg_bytes: Bytes,
 }
@@ -1971,6 +1984,9 @@ impl InstanceOp for ProcedureOp {
     }
     fn call_type(&self) -> FuncCallType {
         FuncCallType::Procedure
+    }
+    fn call_auth_flags(&self) -> u32 {
+        self.call_auth_flags
     }
 }
 

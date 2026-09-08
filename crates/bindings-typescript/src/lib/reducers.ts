@@ -61,7 +61,7 @@ export type Reducer<S extends UntypedSchemaDef, Params extends ParamsObj> = (
  * Authentication information for the caller of a reducer.
  */
 export type AuthCtx = Readonly<{
-  /** Whether the caller is an internal system process. */
+  /** Whether the host verified internal invocation authority. Independent of JWT presence. */
   isInternal: boolean;
   /** Whether the caller has authenticated with a JWT token. */
   hasJWT: boolean;
@@ -93,7 +93,7 @@ export interface JwtClaims {
   readonly issuer: string;
   /** The audience of the JWT token ('aud') */
   readonly audience: readonly string[];
-  /** The identity associated with the JWT token, which is based on the sub and iss */
+  /** The verified sender Identity provided by the host, including hosted credentials. */
   readonly identity: Identity;
   /** The full payload as a JsonObject */
   readonly fullPayload: JsonObject;

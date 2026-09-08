@@ -169,6 +169,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         procedures,
         http_handlers: IndexMap::new(),
         http_routes: Vec::new(),
+        capabilities: Default::default(),
         raw_module_def_version: RawModuleDefVersion::V9OrEarlier,
         submodules: IndexMap::new(),
     };
@@ -389,7 +390,11 @@ impl ModuleValidatorV9<'_> {
                 recursive: false, // A ProductTypeDef not stored in a Typespace cannot be recursive.
             },
             lifecycle,
-            visibility: FunctionVisibility::ClientCallable,
+            visibility: if lifecycle.is_some() {
+                FunctionVisibility::Internal
+            } else {
+                FunctionVisibility::ClientCallable
+            },
             ok_return_type: reducer_default_ok_return_type(),
             err_return_type: reducer_default_err_return_type(),
         };

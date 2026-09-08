@@ -647,6 +647,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             store
                 .data_mut()
                 .start_funcall(reducer_name, args_bytes, op.timestamp, op.call_type());
+        store.data_mut().set_call_auth_flags(op.call_auth_flags);
 
         let call_result = call_sync_typed_func(
             &self.call_reducer,
@@ -770,6 +771,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             store
                 .data_mut()
                 .start_funcall(op.name().clone(), op.arg_bytes, op.timestamp, FuncCallType::Procedure);
+        store.data_mut().set_call_auth_flags(op.call_auth_flags);
 
         let Some(call_procedure) = self.call_procedure.as_ref() else {
             let res = module_host_actor::ProcedureExecuteResult {

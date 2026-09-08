@@ -405,7 +405,10 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
       case 2: {
         let arg1;
         [arg1, fn] = args;
-        if (typeof arg1.name === 'string')
+        if (
+          typeof arg1.name === 'string' ||
+          typeof arg1.visibility === 'string'
+        )
           opts = arg1 as ReducerOptsWithOptionalName<Params>;
         else params = arg1 as Params;
         break;
@@ -644,7 +647,10 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
       case 3: {
         let arg1;
         [arg1, ret, fn] = args;
-        if (typeof arg1.name === 'string')
+        if (
+          typeof arg1.name === 'string' ||
+          typeof arg1.visibility === 'string'
+        )
           opts = arg1 as ProcedureOptsWithOptionalName<Params, Ret>;
         else params = arg1 as Params;
         break;

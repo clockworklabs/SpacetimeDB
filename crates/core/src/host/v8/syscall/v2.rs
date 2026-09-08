@@ -169,6 +169,18 @@ pub(super) fn sys_v2_1<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
     )
 }
 
+pub(super) fn sys_v2_2<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
+    create_synthetic_module!(
+        scope,
+        "spacetime:sys@2.2",
+        (with_sys_result, AbiCall::GetCallAuthFlags, get_call_auth_flags),
+    )
+}
+
+fn get_call_auth_flags(scope: &mut PinScope<'_, '_>, _args: FunctionCallbackArguments<'_>) -> SysCallResult<u32> {
+    Ok(get_env(scope)?.instance_env.get_call_auth_flags())
+}
+
 pub(super) fn sys_v2_3<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
     create_synthetic_module!(scope, "spacetime:sys@2.3", (with_sys_result, AbiCall::EnvGet, env_get),)
 }
@@ -467,6 +479,7 @@ pub(super) fn call_call_reducer<'scope>(
         name: _,
         caller_identity: sender,
         caller_connection_id: conn_id,
+        call_auth_flags: _,
         timestamp,
         args: reducer_args,
     } = op;

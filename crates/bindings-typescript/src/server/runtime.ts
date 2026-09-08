@@ -1,6 +1,7 @@
 import { environment } from './environment';
 import * as _syscalls2_0 from 'spacetime:sys@2.0';
 import * as _syscalls2_1 from 'spacetime:sys@2.1';
+import * as _syscalls2_2 from 'spacetime:sys@2.2';
 
 import type { ModuleHooks, u128, u16, u256, u32 } from 'spacetime:sys@2.0';
 import {
@@ -80,7 +81,7 @@ import { HttpRequest, HttpResponse } from '../lib/autogen/types';
 
 const { freeze } = Object;
 
-export const sys = { ..._syscalls2_0, ..._syscalls2_1 };
+export const sys = { ..._syscalls2_0, ..._syscalls2_1, ..._syscalls2_2 };
 
 function requestFromWire(request: HttpRequest, body: Uint8Array): Request {
   return Request[makeRequest](body, {
@@ -125,7 +126,8 @@ class JwtClaimsImpl implements JwtClaims {
   /**
    * Creates a new JwtClaims instance.
    * @param rawPayload The JWT payload as a raw JSON string.
-   * @param identity The identity for this JWT. We are only taking this because we don't have a blake3 implementation (which we need to compute it).
+   * @param identity The verified sender Identity supplied by the host. Claims
+   * cannot override it, including for hosted database credentials.
    */
   constructor(
     public readonly rawPayload: string,
@@ -153,7 +155,7 @@ class JwtClaimsImpl implements JwtClaims {
   }
 }
 
-class AuthCtxImpl implements AuthCtx {
+export class AuthCtxImpl implements AuthCtx {
   public readonly isInternal: boolean;
 
   // Source of the JWT payload string, if there is one.
@@ -199,29 +201,21 @@ class AuthCtxImpl implements AuthCtx {
     return this._jwtClaims!;
   }
 
-  /** Create a context representing internal (non-user) requests. */
-  static internal(): AuthCtx {
-    return new AuthCtxImpl({
-      isInternal: true,
-      jwtSource: () => null,
-      senderIdentity: Identity.zero(),
-    });
-  }
-
   /** If there is a connection id, look up the JWT payload from the system tables. */
   static fromSystemTables(
     connectionId: ConnectionId | null,
-    sender: Identity
+    sender: Identity,
+    callAuthFlags: number
   ): AuthCtx {
     if (connectionId === null) {
       return new AuthCtxImpl({
-        isInternal: false,
+        isInternal: (callAuthFlags & 1) !== 0,
         jwtSource: () => null,
         senderIdentity: sender,
       });
     }
     return new AuthCtxImpl({
-      isInternal: false,
+      isInternal: (callAuthFlags & 1) !== 0,
       jwtSource: () => {
         const payloadBuf = sys.get_jwt_payload(connectionId.__connection_id__);
         if (payloadBuf.length === 0) return null;
@@ -240,7 +234,7 @@ export const ReducerCtxImpl = class ReducerCtx<
 > implements IReducerCtx<SchemaDef>
 {
   #identity: Identity | undefined;
-  #senderAuth: AuthCtx | undefined;
+  #senderAuth: AuthCtx;
   #uuidCounter: { value: number } | undefined;
   #random: Random | undefined;
   sender: Identity;
@@ -255,7 +249,8 @@ export const ReducerCtxImpl = class ReducerCtx<
     timestamp: Timestamp,
     connectionId: ConnectionId | null,
     dbView: DbView<any>,
-    asViews: object = {}
+    asViews: object = {},
+    senderAuth?: AuthCtx
   ) {
     Object.seal(this);
     this.sender = sender;
@@ -263,6 +258,13 @@ export const ReducerCtxImpl = class ReducerCtx<
     this.connectionId = connectionId;
     this.db = dbView as unknown as DbView<SchemaDef>;
     this.as = asViews as AliasViews<SchemaDef>;
+    this.#senderAuth =
+      senderAuth ??
+      AuthCtxImpl.fromSystemTables(
+        connectionId,
+        sender,
+        sys.get_call_auth_flags()
+      );
   }
 
   /** Reset the `ReducerCtx` to be used for a new transaction */
@@ -278,7 +280,11 @@ export const ReducerCtxImpl = class ReducerCtx<
     me.timestamp = timestamp;
     me.connectionId = connectionId;
     me.#uuidCounter = undefined;
-    me.#senderAuth = undefined;
+    me.#senderAuth = AuthCtxImpl.fromSystemTables(
+      connectionId,
+      sender,
+      sys.get_call_auth_flags()
+    );
     if (dbView !== undefined) {
       me.db = dbView;
     }
@@ -296,10 +302,7 @@ export const ReducerCtxImpl = class ReducerCtx<
   }
 
   get senderAuth() {
-    return (this.#senderAuth ??= AuthCtxImpl.fromSystemTables(
-      this.connectionId,
-      this.sender
-    ));
+    return this.#senderAuth;
   }
 
   get random() {

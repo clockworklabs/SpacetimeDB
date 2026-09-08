@@ -812,6 +812,7 @@ pub struct CallReducerParams {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,
     pub caller_connection_id: ConnectionId,
+    pub(crate) call_auth_flags: u32,
     pub client: Option<Arc<ClientConnectionSender>>,
     pub request_id: Option<RequestId>,
     pub timer: Option<Instant>,
@@ -832,6 +833,7 @@ impl CallReducerParams {
             timestamp,
             caller_identity,
             caller_connection_id: ConnectionId::ZERO,
+            call_auth_flags: 1,
             client: None,
             request_id: None,
             timer: None,
@@ -1211,6 +1213,7 @@ pub struct CallProcedureParams {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,
     pub caller_connection_id: ConnectionId,
+    pub(crate) call_auth_flags: u32,
     pub timer: Option<Instant>,
     pub procedure_id: ProcedureId,
     pub args: ArgsTuple,
@@ -1229,6 +1232,7 @@ impl CallProcedureParams {
             timestamp,
             caller_identity,
             caller_connection_id: ConnectionId::ZERO,
+            call_auth_flags: 1,
             timer: None,
             procedure_id,
             args,
@@ -2299,6 +2303,7 @@ impl ModuleHost {
             timestamp: Timestamp::now(),
             caller_identity,
             caller_connection_id,
+            call_auth_flags: 0,
             client,
             request_id,
             timer,
@@ -2326,7 +2331,10 @@ impl ModuleHost {
             return Err(ReducerCallError::LifecycleReducer(lifecycle));
         }
 
-        if reducer_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+        if !reducer_def
+            .visibility
+            .allows_invocation(false, self.is_database_owner(caller_identity))
+        {
             return Err(ReducerCallError::NoSuchReducer);
         }
 
@@ -2836,7 +2844,10 @@ impl ModuleHost {
             .procedure_by_name_with_module(procedure_name)
             .ok_or(ProcedureCallError::NoSuchProcedure)?;
 
-        if procedure_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
+        if !procedure_def
+            .visibility
+            .allows_invocation(false, self.is_database_owner(caller_identity))
+        {
             return Err(ProcedureCallError::NoSuchProcedure);
         }
 
@@ -2851,6 +2862,7 @@ impl ModuleHost {
                 timestamp: Timestamp::now(),
                 caller_identity,
                 caller_connection_id,
+                call_auth_flags: 0,
                 timer,
                 procedure_id,
                 args,

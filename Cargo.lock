@@ -3609,6 +3609,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "invocation-flags-test"
+version = "0.0.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

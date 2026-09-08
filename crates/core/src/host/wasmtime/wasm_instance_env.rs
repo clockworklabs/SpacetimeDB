@@ -338,6 +338,14 @@ impl WasmInstanceEnv {
         self.bytes_sinks.remove(&sink).unwrap_or_default()
     }
 
+    pub fn get_call_auth_flags(caller: Caller<'_, Self>) -> u32 {
+        caller.data().instance_env.get_call_auth_flags()
+    }
+
+    pub(crate) fn set_call_auth_flags(&mut self, flags: u32) {
+        self.instance_env.set_call_auth_flags(flags);
+    }
+
     /// Signal to this `WasmInstanceEnv` that a reducer or procedure call is beginning.
     ///
     /// Returns the handle used by reducers and procedures to read from `args`

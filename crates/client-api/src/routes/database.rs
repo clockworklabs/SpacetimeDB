@@ -533,7 +533,8 @@ where
     let module_def = &module.info.module_def;
     let response_json = match version {
         SchemaVersion::V9 => {
-            let raw = RawModuleDefV9::from(module_def.as_ref().clone());
+            let raw = RawModuleDefV9::try_from(module_def.as_ref().clone())
+                .map_err(|err| bad_request(err.to_string().into()))?;
             axum::Json(sats::serde::SerdeWrapper(raw)).into_response()
         }
         SchemaVersion::V10 => {

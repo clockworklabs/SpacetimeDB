@@ -546,7 +546,7 @@ fn with_tx(ctx: &mut ProcedureContext) {
 fn get_my_schema_via_http(ctx: &mut ProcedureContext) -> String {
     let module_identity = ctx.database_identity();
     match ctx.http.get(format!(
-        "http://localhost:3000/v1/database/{module_identity}/schema?version=9"
+        "http://localhost:3000/v1/database/{module_identity}/schema?version=10"
     )) {
         Ok(result) => result.into_body().into_string_lossy(),
         Err(e) => format!("{e}"),

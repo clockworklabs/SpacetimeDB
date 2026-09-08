@@ -219,6 +219,31 @@ RawConstraintDefV10 V10Builder::CreateUniqueConstraint(const std::string& table_
     };
 }
 
+void V10Builder::SetFunctionVisibility(const std::string& name, ::SpacetimeDB::FunctionVisibility visibility) {
+    FunctionVisibility declared;
+    switch (visibility) {
+        case ::SpacetimeDB::FunctionVisibility::Public: declared = FunctionVisibility::ExplicitClientCallable; break;
+        case ::SpacetimeDB::FunctionVisibility::Private: declared = FunctionVisibility::Private; break;
+        case ::SpacetimeDB::FunctionVisibility::Internal: declared = FunctionVisibility::Internal; break;
+        default:
+            SetConstraintRegistrationError("INVALID_FUNCTION_VISIBILITY", "function='" + name + "'");
+            return;
+    }
+    for (const auto& lifecycle : lifecycle_reducers_) {
+        if (lifecycle.function_name == name && declared != FunctionVisibility::Internal) {
+            SetConstraintRegistrationError("INVALID_LIFECYCLE_VISIBILITY", "function='" + name + "' must be Internal");
+            return;
+        }
+    }
+    for (auto& reducer : reducers_) {
+        if (reducer.source_name == name) { reducer.visibility = declared; return; }
+    }
+    for (auto& procedure : procedures_) {
+        if (procedure.source_name == name) { procedure.visibility = declared; return; }
+    }
+    SetConstraintRegistrationError("UNKNOWN_FUNCTION_VISIBILITY", "function='" + name + "' is not a reducer or procedure");
+}
+
 RawModuleDefV10 V10Builder::BuildModuleDef() const {
     RawModuleDefV10 v10_module;
 
@@ -227,27 +252,12 @@ RawModuleDefV10 V10Builder::BuildModuleDef() const {
     std::vector<RawReducerDefV10> reducers = reducers_;
     std::vector<RawProcedureDefV10> procedures = procedures_;
 
-    std::unordered_set<std::string> internal_functions;
-    for (const auto& lifecycle : lifecycle_reducers_) {
-        internal_functions.insert(lifecycle.function_name);
-    }
-    for (const auto& schedule : schedules_) {
-        internal_functions.insert(schedule.function_name);
-    }
-    for (auto& reducer : reducers) {
-        if (internal_functions.find(reducer.source_name) != internal_functions.end()) {
-            reducer.visibility = FunctionVisibility::Private;
-        }
-    }
-    for (auto& procedure : procedures) {
-        if (internal_functions.find(procedure.source_name) != internal_functions.end()) {
-            procedure.visibility = FunctionVisibility::Private;
-        }
-    }
-
     RawModuleDefV10Section section_typespace;
     section_typespace.set<0>(typespace_);
     v10_module.sections.push_back(section_typespace);
+    RawModuleDefV10Section capabilities;
+    capabilities.set<15>(std::vector<std::string>{"hosted_auth_v1"});
+    v10_module.sections.push_back(std::move(capabilities));
 
     if (!types.empty()) {
         RawModuleDefV10Section section_types;

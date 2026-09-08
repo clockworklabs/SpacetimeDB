@@ -1,5 +1,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
+pub use spacetimedb_lib::db::raw_def::v10::FunctionVisibility;
+
 use crate::query_builder::{FromWhere, HasCols, LeftSemiJoin, RawQuery, RightSemiJoin, Table as QbTable};
 use crate::table::IndexAlgo;
 use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, ViewContext};
@@ -158,6 +160,9 @@ pub trait FnInfo: ExplicitNames {
 
     /// The lifecycle of the function, if there is one.
     const LIFECYCLE: Option<LifecycleReducer> = None;
+
+    /// Explicit SpacetimeDB visibility; Rust item visibility is independent.
+    const DECLARED_VISIBILITY: Option<FunctionVisibility> = None;
 
     /// A description of the parameter names of the function.
     const ARG_NAMES: &'static [Option<&'static str>];
@@ -800,9 +805,13 @@ pub fn register_reducer<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl 
     register_describer(|module| {
         let params = A::schema::<I>(&mut module.inner);
         if let Some(lifecycle) = I::LIFECYCLE {
-            module.inner.add_lifecycle_reducer(lifecycle, I::NAME, params);
+            module
+                .inner
+                .add_lifecycle_reducer_with_visibility(lifecycle, I::NAME, params, I::DECLARED_VISIBILITY);
         } else {
-            module.inner.add_reducer(I::NAME, params);
+            module
+                .inner
+                .add_reducer_with_visibility(I::NAME, params, I::DECLARED_VISIBILITY);
         }
         module.reducers.push(I::INVOKE);
 
@@ -819,7 +828,9 @@ where
     register_describer(|module| {
         let params = A::schema::<I>(&mut module.inner);
         let ret_ty = <Ret as SpacetimeType>::make_type(&mut module.inner);
-        module.inner.add_procedure(I::NAME, params, ret_ty);
+        module
+            .inner
+            .add_procedure_with_visibility(I::NAME, params, ret_ty, I::DECLARED_VISIBILITY);
         module.procedures.push(I::INVOKE);
 
         module.inner.add_explicit_names(I::explicit_names());
@@ -981,6 +992,9 @@ extern "C" fn __describe_module__(description: BytesSink) {
     for describer in &mut *DESCRIBERS.lock().unwrap() {
         describer(&mut module)
     }
+
+    // These bindings capture host flags and preserve the verified sender in JWT claims.
+    module.inner.add_capability("hosted_auth_v1");
 
     // Serialize the module to bsatn.
     let module_def = module.inner.finish();

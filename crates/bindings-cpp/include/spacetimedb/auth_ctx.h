@@ -28,22 +28,25 @@ struct ConnectionId;
 class AuthCtx {
 private:
     bool is_internal_;
+    std::optional<Identity> verified_sender_;
     mutable std::shared_ptr<std::optional<JwtClaims>> jwt_;
     std::function<std::optional<JwtClaims>()> jwt_loader_;
 
     // Private constructor used by factory methods
-    AuthCtx(bool is_internal, std::function<std::optional<JwtClaims>()> loader);
+    AuthCtx(bool is_internal, std::function<std::optional<JwtClaims>()> loader,
+            std::optional<Identity> verified_sender = std::nullopt);
+    static AuthCtx from_connection_with_flags(ConnectionId connection_id, Identity sender, uint32_t flags);
 
 public:
     /**
      * @brief Creates an AuthCtx from an optional ConnectionId.
      * 
      * If the connection_id is present, creates an AuthCtx that will load the JWT.
-     * If the connection_id is absent, creates an internal AuthCtx.
+     * Internal authority is captured from the host, independently of connection presence.
      * 
      * @param connection_id Optional connection ID
-     * @param sender The identity of the caller (already derived from JWT claims by the host)
-     * @return An AuthCtx based on the connection_id
+     * @param sender The verified caller Identity supplied by the host
+     * @return An AuthCtx with captured invocation authority and lazy JWT loading
      */
     static AuthCtx from_connection_id_opt(std::optional<ConnectionId> connection_id, Identity sender);
 
@@ -63,11 +66,10 @@ public:
      * This is primarily used for testing purposes, allowing you to create
      * an AuthCtx with specific JWT claims without needing a real connection.
      * 
-     * Note: The Identity must be computed by calling the host function,
-     * as we cannot compute Blake3 hashes in WASM.
+     * The Identity must be the verified sender supplied by the host.
      * 
      * @param jwt_payload The raw JWT payload (JSON claims)
-     * @param identity The identity derived from the JWT's issuer and subject
+     * @param identity The verified sender Identity
      * @return An AuthCtx with the provided JWT
      */
     static AuthCtx from_jwt_payload(std::string jwt_payload, Identity identity);
@@ -76,11 +78,10 @@ public:
      * @brief Creates an AuthCtx that reads the JWT for the given connection ID.
      * 
      * The JWT will be lazily loaded from the host when first accessed.
-     * The identity parameter is the sender's identity, already derived from
-     * JWT claims by the host (using Blake3 hashing).
+     * The identity parameter is the verified sender supplied by the host.
      * 
      * @param connection_id The connection ID to load the JWT for
-     * @param sender The identity of the caller (already derived from JWT claims by the host)
+     * @param sender The verified sender Identity supplied by the host
      * @return An AuthCtx that will load the JWT on demand
      */
     static AuthCtx from_connection_id(ConnectionId connection_id, Identity sender);
@@ -93,9 +94,9 @@ public:
     bool is_internal() const { return is_internal_; }
 
     /**
-     * @brief Checks if there is a JWT without loading it.
+     * @brief Checks if there is a JWT, loading it lazily if necessary.
      * 
-     * If is_internal() returns true, this will return false.
+     * Independent of is_internal(). Internal calls can also have a JWT.
      * 
      * @return true if a JWT is available
      */
@@ -113,9 +114,8 @@ public:
     /**
      * @brief Gets the caller's identity.
      * 
-     * For internal calls, this returns the database's identity.
-     * For external calls, this returns the identity derived from the JWT
-     * (based on the issuer and subject claims).
+     * Returns the verified sender captured when constructing the context,
+     * independently of JWT presence or token claims.
      * 
      * @return The caller's Identity
      */
@@ -126,16 +126,16 @@ public:
 // INLINE IMPLEMENTATIONS
 // ============================================================================
 
-constexpr uint16_t ERROR_BUFFER_TOO_SMALL = 11;
-
-inline AuthCtx::AuthCtx(bool is_internal, std::function<std::optional<JwtClaims>()> loader)
-    : is_internal_(is_internal), jwt_loader_(std::move(loader)) {}
+inline AuthCtx::AuthCtx(bool is_internal, std::function<std::optional<JwtClaims>()> loader,
+                       std::optional<Identity> verified_sender)
+    : is_internal_(is_internal), verified_sender_(std::move(verified_sender)), jwt_loader_(std::move(loader)) {}
 
 inline AuthCtx AuthCtx::from_connection_id_opt(std::optional<ConnectionId> connection_id, Identity sender) {
+    const auto flags = FFI::get_call_auth_flags();
     if (connection_id.has_value()) {
-        return from_connection_id(*connection_id, std::move(sender));
+        return from_connection_with_flags(*connection_id, std::move(sender), flags);
     } else {
-        return internal();
+        return AuthCtx((flags & 1) != 0, []() -> std::optional<JwtClaims> { return std::nullopt; }, sender);
     }
 }
 
@@ -144,13 +144,17 @@ inline AuthCtx AuthCtx::internal() {
 }
 
 inline AuthCtx AuthCtx::from_jwt_payload(std::string jwt_payload, Identity identity) {
-    return AuthCtx(false, [payload = std::move(jwt_payload), id = std::move(identity)]() mutable -> std::optional<JwtClaims> {
+    return AuthCtx(false, [payload = std::move(jwt_payload), id = identity]() mutable -> std::optional<JwtClaims> {
         return JwtClaims(std::move(payload), std::move(id));
-    });
+    }, identity);
 }
 
 inline AuthCtx AuthCtx::from_connection_id(ConnectionId connection_id, Identity sender) {
-    return AuthCtx(false, [connection_id, sender]() -> std::optional<JwtClaims> {
+    return from_connection_with_flags(connection_id, std::move(sender), FFI::get_call_auth_flags());
+}
+
+inline AuthCtx AuthCtx::from_connection_with_flags(ConnectionId connection_id, Identity sender, uint32_t flags) {
+    return AuthCtx((flags & 1) != 0, [connection_id, sender]() -> std::optional<JwtClaims> {
         // Call the host FFI to get the JWT
         BytesSource jwt_source;
         
@@ -169,35 +173,24 @@ inline AuthCtx AuthCtx::from_connection_id(ConnectionId connection_id, Identity 
         }
         
         // Read the JWT payload from the BytesSource
-        std::vector<uint8_t> buffer;
-        buffer.resize(4096); // Start with 4KB buffer
-        
-        size_t buffer_len = buffer.size();
-        int16_t result = bytes_source_read(jwt_source, buffer.data(), &buffer_len);
-        
-        while (result == ERROR_BUFFER_TOO_SMALL) {
-            buffer.resize(buffer.size() * 2);
-            buffer_len = buffer.size();
-            result = bytes_source_read(jwt_source, buffer.data(), &buffer_len);
+        std::array<uint8_t, 4096> buffer;
+        std::string jwt_payload;
+        for (;;) {
+            size_t buffer_len = buffer.size();
+            const auto result = bytes_source_read(jwt_source, buffer.data(), &buffer_len);
+            if (result != 0 && result != -1) return std::nullopt;
+            jwt_payload.append(reinterpret_cast<const char*>(buffer.data()), buffer_len);
+            // -1 is successful exhaustion and may include the final payload bytes.
+            if (result == -1) break;
+            if (buffer_len == 0) return std::nullopt;
         }
-        
-        if (result < 0) {
-            return std::nullopt;
-        }
-        
-        // Convert bytes to string
-        std::string jwt_payload(buffer.begin(), buffer.begin() + buffer_len);
-        
-        // Use the provided sender identity (already computed by host from JWT claims)
+        if (jwt_payload.empty()) return std::nullopt;
+        // Token claims cannot override the verified sender, including hosted tokens.
         return JwtClaims(std::move(jwt_payload), sender);
-    });
+    }, sender);
 }
 
 inline bool AuthCtx::has_jwt() const {
-    if (is_internal_) {
-        return false;
-    }
-    
     // Load the JWT if not already loaded, then check if it has a value
     // This ensures has_jwt() and get_jwt() are consistent
     return get_jwt().has_value();
@@ -211,6 +204,7 @@ inline const std::optional<JwtClaims>& AuthCtx::get_jwt() const {
 }
 
 inline Identity AuthCtx::get_caller_identity() const {
+    if (verified_sender_.has_value()) return *verified_sender_;
     if (is_internal_) {
         // Return database identity for internal calls
         std::array<uint8_t, 32> identity_bytes;

@@ -199,18 +199,30 @@ namespace SpacetimeDB
         ClientDisconnected,
     }
 
+    /// <summary>Invocation admission for reducers and procedures.</summary>
+    public enum FunctionVisibility
+    {
+        /// <summary>Public for ordinary functions, Private for scheduled functions.</summary>
+        Default,
+        Public,
+        Private,
+        Internal,
+    }
+
     [AttributeUsage(AttributeTargets.Method, Inherited = false)]
     public sealed class ReducerAttribute(ReducerKind kind = ReducerKind.UserDefined) : Attribute
     {
         public ReducerKind Kind => kind;
 
         public string? Name { get; init; }
+        public FunctionVisibility Visibility { get; init; }
     }
 
     [AttributeUsage(AttributeTargets.Method, Inherited = false)]
     public sealed class ProcedureAttribute() : Attribute
     {
         public string? Name { get; init; }
+        public FunctionVisibility Visibility { get; init; }
     }
 
     [AttributeUsage(AttributeTargets.Method, Inherited = false)]

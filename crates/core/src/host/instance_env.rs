@@ -54,6 +54,7 @@ pub struct InstanceEnv {
     in_anon_tx: bool,
     /// A procedure's last known transaction offset.
     procedure_last_tx_offset: Option<TransactionOffset>,
+    call_auth_flags: u32,
 }
 
 /// `InstanceEnv` needs to be `Send` because it is created on the host thread
@@ -238,6 +239,7 @@ impl InstanceEnv {
             func_name: None,
             in_anon_tx: false,
             procedure_last_tx_offset: None,
+            call_auth_flags: 0,
         }
     }
 
@@ -252,6 +254,15 @@ impl InstanceEnv {
         self.start_instant = Instant::now();
         self.func_type = func_type;
         self.func_name = Some(name);
+        self.call_auth_flags = 0;
+    }
+
+    pub(crate) fn set_call_auth_flags(&mut self, flags: u32) {
+        self.call_auth_flags = flags;
+    }
+
+    pub(crate) fn get_call_auth_flags(&self) -> u32 {
+        self.call_auth_flags
     }
 
     /// Returns the name of the most recent reducer to be run in this environment,

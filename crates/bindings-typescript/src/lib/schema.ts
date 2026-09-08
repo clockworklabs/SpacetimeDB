@@ -200,6 +200,7 @@ export class ModuleContext {
     lifeCycleReducers: [],
     httpHandlers: [],
     httpRoutes: [],
+    capabilities: ['hosted_auth_v1'],
     caseConversionPolicy: { tag: 'SnakeCase' },
     explicitNames: {
       entries: [],
@@ -221,6 +222,7 @@ export class ModuleContext {
     const module = this.#moduleDef;
 
     push(module.typespace && { tag: 'Typespace', value: module.typespace });
+    push({ tag: 'Capabilities', value: module.capabilities });
     push(module.types && { tag: 'Types', value: module.types });
     push(module.tables && { tag: 'Tables', value: module.tables });
     push(module.reducers && { tag: 'Reducers', value: module.reducers });

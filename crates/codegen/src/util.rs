@@ -10,8 +10,8 @@ use convert_case::{Case, Casing};
 use itertools::Itertools;
 use spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb_lib::sats::layout::PrimitiveType;
+use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_lib::version;
-use spacetimedb_lib::{db::raw_def::v9::Lifecycle, sats::AlgebraicTypeRef};
 use spacetimedb_primitives::ColList;
 use spacetimedb_schema::{def::ViewDef, type_for_generate::ProductTypeDef};
 use spacetimedb_schema::{
@@ -99,31 +99,20 @@ pub(super) fn is_reducer_invokable(reducer: &ReducerDef) -> bool {
     reducer.lifecycle.is_none()
 }
 
-/// Iterate over all the [`ReducerDef`]s defined by the module, in alphabetical order by name.
-///
-/// Skipping the `init` reducer and internal [`FunctionVisibiity::Internal`] reducers because
-/// they should not be directly invokable.
-/// Sorting is not necessary for reducers because they are already stored in an IndexMap.
+/// Non-lifecycle reducer entry points in declaration order. Default clients see
+/// only public functions; IncludePrivate adds Private and Internal methods.
 pub(super) fn iter_reducers(module: &ModuleDef, visibility: CodegenVisibility) -> impl Iterator<Item = &ReducerDef> {
     module
         .reducers()
-        // `RawModuleDefV10` already marks all lifecycle reducers as private, but we keep
-        // this filter for backward compatibility with older versions where `init`
-        // reducers were not private.
-        .filter(|reducer| reducer.lifecycle != Some(Lifecycle::Init))
-        // Prior to `RawModuleDefV10`, all reducers were public by default. Filtering out
-        // internal reducers here does not break SDKs built against older versions.
+        .filter(|reducer| reducer.lifecycle.is_none())
         .filter(move |reducer| match visibility {
             CodegenVisibility::IncludePrivate => true,
-            CodegenVisibility::OnlyPublic => !reducer.visibility.is_private(),
+            CodegenVisibility::OnlyPublic => reducer.visibility.is_client_callable(),
         })
 }
 
-/// Iterate over all the [`ProcedureDef`]s defined by the module, in alphabetical order by name.
-///
-/// Skipping internal [`FunctionVisibiity::Internal`] procedures because they should not be
-/// directly invokable.
-/// Sorting is necessary to have deterministic reproducible codegen.
+/// Procedure entry points in alphabetical order. Default clients see only Public
+/// functions; IncludePrivate also generates Private and Internal methods.
 pub(super) fn iter_procedures(
     module: &ModuleDef,
     visibility: CodegenVisibility,
@@ -133,7 +122,7 @@ pub(super) fn iter_procedures(
         .sorted_by_key(|procedure| &procedure.name)
         .filter(move |procedure| match visibility {
             CodegenVisibility::IncludePrivate => true,
-            CodegenVisibility::OnlyPublic => !procedure.visibility.is_private(),
+            CodegenVisibility::OnlyPublic => procedure.visibility.is_client_callable(),
         })
 }
 
@@ -222,4 +211,65 @@ pub(super) fn iter_constraints(table: &TableDef) -> impl Iterator<Item = &Constr
 /// Sorting is necessary to have deterministic reproducible codegen.
 pub fn iter_types(module: &ModuleDef) -> impl Iterator<Item = &TypeDef> {
     module.types().sorted_by_key(|table| &table.accessor_name)
+}
+
+#[cfg(test)]
+mod visibility_tests {
+    use super::*;
+    use spacetimedb_lib::db::raw_def::{
+        v10::{FunctionVisibility, RawModuleDefV10Builder},
+        v9::Lifecycle,
+    };
+    use spacetimedb_lib::{AlgebraicType, ProductType};
+
+    #[test]
+    fn public_codegen_excludes_internal_private_and_every_lifecycle() {
+        let mut builder = RawModuleDefV10Builder::new();
+        builder.add_reducer("ordinary", ProductType::unit());
+        for (name, visibility) in [
+            ("public_function", FunctionVisibility::ClientCallable),
+            ("private_function", FunctionVisibility::Private),
+            ("internal_function", FunctionVisibility::Internal),
+        ] {
+            builder.add_reducer_with_visibility(name, ProductType::unit(), Some(visibility));
+            builder.add_procedure_with_visibility(
+                format!("{name}_procedure"),
+                ProductType::unit(),
+                AlgebraicType::unit(),
+                Some(visibility),
+            );
+        }
+        for (name, lifecycle) in [
+            ("init", Lifecycle::Init),
+            ("connect", Lifecycle::OnConnect),
+            ("disconnect", Lifecycle::OnDisconnect),
+        ] {
+            builder.add_lifecycle_reducer(lifecycle, name, ProductType::unit());
+        }
+        let module: ModuleDef = builder.finish().try_into().unwrap();
+        let names = |visibility| {
+            iter_reducers(&module, visibility)
+                .map(|r| &r.name[..])
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names(CodegenVisibility::OnlyPublic), ["ordinary", "public_function"]);
+        assert_eq!(
+            names(CodegenVisibility::IncludePrivate),
+            ["ordinary", "public_function", "private_function", "internal_function"]
+        );
+        let names = |visibility| {
+            iter_procedures(&module, visibility)
+                .map(|p| &p.name[..])
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names(CodegenVisibility::OnlyPublic), ["public_function_procedure"]);
+        assert_eq!(
+            names(CodegenVisibility::IncludePrivate),
+            [
+                "internal_function_procedure",
+                "private_function_procedure",
+                "public_function_procedure"
+            ]
+        );
+    }
 }
