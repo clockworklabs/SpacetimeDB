@@ -70,7 +70,9 @@ export function graph(view: CampaignProgression, stacks: readonly GraphStack[]):
     if (!at) return '';
     const dots = stacks.map((entry, column) =>
       `<circle class="d ${DOT[entry.statuses[at.index] ?? 'locked'] ?? 'o'}" `
-      + `cx="${at.x + DOT_START + column * DOT_SPACING}" cy="${at.y + 12}" r="4"/>`).join('');
+      + `cx="${at.x + DOT_START + column * DOT_SPACING}" cy="${at.y + 12}" r="4"/>`
+      + (entry.statuses[at.index] === 'passed'
+        ? `<path class="passed-check" transform="translate(${at.x + DOT_START + column * DOT_SPACING} ${at.y + 12})" d="M-2 0 L-.5 1.5 L2 -1.5"/>` : '')).join('');
     const hover = stacks.map(entry =>
       `${stackLabel(entry.stack)} ${statusWord(entry.statuses[at.index] ?? 'locked')}`).join(' · ');
     return `<g class="n"><title>${esc(`${node.title} · ${hover}`)}</title>`

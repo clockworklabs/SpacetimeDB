@@ -1,5 +1,5 @@
 /* Stack Bench dashboard: compact tables, sentence-case labels, and consistent spacing.
- * Brand colors identify stacks in charts. Status: amber active, green passed,
+ * Brand colors identify stacks in charts. Status: pulsing green active, static green checks passed,
  * red failed, yellow warning, gray pending. Completion alone is not success. */
 
 @font-face {
@@ -19,7 +19,7 @@
 
 :root {
   --green: #4cf490; --green-25: #4cf49040; --green-10: #4cf4901a;
-  --active: #f69d50; --active-ring: #f69d5040;
+  --active: var(--green); --active-ring: var(--green-25);
   --yellow: #fbdc8e; --yellow-25: #fbdc8e40; --yellow-10: #fbdc8e1a;
   --red: #ff4c4c;
   --n1: #e6e9f0; --n2: #ced3e0; --n3: #b6c0cf; --n4: #8d98a5; --n5: #363840; --n7: #050505;
@@ -136,7 +136,8 @@ table.plans td.name { color: var(--n1); font-weight: 600; min-width: 240px; max-
 .evhead .ev { display: grid; gap: 5px; padding: 8px 16px; border-left: 1px solid var(--shade4); min-height: 48px; min-width: 130px; }
 .evhead .ev:first-child { border-left: 0; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--shade1); flex: 0 0 auto; }
-.dot.p { background: var(--green); }
+.dot.p { position: relative; background: var(--green); }
+.dot.p::after { content: ""; position: absolute; left: 3px; top: 1px; width: 2px; height: 4px; border: solid var(--shade7); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
 .dot.a { background: var(--active); box-shadow: 0 0 0 2px var(--active-ring); }
 .dot.f { background: var(--red); }
 .dot.b { background: transparent; border: 1.5px solid var(--red); }
@@ -307,3 +308,5 @@ main[aria-busy="true"]:not(:has(.loading))::before { content: ''; position: fixe
 .dot.a, .dag .d.a { animation: activity-pulse 2.8s ease-in-out infinite; }
 @keyframes activity-pulse { 50% { opacity: .4; } }
 @media (prefers-reduced-motion: reduce) { .dot.a, .dag .d.a { animation: none; } }
+
+.dag .passed-check { fill: none; stroke: var(--shade7); stroke-width: 1.2; }

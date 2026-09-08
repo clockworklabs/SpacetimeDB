@@ -30,6 +30,7 @@ for (const count of [1, 4, 6]) {
     }, Array.from({ length: count }, (_, index) => ({ stack: `stack-${index}`, statuses: ['passed', 'active'] })));
     const groups = [...html.matchAll(/<g class="n">([\s\S]*?)<\/g>/g)];
     assert.equal(groups.length, 2);
+    assert.equal((html.match(/class="passed-check"/g) ?? []).length, count);
     let previousRight = 0;
     for (const group of groups) {
       const rect = /<rect x="([\d.]+)" y="[\d.]+" width="([\d.]+)"/.exec(group[1]!);
