@@ -46,7 +46,7 @@ export function ratio(used: number | null | undefined, budget: number | null | u
 
 export function money(value: number | null | undefined): string {
   if (value == null) return DASH;
-  return value >= 10 ? `$${Math.round(value)}` : `$${value.toFixed(2)}`;
+  return `$${value.toFixed(2)}`;
 }
 
 export function spend(value: CostEvidence): string {
@@ -66,8 +66,14 @@ export function elapsed(startedAt: string | null, completedAt: string | null,
   if (startedAt === null) return DASH;
   const start = Date.parse(startedAt);
   const end = completedAt === null ? now : Date.parse(completedAt);
-  return Number.isFinite(start) && Number.isFinite(end)
-    ? duration(Math.max(0, end - start) / 1000) : DASH;
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return DASH;
+  const seconds = Math.floor(Math.max(0, end - start) / 1000);
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes >= 60 ? `${Math.floor(minutes / 60)}h ` : ''}${minutes % 60}m ${seconds % 60}s`;
+}
+
+export function executionClock(startedAt: string | null, completedAt: string | null): string {
+  return `<span${startedAt && !completedAt ? ` data-started-at="${esc(startedAt)}"` : ''}>${elapsed(startedAt, completedAt)}</span>`;
 }
 
 export function since(value: string | null | undefined, now = Date.now()): string {

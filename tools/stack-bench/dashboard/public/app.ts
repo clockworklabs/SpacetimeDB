@@ -13,7 +13,7 @@ import { type AttemptTab, attemptPage } from './views/attempt.js';
 import { type CampaignFilter, campaignsPage } from './views/campaigns.js';
 import { type Page, type RunForm, afterRun, plansPage, runName, topbar }
   from './views/plans.js';
-import { esc } from './format.js';
+import { elapsed, esc } from './format.js';
 
 const FALLBACK_MS = 15_000;
 const TABS: readonly AttemptTab[] = ['checks', 'screenshots', 'files', 'log'];
@@ -46,6 +46,8 @@ const state = {
 let fallback = 0;
 let playing = 0;
 let submitting = false;
+let loading = false;
+let loadVersion = 0;
 
 function route(): Route {
   const url = new URL(location.href);
@@ -64,16 +66,18 @@ function route(): Route {
 }
 
 async function read<Payload>(url: string): Promise<Payload | null> {
+  const version = loadVersion;
   try {
-    const response = await fetch(url, { headers: { accept: 'application/json' } });
+    const response = await fetch(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(30_000) });
     if (!response.ok) {
       const failure = await response.json().catch(() => ({})) as { error?: string };
-      state.readError = failure.error ?? `Request failed (${response.status}).`;
+      if (version === loadVersion) state.readError = failure.error ?? `Request failed (${response.status}).`;
       return null;
     }
-    return await response.json() as Payload;
+    const payload = await response.json() as Payload;
+    return version === loadVersion ? payload : null;
   } catch {
-    state.readError = 'Cannot reach the dashboard. Check that its container is running.';
+    if (version === loadVersion) state.readError = 'The dashboard did not respond. Check its connection and try again.';
     return null;
   }
 }
@@ -86,11 +90,15 @@ function attemptUrl(current: Route, suffix: string): string {
 async function readLog(current: Route): Promise<void> {
   if (state.log.attempt !== current.attempt) state.log = { attempt: current.attempt, text: '', offset: 0 };
   try {
-    const response = await fetch(attemptUrl(current, `log?from=${state.log.offset}`));
-    if (!response.ok) return;
-    state.log.text += await response.text();
+    const response = await fetch(attemptUrl(current, `log?from=${state.log.offset}`), { signal: AbortSignal.timeout(30_000) });
+    if (!response.ok) throw new Error('Log request failed');
+    const text = await response.text();
+    if (state.log.attempt !== current.attempt) return;
+    state.log.text += text;
     state.log.offset = Number(response.headers.get('x-stack-bench-log-offset') ?? state.log.offset);
-  } catch { /* the stream reconnects and asks again */ }
+  } catch {
+    if (route().attempt === current.attempt) state.readError = 'Could not load the run log. Try again.';
+  }
 }
 
 function chrome(current: Route): string {
@@ -168,9 +176,10 @@ function render(): void {
   const current = route();
   const root = document.body;
   const next = document.createElement('body');
-  next.innerHTML = `${chrome(current)}<main>`
-    + (state.readError ? `<div class="page err" role="alert">${esc(state.readError)}</div>` : '')
-    + `${page(current)}</main>`;
+  next.innerHTML = `${chrome(current)}<main aria-busy="${loading}">`
+    + (state.readError ? `<div class="page err" role="alert">${esc(state.readError)} <button type="button" data-retry>Retry</button></div>` : '')
+    + (loading ? '<div class="page loading" role="status">Loading page…</div>' : page(current))
+    + '</main>';
   patch(root, next);
   // The secret and the run name live in the tab, never in the markup.
   for (const field of document.querySelectorAll<HTMLInputElement>('form[data-run] input')) {
@@ -186,18 +195,37 @@ function render(): void {
   }
 }
 
-async function load(): Promise<void> {
+async function load(navigation = false): Promise<void> {
+  if (loading && !navigation) return;
+  const version = ++loadVersion;
+  loading = navigation;
   state.readError = '';
+  if (navigation) render();
+  try {
+    await loadData(version);
+  } catch {
+    if (version === loadVersion) state.readError = 'Could not load this page. Try again.';
+  } finally {
+    if (version === loadVersion) {
+      loading = false;
+      render();
+    }
+  }
+}
+
+async function loadData(version: number): Promise<void> {
   const current = route();
   if (!current.key || !state.csrfToken) {
     const overview = await read<{ campaigns: OverviewEntry[]; canStart: boolean;
       csrfToken: string; }>('/api/overview');
+    if (version !== loadVersion) return;
     if (overview) Object.assign(state, { overview: overview.campaigns,
       canStart: overview.canStart, csrfToken: overview.csrfToken });
     render();
   }
   if (current.plans) {
     const plans = await read<DashboardPlan[]>('/api/plans');
+    if (version !== loadVersion) return;
     if (plans) state.plans = plans;
     const first = state.plans.find(plan => plan.state === 'frozen');
     if (first && !state.form.planId) {
@@ -209,18 +237,22 @@ async function load(): Promise<void> {
   if (!current.key) {
     for (const campaign of state.overview.filter(entry => entry.status === 'running')) {
       const sheet = await read<CampaignSheet>(`/api/campaigns/${encodeURIComponent(campaign.key)}`);
+      if (version !== loadVersion) return;
       if (sheet) state.sheets.set(campaign.key, sheet);
       render();
     }
     return;
   }
   const sheet = await read<CampaignSheet>(`/api/campaigns/${encodeURIComponent(current.key)}`);
+  if (version !== loadVersion) return;
   if (sheet) state.sheets.set(current.key, sheet);
   render();
   if (sheet?.mode === 'dependency' && current.view !== 'grid'
     && !state.progression.has(current.key)) {
-    state.progression.set(current.key, await read<CampaignProgression>(
-      `/api/campaigns/${encodeURIComponent(current.key)}/progression`));
+    const progression = await read<CampaignProgression>(
+      `/api/campaigns/${encodeURIComponent(current.key)}/progression`);
+    if (version !== loadVersion) return;
+    if (progression) state.progression.set(current.key, progression);
     render();
   }
   if (!current.attempt) return;
@@ -239,7 +271,7 @@ async function load(): Promise<void> {
 
 function go(href: string): void {
   history.pushState(null, '', href);
-  void load();
+  void load(true);
 }
 
 function stepTo(offset: number): void {
@@ -298,6 +330,10 @@ for (const type of ['pointerout', 'focusout']) document.addEventListener(type, e
 document.addEventListener('click', event => {
   if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey
     || event.shiftKey || event.altKey) return;
+  if ((event.target as Element | null)?.closest('[data-retry]')) {
+    void load(true);
+    return;
+  }
   const shot = (event.target as Element | null)?.closest<HTMLElement>('[data-shot]');
   if (shot) {
     const dialog = document.querySelector<HTMLDialogElement>('.lightbox');
@@ -392,6 +428,11 @@ document.addEventListener('keydown', event => {
   }
 });
 
-window.addEventListener('popstate', () => void load());
+window.setInterval(() => {
+  for (const clock of document.querySelectorAll<HTMLElement>('[data-started-at]')) {
+    clock.textContent = elapsed(clock.dataset.startedAt ?? null, null);
+  }
+}, 1000);
+window.addEventListener('popstate', () => void load(true));
 subscribe();
-void load();
+void load(true);

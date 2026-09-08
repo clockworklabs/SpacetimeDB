@@ -1,8 +1,26 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseRunProgress } from '../../dashboard/dashboard-model.js';
-import { elapsed } from '../../dashboard/public/format.js';
+import { elapsed, executionClock } from '../../dashboard/public/format.js';
 import { compareCampaign, type MetricAttempt } from '../../dashboard/public/metrics.js';
+import { recordedExecutionSpend } from '../../src/campaigns/campaign-inspection.js';
+import { runCostEvidence } from '../../src/evidence/cost-proof.js';
+
+test('live spend validates recorded sessions without treating them as final execution cost', () => {
+  const session = (costUsd: number) => ({ costUsd, costComplete: true,
+    costReceipts: [{ receipt: { costUsd, exact: true, complete: true, reconciled: true, error: null } }] });
+  const run = { progressionResume: { inheritedLevels: [1] }, levels: [
+    { level: 1, buildSessions: [session(100)] },
+    { level: 2, buildSessions: [session(2)], repairSessions: [session(3)] },
+  ] };
+  assert.deepEqual(recordedExecutionSpend(run), { status: 'exact', costUsd: 5 });
+  assert.equal(runCostEvidence(run, 'execution').status, 'unknown');
+  run.levels[1]!.repairSessions!.push(session(4));
+  assert.equal(recordedExecutionSpend(run).costUsd, 9);
+  run.levels[1]!.repairSessions![0]!.costComplete = false;
+  assert.equal(recordedExecutionSpend(run).status, 'unknown');
+  assert.equal(recordedExecutionSpend({}).status, 'unknown');
+});
 
 test('cost per valid run uses only completed comparable runs with complete exact costs', () => {
   const run: MetricAttempt = {
@@ -33,11 +51,14 @@ test('execution elapsed time uses the execution clock, and stops at completion',
   const start = '2026-09-07T12:00:00Z';
   const end = '2026-09-07T12:03:00Z';
   const now = Date.parse('2026-09-07T12:05:00Z');
-  assert.equal(elapsed(start, null, now), '5m');
-  assert.equal(elapsed(start, end, now), '3m');
+  assert.equal(elapsed(start, null, now), '5m 0s');
+  assert.equal(elapsed(start, null, now + 1000), '5m 1s');
+  assert.equal(elapsed(start, end, now), '3m 0s');
+  assert.match(executionClock(start, null), /data-started-at=/);
+  assert.doesNotMatch(executionClock(start, end), /data-started-at=/);
   assert.equal(elapsed(null, null, now), '—');
   assert.equal(elapsed('invalid', null, now), '—');
-  assert.equal(elapsed(start, null, Date.parse(start) - 1), '0m');
+  assert.equal(elapsed(start, null, Date.parse(start) - 1), '0m 0s');
 });
 
 test('stopped attempts do not claim a previous grading or repair phase is live', () => {

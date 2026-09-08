@@ -4,7 +4,7 @@
 import type { AttemptCheck, AttemptChecks, AttemptPackage, CampaignSheet, SheetAttempt, SheetStack }
   from '../../dashboard-views.js';
 import { bigClimb } from '../climb.js';
-import { DASH, duration, elapsed, esc, metricLabel, spend, pct, phrase, ratio, stackLabel } from '../format.js';
+import { DASH, duration, executionClock, esc, metricLabel, spend, pct, phrase, ratio, stackLabel } from '../format.js';
 
 export type AttemptTab = 'checks' | 'screenshots' | 'files' | 'log';
 
@@ -103,7 +103,7 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log }: At
     Repairs: 'Completed repairs out of the planned allowance for this attempt. Per-feature limits still apply.',
     Elapsed: 'Wall time for this execution. This is separate from measured run duration.',
     Time: 'Recorded attempt duration. A dash means duration evidence is not yet available.',
-    Spend: 'Cost from recorded usage and the pinned price snapshot. Unknown is not zero; an upper bound starts with an inequality sign.',
+    Spend: 'Cost from recorded usage and the pinned price snapshot. During a run, this updates when session evidence is saved; the current session is not yet included. Unknown is not zero; an upper bound starts with an inequality sign.',
   };
   const figure = (label: string, text: string, tone = ''): string =>
     `<div><div class="metric-label">${metricLabel(label, help[label])}</div><b class="${tone}">${text}</b></div>`;
@@ -126,13 +126,13 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log }: At
     + `<span>rep ${attempt.repetition}</span></h2></div>`
     + (sheet.provisional ? '<p class="summary-note">Provisional results: qualification is incomplete.</p>' : '')
     + `<div class="figs">${figure('Completion', attempt.completion ? ratio(attempt.completion.passed, attempt.completion.selected) : DASH)}`
-    + figure('Spend', spend(attempt.spend) + (attempt.spendPending ? ' (usage pending)' : ''))
+    + figure('Spend', spend(attempt.spend) + (attempt.spendPending ? ' (recorded so far)' : ''))
     + figure('Status', esc(phrase(attempt)), attempt.stalling ? 'now warn' : 'now')
     + figure('Weighted score', pct(attempt.score), sheet.provisional ? 'prov' : '')
     + figure('Unaided', pct(attempt.unaided))
     + figure('Repairs', ratio(attempt.repairs.used, attempt.repairs.budget))
     + figure('Elapsed', attempt.status === 'running' || attempt.executionCompletedAt
-      ? elapsed(attempt.executionStartedAt, attempt.executionCompletedAt) : DASH)
+      ? executionClock(attempt.executionStartedAt, attempt.executionCompletedAt) : DASH)
     + figure('Time', duration(attempt.timeSec))
     + `</div>${issue}${dependency}<h3>Grade history</h3>${bigClimb(attempt.climb, stage)}`
     + `<div class="tabs">${tabs}</div>${panel}</div>`;

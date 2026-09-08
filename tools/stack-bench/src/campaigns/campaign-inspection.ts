@@ -16,7 +16,7 @@ import { campaignGradingQualification, campaignProgressionOwner } from './campai
 import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
 import type { DependencyPromptSelection } from '../progression/dependency-mode.js';
 import { validateCampaignRun } from './campaign-run-validation.js';
-import { runCostEvidence, sessionCostEvidence, type CostEvidence } from '../evidence/cost-proof.js';
+import { runCostEvidence, sessionCostEvidence, type CostEvidence, type CostRun } from '../evidence/cost-proof.js';
 import type { RunSessionRecord } from '../evidence/benchmark-run.js';
 import type { CheckCompletion } from '../evidence/check-completion.js';
 
@@ -403,6 +403,17 @@ export function dependencyProgress(plan: CompiledCampaignPlan, attempt: Campaign
   }
 }
 
+/** Display-only recorded sessions. This is not a complete execution cost. */
+export function recordedExecutionSpend(run: CostRun): CostEvidence {
+  try {
+    const inherited = new Set(run.progressionResume?.inheritedLevels ?? []);
+    const sessions = (run.levels ?? []).filter(level => !inherited.has(level.level))
+      .flatMap(level => [...(level.buildSessions ?? []), ...(level.repairSessions ?? []),
+        ...(level.resumeSession ? [level.resumeSession] : [])]);
+    return sessions.length ? sessionCostEvidence(sessions) : { status: 'unknown', costUsd: null };
+  } catch { return { status: 'unknown', costUsd: null }; }
+}
+
 export function inspectCampaignAttempt(plan: CompiledCampaignPlan, attempt: CampaignAttemptState,
   directory: string) {
   const execution = attempt.executions.at(-1) ?? null;
@@ -424,7 +435,9 @@ export function inspectCampaignAttempt(plan: CompiledCampaignPlan, attempt: Camp
         || canonicalDefinitionJson(run.pricing) !== canonicalDefinitionJson(attempt.plan.pricing)) {
         throw new Error('cost evidence belongs to another variant');
       }
-      return { cost: runCostEvidence(run, 'execution') };
+      return { cost: runCostEvidence(run, 'execution'),
+        recorded: attempt.status === 'running' && item.id === execution?.id
+          ? recordedExecutionSpend(run) : null };
     } catch { return { cost: { status: 'unknown' as const, costUsd: null } }; }
   });
   const dependency = dependencyProgress(plan, attempt.plan, executionDirectory);
@@ -434,7 +447,7 @@ export function inspectCampaignAttempt(plan: CompiledCampaignPlan, attempt: Camp
     comparisonKey: campaignComparisonKey(attempt.plan),
     variantLabel: `${attempt.plan.model} / ${attempt.plan.guidance} / ${attempt.plan.condition.id}`,
     cost: costs.at(-1)?.cost ?? { status: 'unknown' as const, costUsd: null },
-    spend: executionSpend(costs),
+    spend: executionSpend(costs.map(item => ({ cost: item.recorded ?? item.cost }))),
     completion: dependency?.score?.completion ?? result?.completion ?? null,
     stack: attempt.plan.stack,
     model: attempt.plan.model,

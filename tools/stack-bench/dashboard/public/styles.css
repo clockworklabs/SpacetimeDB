@@ -262,5 +262,16 @@ table.plans td.name { color: var(--n1); font-weight: 600; }
 .explore { position: relative; }
 .explore summary { cursor: pointer; color: var(--n3); font-size: 12px; padding: 6px 0; }
 .explore nav { position: absolute; right: 0; z-index: 2; padding: 10px; border: 1px solid var(--shade1); border-radius: 4px; background: var(--shade5); }
-table.attempt-list .run-status { min-width: 220px; max-width: 360px; padding-block: 10px; white-space: normal; overflow-wrap: anywhere; }
+table.attempt-list { table-layout: fixed; min-width: 960px; }
+table.attempt-list th:first-child { width: 24%; }
+table.attempt-list th:nth-child(2) { width: 12%; }
+table.attempt-list th:nth-child(3), table.attempt-list th:nth-child(4) { width: 10%; }
+table.attempt-list th:nth-child(5) { width: 14%; }
+table.attempt-list td { white-space: normal; overflow-wrap: anywhere; }
+table.attempt-list .run-status { padding-block: 10px; }
 .run-status summary { cursor: pointer; color: var(--yellow); }
+.loading { display: flex; align-items: center; gap: 12px; min-height: 140px; color: var(--n3); }
+.loading::before { content: ''; width: 16px; height: 16px; border: 2px solid var(--shade1); border-top-color: var(--green); border-radius: 50%; animation: loading-spin 1s linear infinite; }
+@keyframes loading-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .loading::before { animation: none; } }
+[data-started-at] { font-variant-numeric: tabular-nums; white-space: nowrap; }
