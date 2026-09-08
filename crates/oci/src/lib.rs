@@ -57,14 +57,14 @@ impl Platform {
             && self.architecture == requested.architecture
             && self.os_version.as_deref().is_none_or(str::is_empty)
             && self.os_features.is_empty()
-            && match (self.architecture.as_str(), self.variant.as_deref()) {
-                (_, None | Some("")) | ("arm64", Some("v8")) => true,
-                _ => false,
-            }
+            && matches!(
+                (self.architecture.as_str(), self.variant.as_deref()),
+                (_, None | Some("")) | ("arm64", Some("v8"))
+            )
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Manifest {
     pub schema_version: u32,
@@ -196,7 +196,7 @@ fn validate_platform(platform: &ImagePlatform) -> Result<()> {
     Ok(())
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ImageConfig {
     pub architecture: String,
     pub os: String,
@@ -207,7 +207,7 @@ pub struct ImageConfig {
     pub rootfs: RootFs,
 }
 
-#[derive(Clone, Default, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ContainerConfig {
     #[serde(default)]
@@ -244,7 +244,7 @@ impl std::fmt::Debug for ContainerConfig {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RootFs {
     #[serde(rename = "type")]
     pub kind: String,

@@ -1776,7 +1776,13 @@ pub struct BroadcastQueue(SenderWithGauge<SendWorkerMessage>);
 
 #[derive(thiserror::Error, Debug)]
 #[error(transparent)]
-pub struct BroadcastError(#[from] mpsc::error::SendError<SendWorkerMessage>);
+pub struct BroadcastError(Box<mpsc::error::SendError<SendWorkerMessage>>);
+
+impl From<mpsc::error::SendError<SendWorkerMessage>> for BroadcastError {
+    fn from(error: mpsc::error::SendError<SendWorkerMessage>) -> Self {
+        Self(Box::new(error))
+    }
+}
 
 impl BroadcastQueue {
     fn send(&self, message: SendWorkerMessage) -> Result<(), BroadcastError> {

@@ -138,6 +138,254 @@ fn deployment_and_module_effects_roll_back_together() {
 }
 
 #[test]
+fn publication_abort_closes_delayed_commits_and_cannot_reopen_its_epoch() {
+    let db = TestDB::in_memory().unwrap();
+    let first = request(1, None);
+    let limits = ContainerSpecLimits::default();
+    transact(&db, |tx| {
+        install_publication_fence(tx, first.publication_epoch, first.operation_id)
+    })
+    .unwrap();
+    let aborted = AbortResult::Aborted {
+        previous_revision: None,
+    };
+    assert_eq!(
+        transact(&db, |tx| abort_deployment_commit(tx, &first)).unwrap(),
+        aborted
+    );
+    transact(&db, |tx| {
+        assert_eq!(abort_deployment_commit(tx, &first)?, aborted);
+        assert!(matches!(
+            record_deployment_commit(tx, &first, now(), &limits),
+            Err(DeploymentError::PublicationFenced)
+        ));
+        assert!(matches!(
+            install_publication_fence(tx, first.publication_epoch, first.operation_id),
+            Err(DeploymentError::PublicationFenced)
+        ));
+        assert!(matches!(
+            install_publication_fence(tx, first.publication_epoch + 1, Uuid::NIL),
+            Err(DeploymentError::PublicationFenced)
+        ));
+        assert!(current_deployment(tx)?.is_none());
+        let second = request(2, None);
+        install_publication_fence(tx, second.publication_epoch, second.operation_id)?;
+        let result = record_deployment_commit(tx, &second, now(), &limits)?;
+        assert!(matches!(
+            abort_deployment_commit(tx, &first),
+            Err(DeploymentError::PublicationFenced)
+        ));
+        assert_eq!(current_deployment(tx)?.unwrap().0, result.revision);
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn publication_commit_winning_abort_race_is_never_reported_as_aborted() {
+    let db = TestDB::in_memory().unwrap();
+    let first = request(1, None);
+    let limits = ContainerSpecLimits::default();
+    let committed = transact(&db, |tx| {
+        install_publication_fence(tx, first.publication_epoch, first.operation_id)?;
+        record_deployment_commit(tx, &first, now(), &limits)
+    })
+    .unwrap();
+    let second = request(2, Some(committed.revision));
+    transact(&db, |tx| {
+        assert_eq!(
+            abort_deployment_commit(tx, &first)?,
+            AbortResult::AlreadyCommitted(committed.clone())
+        );
+        install_publication_fence(tx, second.publication_epoch, second.operation_id)?;
+        record_deployment_commit(tx, &second, now(), &limits)?;
+        assert_eq!(
+            abort_deployment_commit(tx, &first)?,
+            AbortResult::AlreadyCommitted(committed)
+        );
+        assert!(matches!(
+            check_deployment_commit(tx, &second, now(), &limits)?,
+            CommitAdmission::AlreadyCommitted(_)
+        ));
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn publication_abort_rollback_does_not_report_a_closed_fence() {
+    let db = TestDB::in_memory().unwrap();
+    let request = request(1, None);
+    let limits = ContainerSpecLimits::default();
+    transact(&db, |tx| {
+        install_publication_fence(tx, request.publication_epoch, request.operation_id)
+    })
+    .unwrap();
+    let failed: Result<(), DeploymentError> = transact(&db, |tx| {
+        abort_deployment_commit(tx, &request)?;
+        Err(DeploymentError::CorruptMetadata)
+    });
+    assert!(failed.is_err());
+    transact(&db, |tx| {
+        assert!(matches!(
+            check_deployment_commit(tx, &request, now(), &limits)?,
+            CommitAdmission::Ready
+        ));
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn recovery_of_expired_publication_preserves_commits_and_closes_uncommitted_epochs() {
+    let db = TestDB::in_memory().unwrap();
+    let first = request(1, None);
+    let limits = ContainerSpecLimits::default();
+    let committed = transact(&db, |tx| {
+        install_publication_fence(tx, first.publication_epoch, first.operation_id)?;
+        record_deployment_commit(tx, &first, now(), &limits)
+    })
+    .unwrap();
+    let expired = Timestamp::from_micros_since_unix_epoch(
+        now().to_micros_since_unix_epoch() + (PUBLISH_RETRY_WINDOW_MS * 1000) as i64,
+    );
+    let second = request(2, Some(committed.revision));
+    transact(&db, |tx| {
+        assert!(matches!(
+            check_deployment_commit(tx, &first, expired, &limits),
+            Err(DeploymentError::Validation(DeploymentValidationError::ExpiredOperation))
+        ));
+        assert_eq!(committed_deployment_operation(tx, &first)?, Some(committed.clone()));
+        assert_eq!(
+            abort_deployment_commit(tx, &first)?,
+            AbortResult::AlreadyCommitted(committed.clone())
+        );
+        let mut wrong_publisher = first.clone();
+        wrong_publisher.publisher = Identity::ZERO;
+        assert!(matches!(
+            committed_deployment_operation(tx, &wrong_publisher),
+            Err(DeploymentError::OperationConflict)
+        ));
+        install_publication_fence(tx, second.publication_epoch, second.operation_id)?;
+        assert!(matches!(
+            check_deployment_commit(tx, &second, expired, &limits),
+            Err(DeploymentError::Validation(DeploymentValidationError::ExpiredOperation))
+        ));
+        assert_eq!(
+            abort_deployment_commit(tx, &second)?,
+            AbortResult::Aborted {
+                previous_revision: Some(committed.revision)
+            }
+        );
+        // Clock rollback cannot make a delayed old commit admissible again.
+        assert!(matches!(
+            check_deployment_commit(tx, &second, now(), &limits),
+            Err(DeploymentError::PublicationFenced)
+        ));
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn publication_abort_and_commit_receipts_survive_commitlog_replay() {
+    let db = TestDB::durable_without_snapshot_repo().unwrap();
+    let first = request(1, None);
+    let limits = ContainerSpecLimits::default();
+    transact(&db, |tx| {
+        install_publication_fence(tx, first.publication_epoch, first.operation_id)?;
+        abort_deployment_commit(tx, &first)
+    })
+    .unwrap();
+    let db = db.reopen().unwrap();
+    let second = request(2, None);
+    let committed = transact(&db, |tx| {
+        assert_eq!(
+            abort_deployment_commit(tx, &first)?,
+            AbortResult::Aborted {
+                previous_revision: None
+            }
+        );
+        assert!(matches!(
+            record_deployment_commit(tx, &first, now(), &limits),
+            Err(DeploymentError::PublicationFenced)
+        ));
+        assert!(matches!(
+            install_publication_fence(tx, first.publication_epoch, first.operation_id),
+            Err(DeploymentError::PublicationFenced)
+        ));
+        install_publication_fence(tx, second.publication_epoch, second.operation_id)?;
+        record_deployment_commit(tx, &second, now(), &limits)
+    })
+    .unwrap();
+    let db = db.reopen().unwrap();
+    db.with_read_only(Workload::ForTests, |tx| {
+        assert_eq!(
+            committed_deployment_operation(tx, &second).unwrap(),
+            Some(committed.clone())
+        );
+        assert_eq!(current_deployment(tx).unwrap().unwrap().0, committed.revision);
+    });
+    assert_eq!(
+        transact(&db, |tx| abort_deployment_commit(tx, &second)).unwrap(),
+        AbortResult::AlreadyCommitted(committed)
+    );
+}
+
+#[test]
+fn publication_recovery_does_not_reapply_tightened_resource_admission() {
+    use spacetimedb_lib::container::{
+        ContainerMode, ContainerResources, ContainerSpec, ImagePlatform, OciDigest, RestartPolicy,
+    };
+    let db = TestDB::in_memory().unwrap();
+    let mut first = request(1, None);
+    let DeploymentSpec::V1(spec) = &mut first.deployment;
+    spec.container = Some(ContainerSpec {
+        image_manifest: OciDigest::sha256([7; 32]),
+        image_platform: ImagePlatform {
+            os: "linux".into(),
+            architecture: "arm64".into(),
+        },
+        argv: vec!["/app/server".into()],
+        user: "1000:1000".into(),
+        working_directory: "/app".into(),
+        mode: ContainerMode::Service,
+        restart: RestartPolicy::OnFailure,
+        env_keys: vec![],
+        resources: ContainerResources {
+            cpu_millicores: 1000,
+            memory_bytes: 64 * 1024 * 1024,
+            scratch_bytes: 64 * 1024 * 1024,
+            pids_max: 64,
+        },
+        ports: vec![],
+        mounts: vec![],
+        stop_grace_ms: 10_000,
+    });
+    let original_limits = ContainerSpecLimits::default();
+    let committed = transact(&db, |tx| {
+        install_publication_fence(tx, first.publication_epoch, first.operation_id)?;
+        record_deployment_commit(tx, &first, now(), &original_limits)
+    })
+    .unwrap();
+    let mut tightened = original_limits;
+    tightened.resources.cpu_millicores = 500;
+    let mut second = request(2, Some(committed.revision));
+    second.deployment = first.deployment.clone();
+    transact(&db, |tx| {
+        assert!(first.deployment.clone().normalize(&tightened).is_err());
+        assert!(matches!(check_deployment_commit(tx, &first, now(), &tightened)?, CommitAdmission::AlreadyCommitted(ref result) if result == &committed));
+        assert_eq!(committed_deployment_operation(tx, &first)?, Some(committed.clone()));
+        assert_eq!(abort_deployment_commit(tx, &first)?, AbortResult::AlreadyCommitted(committed.clone()));
+        install_publication_fence(tx, second.publication_epoch, second.operation_id)?;
+        assert!(check_deployment_commit(tx, &second, now(), &tightened).is_err());
+        assert_eq!(abort_deployment_commit(tx, &second)?, AbortResult::Aborted { previous_revision: Some(committed.revision) });
+        assert!(deployment_publication_aborted(tx, &second)?);
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
 fn deployment_operation_cannot_be_reused_by_another_publisher_or_changed_request() {
     let db = TestDB::in_memory().unwrap();
     let original = request(1, None);

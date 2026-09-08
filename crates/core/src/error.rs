@@ -132,7 +132,7 @@ pub enum DBError {
     #[error("Error reading a value from a table through BSATN: {0}")]
     ReadViaBsatnError(#[from] ReadViaBsatnError),
     #[error("Module validation errors: {0}")]
-    ModuleValidationErrors(#[from] ValidationErrors),
+    ModuleValidationErrors(#[from] Box<ValidationErrors>),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
     #[error(transparent)]
@@ -149,6 +149,12 @@ pub enum DBError {
     DurabilityGone(#[from] DurabilityExited),
     #[error(transparent)]
     View(#[from] ViewCallError),
+}
+
+impl From<ValidationErrors> for DBError {
+    fn from(errors: ValidationErrors) -> Self {
+        Self::ModuleValidationErrors(Box::new(errors))
+    }
 }
 
 impl From<InvalidFieldError> for DBError {

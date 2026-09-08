@@ -336,7 +336,7 @@ pub enum InitializationError {
     #[error(transparent)]
     Validation(#[from] ValidationError),
     #[error(transparent)]
-    ModuleValidation(#[from] spacetimedb_schema::error::ValidationErrors),
+    ModuleValidation(#[from] Box<spacetimedb_schema::error::ValidationErrors>),
     #[error("setup function returned an error: {0}")]
     Setup(Box<str>),
     #[error("wasm trap while calling {func:?}")]

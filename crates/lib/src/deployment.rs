@@ -6,6 +6,8 @@
 use crate::container::{ContainerAction, ContainerSpec, ContainerSpecLimits, ContainerValidationError};
 use crate::{bsatn, hash_bytes, Hash, SpacetimeType, Uuid};
 
+pub mod manifest;
+
 pub const PUBLISH_PROTOCOL_VERSION: u32 = 1;
 pub const SYSTEM_EMPTY_MODULE_VERSION: u32 = 1;
 /// Immutable Keccak-256 program identity of the version-1 bundled empty Wasm

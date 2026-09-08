@@ -4,7 +4,7 @@
 
 use crate::{Descriptor, OciDigest};
 use anyhow::{bail, ensure, Context, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
@@ -40,7 +40,7 @@ pub struct VerifiedLayerSize {
     pub regular_file_bytes: u64,
 }
 
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct VerifiedImageSize {
     pub compressed_bytes: u64,
     pub uncompressed_tar_bytes: u64,
@@ -117,6 +117,29 @@ pub fn verify_layer(
     diff_id: OciDigest,
     limits: LayerLimits,
 ) -> Result<VerifiedLayerSize> {
+    verify_layer_with_check(reader, descriptor, diff_id, limits, || Ok(()))
+}
+
+/// Check cancellation/deadline between both compressed and expanded reads.
+/// The caller retains its worker admission until this synchronous operation ends.
+pub fn verify_layer_with_check(
+    reader: impl Read,
+    descriptor: &Descriptor,
+    diff_id: OciDigest,
+    limits: LayerLimits,
+    check: impl Fn() -> io::Result<()> + Copy,
+) -> Result<VerifiedLayerSize> {
+    struct Checked<R, F> {
+        reader: R,
+        check: F,
+    }
+    impl<R: Read, F: Fn() -> io::Result<()>> Read for Checked<R, F> {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            (self.check)()?;
+            self.reader.read(buf)
+        }
+    }
+    check()?;
     ensure!(
         descriptor.size > 0 && descriptor.size <= crate::MAX_IMAGE_BYTES,
         "invalid compressed layer size"
@@ -126,7 +149,7 @@ pub fn verify_layer(
         "external layer sources are unsupported"
     );
     let mut compressed = HashBounded {
-        inner: reader,
+        inner: Checked { reader, check },
         hash: Sha256::new(),
         count: 0,
         limit: descriptor.size,
@@ -146,7 +169,7 @@ pub fn verify_layer(
         _ => bail!("unsupported or foreign layer media type"),
     };
     let mut expanded = HashBounded {
-        inner: decoder,
+        inner: Checked { reader: decoder, check },
         hash: Sha256::new(),
         count: 0,
         limit: limits.max_uncompressed_bytes,

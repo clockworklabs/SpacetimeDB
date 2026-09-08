@@ -92,6 +92,14 @@ pub enum CommitAdmission {
     Ready,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AbortResult {
+    /// The commit won the race. Recovery must converge on this deployment.
+    AlreadyCommitted(PublishResult),
+    /// This epoch can no longer admit a commit, and the prior revision remains.
+    Aborted { previous_revision: Option<Hash> },
+}
+
 /// Check the actual program selected by the host, not a caller-provided
 /// capability bit. The program bytes are hashed here because `Program` also
 /// has a public constructor which accepts a previously computed hash.
@@ -176,7 +184,7 @@ pub fn install_publication_fence(
     publication_epoch: u64,
     operation_id: Uuid,
 ) -> Result<(), DeploymentError> {
-    if publication_epoch == 0 {
+    if publication_epoch == 0 || operation_id == Uuid::NIL {
         return Err(DeploymentError::PublicationFenced);
     }
     let next = StPublishFenceRow {
@@ -200,12 +208,75 @@ pub fn install_publication_fence(
     Ok(())
 }
 
+/// Close an admitted publication before reporting an abort to control. Run in
+/// one serializable transaction and await its durability before releasing the
+/// control operation or resuming the previous container under a fresh generation.
+/// A delayed commit and this transaction serialize on the same database fence.
+///
+/// The nil operation ID is a closed-epoch marker, never a publish operation.
+/// Keeping the epoch makes closure irreversible at that epoch while allowing
+/// the next control-allocated epoch to install its own operation normally.
+pub fn abort_deployment_commit(tx: &mut MutTx, request: &DeploymentCommit) -> Result<AbortResult, DeploymentError> {
+    if let Some(result) = committed_deployment_operation(tx, request)? {
+        return Ok(AbortResult::AlreadyCommitted(result));
+    }
+    // Recovery must be able to close an expired operation too. Its expiry
+    // prevents new commits, but cannot substitute for a durable abort fence.
+    // Control owns the immutable epoch-to-operation mapping; authenticate and
+    // resolve that recorded operation before calling this function.
+    let fence = singleton(tx, ST_PUBLISH_FENCE_ID)?
+        .map(StPublishFenceRow::try_from)
+        .transpose()?;
+    let fence = fence
+        .filter(|row| {
+            row.publication_epoch == request.publication_epoch
+                && (row.operation_id == request.operation_id.as_u128() || row.operation_id == 0)
+        })
+        .ok_or(DeploymentError::PublicationFenced)?;
+    if current_deployment(tx)?.map(|(revision, _)| revision) != request.expected_revision {
+        return Err(DeploymentError::RevisionConflict);
+    }
+    if fence.operation_id == 0 {
+        return Ok(AbortResult::Aborted {
+            previous_revision: request.expected_revision,
+        });
+    }
+    tx.clear_table(ST_PUBLISH_FENCE_ID)?;
+    tx.insert_via_serialize_bsatn(
+        ST_PUBLISH_FENCE_ID,
+        &StPublishFenceRow {
+            key: 0,
+            publication_epoch: request.publication_epoch,
+            operation_id: 0,
+        },
+    )?;
+    Ok(AbortResult::Aborted {
+        previous_revision: request.expected_revision,
+    })
+}
+
 fn normalized_request(
     request: &DeploymentCommit,
     limits: &ContainerSpecLimits,
 ) -> Result<(DeploymentSpec, Hash, Hash), DeploymentError> {
     let spec = request.deployment.clone().normalize(limits)?;
-    let revision = spec.revision()?;
+    if spec != request.deployment {
+        return Err(DeploymentValidationError::InvalidEncoding.into());
+    }
+    let (revision, request_hash) = request_identity(request)?;
+    Ok((spec, revision, request_hash))
+}
+
+fn request_identity(request: &DeploymentCommit) -> Result<(Hash, Hash), DeploymentError> {
+    if request.operation_id.get_version() != Some(spacetimedb_sats::uuid::Version::V7) {
+        return Err(DeploymentValidationError::InvalidOperationId.into());
+    }
+    if request.publication_epoch == 0 {
+        return Err(DeploymentError::PublicationFenced);
+    }
+    // These bytes were normalized at admission. Do not re-apply today's
+    // resource eligibility when inspecting yesterday's committed outcome.
+    let revision = request.deployment.revision()?;
     let mut bytes = b"spacetimedb/deployment-operation\0".to_vec();
     bytes.extend_from_slice(
         &bsatn::to_vec(&(
@@ -218,7 +289,7 @@ fn normalized_request(
         ))
         .map_err(|_| DeploymentError::CorruptMetadata)?,
     );
-    Ok((spec, revision, hash_bytes(bytes)))
+    Ok((revision, hash_bytes(bytes)))
 }
 
 /// Call before module execution, while holding the transaction later used for
@@ -231,9 +302,36 @@ pub fn check_deployment_commit(
 ) -> Result<CommitAdmission, DeploymentError> {
     let now_ms = u64::try_from(now.to_micros_since_unix_epoch()).map_err(|_| DeploymentError::CorruptMetadata)? / 1000;
     operation_expiry_ms(request.operation_id, now_ms)?;
-    let (_, revision, request_hash) = normalized_request(request, limits)?;
+    if let Some(result) = committed_deployment_operation(tx, request)? {
+        return Ok(CommitAdmission::AlreadyCommitted(result));
+    }
+    normalized_request(request, limits)?;
+    let fence = singleton(tx, ST_PUBLISH_FENCE_ID)?
+        .map(StPublishFenceRow::try_from)
+        .transpose()?;
+    if !fence.is_some_and(|f| {
+        f.publication_epoch == request.publication_epoch && f.operation_id == request.operation_id.as_u128()
+    }) {
+        return Err(DeploymentError::PublicationFenced);
+    }
+    if current_deployment(tx)?.map(|(revision, _)| revision) != request.expected_revision {
+        return Err(DeploymentError::RevisionConflict);
+    }
+    Ok(CommitAdmission::Ready)
+}
+
+/// Inspect the exact retained commit receipt during host recovery. Unlike
+/// admitting a client retry, inspecting an existing outcome does not expire.
+/// This never authorizes module execution. An absent receipt is not proof of
+/// abort: close the epoch atomically before reporting an abort to control.
+/// Retain active operations' receipts until their control recovery completes.
+pub fn committed_deployment_operation<S: StateView>(
+    state: &S,
+    request: &DeploymentCommit,
+) -> Result<Option<PublishResult>, DeploymentError> {
+    let (revision, request_hash) = request_identity(request)?;
     let operation_key = AlgebraicValue::U128(request.operation_id.as_u128().into());
-    if let Some(row) = tx
+    if let Some(row) = state
         .iter_by_col_eq(ST_DEPLOYMENT_OPERATION_ID, ColId(0), &operation_key)?
         .next()
     {
@@ -250,20 +348,29 @@ pub fn check_deployment_commit(
         {
             return Err(DeploymentError::CorruptMetadata);
         }
-        return Ok(CommitAdmission::AlreadyCommitted(receipt.result));
+        return Ok(Some(receipt.result));
     }
-    let fence = singleton(tx, ST_PUBLISH_FENCE_ID)?
+    Ok(None)
+}
+
+/// Recognize the durable closed marker when recovering a control operation
+/// whose abort report was lost. The authenticated caller must resolve control's
+/// immutable epoch-to-operation binding before using this host-only API.
+pub fn deployment_publication_aborted<S: StateView>(
+    state: &S,
+    request: &DeploymentCommit,
+) -> Result<bool, DeploymentError> {
+    request_identity(request)?;
+    let fence = singleton(state, ST_PUBLISH_FENCE_ID)?
         .map(StPublishFenceRow::try_from)
         .transpose()?;
-    if !fence.is_some_and(|f| {
-        f.publication_epoch == request.publication_epoch && f.operation_id == request.operation_id.as_u128()
-    }) {
-        return Err(DeploymentError::PublicationFenced);
+    if !fence.is_some_and(|row| row.publication_epoch == request.publication_epoch && row.operation_id == 0) {
+        return Ok(false);
     }
-    if current_deployment(tx)?.map(|(revision, _)| revision) != request.expected_revision {
+    if current_deployment(state)?.map(|(revision, _)| revision) != request.expected_revision {
         return Err(DeploymentError::RevisionConflict);
     }
-    Ok(CommitAdmission::Ready)
+    Ok(true)
 }
 
 /// Record after successful module initialization/migration in that same
