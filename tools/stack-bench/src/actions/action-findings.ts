@@ -53,7 +53,7 @@ const target = (value: LifecycleTarget): string =>
   value === 'app-server' ? 'the application server' : 'the database runtime';
 
 export const FAILED_FINDINGS: Renderers<FailedFindingFields> = {
-  'control-missing': f => `${control(f.control)} did not appear`,
+  'control-missing': f => `${scopedControl(f)}${f.filtered ? ' matching the requested entry' : ''} did not appear`,
   'control-present': f => `${control(f.control)} was shown when it must not be`,
   'control-available': f => `${control(f.control)} stayed available to ${f.actor}`,
   'control-not-ready': f => `${control(f.control)} never became usable for ${names(f.actors)}`,
@@ -103,7 +103,9 @@ export const FAILED_FINDINGS: Renderers<FailedFindingFields> = {
   'forgery-accepted': f => `a request with a tampered ${f.field} was accepted (${http(f.status)})`,
   'forgery-error': f => `the tampered request failed with ${http(f.status)} instead of a refusal`,
   'message-delivered': f => `a private message was delivered to ${f.actor}, who is not a participant`,
-  'stock-interface-missing': () => 'the stock data interface (item, warehouse, stock) is not available in the database',
+  'stock-interface-missing': f => f.missingRow
+    ? `the required ${f.missingRow} row was not found in the stock data interface; check the original starting data and the item/warehouse links`
+    : 'the stock data interface (item, warehouse, stock) is not available in the database',
 };
 
 export const INCONCLUSIVE_FINDINGS: Renderers<InconclusiveFindingFields> = {
@@ -161,7 +163,7 @@ const expectationSchema = z.strictObject({
 const targetSchema = z.enum(['app-server', 'backend-runtime']);
 
 export const findingSchema = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('control-missing'), fields: controlSchema }),
+  z.strictObject({ kind: z.literal('control-missing'), fields: controlSchema.extend({ scope: z.string().optional(), filtered: z.boolean().optional() }) }),
   z.strictObject({ kind: z.literal('control-present'), fields: controlSchema }),
   z.strictObject({ kind: z.literal('control-available'), fields: z.strictObject({ control: z.string(), actor: z.string() }) }),
   z.strictObject({ kind: z.literal('control-not-ready'), fields: z.strictObject({ control: z.string(), actors: z.array(z.string()) }) }),
@@ -199,7 +201,7 @@ export const findingSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('forgery-accepted'), fields: z.strictObject({ status: z.number().nullable(), field: z.string() }) }),
   z.strictObject({ kind: z.literal('forgery-error'), fields: statusSchema }),
   z.strictObject({ kind: z.literal('message-delivered'), fields: actorSchema }),
-  z.strictObject({ kind: z.literal('stock-interface-missing'), fields: detailSchema }),
+  z.strictObject({ kind: z.literal('stock-interface-missing'), fields: detailSchema.extend({ missingRow: z.enum(['item', 'warehouse', 'stock']).optional() }) }),
   z.strictObject({ kind: z.literal('assertion-without-action'), fields: actionSchema }),
   z.strictObject({ kind: z.literal('unknown-action'), fields: actionSchema }),
   z.strictObject({ kind: z.literal('action-without-parameters'), fields: actionSchema }),

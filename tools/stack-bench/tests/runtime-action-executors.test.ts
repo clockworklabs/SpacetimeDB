@@ -213,6 +213,7 @@ test('direct PostgreSQL stock writes quote names and require exactly one updated
   assert.equal(failed.status, 'failed');
   assert.equal(failed.finding?.kind, 'stock-interface-missing');
   assert.match(String(failed.finding?.fields.detail), /could not locate one relational stock row/);
+  assert.equal(failed.finding?.fields.missingRow, 'stock');
 });
 
 test('a database without the stock interface is an application failure that keeps its diagnostic', async () => {
@@ -236,6 +237,19 @@ test('a database without the stock interface is an application failure that keep
   assert.equal(result.finding?.kind, 'stock-interface-missing');
   assert.match(String(result.finding?.fields.detail), /singular collections/);
   assert.match(String(result.finding?.fields.detail), /MISSING/);
+  for (const row of ['ITEM', 'WAREHOUSE'] as const) {
+    const missing = createDatabaseWriteCapability({ backend: 'mongodb',
+      databaseLease: { resources: { database: 'bench', container: { name: 'leased-mongodb', id: 'mongodb-id' } } },
+      expand: value => value, exec: (_command, args) => {
+        if (args[0] === 'inspect') return 'mongodb-id\n';
+        throw Object.assign(new Error('missing row'), { stdout: `MISSING_${row}\n` });
+      } });
+    const result = await run({ do: 'dbSetStock', item: 'Desk Lamp', warehouse: 'East', quantity: 5, settleMs: 0 },
+      services(new Map(), { databaseWrite: missing }));
+    assert.equal(result.finding?.kind, 'stock-interface-missing');
+    assert.equal(result.finding?.fields.missingRow, row.toLowerCase());
+  }
+
 });
 
 test('direct MongoDB writes use public stock IDs and the container selected by the run lease', async () => {
@@ -252,6 +266,7 @@ test('direct MongoDB writes use public stock IDs and the container selected by t
       let output = '';
       runInNewContext(args.at(-1)!, {
         db: {
+          getCollectionNames: () => ['item', 'warehouse', 'stock'],
           item: { findOne: () => ({ id: stock.item_id, _id: 'generated-item-object-id' }) },
           warehouse: { findOne: () => ({ id: stock.warehouse_id, _id: 'generated-warehouse-object-id' }) },
           stock: { updateOne: (query: { $or: Array<{ item_id?: number; warehouse_id?: number }> },

@@ -156,6 +156,12 @@ test('a stock write that finds no table, column, or row is the application missi
   (error: unknown) => error instanceof Error && 'stockInterface' in error
     && error.stockInterface === true && /does not have a field/.test(error.message));
 
+  assert.throws(() => setSpacetimeStock({ item: 'widget', warehouse: 'east', quantity: 3,
+    spacetime: { buildContainer: { name: 'leased-build', id: 'leased-build-id' }, mod: 'shop',
+      containerUri: 'http://host.docker.internal:3000' },
+    exec: (_command, args) => /select id from item/.test(args.at(-1) ?? '') ? '1\n' : '' }),
+  (error: unknown) => error instanceof Error && 'missingRow' in error && error.missingRow === 'warehouse');
+
   for (const [stderr, expectedInterface] of [
     ['Error: `id` is not in scope\n', true],
     ['Error: `unrelated_field` is not in scope\n', false],

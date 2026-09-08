@@ -70,9 +70,9 @@ function renderPrompt({ level, stack, task, guidance, repair = false, cli = fals
       skillsText: readAgentSkillDocuments(resolve(STACK_BENCH_ROOT, '..', '..'), skills.ids),
       requirementText: selected.task.requirementText,
       contractText: selected.task.contractText,
-      startingCatalog: selected.task.taskMode === 'fresh' ? JSON.stringify({
+      startingCatalog: JSON.stringify({
         warehouses: binding.plan.fixture.warehouses, items: binding.plan.fixture.items,
-      }, null, 2) : undefined,
+      }, null, 2),
     });
   }
   return execFileSync(process.execPath, argv, {
@@ -146,12 +146,12 @@ test('neutral dependency prompts include only selected product and stack contrac
         warehouses: binding.plan.fixture.warehouses,
         items: binding.plan.fixture.items,
       }, null, 2);
-      if (level === 1) {
-        assert.match(applicationRequest, /## Starting catalog/);
-        assert.ok(applicationRequest.includes(startingCatalog));
-      } else {
-        assert.doesNotMatch(applicationRequest, /## Starting catalog/);
+      for (const request of [applicationRequest, repair]) {
+        assert.ok(request.includes(startingCatalog));
+        assert.equal(request.split('## Starting catalog').length, 2);
       }
+      assert.match(repair, /Do not reset current quantities, prices, or user data/);
+      if (level > 1) assert.match(applicationRequest, /original catalog baseline/);
       if (stack === 'spacetime') {
         assert.match(prompt, /file:\/deps\/spacetimedb\.tgz/);
         assert.doesNotMatch(prompt, /file:\/deps\/bindings-typescript/);

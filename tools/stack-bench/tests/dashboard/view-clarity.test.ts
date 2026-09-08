@@ -57,7 +57,7 @@ test('campaign separates aggregate scores from selected evidence and explains pe
   assert.doesNotMatch(page, /class="label">Qualification/);
   assert.match(page, /<summary>Explore · grid<\/summary>/);
   assert.match(page, /<nav aria-label="Feature progress view">/);
-  assert.doesNotMatch(page.slice(0, page.indexOf('<section class="feature-progress"')), /\?questlines=/);
+  assert.doesNotMatch(page.slice(0, page.indexOf('<section class="feature-progress"')), /aria-label="Feature progress view"/);
   assert.match(page, /popovertarget="help-completion"/);
   assert.match(page, /id="help-completion" popover role="tooltip"/);
   assert.doesNotMatch(page, /<details class="metric-help"/);

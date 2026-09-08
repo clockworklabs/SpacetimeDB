@@ -296,7 +296,9 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
       if (harnessBrowserFailure(error)) throw error;
       return false;
     });
-  if (!visible) fail('control-missing', { control: input.testid });
+  if (!visible) fail('control-missing', { control: input.testid,
+      ...(scope ? { scope: scope.testid } : {}),
+      ...(contains || scope?.contains ? { filtered: true } : {}) });
 
   if (input.count !== undefined) {
     const all = scope
@@ -509,7 +511,9 @@ async function expectNumber({ input, capabilities, signal }:
   const loc = actor.loc(input.testid, { contains, scope });
   await loc.waitFor({ state: 'visible', timeout: within }).catch(error => {
     if (harnessBrowserFailure(error)) throw error;
-    fail('control-missing', { control: input.testid });
+    fail('control-missing', { control: input.testid,
+      ...(scope ? { scope: scope.testid } : {}),
+      ...(contains || scope?.contains ? { filtered: true } : {}) });
   });
 
   const equals = expectedNumber(browser, input);

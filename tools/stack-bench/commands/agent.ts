@@ -638,6 +638,12 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
     ]);
   }
 
+  const startingCatalog = materials.startingCatalog
+    ? ['', '## Starting catalog', '', args.mode === 'build'
+      ? 'Use exactly this starting data:'
+      : 'This is the original catalog baseline. Preserve its entity names and relationships. Do not reset current quantities, prices, or user data.',
+      '', '```json', materials.startingCatalog, '```'] : [];
+
   if (args.mode === 'fix') {
     return prompt([
       'Fix the reported application bugs.',
@@ -654,6 +660,7 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
       '',
       agentVisibleContractText(materials.requirementText ?? levelPrompt(track, args.level),
         args.credentialAliases, applicationInterface),
+      ...startingCatalog,
       '',
       '## Application interface',
       '',
@@ -669,9 +676,6 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
         'Keep completed features working. Add only the current features below.',
       ]
     : [`Build the application described below and leave it running.`];
-  const startingCatalog = args.mode === 'build' && materials.startingCatalog
-    ? ['', '## Starting catalog', '', 'Use exactly this starting data:', '',
-        '```json', materials.startingCatalog, '```'] : [];
 
   return prompt([
     ...verb,
@@ -753,8 +757,7 @@ async function main() {
     : null;
   const requirementText = selectedTask?.task.requirementText ?? levelPrompt(track, args.level);
   const contractText = selectedTask?.task.contractText ?? appendix(track, args.level);
-  const taskMode = isRecord(args.recipeTask?.task) ? args.recipeTask.task.mode : null;
-  const startingCatalog = recipeBinding && taskMode === 'fresh' ? JSON.stringify({
+  const startingCatalog = recipeBinding ? JSON.stringify({
     warehouses: recipeBinding.plan.fixture.warehouses,
     items: recipeBinding.plan.fixture.items,
   }, null, 2) : undefined;

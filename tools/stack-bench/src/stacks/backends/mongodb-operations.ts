@@ -79,9 +79,11 @@ export function setMongoDbStock({ item, warehouse, quantity, lease, exec = execF
   const container = assertLeasedContainer(lease.resources.container, exec, WRITE_TIMEOUT_MS,
     'direct database write');
   const script = `
+    const collections = db.getCollectionNames();
+    if (!['item', 'warehouse', 'stock'].every(name => collections.includes(name))) { print('MISSING'); quit(1); }
     const it = db.item.findOne({ name: ${JSON.stringify(item)} });
     const wh = db.warehouse.findOne({ name: ${JSON.stringify(warehouse)} });
-    if (!it || !wh) { print('MISSING'); quit(1); }
+    if (!it || !wh) { print(!it ? 'MISSING_ITEM' : 'MISSING_WAREHOUSE'); quit(1); }
     const iid = it.id ?? it._id, wid = wh.id ?? wh._id;
     const r = db.stock.updateOne(
       { $or: [ { item_id: iid, warehouse_id: wid }, { itemId: iid, warehouseId: wid } ] },
@@ -94,6 +96,9 @@ export function setMongoDbStock({ item, warehouse, quantity, lease, exec = execF
       ...mongoShell(lease), '--quiet', '--eval', script],
     { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
   } catch (error) {
+    const missingRow = /^MISSING_(ITEM|WAREHOUSE)$/m.exec(streams(error, 'stdout').trim())?.[1];
+    if (missingRow) throw stockInterfaceError(`required ${missingRow.toLowerCase()} row is absent`,
+      { cause: error, missingRow: missingRow === 'ITEM' ? 'item' : 'warehouse' });
     if (!/^MISSING$/m.test(streams(error, 'stdout').trim())) throw error;
     const detail = streams(error, 'stdout', 'stderr').trim().slice(-160);
     throw stockInterfaceError('direct stock correction requires singular collections '
@@ -103,7 +108,7 @@ export function setMongoDbStock({ item, warehouse, quantity, lease, exec = execF
   }
   if (/^NOMATCH$/m.test(output.trim())) {
     throw stockInterfaceError(`could not find ${item} / ${warehouse} in the required collections `
-      + `(${output.trim().slice(0, 80)})`);
+      + `(${output.trim().slice(0, 80)})`, { missingRow: 'stock' });
   }
   if (!/^OK$/m.test(output.trim())) throw new Error(`unexpected MongoDB stock write result: ${output.trim().slice(-160)}`);
   return { backend: 'mongodb', item, warehouse, quantity };

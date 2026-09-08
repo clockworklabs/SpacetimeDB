@@ -133,7 +133,7 @@ export function setPostgresStock({ item, warehouse, quantity, lease, exec = exec
   if ((output.match(/UPDATE 1\b/g) ?? []).length === 1) {
     return { backend: 'postgres', item, warehouse, quantity };
   }
-  throw stockInterfaceError(`could not locate one relational stock row for ${item} / ${warehouse}`);
+  throw stockInterfaceError(`could not locate one relational stock row for ${item} / ${warehouse}`, { missingRow: 'stock' });
 }
 
 export function preparePostgresDatabase({ lease, name, expectedName, wipe,

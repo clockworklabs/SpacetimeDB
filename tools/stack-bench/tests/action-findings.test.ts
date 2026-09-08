@@ -148,3 +148,11 @@ test('sample renderings read as behavior, not mechanics', () => {
   assert.equal(renderFinding(SAMPLES['forgery-error']),
     'the tampered request failed with no server response instead of a refusal');
 });
+
+
+test('missing rows and filtered controls give useful feedback without exposing probe text', () => {
+  assert.match(renderFinding(finding('stock-interface-missing', { missingRow: 'warehouse', detail: DETAIL })), /required warehouse row was not found/);
+  const text = renderFinding(finding('control-missing', { control: 'admin-warehouse-item', filtered: true }));
+  assert.match(text, /matching the requested entry/);
+  assert.doesNotMatch(text, /RAW-DETAIL/);
+});

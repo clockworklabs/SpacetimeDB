@@ -118,10 +118,10 @@ export function setSpacetimeStock({ item, warehouse, quantity, spacetime,
     ...codingContainerAgentCommand(CODING_CONTAINER_SPACETIME_CLI,
       ['sql', spacetime.mod, '-s', spacetime.containerUri, sql])],
   { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
-  const idOf = (table: string, name: string): string => {
+  const idOf = (table: 'item' | 'warehouse', name: string): string => {
     const output = guarded(`select id from ${table} where name = ${sqlString(name)}`);
     const match = output.match(/^\s*(\d+)\s*$/m);
-    if (!match?.[1]) throw stockInterfaceError(`no ${table} named "${name}"`);
+    if (!match?.[1]) throw stockInterfaceError(`no ${table} named "${name}"`, { missingRow: table });
     return match[1];
   };
   // A missing or private table, or a missing column, is the application not

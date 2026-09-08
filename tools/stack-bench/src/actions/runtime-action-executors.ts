@@ -154,6 +154,7 @@ interface ProcessErrorShape {
   readonly stderr?: unknown;
   readonly stdout?: unknown;
   readonly stockInterface?: unknown;
+  readonly missingRow?: unknown;
 }
 
 interface NestedActionEvidence {
@@ -328,7 +329,9 @@ async function dbSetStock({ input, capabilities, signal }: ActionArguments<SetSt
     // The contract names the stock tables; an application without them has
     // failed that interface. Any other write failure is the harness's.
     if (errorShape(error).stockInterface === true) {
-      fail('stock-interface-missing', { detail: databaseWriteFailureDetail(error) });
+      const row = errorShape(error).missingRow;
+      fail('stock-interface-missing', { detail: databaseWriteFailureDetail(error),
+        ...(row === 'item' || row === 'warehouse' || row === 'stock' ? { missingRow: row } : {}) });
     }
     throw new Error(`direct database write failed: ${databaseWriteFailureDetail(error)}`, { cause: error });
   }
