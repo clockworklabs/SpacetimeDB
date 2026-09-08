@@ -55,6 +55,9 @@ use tokio::{
 
 pub(crate) type SharedCell<T> = Arc<StdMutex<T>>;
 
+#[cfg(all(test, not(feature = "browser")))]
+mod builder_tests;
+
 #[cfg(not(feature = "browser"))]
 type SharedAsyncCell<T> = Arc<TokioMutex<T>>;
 #[cfg(feature = "browser")]
@@ -136,6 +139,12 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     /// applying its mutations to the client cache and invoking callbacks.
     fn process_message(&self, msg: ParsedMessage<M>) -> crate::Result<()> {
         self.debug_log(|out| writeln!(out, "`process_message`: {msg:?}"));
+        if !self.is_active() && !matches!(&msg, ParsedMessage::Error(_)) {
+            // Local disconnect invalidated callbacks. Drain already received
+            // results without interpreting them as outstanding healthy calls;
+            // the socket's terminal event must still reach end_connection.
+            return Ok(());
+        }
         match msg {
             // Error: route as a connection error if we never finished connecting,
             // otherwise treat it as an erroneous disconnect.
@@ -317,17 +326,27 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     ///
     /// Returns the terminal error that should be returned from `advance_*` methods.
     fn end_connection(&self, callback_error: Option<crate::Error>) -> crate::Error {
-        let mut inner = self.inner.lock().unwrap();
         let return_error = callback_error.clone().unwrap_or(crate::Error::Disconnected);
+        let (lifecycle, db_callbacks, mut subscriptions, connect_callback, disconnect_callback, connect_error_callback) = {
+            let mut inner = self.inner.lock().unwrap();
+            let lifecycle = inner.connection_lifecycle;
+            inner.connection_lifecycle = ConnectionLifecycle::Ended;
+            (
+                lifecycle,
+                std::mem::take(&mut inner.db_callbacks),
+                std::mem::take(&mut inner.subscriptions),
+                inner.on_connect.take(),
+                inner.on_disconnect.take(),
+                inner.on_connect_error.take(),
+            )
+        };
 
-        let lifecycle = inner.connection_lifecycle;
-        if lifecycle == ConnectionLifecycle::Ended {
-            return return_error;
-        }
-        inner.connection_lifecycle = ConnectionLifecycle::Ended;
-
-        // Set `send_chan` to `None`, since `Self::is_active` checks that.
-        *self.send_chan.lock().unwrap() = None;
+        // Serialize request enqueueing with terminal closure. A retained
+        // DbConnection must not retain in-flight callback captures indefinitely.
+        let outgoing = self.send_chan.lock().unwrap().take();
+        self.discard_pending_requests();
+        drop((outgoing, db_callbacks, connect_callback));
+        subscriptions.on_disconnect(&self.make_event_ctx(callback_error.clone()));
 
         match lifecycle {
             ConnectionLifecycle::Connecting => {
@@ -335,24 +354,57 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     source: InternalError::new("Connection closed before receiving the initial connection message"),
                 });
                 let ctx: M::ErrorContext = self.make_event_ctx(Some(callback_error.clone()));
-                if let Some(connect_error_callback) = inner.on_connect_error.take() {
+                if let Some(connect_error_callback) = connect_error_callback {
                     connect_error_callback(&ctx, callback_error.clone());
                 }
                 callback_error
             }
             ConnectionLifecycle::Connected => {
                 let ctx: M::ErrorContext = self.make_event_ctx(callback_error.clone());
-                if let Some(disconnect_callback) = inner.on_disconnect.take() {
+                if let Some(disconnect_callback) = disconnect_callback {
                     disconnect_callback(&ctx, callback_error.clone());
                 }
-
-                // Call the `on_disconnect` method for all subscriptions.
-                inner.subscriptions.on_disconnect(&ctx);
-
                 return_error
             }
             ConnectionLifecycle::Ended => return_error,
         }
+    }
+
+    fn discard_pending_requests(&self) {
+        let (reducer_callbacks, procedure_callbacks) = {
+            let mut inner = self.inner.lock().unwrap();
+            (
+                std::mem::take(&mut inner.reducer_callbacks),
+                std::mem::take(&mut inner.procedure_callbacks),
+            )
+        };
+        let mut queued = Vec::new();
+        {
+            // There is exactly one supported advance_* caller, and get_message
+            // releases this guard before applying a terminal message. Avoid a
+            // blocking_lock here because advance_one_message_async runs in Tokio.
+            #[cfg(not(feature = "browser"))]
+            let mut pending = self
+                .pending_mutations_recv
+                .try_lock()
+                .expect("concurrent SDK message advancement");
+            #[cfg(feature = "browser")]
+            let mut pending = self.pending_mutations_recv.lock().unwrap();
+            pending.close();
+            while let Ok(Some(mutation)) = pending.try_next() {
+                queued.push(mutation);
+            }
+        }
+        // Destructors may reenter SDK methods. Drop user captures only after
+        // releasing the connection and pending-queue locks. These calls have an
+        // unknown outcome; do not manufacture a successful reducer completion.
+        for mutation in queued {
+            if let PendingMutation::Subscribe { handle, .. } = &mutation {
+                handle.cancel_pending_callbacks();
+            }
+            drop(mutation);
+        }
+        drop((reducer_callbacks, procedure_callbacks));
     }
 
     fn make_event_ctx<E, Ctx: AbstractEventContext<Module = M, Event = E>>(&self, event: E) -> Ctx {
@@ -362,7 +414,9 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
     /// Apply all queued [`PendingMutation`]s.
     fn apply_pending_mutations(&self) -> crate::Result<()> {
-        while let Ok(Some(pending_mutation)) = get_lock_sync(&self.pending_mutations_recv).try_next() {
+        loop {
+            let pending = get_lock_sync(&self.pending_mutations_recv).try_next();
+            let Ok(Some(pending_mutation)) = pending else { break };
             self.apply_mutation(pending_mutation)?;
         }
 
@@ -372,6 +426,16 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     /// Apply an individual [`PendingMutation`].
     fn apply_mutation(&self, mutation: PendingMutation<M>) -> crate::Result<()> {
         self.debug_log(|out| writeln!(out, "`apply_mutation`: {mutation:?}"));
+        if !self.is_active()
+            && matches!(
+                &mutation,
+                PendingMutation::InvokeReducerWithCallback { .. } | PendingMutation::InvokeProcedureWithCallback { .. }
+            )
+        {
+            // A call may have been queued behind the disconnect mutation. Drop
+            // its captures and continue driving the actual terminal event.
+            return Ok(());
+        }
         match mutation {
             // Subscribe: register the subscription in the [`SubscriptionManager`]
             // and send the `Subscribe` WS message.
@@ -491,6 +555,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 // eventually resulting in disconnect callbacks being called
                 // if the initial connection had completed.
                 *self.send_chan.lock().unwrap() = None;
+                self.discard_pending_requests();
             }
 
             // Callback stuff: these all do what you expect.
@@ -605,13 +670,13 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         // This may be unnecessary, but `tokio::select` does not document any ordering guarantees,
         // and if both `pending_mutations.next()` and `recv.next()` have values ready,
         // we want to process the pending mutation first.
-        if let Ok(pending_mutation) = pending_mutations.try_next() {
-            return Message::Local(pending_mutation.unwrap());
+        if let Ok(Some(pending_mutation)) = pending_mutations.try_next() {
+            return Message::Local(pending_mutation);
         }
 
         #[cfg(not(feature = "browser"))]
         tokio::select! {
-            pending_mutation = pending_mutations.next() => Message::Local(pending_mutation.unwrap()),
+            Some(pending_mutation) = pending_mutations.next() => Message::Local(pending_mutation),
             incoming_message = recv.next() => Message::Ws(incoming_message),
         }
 
@@ -621,7 +686,10 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             pin_mut!(pending_fut, recv_fut);
 
             futures::select! {
-                pending_mutation = pending_fut => Message::Local(pending_mutation.unwrap()),
+                pending_mutation = pending_fut => match pending_mutation {
+                    Some(pending_mutation) => Message::Local(pending_mutation),
+                    None => Message::Ws(recv_fut.await),
+                },
                 incoming_message = recv_fut => Message::Ws(incoming_message),
             }
         }
@@ -716,8 +784,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         }
         self.pending_mutations_send
             .unbounded_send(PendingMutation::Disconnect)
-            .unwrap();
-        Ok(())
+            .map_err(|_| crate::Error::Disconnected)
     }
 
     /// Add a [`PendingMutation`] to the `pending_mutations` queue,
@@ -725,8 +792,14 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     ///
     /// This is used to defer operations which would otherwise need to hold a lock on `self.inner`,
     /// as otherwise running those operations within a callback would deadlock.
-    fn queue_mutation(&self, mutation: PendingMutation<M>) {
+    fn queue_mutation(&self, mutation: PendingMutation<M>) -> crate::Result<()> {
+        let outgoing = self.send_chan.lock().unwrap();
+        if outgoing.is_none() {
+            drop(outgoing);
+            return Err(crate::Error::Disconnected);
+        }
         self.pending_mutations_send.unbounded_send(mutation).unwrap();
+        Ok(())
     }
 
     /// Called by autogenerated table access methods.
@@ -757,8 +830,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         self.queue_mutation(PendingMutation::InvokeReducerWithCallback {
             reducer: reducer.into(),
             callback: Box::new(callback),
-        });
-        Ok(())
+        })
     }
 
     /// Called by the autogenerated `DbConnection` method of the same name.
@@ -788,7 +860,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             + Send
             + 'static,
     ) {
-        self.queue_mutation(PendingMutation::InvokeProcedureWithCallback {
+        let _ = self.queue_mutation(PendingMutation::InvokeProcedureWithCallback {
             procedure: procedure_name,
             args: bsatn::to_vec(&args).expect("Failed to BSATN serialize procedure args"),
             callback: Box::new(move |ctx, ret| {
@@ -953,6 +1025,25 @@ but you must call one of them, or else the connection will never progress.
         Ok(<M::DbConnection as DbConnection>::new(imp))
     }
 
+    /// Open a connection asynchronously on the current Tokio runtime.
+    ///
+    /// Unlike [`Self::build`], the WebSocket handshake does not block this task.
+    /// Dropping this future while the handshake is pending closes its socket
+    /// and releases the builder's callbacks. Callers can impose their own
+    /// connection deadline with [`tokio::time::timeout`]. Background connection
+    /// tasks are started only after the handshake succeeds.
+    ///
+    /// Requires an active Tokio runtime. As with [`Self::build`], the returned
+    /// connection must be advanced explicitly to receive events.
+    #[cfg(not(feature = "browser"))]
+    pub async fn build_async(self) -> crate::Result<M::DbConnection> {
+        let handle = runtime::Handle::try_current().map_err(|error| {
+            InternalError::new("DbConnectionBuilder::build_async requires a Tokio runtime").with_cause(error)
+        })?;
+        let imp = self.build_native_impl(handle).await?;
+        Ok(<M::DbConnection as DbConnection>::new(imp))
+    }
+
     #[cfg(feature = "browser")]
     pub async fn build(self) -> crate::Result<M::DbConnection> {
         let imp = self.build_impl().await?;
@@ -963,6 +1054,19 @@ but you must call one of them, or else the connection will never progress.
     /// to construct a [`DbContextImpl`].
     #[cfg(not(feature = "browser"))]
     fn build_impl(self) -> crate::Result<DbContextImpl<M>> {
+        let (runtime, handle) = enter_or_create_runtime()?;
+        // Keep an SDK-owned runtime outside its own block_on future. If the
+        // handshake fails, dropping that runtime inside the future would panic.
+        let imp = tokio::task::block_in_place(|| handle.block_on(self.build_native_impl(handle.clone())))?;
+        imp.inner.lock().unwrap().runtime = runtime;
+        Ok(imp)
+    }
+
+    /// Share native construction between the synchronous and asynchronous API.
+    /// The handshake is the only suspension point. Until it succeeds, this
+    /// future owns the socket and callbacks without spawning background tasks.
+    #[cfg(not(feature = "browser"))]
+    async fn build_native_impl(self, handle: runtime::Handle) -> crate::Result<DbContextImpl<M>> {
         let extra_logging = self
             .additional_logging_path
             .map(|path| {
@@ -973,18 +1077,15 @@ but you must call one of them, or else the connection will never progress.
             .transpose()?
             .map(|file| Arc::new(StdMutex::new(file)));
 
-        let (runtime, handle) = enter_or_create_runtime()?;
-
         let connection_id_override = get_connection_id_override();
-        let ws_connection = tokio::task::block_in_place(|| {
-            handle.block_on(WsConnection::connect(
-                self.uri.unwrap(),
-                self.database_name.as_ref().unwrap(),
-                self.token.as_deref(),
-                connection_id_override,
-                self.params,
-            ))
-        })
+        let ws_connection = WsConnection::connect(
+            self.uri.unwrap(),
+            self.database_name.as_ref().unwrap(),
+            self.token.as_deref(),
+            connection_id_override,
+            self.params,
+        )
+        .await
         .map_err(|source| crate::Error::FailedToConnect {
             source: InternalError::new("Failed to initiate WebSocket connection").with_cause(source),
         })?;
@@ -998,7 +1099,7 @@ but you must call one of them, or else the connection will never progress.
         let (pending_mutations_send, pending_mutations_recv) = mpsc::unbounded();
         let pending_mutations_recv = Arc::new(TokioMutex::new(pending_mutations_recv));
 
-        let inner_ctx = build_db_ctx_inner(runtime, self.on_connect, self.on_connect_error, self.on_disconnect);
+        let inner_ctx = build_db_ctx_inner(None, self.on_connect, self.on_connect_error, self.on_disconnect);
         Ok(build_db_ctx(
             handle,
             inner_ctx,
@@ -1622,3 +1723,6 @@ pub(crate) fn next_query_set_id() -> QuerySetId {
         id: NEXT_QUERY_SET_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
     }
 }
+
+#[cfg(all(test, not(feature = "browser")))]
+mod terminal_tests;
