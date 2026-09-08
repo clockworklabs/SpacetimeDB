@@ -1,5 +1,6 @@
 //! Container build and operation commands. Local builds do not read saved
 //! server credentials; network commands use the explicitly selected server.
+mod operations;
 mod url;
 
 use crate::{
@@ -12,7 +13,7 @@ use std::path::{Path, PathBuf};
 use tokio_util::sync::CancellationToken;
 
 pub fn cli() -> Command {
-    Command::new("container")
+    let command = Command::new("container")
         .about("Build and manage a database's container")
         .subcommand_required(true)
         .subcommand(url::cli())
@@ -81,7 +82,8 @@ pub fn cli() -> Command {
                         .value_name("NAME=FILE")
                         .help("Explicit build secret file; separate from runtime env_keys"),
                 ),
-        )
+        );
+    operations::commands(command)
 }
 
 pub(crate) fn select(config: &SpacetimeConfig, database: Option<&str>) -> Result<ContainerConfig> {
@@ -115,10 +117,11 @@ pub(crate) fn select(config: &SpacetimeConfig, database: Option<&str>) -> Result
         .context("selected database has no container declaration; containers are not inherited")
 }
 
-pub async fn exec(config: crate::Config, args: &ArgMatches) -> Result<()> {
+pub async fn exec(mut config: crate::Config, args: &ArgMatches) -> Result<()> {
     match args.subcommand().context("missing container command")? {
         ("build", args) => exec_build(args).await,
         ("url", args) => url::exec(&config, args).await,
+        (name @ ("status" | "start" | "stop" | "restart"), args) => operations::exec(&mut config, name, args).await,
         _ => anyhow::bail!("unsupported container command"),
     }
 }

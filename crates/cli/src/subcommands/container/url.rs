@@ -111,7 +111,7 @@ async fn fetch(server: &str, database: &str) -> Result<ContainerEndpoints> {
     Ok(endpoints)
 }
 
-fn validate(endpoints: &ContainerEndpoints) -> Result<()> {
+pub(super) fn validate(endpoints: &ContainerEndpoints) -> Result<()> {
     ensure!(
         endpoints.endpoints.len() <= MAX_PORTS,
         "too many container endpoints in discovery response"
