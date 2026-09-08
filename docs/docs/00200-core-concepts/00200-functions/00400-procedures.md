@@ -23,7 +23,7 @@ For this reason, prefer defining reducers rather than procedures unless you need
 Define a procedure with `spacetimedb.procedure`:
 
 ```typescript
-export const add_two_numbers = spacetimedb.procedure(
+export const addTwoNumbers = spacetimedb.procedure(
     { lhs: t.u32(), rhs: t.u32() },
     t.u64(),
     (ctx, { lhs, rhs }) => BigInt(lhs) + BigInt(rhs),
@@ -440,7 +440,7 @@ const player = table(
 const spacetimedb = schema({ player });
 export default spacetimedb;
 
-export const find_highest_level_player = spacetimedb.procedure(t.unit(), ctx => {
+export const findHighestLevelPlayer = spacetimedb.procedure(t.unit(), ctx => {
     let highestLevelPlayer = ctx.withTx(ctx =>
         Iterator.from(ctx.db.player).reduce(
             (a, b) => a == null || b.level > a.level ? b : a,
@@ -590,7 +590,7 @@ Procedures can make HTTP requests to external services using methods contained i
 It can perform simple `GET` requests:
 
 ```typescript
-export const get_request = spacetimedb.procedure(t.unit(), ctx => {
+export const getRequest = spacetimedb.procedure(t.unit(), ctx => {
     try {
         const response = ctx.http.fetch("https://example.invalid");
         const body = response.text();
@@ -605,7 +605,7 @@ export const get_request = spacetimedb.procedure(t.unit(), ctx => {
 It can also accept an options object to specify a body, headers, HTTP method, and timeout:
 
 ```typescript
-export const post_request = spacetimedb.procedure(t.unit(), ctx => {
+export const postRequest = spacetimedb.procedure(t.unit(), ctx => {
     try {
         const response = ctx.http.fetch("https://example.invalid/upload", {
             method: "POST",
@@ -620,7 +620,7 @@ export const post_request = spacetimedb.procedure(t.unit(), ctx => {
     return {};
 });
 
-export const get_request_with_short_timeout = spacetimedb.procedure(t.unit(), ctx => {
+export const getRequestWithShortTimeout = spacetimedb.procedure(t.unit(), ctx => {
     try {
         const response = ctx.http.fetch("https://example.invalid", {
             method: "GET",
@@ -893,7 +893,7 @@ export const processItem = spacetimedb.reducer({ itemId: t.u64() }, (ctx, { item
 });
 
 // Call it from a procedure using the saved reference
-export const fetch_and_process = spacetimedb.procedure({ url: t.string() }, t.unit(), (ctx, { url }) => {
+export const fetchAndProcess = spacetimedb.procedure({ url: t.string() }, t.unit(), (ctx, { url }) => {
   // Fetch external data
   const response = ctx.http.fetch(url);
   const data = response.json();

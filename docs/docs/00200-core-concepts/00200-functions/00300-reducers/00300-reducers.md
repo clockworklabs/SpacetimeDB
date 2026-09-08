@@ -34,7 +34,7 @@ const user = table(
 const spacetimedb = schema({ user });
 export default spacetimedb;
 
-export const create_user = spacetimedb.reducer({ name: t.string(), email: t.string() }, (ctx, { name, email }) => {
+export const createUser = spacetimedb.reducer({ name: t.string(), email: t.string() }, (ctx, { name, email }) => {
   // Validate input
   if (name === '') {
     throw new Error('Name cannot be empty');
