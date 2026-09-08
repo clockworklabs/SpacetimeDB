@@ -5,14 +5,14 @@ This repository contains the C#, [Unity](https://unity.com/) and [Godot](https:/
 
 ## Documentation
 ### Unity
-The Unity SDK uses the same code as the C# SDK. You can find the documentation for the C# SDK in the [C# SDK Reference](https://spacetimedb.com/docs/sdks/c-sharp). For a guided tutorial, see the [C# SDK Quickstart](https://spacetimedb.com/docs/sdks/c-sharp/quickstart).
+The Unity SDK uses the same code as the C# SDK. You can find the documentation for the C# SDK in the [C# SDK Reference](https://spacetimedb.com/docs/clients/c-sharp). For a guided tutorial, see the [C# SDK Quickstart](https://spacetimedb.com/docs/quickstarts/c-sharp).
 
 There is also a comprehensive Unity tutorial/demo available:
 - [Unity Tutorial](https://spacetimedb.com/docs/tutorials/unity) Doc
 - [Unity Demo](https://github.com/clockworklabs/SpacetimeDB/tree/master/demo/Blackholio/client-unity) Repo
 
 ### Godot
-The Godot SDK uses the same code as the C# SDK. You can find the documentation for the C# SDK in the [C# SDK Reference](https://spacetimedb.com/docs/sdks/c-sharp). For a guided tutorial, see the [C# SDK Quickstart](https://spacetimedb.com/docs/sdks/c-sharp/quickstart).
+The Godot SDK uses the same code as the C# SDK. You can find the documentation for the C# SDK in the [C# SDK Reference](https://spacetimedb.com/docs/clients/c-sharp). For a guided tutorial, see the [C# SDK Quickstart](https://spacetimedb.com/docs/quickstarts/c-sharp).
 
 There is also a comprehensive Godot tutorial/demo available:
 - [Godot Tutorial](https://spacetimedb.com/docs/tutorials/godot) Doc
