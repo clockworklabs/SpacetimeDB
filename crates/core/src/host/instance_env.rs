@@ -1592,8 +1592,8 @@ mod test {
     #[test]
     fn module_cannot_access_hosted_system_records_by_guessed_ids() -> Result<()> {
         use spacetimedb_datastore::system_tables::{
-            ST_CONNECTION_AUTH_ID, ST_CONTAINER_FENCE_ID, ST_DEPLOYMENT_ID, ST_DEPLOYMENT_OPERATION_ID, ST_ENV_ID,
-            ST_PUBLISH_FENCE_ID,
+            ST_CONNECTION_AUTH_ID, ST_CONTAINER_ENVIRONMENT_ID, ST_CONTAINER_FENCE_ID, ST_DEPLOYMENT_ID,
+            ST_DEPLOYMENT_OPERATION_ID, ST_ENV_ID, ST_PUBLISH_FENCE_ID,
         };
         let db = relational_db()?;
         let (env, _runtime) = instance_env(db.clone())?;
@@ -1604,6 +1604,7 @@ mod test {
             (ST_PUBLISH_FENCE_ID, "st_publish_fence", to_vec(&0u8)?),
             (ST_DEPLOYMENT_OPERATION_ID, "st_deployment_operation", to_vec(&0u128)?),
             (ST_CONNECTION_AUTH_ID, "st_connection_auth", to_vec(&0u128)?),
+            (ST_CONTAINER_ENVIRONMENT_ID, "st_container_environment", to_vec(&0u64)?),
             (
                 ST_CONTAINER_FENCE_ID,
                 "st_container_fence",

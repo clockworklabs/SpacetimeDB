@@ -175,7 +175,7 @@ pub fn is_built_in_meta_row(table_id: TableId, row: &ProductValue) -> Result<boo
             // in the sense that if they exist, they come from users.
             false
         }
-        ST_CONNECTION_CREDENTIALS_ID | ST_CONNECTION_AUTH_ID => false,
+        ST_CONNECTION_CREDENTIALS_ID | ST_CONNECTION_AUTH_ID | ST_CONTAINER_ENVIRONMENT_ID => false,
         // We don't define any system views, so none of the view-related tables can be system meta-descriptors.
         ST_VIEW_ID | ST_VIEW_PARAM_ID | ST_VIEW_COLUMN_ID | ST_VIEW_SUB_ID | ST_VIEW_ARG_ID => false,
         ST_EVENT_TABLE_ID => {
@@ -205,8 +205,8 @@ pub enum SystemTable {
     st_table_accessor,
 }
 
-pub fn system_tables() -> [TableSchema; 26] {
-    let [env, deployment, publish_fence, deployment_operation, container_fence, connection_auth] =
+pub fn system_tables() -> [TableSchema; 27] {
+    let [env, deployment, publish_fence, deployment_operation, container_fence, connection_auth, container_environment] =
         deployment_system_schemas();
     [
         // The order should match the `id` of the system table, that start with [ST_TABLE_IDX].
@@ -236,6 +236,7 @@ pub fn system_tables() -> [TableSchema; 26] {
         deployment_operation,
         container_fence,
         connection_auth,
+        container_environment,
     ]
 }
 

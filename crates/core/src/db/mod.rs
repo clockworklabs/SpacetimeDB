@@ -9,6 +9,7 @@ use crate::subscription::ExecutionCounters;
 use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_datastore::{locking_tx_datastore::datastore::TxMetrics, traits::TxData};
 
+pub mod container_environment;
 pub mod deployment;
 mod durability;
 pub mod environment;

@@ -13,6 +13,7 @@ pub const ST_PUBLISH_FENCE_ID: TableId = TableId(23);
 pub const ST_DEPLOYMENT_OPERATION_ID: TableId = TableId(24);
 pub const ST_CONTAINER_FENCE_ID: TableId = TableId(25);
 pub const ST_CONNECTION_AUTH_ID: TableId = TableId(26);
+pub const ST_CONTAINER_ENVIRONMENT_ID: TableId = TableId(27);
 
 pub const ST_ENV_NAME: &str = "st_env";
 pub const ST_DEPLOYMENT_NAME: &str = "st_deployment";
@@ -20,6 +21,7 @@ pub const ST_PUBLISH_FENCE_NAME: &str = "st_publish_fence";
 pub const ST_DEPLOYMENT_OPERATION_NAME: &str = "st_deployment_operation";
 pub const ST_CONTAINER_FENCE_NAME: &str = "st_container_fence";
 pub const ST_CONNECTION_AUTH_NAME: &str = "st_connection_auth";
+pub const ST_CONTAINER_ENVIRONMENT_NAME: &str = "st_container_environment";
 
 st_fields_enum!(enum StEnvFields {
     "key", Key = 0,
@@ -55,6 +57,28 @@ st_fields_enum!(enum StConnectionAuthFields {
     "sender_identity", SenderIdentity = 1,
     "call_auth_flags", CallAuthFlags = 2,
 });
+
+st_fields_enum!(enum StContainerEnvironmentFields {
+    "generation", Generation = 0,
+    "payload", Payload = 1,
+});
+
+/// Secret-bearing host state. Never expose its retained history through SQL or module syscalls.
+#[derive(Clone, PartialEq, Eq, SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct StContainerEnvironmentRow {
+    pub generation: u64,
+    pub payload: Box<[u8]>,
+}
+
+impl std::fmt::Debug for StContainerEnvironmentRow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StContainerEnvironmentRow")
+            .field("generation", &self.generation)
+            .field("payload", &"[redacted]")
+            .finish()
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
@@ -131,7 +155,8 @@ row_conversions!(
     StPublishFenceRow,
     StDeploymentOperationRow,
     StContainerFenceRow,
-    StConnectionAuthRow
+    StConnectionAuthRow,
+    StContainerEnvironmentRow
 );
 
 pub(super) fn register_tables(builder: &mut RawModuleDefV9Builder) {
@@ -151,6 +176,7 @@ pub(super) fn register_tables(builder: &mut RawModuleDefV9Builder) {
     register::<StDeploymentOperationRow>(builder, ST_DEPLOYMENT_OPERATION_NAME);
     register::<StContainerFenceRow>(builder, ST_CONTAINER_FENCE_NAME);
     register::<StConnectionAuthRow>(builder, ST_CONNECTION_AUTH_NAME);
+    register::<StContainerEnvironmentRow>(builder, ST_CONTAINER_ENVIRONMENT_NAME);
 }
 
 pub(super) fn validate_tables(def: &ModuleDef) {
@@ -160,9 +186,10 @@ pub(super) fn validate_tables(def: &ModuleDef) {
     validate_system_table::<StDeploymentOperationFields>(def, ST_DEPLOYMENT_OPERATION_NAME);
     validate_system_table::<StContainerFenceFields>(def, ST_CONTAINER_FENCE_NAME);
     validate_system_table::<StConnectionAuthFields>(def, ST_CONNECTION_AUTH_NAME);
+    validate_system_table::<StContainerEnvironmentFields>(def, ST_CONTAINER_ENVIRONMENT_NAME);
 }
 
-pub(crate) fn deployment_system_schemas() -> [TableSchema; 6] {
+pub(crate) fn deployment_system_schemas() -> [TableSchema; 7] {
     [
         st_schema(ST_ENV_NAME, ST_ENV_ID),
         st_schema(ST_DEPLOYMENT_NAME, ST_DEPLOYMENT_ID),
@@ -170,6 +197,7 @@ pub(crate) fn deployment_system_schemas() -> [TableSchema; 6] {
         st_schema(ST_DEPLOYMENT_OPERATION_NAME, ST_DEPLOYMENT_OPERATION_ID),
         st_schema(ST_CONTAINER_FENCE_NAME, ST_CONTAINER_FENCE_ID),
         st_schema(ST_CONNECTION_AUTH_NAME, ST_CONNECTION_AUTH_ID),
+        st_schema(ST_CONTAINER_ENVIRONMENT_NAME, ST_CONTAINER_ENVIRONMENT_ID),
     ]
 }
 
@@ -181,6 +209,7 @@ pub(super) fn system_schema(table: TableId) -> Option<TableSchema> {
         ST_DEPLOYMENT_OPERATION_ID => ST_DEPLOYMENT_OPERATION_NAME,
         ST_CONTAINER_FENCE_ID => ST_CONTAINER_FENCE_NAME,
         ST_CONNECTION_AUTH_ID => ST_CONNECTION_AUTH_NAME,
+        ST_CONTAINER_ENVIRONMENT_ID => ST_CONTAINER_ENVIRONMENT_NAME,
         _ => return None,
     };
     Some(st_schema(name, table))
@@ -197,7 +226,13 @@ pub fn is_module_restricted_table(table: TableId) -> bool {
             | ST_DEPLOYMENT_OPERATION_ID
             | ST_CONTAINER_FENCE_ID
             | ST_CONNECTION_AUTH_ID
+            | ST_CONTAINER_ENVIRONMENT_ID
     )
+}
+
+/// Snapshot history is exclusively available through authenticated host operations.
+pub fn is_host_only_read_table(table: TableId) -> bool {
+    table == ST_CONTAINER_ENVIRONMENT_ID
 }
 
 pub fn is_module_restricted_index(index: IndexId) -> bool {
@@ -214,23 +249,26 @@ pub fn is_host_managed_deployment_table(table: TableId) -> bool {
             | ST_DEPLOYMENT_OPERATION_ID
             | ST_CONTAINER_FENCE_ID
             | ST_CONNECTION_AUTH_ID
+            | ST_CONTAINER_ENVIRONMENT_ID
     )
 }
 
-pub(super) const CONSTRAINTS: [(&str, ConstraintId); 6] = [
+pub(super) const CONSTRAINTS: [(&str, ConstraintId); 7] = [
     ("st_env_key_key", ConstraintId(26)),
     ("st_deployment_key_key", ConstraintId(27)),
     ("st_publish_fence_key_key", ConstraintId(28)),
     ("st_deployment_operation_operation_id_key", ConstraintId(29)),
     ("st_container_fence_source_identity_key", ConstraintId(30)),
     ("st_connection_auth_connection_id_key", ConstraintId(31)),
+    ("st_container_environment_generation_key", ConstraintId(32)),
 ];
 
-pub(super) const INDEXES: [(&str, IndexId); 6] = [
+pub(super) const INDEXES: [(&str, IndexId); 7] = [
     ("st_env_key_idx_btree", IndexId(30)),
     ("st_deployment_key_idx_btree", IndexId(31)),
     ("st_publish_fence_key_idx_btree", IndexId(32)),
     ("st_deployment_operation_operation_id_idx_btree", IndexId(33)),
     ("st_container_fence_source_identity_idx_btree", IndexId(34)),
     ("st_connection_auth_connection_id_idx_btree", IndexId(35)),
+    ("st_container_environment_generation_idx_btree", IndexId(36)),
 ];
