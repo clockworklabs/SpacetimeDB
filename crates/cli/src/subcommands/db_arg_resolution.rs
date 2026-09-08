@@ -13,6 +13,10 @@
 // | subscribe   | resolve_optional_database_parts    | No (variable args)  | No                |
 // | describe    | resolve_database_with_optional_parts | No (optional args)| No                |
 //
+// Commands that address a server rather than a database (`list`, `rename`, `mcp`) have no
+// database argument to resolve, so they take the project's server from the config directly
+// via `resolve_config_server`.
+//
 // "Auto-fallthrough" means: if the provided database name doesn't match any config target,
 // treat it as an ad-hoc database outside the project (equivalent to --no-config for that arg).
 //
@@ -21,7 +25,7 @@
 // so 2+ positional args means the first must be a database. For `call`/`subscribe`/`describe`,
 // the first positional could be a non-database argument, so we must error to avoid misinterpreting it.
 
-use crate::spacetime_config::find_and_load_with_env;
+use crate::spacetime_config::{find_and_load_with_env, SpacetimeConfig};
 use itertools::Itertools;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,6 +83,31 @@ pub(crate) fn load_config_db_targets(no_config: bool) -> anyhow::Result<Option<V
                 .collect::<Vec<_>>()
         })
         .filter(|targets| !targets.is_empty()))
+}
+
+/// Resolve the server for commands that address a *server* rather than a specific
+/// database (`list` has no database argument to hang a config lookup off).
+///
+/// Only answers when the whole config agrees on one server: a multi-database
+/// config spanning several servers has no single right answer, so we leave the
+/// CLI's default server alone rather than guess.
+pub(crate) fn resolve_config_server(no_config: bool) -> anyhow::Result<Option<String>> {
+    if no_config {
+        return Ok(None);
+    }
+    Ok(find_and_load_with_env(None)?.and_then(|loaded| single_config_server(&loaded.config)))
+}
+
+/// The one server a config points at, or `None` if it names zero or several.
+fn single_config_server(config: &SpacetimeConfig) -> Option<String> {
+    config
+        .collect_all_targets_with_inheritance()
+        .iter()
+        .filter_map(|target| target.fields.get("server").and_then(|v| v.as_str()))
+        .unique()
+        .exactly_one()
+        .ok()
+        .map(str::to_string)
 }
 
 pub(crate) fn resolve_optional_database_parts(
@@ -262,8 +291,44 @@ pub(crate) fn resolve_database_with_optional_parts(
 #[cfg(test)]
 mod tests {
     use super::{
-        resolve_database_arg, resolve_database_with_optional_parts, resolve_optional_database_parts, ConfigDbTarget,
+        resolve_database_arg, resolve_database_with_optional_parts, resolve_optional_database_parts,
+        single_config_server, ConfigDbTarget,
     };
+    use crate::spacetime_config::SpacetimeConfig;
+
+    fn parse_config(json: &str) -> SpacetimeConfig {
+        serde_json::from_str(json).unwrap()
+    }
+
+    #[test]
+    fn root_server_is_used_when_config_has_no_database() {
+        let config = parse_config(r#"{ "server": "local", "module-path": "./spacetimedb" }"#);
+        assert_eq!(single_config_server(&config).as_deref(), Some("local"));
+    }
+
+    #[test]
+    fn children_inherit_the_root_server() {
+        let config =
+            parse_config(r#"{ "server": "local", "children": [{ "database": "foo" }, { "database": "bar" }] }"#);
+        assert_eq!(single_config_server(&config).as_deref(), Some("local"));
+    }
+
+    #[test]
+    fn no_server_when_config_omits_it() {
+        let config = parse_config(r#"{ "database": "foo" }"#);
+        assert_eq!(single_config_server(&config), None);
+    }
+
+    #[test]
+    fn no_server_when_children_disagree() {
+        let config = parse_config(
+            r#"{ "children": [
+                { "database": "foo", "server": "local" },
+                { "database": "bar", "server": "maincloud" }
+            ] }"#,
+        );
+        assert_eq!(single_config_server(&config), None);
+    }
 
     #[test]
     fn single_db_infers_database() {
