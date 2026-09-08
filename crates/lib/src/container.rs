@@ -7,6 +7,9 @@
 use crate::{bsatn, hash_bytes, Hash, SpacetimeType};
 use std::{collections::BTreeSet, fmt, str::FromStr};
 
+#[cfg(feature = "serde")]
+pub mod endpoints;
+
 /// Version of the normalized deployment encoding, independent of module ABI.
 pub const CONTAINER_SPEC_VERSION: u32 = 1;
 pub const MAX_ARGV_ENTRIES: usize = 256;

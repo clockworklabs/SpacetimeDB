@@ -48,8 +48,14 @@ pub fn get_subcommands() -> Vec<Command> {
 /// server settings or credentials. Future container network commands use the
 /// ordinary authenticated dispatcher below.
 pub async fn exec_local_subcommand(cmd: &str, args: &ArgMatches) -> Option<anyhow::Result<ExitCode>> {
-    if cmd == "container" && args.subcommand_name() == Some("build") {
-        Some(subcommands::container::exec(args).await.map(|()| ExitCode::SUCCESS))
+    if cmd == "container"
+        && let Some(("build", args)) = args.subcommand()
+    {
+        Some(
+            subcommands::container::exec_build(args)
+                .await
+                .map(|()| ExitCode::SUCCESS),
+        )
     } else {
         None
     }
@@ -75,7 +81,7 @@ pub async fn exec_subcommand(
         "list" => list::exec(config, args).await,
         "init" => init::exec(config, args).await.map(|_| ()),
         "build" => build::exec(config, args).await.map(drop),
-        "container" => subcommands::container::exec(args).await,
+        "container" => subcommands::container::exec(config, args).await,
         "server" => server::exec(config, paths, args).await,
         "subscribe" => subscribe::exec(config, args).await,
         "start" => return start::exec(config, paths, args).await,

@@ -197,7 +197,6 @@ impl AuthHeader {
             val
         })
     }
-
 }
 
 pub const VALID_PROTOCOLS: [&str; 2] = ["http", "https"];

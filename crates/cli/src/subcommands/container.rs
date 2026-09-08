@@ -1,4 +1,7 @@
-//! Local container tooling. Database selection here never contacts a server.
+//! Container build and operation commands. Local builds do not read saved
+//! server credentials; network commands use the explicitly selected server.
+mod url;
+
 use crate::{
     container::{config::ContainerConfig, prepare_container, process::LocalRunner, BuildSecret, BuildTools},
     spacetime_config::{find_and_load_with_env_from, SpacetimeConfig},
@@ -12,6 +15,7 @@ pub fn cli() -> Command {
     Command::new("container")
         .about("Build and manage a database's container")
         .subcommand_required(true)
+        .subcommand(url::cli())
         .subcommand(
             Command::new("build")
                 .about("Prepare verified OCI artifacts locally without publishing")
@@ -111,10 +115,15 @@ pub(crate) fn select(config: &SpacetimeConfig, database: Option<&str>) -> Result
         .context("selected database has no container declaration; containers are not inherited")
 }
 
-pub async fn exec(args: &ArgMatches) -> Result<()> {
-    let ("build", args) = args.subcommand().context("missing container command")? else {
-        anyhow::bail!("unsupported container command");
-    };
+pub async fn exec(config: crate::Config, args: &ArgMatches) -> Result<()> {
+    match args.subcommand().context("missing container command")? {
+        ("build", args) => exec_build(args).await,
+        ("url", args) => url::exec(&config, args).await,
+        _ => anyhow::bail!("unsupported container command"),
+    }
+}
+
+pub async fn exec_build(args: &ArgMatches) -> Result<()> {
     let project = args.get_one::<PathBuf>("project_path").unwrap().canonicalize()?;
     let loaded = find_and_load_with_env_from(args.get_one::<String>("env").map(String::as_str), project)?
         .context("spacetime.json not found")?;
