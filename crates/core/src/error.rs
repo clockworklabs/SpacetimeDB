@@ -237,6 +237,10 @@ pub enum LogReplayError {
 
 #[derive(Error, Debug)]
 pub enum NodesError {
+    #[error("invalid environment variable name")]
+    InvalidEnvironmentKey,
+    #[error("too many outstanding byte sources for environment read")]
+    EnvironmentSourceLimit,
     #[error("hosted invocation rejected: {0}")]
     HostedInvocationRejected(String),
     #[error("Failed to decode row: {0}")]

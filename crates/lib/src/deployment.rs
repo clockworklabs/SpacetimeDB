@@ -8,6 +8,12 @@ use crate::{bsatn, hash_bytes, Hash, SpacetimeType, Uuid};
 
 pub const PUBLISH_PROTOCOL_VERSION: u32 = 1;
 pub const SYSTEM_EMPTY_MODULE_VERSION: u32 = 1;
+/// Immutable Keccak-256 program identity of the version-1 bundled empty Wasm
+/// module. Control can verify initial program bytes without linking the host.
+pub const SYSTEM_EMPTY_MODULE_V1_PROGRAM_HASH: Hash = Hash::from_byte_array([
+    0x9b, 0x6c, 0xf2, 0xdb, 0x36, 0x44, 0xc1, 0xd3, 0x21, 0xd9, 0x7a, 0xe0, 0xfc, 0xd4, 0xab, 0x3f, 0xc0, 0x65, 0xfc,
+    0x94, 0xf5, 0x4a, 0x49, 0xf6, 0x1c, 0x7a, 0x1d, 0xfa, 0x40, 0xa0, 0x26, 0x12,
+]);
 pub const MAX_DEPLOYMENT_BYTES: usize = 256 * 1024;
 pub const PUBLISH_RETRY_WINDOW_MS: u64 = 7 * 24 * 60 * 60 * 1000;
 pub const MAX_OPERATION_CLOCK_SKEW_MS: u64 = 5 * 60 * 1000;
@@ -131,10 +137,10 @@ impl DeploymentSpec {
 
     pub fn normalize(self, limits: &ContainerSpecLimits) -> Result<Self, DeploymentValidationError> {
         let Self::V1(mut spec) = self;
-        if let ModuleComponent::SystemEmpty(version) = spec.module {
-            if version != SYSTEM_EMPTY_MODULE_VERSION {
-                return Err(DeploymentValidationError::UnsupportedEmptyModule);
-            }
+        if let ModuleComponent::SystemEmpty(version) = spec.module
+            && version != SYSTEM_EMPTY_MODULE_VERSION
+        {
+            return Err(DeploymentValidationError::UnsupportedEmptyModule);
         }
         spec.container = spec.container.map(|spec| spec.normalize(limits)).transpose()?;
         let spec = Self::V1(spec);

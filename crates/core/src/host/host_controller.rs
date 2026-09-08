@@ -6,6 +6,7 @@ use super::{Scheduler, UpdateDatabaseResult};
 use crate::client::{ClientActorId, ClientName};
 use crate::config::{V8Config, WasmConfig};
 use crate::database_logger::DatabaseLogger;
+use crate::db::deployment::DeploymentCommit;
 use crate::db::persistence::PersistenceProvider;
 use crate::db::relational_db::{self, spawn_view_cleanup_loop, DiskSizeFn, RelationalDB, Txdata};
 use crate::db::{self, spawn_tx_metrics_recorder};
@@ -69,11 +70,26 @@ type HostCell = Arc<AsyncRwLock<Option<Host>>>;
 /// The registry of all running hosts.
 type Hosts = Arc<Mutex<IntMap<u64, HostCell>>>;
 
+#[cfg(test)]
+mod deployment_tests;
+
+#[cfg(test)]
+static FAIL_NEXT_DEPLOYMENT_ACTIVATION: Mutex<std::collections::BTreeSet<Identity>> =
+    Mutex::new(std::collections::BTreeSet::new());
+
 pub type ExternalDurability = (Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn);
 
 #[async_trait]
 pub trait ExternalStorage: Send + Sync + 'static {
     async fn lookup(&self, program_hash: Hash) -> anyhow::Result<Option<Box<[u8]>>>;
+
+    /// Resolve the authorized initial deployment from the same control
+    /// transaction that created the database. A failed lookup must return an
+    /// error, never None: None is reserved for legacy module-only databases.
+    /// Called only when no initialized program exists in the user database.
+    async fn initial_deployment(&self, _database: &Database) -> anyhow::Result<Option<DeploymentCommit>> {
+        Ok(None)
+    }
 }
 #[async_trait]
 impl<F, Fut> ExternalStorage for F
@@ -396,6 +412,23 @@ impl HostController {
         program_bytes: Box<[u8]>,
         policy: MigrationPolicy,
     ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.update_module_host_with_deployment(database, host_type, replica_id, program_bytes, policy, None)
+            .await
+    }
+
+    /// Authorized coordinator entry point. The deployment and its operation
+    /// receipt are committed in the module migration transaction. Process
+    /// startup and the control database mirror remain separate reconciliation.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_module_host_with_deployment(
+        &self,
+        database: Database,
+        host_type: HostType,
+        replica_id: u64,
+        program_bytes: Box<[u8]>,
+        policy: MigrationPolicy,
+        deployment: Option<DeploymentCommit>,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
         let program = Program::from_bytes(host_type.into(), program_bytes);
         trace!(
             "update module host {}/{}: genesis={} update-to={}",
@@ -438,20 +471,34 @@ impl HostController {
                     host
                 }
             };
+            let mut database_committed = false;
             let update_result = host
                 .update_module(
                     this.runtimes.clone(),
                     program,
                     policy,
+                    deployment,
                     this.energy_monitor.clone(),
                     this.unregister_fn(replica_id),
                     this.db_cores.take(),
+                    &mut database_committed,
                 )
-                .await?;
+                .await;
 
-            *guard = Some(host);
+            if update_result.is_err() && database_committed {
+                // Schema/program/receipt already committed. The previous
+                // executable cannot be retained after activation failure.
+                // Close clients/scheduler and reconstruct from stored program
+                // on the next leader lookup or reconciliation attempt.
+                let module = host.module.borrow().clone();
+                module.exit().await;
+                host.replica_ctx.relational_db().shutdown().await;
+                drop(host);
+            } else {
+                *guard = Some(host);
+            }
 
-            Ok::<_, anyhow::Error>(update_result)
+            update_result
         })
         .await??;
 
@@ -813,30 +860,24 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
 /// If the `db` is not initialized yet (i.e. its program hash is `None`),
 /// return an error.
 ///
-/// Otherwise, if `db.program_hash` matches the given `program_hash`, do
-/// nothing and return an empty `UpdateDatabaseResult`.
-///
-/// Otherwise, invoke `module.update_database` and return the result.
+/// Admission, including unchanged programs and idempotent deployment retries,
+/// is serialized inside the migration transaction.
 async fn update_module(
     db: &RelationalDB,
     module: &ModuleHost,
     program: Program,
     old_module_info: Arc<ModuleInfo>,
     policy: MigrationPolicy,
+    deployment: Option<DeploymentCommit>,
 ) -> anyhow::Result<UpdateDatabaseResult> {
     let addr = db.database_identity();
     match stored_program_hash(db)? {
         None => Err(anyhow!("database `{addr}` not yet initialized")),
         Some(stored) => {
-            let res = if stored == program.hash {
-                info!("database `{}` up to date with program `{}`", addr, program.hash);
-                UpdateDatabaseResult::NoUpdateNeeded
-            } else {
-                info!("updating `{}` from {} to {}", addr, stored, program.hash);
-                module.update_database(program, old_module_info, policy).await?
-            };
-
-            Ok(res)
+            info!("publishing `{}` from {} to {}", addr, stored, program.hash);
+            module
+                .update_database_with_deployment(program, old_module_info, policy, deployment)
+                .await
         }
     }
 }
@@ -936,7 +977,7 @@ impl Host {
                 (db, clients)
             }
         };
-        let (mut program, program_needs_init) = match db.program()? {
+        let (mut program, program_needs_init, initial_deployment) = match db.program()? {
             // Launch module with program from existing database.
             Some(program) => {
                 info!(
@@ -944,7 +985,7 @@ impl Host {
                     program.hash,
                     HostType::from(program.kind)
                 );
-                (program, false)
+                (program, false, None)
             }
             // Database is empty, load program from external storage and run
             // initialization.
@@ -953,13 +994,14 @@ impl Host {
                     "loading program {} from external storage host-type={}",
                     database.initial_program, database.host_type
                 );
+                let initial_deployment = program_storage.initial_deployment(&database).await?;
                 let program_bytes = load_program(program_storage, database.initial_program).await?;
                 let program = Program {
                     hash: database.initial_program,
                     bytes: program_bytes,
                     kind: database.host_type.into(),
                 };
-                (program, true)
+                (program, true, initial_deployment)
             }
         };
 
@@ -1054,7 +1096,10 @@ impl Host {
         };
 
         if program_needs_init {
-            let call_result = launched.module_host.init_database(program).await?;
+            let call_result = launched
+                .module_host
+                .init_database_with_deployment(program, initial_deployment)
+                .await?;
             if let Some(call_result) = call_result {
                 Result::from(call_result)?;
             }
@@ -1168,9 +1213,11 @@ impl Host {
         runtimes: Arc<HostRuntimes>,
         program: Program,
         policy: MigrationPolicy,
+        deployment: Option<DeploymentCommit>,
         energy_monitor: Arc<dyn EnergyMonitor>,
         on_panic: impl Fn() + Send + Sync + 'static,
         core: AllocatedJobCore,
+        database_committed: &mut bool,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.replica_ctx;
         let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db().clone());
@@ -1189,15 +1236,37 @@ impl Host {
         // Get the old module info to diff against when building a migration plan.
         let old_module_info = self.module.borrow().info.clone();
 
-        let update_result =
-            update_module(replica_ctx.relational_db(), &module, program, old_module_info, policy).await?;
+        let update_result = update_module(
+            replica_ctx.relational_db(),
+            &module,
+            program,
+            old_module_info,
+            policy,
+            deployment,
+        )
+        .await?;
+
+        *database_committed = matches!(
+            update_result,
+            UpdateDatabaseResult::UpdatePerformed { .. }
+                | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect { .. }
+        );
+
+        #[cfg(test)]
+        if *database_committed
+            && FAIL_NEXT_DEPLOYMENT_ACTIVATION
+                .lock()
+                .remove(&replica_ctx.database_identity)
+        {
+            bail!("injected scheduler activation failure after deployment commit");
+        }
 
         // Only replace the module + scheduler if the update succeeded.
         // Otherwise, we want the database to continue running with the old state.
         match update_result {
             UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed { .. } => {
-                self.scheduler = scheduler;
                 scheduler_starter.start(&module)?;
+                self.scheduler = scheduler;
                 let old_module = self.module.send_replace(module);
                 old_module.exit().await;
             }
@@ -1206,26 +1275,29 @@ impl Host {
             UpdateDatabaseResult::UpdatePerformedWithClientDisconnect { .. } => {
                 // Replace the module first, so that new clients get the new module.
                 let old_watcher = std::mem::replace(&mut self.module, watch::Sender::new(module.clone()));
+                let old_module = old_watcher.borrow().clone();
 
                 // Disconnect all clients connected to the old module.
-                let connected_clients = replica_ctx.relational_db().connected_clients()?;
-                for (identity, connection_id) in connected_clients {
-                    let client_actor_id = ClientActorId {
-                        identity,
-                        connection_id,
-                        name: ClientName(0),
-                    };
-                    //NOTE: This will call disconnect reducer of the new module, not the old one.
-                    //It makes sense, as relationaldb is already updated to the new module.
-                    module.disconnect_client(client_actor_id).await;
+                let activation = async {
+                    let connected_clients = replica_ctx.relational_db().connected_clients()?;
+                    for (identity, connection_id) in connected_clients {
+                        let client_actor_id = ClientActorId {
+                            identity,
+                            connection_id,
+                            name: ClientName(0),
+                        };
+                        // Disconnect uses the newly committed module.
+                        module.disconnect_client(client_actor_id).await;
+                    }
+                    scheduler_starter.start(&module)?;
+                    Ok::<_, anyhow::Error>(())
                 }
-
-                self.scheduler = scheduler;
-                scheduler_starter.start(&module)?;
+                .await;
                 // exit the old module, drop the `old_watcher` afterwards,
                 // which will signal websocket clients that the module is gone.
-                let old_module = old_watcher.borrow().clone();
                 old_module.exit().await;
+                activation?;
+                self.scheduler = scheduler;
             }
             _ => {}
         }

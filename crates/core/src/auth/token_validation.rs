@@ -258,9 +258,9 @@ fn get_raw_issuer(token: &str) -> Result<Box<str>, TokenValidationError> {
 }
 
 fn reject_reserved_hosted_credentials(token: &str) -> Result<(), TokenValidationError> {
-    if spacetimedb_auth::hosted::has_reserved_hosted_token_kind(token)? {
+    if spacetimedb_auth::hosted::has_reserved_platform_token_kind(token)? {
         return Err(anyhow::anyhow!(
-            "hosted credentials require dedicated target-bound validation and cannot be exchanged"
+            "platform container credentials require their dedicated validator and cannot be exchanged"
         )
         .into());
     }

@@ -304,6 +304,27 @@ impl InstanceEnv {
         self.replica_ctx.relational_db()
     }
 
+    /// Dedicated read-only environment access. Missing reads also register a
+    /// dependency so a later insert refreshes a view that observed absence.
+    pub(crate) fn env_get(&self, key: &str) -> Result<Option<String>, NodesError> {
+        use crate::db::environment;
+        use spacetimedb_datastore::system_tables::ST_ENV_ID;
+        spacetimedb_lib::environment::validate_key(key).map_err(|_| NodesError::InvalidEnvironmentKey)?;
+        let read = |state: &_| environment::get(state, key).map_err(|err| NodesError::from(DBError::Other(err.into())));
+        if let Ok(mut tx) = self.get_tx() {
+            tx.record_table_scan(&self.func_type, ST_ENV_ID);
+            return read(&*tx);
+        }
+        if !matches!(self.func_type, FuncCallType::Procedure) {
+            return Err(NodesError::NotInTransaction);
+        }
+        self.relational_db().with_read_only(Workload::Internal, |tx| {
+            check_hosted_admission(tx, *self.database_identity(), self.hosted_auth.as_deref())
+                .map_err(|err| NodesError::HostedInvocationRejected(err.to_string()))?;
+            environment::get(tx, key).map_err(|err| NodesError::from(DBError::Other(err.into())))
+        })
+    }
+
     pub(crate) fn get_jwt_payload(&self, connection_id: ConnectionId) -> Result<Option<String>, NodesError> {
         if let Ok(tx) = self.get_tx() {
             return Ok(tx.get_jwt_payload(connection_id).map_err(DBError::from)?);
@@ -1453,6 +1474,111 @@ mod test {
     fn relational_db() -> Result<Arc<RelationalDB>> {
         let TestDB { db, .. } = TestDB::in_memory()?;
         Ok(db)
+    }
+
+    #[test]
+    fn environment_reads_use_active_transaction_and_track_missing_view_dependency() -> Result<()> {
+        use crate::db::environment;
+        use spacetimedb_datastore::locking_tx_datastore::ViewCallInfo;
+        use spacetimedb_datastore::system_tables::ST_ENV_ID;
+        use spacetimedb_primitives::{ViewFnPtr, ViewId};
+        let db = relational_db()?;
+        let (mut env, _runtime) = instance_env(db.clone())?;
+        assert!(matches!(env.env_get("A"), Err(NodesError::NotInTransaction)));
+        env.func_type = FuncCallType::Procedure;
+        assert_eq!(env.env_get("A")?, None);
+        let mut tx = begin_mut_tx(&db);
+        environment::set(&db, &mut tx, "A", "uncommitted")?;
+        env.tx.set_raw(tx);
+        assert_eq!(env.env_get("A")?.as_deref(), Some("uncommitted"));
+        let view = ViewCallInfo {
+            view_id: ViewId(88),
+            table_id: ST_ENV_ID,
+            fn_ptr: ViewFnPtr(0),
+            sender: None,
+        };
+        env.func_type = FuncCallType::View(view.clone());
+        assert_eq!(env.env_get("MISSING")?, None);
+        let tx = env.tx.take()?;
+        db.commit_tx(tx)?;
+        let mut tx = begin_mut_tx(&db);
+        environment::set(&db, &mut tx, "MISSING", "")?;
+        assert!(tx.views_for_refresh().any(|dependency| dependency == &view));
+        let (_, metrics, reducer) = db.rollback_mut_tx(tx);
+        db.report_mut_tx_metrics(reducer, metrics, None);
+        env.func_type = FuncCallType::Procedure;
+        assert_eq!(env.env_get("MISSING")?, None);
+        assert!(matches!(env.env_get("A=B"), Err(NodesError::InvalidEnvironmentKey)));
+        Ok(())
+    }
+
+    #[test]
+    fn procedure_environment_snapshot_rechecks_durable_fence_and_expiry() -> Result<()> {
+        use crate::auth::{
+            hosted_tokens::{sign_hosted_token, HostedTokenBinding, HostedTokenValidator},
+            JwtKeys,
+        };
+        use crate::db::{deployment::install_container_fence, environment};
+        use spacetimedb_datastore::system_tables::StContainerFenceRow;
+        use std::time::SystemTime;
+        let db = relational_db()?;
+        let (mut env, _runtime) = instance_env(db.clone())?;
+        env.func_type = FuncCallType::Procedure;
+        let keys = JwtKeys::generate()?;
+        let validator = HostedTokenValidator::new([("platform.test".into(), keys.public)])?;
+        let mint = |issued: SystemTime| -> Result<_> {
+            let binding = HostedTokenBinding {
+                source_database: db.database_identity(),
+                target_database: db.database_identity(),
+                generation: 1,
+                grant_revision: 1,
+                lease_expires_at: issued + Duration::from_secs(30),
+            };
+            let token = sign_hosted_token(
+                &keys.private,
+                "platform.test",
+                &binding,
+                issued,
+                issued + Duration::from_secs(20),
+                "env-test",
+            )?;
+            Ok(Arc::new(validator.validate_token(
+                &token,
+                db.database_identity(),
+                issued,
+                |_, _, _| Some(binding),
+            )?))
+        };
+        let fence = |generation, allowed| StContainerFenceRow {
+            source_identity: db.database_identity().into(),
+            generation,
+            target_grant_revision: generation,
+            target_set_hash: Hash::ZERO,
+            allowed,
+        };
+        db.with_auto_commit(Workload::ForTests, |tx| -> Result<()> {
+            install_container_fence(&db, tx, &fence(1, true))?;
+            environment::set(&db, tx, "VALUE", "available")?;
+            Ok(())
+        })?;
+        env.set_hosted_auth(Some(mint(SystemTime::now())?));
+        assert_eq!(env.env_get("VALUE")?.as_deref(), Some("available"));
+        env.set_hosted_auth(Some(mint(SystemTime::now() - Duration::from_secs(60))?));
+        assert!(matches!(
+            env.env_get("VALUE"),
+            Err(NodesError::HostedInvocationRejected(_))
+        ));
+        env.set_hosted_auth(Some(mint(SystemTime::now())?));
+        db.with_auto_commit(Workload::ForTests, |tx| {
+            install_container_fence(&db, tx, &fence(2, false))
+        })?;
+        assert!(matches!(
+            env.env_get("VALUE"),
+            Err(NodesError::HostedInvocationRejected(_))
+        ));
+        env.set_hosted_auth(None);
+        assert_eq!(env.env_get("VALUE")?.as_deref(), Some("available"));
+        Ok(())
     }
 
     /// Generate a `ProductValue` for use in [create_table_with_index]

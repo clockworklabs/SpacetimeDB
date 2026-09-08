@@ -96,12 +96,12 @@ fn run_inner<I: WasmInstance>(
     let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
         check_hosted_admission(tx, db.database_identity(), auth.hosted.as_deref())?;
         let stmt = compile_sql_stmt(&sql_text, &SchemaViewer::new(tx, &auth), &auth)?;
-        if let Statement::DML(dml) = &stmt {
-            if spacetimedb_datastore::system_tables::is_host_managed_deployment_table(dml.table_id()) {
-                return Err(anyhow!(
-                    "Deployment and container authorization metadata may only be changed by the host"
-                ));
-            }
+        if let Statement::DML(dml) = &stmt
+            && spacetimedb_datastore::system_tables::is_host_managed_deployment_table(dml.table_id())
+        {
+            return Err(anyhow!(
+                "Deployment and container authorization metadata may only be changed by the host"
+            ));
         }
         Ok(stmt)
     })?;

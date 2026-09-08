@@ -1,3 +1,4 @@
+import type { Environment } from '../lib/environment';
 import type { Identity } from '../lib/identity';
 import type {
   HttpMethod,
@@ -214,6 +215,7 @@ export class Request {
 export interface HandlerContext<S extends UntypedSchemaDef = UntypedSchemaDef> {
   readonly timestamp: Timestamp;
   readonly http: HttpClient;
+  readonly env: Environment;
   readonly identity: Identity;
   readonly random: Random;
   withTx<T>(body: (ctx: TransactionCtx<S>) => T): T;

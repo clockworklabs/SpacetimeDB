@@ -38,6 +38,14 @@ extern "C" Status get_jwt(const uint8_t*, BytesSource* out) {
     return Status{0};
 }
 
+extern "C" Status env_get(const uint8_t* key, uint32_t key_len, BytesSource* out) {
+    payload_offset = 0;
+    const std::string name(reinterpret_cast<const char*>(key), key_len);
+    if (name == "ERROR") return Status{1};
+    *out = BytesSource{name == "MISSING" ? 0u : 1u};
+    return Status{0};
+}
+
 extern "C" int16_t bytes_source_read(BytesSource, uint8_t* out, size_t* len) {
     *len = std::min(*len, jwt_payload.size() - payload_offset);
     std::memcpy(out, jwt_payload.data() + payload_offset, *len);
@@ -101,4 +109,29 @@ TEST_CASE(procedure_transactions_preserve_authority_connection_and_sender) {
         });
         ASSERT_EQ(size_t{1}, flag_reads);
     }
+}
+
+TEST_CASE(environment_preserves_missing_empty_and_all_chunks_without_caching) {
+    Environment env;
+    reset_host(0);
+    ASSERT_TRUE(!env.get("MISSING").has_value());
+    ASSERT_EQ(std::string{}, env.get("EMPTY").value());
+    jwt_payload = std::string(8192, 'x');
+    ASSERT_EQ(jwt_payload, env.get("LARGE").value());
+    jwt_payload = std::string("a\0b", 3);
+    ASSERT_EQ(jwt_payload, env.get("NUL").value());
+    jwt_payload = "updated";
+    ASSERT_EQ(jwt_payload, env.get("NUL").value());
+    ProcedureContext procedure(verified_sender(), Timestamp::from_micros_since_epoch(0), ConnectionId(0));
+    ASSERT_EQ(jwt_payload, procedure.env.get("VALUE").value());
+    procedure.with_tx([&](TxContext& tx) { ASSERT_EQ(jwt_payload, tx.env.get("VALUE").value()); });
+}
+
+TEST_CASE(optional_reader_matches_canonical_bsatn_tags_and_preserves_following_bytes) {
+    const std::vector<uint8_t> bytes{1, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 'a', 0, 'b', 42};
+    bsatn::Reader reader(bytes.data(), bytes.size());
+    ASSERT_TRUE(!bsatn::deserialize<std::optional<std::string>>(reader).has_value());
+    ASSERT_EQ(std::string{}, bsatn::deserialize<std::optional<std::string>>(reader).value());
+    ASSERT_EQ(std::string("a\0b", 3), bsatn::deserialize<std::optional<std::string>>(reader).value());
+    ASSERT_EQ(uint8_t{42}, reader.read_u8());
 }

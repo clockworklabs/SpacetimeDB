@@ -1,3 +1,4 @@
+import { environment } from './environment';
 import * as _syscalls2_0 from 'spacetime:sys@2.0';
 import * as _syscalls2_1 from 'spacetime:sys@2.1';
 import * as _syscalls2_2 from 'spacetime:sys@2.2';
@@ -220,6 +221,7 @@ export const ReducerCtxImpl = class ReducerCtx<
   timestamp: Timestamp;
   connectionId: ConnectionId | null;
   db: DbView<SchemaDef>;
+  readonly env = environment;
 
   constructor(
     sender: Identity,
@@ -425,6 +427,7 @@ class ModuleHooksImpl implements ModuleHooks {
     const { fn, deserializeParams, serializeReturn, returnTypeBaseSize } =
       moduleCtx.views[id];
     const ctx: ViewCtx<any> = freeze({
+      env: environment,
       sender: new Identity(sender),
       // this is the non-readonly DbView, but the typing for the user will be
       // the readonly one, and if they do call mutating functions it will fail
@@ -450,6 +453,7 @@ class ModuleHooksImpl implements ModuleHooks {
     const { fn, deserializeParams, serializeReturn, returnTypeBaseSize } =
       moduleCtx.anonViews[id];
     const ctx: AnonymousViewCtx<any> = freeze({
+      env: environment,
       // this is the non-readonly DbView, but the typing for the user will be
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime
@@ -520,6 +524,7 @@ const BINARY_READER = new BinaryReader(new Uint8Array());
 class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
   implements HandlerContext<S>
 {
+  readonly env = environment;
   #identity: Identity | undefined;
   #uuidCounter: { value: number } | undefined;
   #random: Random | undefined;

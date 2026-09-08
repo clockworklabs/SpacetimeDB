@@ -1,3 +1,4 @@
+import { environment, type Environment } from './environment';
 import {
   AlgebraicType,
   ProductType,
@@ -83,6 +84,7 @@ export interface ProcedureOpts {
 }
 
 export interface ProcedureCtx<S extends UntypedSchemaDef> {
+  readonly env: Environment;
   readonly sender: Identity;
   readonly databaseIdentity: Identity;
   /** @deprecated Use `databaseIdentity` instead. */
@@ -192,6 +194,7 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   #random: Random | undefined;
   #dbView: () => DbView<any>;
   readonly senderAuth: AuthCtx;
+  readonly env = environment;
 
   constructor(
     readonly sender: Identity,

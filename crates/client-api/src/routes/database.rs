@@ -1081,6 +1081,11 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
             | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect {
                 tx_offset,
                 durable_offset,
+            }
+            | UpdateDatabaseResult::DeploymentAlreadyCommitted {
+                tx_offset,
+                durable_offset,
+                ..
             },
         ) => {
             timeout(confirmation_timeout.min(MAX_UPDATE_CONFIRMATION_TIMEOUT), async {

@@ -4,6 +4,7 @@ use crate::auth::hosted_tokens::VerifiedHostedAuth;
 use crate::auth::invocation::check_hosted_admission;
 use crate::client::ClientActorId;
 use crate::database_logger;
+use crate::db::deployment::{self, CommitAdmission, DeploymentCommit};
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
 use crate::error::DBError;
 use crate::host::host_controller::CallProcedureReturn;
@@ -477,9 +478,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        deployment: Option<DeploymentCommit>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         self.common
-            .update_database(program, old_module_info, policy, &mut self.instance)
+            .update_database(program, old_module_info, policy, deployment, &mut self.instance)
     }
 
     pub fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult {
@@ -533,11 +535,23 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
-    pub fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
-        let module_def = &self.common.info.clone().module_def;
+    pub fn init_database(
+        &mut self,
+        program: Program,
+        deployment: Option<DeploymentCommit>,
+    ) -> anyhow::Result<Option<ReducerCallResult>> {
+        let info = self.common.info.clone();
+        let module_def = &info.module_def;
         let replica_ctx = &self.instance.replica_ctx().clone();
         let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
-        let (res, trapped) = init_database(replica_ctx, module_def, program, call_reducer);
+        let (res, trapped) = init_database(
+            replica_ctx,
+            module_def,
+            info.module_hash,
+            program,
+            deployment,
+            call_reducer,
+        );
         self.trapped = trapped;
         res
     }
@@ -632,11 +646,81 @@ impl InstanceCommon {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        deployment: Option<DeploymentCommit>,
         inst: &mut I,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
         let replica_ctx = inst.replica_ctx().clone();
         let system_logger = replica_ctx.logger.system_logger();
         let stdb = &replica_ctx.relational_db();
+
+        let timestamp = Timestamp::now();
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        let (tx, (admission, unchanged)) = stdb.with_auto_rollback(tx, |tx| -> anyhow::Result<_> {
+            ensure!(
+                self.info.module_hash == program.hash,
+                "program does not match the instantiated module"
+            );
+            let admission = if let Some(request) = &deployment {
+                deployment::validate_deployment_program(request, &program, &self.info.module_def)?;
+                deployment::check_deployment_commit(tx, request, timestamp, &Default::default())?
+            } else {
+                deployment::require_unmanaged_publication(tx)?;
+                CommitAdmission::Ready
+            };
+            if matches!(admission, CommitAdmission::AlreadyCommitted(_)) {
+                return Ok((admission, false));
+            }
+            deployment::validate_active_hosted_grants(tx, &self.info.module_def)?;
+            use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+            use spacetimedb_datastore::system_tables::{read_hash_from_col, StModuleFields, ST_MODULE_ID};
+            let row = tx.iter(ST_MODULE_ID)?.next().context("database is not initialized")?;
+            let stored_hash = read_hash_from_col(row, StModuleFields::ProgramHash)?;
+            ensure!(
+                stored_hash == old_module_info.module_hash,
+                "module changed before publication admission"
+            );
+            Ok((admission, stored_hash == program.hash))
+        })?;
+        if let CommitAdmission::AlreadyCommitted(result) = admission {
+            let (offset, metrics, reducer) = stdb.rollback_mut_tx(tx);
+            stdb.report_mut_tx_metrics(reducer, metrics, None);
+            let (sender, tx_offset) = tokio::sync::oneshot::channel();
+            let _ = sender.send(offset);
+            return Ok(UpdateDatabaseResult::DeploymentAlreadyCommitted {
+                result,
+                tx_offset,
+                durable_offset: stdb.durable_tx_offset(),
+            });
+        }
+        if unchanged {
+            let Some(request) = &deployment else {
+                let (_, metrics, reducer) = stdb.rollback_mut_tx(tx);
+                stdb.report_mut_tx_metrics(reducer, metrics, None);
+                return Ok(UpdateDatabaseResult::NoUpdateNeeded);
+            };
+            let (tx, _) = stdb.with_auto_rollback(tx, |tx| {
+                deployment::record_deployment_commit(tx, request, timestamp, &Default::default())
+            })?;
+            let event = ModuleEvent {
+                timestamp,
+                caller_identity: request.publisher,
+                caller_connection_id: None,
+                function_call: ModuleFunctionCall::update(),
+                status: EventStatus::Committed(DatabaseUpdate::default()),
+                reducer_return_value: None,
+                energy_quanta_used: FunctionBudget::ZERO.into(),
+                host_execution_duration: Duration::ZERO,
+                request_id: None,
+                timer: None,
+            };
+            let durable_offset = stdb.durable_tx_offset();
+            let CommitAndBroadcastEventSuccess { tx_offset, .. } =
+                commit_and_broadcast_event(&self.info.subscriptions, None, event, tx);
+            return Ok(UpdateDatabaseResult::UpdatePerformed {
+                tx_offset,
+                durable_offset,
+            });
+        }
 
         let plan: MigratePlan = match policy.try_migrate(
             self.info.database_identity,
@@ -647,17 +731,24 @@ impl InstanceCommon {
         ) {
             Ok(plan) => plan,
             Err(e) => {
+                let (_, metrics, reducer) = stdb.rollback_mut_tx(tx);
+                stdb.report_mut_tx_metrics(reducer, metrics, None);
                 return match e {
                     MigrationPolicyError::AutoMigrateFailure(e) => Ok(UpdateDatabaseResult::AutoMigrateError(e.into())),
                     _ => Ok(UpdateDatabaseResult::ErrorExecutingMigration(e.into())),
-                }
+                };
             }
         };
 
         let program_hash = program.hash;
         let host_type = HostType::from(program.kind);
-        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-        let (mut tx, _) = stdb.with_auto_rollback(tx, |tx| stdb.update_program(tx, program))?;
+        let (mut tx, _) = stdb.with_auto_rollback(tx, |tx| -> anyhow::Result<()> {
+            stdb.update_program(tx, program)?;
+            if let Some(request) = &deployment {
+                deployment::record_deployment_commit(tx, request, timestamp, &Default::default())?;
+            }
+            Ok(())
+        })?;
         system_logger.info(&format!("Updated program to {program_hash}"));
 
         let auth_ctx = AuthCtx::for_current(replica_ctx.database.owner_identity);
@@ -750,7 +841,9 @@ impl InstanceCommon {
         tx: MutTxId,
         inst: &mut I,
     ) -> Result<(ViewCallResult, bool), anyhow::Error> {
-        let view_calls = collect_subscribed_view_calls(&tx, &self.info.module_def, self.info.owner_identity)?;
+        let (tx, view_calls) = inst.replica_ctx().relational_db().with_auto_rollback(tx, |tx| {
+            collect_subscribed_view_calls(tx, &self.info.module_def, self.info.owner_identity)
+        })?;
         Ok(self.execute_view_calls(tx, view_calls, inst))
     }
 

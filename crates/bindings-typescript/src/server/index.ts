@@ -36,3 +36,5 @@ export {
 export type { HandlerContext, HttpHandlerExport } from './http';
 
 import './polyfills'; // Ensure polyfills are loaded
+
+export type { Environment } from './environment';

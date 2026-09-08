@@ -19,7 +19,7 @@ pub const EXEC_RESERVED_BYTES: usize = 4096;
 pub const DEFAULT_STOP_GRACE_MS: u32 = 30_000;
 pub const MAX_STOP_GRACE_MS: u32 = 120_000;
 
-/// The digest of an OCI object. This is never a SpacetimeDB BLAKE3 object key.
+/// The digest of an OCI object. This is never a SpacetimeDB Keccak-256 program key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, SpacetimeType)]
 #[sats(crate = crate)]
 pub enum OciDigest {
@@ -241,6 +241,10 @@ pub struct ContainerSpec {
 #[cfg_attr(
     feature = "serde",
     serde(tag = "action", content = "value", rename_all = "snake_case", deny_unknown_fields)
+)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "the normalized publish request owns its single container spec"
 )]
 pub enum ContainerAction {
     #[default]

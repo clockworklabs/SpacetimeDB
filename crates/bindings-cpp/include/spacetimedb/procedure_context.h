@@ -17,6 +17,8 @@
 #include <type_traits>
 #include <memory>
 
+#include <spacetimedb/environment.h>
+
 namespace SpacetimeDB {
 
 /**
@@ -60,6 +62,7 @@ private:
     AuthCtx sender_auth_ = AuthCtx::internal();
 
 public:
+    Environment env;
     // Timestamp when the procedure was invoked
     Timestamp timestamp;
 

@@ -109,6 +109,21 @@ internal static partial class FFI
     [LibraryImport(StdbNamespace10_6)]
     public static partial uint get_call_auth_flags();
 
+    const string StdbNamespace10_7 =
+#if EXPERIMENTAL_WASM_AOT
+        "spacetime_10.7"
+#else
+        "bindings"
+#endif
+    ;
+
+    [LibraryImport(StdbNamespace10_7)]
+    public static unsafe partial CheckedStatus env_get(
+        byte* key,
+        uint keyLen,
+        out BytesSource source
+    );
+
     [NativeMarshalling(typeof(Marshaller))]
     public struct CheckedStatus
     {

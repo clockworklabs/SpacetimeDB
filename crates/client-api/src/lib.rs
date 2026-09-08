@@ -213,6 +213,28 @@ impl Host {
             .update_module_host(database, host_type, self.replica_id, program_bytes, policy)
             .await
     }
+
+    /// Used only by an authenticated publication coordinator after control
+    /// admission and quiescing. This does not authorize or start a container.
+    pub async fn update_with_deployment(
+        &self,
+        database: Database,
+        host_type: HostType,
+        program_bytes: Box<[u8]>,
+        policy: MigrationPolicy,
+        deployment: spacetimedb::db::deployment::DeploymentCommit,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.host_controller
+            .update_module_host_with_deployment(
+                database,
+                host_type,
+                self.replica_id,
+                program_bytes,
+                policy,
+                Some(deployment),
+            )
+            .await
+    }
 }
 /// Parameters for publishing a database.
 ///

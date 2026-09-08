@@ -7,6 +7,7 @@ use crate::auth::invocation::{check_hosted_admission, InvocationCaller, SqlCallA
 use crate::client::messages::{OneOffQueryResponseMessage, ProcedureResultMessage, SerializableMessage};
 use crate::client::{ClientActorId, ClientConnectionSender, WsVersion};
 use crate::database_logger::{DatabaseLogger, LogLevel, Record};
+use crate::db::deployment::{self, CommitAdmission, DeploymentCommit, PublishResult as DeploymentPublishResult};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
@@ -592,18 +593,33 @@ fn extract_trapped<T, E>(res: Result<(T, bool), E>) -> (Result<T, E>, bool) {
 pub(crate) fn init_database(
     replica_ctx: &ReplicaContext,
     module_def: &ModuleDef,
+    module_hash: Hash,
     program: Program,
+    deployment: Option<DeploymentCommit>,
     call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResult, bool),
 ) -> (anyhow::Result<Option<ReducerCallResult>>, bool) {
-    extract_trapped(init_database_inner(replica_ctx, module_def, program, call_reducer))
+    extract_trapped(init_database_inner(
+        replica_ctx,
+        module_def,
+        module_hash,
+        program,
+        deployment,
+        call_reducer,
+    ))
 }
 
 fn init_database_inner(
     replica_ctx: &ReplicaContext,
     module_def: &ModuleDef,
+    module_hash: Hash,
     program: Program,
+    deployment: Option<DeploymentCommit>,
     call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResult, bool),
 ) -> anyhow::Result<(Option<ReducerCallResult>, bool)> {
+    anyhow::ensure!(
+        module_hash == program.hash && spacetimedb_lib::hash_bytes(&program.bytes) == program.hash,
+        "program does not match the instantiated module"
+    );
     log::debug!("init database");
     let timestamp = Timestamp::now();
     let stdb = replica_ctx.relational_db();
@@ -612,6 +628,28 @@ fn init_database_inner(
 
     let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
     let auth_ctx = AuthCtx::for_current(owner_identity);
+    let (tx, admission) = stdb.with_auto_rollback(tx, |tx| {
+        if let Some(request) = &deployment {
+            deployment::validate_deployment_program(request, &program, module_def)?;
+            // New databases install the bootstrap fence, schema, program and
+            // receipt in this one transaction. An interrupted initialization
+            // cannot leave a successful partial deployment behind.
+            use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+            use spacetimedb_datastore::system_tables::ST_MODULE_ID;
+            if tx.iter(ST_MODULE_ID)?.next().is_none() {
+                deployment::install_publication_fence(tx, request.publication_epoch, request.operation_id)?;
+            }
+            deployment::check_deployment_commit(tx, request, timestamp, &Default::default())
+        } else {
+            deployment::require_unmanaged_publication(tx)?;
+            Ok(CommitAdmission::Ready)
+        }
+    })?;
+    if matches!(admission, CommitAdmission::AlreadyCommitted(_)) {
+        let (_, metrics, reducer) = stdb.rollback_mut_tx(tx);
+        stdb.report_mut_tx_metrics(reducer, metrics, None);
+        return Ok((None, false));
+    }
     let (tx, ()) = stdb
         .with_auto_rollback(tx, |tx| {
             // Create all in-memory tables defined by the module,
@@ -644,6 +682,10 @@ fn init_database_inner(
             }
 
             stdb.set_initialized(tx, program)?;
+
+            if let Some(request) = &deployment {
+                deployment::record_deployment_commit(tx, request, timestamp, &Default::default())?;
+            }
 
             anyhow::Ok(())
         })
@@ -1443,6 +1485,13 @@ pub struct WeakModuleHost {
 #[derive(Debug)]
 pub enum UpdateDatabaseResult {
     NoUpdateNeeded,
+    /// A prior successful commit is returned without replacing the current
+    /// module, which may already be newer than this retried publication.
+    DeploymentAlreadyCommitted {
+        result: DeploymentPublishResult,
+        tx_offset: TransactionOffset,
+        durable_offset: Option<DurableOffset>,
+    },
     UpdatePerformed {
         /// The transaction offset of the successful database update.
         tx_offset: TransactionOffset,
@@ -1467,6 +1516,7 @@ impl UpdateDatabaseResult {
             self,
             UpdateDatabaseResult::UpdatePerformed { .. }
                 | UpdateDatabaseResult::NoUpdateNeeded
+                | UpdateDatabaseResult::DeploymentAlreadyCommitted { .. }
                 | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect { .. }
         )
     }
@@ -3097,14 +3147,49 @@ impl ModuleHost {
     }
 
     pub async fn init_database(&self, program: Program) -> Result<Option<ReducerCallResult>, InitDatabaseError> {
-        call_instance!(
+        self.init_database_with_deployment(program, None).await
+    }
+
+    /// Host-only initialization following an authorized, durable control intent.
+    /// A new database installs its bootstrap fence in the initialization
+    /// transaction. Successful deployment initialization waits for durability
+    /// before its scheduler or container can be activated.
+    pub async fn init_database_with_deployment(
+        &self,
+        program: Program,
+        deployment: Option<DeploymentCommit>,
+    ) -> Result<Option<ReducerCallResult>, InitDatabaseError> {
+        let confirm_deployment = deployment.is_some();
+        let result = call_instance!(
             self,
             "<init_database>",
-            program,
-            |p, inst| inst.init_database(p),
-            |p, inst| inst.init_database(p).await,
+            (program, deployment),
+            |(p, d), inst| inst.init_database(p, d),
+            |(p, d), inst| inst.init_database(p, d).await,
         )?
-        .map_err(InitDatabaseError::Other)
+        .map_err(InitDatabaseError::Other)?;
+        if confirm_deployment
+            && result.as_ref().is_none_or(|result| result.is_ok())
+            && let Some(mut durability) = self.relational_db().durable_tx_offset()
+        {
+            // A read barrier after init includes its receipt even when the
+            // module has no init reducer. Do not block the async worker on
+            // the datastore lock while capturing that barrier.
+            let db = self.relational_db().clone();
+            let offset = tokio::task::spawn_blocking(move || {
+                let tx = db.begin_tx(Workload::Internal);
+                let (offset, metrics, reducer) = db.release_tx(tx);
+                db.report_read_tx_metrics(reducer, metrics);
+                offset
+            })
+            .await
+            .map_err(|error| InitDatabaseError::Other(error.into()))?;
+            durability
+                .wait_for(offset)
+                .await
+                .map_err(|error| InitDatabaseError::Other(error.into()))?;
+        }
+        Ok(result)
     }
 
     pub async fn update_database(
@@ -3113,12 +3198,24 @@ impl ModuleHost {
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        self.update_database_with_deployment(program, old_module_info, policy, None)
+            .await
+    }
+
+    /// Commit the prepared deployment in the same transaction as migration.
+    pub async fn update_database_with_deployment(
+        &self,
+        program: Program,
+        old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
+        deployment: Option<DeploymentCommit>,
+    ) -> Result<UpdateDatabaseResult, anyhow::Error> {
         call_instance!(
             self,
             "<update_database>",
-            (program, old_module_info, policy),
-            |(a, b, c), inst| inst.update_database(a, b, c),
-            |(a, b, c), inst| inst.update_database(a, b, c).await,
+            (program, old_module_info, policy, deployment),
+            |(a, b, c, d), inst| inst.update_database(a, b, c, d),
+            |(a, b, c, d), inst| inst.update_database(a, b, c, d).await,
         )?
     }
 

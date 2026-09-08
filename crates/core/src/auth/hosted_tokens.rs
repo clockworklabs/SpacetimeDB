@@ -3,8 +3,8 @@
 use anyhow::{ensure, Context};
 use jsonwebtoken::DecodingKey;
 pub use spacetimedb_auth::hosted::{
-    has_reserved_hosted_token_kind, sign_hosted_token, HostedTokenBinding, HostedTokenClaims, VerifiedHostedAuth, HOSTED_TOKEN_KIND, HOSTED_TOKEN_TYPE,
-    MAX_HOSTED_TOKEN_LIFETIME,
+    has_reserved_hosted_token_kind, sign_hosted_token, HostedTokenBinding, HostedTokenClaims, VerifiedHostedAuth,
+    HOSTED_TOKEN_KIND, HOSTED_TOKEN_TYPE, MAX_HOSTED_TOKEN_LIFETIME,
 };
 use spacetimedb_auth::hosted::{unverified_hosted_token_claims, verify_hosted_token};
 use spacetimedb_lib::Identity;
@@ -258,7 +258,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ordinary_validation_rejects_reserved_hosted_kinds_and_types() {
+    async fn ordinary_validation_rejects_reserved_platform_kinds_and_types() {
         let (keys, _, binding, _) = fixture();
         let now = SystemTime::now();
         let binding = HostedTokenBinding {
@@ -281,8 +281,20 @@ mod tests {
                 claims.as_object_mut().unwrap().remove("kind");
                 header.typ = Some("spacetimedb-hosted-v2+jwt".into());
             }),
+            change(&token, &keys, |claims, header| {
+                claims["kind"] = json!("spacetimedb_container_lease_v1");
+                header.typ = Some("JWT".into());
+            }),
+            change(&token, &keys, |claims, header| {
+                claims.as_object_mut().unwrap().remove("kind");
+                header.typ = Some("spacetimedb-container-lease+jwt".into());
+            }),
+            change(&token, &keys, |claims, header| {
+                claims["kind"] = json!("spacetimedb_container_registry_future");
+                header.typ = Some("JWT".into());
+            }),
         ] {
-            assert!(has_reserved_hosted_token_kind(&reserved).unwrap());
+            assert!(spacetimedb_auth::hosted::has_reserved_platform_token_kind(&reserved).unwrap());
             assert!(keys.public.validate_token(&reserved).await.is_err());
             assert!(ordinary.validate_token(&reserved).await.is_err());
         }

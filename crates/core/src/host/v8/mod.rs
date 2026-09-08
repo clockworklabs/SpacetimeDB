@@ -488,11 +488,13 @@ impl JsMainInstance {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        deployment: Option<crate::db::deployment::DeploymentCommit>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         self.request(UpdateDatabaseRequest {
             program,
             old_module_info,
             policy,
+            deployment,
         })
         .await
     }
@@ -548,8 +550,12 @@ impl JsMainInstance {
         self.request(DisconnectClientRequest { client_id }).await
     }
 
-    pub async fn init_database(&self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
-        self.request(InitDatabaseRequest { program }).await
+    pub async fn init_database(
+        &self,
+        program: Program,
+        deployment: Option<crate::db::deployment::DeploymentCommit>,
+    ) -> anyhow::Result<Option<ReducerCallResult>> {
+        self.request(InitDatabaseRequest { program, deployment }).await
     }
 
     pub async fn call_view(&self, cmd: ViewCommand) -> ViewCommandResult {
@@ -633,6 +639,7 @@ js_main_request! {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        deployment: Option<crate::db::deployment::DeploymentCommit>,
     } => "update_database", anyhow::Result<UpdateDatabaseResult>, UpdateDatabase
 }
 
@@ -675,6 +682,7 @@ js_main_request! {
 js_main_request! {
     InitDatabaseRequest {
         program: Program,
+        deployment: Option<crate::db::deployment::DeploymentCommit>,
     } => "init_database", anyhow::Result<Option<ReducerCallResult>>, InitDatabase
 }
 
@@ -817,6 +825,7 @@ enum JsMainWorkerRequest {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        deployment: Option<crate::db::deployment::DeploymentCommit>,
     },
     /// See [`JsMainInstance::call_reducer`].
     CallReducer {
@@ -877,6 +886,7 @@ enum JsMainWorkerRequest {
     InitDatabase {
         reply_tx: JsReplyTx<anyhow::Result<Option<ReducerCallResult>>>,
         program: Program,
+        deployment: Option<crate::db::deployment::DeploymentCommit>,
     },
 }
 
@@ -1407,8 +1417,9 @@ fn handle_main_worker_request(
             program,
             old_module_info,
             policy,
+            deployment,
         } => handle_worker_request("update_database", reply_tx, || {
-            let res = instance_common.update_database(program, old_module_info, policy, inst);
+            let res = instance_common.update_database(program, old_module_info, policy, deployment, inst);
             (res, false)
         }),
         JsMainWorkerRequest::CallReducer { reply_tx, params } => {
@@ -1496,14 +1507,22 @@ fn handle_main_worker_request(
                 (res, trapped)
             })
         }
-        JsMainWorkerRequest::InitDatabase { reply_tx, program } => {
-            handle_worker_request("init_database", reply_tx, || {
-                let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
-                let (res, trapped): (Result<Option<ReducerCallResult>, anyhow::Error>, bool) =
-                    init_database(replica_ctx, &info.module_def, program, call_reducer);
-                (res, trapped)
-            })
-        }
+        JsMainWorkerRequest::InitDatabase {
+            reply_tx,
+            program,
+            deployment,
+        } => handle_worker_request("init_database", reply_tx, || {
+            let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+            let (res, trapped): (Result<Option<ReducerCallResult>, anyhow::Error>, bool) = init_database(
+                replica_ctx,
+                &info.module_def,
+                info.module_hash,
+                program,
+                deployment,
+                call_reducer,
+            );
+            (res, trapped)
+        }),
     }
 }
 

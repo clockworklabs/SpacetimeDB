@@ -128,3 +128,8 @@ declare module 'spacetime:sys@2.2' {
   /** Verified invocation flags. Bit 0 is INTERNAL; JWT presence is independent. */
   export function get_call_auth_flags(): number;
 }
+
+declare module 'spacetime:sys@2.3' {
+  /** Null means missing; an empty string is a present value. */
+  export function env_get(key: string): string | null;
+}

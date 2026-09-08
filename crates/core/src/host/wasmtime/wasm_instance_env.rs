@@ -28,6 +28,10 @@ use std::sync::Arc;
 use std::time::Instant;
 use wasmtime::{AsContext, Caller, StoreContextMut};
 
+/// Env reads may retain at most 2 MiB of value bytes outside the Wasm heap.
+/// Other outstanding byte sources count against this interface's handle limit.
+const MAX_OUTSTANDING_ENV_SOURCES: usize = 256;
+
 /// A stream of bytes which the WASM module can read from
 /// using [`WasmInstanceEnv::bytes_source_read`].
 ///
@@ -188,7 +192,14 @@ impl WasmInstanceEnv {
         // This allows the module to avoid allocating and make a system call in those cases.
         if bytes.is_empty() {
             Ok(BytesSourceId::INVALID)
-        } else if bytes.len() > u32::MAX as usize {
+        } else {
+            self.create_present_bytes_source(bytes)
+        }
+    }
+
+    /// Allocate a valid source even for an empty value when zero means absence.
+    fn create_present_bytes_source(&mut self, bytes: bytes::Bytes) -> RtResult<BytesSourceId> {
+        if bytes.len() > u32::MAX as usize {
             // There's no inherent reason we need to error here,
             // other than that it makes it impossible to report the length in `bytes_source_remaining_length`
             // and that all of our usage of `BytesSource`s as of writing (pgoldman 2025-09-26)
@@ -1541,6 +1552,34 @@ impl WasmInstanceEnv {
             let b = bytes::Bytes::from(jwt);
             let source_id = env.create_bytes_source(b)?;
             Ok(source_id.0)
+        })
+    }
+
+    /// Read an environment value as a nullable BytesSource. Zero means missing;
+    /// a present empty string always receives a nonzero, consumable source.
+    pub fn env_get(
+        caller: Caller<'_, Self>,
+        key: WasmPtr<u8>,
+        key_len: u32,
+        target_ptr: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::EnvGet, target_ptr, |caller| {
+            if key_len == 0 || key_len > spacetimedb_lib::environment::MAX_ENV_KEY_BYTES as u32 {
+                return Err(crate::error::NodesError::InvalidEnvironmentKey.into());
+            }
+            let (mem, env) = Self::mem_env(caller);
+            let key = mem.deref_str(key, key_len)?;
+            match env.instance_env.env_get(key)? {
+                None => Ok(0),
+                Some(value) => {
+                    // These buffers live on the host heap until consumed or the
+                    // invocation ends. Bound retained reads from hand-written Wasm.
+                    if env.bytes_sources.len() >= MAX_OUTSTANDING_ENV_SOURCES {
+                        return Err(crate::error::NodesError::EnvironmentSourceLimit.into());
+                    }
+                    Ok(env.create_present_bytes_source(bytes::Bytes::from(value))?.0)
+                }
+            }
         })
     }
 

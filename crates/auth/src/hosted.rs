@@ -142,8 +142,27 @@ impl VerifiedHostedAuth {
 /// Classifies the reserved namespace only. A positive result grants no authority.
 /// All reserved versions are rejected by ordinary OIDC validation and token exchange.
 pub fn has_reserved_hosted_token_kind(token: &str) -> anyhow::Result<bool> {
+    classify_reserved_token(token, is_reserved_hosted_type, is_reserved_hosted_kind)
+}
+
+/// Operational container proofs are never client Identity credentials. Reserve
+/// their entire versioned namespace so a lease/registry proof cannot enter
+/// OIDC discovery, ordinary JWT validation, or the Identity token exchange.
+pub fn has_reserved_platform_token_kind(token: &str) -> anyhow::Result<bool> {
+    classify_reserved_token(
+        token,
+        |kind| is_reserved_hosted_type(kind) || kind.starts_with("spacetimedb-container-"),
+        |kind| is_reserved_hosted_kind(kind) || kind.starts_with("spacetimedb_container_"),
+    )
+}
+
+fn classify_reserved_token(
+    token: &str,
+    reserved_type: impl FnOnce(&str) -> bool,
+    reserved_kind: impl FnOnce(&str) -> bool,
+) -> anyhow::Result<bool> {
     let header = decode_header(token)?;
-    if header.typ.as_deref().is_some_and(is_reserved_hosted_type) {
+    if header.typ.as_deref().is_some_and(reserved_type) {
         return Ok(true);
     }
     let mut validation = Validation::new(Algorithm::ES256);
@@ -156,7 +175,7 @@ pub fn has_reserved_hosted_token_kind(token: &str) -> anyhow::Result<bool> {
         .claims
         .get("kind")
         .and_then(serde_json::Value::as_str)
-        .is_some_and(is_reserved_hosted_kind))
+        .is_some_and(reserved_kind))
 }
 
 pub fn is_reserved_hosted_kind(kind: &str) -> bool {

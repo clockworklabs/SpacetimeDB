@@ -51,6 +51,7 @@ namespace SpacetimeDB
 
     public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
     {
+        public global::SpacetimeDB.DatabaseEnvironment Env => default;
         public readonly Identity Sender;
         public readonly ConnectionId? ConnectionId;
         public readonly Random Rng;
@@ -279,6 +280,7 @@ namespace SpacetimeDB
     {
         public Identity Sender { get; }
 
+        public global::SpacetimeDB.DatabaseEnvironment Env => default;
         public QueryBuilder From => default;
 
         internal ViewContext(Identity sender, Internal.LocalReadOnly db)
@@ -292,6 +294,7 @@ namespace SpacetimeDB
         : DbContext<Internal.LocalReadOnly>,
             Internal.IAnonymousViewContext
     {
+        public global::SpacetimeDB.DatabaseEnvironment Env => default;
         public QueryBuilder From => default;
 
         internal AnonymousViewContext(Internal.LocalReadOnly db)

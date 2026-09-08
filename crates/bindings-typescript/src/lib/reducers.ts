@@ -1,3 +1,4 @@
+import type { Environment } from './environment';
 import type { DbView } from '../server/db_view';
 import type { Random } from '../server/rng';
 import type { ConnectionId } from './connection_id';
@@ -109,6 +110,7 @@ export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
   timestamp: Timestamp;
   connectionId: ConnectionId | null;
   db: DbView<SchemaDef>;
+  env: Environment;
   senderAuth: AuthCtx;
   newUuidV4(): Uuid;
   newUuidV7(): Uuid;

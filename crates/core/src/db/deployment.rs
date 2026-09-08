@@ -22,6 +22,12 @@ use spacetimedb_sats::AlgebraicValue;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DeploymentError {
+    #[error("this database requires the deployment publication protocol")]
+    CoordinatorRequired,
+    #[error("the supplied module does not match the prepared deployment")]
+    ProgramMismatch,
+    #[error("the prepared module must advertise hosted_auth_v1 to attach a container")]
+    UnsupportedHostedModule,
     #[error("the publication coordinator no longer owns the database fence")]
     PublicationFenced,
     #[error("the expected deployment revision does not match the database")]
@@ -84,6 +90,64 @@ pub enum CommitAdmission {
     /// Return this result without repeating module init/update or any effects.
     AlreadyCommitted(PublishResult),
     Ready,
+}
+
+/// Check the actual program selected by the host, not a caller-provided
+/// capability bit. The program bytes are hashed here because `Program` also
+/// has a public constructor which accepts a previously computed hash.
+pub fn validate_deployment_program(
+    request: &DeploymentCommit,
+    program: &spacetimedb_datastore::traits::Program,
+    module: &spacetimedb_schema::def::ModuleDef,
+) -> Result<(), DeploymentError> {
+    use spacetimedb_datastore::system_tables::ModuleKind;
+    use spacetimedb_lib::deployment::{ModuleComponent, UserModuleKind};
+    if hash_bytes(&program.bytes) != program.hash {
+        return Err(DeploymentError::ProgramMismatch);
+    }
+    match &request.deployment.current().module {
+        ModuleComponent::User(expected)
+            if expected.program_hash == program.hash
+                && matches!(
+                    (expected.kind, program.kind),
+                    (UserModuleKind::Wasm, ModuleKind::WASM) | (UserModuleKind::Js, ModuleKind::JS)
+                ) => {}
+        ModuleComponent::SystemEmpty(version) if crate::host::empty_module::matches_program(*version, program) => {}
+        _ => return Err(DeploymentError::ProgramMismatch),
+    }
+    if request.deployment.current().container.is_some() && !module.supports_hosted_auth_v1() {
+        return Err(DeploymentError::UnsupportedHostedModule);
+    }
+    Ok(())
+}
+
+/// Legacy raw module publication must be routed through the coordinator once
+/// a database has deployment metadata or a publication fence, including after
+/// an attempt aborts or its container is removed. In particular a legacy
+/// request cannot race the first prepared container publication.
+/// Call while holding the transaction that changes the program/schema.
+pub fn require_unmanaged_publication(tx: &MutTx) -> Result<(), DeploymentError> {
+    if current_deployment(tx)?.is_some() || singleton(tx, ST_PUBLISH_FENCE_ID)?.is_some() {
+        return Err(DeploymentError::CoordinatorRequired);
+    }
+    Ok(())
+}
+
+/// Foreign callers depend on the receiving module's bindings just as self
+/// callers do. A module replacement cannot silently erase that capability
+/// while an admitted generation can still address the database.
+pub fn validate_active_hosted_grants(
+    tx: &MutTx,
+    module: &spacetimedb_schema::def::ModuleDef,
+) -> Result<(), DeploymentError> {
+    if !module.supports_hosted_auth_v1() {
+        for row in tx.iter(ST_CONTAINER_FENCE_ID)? {
+            if StContainerFenceRow::try_from(row)?.allowed {
+                return Err(DeploymentError::UnsupportedHostedModule);
+            }
+        }
+    }
+    Ok(())
 }
 
 fn singleton<S: StateView>(

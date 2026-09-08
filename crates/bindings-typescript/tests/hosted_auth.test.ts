@@ -19,6 +19,7 @@ vi.mock('spacetime:sys@2.0', () => ({
   },
 }));
 vi.mock('spacetime:sys@2.1', () => ({}));
+vi.mock('spacetime:sys@2.3', () => ({ env_get: () => null }));
 vi.mock('spacetime:sys@2.2', () => ({
   get_call_auth_flags: () => {
     host.flagReads++;
