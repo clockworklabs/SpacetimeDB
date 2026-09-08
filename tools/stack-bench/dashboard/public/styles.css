@@ -69,12 +69,17 @@ a { color: var(--n1); }
 .live { border: 1px solid var(--shade4); border-radius: 4px; background: var(--shade6); margin-bottom: 18px; }
 .live-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: 44px; padding: 8px 16px; border-bottom: 1px solid var(--shade4); }
 .live-head b { color: var(--n1); font-size: 15px; font-weight: 600; }
-.lane { display: grid; grid-template-columns: 130px 96px minmax(200px, 1fr) minmax(260px, 1.1fr); gap: 20px; align-items: center; height: 60px; padding: 0 16px; border-top: 1px solid var(--shade4); }
+.lane { display: grid; grid-template-columns: minmax(220px, 1.6fr) minmax(80px, .4fr) minmax(100px, .5fr) minmax(180px, 1fr); gap: 20px; align-items: center; padding: 14px 16px; border-top: 1px solid var(--shade4); }
+.lane > * { min-width: 0; }
+.lane-repetition { white-space: nowrap; }
+.lane-variant { margin-top: 5px; font-size: 12px; overflow-wrap: anywhere; color: var(--n2); }
+.lane-metric { display: grid; gap: 6px; font-variant-numeric: tabular-nums; }
+.lane-label { font-size: 12px; color: var(--n2); }
 .lane:first-of-type { border-top: 0; }
 .lane .who { color: var(--n1); font-weight: 600; }
 .lane .big { color: var(--n1); font: 600 26px/1 var(--sans); letter-spacing: -.02em; }
 .lane .big.prov { color: var(--yellow); }
-.lane .phase { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lane .phase { font-size: 13px; overflow-wrap: anywhere; }
 .lane .phase.warn { color: var(--yellow); }
 
 /* campaigns table */
@@ -237,9 +242,8 @@ table.plans td.name { color: var(--n1); font-weight: 600; }
   .topbar { height: auto; min-height: 48px; flex-wrap: wrap; padding: 10px 16px; gap: 12px; }
   .tools { flex-wrap: wrap; margin-left: 0; }
   .page { padding: 18px 16px 32px; }
-  .lane { height: auto; min-height: 76px; grid-template-columns: minmax(110px, 1fr) minmax(80px, 1fr); gap: 8px 16px; padding: 12px 16px; }
-  .lane .phase { white-space: normal; }
-  .lane > * { min-width: 0; }
+  .lane { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .lane-identity, .lane .phase { grid-column: 1 / -1; }
   .runform > div { width: 100%; }
   .runform select, .runform input[name=output] { min-width: 0; width: 100%; }
   .figs { gap: 20px; }

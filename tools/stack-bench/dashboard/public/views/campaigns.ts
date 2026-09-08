@@ -26,11 +26,13 @@ function matches(campaign: OverviewEntry, filter: CampaignFilter): boolean {
 function lane(sheet: CampaignSheet, stack: string, attempt: SheetAttempt): string {
   const warn = attempt.stalling;
   return `<div class="lane" data-key="${esc(`${sheet.key}:${attempt.id}`)}">`
-    + `<a class="who" href="/c/${encodeURIComponent(sheet.key)}/a/${encodeURIComponent(attempt.id)}"`
-    + ` title="${esc(`${attempt.variant} · repetition ${attempt.repetition}`)}">${esc(stackLabel(stack))} · Rep ${attempt.repetition}</a>`
-    + `<span class="big${sheet.provisional ? ' prov' : ''}" title="Checks passed / all selected checks">`
-    + `${pct(attempt.completion?.rate == null ? null : 100 * attempt.completion.rate)}</span>`
-    + `<span class="phase" title="${esc(attempt.variant)}">${spend(attempt.spend) + (attempt.spendPending ? ' (usage pending)' : '')} · ${esc(attempt.variant)}</span>`
+    + `<div class="lane-identity"><a class="who" href="/c/${encodeURIComponent(sheet.key)}/a/${encodeURIComponent(attempt.id)}">`
+    + `${esc(stackLabel(stack))} <span class="lane-repetition">· Rep ${attempt.repetition}</span></a>`
+    + `<div class="lane-variant">${esc(attempt.variant)}</div></div>`
+    + `<div class="lane-metric" title="Checks passed / all selected checks"><span class="lane-label">Completion</span>`
+    + `<span class="big${sheet.provisional ? ' prov' : ''}">${pct(attempt.completion?.rate == null ? null : 100 * attempt.completion.rate)}</span></div>`
+    + `<div class="lane-metric" title="API-equivalent cost from recorded usage. Pending usage is not zero cost."><span class="lane-label">Cost</span>`
+    + `<span>${attempt.spendPending && attempt.spend.status === 'unknown' ? 'Pending' : spend(attempt.spend)}${attempt.spendPending && attempt.spend.status !== 'unknown' ? ' (partial)' : ''}</span></div>`
     + `<span class="phase${warn ? ' warn' : ''}">${esc(phrase(attempt))}</span></div>`;
 }
 
