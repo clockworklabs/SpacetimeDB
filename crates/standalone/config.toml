@@ -27,6 +27,10 @@ directives = [
 # Maximum number of JS procedure isolates per database. Omit to use the number
 # of cores reported by the OS.
 # procedure-instance-pool-size = 8
+# Wall-clock bound for each JS startup, schema description and function call.
+# Defaults to 120 seconds; must be positive and no greater than 120 seconds.
+# Timed-out reducers fail and roll back, including lifecycle calls during publish.
+# execution-timeout = "120s"
 
 [v8-heap-policy]
 # Check the V8 heap after this many requests. Set to 0 to disable.

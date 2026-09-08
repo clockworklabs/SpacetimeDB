@@ -171,6 +171,7 @@ impl<'de> serde::Deserialize<'de> for ConfigFile {
             v8: V8Config {
                 procedure_instance_pool_size: config.v8.procedure_instance_pool_size,
                 heap_policy: config.v8_heap_policy,
+                execution_timeout: config.v8.execution_timeout,
             },
         })
     }
@@ -247,6 +248,9 @@ impl Default for WasmConfigToml {
 pub struct V8Config {
     pub procedure_instance_pool_size: NonZeroUsize,
     pub heap_policy: V8HeapPolicyConfig,
+    /// Wall-clock limit for one JavaScript startup, description or function call.
+    /// Must be positive and no greater than 120 seconds.
+    pub execution_timeout: Duration,
 }
 
 impl Default for V8Config {
@@ -254,11 +258,20 @@ impl Default for V8Config {
         Self {
             procedure_instance_pool_size: default_v8_procedure_instance_pool_size(),
             heap_policy: V8HeapPolicyConfig::default(),
+            execution_timeout: default_v8_execution_timeout(),
         }
     }
 }
 
 impl V8Config {
+    pub fn validate_execution_timeout(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !self.execution_timeout.is_zero() && self.execution_timeout <= default_v8_execution_timeout(),
+            "V8 execution timeout must be positive and no greater than 120 seconds"
+        );
+        Ok(())
+    }
+
     pub fn normalized(mut self) -> Self {
         self.heap_policy = self.heap_policy.normalized();
         self
@@ -273,14 +286,33 @@ struct V8ConfigToml {
         deserialize_with = "de_nz_usize"
     )]
     pub procedure_instance_pool_size: NonZeroUsize,
+    #[serde(
+        default = "default_v8_execution_timeout",
+        deserialize_with = "de_v8_execution_timeout"
+    )]
+    pub execution_timeout: Duration,
 }
 
 impl Default for V8ConfigToml {
     fn default() -> Self {
         Self {
             procedure_instance_pool_size: default_v8_procedure_instance_pool_size(),
+            execution_timeout: default_v8_execution_timeout(),
         }
     }
+}
+
+fn default_v8_execution_timeout() -> Duration {
+    Duration::from_secs(120)
+}
+
+fn de_v8_execution_timeout<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Duration, D::Error> {
+    let timeout = de_nz_duration(deserializer)?
+        .filter(|timeout| *timeout <= default_v8_execution_timeout())
+        .ok_or_else(|| {
+            serde::de::Error::custom("V8 execution timeout must be positive and no greater than 120 seconds")
+        })?;
+    Ok(timeout)
 }
 
 #[derive(Clone, Copy, Debug, serde::Deserialize)]
@@ -556,6 +588,25 @@ mod tests {
         mkmeta(2, 0, 0)
             .check_compatibility_and_update(mkmeta_pre(2, 1, 0, "rc1"), Path::new("metadata.toml"))
             .unwrap_err();
+    }
+
+    #[test]
+    fn v8_execution_timeout_is_finite_and_bounded() {
+        let defaults: ConfigFile = toml::from_str("").unwrap();
+        assert_eq!(defaults.v8.execution_timeout, Duration::from_secs(120));
+        for value in ["0", "121", "\"0s\"", "\"121s\""] {
+            assert!(toml::from_str::<ConfigFile>(&format!("[v8]\nexecution-timeout = {value}")).is_err());
+        }
+        let config: ConfigFile = toml::from_str("[v8]\nexecution-timeout = \"150ms\"").unwrap();
+        assert_eq!(config.v8.execution_timeout, Duration::from_millis(150));
+        for timeout in [Duration::ZERO, Duration::from_secs(121)] {
+            assert!(V8Config {
+                execution_timeout: timeout,
+                ..V8Config::default()
+            }
+            .validate_execution_timeout()
+            .is_err());
+        }
     }
 
     #[test]

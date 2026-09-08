@@ -463,7 +463,10 @@ impl WasmtimeModuleHost {
         A: Send + 'static,
     {
         let instance_manager = self.procedure_instances.clone();
-        let ModuleInstanceLease { instance, slot } = instance_manager.get_instance().await;
+        let ModuleInstanceLease { instance, slot } = instance_manager
+            .get_instance()
+            .await
+            .unwrap_or_else(|never| match never {});
         let label = label.to_owned();
         self.procedure_executor.enqueue_job(async move || {
             scopeguard::defer_on_unwind!({
@@ -488,7 +491,8 @@ struct V8ModuleHost {
 /// A module; used as a bound on `InstanceManager`.
 trait GenericModule {
     type Instance: GenericModuleInstance;
-    async fn create_instance(&self) -> Self::Instance;
+    type CreationError;
+    async fn create_instance(&self) -> Result<Self::Instance, Self::CreationError>;
     fn host_type(&self) -> HostType;
 }
 
@@ -518,8 +522,9 @@ impl<T: GenericModuleInstance + ?Sized> GenericModuleInstance for Box<T> {
 
 impl GenericModule for Arc<super::wasmtime::Module> {
     type Instance = Box<super::wasmtime::ModuleInstance>;
-    async fn create_instance(&self) -> Self::Instance {
-        Box::new((**self).create_instance())
+    type CreationError = std::convert::Infallible;
+    async fn create_instance(&self) -> Result<Self::Instance, Self::CreationError> {
+        Ok(Box::new((**self).create_instance()))
     }
     fn host_type(&self) -> HostType {
         HostType::Wasm
@@ -528,8 +533,9 @@ impl GenericModule for Arc<super::wasmtime::Module> {
 
 impl GenericModule for Arc<super::wasmtime::ProcedureModule> {
     type Instance = Box<super::wasmtime::ModuleInstance>;
-    async fn create_instance(&self) -> Self::Instance {
-        Box::new((**self).create_instance())
+    type CreationError = std::convert::Infallible;
+    async fn create_instance(&self) -> Result<Self::Instance, Self::CreationError> {
+        Ok(Box::new((**self).create_instance()))
     }
     fn host_type(&self) -> HostType {
         HostType::Wasm
@@ -538,7 +544,8 @@ impl GenericModule for Arc<super::wasmtime::ProcedureModule> {
 
 impl GenericModule for super::v8::JsModule {
     type Instance = super::v8::JsProcedureInstance;
-    async fn create_instance(&self) -> Self::Instance {
+    type CreationError = anyhow::Error;
+    async fn create_instance(&self) -> Result<Self::Instance, Self::CreationError> {
         self.create_instance().await
     }
     fn host_type(&self) -> HostType {
@@ -1387,14 +1394,17 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
         }
     }
 
-    async fn with_instance<R>(&self, f: impl AsyncFnOnce(M::Instance) -> (R, M::Instance)) -> R {
-        let ModuleInstanceLease { instance, slot } = self.get_instance().await;
+    async fn with_instance<R>(
+        &self,
+        f: impl AsyncFnOnce(M::Instance) -> (R, M::Instance),
+    ) -> Result<R, M::CreationError> {
+        let ModuleInstanceLease { instance, slot } = self.get_instance().await?;
         let (res, instance) = f(instance).await;
         self.return_instance(ModuleInstanceLease { instance, slot });
-        res
+        Ok(res)
     }
 
-    async fn get_instance(&self) -> ModuleInstanceLease<M::Instance> {
+    async fn get_instance(&self) -> Result<ModuleInstanceLease<M::Instance>, M::CreationError> {
         let slot = if let Some(instance_slots) = &self.instance_slots {
             Some(
                 instance_slots
@@ -1415,13 +1425,13 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             instance
         } else {
             let start_time = std::time::Instant::now();
-            let res = self.module.create_instance().await;
+            let res = self.module.create_instance().await?;
             let elapsed_time = start_time.elapsed();
             self.metrics.observe_instance_created(elapsed_time);
             res
         };
 
-        ModuleInstanceLease { instance, slot }
+        Ok(ModuleInstanceLease { instance, slot })
     }
 
     fn return_instance(&self, lease: ModuleInstanceLease<M::Instance>) {
@@ -1525,6 +1535,45 @@ impl UpdateDatabaseResult {
 #[derive(thiserror::Error, Debug)]
 #[error("no such module")]
 pub struct NoSuchModule;
+
+#[derive(thiserror::Error, Debug)]
+enum PooledCallError {
+    #[error(transparent)]
+    NoSuchModule(#[from] NoSuchModule),
+    #[error("module instance startup failed: {0}")]
+    Startup(anyhow::Error),
+}
+
+impl From<PooledCallError> for ProcedureCallError {
+    fn from(error: PooledCallError) -> Self {
+        match error {
+            PooledCallError::NoSuchModule(error) => Self::NoSuchModule(error),
+            PooledCallError::Startup(error) => {
+                Self::InternalError(format!("module instance startup failed: {error:#}"))
+            }
+        }
+    }
+}
+
+impl From<PooledCallError> for HttpHandlerCallError {
+    fn from(error: PooledCallError) -> Self {
+        match error {
+            PooledCallError::NoSuchModule(error) => Self::NoSuchModule(error),
+            PooledCallError::Startup(error) => {
+                Self::InternalError(format!("module instance startup failed: {error:#}"))
+            }
+        }
+    }
+}
+
+impl From<PooledCallError> for CallScheduledFunctionError {
+    fn from(error: PooledCallError) -> Self {
+        match error {
+            PooledCallError::NoSuchModule(error) => Self::NoSuchModule(error),
+            PooledCallError::Startup(error) => Self::InstanceStartup(error),
+        }
+    }
+}
 
 #[derive(thiserror::Error, Debug)]
 pub enum ReducerCallError {
@@ -1903,7 +1952,7 @@ impl ModuleHost {
         arg: A,
         wasm: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
         js: impl AsyncFnOnce(A, &JsProcedureInstance) -> R,
-    ) -> Result<R, NoSuchModule>
+    ) -> Result<R, PooledCallError>
     where
         R: Send + 'static,
         A: Send + 'static,
@@ -1931,16 +1980,17 @@ impl ModuleHost {
                             .await
                     })
                     .await
+                    .unwrap_or_else(|never| match never {})
             }
-            ModuleHostInner::Js(host) => {
-                host.procedure_instances
-                    .with_instance(async |inst| {
-                        drop(timer_guard);
-                        let res = js(arg, &inst).await;
-                        (res, inst)
-                    })
-                    .await
-            }
+            ModuleHostInner::Js(host) => host
+                .procedure_instances
+                .with_instance(async |inst| {
+                    drop(timer_guard);
+                    let res = js(arg, &inst).await;
+                    (res, inst)
+                })
+                .await
+                .map_err(PooledCallError::Startup)?,
         })
     }
 
@@ -2605,9 +2655,7 @@ impl ModuleHost {
     ) -> CallProcedureReturn {
         let res = async {
             let call = self.prepare_procedure_call(caller.into(), caller_connection_id, timer, procedure_name, args)?;
-            self.call_procedure_with_params(&call.name, call.params)
-                .await
-                .map_err(Into::into)
+            self.call_procedure_with_params(&call.name, call.params).await
         }
         .await;
 
@@ -2648,8 +2696,29 @@ impl ModuleHost {
 
         match &*self.inner {
             ModuleHostInner::Js(host) => {
-                let lease = host.procedure_instances.get_instance().await;
-                let call = lease.instance.enqueue_procedure(params).await;
+                let lease = match host.procedure_instances.get_instance().await {
+                    Ok(lease) => lease,
+                    Err(error) => {
+                        return self.send_procedure_error(
+                            &procedure_name,
+                            timer,
+                            target,
+                            PooledCallError::Startup(error).into(),
+                        );
+                    }
+                };
+                let call = match lease.instance.enqueue_procedure(params).await {
+                    Ok(call) => call,
+                    Err(error) => {
+                        self.return_js_procedure_instance(lease);
+                        return self.send_procedure_error(
+                            &procedure_name,
+                            timer,
+                            target,
+                            ProcedureCallError::InternalError(error.to_string()),
+                        );
+                    }
+                };
                 let module = self.clone();
                 tokio::spawn(async move {
                     match call.receive().await {
@@ -2657,6 +2726,16 @@ impl ModuleHost {
                             if let Err(err) = module.log_and_send_procedure_result(&procedure_name, timer, target, ret)
                             {
                                 log::warn!("failed to send procedure result: {err:#}");
+                            }
+                        }
+                        JsProcedureCallCompletion::StartupFailed(error) => {
+                            if let Err(error) = module.send_procedure_error(
+                                &procedure_name,
+                                timer,
+                                target,
+                                ProcedureCallError::InternalError(error.to_string()),
+                            ) {
+                                log::warn!("failed to send procedure startup error: {error:#}");
                             }
                         }
                         JsProcedureCallCompletion::Panicked | JsProcedureCallCompletion::WorkerExited => {
@@ -2871,7 +2950,7 @@ impl ModuleHost {
         &self,
         name: &str,
         params: CallProcedureParams,
-    ) -> Result<CallProcedureReturn, NoSuchModule> {
+    ) -> Result<CallProcedureReturn, ProcedureCallError> {
         call_pooled_instance!(
             self,
             name,
@@ -2879,6 +2958,7 @@ impl ModuleHost {
             |params, inst| inst.call_procedure(params).await,
             |params, inst| inst.call_procedure(params).await,
         )
+        .map_err(Into::into)
     }
 
     pub async fn call_http_handler(
@@ -2929,10 +3009,13 @@ impl ModuleHost {
             self,
             "scheduled procedure",
             params,
-            |params, inst| inst.call_scheduled_procedure(params).await,
-            |params, inst| inst.call_scheduled_procedure(params).await,
+            |params, inst| Ok(inst.call_scheduled_procedure(params).await),
+            |params, inst| inst
+                .call_scheduled_procedure(params)
+                .await
+                .map_err(|error| CallScheduledFunctionError::InstanceStartup(error.into())),
         )
-        .map_err(Into::into)
+        .map_err(CallScheduledFunctionError::from)?
     }
 
     /// Materializes the views return by the `view_collector`, if not already materialized,

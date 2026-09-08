@@ -74,6 +74,9 @@ type Hosts = Arc<Mutex<IntMap<u64, HostCell>>>;
 mod deployment_tests;
 
 #[cfg(test)]
+mod execution_deadline_tests;
+
+#[cfg(test)]
 static FAIL_NEXT_DEPLOYMENT_ACTIVATION: Mutex<std::collections::BTreeSet<Identity>> =
     Mutex::new(std::collections::BTreeSet::new());
 
