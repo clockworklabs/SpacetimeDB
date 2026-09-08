@@ -68,12 +68,12 @@ const IN_MEMORY_DATABASE_LOGGER_MAX_SIZE: u64 = 0x1_000_000;
 /// A shared mutable cell containing a module host and associated database.
 type HostCell = Arc<AsyncRwLock<Option<Host>>>;
 
+mod lifecycle;
 mod registry;
-mod retained;
 use registry::{Hosts, Registration};
 
 #[cfg(test)]
-mod retained_tests;
+mod lifecycle_tests;
 
 #[cfg(test)]
 mod deployment_tests;
@@ -123,8 +123,6 @@ pub struct HostController {
     /// Map of all hosts managed by this controller,
     /// keyed by replica id.
     hosts: Hosts,
-    /// Held by physical cold operations through their joined writer shutdown.
-    retained_capacity: Arc<tokio::sync::Semaphore>,
     /// The root directory for database data.
     pub data_dir: Arc<ServerDataDir>,
     /// The default configuration to use for databases created by this
@@ -258,7 +256,6 @@ impl HostController {
     ) -> Self {
         Self {
             hosts: <_>::default(),
-            retained_capacity: retained::capacity(),
             default_config,
             program_storage,
             energy_monitor,
@@ -500,9 +497,9 @@ impl HostController {
             let update_result = match update_result {
                 Ok(result) => result,
                 Err(panic) => {
-                    if let Err(error) = retained::close_host(host).await {
-                        if matches!(error, retained::CloseFailure::WriterUnconfirmed) {
-                            guard.quarantine(None);
+                    if let Err(error) = lifecycle::close_host(host).await {
+                        if matches!(error, lifecycle::CloseFailure::WriterUnconfirmed) {
+                            guard.quarantine();
                         }
                         return Err(error.into());
                     }
@@ -515,9 +512,9 @@ impl HostController {
                 // executable cannot be retained after activation failure.
                 // Close clients/scheduler and reconstruct from stored program
                 // on the next leader lookup or reconciliation attempt.
-                if let Err(error) = retained::close_host(host).await {
-                    if matches!(error, retained::CloseFailure::WriterUnconfirmed) {
-                        guard.quarantine(None);
+                if let Err(error) = lifecycle::close_host(host).await {
+                    if matches!(error, lifecycle::CloseFailure::WriterUnconfirmed) {
+                        guard.quarantine();
                     }
                     return Err(error.into());
                 }
@@ -672,8 +669,8 @@ impl HostController {
     ) -> anyhow::Result<Host> {
         let database_identity = database.database_identity;
         let result = Host::try_init(self, database, replica_id, guard.registration()).await;
-        if result.as_ref().is_err_and(retained::writer_unconfirmed) {
-            guard.quarantine(None);
+        if result.as_ref().is_err_and(lifecycle::writer_unconfirmed) {
+            guard.quarantine();
         }
         result.with_context(|| format!("failed to init replica {} for {}", replica_id, database_identity))
     }
@@ -929,7 +926,7 @@ impl Host {
 
         let metrics_cleanup = scopeguard::guard(tx_metrics_recorder_task.clone(), |task| task.abort());
         let (db, connected_clients, joined) =
-            retained::open_database(host_controller, &database, replica_id, false, Some(tx_metrics_queue)).await?;
+            lifecycle::open_database(host_controller, &database, replica_id, Some(tx_metrics_queue)).await?;
         let initialized = std::panic::AssertUnwindSafe(async {
             let (mut program, program_needs_init, initial_deployment) = match db.program()? {
                 // Launch module with program from existing database.
@@ -1095,7 +1092,7 @@ impl Host {
             registration.activate();
             scheduler_starter.start(&module_host)?;
             #[cfg(test)]
-            if retained::PANIC_CALLBACK_AT_INITIAL_SCHEDULER_START
+            if lifecycle::PANIC_CALLBACK_AT_INITIAL_SCHEDULER_START
                 .lock()
                 .remove(&replica_ctx.database_identity)
             {

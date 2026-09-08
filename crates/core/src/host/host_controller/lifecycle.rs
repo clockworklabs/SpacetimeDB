@@ -1,6 +1,5 @@
-//! Operation-scoped access to initialized retained storage, without starting a
-//! module. Only the configured durability writer is joined on close; shared
-//! provider snapshot and archival services retain their existing ownership.
+//! Shared physical writer completion for ordinary module initialization and
+//! shutdown. Provider snapshot and archival services keep their own ownership.
 
 use super::*;
 use crate::db::persistence::Persistence;
@@ -9,7 +8,6 @@ use futures::FutureExt;
 use spacetimedb_durability::{Close, DurableOffset, PreparedTx};
 use std::panic::{resume_unwind, AssertUnwindSafe};
 use std::sync::OnceLock;
-use tokio::sync::Semaphore;
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum CloseFailure {
@@ -74,13 +72,12 @@ impl Durability for JoinedDurability {
     }
 }
 
-/// Shared with ordinary initialization, so a failed normal replay cannot leave
-/// its writer shutting down behind a later retained-storage operation.
+/// A failed replay joins the same physical writer close before another normal
+/// initialization can acquire the replica's canonical registry cell.
 pub(super) async fn open_database(
     controller: &HostController,
     database: &Database,
     replica_id: u64,
-    retained_only: bool,
     tx_metrics_queue: Option<crate::db::MetricsRecorderQueue>,
 ) -> anyhow::Result<(
     Arc<RelationalDB>,
@@ -88,7 +85,6 @@ pub(super) async fn open_database(
     Option<Arc<JoinedDurability>>,
 )> {
     if matches!(controller.default_config.storage, db::Storage::Memory) {
-        anyhow::ensure!(!retained_only, "retained storage requires disk persistence");
         let (db, clients) = RelationalDB::open(
             database.database_identity,
             database.owner_identity,
@@ -101,20 +97,6 @@ pub(super) async fn open_database(
     }
 
     let replica_dir = controller.data_dir.replica(replica_id);
-    if retained_only {
-        let commit_log = replica_dir.commit_log();
-        // Fs::new can create a missing directory. Establish existing history
-        // before calling either that helper or the configured provider.
-        asyncify(move || {
-            anyhow::ensure!(commit_log.is_dir(), "retained database history is absent");
-            anyhow::ensure!(
-                spacetimedb_commitlog::committed_meta(commit_log)?.is_some(),
-                "retained database history is empty"
-            );
-            Ok::<_, anyhow::Error>(())
-        })
-        .await?;
-    }
     let history = relational_db::local_history(&replica_dir).await?;
     let mut persistence = controller.persistence.persistence(database, replica_id).await?;
     let joined = JoinedDurability::wrap(&mut persistence);
@@ -138,91 +120,7 @@ pub(super) async fn open_database(
         }
     };
     let db = Arc::new(db);
-    if retained_only {
-        let validation = db
-            .metadata()
-            .and_then(|metadata| metadata.ok_or_else(|| anyhow!("retained database is not initialized").into()));
-        if let Err(error) = validation {
-            joined.join().await?;
-            drop(db);
-            return Err(error.into());
-        }
-    }
     Ok((db, clients, Some(joined)))
-}
-
-impl HostController {
-    /// Access retained initialized database storage without launching user code.
-    ///
-    /// This is a trusted host API, not an external authorization endpoint. The
-    /// caller must confirm current leadership and operation authority. It must
-    /// not retain or return the supplied database/module handles, spawn work
-    /// that outlives the returned future, or reenter this replica's controller.
-    /// A cold open keeps hosted admission closed and never runs initialization,
-    /// lifecycle reducers, scheduled functions, or module compilation.
-    ///
-    /// Caller cancellation does not stop the owned operation. Its finite
-    /// capacity permit and registry pin remain until its writer has closed.
-    pub async fn with_retained_database<T, F, Fut>(
-        &self,
-        database: Database,
-        replica_id: u64,
-        operation: F,
-    ) -> anyhow::Result<T>
-    where
-        T: Send + 'static,
-        F: FnOnce(Arc<RelationalDB>, Option<ModuleHost>) -> Fut + Send + 'static,
-        Fut: Future<Output = anyhow::Result<T>> + Send + 'static,
-    {
-        let permit = self
-            .retained_capacity
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| anyhow!("retained database operation capacity exhausted"))?;
-        let controller = self.clone();
-        tokio::spawn(async move {
-            let _permit = permit;
-            let guard = controller
-                .acquire_write_lock(replica_id)
-                .await
-                .map_err(|_| anyhow!("unable to lock retained database"))?;
-            if let Some(host) = guard.as_ref() {
-                anyhow::ensure!(
-                    host.replica_ctx.database.database_identity == database.database_identity
-                        && host.replica_ctx.database.owner_identity == database.owner_identity,
-                    "retained database identity mismatch"
-                );
-                let module = host.module.borrow().clone();
-                let db = host.replica_ctx.relational_db().clone();
-                return operation(db, Some(module)).await;
-            }
-            let (db, _clients, joined) = match open_database(&controller, &database, replica_id, true, None).await {
-                Ok(opened) => opened,
-                Err(error) => {
-                    if writer_unconfirmed(&error) {
-                        guard.quarantine(Some(_permit));
-                    }
-                    return Err(error);
-                }
-            };
-            let result = AssertUnwindSafe(async { operation(db.clone(), None).await })
-                .catch_unwind()
-                .await;
-            // Keep the guard and permit while waiting for the actual first close
-            // even if an inner helper or RelationalDB::Drop also requests close.
-            if let Err(error) = joined.expect("retained open always uses disk persistence").join().await {
-                guard.quarantine(Some(_permit));
-                return Err(error.into());
-            }
-            drop(db);
-            drop(guard);
-            match result {
-                Ok(result) => result,
-                Err(panic) => resume_unwind(panic),
-            }
-        })
-        .await?
-    }
 }
 
 pub(super) async fn close_host(host: Host) -> Result<(), CloseFailure> {
@@ -244,8 +142,4 @@ pub(super) async fn close_host(host: Host) -> Result<(), CloseFailure> {
     drop(host);
     writer.map_err(|_| CloseFailure::WriterUnconfirmed)?;
     exited.map_err(|_| CloseFailure::ModuleExit)
-}
-
-pub(super) fn capacity() -> Arc<Semaphore> {
-    Arc::new(Semaphore::new(2))
 }

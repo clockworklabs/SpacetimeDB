@@ -26,10 +26,6 @@ pub(super) struct Entry {
 /// caller's wait expired. Provider-owned snapshot/archival services are separate.
 pub(super) struct Closing {
     result: watch::Sender<Option<Result<(), Arc<str>>>>,
-    /// An unconfirmed cold writer remains charged to the finite capacity.
-    /// Recovery requires positive external repair or process termination;
-    /// recreating a controller is not proof that an old writer has stopped.
-    _retained_capacity: Option<tokio::sync::OwnedSemaphorePermit>,
 }
 
 impl Closing {
@@ -183,7 +179,7 @@ impl WriteGuard {
         self.pin.as_ref().unwrap().publish(self.as_ref());
     }
 
-    pub fn quarantine(&self, capacity: Option<tokio::sync::OwnedSemaphorePermit>) {
+    pub fn quarantine(&self) {
         let pin = self.pin.as_ref().unwrap();
         let Some(hosts) = pin.hosts.upgrade() else { return };
         let mut entries = hosts.lock();
@@ -197,7 +193,6 @@ impl WriteGuard {
             result: watch::Sender::new(Some(Err(
                 "storage writer close is unconfirmed; replica is quarantined".into()
             ))),
-            _retained_capacity: capacity,
         }));
     }
 }
@@ -288,7 +283,6 @@ fn request_close(hosts: &Hosts, replica: u64, entry: &mut Entry) -> CloseRequest
     }
     let completion = Arc::new(Closing {
         result: watch::Sender::new(None),
-        _retained_capacity: None,
     });
     entry.closing = Some(completion.clone());
     entry.pins += 1;
@@ -314,10 +308,10 @@ impl CloseOwner {
             return;
         }
         let result = match guard.take() {
-            Some(host) => super::retained::close_host(host).await,
+            Some(host) => super::lifecycle::close_host(host).await,
             None => Ok(()),
         };
-        let writer_closed = !matches!(result, Err(super::retained::CloseFailure::WriterUnconfirmed));
+        let writer_closed = !matches!(result, Err(super::lifecycle::CloseFailure::WriterUnconfirmed));
         // Publish under the cell lock, then release it before final registry
         // unpin/removal. Closing stays set during both steps, so reopen waits.
         self.pin.publish(None);
