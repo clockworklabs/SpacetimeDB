@@ -108,7 +108,7 @@ public:
      * @code
      * auto module_id = ctx.database_identity();
      * std::string url = "http://localhost:3000/v1/database/" + 
-     *                   module_id.to_hex_string() + "/schema?version=11";
+     *                   module_id.to_hex_string() + "/schema?version=10";
      * @endcode
      */
     Identity database_identity() const {

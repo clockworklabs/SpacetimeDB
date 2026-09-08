@@ -688,3 +688,4 @@ V10Builder& getV10Builder();
 } // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_V10_BUILDER_H
+
