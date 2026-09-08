@@ -1229,6 +1229,9 @@ jobs:
         rust_serial_tests,
         csharp_tests,
         cpp_compile_tests,
+        sdk_tests_native,
+        sdk_tests_browser,
+        sdk_tests_noop,
       ]
     if: ${{ always() }}
     name: Test Suite
@@ -1243,16 +1246,24 @@ jobs:
           RUST_SERIAL_RESULT: ${{ needs.rust_serial_tests.result }}
           CSHARP_RESULT: ${{ needs.csharp_tests.result }}
           CPP_RESULT: ${{ needs.cpp_compile_tests.result }}
+          SDK_NATIVE_RESULT: ${{ needs.sdk_tests_native.result }}
+          SDK_BROWSER_RESULT: ${{ needs.sdk_tests_browser.result }}
         run: |
           test "${RUST_BUILD_RESULT}" = success
           test "${RUST_RESULT}" = success
           test "${RUST_SERIAL_RESULT}" = success
           test "${CSHARP_RESULT}" = success
           test "${CPP_RESULT}" = success
+          test "${SDK_NATIVE_RESULT}" = success
+          test "${SDK_BROWSER_RESULT}" = success
 
       - name: Reuse merge queue result
         if: ${{ needs.merge_queue_noop.outputs.skip == 'true' }}
-        run: echo "Test Suite already ran for the equivalent PR head."
+        env:
+          SDK_NOOP_RESULT: ${{ needs.sdk_tests_noop.result }}
+        run: |
+          test "${SDK_NOOP_RESULT}" = success
+          echo "Test Suite already ran for the equivalent PR head."
 
   index_scan_bench:
     needs: [merge_queue_noop, lints]
