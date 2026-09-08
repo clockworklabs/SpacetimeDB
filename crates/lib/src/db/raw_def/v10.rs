@@ -101,6 +101,9 @@ pub enum RawModuleDefV10Section {
 
     /// Submodules, keyed by the namespace they are registered under.
     Submodules(Vec<RawSubmoduleV10>),
+
+    /// Declared publish-only configuration. Even an empty section requires ENV support.
+    Environment(Vec<crate::environment::EnvironmentDeclaration>),
 }
 
 #[derive(Debug, Clone, SpacetimeType)]
@@ -713,6 +716,27 @@ impl RawModuleDefV10Builder {
     /// Create a new, empty `RawModuleDefV10Builder`.
     pub fn new() -> Self {
         Default::default()
+    }
+
+    /// Declare a complete environment schema, including an explicit empty schema.
+    /// Repeated calls remain repeated sections so host validation rejects ambiguity.
+    pub fn add_environment(&mut self, declarations: Vec<crate::environment::EnvironmentDeclaration>) -> &mut Self {
+        self.module
+            .sections
+            .push(RawModuleDefV10Section::Environment(declarations));
+        self
+    }
+
+    /// New ENV-aware bindings declare an empty schema when no declaration is registered.
+    pub fn ensure_environment(&mut self) {
+        if !self
+            .module
+            .sections
+            .iter()
+            .any(|section| matches!(section, RawModuleDefV10Section::Environment(_)))
+        {
+            self.add_environment(Vec::new());
+        }
     }
 
     /// Get mutable access to the typespace section, creating it if missing.

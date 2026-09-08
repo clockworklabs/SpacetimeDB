@@ -722,6 +722,8 @@ SPACETIMEDB_HTTP_ROUTER(router) {
 }
 
 SPACETIMEDB_REDUCER(expect_environment, ReducerContext ctx, std::string key, std::optional<std::string> expected) {
+    // Parentheses avoid the existing enum helper macro named EMPTY().
+    if ((ctx.env.EMPTY)() != ctx.env.get("EMPTY")) LOG_PANIC("named environment mismatch");
     if (ctx.env.get(key) != expected) LOG_PANIC("environment value mismatch");
     return Ok();
 }

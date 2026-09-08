@@ -1,4 +1,4 @@
-import { environment } from './environment';
+import { environment, type EnvironmentFor } from './environment';
 import * as _syscalls2_0 from 'spacetime:sys@2.0';
 import * as _syscalls2_1 from 'spacetime:sys@2.1';
 
@@ -247,7 +247,7 @@ export const ReducerCtxImpl = class ReducerCtx<
   timestamp: Timestamp;
   connectionId: ConnectionId | null;
   db: DbView<SchemaDef>;
-  readonly env = environment;
+  readonly env = environment as EnvironmentFor<SchemaDef>;
   as: AliasViews<SchemaDef>;
 
   constructor(
@@ -777,7 +777,7 @@ const BINARY_READER = new BinaryReader(new Uint8Array());
 class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
   implements HandlerContext<S>
 {
-  readonly env = environment;
+  readonly env = environment as EnvironmentFor<S>;
   #identity: Identity | undefined;
   #uuidCounter: { value: number } | undefined;
   #random: Random | undefined;

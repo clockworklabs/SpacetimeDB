@@ -393,8 +393,37 @@ export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
   get Submodules() {
     return __t.array(RawSubmoduleV10);
   },
+  get Environment() {
+    return __t.array(EnvironmentDeclaration);
+  },
 });
 export type RawModuleDefV10Section = __Infer<typeof RawModuleDefV10Section>;
+
+export const EnvironmentConstraint = __t.enum('EnvironmentConstraint', {
+  get AnyString() {
+    return __t.unit();
+  },
+  get Literal() {
+    return __t.string();
+  },
+  get OneOf() {
+    return __t.array(__t.string());
+  },
+});
+export type EnvironmentConstraint = __Infer<typeof EnvironmentConstraint>;
+
+export const EnvironmentDeclaration = __t.object('EnvironmentDeclaration', {
+  get name() {
+    return __t.string();
+  },
+  get constraint() {
+    return EnvironmentConstraint;
+  },
+  get optional() {
+    return __t.bool();
+  },
+});
+export type EnvironmentDeclaration = __Infer<typeof EnvironmentDeclaration>;
 
 export const RawModuleDefV8 = __t.object('RawModuleDefV8', {
   get typespace() {

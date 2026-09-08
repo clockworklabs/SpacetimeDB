@@ -1,3 +1,6 @@
+mod publish_environment;
+use publish_environment::{ModuleBody, PublishBody};
+
 use std::borrow::Cow;
 use std::future::Future;
 use std::num::NonZeroU8;
@@ -835,7 +838,10 @@ pub async fn reset<S: NodeDelegate + ControlStateDelegate + Authorization>(
         host_type,
     }): Query<ResetDatabaseQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
-    program_bytes: Option<Bytes>,
+    PublishBody {
+        program_bytes,
+        environment,
+    }: PublishBody,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
     let database_identity = database.database_identity;
 
@@ -856,6 +862,7 @@ pub async fn reset<S: NodeDelegate + ControlStateDelegate + Authorization>(
         DatabaseResetDef {
             database_identity,
             program_bytes,
+            environment,
             num_replicas,
             host_type: Some(host_type),
         },
@@ -933,7 +940,10 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         update_confirmation_timeout: confirmation_timeout,
     }): Query<PublishDatabaseQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
-    program_bytes: Bytes,
+    PublishBody {
+        program_bytes,
+        environment,
+    }: PublishBody,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
     // If `clear`, check that the database exists and delegate to `reset`.
     // If it doesn't exist, ignore the `clear` parameter.
@@ -963,13 +973,17 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
                         host_type,
                     }),
                     Extension(auth),
-                    Some(program_bytes),
+                    PublishBody {
+                        program_bytes,
+                        environment,
+                    },
                 )
                 .await;
             }
         }
     }
 
+    let program_bytes = program_bytes.unwrap_or_default();
     let (database_identity, db_name) = get_or_create_identity_and_name(&ctx, &auth, name_or_identity.as_ref()).await?;
     let maybe_parent_database_identity = match parent.as_ref() {
         None => None,
@@ -1033,6 +1047,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
             DatabaseDef {
                 database_identity,
                 program_bytes,
+                environment,
                 num_replicas,
                 host_type,
                 parent,
@@ -1217,7 +1232,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
     Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
     Query(PrePublishQueryParams { style, host_type }): Query<PrePublishQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
-    program_bytes: Bytes,
+    ModuleBody(program_bytes): ModuleBody,
 ) -> axum::response::Result<axum::Json<PrePublishResult>> {
     let database_identity = database.database_identity;
 
@@ -1236,6 +1251,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
             DatabaseDef {
                 database_identity,
                 program_bytes,
+                environment: Default::default(),
                 num_replicas: None,
                 host_type,
                 parent: None,

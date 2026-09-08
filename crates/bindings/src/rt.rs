@@ -917,6 +917,14 @@ pub fn register_case_conversion_policy(policy: CaseConversionPolicy) {
     })
 }
 
+/// Register declarative ENV metadata without reading any environment values.
+#[doc(hidden)]
+pub fn register_environment(declarations: fn() -> Vec<spacetimedb_lib::environment::EnvironmentDeclaration>) {
+    register_describer(move |module| {
+        module.inner.add_environment(declarations());
+    });
+}
+
 /// A builder for a module.
 #[derive(Default)]
 pub struct ModuleBuilder {
@@ -983,6 +991,7 @@ extern "C" fn __describe_module__(description: BytesSink) {
     }
 
     // Serialize the module to bsatn.
+    module.inner.ensure_environment();
     let module_def = module.inner.finish();
     let module_def = RawModuleDef::V10(module_def);
     let bytes = bsatn::to_vec(&module_def).expect("unable to serialize typespace");

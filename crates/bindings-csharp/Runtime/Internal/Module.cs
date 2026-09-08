@@ -20,6 +20,7 @@ partial class RawModuleDefV10
     private readonly List<RawHttpRouteDefV10> httpRouteDefs = [];
     private readonly List<RawViewDefV10> viewDefs = [];
     private readonly List<RawViewPrimaryKeyDefV10> viewPrimaryKeyDefs = [];
+    private readonly List<EnvironmentDeclaration> environment = [];
     private readonly List<RawRowLevelSecurityDefV9> rowLevelSecurityDefs = [];
     private readonly Dictionary<string, List<RawColumnDefaultValueV10>> defaultValuesByTable =
         new(StringComparer.Ordinal);
@@ -85,6 +86,8 @@ partial class RawModuleDefV10
     }
 
     internal void RegisterView(RawViewDefV10 view) => viewDefs.Add(view);
+
+    internal void RegisterEnvironment(EnvironmentDeclaration declaration) => environment.Add(declaration);
 
     internal void RegisterViewPrimaryKey(string viewSourceName, IEnumerable<string> columns) =>
         viewPrimaryKeyDefs.Add(new RawViewPrimaryKeyDefV10(viewSourceName, [.. columns]));
@@ -162,6 +165,7 @@ partial class RawModuleDefV10
         var sections = new List<RawModuleDefV10Section>
         {
             new RawModuleDefV10Section.Typespace(typespace),
+            new RawModuleDefV10Section.Environment(environment),
         };
 
         if (typeDefs.Count > 0)
@@ -426,6 +430,8 @@ public static class Module
         var def = dispatcher.MakeAnonymousViewDef(typeRegistrar);
         moduleDef.RegisterView(def);
     }
+
+    public static void RegisterEnvironment(EnvironmentDeclaration declaration) => moduleDef.RegisterEnvironment(declaration);
 
     public static void RegisterViewPrimaryKey(string viewSourceName, string[] columns) =>
         moduleDef.RegisterViewPrimaryKey(viewSourceName, columns);

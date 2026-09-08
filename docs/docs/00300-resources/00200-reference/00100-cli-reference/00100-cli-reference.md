@@ -11,6 +11,9 @@ This document contains the help content for the `spacetime` command-line program
 
 * [`spacetime`↴](#spacetime)
 * [`spacetime publish`↴](#spacetime-publish)
+* [`spacetime env`↴](#spacetime-env)
+* [`spacetime env get`↴](#spacetime-env-get)
+* [`spacetime env list`↴](#spacetime-env-list)
 * [`spacetime delete`↴](#spacetime-delete)
 * [`spacetime logs`↴](#spacetime-logs)
 * [`spacetime call`↴](#spacetime-call)
@@ -48,6 +51,7 @@ This document contains the help content for the `spacetime` command-line program
 ###### **Subcommands:**
 
 * `publish` — Create and update a SpacetimeDB database
+* `env` — Inspect published database environment variables
 * `delete` — Deletes a SpacetimeDB database
 * `logs` — Prints logs from a SpacetimeDB database
 * `call` — Invokes a function (reducer or procedure) in a database. WARNING: This command is UNSTABLE and subject to breaking changes.
@@ -82,7 +86,7 @@ Create and update a SpacetimeDB database
 
 **Usage:** `spacetime publish [OPTIONS] [name|identity]`
 
-Run `spacetime help publish` for more detailed information.
+Every publish replaces the complete declared environment. Put an env map in spacetime.json; declared shell variables override config values (including empty strings). The CLI displays supplied keys and sources, never values. Optional values omitted from every input are removed. --env selects config file layers. Run `spacetime help publish` for more detailed information.
 
 ###### **Arguments:**
 
@@ -134,6 +138,66 @@ Run `spacetime help publish` for more detailed information.
 * `--env <ENV>` — Environment name for config file layering (e.g., dev, staging)
 * `--native-aot` — Use NativeAOT-LLVM compilation for C# modules (experimental, Windows only)
 * `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.
+
+
+
+## `spacetime env`
+
+Inspect published database environment variables
+
+**Usage:** `spacetime env <COMMAND>`
+
+###### **Subcommands:**
+
+* `get` — Read one published environment value
+* `list` — List published environment keys (never values)
+
+
+
+## `spacetime env get`
+
+Read one published environment value
+
+**Usage:** `spacetime env get [OPTIONS] <database> <key>`
+
+###### **Arguments:**
+
+* `<KEY>` — The declared environment key to read
+* `<DATABASE>` — The database name, identity, or configured target
+
+###### **Options:**
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server
+* `--anonymous` — Perform this action with an anonymous identity
+* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--confirmed <CONFIRMED>` — Instruct the server to deliver only updates of confirmed transactions
+
+  Possible values: `true`, `false`
+
+* `--no-config` — Ignore project configuration when resolving the database target
+
+
+
+## `spacetime env list`
+
+List published environment keys (never values)
+
+**Usage:** `spacetime env list [OPTIONS] <database>`
+
+###### **Arguments:**
+
+* `<DATABASE>` — The database name, identity, or configured target
+
+###### **Options:**
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server
+* `--anonymous` — Perform this action with an anonymous identity
+* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--confirmed <CONFIRMED>` — Instruct the server to deliver only updates of confirmed transactions
+
+  Possible values: `true`, `false`
+
+* `--no-config` — Ignore project configuration when resolving the database target
 
 
 

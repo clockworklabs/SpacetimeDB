@@ -78,6 +78,7 @@ impl From<CaseConversionPolicy> for ValidationCase {
 /// Validate a `RawModuleDefV10` and convert it into a `ModuleDef`,
 /// or return a stream of errors if the definition is invalid.
 pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
+    let environment = validate_environment(&def);
     let mut typespace = def.typespace().cloned().unwrap_or_else(|| Typespace::EMPTY.clone());
     let known_type_definitions = def.types().into_iter().flatten().map(|def| def.ty);
     let case_policy = def.case_conversion_policy().into();
@@ -297,10 +298,13 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .map(|rls| (rls.sql.clone(), rls.to_owned()))
         .collect();
 
-    let ((tables, types, reducers, procedures, views, (http_handlers, http_routes)), submodules) =
-        (tables_types_reducers_procedures_views, submodules)
-            .combine_errors()
-            .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
+    let (
+        (tables, types, reducers, procedures, views, (http_handlers, http_routes)),
+        submodules,
+        (environment, environment_declared),
+    ) = (tables_types_reducers_procedures_views, submodules, environment)
+        .combine_errors()
+        .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
 
     let typespace_for_generate = typespace_for_generate.finish();
 
@@ -322,6 +326,8 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         http_routes,
         raw_module_def_version: RawModuleDefVersion::V10,
         submodules,
+        environment,
+        environment_declared,
     };
 
     // Submodules were validated in isolation, so their defs carry root-relative names.
@@ -332,6 +338,22 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
     module_def.assert_namespaces_applied(&NamespacePath::root());
 
     Ok(module_def)
+}
+
+fn validate_environment(def: &RawModuleDefV10) -> Result<(spacetimedb_lib::environment::EnvironmentSchema, bool)> {
+    let mut sections = def.sections.iter().filter_map(|section| match section {
+        RawModuleDefV10Section::Environment(declarations) => Some(declarations),
+        _ => None,
+    });
+    let Some(declarations) = sections.next() else {
+        return Ok((Default::default(), false));
+    };
+    if sections.next().is_some() {
+        return Err(ValidationError::RepeatedEnvironmentSection.into());
+    }
+    let schema = spacetimedb_lib::environment::EnvironmentSchema::from_declarations(declarations)
+        .map_err(|error| ValidationError::Environment { error })?;
+    Ok((schema, true))
 }
 
 /// Validate that each submodule's namespace is a valid identifier of at most 63 characters,
@@ -365,6 +387,11 @@ fn validate_submodules(submodules: Vec<RawSubmoduleV10>) -> Result<IndexMap<Iden
         } else {
             match validate(submodule.module) {
                 Ok(def) => {
+                    if !def.environment().is_empty() {
+                        errors.push(ValidationError::EnvironmentInSubmodule {
+                            namespace: submodule.namespace.clone(),
+                        });
+                    }
                     for (lifecycle, opt_id) in def.lifecycle_reducers_map() {
                         if opt_id.is_some() {
                             errors.push(ValidationError::LifecycleInSubmodule {
@@ -2794,5 +2821,80 @@ mod tests {
         expect_error_matching!(result, ValidationError::LifecycleInSubmodule { lifecycle, namespace } => {
             lifecycle == &Lifecycle::Init && namespace == "baz"
         });
+    }
+}
+
+#[cfg(test)]
+mod environment_tests {
+    use super::*;
+    use spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration};
+
+    fn declared(name: &str) -> RawModuleDefV10 {
+        RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Environment(vec![EnvironmentDeclaration {
+                name: name.into(),
+                constraint: EnvironmentConstraint::AnyString,
+                optional: true,
+            }])],
+        }
+    }
+
+    #[test]
+    fn environment_schema_round_trip_preserves_explicit_empty_and_exact_keys() {
+        let legacy = validate(RawModuleDefV10::default()).unwrap();
+        assert!(legacy.environment().is_empty());
+        assert!(!legacy.environment_declared());
+        let explicit = validate(RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Environment(vec![])],
+        })
+        .unwrap();
+        assert!(explicit.environment().is_empty());
+        assert!(explicit.environment_declared());
+        let raw: RawModuleDefV10 = explicit.into();
+        assert!(validate(raw).unwrap().environment_declared());
+        let module = validate(declared("Mixed_CASE")).unwrap();
+        assert!(module.environment().get("Mixed_CASE").is_some());
+        assert!(module.environment().get("mixed_case").is_none());
+        let raw: RawModuleDefV10 = module.into();
+        assert!(validate(raw).unwrap().environment().get("Mixed_CASE").is_some());
+        assert_eq!(
+            spacetimedb_lib::bsatn::to_vec(&RawModuleDefV10Section::Environment(vec![])).unwrap(),
+            vec![15, 0, 0, 0, 0]
+        );
+    }
+
+    #[test]
+    fn environment_rejects_ambiguous_sections_and_nested_declarations() {
+        let mut duplicate = declared("A");
+        duplicate.sections.push(RawModuleDefV10Section::Environment(vec![]));
+        assert!(validate(duplicate)
+            .unwrap_err()
+            .into_iter()
+            .any(|error| matches!(error, ValidationError::RepeatedEnvironmentSection)));
+        let nested = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "outer".into(),
+                module: RawModuleDefV10 {
+                    sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                        namespace: "inner".into(),
+                        module: declared("SECRET"),
+                    }])],
+                },
+            }])],
+        };
+        assert!(validate(nested)
+            .unwrap_err()
+            .into_iter()
+            .any(|error| matches!(error, ValidationError::EnvironmentInSubmodule { .. })));
+        let empty = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "allowed".into(),
+                module: RawModuleDefV10 {
+                    sections: vec![RawModuleDefV10Section::Environment(vec![])],
+                },
+            }])],
+        };
+        assert!(validate(empty).is_ok());
+        assert!(validate(declared("INVALID-NAME")).is_err());
     }
 }

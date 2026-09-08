@@ -298,7 +298,9 @@ impl WasmInstanceEnv {
         self.mem = Some(mem);
     }
 
-    pub fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
+    pub fn set_module_def(&mut self, module_def: Arc<ModuleDef>, module_hash: spacetimedb_lib::Hash) {
+        self.instance_env
+            .bind_environment_module(module_hash, module_def.clone());
         self.module_def = Some(module_def)
     }
 
@@ -379,6 +381,7 @@ impl WasmInstanceEnv {
     ///
     /// This resets the call times and clears the arguments source and error sink.
     pub fn finish_funcall(&mut self, result_sink: u32) -> (ExecutionTimings, Vec<u8>) {
+        self.instance_env.finish_funcall();
         // For the moment,
         // we only explicitly clear the source/sink buffers and the "syscall" times.
         // TODO: should we be clearing `iters` and/or `timing_spans`?
@@ -1889,10 +1892,10 @@ impl WasmInstanceEnv {
         fn_ptr: ViewFnPtr,
         sender: Option<Identity>,
     ) -> anyhow::Result<ViewReturnData> {
-        let prev_func_type = caller
+        let (prev_func_name, prev_func_type) = caller
             .data_mut()
             .instance_env
-            .swap_func_type(FuncCallType::View(view_call.clone()));
+            .swap_func_context(Some(view_name.clone()), FuncCallType::View(view_call.clone()));
 
         let mut nested_result_sink = None;
         let call_result = (|| -> anyhow::Result<i32> {
@@ -1924,7 +1927,10 @@ impl WasmInstanceEnv {
             Ok(code)
         })();
 
-        caller.data_mut().instance_env.swap_func_type(prev_func_type);
+        caller
+            .data_mut()
+            .instance_env
+            .swap_func_context(prev_func_name, prev_func_type);
 
         let result_bytes = {
             let env = caller.data_mut();

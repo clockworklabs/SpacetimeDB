@@ -14,6 +14,7 @@ export default defineConfig({
     alias: [
       { find: 'spacetime:sys@2.0', replacement: sysMock },
       { find: 'spacetime:sys@2.1', replacement: sysMock },
+      { find: 'spacetime:sys@2.3', replacement: sysMock },
     ],
   },
   test: {
