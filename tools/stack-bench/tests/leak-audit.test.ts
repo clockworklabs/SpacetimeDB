@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { runOwnEndpoints } from '../commands/bench.js';
+import { runAuditNetworkContext } from '../commands/bench.js';
 import { createBackendLease } from '../src/runtime/backend-lease.js';
 import { loadTrack } from '../src/composition/tracks.js';
 import { auditTranscript, networkTargetsFromBash, pathsFromBash } from '../commands/leak-audit.js';
@@ -126,7 +126,18 @@ test('leased database endpoints permit the supplied namespace, not another host 
         hostAddresses: [], services: [{ address: '172.20.0.2', port: 4873 }],
         ownAddresses: ['172.20.0.3'],
         cacheContainerId: 'cache', firewallSha256: null, firewallInstalledAt: null };
-      const ownEndpoints = runOwnEndpoints(loadTrack('ecommerce'), { backend, runIndex: 1 }, lease);
+      const context = () => runAuditNetworkContext(loadTrack('ecommerce'), { backend, runIndex: 1 }, lease);
+      const { ownEndpoints } = context();
+      assert.equal(context().isolatedLoopback, false);
+      lease.resources.container = { name: 'backend', id: 'namespace', owned: true };
+      lease.resources.buildContainer = { name: 'build', id: 'build', owned: true, networkMode: 'container:namespace' };
+      lease.resources.network.firewallSha256 = 'a'.repeat(64);
+      lease.resources.network.firewallInstalledAt = new Date().toISOString();
+      assert.equal(context().isolatedLoopback, true);
+      for (const mode of ['host', 'bridge', 'container:foreign']) {
+        lease.resources.buildContainer.networkMode = mode;
+        assert.equal(context().isolatedLoopback, false, mode);
+      }
       assert(ownEndpoints.includes(`127.0.0.1:${port}`));
       // The attempt's own bridge address owns the same ports; a probe there is not another run.
       assert(ownEndpoints.includes(`172.20.0.3:${port}`));
@@ -148,5 +159,24 @@ test('leased database endpoints permit the supplied namespace, not another host 
         { path: `172.20.0.99:${port}`, via: 'Bash network attempt', kind: 'NETWORK / OTHER RUN' },
       ]);
     }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('verified isolated loopback allows temporary test ports but keeps private hosts restricted', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-isolated-network-'));
+  try {
+    const transcript = join(root, 'session.jsonl');
+    const loopback = ['localhost:6574', '127.0.0.1:6579', '127.0.0.2:7331', '[::1]:6574', '0.0.0.0:6574'];
+    const privateHosts = ['host.docker.internal:6574', '10.0.0.1:6574', '172.20.0.99:6574', '192.168.0.1:6574'];
+    writeFileSync(transcript, [...loopback, ...privateHosts].flatMap((endpoint, i) => [
+      { cwd: '/app', message: { content: [{ type: 'tool_use', id: String(i), name: 'Bash',
+        input: { command: `curl http://${endpoint}/` } }] } },
+      { message: { content: [{ type: 'tool_result', tool_use_id: String(i), is_error: false }] } },
+    ]).map(event => JSON.stringify(event)).join('\n'));
+    // /app in a transcript is not proof of isolation; the default remains strict.
+    assert.equal(auditTranscript(transcript, '/app').hits.length, loopback.length + privateHosts.length);
+    const isolated = auditTranscript(transcript, '/app', { isolatedLoopback: true });
+    assert.deepEqual(isolated.hits.map(hit => hit.path), privateHosts);
+    assert(isolated.hits.every(hit => hit.kind === 'NETWORK / OTHER RUN'));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

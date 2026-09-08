@@ -153,6 +153,8 @@ test('campaign failures prefer the last explicit error over stack and exit noise
   ].join('\n');
   assert.equal(processFailureDetail({ stderrTail }),
     'Error: reference source contains an unsupported generated link');
+  assert.equal(processFailureDetail({ stdoutTail: 'ABORTED: contract lint produced no report\nremoved build container\nsummary saved' }),
+    'ABORTED: contract lint produced no report');
 });
 
 test('dependency completion does not hide a whole-app failure', () => {

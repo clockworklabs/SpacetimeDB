@@ -628,6 +628,7 @@ export function contractLintArgv(args: ContractLintArguments,
       '--parent-attempt-id', args.bundleArtifactId,
       ...(args.credentialAliases
         ? ['--credential-aliases-json', JSON.stringify(args.credentialAliases)] : []),
+      ...(selectedTask ? ['--selected-hooks'] : []),
       ...interfaces.flatMap(id => ['--hook', id])];
 }
 
@@ -650,7 +651,9 @@ function lint(args: RunArguments, selectedTask: BoundRecipeTaskRequestResult | n
   console.log(r.pass
     ? r.counts.pass > 0
       ? `PASS (${r.counts.pass} interfaces)`
-      : `DEFERRED (${r.counts.scenario} interfaces checked during feature grading)`
+      : r.counts.scenario > 0
+        ? `DEFERRED (${r.counts.scenario} interfaces checked during feature grading)`
+        : 'NO STANDALONE INTERFACES SELECTED'
     : `FAIL (${r.counts.fail} failed, ${r.counts.blocked} blocked)`);
   return r;
 }

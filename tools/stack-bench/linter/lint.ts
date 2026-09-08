@@ -39,7 +39,7 @@ export interface LintArgs {
   label?: string;
   parentAttemptId?: string;
   credentialAliases?: unknown;
-  hooks: string[];
+  hooks?: string[];
 }
 
 export interface LintWalkContext {
@@ -60,7 +60,8 @@ function parseArgs(argv: string[]): LintArgs {
     url: { type: 'string' }, track: { type: 'string' }, level: { type: 'string' },
     json: { type: 'boolean' }, out: { type: 'string' }, label: { type: 'string' },
     'parent-attempt-id': { type: 'string' }, 'credential-aliases-json': { type: 'string' },
-    hook: { type: 'string', multiple: true }, headed: { type: 'boolean' },
+    hook: { type: 'string', multiple: true }, 'selected-hooks': { type: 'boolean' },
+    headed: { type: 'boolean' },
   } });
   const args: LintArgs = { url: values.url, track: values.track ?? DEFAULT_TRACK,
     level: values.level === undefined ? 1 : Number(values.level), json: values.json ?? false,
@@ -68,7 +69,7 @@ function parseArgs(argv: string[]): LintArgs {
     parentAttemptId: values['parent-attempt-id'],
     credentialAliases: values['credential-aliases-json'] === undefined
       ? undefined : JSON.parse(values['credential-aliases-json']),
-    hooks: values.hook ?? [] };
+    hooks: values.hook ?? (values['selected-hooks'] ? [] : undefined) };
   if (!args.url || !Number.isInteger(args.level) || args.level < 1) {
     console.error('Usage: node dist/linter/lint.js --url <app-url> --level <N> [--json] [--headed]');
     process.exit(2);
@@ -76,8 +77,8 @@ function parseArgs(argv: string[]): LintArgs {
   return args;
 }
 
-export function selectHooks(hooks: LintHook[], selectedIds: string[] = []): LintHook[] {
-  if (!selectedIds.length) return hooks;
+export function selectHooks(hooks: LintHook[], selectedIds?: string[]): LintHook[] {
+  if (selectedIds === undefined) return hooks;
   const remaining = new Set(selectedIds);
   const selected = hooks.filter(hook => remaining.delete(hook.id));
   const unknown: LintHook[] = [...remaining].sort().map(id => ({
@@ -90,7 +91,7 @@ export function selectHooks(hooks: LintHook[], selectedIds: string[] = []): Lint
   return [...selected, ...unknown];
 }
 
-export function loadHooks(level: number, track: { contracts: string }, selectedIds: string[] = []): LintHook[] {
+export function loadHooks(level: number, track: { contracts: string }, selectedIds?: string[]): LintHook[] {
   const CONTRACTS_DIR = track.contracts;
   const files = readdirSync(CONTRACTS_DIR).filter(f => /^\d+-[a-z-]+\.json$/.test(f)).sort();
   const hooks = [];
@@ -100,7 +101,7 @@ export function loadHooks(level: number, track: { contracts: string }, selectedI
     };
     if (contract.level <= level) hooks.push(...contract.hooks);
   }
-  if (hooks.length === 0 && selectedIds.length === 0) {
+  if (hooks.length === 0 && selectedIds === undefined) {
     console.error(`No contracts found for level ${level} in ${CONTRACTS_DIR}`);
     process.exit(2);
   }
@@ -174,24 +175,26 @@ async function run() {
     }
   };
 
-  const browser = await chromium.launch({ headless: !args.headed, ...attemptBrowserLaunchOptions() });
-  const page = await browser.newContext().then(c => c.newPage());
-  page.setDefaultTimeout(CHECK_TIMEOUT);
+  if (hooks.length) {
+    const browser = await chromium.launch({ headless: !args.headed, ...attemptBrowserLaunchOptions() });
+    const page = await browser.newContext().then(c => c.newPage());
+    page.setDefaultTimeout(CHECK_TIMEOUT);
 
-  try {
-    // The core flow is the one part of linting that is entirely
-    // application-specific, so each track brings its own.
-    const { walk } = await import(pathToFileURL(track.walk).href) as {
-      walk(context: LintWalkContext): Promise<void>;
-    };
-    await walk({ page, args, hooks, byStage, blocked, checkHook, results, uniq, tid, CHECK_TIMEOUT });
-    // Every lintable hook must record explicit evidence.
-    completeUnvisitedHooks(hooks, results);
-  } catch (err: unknown) {
-    console.error(`Core flow aborted: ${err instanceof Error ? err.message : String(err)}`);
-    completeAbortedHooks(hooks, results, err);
-  } finally {
-    await browser.close();
+    try {
+      // The core flow is the one part of linting that is entirely
+      // application-specific, so each track brings its own.
+      const { walk } = await import(pathToFileURL(track.walk).href) as {
+        walk(context: LintWalkContext): Promise<void>;
+      };
+      await walk({ page, args, hooks, byStage, blocked, checkHook, results, uniq, tid, CHECK_TIMEOUT });
+      // Every lintable hook must record explicit evidence.
+      completeUnvisitedHooks(hooks, results);
+    } catch (err: unknown) {
+      console.error(`Core flow aborted: ${err instanceof Error ? err.message : String(err)}`);
+      completeAbortedHooks(hooks, results, err);
+    } finally {
+      await browser.close();
+    }
   }
 
   const failures = results.filter(r => r.status === 'FAIL' || r.status === 'BLOCKED');
@@ -199,7 +202,7 @@ async function run() {
     label: args.label ?? null,
     url: args.url,
     level: args.level,
-    selectedHooks: args.hooks.length ? [...new Set(args.hooks)].sort() : null,
+    selectedHooks: args.hooks === undefined ? null : [...new Set(args.hooks)].sort(),
     pass: failures.length === 0,
     counts: {
       lintable: results.filter(r => r.status !== 'SCENARIO').length,
@@ -229,7 +232,9 @@ async function run() {
     console.log(failures.length === 0
       ? report.counts.pass > 0
         ? `\nAPPLICATION CONTRACT PASS (${report.counts.pass} interfaces)`
-        : `\nAPPLICATION CONTRACT DEFERRED (${report.counts.scenario} interfaces checked during feature grading)`
+        : report.counts.scenario > 0
+          ? `\nAPPLICATION CONTRACT DEFERRED (${report.counts.scenario} interfaces checked during feature grading)`
+          : '\nNO STANDALONE INTERFACES SELECTED'
       : `\nAPPLICATION CONTRACT FAIL (${failures.length} interfaces missing or blocked)`);
   }
   process.exit(failures.length === 0 ? 0 : 1);

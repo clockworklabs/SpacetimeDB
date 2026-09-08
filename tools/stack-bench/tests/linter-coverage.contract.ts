@@ -28,10 +28,13 @@ test('stable element selectors support one-off ids and repeated roles', () => {
 });
 
 test('a selected lint surface excludes unrelated hooks and keeps unknown hooks for scenario grading', () => {
-  const selected = selectHooks([
+  const hooks: TestHook[] = [
     { id: 'accounts', element: 'accounts', stage: 'landing', check: 'visible', note: '' },
     { id: 'cart', element: 'cart', stage: 'cart', check: 'visible', note: '' },
-  ], ['support-link', 'accounts']);
+  ];
+  assert.deepEqual(selectHooks(hooks), hooks);
+  assert.deepEqual(selectHooks(hooks, []), []);
+  const selected = selectHooks(hooks, ['support-link', 'accounts']);
   assert.deepEqual(selected.map(hook => hook.id), ['accounts', 'support-link']);
   assert.equal(selected[1]?.stage, 'scenario');
 });

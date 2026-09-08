@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,6 +19,7 @@ import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.js';
 import { createBackendLease } from '../src/runtime/backend-lease.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
+import { readArtifactPayload } from '../src/evidence/artifacts.js';
 
 const ECOMMERCE = join(STACK_BENCH_ROOT, 'tracks', 'ecommerce');
 
@@ -37,6 +39,39 @@ test('contract lint receives the selected credential aliases', () => {
     out: '/results', bundleArtifactId: 'attempt', credentialAliases: aliases,
   });
   assert.equal(argv[argv.indexOf('--credential-aliases-json') + 1], JSON.stringify(aliases));
+  assert.equal(argv.includes('--selected-hooks'), false);
+});
+
+test('a targeted staff repair writes explicit empty lint evidence without falling back to level contracts', () => {
+  const out = mkdtempSync(join(tmpdir(), 'stack-bench-empty-lint-'));
+  try {
+    for (const level of [2, 3]) {
+      const binding = resolveRecipeRelease(loadTrack('ecommerce'), level, 'ecommerce.progression-catalog');
+      const selected = createBoundRecipeTaskRequest(binding, {
+        featureIds: ['ecommerce.progression.staff-access'],
+        taskMode: 'upgrade',
+      });
+      assert(selected.selection.checks.length > 0, 'scenario grading must still select staff checks');
+      const argv = contractLintArgv({
+        url: 'http://127.0.0.1:1', level: String(level), track: 'ecommerce', label: 'staff-repair',
+        out, bundleArtifactId: 'staff-repair',
+      }, selected);
+      assert(argv.includes('--selected-hooks'));
+      assert.equal(argv.includes('--hook'), false);
+      const result = spawnSync(process.execPath, argv, { encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      const report = readArtifactPayload<{ selectedHooks: string[]; pass: boolean; results: unknown[] }>(
+        join(out, 'contract-lint.json'), { expectedKind: 'contract_lint' });
+      assert.deepEqual(report.selectedHooks, []);
+      assert.equal(report.pass, true);
+      assert.deepEqual(report.results, []);
+
+      const unscoped = spawnSync(process.execPath, argv.filter(value => value !== '--selected-hooks'),
+        { encoding: 'utf8' });
+      assert.equal(unscoped.status, 2);
+      assert.match(unscoped.stderr, /No contracts found/);
+    }
+  } finally { rmSync(out, { recursive: true, force: true }); }
 });
 
 test('code metrics count each package manifest once when server code is at the app root', () => {

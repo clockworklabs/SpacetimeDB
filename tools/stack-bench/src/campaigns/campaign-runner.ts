@@ -225,11 +225,13 @@ function readAttemptResult(plan: CompiledCampaignPlan, attempt: CampaignAttemptP
     catch (error) { artifactError = error instanceof Error ? error : new Error(String(error)); }
   }
   if (artifactError) {
-    const processDetail = processResult.code !== 0
-      ? processFailureDetail(processResult) : null;
+    // Preserve the reported trigger for diagnosis, never as accepted evidence.
+    const reported = run?.contaminated ? run.contamination?.verdict : run?.outcome?.reason;
+    const processDetail = typeof reported === 'string' && reported.trim()
+      ? reported.slice(0, 800) : processFailureDetail(processResult);
     return withRetryAuthority({ exitCode: processResult.code, timedOut: processResult.timedOut,
       run: { outcome: { kind: 'harness_failure',
-        reason: `${processDetail ? `${processDetail}; ` : ''}partial ${ARTIFACT_FILE.run} is invalid: ${artifactError.message}` } } });
+        reason: `${processDetail ? `Reported failure: ${processDetail}; ` : ''}partial ${ARTIFACT_FILE.run} is invalid: ${artifactError.message}` } } });
   }
   if (!run && processResult.code !== 0 && !processResult.timedOut) {
     const detail = processFailureDetail(processResult);
@@ -269,7 +271,7 @@ export function processFailureDetail(processResult: Partial<RunnerProcessResult>
   const text = processResult.stderrTail || processResult.stdoutTail
     || processResult.error?.message || '';
   const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-  const explicit = lines.filter(line => /^Error:\s+/.test(line)).at(-1);
+  const explicit = lines.filter(line => /^(?:Error:|ABORTED:|CONTAMINATED\b)/.test(line)).at(-1);
   return (explicit ?? lines.slice(-4).join(' | ')).slice(0, 800);
 }
 

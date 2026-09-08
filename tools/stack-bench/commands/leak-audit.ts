@@ -28,12 +28,18 @@ const IGNORE = /node_modules|\.git[/\\]|package-lock\.json|\/dist\/|\.map$|[/\\]
 const READER = /(?:^|[;&|]\s*)(?:cat|head|tail|less|more|type|grep|rg|ack|find|ls\s+-\w*l|sed\s+-n|awk)\s+([^;&|]+)/g;
 
 // Network targets in a shell command: any URL, and a raw socket target. A
-// build legitimately reaches its own web, database, and SpacetimeDB ports;
-// every other local port belongs to another run, the controller, or the
-// dashboard. Internet targets are recorded, not judged.
+// A verified attempt namespace owns its loopback ports, including temporary
+// test servers. Shared namespaces require exact endpoints. Internet targets
+// are recorded, not judged.
 const URL_TARGET = /https?:\/\/([^\s/'"`]+)/gi;
 const SOCKET_TARGET = /(?:^|[;&|]\s*)(?:nc|ncat|netcat)\s+(?:-\S+\s+)*([\w.-]+)\s+(\d{2,5})\b/g;
 const LOCAL_HOST = /^(?:127\.\d+\.\d+\.\d+|localhost|0\.0\.0\.0|\[::1\]|host\.docker\.internal|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+)$/i;
+const LOOPBACK_HOST = /^(?:127\.\d+\.\d+\.\d+|localhost|0\.0\.0\.0|\[::1\])$/i;
+
+export interface AuditNetworkContext {
+  ownEndpoints?: readonly string[];
+  isolatedLoopback?: boolean;
+}
 
 export interface NetworkTarget {
   host: string;
@@ -58,7 +64,8 @@ const endpointHost = (host: string): string => /^(?:127\.0\.0\.1|0\.0\.0\.0|loca
   ? 'localhost' : host.toLowerCase();
 const endpointKey = (target: NetworkTarget): string => `${endpointHost(target.host)}:${target.port}`;
 
-const networkKind = (target: NetworkTarget, ownEndpoints: ReadonlySet<string>): string | null => {
+const networkKind = (target: NetworkTarget, ownEndpoints: ReadonlySet<string>, isolatedLoopback: boolean): string | null => {
+  if (isolatedLoopback && LOOPBACK_HOST.test(target.host)) return null;
   if (ownEndpoints.has(endpointKey(target))) return null;
   if (!LOCAL_HOST.test(target.host)) return 'network (internet)';
   return 'NETWORK / OTHER RUN';
@@ -140,7 +147,7 @@ interface TranscriptContent {
 }
 
 export function auditTranscript(file: string, boundary: string | null,
-  { ownEndpoints = [] }: { ownEndpoints?: readonly string[] } = {}): TranscriptAudit {
+  { ownEndpoints = [], isolatedLoopback = false }: AuditNetworkContext = {}): TranscriptAudit {
   const endpoints = new Set(ownEndpoints.map(endpoint => {
     const url = new URL(`http://${endpoint}`);
     return endpointKey({ host: url.hostname, port: Number(url.port || 80) });
@@ -184,7 +191,7 @@ export function auditTranscript(file: string, boundary: string | null,
       const network: Array<{ path: string; kind: string }> = [];
       if (p.name === 'Bash') {
         for (const target of networkTargetsFromBash(p.input?.command ?? '')) {
-          const kind = networkKind(target, endpoints);
+          const kind = networkKind(target, endpoints, isolatedLoopback);
           if (kind) network.push({ path: `${target.host}${target.port === null ? '' : `:${target.port}`}`, kind });
         }
       }
@@ -222,6 +229,7 @@ function main(): void {
   const { values } = parseArgs({ args: process.argv.slice(2), options: {
     app: { type: 'string' }, dir: { type: 'string' }, json: { type: 'boolean' },
     'own-endpoints': { type: 'string' },
+    'isolated-loopback': { type: 'boolean' },
   } });
   const ownEndpoints = (values['own-endpoints'] ?? '').split(',').filter(Boolean);
   const requestedApp = values.app;
@@ -247,7 +255,8 @@ for (const root of roots) {
       // Include transcripts from the main session and its subagents.
       if (!/transcript|^agent-|^[0-9a-f-]{36}\.jsonl$/.test(e.name)) continue;
       if (statSync(p).size < 2000) continue;
-      results.push({ ...auditTranscript(p, appBoundary, { ownEndpoints }), root });
+      results.push({ ...auditTranscript(p, appBoundary, { ownEndpoints,
+        isolatedLoopback: values['isolated-loopback'] === true }), root });
     }
   }
 }

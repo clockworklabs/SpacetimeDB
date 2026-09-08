@@ -27,6 +27,61 @@ import type { ProgressionState } from '../src/progression/progression-state.js';
 import type { ProgressionNodeState } from '../src/progression/progression-state.js';
 import { validateCampaignRun } from '../src/campaigns/campaign-run-validation.js';
 import type { RepairPlanInput } from '../src/progression/repair-plan.js';
+import { progressionEngine } from '../src/progression/progression-engine.js';
+import { synchronizeProgressionSummary } from '../commands/bench.js';
+import { aggregateRunOutcome, runExitCode } from '../src/evidence/outcomes.js';
+import type { BenchmarkRunRecord, RunLevelRecord } from '../src/evidence/benchmark-run.js';
+
+test('interrupted repair summaries retain failure identity and charge the recorded depth', () => {
+  const compiled = compileProgressionInput(definition());
+  let state = progressionEngine.initialize(compiled.definition);
+  state = progressionEngine.recordResult(state, {
+    attemptId: 'initial', outcome: 'conclusive', selectionSha256: 'a'.repeat(64),
+    nodes: [{ id: 'accounts', checks: [
+      { id: 'ecommerce.feature.accounts.accounts.1a', outcome: 'fail' },
+    ] }],
+  });
+  state = progressionEngine.recordResult(state, {
+    attemptId: 'repair', outcome: 'inconclusive', category: 'harness_failure',
+    reason: 'target grading failed', completedRepair: true,
+  });
+  const run: Pick<BenchmarkRunRecord, 'validation' | 'levels'> = {
+    validation: { ladder: { policy: 'dependency-graph', requestedLevels: [1, 2, 3],
+      completedLevels: [], stoppedAfterLevel: null, blockedLevels: [] } },
+    levels: [1, 3].map((level): RunLevelRecord => ({ level, graded: true, score: 1, max: 1,
+      selection: { sha256: 'a'.repeat(64) }, outcome: { kind: 'passed', reason: null },
+      repairs: level === 3 ? 1 : 0,
+      repair: { status: 'not-needed', used: level === 3 ? 1 : 0, limit: 2, stopReason: null },
+    })),
+  };
+  synchronizeProgressionSummary(run, state);
+  assert.deepEqual(run.validation.ladder.completedLevels, [1]);
+  assert.equal(run.levels[0]?.graded, false);
+  assert.equal(run.levels[0]?.score, null);
+  assert.equal(run.levels[0]?.selection, null);
+  assert.equal(run.levels[0]?.outcome.reason, 'target grading failed');
+  assert.equal(run.levels[0]?.repairs, 1);
+  assert.equal(run.levels[0]?.repair?.used, 1);
+  assert.equal(run.levels[1]?.repairs, 0);
+  assert.equal(run.levels[1]?.repair?.used, 0);
+  assert.equal(aggregateRunOutcome(run.levels).kind, 'harness_failure');
+  assert.notEqual(runExitCode(aggregateRunOutcome(run.levels)), 0);
+  const once = structuredClone(run);
+  synchronizeProgressionSummary(run, state);
+  assert.deepEqual(run, once);
+  state = progressionEngine.recordResult(state, {
+    attemptId: 'regraded', outcome: 'conclusive', selectionSha256: 'b'.repeat(64),
+    nodes: [{ id: 'accounts', checks: [
+      { id: 'ecommerce.feature.accounts.accounts.1a', outcome: 'pass' },
+    ] }],
+  });
+  Object.assign(run.levels[0]!, { graded: true, score: 1, max: 1,
+    selection: { sha256: 'b'.repeat(64) }, outcome: { kind: 'passed', reason: null } });
+  synchronizeProgressionSummary(run, state);
+  assert.equal(run.levels[0]?.repair?.status, 'corrected');
+  assert.equal(run.levels[0]?.repair?.used, 1);
+  assert.equal(run.levels[0]?.stalled, false);
+});
 
 interface FixtureDependency {
   id: string;

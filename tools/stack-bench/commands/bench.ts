@@ -318,6 +318,44 @@ function featureActionNeedsCoding(selected: ProgressionWorkRecipeAction,
   });
 }
 
+export function synchronizeProgressionSummary(run: Pick<BenchmarkRunRecord, 'validation' | 'levels'>,
+  state: ProgressionState): void {
+  run.validation.ladder.completedLevels = [...new Set(state.attempts
+    .filter(attempt => attempt.outcome === 'conclusive').map(attempt => attempt.level))];
+  for (const level of run.levels) {
+    const latest = state.attempts.findLast(attempt => attempt.level === level.level);
+    if (latest?.outcome === 'inconclusive') {
+      level.graded = false;
+      level.score = null;
+      level.max = null;
+      level.selection = latest.selectionSha256 ? { sha256: latest.selectionSha256 } : null;
+      if (level.outcome?.reason !== latest.reason
+        || ['passed', 'app_failure'].includes(level.outcome.kind)) {
+        const kind = latest.category === 'interrupted' ? 'ungraded'
+          : latest.category === 'inconclusive_evidence' ? 'inconclusive'
+          : runOutcomeKind(latest.category ?? 'harness_failure');
+        level.outcome = { kind, phase: 'progression', reason: latest.reason ?? null,
+          appFailures: [], inconclusive: [],
+          harnessFailures: kind === 'harness_failure' ? [latest.reason ?? 'progression failed'] : [] };
+      }
+    }
+    if (level.repair) {
+      const used = state.attempts.filter(attempt => attempt.repair?.depth === level.level).length;
+      level.repairs = used - (level.priorRepairs ?? 0);
+      level.repair.used = used;
+      level.repair.limit = Math.max(level.repair.limit, used);
+      level.repair.nodeRepairs = dependencyLevelRepairRecords(state, level.level);
+      if (level.cumulativeRepairs !== undefined) level.cumulativeRepairs = used;
+      if (latest?.outcome === 'inconclusive') level.repair.status = 'ungraded';
+      else if (level.outcome.kind === 'passed') {
+        level.repair.status = used ? 'corrected' : 'not-needed';
+        level.repair.stopReason = used ? 'passed' : 'not-needed';
+        level.stalled = false;
+      }
+    }
+  }
+}
+
 function mergeFeatureLevelRecord(previous: RunLevelRecord | null,
   current: RunLevelRecord): RunLevelRecord {
   if (!previous) return current;
@@ -400,8 +438,8 @@ function snapshotSource(appDir: string, to: string): void {
 
 // Match the database and registry endpoints supplied to the coding container.
 // A matching port on another host is not owned by this run.
-export function runOwnEndpoints(track: Parameters<typeof portsFor>[0],
-  args: { backend: string; runIndex: number }, lease: BackendLease): string[] {
+export function runAuditNetworkContext(track: Parameters<typeof portsFor>[0],
+  args: { backend: string; runIndex: number }, lease: BackendLease): { ownEndpoints: string[]; isolatedLoopback: boolean } {
   const ports = portsFor(track, args.backend, args.runIndex);
   const databaseUrl = leasedDatabaseEnvironment(STACK_ADAPTER_REGISTRY.get(args.backend), {
     database: lease.resources.database, networkMode: lease.resources.buildContainer?.networkMode,
@@ -415,24 +453,33 @@ export function runOwnEndpoints(track: Parameters<typeof portsFor>[0],
   // A loopback endpoint is also owned at each of the attempt's own network addresses,
   // which is how a coding agent reaches its own application by bridge address.
   const ownAddresses = lease.resources.network?.ownAddresses ?? [];
-  return [...new Set(urls.flatMap(value => {
+  const ownEndpoints = [...new Set(urls.flatMap(value => {
     const url = new URL(value);
     const port = url.port || (url.protocol === 'https:' ? '443' : '80');
     const hosts = /^(?:127\.0\.0\.1|localhost|0\.0\.0\.0)$/.test(url.hostname)
       ? [url.hostname, ...ownAddresses] : [url.hostname];
     return hosts.map(host => `${host}:${port}`);
   }))];
+  // The authenticated lease records the inspected coding container's namespace.
+  // A transcript's cwd or a Docker bridge alone does not prove isolation.
+  const network = lease.resources.network;
+  const build = lease.resources.buildContainer;
+  const isolatedLoopback = !!(network?.namespaceContainerId
+    && lease.resources.container?.owned && lease.resources.container.id === network.namespaceContainerId
+    && network.firewallSha256 && network.firewallInstalledAt
+    && build?.owned && build.networkMode === `container:${network.namespaceContainerId}`);
+  return { ownEndpoints, isolatedLoopback };
 }
 
 // Check contamination after every coding session. File-tool permissions do not
 // govern shell reads, so the transcript audit remains a separate hard gate.
-function auditContamination(appDir: string, ownEndpoints: readonly string[],
+function auditContamination(appDir: string, network: ReturnType<typeof runAuditNetworkContext>,
   expectTranscripts: boolean): ContaminationAudit | null {
   // A non-billable adapter runs no provider session and leaves no transcript;
   // there is nothing to audit and nothing that could have been read.
   if (!expectTranscripts) return null;
   const args = [join(ROOT, 'dist', 'commands', 'leak-audit.js'), '--app', appDir, '--json',
-    '--own-endpoints', ownEndpoints.join(',')];
+    '--own-endpoints', network.ownEndpoints.join(','), ...(network.isolatedLoopback ? ['--isolated-loopback'] : [])];
   let firstFailure: unknown = null;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
@@ -1202,8 +1249,9 @@ async function main() {
   }
   process.env.STACK_BENCH_LEASE = leasePath;
   process.env.STACK_BENCH_LEASE_TOKEN = initialLease.ownershipToken;
-  const ownEndpoints = () => auditsTranscripts ? runOwnEndpoints(track, { backend: stackAdapter.id, runIndex: args.runIndex },
-    readBackendLease(leasePath, { token: initialLease.ownershipToken, backend: args.backend, runId })) : [];
+  const auditNetwork = () => auditsTranscripts ? runAuditNetworkContext(track, { backend: stackAdapter.id, runIndex: args.runIndex },
+    readBackendLease(leasePath, { token: initialLease.ownershipToken, backend: args.backend, runId }))
+    : { ownEndpoints: [], isolatedLoopback: false };
 
   if (process.platform === 'win32') {
     // When Windows resolves `bash` through WSL, WSLENV must carry lease paths
@@ -1549,10 +1597,10 @@ async function main() {
       run.validation.ladder.stoppedAfterLevel = run.levels.at(-1)?.level ?? null;
       run.validation.ladder.blockedLevels = args.levelList.filter(candidate => candidate >= level);
       if (progressionExecution) {
+        recordProgressionGrade({ selected: progressionExecution.bind(), bundle: null, level,
+          failure: progressionFailure(run.outcome) });
         run.progressionStatus = progressionExecution.status();
-        run.validation.ladder.completedLevels = [...new Set(requireProgressionState(progressionExecution.state).attempts
-          .filter(attempt => attempt.outcome === 'conclusive')
-          .map(attempt => attempt.level))];
+        synchronizeProgressionSummary(run, requireProgressionState(progressionExecution.state));
       }
       finalizeRunTotals(run, started, { costComplete: false });
       run.completedAt = new Date().toISOString();
@@ -1583,6 +1631,7 @@ async function main() {
         failure: progressionFailure(outcome),
         completedRepair });
       run.progressionStatus = progressionExecution!.status();
+      synchronizeProgressionSummary(run, requireProgressionState(progressionExecution.state));
     }
     run.validation.ladder.stoppedAfterLevel = run.levels.at(-2)?.level ?? null;
     run.validation.ladder.blockedLevels = args.levelList
@@ -1856,7 +1905,7 @@ async function main() {
       if (!build) throw new Error(`level ${level} has no coding session`);
       return build;
     };
-    const buildLeak = build ? auditContamination(appDir, ownEndpoints(), auditsTranscripts) : null;
+    const buildLeak = build ? auditContamination(appDir, auditNetwork(), auditsTranscripts) : null;
     if (buildLeak) {
       const session = requireBuild();
       const buildSession = runSessionRecord(session,
@@ -2295,6 +2344,9 @@ async function main() {
       if (args.progression) recordRepairProgression({
         failure: progressionFailure(failure), completedRepair,
       });
+      const failedLevel = progressionExecution?.state?.attempts.at(-1)?.level;
+      const prior = run.levels.find(record => record.level === failedLevel);
+      if (prior) prior.outcome = failure;
     };
     const restoreProgressionGrade = (accepted: GradeBundlePayload | null,
       label: string): boolean => {
@@ -2480,7 +2532,7 @@ async function main() {
       repairs += 1;
 
       // Reject contaminated repairs before spending time on grading.
-      const fixLeak = auditContamination(appDir, ownEndpoints(), auditsTranscripts);
+      const fixLeak = auditContamination(appDir, auditNetwork(), auditsTranscripts);
       if (fixLeak) {
         const buildSession = build ? runSessionRecord(build) : null;
         const sessions = resumedRepair || !buildSession
@@ -2737,7 +2789,7 @@ async function main() {
     if (progressionState && latestProgressionAttempt && latestProgressionAttempt.level !== level) {
       const prior = run.levels.find(item => item.level === latestProgressionAttempt.level);
       const latestBundle = progressionBundles.get(latestProgressionAttempt.level);
-      if (prior && latestBundle) {
+      if (prior && latestBundle && latestProgressionAttempt.outcome === 'conclusive') {
         const latestOutcome = classifyBundle(latestBundle);
         const latestGraded = levelGradeIsUsable(latestOutcome, latestProgressionAttempt);
         prior.graded = latestGraded;
@@ -2747,11 +2799,6 @@ async function main() {
         prior.selection = latestBundle.selection ?? null;
         prior.contractPass = latestBundle.totals?.contractPass ?? null;
         prior.code = latestBundle.code ?? null;
-        prior.repair = { ...repair,
-          nodeRepairs: dependencyRepairRecords(
-            progressionState, latestProgressionAttempt.level, levelRepairNodeIds),
-        };
-        prior.stalled = repairStatus === 'budget-exhausted';
         prior.outcome = latestOutcome;
       }
     }
@@ -2840,6 +2887,7 @@ async function main() {
         run.validation.ladder.completedLevels.push(level);
       }
     }
+    if (progressionState) synchronizeProgressionSummary(run, progressionState);
     writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
     const blockedLevels = args.levelList.filter(candidate => candidate > level);
     if (args.progression) {
@@ -2898,7 +2946,7 @@ async function main() {
   // Record a final transcript audit in addition to the per-session hard gates.
   // The same retry and diagnostic path is used at both gates.
   let finalAuditFailure = null;
-  const finalAudit = auditContamination(appDir, ownEndpoints(), auditsTranscripts);
+  const finalAudit = auditContamination(appDir, auditNetwork(), auditsTranscripts);
   if (!finalAudit) {
     run.contaminated = false;
     run.contamination = { evidence: 'no agent access to private benchmark files detected',
@@ -2922,6 +2970,9 @@ async function main() {
   try { archiveTranscripts(appDir, artifactLabel); }
   catch { console.log('  (transcript archiving failed — evidence is on a 30-day timer)'); }
 
+  if (args.progression && progressionExecution?.state) {
+    synchronizeProgressionSummary(run, requireProgressionState(progressionExecution.state));
+  }
   run.outcome = finalAuditFailure ?? (args.referenceMutationOnly && run.mutationControl?.ok
     ? { kind: 'passed', phase: 'mutation-control', reason: null,
       appFailures: [], inconclusive: [], harnessFailures: [] }
@@ -2948,16 +2999,6 @@ async function main() {
     }
   }
 
-  // Every level's node repair record is derived from the final progression
-  // state, the same way the campaign validator recomputes it.
-  if (args.progression && progressionExecution?.state) {
-    const finalState = requireProgressionState(progressionExecution.state);
-    for (const level of run.levels) {
-      if (level.repair?.nodeRepairs) {
-        level.repair.nodeRepairs = dependencyLevelRepairRecords(finalState, level.level);
-      }
-    }
-  }
   finalizeRunTotals(run, started, { costComplete: runCostComplete });
   if (args.repairGrant) {
     const continuation = requireContinuation(run);
