@@ -75,6 +75,7 @@ use crate::client::{ClientActorId, MeteredUnboundedReceiver, MeteredUnboundedSen
 use crate::config::{V8Config, V8HeapPolicyConfig};
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
+use crate::host::module_host::OperationLease;
 use crate::host::module_host::{
     call_identity_connected, init_database, ClientConnectedError, HttpHandlerCallError, OneOffQueryRequest, SqlCommand,
     SqlCommandResult, ViewCommand, ViewCommandMetric, ViewCommandResult,
@@ -312,7 +313,10 @@ impl JsModule {
         self.procedure_instance_pool_size
     }
 
-    async fn create_procedure_instance(&self) -> anyhow::Result<JsProcedureInstance> {
+    async fn create_procedure_instance(
+        &self,
+        operation: Option<OperationLease>,
+    ) -> anyhow::Result<JsProcedureInstance> {
         let program = self.program.clone();
         let common = self.common.clone();
         let load_balance_guard = self.load_balance_guard.clone();
@@ -329,13 +333,21 @@ impl JsModule {
             heap_policy,
             self.execution_timeout,
             metrics,
+            operation,
         )
         .await?;
         Ok(instance)
     }
 
+    pub(in crate::host) async fn create_instance_for_operation(
+        &self,
+        operation: Option<OperationLease>,
+    ) -> anyhow::Result<JsProcedureInstance> {
+        self.create_procedure_instance(operation).await
+    }
+
     pub async fn create_instance(&self) -> anyhow::Result<JsProcedureInstance> {
-        self.create_procedure_instance().await
+        self.create_procedure_instance(None).await
     }
 }
 
@@ -468,7 +480,8 @@ impl JsInstanceEnv {
 /// and friends.
 #[derive(Clone)]
 pub struct JsMainInstance {
-    tx: MeteredUnboundedSender<JsMainWorkerRequest>,
+    tx: MeteredUnboundedSender<PhysicalRequest<JsMainWorkerRequest>>,
+    operation: Option<OperationLease>,
 }
 
 /// A procedure instance for a [`JsModule`].
@@ -476,7 +489,8 @@ pub struct JsMainInstance {
 /// Procedure instances are checked out exclusively from the procedure pool and
 /// only execute procedure-style requests.
 pub struct JsProcedureInstance {
-    tx: mpsc::Sender<JsProcedureWorkerRequest>,
+    tx: mpsc::Sender<PhysicalRequest<JsProcedureWorkerRequest>>,
+    operation: Option<OperationLease>,
     startup_failure: ProcedureStartupStatus,
 }
 
@@ -489,13 +503,34 @@ type ProcedureStartupStatus = Arc<OnceLock<JsProcedureStartupError>>;
 #[error("procedure isolate startup failed: {0}")]
 pub(in crate::host) struct JsProcedureStartupError(Arc<str>);
 
+struct PhysicalRequest<R> {
+    request: R,
+    operation: Option<OperationLease>,
+}
+
 impl JsMainInstance {
+    pub(in crate::host) fn with_operation(mut self, operation: OperationLease) -> Self {
+        self.operation = Some(operation);
+        self
+    }
+
     async fn request<R: JsMainRequest>(&self, request: R) -> R::Response {
-        send_js_unbounded_request(R::CTX, &self.tx, |reply_tx| request.into_worker_request(reply_tx)).await
+        send_js_unbounded_request(R::CTX, &self.tx, |reply_tx| PhysicalRequest {
+            request: request.into_worker_request(reply_tx),
+            operation: self.operation.clone(),
+        })
+        .await
     }
 
     async fn send_detached_request(&self, ctx: &'static str, request: JsMainWorkerRequest) {
-        if self.tx.send(request).is_err() {
+        if self
+            .tx
+            .send(PhysicalRequest {
+                request,
+                operation: self.operation.clone(),
+            })
+            .is_err()
+        {
             panic!("JS worker exited before accepting `{ctx}`");
         }
     }
@@ -716,6 +751,10 @@ js_main_request! {
 }
 
 impl JsProcedureInstance {
+    pub(in crate::host) fn set_operation(&mut self, operation: Option<OperationLease>) {
+        self.operation = operation;
+    }
+
     pub(in crate::host) fn is_closed(&self) -> bool {
         self.startup_failure.get().is_some() || self.tx.is_closed()
     }
@@ -725,7 +764,11 @@ impl JsProcedureInstance {
         ctx: &'static str,
         request: impl FnOnce(JsReplyTx<T>) -> JsProcedureWorkerRequest,
     ) -> Result<T, JsProcedureStartupError> {
-        send_js_request(ctx, &self.tx, &self.startup_failure, request).await
+        send_js_request(ctx, &self.tx, &self.startup_failure, |reply_tx| PhysicalRequest {
+            request: request(reply_tx),
+            operation: self.operation.clone(),
+        })
+        .await
     }
 
     pub async fn call_procedure(&self, params: CallProcedureParams) -> CallProcedureReturn {
@@ -758,7 +801,10 @@ impl JsProcedureInstance {
         let (reply_tx, reply_rx) = oneshot::channel();
         if self
             .tx
-            .send(JsProcedureWorkerRequest::CallProcedure { reply_tx, params })
+            .send(PhysicalRequest {
+                request: JsProcedureWorkerRequest::CallProcedure { reply_tx, params },
+                operation: self.operation.clone(),
+            })
             .await
             .is_err()
         {
@@ -810,10 +856,10 @@ where
     }
 }
 
-async fn send_js_unbounded_request<T>(
+async fn send_js_unbounded_request<Req, T>(
     ctx: &'static str,
-    tx: &MeteredUnboundedSender<JsMainWorkerRequest>,
-    request: impl FnOnce(JsReplyTx<T>) -> JsMainWorkerRequest,
+    tx: &MeteredUnboundedSender<Req>,
+    request: impl FnOnce(JsReplyTx<T>) -> Req,
 ) -> T {
     let (reply_tx, reply_rx) = oneshot::channel();
     if tx.send(request(reply_tx)).is_err() {
@@ -1336,10 +1382,12 @@ async fn spawn_main_instance_worker(
         heap_policy,
         execution_timeout,
         metrics,
+        None,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn spawn_procedure_instance_worker(
     program: Arc<str>,
     module_or_mcc: Either<ModuleCommon, ModuleCreationContext>,
@@ -1348,6 +1396,7 @@ async fn spawn_procedure_instance_worker(
     heap_policy: V8HeapPolicyConfig,
     execution_timeout: Duration,
     metrics: InstanceManagerMetrics,
+    operation: Option<OperationLease>,
 ) -> anyhow::Result<(ModuleCommon, JsProcedureInstance)> {
     spawn_instance_worker::<ProcedureJsWorker>(
         program,
@@ -1357,6 +1406,7 @@ async fn spawn_procedure_instance_worker(
         heap_policy,
         execution_timeout,
         metrics,
+        operation,
     )
     .await
 }
@@ -1377,7 +1427,7 @@ trait JsWorkerSpec {
 
     fn make_instance(tx: Self::Sender, startup_failure: ProcedureStartupStatus) -> Self::Instance;
 
-    fn blocking_recv(rx: &mut Self::Receiver) -> Option<Self::Request>;
+    fn blocking_recv(rx: &mut Self::Receiver) -> Option<PhysicalRequest<Self::Request>>;
 
     fn handle_request(
         request: Self::Request,
@@ -1391,8 +1441,8 @@ trait JsWorkerSpec {
 impl JsWorkerSpec for MainJsWorker {
     type Request = JsMainWorkerRequest;
     type Instance = JsMainInstance;
-    type Sender = MeteredUnboundedSender<Self::Request>;
-    type Receiver = MeteredUnboundedReceiver<Self::Request>;
+    type Sender = MeteredUnboundedSender<PhysicalRequest<Self::Request>>;
+    type Receiver = MeteredUnboundedReceiver<PhysicalRequest<Self::Request>>;
 
     const KIND: JsWorkerKind = JsWorkerKind::Main;
 
@@ -1408,10 +1458,10 @@ impl JsWorkerSpec for MainJsWorker {
     }
 
     fn make_instance(tx: Self::Sender, _startup_failure: ProcedureStartupStatus) -> Self::Instance {
-        JsMainInstance { tx }
+        JsMainInstance { tx, operation: None }
     }
 
-    fn blocking_recv(rx: &mut Self::Receiver) -> Option<Self::Request> {
+    fn blocking_recv(rx: &mut Self::Receiver) -> Option<PhysicalRequest<Self::Request>> {
         rx.blocking_recv()
     }
 
@@ -1429,8 +1479,8 @@ impl JsWorkerSpec for MainJsWorker {
 impl JsWorkerSpec for ProcedureJsWorker {
     type Request = JsProcedureWorkerRequest;
     type Instance = JsProcedureInstance;
-    type Sender = mpsc::Sender<Self::Request>;
-    type Receiver = mpsc::Receiver<Self::Request>;
+    type Sender = mpsc::Sender<PhysicalRequest<Self::Request>>;
+    type Receiver = mpsc::Receiver<PhysicalRequest<Self::Request>>;
 
     const KIND: JsWorkerKind = JsWorkerKind::Procedure;
 
@@ -1439,10 +1489,14 @@ impl JsWorkerSpec for ProcedureJsWorker {
     }
 
     fn make_instance(tx: Self::Sender, startup_failure: ProcedureStartupStatus) -> Self::Instance {
-        JsProcedureInstance { tx, startup_failure }
+        JsProcedureInstance {
+            tx,
+            startup_failure,
+            operation: None,
+        }
     }
 
-    fn blocking_recv(rx: &mut Self::Receiver) -> Option<Self::Request> {
+    fn blocking_recv(rx: &mut Self::Receiver) -> Option<PhysicalRequest<Self::Request>> {
         rx.blocking_recv()
     }
 
@@ -1651,6 +1705,7 @@ fn spawn_v8_worker_thread(worker_kind: JsWorkerKind, database_identity: Identity
 ///
 /// `load_balance_guard` and `core_pinner` should both be from the same
 /// [`AllocatedJobCore`], and are used to manage the core pinning of this thread.
+#[allow(clippy::too_many_arguments)]
 async fn spawn_instance_worker<W>(
     program: Arc<str>,
     module_or_mcc: Either<ModuleCommon, ModuleCreationContext>,
@@ -1659,6 +1714,7 @@ async fn spawn_instance_worker<W>(
     heap_policy: V8HeapPolicyConfig,
     execution_timeout: Duration,
     instance_metrics: InstanceManagerMetrics,
+    operation: Option<OperationLease>,
 ) -> anyhow::Result<(ModuleCommon, W::Instance)>
 where
     W: JsWorkerSpec + 'static,
@@ -1685,6 +1741,7 @@ where
         let mut startup_result_tx = Some(result_tx);
         let mut module_common_for_recreate = None::<ModuleCommon>;
 
+        let mut physical_operation = operation;
         'worker: loop {
             let replacing_instance = module_common_for_recreate.is_some();
             let generation_start_time = replacing_instance.then(Instant::now);
@@ -1793,9 +1850,11 @@ where
                 //
                 // The loop is terminated when the last worker instance handle is dropped.
                 // This will cause channels, scopes, and the isolate to be cleaned up.
+                physical_operation.take();
                 let mut requests_since_heap_check = 0u64;
                 let mut last_heap_check_at = Instant::now();
-                while let Some(request) = W::blocking_recv(&mut request_rx) {
+                while let Some(PhysicalRequest { request, operation }) = W::blocking_recv(&mut request_rx) {
+                    physical_operation = operation;
                     core_pinner.pin_if_changed();
 
                     let mut outcome =
@@ -1826,7 +1885,9 @@ where
                     }
 
                     match outcome {
-                        WorkerRequestOutcome::Continue => {}
+                        WorkerRequestOutcome::Continue => {
+                            physical_operation.take();
+                        }
                         WorkerRequestOutcome::RecreateInstance => {
                             instance_metrics.track_instance_removed();
                             continue 'worker;

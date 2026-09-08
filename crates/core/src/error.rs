@@ -89,6 +89,8 @@ impl From<LockError> for DatabaseError {
 
 #[derive(Error, Debug)]
 pub enum DBError {
+    #[error("database is closed")]
+    DatabaseClosed,
     #[error("LibError: {0}")]
     Lib(#[from] LibError),
     #[error("BufferError: {0}")]

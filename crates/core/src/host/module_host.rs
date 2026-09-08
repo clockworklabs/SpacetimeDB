@@ -76,10 +76,15 @@ use spacetimedb_schema::table_name::TableName;
 use std::collections::VecDeque;
 use std::fmt;
 use std::num::NonZeroUsize;
-use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
+
+#[cfg(test)]
+mod drain_tests;
+mod operations;
+use operations::ModuleOperations;
+pub(in crate::host) use operations::OperationLease;
 
 #[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
@@ -433,6 +438,7 @@ impl WasmtimeModuleHost {
         label: &str,
         on_panic: Arc<dyn Fn() + Send + Sync>,
         timer_guard: CallTimerGuard,
+        operation: OperationLease,
         arg: A,
         wasm: impl FnOnce(A, &mut ModuleInstance) + Send + 'static,
     ) where
@@ -440,6 +446,7 @@ impl WasmtimeModuleHost {
     {
         let label = label.to_owned();
         self.main_executor.enqueue_job(move |state| {
+            let _operation = operation;
             scopeguard::defer_on_unwind!({
                 log::warn!("wasm main operation {label} panicked");
                 on_panic();
@@ -457,6 +464,7 @@ impl WasmtimeModuleHost {
         label: &str,
         on_panic: Arc<dyn Fn() + Send + Sync>,
         timer_guard: CallTimerGuard,
+        operation: OperationLease,
         arg: A,
         wasm: impl AsyncFnOnce(A, &mut ModuleInstance) + Send + 'static,
     ) where
@@ -464,11 +472,12 @@ impl WasmtimeModuleHost {
     {
         let instance_manager = self.procedure_instances.clone();
         let ModuleInstanceLease { instance, slot } = instance_manager
-            .get_instance()
+            .get_instance(Some(operation.clone()))
             .await
             .unwrap_or_else(|never| match never {});
         let label = label.to_owned();
         self.procedure_executor.enqueue_job(async move || {
+            let _operation = operation;
             scopeguard::defer_on_unwind!({
                 log::warn!("wasm procedure {label} panicked");
                 on_panic();
@@ -492,7 +501,7 @@ struct V8ModuleHost {
 trait GenericModule {
     type Instance: GenericModuleInstance;
     type CreationError;
-    async fn create_instance(&self) -> Result<Self::Instance, Self::CreationError>;
+    async fn create_instance(&self, operation: Option<OperationLease>) -> Result<Self::Instance, Self::CreationError>;
     fn host_type(&self) -> HostType;
 }
 
@@ -523,7 +532,8 @@ impl<T: GenericModuleInstance + ?Sized> GenericModuleInstance for Box<T> {
 impl GenericModule for Arc<super::wasmtime::Module> {
     type Instance = Box<super::wasmtime::ModuleInstance>;
     type CreationError = std::convert::Infallible;
-    async fn create_instance(&self) -> Result<Self::Instance, Self::CreationError> {
+    async fn create_instance(&self, operation: Option<OperationLease>) -> Result<Self::Instance, Self::CreationError> {
+        let _operation = operation;
         Ok(Box::new((**self).create_instance()))
     }
     fn host_type(&self) -> HostType {
@@ -534,7 +544,8 @@ impl GenericModule for Arc<super::wasmtime::Module> {
 impl GenericModule for Arc<super::wasmtime::ProcedureModule> {
     type Instance = Box<super::wasmtime::ModuleInstance>;
     type CreationError = std::convert::Infallible;
-    async fn create_instance(&self) -> Result<Self::Instance, Self::CreationError> {
+    async fn create_instance(&self, operation: Option<OperationLease>) -> Result<Self::Instance, Self::CreationError> {
+        let _operation = operation;
         Ok(Box::new((**self).create_instance()))
     }
     fn host_type(&self) -> HostType {
@@ -545,8 +556,8 @@ impl GenericModule for Arc<super::wasmtime::ProcedureModule> {
 impl GenericModule for super::v8::JsModule {
     type Instance = super::v8::JsProcedureInstance;
     type CreationError = anyhow::Error;
-    async fn create_instance(&self) -> Result<Self::Instance, Self::CreationError> {
-        self.create_instance().await
+    async fn create_instance(&self, operation: Option<OperationLease>) -> Result<Self::Instance, Self::CreationError> {
+        self.create_instance_for_operation(operation).await
     }
     fn host_type(&self) -> HostType {
         HostType::Js
@@ -1221,7 +1232,7 @@ struct ModuleInstanceManager<M: GenericModule> {
 
 struct ModuleInstanceLease<I> {
     instance: I,
-    slot: Option<OwnedSemaphorePermit>,
+    slot: Option<Arc<OwnedSemaphorePermit>>,
 }
 
 /// Holds the single shared instance used by the JS main execution path.
@@ -1394,25 +1405,18 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
         }
     }
 
-    async fn with_instance<R>(
+    async fn get_instance(
         &self,
-        f: impl AsyncFnOnce(M::Instance) -> (R, M::Instance),
-    ) -> Result<R, M::CreationError> {
-        let ModuleInstanceLease { instance, slot } = self.get_instance().await?;
-        let (res, instance) = f(instance).await;
-        self.return_instance(ModuleInstanceLease { instance, slot });
-        Ok(res)
-    }
-
-    async fn get_instance(&self) -> Result<ModuleInstanceLease<M::Instance>, M::CreationError> {
+        operation: Option<OperationLease>,
+    ) -> Result<ModuleInstanceLease<M::Instance>, M::CreationError> {
         let slot = if let Some(instance_slots) = &self.instance_slots {
-            Some(
+            Some(Arc::new(
                 instance_slots
                     .clone()
                     .acquire_owned()
                     .await
                     .expect("module instance slot semaphore should not close"),
-            )
+            ))
         } else {
             None
         };
@@ -1425,7 +1429,10 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             instance
         } else {
             let start_time = std::time::Instant::now();
-            let res = self.module.create_instance().await?;
+            let res = self
+                .module
+                .create_instance(operation.map(|operation| operation.with_pool_slot(slot.clone())))
+                .await?;
             let elapsed_time = start_time.elapsed();
             self.metrics.observe_instance_created(elapsed_time);
             res
@@ -1470,10 +1477,10 @@ pub struct ModuleHost {
     /// Called whenever a reducer call on this host panics.
     on_panic: Arc<dyn Fn() + Send + Sync + 'static>,
 
-    /// Marks whether this module has been closed by [`Self::exit`].
-    ///
-    /// When this is true, most operations will fail with [`NoSuchModule`].
-    closed: Arc<AtomicBool>,
+    /// Shared admission and physical-operation drainage for this module.
+    /// [`Self::exit`] closes admission, rejects new work with [`NoSuchModule`],
+    /// and waits for accepted executor jobs, including cancelled callers.
+    operations: Arc<ModuleOperations>,
 }
 
 impl fmt::Debug for ModuleHost {
@@ -1489,7 +1496,7 @@ pub struct WeakModuleHost {
     info: Arc<ModuleInfo>,
     inner: Weak<ModuleHostInner>,
     on_panic: Weak<dyn Fn() + Send + Sync + 'static>,
-    closed: Weak<AtomicBool>,
+    operations: Weak<ModuleOperations>,
 }
 
 #[derive(Debug)]
@@ -1843,7 +1850,7 @@ impl ModuleHost {
             info,
             inner,
             on_panic,
-            closed: Arc::new(AtomicBool::new(false)),
+            operations: Arc::new(ModuleOperations::default()),
         }
     }
 
@@ -1860,20 +1867,6 @@ impl ModuleHost {
     #[inline]
     pub fn is_js(&self) -> bool {
         matches!(&*self.inner, ModuleHostInner::Js(_))
-    }
-
-    fn is_marked_closed(&self) -> bool {
-        // `self.closed` isn't used for any synchronization, it's just a shared flag,
-        // so `Ordering::Relaxed` is sufficient.
-        self.closed.load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    fn guard_closed(&self) -> Result<(), NoSuchModule> {
-        if self.is_marked_closed() {
-            Err(NoSuchModule)
-        } else {
-            Ok(())
-        }
     }
 
     fn start_call_timer(&self, label: &str) -> CallTimerGuard {
@@ -1913,7 +1906,7 @@ impl ModuleHost {
         R: Send + 'static,
         A: Send + 'static,
     {
-        self.guard_closed()?;
+        let operation = self.operations.begin()?;
         let timer_guard = self.start_call_timer(label);
 
         scopeguard::defer_on_unwind!({
@@ -1926,6 +1919,7 @@ impl ModuleHost {
                 let executor = host.main_executor.clone();
                 executor
                     .run_job(move |state| {
+                        let _operation = operation;
                         state.with_instance(move |inst| {
                             drop(timer_guard);
                             wasm(arg, inst)
@@ -1936,7 +1930,7 @@ impl ModuleHost {
             ModuleHostInner::Js(host) => {
                 drop(timer_guard);
                 host.main_instance
-                    .with_instance(|inst| async move { js(arg, &inst).await })
+                    .with_instance(|inst| async move { js(arg, &inst.with_operation(operation)).await })
                     .await
             }
         })
@@ -1957,7 +1951,7 @@ impl ModuleHost {
         R: Send + 'static,
         A: Send + 'static,
     {
-        self.guard_closed()?;
+        let operation = self.operations.begin()?;
         let timer_guard = self.start_call_timer(label);
 
         scopeguard::defer_on_unwind!({
@@ -1968,29 +1962,36 @@ impl ModuleHost {
         Ok(match &*self.inner {
             ModuleHostInner::Wasm(host) => {
                 let executor = host.procedure_executor.clone();
-                let instance_manager = host.procedure_instances.clone();
-                instance_manager
-                    .with_instance(async move |mut inst| {
-                        executor
-                            .run_job(async move || {
-                                drop(timer_guard);
-                                let res = wasm(arg, &mut inst).await;
-                                (res, inst)
-                            })
-                            .await
+                let manager = host.procedure_instances.clone();
+                let ModuleInstanceLease { mut instance, slot } = manager
+                    .get_instance(Some(operation.clone()))
+                    .await
+                    .unwrap_or_else(|never| match never {});
+                let operation = operation.with_pool_slot(slot);
+                executor
+                    .run_job(async move || {
+                        let _operation = operation;
+                        drop(timer_guard);
+                        let result = wasm(arg, &mut instance).await;
+                        manager.return_instance(ModuleInstanceLease { instance, slot: None });
+                        result
                     })
                     .await
-                    .unwrap_or_else(|never| match never {})
             }
-            ModuleHostInner::Js(host) => host
-                .procedure_instances
-                .with_instance(async |inst| {
-                    drop(timer_guard);
-                    let res = js(arg, &inst).await;
-                    (res, inst)
-                })
-                .await
-                .map_err(PooledCallError::Startup)?,
+            ModuleHostInner::Js(host) => {
+                let mut lease = host
+                    .procedure_instances
+                    .get_instance(Some(operation.clone()))
+                    .await
+                    .map_err(PooledCallError::Startup)?;
+                lease
+                    .instance
+                    .set_operation(Some(operation.with_pool_slot(lease.slot.take())));
+                drop(timer_guard);
+                let result = js(arg, &lease.instance).await;
+                self.return_js_procedure_instance(lease);
+                result
+            }
         })
     }
 
@@ -2000,7 +2001,7 @@ impl ModuleHost {
         label: &str,
         arg: A,
         js: impl FnOnce(A, JsMainInstance, JsFatalHook) -> JsFut,
-        wasm: impl FnOnce(A, &WasmtimeModuleHost, JsFatalHook, CallTimerGuard) -> Result<(), NoSuchModule>,
+        wasm: impl FnOnce(A, &WasmtimeModuleHost, JsFatalHook, CallTimerGuard, OperationLease) -> Result<(), NoSuchModule>,
     ) -> Result<(), NoSuchModule>
     where
         A: Send + 'static,
@@ -2012,21 +2013,20 @@ impl ModuleHost {
             (self.on_panic)();
         });
 
+        let operation = self.operations.begin()?;
         match &*self.inner {
             ModuleHostInner::Js(js_host) => {
-                self.guard_closed()?;
                 let on_panic = self.on_panic.clone();
                 js_host
                     .main_instance
-                    .with_instance(|inst| js(arg, inst, on_panic))
+                    .with_instance(|inst| js(arg, inst.with_operation(operation), on_panic))
                     .await;
                 Ok(())
             }
             ModuleHostInner::Wasm(wasm_host) => {
-                self.guard_closed()?;
                 let timer_guard = self.start_call_timer(label);
                 let on_panic = self.on_panic.clone();
-                wasm(arg, wasm_host, on_panic, timer_guard)
+                wasm(arg, wasm_host, on_panic, timer_guard, operation)
             }
         }
     }
@@ -2043,12 +2043,13 @@ impl ModuleHost {
             label,
             (cmd, metric),
             |(cmd, metric), inst, on_panic| async move { inst.enqueue_call_view(cmd, metric, on_panic).await },
-            move |(cmd, metric), wasm_host, on_panic, timer_guard| {
+            move |(cmd, metric), wasm_host, on_panic, timer_guard, operation| {
                 let info = wasm_host.module.info();
                 wasm_host.enqueue_with_main_instance(
                     label,
                     on_panic,
                     timer_guard,
+                    operation,
                     (cmd, metric),
                     move |(cmd, metric), inst| {
                         let result = inst.call_view(cmd);
@@ -2494,11 +2495,12 @@ impl ModuleHost {
                     reducer_name,
                     call.params,
                     |params, inst, on_panic| async move { inst.enqueue_reducer(params, on_panic).await },
-                    move |params, wasm_host, on_panic, timer_guard| {
+                    move |params, wasm_host, on_panic, timer_guard, operation| {
                         wasm_host.enqueue_with_main_instance(
                             &reducer_label,
                             on_panic,
                             timer_guard,
+                            operation,
                             params,
                             move |params, inst| {
                                 let _ = inst.call_reducer(params);
@@ -2690,13 +2692,14 @@ impl ModuleHost {
             (self.on_panic)();
         });
 
-        if let Err(err) = self.guard_closed() {
-            return self.send_procedure_error(&procedure_name, timer, target, err.into());
-        }
+        let operation = match self.operations.begin() {
+            Ok(operation) => operation,
+            Err(err) => return self.send_procedure_error(&procedure_name, timer, target, err.into()),
+        };
 
         match &*self.inner {
             ModuleHostInner::Js(host) => {
-                let lease = match host.procedure_instances.get_instance().await {
+                let mut lease = match host.procedure_instances.get_instance(Some(operation.clone())).await {
                     Ok(lease) => lease,
                     Err(error) => {
                         return self.send_procedure_error(
@@ -2707,6 +2710,9 @@ impl ModuleHost {
                         );
                     }
                 };
+                lease
+                    .instance
+                    .set_operation(Some(operation.with_pool_slot(lease.slot.take())));
                 let call = match lease.instance.enqueue_procedure(params).await {
                     Ok(call) => call,
                     Err(error) => {
@@ -2758,6 +2764,7 @@ impl ModuleHost {
                         &procedure_name,
                         on_panic,
                         timer_guard,
+                        operation,
                         params,
                         async move |params, inst| {
                             let ret = inst.call_procedure(params).await;
@@ -2777,10 +2784,11 @@ impl ModuleHost {
         }
     }
 
-    fn return_js_procedure_instance(&self, lease: ModuleInstanceLease<JsProcedureInstance>) {
+    fn return_js_procedure_instance(&self, mut lease: ModuleInstanceLease<JsProcedureInstance>) {
         let ModuleHostInner::Js(host) = &*self.inner else {
             return;
         };
+        lease.instance.set_operation(None);
         host.procedure_instances.return_instance(lease);
     }
 
@@ -3303,14 +3311,17 @@ impl ModuleHost {
     }
 
     pub async fn exit(&self) {
-        // As in `Self::marked_closed`, `Relaxed` is sufficient because we're not synchronizing any external state.
-        self.closed.store(true, std::sync::atomic::Ordering::Relaxed);
+        // Admission and closure share one lock. Already admitted work retains
+        // its lease inside the physical executor after cancellation of a caller.
+        self.operations.close();
         self.scheduler().close();
         self.exited().await;
     }
 
     pub async fn exited(&self) {
         self.scheduler().closed().await;
+        self.operations.close();
+        self.operations.drained().await;
     }
 
     pub fn inject_logs(&self, log_level: LogLevel, function_name: &str, message: &str) {
@@ -3383,11 +3394,12 @@ impl ModuleHost {
             label,
             request,
             |request, inst, on_panic| async move { inst.enqueue_one_off_query(request, on_panic).await },
-            move |request, wasm_host, on_panic, timer_guard| {
+            move |request, wasm_host, on_panic, timer_guard, operation| {
                 let executor = wasm_host.main_executor.clone();
                 let info = wasm_host.module.info();
                 let label = label.to_owned();
                 executor.enqueue_job(move |_| {
+                    let _operation = operation;
                     scopeguard::defer_on_unwind!({
                         log::warn!("websocket one-off query operation {label} panicked");
                         on_panic();
@@ -3662,6 +3674,7 @@ impl ModuleHost {
     /// for tables without primary keys. It is only used in the benchmarks.
     /// Note: this doesn't drop the table, it just clears it!
     pub fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
+        let _operation = self.operations.begin()?;
         let db = self.relational_db();
 
         db.with_auto_commit(Workload::Internal, |tx| {
@@ -3683,7 +3696,7 @@ impl ModuleHost {
             info: self.info.clone(),
             inner: Arc::downgrade(&self.inner),
             on_panic: Arc::downgrade(&self.on_panic),
-            closed: Arc::downgrade(&self.closed),
+            operations: Arc::downgrade(&self.operations),
         }
     }
 
@@ -3722,12 +3735,12 @@ impl WeakModuleHost {
     pub fn upgrade(&self) -> Option<ModuleHost> {
         let inner = self.inner.upgrade()?;
         let on_panic = self.on_panic.upgrade()?;
-        let closed = self.closed.upgrade()?;
+        let operations = self.operations.upgrade()?;
         Some(ModuleHost {
             info: self.info.clone(),
             inner,
             on_panic,
-            closed,
+            operations,
         })
     }
 }

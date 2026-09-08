@@ -12,7 +12,7 @@ use crate::host::module_host::{
     ViewOutcome, WasmInstance,
 };
 use crate::host::{ArgsTuple, ModuleHost};
-use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
+use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::subscription::tx::DeltaTx;
 use anyhow::anyhow;
@@ -131,7 +131,7 @@ fn run_inner<I: WasmInstance>(
                 None => (tx, false),
             };
 
-            let (tx_data, tx_metrics_mut, tx) = db.commit_tx_downgrade(tx, Workload::Sql);
+            let (tx_data, tx_metrics_mut, tx) = db.commit_tx_downgrade(tx, Workload::Sql)?;
 
             let (tx_offset_send, tx_offset) = oneshot::channel();
             // Release the tx on drop, so that we record metrics
@@ -246,7 +246,10 @@ fn run_inner<I: WasmInstance>(
                 request_id: None,
                 timer: None,
             };
-            let res = commit_and_broadcast_event(&subs.unwrap(), None, event, tx);
+            let res = subs
+                .unwrap()
+                .commit_and_broadcast_event(None, event, tx)?
+                .map_err(|_| anyhow!("SQL transaction write conflict"))?;
             Ok((
                 SqlResult {
                     tx_offset: res.tx_offset,

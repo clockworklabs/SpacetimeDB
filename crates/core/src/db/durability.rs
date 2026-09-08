@@ -1,15 +1,12 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
-use log::{error, info};
 use spacetimedb_commitlog::payload::{
     txdata::{Mutations, Ops},
     Txdata,
 };
 use spacetimedb_datastore::{execution_context::ReducerContext, traits::TxData};
 use spacetimedb_durability::Transaction;
-use spacetimedb_lib::Identity;
 use spacetimedb_sats::ProductValue;
-use tokio::{runtime, time::timeout};
 
 use crate::db::persistence::Durability;
 
@@ -30,21 +27,6 @@ pub(super) fn request_durability(
     durability.append_tx(Box::new(move || {
         prepare_tx_data_for_durability(tx_offset, reducer_context, &tx_data)
     }));
-}
-
-pub(super) fn spawn_close(durability: Arc<Durability>, runtime: &runtime::Handle, database_identity: Identity) {
-    let rt = runtime.clone();
-    rt.spawn(async move {
-        let label = format!("[{database_identity}]");
-        match timeout(Duration::from_secs(10), durability.close()).await {
-            Err(_elapsed) => {
-                error!("{label} timeout waiting for durability shutdown");
-            }
-            Ok(offset) => {
-                info!("{label} durability shut down at tx offset: {offset:?}");
-            }
-        }
-    });
 }
 
 fn prepare_tx_data_for_durability(
