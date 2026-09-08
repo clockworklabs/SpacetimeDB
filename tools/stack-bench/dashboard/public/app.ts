@@ -29,6 +29,7 @@ interface Route {
   plans: boolean;
   filter: CampaignFilter;
   view: QuestlineView;
+  chart: 'completion' | 'cost';
   step: number;
   tab: AttemptTab;
 }
@@ -69,6 +70,7 @@ function route(): Route {
     plans: parts[0] === 'plans',
     filter: pick(FILTERS, 'filter', 'all'),
     view: pick(VIEWS, 'questlines', 'grid'),
+    chart: pick(['completion', 'cost'] as const, 'chart', 'completion'),
     step: Math.max(0, Number(url.searchParams.get('step') ?? 0)),
     tab: pick(TABS, 'tab', 'checks'),
   };
@@ -145,7 +147,7 @@ function page(current: Route): string {
       log: state.log.attempt === current.attempt ? state.log.text : '' });
   }
   return campaignPage({ sheet, progression: state.progression.get(current.key) ?? null,
-    view: current.view, step: current.step });
+    view: current.view, step: current.step, chart: current.chart });
 }
 
 function sync(current: Element, next: Element): void {

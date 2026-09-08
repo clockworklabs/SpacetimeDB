@@ -1,7 +1,7 @@
 import { readAttemptTranscript } from './dashboard-transcript.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { sha256 } from '../src/evidence/provenance.js';
-import { closeSync, existsSync, fstatSync, openSync, readSync, readdirSync, statSync }
+import { closeSync, existsSync, fstatSync, openSync, readFileSync, readSync, readdirSync, statSync }
   from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 
@@ -14,6 +14,7 @@ import type { DependencyProgress } from '../src/campaigns/campaign-inspection.js
 import type { GradeBundlePayload } from '../src/evidence/benchmark-run.js';
 import { sumCostEvidence } from '../src/evidence/cost-proof.js';
 import type { CostEvidence } from '../src/evidence/cost-proof.js';
+import type { RunCheckpoint } from '../src/evidence/run-checkpoints.js';
 import { scoreDependencyState } from '../src/progression/dependency-score.js';
 import type { CheckCompletion } from '../src/evidence/check-completion.js';
 import { ARTIFACT_FILE, readArtifact, readArtifactPayload } from '../src/evidence/artifacts.js';
@@ -724,6 +725,7 @@ export interface ProgressionTrack {
   attemptId: string;
   updatedAt: string;
   steps: ProgressionStep[];
+  costs?: Array<{ completedAt: string; cost: CostEvidence }>;
 }
 
 export interface CampaignProgression {
@@ -777,7 +779,7 @@ export function campaignProgression(resultsRoot: string, key: string): CampaignP
   if (plan.definition.mode?.id !== 'dependency' || !plan.featureCatalog
     || !plan.dependencyPolicy) return null;
   const fingerprint = campaignFingerprint(directory, [CAMPAIGN_FILE.plan, CAMPAIGN_FILE.state],
-    [ARTIFACT_FILE.progressionState]);
+    [ARTIFACT_FILE.progressionState, ARTIFACT_FILE.run]);
   const cached = progressionCache.get(directory);
   if (cached?.fingerprint === fingerprint) return cached.view;
   const progression = compileProgressionInput(dependencyRuntimeDefinition(
@@ -808,8 +810,24 @@ export function campaignProgression(resultsRoot: string, key: string): CampaignP
         times.set(`${bundle.id}:${sha256(canonicalDefinitionJson(bundle))}`, bundle.timestamps.completedAt);
       } catch { /* Missing or invalid evidence must not invent a chart timestamp. */ }
     }
+    const costs: NonNullable<ProgressionTrack['costs']> = [];
+    try {
+      const run = readArtifact(join(executionDirectory, ARTIFACT_FILE.run), { expectedKind: 'benchmark_run' });
+      if (run.attempt.parentId !== attempt.plan.id) throw new Error('Run belongs to another attempt');
+      const checkpoints = (run.payload as { checkpoints?: RunCheckpoint[] }).checkpoints ?? [];
+      for (const checkpoint of checkpoints) {
+        try {
+          const evidencePath = contained(executionDirectory, checkpoint.evidence.path, 'cost checkpoint');
+          if (sha256(readFileSync(evidencePath)) !== checkpoint.evidence.sha256) continue;
+          const grade = readArtifact(evidencePath, { expectedKind: 'grade_bundle' });
+          if (grade.timestamps.completedAt && checkpoint.executionCost.status !== 'unknown') {
+            costs.push({ completedAt: grade.timestamps.completedAt, cost: checkpoint.executionCost });
+          }
+        } catch { /* Missing evidence does not establish a timed cost. */ }
+      }
+    } catch { /* A run may not have saved its first checkpoint yet. */ }
     stacks.push({ stack: attempt.plan.stack, attemptId: attempt.plan.id,
-      updatedAt: new Date(statSync(path).mtimeMs).toISOString(),
+      updatedAt: new Date(statSync(path).mtimeMs).toISOString(), costs,
       steps: progressionSteps(stored.state as DependencyState, nodeIds, times) });
   }
   const view: CampaignProgression = {

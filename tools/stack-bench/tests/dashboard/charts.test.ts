@@ -73,3 +73,22 @@ test('time chart uses measured elapsed time, preserves regressions, and labels e
   assert.doesNotMatch(html, /NaN|Infinity/);
   assert.match(progressChart(sheet, null), /Awaiting first timed grade/);
 });
+
+
+test('cost chart uses cumulative checkpoint costs, labels bounds, and omits unknowns', () => {
+  const sheet = { key: 'test', stacks: [{ stack: 'postgres', attempts: [{ id: 'a', repetition: 1,
+    executionStartedAt: '2026-09-08T00:00:00Z', excluded: null }] }] } as CampaignSheet;
+  const progression = { key: 'test', depths: [], questlines: [], nodes: [],
+    stacks: [{ stack: 'postgres', attemptId: 'a', updatedAt: '', steps: [], costs: [
+    { completedAt: '2026-09-08T00:01:00Z', cost: { status: 'exact', costUsd: 2 } },
+    { completedAt: '2026-09-08T00:01:30Z', cost: { status: 'unknown', costUsd: null } },
+    { completedAt: '2026-09-08T00:02:00Z', cost: { status: 'upper-bound', costUsd: 4 } },
+  ] }] } as CampaignProgression;
+  const html = progressChart(sheet, progression, 'cost', 'graph');
+  assert.match(html, /M80 190 H514 V110 H948 V30/);
+  assert.match(html, /Rep 1 · ≤\$4.00/);
+  assert.match(html, /Run start; no recorded cost/);
+  assert.match(html, /questlines=graph&amp;chart=completion/);
+  assert.doesNotMatch(html, /NaN|Infinity/);
+  assert.match(progressChart(sheet, null, 'cost'), /Awaiting first timed cost receipt/);
+});

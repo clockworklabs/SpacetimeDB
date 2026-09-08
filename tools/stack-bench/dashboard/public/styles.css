@@ -301,3 +301,8 @@ main[aria-busy="true"]:not(:has(.loading))::before { content: ''; position: fixe
 
 .transcript-controls button { cursor: pointer; }
 .transcript-controls button:hover { border-color: var(--green); }
+
+@media (max-width: 600px) {
+  .progress-chart { min-width: 640px; }
+  .progress-chart text { font-size: 20px; }
+}
