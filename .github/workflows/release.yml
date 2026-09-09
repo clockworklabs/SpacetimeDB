@@ -328,7 +328,7 @@ jobs:
           npm --version
 
       - name: Install pnpm
-        run: npm install -g pnpm
+        uses: ./.github/actions/setup-pnpm
 
       - name: Run NPM release (dry-run)
         if: ${{ inputs.dry_run }}

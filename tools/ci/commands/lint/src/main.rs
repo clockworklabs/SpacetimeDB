@@ -104,6 +104,30 @@ fn npmrc_minimum_release_age(path: &Path, expected_minimum_release_age: u64) -> 
         })
 }
 
+fn shell_line_installs_pnpm_with_npm(line: &str) -> bool {
+    let line = line
+        .split_once('#')
+        .map_or(line, |(line, _comment)| line)
+        .trim();
+    let line = line.strip_prefix("run:").unwrap_or(line).trim();
+    let line = line.strip_prefix("-").unwrap_or(line).trim();
+    let line = line.trim_matches(|c| c == '"' || c == '\'');
+    let tokens: Vec<_> = line.split_whitespace().collect();
+
+    tokens.first() == Some(&"npm")
+        && tokens
+            .iter()
+            .any(|token| *token == "install" || *token == "i")
+        && tokens.iter().any(|token| {
+            let token = token.trim_matches(|c: char| c == '"' || c == '\'' || c == ';');
+            token == "pnpm" || token.starts_with("pnpm@")
+        })
+}
+
+fn workflow_installs_pnpm_with_npm(contents: &str) -> bool {
+    contents.lines().any(shell_line_installs_pnpm_with_npm)
+}
+
 fn check_pnpm_release_age_policy() -> Result<()> {
     ensure_repo_root()?;
 
@@ -211,9 +235,42 @@ fn check_pnpm_release_age_policy() -> Result<()> {
                 workflow_path.display()
             );
         }
+        if workflow_installs_pnpm_with_npm(&contents) {
+            bail!(
+                "{} must use ./.github/actions/setup-pnpm instead of installing pnpm with npm",
+                workflow_path.display()
+            );
+        }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::workflow_installs_pnpm_with_npm;
+
+    #[test]
+    fn detects_direct_npm_pnpm_install() {
+        assert!(workflow_installs_pnpm_with_npm("run: npm install -g pnpm\n"));
+        assert!(workflow_installs_pnpm_with_npm(
+            "run: npm i --global pnpm@10.16.0\n"
+        ));
+        assert!(workflow_installs_pnpm_with_npm(
+            "run: |\n  npm install --global pnpm\n"
+        ));
+    }
+
+    #[test]
+    fn allows_other_npm_and_pnpm_commands() {
+        assert!(!workflow_installs_pnpm_with_npm(
+            "run: npm install --global npm@11.5.1\n"
+        ));
+        assert!(!workflow_installs_pnpm_with_npm("run: pnpm install\n"));
+        assert!(!workflow_installs_pnpm_with_npm(
+            "uses: ./.github/actions/setup-pnpm\n"
+        ));
+    }
 }
 
 /// Codex plugin ships a copy of `skills/`, because plugin installers do not follow symlinks,
