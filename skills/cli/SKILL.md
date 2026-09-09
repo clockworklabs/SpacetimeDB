@@ -50,7 +50,7 @@ spacetime generate --lang typescript|csharp|rust --out-dir ./bindings --module-p
 spacetime generate --lang unrealcpp --uproject-dir ./MyGame --module-path ./server --unreal-module-name MyGame
 ```
 
-`dev` stays running and watches module changes. `--run "npm run dev"` starts a client command; `--server-only` omits it. `--module-path` selects the module directory. Separate build/publish/generate commands remain useful for one-shot deployment.
+`dev` stays running and watches module changes. `--run "npm run dev"` starts a client command; `--server-only` omits it. `--module-path` selects the module directory when no publish targets exist in `spacetime.json`. Once targets exist, use their configured paths and omit that flag. Separate build/publish/generate commands remain useful for one-shot deployment.
 
 ### Publishing & Deployment
 
