@@ -185,7 +185,17 @@ export const onConnect = spacetimedb.clientConnected((ctx) => { ... });
 export const onDisconnect = spacetimedb.clientDisconnected((ctx) => { ... });
 ```
 
-Connection hooks run once per connection. The same authenticated principal keeps the same identity (`ctx.sender`) across connections, while each connection has its own connection ID (`ctx.connectionId`). A disconnect ends one connection; it does not end the identity, which returns unchanged on the next connection with the same token. Use connection IDs for presence and other connection-scoped state. Reloads and temporary network loss also disconnect clients; application login expiry and explicit sign-out are separate from connection cleanup.
+Connection hooks run once per connection. `ctx.connectionId` identifies that connection.
+`ctx.sender` identifies the authenticated caller and stays the same when the client
+reconnects with the same token.
+
+Use connection IDs for connection state, such as presence. A reload or network loss can
+cause a disconnect. A disconnect alone does not mean the user signed out or their
+application login expired. Keep connection cleanup separate from session revocation.
+
+`ctx.sender` is a SpacetimeDB identity, not necessarily an application account. Separate
+identities can authenticate to the same application account. Identity equality alone
+does not establish whether two callers belong to the same account.
 
 `ctx.connectionId` is typed `ConnectionId | null`. It is present inside connection lifecycle hooks and reducers invoked over a connection, and `null` in `init` and scheduled reducers. Guard it before passing it to a helper or using it as a table key.
 
