@@ -6,11 +6,29 @@ static VIEW_TRAP_ENTERED: AtomicBool = AtomicBool::new(false);
 type RequiredString = String;
 type OptionalString = Option<RequiredString>;
 
+#[derive(Debug, PartialEq, spacetimedb::EnvironmentValue)]
+pub enum Mode {
+    #[env(value = "ready")]
+    Ready,
+    #[env(value = "other")]
+    Other,
+    #[env(value = "in progress")]
+    InProgress,
+    #[env(value = "Ready")]
+    Capitalized,
+    #[env(value = "")]
+    Empty,
+    #[env(value = "héllo\0世界")]
+    Unicode,
+}
+
+type OptionalMode = Option<Mode>;
+
 #[spacetimedb::env]
 pub struct Env {
     pub REQUIRED: RequiredString,
-    #[env(values("ready", "other"))]
-    pub MODE: String,
+    pub MODE: Mode,
+    pub TYPED: OptionalMode,
     pub MISSING: OptionalString,
     pub EMPTY: Option<String>,
     pub UTF8: Option<String>,
@@ -24,7 +42,25 @@ pub struct Env {
 #[spacetimedb::reducer(init)]
 pub fn init(ctx: &ReducerContext) {
     assert_eq!(ctx.env.REQUIRED(), "initial-required");
-    assert_eq!(ctx.env.MODE(), "ready");
+    assert_eq!(ctx.env.MODE(), Mode::Ready);
+    assert_eq!(ctx.env.TYPED(), None);
+}
+
+#[spacetimedb::reducer]
+pub fn expect_typed_environment(ctx: &ReducerContext, required: u8, optional: Option<u8>) {
+    fn index(mode: Mode) -> u8 {
+        match mode {
+            Mode::Ready => 0,
+            Mode::Other => 1,
+            Mode::InProgress => 2,
+            Mode::Capitalized => 3,
+            Mode::Empty => 4,
+            Mode::Unicode => 5,
+        }
+    }
+    assert_eq!(index(ctx.env.MODE()), required);
+    assert_eq!(ctx.env.TYPED().map(index), optional);
+    assert_eq!(index(ctx.as_read_only().env.MODE()), required);
 }
 
 #[spacetimedb::reducer]

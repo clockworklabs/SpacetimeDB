@@ -29,7 +29,7 @@ pub fn compile_subscription(
     auth: &AuthCtx,
 ) -> Result<(Vec<ProjectPlan>, TableId, TableName, bool)> {
     if sql.len() > MAX_SQL_LENGTH {
-        bail!("SQL query exceeds maximum allowed length")
+        bail!("SQL query exceeds maximum allowed length: \"{sql:.120}...\"")
     }
 
     let (plan, mut has_param) = parse_and_type_sub(sql, tx, auth)?;
@@ -59,7 +59,7 @@ pub fn compile_subscription(
 /// A utility for parsing and type checking a sql statement
 pub fn compile_sql_stmt(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> Result<Statement> {
     if sql.len() > MAX_SQL_LENGTH {
-        bail!("SQL query exceeds maximum allowed length")
+        bail!("SQL query exceeds maximum allowed length: \"{sql:.120}...\"")
     }
 
     match parse_and_type_sql(sql, tx, auth)? {

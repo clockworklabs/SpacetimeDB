@@ -56,16 +56,30 @@ Within an environment declaration, a simple enum specifies allowed strings. Enum
 </TabItem>
 <TabItem value="rust" label="Rust">
 
-Add one environment declaration to the module:
+Declare allowed strings with enums, then add one environment declaration to the module:
 
 ```rust
+#[derive(spacetimedb::EnvironmentValue)]
+pub enum Mode {
+    #[env(value = "development")]
+    Development,
+    #[env(value = "production")]
+    Production,
+}
+
+#[derive(spacetimedb::EnvironmentValue)]
+pub enum LogLevel {
+    #[env(value = "info")]
+    Info,
+    #[env(value = "debug")]
+    Debug,
+}
+
 #[spacetimedb::env]
 pub struct Env {
     pub API_KEY: String,
-    #[env(values("development", "production"))]
-    pub MODE: String,
-    #[env(values("info", "debug"))]
-    pub LOG_LEVEL: Option<String>,
+    pub MODE: Mode,
+    pub LOG_LEVEL: Option<LogLevel>,
 }
 ```
 
@@ -73,12 +87,14 @@ Inside a reducer, procedure, or view, read values from its context:
 
 ```rust
 let api_key: String = ctx.env.API_KEY();
-let mode: String = ctx.env.MODE();
-let log_level: Option<String> = ctx.env.LOG_LEVEL();
+let mode: Mode = ctx.env.MODE();
+let log_level: Option<LogLevel> = ctx.env.LOG_LEVEL();
 let checked: Option<String> = ctx.env.get("LOG_LEVEL");
 ```
 
-`String` requires a value, and `Option<String>` permits absence. `#[env(values(...))]` restricts the allowed strings. Supplying one string makes it an exact-value constraint.
+`String` accepts any string. An enum restricts values to its variants, and `Option<T>` permits absence. Type aliases work for these types. Without an attribute, a variant accepts its exact Rust name. An explicit mapping such as `#[env(value = "in progress")] InProgress` supports spaces, capitalization, Unicode, or the empty string. Mappings must be unique; variants cannot have payloads. A one-variant enum declares a single allowed string. These mappings affect environment reads and declarations only, not the enum's ordinary serialization.
+
+Existing `#[env(values(...))]` constraints on `String` and `Option<String>` fields remain supported. Use enum variants to constrain typed enum fields.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -200,6 +216,8 @@ The same rules apply to precompiled modules published with `--bin-path`. The CLI
 
 Managed publications also retain the complete resolved environment in the operation's private local `submission.json` file. Keep the publication directory private and out of source control. `--resume-publication` sends the original request bytes, including the original values, even if project files or shell variables have changed. Missing or altered retained input causes an error; resuming never substitutes an empty environment. When preserving the current module, the CLI checks its environment declarations against authenticated metadata for the selected database and program before creating this input.
 
+For publishing from an HTTP client or a module procedure, see the [HTTP publish format and example](../../00300-resources/00200-reference/00200-http-api/00300-database.md#publishing-with-environment-values). Supply the module and complete environment in the request body; project configuration and shell overrides are CLI conveniences.
+
 ## Inspect published values
 
 The database owner and collaborators with private-table read access can inspect the environment. For the local database above:
@@ -209,7 +227,7 @@ spacetime env list env-example --server http://127.0.0.1:3000
 spacetime env get env-example MODE --server http://127.0.0.1:3000
 ```
 
-`env list` prints keys only. `env get` prints the requested value and fails if it is absent. Reading a secret with `env get` therefore exposes that secret in the command's output.
+`env list` prints a table of keys and values. `env get` prints the requested value and fails if it is absent. Both are explicit inspection commands and include secrets in their output. Automatic publish output still omits values.
 
 Values are stored in the private system table `st_env`. Authorized SQL reads are also supported:
 

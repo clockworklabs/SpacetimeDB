@@ -928,41 +928,81 @@ pub fn register_case_conversion_policy(policy: CaseConversionPolicy) {
     })
 }
 
-mod environment_value_sealed {
+/// Implementation support for `#[env]` and `#[derive(EnvironmentValue)]`.
+///
+/// The compiler resolves aliases before selecting metadata and accessors. Custom
+/// implementations must keep their declared constraint and decoding in agreement.
+/// The host independently validates every published string against that constraint.
+#[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "environment fields must be `String`, an enum deriving `EnvironmentValue`, or an `Option` of either"
+)]
+pub trait EnvironmentValue: Sized {
+    const OPTIONAL: bool;
+
+    fn constraint() -> spacetimedb_lib::environment::EnvironmentConstraint;
+
+    /// Decode a checked host result. Errors must identify only the key, never its value.
+    fn from_environment(value: Option<String>, key: &str) -> Self;
+
+    fn get(environment: &crate::Environment, key: &str) -> Self {
+        Self::from_environment(environment.get(key), key)
+    }
+}
+
+/// Required environment types supported by the optional-value implementation.
+/// Derived enums and `String` implement this; `Option<T>` deliberately does not.
+#[doc(hidden)]
+pub trait RequiredEnvironmentValue: EnvironmentValue {}
+
+impl EnvironmentValue for String {
+    const OPTIONAL: bool = false;
+
+    fn constraint() -> spacetimedb_lib::environment::EnvironmentConstraint {
+        spacetimedb_lib::environment::EnvironmentConstraint::AnyString
+    }
+
+    fn from_environment(value: Option<String>, key: &str) -> Self {
+        value.unwrap_or_else(|| panic!("required environment key is missing: {key}"))
+    }
+}
+
+impl RequiredEnvironmentValue for String {}
+
+impl<T: RequiredEnvironmentValue> EnvironmentValue for Option<T> {
+    const OPTIONAL: bool = true;
+
+    fn constraint() -> spacetimedb_lib::environment::EnvironmentConstraint {
+        T::constraint()
+    }
+
+    fn from_environment(value: Option<String>, key: &str) -> Self {
+        value.map(|value| T::from_environment(Some(value), key))
+    }
+}
+
+mod string_environment_value_sealed {
     pub trait Sealed {}
 
     impl Sealed for String {}
     impl Sealed for Option<String> {}
 }
 
-/// The compiler resolves declaration types, including aliases, before selecting
-/// their metadata and accessor. Sealing keeps the accepted types identical to
-/// the host's string and optional-string environment model.
+/// Legacy field-level string constraints cannot override a typed enum's mapping.
 #[doc(hidden)]
-#[diagnostic::on_unimplemented(message = "environment fields must be `String` or `Option<String>`")]
-pub trait EnvironmentValue: environment_value_sealed::Sealed + Sized {
-    const OPTIONAL: bool;
-
-    fn get(environment: &crate::Environment, key: &str) -> Self;
-}
-
-impl EnvironmentValue for String {
-    const OPTIONAL: bool = false;
-
-    fn get(environment: &crate::Environment, key: &str) -> Self {
-        environment
-            .get(key)
-            .unwrap_or_else(|| panic!("required environment key is missing: {key}"))
+#[diagnostic::on_unimplemented(
+    message = "`#[env(values(...))]` requires `String` or `Option<String>`; map enum variants with `#[env(value = \"...\")]` instead"
+)]
+pub trait StringEnvironmentValue: EnvironmentValue + string_environment_value_sealed::Sealed {
+    fn with_constraint(
+        constraint: spacetimedb_lib::environment::EnvironmentConstraint,
+    ) -> spacetimedb_lib::environment::EnvironmentConstraint {
+        constraint
     }
 }
 
-impl EnvironmentValue for Option<String> {
-    const OPTIONAL: bool = true;
-
-    fn get(environment: &crate::Environment, key: &str) -> Self {
-        environment.get(key)
-    }
-}
+impl StringEnvironmentValue for String {}
+impl StringEnvironmentValue for Option<String> {}
 
 /// Register declarative ENV metadata without reading any environment values.
 #[doc(hidden)]

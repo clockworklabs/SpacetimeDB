@@ -30,8 +30,8 @@ pub enum ValidationError {
     InvalidLifecycleVisibility { function: RawIdentifier },
     #[error("module contains repeated V10 section `{section}`")]
     DuplicateModuleSection { section: String },
-    #[error("module has repeated environment sections")]
-    RepeatedEnvironmentSection,
+    #[error("module has repeated environment declarations")]
+    RepeatedEnvironmentDeclaration,
     #[error("invalid environment declaration: {error}")]
     Environment {
         error: spacetimedb_lib::environment::EnvironmentSchemaError,

@@ -1094,7 +1094,7 @@ pub(crate) mod tests {
     };
     use crate::system_tables::{
         ST_CONNECTION_AUTH_ID, ST_CONTAINER_ENVIRONMENT_ID, ST_CONTAINER_FENCE_ID, ST_DEPLOYMENT_ID,
-        ST_DEPLOYMENT_OPERATION_ID, ST_ENV_ID, ST_PUBLISH_FENCE_ID,
+        ST_DEPLOYMENT_OPERATION_ID, ST_ENV_ID, ST_ENV_NAME, ST_PUBLISH_FENCE_ID,
     };
     use crate::traits::{IsolationLevel, MutTx};
     use crate::Result;
@@ -1562,7 +1562,7 @@ pub(crate) mod tests {
             TableRow { id: ST_TABLE_ACCESSOR_ID.into(), name: ST_TABLE_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
             TableRow { id: ST_INDEX_ACCESSOR_ID.into(), name: ST_INDEX_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
             TableRow { id: ST_COLUMN_ACCESSOR_ID.into(), name: ST_COLUMN_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
-            TableRow { id: ST_ENV_ID.into(), name: "st_env", ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
+            TableRow { id: ST_ENV_ID.into(), name: ST_ENV_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
             TableRow { id: ST_DEPLOYMENT_ID.into(), name: "st_deployment", ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
             TableRow { id: ST_PUBLISH_FENCE_ID.into(), name: "st_publish_fence", ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
             TableRow { id: ST_DEPLOYMENT_OPERATION_ID.into(), name: "st_deployment_operation", ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },

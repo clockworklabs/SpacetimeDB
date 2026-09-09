@@ -1,3 +1,5 @@
+pub(crate) mod value;
+
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::ext::IdentExt as _;
@@ -59,7 +61,7 @@ pub(crate) fn expand(args: TokenStream, mut item: ItemStruct) -> syn::Result<Tok
         }
         field.attrs.retain(|attr| !attr.path().is_ident("env"));
         let constraint = match values.as_deref() {
-            None => quote!(::spacetimedb::spacetimedb_lib::environment::EnvironmentConstraint::AnyString),
+            None => quote!(<#ty as ::spacetimedb::rt::EnvironmentValue>::constraint()),
             Some([value]) => {
                 quote!(::spacetimedb::spacetimedb_lib::environment::EnvironmentConstraint::Literal(#value.into()))
             }
@@ -68,6 +70,11 @@ pub(crate) fn expand(args: TokenStream, mut item: ItemStruct) -> syn::Result<Tok
                     ::std::vec![#(#values.into()),*]
                 )
             ),
+        };
+        let constraint = if values.is_some() {
+            quote!(<#ty as ::spacetimedb::rt::StringEnvironmentValue>::with_constraint(#constraint))
+        } else {
+            constraint
         };
         declarations.push(
             quote!(::spacetimedb::spacetimedb_lib::environment::EnvironmentDeclaration {

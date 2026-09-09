@@ -876,7 +876,7 @@ impl SpacetimeConfig {
         let value =
             environment::parse(&content).with_context(|| format!("Failed to parse config file {}", path.display()))?;
         let config: Self = environment::decode_config(value)
-            .map_err(|_| anyhow::anyhow!("Invalid configuration structure in {}", path.display()))?;
+            .with_context(|| format!("Invalid configuration structure in {}", path.display()))?;
 
         Ok(config)
     }

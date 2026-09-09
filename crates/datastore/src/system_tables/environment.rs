@@ -30,9 +30,6 @@ pub(super) fn register_table(builder: &mut RawModuleDefV9Builder) {
         .with_unique_constraint(ColId(0))
         .with_index_no_accessor_name(btree(ColId(0)));
 }
-pub(super) fn validate_table(def: &ModuleDef) {
-    validate_system_table::<StEnvFields>(def, ST_ENV_NAME);
-}
 pub(crate) fn st_env_schema() -> TableSchema {
     st_schema(ST_ENV_NAME, ST_ENV_ID)
 }

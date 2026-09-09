@@ -19,31 +19,31 @@ const KEYS: &[&str] = &[
     "SMOKE_FLAG",
 ];
 
-struct Fixture {
+struct EnvironmentFixture {
     test: Smoketest,
     database: String,
     wasm: PathBuf,
 }
 
-impl Fixture {
+impl EnvironmentFixture {
     fn new() -> Self {
-        // Check before the harness can connect or copy a prior login. These are
-        // standalone-only tests, including when accidentally run in a remote job.
-        for key in [
+        // Private CI supplies remote cluster settings to the same test binary.
+        // This fixture must still create its own server and fresh credentials,
+        // without changing those settings for other tests in the process.
+        let remote_settings = [
             "SPACETIME_REMOTE_SERVER",
             "SPACETIME_USE_AUTH_HOST",
             "SPACETIME_SMOKETEST_BASE_CONFIG_PATH",
-        ] {
-            assert!(
-                std::env::var_os(key).is_none(),
-                "ENV smoke test requires isolated local settings ({key})"
-            );
-        }
+        ];
+        let inherited = remote_settings.map(std::env::var_os);
         let test = Smoketest::builder()
+            .isolated_local_server()
             .precompiled_module("environment-publish")
             .autopublish(false)
             .build();
+        assert_eq!(remote_settings.map(std::env::var_os), inherited);
         assert!(test.guard.is_some());
+        assert!(!test.config_path.exists(), "local fixture copied inherited credentials");
         let address = test
             .server_url
             .strip_prefix("http://")
@@ -88,6 +88,10 @@ impl Fixture {
             .env("NO_PROXY", "*")
             .env("no_proxy", "*")
             .envs(shell.iter().copied())
+            // Avoid platform directory discovery after clearing the environment,
+            // including Windows' known-folder lookup for LocalAppData.
+            .arg("--root-dir")
+            .arg(self.test.project_dir.path())
             .arg("--config-path")
             .arg(&self.test.config_path)
             .args(args)
@@ -186,10 +190,19 @@ impl Fixture {
             &[],
         );
         let mut lines = output.lines().map(str::trim);
-        assert_eq!(lines.next(), Some("key"));
+        assert_eq!(
+            lines.next().unwrap().split('|').map(str::trim).collect::<Vec<_>>(),
+            ["key", "value"]
+        );
         lines
-            .filter(|line| !line.is_empty() && !line.chars().all(|c| c == '-'))
-            .map(|line| serde_json::from_str::<String>(line).unwrap())
+            .filter(|line| !line.is_empty() && !line.chars().all(|c| matches!(c, '-' | '+')))
+            .map(|line| {
+                let (key, value) = line.split_once('|').unwrap();
+                let key: String = serde_json::from_str(key.trim()).unwrap();
+                let value: String = serde_json::from_str(value.trim()).unwrap();
+                assert_eq!(self.get(&key), format!("{value}\n"));
+                key
+            })
             .collect()
     }
 
@@ -283,7 +296,7 @@ fn bounded_output(mut command: Command) -> Output {
 
 #[test]
 fn cli_environment_layers_shell_and_exact_precompiled_declarations() {
-    let f = Fixture::new();
+    let f = EnvironmentFixture::new();
     f.write(
         "spacetime.json",
         json!({"database":"unused-parent", "env":{
@@ -349,7 +362,7 @@ fn cli_environment_layers_shell_and_exact_precompiled_declarations() {
 
 #[test]
 fn cli_environment_replacement_rejection_and_read_only_commands() {
-    let f = Fixture::new();
+    let f = EnvironmentFixture::new();
     f.config(Some(
         json!({"SMOKE_REQUIRED":"initial-sentinel","SMOKE_MODE":"ready","SMOKE_OPTIONAL":"remove-me"}),
     ));
@@ -423,7 +436,7 @@ fn cli_environment_replacement_rejection_and_read_only_commands() {
 
 #[test]
 fn cli_environment_initial_rejection_clear_and_omitted_payload() {
-    let mut f = Fixture::new();
+    let mut f = EnvironmentFixture::new();
     f.config(None);
     assert!(!f.publish(&[], &[]).status.success());
     f.config(Some(json!({"SMOKE_REQUIRED":"clear-initial","SMOKE_MODE":"ready"})));

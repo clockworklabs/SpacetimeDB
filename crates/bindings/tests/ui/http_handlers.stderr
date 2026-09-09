@@ -175,7 +175,7 @@ error[E0609]: no field `db` on type `&mut HandlerContext`
 53 |     let _rows = ctx.db.test_table().iter();
    |                     ^^ unknown field
    |
-   = note: available fields are: `timestamp`, `http`
+   = note: available fields are: `env`, `timestamp`, `http`
 
 error[E0308]: mismatched types
   --> tests/ui/http_handlers.rs:66:4
