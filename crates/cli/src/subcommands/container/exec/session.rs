@@ -43,11 +43,39 @@ pub(super) struct Io {
 }
 
 pub(super) async fn run<S>(
-    mut url: Url,
+    url: Url,
     authorization: HeaderValue,
     identity: Identity,
     start: ExecStart,
     io: &mut Io,
+    signals: S,
+) -> Result<u8>
+where
+    S: Stream<Item = Result<ClientControl>> + Unpin,
+{
+    // Terminal failure/cancellation also owns the connection and Ready phases.
+    // The inline socket future drops before the caller joins native I/O workers.
+    let Io {
+        input,
+        output,
+        completion,
+    } = io;
+    tokio::select! {
+        result = run_socket(url, authorization, identity, start, input, output, signals) => result,
+        result = completion => {
+            result.context("terminal worker stopped")??;
+            bail!("terminal worker stopped before observed exec exit")
+        }
+    }
+}
+
+async fn run_socket<S>(
+    mut url: Url,
+    authorization: HeaderValue,
+    identity: Identity,
+    start: ExecStart,
+    input: &mut mpsc::Receiver<Input>,
+    output: &OutputSender,
     mut signals: S,
 ) -> Result<u8>
 where
@@ -126,8 +154,6 @@ where
 
     let (mut sink, mut source) = socket.split();
     let (pong_tx, mut pong_rx) = mpsc::channel(1);
-    let input = &mut io.input;
-    let output = &io.output;
     let reader = async {
         while let Some(message) = source.next().await {
             match message.map_err(|_| anyhow::anyhow!("exec transport failed; process outcome is unknown"))? {
@@ -183,10 +209,6 @@ where
     tokio::select! {
         result = reader => result,
         result = writer => result,
-        result = &mut io.completion => {
-            result.context("terminal worker stopped")??;
-            bail!("terminal worker stopped before observed exec exit")
-        }
     }
 }
 

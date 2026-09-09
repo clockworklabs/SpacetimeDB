@@ -4,6 +4,9 @@ mod session;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[path = "exec/terminal.rs"]
 mod terminal;
+#[cfg(windows)]
+#[path = "exec/terminal_windows.rs"]
+mod terminal;
 #[cfg(test)]
 #[path = "exec/tests.rs"]
 mod tests;
@@ -19,7 +22,7 @@ use std::collections::BTreeMap;
 pub(super) fn cli() -> Command {
     Command::new("exec")
         .about("Run a literal command in the current running container")
-        .after_help("Requires database Admin permission. No shell, container start, or reconnect is implicit. Use -- before COMMAND; for a shell, name its executable explicitly. Linux and macOS terminals are currently supported. A lost connection does not establish that the process exited.")
+        .after_help("Requires database Admin permission. No shell, container start, or reconnect is implicit. Use -- before COMMAND; for a shell, name its executable explicitly. Linux, macOS, and Windows terminals are supported. Windows requires an attached VT-capable console for --tty; inherited asynchronous seekable files are unsupported. A lost connection does not establish that the process exited.")
         .arg(Arg::new("database").required(true).help("Database name or Identity"))
         .arg(crate::common_args::server())
         .arg(crate::common_args::yes())
@@ -78,17 +81,20 @@ fn running_generation(status: &ContainerStatus) -> Result<u64> {
 
 pub(super) async fn exec(config: &mut crate::Config, args: &ArgMatches) -> Result<()> {
     // Reject unsupported terminal implementations before login, status, or a socket.
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     {
         let _ = (config, args);
         anyhow::bail!("container exec terminal support is not implemented on this host platform");
     }
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     {
         let mut start = start(args, 1)?;
         if args.get_flag("tty") {
             start.terminal = Some(terminal::dimensions()?);
         }
+        // Classify inherited Windows handles before any login or network I/O.
+        #[cfg(windows)]
+        let prepared = terminal::Prepared::stdio(start.stdin, start.terminal.is_some())?;
         let selection = args.get_one::<String>("server").map(String::as_str);
         let origin = crate::container::publish::client::endpoint(&config.get_host_url(selection)?)?;
         let auth = crate::util::get_auth_header(config, false, selection, !args.get_flag("force")).await?;
@@ -100,8 +106,14 @@ pub(super) async fn exec(config: &mut crate::Config, args: &ArgMatches) -> Resul
             .await?;
         start.generation = running_generation(&status)?;
         let url = client.url(status.database_identity.to_hex().as_ref(), "exec")?;
+        #[cfg(not(windows))]
         let signals = terminal::signals(start.terminal.is_some())?;
+        #[cfg(not(windows))]
         let (mut terminal, mut io) = terminal::Terminal::stdio(start.stdin, start.terminal.is_some())?;
+        #[cfg(windows)]
+        let (mut terminal, mut io) = prepared.start()?;
+        #[cfg(windows)]
+        let signals = terminal.signals()?;
         let result = session::run(url, auth, status.database_identity, start, &mut io, signals).await;
         // Always join and restore the terminal, including a failed handshake.
         let cleanup = terminal.finish();

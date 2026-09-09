@@ -403,3 +403,85 @@ async fn status_uses_authenticated_explicit_loopback_and_pins_the_resolved_ident
     );
     assert!(running_generation(&status).is_err());
 }
+
+#[tokio::test]
+async fn terminal_cancellation_closes_pending_handshake_and_ready_without_replay() {
+    use tokio::io::AsyncReadExt;
+    for handshake in [true, false] {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = Url::parse(&format!(
+            "http://{}/v1/database/{}/container/exec",
+            listener.local_addr().unwrap(),
+            Identity::ZERO.to_hex()
+        ))
+        .unwrap();
+        let (_input_tx, input) = mpsc::channel(1);
+        let (output_tx, _output) = mpsc::channel(1);
+        let (cancel, completion) = oneshot::channel();
+        let mut io = Io {
+            input,
+            output: OutputSender {
+                sender: output_tx,
+                wake: None,
+            },
+            completion,
+        };
+        let mut server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            if handshake {
+                let mut byte = [0];
+                assert_eq!(socket.read(&mut byte).await.unwrap(), 1);
+                let _ = cancel.send(Err(anyhow::anyhow!("owned terminal cancellation")));
+                let mut pending_request = Vec::new();
+                socket.read_to_end(&mut pending_request).await.unwrap();
+            } else {
+                let mut socket =
+                    tokio_tungstenite::accept_hdr_async(socket, |_request: &Request, mut response: Response| {
+                        response
+                            .headers_mut()
+                            .insert("sec-websocket-protocol", HeaderValue::from_static(wire::SUBPROTOCOL));
+                        Ok(response)
+                    })
+                    .await
+                    .unwrap();
+                assert!(matches!(socket.next().await, Some(Ok(Message::Text(_)))));
+                let _ = cancel.send(Err(anyhow::anyhow!("owned terminal cancellation")));
+                assert!(matches!(
+                    socket.next().await,
+                    None | Some(Err(_)) | Some(Ok(Message::Close(_)))
+                ));
+            }
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(30), listener.accept())
+                    .await
+                    .is_err()
+            );
+        });
+        let options = start(&arguments(&["exec", "db", "--", "true"]).unwrap(), 42).unwrap();
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            session::run(
+                url,
+                HeaderValue::from_static("Bearer owned-loopback-fixture"),
+                Identity::ZERO,
+                options,
+                &mut io,
+                futures::stream::pending(),
+            ),
+        )
+        .await;
+        let joined = tokio::time::timeout(std::time::Duration::from_secs(2), &mut server).await;
+        let forced = joined.is_err();
+        if forced {
+            server.abort();
+            let _ = server.await;
+        }
+        assert!(!forced, "owned cancellation server failed to stop");
+        joined.unwrap().unwrap();
+        assert!(result
+            .unwrap()
+            .unwrap_err()
+            .to_string()
+            .contains("owned terminal cancellation"));
+    }
+}

@@ -629,7 +629,7 @@ Run a literal command in the current running container
 
 **Usage:** `spacetime container exec [OPTIONS] <database> -- <COMMAND>...`
 
-Requires database Admin permission. No shell, container start, or reconnect is implicit. Use -- before COMMAND; for a shell, name its executable explicitly. Linux and macOS terminals are currently supported. A lost connection does not establish that the process exited.
+Requires database Admin permission. No shell, container start, or reconnect is implicit. Use -- before COMMAND; for a shell, name its executable explicitly. Linux, macOS, and Windows terminals are supported. Windows requires an attached VT-capable console for --tty; inherited asynchronous seekable files are unsupported. A lost connection does not establish that the process exited.
 
 ###### **Arguments:**
 
