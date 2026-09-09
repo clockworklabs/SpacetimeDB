@@ -120,13 +120,13 @@ pub(super) async fn exec(config: &mut crate::Config, name: &str, args: &ArgMatch
     Ok(())
 }
 
-struct ContainerClient {
+pub(super) struct ContainerClient {
     http: Client,
     server: Url,
     authorization: HeaderValue,
 }
 impl ContainerClient {
-    fn new(server: Url, mut authorization: HeaderValue) -> Result<Self> {
+    pub(super) fn new(server: Url, mut authorization: HeaderValue) -> Result<Self> {
         ensure!(
             authorization.as_bytes().starts_with(b"Bearer "),
             "container operations require ordinary Bearer authentication"
@@ -144,7 +144,7 @@ impl ContainerClient {
             authorization,
         })
     }
-    fn url(&self, database: &str, operation: &str) -> Result<Url> {
+    pub(super) fn url(&self, database: &str, operation: &str) -> Result<Url> {
         validate_database(database)?;
         let mut url = self.server.clone();
         url.path_segments_mut()
@@ -153,7 +153,7 @@ impl ContainerClient {
             .extend(["v1", "database", database, "container", operation]);
         Ok(url)
     }
-    async fn status(&self, database: &str) -> Result<ContainerStatus> {
+    pub(super) async fn status(&self, database: &str) -> Result<ContainerStatus> {
         let response = self
             .http
             .get(self.url(database, "status")?)

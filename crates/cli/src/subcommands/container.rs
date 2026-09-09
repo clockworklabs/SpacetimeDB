@@ -1,5 +1,7 @@
 //! Container build and operation commands. Local builds do not read saved
 //! server credentials; network commands use the explicitly selected server.
+#[path = "container/exec.rs"]
+mod execute;
 mod operations;
 mod url;
 
@@ -17,6 +19,7 @@ pub fn cli() -> Command {
         .about("Build and manage a database's container")
         .subcommand_required(true)
         .subcommand(url::cli())
+        .subcommand(execute::cli())
         .subcommand(
             Command::new("build")
                 .about("Prepare verified OCI artifacts locally without publishing")
@@ -120,6 +123,7 @@ pub(crate) fn select(config: &SpacetimeConfig, database: Option<&str>) -> Result
 pub async fn exec(mut config: crate::Config, args: &ArgMatches) -> Result<()> {
     match args.subcommand().context("missing container command")? {
         ("build", args) => exec_build(args).await,
+        ("exec", args) => execute::exec(&mut config, args).await,
         ("url", args) => url::exec(&config, args).await,
         (name @ ("status" | "start" | "stop" | "restart"), args) => operations::exec(&mut config, name, args).await,
         _ => anyhow::bail!("unsupported container command"),
