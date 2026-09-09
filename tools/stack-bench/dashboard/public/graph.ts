@@ -87,7 +87,7 @@ export function graph(view: CampaignProgression, stacks: readonly GraphStack[]):
     `${stackLabel(entry.stack)} ${statusWord(entry.statuses[index] ?? 'locked')}`).join(', ')}`).join('. ');
   const key = [['p', 'Passed'], ['a', 'Active'], ['f', 'Failed'], ['b', 'Blocked'], ['o', 'Locked']]
     .map(([tone, label]) => `<span><i class="dot ${tone}" aria-hidden="true"></i>${label}</span>`).join('');
-  return `<div class="graph-key"><p>Feature dots, left to right: ${esc(order)}.</p>${key}</div>`
+  return `<div class="graph-key">${stacks.length > 1 ? `<p>Feature dots, left to right: ${esc(order)}.</p>` : ''}${key}</div>`
     + `<div class="graph-scroll" role="region" aria-label="Feature dependency graph" tabindex="0">`
     + `<svg class="dag" width="${width}" viewBox="0 0 ${width} ${top + 10}" role="img" aria-label="Feature dependencies and stack status">`
     + `<title>Feature dependencies and stack status</title><desc>${esc(description)}</desc>`

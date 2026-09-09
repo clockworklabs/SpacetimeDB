@@ -1,10 +1,11 @@
 import type { TranscriptPage } from '../../dashboard-transcript.js';
-// One attempt: figures, the climb at full size, and the evidence behind tabs.
+// One attempt: figures, feature dependencies, and the evidence behind tabs.
 // Each tab is a link, so what is open survives a reload and a back button.
 
-import type { AttemptCheck, AttemptChecks, AttemptPackage, CampaignSheet, SheetAttempt, SheetStack }
+import type { AttemptCheck, AttemptChecks, AttemptPackage, CampaignProgression, CampaignSheet, SheetAttempt, SheetStack }
   from '../../dashboard-views.js';
 import type { readCampaignTimeBudget } from '../../../src/campaigns/campaign-time-grant.js';
+import { graph } from '../graph.js';
 import { bigClimb } from '../climb.js';
 import { DASH, duration, executionClock, esc, metricLabel, spend, pct, phrase, ratio, stackLabel } from '../format.js';
 
@@ -12,6 +13,7 @@ export type AttemptTab = 'checks' | 'screenshots' | 'files' | 'log' | 'transcrip
 
 export interface AttemptPageInput {
   sheet: CampaignSheet;
+  progression?: CampaignProgression | null;
   attemptId: string;
   tab: AttemptTab;
   checks: AttemptChecks | null;
@@ -80,7 +82,7 @@ function artifacts(evidence: AttemptPackage | null, key: string, visual: boolean
 }
 
 export function attemptPage({ sheet, attemptId, tab, checks, evidence, log, transcript,
-  timeBudget, canControl = false, controlError = '' }: AttemptPageInput): string {
+  progression, timeBudget, canControl = false, controlError = '' }: AttemptPageInput): string {
   const found = locate(sheet, attemptId);
   const crumbs = (tail: string): string => `<div class="crumbs"><a href="/">Campaigns</a> / `
     + `<a href="/c/${encodeURIComponent(sheet.key)}">${esc(sheet.title)}</a> / `
@@ -139,8 +141,6 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log, tran
   };
   const figure = (label: string, text: string, tone = ''): string =>
     `<div><div class="metric-label">${metricLabel(label, help[label])}</div><b class="${tone}">${text}</b></div>`;
-  const stage = (level: number): string =>
-    sheet.mode === 'dependency' ? `depth ${level}` : `L${level}`;
   const panel = tab === 'transcript' ? transcriptPanel(transcript)
     : tab === 'checks' ? checksTable(checks)
     : tab === 'log' ? (log ? `<pre class="log">${esc(log)}</pre>` : '<p class="summary-note">No log output is recorded yet.</p>')
@@ -148,16 +148,17 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log, tran
   const issue = attempt.excluded
     ? `<div class="issue"><span class="label">Why this run was excluded</span>`
       + `<p>${esc(attempt.excluded)}</p></div>` : '';
-  const dependency = sheet.mode === 'dependency'
-    ? '<p class="grade-key">Completion uses the full selected target. Blocked descendants receive no credit, even if a raw check passed. '
-      + (attempt.completion ? `${attempt.completion.unmeasured} checks have no accepted outcome. `
-        : 'The count without an accepted outcome is unavailable. ')
-      + 'This can mean a guarantee was deferred by a prerequisite or conclusive evidence is missing. '
-      + 'The saved summary does not separate these causes. The Checks tab shows raw grade outcomes, not accepted completion.</p>' : '';
+  const track = progression?.stacks.find(entry => entry.attemptId === attemptId);
+  const history = sheet.mode === 'dependency'
+    ? '<h3>Feature dependencies</h3>' + (progression && track
+      ? graph(progression, [{ stack: track.stack,
+        statuses: track.steps.at(-1)?.statuses ?? progression.nodes.map(() => 'locked') }])
+      : '<p class="chart-empty">Feature graph unavailable.</p>')
+    : `<h3>Grade history</h3>${bigClimb(attempt.climb, level => `L${level}`)}`;
   return `<div class="page">${crumbs(name)}`
     + `<div class="title"><h2>${esc(stackLabel(stack.stack))} `
     + `<span>rep ${attempt.repetition}</span></h2></div>`
-    + (sheet.provisional ? '<p class="summary-note">Provisional results: qualification is incomplete.</p>' : '')
+
     + `<div class="figs">${figure('Completion', attempt.completion ? ratio(attempt.completion.passed, attempt.completion.selected) : DASH)}`
     + figure('Spend', spend(attempt.spend, attempt.spendPending))
     + figure('Status', esc(phrase(attempt)), attempt.stalling ? 'now warn' : 'now')
@@ -168,7 +169,7 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log, tran
       ? clock
         + ` / ${duration((timeBudget?.effectiveMinutes ?? sheet.facts.timeLimitMinutes) * 60)}` : DASH)
     + figure('Time', duration(attempt.timeSec))
-    + `</div>${timeControls}${grantStatus}${controlError ? `<p class="err" role="alert">${esc(controlError)}</p>` : ''}${issue}${dependency}<h3>Grade history</h3>${bigClimb(attempt.climb, stage)}`
+    + `</div>${timeControls}${grantStatus}${controlError ? `<p class="err" role="alert">${esc(controlError)}</p>` : ''}${issue}${history}`
     + `<div class="tabs">${tabs}</div>${panel}</div>`;
 }
 

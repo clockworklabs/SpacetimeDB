@@ -73,6 +73,5 @@ export function bigClimb(series: readonly ClimbPoint[], stage: (level: number) =
       + `${item === last ? ' now' : ''}" cx="${item.x}" cy="${item.y}" r="${
         item.point.unaided || item === last ? 4.5 : 3.5}">${pointTitle(item.point)}</circle>`).join('')
     + label(first, '#b6c0cf') + (best === first || best === last ? '' : label(best, '#b6c0cf'))
-    + (last === first ? '' : label(last, '#e6e9f0')) + '</svg></div>'
-    + '<p class="chart-caption">Weighted score by completed grade, from left to right. Each grade can cover a different scope. Points show completed grades, not elapsed time.</p>';
+    + (last === first ? '' : label(last, '#e6e9f0')) + '</svg></div>';
 }

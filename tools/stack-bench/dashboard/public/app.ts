@@ -139,7 +139,8 @@ function page(current: Route): string {
   if (!sheet) return `<div class="page"><div class="crumbs"><a href="/">Campaigns</a> / `
     + `<b>${esc(current.key)}</b></div></div>`;
   if (current.attempt) {
-    return attemptPage({ sheet, attemptId: current.attempt, tab: current.tab,
+    return attemptPage({ sheet, progression: state.progression.get(current.key) ?? null,
+      attemptId: current.attempt, tab: current.tab,
       timeBudget: state.timeBudgets.get(current.attempt), canControl: state.canStart,
       controlError: state.form.error,
       transcript: state.transcript.attempt === current.attempt ? state.transcript.page : null,
@@ -296,7 +297,7 @@ async function loadData(version: number): Promise<void> {
   if (version !== loadVersion) return;
   if (sheet) state.sheets.set(current.key, sheet);
   render();
-  if (sheet?.mode === 'dependency' && !current.attempt) {
+  if (sheet?.mode === 'dependency') {
     const progression = await read<CampaignProgression>(
       `/api/campaigns/${encodeURIComponent(current.key)}/progression`);
     if (version !== loadVersion) return;

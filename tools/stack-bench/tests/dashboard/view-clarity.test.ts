@@ -119,6 +119,13 @@ test('campaign separates aggregate scores from selected evidence and explains pe
       targets: ['item'], statuses: [repetition === 2 ? 'passed' : 'failed'],
       score: repetition === 2 ? 100 : 99, repairs: repetition === 2 ? 0 : 77 }],
   })));
+  const detailSheet = { ...sheet, stacks: [{ ...sheet.stacks[0]!,
+    attempts: [{ ...attempt, id: 'spacetime-1' }] }] };
+  const detail = attemptPage({ sheet: detailSheet, progression, attemptId: 'spacetime-1',
+    tab: 'checks', checks: null, evidence: null, log: '' });
+  assert.equal((detail.match(/class="d f"/g) ?? []).length, 1);
+  assert.doesNotMatch(detail, /class="d p"|Grade history|Provisional results|Completion uses|Feature dots, left to right/);
+  assert.match(detail, /Feature dependency graph/);
   const selectedTracks = selectedProgression(progression, sheet);
   const gridPage = campaignPage({ sheet, progression, view: 'grid', step: 0 });
   const comparison = gridPage.split('<table class="sheet">')[1]!.split('</table>')[0]!;

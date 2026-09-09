@@ -1158,12 +1158,12 @@ test('cost and completion keep unknown spend and the full selected scope visible
   const input = { sheet, attemptId: attempt.id, tab: 'checks' as const,
     checks: null, evidence: null, log: '' };
   const detail = attemptPage(input);
-  assert.match(detail, /106 checks have no accepted outcome/);
-  assert.match(detail, /does not separate these causes/);
+  assert.doesNotMatch(detail, /Completion uses|no accepted outcome|Provisional results|Grade history/);
+  assert.match(detail, /Feature dependencies/);
   assert.match(detail, /1<i>\/ 107<\/i>/);
   assert.equal(attempt.completion.unmeasured, 106);
   attempt.completion = null;
-  assert.match(attemptPage(input), /count without an accepted outcome is unavailable/);
+  assert.doesNotMatch(attemptPage(input), /count without an accepted outcome/);
 });
 
 test('time controls require authorization and validate minutes before requesting a grant', async t => {
