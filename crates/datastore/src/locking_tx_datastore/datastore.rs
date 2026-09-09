@@ -229,9 +229,8 @@ impl Locking {
     /// error.
     pub fn take_snapshot(&self, repo: &DynSnapshotRepo) -> Result<Option<TxOffset>> {
         Self::take_snapshot_internal(&self.committed_state, repo)?
-            .map(|(_offset, snap)| snap.sync_all())
+            .map(|(_offset, snap)| snap.sync_all().map_err(Into::into))
             .transpose()
-            .map_err(Into::into)
     }
 
     pub fn assert_system_tables_match(&self) -> Result<()> {
@@ -3014,7 +3013,7 @@ pub(crate) mod tests {
 
         fn assert_rows(datastore: &Locking, table_id: TableId, rows: Vec<ProductValue>) -> ResultTest<()> {
             let tx = begin_tx(datastore);
-            for (actual, expected) in datastore.iter_tx(&tx, table_id)?.zip_eq(rows.into_iter()) {
+            for (actual, expected) in datastore.iter_tx(&tx, table_id)?.zip_eq(rows) {
                 assert_eq!(actual.to_bsatn_vec()?, expected.to_bsatn_vec()?);
             }
             Ok(())

@@ -564,7 +564,7 @@ fn model_filter_from_groups(groups: Option<Vec<ModelGroup>>) -> Option<HashMap<V
     let mut out: HashMap<Vendor, HashSet<String>> = HashMap::new();
 
     for g in groups {
-        out.entry(g.vendor).or_default().extend(g.models.into_iter());
+        out.entry(g.vendor).or_default().extend(g.models);
     }
     Some(out)
 }

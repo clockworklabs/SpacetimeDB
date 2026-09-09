@@ -1326,6 +1326,7 @@ impl TableDef {
 
 impl From<TableDef> for RawTableDefV9 {
     fn from(val: TableDef) -> Self {
+        #[expect(clippy::unneeded_wildcard_pattern)]
         let TableDef {
             name,
             product_type_ref,

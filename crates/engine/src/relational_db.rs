@@ -627,13 +627,10 @@ impl RelationalDB {
             // Try to restore from any snapshot that was taken within the
             // range `(min_commitlog_offset + 1)..=durable_tx_offset`.
             let mut upper_bound = durable_tx_offset;
-            loop {
-                let Some(snapshot_offset) = snapshot_repo
-                    .latest_snapshot_older_than(upper_bound)
-                    .map_err(Box::new)?
-                else {
-                    break;
-                };
+            while let Some(snapshot_offset) = snapshot_repo
+                .latest_snapshot_older_than(upper_bound)
+                .map_err(Box::new)?
+            {
                 if min_commitlog_offset > 0 && min_commitlog_offset > snapshot_offset + 1 {
                     log::debug!("snapshot_offset={snapshot_offset} min_commitlog_offset={min_commitlog_offset}");
                     break;

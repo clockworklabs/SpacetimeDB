@@ -375,7 +375,7 @@ fn validate_submodules(submodules: Vec<RawSubmoduleV10>) -> Result<IndexMap<Iden
                     }
                     map.insert(namespace, def);
                 }
-                Err(e) => errors.extend(e.into_iter()),
+                Err(e) => errors.extend(e),
             }
         }
     }
