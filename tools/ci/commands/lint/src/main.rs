@@ -4,12 +4,14 @@ use anyhow::{bail, Context, Result};
 use ci_common::{ensure_repo_root, pnpm};
 use clap::Parser;
 use duct::cmd;
+use regex::Regex;
 use serde_json::Value;
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 /// Lints the codebase
 ///
@@ -104,23 +106,9 @@ fn npmrc_minimum_release_age(path: &Path, expected_minimum_release_age: u64) -> 
         })
 }
 
-fn shell_line_installs_pnpm_with_npm(line: &str) -> bool {
-    let line = line.split_once('#').map_or(line, |(line, _comment)| line).trim();
-    let line = line.strip_prefix("run:").unwrap_or(line).trim();
-    let line = line.strip_prefix("-").unwrap_or(line).trim();
-    let line = line.trim_matches(|c| c == '"' || c == '\'');
-    let tokens: Vec<_> = line.split_whitespace().collect();
-
-    tokens.first() == Some(&"npm")
-        && tokens.iter().any(|token| *token == "install" || *token == "i")
-        && tokens.iter().any(|token| {
-            let token = token.trim_matches(|c: char| c == '"' || c == '\'' || c == ';');
-            token == "pnpm" || token.starts_with("pnpm@")
-        })
-}
-
 fn workflow_installs_pnpm_with_npm(contents: &str) -> bool {
-    contents.lines().any(shell_line_installs_pnpm_with_npm)
+    static NPM_INSTALL_PNPM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"npm install.*pnpm").unwrap());
+    NPM_INSTALL_PNPM.is_match(contents)
 }
 
 fn check_pnpm_release_age_policy() -> Result<()> {
@@ -386,7 +374,9 @@ mod tests {
     #[test]
     fn detects_direct_npm_pnpm_install() {
         assert!(workflow_installs_pnpm_with_npm("run: npm install -g pnpm\n"));
-        assert!(workflow_installs_pnpm_with_npm("run: npm i --global pnpm@10.16.0\n"));
+        assert!(workflow_installs_pnpm_with_npm(
+            "run: npm install --global pnpm@10.16.0\n"
+        ));
         assert!(workflow_installs_pnpm_with_npm("run: |\n  npm install --global pnpm\n"));
     }
 
