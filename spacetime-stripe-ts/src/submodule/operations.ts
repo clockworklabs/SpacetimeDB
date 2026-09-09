@@ -26,7 +26,12 @@ import {
   MAX_WEBHOOK_HEADER_LENGTH,
   MAX_WEBHOOK_METADATA_LENGTH,
 } from './limits';
-import { assertExhaustive, safeJsonParse, summarizeIssues } from './validation';
+import {
+  assertExhaustive,
+  safeJsonParse,
+  summarizeIssues,
+  throwSenderError,
+} from './validation';
 
 export function requireProcedureAdmin(ctx: ProcedureModuleCtx): void {
   const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
@@ -86,16 +91,8 @@ export function maybeId(value: unknown): string | undefined {
   return maybeString(value.id);
 }
 
-export function maybeJson(value: string): unknown | undefined {
-  try {
-    return JSON.parse(value);
-  } catch {
-    return undefined;
-  }
-}
-
 export function stripeErrorSuffix(body: string): string {
-  const parsed = maybeJson(body);
+  const parsed = safeJsonParse(body);
   if (isRecord(parsed)) {
     const errorPayload = isRecord(parsed.error) ? parsed.error : undefined;
     if (errorPayload) {
@@ -146,7 +143,7 @@ export function coerceMetadataFromJson(metadataJson: string | undefined) {
   if (!metadataJson) {
     return { metadataJson: undefined, orgId: undefined, userId: undefined };
   }
-  const parsed = maybeJson(metadataJson);
+  const parsed = safeJsonParse(metadataJson);
   const details = metadataInfo(parsed);
   return {
     metadataJson: details.metadataJson ?? metadataJson,
@@ -184,7 +181,7 @@ export function metadataJsonToFormPairs(
   metadataJson: string | undefined
 ) {
   if (!metadataJson) return [] as Array<[string, string]>;
-  const parsed = maybeJson(metadataJson);
+  const parsed = safeJsonParse(metadataJson);
   if (!isRecord(parsed)) return [] as Array<[string, string]>;
 
   const out: Array<[string, string]> = [];
@@ -193,10 +190,6 @@ export function metadataJsonToFormPairs(
     out.push([`${keyPrefix}[${k}]`, String(raw)]);
   }
   return out;
-}
-
-export function throwSenderError(message: string): never {
-  throw new SenderError(message);
 }
 
 export function upsertCustomer(

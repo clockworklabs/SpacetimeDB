@@ -14,7 +14,11 @@ import {
 } from '../schema';
 import { loadConfigOrThrowFromProcedure } from '../config';
 import { adminVerdict, denyIfNotAdmin } from '../auth';
-import { safeJsonParse, summarizeIssues } from '../validation';
+import {
+  safeJsonParse,
+  summarizeIssues,
+  throwSenderError,
+} from '../validation';
 
 import {
   requireProcedureAdmin,
@@ -24,14 +28,12 @@ import {
   maybeBoolean,
   maybeBigIntFromUnknown,
   maybeId,
-  maybeJson,
   stripeErrorSuffix,
   metadataInfo,
   coerceMetadataFromJson,
   deriveCancelAtPeriodEnd,
   formPairsToBody,
   metadataJsonToFormPairs,
-  throwSenderError,
   upsertCustomer,
   upsertSubscription,
   callStripe,
@@ -491,7 +493,7 @@ function patchSubscriptionFromStripe(
       `stripe.subscription_update_failed:${response.status}${stripeErrorSuffix(response.body)}`
     );
   }
-  const parsed = maybeJson(response.body);
+  const parsed = safeJsonParse(response.body);
   if (!isRecord(parsed))
     throwSenderError('stripe.subscription_update_invalid_response');
   return parsed;
@@ -574,7 +576,7 @@ export const cancel_subscription = spacetimedb.procedure(
               `stripe.subscription_cancel_failed:${response.status}${stripeErrorSuffix(response.body)}`
             );
           }
-          const parsed = maybeJson(response.body);
+          const parsed = safeJsonParse(response.body);
           if (!isRecord(parsed)) {
             throwSenderError('stripe.subscription_cancel_invalid_response');
           }
@@ -628,7 +630,7 @@ export const update_subscription_quantity = spacetimedb.procedure(
       );
     }
 
-    const existing = maybeJson(getResponse.body);
+    const existing = safeJsonParse(getResponse.body);
     if (!isRecord(existing))
       throwSenderError('stripe.subscription_lookup_invalid_response');
     const items = isRecord(existing.items) ? existing.items : undefined;
