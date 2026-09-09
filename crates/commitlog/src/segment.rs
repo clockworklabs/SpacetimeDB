@@ -144,10 +144,19 @@ impl<W: io::Write> Writer<W> {
         let checksum = self
             .commit
             .write(&mut self.inner)
-            // Panic here as we don't know how much of the commit has been
-            // written (if anything). Further commits would leave corrupted data
-            // in the log.
-            .unwrap_or_else(|e| panic!("failed to write commit {}: {:#}", self.commit.min_tx_offset, e));
+            // Panic here as the data remaining in the `BufWriter`'s buffer is
+            // probably not on a commit boundary. If the caller rotates segments
+            // and continues to commit, we'd write a torn commit.
+            //
+            // Panicking ensures that the buffer is discarded, and that the
+            // commitlog is reopened to recover the last durable commit.
+            .unwrap_or_else(|e| {
+                let buffered = self.inner.buffer().len();
+                panic!(
+                    "failed to write commit {} with {} bytes remaining buffered: {:#}",
+                    self.commit.min_tx_offset, buffered, e
+                )
+            });
         let commit_len = self.commit.encoded_len() as u64;
 
         if let Some(index) = self.offset_index_head.as_mut() {

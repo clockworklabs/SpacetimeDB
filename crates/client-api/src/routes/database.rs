@@ -1679,6 +1679,7 @@ mod tests {
     use super::*;
     use crate::auth::JwtAuthProvider;
     use crate::routes::subscribe::{HasWebSocketOptions, WebSocketOptions};
+    use crate::routes::{identity::IdentityRoutes, router_with_root_routes, RootRoutes};
     use crate::{
         Action, Authorization, ControlStateReadAccess, ControlStateWriteAccess, MaybeMisdirected, Unauthorized,
     };
@@ -2451,5 +2452,80 @@ mod tests {
         );
 
         remove_http_response_size_metric(database_identity);
+    }
+
+    fn root_router(root_routes: RootRoutes<DummyState>) -> axum::Router {
+        let state = DummyState::new();
+        router_with_root_routes(
+            &state,
+            DatabaseRoutes::default(),
+            IdentityRoutes::default(),
+            root_routes,
+            axum::Router::new(),
+        )
+        .with_state(state)
+    }
+
+    fn post_mcp_root(body: &'static str) -> Request<Body> {
+        Request::builder()
+            .method(http::Method::POST)
+            .uri("/v1/mcp")
+            .header(http::header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn default_root_routes_serve_the_real_handlers() {
+        let app = root_router(RootRoutes::default());
+
+        let response = app
+            .clone()
+            .oneshot(post_mcp_root(
+                r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ping"}}"#,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        assert!(std::str::from_utf8(&body).unwrap().contains("pong"));
+
+        let response = app
+            .oneshot(Request::builder().uri("/v1/ping").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn a_substituted_root_mcp_route_replaces_the_default_handler() {
+        let app = root_router(RootRoutes {
+            mcp_post: axum::routing::post(|| async { "substituted" }),
+            ..Default::default()
+        });
+
+        let response = app.oneshot(post_mcp_root("")).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.into_body().collect().await.unwrap().to_bytes(), "substituted");
+    }
+
+    #[tokio::test]
+    async fn the_auth_middleware_runs_before_substituted_root_layers() {
+        let app = root_router(RootRoutes {
+            mcp_post: axum::routing::post(|| async { "substituted" }).layer(axum::middleware::from_fn(
+                |request: axum::extract::Request, next: axum::middleware::Next| async move {
+                    if request.extensions().get::<crate::auth::SpacetimeAuth>().is_none() {
+                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    }
+                    next.run(request).await
+                },
+            )),
+            ..Default::default()
+        });
+
+        let response = app.oneshot(post_mcp_root("")).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
     }
 }
