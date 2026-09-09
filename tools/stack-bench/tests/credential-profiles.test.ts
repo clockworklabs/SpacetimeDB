@@ -72,3 +72,27 @@ test('named execution credentials select explicitly, preserve other providers, a
       error => error instanceof Error && !error.message.includes('SYNTHETIC'));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('simultaneous account assignments keep independent secrets and drift checks', () => {
+  const root = mkdtempSync(join(tmpdir(), 'credential-isolation-'));
+  try {
+    const registry = join(root, 'profiles.json');
+    const firstFile = join(root, 'first');
+    const secondFile = join(root, 'second');
+    writeFileSync(firstFile, 'SYNTHETIC_FIRST_ACCOUNT');
+    writeFileSync(secondFile, 'SYNTHETIC_SECOND_ACCOUNT');
+    writeFileSync(registry, JSON.stringify({
+      first: { provider: 'anthropic', mode: 'api-key', secretFile: firstFile, version: 'v1' },
+      second: { provider: 'anthropic', mode: 'api-key', secretFile: secondFile, version: 'v1' },
+    }));
+    const source = { STACK_BENCH_CREDENTIAL_PROFILES_FILE: registry, ANTHROPIC_API_KEY: 'ambient' };
+    const first = resolveExecutionCredentials('claude-code', 'a', { default: 'first' }, source);
+    const second = resolveExecutionCredentials('claude-code', 'a', { default: 'second' }, source);
+    assert.equal(readPinnedExecutionCredential(first.env)?.secret, 'SYNTHETIC_FIRST_ACCOUNT');
+    assert.equal(readPinnedExecutionCredential(second.env)?.secret, 'SYNTHETIC_SECOND_ACCOUNT');
+    writeFileSync(firstFile, 'SYNTHETIC_CHANGED_ACCOUNT');
+    assert.throws(() => readPinnedExecutionCredential(first.env), /changed after admission/);
+    assert.equal(readPinnedExecutionCredential(second.env)?.secret, 'SYNTHETIC_SECOND_ACCOUNT');
+    assert.deepEqual(source, { STACK_BENCH_CREDENTIAL_PROFILES_FILE: registry, ANTHROPIC_API_KEY: 'ambient' });
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

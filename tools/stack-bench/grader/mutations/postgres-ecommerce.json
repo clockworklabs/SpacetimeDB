@@ -1629,12 +1629,12 @@
       "targets": [
         "ecommerce.l3.deferred-durability.restart-survival.311a"
       ],
-      "desc": "Do not process due restocks after restart.",
-      "file": "server/src/progression.ts",
+      "desc": "Application startup discards pending restocks. Ordinary timer execution remains intact; completed and cancelled work is retained.",
+      "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "`SELECT * FROM scheduled_restock WHERE due_at <= now() AND cancelled = false AND applied = false FOR UPDATE`,",
-          "replace": "`SELECT * FROM scheduled_restock WHERE false FOR UPDATE`,"
+          "find": "  await initializeProgressionSchema(pool);",
+          "replace": "  await initializeProgressionSchema(pool);\n  await pool.query(`DELETE FROM scheduled_restock WHERE cancelled = false AND applied = false`);"
         }
       ]
     },

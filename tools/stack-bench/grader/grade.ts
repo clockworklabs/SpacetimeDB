@@ -36,6 +36,7 @@ import type { ConcurrentCallResult }
   from '../src/actions/actor-transport-action-executors.js';
 import {
   createDatabaseWriteCapability,
+  createDatabaseReadCapability,
   createLifecycleCapability,
 } from '../src/actions/runtime-action-executors.js';
 import { requireLeasedDatabase } from '../src/stacks/backend-reset-guard.js';
@@ -532,6 +533,13 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
     'browser-observation': runtimeValues,
     clock: Object.freeze({ sleep: abortableSleep }),
     concurrency,
+    'database-read': createDatabaseReadCapability({
+      backend: ctx.backend,
+      spacetime: ctx.spacetime,
+      databaseLease: ctx.databaseLease,
+      skip: ctx.nullControl,
+      expand: (value: string) => String(expand(value, ctx)),
+    }),
     'database-write': createDatabaseWriteCapability({
       backend: ctx.backend,
       spacetime: ctx.spacetime,

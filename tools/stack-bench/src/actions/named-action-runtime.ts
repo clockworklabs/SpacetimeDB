@@ -3,6 +3,7 @@ import type { Actor, HeaderRecord } from './actor-action-runtime.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import type { NamedAction } from '../composition/tracks.js';
 import type { SpacetimeTarget } from '../stacks/stack-grading-operations.js';
+import { evidenceNowMs } from '../evidence/evidence-timing.js';
 
 interface StorageLike {
   readonly length: number;
@@ -24,6 +25,11 @@ export interface NamedActionRequest {
 }
 
 export interface ConcurrentCallOutcome {
+  readonly requestIndex?: number;
+  readonly startedAtMs?: number;
+  readonly completedAtMs?: number;
+  readonly durationMs?: number;
+  readonly transport?: 'response' | 'error' | 'timeout';
   readonly applicationRejected?: boolean;
   readonly name: string;
   readonly ok: boolean;
@@ -146,7 +152,7 @@ export function createNamedActionsCapability({
   lastCalls,
   sleep,
   fetchImpl = defaultFetch,
-  now = () => Date.now(),
+  now = evidenceNowMs,
 }: {
   readonly actions?: readonly NamedAction[];
   readonly backend: string;

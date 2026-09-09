@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { describesMissingStockInterface, stockInterfaceError } from '../stock-interface.js';
+import { describesMissingStockInterface, stockInterfaceError, stockQuantity } from '../stock-interface.js';
 
 
 import { assertLeasedContainer } from '../backend-reset-guard.js';
@@ -20,7 +20,7 @@ const streams = (error: unknown, ...keys: readonly string[]): string =>
 
 const POSTGRES_USER = POSTGRES_APPLICATION_IDENTITY.user;
 
-const stockUpdateSql = (itemName: string, warehouseName: string, quantity: number): string => `
+const STOCK_RELATIONS_SQL = `
 WITH foreign_keys AS (
   SELECT source_ns.nspname AS source_schema, source.relname AS source_table,
          source_column.attname AS source_column,
@@ -48,15 +48,9 @@ WITH foreign_keys AS (
   WHERE table_schema = 'public'
     AND column_name IN ('quantity', 'qty', 'stock', 'on_hand', 'available')
 )
-SELECT format(
-  'WITH target AS (SELECT item.%1$I AS item_id, warehouse.%2$I AS warehouse_id '
-  'FROM public.%3$I item, public.%4$I warehouse '
-  'WHERE item.name = %5$L AND warehouse.name = %6$L) '
-  'UPDATE public.%7$I stock SET %8$I = %9$s FROM target '
-  'WHERE stock.%10$I = target.item_id AND stock.%11$I = target.warehouse_id;',
-  item.target_column, warehouse.target_column, item.target_table, warehouse.target_table,
-  ${sqlString(itemName)}, ${sqlString(warehouseName)}, quantity.table_name, quantity.column_name,
-  ${quantity}, item.source_column, warehouse.source_column)
+`;
+
+const STOCK_RELATION_JOINS = `
 FROM quantity_columns quantity
 JOIN foreign_keys item ON item.source_schema = quantity.table_schema
   AND item.source_table = quantity.table_name
@@ -70,6 +64,68 @@ JOIN named_tables warehouse_name ON warehouse_name.table_schema = warehouse.targ
 ORDER BY quantity.table_name, item.source_column, warehouse.source_column
 \\gexec
 `;
+
+const stockUpdateSql = (itemName: string, warehouseName: string, quantity: number): string => `
+${STOCK_RELATIONS_SQL}
+SELECT format(
+  'WITH target AS (SELECT item.%1$I AS item_id, warehouse.%2$I AS warehouse_id '
+  'FROM public.%3$I item, public.%4$I warehouse '
+  'WHERE item.name = %5$L AND warehouse.name = %6$L) '
+  'UPDATE public.%7$I stock SET %8$I = %9$s FROM target '
+  'WHERE stock.%10$I = target.item_id AND stock.%11$I = target.warehouse_id;',
+  item.target_column, warehouse.target_column, item.target_table, warehouse.target_table,
+  ${sqlString(itemName)}, ${sqlString(warehouseName)}, quantity.table_name, quantity.column_name,
+  ${quantity}, item.source_column, warehouse.source_column)
+${STOCK_RELATION_JOINS}
+`;
+
+export function getPostgresStock({ item, warehouse, lease, exec = execFileSync }: {
+  item: string; warehouse?: string; lease: LeasedDatabase; exec?: TextCommandExecutor;
+}): { backend: string; item: string; warehouse?: string; quantity: number } {
+  const container = assertLeasedContainer(lease.resources.container, exec, WRITE_TIMEOUT_MS,
+    'direct database read');
+  const sql = `${STOCK_RELATIONS_SQL}
+SELECT format(
+  'SELECT json_build_object(''items'', (SELECT count(*) FROM public.%5$I WHERE name = %9$L), '
+  ${warehouse === undefined ? "''" : "'''namedWarehouses'', (SELECT count(*) FROM public.%7$I WHERE name = %10$L), '"}
+  '''warehouses'', count(DISTINCT warehouse.%2$I), '
+  '''quantities'', json_agg(stock.%3$I))::text '
+  'FROM public.%4$I stock JOIN public.%5$I item ON stock.%6$I = item.%1$I '
+  'LEFT JOIN public.%7$I warehouse ON stock.%8$I = warehouse.%2$I '
+  'WHERE item.name = %9$L ${warehouse === undefined ? '' : 'AND warehouse.name = %10$L '}'
+  'HAVING count(*) > 0;',
+  item.target_column, warehouse.target_column, quantity.column_name, quantity.table_name,
+  item.target_table, item.source_column, warehouse.target_table, warehouse.source_column,
+  ${sqlString(item)}, ${warehouse === undefined ? 'NULL' : sqlString(warehouse)})
+${STOCK_RELATION_JOINS}`;
+  let output: string;
+  try {
+    output = exec('docker', ['exec', '-i', container,
+      'psql', '-U', POSTGRES_USER, '-d', lease.resources.database, '-v', 'ON_ERROR_STOP=1', '-At'],
+    { encoding: 'utf8', input: sql, stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
+  } catch (error) {
+    const detail = streams(error, 'stdout', 'stderr', 'message');
+    if (describesMissingStockInterface(detail)) {
+      throw stockInterfaceError(detail.trim().slice(-300), { cause: error });
+    }
+    throw error;
+  }
+  const rows = output.trim().split(/\r?\n/).filter(Boolean);
+  if (!rows.length) throw stockInterfaceError(`no stock data for ${item}${warehouse === undefined ? '' : ` / ${warehouse}`}`,
+    { missingRow: 'stock' });
+  if (rows.length !== 1) throw new Error('stock read is ambiguous: multiple relational stock interfaces match');
+  const row: unknown = JSON.parse(rows[0]!);
+  if (!record(row) || !Array.isArray(row.quantities) || row.quantities.length === 0) {
+    throw new Error('PostgreSQL stock read returned an invalid result');
+  }
+  if (row.items !== 1 || row.warehouses !== row.quantities.length
+    || (warehouse !== undefined && (row.namedWarehouses !== 1 || row.quantities.length !== 1))) {
+    throw stockInterfaceError('stock read is ambiguous: duplicate or missing item/warehouse links', { invalid: true });
+  }
+  const quantity = row.quantities.reduce((sum: number, value: unknown) =>
+    stockQuantity(sum + stockQuantity(value)), 0);
+  return { backend: 'postgres', item, ...(warehouse === undefined ? {} : { warehouse }), quantity };
+}
 
 export function resetPostgres({ lease, exec = execFileSync }:
   { lease: LeasedDatabase; exec?: TextCommandExecutor }): string {

@@ -82,7 +82,7 @@ export type CampaignArgs =
   | { command: 'grant-repairs'; directory: string; attemptId: string; grantId: string;
     level: number; nodeIds: string[]; repairs: number }
   | { command: 'extend'; path: string; parentDirectory: string; fromDepth: number;
-    directory: string }
+    directory: string; prepareOnly: boolean }
   | { command: 'trial'; path: string; directory: string }
   | { command: 'run'; path: string; directory: string }
   | { command: 'resume'; path: string; directory: string }
@@ -222,14 +222,15 @@ export function parseCampaignArgs(argv: string[]): CampaignArgs {
       grantId: values.grantId, level: values.level, nodeIds: values.nodeIds,
       repairs: values.repairs };
   }
-  if (command === 'extend' && path && rest.length === 6
+  if (command === 'extend' && path && (rest.length === 6
+    || (rest.length === 7 && rest[6] === '--prepare-only'))
     && rest[0] === '--from' && rest[2] === '--depth' && rest[4] === '--out') {
     const fromDepth = Number(rest[3]);
     if (!Number.isSafeInteger(fromDepth) || fromDepth < 1) {
       throw new Error('extend --depth must be a positive integer');
     }
     return { command, path: resolve(path), parentDirectory: resolve(rest[1]!),
-      fromDepth, directory: resolve(rest[5]!) };
+      fromDepth, directory: resolve(rest[5]!), prepareOnly: rest.length === 7 };
   }
   if (isOneOf(command, ['trial', 'run', 'resume', 'reconcile'])
     && path && rest.length === 2 && rest[0] === '--out') {
@@ -237,7 +238,7 @@ export function parseCampaignArgs(argv: string[]): CampaignArgs {
   }
   throw new Error('usage: campaign-cli.js modes | validate|show <campaign.json> '
     + '| trial|run|resume|reconcile <campaign.json> --out <directory> '
-    + '| extend <campaign.json> --from <campaign-directory> --depth <N> --out <directory> '
+    + '| extend <campaign.json> --from <campaign-directory> --depth <N> --out <directory> [--prepare-only] '
     + '| status <directory> [--full] | inspect|report|audit|stop <directory> | export <directory> --out <new-directory> '
     + '| grant-repairs <directory> --attempt <id> --grant-id <id> --level <N> '
     + '--feature <id> [--feature <id> ...] --repairs <N> '
@@ -318,6 +319,11 @@ async function main() {
   }
   if (args.command === 'extend') {
     prepareCampaignExtension(args.path, args.parentDirectory, args.directory, args.fromDepth);
+    if (args.prepareOnly) {
+      console.log(JSON.stringify({ status: 'prepared', directory: args.directory,
+        parentDirectory: args.parentDirectory, fromDepth: args.fromDepth }, null, 2));
+      return;
+    }
     const plan = compileCampaignFile(args.path);
     const state = await executeCampaign(args.path, args.directory, { mode: 'frozen' });
     console.log(JSON.stringify(campaignStateSummary(plan, state), null, 2));

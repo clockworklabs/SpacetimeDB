@@ -67,6 +67,17 @@
               "warehouse": "warehouse"
             },
             {
+              "as": "stored-before",
+              "do": "dbRecordStock",
+              "item": "item"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "item",
+              "plus": 0,
+              "relativeTo": "stored-before"
+            },
+            {
               "actor": "a",
               "do": "ensureSignedIn",
               "name": "alice"

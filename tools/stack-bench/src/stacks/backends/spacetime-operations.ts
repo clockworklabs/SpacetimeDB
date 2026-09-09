@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { describesMissingStockInterface, stockInterfaceError } from '../stock-interface.js';
+import { describesMissingStockInterface, stockInterfaceError, stockQuantity } from '../stock-interface.js';
+import { assertLeasedContainer } from '../backend-reset-guard.js';
 
 import { leasedSpacetimeTarget } from '../../runtime/spacetime-target.js';
 import { resolveSpacetimeModuleLayout } from '../../runtime/spacetime-layout.js';
@@ -141,6 +142,68 @@ export function setSpacetimeStock({ item, warehouse, quantity, spacetime,
     throw new Error(`stock row for ${item} / ${warehouse} did not update to ${quantity}`);
   }
   return { backend: 'spacetime', item, warehouse, quantity };
+}
+
+export function getSpacetimeStock({ item, warehouse, spacetime, exec = execFileSync }: {
+  item: string; warehouse?: string; exec?: TextCommandExecutor;
+  spacetime?: { buildContainer?: { id: string; name: string } | null; mod: string; containerUri: string };
+}): { backend: string; item: string; warehouse?: string; quantity: number } {
+  if (!spacetime?.buildContainer) throw new Error('SpacetimeDB build container is unavailable for direct SQL');
+  const container = assertLeasedContainer(spacetime.buildContainer, exec, WRITE_TIMEOUT_MS,
+    'direct database read');
+  const query = (sql: string, columns: string[]): string[][] => {
+    let output: string;
+    try {
+      output = exec('docker', [...agentExec(), container,
+        ...codingContainerAgentCommand(CODING_CONTAINER_SPACETIME_CLI,
+          ['sql', spacetime.mod, '-s', spacetime.containerUri, sql])],
+      { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
+    } catch (error) {
+      const detail = streams(error, 'stdout', 'stderr', 'message');
+      if (describesMissingStockInterface(detail)) throw stockInterfaceError(detail.trim().slice(-300));
+      throw error;
+    }
+    const lines = output.trim().split(/\r?\n/).map(line => line.trim());
+    const cells = (line: string): string[] => line.split('|').map(cell => cell.trim());
+    if (JSON.stringify(cells(lines[0] ?? '')) !== JSON.stringify(columns)
+      || !/^[-+\s]+$/.test(lines[1] ?? '')) {
+      throw new Error('SpacetimeDB stock read returned an invalid table header');
+    }
+    return lines.slice(2).map(line => {
+      const row = cells(line);
+      if (row.length !== columns.length || row.some(cell => !/^-?\d+$/.test(cell))) {
+        throw stockInterfaceError('stock interface contains invalid numeric data', { invalid: true });
+      }
+      return row;
+    });
+  };
+  const idOf = (table: 'item' | 'warehouse', name: string): string => {
+    const rows = query(`select id from ${table} where name = ${sqlString(name)}`, ['id']);
+    if (!rows.length) throw stockInterfaceError(`required ${table} is missing`, { missingRow: table });
+    if (rows.length !== 1) throw stockInterfaceError(`required ${table} is ambiguous`, { invalid: true });
+    const id = rows[0]![0]!;
+    if (!/^\d+$/.test(id)) throw stockInterfaceError(`${table} contains an invalid id`, { invalid: true });
+    return id;
+  };
+  const itemId = idOf('item', item);
+  const warehouseId = warehouse === undefined ? undefined : idOf('warehouse', warehouse);
+  const parents = warehouseId === undefined ? query('select id from warehouse', ['id']).map(row => row[0]!) : [warehouseId];
+  if (!parents.length || parents.some(id => !/^\d+$/.test(id)) || new Set(parents).size !== parents.length) {
+    throw stockInterfaceError('warehouse ids are missing or ambiguous', { missingRow: 'warehouse' });
+  }
+  const rows = query(`select warehouse_id, quantity from stock where item_id = ${itemId}`
+    + (warehouseId === undefined ? '' : ` and warehouse_id = ${warehouseId}`), ['warehouse_id', 'quantity']);
+  if (!rows.length) throw stockInterfaceError('required stock row is absent', { missingRow: 'stock' });
+  const seen = new Set<string>();
+  let quantity = 0;
+  for (const [id, value] of rows) {
+    if (!id || parents.filter(parent => parent === id).length !== 1 || seen.has(id)) {
+      throw stockInterfaceError('stock warehouse links are invalid or duplicated', { invalid: true });
+    }
+    seen.add(id);
+    quantity = stockQuantity(quantity + stockQuantity(Number(value)));
+  }
+  return { backend: 'spacetime', item, ...(warehouse === undefined ? {} : { warehouse }), quantity };
 }
 
 export function prepareSpacetimeDatabase({ lease, name, wipe, exec = execFileSync,

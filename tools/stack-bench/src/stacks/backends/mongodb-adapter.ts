@@ -8,7 +8,7 @@ import { standardOrchestratorConfig } from '../stack-orchestrator-operations.js'
 import { stopHostedHost } from '../stack-teardown-operations.js';
 import { stackLeaseOperations } from '../stack-lease-capabilities.js';
 import { prepareMongoDbDatabase, proveMongoDbUse, resetMongoDb,
-  setMongoDbStock } from './mongodb-operations.js';
+  setMongoDbStock, getMongoDbStock } from './mongodb-operations.js';
 import { MONGODB_ADAPTER_VERSION } from './mongodb-identity.js';
 import { controlHostedFor, defineStackAdapter } from '../stack-adapter-common.js';
 
@@ -22,6 +22,7 @@ const MONGODB_GRADING_CAPABILITIES = [
   'clock',
   'concurrency',
   'database-write',
+  'database-read',
   'named-actions',
   'subprocess',
   'transport-observation',
@@ -34,6 +35,7 @@ const mongodbAdapter = defineStackAdapter('mongodb', {
   lease: stackLeaseOperations('mongodb'),
   reset: { run: resetMongoDb, requiresReseed: true },
   databaseWrite: { setStock: setMongoDbStock },
+  databaseRead: { getStock: getMongoDbStock },
   diagnostics: { capture: captureHostedDiagnostics },
   database: { prepare: prepareMongoDbDatabase, proveUse: proveMongoDbUse },
   grading: { context: createHttpGradingContext,

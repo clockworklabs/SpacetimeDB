@@ -79,7 +79,7 @@ test('the prescribed condition binds independent guidance, repair, and document 
   assert.match(spacetimeSkills.sha256, /^[a-f0-9]{64}$/);
   assert.equal(condition.repair.scoredEvidence, true);
   assert.equal(condition.repair.observedEvidence, false);
-  assert.equal(condition.repair.scenarioValues, 'withheld');
+  assert.equal(condition.repair.scenarioValues, 'failed-observations');
   assert.deepEqual(condition.requested, requested);
   const requestedLevel = requested.levels[0];
   assert.ok(requestedLevel);
@@ -168,7 +168,7 @@ function customCondition({ guidance = {}, repair = {} } = {}) {
     skills: { fake: [] }, ...guidance });
   writeJson(join(catalogRoot, 'repair.json'), { schemaVersion: 1, kind: 'repair-policy',
     id: 'scored', scoredEvidence: true,
-    observedEvidence: false, scenarioValues: 'withheld', ...repair });
+    observedEvidence: false, scenarioValues: 'failed-observations', ...repair });
   const ref = { id: 'defaults', guidanceProfile: 'neutral', repairPolicy: 'scored' };
   return { root, catalogPath: join(catalogRoot, 'catalog.json'), ref };
 }
@@ -193,7 +193,8 @@ test('guidance records selected design advice and requires each stack document',
 
 test('observed-only evidence can never enter repairs and scored evidence remains available', () => {
   for (const overrides of [{ repair: { observedEvidence: true } },
-    { repair: { scoredEvidence: false } }, { repair: { scenarioValues: 'disclosed' } }]) {
+    { repair: { scoredEvidence: false } }, { repair: { scenarioValues: 'disclosed' } },
+    { repair: { scenarioValues: 'withheld' } }]) {
     const fixture = customCondition(overrides);
     try {
       assert.throws(() => resolveStudyConditions([fixture.ref], ['fake'], {

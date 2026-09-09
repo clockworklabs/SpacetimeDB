@@ -4,5 +4,5 @@
   "id": "scored-only",
   "scoredEvidence": true,
   "observedEvidence": false,
-  "scenarioValues": "withheld"
+  "scenarioValues": "failed-observations"
 }

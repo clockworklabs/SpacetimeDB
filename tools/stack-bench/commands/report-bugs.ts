@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 // Turns grading results into a behavioral BUG_REPORT.md for the fix agent.
 //
-// Behavior feedback uses the authored expectation (`statedBy`, else the
-// criterion's description), the rendered finding from the catalog, or the
-// application's own console errors. Harness prose never enters the report.
+// Report behavior and typed observations, never implementation advice. A setup
+// failure must not be described as a failure of the later criterion.
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -13,7 +12,7 @@ import { renderRepairFinding } from '../src/actions/action-findings.js';
 import type { Finding } from '../src/actions/action-findings.js';
 import { sanitiseConsoleError, sanitiseDiagnostic } from '../src/evidence/diagnostic-sanitizer.js';
 import { ARTIFACT_FILE, readArtifactPayload } from '../src/evidence/artifacts.js';
-import { criterionEvidence, evidenceIsRepairable } from '../src/evidence/check-evidence.js';
+import { criterionEvidence, evidenceIsRepairable, validateCheckEvidence } from '../src/evidence/check-evidence.js';
 import { assertAgentVisibleText } from '../src/composition/agent-visible-contract.js';
 import { CODING_CONTAINER_BUG_REPORT_FILE, CODING_CONTAINER_START_SCRIPT }
   from '../src/runtime/coding-container-policy.js';
@@ -63,6 +62,7 @@ interface GradeFeature {
   name?: string;
   consoleErrors?: string[];
   criteria?: Criterion[];
+  setupEvidence?: unknown;
 }
 
 interface GradePayload {
@@ -88,7 +88,7 @@ interface RepairBug {
   area: string;
   actor: string | null;
   action: string | null;
-  expected: string;
+  expected: string | null;
   observed: string;
   consoleErrors: string[];
   contract: boolean;
@@ -178,6 +178,7 @@ export function createBugReport(args: ReportBugsArgs): number {
   if (!existsSync(resultsDir)) throw new Error(`No grading results in ${resultsDir}`);
 
   const bugs: RepairBug[] = [];
+  const reportedSetups = new Set<string>();
   const selectedChecks = args.checks === null ? null : new Set(args.checks);
   const selectedControls = args.controls === null ? null : new Set(args.controls);
 
@@ -191,18 +192,30 @@ export function createBugReport(args: ReportBugsArgs): number {
         if (!(Number(criterion.points) > 0)) continue;
         const evidence = criterionEvidence(criterion);
         if (!evidenceIsRepairable(evidence)) continue;
-        const actionEntry = evidence.actions.at(-1);
+        const failure = evidence.phase === 'setup' && feature.setupEvidence
+          ? validateCheckEvidence(feature.setupEvidence) : evidence;
+        if (evidence.phase === 'setup') {
+          // One failed setup is copied to each selected criterion it prevented.
+          // Use full evidence, not rendered prose, so distinct failures stay separate.
+          const key = JSON.stringify({ area: feature.name, failure });
+          if (reportedSetups.has(key)) continue;
+          reportedSetups.add(key);
+        }
+        const actionEntry = failure.actions.findLast(entry =>
+          entry.evidence !== null && typeof entry.evidence === 'object'
+            && (entry.evidence as { status?: string }).status === 'failed') ?? failure.actions.at(-1);
         const actionId = actionEntry && typeof actionEntry.evidence === 'object' && actionEntry.evidence
           ? String((actionEntry.evidence as { action?: { id?: string } }).action?.id ?? '') : undefined;
-        const expected = (criterion.statedBy ?? criterion.desc ?? '').trim() || 'the requested behavior';
+        const expected = evidence.phase === 'setup' ? null
+          : (criterion.statedBy ?? criterion.desc ?? '').trim() || 'the requested behavior';
         bugs.push({
           area: sanitiseDiagnostic(feature.name, 120),
-          actor: sanitiseDiagnostic(actionEntry?.actor ?? evidence.actor, 120) || null,
-          action: failedAction(actionId, evidence.finding),
+          actor: sanitiseDiagnostic(actionEntry?.actor ?? failure.actor, 120) || null,
+          action: failedAction(actionId, failure.finding),
           expected,
-          observed: observed(evidence.finding, evidence.phase),
-          consoleErrors: (feature.consoleErrors ?? []).slice(0, 3)
-            .map(sanitiseConsoleError).filter(Boolean),
+          observed: observed(failure.finding, evidence.phase),
+          consoleErrors: [...new Set((feature.consoleErrors ?? [])
+            .map(sanitiseConsoleError).filter(Boolean))].slice(0, 3),
           contract: false,
         });
       }
@@ -280,7 +293,7 @@ export function createBugReport(args: ReportBugsArgs): number {
       lines.push(`### Bug ${index + 1}: ${bug.area}`, '');
       if (bug.actor) lines.push(`**Actor/session:** ${bug.actor}`, '');
       if (bug.action) lines.push(`**Failed action:** ${bug.action}`, '');
-      lines.push(`**Expected:** ${bug.expected}`, '');
+      if (bug.expected) lines.push(`**Expected:** ${bug.expected}`, '');
       lines.push(`**Actual:** ${bug.observed}`, '');
       if (bug.consoleErrors.length) {
         lines.push('**Console or network errors:**', '');

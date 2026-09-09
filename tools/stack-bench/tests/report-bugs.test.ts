@@ -33,16 +33,19 @@ interface WriteGradeOptions {
   consoleErrors?: string[];
   statedBy?: string;
   evidence?: ReturnType<typeof createCheckEvidence>;
+  setupEvidence?: ReturnType<typeof createCheckEvidence>;
 }
 
 function writeGrade(app: string, status: EvidenceStatus, summary: string,
   { grading = join(app, 'stack-bench'), feature = 'Accounts', points = 1,
     criterion = 'owner', stableKey = criterion, file = 'grading-features.json',
-    url = 'http://app', consoleErrors = [], statedBy, evidence: suppliedEvidence }:
+    url = 'http://app', consoleErrors = [], statedBy, evidence: suppliedEvidence,
+    setupEvidence: suppliedSetup }:
     WriteGradeOptions = {}): void {
   mkdirSync(grading, { recursive: true });
-  const setupEvidence = createCheckEvidence({ status: 'passed', code: 'completed', phase: 'setup',
-    startedAtMs: 1, completedAtMs: 2 });
+  const setupEvidence = suppliedSetup ?? (suppliedEvidence?.phase === 'setup' ? suppliedEvidence
+    : createCheckEvidence({ status: 'passed', code: 'completed', phase: 'setup',
+      startedAtMs: 1, completedAtMs: 2 }));
   const evidence = suppliedEvidence ?? createCheckEvidence({ status,
     code: status === 'passed' ? 'completed' : 'test_result', phase: 'assertion', summary,
     startedAtMs: 3, completedAtMs: 4 });
@@ -110,9 +113,8 @@ test('repair feedback includes actionable runtime evidence without private artif
     const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
     assert.match(repair, /Actor\/session:\*\* buyer/);
     assert.match(repair, /Expected:\*\* the cart total equals the sum of its lines/);
-    assert.match(repair, /Actual:\*\* the cart-total control shows a value below the required value/);
+    assert.match(repair, /Actual:\*\* the cart-total control reads 9, expected exactly 12/);
     assert.match(repair, /5 percent discount/);
-    assert.doesNotMatch(repair, /\b(?:9|12)\b/);
     assert.match(readFileSync(join(app, 'stack-bench', 'grading-features.json'), 'utf8'), /"equals": 12/);
     assert.doesNotMatch(repair, /cart total was wrong/);
     assert.doesNotMatch(repair, /Application URL|http:\/\//);
@@ -165,6 +167,54 @@ test('repair feedback refuses internal evaluation language', () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('setup feedback reports the failed control without claiming the later guarantee failed', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-setup-'));
+  try {
+    const evidence = createCheckEvidence({ status: 'failed', code: 'application_failure',
+      phase: 'setup', startedAtMs: 1, completedAtMs: 2,
+      finding: finding('control-missing', { control: 'item-stock', filtered: false }) });
+    writeGrade(root, 'failed', 'setup failed', { evidence,
+      statedBy: 'the server refuses an unauthenticated purchase' });
+    const reported = spawnSync(process.execPath, [CLI, '--app', root], { encoding: 'utf8' });
+    assert.equal(reported.status, 0, reported.stderr);
+    const report = readFileSync(join(root, 'BUG_REPORT.md'), 'utf8');
+    assert.match(report, /item-stock control did not appear/);
+    assert.doesNotMatch(report, /Expected:|unauthenticated purchase/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('copied setup failures use original observations once and retain distinct setup failures', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-setup-dedup-'));
+  try {
+    const copied = createCheckEvidence({ status: 'failed', code: 'application_failure',
+      phase: 'setup', startedAtMs: 1, completedAtMs: 2 });
+    const setup = createCheckEvidence({ status: 'failed', code: 'application_failure',
+      phase: 'setup', actor: 'buyer', startedAtMs: 1, completedAtMs: 2,
+      finding: finding('number-mismatch', { control: 'item-stock', observed: 100,
+        expected: { equals: 99 } }) });
+    for (const criterion of ['authentication', 'ownership']) {
+      writeGrade(root, 'failed', 'later behavior did not run', { criterion,
+        file: `grading-${criterion}.json`, evidence: copied, setupEvidence: setup,
+        statedBy: 'unauthorized purchases must be refused',
+        consoleErrors: ['POST /api/buy returned 500', 'POST /api/buy returned 500'] });
+    }
+    writeGrade(root, 'failed', 'different setup failure', { criterion: 'other',
+      file: 'grading-other.json', evidence: copied,
+      setupEvidence: createCheckEvidence({ ...setup,
+        startedAtMs: 3, completedAtMs: 4,
+        finding: finding('control-missing', { control: 'orders-toggle', filtered: false }) }),
+      statedBy: 'orders must survive a restart' });
+    const reported = spawnSync(process.execPath, [CLI, '--app', root], { encoding: 'utf8' });
+    assert.equal(reported.status, 0, reported.stderr);
+    const report = readFileSync(join(root, 'BUG_REPORT.md'), 'utf8');
+    assert.equal((report.match(/### Bug /g) ?? []).length, 2);
+    assert.equal((report.match(/item-stock control reads 100, expected exactly 99/g) ?? []).length, 1);
+    assert.match(report, /orders-toggle control did not appear/);
+    assert.equal((report.match(/POST \/api\/buy returned 500/g) ?? []).length, 1);
+    assert.doesNotMatch(report, /unauthorized purchases|orders must survive|Expected:\*\*/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('dependency repair feedback contains only checks selected for that feature', () => {
@@ -381,7 +431,7 @@ test('repair feedback states clean authority without exposing scoring history', 
   }
 });
 
-test('repair feedback is assembled from the authored sentence, the finding, and console errors only', () => {
+test('repair feedback uses behavioral expectations and findings without implementation advice', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-sources-'));
   try {
     const app = join(root, 'app');

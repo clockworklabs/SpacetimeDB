@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { stockInterfaceError } from '../stock-interface.js';
+import { stockInterfaceError, stockQuantity } from '../stock-interface.js';
 
 import { assertLeasedContainer } from '../backend-reset-guard.js';
 import type { LeasedDatabase } from '../backend-reset-guard.js';
@@ -126,6 +126,64 @@ export function setMongoDbStock({ item, warehouse, quantity, lease, exec = execF
   }
   if (!/^OK$/m.test(output.trim())) throw new Error(`unexpected MongoDB stock write result: ${output.trim().slice(-160)}`);
   return { backend: 'mongodb', item, warehouse, quantity };
+}
+
+export function getMongoDbStock({ item, warehouse, lease, exec = execFileSync }: {
+  item: string; warehouse?: string; lease: LeasedDatabase; exec?: TextCommandExecutor;
+}): { backend: string; item: string; warehouse?: string; quantity: number } {
+  const container = assertLeasedContainer(lease.resources.container, exec, WRITE_TIMEOUT_MS,
+    'direct database read');
+  const script = `
+    function reject(error, missingRow, invalid = false) { print(JSON.stringify({ error, missingRow, invalid })); quit(0); }
+    const collections = db.getCollectionNames();
+    if (!['item', 'warehouse', 'stock'].every(name => collections.includes(name))) reject('required singular stock collections are absent');
+    const items = db.item.find({ name: ${JSON.stringify(item)} }).limit(2).toArray();
+    if (!items.length) reject('required item is missing', 'item');
+    if (items.length !== 1) reject('required item is ambiguous', undefined, true);
+    const warehouses = db.warehouse.find(${warehouse === undefined ? '{}' : `{ name: ${JSON.stringify(warehouse)} }`}).toArray();
+    if (!warehouses.length) reject('required warehouse is missing', 'warehouse');
+    ${warehouse === undefined ? '' : "if (warehouses.length !== 1) reject('required warehouse is ambiguous', undefined, true);"}
+    function references(id) {
+      if (id && id._bsontype === 'ObjectId') return [id, id.toHexString()];
+      if (typeof id === 'string' && /^[0-9a-f]{24}$/.test(id)) return [id, new ObjectId(id)];
+      return [id];
+    }
+    function key(id) { return id && id._bsontype === 'ObjectId' ? id.toHexString() : String(id); }
+    const iid = references(items[0].id ?? items[0]._id);
+    const wid = ${warehouse === undefined ? 'null' : 'references(warehouses[0].id ?? warehouses[0]._id)'};
+    const matches = db.stock.find({ $or: [
+      { item_id: { $in: iid }${warehouse === undefined ? '' : ', warehouse_id: { $in: wid }'} },
+      { itemId: { $in: iid }${warehouse === undefined ? '' : ', warehouseId: { $in: wid }'} }
+    ] }).toArray();
+    if (!matches.length) reject('required stock row is absent', 'stock');
+    const seen = new Set();
+    for (const row of matches) {
+      const id = key(row.warehouse_id ?? row.warehouseId);
+      if (warehouses.filter(w => key(w.id ?? w._id) === id).length !== 1 || seen.has(id)) reject('stock warehouse links are invalid or duplicated', undefined, true);
+      seen.add(id);
+    }
+    print(JSON.stringify({ quantities: matches.map(row => row.quantity) }));
+  `;
+  const output = exec('docker', ['exec', container, ...mongoShell(lease), '--quiet', '--eval', script],
+    { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS }).trim();
+  let result: unknown;
+  try { result = JSON.parse(output); } catch {
+    throw new Error('MongoDB stock read returned invalid JSON');
+  }
+  if (!record(result)) throw new Error('MongoDB stock read returned an invalid result');
+  if (typeof result.error === 'string') {
+    throw stockInterfaceError(result.error, {
+      invalid: result.invalid === true,
+      ...(result.missingRow === 'item' || result.missingRow === 'warehouse' || result.missingRow === 'stock'
+        ? { missingRow: result.missingRow } : {}),
+    });
+  }
+  if (!Array.isArray(result.quantities) || !result.quantities.length) {
+    throw stockInterfaceError('stock read returned no quantities', { missingRow: 'stock' });
+  }
+  const quantity = stockQuantity(result.quantities.reduce((sum: number, value: unknown) =>
+    stockQuantity(sum + stockQuantity(value)), 0));
+  return { backend: 'mongodb', item, ...(warehouse === undefined ? {} : { warehouse }), quantity };
 }
 
 export function prepareMongoDbDatabase({ lease, name, expectedName, wipe,

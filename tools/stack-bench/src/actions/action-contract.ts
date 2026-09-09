@@ -100,6 +100,7 @@ export const GRADING_CAPABILITY_IDS = Object.freeze([
   'clock',
   'concurrency',
   'database-write',
+  'database-read',
   'named-actions',
   'subprocess',
   'transport-observation',

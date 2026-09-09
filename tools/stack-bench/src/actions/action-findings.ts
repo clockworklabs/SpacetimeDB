@@ -2,8 +2,8 @@
 // fails with a sentence; it fails with a kind and its fields, and every reader
 // renders the finding from one template. Fields are things the coding agent
 // already has or the application produced: contract control names, action
-// ids, actor labels, numbers, counts, HTTP statuses. Numeric fields can include
-// private scenario expectations; repair rendering omits their exact values.
+// ids, actor labels, numbers, counts, HTTP statuses. Repair reports can include
+// measured values and required results, but not scenario scripts or algorithms.
 // A scenario's own probe text is never a field. `detail` is never rendered.
 
 import { z } from 'zod';
@@ -24,6 +24,7 @@ export type InconclusiveFindingKind =
   | 'no-session' | 'unresolved-action' | 'replay-unavailable'
   | 'forgery-unverifiable' | 'not-observed' | 'nothing-contended'
   | 'no-backend-control' | 'control-refused' | 'database-write-failed'
+  | 'stock-read-unavailable'
   | 'unsupported-backend' | 'app-directory-unknown' | 'invalid-input';
 export type FailedFindingKind = Exclude<FindingKind, InconclusiveFindingKind>;
 export type FailedFindingFields = Pick<FindingFields, FailedFindingKind>;
@@ -121,6 +122,7 @@ export const INCONCLUSIVE_FINDINGS: Renderers<InconclusiveFindingFields> = {
   'no-backend-control': f => `no control over ${target(f.target)} was supplied`,
   'control-refused': f => `control over ${target(f.target)} was refused on this host`,
   'database-write-failed': () => 'the direct database write did not complete',
+  'stock-read-unavailable': () => 'stored stock could not be measured',
   'unsupported-backend': f => `${f.backend} does not support this step`,
   'app-directory-unknown': () => 'the application directory is unknown',
   'invalid-input': () => 'the step input is invalid',
@@ -145,36 +147,18 @@ export function renderFinding(value: Finding): string {
   return (renderers[value.kind] as (fields: unknown) => string)(value.fields);
 }
 
-// Keep scenario-derived quantities in evidence, not in the repair request.
-// Authored requirements are delivered separately and retain their public numbers.
+// A repair needs the failed observation, including exact amounts when measured.
+// Keep implementation advice out even when private diagnostics contain it.
 export function renderRepairFinding(value: Finding): string {
-  switch (value.kind) {
-    case 'number-mismatch': {
-      const { control: name, observed, expected } = value.fields;
-      if (observed === null) return `${control(name)} shows no number`;
-      const minimum = expected.equals ?? expected.atLeast;
-      const maximum = expected.equals ?? expected.atMost;
-      return `${control(name)} shows a value ${minimum !== undefined && observed < minimum
-        ? 'below the required value' : maximum !== undefined && observed > maximum
-          ? 'above the required value' : 'that does not meet the requirement'}`;
-    }
-    case 'count-mismatch':
-      return `too ${value.fields.observed < value.fields.expected ? 'few' : 'many'} ${value.fields.control} entries are shown`;
-    case 'entries-missing':
-      return [value.fields.missing > 0 ? 'required entries are missing' : null,
-        value.fields.duplicated > 0 ? 'entries are duplicated' : null]
-        .filter(Boolean).join(' and ') || 'the entries do not match the requirement';
-    case 'actors-with-control':
-      return `too ${value.fields.observed < value.fields.expected ? 'few' : 'many'} actors hold ${control(value.fields.control)}`;
-    case 'too-many-per-actor':
-      return `an actor holds more ${value.fields.control} entries than allowed`;
-    case 'clicks-failed':
-      return `some simultaneous clicks on ${control(value.fields.control)} did not go through`;
-    case 'concurrent-calls-mismatch':
-      return `too ${value.fields.accepted < value.fields.expected ? 'few' : 'many'} simultaneous ${value.fields.action} calls were accepted`;
-    default:
-      return renderFinding(value);
+  if (value.kind === 'stock-interface-missing' && value.fields.missingRow) {
+    const { missingRow, item, warehouse } = value.fields;
+    const name = missingRow === 'item' ? item : missingRow === 'warehouse' ? warehouse : undefined;
+    const context = missingRow === 'stock'
+      ? [item ? `item ${JSON.stringify(item)}` : null, warehouse ? `warehouse ${JSON.stringify(warehouse)}` : null]
+        .filter(Boolean).join(' and ') : '';
+    return `the required ${missingRow}${name ? ` ${JSON.stringify(name)}` : ''} row was not found in the stock data interface${context ? ` for ${context}` : ''}`;
   }
+  return renderFinding(value);
 }
 
 const controlSchema = z.strictObject({ control: z.string() });
@@ -233,7 +217,10 @@ export const findingSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('forgery-accepted'), fields: z.strictObject({ status: z.number().nullable(), field: z.string() }) }),
   z.strictObject({ kind: z.literal('forgery-error'), fields: statusSchema }),
   z.strictObject({ kind: z.literal('message-delivered'), fields: actorSchema }),
-  z.strictObject({ kind: z.literal('stock-interface-missing'), fields: detailSchema.extend({ missingRow: z.enum(['item', 'warehouse', 'stock']).optional() }) }),
+  z.strictObject({ kind: z.literal('stock-interface-missing'), fields: detailSchema.extend({
+    missingRow: z.enum(['item', 'warehouse', 'stock']).optional(),
+    item: z.string().optional(), warehouse: z.string().optional(),
+  }) }),
   z.strictObject({ kind: z.literal('assertion-without-action'), fields: actionSchema }),
   z.strictObject({ kind: z.literal('unknown-action'), fields: actionSchema }),
   z.strictObject({ kind: z.literal('action-without-parameters'), fields: actionSchema }),
@@ -246,6 +233,7 @@ export const findingSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('no-backend-control'), fields: z.strictObject({ target: targetSchema }) }),
   z.strictObject({ kind: z.literal('control-refused'), fields: z.strictObject({ target: targetSchema }) }),
   z.strictObject({ kind: z.literal('database-write-failed'), fields: detailSchema }),
+  z.strictObject({ kind: z.literal('stock-read-unavailable'), fields: detailSchema }),
   z.strictObject({ kind: z.literal('unsupported-backend'), fields: z.strictObject({ backend: z.string() }) }),
   z.strictObject({ kind: z.literal('app-directory-unknown'), fields: z.strictObject({}) }),
   z.strictObject({ kind: z.literal('invalid-input'), fields: detailSchema }),

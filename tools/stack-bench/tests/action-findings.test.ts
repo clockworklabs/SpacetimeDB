@@ -74,6 +74,7 @@ const SAMPLES: { [K in FindingKind]: Finding } = {
   'no-backend-control': finding('no-backend-control', { target: 'backend-runtime' }),
   'control-refused': finding('control-refused', { target: 'app-server' }),
   'database-write-failed': finding('database-write-failed', { detail: DETAIL }),
+  'stock-read-unavailable': finding('stock-read-unavailable', { detail: DETAIL }),
   'unsupported-backend': finding('unsupported-backend', { backend: 'stub' }),
   'app-directory-unknown': finding('app-directory-unknown', {}),
   'invalid-input': finding('invalid-input', { detail: DETAIL }),
@@ -91,20 +92,23 @@ test('every kind renders one agent-visible sentence and never its detail', () =>
   }
 });
 
-test('repair findings omit private quantities but retain useful failure context', () => {
+test('repair findings retain measured quantities without changing evidence or prescribing a fix', () => {
   for (const kind of ['number-mismatch', 'count-mismatch', 'entries-missing',
     'actors-with-control', 'too-many-per-actor', 'clicks-failed', 'concurrent-calls-mismatch'] as const) {
     const original = structuredClone(SAMPLES[kind]);
-    assert.doesNotMatch(renderRepairFinding(original), /\d/);
+    assert.match(renderRepairFinding(original), /\d/);
     assert.match(renderFinding(original), /\d/);
     assert.deepEqual(original, SAMPLES[kind]);
   }
-  assert.match(renderRepairFinding(SAMPLES['number-mismatch']), /order-total.*below/);
+  assert.match(renderRepairFinding(SAMPLES['number-mismatch']), /order-total.*reads.*expected/);
   assert.match(renderRepairFinding(finding('number-mismatch', {
     control: 'stock', observed: 52, expected: { atMost: 50 },
-  })), /stock.*above/);
+  })), /stock.*52.*at most 50/);
   assert.match(renderRepairFinding(SAMPLES['call-refused']), /HTTP 404/);
   assert.match(renderRepairFinding(SAMPLES['entries-missing']), /missing.*duplicated/);
+  assert.doesNotMatch(renderRepairFinding(finding('stock-interface-missing', {
+    missingRow: 'warehouse',
+  })), /check the|links/);
 });
 
 test('the catalog partitions into application failures and unmeasured outcomes', () => {
@@ -168,6 +172,14 @@ test('sample renderings read as behavior, not mechanics', () => {
 
 
 test('missing rows and filtered controls give useful feedback without exposing probe text', () => {
+  assert.match(renderRepairFinding(finding('stock-interface-missing', {
+    missingRow: 'warehouse', item: 'Desk Lamp', warehouse: 'East', detail: DETAIL,
+  })), /warehouse "East" row was not found/);
+  const stock = renderRepairFinding(finding('stock-interface-missing', {
+    missingRow: 'stock', item: 'Desk Lamp', warehouse: 'East', detail: DETAIL,
+  }));
+  assert.match(stock, /item "Desk Lamp" and warehouse "East"/);
+  assert.doesNotMatch(stock, /RAW-DETAIL|check the|links/);
   assert.match(renderFinding(finding('stock-interface-missing', { missingRow: 'warehouse', detail: DETAIL })), /required warehouse row was not found/);
   const text = renderFinding(finding('control-missing', { control: 'admin-warehouse-item', filtered: true }));
   assert.match(text, /matching the requested entry/);

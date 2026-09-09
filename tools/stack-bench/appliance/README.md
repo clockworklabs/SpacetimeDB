@@ -459,6 +459,34 @@ The grant creates a linked continuation. It does not rewrite the completed
 execution. Use `campaign resume <campaign.json> --out <campaign-directory>` to
 run scheduled dependency work.
 
+## Continue to a higher level
+
+Use a separate source-seeded campaign to continue a completed dependency campaign.
+For example, prepare an L3 campaign from its passed L2 source without starting work:
+
+```sh
+campaign extend <L3-campaign.json> --from <L2-campaign-directory> --depth 2 --out <L3-campaign-directory> --prepare-only
+```
+
+Preparation copies and verifies each source checkpoint and records its parent.
+It makes no model calls and starts no attempts. After review, start the prepared
+campaign with `campaign run <L3-campaign.json> --out <L3-campaign-directory>`.
+Without `--prepare-only`, `extend` prepares and starts the campaign immediately.
+
+Every matching parent attempt must be complete and pass the chosen depth.
+The target must use progressive dependency work and include that depth plus a
+higher depth. Stack, model, repetition, guidance, and repair condition must match.
+Earlier levels are regraded without model work before any upgrade. If validation
+fails, that attempt stops before higher-level work.
+
+This preserves source, not the agent session or database runtime. The new campaign
+has its own time, cost, and repair budgets. Its reported cost excludes parent work;
+reports identify the parent and label the result as a seeded continuation. Add
+the parent cost when measuring the full path. Previously taught repairs remain in
+the source, so this cannot turn a repaired app into an unaided first-build result.
+Other target-definition changes require a separate comparison interpretation; this
+is not evidence of an uninterrupted run under unchanged conditions.
+
 ## Model-free trials and qualification
 
 `campaign trial` accepts only registered non-billable adapters and zero pricing.

@@ -84,6 +84,13 @@ interface LifecycleConcurrencyCapabilities {
   readonly 'database-write': {
     setStock(input: SetStockInput): unknown | Promise<unknown>;
   };
+  readonly 'database-read': {
+    getStock(input: { item: string; warehouse?: string }):
+      { quantity: number } | Promise<{ quantity: number }>;
+  };
+  readonly 'browser-observation': {
+    readonly recorded: { get(key: string): number | undefined; set(key: string, value: number): void };
+  };
 }
 
 interface ActionArguments<Input> {
@@ -146,6 +153,37 @@ interface SetStockInput {
   readonly warehouse: string;
 }
 
+interface ReadStockInput {
+  readonly item: string;
+  readonly warehouse?: string;
+  readonly as?: string;
+  readonly equals?: number;
+  readonly relativeTo?: string;
+  readonly plus?: number;
+}
+
+async function dbRecordStock({ input, capabilities }: ActionArguments<ReadStockInput>) {
+  const value = await capabilities['database-read'].getStock(input);
+  capabilities['browser-observation'].recorded.set(input.as!, value.quantity);
+  return { ...value, key: input.as };
+}
+
+async function dbExpectStock({ input, capabilities }: ActionArguments<ReadStockInput>) {
+  const base = input.relativeTo === undefined ? undefined
+    : capabilities['browser-observation'].recorded.get(input.relativeTo);
+  if (input.relativeTo !== undefined && base === undefined) {
+    inconclusive('assertion-without-action', { action: 'dbRecordStock' });
+  }
+  const expected = input.relativeTo === undefined ? input.equals! : base! + (input.plus ?? 0);
+  if (!Number.isSafeInteger(expected)) throw new Error('expected stock is not an exact integer');
+  const value = await capabilities['database-read'].getStock(input);
+  if (value.quantity !== expected) fail('number-mismatch', {
+    control: `stored stock for ${input.item}${input.warehouse ? ` in ${input.warehouse}` : ''}`,
+    observed: value.quantity, expected: { equals: expected },
+  });
+  return { ...value, expected };
+}
+
 interface ProcessErrorShape {
   readonly classification?: unknown;
   readonly code?: unknown;
@@ -154,6 +192,7 @@ interface ProcessErrorShape {
   readonly stderr?: unknown;
   readonly stdout?: unknown;
   readonly stockInterface?: unknown;
+  readonly stockInterfaceInvalid?: unknown;
   readonly missingRow?: unknown;
 }
 
@@ -330,7 +369,7 @@ async function dbSetStock({ input, capabilities, signal }: ActionArguments<SetSt
     // failed that interface. Any other write failure is the harness's.
     if (errorShape(error).stockInterface === true) {
       const row = errorShape(error).missingRow;
-      fail('stock-interface-missing', { detail: databaseWriteFailureDetail(error),
+      fail('stock-interface-missing', { detail: databaseWriteFailureDetail(error), item: input.item, warehouse: input.warehouse,
         ...(row === 'item' || row === 'warehouse' || row === 'stock' ? { missingRow: row } : {}) });
     }
     throw new Error(`direct database write failed: ${databaseWriteFailureDetail(error)}`, { cause: error });
@@ -448,6 +487,45 @@ export function createDatabaseWriteCapability({ backend, spacetime, databaseLeas
   });
 }
 
+export function createDatabaseReadCapability({ backend, spacetime, databaseLease, skip = false, expand,
+  exec = execFileSync }: DatabaseWriteCapabilityOptions) {
+  return Object.freeze({
+    getStock(input: { item: string; warehouse?: string }) {
+      if (skip) inconclusive('stock-read-unavailable', { detail: 'direct stock reads are disabled for this control' });
+      const item = expand(input.item);
+      const warehouse = input.warehouse === undefined ? undefined : expand(input.warehouse);
+      const adapter = backend ? STACK_ADAPTER_REGISTRY.get(backend) : undefined;
+      if (!adapter || !('databaseRead' in adapter)) {
+        return inconclusive('unsupported-backend', { backend: backend ?? '<unset>' });
+      }
+      try {
+        if (adapter.id !== 'spacetime' && !databaseLease) throw Object.assign(
+          new Error('direct database reads require an authenticated backend lease'),
+          { classification: 'harness_failure' });
+        const value = adapter.id === 'spacetime'
+          ? adapter.databaseRead.getStock({ item, warehouse, spacetime: spacetime ?? undefined, exec })
+          : adapter.databaseRead.getStock({ item, warehouse, lease: databaseLease!, exec });
+        if (!Number.isSafeInteger(value.quantity)) {
+          inconclusive('stock-read-unavailable', { detail: 'stored stock did not return an exact integer quantity' });
+        }
+        return value;
+      } catch (error) {
+        if (errorShape(error).classification) throw error;
+        if (errorShape(error).stockInterfaceInvalid === true) {
+          fail('interface-invalid', { action: 'read stock', attribute: 'stock data',
+            detail: databaseWriteFailureDetail(error) });
+        }
+        if (errorShape(error).stockInterface === true) {
+          const row = errorShape(error).missingRow;
+          fail('stock-interface-missing', { detail: databaseWriteFailureDetail(error), item, warehouse,
+            ...(row === 'item' || row === 'warehouse' || row === 'stock' ? { missingRow: row } : {}) });
+        }
+        throw new Error(`direct database read failed: ${databaseWriteFailureDetail(error)}`, { cause: error });
+      }
+    },
+  });
+}
+
 function contractLifecycleAction<Input, Result>(
   implementation: (arguments_: ActionArguments<Input>) => Result | Promise<Result>,
 ): ActionImplementation {
@@ -461,6 +539,8 @@ function contractBrowserLifecycleAction<Input, Result>(
 }
 
 export const RUNTIME_ACTION_IMPLEMENTATIONS = Object.freeze({
+  dbRecordStock: contractLifecycleAction(dbRecordStock),
+  dbExpectStock: contractLifecycleAction(dbExpectStock),
   clickConcurrently: contractLifecycleAction(clickConcurrently),
   closeClient: contractBrowserLifecycleAction(closeClient),
   dbSetStock: contractLifecycleAction(dbSetStock),

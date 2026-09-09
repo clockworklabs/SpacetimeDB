@@ -15,10 +15,11 @@ export const stubAdapter = defineStackAdapter('stub', {
   lease: stackLeaseOperations('stub'),
   reset: { requiresReseed: false },
   database: { prepare: ({ name }: { name: string }) => name },
-  // The stub has no backend to restart and no database to write to.
+  // The stub has no backend to restart and no database to read or write.
   grading: { context: createHttpGradingContext, transport: 'http',
     capabilities: GRADING_CAPABILITY_IDS.filter(capability =>
-      capability !== 'backend-lifecycle' && capability !== 'database-write') },
+      capability !== 'backend-lifecycle' && capability !== 'database-write'
+        && capability !== 'database-read') },
   namedAction: { request: httpNamedActionRequest },
   teardown: { host: stopHostedHost },
   runPolicy: { resetEnabled: false, retainHostSupported: false,

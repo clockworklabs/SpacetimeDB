@@ -146,6 +146,26 @@ test('report read model keeps invalid evidence separate and computes declared di
   /summary\.nonsense is unknown/);
 });
 
+test('seeded campaign reports identify parent work excluded from continuation cost', () => {
+  const plan = examplePlan();
+  const state = createCampaignState(plan, { now: created });
+  const attempt = state.attempts[0]!;
+  attempt.extension = {
+    fromDepth: 2, source: `.private/extensions/${attempt.plan.id}/source`,
+    sourceSha256: 'a'.repeat(64), sourceFiles: 1,
+    parent: { campaignId: 'parent-campaign', campaignSha256: 'b'.repeat(64),
+      attemptId: 'parent-attempt', executionId: 'parent-execution',
+      runId: 'parent-run', runSha256: 'c'.repeat(64) },
+  };
+  const report = buildCampaignReport(plan, state, () => { throw new Error('no execution'); });
+  assert(report.limitations.some(item => item.includes('parent-campaign at L2')
+    && item.includes('exclude the parent build') && item.includes('source retains prior repairs')));
+  assert.match(renderCampaignHtml(report), /Seeded continuation from/);
+  delete attempt.extension;
+  assert(!buildCampaignReport(plan, state, () => { throw new Error('no execution'); })
+    .limitations.some(item => item.startsWith('Seeded continuation from')));
+});
+
 test('correction metrics separate successful cost from unresolved spend', () => {
   const corrected = campaignRunMetrics({ outcome: { kind: 'passed' },
     levels: [{ firstBuild: { score: 5, max: 10 }, repairCostUsd: 1.25,

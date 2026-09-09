@@ -1055,7 +1055,7 @@
       "targets": [
         "ecommerce.l3.deferred-durability.restart-survival.311a"
       ],
-      "desc": "A scheduled restock is persisted with an extra ten-minute delay.",
+      "desc": "Timing control only: persist a scheduled restock with an extra ten-minute delay. This does not isolate loss of pending work on restart.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {

@@ -95,6 +95,8 @@ test('action policy is explicit for each behavior category', () => {
     callConcurrently: ['concurrency', 120_000, ['actors', 'named-actions']],
     click: ['browser-interaction', 60_000, ['actors', 'browser-interaction']],
     dbSetStock: ['database', 90_000, ['clock', 'database-write']],
+    dbRecordStock: ['database', 90_000, ['database-read', 'browser-observation']],
+    dbExpectStock: ['database', 90_000, ['database-read', 'browser-observation']],
     expect: ['browser-observation', 300_000, ['actors', 'browser-observation']],
     restartBackend: ['lifecycle', 900_000, ['backend-lifecycle']],
     runScript: ['application-process', 90_000, ['application-files', 'subprocess']],

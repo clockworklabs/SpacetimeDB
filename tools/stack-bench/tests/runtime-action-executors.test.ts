@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 
@@ -7,10 +9,13 @@ import { executeAction } from '../src/actions/action-contract.js';
 import { describesMissingStockInterface } from '../src/stacks/stock-interface.js';
 import {
   createDatabaseWriteCapability,
+  createDatabaseReadCapability,
   createLifecycleCapability,
   databaseWriteFailureDetail,
   RUNTIME_ACTION_IMPLEMENTATIONS,
 } from '../src/actions/runtime-action-executors.js';
+import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 type UnknownRecord = Record<string, unknown>;
 type Event = string | readonly [string, boolean, number];
@@ -69,6 +74,72 @@ test('the runtime executor registry contains only registered actions', () => {
   for (const id of Object.keys(RUNTIME_ACTION_IMPLEMENTATIONS)) {
     assert(ACTION_REGISTRY.get(id).timeoutMs > 0, id);
   }
+});
+
+test('stock observations compare authoritative quantities and cannot use a missing baseline', async () => {
+  const recorded = new Map<string, number>();
+  let quantity = 20;
+  const capabilities = {
+    'browser-observation': { recorded },
+    'database-read': { getStock: async () => ({ backend: 'postgres', item: 'Keyboard', quantity }) },
+  };
+  assert.equal((await run({ do: 'dbExpectStock', item: 'Keyboard', relativeTo: 'before' }, capabilities)).status,
+    'inconclusive');
+  assert.equal((await run({ do: 'dbRecordStock', item: 'Keyboard', as: 'before' }, capabilities)).status, 'passed');
+  quantity = 19;
+  assert.equal((await run({ do: 'dbExpectStock', item: 'Keyboard', relativeTo: 'before', plus: -1 }, capabilities)).status,
+    'passed');
+  quantity = 18;
+  const failed = await run({ do: 'dbExpectStock', item: 'Keyboard', relativeTo: 'before', plus: -1 }, capabilities);
+  assert.equal(failed.status, 'failed');
+  assert.match(failed.summary ?? '', /stored stock for Keyboard/);
+  assert.equal((await run({ do: 'dbExpectStock', item: 'Keyboard', equals: 18 }, capabilities)).status, 'passed');
+  const disabled = { ...capabilities, 'database-read': createDatabaseReadCapability({
+    backend: 'postgres', skip: true, expand: value => value,
+  }) };
+  assert.equal((await run({ do: 'dbExpectStock', item: 'Keyboard', equals: 18 }, disabled)).status, 'inconclusive');
+});
+
+test('optional checkout diagnostic has fresh-account cohorts and cannot pass by rejecting all work', () => {
+  const path = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/diagnostic-checkout-contention.json');
+  const scenario = compileScenarioDefinition(JSON.parse(readFileSync(path, 'utf8')), { source: path });
+  const accounts = scenario.features.flatMap(feature => feature.setup.filter(step => step.do === 'signUp').map(step => step.name));
+  assert.equal(new Set(accounts).size, 12);
+  const widths: unknown[] = [];
+  for (const feature of scenario.features) {
+    assert(feature.setup.some(step => step.do === 'dbRecordStock'));
+    for (const criterion of feature.criteria) {
+      assert.equal(criterion.points, 0, 'diagnostics must not add scored ladder credit');
+      const call = criterion.steps.find(step => step.do === 'callConcurrently')!;
+      widths.push(call.requests);
+      assert(criterion.steps.some(step => step.do === 'expectCallOutcomes'));
+      assert(criterion.steps.some(step => step.do === 'dbExpectStock' && step.plus === -1));
+      assert(criterion.steps.some(step => step.do === 'expect' && step.testid === 'order-item' && step.count === 1));
+    }
+  }
+  assert.deepEqual(widths, [1, 1, 1, 4, 4, 4, 16, 16, 16, 64, 64, 64]);
+});
+
+test('optional purchase cohorts require all affordable requests and stored effects', () => {
+  const path = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/diagnostic-purchase-contention.json');
+  const scenario = compileScenarioDefinition(JSON.parse(readFileSync(path, 'utf8')), { source: path });
+  const accounts = scenario.features.flatMap(feature => feature.setup.filter(step => step.do === 'signUp').map(step => step.name));
+  assert.equal(new Set(accounts).size, 24);
+  const widths: unknown[] = [];
+  for (const feature of scenario.features) {
+    assert(feature.setup.some(step => step.do === 'dbExpectStock' && step.equals === 128));
+    for (const criterion of feature.criteria) {
+      assert.equal(criterion.points, 0);
+      const call = criterion.steps.find(step => step.do === 'callConcurrently')!;
+      widths.push(call.requests);
+      assert.equal(call.action, 'buy');
+      assert(criterion.steps.some(step => step.do === 'expectCallOutcomes' && step.accepted === call.requests));
+      assert(criterion.steps.some(step => step.do === 'dbExpectStock' && step.plus === -Number(call.requests)));
+      const orders = criterion.steps.filter(step => step.do === 'expect' && step.testid === 'order-item');
+      assert.equal(orders.reduce((sum, step) => sum + Number(step.count), 0), call.requests);
+    }
+  }
+  assert.deepEqual(widths, [1, 1, 1, 4, 4, 4, 16, 16, 16, 64, 64, 64]);
 });
 
 test('race preserves branch ordering while overlapping branches through registered dispatch', async () => {
@@ -248,6 +319,8 @@ test('a database without the stock interface is an application failure that keep
       services(new Map(), { databaseWrite: missing }));
     assert.equal(result.finding?.kind, 'stock-interface-missing');
     assert.equal(result.finding?.fields.missingRow, row.toLowerCase());
+    assert.equal(result.finding?.fields.item, 'Desk Lamp');
+    assert.equal(result.finding?.fields.warehouse, 'East');
   }
 
 });

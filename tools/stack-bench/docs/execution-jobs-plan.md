@@ -23,4 +23,12 @@ The campaign fixes the experiment. A job assigns its execution policy and creden
 
 The first placement unit is a complete campaign on one worker host. Multiple hosts can claim different jobs. Splitting one campaign across hosts requires a separate distributed attempt coordinator and artifact-transfer contract; do not disguise filesystem locks as that coordinator.
 
+## Local worker status
+
+The seven steps above are implemented. The CLI, authenticated dashboard submission, and opt-in Compose worker use the same job store and campaign runner. Worker concurrency counts campaigns; it does not reduce a campaign's nine requested attempts.
+
+Synthetic tests cover exclusive claims, cancellation, retained failures, placement, concurrent campaigns, graceful drain, and independent named account secrets. They also check that a pre-claim error stops admission and drains active work without cancelling it or retrying the bad job. These tests do not prove shared provider quota enforcement or multi-host operation.
+
+Recovery remains explicit. A retained claim is not a lease that can expire. Inspect the campaign and reconcile its resources before further execution. Do not delete a claim or resubmit the same work to bypass uncertain paid execution. The surrounding service must authorize account access and manage shared account quotas; the local worker supplies neither automatic account rotation nor account-wide spend limits.
+
 An existing service queue and secret store should call this boundary directly. The standalone job store requires a filesystem that supports atomic hard links and rename. It is not an internet-facing authentication service. Shared account spending and provider request coordination belong at the credential service boundary, not in grading.

@@ -8,6 +8,7 @@ import {
 } from './actor-action-runtime.js';
 import type {
   ActionCall,
+  Actor,
   ActorActionArguments,
   ActorCapabilities,
   HeaderRecord,
@@ -47,9 +48,14 @@ interface OutcomeInput {
 interface ConcurrentCallInput {
   readonly action: string;
   readonly actors: readonly string[];
+  readonly namedAction?: NamedAction;
+  readonly input?: CallActionInput['input'];
+  readonly from?: string;
   readonly args?: readonly unknown[];
   readonly body?: unknown;
   readonly settleMs?: number;
+  readonly requests?: number;
+  readonly requestTimeoutMs?: number;
 }
 
 interface ConcurrentOutcomeInput { readonly accepted?: number }
@@ -65,19 +71,14 @@ type NamedTransportCapabilities = NamedActionCapabilities & TransportActorCapabi
 type NamedTransportArguments<Input> =
   ActorActionArguments<Input, NamedTransportCapabilities>;
 
-async function callAction({ input, capabilities, signal }: NamedTransportArguments<CallActionInput>) {
-  const caller = actorFor(capabilities, input.actor);
-  const source = actorFor(capabilities, input.from ?? input.actor);
-  const named = capabilities['named-actions'];
-  const transport = transportFor(capabilities);
-  const action = input.namedAction ?? named.resolve(input.action);
-  if (!action) inconclusive('unknown-action', { action: input.action });
+async function readActionValues(source: Actor, action: NamedAction,
+  input: Pick<CallActionInput, 'action' | 'input'>, within: number) {
   if (!Array.isArray(action.params) || action.params.length === 0) {
     inconclusive('action-without-parameters', { action: input.action });
   }
 
   const target = source.loc(input.input.testid, { contains: input.input.contains });
-  await target.waitFor({ state: 'attached', timeout: transport.defaultWithin });
+  await target.waitFor({ state: 'attached', timeout: within });
   const raw = await target.getAttribute(input.input.attribute);
   if (raw === null || raw === '') {
     fail('interface-missing', { control: input.input.testid, attribute: input.input.attribute,
@@ -103,6 +104,18 @@ async function callAction({ input, capabilities, signal }: NamedTransportArgumen
   if (missing.length) {
     fail('interface-invalid', { action: input.action, attribute: input.input.attribute, missing });
   }
+
+  return actionValues;
+}
+
+async function callAction({ input, capabilities, signal }: NamedTransportArguments<CallActionInput>) {
+  const caller = actorFor(capabilities, input.actor);
+  const source = actorFor(capabilities, input.from ?? input.actor);
+  const named = capabilities['named-actions'];
+  const transport = transportFor(capabilities);
+  const action = input.namedAction ?? named.resolve(input.action);
+  if (!action) inconclusive('unknown-action', { action: input.action });
+  const actionValues = await readActionValues(source, action, input, transport.defaultWithin);
 
   let credentials: HeaderRecord = {};
   if ((input.authentication ?? 'actor') === 'actor') {
@@ -196,7 +209,7 @@ async function expectActionOutcome({ input, capabilities }: NamedTransportArgume
 
 async function callConcurrently({ input, capabilities, signal }: NamedArguments<ConcurrentCallInput>) {
   const named = capabilities['named-actions'];
-  const action = named.resolve(input.action);
+  const action = input.namedAction ?? named.resolve(input.action);
   if (!action) inconclusive('unknown-action', { action: input.action });
   const prepared: Array<{ name: string; credentials: HeaderRecord }> = [];
   for (const name of input.actors) {
@@ -205,22 +218,43 @@ async function callConcurrently({ input, capabilities, signal }: NamedArguments<
     if (!credentials) inconclusive('no-session', { actor: name, action: input.action });
     prepared.push({ name, credentials });
   }
-  const request = named.request(action, input);
+  const values = input.input ? await readActionValues(
+    actorFor(capabilities, input.from ?? input.actors[0]!), action,
+    { action: input.action, input: input.input }, input.requestTimeoutMs ?? 30000) : undefined;
+  const request = namedActionRequest(named, action, values === undefined ? input : { values });
   const requestUrl = request?.url;
   if (!requestUrl) inconclusive('unresolved-action', { action: input.action });
   const started = named.now();
-  const outcomes = await Promise.all(prepared.map(preparedActor =>
-    named.fetch(requestUrl, {
-      method: request.method ?? 'POST',
-      headers: { 'Content-Type': 'application/json', ...preparedActor.credentials },
-      body: request.body,
-      signal,
-    }).then(async response => ({ name: preparedActor.name, status: response.status, ok: response.ok,
-      applicationRejected: (request.applicationRejectionStatuses ?? []).includes(response.status),
-      text: response.ok ? '' : (await response.text()).slice(0, 120) }))
-      .catch(error => ({ name: preparedActor.name, status: 0, ok: false,
-        text: String(error.message).slice(0, 120) }))));
-  const result = { action: input.action, fired: prepared.length, ms: named.now() - started, outcomes };
+  const outcomes = await Promise.all(Array.from({ length: input.requests ?? prepared.length }, async (_, index) => {
+    const preparedActor = prepared[index % prepared.length]!;
+    const startedAtMs = named.now();
+    const timeout = AbortSignal.timeout(input.requestTimeoutMs ?? 30000);
+    const requestSignal = AbortSignal.any([signal, timeout]);
+    let response;
+    try {
+      const reply = await named.fetch(requestUrl, {
+        method: request.method ?? 'POST',
+        headers: { 'Content-Type': 'application/json', ...preparedActor.credentials },
+        body: request.body,
+        signal: requestSignal,
+      });
+      response = { status: reply.status, ok: reply.ok,
+        applicationRejected: (request.applicationRejectionStatuses ?? []).includes(reply.status),
+        text: reply.ok ? '' : (await reply.text()).slice(0, 120), transport: 'response' as const };
+    } catch (error) {
+      if (signal.aborted) throw error;
+      response = { status: 0, ok: false, text: timeout.aborted ? 'request timed out' : 'request transport failed',
+        transport: timeout.aborted ? 'timeout' as const : 'error' as const };
+    }
+    const completedAtMs = named.now();
+    return { ...response, name: preparedActor.name, requestIndex: index + 1,
+      startedAtMs, completedAtMs, durationMs: Math.max(0, completedAtMs - startedAtMs) };
+  }));
+  const result = { action: input.action, fired: outcomes.length, ms: named.now() - started, outcomes,
+    responses: outcomes.filter(outcome => outcome.transport === 'response').length,
+    transportErrors: outcomes.filter(outcome => outcome.transport === 'error').length,
+    timeouts: outcomes.filter(outcome => outcome.transport === 'timeout').length,
+    timingScope: 'client request dispatch through response; not server execution overlap' };
   named.lastCalls.set(result);
   await named.sleep(input.settleMs ?? 3000, signal);
   return result;

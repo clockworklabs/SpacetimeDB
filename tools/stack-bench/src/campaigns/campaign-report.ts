@@ -951,6 +951,10 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
     conditions,
     summary: reportSummary(rows, state.status),
     limitations: [
+      ...new Set(state.attempts.filter(attempt => attempt.extension).map(attempt => {
+        const seed = attempt.extension!;
+        return `Seeded continuation from ${seed.parent.campaignId} at L${seed.fromDepth}. Costs exclude the parent build. The source retains prior repairs; this is not a fresh first-build or uninterrupted-session result.`;
+      })),
       ...(grading.status === 'pending'
         ? ['Grading qualification is pending. Treat these scores as provisional.'] : []),
       'Statistics describe only the exact scope and conditions recorded above.',

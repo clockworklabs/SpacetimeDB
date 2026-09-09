@@ -23,6 +23,8 @@
             { "do": "closeClient", "actor": "a" },
             { "do": "createRoom", "actor": "a", "room": "room" },
             { "do": "dbSetStock", "item": "item", "warehouse": "warehouse", "quantity": 1, "settleMs": 1 },
+            { "do": "dbRecordStock", "item": "item", "as": "stored-before" },
+            { "do": "dbExpectStock", "item": "item", "relativeTo": "stored-before", "plus": 0 },
             { "do": "ensureSignedIn", "actor": "a", "name": "alice" },
             { "do": "enterRoom", "actor": "a", "room": "room" },
             { "do": "expect", "actor": "a", "testid": "status" },

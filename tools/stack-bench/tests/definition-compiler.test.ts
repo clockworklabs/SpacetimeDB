@@ -143,6 +143,18 @@ test('extracted action inputs expose their runtime options without allowing scri
     'the compiler must materialize the default before scoring');
   assert.doesNotThrow(() => compileScenarioDefinition(scenario({ do: 'callConcurrently',
     actors: ['a', 'b'], action: 'checkout', settleMs: 1, args: [], body: {} })));
+  for (const requests of [1, 4, 16, 64]) assert.doesNotThrow(() =>
+    compileScenarioDefinition(scenario({ do: 'callConcurrently', actors: ['a', 'b'],
+      action: 'checkout', settleMs: 0, requests, requestTimeoutMs: 30000 })));
+  for (const requests of [0, 65, 1.5]) assert.throws(() =>
+    compileScenarioDefinition(scenario({ do: 'callConcurrently', actors: ['a', 'b'],
+      action: 'checkout', settleMs: 0, requests })), /requests/);
+  assert.throws(() => compileScenarioDefinition(scenario({ do: 'callConcurrently',
+    actors: ['a', 'b'], action: 'checkout', settleMs: 0, requestTimeoutMs: 60001 })), /requestTimeoutMs/);
+  assert.doesNotThrow(() => compileScenarioDefinition(scenario({ do: 'dbRecordStock', item: 'Keyboard', as: 'before' })));
+  assert.doesNotThrow(() => compileScenarioDefinition(scenario({ do: 'dbExpectStock', item: 'Keyboard', relativeTo: 'before', plus: -1 })));
+  assert.throws(() => compileScenarioDefinition(scenario({ do: 'dbExpectStock', item: 'Keyboard' })), /exactly one/);
+  assert.throws(() => compileScenarioDefinition(scenario({ do: 'dbExpectStock', item: 'Keyboard', equals: 0, plus: 1 })), /plus requires/);
   assert.throws(() => compileScenarioDefinition(scenario({ do: 'callConcurrently',
     actors: ['a', 'a'], action: 'checkout', settleMs: 1 })), /at least two distinct actors/);
   assert.throws(() => compileScenarioDefinition(scenario({ do: 'clickConcurrently',

@@ -29,6 +29,8 @@ const ACTION_CATEGORY = {
   expectForgeryRejected: 'transport',
   expectNotReceived: 'transport',
   expectNumber: 'browser-observation',
+  dbRecordStock: 'database',
+  dbExpectStock: 'database',
   expectOrderMatches: 'browser-observation',
   expectSequence: 'browser-observation',
   expectReceived: 'transport',
@@ -91,6 +93,8 @@ const CATEGORY_POLICY = {
 } as const satisfies Record<ActionCategory, CategoryPolicy>;
 
 const ACTION_CAPABILITY_OVERRIDES: Partial<Record<ActionId, readonly string[]>> = {
+  dbRecordStock: ['database-read', 'browser-observation'],
+  dbExpectStock: ['database-read', 'browser-observation'],
   callAction: ['actors', 'named-actions', 'transport-observation'],
   callConcurrently: ['actors', 'named-actions'],
   expectCallOutcomes: ['actors', 'named-actions'],

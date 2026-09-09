@@ -7,7 +7,7 @@ import { deployPostgresReference } from '../stack-reference-operations.js';
 import { standardOrchestratorConfig } from '../stack-orchestrator-operations.js';
 import { stopHostedHost } from '../stack-teardown-operations.js';
 import { stackLeaseOperations } from '../stack-lease-capabilities.js';
-import { preparePostgresDatabase, provePostgresUse, resetPostgres,
+import { getPostgresStock, preparePostgresDatabase, provePostgresUse, resetPostgres,
   setPostgresStock } from './postgres-operations.js';
 import { POSTGRES_ADAPTER_VERSION } from './postgres-identity.js';
 import { controlHostedFor, defineStackAdapter } from '../stack-adapter-common.js';
@@ -22,6 +22,7 @@ const POSTGRES_GRADING_CAPABILITIES = [
   'clock',
   'concurrency',
   'database-write',
+  'database-read',
   'named-actions',
   'subprocess',
   'transport-observation',
@@ -34,6 +35,7 @@ const postgresAdapter = defineStackAdapter('postgres', {
   lease: stackLeaseOperations('postgres'),
   reset: { run: resetPostgres, requiresReseed: true },
   databaseWrite: { setStock: setPostgresStock },
+  databaseRead: { getStock: getPostgresStock },
   diagnostics: { capture: captureHostedDiagnostics },
   database: { prepare: preparePostgresDatabase, proveUse: provePostgresUse },
   grading: { context: createHttpGradingContext,

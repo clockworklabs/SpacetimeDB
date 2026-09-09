@@ -92,12 +92,44 @@ test('the live grader executes and reports exactly one selected stable check', a
     const feature = first(report.features);
     const criterion = first(feature.criteria);
     assert.deepEqual(feature.criteria.map(item => item.stableKey), [check.stableKey]);
-    assert.equal(feature.setupEvidence.status, 'failed');
+    assert.equal(feature.setupEvidence.status, 'passed');
     assert.equal(criterion.evidence.status, 'failed');
-    assert.equal(criterion.evidence.phase, 'setup');
-    assert.deepEqual(criterion.evidence.actions, []);
-    assert.deepEqual(criterion.evidence.attachments,
-      [{ kind: 'check-evidence', ref: 'feature.setupEvidence' }]);
+    assert.equal(criterion.evidence.phase, 'assertion');
+    assert(criterion.evidence.actions.length > 0, 'the selected check must execute');
+    assert.equal(report.max, check.points);
+  } finally {
+    server.child.kill('SIGTERM');
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('failed positive controls preserve actionable setup evidence without running the target assertions', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-positive-control-'));
+  const out = join(root, 'grade.json');
+  const spec = join(root, 'scenario.json');
+  writeFileSync(spec, JSON.stringify({ schemaVersion: 1, level: 1, features: [{
+    id: 1, name: 'Access', actors: ['buyer'],
+    setup: [{ do: 'expectNumber', actor: 'buyer', testid: 'item-stock', equals: 99, within: 50 }],
+    criteria: [
+      { id: '1a', category: 'production', desc: 'unauthorized purchase is refused', points: 2,
+        steps: [{ do: 'expect', actor: 'buyer', testid: 'never-run' }] },
+      { id: '1b', category: 'feature', desc: 'stock display works', points: 1,
+        steps: [{ do: 'expect', actor: 'buyer', testid: 'never-run' }] },
+    ],
+  }] }));
+  const server = startBlankApp('<div data-role="item-stock">100</div>');
+  try {
+    const port = await server.port;
+    await run(GRADER, ['--url', `http://127.0.0.1:${port}`, '--level', '1', '--spec', spec, '--out', out]);
+    const feature = first(readGradeArtifactPayload(out).features);
+    assert.equal(feature.setupEvidence.status, 'failed');
+    assert.equal(feature.setupEvidence.finding?.kind, 'number-mismatch');
+    assert.equal(feature.criteria[0]?.evidence.status, 'failed');
+    assert.equal(feature.criteria[0]?.evidence.phase, 'setup');
+    assert.deepEqual(feature.criteria[0]?.evidence.actions, []);
+    assert.equal(feature.criteria[1]?.evidence.status, 'failed');
+    assert.equal(feature.max, 3);
+    assert.equal(feature.score, 0);
   } finally {
     server.child.kill('SIGTERM');
     rmSync(root, { recursive: true, force: true });
@@ -250,6 +282,37 @@ test('an inconclusive check keeps the recipe denominator fixed', async () => {
     assert.equal(feature.max, 3);
     assert.equal(first(feature.criteria).evidence.status, 'inconclusive');
     assert.equal(first(report.inconclusive).points, 3);
+  } finally {
+    server.child.kill('SIGTERM');
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('standalone zero-point diagnostics reach execution without a recipe binding', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-standalone-diagnostic-'));
+  const spec = join(root, 'scenario.json');
+  const out = join(root, 'grade.json');
+  writeFileSync(spec, JSON.stringify({ schemaVersion: 1, track: 'ecommerce', level: 2,
+    features: [{ id: 9000, name: 'Standalone diagnostic', actors: ['a'], setup: [],
+      criteria: [{ id: '9000a', category: 'production', points: 0,
+        desc: 'local entry point control',
+        steps: [{ do: 'expect', actor: 'a', testid: 'diagnostic-ready', within: 1000 }] }],
+    }],
+  }));
+  const server = startBlankApp('<div data-role="diagnostic-ready">ready</div>');
+  try {
+    const port = await server.port;
+    await run(GRADER, ['--url', `http://127.0.0.1:${port}`, '--level', '2', '--spec', spec, '--out', out]);
+    const report = readGradeArtifactPayload(out);
+    assert.equal(report.recipeRelease, null);
+    assert.equal(report.selection, null);
+    assert.equal(report.max, 0);
+    assert.equal(report.total, 0);
+    assert.equal(report.features.length, 1);
+    const criterion = first(first(report.features).criteria);
+    assert.equal(criterion.evidence.status, 'passed');
+    assert.equal(criterion.evidence.phase, 'assertion');
+    assert.deepEqual(actionIds(criterion.evidence.actions), ['expect']);
   } finally {
     server.child.kill('SIGTERM');
     rmSync(root, { recursive: true, force: true });

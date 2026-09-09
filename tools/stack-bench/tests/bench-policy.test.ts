@@ -23,7 +23,7 @@ import { materializationAppFailure, materializeAcceptedSource }
   from '../src/runtime/source-materialization.js';
 import { dependencyLevelRepairRecords, dependencyRepairBudget, dependencyRepairRecords }
   from '../src/progression/dependency-mode.js';
-import { loadTrack } from '../src/composition/tracks.js';
+import { loadTrack, RUN_INDEX_CAP } from '../src/composition/tracks.js';
 import { writeArtifact } from '../src/evidence/artifacts.js';
 import { createCheckEvidence } from '../src/evidence/check-evidence.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
@@ -198,7 +198,7 @@ test('bench arguments reject partial and out-of-range run indexes', () => {
   assert.throws(() => parseBenchArguments(['node', 'bench', '--backend', 'postgres',
     '--run-index', '1junk']), /--run-index must be an integer/);
   assert.throws(() => parseBenchArguments(['node', 'bench', '--backend', 'postgres',
-    '--run-index', '21']), /--run-index must be an integer from 0 through 20/);
+    '--run-index', String(RUN_INDEX_CAP + 1)]), /--run-index must be an integer from 0 through/);
 });
 
 test('bench arguments validate pricing at the CLI boundary', () => {

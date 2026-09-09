@@ -356,7 +356,6 @@ test('bench and reference leases use the same canonical slot and backend keys', 
   const reference = createBackendLease({ ...input, runId: 'reference' });
   const preparedKeys = ['listener:http://127.0.0.1:3310'];
   const expected = [
-    'capacity:runner:0',
     'listener:http://127.0.0.1:3310',
     'port:3310',
     'port:6473',

@@ -116,7 +116,7 @@ export interface ResolvedStudyCondition {
   requested: RequestedScope;
   guidance: ResolvedGuidanceProfile;
   repair: { id: string; contentSha256: string;
-    scoredEvidence: true; observedEvidence: false; scenarioValues: 'withheld' };
+    scoredEvidence: true; observedEvidence: false; scenarioValues: 'failed-observations' };
 }
 
 const object = (value: unknown): value is UnknownRecord =>
@@ -290,13 +290,13 @@ function resolveRepair(catalog: Catalog, reference: string): ResolvedStudyCondit
     fail(`${reference}.scoredEvidence`, 'must be true until no-evidence repair is implemented');
   }
   if (profile.observedEvidence) fail(`${reference}.observedEvidence`, 'must be false');
-  // Scenario-chosen values never reach the coding agent; a report describes
-  // the behaviour that failed, not the probe that found it.
-  if (profile.scenarioValues !== 'withheld') {
-    fail(`${reference}.scenarioValues`, 'must be withheld');
+  // Failed observations can disclose exact expected and actual values.
+  // Scenario scripts, unrelated fixture data, and repair algorithms stay private.
+  if (profile.scenarioValues !== 'failed-observations') {
+    fail(`${reference}.scenarioValues`, 'must be failed-observations');
   }
   return { ...identity(profile, null), scoredEvidence: true, observedEvidence: false,
-    scenarioValues: 'withheld' };
+    scenarioValues: 'failed-observations' };
 }
 
 export function validateConditionReference(input: unknown, at = 'condition'): ConditionReference {

@@ -289,8 +289,11 @@ async function capacityCheck(): Promise<void> {
     await until('ready', deadline);
     const active = Array.from({ length: WORKERS }, (_, index) => readBackendLease(leasePath(root, index)));
     assert.equal(new Set(active.map(lease => lease.resources.network?.id)).size, WORKERS);
+    const track = loadTrack('ecommerce');
     for (const [index, lease] of active.entries()) {
-      assert(lease.resources.locks.some(lock => lock.key === `capacity:runner:${index}`));
+      for (const key of backendResourceLockKeys(lease, portsFor(track, lease.backend, index))) {
+        assert(lease.resources.locks.some(lock => lock.key === key), `missing resource lock ${key}`);
+      }
     }
     write(join(root, 'frontend-go'), { at: Date.now() });
     await until('measured', deadline + HOLD_MS);

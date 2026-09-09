@@ -790,6 +790,85 @@ test('concurrent calls classify every result before counting accepted requests',
     'a missing outcome must not pass');
 });
 
+test('bounded checkout cohorts issue every request and retain client timing and transport outcomes', async () => {
+  const actors = new Map(['a', 'b'].map(name => [name, { name,
+    writes: [{ headers: { authorization: `Bearer ${name}-session` } }] }]));
+  for (const requests of [1, 4, 16, 64]) {
+    let dispatched = 0;
+    let release!: () => void;
+    const allDispatched = new Promise<void>(resolve => { release = resolve; });
+    const provided = services(actors, { fetchImpl: async () => {
+      dispatched++;
+      if (dispatched === requests) release();
+      await allDispatched;
+      return namedResponse(200, true);
+    } });
+    const result = await run({ do: 'callConcurrently', actors: ['a', 'b'],
+      action: 'checkout', requests, settleMs: 0 }, provided);
+    assert.equal(result.status, 'passed');
+    const evidence = record(result.observation);
+    assert.equal(dispatched, requests);
+    assert.equal(evidence.responses, requests);
+    assert.equal(evidence.transportErrors, 0);
+    assert.equal(evidence.timeouts, 0);
+    assert.match(String(evidence.timingScope), /not server execution overlap/);
+    for (const [index, outcome] of provided.calls!.outcomes.entries()) {
+      assert.equal(outcome.requestIndex, index + 1);
+      assert.equal(outcome.name, index % 2 ? 'b' : 'a');
+      assert.equal(outcome.transport, 'response');
+      assert(outcome.completedAtMs! >= outcome.startedAtMs!);
+      assert.equal(outcome.durationMs, outcome.completedAtMs! - outcome.startedAtMs!);
+    }
+  }
+  let calls = 0;
+  const provided = services(actors, { fetchImpl: async (_url, options) => {
+    if (calls++ === 0) throw new Error('sensitive transport internals');
+    return new Promise((_resolve, reject) => options.signal!.addEventListener('abort',
+      () => reject(options.signal!.reason), { once: true }));
+  } });
+  const keepAlive = setInterval(() => {}, 20);
+  try {
+    const result = await run({ do: 'callConcurrently', actors: ['a', 'b'],
+      action: 'checkout', requests: 2, requestTimeoutMs: 10, settleMs: 0 }, provided);
+    assert.equal(record(result.observation).responses, 0);
+    assert.equal(record(result.observation).transportErrors, 1);
+    assert.equal(record(result.observation).timeouts, 1);
+    assert.doesNotMatch(JSON.stringify(result), /sensitive transport internals/);
+    assert.equal((await run({ do: 'expectCallOutcomes' }, provided)).status, 'failed');
+  } finally { clearInterval(keepAlive); }
+});
+
+test('purchase bursts reuse validated dynamic action inputs across stack transports', async () => {
+  for (const backend of ['postgres', 'mongodb', 'spacetime']) {
+    const requests: CapturedRequest[] = [];
+    let raw = '{"itemId":"9007199254740993"}';
+    const actors = new Map(['a', 'b'].map(name => [name, { name,
+      writes: [{ headers: { authorization: `Bearer ${name}-session` } }],
+      loc: () => ({ waitFor: async () => {}, getAttribute: async () => raw }),
+    }]));
+    const provided = services(actors, { backend,
+      spacetime: { uri: 'http://127.0.0.1:3000', mod: 'shop' },
+      fetchImpl: async (url, options) => {
+        requests.push({ url, options: options as unknown as UnknownRecord });
+        return namedResponse(200, true);
+      } });
+    const action = { do: 'callConcurrently', actors: ['a', 'b'], action: 'buy',
+      namedAction: { id: 'buy', path: '/api/items/:id/buy', reducer: 'buy_now', args: [0],
+        params: [{ name: 'itemId', in: 'path', placeholder: ':id', wireType: 'u64' }] },
+      input: { testid: 'item-card', contains: 'Keyboard', attribute: 'data-buy-input' },
+      requests: 4, settleMs: 0 };
+    assert.equal((await run(action, provided)).status, 'passed', backend);
+    assert.equal(requests.length, 4);
+    for (const request of requests) {
+      if (backend === 'spacetime') assert.equal(request.options.body, '[9007199254740993]');
+      else assert.match(request.url, /\/api\/items\/9007199254740993\/buy$/);
+    }
+    raw = '{"itemId":1,"unexpected":2}';
+    assert.equal((await run(action, provided)).status, 'failed');
+    assert.equal(requests.length, 4, 'malformed interface cannot dispatch another request');
+  }
+});
+
 test('named calls keep actor credentials separate in storage and in-memory accessors', async () => {
   for (const inMemory of [false, true]) {
     const requests: CapturedRequest[] = [];

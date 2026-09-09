@@ -7,9 +7,9 @@
   "recipe": {
     "path": "../recipes/sequential-l2.json",
     "id": "ecommerce.sequential-l2",
-    "meaningSha256": "a0eafb2c9c3e4620a7dd6cc2e47d5a64414921ffb4e600c80c0ec61b57aa0697",
-    "executionSha256": "cbcbf3f50ca274c67808da113342a4988f26c4561bb94456ac228176390b5b6c",
-    "contentSha256": "4d392262cb752239670199ab2e38db9f23431e4f159e60052d1231e56cf50b4c"
+    "meaningSha256": "3fcbb846fb6ca6f1cb056eae54895f9968529b7b76e8508fbe593cb990b5a2d3",
+    "executionSha256": "07f03197ed93bd108b501c93321b76cd2bb92fe12ba95abb8de7fa502551e655",
+    "contentSha256": "99f0818c960dd678f21ec425651987c203cd9908c514e1ec95071e7b2f840ec8"
   },
   "fixture": {
     "id": "ecommerce.operations",
@@ -39,19 +39,19 @@
     {
       "backend": "mongodb",
       "path": "grader/mutations/mongodb-ecommerce.json",
-      "sha256": "f5ba359165714ba514d4bb500ddf6438827768c5db799b884e888185021b6f7c",
+      "sha256": "25d8854841d9f676ac79ecc97cc635f7ea324ddd60d375e68c31d6a1476e7f3c",
       "referenceId": "ecommerce-reference-mongodb"
     },
     {
       "backend": "postgres",
       "path": "grader/mutations/postgres-ecommerce.json",
-      "sha256": "8d941828dfa59f2e09bbe6c33e63a056829e06df8cd936a6364339cb16e0b2c2",
+      "sha256": "0214abcb8028343764d8d3cac76a569a9bcda76745b5c1d62421bca8fdab7e53",
       "referenceId": "ecommerce-reference-postgres"
     },
     {
       "backend": "spacetime",
       "path": "grader/mutations/spacetime-ecommerce.json",
-      "sha256": "1c106778086b9f7e532d5b5788fe3befbe08fc4c3a5d52ef62c2ce7cd5b93136",
+      "sha256": "cb55c7ceda8b7d9e298f3238a3ccf3f40495c326244477e0237410f40f34981d",
       "referenceId": "ecommerce-reference-spacetime"
     }
   ],

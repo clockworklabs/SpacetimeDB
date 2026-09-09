@@ -86,10 +86,10 @@ model calls are required. The replay uses the original coding image, a fresh
 owned backend and app directory, the saved credential aliases, and current checks.
 It rebuilds the app from saved source; it does not restore old database contents.
 
-Independent diagnostic commands can run in parallel. Each claims a free slot from
-`STACK_BENCH_RUNNER_CAPACITY`, shared with campaigns, together with its app ports
-and backend resources. Admission fails when the pool is full or those resources
-are already leased. Use a separate output directory for each command. Replays
+Independent diagnostic commands can run in parallel. Each claims its app ports
+and backend resources through the same lease system as campaigns. There is no
+manually sized runner pool. Admission reports resource conflicts. Use a separate
+output directory for each command. Replays
 keep their saved run index and server endpoint, so candidates that need the same
 ports must run at different times.
 
@@ -144,6 +144,36 @@ The destination/readiness marker is a new interface requirement. Preserve old ru
 original definition; do not count its absence in a saved application as an agent failure.
 
 ## Qualification and source coverage
+
+### Stored state and contention
+
+Stock observations use the same item, warehouse, and stock interface already
+required for external corrections. Reads use the authenticated backend lease.
+Zero and negative quantities remain observations. Missing, invalid, or ambiguous
+data cannot become a fabricated zero or a passing comparison. PostgreSQL resolves
+the declared relational links; MongoDB and SpacetimeDB use their declared stock
+interfaces. This does not provide an independent read of arbitrary application
+tables, such as payments or orders.
+
+The restock race requires an ordinary stored restock in setup. Its scored check
+then verifies stored stock, each buyer's order, and UI agreement. A failed setup
+does not establish a concurrency defect. A stock assertion does not establish
+that every other stored entity is correct.
+
+Named concurrent calls retain request timing and distinguish responses, transport
+errors, and timeouts. A timeout has no known business outcome until state is
+reconciled. Client request overlap is not proof of overlap inside the server.
+The optional [contention diagnostic](development.md#optional-contention-diagnostic)
+uses repeated request bursts. It is not a sustained capacity test or a change to
+the scored campaign target.
+
+These changes are draft. Compilation, synthetic transport tests, and isolated
+stock-reader checks do not replace live reference and targeted-defect evidence.
+For a race control, preserve ordinary serial behavior and challenge the concurrent
+case. For restart survival, preserve execution before restart. A disabled timer
+only proves detection of absent execution, not restart-specific loss. PostgreSQL
+and MongoDB have draft pending-work-loss controls; the SpacetimeDB delay control
+does not establish equivalent restart-loss coverage.
 
 Source coverage and executed controls are separate evidence. A declared mutation target is
 not a successful control, and a failed setup is not a target kill. Historical inventory

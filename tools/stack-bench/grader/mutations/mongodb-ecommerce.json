@@ -904,12 +904,16 @@
       "targets": [
         "ecommerce.l3.deferred-durability.restart-survival.311a"
       ],
-      "desc": "Persisted scheduled restocks are never selected after restart.",
-      "file": "server/src/progression.ts",
+      "desc": "Application startup discards pending restocks. Ordinary timer execution remains intact; completed and cancelled work is retained.",
+      "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "const due = await ScheduledRestock.find({ status: \"pending\", dueAt: { $lte: now } });",
-          "replace": "const due = await ScheduledRestock.find({ status: \"pending\", dueAt: { $lte: new Date(0) } });"
+          "find": "import { Dismissal, Payment, Promotion } from \"./progression-models.js\";",
+          "replace": "import { Dismissal, Payment, Promotion, ScheduledRestock } from \"./progression-models.js\";"
+        },
+        {
+          "find": "  await mongoose.connect(DATABASE_URL);",
+          "replace": "  await mongoose.connect(DATABASE_URL);\n  await ScheduledRestock.deleteMany({ status: \"pending\" });"
         }
       ]
     },

@@ -144,7 +144,12 @@ export const ACTION_DEFINITIONS = Object.freeze({
   callAction: fields({ ...actor, action: nonEmptyString, input: object },
     { from: nonEmptyString, authentication: nonEmptyString, namedAction: object, ...settle }),
   callConcurrently: fields({ ...actors, action: nonEmptyString, settleMs: nonNegativeNumber },
-    { args: anyArray, body: object }),
+    { args: anyArray, body: object, input: object, namedAction: object, from: nonEmptyString,
+      requests: value => positiveInteger(value) && Number(value) <= 64,
+      requestTimeoutMs: value => positiveInteger(value) && Number(value) <= 60000 }),
+  dbRecordStock: fields({ item: nonEmptyString, as: nonEmptyString }, { warehouse: nonEmptyString }),
+  dbExpectStock: fields({ item: nonEmptyString },
+    { warehouse: nonEmptyString, equals: integer, relativeTo: nonEmptyString, plus: integer }),
   clearInput: fields(actor),
   click: fields({ ...actor, testid: nonEmptyString },
     { contains: string, ifAvailable: boolean, unlessVisible: nonEmptyString, ...locator, ...settle, ...within }),
@@ -376,7 +381,7 @@ function validateStep(step: unknown, at: string): asserts step is CompiledStep {
   if (step.swap) validateSwap(step.swap, `${at}.swap`);
   if (step.namedAction) validateInlineNamedAction(step.namedAction, `${at}.namedAction`);
   if (step.namedTarget) validateNamedTarget(step.namedTarget, `${at}.namedTarget`);
-  if (step.do === 'callAction') {
+  if (step.do === 'callAction' || (step.do === 'callConcurrently' && step.input !== undefined)) {
     validateActionInput(step.input, `${at}.input`);
     const namedAction = step.namedAction;
     if (namedAction) {
@@ -404,9 +409,26 @@ function validateStep(step: unknown, at: string): asserts step is CompiledStep {
     }
   }
   if (step.do === 'callConcurrently') {
+    if (step.input !== undefined && (step.args !== undefined || step.body !== undefined)) {
+      fail(at, 'callConcurrently input cannot be combined with args or body');
+    }
+    if (step.from !== undefined && step.input === undefined) {
+      fail(at, 'callConcurrently from requires input');
+    }
     const population = step.actors;
-    if (!stringArray(population) || new Set(population).size < 2) {
+    if (!stringArray(population) || new Set(population).size < (step.requests === undefined ? 2 : 1)) {
       fail(`${at}.actors`, 'must contain at least two distinct actors');
+    }
+    if (population.length > 64 || new Set(population).size !== population.length) {
+      fail(`${at}.actors`, 'must contain at most 64 distinct actors');
+    }
+  }
+  if (step.do === 'dbExpectStock') {
+    if ((step.equals !== undefined) === (step.relativeTo !== undefined)) {
+      fail(at, 'dbExpectStock requires exactly one of equals or relativeTo');
+    }
+    if (step.plus !== undefined && step.relativeTo === undefined) {
+      fail(at, 'dbExpectStock plus requires relativeTo');
     }
   }
   if (step.do === 'expectAgreement' || step.do === 'expectOrderMatches') {

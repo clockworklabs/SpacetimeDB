@@ -28,6 +28,33 @@ const fixtures = new Map(loadReferenceRegistry().fixtures
   .filter(fixture => fixture.track === 'ecommerce')
   .map(fixture => [fixture.backend, fixture]));
 
+for (const backend of ['mongodb', 'postgres']) {
+  test(`${backend} restart-loss control preserves timers and removes only pending work at startup`, () => {
+    const mutation = mutationManifest(backend).mutations.find(candidate =>
+      candidate.targets?.includes('ecommerce.l3.deferred-durability.restart-survival.311a'));
+    assert(mutation);
+    const fixture = fixtures.get(backend)!;
+    assert(fixture.targetPath);
+    const file = 'server/src/index.ts';
+    let source = readFileSync(join(ROOT, fixture.targetPath, file), 'utf8');
+    for (const edit of mutationFileEdits(mutation)) {
+      assert.equal(edit.file, file, 'do not disable ordinary timer processing');
+      assert.equal(source.split(edit.find).length - 1, 1);
+      source = source.replace(edit.find, edit.replace);
+    }
+    assert.deepEqual(syntaxErrors(source, file), []);
+    const removal = backend === 'postgres'
+      ? 'DELETE FROM scheduled_restock WHERE cancelled = false AND applied = false'
+      : 'ScheduledRestock.deleteMany({ status: "pending" })';
+    assert(source.indexOf(removal) > source.indexOf('async function main()'));
+    assert(source.indexOf(removal) < source.indexOf('  await seed();', source.indexOf('async function main()')));
+    const timers = readFileSync(join(ROOT, fixture.targetPath, 'server/src/progression.ts'), 'utf8');
+    assert(timers.includes(backend === 'postgres'
+      ? 'SELECT * FROM scheduled_restock WHERE due_at <= now() AND cancelled = false AND applied = false FOR UPDATE'
+      : 'const due = await ScheduledRestock.find({ status: "pending", dueAt: { $lte: now } });'));
+  });
+}
+
 function mutationManifest(backend: string) {
   const fixture = fixtures.get(backend);
   assert(fixture, `missing ${backend} ecommerce reference`);

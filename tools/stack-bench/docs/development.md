@@ -91,6 +91,41 @@ reassurance. Add a test only when it protects a distinct invariant that an
 existing test does not cover. Pending qualification marks campaign scores as
 provisional; it blocks publishing verified comparisons, not campaign execution.
 
+## Optional contention diagnostic
+
+`tracks/ecommerce/scenarios/diagnostic-checkout-contention.json` is a separate,
+zero-point diagnostic. It does not run in scored campaigns. On a reset,
+disposable L2 app copy with its authenticated lease environment, use the existing
+grader entry point:
+
+```sh
+node dist/grader/grade.js --backend <stack> --url <app-url> --level 2 --spec tracks/ecommerce/scenarios/diagnostic-checkout-contention.json --out <diagnostic-result.json>
+```
+
+This standalone command deliberately omits `--track`. Both diagnostics include their named action mappings. Output is unbound to a recipe and has zero scored points; it cannot establish campaign completion. Backend reads still require the authenticated backend lease.
+
+This starts no coding agent. It changes application data, so do not point it at a
+campaign app or its retained database. Prepare each stack with the same runtime
+and resources. The probe requires the declared stock data interface and two
+sessions of each fresh test account. It sends 1, 4, 16, and 64 parallel checkout
+requests, with three fresh-account cohorts per width. These are request counts,
+not distinct client counts or sustained throughput.
+
+Each cohort requires one order, one stored stock decrement, and an empty cart.
+Rejecting all requests cannot pass. Retained action evidence contains each
+request's timing, response status, and transport error or timeout. Timings cover
+client dispatch through response, not server overlap or commit latency. Inspect
+these observations separately from correctness. This draft diagnostic still
+needs matching reference and targeted-defect qualification.
+
+Use `diagnostic-purchase-contention.json` with the same command to test competing
+affordable purchases. It uses the declared `data-buy-input` interface and two
+fresh customer accounts per cohort. Stock is reset to 128 in East and zero in
+West before each cohort. Every request must be accepted, each account must show
+its exact order count, and stored stock must decrease by the request count.
+This diagnoses lost updates under bursts. It does not replace the separate
+scarce-stock overselling check or measure sustainable throughput.
+
 ## Generated files
 
 Run `npm run graph` to rebuild `docs/dependency-graph.html` from the versioned

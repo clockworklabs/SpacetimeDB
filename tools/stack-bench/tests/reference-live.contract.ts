@@ -27,7 +27,7 @@ import { createCheckEvidence } from '../src/evidence/check-evidence.js';
 import { readMutationManifest } from '../src/evidence/mutation-analysis.js';
 import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.js';
 import { requireRecipeRelease as resolveRecipeRelease } from '../src/composition/recipe-release.js';
-import { loadTrack } from '../src/composition/tracks.js';
+import { loadTrack, RUN_INDEX_CAP } from '../src/composition/tracks.js';
 import { resolveFeatureCatalog } from '../src/progression/feature-catalog-selection.js';
 import { resolveProgressionRecipeLevelSelection }
   from '../src/progression/progression-recipe-selection.js';
@@ -177,7 +177,7 @@ test('parallel mutation qualification reserves bounded slots and exact child sha
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.js',
     '--backend', 'mongodb', '--mutation-workers', '2']), /requires --mutations/);
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.js',
-    '--backend', 'mongodb', '--mutations', '--full-mutations', '--mutation-workers', '2', '--run-index', '20']),
+    '--backend', 'mongodb', '--mutations', '--full-mutations', '--mutation-workers', '2', '--run-index', String(RUN_INDEX_CAP)]),
   /run-index cap/);
 
   const argv = parallelMutationChildArgv(args,

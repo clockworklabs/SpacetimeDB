@@ -60,7 +60,7 @@ test('campaign CLI separates read-only, execution, and status commands', () => {
   assert.deepEqual(parseCampaignArgs(argv('extend', './depth-3.json', '--from', './depth-2',
     '--depth', '2', '--out', './depth-3')), {
     command: 'extend', path: resolve('./depth-3.json'), parentDirectory: resolve('./depth-2'),
-    fromDepth: 2, directory: resolve('./depth-3'),
+    fromDepth: 2, directory: resolve('./depth-3'), prepareOnly: false,
   });
   assert.throws(() => parseCampaignArgs(argv('run', './campaign.json')), /usage/);
   assert.throws(() => parseCampaignArgs(argv('prepare', './campaign.json', '--out', './results')),
@@ -71,6 +71,17 @@ test('campaign CLI separates read-only, execution, and status commands', () => {
   assert.throws(() => parseCampaignArgs(argv('grant-repairs', './results',
     '--attempt', 'campaign-r1', '--level', '3', '--feature', 'orders', '--repairs', '2')),
   /requires --attempt, --grant-id/);
+});
+
+test('extension preparation is explicit and rejects extra execution flags', () => {
+  const args = ['extend', './depth-3.json', '--from', './depth-2',
+    '--depth', '2', '--out', './depth-3'];
+  assert.deepEqual(parseCampaignArgs(argv(...args, '--prepare-only')), {
+    command: 'extend', path: resolve('./depth-3.json'), parentDirectory: resolve('./depth-2'),
+    fromDepth: 2, directory: resolve('./depth-3'), prepareOnly: true,
+  });
+  assert.throws(() => parseCampaignArgs(argv(...args, '--prepare-only', '--prepare-only')), /usage/);
+  assert.throws(() => parseCampaignArgs(argv(...args, '--prepare-only', '--run')), /usage/);
 });
 
 test('campaign commands print a compact result and retain failed attempt details', () => {

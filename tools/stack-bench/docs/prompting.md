@@ -241,13 +241,36 @@ Behavior feedback uses the authored expectation for that behavior, a finding fro
 grader's closed catalog rendered as one sentence (a control that did not
 appear, a number below its required value, a request that was accepted
 when it had to be refused), and the application's own console errors.
-Exact scenario quantities and counts remain in private finding fields, not
-agent-facing repair sentences. Reports retain the affected control, failure
-direction, missing or duplicate entries, and HTTP error statuses. Public numbers
-in authored requirements remain in the expected-behavior text. A repair fixes
-the behavior, not the probe. Private diagnostic rendering is unchanged.
+Reports include measured quantities and expected results when they explain the
+failure, such as two orders where one was expected. They retain the affected
+control, missing or duplicate entries, and HTTP error statuses. They do not copy
+scenario scripts, unrelated fixture data, or instructions for a particular
+algorithm or data structure.
+
+The current repair policy records this disclosure as
+`scenarioValues: "failed-observations"`. This changes the condition identity
+from the earlier `"withheld"` policy. New plans must use the current identity;
+old frozen plans and reports keep their original metadata. The value permits
+exact expected and actual values only for the failed observations above.
+
+When setup fails, the report uses that setup's observation once, even if it
+prevented several checks. It does not repeat the expectation of a later check
+that never ran. Distinct failures remain separate. Console errors are supporting
+observations from the same product area, not proof of a cause; duplicate lines
+are removed. Initial feature requests still exclude scenario inputs.
 
 ## Authoring rules
+
+No-repair runs measure behavior supplied without repair feedback. Normal repair
+runs report observed failures and expected behavior, including production
+guarantees, but do not prescribe algorithms or implementation changes. Their
+results measure remediation, not unprompted guarantees. Earlier repairs also
+carry into later levels and source-seeded campaigns.
+
+Put positive controls in scenario setup. If setup fails, preserve that actionable
+application failure and its setup phase. The check earns no credit, but the
+failure does not prove that the later guarantee is broken. Repair feedback must
+not claim that an unperformed authorization or integrity assertion failed.
 
 - Put product asks in feature prompts.
 - Put optional production requirements in specification prompts.
