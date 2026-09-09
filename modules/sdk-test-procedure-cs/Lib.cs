@@ -70,7 +70,7 @@ public static partial class Module
     {
         var moduleIdentity = ProcedureContextBase.Identity;
         serverUrl = serverUrl.TrimEnd('/');
-        var result = ctx.Http.Get($"{serverUrl}/v1/database/{moduleIdentity}/schema?version=9");
+        var result = ctx.Http.Get($"{serverUrl}/v1/database/{moduleIdentity}/schema?version=10");
         return result.Match(
             response => response.Body.ToStringUtf8Lossy(),
             error => throw new Exception($"HTTP request failed: {error}")
