@@ -22,7 +22,6 @@ test('setup uses the daemon volume path and exact local images without disclosin
   });
   assert.match(env, new RegExp(`STACK_BENCH_STATE_ROOT=${root}`));
   assert.match(env, new RegExp(`STACK_BENCH_CONTROLLER_IMAGE=${id}`));
-  assert.match(env, /STACK_BENCH_RUNNER_CAPACITY=1/);
   const initialization = calls.find(args => args[0] === 'run');
   assert(initialization?.includes(`type=volume,source=stack-bench-state,target=${root}`));
   assert.doesNotMatch(env, /ANTHROPIC_API_KEY=|CLAUDE_CODE_OAUTH_TOKEN=/);

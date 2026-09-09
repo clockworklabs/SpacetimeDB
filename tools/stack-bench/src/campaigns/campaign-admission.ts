@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
-import { DEFAULT_BUILD_IMAGE, runnerCapacity } from '../composition/product-config.js';
+import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.js';
 import { loadTrack, portsFor, RUN_INDEX_CAP } from '../composition/tracks.js';
 import { emptyArtifactIdentities, readArtifact, writeArtifact } from '../evidence/artifacts.js';
 import { claimBackendResources, createBackendLease, runResourceLockKeys,
@@ -236,11 +236,11 @@ export function validateCampaignAdmission(
 export interface CampaignReservation { path: string; token: string }
 
 interface ReservationLease extends BackendLease {
-  campaign: { sha256: string; admissionId: string; runIndices: number[]; capacityIndices: number[] };
+  campaign: { sha256: string; admissionId: string; runIndices: number[] };
 }
 interface DelegationLease extends BackendLease {
   delegation: { parent: CampaignReservation; campaignSha256: string; admissionId: string;
-    executionId: string; output: string; backend: string; runIndex: number; capacityIndex: number };
+    executionId: string; output: string; backend: string; runIndex: number };
   childLeasePath?: string;
   childRunId?: string;
   childOwnershipToken?: string;
@@ -261,42 +261,40 @@ function reserveRunIndices(plan: CompiledCampaignPlan, directory: string, id: st
 ): { runIndices: number[]; reservation: CampaignReservation } {
   const track = loadTrack(plan.definition.track);
   const scope = resourceLockScope(env);
-  const capacity = runnerCapacity(env);
-  if (plan.summary.parallelism > capacity) throw new Error('campaign exceeds declared runner capacity');
   const path = contained(directory, join('.private', `${id}.reservation.json`), 'campaign reservation');
   // Selection is a hint. The kernel-locked claim below admits the complete set
   // or none of it. A competing campaign can win between selection and claim.
-  for (let retry = 0; retry <= RUN_INDEX_CAP + capacity; retry += 1) {
+  for (let retry = 0; retry <= RUN_INDEX_CAP; retry += 1) {
     const selected: number[] = [];
-    const pool = Array.from({ length: capacity }, (_, index) => `capacity:runner:${index}`);
-    const held = new Set(existingResourceLockKeys({ ...scope, keys: pool }));
-    const capacityIndices = pool.flatMap((key, index) => held.has(key) ? [] : [index])
-      .slice(0, plan.summary.parallelism);
-    if (capacityIndices.length !== plan.summary.parallelism) {
-      throw new Error(`only ${capacityIndices.length} of ${plan.summary.parallelism} required runner slots are free`);
-    }
-    const keys: string[] = capacityIndices.map(index => `capacity:runner:${index}`);
+    const keys: string[] = [];
+    const selectedKeys = new Set<string>();
     for (let runIndex = 0; runIndex <= RUN_INDEX_CAP; runIndex += 1) {
-      const slotEnv = campaignSlotEnvironment(env, 'spacetime', runIndex);
-      const ports = new Set(plan.stacks.flatMap(stack => {
-        const assigned = portsFor(track, stack.id, runIndex);
-        return [assigned.vite, assigned.express].filter((port): port is number => typeof port === 'number');
-      }));
-      if (plan.stacks.some(stack => stack.id === 'spacetime')) {
-        ports.add(Number(loopbackHttpUri(slotEnv.STACK_BENCH_STDB_URI!).port));
+      let candidateKeys: string[];
+      let ports: Set<number>;
+      try {
+        const slotEnv = campaignSlotEnvironment(env, 'spacetime', runIndex);
+        ports = new Set(plan.stacks.flatMap(stack => {
+          const assigned = portsFor(track, stack.id, runIndex);
+          return [assigned.vite, assigned.express].filter((port): port is number => typeof port === 'number');
+        }));
+        if (plan.stacks.some(stack => stack.id === 'spacetime')) {
+          ports.add(Number(loopbackHttpUri(slotEnv.STACK_BENCH_STDB_URI!).port));
+        }
+        candidateKeys = plan.stacks.flatMap(stack => runResourceLockKeys({
+          track: plan.definition.track, backend: stack.id, runIndex,
+          ports: portsFor(track, stack.id, runIndex),
+          serverUri: stack.id === 'spacetime' ? slotEnv.STACK_BENCH_STDB_URI : null,
+        }));
+      } catch (error) {
+        if (error instanceof RangeError) continue;
+        throw error;
       }
-      if (![...ports].every(port => probePort(port).free)) continue;
-      const candidateKeys = plan.stacks.flatMap(stack => runResourceLockKeys({
-        track: plan.definition.track, backend: stack.id, runIndex,
-        ports: portsFor(track, stack.id, runIndex),
-        serverUri: stack.id === 'spacetime' ? slotEnv.STACK_BENCH_STDB_URI : null,
-      }, [], capacityIndices[selected.length]!));
-      // Capacity can change after its snapshot. Let the atomic claim detect that
-      // race so the next iteration can choose another capacity slot.
-      const slotKeys = candidateKeys.filter(key => !key.startsWith('capacity:runner:'));
-      if (existingResourceLockKeys({ ...scope, keys: slotKeys }).length) continue;
+      if (candidateKeys.some(key => selectedKeys.has(key))
+        || existingResourceLockKeys({ ...scope, keys: candidateKeys }).length
+        || ![...ports].every(port => probePort(port).free)) continue;
       selected.push(runIndex);
       keys.push(...candidateKeys);
+      for (const key of candidateKeys) selectedKeys.add(key);
       if (selected.length === plan.summary.parallelism) break;
     }
     if (selected.length !== plan.summary.parallelism) {
@@ -304,7 +302,7 @@ function reserveRunIndices(plan: CompiledCampaignPlan, directory: string, id: st
     }
     const lease: ReservationLease = { ...createBackendLease({ runId: id, backend: 'stub',
       track: plan.definition.track, runIndex: selected[0]! }),
-      campaign: { sha256: plan.contentSha256, admissionId: id, runIndices: selected, capacityIndices } };
+      campaign: { sha256: plan.contentSha256, admissionId: id, runIndices: selected } };
     try {
       claimBackendResources(path, lease, { ...scope, keys });
       return { runIndices: selected, reservation: { path, token: lease.ownershipToken } };
@@ -344,25 +342,11 @@ export function delegateCampaignReservation(authority: CampaignReservation, dire
   if (existsSync(path)) throw new Error('campaign execution delegation already exists');
   const delegation: DelegationLease = { ...createBackendLease({ runId: input.executionId,
     backend: 'stub', track: parent.track, runIndex: input.runIndex }),
-    delegation: { ...input, parent: authority,
-      capacityIndex: parent.campaign.capacityIndices[parent.campaign.runIndices.indexOf(input.runIndex)]! } };
+    delegation: { ...input, parent: authority } };
   writeBackendLease(path, delegation, { exclusive: true });
   return { STACK_BENCH_CAMPAIGN_DELEGATION: path,
     STACK_BENCH_CAMPAIGN_DELEGATION_TOKEN: delegation.ownershipToken,
     STACK_BENCH_CAMPAIGN_EXECUTION: input.executionId };
-}
-
-export function campaignDelegationCapacityIndex(env: NodeJS.ProcessEnv = process.env): number | null {
-  const path = env.STACK_BENCH_CAMPAIGN_DELEGATION;
-  const token = env.STACK_BENCH_CAMPAIGN_DELEGATION_TOKEN;
-  if (!path && !token) return null;
-  if (!path || !token) throw new Error('campaign delegation path and token are required');
-  const document = readBackendLease(path, { token }) as DelegationLease;
-  const index = document.delegation?.capacityIndex;
-  if (!Number.isInteger(index) || index < 0 || index >= runnerCapacity(env)) {
-    throw new Error('campaign delegation capacity is outside the declared runner pool');
-  }
-  return index;
 }
 
 export function borrowCampaignReservation(input: {

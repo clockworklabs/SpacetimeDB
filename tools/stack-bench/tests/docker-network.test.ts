@@ -7,7 +7,7 @@ import { createBackendLease, publicBackendLease, validateBackendLease, writeBack
 import { attemptBrowserLaunchOptions } from '../container/browser-pipe.js';
 
 import { attemptNetworkRules, dockerHostGatewayArguments, dockerHostServiceAddress,
-  installAttemptFirewall } from '../src/runtime/docker-network.js';
+  installAttemptFirewall, createAttemptNetwork } from '../src/runtime/docker-network.js';
 
 test('only the authenticated owned browser uses its private shared memory', () => {
   const root = mkdtempSync(join(tmpdir(), 'browser-shm-'));
@@ -124,4 +124,51 @@ test('host services use the address reachable from the selected network namespac
   assert.equal(dockerHostServiceAddress('bridge'), 'host.docker.internal');
   assert.equal(dockerHostServiceAddress('host'), '127.0.0.1');
   assert.throws(() => dockerHostServiceAddress('ambient'), /unsupported Docker network mode/);
+});
+
+
+test('attempt subnets avoid host routes and Docker IPAM, and retry only overlap races', () => {
+  const header = 'Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT';
+  for (const mode of ['race', 'host-route', 'exhausted', 'daemon-error'] as const) {
+    const root = mkdtempSync(join(tmpdir(), 'attempt-subnet-'));
+    try {
+      const lease = createBackendLease({ backend: 'postgres', track: 'chat', runIndex: 0,
+        runId: `subnet-${mode}`, database: 'subnet_test' });
+      const path = join(root, 'lease.json');
+      writeBackendLease(path, lease);
+      const attempts: string[][] = [];
+      const route = mode === 'host-route' ? 'eth0 0000000A 00000000 0001 0 0 0 00FFFFFF 0 0 0'
+        : 'eth0 00000000 0100000A 0003 0 0 0 00000000 0 0 0';
+      const reserved = mode === 'exhausted' ? ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']
+        : [mode === 'host-route' ? '10.0.1.0/29' : '10.0.0.0/29', 'fd00::/64'];
+      const id = 'b'.repeat(64);
+      const docker = (args: string[]) => {
+        if (args[1] === 'ls') return 'existing';
+        if (args[1] === 'inspect') return JSON.stringify([{ IPAM: { Config:
+          args[2] === id ? [{ Subnet: attempts.at(-1)![5], Gateway: '10.0.0.17' }]
+            : reserved.map(Subnet => ({ Subnet })) } }]);
+        assert.equal(args[1], 'create');
+        attempts.push(args);
+        if (mode === 'daemon-error') throw Object.assign(new Error('permission denied'), { stderr: 'permission denied' });
+        if (mode === 'race' && attempts.length === 1) {
+          throw Object.assign(new Error('overlap'), { stderr: 'Error response from daemon: Pool overlaps with other one on this address space' });
+        }
+        return id;
+      };
+      const create = () => createAttemptNetwork(path, lease, docker, `${header}\n${route}\n`);
+      if (mode === 'exhausted') {
+        assert.throws(create, /No unused private IPv4/);
+        assert.equal(attempts.length, 0);
+      } else if (mode === 'daemon-error') {
+        assert.throws(create, /permission denied/);
+        assert.equal(attempts.length, 1);
+      } else {
+        const updated = create();
+        assert.equal(updated.resources.network?.id, id);
+        assert.deepEqual(attempts.map(args => args[5]), mode === 'race'
+          ? ['10.0.0.8/29', '10.0.0.16/29'] : ['10.0.1.8/29']);
+        assert.ok(attempts.every(args => args[7]!.includes(updated.resources.creationIntents!.network!.creationToken)));
+      }
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }
 });

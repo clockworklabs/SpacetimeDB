@@ -3,9 +3,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { compileTrackManifest } from './definition-compiler.js';
-import { MAX_RUNNER_CAPACITY } from './product-config.js';
 import type { StackRunPorts } from '../stacks/stack-adapter-contract.js';
-import { STACK_ADAPTER_REGISTRY, stackPortAllocations } from '../stacks/stack-adapters.js';
+import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 
@@ -132,23 +131,28 @@ export function isDeclaredLevel(track: TrackDefinition | null | undefined, level
   return Number.isInteger(level) && level >= 1 && Boolean(track?.suites?.[String(level)]);
 }
 
-// Keep run ports inside the collision-free range checked below.
-export const RUN_INDEX_CAP = MAX_RUNNER_CAPACITY - 1;
+// Candidate indices are bounded by TCP ports. Admission skips invalid or leased ports.
+export const RUN_INDEX_CAP = 65535;
 
 export function portsFor(track: TrackDefinition, backend: string, runIndex: number): StackRunPorts {
   if (!Number.isInteger(runIndex) || runIndex < 0 || runIndex > RUN_INDEX_CAP) {
     throw new Error(`--run-index must be an integer from 0 through ${RUN_INDEX_CAP}`);
   }
   const adapter = STACK_ADAPTER_REGISTRY.get(backend);
-  return adapter.ports.forRun({
+  const ports = adapter.ports.forRun({
     trackOffset: track.portOffset,
     runIndex,
   });
+  for (const port of [ports.vite, ports.express]) {
+    if (port !== null && (!Number.isSafeInteger(port) || port < 1 || port > 65535
+      || RESTRICTED_PORTS.has(port))) {
+      throw new RangeError(`run index ${runIndex} assigns unavailable TCP port ${port}`);
+    }
+  }
+  return ports;
 }
 
-// Every (track, backend, run-index) combination must own its ports outright.
-// Run at startup: a new track whose offset collides with an existing window
-// fails loudly here, instead of silently grading the wrong application.
+// Actual host ports are leased atomically, including overlaps between indices.
 // Browsers and the Fetch standard refuse connections to these ports; an
 // application leased one of them can never be reached by the grader.
 export const RESTRICTED_PORTS: ReadonlySet<number> = new Set([
@@ -158,34 +162,6 @@ export const RESTRICTED_PORTS: ReadonlySet<number> = new Set([
   995, 1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668,
   6669, 6679, 6697, 10080,
 ]);
-
-export function assertNoPortCollisions(): void {
-  const owner = new Map<number, string>();
-  // The database containers' host ports are fixed and shared by design, but no
-  // track window may land on them either.
-  for (const [backend, base] of Object.entries(stackPortAllocations())) {
-    if (base.db) owner.set(base.db, `${backend} database container`);
-  }
-  for (const name of listTracks({ includeInternal: true })) {
-    const track = loadTrack(name);
-    for (const backend of STACK_ADAPTER_REGISTRY.ids) {
-      for (let i = 0; i <= RUN_INDEX_CAP; i++) {
-        const p = portsFor(track, backend, i);
-        for (const port of [p.vite, p.express]) {
-          if (port == null) continue;
-          const who = `${name}/${backend}/run${i}`;
-          if (RESTRICTED_PORTS.has(port)) {
-            throw new Error(`port ${port} for ${who} is refused by browsers — adjust the port window`);
-          }
-          if (owner.has(port)) {
-            throw new Error(`port ${port} is claimed by both ${owner.get(port)} and ${who} — adjust the new track's portOffset`);
-          }
-          owner.set(port, who);
-        }
-      }
-    }
-  }
-}
 
 // Keep builds outside the harness tree and below the platform path limit.
 export function workRoot(): string {

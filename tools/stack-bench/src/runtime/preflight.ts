@@ -15,7 +15,7 @@ import type { RequestedScope } from '../campaigns/condition-compiler.js';
 import { isExactImageReference, isImageId, parseImageId } from './container-image.js';
 import { runContainerSmoke } from './container-smoke.js';
 import { ATTEMPT_CONTAINER_LIMIT_TOTALS, BUILD_OUTBOUND_DESTINATIONS,
-  PREFLIGHT_RESOURCE_FLOORS, runnerCapacity } from '../composition/product-config.js';
+  PREFLIGHT_RESOURCE_FLOORS } from '../composition/product-config.js';
 import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
 import { resolveRecipeRelease } from '../composition/recipe-release.js';
 import { createBoundRecipeTaskRequest, resolveRecipeSelection } from '../composition/recipe-selection.js';
@@ -28,7 +28,7 @@ import { leaseFromEnv } from './backend-lease.js';
 import { validateSupervisorState } from './recovery.js';
 import { requireAttemptNetwork } from './docker-network.js';
 import { POSTGRES_APPLICATION_IDENTITY } from '../stacks/hosted-database-identity.js';
-import { assertNoPortCollisions, listTracks, loadTrack, portsFor } from '../composition/tracks.js';
+import { listTracks, loadTrack, portsFor } from '../composition/tracks.js';
 import { packageRegistry } from './package-registry.js';
 import { pidsOnPort } from './platform.js';
 import { agentSkillPaths, selectAgentSkills } from '../agents/agent-materials.js';
@@ -304,7 +304,6 @@ export function runPreflight(
   const checks: PreflightCheck[] = [];
   const parallelism = request.parallelism ?? 1;
   if (!Number.isInteger(parallelism) || parallelism < 1) throw new Error('parallelism must be a positive integer');
-  const capacity = env.STACK_BENCH_APPLIANCE === '1' ? runnerCapacity(env) : parallelism;
   const resourceFloors = PREFLIGHT_RESOURCE_FLOORS;
   const add = (...args: Parameters<typeof checkResult>): void => {
     checks.push(checkResult(...args));
@@ -323,7 +322,6 @@ export function runPreflight(
       throw new Error(`unknown track ${JSON.stringify(request.track)}`);
     }
     track = loadTrack(request.track);
-    assertNoPortCollisions();
     if (request.requestedScopes?.length) {
       const featureCatalog = request.featureCatalog
         ? validateFeatureCatalogInput(request.featureCatalog) : null;
@@ -522,14 +520,14 @@ export function runPreflight(
     add('docker.memory', enoughMemory ? 'pass' : 'fail',
       `${bytes(info.MemTotal)} total memory allocation reported by Docker`,
       enoughMemory ? null : `Allocate at least ${bytes(resourceFloors.memoryBytes)} to Docker.`);
-    const poolCpu = capacity * ATTEMPT_CONTAINER_LIMIT_TOTALS.cpuCount;
-    const poolMemory = capacity * ATTEMPT_CONTAINER_LIMIT_TOTALS.memoryBytes;
+    const poolCpu = parallelism * ATTEMPT_CONTAINER_LIMIT_TOTALS.cpuCount;
+    const poolMemory = parallelism * ATTEMPT_CONTAINER_LIMIT_TOTALS.memoryBytes;
     const withinAllocation = poolCpu <= info.NCPU && poolMemory <= info.MemTotal;
     add('docker.capacity', withinAllocation ? 'pass' : 'warn',
-      `${capacity}-worker container caps: ${poolCpu} CPUs and ${bytes(poolMemory)} RAM. `
+      `${parallelism}-worker container caps: ${poolCpu} CPUs and ${bytes(poolMemory)} RAM. `
         + 'Shared services and uncapped CPU are additional; this is not a measured minimum.',
       withinAllocation ? null : 'Configured caps exceed the Docker allocation. Concurrent work can contend '
-        + 'for CPU or run out of memory. Reduce the worker pool if the workload cannot run safely.');
+        + 'for CPU or run out of memory. Reduce requested parallelism if the workload cannot run safely.');
     const engineTime = Date.parse(info.SystemTime);
     const skew = !Number.isFinite(engineTime) ? Number.NaN
       : engineTime < dockerInfoStartedAt ? dockerInfoStartedAt - engineTime

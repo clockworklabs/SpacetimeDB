@@ -1,23 +1,22 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { RESTRICTED_PORTS, RUN_INDEX_CAP, assertNoPortCollisions, listTracks, loadTrack,
+import { RESTRICTED_PORTS, RUN_INDEX_CAP, listTracks, loadTrack,
   portsFor } from '../src/composition/tracks.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 
-test('no run window contains a port browsers refuse', () => {
-  assert.doesNotThrow(() => assertNoPortCollisions());
+test('dynamic indices validate actual ports, including browser restrictions and TCP bounds', () => {
   for (const name of listTracks({ includeInternal: true })) {
     const track = loadTrack(name);
     for (const backend of STACK_ADAPTER_REGISTRY.ids) {
-      for (let index = 0; index <= RUN_INDEX_CAP; index++) {
-        const ports = portsFor(track, backend, index);
-        for (const port of [ports.vite, ports.express]) {
-          if (port != null) assert(!RESTRICTED_PORTS.has(port), `${name}/${backend}/run${index} leases ${port}`);
-        }
+      const ports = portsFor(track, backend, 30);
+      for (const port of [ports.vite, ports.express]) {
+        if (port != null) assert(!RESTRICTED_PORTS.has(port));
       }
+      assert.throws(() => portsFor(track, backend, RUN_INDEX_CAP), /TCP port/);
     }
   }
+  assert.throws(() => portsFor(loadTrack('chat'), 'mongodb', 256), /6679/);
 });
 
 test('the restricted list is the one fetch enforces', async () => {

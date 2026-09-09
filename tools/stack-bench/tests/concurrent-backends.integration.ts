@@ -38,7 +38,7 @@ test('two admitted native attempts overlap and deny cross-attempt traffic', {
         track:'chat',runIndex:18+index,database:'concurrent_probe'});
       try {
         claimBackendResources(path,lease,{...resourceLockScope(),
-          keys:backendResourceLockKeys(lease,portsFor(loadTrack(lease.track),backend,lease.runIndex),[],index)});
+          keys:backendResourceLockKeys(lease,portsFor(loadTrack(lease.track),backend,lease.runIndex))});
         STACK_ADAPTER_REGISTRY.get(backend).lifecycle.activate({leasePath:path,leaseToken:lease.ownershipToken,lease,
           ports:portsFor(loadTrack(lease.track),backend,lease.runIndex)});
         const active=readBackendLease(path,{token:lease.ownershipToken,active:true});
@@ -58,7 +58,7 @@ test('two admitted native attempts overlap and deny cross-attempt traffic', {
       '--mount', 'type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock',
       '--mount', `type=bind,source=${state},target=${state}`,
       '--mount', `type=bind,source=${fileURLToPath(new URL('../', import.meta.url))},target=/opt/stack-bench/dist,readonly`,
-      '-e', 'STACK_BENCH_APPLIANCE=1', '-e', 'STACK_BENCH_RUNNER_CAPACITY=2',
+      '-e', 'STACK_BENCH_APPLIANCE=1',
       '-e', `STACK_BENCH_RESOURCE_LOCK_DIR=${state}/locks`,
       '-e', `STACK_BENCH_CONTROLLER_IMAGE_ID=${image}`, '--entrypoint', 'node', image!,
       '--input-type=module', '-e', `
@@ -86,8 +86,7 @@ test('two admitted native attempts overlap and deny cross-attempt traffic', {
         leases=names.map(name=>JSON.parse(readFileSync(state+'/'+name+'/lease.json','utf8')));
         assert.notEqual(leases[0].resources.network.id,leases[1].resources.network.id);
         assert.notEqual(leases[0].ownershipToken,leases[1].ownershipToken);
-        assert.ok(leases[0].resources.locks.some(lock=>lock.key==='capacity:runner:0'));
-        assert.ok(leases[1].resources.locks.some(lock=>lock.key==='capacity:runner:1'));
+        assert.ok(leases.every(lease=>lease.resources.locks.every(lock=>!lock.key.startsWith('capacity:'))));
         for(const [index,lease] of leases.entries()) {
           requireAttemptNetwork(lease);
           const other=leases[1-index], secret=attemptDatabaseIdentity(lease.ownershipToken);

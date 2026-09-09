@@ -80,7 +80,7 @@ export function campaignSlotEnvironment(env: NodeJS.ProcessEnv, stack: string | 
   const base = loopbackHttpUri(executionEnv.STACK_BENCH_STDB_URI ?? DEFAULT_SPACETIME_SERVER_URI);
   const port = Number(base.port) + runIndex;
   if (!Number.isInteger(runIndex) || runIndex < 0 || port > 65535) {
-    throw new Error(`campaign run slot ${runIndex} cannot allocate a SpacetimeDB host port`);
+    throw new RangeError(`campaign run slot ${runIndex} cannot allocate a SpacetimeDB host port`);
   }
   base.port = String(port);
   executionEnv.STACK_BENCH_STDB_URI = base.toString().replace(/\/$/, '');

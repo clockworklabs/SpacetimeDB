@@ -52,7 +52,6 @@ export function prepareStateVolume(env: NodeJS.ProcessEnv = process.env, run: Do
     `STACK_BENCH_STATE_ROOT=${root}`,
     `STACK_BENCH_CONTROLLER_IMAGE=${controller}`,
     `STACK_BENCH_BUILD_IMAGE=${build}`,
-    'STACK_BENCH_RUNNER_CAPACITY=1',
     'STACK_BENCH_AGENT_AUTH=subscription-token',
     `STACK_BENCH_CLAUDE_OAUTH_TOKEN_FILE=${root}/secrets/claude_subscription_token`,
     `STACK_BENCH_ANTHROPIC_API_KEY_FILE=${root}/secrets/anthropic_api_key`,

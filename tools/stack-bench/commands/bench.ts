@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync, cpSyn
 import { join, dirname, resolve, relative, sep, isAbsolute } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
-import { loadTrack, resultsName, portsFor, workDirFor, assertNoPortCollisions,
+import { loadTrack, resultsName, portsFor, workDirFor,
   moduleName, dbName, suitesFor } from '../src/composition/tracks.js';
 import { parseBenchArguments } from './bench-arguments.js';
 import type { BenchArguments } from './bench-arguments.js';
@@ -22,7 +22,7 @@ import { summarizeSessions } from '../src/evidence/session-metrics.js';
 import { hashDirectory, sha256 } from '../src/evidence/provenance.js';
 import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
   claimBackendResources, backendResourceLockKeys, resourceLockScope, loopbackHttpUri } from '../src/runtime/backend-lease.js';
-import { borrowCampaignReservation, campaignDelegationCapacityIndex }
+import { borrowCampaignReservation }
   from '../src/campaigns/campaign-admission.js';
 import { captureApplicationDiagnostics } from '../src/runtime/backend-control.js';
 import type { RuntimeControlSpec } from '../src/runtime/backend-control.js';
@@ -42,7 +42,7 @@ import { checkpointSchema, recordRunCheckpoint } from '../src/evidence/run-check
 import type { RunCheckpoint } from '../src/evidence/run-checkpoints.js';
 import { runCostEvidence } from '../src/evidence/cost-proof.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
-import { DEFAULT_BUILD_IMAGE, runnerCapacity } from '../src/composition/product-config.js';
+import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { SUPERVISOR_STATE_VERSION, writeRecoveryArtifact } from '../src/runtime/recovery.js';
 import { applyAgentCredential } from '../src/agents/agent-credentials.js';
 import { assertPlainAppSourceTree, hashAppSource, resetAppToSource, seedAppSource, snapshotAppSource } from '../src/runtime/source-snapshot.js';
@@ -1127,7 +1127,6 @@ async function main() {
   // checking credentials, Docker, ports, or any other ambient runner state so
   // an invalid experiment can never be masked by an unrelated preflight error.
   validateMutationInput(args);
-  assertNoPortCollisions();
   // The deterministic adapter/stack is the model-free unit loop. Real runs
   // prove the exact requested scope, engine, image, credentials, storage and
   // ports before any paid coding session begins.
@@ -1222,9 +1221,8 @@ async function main() {
     ...preparedLease.lease,
   });
   const lockScope = resourceLockScope();
-  const capacityIndex = campaignDelegationCapacityIndex(process.env) ?? 0;
   const lockKeys = backendResourceLockKeys(initialLease, assignedPorts,
-    [...preparedLease.lockKeys, ...(args.app ? [`workspace:${realpathSync(appDir)}`] : [])], capacityIndex);
+    [...preparedLease.lockKeys, ...(args.app ? [`workspace:${realpathSync(appDir)}`] : [])]);
   let privateSupervisorStatePath = null;
   try {
     if ((args.campaignFile || args.campaignAdmissionId) && args.backend !== 'stub') {
@@ -1236,8 +1234,7 @@ async function main() {
         throw new Error('campaign worker requires private resource delegation');
       }
     } else {
-      claimBackendResources(leasePath, initialLease, { ...lockScope, keys: lockKeys,
-        capacity: runnerCapacity() });
+      claimBackendResources(leasePath, initialLease, { ...lockScope, keys: lockKeys });
     }
     const supervisorState = process.env.STACK_BENCH_SUPERVISOR_STATE
       ?? (process.env.STACK_BENCH_SUPERVISOR_DIR

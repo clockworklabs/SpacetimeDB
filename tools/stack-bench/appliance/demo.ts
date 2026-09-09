@@ -16,7 +16,6 @@ export function demoConfiguration(setup: string, source: NodeJS.ProcessEnv = pro
   }
   const digest = prepared.STACK_BENCH_CONTROLLER_IMAGE?.match(/^(?:.*@)?sha256:([a-f0-9]{64})$/)?.[1];
   if (!digest) throw new Error('Demo requires a resolved controller image digest');
-  prepared.STACK_BENCH_RUNNER_CAPACITY = '3';
   prepared.STACK_BENCH_RELEASE_DEPS_VOLUME = `stack-bench-release-deps-${digest.slice(0, 12)}`;
   const output = `campaigns/demo-${digest.slice(0, 12)}`;
   const compose = ['compose', '-f', join(STACK_BENCH_ROOT, 'appliance/docker-compose.yaml')];

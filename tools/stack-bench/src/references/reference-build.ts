@@ -20,7 +20,7 @@ import { CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_SPACETIME_CLI,
   codingContainerAgentCommand, codingContainerAgentExecOptions }
   from '../runtime/coding-container-policy.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
-import { DEFAULT_BUILD_IMAGE, runnerCapacity } from '../composition/product-config.js';
+import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.js';
 import { loadTrack, portsFor } from '../composition/tracks.js';
 import { inspectImportedReference, loadReferenceRegistry,
   prepareReferenceFixtureSource, REFERENCE_METADATA_FILE, referenceMetadataIssues,
@@ -170,7 +170,7 @@ function qualify(fixture: ReferenceFixture, imageIdentity: ImageIdentity): Fixtu
       track: fixture.track, runIndex: 0,
       ...preparedResources });
     claimBackendResources(leasePath, lease, { ...resourceLockScope(),
-      keys: backendResourceLockKeys(lease, ports, lockKeys), capacity: runnerCapacity() });
+      keys: backendResourceLockKeys(lease, ports, lockKeys) });
     adapter.lifecycle.activate({ leasePath, leaseToken: lease.ownershipToken, lease,
       ports,
       ...runtime.lifecycle });

@@ -1,18 +1,4 @@
-// The runner pool and per-stack port slots use the same finite index range.
-export const MAX_RUNNER_CAPACITY = 21;
-
 export const DEFAULT_BUILD_IMAGE = 'stack-bench-build:2.1.226';
-
-export function runnerCapacity(env: NodeJS.ProcessEnv = process.env): number {
-  const value = env.STACK_BENCH_RUNNER_CAPACITY ?? '1';
-  if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value))) {
-    throw new Error('STACK_BENCH_RUNNER_CAPACITY must be a positive integer');
-  }
-  if (Number(value) > MAX_RUNNER_CAPACITY) {
-    throw new Error(`STACK_BENCH_RUNNER_CAPACITY must be at most ${MAX_RUNNER_CAPACITY}`);
-  }
-  return Number(value);
-}
 
 // Conservative startup policy, not measured requirements for every workload.
 export const PREFLIGHT_RESOURCE_FLOORS = Object.freeze({

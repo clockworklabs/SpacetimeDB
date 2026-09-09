@@ -66,7 +66,7 @@ async function worker(root: string, index: number): Promise<void> {
     serverUri: backend === 'spacetime' ? `http://127.0.0.1:${3290 + index}` : null,
     dataDir: backend === 'spacetime' ? join(root, 'work', String(index), 'data') : null });
   claimBackendResources(path, lease, { ...resourceLockScope(),
-    keys: backendResourceLockKeys(lease, ports, [], index) });
+    keys: backendResourceLockKeys(lease, ports) });
   Object.assign(process.env, { STACK_BENCH_LEASE: path, STACK_BENCH_LEASE_TOKEN: lease.ownershipToken });
   if (lease.resources.serverUri) process.env.STACK_BENCH_STDB_URI = lease.resources.serverUri;
   adapter.lifecycle.activate({ leasePath: path, leaseToken: lease.ownershipToken, lease, ports });
@@ -170,7 +170,7 @@ async function capacityCheck(): Promise<void> {
   const root = mkdtempSync(join(state, 'capacity-'));
   const deadline = Date.now() + STARTUP_MS;
   Object.assign(process.env, { STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks'),
-    STACK_BENCH_RUNNER_CAPACITY: String(WORKERS), STACK_BENCH_CAPACITY_ROOT: root,
+    STACK_BENCH_CAPACITY_ROOT: root,
     STACK_BENCH_CAPACITY_DEADLINE: String(deadline) });
   const cache = docker(['inspect', '--format', '{{.Id}}', 'stack-bench-npm-cache']);
   const cacheMemberships = docker(['inspect', '--format', '{{json .NetworkSettings.Networks}}', cache]);

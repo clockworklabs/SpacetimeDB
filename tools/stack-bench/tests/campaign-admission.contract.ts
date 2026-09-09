@@ -27,20 +27,6 @@ const passingPreflight = (request: CampaignAdmissionPreflightRequest) => ({
   checks: [{ id: 'smoke.container', status: 'pass' as const, summary: 'passed' }],
 });
 
-test('admission rejects campaign concurrency above the runner pool before resource preflight', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-capacity-admission-'));
-  try {
-    const example = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, 'tests', 'fixtures',
-      'campaign.deterministic.json'), 'utf8'));
-    const campaignPath = join(root, 'campaign.json');
-    writeFileSync(campaignPath, JSON.stringify({ ...example, parallelism: 2 }));
-    const plan = compileCampaignFile(campaignPath);
-    assert.throws(() => runCampaignAdmission(plan, root, {
-      env: { STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks'), STACK_BENCH_RUNNER_CAPACITY: '1' },
-      preflight: () => { throw new Error('preflight must not start'); } }), /exceeds declared runner capacity/);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
 test('campaign admission receives only the feature catalog levels in the compiled plan', { skip: process.platform !== 'linux' ? 'Kernel flock requires Linux' : false }, () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-scoped-admission-'));
   try {

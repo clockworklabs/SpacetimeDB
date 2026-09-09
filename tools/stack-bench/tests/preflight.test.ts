@@ -212,14 +212,14 @@ test('appliance pool caps warn without replacing the single-worker startup basel
     };
     const dependencies = {
       run, now: Date.parse('2026-08-12T12:00:00.100Z'),
-      env: { STACK_BENCH_APPLIANCE: '1', STACK_BENCH_RUNNER_CAPACITY: '9',
+      env: { STACK_BENCH_APPLIANCE: '1',
         STACK_BENCH_CONTROLLER_IMAGE: IMAGE_ID }, home: root,
       statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }),
       pidsOnPort: () => [], probePort: () => ({ free: true }),
     };
-    const selected = { ...request(root, ['--parallelism', '1']), image: IMAGE_ID };
+    const selected = { ...request(root, ['--parallelism', '9']), image: IMAGE_ID };
     const report = runPreflight(selected, dependencies);
-    assert.equal(report.request.parallelism, 1);
+    assert.equal(report.request.parallelism, 9);
     assert.equal(requiredCheck(report, 'docker.cpu').status, 'pass');
     assert.equal(requiredCheck(report, 'docker.memory').status, 'pass');
     assert.match(requiredCheck(report, 'docker.memory').summary, /total memory allocation/);
@@ -228,7 +228,6 @@ test('appliance pool caps warn without replacing the single-worker startup basel
     assert.equal(requiredCheck(report, 'storage.results').status, 'pass');
 
     allocation = { NCPU: 3, MemTotal: 7 * 1024 ** 3 };
-    dependencies.env.STACK_BENCH_RUNNER_CAPACITY = '1';
     const insufficient = runPreflight(selected, dependencies);
     assert.equal(requiredCheck(insufficient, 'docker.cpu').status, 'fail');
     assert.match(requiredCheck(insufficient, 'docker.cpu').remediation ?? '',

@@ -82,11 +82,12 @@ PostgreSQL and MongoDB images when they are absent.
 
 ## Parallel runs and recovery
 
-`STACK_BENCH_RUNNER_CAPACITY` declares the appliance worker pool. A campaign's
-`parallelism` uses that pool. Linux `flock` protects complete capacity and port
-claims across controller processes. Campaign children receive private,
-single-use delegated authority. A worker remains reserved until exact cleanup
-is proven. The dashboard and CLI use the same campaign owner checks for Stop.
+A campaign's `parallelism` is its requested worker count. Admission finds unused
+run indices and valid host ports. Linux `flock` protects the complete port and
+run-slot claim across controller processes. There is no separate manual pool.
+Campaign children receive private, single-use delegated authority. Workers stay
+reserved until exact cleanup is proven. Admission starts the full requested set
+or fails; it does not reduce parallelism. Dashboard and CLI Stop share owner checks.
 
 Every attempt runs its own model-free smoke after lease activation and before
 agent execution. Parent admission cannot substitute an earlier smoke result.

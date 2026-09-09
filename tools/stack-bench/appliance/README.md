@@ -237,7 +237,7 @@ and build image IDs, and freezes it for execution. It runs one fresh L1 build pe
 three in parallel, with no repairs or retries and a $10 limit per attempt
 ($30 maximum across the three attempts). It uses Sonnet 5 and includes the
 SpacetimeDB skills. Its results are provisional. Set
-`STACK_BENCH_RUNNER_CAPACITY=3` in `operator.env` before running this plan.
+the plan's `parallelism` to 3 before running this plan.
 Inspect its model, stacks, repetitions, spend limits, and pricing before launch.
 For a longer study, [`campaign.paid-l1-l3.json`](campaign.paid-l1-l3.json) is a
 draft three-stack progression pilot. It selects L1 through L3, six repairs total
@@ -329,11 +329,11 @@ private network namespace. Native firewall rules block host and other-attempt
 connections. Concurrent native attempts and exact cleanup have passed the
 bounded Docker checks. A clean appliance rehearsal remains a release gate.
 
-Set `STACK_BENCH_RUNNER_CAPACITY` in `operator.env` to the total worker pool
-across all campaigns. It defaults to 1 and accepts up to 21. Set each plan's
-`parallelism` within that pool. Admission atomically reserves capacity and
-ports; it refuses work when there are too few free workers. The startup baseline
-remains 4 CPUs and 8 GiB RAM. Preflight also reports the configured pool's
+Set each plan's `parallelism` to the number of simultaneous attempts you want.
+Admission automatically leases unused run indices and host ports across campaigns.
+It reserves the full requested worker set or fails explicitly; it never lowers
+parallelism. No appliance worker-pool setting is needed. The startup baseline
+remains 4 CPUs and 8 GiB RAM. Preflight reports the requested campaign's
 container caps and warns when their sum exceeds Docker's total allocation.
 These caps do not reserve CPU or RAM and are not measured hardware minimums.
 
@@ -346,8 +346,7 @@ The shared package cache has caps of 1 CPU, 2 GiB RAM, and 128 processes. Allow
 for its use alongside the controller and attempt containers.
 
 Docker's reported memory is total allocation, not free memory. Contention can
-increase run time; heavier apps can exhaust memory. Set the pool to the
-intended parallelism and validate it with the selected workload. A short fixture
+increase run time; heavier apps can exhaust memory. Validate the intended parallelism with the selected workload. A short fixture
 test does not establish capacity for arbitrary model builds or timed grading.
 
 The 10-GiB disk check is a startup free-space check, not a per-worker reservation

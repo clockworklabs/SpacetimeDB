@@ -1,4 +1,5 @@
 import { isIPv4 } from 'node:net';
+import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
@@ -32,11 +33,85 @@ export function recordAttemptCreation(leasePath: string, lease: BackendLease, ki
   return intent;
 }
 
-export function createAttemptNetwork(leasePath: string, lease: BackendLease): BackendLease {
+type AddressRange = readonly [number, number];
+
+function ipv4Number(address: string): number {
+  if (!isIPv4(address)) throw new Error(`invalid IPv4 network address: ${address}`);
+  return address.split('.').reduce((value, octet) => value * 256 + Number(octet), 0);
+}
+
+function subnetRange(subnet: string): AddressRange {
+  const [address, prefix] = subnet.split('/');
+  const bits = Number(prefix);
+  if (!address || prefix === undefined || !/^\d+$/.test(prefix) || bits < 0 || bits > 32) {
+    throw new Error(`invalid IPv4 subnet: ${subnet}`);
+  }
+  const size = 2 ** (32 - bits);
+  const start = Math.floor(ipv4Number(address) / size) * size;
+  return [start, start + size - 1];
+}
+
+function hostRouteRanges(routes: string): AddressRange[] {
+  // The Linux appliance runs in the Docker host's network namespace.
+  const lines = routes.trim().split('\n');
+  if (!lines.shift()?.includes('Destination')) throw new Error('cannot read Docker host IPv4 routes');
+  return lines.filter(line => line.trim()).flatMap(line => {
+    const fields = line.trim().split(/\s+/);
+    const number = (hex: string | undefined) => {
+      if (!hex || !/^[0-9a-f]{8}$/i.test(hex)) throw new Error('invalid Docker host IPv4 route');
+      return Number.parseInt(hex.match(/../g)!.reverse().join(''), 16);
+    };
+    const destination = number(fields[1]), mask = number(fields[7]);
+    if (!/^1*0*$/.test(mask.toString(2).padStart(32, '0'))) throw new Error('invalid Docker host route mask');
+    if (mask === 0) return []; // The default route does not reserve the entire address space.
+    const first = (destination & mask) >>> 0;
+    return [[first, first + (0xffffffff - mask)] as AddressRange];
+  });
+}
+
+function* attemptSubnets(reserved: readonly AddressRange[]): Generator<string> {
+  // Six usable addresses cover the namespace anchor and package-cache endpoint.
+  // Skip whole occupied ranges rather than probing every address in a large LAN.
+  for (const block of ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']) {
+    const [first, last] = subnetRange(block);
+    for (let candidate = first; candidate + 7 <= last;) {
+      const conflict = reserved.find(([start, end]) => candidate <= end && candidate + 7 >= start);
+      if (conflict) { candidate = Math.floor(conflict[1] / 8 + 1) * 8; continue; }
+      const address = [24, 16, 8, 0].map(shift => (candidate >>> shift) & 255).join('.');
+      yield `${address}/29`;
+      candidate += 8;
+    }
+  }
+}
+
+export function createAttemptNetwork(leasePath: string, lease: BackendLease,
+  docker: typeof attemptDocker = attemptDocker,
+  routes: string = readFileSync('/proc/net/route', 'utf8')): BackendLease {
+  const reserved = hostRouteRanges(routes);
+  const networks = docker(['network', 'ls', '--quiet']).split(/\s+/).filter(Boolean);
+  if (networks.length) {
+    const inspected = JSON.parse(docker(['network', 'inspect', ...networks]));
+    for (const network of inspected) {
+      for (const config of network.IPAM?.Config ?? []) {
+        if (config.Subnet && !config.Subnet.includes(':')) reserved.push(subnetRange(config.Subnet));
+      }
+    }
+  }
   const intent = recordAttemptCreation(leasePath, lease, 'network');
-  const id = attemptDocker(['network', 'create', '--driver', 'bridge',
-    '--label', `${ATTEMPT_CREATION_LABEL}=${intent.creationToken}`, intent.name]);
-  const inspected = JSON.parse(attemptDocker(['network', 'inspect', id]))[0];
+  let id: string | undefined;
+  for (const subnet of attemptSubnets(reserved)) {
+    try {
+      id = docker(['network', 'create', '--driver', 'bridge', '--subnet', subnet,
+        '--label', `${ATTEMPT_CREATION_LABEL}=${intent.creationToken}`, intent.name]);
+      break;
+    } catch (error) {
+      // Docker IPAM is the atomic authority when other attempts allocate concurrently.
+      const stderr = error && typeof error === 'object' && 'stderr' in error ? String(error.stderr) : '';
+      if (!/Pool overlaps with other one on this address space/i.test(stderr)) throw error;
+    }
+  }
+  if (!id) throw new Error('No unused private IPv4 /29 subnet remains for this attempt; Docker networks or host routes occupy the available address space');
+  const inspected = JSON.parse(docker(['network', 'inspect', id]))[0];
   const hostAddresses = [...new Set([...Object.values(networkInterfaces()).flatMap(entries =>
     (entries ?? []).filter(value => value.family === 'IPv4').map(value => value.address)),
     ...inspected.IPAM.Config.map((value: { Gateway?: string }) => value.Gateway).filter(Boolean)])] as string[];

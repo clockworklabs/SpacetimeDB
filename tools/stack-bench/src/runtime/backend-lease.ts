@@ -9,7 +9,6 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { validateStackLeaseResources } from '../stacks/stack-lease-capabilities.js';
 import { resourceLockDescriptors } from './resource-lock-worker.js';
 import type { ResourceLockTransaction } from './resource-lock-worker.js';
-import { MAX_RUNNER_CAPACITY } from '../composition/product-config.js';
 
 export const LEASE_VERSION = 1;
 const LEASE_STATES = new Set<string>(['created', 'starting', 'active', 'restarting',
@@ -443,29 +442,24 @@ export function backendResourceLockKeys(
   lease: BackendLease,
   ports: AppPorts,
   additionalKeys: string[] = [],
-  capacityIndex = 0,
 ): string[] {
   validateBackendLease(lease);
-  return runResourceLockKeys({ ...lease, ports, serverUri: lease.resources.serverUri }, additionalKeys, capacityIndex);
+  return runResourceLockKeys({ ...lease, ports, serverUri: lease.resources.serverUri }, additionalKeys);
 }
 
 export function runResourceLockKeys(
   run: { track: string; backend: string; runIndex: number; ports: AppPorts; serverUri?: string | null },
-  additionalKeys: string[] = [], capacityIndex = 0,
+  additionalKeys: string[] = [],
 ): string[] {
   if (run.backend === 'stub') return [];
   if (!Array.isArray(additionalKeys)) fail('additional resource lock keys must be an array');
   for (const key of additionalKeys) requireString(key, 'resource lock key');
-  if (!Number.isInteger(capacityIndex) || capacityIndex < 0 || capacityIndex >= MAX_RUNNER_CAPACITY) {
-    fail('capacity index is outside the declared runner pool');
-  }
   const ports = [run.ports.vite, run.ports.express, run.serverUri
     ? Number(loopbackHttpUri(run.serverUri).port) : null].filter((port): port is number => port !== null);
   if (ports.some(port => !Number.isInteger(port) || port < 1 || port > 65535)) {
     fail('resource lock ports must be assigned TCP ports');
   }
   return [...new Set([
-    `capacity:runner:${capacityIndex}`,
     `slot:${run.track}:${run.backend}:run${run.runIndex}`,
     ...(run.serverUri ? [`listener:${run.serverUri}`] : []),
     ...ports.map(port => `port:${port}`),
@@ -516,7 +510,7 @@ export function acquireResourceLock(input: {
 }
 
 export function acquireResourceLocks(input: {
-  root: string; keys: string[]; lease: BackendLease; capacity?: number;
+  root: string; keys: string[]; lease: BackendLease;
 }): BackendResourceLock[] {
   if (!Array.isArray(input.keys) || input.keys.length === 0) {
     fail('resource lock keys must be a non-empty array');
@@ -526,15 +520,15 @@ export function acquireResourceLocks(input: {
 
 /** Persist intended keys and private identity before any claim can survive a crash. */
 export function claimBackendResources(path: string, lease: BackendLease, input: {
-  root: string; keys: string[]; capacity?: number;
+  root: string; keys: string[];
 }): BackendLease {
   if (!input.keys.length) {
     writeBackendLease(path, lease);
     return lease;
   }
-  // Record every candidate before the atomic worker selects one. Recovery only
+  // Record intended claims before acquisition. Recovery only
   // releases intent records that match this lease's private ownership token.
-  lease.resources.lockIntent = resourceLockDescriptors(input.root, input.keys, input.capacity);
+  lease.resources.lockIntent = resourceLockDescriptors(input.root, input.keys);
   writeBackendLease(path, lease);
   lease.resources.locks = acquireResourceLocks({ ...input, lease });
   delete lease.resources.lockIntent;

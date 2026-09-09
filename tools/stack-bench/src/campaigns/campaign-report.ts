@@ -8,6 +8,7 @@ import { ARTIFACT_FILE, emptyArtifactIdentities, readArtifact, readArtifactPaylo
 import { inspectCampaign } from './campaign-runner.js';
 import { validateCampaignRun } from './campaign-run-validation.js';
 import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/definition-plan.js';
+import { RUN_INDEX_CAP } from '../composition/tracks.js';
 import { sha256 } from '../evidence/provenance.js';
 import { campaignGradingQualification } from './campaign-compiler.js';
 import type { CampaignAttemptPlan, CampaignGradingQualification,
@@ -661,7 +662,7 @@ export function validateCampaignReport(input: unknown): CampaignReport {
     || !report.scope.repetitionsByStack || typeof report.scope.repetitionsByStack !== 'object'
     || Array.isArray(report.scope.repetitionsByStack)
     || !Number.isInteger(report.scope.parallelism) || report.scope.parallelism < 1
-    || report.scope.parallelism > 21
+    || report.scope.parallelism > RUN_INDEX_CAP + 1
     || !report.scope.runtime || typeof report.scope.runtime !== 'object'
     || !report.scope.pricing || typeof report.scope.pricing !== 'object') {
     throw new Error('campaign report exact scope is invalid');
