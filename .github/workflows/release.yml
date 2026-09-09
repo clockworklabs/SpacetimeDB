@@ -473,5 +473,6 @@ jobs:
             --arg tag "$RELEASE_TAG" \
             --arg url "$url" \
             --arg body "$body" \
-            '{release_tag: $tag, release_url: $url, release_body: $body, dry_run: "false"}' \
+            --arg dry_run "false" \
+            '{release_tag: $tag, release_url: $url, release_body: $body, dry_run: $dry_run}' \
           | gh workflow run tag-release.yml --repo clockworklabs/SpacetimeDB --ref master --json
