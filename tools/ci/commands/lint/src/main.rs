@@ -241,27 +241,6 @@ fn check_pnpm_release_age_policy() -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::workflow_installs_pnpm_with_npm;
-
-    #[test]
-    fn detects_direct_npm_pnpm_install() {
-        assert!(workflow_installs_pnpm_with_npm("run: npm install -g pnpm\n"));
-        assert!(workflow_installs_pnpm_with_npm("run: npm i --global pnpm@10.16.0\n"));
-        assert!(workflow_installs_pnpm_with_npm("run: |\n  npm install --global pnpm\n"));
-    }
-
-    #[test]
-    fn allows_other_npm_and_pnpm_commands() {
-        assert!(!workflow_installs_pnpm_with_npm(
-            "run: npm install --global npm@11.5.1\n"
-        ));
-        assert!(!workflow_installs_pnpm_with_npm("run: pnpm install\n"));
-        assert!(!workflow_installs_pnpm_with_npm("uses: ./.github/actions/setup-pnpm\n"));
-    }
-}
-
 /// Codex plugin ships a copy of `skills/`, because plugin installers do not follow symlinks,
 /// this checks if the copy is in sync
 fn check_codex_plugin_skills_sync() -> Result<()> {
@@ -398,4 +377,25 @@ fn main() -> Result<()> {
         .run()?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::workflow_installs_pnpm_with_npm;
+
+    #[test]
+    fn detects_direct_npm_pnpm_install() {
+        assert!(workflow_installs_pnpm_with_npm("run: npm install -g pnpm\n"));
+        assert!(workflow_installs_pnpm_with_npm("run: npm i --global pnpm@10.16.0\n"));
+        assert!(workflow_installs_pnpm_with_npm("run: |\n  npm install --global pnpm\n"));
+    }
+
+    #[test]
+    fn allows_other_npm_and_pnpm_commands() {
+        assert!(!workflow_installs_pnpm_with_npm(
+            "run: npm install --global npm@11.5.1\n"
+        ));
+        assert!(!workflow_installs_pnpm_with_npm("run: pnpm install\n"));
+        assert!(!workflow_installs_pnpm_with_npm("uses: ./.github/actions/setup-pnpm\n"));
+    }
 }
