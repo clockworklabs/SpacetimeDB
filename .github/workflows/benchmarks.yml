@@ -185,7 +185,7 @@ jobs:
     timeout-minutes: 20 # on a successful run, runs in 8 minutes
     container:
       # !rust-toolchain-sync
-      image: rust:1.93.0
+      image: rust:1.98.1
       options: --privileged
     # disable until we fix the benchmarks
     if: false

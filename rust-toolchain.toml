@@ -1,7 +1,7 @@
 [toolchain]
 # run ./tools/rust-toolchain-sync.sh when you change the channel!
 # also consider changing the rust-version in Cargo.toml
-channel = "1.93.0"
+channel = "1.98.1"
 profile = "default"
 targets = ["wasm32-unknown-unknown"]
 components = ["rust-src"]
