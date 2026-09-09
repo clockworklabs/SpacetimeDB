@@ -17,6 +17,7 @@
       "criteria": [
         {
           "id": "618a",
+          "category": "production",
           "desc": "the server refuses a review from a customer who did not buy the item",
           "points": 2,
           "statedBy": "Only a customer who bought an item can review it.",

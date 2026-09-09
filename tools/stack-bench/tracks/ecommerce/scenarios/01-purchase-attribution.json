@@ -13,6 +13,7 @@
       "criteria": [
         {
           "id": "102a",
+          "category": "production",
           "desc": "a direct purchase is attributed to the authenticated caller, not another account",
           "points": 2,
           "steps": [

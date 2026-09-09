@@ -25,6 +25,7 @@
       "criteria": [
         {
           "id": "6b",
+          "category": "production",
           "desc": "a later review submission does not create a duplicate for the same customer and item",
           "points": 1,
           "steps": [

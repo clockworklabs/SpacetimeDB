@@ -8,10 +8,8 @@ with the same ordinary buy operation as the visible button.
 ## Cart quantity action input
 
 Put a `data-cart-input` attribute on each `cart-item`. Its value is a JSON
-object containing that line's server item identifier and the invalid quantity
-`-3`, for example `{"itemId":42,"quantity":-3}`. The identifier may be a
-JSON number or string. The ordinary cart-quantity operation must refuse the
-invalid quantity in this value.
+object containing that line's item identifier, for example `{"itemId":42}`.
+The identifier may be a JSON number or string.
 
 ## Restock action input
 

@@ -27,6 +27,7 @@
       "criteria": [
         {
           "id": "311a",
+          "category": "production",
           "desc": "a restock scheduled before restart still applies",
           "points": 4,
           "statedBy": "Pending restocks survive a backend restart.",
@@ -59,6 +60,7 @@
       "criteria": [
         {
           "id": "314a",
+          "category": "production",
           "desc": "a reservation pending before restart still expires and returns stock",
           "points": 4,
           "statedBy": "Pending reservations survive a backend restart.",
@@ -91,6 +93,7 @@
       "criteria": [
         {
           "id": "315a",
+          "category": "production",
           "desc": "an order shipped before restart still becomes delivered",
           "points": 4,
           "statedBy": "Pending order delivery survives a backend restart.",
@@ -116,6 +119,7 @@
       "criteria": [
         {
           "id": "316a",
+          "category": "production",
           "desc": "a cart inactive before restart still expires at five minutes",
           "points": 4,
           "statedBy": "Pending cart expiration survives a backend restart.",

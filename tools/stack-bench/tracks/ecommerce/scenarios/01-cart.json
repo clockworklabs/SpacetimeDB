@@ -32,6 +32,7 @@
         },
         {
           "id": "4b",
+          "category": "production",
           "desc": "the cart survives a reload",
           "points": 1,
           "steps": [
@@ -47,6 +48,7 @@
         },
         {
           "id": "4c",
+          "category": "production",
           "desc": "the same account signed in elsewhere sees one cart, live",
           "points": 2,
           "steps": [

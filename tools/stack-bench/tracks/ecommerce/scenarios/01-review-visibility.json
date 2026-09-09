@@ -20,6 +20,7 @@
       "criteria": [
         {
           "id": "6a",
+          "category": "feature",
           "desc": "a customer can review an item and everyone sees it, signed out included",
           "points": 2,
           "steps": [

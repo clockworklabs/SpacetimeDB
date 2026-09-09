@@ -19,6 +19,7 @@
       "criteria": [
         {
           "id": "614a",
+          "category": "feature",
           "desc": "the customer can link their order and staff can inspect it",
           "points": 3,
           "statedBy": "A customer can attach one of their orders to a support case.",

@@ -14,6 +14,7 @@ export interface CampaignPageInput {
   progression: CampaignProgression | null;
   view: QuestlineView;
   chart?: 'completion' | 'cost' | 'distribution';
+  unit?: 'checks' | 'features';
   hiddenChartRuns?: ReadonlySet<string>;
   step: number;
 }
@@ -234,7 +235,7 @@ export function campaignPage(input: CampaignPageInput): string {
     + repetitions
     + row('Total spend', stack => value(spend(stack.spend, stack.spendPending)))
     + '</tbody></table></div>'
-    + (sheet.mode === 'dependency' ? progressChart(sheet, input.progression, input.chart, input.view, input.hiddenChartRuns) : '')
+    + (sheet.mode === 'dependency' ? progressChart(sheet, input.progression, input.chart, input.view, input.hiddenChartRuns, input.unit) : '')
     + '<h3>Runs</h3>'
     + '<div class="tablewrap"><div class="wrap"><table class="runs attempt-list"><thead><tr><th>Run</th><th>Completion</th><th>Spend</th><th>Repairs</th><th>Elapsed</th><th>Status</th></tr></thead><tbody>'
     + stacks.flatMap(stack => stack.attempts.map(attempt => {

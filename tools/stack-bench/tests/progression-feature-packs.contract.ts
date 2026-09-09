@@ -250,3 +250,11 @@ test('the sequential L2 recipe runs every source its operations feature packs ow
     }
   }
 });
+
+// Each check has authored reporting metadata; browser transport is not a UI category.
+test('every current progression check has a category independent of its operational role', () => {
+  const checks = definition.nodes.flatMap(node => node.gradingChecks);
+  assert.ok(checks.length);
+  assert.ok(checks.every(check => ['feature', 'production', 'interface'].includes(check.category ?? '')));
+  assert.ok(checks.some(check => check.role === 'feature' && check.category === 'production'));
+});

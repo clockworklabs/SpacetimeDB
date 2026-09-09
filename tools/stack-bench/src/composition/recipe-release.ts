@@ -1,3 +1,4 @@
+import type { CheckCategory } from './definition-compiler.js';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { z } from 'zod';
@@ -18,6 +19,7 @@ import { TRACK_MANIFEST_FILE, type Track } from './tracks.js';
 export const RECIPE_RELEASE_SCHEMA_VERSION = 3;
 
 export interface RecipeCheck {
+  category?: CheckCategory;
   stableKey: string;
   executionId: string;
   points: number;
@@ -296,6 +298,7 @@ function checkDetails(plan: CompiledRecipePlan): RecipeCheckDetail[] {
           ...(group.stablePackId === undefined ? {} : { stablePackId: group.stablePackId }),
           checkGroupId: group.checkGroupId,
           role: group.role,
+          ...(criterion.category === undefined ? {} : { category: criterion.category }),
           ...(group.observations === undefined ? {} : { observations: group.observations }),
           ...(group.requiresFeatures === undefined ? {} : { requiresFeatures: group.requiresFeatures }),
           source: group.source,
@@ -401,6 +404,7 @@ function buildCompiledRecipeRelease(absoluteRecipe: string, root: string,
       packId: detail.packId,
       checkGroupId: detail.checkGroupId,
       role: detail.role,
+      ...(detail.category === undefined ? {} : { category: detail.category }),
       ...(detail.observations === undefined ? {} : { observations: detail.observations }),
       ...(detail.requiresFeatures === undefined ? {} : { requiresFeatures: detail.requiresFeatures }),
       source: detail.source,
@@ -553,6 +557,7 @@ function buildCompiledRecipeRelease(absoluteRecipe: string, root: string,
       ...(detail.stablePackId === undefined ? {} : { stablePackId: detail.stablePackId }),
       checkGroupId: detail.checkGroupId,
       role: detail.role,
+      ...(detail.category === undefined ? {} : { category: detail.category }),
       ...(detail.observations === undefined ? {} : { observations: detail.observations }),
       ...(detail.requiresFeatures === undefined ? {} : { requiresFeatures: detail.requiresFeatures }),
       source: detail.source,

@@ -1100,6 +1100,12 @@ test('the progression view replays the graph once per stack within its budget', 
   assert.deepEqual(track.steps.map(step => step.completedAt), track.steps.map((_, index) =>
     new Date(Date.parse(now) + (index + 1) * 60_000).toISOString()));
   assert.ok(track.steps.every(step => step.statuses.length === view.nodes.length));
+  assert.ok(track.steps.every(step => step.featureCompletion ===
+    step.statuses.filter(status => status === 'passed').length / view.nodes.length));
+  const sheet = campaignSheet(resultsRoot, 'progression-run');
+  const attemptView = sheet.stacks.flatMap(stack => stack.attempts).find(attempt => attempt.id === track.attemptId)!;
+  assert.equal(attemptView.featureCompletion?.rate, track.steps.at(-1)?.featureCompletion);
+  assert.equal(Object.values(attemptView.checkCategories ?? {}).reduce((total, category) => total + category.selected, 0), attemptView.completion?.selected);
   assert.ok(track.steps.some(step => step.action === 'build'));
   assert.equal(track.steps.some(step => step.action === 'repair'), false);
   assert.ok(track.steps.at(-1)?.statuses.includes('passed'));

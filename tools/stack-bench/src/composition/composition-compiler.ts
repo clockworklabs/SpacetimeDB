@@ -1,3 +1,4 @@
+import type { CheckCategory } from './definition-compiler.js';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
 
@@ -111,6 +112,7 @@ export interface SelectedCheckGroup {
 }
 
 export interface SelectedCheck {
+  category?: CheckCategory;
   stableKey: string;
   packId: string;
   stablePackId?: string;
@@ -1006,6 +1008,7 @@ export function compileRecipeFile(recipePath: string,
           checkGroupId: group.checkGroupId,
           criterionId: criterion.id,
           role: group.role,
+          ...(criterion.category === undefined ? {} : { category: criterion.category }),
           ...(group.observations === undefined ? {} : { observations: group.observations }),
           ...(group.requiresFeatures === undefined ? {} : { requiresFeatures: group.requiresFeatures }),
           source: group.source,

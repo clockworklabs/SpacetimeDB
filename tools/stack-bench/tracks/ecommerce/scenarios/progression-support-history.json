@@ -21,6 +21,7 @@
       "criteria": [
         {
           "id": "612c",
+          "category": "feature",
           "desc": "the customer can view their support ticket history",
           "points": 1,
           "statedBy": "Signed-in customers can see their support ticket history.",
@@ -30,6 +31,7 @@
         },
         {
           "id": "612a",
+          "category": "production",
           "desc": "the owner sees the ticket after reload",
           "points": 2,
           "statedBy": "A customer's support history persists.",
@@ -42,6 +44,7 @@
         },
         {
           "id": "612b",
+          "category": "production",
           "desc": "another customer cannot see the ticket",
           "points": 2,
           "statedBy": "Customers cannot see another customer's support tickets.",

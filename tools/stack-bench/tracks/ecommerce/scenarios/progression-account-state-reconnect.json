@@ -16,6 +16,7 @@
       "criteria": [
         {
           "id": "105b",
+          "category": "production",
           "desc": "the same account and cart survive the connection dropping and coming back",
           "points": 1,
           "statedBy": "the signed-in account and its current data remain available after reconnecting",

@@ -14,6 +14,7 @@
       "criteria": [
         {
           "id": "3b",
+          "category": "feature",
           "desc": "a cancelled order is shown as cancelled in the customer's history",
           "points": 1,
           "statedBy": "a customer can cancel an order that has not shipped",

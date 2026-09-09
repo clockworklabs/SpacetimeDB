@@ -147,7 +147,7 @@ function compileGraphDefinition(input: unknown,
     const localChecks = new Set<string>();
     node.gradingChecks.forEach((check, checkIndex) => {
       const checkAt = `${at}.gradingChecks[${checkIndex}]`;
-      strictObject(check, checkAt, new Set(['id', 'points', 'role', 'requiresFeatures']));
+      strictObject(check, checkAt, new Set(['id', 'points', 'role', 'requiresFeatures', 'category']));
       identifier(check.id, `${checkAt}.id`);
       if (localChecks.has(check.id)) fail(`${checkAt}.id`, `duplicates ${JSON.stringify(check.id)}`);
       if (checkIds.has(check.id)) fail(`${checkAt}.id`, 'is already owned by another node');
@@ -156,6 +156,9 @@ function compileGraphDefinition(input: unknown,
       positiveInteger(check.points, `${checkAt}.points`);
       if (!['feature', 'guarantee'].includes(check.role)) {
         fail(`${checkAt}.role`, 'must be "feature" or "guarantee"');
+      }
+      if (check.category !== undefined && !['feature', 'production', 'interface'].includes(check.category)) {
+        fail(`${checkAt}.category`, 'must be feature, production, or interface');
       }
       if (check.requiresFeatures !== undefined) {
         check.requiresFeatures = uniqueStrings(check.requiresFeatures,

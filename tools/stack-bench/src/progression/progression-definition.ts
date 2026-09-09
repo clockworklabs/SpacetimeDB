@@ -10,6 +10,7 @@ import {
   compileScenarioDefinition,
   type CompiledScenarioDefinition,
   type CompiledStep,
+  type CheckCategory,
 } from '../composition/definition-compiler.js';
 import { agentVisibleContractText } from '../composition/agent-visible-contract.js';
 import { canonicalDefinitionJson, canonicalizeDefinition }
@@ -32,6 +33,7 @@ export interface CompiledProgressionCheck {
   id: string;
   points: number;
   role: 'feature' | 'guarantee';
+  category?: CheckCategory;
   requiresFeatures?: string[];
 }
 
@@ -227,6 +229,7 @@ function groupChecks(pack: CompiledPackDefinition, groupId: string, trackRoot: s
       id: `${pack.stableId ?? pack.id}.${group.stableId ?? group.id}.${criterion.id}`,
       points: criterion.points,
       role,
+      ...(criterion.category === undefined ? {} : { category: criterion.category }),
       ...(group.requiresFeatures?.length
         ? { requiresFeatures: [...group.requiresFeatures].sort() } : {}),
     })),

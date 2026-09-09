@@ -7,9 +7,9 @@
   "recipe": {
     "path": "../recipes/progression-catalog.json",
     "id": "ecommerce.progression-catalog",
-    "meaningSha256": "f7269d03f4e3a5f08adcc0516aca1fd136ee83b4ced2ae3440968d84348a0d21",
+    "meaningSha256": "f595678522b9ab8a11596c396980b644b13ef30dd35689d7dca4bb8c29c41271",
     "executionSha256": "67e57846506c2b5b65852621f0225ede418225de5d01a943ed019b9ca778d088",
-    "contentSha256": "2e9195bfac929264d2a985ea8907651cbd08595ac47ac3c93bb24bc40ced5efb"
+    "contentSha256": "4df3f3c61ec47a165c263a1fedc4d3d7a2c1d153866573a207679c284931c034"
   },
   "fixture": {
     "id": "ecommerce.operations",
@@ -130,7 +130,7 @@
     "evidence": [],
     "featureCatalog": {
       "path": "progression/ecommerce.json",
-      "contentSha256": "a4d28038c67155657bb3357225cedb0ad87a414c84c7f04ecd2176f04318ecef",
+      "contentSha256": "1ed9727296687094485337dc14b17be42769f248a5ac51241f9dc64248140484",
       "id": "ecommerce.questlines"
     }
   },

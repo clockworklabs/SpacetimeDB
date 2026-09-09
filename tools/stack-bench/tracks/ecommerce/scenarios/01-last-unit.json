@@ -44,6 +44,7 @@
       "criteria": [
         {
           "id": "201a",
+          "category": "production",
           "desc": "six customers buy the last three units at once: stock lands on exactly zero, never below",
           "points": 1,
           "steps": [
@@ -67,6 +68,7 @@
         },
         {
           "id": "201b",
+          "category": "production",
           "desc": "exactly three of the six customers end up with an order, and none is charged twice",
           "points": 1,
           "steps": [
@@ -90,6 +92,7 @@
         },
         {
           "id": "201c",
+          "category": "production",
           "desc": "revenue increases by exactly three sales, not six",
           "points": 1,
           "steps": [

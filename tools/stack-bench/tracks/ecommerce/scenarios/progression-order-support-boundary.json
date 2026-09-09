@@ -25,6 +25,7 @@
       "criteria": [
         {
           "id": "614b",
+          "category": "production",
           "desc": "another customer cannot attach or inspect the owner's order",
           "points": 2,
           "statedBy": "A customer cannot attach or inspect another customer's order.",

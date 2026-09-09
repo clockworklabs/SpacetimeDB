@@ -23,6 +23,7 @@
       "criteria": [
         {
           "id": "501a",
+          "category": "feature",
           "desc": "the order owner receives one delivery notification",
           "points": 3,
           "statedBy": "A delivered order creates one notification for its owner.",
@@ -33,6 +34,7 @@
         },
         {
           "id": "501b",
+          "category": "production",
           "desc": "another customer cannot see the delivery notification",
           "points": 2,
           "statedBy": "Delivery notifications are private to the order owner.",

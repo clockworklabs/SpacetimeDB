@@ -129,3 +129,29 @@ test('distribution shows completed run percentages across providers and preserve
   assert.match(html, /questlines=graph&amp;chart=distribution/);
   assert.doesNotMatch(html, /NaN|Infinity|Elapsed run time/);
 });
+
+test('completion units use distinct saved metrics in both chart views', () => {
+  const sheet = { stacks: [{ stack: 'spacetime', attempts: [{ id: 'a', repetition: 1,
+    status: 'completed', executionStartedAt: '2026-09-08T00:00:00Z',
+    completion: { rate: 0.75 }, featureCompletion: { rate: 0.5 } }] }] } as CampaignSheet;
+  const progression = { stacks: [{ stack: 'spacetime', attemptId: 'a', steps: [
+    { completedAt: '2026-09-08T00:01:00Z', completion: 0.75, featureCompletion: 0.5 },
+  ] }] } as CampaignProgression;
+  for (const metric of ['completion', 'distribution'] as const) {
+    const features = progressChart(sheet, progression, metric, 'graph', new Set(), 'features');
+    const checks = progressChart(sheet, progression, metric, 'graph', new Set(), 'checks');
+    assert.match(features, /Rep 1[^<]*50%/);
+    assert.match(checks, /Rep 1[^<]*75%/);
+    assert.match(features, /aria-label="Completion unit"/);
+    assert.match(features, new RegExp(`questlines=graph&amp;chart=${metric}&amp;unit=checks`));
+    assert.match(features, /chart=distribution&amp;unit=features/);
+  }
+  sheet.stacks[0]!.attempts[0]!.featureCompletion = null;
+  progression.stacks[0]!.steps[0]!.featureCompletion = null;
+  for (const metric of ['completion', 'distribution'] as const) {
+    const html = progressChart(sheet, progression, metric, 'grid', new Set(), 'features');
+    assert.doesNotMatch(html, /progress-series|>75%<\/text><\/g>/);
+    assert.match(html, /Pending/);
+  }
+  assert.doesNotMatch(progressChart(sheet, progression, 'cost'), /aria-label="Completion unit"/);
+});

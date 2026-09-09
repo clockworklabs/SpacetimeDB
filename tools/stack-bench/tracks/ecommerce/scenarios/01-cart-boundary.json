@@ -20,6 +20,7 @@
       "criteria": [
         {
           "id": "109a",
+          "category": "production",
           "desc": "the same cart action run by another customer changes only that customer's cart",
           "points": 2,
           "steps": [
@@ -44,6 +45,7 @@
         },
         {
           "id": "109b",
+          "category": "production",
           "desc": "a negative quantity is refused and leaves the cart unchanged",
           "points": 1,
           "steps": [

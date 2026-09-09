@@ -22,6 +22,7 @@
       "criteria": [
         {
           "id": "107a",
+          "category": "production",
           "desc": "revenue rises by exactly what was bought",
           "points": 1,
           "statedBy": "total revenue equals the sum of order totals",
@@ -31,6 +32,7 @@
         },
         {
           "id": "107b",
+          "category": "production",
           "desc": "what the store sold is what left the warehouses, and a fresh client agrees",
           "points": 1,
           "statedBy": "warehouse totals and a fresh storefront agree with completed sales",

@@ -36,6 +36,7 @@
         },
         {
           "id": "2c",
+          "category": "production",
           "desc": "a purchase moves the bought item to the front of the ranking, live",
           "points": 1,
           "steps": [

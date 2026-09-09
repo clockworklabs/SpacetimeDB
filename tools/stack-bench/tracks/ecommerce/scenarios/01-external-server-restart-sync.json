@@ -23,6 +23,7 @@
       "criteria": [
         {
           "id": "901c",
+          "category": "production",
           "desc": "a stock correction lands while the app server is stopped, and the already-open storefront shows the authoritative total of 65 after the server returns without a reload",
           "points": 1,
           "note": "Preserves the previously promoted score while removing its dependency on 901a changing East stock first.",

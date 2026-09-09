@@ -17,6 +17,7 @@
       "criteria": [
         {
           "id": "3d",
+          "category": "production",
           "desc": "an item sells out visibly, and a further purchase is refused without changing stock",
           "points": 2,
           "statedBy": "an item with zero stock cannot be bought",

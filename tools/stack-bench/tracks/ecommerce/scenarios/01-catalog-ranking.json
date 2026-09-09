@@ -13,6 +13,7 @@
       "criteria": [
         {
           "id": "2b",
+          "category": "feature",
           "desc": "the storefront shows the exact alphabetical top ten before any purchase",
           "points": 1,
           "statedBy": "Show the ten most-purchased items and break ties by item name",

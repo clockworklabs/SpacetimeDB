@@ -16,6 +16,7 @@
       "criteria": [
         {
           "id": "2b",
+          "category": "production",
           "desc": "both warehouse totals move live and in opposite directions as stock is transferred",
           "points": 2,
           "statedBy": "the per-warehouse numbers staff and admins see both move at once",

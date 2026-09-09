@@ -22,8 +22,6 @@
     "mongodb": [],
     "postgres": [],
     "spacetime": [
-      "typescript-server",
-      "typescript-client",
       "cli",
       "spacetime-managed-dev"
     ]

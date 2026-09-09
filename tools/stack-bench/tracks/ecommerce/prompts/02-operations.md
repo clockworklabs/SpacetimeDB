@@ -1,25 +1,6 @@
-# Level 2 — Running the business
+# Store operations
 
-The store works. Now it has to be **operated**: stock moved between warehouses,
-orders fulfilled, prices changed, orders cancelled and returned — while everyone
-watching sees the consequences immediately.
-
-Everything below is ordinary retail work. What makes it demanding is that each
-action touches several different views of the same data, and every one of those
-views belongs to someone who is looking at it right now.
-
-## The people watching
-
-Four kinds of viewer, each seeing a different projection of the same store:
-
-- **A visitor**, signed out — the storefront
-- **A customer** — their cart, their orders, their recommendations
-- **Warehouse staff** — the fulfilment queue and where stock physically is
-- **An administrator** — every item, every warehouse, the money
-
-A change made by any of them must reach all of the others it affects, without a
-reload, every time. There is no acceptable action that updates some views and not
-others.
+Add warehouse operations, order fulfilment, cancellation, returns, and price management.
 
 ## New: warehouse staff
 
@@ -32,66 +13,37 @@ others.
 
 ### Fulfilment
 
-- Every order is **pending** when placed, and appears in the **fulfilment queue**
-  in the order it was placed
-- Staff **mark an order shipped**. It leaves the queue for everyone watching the
-  queue, and the customer's order history shows it as shipped, live.
-- The queue shows, for each order, its items and which warehouse each will ship
-  from — the warehouse holding stock for that item, chosen the same way a purchase
-  drains it
+Show pending orders in a fulfilment queue, oldest first. Each entry shows its items and
+shipping warehouse. Staff can mark an order shipped. Show the status in order history.
 
-The Level 1 named-action rule also applies to shipping. Name the ordinary
-server write `ship`: server-based stacks expose `POST /api/fulfilment/ship`
-with `{ "orderId": ... }`, and SpacetimeDB exposes reducer `shipOrder`. The
+Name the shipping write `ship`: server-based stacks expose `POST /api/fulfilment/ship`
+with `{ "orderId": ... }`, and SpacetimeDB exposes reducer `shipOrder`.
+
+The
 same authentication and staff-only authorization apply through this path.
 
 ### Moving stock
 
-- An admin can **transfer** a number of units of an item from one warehouse to
-  another
-- A transfer **moves stock, it does not create or destroy it**: the item's total
-  is identical before and after, and the two warehouses' numbers change together.
-  A transfer that would leave a warehouse short is refused and changes nothing.
-- Transfers are visible immediately: the storefront total is unchanged, but the
-  per-warehouse numbers staff and admins see both move at once
+An admin can transfer units of an item from one warehouse to another.
 
 ### Cancelling and returning
 
-- A customer can **cancel** an order that has not shipped. The stock goes back to
-  the warehouse it came from, the order leaves the fulfilment queue, and revenue
-  falls by that order's total.
-- A customer can **return** an item from an order that has shipped. The stock comes
-  back, revenue falls by what was paid for it, and the order shows the item as
-  returned.
-- A cancelled or returned order's items **stop counting as purchases** — the
-  best-seller ranking reflects what was actually kept
+Customers can cancel an order before it ships. Refund the purchase and return its stock
+to the supplying warehouse. After shipping, customers can return an item for its purchase
+price and the item is restocked. Show cancelled and returned states in order history.
 
 ### Prices
 
-- An admin can **change an item's price**
-- The storefront shows the new price immediately, to everyone
-- **Past orders keep the price that was paid.** Changing a price never alters the
-  history, the revenue already recorded, or a customer's receipt.
-- An item in someone's cart at the moment the price changes is charged the **new**
-  price at checkout, and the cart total they are looking at updates to match
+An admin can change an item's price. Show prices in the catalog.
 
 ### Live operational views
 
-These exist so the people running the store can see its state. Each is derived
-from the same data as everything else, and each must be correct the instant any
-action above changes it:
-
-- **Low stock** — an admin list of every item whose total is at or below 10 units,
-  most urgent first. Items enter and leave this list as stock moves, sells, is
-  restocked, cancelled or returned.
-- **Warehouse utilisation** — for each warehouse, the total units it holds, live
-- **Category totals** — every item belongs to a category (below); for each
-  category, how many units have been sold and the revenue they earned, live
-- **Fulfilment queue depth** — how many orders are waiting, visible to staff and
-  admins, live
-- **Recommended for you** — for a signed-in customer, the items from categories
-  they have bought from, most-purchased first, excluding items already in their
-  cart. A signed-out visitor sees the best sellers on the storefront without opening another view.
+- Low stock: items with 10 units or fewer, most urgent first.
+- Warehouse utilisation: total units in each warehouse.
+- Category totals: units sold and revenue per category.
+- Fulfilment queue depth: number of pending orders.
+- Recommended for you: items from categories the customer bought from, most-purchased
+  first, excluding items already in their cart. Signed-out visitors see best sellers.
 
 ### What must stay true
 

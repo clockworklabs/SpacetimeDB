@@ -39,6 +39,8 @@ function locate(sheet: CampaignSheet, attemptId: string): {
   return null;
 }
 
+const CATEGORY = { feature: 'Feature', production: 'Production', interface: 'Interface', unknown: 'Unclassified' };
+
 function checksTable(checks: AttemptChecks | null): string {
   if (!checks?.checks.length) return '<p class="summary-note">No check results are recorded yet. Check the log for current work or an execution error.</p>';
   const features = new Map<string, AttemptCheck[]>();
@@ -49,17 +51,18 @@ function checksTable(checks: AttemptChecks | null): string {
     const points = items.reduce((total, check) => total + check.points, 0);
     const passed = items.filter(check => check.outcome === 'pass')
       .reduce((total, check) => total + check.points, 0);
-    return `<tr class="group"><td colspan="3">${esc(feature)}`
+    return `<tr class="group"><td colspan="4">${esc(feature)}`
       + `<i>${ratio(passed, points)}</i></td></tr>`
       + items.map(check => `<tr><td class="k">${esc(check.id)}</td>`
-        + `<td class="d">${esc(check.description)}</td><td class="h">`
+        + `<td class="d">${esc(check.description)}</td>`
+        + `<td>${CATEGORY[check.category ?? 'unknown']}</td><td class="h">`
         + `${check.history.map(outcome => GLYPH[outcome] ?? GLYPH['not-run']).join('')}`
         + '</td></tr>').join('');
   }).join('');
   return '<div class="grade-key">Raw check outcomes from each grade, from left to right. '
     + '<span class="p">✓ Pass</span><span class="f">✕ Fail</span>'
     + '<span class="x">· No pass/fail result</span></div>'
-    + '<div class="wrap"><table class="checks"><thead><tr><th>Check</th><th>Proves</th>'
+    + '<div class="wrap"><table class="checks"><thead><tr><th>Check</th><th>Proves</th><th>Category</th>'
     + `<th>Grades</th></tr></thead><tbody>${groups}</tbody></table></div>`;
 }
 
@@ -148,6 +151,9 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log, tran
   const issue = attempt.excluded
     ? `<div class="issue"><span class="label">Why this run was excluded</span>`
       + `<p>${esc(attempt.excluded)}</p></div>` : '';
+  const categories = Object.entries(attempt.checkCategories ?? {}).filter(([, value]) => value.selected > 0);
+  const categorySummary = categories.some(([category]) => category !== 'unknown') ? '<div class="figs">' + categories.map(([category, value]) =>
+    figure(CATEGORY[category as keyof typeof CATEGORY], ratio(value.passed, value.selected))).join('') + '</div>' : '';
   const track = progression?.stacks.find(entry => entry.attemptId === attemptId);
   const history = sheet.mode === 'dependency'
     ? '<h3>Feature dependencies</h3>' + (progression && track
@@ -170,7 +176,7 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log, tran
         + ` / ${duration((timeBudget?.effectiveMinutes ?? sheet.facts.timeLimitMinutes) * 60)}` : DASH)
     + figure('Time', duration(attempt.timeSec))
     + `</div>${timeControls}${grantStatus}${controlError ? `<p class="err" role="alert">${esc(controlError)}</p>` : ''}${issue}${history}`
-    + `<div class="tabs">${tabs}</div>${panel}</div>`;
+    + `<div class="tabs">${tabs}</div>${tab === 'checks' ? categorySummary : ''}${panel}</div>`;
 }
 
 function transcriptPanel(page?: TranscriptPage | null): string {

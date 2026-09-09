@@ -16,6 +16,7 @@
       "criteria": [
         {
           "id": "2a",
+          "category": "production",
           "desc": "a transfer decreases the source, increases the destination, and preserves the item's exact total",
           "points": 3,
           "statedBy": "a transfer moves stock, it does not create or destroy it",
@@ -34,6 +35,7 @@
         },
         {
           "id": "2c",
+          "category": "production",
           "desc": "a transfer that would overdraw a warehouse is refused and changes neither warehouse nor the item total",
           "points": 2,
           "statedBy": "a transfer that would leave a warehouse short is refused and changes nothing",
@@ -165,6 +167,7 @@
       "criteria": [
         {
           "id": "201a",
+          "category": "production",
           "desc": "the server refuses a customer's direct transfer and neither warehouse nor the item total changes",
           "points": 2,
           "statedBy": "An admin can transfer a number of units of an item from one warehouse to another",
@@ -183,6 +186,7 @@
         },
         {
           "id": "201b",
+          "category": "production",
           "desc": "the server refuses a customer's direct price change and the last accepted price remains exact",
           "points": 2,
           "statedBy": "an admin can change an item's price",
@@ -210,6 +214,7 @@
       "criteria": [
         {
           "id": "202a",
+          "category": "production",
           "desc": "a transfer decreases East, increases West, and leaves the item's exact total unchanged",
           "points": 2,
           "statedBy": "a transfer moves stock, it does not create or destroy it",

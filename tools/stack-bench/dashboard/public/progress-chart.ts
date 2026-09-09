@@ -2,9 +2,9 @@ import type { CampaignProgression, CampaignSheet } from '../dashboard-views.js';
 import { duration, esc, stackLabel } from './format.js';
 
 export function progressChart(sheet: CampaignSheet, progression: CampaignProgression | null,
-  metric: 'completion' | 'cost' | 'distribution' = 'completion', view = 'grid', hidden: ReadonlySet<string> = new Set()): string {
+  metric: 'completion' | 'cost' | 'distribution' = 'completion', view = 'grid', hidden: ReadonlySet<string> = new Set(), unit: 'checks' | 'features' = 'checks'): string {
   const tracks = metric === 'distribution' ? sheet.stacks.flatMap(stack => stack.attempts.flatMap(attempt => {
-    const rate = attempt.completion?.rate;
+    const rate = unit === 'features' ? attempt.featureCompletion?.rate : attempt.completion?.rate;
     return attempt.status === 'completed' && rate != null && Number.isFinite(rate)
       ? [{ stack: stack.stack, attempt, points: [{ elapsed: 0, value: rate * 100, upper: false }] }] : [];
   })) : (progression?.stacks ?? []).flatMap(track => {
@@ -15,7 +15,8 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
     const observations = (metric === 'cost' ? (track.costs ?? []).map(point => ({
       completedAt: point.completedAt, value: point.cost.costUsd, upper: point.cost.status === 'upper-bound',
     })) : track.steps.map(step => ({ completedAt: step.completedAt,
-      value: step.completion == null ? null : step.completion * 100, upper: false }))).flatMap(step => {
+      value: (unit === 'features' ? step.featureCompletion : step.completion) == null ? null
+        : (unit === 'features' ? step.featureCompletion! : step.completion!) * 100, upper: false }))).flatMap(step => {
       const elapsed = (Date.parse(step.completedAt ?? '') - start) / 1000;
       return Number.isFinite(elapsed) && elapsed >= 0 && step.value != null
         && Number.isFinite(step.value) && step.value >= 0
@@ -24,14 +25,20 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
     const points = [{ elapsed: 0, value: 0, upper: false }, ...observations];
     return observations.length ? [{ stack: track.stack, attempt, points }] : [];
   });
+  const unitDescription = unit === 'features'
+    ? 'Features fully passed out of all selected features. A feature passes only when all its selected checks pass, including production guarantees.'
+    : 'Accepted checks passed out of all selected checks.';
   const label = metric === 'distribution' ? 'Completion distribution' : metric === 'cost' ? 'Cost' : 'Completion';
   const description = metric === 'distribution'
-    ? 'One point per completed run, grouped by provider. Percentage is accepted checks passed out of all selected checks. Running runs are omitted. Excluded runs are labelled.'
+    ? `One point per completed run, grouped by provider. ${unitDescription} Running runs are omitted. Excluded runs are labelled.`
     : metric === 'cost'
     ? 'Cumulative cost per run at saved grade checkpoints. Includes repairs and excluded runs. Subscription costs use the pinned API-equivalent price snapshot, not invoice charges. Unknown costs are not plotted; upper bounds are labelled. Time starts at the current execution. Lines connect recorded observations; intermediate values are not measured.'
-    : 'Checks passed out of all selected checks at each saved grade. Zero marks run start before any checks pass. Each line is one repetition; elapsed time starts at that run. Excluded runs are labelled. Lines can fall after regressions. Lines connect recorded observations; intermediate values are not measured.';
-  const heading = `<div class="section-heading progress-heading"><h3 title="${description}">${label}${metric === 'distribution' ? '' : ' over time'}</h3><nav aria-label="Chart metric">`
-    + (['completion', 'cost', 'distribution'] as const).map(option => `<a class="chip sm${metric === option ? ' on' : ''}"${metric === option ? ' aria-current="page"' : ''} href="?questlines=${encodeURIComponent(view)}&amp;chart=${option}">${option === 'distribution' ? 'Distribution' : option === 'cost' ? 'Cost' : 'Completion'}</a>`).join('') + '</nav></div>';
+    : `${unitDescription} Each point is a saved grade. Zero marks run start. Each line is one repetition; elapsed time starts at that run. Excluded runs are labelled. Lines can fall after regressions. Intermediate values are not measured.`;
+  const heading = `<div class="section-heading progress-heading"><h3 title="${description}">${label}${metric === 'distribution' ? '' : ' over time'}</h3><div class="chart-options"><nav aria-label="Chart metric">`
+    + (['completion', 'cost', 'distribution'] as const).map(option => `<a class="chip sm${metric === option ? ' on' : ''}"${metric === option ? ' aria-current="page"' : ''} href="?questlines=${encodeURIComponent(view)}&amp;chart=${option}&amp;unit=${unit}">${option === 'distribution' ? 'Distribution' : option === 'cost' ? 'Cost' : 'Completion'}</a>`).join('') + '</nav>'
+    + (metric === 'cost' ? '' : '<nav aria-label="Completion unit">'
+      + (['features', 'checks'] as const).map(option => `<a class="chip sm${unit === option ? ' on' : ''}"${unit === option ? ' aria-current="page"' : ''} href="?questlines=${encodeURIComponent(view)}&amp;chart=${metric}&amp;unit=${option}">${option === 'features' ? 'Features' : 'Checks'}</a>`).join('') + '</nav>')
+    + '</div></div>';
   const valueLabel = (value: number, upper = false, decimals = 1) => metric === 'cost'
     ? `${upper ? '≤' : ''}$${value.toFixed(2)}` : `${value.toFixed(decimals)}%`;
   const brandColors: Record<string, string> = { spacetime: '#4cf490', mongodb: '#b45af2', postgres: '#336791' };

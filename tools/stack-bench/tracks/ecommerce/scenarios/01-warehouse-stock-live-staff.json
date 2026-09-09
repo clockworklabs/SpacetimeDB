@@ -16,6 +16,7 @@
       "criteria": [
         {
           "id": "7c",
+          "category": "production",
           "desc": "the storefront stock is the sum across warehouses, and a restock raises it live",
           "points": 2,
           "statedBy": "an item's stock on the storefront is the sum of that item's units across all warehouses",

@@ -1,4 +1,3 @@
 ## Delivery notifications
 
-A customer who enabled order notifications receives one private notification when their order
-is delivered.
+Notify customers when their orders are delivered, using their notification preferences.

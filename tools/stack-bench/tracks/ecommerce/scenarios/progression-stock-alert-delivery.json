@@ -20,6 +20,7 @@
       "criteria": [
         {
           "id": "631c",
+          "category": "feature",
           "desc": "restored stock sends the requested alert",
           "points": 1,
           "statedBy": "Show an alert when stock returns.",

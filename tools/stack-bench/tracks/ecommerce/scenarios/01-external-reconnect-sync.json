@@ -23,6 +23,7 @@
       "criteria": [
         {
           "id": "901d",
+          "category": "production",
           "desc": "while the storefront is offline, a direct database write sets Desk Lamp's East stock to 7; after reconnecting, the same page catches up from 100 to the authoritative total of 52",
           "points": 1,
           "note": "This proposed score remains draft until the focused pristine and mutation controls are qualified.",

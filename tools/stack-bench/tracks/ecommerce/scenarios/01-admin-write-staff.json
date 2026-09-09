@@ -16,6 +16,7 @@
       "criteria": [
         {
           "id": "103a",
+          "category": "feature",
           "desc": "an administrator can restock a warehouse",
           "points": 1,
           "statedBy": "An administrator can add units to a selected item and warehouse.",
@@ -30,6 +31,7 @@
         },
         {
           "id": "103b",
+          "category": "production",
           "desc": "the server refuses a warehouse write from staff",
           "points": 2,
           "statedBy": "Only administrators can change warehouse stock.",

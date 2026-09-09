@@ -95,6 +95,7 @@
       "criteria": [
         {
           "id": "403a",
+          "category": "feature",
           "desc": "recommendations follow the customer's categories, global sales, and name tie-break",
           "points": 4,
           "statedBy": "Order the remaining items by global units sold, highest first, then by item name.",
@@ -137,6 +138,7 @@
         },
         {
           "id": "403b",
+          "category": "production",
           "desc": "one customer's activity does not replace another customer's recommendations",
           "points": 2,
           "statedBy": "Customer recommendation profiles are isolated.",

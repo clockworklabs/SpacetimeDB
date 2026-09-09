@@ -142,6 +142,7 @@
       "criteria": [
         {
           "id": "202b",
+          "category": "production",
           "desc": "a sale and its cancellation leave the shelf exactly as they found it",
           "points": 2,
           "statedBy": "the stock goes back to the warehouse it came from",
@@ -158,6 +159,7 @@
         },
         {
           "id": "202c",
+          "category": "production",
           "desc": "a fresh client sees the restored total after a sale is cancelled",
           "points": 1,
           "statedBy": "every one of these numbers is the same for every person looking at it",

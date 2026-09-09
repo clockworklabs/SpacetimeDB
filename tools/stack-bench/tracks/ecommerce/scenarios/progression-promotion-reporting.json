@@ -27,6 +27,7 @@
       "criteria": [
         {
           "id": "622a",
+          "category": "feature",
           "desc": "the promotion report has the exact redemption count",
           "points": 1,
           "statedBy": "Promotion redemption counts match orders that used the promotion.",
@@ -36,6 +37,7 @@
         },
         {
           "id": "622b",
+          "category": "feature",
           "desc": "the promotion report has the exact discounted revenue",
           "points": 2,
           "statedBy": "Promotion revenue after discounts matches orders that used the promotion.",

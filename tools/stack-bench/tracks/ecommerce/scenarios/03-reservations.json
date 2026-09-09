@@ -15,6 +15,7 @@
       ],
       "criteria": [{
         "id": "301a",
+        "category": "production",
         "desc": "adding an item reserves one unit for every open viewer",
         "points": 2,
         "statedBy": "Adding an item to a cart reserves its stock immediately for 90 seconds.",
@@ -35,6 +36,7 @@
       ],
       "criteria": [{
         "id": "305a",
+        "category": "interface",
         "desc": "the reservation timer decreases",
         "points": 1,
         "statedBy": "The cart shows the remaining reservation time.",
@@ -56,6 +58,7 @@
       ],
       "criteria": [{
         "id": "306a",
+        "category": "feature",
         "desc": "checkout converts the reservation into an order and empties the cart",
         "points": 2,
         "statedBy": "Checkout converts a live reservation into a sale.",
@@ -78,6 +81,7 @@
       ],
       "criteria": [{
         "id": "307a",
+        "category": "feature",
         "desc": "an expired reservation marks its cart line",
         "points": 3,
         "statedBy": "An expired reservation remains visible as expired.",
@@ -100,6 +104,7 @@
       ],
       "criteria": [{
         "id": "308a",
+        "category": "feature",
         "desc": "raising quantity starts a new reservation window",
         "points": 2,
         "statedBy": "Adding the item again renews the reservation.",

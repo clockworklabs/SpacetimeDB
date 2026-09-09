@@ -8,5 +8,4 @@ your stack's ordinary write path; do not add another transport for this action.
 |---|---|---|
 | transfer stock between warehouses | `POST /api/admin/transfer` | reducer `adminTransferStock` |
 
-The rules do not change because a request arrived this way. Authentication,
-staff authorization, stock conservation, and every guarantee above still apply.
+Use the same action as the visible transfer control.

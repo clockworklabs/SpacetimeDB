@@ -4,11 +4,12 @@ import test from 'node:test';
 import { dependencyRepairStopReason, type ConclusiveResult, type DependencyGradingSelection,
   type DependencyPromptSelection } from '../src/progression/dependency-mode.js';
 import { compileDependencyMode } from '../src/progression/dependency-definition.js';
-import type { DependencyScore } from '../src/progression/dependency-score.js';
+import { dependencyCompletionBreakdown, type DependencyScore } from '../src/progression/dependency-score.js';
 import { compileDependencyPolicyInput, compileFeatureCatalogInput }
   from '../src/progression/progression-definition.js';
 import { progressionEngine, type ProgressionWorkAction }
   from '../src/progression/progression-engine.js';
+import type { CheckCategory } from '../src/composition/definition-compiler.js';
 import type { ProgressionState } from '../src/progression/progression-state.js';
 import type { RepairPlanInput } from '../src/progression/repair-plan.js';
 
@@ -22,7 +23,7 @@ interface FixtureNode {
   dependencies: Array<{ id: string; reason: string }>;
   featureRefs: string[];
   promptModules: string[];
-  gradingChecks: Array<{ id: string; points: number; role: 'feature' | 'guarantee';
+  gradingChecks: Array<{ id: string; points: number; role: 'feature' | 'guarantee'; category?: CheckCategory;
     requiresFeatures?: string[] }>;
 }
 
@@ -46,7 +47,7 @@ const node = (id: string, dependencies: string[], questline: string,
   featureRefs: [`features.${id}`],
   promptModules: [`prompt.${id}`],
   gradingChecks: points.map((value, index) => ({
-    id: `check.${id}.${index + 1}`, points: value, role: 'feature',
+    id: `check.${id}.${index + 1}`, points: value, role: 'feature', category: 'feature',
     ...(requires.length ? { requiresFeatures: requires.map(feature => `features.${feature}`) } : {}),
   })),
 });
@@ -128,7 +129,7 @@ function guaranteeFixture(): FixtureDefinition {
     { id: 'discovery', title: 'Discovery' },
   ];
   definition.nodes[0]!.gradingChecks.push({
-    id: 'check.owner.guarantee', points: 1, role: 'guarantee',
+    id: 'check.owner.guarantee', points: 1, role: 'guarantee', category: 'production',
     requiresFeatures: ['features.other'],
   });
   return definition;
@@ -139,6 +140,10 @@ test('a deferred guarantee runs and remains repairable without blocking descenda
   state = progressionEngine.recordResult(state, grade(state, 'owner', { owner: 'pass' }));
   assert.equal(state.nodes.owner!.status, 'working');
   assert.deepEqual(prompt(state).nodeIds, ['other']);
+  const initial = dependencyCompletionBreakdown(state);
+  assert.deepEqual(initial.featureCompletion, { selected: 3, passed: 0, rate: 0 });
+  assert.equal(initial.checkCategories.feature.passed, 1);
+  assert.equal(initial.checkCategories.production.unmeasured, 1);
 
   state = progressionEngine.recordResult(state, grade(state, 'other', {
     owner: { 'check.owner.1': 'pass', 'check.owner.guarantee': 'fail' },
@@ -704,6 +709,11 @@ test('score keeps blocked points and averages questlines equally', () => {
   assert.equal(score.questlines.find(item => item.id === 'identity')!.passedPoints, 5);
   assert.equal(score.questlines.find(item => item.id === 'discovery')!.blockedPoints, 2);
   assert.equal(score.questlineAveragePercentage, 50);
+  const breakdown = dependencyCompletionBreakdown(state);
+  assert.deepEqual(breakdown.featureCompletion, { selected: 6, passed: 3, rate: 0.5 });
+  assert.equal(breakdown.checkCategories.feature.blocked, 2);
+  assert.equal(breakdown.checkCategories.feature.selected, 7);
+  assert.equal(breakdown.checkCategories.production.rate, null);
 });
 
 test('repair stop summaries distinguish unchanged findings from budget limits', () => {
@@ -712,4 +722,24 @@ test('repair stop summaries distinguish unchanged findings from budget limits', 
   assert.equal(dependencyRepairStopReason([{ exhaustionReason: 'repeated-findings' }]), 'repeated-findings');
   assert.equal(dependencyRepairStopReason([{ exhaustionReason: 'repeated-findings' },
     { exhaustionReason: 'feature-repairs-exhausted' }]), 'feature-repairs-exhausted');
+});
+
+// Classification is reporting metadata. It must not change dependency gates or scores.
+test('check categories preserve scoring and leave historical definitions unclassified', () => {
+  const definition = fixture();
+  const classified = progressionEngine.initialize(definition);
+  const historicalDefinition = structuredClone(definition);
+  for (const node of historicalDefinition.nodes) {
+    for (const check of node.gradingChecks) delete check.category;
+  }
+  const historical = progressionEngine.initialize(historicalDefinition);
+  assert.deepEqual(progressionEngine.score(classified), progressionEngine.score(historical));
+  assert.deepEqual(prompt(classified), prompt(historical));
+  const unknown = dependencyCompletionBreakdown(historical).checkCategories;
+  assert.equal(unknown.unknown.selected, 7);
+  assert.equal(unknown.feature.selected, 0);
+  assert.equal(unknown.production.selected, 0);
+  assert.throws(() => compileDependencyMode({ ...definition, nodes: definition.nodes.map(node => ({
+    ...node, gradingChecks: node.gradingChecks.map(check => ({ ...check, category: 'browser' })),
+  })) }), /category/);
 });

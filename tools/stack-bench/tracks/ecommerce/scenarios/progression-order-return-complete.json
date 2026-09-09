@@ -18,6 +18,7 @@
       "criteria": [
         {
           "id": "3c",
+          "category": "production",
           "desc": "returning a shipped item restores stock and revenue and marks the item returned",
           "points": 3,
           "statedBy": "An accepted return marks the item as returned, restores stock, and reduces revenue by the price paid.",

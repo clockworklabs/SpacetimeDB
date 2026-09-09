@@ -18,6 +18,7 @@
       "criteria": [
         {
           "id": "5d",
+          "category": "feature",
           "desc": "a signed-out visitor sees a best seller in the recommendations list",
           "points": 1,
           "statedBy": "Signed-out visitors see best sellers",

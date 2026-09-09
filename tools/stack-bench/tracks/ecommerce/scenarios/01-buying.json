@@ -26,6 +26,7 @@
         },
         {
           "id": "3b",
+          "category": "production",
           "desc": "buying reduces the stock every other client sees, without a reload",
           "points": 2,
           "steps": [

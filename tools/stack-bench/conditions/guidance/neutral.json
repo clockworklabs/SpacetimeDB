@@ -21,7 +21,9 @@
   "skills": {
     "mongodb": [],
     "postgres": [],
-    "spacetime": ["typescript-server", "typescript-client", "cli"]
+    "spacetime": [
+      "cli"
+    ]
   },
   "credentialAliases": {
     "stackbench-admin-2026": "store-admin-2026",

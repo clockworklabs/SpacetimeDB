@@ -97,14 +97,41 @@ const emptyPoints = (): PointTotals => ({
 const percentage = ({ passedPoints, availablePoints }: PointTotals): number =>
   (passedPoints / availablePoints) * 100;
 
-export function scoreDependencyState(state: ScoringState): DependencyScore {
-  const final = state.phase === 'terminal';
-  const outcomes = new Map<string, CheckStatus>(state.definition.nodes.flatMap(node => {
+export interface DependencyCompletionBreakdown {
+  featureCompletion: Pick<CheckCompletion, 'selected' | 'passed' | 'rate'>;
+  checkCategories: Record<'feature' | 'production' | 'interface' | 'unknown', CheckCompletion>;
+}
+
+function dependencyOutcomes(state: ScoringState): Map<string, CheckStatus> {
+  return new Map<string, CheckStatus>(state.definition.nodes.flatMap(node => {
     const current = dependencyNodeState(state, node.id);
     return node.gradingChecks.map(check => [check.id, current.status === 'blocked' ? 'blocked'
       : current.checks[check.id] === 'pass' ? 'passed'
       : current.checks[check.id] === 'fail' ? 'failed' : 'unmeasured'] as const);
   }));
+}
+
+/** Read-only breakdown of the pinned target; blocked checks never receive credit. */
+export function dependencyCompletionBreakdown(state: ScoringState): DependencyCompletionBreakdown {
+  const checks = state.definition.nodes.flatMap(node => node.gradingChecks);
+  const outcomes = dependencyOutcomes(state);
+  const selected = state.definition.nodes.length;
+  const passed = state.definition.nodes.filter(node =>
+    dependencyNodeState(state, node.id).status === 'passed').length;
+  return {
+    featureCompletion: { selected, passed, rate: selected ? passed / selected : null },
+    checkCategories: {
+      feature: checkCompletion(checks.filter(check => check.category === 'feature'), outcomes),
+      production: checkCompletion(checks.filter(check => check.category === 'production'), outcomes),
+      interface: checkCompletion(checks.filter(check => check.category === 'interface'), outcomes),
+      unknown: checkCompletion(checks.filter(check => check.category === undefined), outcomes),
+    },
+  };
+}
+
+export function scoreDependencyState(state: ScoringState): DependencyScore {
+  const final = state.phase === 'terminal';
+  const outcomes = dependencyOutcomes(state);
   const questlines = state.definition.questlines.map(questline => {
     const points = questline.nodes.reduce((total, nodeId) =>
       addPoints(total, nodePoints(state, nodeId)), emptyPoints());

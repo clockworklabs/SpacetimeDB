@@ -324,3 +324,5 @@ main[aria-busy="true"]:not(:has(.loading))::before { content: ''; position: fixe
 @media (prefers-reduced-motion: reduce) { .dot.a, .dag .d.a { animation: none; } }
 
 .dag .passed-check { fill: none; stroke: var(--shade7); stroke-width: 1.2; }
+
+.chart-options { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }

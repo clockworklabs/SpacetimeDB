@@ -24,6 +24,7 @@
       "criteria": [
         {
           "id": "5e",
+          "category": "feature",
           "desc": "the dashboard lists a current low-stock item",
           "points": 1,
           "statedBy": "It lists items with 10 units or fewer, most urgent first.",
@@ -33,6 +34,7 @@
         },
         {
           "id": "5a",
+          "category": "production",
           "desc": "an item falling to ten units or fewer joins the low-stock list, live",
           "points": 3,
           "statedBy": "items enter and leave this list as stock moves, sells, is restocked, cancelled or returned",

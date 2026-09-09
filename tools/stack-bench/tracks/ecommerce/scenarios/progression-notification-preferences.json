@@ -18,6 +18,7 @@
       "criteria": [
         {
           "id": "630c",
+          "category": "feature",
           "desc": "the customer can save a notification choice",
           "points": 1,
           "statedBy": "Signed-in customers can turn order and stock notifications on or off.",
@@ -27,6 +28,7 @@
         },
         {
           "id": "630a",
+          "category": "production",
           "desc": "the owner's notification choice survives a reload",
           "points": 2,
           "statedBy": "Notification choices persist for the account.",
@@ -39,6 +41,7 @@
         },
         {
           "id": "630b",
+          "category": "production",
           "desc": "the owner's choice does not change another account",
           "points": 2,
           "statedBy": "One customer's notification choices do not affect another customer.",

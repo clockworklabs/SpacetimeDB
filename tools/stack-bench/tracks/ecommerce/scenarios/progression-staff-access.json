@@ -12,6 +12,7 @@
       "criteria": [
         {
           "id": "601a",
+          "category": "feature",
           "desc": "staff and administrators can sign in and open staff tools",
           "points": 2,
           "statedBy": "Staff and administrators can sign in and use staff areas.",
@@ -26,6 +27,7 @@
         },
         {
           "id": "601b",
+          "category": "production",
           "desc": "customers cannot open staff tools",
           "points": 2,
           "statedBy": "Customers cannot open staff tools.",

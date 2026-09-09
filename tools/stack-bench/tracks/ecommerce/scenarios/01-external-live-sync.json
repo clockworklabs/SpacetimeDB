@@ -23,6 +23,7 @@
       "criteria": [
         {
           "id": "901a",
+          "category": "production",
           "desc": "a direct database write sets Desk Lamp's East stock to 5, and the already-open storefront updates from 100 to 50 without a reload or page action",
           "points": 1,
           "note": "This proposed score remains draft until the focused pristine and mutation controls are qualified.",

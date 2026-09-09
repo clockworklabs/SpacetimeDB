@@ -35,7 +35,10 @@ export interface CompiledStep {
   [key: string]: unknown;
 }
 
+export type CheckCategory = 'feature' | 'production' | 'interface';
+
 export interface CompiledCriterion {
+  category?: CheckCategory;
   id: string;
   desc: string;
   note?: string;
@@ -457,7 +460,7 @@ const SCENARIO_FIELDS = new Set([
 ]);
 const FEATURE_FIELDS = new Set(['actors', 'criteria', 'id', 'max', 'name', 'note', 'setup']);
 const CRITERION_FIELDS = new Set([
-  'desc', 'id', 'note', 'points', 'provenBy', 'statedBy', 'steps', 'withheld',
+  'desc', 'id', 'note', 'points', 'provenBy', 'statedBy', 'steps', 'withheld', 'category',
 ]);
 
 export function compileScenarioDefinition(input: unknown,
@@ -507,6 +510,10 @@ export function compileScenarioDefinition(input: unknown,
       if (criterionKeys.has(key)) fail(`${criterionAt}.id`, `duplicate criterion key ${key}`);
       criterionKeys.add(key);
       if (!nonEmptyString(criterion.desc)) fail(`${criterionAt}.desc`, 'must be a non-empty string');
+      if (criterion.category !== undefined && (typeof criterion.category !== 'string'
+        || !['feature', 'production', 'interface'].includes(criterion.category))) {
+        fail(`${criterionAt}.category`, 'must be feature, production, or interface');
+      }
       const criterionPoints = criterion.points ?? 1;
       if (!integer(criterionPoints) || criterionPoints < 0) {
         fail(`${criterionAt}.points`, 'must be a non-negative integer');

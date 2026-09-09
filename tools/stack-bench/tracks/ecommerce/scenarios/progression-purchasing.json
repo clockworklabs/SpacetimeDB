@@ -14,6 +14,7 @@
       "criteria": [
         {
           "id": "3c",
+          "category": "feature",
           "desc": "the purchase is recorded in the buyer's order history at the price paid",
           "points": 1,
           "statedBy": "A purchase creates an order for the customer at the price paid.",

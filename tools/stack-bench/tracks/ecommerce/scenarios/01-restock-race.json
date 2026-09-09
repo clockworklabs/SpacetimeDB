@@ -26,6 +26,7 @@
       "criteria": [
         {
           "id": "202-control",
+          "category": "feature",
           "points": 0,
           "withheld": "A measured precondition for interpreting the race, not an additional product score. Candidate qualification includes an exact omitted-restock defect for every reference stack.",
           "desc": "an uncontended restock of five is stored by the server and shows on the storefront",
@@ -80,6 +81,7 @@
         },
         {
           "id": "202a",
+          "category": "production",
           "points": 1,
           "desc": "three purchases and a restock of five during the rush leave stock at start + 2",
           "steps": [

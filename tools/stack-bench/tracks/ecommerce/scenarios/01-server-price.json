@@ -13,6 +13,7 @@
       "criteria": [
         {
           "id": "104a",
+          "category": "production",
           "desc": "the direct purchase operation creates exactly one order at the store's current price",
           "points": 2,
           "steps": [

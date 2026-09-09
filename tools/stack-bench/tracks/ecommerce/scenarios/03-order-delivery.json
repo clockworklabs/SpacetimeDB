@@ -21,6 +21,7 @@
       ],
       "criteria": [{
         "id": "303a",
+        "category": "production",
         "desc": "a shipped order becomes delivered for the customer and staff without a reload",
         "points": 3,
         "statedBy": "A shipped order becomes delivered after 60 seconds.",
@@ -44,6 +45,7 @@
       ],
       "criteria": [{
         "id": "305a",
+        "category": "production",
         "desc": "a cancelled order does not advance later",
         "points": 2,
         "statedBy": "A cancelled order never advances.",

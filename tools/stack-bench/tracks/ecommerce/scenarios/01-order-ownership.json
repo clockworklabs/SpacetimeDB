@@ -14,6 +14,7 @@
       "criteria": [
         {
           "id": "106a",
+          "category": "production",
           "desc": "a working order history contains the customer's own order and not another customer's order",
           "points": 1,
           "steps": [

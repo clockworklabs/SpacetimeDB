@@ -12,6 +12,7 @@
       "criteria": [
         {
           "id": "1b",
+          "category": "production",
           "desc": "a taken username is refused and does not sign the visitor in as the existing account",
           "points": 1,
           "steps": [

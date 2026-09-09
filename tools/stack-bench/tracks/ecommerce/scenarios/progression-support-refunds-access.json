@@ -23,6 +23,7 @@
       "criteria": [
         {
           "id": "615c",
+          "category": "production",
           "desc": "a customer cannot issue a refund or change its records",
           "points": 1,
           "statedBy": "Only authorized staff can refund an order from a support case.",

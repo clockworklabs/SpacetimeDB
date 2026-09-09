@@ -1,4 +1,3 @@
 ## Price history
 
-An administrator can change an item's price. The public catalog shows the new price without a
-reload.
+An administrator can change an item's price. Show the price in the public catalog.

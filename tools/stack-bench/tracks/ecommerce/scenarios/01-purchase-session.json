@@ -13,6 +13,7 @@
       "criteria": [
         {
           "id": "101a",
+          "category": "production",
           "desc": "a valid direct purchase works for the buyer but is refused without a session",
           "points": 2,
           "steps": [

@@ -25,6 +25,7 @@
       "criteria": [
         {
           "id": "615b",
+          "category": "production",
           "desc": "the refund equals the paid total and cannot be applied twice",
           "points": 1,
           "statedBy": "The recorded refund equals the amount paid and is applied only once.",

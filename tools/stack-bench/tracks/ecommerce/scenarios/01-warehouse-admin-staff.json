@@ -16,6 +16,7 @@
       "criteria": [
         {
           "id": "7a",
+          "category": "production",
           "desc": "the administrator area stays unavailable to other staff",
           "points": 1,
           "statedBy": "Administrators can open the administration area; other staff cannot.",
@@ -27,6 +28,7 @@
         },
         {
           "id": "7b",
+          "category": "feature",
           "desc": "admin lists every item, every warehouse, and what each warehouse holds",
           "points": 1,
           "statedBy": "admin lists every item with its stock, every warehouse, and the stock of each item in each warehouse",

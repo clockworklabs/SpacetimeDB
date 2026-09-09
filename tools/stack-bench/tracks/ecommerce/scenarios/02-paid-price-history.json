@@ -17,6 +17,7 @@
       "criteria": [
         {
           "id": "4a",
+          "category": "production",
           "desc": "a price change updates the live catalog but leaves the customer's exact paid price unchanged",
           "points": 3,
           "statedBy": "past orders keep the price that was paid",

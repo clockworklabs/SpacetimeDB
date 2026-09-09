@@ -12,6 +12,7 @@
       "criteria": [
         {
           "id": "610a",
+          "category": "feature",
           "desc": "a visitor can submit a support ticket and receives a reference",
           "points": 2,
           "statedBy": "Anyone can open a support ticket and receives a reference.",

@@ -16,6 +16,7 @@
       "criteria": [
         {
           "id": "4c",
+          "category": "production",
           "desc": "a price change updates an open cart and checkout charges the new price",
           "points": 3,
           "statedBy": "The public catalog and every open cart show the new price without a reload. Checkout uses the current price.",

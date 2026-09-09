@@ -13,6 +13,7 @@
       "criteria": [
         {
           "id": "2d",
+          "category": "feature",
           "desc": "case-insensitive partial search finds an item outside the storefront top ten",
           "points": 1,
           "statedBy": "Search matches any part of an item name without regard to case across the full catalog",

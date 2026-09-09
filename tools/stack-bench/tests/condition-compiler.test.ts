@@ -103,7 +103,7 @@ test('neutral guidance uses current stack documents, skills, and credential alia
   const profile = resolveGuidanceProfile('neutral', ['mongodb', 'postgres', 'spacetime']);
   assert.equal(profile.material.designAdvice, false);
   assert.deepEqual(Object.keys(profile.documents), ['mongodb', 'postgres', 'spacetime']);
-  assert.deepEqual(profile.skills.spacetime?.ids, ['typescript-server', 'typescript-client', 'cli']);
+  assert.deepEqual(profile.skills.spacetime?.ids, ['cli']);
   assert.deepEqual(profile.credentialAliases, {
     'stackbench-admin-2026': 'store-admin-2026',
     'stackbench-customer-2026': 'store-customer-2026',

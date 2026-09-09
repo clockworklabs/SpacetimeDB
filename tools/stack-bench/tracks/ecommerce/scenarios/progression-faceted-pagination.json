@@ -15,6 +15,7 @@
       "criteria": [
         {
           "id": "402a",
+          "category": "feature",
           "desc": "moving between pages returns the same ordered items without duplicates",
           "points": 3,
           "statedBy": "Moving between pages must not omit or repeat an item",

@@ -1,5 +1,4 @@
 ## Customer support history controls
 
-`support-link` opens the support area. For a signed-in customer that area also shows their own
-ticket history: use `support-ticket` for each visible ticket, showing the ticket's subject. The intake form named by the support
-intake interface stays reachable from the same control.
+`support-link` opens support. Use `support-ticket` for each ticket in the history, showing
+its subject. The intake form stays reachable from the same control.

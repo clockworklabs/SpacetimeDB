@@ -17,6 +17,7 @@
       "criteria": [
         {
           "id": "1b",
+          "category": "feature",
           "desc": "the queue names the warehouse the order will ship from",
           "points": 1,
           "statedBy": "which warehouse each will ship from",

@@ -3,7 +3,7 @@
 | Element ID | Required element |
 | --- | --- |
 | `staff-link` | Opens the fulfilment area. |
-| `fulfilment-panel` | Contains authorized fulfilment tools, including an empty queue. Absent when access is denied; do not put this hook on a denial message. |
+| `fulfilment-panel` | Contains fulfilment tools, including an empty queue; not a loading or error message. |
 | `queue-depth` | Shows the number of pending orders. |
 | `queue-item` | Shows one pending order and names its items. |
 | `queue-warehouse` | Shows the selected warehouse inside its `queue-item`. |

@@ -37,6 +37,7 @@
       "criteria": [
         {
           "id": "621a",
+          "category": "feature",
           "desc": "an active promotion changes checkout and is recorded on the order",
           "points": 3,
           "statedBy": "An active promotion applies to the cart and the order records its discount.",
@@ -52,6 +53,7 @@
         },
         {
           "id": "621b",
+          "category": "feature",
           "desc": "an expired promotion is refused",
           "points": 2,
           "statedBy": "Expired promotions cannot be applied.",
@@ -65,6 +67,7 @@
         },
         {
           "id": "621c",
+          "category": "feature",
           "desc": "a fully redeemed promotion is refused",
           "points": 2,
           "statedBy": "A promotion cannot be used after its redemption limit is reached.",

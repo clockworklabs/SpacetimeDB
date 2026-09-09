@@ -112,11 +112,9 @@ test('neutral dependency prompts include only selected product and stack contrac
   const guidance = resolveGuidanceProfile('neutral', STACKS);
   const spacetimeReference = readAgentSkillDocuments(
     resolve(STACK_BENCH_ROOT, '..', '..'), guidance.skills.spacetime?.ids ?? []);
-  assert.match(spacetimeReference, /schema\(\{ score_record \}\).*spacetimedb\.reducer/s);
-  assert.match(spacetimeReference, /ctx\.sender/);
-  assert.match(spacetimeReference, /SenderError/);
-  assert.match(spacetimeReference, /clientVisibilityFilter/);
-  assert.match(spacetimeReference, /DbConnection\.builder\(\).*withToken.*subscriptionBuilder/s);
+  assert.deepEqual(guidance.skills.spacetime?.ids, ['cli']);
+  assert.match(spacetimeReference, /spacetime publish/);
+  assert.doesNotMatch(spacetimeReference, /clientVisibilityFilter|withToken|ctx\.sender/);
   for (const level of [1, 2, 3, 4, 5, 6] as const) {
     const binding = resolveRecipeRelease(track, level, 'ecommerce.progression-catalog');
     const selected = resolveProgressionRecipeLevelSelection(binding, catalog, level,
@@ -228,9 +226,8 @@ test('direct neutral guidance uses the current stack access documents', () => {
       assert.match(prompt, /Serve the complete application on `\d+`/);
       assert.doesNotMatch(prompt, /Application service port/);
     } else {
-      assert.match(prompt, /withToken/);
-      assert.match(prompt, /ctx\.sender/);
-      assert.match(prompt, /clientVisibilityFilter/);
+      assert.match(prompt, /spacetime publish/);
+      assert.doesNotMatch(prompt, /withToken|ctx\.sender|clientVisibilityFilter/);
     }
   }
 });
@@ -277,4 +274,25 @@ test('campaign skill material cannot change after compilation', () => {
     env: { ...process.env, STACK_BENCH_APPLIANCE: '1',
       STACK_BENCH_IMAGE: 'prompt-review-does-not-use-docker' },
   }), /campaign skill material changed after compilation/);
+});
+
+
+test('all dependency depths keep production guarantees out of product work and interfaces', () => {
+  const track = loadTrack('ecommerce');
+  const catalog = resolveFeatureCatalog('progression/ecommerce.json', track);
+  const guidance = resolveGuidanceProfile('neutral', STACKS);
+  const disclosedGuarantees = /change together|applied only once|does not create a second payment|without a reload|cannot attach or inspect another|another customer's purchase history|cancelled restock never changes stock|restores the stock to its original warehouse|same authorization and price rules|same administrator, stock, and warehouse rules|invalid quantity|`-3`/i;
+  for (const level of [1, 2, 3, 4, 5, 6] as const) {
+    const binding = resolveRecipeRelease(track, level, 'ecommerce.progression-catalog');
+    const task = resolveProgressionRecipeLevelSelection(binding, catalog, level,
+      { cumulative: true }).agent.request;
+    for (const stack of STACKS) {
+      const prompt = renderPrompt({ level, stack, task, guidance });
+      const marker = level === 1 ? '## New application' : '## Existing application';
+      const product = prompt.slice(prompt.indexOf(marker));
+      assert.doesNotMatch(product, disclosedGuarantees, `${stack} depth ${level}`);
+      assert.match(product, /## Starting catalog/);
+      assert.match(product, /## Application interface/);
+    }
+  }
 });

@@ -17,6 +17,7 @@
       "criteria": [
         {
           "id": "5f",
+          "category": "feature",
           "desc": "the dashboard shows category units and revenue",
           "points": 1,
           "statedBy": "Category totals show units sold and revenue for each category.",
@@ -33,6 +34,7 @@
         },
         {
           "id": "5b",
+          "category": "production",
           "desc": "a purchase updates that category's units and revenue live",
           "points": 3,
           "statedBy": "Category totals show units sold and revenue for each category",

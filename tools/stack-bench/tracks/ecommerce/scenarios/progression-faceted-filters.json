@@ -18,6 +18,7 @@
       "criteria": [
         {
           "id": "401a",
+          "category": "feature",
           "desc": "category, price, and availability filters apply together",
           "points": 3,
           "statedBy": "Apply all selected filters together",

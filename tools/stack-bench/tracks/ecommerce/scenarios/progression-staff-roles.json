@@ -18,6 +18,7 @@
       "criteria": [
         {
           "id": "621c",
+          "category": "feature",
           "desc": "an administrator can assign a staff role",
           "points": 1,
           "statedBy": "An administrator can assign a role to an existing staff account.",
@@ -27,6 +28,7 @@
         },
         {
           "id": "621a",
+          "category": "production",
           "desc": "an assigned staff role survives a reload",
           "points": 2,
           "statedBy": "Assigned staff roles persist.",
@@ -39,6 +41,7 @@
         },
         {
           "id": "621b",
+          "category": "production",
           "desc": "a staff member cannot assign roles through the UI or a replayed request",
           "points": 2,
           "statedBy": "A staff member cannot assign or change roles.",

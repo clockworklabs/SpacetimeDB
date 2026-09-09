@@ -17,6 +17,7 @@
       "criteria": [
         {
           "id": "201c",
+          "category": "production",
           "desc": "the server refuses a customer's direct attempt to ship their own pending order",
           "points": 2,
           "statedBy": "Staff mark an order shipped",
@@ -48,6 +49,7 @@
       "criteria": [
         {
           "id": "202d",
+          "category": "production",
           "desc": "a direct transfer racing a direct purchase leaves the exact starting total minus the sold unit",
           "points": 2,
           "statedBy": "a transfer moves stock, it does not create or destroy it",
@@ -112,6 +114,7 @@
       "criteria": [
         {
           "id": "204a",
+          "category": "production",
           "desc": "the server refuses one customer trying to cancel another customer's still-pending order",
           "points": 2,
           "statedBy": "A customer can cancel an order that has not shipped",

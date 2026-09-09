@@ -17,6 +17,7 @@
       "criteria": [
         {
           "id": "1c",
+          "category": "feature",
           "desc": "shipping removes the order from the queue and marks the customer's order shipped",
           "points": 2,
           "statedBy": "Staff can mark an order as shipped; show the new status in the fulfilment area and the customer's order history.",

@@ -21,6 +21,7 @@
       "criteria": [
         {
           "id": "611a",
+          "category": "feature",
           "desc": "staff can assign a new ticket",
           "points": 1,
           "statedBy": "Staff can assign support tickets.",
@@ -35,6 +36,7 @@
         },
         {
           "id": "611b",
+          "category": "feature",
           "desc": "staff can set a ticket priority",
           "points": 1,
           "statedBy": "Staff can set support ticket priority.",
@@ -49,6 +51,7 @@
         },
         {
           "id": "611c",
+          "category": "feature",
           "desc": "staff can change a ticket status",
           "points": 1,
           "statedBy": "Staff can change support ticket status.",

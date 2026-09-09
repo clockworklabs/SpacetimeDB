@@ -18,6 +18,7 @@
       "criteria": [
         {
           "id": "620c",
+          "category": "feature",
           "desc": "the owner can save and view a customer profile",
           "points": 1,
           "statedBy": "A signed-in customer can save and view their name and shipping address.",
@@ -27,6 +28,7 @@
         },
         {
           "id": "620a",
+          "category": "production",
           "desc": "the owner sees the saved profile after reload",
           "points": 2,
           "statedBy": "The saved profile remains after a reload.",
@@ -39,6 +41,7 @@
         },
         {
           "id": "620b",
+          "category": "production",
           "desc": "another customer cannot see the owner's profile",
           "points": 2,
           "statedBy": "Each customer can see only their own profile.",

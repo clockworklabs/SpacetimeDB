@@ -33,6 +33,7 @@
       "criteria": [
         {
           "id": "620a",
+          "category": "feature",
           "desc": "staff can save every bounded promotion value",
           "points": 2,
           "statedBy": "Staff can create a promotion code with a discount, active period, and redemption limit.",
@@ -121,6 +122,7 @@
         },
         {
           "id": "620b",
+          "category": "production",
           "desc": "customers cannot open promotion management",
           "points": 2,
           "statedBy": "Customers cannot manage promotion rules.",

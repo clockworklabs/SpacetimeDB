@@ -74,6 +74,19 @@ test('campaign separates aggregate scores from selected evidence and explains pe
     assert.doesNotMatch(detail, /<details class="metric-help"/);
     assert.ok(detail.indexOf('About Completion') < detail.indexOf('About Weighted score'));
   }
+  attempt.checkCategories = {
+    production: { selected: 2, passed: 1, failed: 1, blocked: 0, unmeasured: 0, rate: 0.5 },
+    feature: { selected: 0, passed: 0, failed: 0, blocked: 0, unmeasured: 0, rate: null },
+    interface: { selected: 0, passed: 0, failed: 0, blocked: 0, unmeasured: 0, rate: null },
+    unknown: { selected: 0, passed: 0, failed: 0, blocked: 0, unmeasured: 0, rate: null },
+  };
+  const categorized = attemptPage({ sheet, attemptId: attempt.id, tab: 'checks', evidence: null, log: '',
+    checks: { attemptId: attempt.id, stack: 'spacetime', grades: [], checks: [{ id: 'p', key: 'p', description: 'Durable', feature: 'Orders', points: 1,
+      category: 'production', outcome: 'pass', regressed: false, history: ['pass'] }] } });
+  assert.match(categorized, /<th>Category<\/th>/);
+  assert.match(categorized, /<td>Production<\/td>/);
+  assert.match(categorized, /1<i>\/ 2<\/i>/);
+  delete attempt.checkCategories;
   const grantInput = { sheet, attemptId: attempt.id, tab: 'checks' as const,
     checks: null, evidence: null, log: '', canControl: true };
   const request = { campaignSha256: 'a'.repeat(64), attemptId: attempt.id,

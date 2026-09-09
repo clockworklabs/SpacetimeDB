@@ -17,6 +17,7 @@
       "criteria": [
         {
           "id": "4b",
+          "category": "production",
           "desc": "the new price reaches a signed-out visitor without a reload",
           "points": 2,
           "statedBy": "the storefront shows the new price immediately, to everyone",

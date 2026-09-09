@@ -22,6 +22,7 @@
       "criteria": [
         {
           "id": "613c",
+          "category": "feature",
           "desc": "staff can update a support case and the customer can reply",
           "points": 1,
           "statedBy": "Customers and staff can exchange replies and update the status of a support case.",
@@ -45,6 +46,7 @@
         },
         {
           "id": "613a",
+          "category": "production",
           "desc": "the customer and staff see the same replies and status live",
           "points": 2,
           "statedBy": "Customers and authorized staff use one shared support case.",

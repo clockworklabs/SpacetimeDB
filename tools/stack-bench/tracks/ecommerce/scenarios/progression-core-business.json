@@ -139,6 +139,7 @@
       "criteria": [
         {
           "id": "623a",
+          "category": "production",
           "desc": "checkout records the exact paid amount",
           "points": 3,
           "statedBy": "Checkout records the amount paid on the order.",
@@ -149,6 +150,7 @@
         },
         {
           "id": "623b",
+          "category": "production",
           "desc": "one checkout has one payment record",
           "points": 2,
           "statedBy": "A checkout does not create duplicate payments.",

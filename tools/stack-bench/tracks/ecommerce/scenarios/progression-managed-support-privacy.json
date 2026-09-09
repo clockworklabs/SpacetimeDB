@@ -24,6 +24,7 @@
       "criteria": [
         {
           "id": "613b",
+          "category": "production",
           "desc": "another customer cannot read or reply to the managed case",
           "points": 1,
           "statedBy": "A customer can access only cases that belong to their account.",

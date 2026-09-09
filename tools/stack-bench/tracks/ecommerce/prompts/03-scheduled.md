@@ -1,13 +1,6 @@
-# Level 3 — Work that happens later
+# Scheduled work
 
-The store is operated. Now it has to keep promises made about the **future**:
-holds that expire, restocks that arrive on a schedule, orders that advance on
-their own, carts that go stale. Nobody is watching when these happen — and they
-must happen anyway.
-
-This is the level where "the server was restarted" stops being an excuse.
-Deferred work that a running process was holding in memory is work that was
-never really scheduled.
+Add stock reservations, scheduled restocks, order delivery, and cart expiration.
 
 ## Reservations that expire
 

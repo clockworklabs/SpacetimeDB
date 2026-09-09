@@ -22,6 +22,7 @@
       "criteria": [
         {
           "id": "203a",
+          "category": "production",
           "desc": "the same item added from two tabs at once becomes one line of two",
           "points": 1,
           "steps": [
@@ -32,6 +33,7 @@
         },
         {
           "id": "203b",
+          "category": "production",
           "desc": "checking the same cart out twice at once produces one order",
           "points": 1,
           "steps": [

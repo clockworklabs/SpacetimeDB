@@ -15,6 +15,7 @@
       "criteria": [
         {
           "id": "4a",
+          "category": "feature",
           "desc": "adding the same item twice raises its quantity instead of adding a second line",
           "points": 1,
           "statedBy": "Adding an existing cart item increases its quantity.",
@@ -29,6 +30,7 @@
         },
         {
           "id": "4d",
+          "category": "feature",
           "desc": "checkout creates one order, reduces stock, and empties the cart",
           "points": 2,
           "statedBy": "Checkout creates one order, reduces stock, and empties the cart.",

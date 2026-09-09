@@ -16,6 +16,7 @@
       "criteria": [
         {
           "id": "3a",
+          "category": "production",
           "desc": "cancelling a pending order restores its stock and revenue",
           "points": 2,
           "statedBy": "the stock goes back to the warehouse it came from and revenue falls",

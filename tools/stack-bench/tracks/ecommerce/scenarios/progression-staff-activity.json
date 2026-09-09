@@ -22,6 +22,7 @@
       "criteria": [
         {
           "id": "624a",
+          "category": "feature",
           "desc": "an administrative change records its actor, action, subject, and time",
           "points": 3,
           "statedBy": "Each administrative change identifies its actor, action, subject, and time.",
@@ -37,6 +38,7 @@
         },
         {
           "id": "624b",
+          "category": "production",
           "desc": "customers cannot open staff activity history",
           "points": 2,
           "statedBy": "Customers cannot open staff activity history.",

@@ -15,6 +15,7 @@
       "criteria": [
         {
           "id": "5c",
+          "category": "feature",
           "desc": "a purchase recommends another item from that category and excludes an item in the cart",
           "points": 2,
           "statedBy": "Recommend items from categories the customer bought from and exclude items already in the cart",

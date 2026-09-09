@@ -14,14 +14,12 @@ Put a `data-restock-input` attribute on each `admin-location-row`. Its value is 
 with exactly `itemId`, `warehouseId`, and a valid one-unit `quantity`. Identifiers can be JSON numbers or
 strings.
 
-The restock action uses the same administrator, stock, and warehouse rules as the visible
-application.
+Use the same restock action as the visible control.
 
 ## Stock data interface
 
-Other systems read and write stock directly in the database, without calling the application.
-Keep singular tables `item(id, name, price)`, `warehouse(id, name)`, and
-`stock(item_id, warehouse_id, quantity)` as the source of truth for that surface.
+Expose singular tables `item(id, name, price)`, `warehouse(id, name)`, and
+`stock(item_id, warehouse_id, quantity)` for direct database access.
 `stock.item_id` and `stock.warehouse_id` reference `item.id` and `warehouse.id`; in a document
 store they hold the referenced document's `id` value, or its `_id` when it has no `id`. Keep
 these tables readable and writable with the database's own tools.

@@ -33,6 +33,7 @@
       "criteria": [
         {
           "id": "3d",
+          "category": "production",
           "desc": "cancelling a pending order removes it from the fulfilment queue",
           "points": 1,
           "statedBy": "the order leaves the fulfilment queue",

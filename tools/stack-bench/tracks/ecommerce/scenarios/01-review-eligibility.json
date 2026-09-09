@@ -17,6 +17,7 @@
       "criteria": [
         {
           "id": "108a",
+          "category": "production",
           "desc": "someone who never bought the item cannot review it",
           "points": 2,
           "steps": [
@@ -43,6 +44,7 @@
         },
         {
           "id": "108b",
+          "category": "production",
           "desc": "buying the item earns the right to review it",
           "points": 1,
           "steps": [

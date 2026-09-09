@@ -17,6 +17,7 @@
     ],
     "criteria": [{
       "id": "304a",
+      "category": "production",
       "desc": "an inactive cart expires without a browser, releases stock, and returns empty",
       "points": 4,
       "statedBy": "A cart with no activity for five minutes expires and releases its reservations.",

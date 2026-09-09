@@ -19,6 +19,7 @@
       "criteria": [
         {
           "id": "503a",
+          "category": "feature",
           "desc": "restoring an expired cart reserves available items again",
           "points": 3,
           "statedBy": "A customer can restore the available items from an expired cart.",
@@ -31,6 +32,7 @@
         },
         {
           "id": "503b",
+          "category": "feature",
           "desc": "a partial restore keeps available items and names each unavailable item",
           "points": 3,
           "statedBy": "Restore the available items and list each item that could not be restored.",

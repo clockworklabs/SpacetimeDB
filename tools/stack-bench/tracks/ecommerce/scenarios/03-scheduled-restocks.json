@@ -17,6 +17,7 @@
       "criteria": [
         {
           "id": "302a",
+          "category": "feature",
           "desc": "a scheduled restock is pending and its remaining time decreases",
           "points": 2,
           "statedBy": "A pending restock shows its remaining time.",
@@ -48,6 +49,7 @@
       "criteria": [
         {
           "id": "305a",
+          "category": "feature",
           "desc": "a due restock updates stock and moves to the ledger",
           "points": 3,
           "statedBy": "A due restock updates stock, leaves the pending list, and enters the stock ledger.",
@@ -84,6 +86,7 @@
       "criteria": [
         {
           "id": "306a",
+          "category": "production",
           "desc": "a cancelled restock never applies",
           "points": 2,
           "statedBy": "An admin can schedule and cancel a restock.",

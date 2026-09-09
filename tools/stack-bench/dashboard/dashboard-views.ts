@@ -15,7 +15,7 @@ import type { GradeBundlePayload } from '../src/evidence/benchmark-run.js';
 import { sumCostEvidence } from '../src/evidence/cost-proof.js';
 import type { CostEvidence } from '../src/evidence/cost-proof.js';
 import type { RunCheckpoint } from '../src/evidence/run-checkpoints.js';
-import { scoreDependencyState } from '../src/progression/dependency-score.js';
+import { scoreDependencyState, dependencyCompletionBreakdown, type DependencyCompletionBreakdown } from '../src/progression/dependency-score.js';
 import type { CheckCompletion } from '../src/evidence/check-completion.js';
 import { ARTIFACT_FILE, readArtifact, readArtifactPayload } from '../src/evidence/artifacts.js';
 import { CAMPAIGN_FILE } from '../src/campaigns/campaign-path.js';
@@ -245,6 +245,8 @@ export interface SheetAttempt {
   spend: CostEvidence;
   spendPending: boolean;
   completion: CheckCompletion | null;
+  featureCompletion?: DependencyCompletionBreakdown['featureCompletion'] | null;
+  checkCategories?: DependencyCompletionBreakdown['checkCategories'] | null;
   variant: string;
   climb: ClimbPoint[];
 }
@@ -426,6 +428,8 @@ function sheetAttemptView(plan: CompiledCampaignPlan, state: CampaignAttemptStat
       spend: inspected.spend,
       spendPending: inspected.status === 'running' || inspected.status === 'pending',
       completion: inspected.completion,
+      featureCompletion: inspected.dependency?.featureCompletion ?? null,
+      checkCategories: inspected.dependency?.checkCategories ?? null,
       variant: inspected.variantLabel,
       climb: progress.series,
     },
@@ -530,6 +534,7 @@ export interface AttemptCheckGrade {
 }
 
 export interface AttemptCheck {
+  category?: 'feature' | 'production' | 'interface' | null;
   key: string;
   id: string;
   description: string;
@@ -586,6 +591,9 @@ export function attemptChecks(resultsRoot: string, key: string, attemptId: strin
   if (!execution) return { attemptId, stack: attempt.plan.stack, grades: [], checks: [] };
   const executionDirectory = contained(directory, execution.output, 'campaign execution');
   const grades = gradeDirectories(executionDirectory);
+  const { plan } = readCampaignState(directory, { requireCurrentInputs: false });
+  const metadata = new Map(plan.featureCatalog?.definition.nodes.flatMap(node =>
+    node.gradingChecks.map(check => [check.id, check] as const)) ?? []);
   const checks = new Map<string, AttemptCheck>();
   grades.forEach((grade, index) => {
     const path = join(executionDirectory, grade.id, ARTIFACT_FILE.gradeBundle);
@@ -608,6 +616,7 @@ export function attemptChecks(resultsRoot: string, key: string, attemptId: strin
           const stableKey = criterion.stableKey ?? `${feature.name ?? ''}.${criterion.id ?? ''}`;
           const entry = checks.get(stableKey) ?? { key: stableKey, id: criterion.id ?? stableKey,
             description: criterionDescription(criterion), points: criterion.points ?? 0,
+            category: metadata.get(stableKey)?.category ?? null,
             feature: feature.name ?? '', outcome: 'not-run', regressed: false,
             history: grades.map(() => 'not-run') };
           entry.history[index] = checkOutcome(criterion.evidence);
@@ -712,6 +721,7 @@ export interface ProgressionStep {
   sequence: number;
   completedAt?: string | null;
   completion?: number | null;
+  featureCompletion?: number | null;
   action: 'build' | 'repair' | 'grant';
   targets: string[];
   // Node status after the event, index-aligned with `nodes`.
@@ -765,7 +775,8 @@ function progressionSteps(state: DependencyState, nodeIds: readonly string[], ti
     return { sequence: event.sequence, action: repair ? 'repair' as const : 'build' as const,
       targets, ...progressionSnapshot(replay, nodeIds),
       completedAt: event.result.evidence ? times.get(`${event.result.evidence.id}:${event.result.evidence.sha256}`) ?? null : null,
-      completion: scoreDependencyState(replay as DependencyState).completion.rate };
+      completion: scoreDependencyState(replay as DependencyState).completion.rate,
+      featureCompletion: dependencyCompletionBreakdown(replay as DependencyState).featureCompletion.rate };
   });
 }
 

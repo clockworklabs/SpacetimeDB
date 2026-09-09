@@ -25,6 +25,7 @@
       "criteria": [
         {
           "id": "631a",
+          "category": "production",
           "desc": "restored stock sends one alert and later restocks do not duplicate it",
           "points": 2,
           "statedBy": "A stock request creates one alert when stock returns.",
@@ -47,6 +48,7 @@
         },
         {
           "id": "631b",
+          "category": "production",
           "desc": "a customer who did not request the alert cannot see it",
           "points": 1,
           "statedBy": "Stock alerts are private to the requesting customer.",

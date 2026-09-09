@@ -43,7 +43,7 @@ Rules:
 | `review-input` | the text input for a new review's comment |
 | `review-submit` | button that submits the review |
 | `review-average` | the item's average rating as a number |
-| `review-item` | one per review on the item, containing its comment; appears without a reload once submitted |
+| `review-item` | one per review on the item, containing its comment |
 | `cart-panel` | the cart's container, opened by cart-toggle |
 | `cart-item` | one per line in the cart, containing that item's name |
 | `cart-quantity` | the quantity of a cart line, as a number |
@@ -52,7 +52,7 @@ Rules:
 | `order-list` | the container holding the customer's orders, opened by orders-toggle |
 | `order-item` | one per order, containing the names of the items bought; set `data-entity-id` to that order's server identifier |
 | `order-total` | an order's total price |
-| `admin-panel` | the admin area's container; present only for an admin account |
+| `admin-panel` | the admin area's tools; not a loading or error message |
 | `admin-item-row` | one per item in the admin item list, containing that item's name; all item and holding rows are available in the open admin panel without pagination |
 | `admin-stock` | an item's total stock in the admin item list, as a number |
 | `admin-warehouse-item` | one per warehouse in the admin warehouse list, containing its name |
@@ -63,13 +63,13 @@ Rules:
 | `admin-revenue` | total revenue across all orders, as a number |
 | `buy-error` | appears when buying an out-of-stock item, or checking out more than is available |
 | `auth-error` | appears on a taken username or a wrong password |
-| `review-error` | appears when reviewing an item the customer has never bought; also if a second review is rejected rather than updating the first |
-| `out-of-stock` | appears once an item's stock reaches zero, without a reload |
+| `review-error` | visible review error |
+| `out-of-stock` | visible out-of-stock state |
 | `empty-cart` | shown before anything is added, and again after checkout empties the cart |
 | `cart-remove` | checked with a populated cart by the application |
 | `admin-link` | opens administrator tools; the link may remain visible to other accounts |
 | `staff-link` | opens staff tools; the link may remain visible to customers |
-| `fulfilment-panel` | authorized fulfilment tools, including an empty queue; absent when access is denied, not a denial-message wrapper |
+| `fulfilment-panel` | fulfilment tools, including an empty queue; not a loading or error message |
 | `queue-item` | one per order waiting to ship, oldest first, naming the items it contains |
 | `queue-warehouse` | the warehouse a queued order's item will ship from, inside its queue-item |
 | `queue-depth` | how many orders are waiting, as a number |
@@ -82,7 +82,7 @@ Rules:
 | `price-submit` | button that applies the new price |
 | `low-stock-list` | the container listing items at or below ten units |
 | `low-stock-link` | control that opens the low-stock list when it is on a separate screen within the admin area; omit it when the list is already shown there |
-| `low-stock-item` | appears and disappears live as stock crosses the threshold |
+| `low-stock-item` | one low-stock item |
 | `warehouse-total` | the number of units a warehouse holds, inside its admin-warehouse-item |
 | `category-row` | one per category in the admin totals, naming the category; present for a category with no sales yet, reading 0 |
 | `category-units` | units sold in that category, as a number, inside its category-row |
@@ -92,7 +92,7 @@ Rules:
 | `order-status` | an order's state — pending, shipped, cancelled — inside its order-item |
 | `cancel-order` | button on a pending order that cancels it |
 | `return-item` | only on orders that have shipped |
-| `order-error` | appears on a transfer that would overdraw a warehouse, or cancelling an order that already shipped |
+| `order-error` | visible order or transfer error |
 
 Before declaring DEPLOY_COMPLETE, verify the interface by running the contract
 linter (command provided in your build instructions) and fix any failures.

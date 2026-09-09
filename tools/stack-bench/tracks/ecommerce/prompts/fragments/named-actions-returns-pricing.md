@@ -9,6 +9,4 @@ your stack's ordinary write path; do not add another transport for this action.
 | change an item's price | `POST /api/admin/price` | reducer `adminChangePrice` |
 | cancel an order | `POST /api/orders/:id/cancel` | reducer `cancelOrder` |
 
-The rules do not change because a request arrived this way. Authentication,
-staff authorization, price integrity, ownership, and every guarantee above
-still apply.
+Use the same actions as the visible controls.

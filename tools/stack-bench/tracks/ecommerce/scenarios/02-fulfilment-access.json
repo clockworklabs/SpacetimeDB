@@ -17,6 +17,7 @@
       "criteria": [
         {
           "id": "1d",
+          "category": "production",
           "desc": "staff and administrators can open fulfilment while customers cannot",
           "points": 1,
           "statedBy": "Customers cannot open the fulfilment area",

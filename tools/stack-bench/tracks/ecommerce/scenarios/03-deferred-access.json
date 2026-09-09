@@ -24,6 +24,7 @@
       "criteria": [
         {
           "id": "317a",
+          "category": "production",
           "desc": "the server refuses a customer cancellation of a scheduled restock",
           "points": 3,
           "statedBy": "Only an admin can schedule or cancel a restock.",

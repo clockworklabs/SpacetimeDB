@@ -13,6 +13,7 @@
       "criteria": [
         {
           "id": "2a",
+          "category": "feature",
           "desc": "a signed-out visitor sees the seeded item name, price, and total stock",
           "points": 1,
           "statedBy": "Each item shows its name, price, and total stock",

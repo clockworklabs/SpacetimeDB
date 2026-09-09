@@ -32,6 +32,7 @@
       "criteria": [
         {
           "id": "312a",
+          "category": "production",
           "desc": "restart preserves the due time and the work later completes",
           "points": 3,
           "statedBy": "A pending restock does not run early after a restart.",
@@ -65,6 +66,7 @@
       "criteria": [
         {
           "id": "313a",
+          "category": "production",
           "desc": "a reservation expires while its browser is closed",
           "points": 3,
           "statedBy": "A reservation expires without an open browser.",

@@ -17,6 +17,7 @@
       "criteria": [
         {
           "id": "1a",
+          "category": "production",
           "desc": "an order placed by a customer appears in the staff queue without a reload",
           "points": 2,
           "statedBy": "New orders appear in the queue without a reload",

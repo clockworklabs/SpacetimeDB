@@ -1,4 +1,3 @@
 ## Payment records
 
-Checkout records the amount paid on the order. Retrying the same checkout does not create a
-second payment.
+Show the payment status and amount paid on each order.

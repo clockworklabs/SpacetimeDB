@@ -31,6 +31,7 @@
       "criteria": [
         {
           "id": "6c",
+          "category": "production",
           "desc": "the average rating reflects both reviewers and updates live",
           "points": 1,
           "steps": [

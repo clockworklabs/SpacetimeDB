@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { classifyCampaignExecution, readCampaignState } from './campaign-scheduler.js';
 import type { CampaignAttemptState, CampaignExecution } from './campaign-scheduler.js';
 import { ARTIFACT_FILE, readArtifactPayload } from '../evidence/artifacts.js';
+import { dependencyCompletionBreakdown, type DependencyCompletionBreakdown } from '../progression/dependency-score.js';
 import { progressionEngine } from '../progression/progression-engine.js';
 import { readProgressionState } from '../progression/progression-state.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
@@ -238,6 +239,8 @@ export interface DependencyProgressEvidence {
 }
 
 export interface DependencyProgress {
+  featureCompletion?: DependencyCompletionBreakdown['featureCompletion'];
+  checkCategories?: DependencyCompletionBreakdown['checkCategories'];
   phase: string;
   activeDepths: number[];
   attempts: {
@@ -384,6 +387,7 @@ export function dependencyProgress(plan: CompiledCampaignPlan, attempt: Campaign
         nodes: [...questline.nodes] })),
       nodes,
       score: progressionEngine.score(state),
+      ...dependencyCompletionBreakdown(state),
       ...dependencyHistory(state as DependencyState),
       evidence: state.attempts.map((item, index) => ({
         attempt: index + 1,

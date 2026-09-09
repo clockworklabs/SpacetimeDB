@@ -27,6 +27,7 @@
       "criteria": [
         {
           "id": "311a",
+          "category": "production",
           "desc": "restart cannot replay a completed restock",
           "points": 3,
           "statedBy": "Restarting the backend cannot apply a restock more than once.",
@@ -64,6 +65,7 @@
       "criteria": [
         {
           "id": "312a",
+          "category": "production",
           "desc": "restart cannot duplicate a delivered order",
           "points": 3,
           "statedBy": "Restarting the backend cannot apply an order transition more than once.",
@@ -89,6 +91,7 @@
       "criteria": [
         {
           "id": "313a",
+          "category": "production",
           "desc": "expiry returns exactly the unit reserved",
           "points": 3,
           "statedBy": "Reservation expiry returns exactly the stock that the reservation took.",
@@ -113,6 +116,7 @@
       "criteria": [
         {
           "id": "314a",
+          "category": "production",
           "desc": "checkout does not decrement stock after the reservation already did",
           "points": 3,
           "statedBy": "Checkout does not take reserved stock twice.",

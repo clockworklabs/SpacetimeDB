@@ -17,6 +17,7 @@
       "criteria": [
         {
           "id": "504a",
+          "category": "production",
           "desc": "a dismissed recommendation stays absent after reload",
           "points": 2,
           "statedBy": "A dismissed recommendation stays dismissed for that customer.",
@@ -29,6 +30,7 @@
         },
         {
           "id": "504b",
+          "category": "production",
           "desc": "one customer's dismissal does not hide another customer's result",
           "points": 2,
           "statedBy": "Recommendation feedback belongs to one customer.",

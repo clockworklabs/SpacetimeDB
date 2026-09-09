@@ -20,6 +20,7 @@
       "criteria": [
         {
           "id": "1d",
+          "category": "feature",
           "desc": "signing out and back in returns the same account",
           "points": 1,
           "steps": [

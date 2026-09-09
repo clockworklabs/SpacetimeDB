@@ -14,4 +14,4 @@ Expose `POST /api/admin/price`.
 Expose the `admin_change_price` reducer.
 <!-- /interface -->
 
-This action uses the same authorization and price rules as the visible application.
+Use the same action as the visible price control.
