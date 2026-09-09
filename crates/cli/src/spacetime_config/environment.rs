@@ -1,4 +1,6 @@
 //! Preserve JSON numeric values before the JSON5 deserializer can round them.
+//! For example, converting `9007199254740993` through `f64` yields
+//! `9007199254740992`, changing an environment value before it reaches the module.
 //! This also permits existing comments, unquoted names and trailing commas.
 use serde_json::Value;
 

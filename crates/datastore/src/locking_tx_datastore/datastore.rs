@@ -1079,7 +1079,6 @@ pub(crate) mod tests {
     use super::*;
     use crate::error::IndexError;
     use crate::locking_tx_datastore::tx_state::PendingSchemaChange;
-    use crate::system_tables::ST_ENV_ID;
     use crate::system_tables::{
         system_tables, StColumnRow, StConnectionCredentialsFields, StConstraintData, StConstraintFields,
         StConstraintRow, StEventTableFields, StIndexAlgorithm, StIndexFields, StIndexRow, StRowLevelSecurityFields,
@@ -1093,6 +1092,7 @@ pub(crate) mod tests {
         ST_VIEW_ARG_NAME, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_NAME, ST_VIEW_ID, ST_VIEW_NAME, ST_VIEW_PARAM_ID,
         ST_VIEW_PARAM_NAME, ST_VIEW_SUB_ID, ST_VIEW_SUB_NAME,
     };
+    use crate::system_tables::{ST_ENV_ID, ST_ENV_NAME};
     use crate::traits::{IsolationLevel, MutTx};
     use crate::Result;
     use core::{fmt, mem};
@@ -1559,7 +1559,7 @@ pub(crate) mod tests {
             TableRow { id: ST_TABLE_ACCESSOR_ID.into(), name: ST_TABLE_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
             TableRow { id: ST_INDEX_ACCESSOR_ID.into(), name: ST_INDEX_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
             TableRow { id: ST_COLUMN_ACCESSOR_ID.into(), name: ST_COLUMN_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
-            TableRow { id: ST_ENV_ID.into(), name: "st_env", ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
+            TableRow { id: ST_ENV_ID.into(), name: ST_ENV_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
 
         ]));
         #[rustfmt::skip]

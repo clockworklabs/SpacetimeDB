@@ -19,13 +19,13 @@ const KEYS: &[&str] = &[
     "SMOKE_FLAG",
 ];
 
-struct Fixture {
+struct EnvironmentFixture {
     test: Smoketest,
     database: String,
     wasm: PathBuf,
 }
 
-impl Fixture {
+impl EnvironmentFixture {
     fn new() -> Self {
         // Private CI supplies remote cluster settings to the same test binary.
         // This fixture must still create its own server and fresh credentials,
@@ -296,7 +296,7 @@ fn bounded_output(mut command: Command) -> Output {
 
 #[test]
 fn cli_environment_layers_shell_and_exact_precompiled_declarations() {
-    let f = Fixture::new();
+    let f = EnvironmentFixture::new();
     f.write(
         "spacetime.json",
         json!({"database":"unused-parent", "env":{
@@ -362,7 +362,7 @@ fn cli_environment_layers_shell_and_exact_precompiled_declarations() {
 
 #[test]
 fn cli_environment_replacement_rejection_and_read_only_commands() {
-    let f = Fixture::new();
+    let f = EnvironmentFixture::new();
     f.config(Some(
         json!({"SMOKE_REQUIRED":"initial-sentinel","SMOKE_MODE":"ready","SMOKE_OPTIONAL":"remove-me"}),
     ));
@@ -436,7 +436,7 @@ fn cli_environment_replacement_rejection_and_read_only_commands() {
 
 #[test]
 fn cli_environment_initial_rejection_clear_and_omitted_payload() {
-    let mut f = Fixture::new();
+    let mut f = EnvironmentFixture::new();
     f.config(None);
     assert!(!f.publish(&[], &[]).status.success());
     f.config(Some(json!({"SMOKE_REQUIRED":"clear-initial","SMOKE_MODE":"ready"})));
