@@ -1,3 +1,4 @@
+import * as v from 'valibot';
 import {
   SenderError,
   t,
@@ -25,12 +26,7 @@ import {
   MAX_WEBHOOK_HEADER_LENGTH,
   MAX_WEBHOOK_METADATA_LENGTH,
 } from './limits';
-import {
-  assertExhaustive,
-  parseWithSchema,
-  safeJsonParse,
-  summarizeIssues,
-} from './validation';
+import { assertExhaustive, safeJsonParse, summarizeIssues } from './validation';
 
 export function requireProcedureAdmin(ctx: ProcedureModuleCtx): void {
   const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
@@ -492,8 +488,8 @@ export function applyStripeEvent(
     return { status: WebhookEventStatus.Failed, error: 'invalid JSON payload' };
   }
 
-  const result = parseWithSchema(vStripeEvent, parsedJson);
-  if (result.kind === 'error') {
+  const result = v.safeParse(vStripeEvent, parsedJson);
+  if (!result.success) {
     // Distinguish unhandled type (ignore) from handled-but-malformed (fail).
     const eventTypeRaw =
       typeof parsedJson === 'object' && parsedJson !== null
@@ -510,7 +506,7 @@ export function applyStripeEvent(
     };
   }
 
-  return { status: dispatchEvent(ctx, result.data), error: undefined };
+  return { status: dispatchEvent(ctx, result.output), error: undefined };
 }
 
 type ParsedInvoiceObject = Extract<
@@ -732,13 +728,13 @@ export function createCustomerInStripeAndSync(
   }
 
   const parsedBody = safeJsonParse(result.body);
-  const idResult = parseWithSchema(vStripeIdResponse, parsedBody);
-  if (idResult.kind === 'error') {
+  const idResult = v.safeParse(vStripeIdResponse, parsedBody);
+  if (!idResult.success) {
     throwSenderError(
       `stripe.create_customer_invalid_response:${summarizeIssues(idResult.issues)}`
     );
   }
-  const customerId = idResult.data.id;
+  const customerId = idResult.output.id;
 
   const details = coerceMetadataFromJson(args.metadataJson);
   ctx.withTx(tx => {

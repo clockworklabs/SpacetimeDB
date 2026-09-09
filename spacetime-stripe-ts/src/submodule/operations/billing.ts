@@ -1,3 +1,4 @@
+import * as v from 'valibot';
 import {
   t,
   spacetimedb,
@@ -13,7 +14,7 @@ import {
 } from '../schema';
 import { loadConfigOrThrowFromProcedure } from '../config';
 import { adminVerdict, denyIfNotAdmin } from '../auth';
-import { parseWithSchema, safeJsonParse, summarizeIssues } from '../validation';
+import { safeJsonParse, summarizeIssues } from '../validation';
 
 import {
   requireProcedureAdmin,
@@ -413,18 +414,18 @@ export const create_checkout_session = spacetimedb.procedure(
       );
     }
 
-    const sessionResult = parseWithSchema(
+    const sessionResult = v.safeParse(
       vStripeCheckoutSessionResponse,
       safeJsonParse(response.body)
     );
-    if (sessionResult.kind === 'error') {
+    if (!sessionResult.success) {
       throwSenderError(
         `stripe.checkout_session_invalid_response:${summarizeIssues(sessionResult.issues)}`
       );
     }
     return {
-      sessionId: sessionResult.data.id,
-      url: sessionResult.data.url ?? undefined,
+      sessionId: sessionResult.output.id,
+      url: sessionResult.output.url ?? undefined,
     };
   }
 );
@@ -455,16 +456,16 @@ export const create_customer_portal_session = spacetimedb.procedure(
       );
     }
 
-    const portalResult = parseWithSchema(
+    const portalResult = v.safeParse(
       vStripeBillingPortalSessionResponse,
       safeJsonParse(response.body)
     );
-    if (portalResult.kind === 'error') {
+    if (!portalResult.success) {
       throwSenderError(
         `stripe.portal_session_invalid_response:${summarizeIssues(portalResult.issues)}`
       );
     }
-    return { url: portalResult.data.url };
+    return { url: portalResult.output.url };
   }
 );
 
