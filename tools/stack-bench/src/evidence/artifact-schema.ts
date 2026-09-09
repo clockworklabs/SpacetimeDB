@@ -99,7 +99,7 @@ const PAYLOAD_FIELDS = Object.freeze({
   benchmark_run: BENCHMARK_RUN_PAYLOAD_FIELDS,
   bug_report_quality: new Set(['bugs', 'vague', 'vaguePct']),
   campaign_admission: new Set(['schemaVersion', 'campaignId', 'campaignSha256', 'createdAt',
-    'ok', 'runtime', 'agents', 'conditions', 'reports']),
+    'ok', 'runtime', 'agents', 'conditions', 'reports', 'attemptId']),
   campaign_process: new Set(['schemaVersion', 'executionId', 'runIndex', 'exitCode', 'signal', 'timedOut',
     'streams']),
   campaign_plan: new Set(['campaignSchemaVersion', 'id', 'version', 'state', 'title', 'source',

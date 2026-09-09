@@ -26,12 +26,25 @@ function compile(value: unknown) {
   finally { rmSync(directory, { recursive: true, force: true }); }
 }
 
-test('campaigns accept a twelve-hour attempt allowance and reject values beyond it', () => {
+test('campaign duration follows safe deadline arithmetic rather than a twelve-hour policy', () => {
   const value = manifest('campaign.example.json');
-  const budgets = { ...(value.budgets as object), attemptTimeoutMinutes: 720 };
-  assert.equal(validateCampaignDefinition({ ...value, budgets }).budgets.attemptTimeoutMinutes, 720);
-  assert.throws(() => validateCampaignDefinition({ ...value,
-    budgets: { ...budgets, attemptTimeoutMinutes: 721 } }), /attemptTimeoutMinutes/);
+  for (const minutes of [1, 721, 43_200]) {
+    const budgets = { ...(value.budgets as object), attemptTimeoutMinutes: minutes };
+    assert.equal(validateCampaignDefinition({ ...value, budgets }).budgets.attemptTimeoutMinutes, minutes);
+  }
+  for (const minutes of [0, -1, 1.5, Number.MAX_SAFE_INTEGER]) {
+    assert.throws(() => validateCampaignDefinition({ ...value,
+      budgets: { ...(value.budgets as object), attemptTimeoutMinutes: minutes } }), /attemptTimeoutMinutes/);
+  }
+});
+
+test('campaign repetitions use checked expansion rather than a hundred-run policy', () => {
+  const value = manifest('campaign.example.json');
+  const expanded = compile({ ...value, repetitions: 101 });
+  assert.equal(expanded.attempts.length, 101 * expanded.stacks.length * expanded.agents.length * expanded.conditions.length);
+  assert.throws(() => compile({ ...value, repetitions: Number.MAX_SAFE_INTEGER }), /array length limit/);
+  assert.throws(() => compile({ ...value, repetitions: 100_000_000 }), /string or available heap capacity/);
+  assert.throws(() => validateCampaignDefinition({ ...value, repetitions: Number.MAX_SAFE_INTEGER + 1 }), /repetitions/);
 });
 
 test('a campaign preserves its own version and state while binding authored content by hash', () => {

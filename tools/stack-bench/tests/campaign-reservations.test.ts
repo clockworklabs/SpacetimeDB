@@ -137,3 +137,48 @@ test('dynamic admission skips live legacy capacity and port reservations without
     releaseResourceLocks(legacy);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+
+test('attempt admissions reserve only their stack and release slots for another campaign', linux, () => {
+  const root = mkdtempSync(join(tmpdir(), 'campaign-attempt-reservation-'));
+  const locks = join(root, 'locks');
+  const plan = compileCampaignFile(join(STACK_BENCH_ROOT, 'tests', 'fixtures', 'campaign.deterministic.json'));
+  const pg = plan.attempts.find(attempt => attempt.stack === 'postgres')!;
+  const mongo = plan.attempts.find(attempt => attempt.stack === 'mongodb')!;
+  const reservations: NonNullable<ReturnType<typeof runCampaignAdmission>['reservation']>[] = [];
+  const admit = (attempt: typeof pg, directory: string) => {
+    const result = runCampaignAdmission(plan, join(root, directory), {
+      attempt, env: { STACK_BENCH_RESOURCE_LOCK_DIR: locks }, probePort: () => ({ free: true }),
+      preflight: request => {
+        assert.deepEqual(request.backends, [attempt.stack]);
+        assert.deepEqual(request.agentSkills, attempt.skills.slice().sort());
+        assert.equal(request.parallelism, plan.summary.parallelism);
+        return { schemaVersion: 1, generatedAt: new Date().toISOString(),
+          request: { backends: request.backends, track: request.track, levels: request.levelList,
+            runIndex: request.runIndex, parallelism: request.parallelism, agentAdapter: request.agentAdapter,
+            packs: request.packIds, checks: request.checkKeys, image: request.image,
+            resultsDir: request.resultsDir, smoke: request.smoke },
+          ok: true, summary: { passed: 0, failed: 0, warnings: 0 }, checks: [] };
+      },
+    });
+    reservations.push(result.reservation!);
+    assert.equal(result.payload.attemptId, attempt.id);
+    return result;
+  };
+  try {
+    const first = admit(pg, 'first');
+    const otherStack = admit(mongo, 'second');
+    assert.deepEqual(first.runIndices, [0]);
+    assert.deepEqual(otherStack.runIndices, [0]);
+    const otherPg = admit(pg, 'second');
+    assert.deepEqual(otherPg.runIndices, [1]);
+    const live = readBackendLease(otherPg.reservation!.path, { token: otherPg.reservation!.token });
+    releaseCampaignReservation(first.reservation!);
+    reservations.splice(reservations.indexOf(first.reservation!), 1);
+    assert.deepEqual(admit(pg, 'first').runIndices, [0]);
+    verifyResourceLocks(live);
+  } finally {
+    for (const reservation of reservations) releaseCampaignReservation(reservation);
+    rmSync(root, { recursive: true, force: true });
+  }
+});

@@ -277,7 +277,7 @@ for (const mode of ['api-key', 'subscription-token'] satisfies BrokerMode[]) {
   });
 }
 
-test('credential broker enforces request size and count limits', async () => {
+test('credential broker limits body size without truncating authorized sessions at 512 requests', async () => {
   const root = mkdtempSync(join(tmpdir(), 'broker-local-limit-'));
   const ledgerPath = join(root, 'ledger.json');
   const seen: string[] = [];
@@ -296,20 +296,18 @@ test('credential broker enforces request size and count limits', async () => {
     model: 'test-model', maxOutputTokens: 4096 }, {
     requestUpstream: httpRequest,
     upstream: { protocol: 'http:', hostname: '127.0.0.1', port: upstreamPort },
-    maxRequests: 2,
     maxRequestBytes: 64,
   });
   const brokerPort = await listen(server);
   const headers = { authorization: `Bearer ${sessionToken}` };
   try {
     assert.equal((await send(brokerPort, { headers, body: 'x'.repeat(65) })).status, 413);
-    assert.equal((await send(brokerPort, { headers,
-      body: '{"model":"test-model","max_tokens":1}' })).status, 200);
-    assert.equal((await send(brokerPort, { headers,
-      body: '{"model":"test-model","max_tokens":1}' })).status, 429);
-    assert.deepEqual(seen, ['/v1/messages']);
-    assert.deepEqual(readCredentialBrokerLedger(ledgerPath).providerFailure,
-      { category: 'request', status: 429, code: 'broker-request-limit' });
+    for (let index = 0; index < 513; index++) {
+      assert.equal((await send(brokerPort, { headers,
+        body: '{"model":"test-model","max_tokens":1}' })).status, 200);
+    }
+    assert.equal(seen.length, 513);
+    assert.equal(readCredentialBrokerLedger(ledgerPath).providerFailure, null);
   } finally {
     await close(server);
     await close(upstreamServer);

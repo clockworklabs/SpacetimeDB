@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { assertExecutionCredentialUnchanged } from '../src/agents/credential-profiles.js';
 
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -718,6 +719,7 @@ export function agentRecipeRequest(explicitRecipe: string | null = null,
 export function refreshCodingInvocationCredentials({ provider, apiKey, keyFile,
   expectedMode, env = process.env }: { provider: keyof typeof CODING_PROVIDERS;
     apiKey?: string; keyFile?: string; expectedMode: string | null; env?: NodeJS.ProcessEnv }) {
+  assertExecutionCredentialUnchanged(env);
   const credential = keyFile ? readFileSync(keyFile, 'utf8').trim()
     : apiKey ?? env[CODING_PROVIDERS[provider].apiKeyEnvironment] ?? '';
   if (keyFile && !credential) throw new Error('selected API key file is empty');

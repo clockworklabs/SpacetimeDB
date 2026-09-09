@@ -22,7 +22,6 @@ import type { BrokerConfig, EstimateReason, PricingRates }
   from './credential-broker-accounting.js';
 
 const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
-const MAX_REQUESTS = 512;
 const BROKER_SERVER_CLOSE_GRACE_MS = 1_000;
 export type { ClaudeUsage } from '../src/evidence/claude-usage-cost.js';
 type JsonRecord = Record<string, unknown>;
@@ -80,11 +79,10 @@ function requestCostCeiling(bodyBytes: number, maxTokens: number, rates: Pricing
 export function createCredentialBroker(configInput: unknown, {
   requestUpstream = httpsRequest as UpstreamRequest,
   upstream,
-  maxRequests = MAX_REQUESTS,
   maxRequestBytes = MAX_REQUEST_BYTES,
 }: { requestUpstream?: UpstreamRequest;
   upstream?: { protocol: string; hostname: string; port: number };
-  maxRequests?: number; maxRequestBytes?: number } = {}): CreatedCredentialBroker {
+  maxRequestBytes?: number } = {}): CreatedCredentialBroker {
   const config = validateBrokerConfig(configInput);
   const protocol = brokerProtocol(config);
   const destination = upstream ?? { protocol: 'https:', hostname: protocol.hostname, port: 443 };
@@ -160,12 +158,6 @@ export function createCredentialBroker(configInput: unknown, {
     acceptedRequests += 1;
     const requestOrdinal = acceptedRequests;
     recordLedger();
-    if (acceptedRequests > maxRequests) {
-      recordFailure(requestOrdinal, { category: 'request', status: 429, code: 'broker-request-limit' });
-      recordLedger();
-      rejectRequest(request, response, 429, 'session request limit reached');
-      return;
-    }
 
     const chunks: Buffer[] = [];
     let received = 0;

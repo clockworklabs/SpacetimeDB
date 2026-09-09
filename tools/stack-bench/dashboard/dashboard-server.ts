@@ -23,6 +23,8 @@ import { controllerRuntimeCommand } from '../appliance/controller.js';
 import { requestCampaignCancellation } from '../src/campaigns/campaign-lock.js';
 import { readCampaignTimeBudget, requestCampaignTimeGrant } from '../src/campaigns/campaign-time-grant.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
+import { submitExecutionJob, listExecutionJobs, readExecutionJob, cancelExecutionJob }
+  from '../src/campaigns/execution-jobs.js';
 
 const DASHBOARD_ROOT = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_ROOT = join(DASHBOARD_ROOT, 'public');
@@ -301,6 +303,40 @@ export function createDashboardServer(options: DashboardServerOptions) {
       }
       if (request.method === 'GET' && url.pathname === '/api/plans') {
         return json(response, 200, plans());
+      }
+      const jobRoute = url.pathname.match(/^\/api\/jobs(?:\/([a-f0-9]{64})(\/cancel)?)?$/);
+      if (jobRoute) {
+        const id = jobRoute[1], cancel = jobRoute[2] !== undefined;
+        if (request.method === 'GET' && !cancel) {
+          if (!id) {
+            const after = url.searchParams.get('after') ?? '';
+            const limit = Number(url.searchParams.get('limit') ?? 50);
+            if ((after && !/^[a-f0-9]{64}$/.test(after)) || !Number.isSafeInteger(limit) || limit < 1 || limit > 200) {
+              return json(response, 400, { error: 'Use a valid job cursor and a page size from 1 through 200.' });
+            }
+            return json(response, 200, listExecutionJobs(resultsRoot, { after, limit }));
+          }
+          if (!existsSync(join(resultsRoot, 'jobs', id, 'job.json'))) return json(response, 404, { error: 'Job not found.' });
+          return json(response, 200, readExecutionJob(resultsRoot, id));
+        }
+        if (request.method === 'POST' && (!id || cancel)) {
+          if (!allowLaunch) return json(response, 503, { error: 'Run controls are available inside the Stack Bench appliance.' });
+          if (!controlAuthorized(request, request.headers.host, token, controlSecret)) {
+            return json(response, 403, { error: 'The job request is not authorized.' });
+          }
+          if (id) {
+            if (!existsSync(join(resultsRoot, 'jobs', id, 'job.json'))) return json(response, 404, { error: 'Job not found.' });
+            cancelExecutionJob(resultsRoot, id);
+            return json(response, 202, readExecutionJob(resultsRoot, id));
+          }
+          if (!String(request.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
+            return json(response, 415, { error: 'Job submissions must use JSON.' });
+          }
+          try {
+            const job = submitExecutionJob(resultsRoot, await body(request));
+            return json(response, 202, readExecutionJob(resultsRoot, job.id));
+          } catch (error) { return json(response, 400, { error: errorMessage(error) }); }
+        }
       }
       if (request.method === 'GET' && url.pathname === '/api/events') {
         response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8',

@@ -951,7 +951,8 @@ test('one campaign runs multiple attempts of the same stack concurrently in isol
     let releaseFirstWave: (() => void) | null = null;
     const firstWave = new Promise<void>(resolve => { releaseFirstWave = resolve; });
     const state = await executeCampaign(campaignPath, results, { mode: 'model-free-trial',
-      admit: () => ({ id: 'parallel-admission', payload: { ok: true }, runIndices: [3, 4, 5] }),
+      admit: (_plan, _directory, options) => ({ id: 'parallel-admission', payload: { ok: true },
+        runIndices: [[3, 4, 5].find(index => !options.excludedRunIndices.includes(index))!] }),
       execute: async (_command, argv, options) => {
         assert(options.env);
         const runIndex = Number(argv[argv.indexOf('--run-index') + 1]);
@@ -1213,5 +1214,54 @@ test('campaign admission accepts a modular level selection without legacy pack f
     const scope = calls[0]!.requestedScopes[0] as { levels: Array<{
       selection: { schemaVersion: number } }> };
     assert.equal(scope.levels[0]!.selection.schemaVersion, 3);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+
+test('resource wait is explicit, keeps attempts pending, and wakes on cancellation', async () => {
+  const { CampaignResourceUnavailable } = await import('../src/campaigns/campaign-admission.js');
+  const root = mkdtempSync(join(tmpdir(), 'campaign-capacity-policy-'));
+  try {
+    let launched = false;
+    const admit = () => { throw new CampaignResourceUnavailable('all actual ports are owned'); };
+    const execute = async () => { launched = true; return { code: 0, timedOut: false }; };
+    await assert.rejects(executeCampaign(example, join(root, 'fail'), {
+      mode: 'model-free-trial', admit, execute }), /all actual ports/);
+    const controller = new AbortController();
+    let waits = 0;
+    const state = await executeCampaign(example, join(root, 'wait'), {
+      mode: 'model-free-trial', admit, execute, capacityPolicy: 'wait', signal: controller.signal,
+      onCapacityWait: reason => { assert.match(reason!, /actual ports/); waits++; controller.abort(); },
+    });
+    assert.equal(waits, 1);
+    assert.equal(launched, false);
+    assert.equal(state.summary.executions, 0);
+    assert.equal(state.summary.pending, state.summary.total);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+
+test('failed dispatch drains and records already active attempts before returning failure', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'campaign-dispatch-failure-'));
+  try {
+    const definition = JSON.parse(readFileSync(example, 'utf8'));
+    definition.parallelism = 2;
+    const path = join(root, 'plan.json');
+    writeFileSync(path, JSON.stringify(definition));
+    let admissions = 0;
+    const directory = join(root, 'results');
+    await assert.rejects(executeCampaign(path, directory, { mode: 'model-free-trial',
+      admit: () => {
+        if (++admissions === 2) throw new Error('second worker unavailable');
+        return { id: 'first-admission', payload: { ok: true }, runIndices: [0] };
+      },
+      execute: async () => ({ code: 1, timedOut: false }),
+    }), /second worker unavailable/);
+    const { readCampaignState } = await import('../src/campaigns/campaign-scheduler.js');
+    const state = readCampaignState(directory).state;
+    assert.equal(state.summary.running, 0);
+    assert.equal(state.summary.executions, 1);
+    assert.equal(state.summary.invalid, 1);
+    assert.equal(state.summary.pending, state.summary.total - 1);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

@@ -16,7 +16,7 @@ import { releaseBackendLease } from '../runtime/backend-teardown.js';
 import { probeLoopbackPort, runPreflight } from '../runtime/preflight.js';
 import type { PreflightReport } from '../runtime/preflight.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
-import type { CompiledCampaignPlan } from './campaign-compiler.js';
+import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
 import type { RequestedScope } from './condition-compiler.js';
 import { campaignChildPath as contained } from './campaign-path.js';
 import { campaignExecutionEnvironment, campaignSlotEnvironment } from './campaign-runtime.js';
@@ -58,6 +58,7 @@ export interface CampaignAdmission extends UnknownRecord {
   agents: unknown;
   conditions: unknown;
   reports: CampaignAdmissionReport[];
+  attemptId?: string;
 }
 
 export interface CampaignAdmissionPreflightRequest extends UnknownRecord {
@@ -103,6 +104,7 @@ interface CampaignAdmissionPlan {
   conditions: unknown;
   stacks: Array<{ id: string }>;
   summary: { parallelism: number };
+  attempts?: CampaignAttemptPlan[];
 }
 
 const object = (value: unknown): value is UnknownRecord =>
@@ -137,6 +139,7 @@ const campaignAdmissionSchema = z.strictObject({
   agents: z.unknown(),
   conditions: z.unknown(),
   reports: z.array(admissionReportSchema),
+  attemptId: z.string().optional(),
 });
 
 function validReport(value: unknown): value is CampaignAdmissionReport {
@@ -181,17 +184,24 @@ export function validateCampaignAdmission(
   if (canonicalDefinitionJson(admission.conditions) !== canonicalDefinitionJson(plan.conditions)) {
     throw new Error('campaign admission conditions do not match the compiled plan');
   }
-  const selections = admissionSelections(plan.agents);
+  const attempt = admission.attemptId === undefined ? undefined
+    : plan.attempts?.find(candidate => candidate.id === admission.attemptId);
+  if (admission.attemptId !== undefined && !attempt) throw new Error('campaign admission attempt is invalid');
+  const selectedAgents = attempt ? plan.agents.filter(agent => agent.adapter === attempt.agentAdapter
+    && agent.model === attempt.model && agent.providerRoute === attempt.providerRoute
+    && agent.maxOutputTokens === attempt.maxOutputTokens) : plan.agents;
+  const selections = admissionSelections(selectedAgents);
+  const workerCount = attempt ? 1 : plan.summary.parallelism;
   const runIndices = [...new Set(admission.reports.map(report => report.request.runIndex))]
     .sort((a, b) => a - b);
-  if (runIndices.length !== plan.summary.parallelism
+  if (runIndices.length !== workerCount
     || runIndices.some(index => !Number.isInteger(index) || index < 0 || index > RUN_INDEX_CAP)) {
     throw new Error('campaign admission run slots are incomplete or invalid');
   }
-  if (admission.reports.length !== selections.length * plan.summary.parallelism) {
+  if (admission.reports.length !== selections.length * workerCount) {
     throw new Error('campaign admission reports are incomplete');
   }
-  const expectedBackends = plan.stacks.map(stack => stack.id);
+  const expectedBackends = attempt ? [attempt.stack] : plan.stacks.map(stack => stack.id);
   const expectedResultsDir = resolve(directory);
   const recordedResultsDir = admission.reports[0]?.request.resultsDir;
   for (const { adapter, providerRoute, maxOutputTokens } of selections) {
@@ -233,6 +243,8 @@ export function validateCampaignAdmission(
   return admission as CampaignAdmission;
 }
 
+export class CampaignResourceUnavailable extends Error {}
+
 export interface CampaignReservation { path: string; token: string }
 
 interface ReservationLease extends BackendLease {
@@ -258,6 +270,7 @@ function reservationLease(authority: CampaignReservation): ReservationLease {
 
 function reserveRunIndices(plan: CompiledCampaignPlan, directory: string, id: string,
   env: NodeJS.ProcessEnv, probePort: (port: number | string) => { free: boolean },
+  excludedRunIndices: readonly number[] = [],
 ): { runIndices: number[]; reservation: CampaignReservation } {
   const track = loadTrack(plan.definition.track);
   const scope = resourceLockScope(env);
@@ -269,6 +282,7 @@ function reserveRunIndices(plan: CompiledCampaignPlan, directory: string, id: st
     const keys: string[] = [];
     const selectedKeys = new Set<string>();
     for (let runIndex = 0; runIndex <= RUN_INDEX_CAP; runIndex += 1) {
+      if (excludedRunIndices.includes(runIndex)) continue;
       let candidateKeys: string[];
       let ports: Set<number>;
       try {
@@ -298,7 +312,7 @@ function reserveRunIndices(plan: CompiledCampaignPlan, directory: string, id: st
       if (selected.length === plan.summary.parallelism) break;
     }
     if (selected.length !== plan.summary.parallelism) {
-      throw new Error(`only ${selected.length} of ${plan.summary.parallelism} required run slots are free`);
+      throw new CampaignResourceUnavailable(`only ${selected.length} of ${plan.summary.parallelism} required run slots are free`);
     }
     const lease: ReservationLease = { ...createBackendLease({ runId: id, backend: 'stub',
       track: plan.definition.track, runIndex: selected[0]! }),
@@ -314,7 +328,7 @@ function reserveRunIndices(plan: CompiledCampaignPlan, directory: string, id: st
       if (!existingResourceLockKeys({ ...scope, keys }).length) throw error;
     }
   }
-  throw new Error('runner slots changed during admission; retry when capacity is available');
+  throw new CampaignResourceUnavailable('runner slots changed during admission; retry when capacity is available');
 }
 
 export function delegateCampaignReservation(authority: CampaignReservation, directory: string,
@@ -532,8 +546,10 @@ function resourceFreeAdmissionReport(request: CampaignAdmissionPreflightRequest,
 
 export function runCampaignAdmission(plan: CompiledCampaignPlan, directory: string,
   { env = process.env, preflight = runPreflight, now = new Date().toISOString(),
-    uuid = randomUUID, probePort = probeLoopbackPort }: {
+    uuid = randomUUID, probePort = probeLoopbackPort, attempt, excludedRunIndices = [] }: {
       env?: NodeJS.ProcessEnv;
+      attempt?: CampaignAttemptPlan;
+      excludedRunIndices?: readonly number[];
       preflight?: (request: CampaignAdmissionPreflightRequest,
         options?: { env: NodeJS.ProcessEnv }) => PreflightReport;
       now?: string;
@@ -543,18 +559,27 @@ export function runCampaignAdmission(plan: CompiledCampaignPlan, directory: stri
   const executionEnv = campaignExecutionEnvironment(plan, env);
   const reports: PreflightReport[] = [];
   const id = `${plan.id}-admission-${now.replace(/[-:.TZ]/g, '').slice(0, 14)}-${uuid()}`;
-  const resourceFree = campaignUsesNoExternalResources(plan);
+  if (attempt && !plan.attempts.some(candidate => canonicalDefinitionJson(candidate) === canonicalDefinitionJson(attempt))) {
+    throw new Error('admission attempt does not match the compiled plan');
+  }
+  const scoped: CompiledCampaignPlan = attempt ? { ...plan,
+    stacks: plan.stacks.filter(stack => stack.id === attempt.stack),
+    agents: plan.agents.filter(agent => agent.adapter === attempt.agentAdapter && agent.model === attempt.model
+      && agent.providerRoute === attempt.providerRoute && agent.maxOutputTokens === attempt.maxOutputTokens),
+    attempts: [attempt], conditions: [attempt.condition], summary: { ...plan.summary, parallelism: 1 } } : plan;
+  const resourceFree = campaignUsesNoExternalResources(scoped);
   const reserved = resourceFree ? null
-    : reserveRunIndices(plan, directory, id, executionEnv, probePort);
+    : reserveRunIndices(scoped, directory, id, executionEnv, probePort, excludedRunIndices);
   const runIndices = reserved?.runIndices
-    ?? Array.from({ length: plan.summary.parallelism }, (_, index) => index);
+    ?? Array.from({ length: scoped.summary.parallelism + excludedRunIndices.length }, (_, index) => index)
+      .filter(index => !excludedRunIndices.includes(index)).slice(0, scoped.summary.parallelism);
   try {
-  const guidanceModes = [...new Set(plan.conditions.map(condition => condition.guidance.mode))];
-  const agentSkills = [...new Set(plan.attempts.flatMap(attempt => attempt.skills))].sort();
-  for (const { adapter, providerRoute, maxOutputTokens } of admissionSelections(plan.agents)) {
+  const guidanceModes = [...new Set(scoped.conditions.map(condition => condition.guidance.mode))];
+  const agentSkills = [...new Set(scoped.attempts.flatMap(attempt => attempt.skills))].sort();
+  for (const { adapter, providerRoute, maxOutputTokens } of admissionSelections(scoped.agents)) {
     for (const runIndex of runIndices) {
       const request: CampaignAdmissionPreflightRequest = {
-        backends: plan.stacks.map(stack => stack.id),
+        backends: scoped.stacks.map(stack => stack.id),
         track: plan.definition.track,
         levels: `${Math.min(...plan.definition.levels)}-${Math.max(...plan.definition.levels)}`,
         levelList: plan.definition.levels,
@@ -567,7 +592,7 @@ export function runCampaignAdmission(plan: CompiledCampaignPlan, directory: stri
         agentSkills,
         packIds: plan.definition.selection.packs ?? [],
         checkKeys: plan.definition.selection.checks ?? [],
-        requestedScopes: plan.conditions.map(condition => condition.requested),
+        requestedScopes: scoped.conditions.map(condition => condition.requested),
         featureCatalog: plan.featureCatalog,
         mode: plan.definition.mode,
         smoke: false,
@@ -577,7 +602,7 @@ export function runCampaignAdmission(plan: CompiledCampaignPlan, directory: stri
       };
       reports.push(resourceFree ? resourceFreeAdmissionReport(request, now) : preflight(request,
         { env: campaignSlotEnvironment(executionEnv,
-          plan.stacks.some(stack => stack.id === 'spacetime') ? 'spacetime' : null, runIndex) }));
+          scoped.stacks.some(stack => stack.id === 'spacetime') ? 'spacetime' : null, runIndex) }));
     }
   }
   const payload = validateCampaignAdmission({ schemaVersion: 1, campaignId: plan.id,
@@ -587,7 +612,7 @@ export function runCampaignAdmission(plan: CompiledCampaignPlan, directory: stri
     agents: plan.agents.map(agent => ({ adapter: agent.adapter, model: agent.model,
       ...(agent.providerRoute ? { providerRoute: agent.providerRoute } : {}),
       ...(agent.maxOutputTokens ? { maxOutputTokens: agent.maxOutputTokens } : {}), identity: agent.identity })),
-    conditions: plan.conditions,
+    conditions: plan.conditions, ...(attempt ? { attemptId: attempt.id } : {}),
     reports }, plan, directory);
   const path = contained(directory, join('admissions', `${id}.json`), 'campaign admission');
   writeArtifact(path, { kind: 'campaign_admission', id,

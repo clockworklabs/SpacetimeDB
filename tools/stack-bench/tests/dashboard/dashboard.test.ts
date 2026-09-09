@@ -1279,3 +1279,38 @@ test('the client renders controls, evidence links, and every supported page', ()
   assert.equal(topbar({ page: 'campaigns', key: '', canStart: false, resumable: false, error: '' })
     .includes('Start a run'), false);
 });
+
+
+test('job endpoints authenticate writes, paginate reads, and queue without launching', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'dashboard-jobs-'));
+  const plansRoot = join(root, 'plans');
+  mkdirSync(plansRoot);
+  writeFileSync(join(plansRoot, 'test.json'), readFileSync(EXAMPLE_CAMPAIGN));
+  let launches = 0;
+  const { server } = createDashboardServer({ resultsRoot: root, plansRoot, allowLaunch: true,
+    token: 'job-token', controlSecret: 'job-control-secret-value-1234567890',
+    launch() { launches++; throw new Error('queue submission must not launch'); } });
+  const origin = await listenOrigin(server);
+  t.after(() => { server.close(); rmSync(root, { recursive: true, force: true }); });
+  const headers = { origin, 'content-type': 'application/json', 'x-stack-bench-token': 'job-token',
+    'x-stack-bench-control-secret': 'job-control-secret-value-1234567890' };
+  const input = { key: 'dashboard-job', planFile: 'test.json' };
+  assert.equal((await fetch(`${origin}/api/jobs`, { method: 'POST', body: JSON.stringify(input) })).status, 403);
+  assert.equal((await fetch(`${origin}/api/jobs`, { method: 'POST', headers,
+    body: JSON.stringify({ ...input, planFile: '../outside.json' }) })).status, 400);
+  const submitted = await fetch(`${origin}/api/jobs`, { method: 'POST', headers, body: JSON.stringify(input) });
+  assert.equal(submitted.status, 202);
+  const job = await submitted.json() as { job: { id: string }; status: string };
+  assert.equal(job.status, 'queued');
+  assert.equal((await fetch(`${origin}/api/jobs/${job.job.id}`)).status, 200);
+  const page = await (await fetch(`${origin}/api/jobs?limit=1`)).json() as { jobs: unknown[]; next: unknown };
+  assert.equal(page.jobs.length, 1);
+  const after = await (await fetch(`${origin}/api/jobs?after=${job.job.id}&limit=1`)).json() as { jobs: unknown[] };
+  assert.deepEqual(after.jobs, []);
+  assert.equal((await fetch(`${origin}/api/jobs?limit=0`)).status, 400);
+  assert.equal((await fetch(`${origin}/api/jobs/${job.job.id}/cancel`, { method: 'POST' })).status, 403);
+  const cancelled = await fetch(`${origin}/api/jobs/${job.job.id}/cancel`, { method: 'POST', headers });
+  assert.equal(cancelled.status, 202);
+  assert.equal((await cancelled.json() as { status: string }).status, 'cancelled');
+  assert.equal(launches, 0);
+});

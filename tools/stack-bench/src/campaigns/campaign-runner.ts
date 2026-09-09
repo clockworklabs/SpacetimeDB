@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync } from 'node:fs';
+import { setTimeout as delay } from 'node:timers/promises';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 
@@ -22,8 +23,10 @@ import type { BoundedProcessResult, RunBoundedOptions }
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { RUN_INDEX_CAP } from '../composition/tracks.js';
 import { readCampaignAdmission, runCampaignAdmission, delegateCampaignReservation,
-  closeCampaignDelegation, releaseCampaignReservation } from './campaign-admission.js';
+  closeCampaignDelegation, releaseCampaignReservation, CampaignResourceUnavailable } from './campaign-admission.js';
 import { recoverCampaignReservations } from './campaign-admission.js';
+import { resolveExecutionCredentials } from '../agents/credential-profiles.js';
+import type { ExecutionCredentials } from '../agents/credential-profiles.js';
 import type { CampaignReservation } from './campaign-admission.js';
 import { campaignChildPath as contained } from './campaign-path.js';
 import { validateCampaignRun } from './campaign-run-validation.js';
@@ -285,6 +288,14 @@ function assertAdmissionReferences(plan: CompiledCampaignPlan, directory: string
   let recordedResultsDir: unknown;
   for (const id of ids) {
     const admission = readCampaignAdmission(directory, id, plan, { allowRelocatedEvidence });
+    for (const attempt of state.attempts) {
+      for (const execution of attempt.executions.filter(execution => execution.admissionId === id)) {
+        if ((admission.attemptId !== undefined && admission.attemptId !== attempt.plan.id)
+          || !admission.reports.some(report => report.request.runIndex === execution.runIndex)) {
+          throw new Error(`campaign execution ${execution.id} does not match its admission`);
+        }
+      }
+    }
     const origin = admission.reports[0]?.request.resultsDir;
     if (allowRelocatedEvidence && recordedResultsDir !== undefined && origin !== recordedResultsDir) {
       throw new Error('campaign admissions have different recorded results directories');
@@ -389,14 +400,18 @@ export function reconcileCampaign(campaignFile: string, directory: string,
 
 export async function executeCampaign(campaignFile: string, directory: string,
   { mode = 'frozen', env = process.env, execute = runBounded as ExecuteProcess,
-    admit = runCampaignAdmission, rescue = rescueSupervisedLease, signal = null }: {
+    admit = runCampaignAdmission, rescue = rescueSupervisedLease, signal = null,
+    capacityPolicy = 'fail', onCapacityWait, executionCredentials }: {
       mode?: 'frozen' | 'model-free-trial';
       env?: NodeJS.ProcessEnv;
       execute?: ExecuteProcess;
       admit?: (plan: CompiledCampaignPlan, directory: string,
-        options: { env: NodeJS.ProcessEnv }) => CampaignAdmissionAuthority;
+        options: { env: NodeJS.ProcessEnv; attempt: CampaignAttemptPlan; excludedRunIndices: number[] }) => CampaignAdmissionAuthority;
       rescue?: (supervisorState: string, output: string) => void;
       signal?: AbortSignal | null;
+      capacityPolicy?: 'wait' | 'fail';
+      onCapacityWait?: (reason: string | null) => void;
+      executionCredentials?: ExecutionCredentials;
     } = {}): Promise<CampaignState> {
   const plan = compileCampaignFile(resolve(campaignFile));
   if (!['frozen', 'model-free-trial'].includes(mode)) {
@@ -421,13 +436,12 @@ export async function executeCampaign(campaignFile: string, directory: string,
         .map(agent => agent.model).join(', ')}`);
     }
   }
+  if (capacityPolicy !== 'wait' && capacityPolicy !== 'fail') throw new Error('capacityPolicy must be wait or fail');
   const executionEnv = campaignExecutionEnvironment(plan, env);
   const lock = acquireCampaignLock(directory, plan);
   const cancellation = watchCampaignCancellation(lock, signal);
   signal = cancellation.signal;
-  let reservation: CampaignReservation | undefined;
   const active = new Map<string, Promise<{ claim: CampaignClaim; result: AttemptResult }>>();
-  let retained = false;
   try {
     const initialized = initializeCampaignDirectory(plan, directory);
     let { state } = inspectCampaign(initialized.paths.root);
@@ -435,12 +449,9 @@ export async function executeCampaign(campaignFile: string, directory: string,
       throw new Error('campaign has an unresolved running attempt; prove its owned resources are clean before reconciliation');
     }
     if (!state.attempts.some(attempt => attempt.status === 'pending')) return state;
-    const admission = admit(plan, initialized.paths.root, { env: executionEnv });
-    reservation = admission.reservation;
-    if (!admission?.payload?.ok || typeof admission.id !== 'string' || !admission.id) {
-      throw new Error('campaign-wide preflight admission failed; no attempt was claimed');
-    }
-    const runClaim = async (claim: CampaignClaim): Promise<AttemptResult> => {
+    const runClaim = async (claim: CampaignClaim, admission: CampaignAdmissionAuthority,
+      attemptEnv: NodeJS.ProcessEnv): Promise<AttemptResult> => {
+      const reservation = admission.reservation;
       const output = contained(initialized.paths.root, claim.output, 'attempt output');
       // Create every execution output before preflight bind-mounts it.
       mkdirSync(output, { recursive: true });
@@ -492,7 +503,7 @@ export async function executeCampaign(campaignFile: string, directory: string,
               'progression resume directory'), admission.id, remainingBudget,
           claim.extension), {
           cwd: ROOT,
-          env: { ...campaignSlotEnvironment(executionEnv, claim.attempt.stack, claim.runIndex),
+          env: { ...campaignSlotEnvironment(attemptEnv, claim.attempt.stack, claim.runIndex),
             ...delegationEnv,
             STACK_BENCH_PROVIDER_WAIT_CONTEXT: JSON.stringify({ directory: initialized.paths.root,
               campaignSha256: plan.contentSha256, attemptId: claim.attempt.id,
@@ -505,7 +516,7 @@ export async function executeCampaign(campaignFile: string, directory: string,
           signal,
         });
         refreshTimeoutMs(timeoutMs, false);
-        processResult.buildImage = executionEnv.STACK_BENCH_IMAGE;
+        processResult.buildImage = attemptEnv.STACK_BENCH_IMAGE;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const reason = `attempt launcher failed: ${message}`;
@@ -565,33 +576,84 @@ export async function executeCampaign(campaignFile: string, directory: string,
     cancellation.poll();
     const invalidAtStart = state.summary.invalid;
     let stopLaunching = signal?.aborted === true;
+    let dispatchFailure: unknown;
     while (true) {
-      while (!stopLaunching && !signal?.aborted && active.size < plan.summary.parallelism) {
-        const next = claimNextAttempt(state, { admissionId: admission.id,
-          runIndices: admission.runIndices });
-        state = next.state;
-        if (!next.claim) break;
-        const claim = next.claim;
-        writeCampaignState(initialized.paths.state, plan, state);
-        const promise = runClaim(claim).then(result => {
-          if (result.cleanupRequired) { retained = true; return { claim, result }; }
-          if (reservation) {
-            try { closeCampaignDelegation(initialized.paths.root, claim.executionId); }
-            catch (error) {
-              retained = true;
-              return { claim, result: { cleanupRequired: true,
-                reason: `campaign delegation cleanup failed: ${error instanceof Error ? error.message : String(error)}` } };
-            }
+      try {
+        while (!stopLaunching && !signal?.aborted && active.size < plan.summary.parallelism) {
+          const pending = state.attempts.find(attempt => attempt.status === 'pending');
+          if (!pending) break;
+          const credentials = resolveExecutionCredentials(pending.plan.agentAdapter, pending.plan.id,
+            executionCredentials ?? {}, executionEnv);
+          const previousAssignment = pending.executions.at(-1)?.credentialAssignment;
+          if (pending.executions.length && canonicalDefinitionJson(previousAssignment ?? null)
+            !== canonicalDefinitionJson(credentials.assignment)) {
+            throw new Error(`attempt ${pending.plan.id} credential assignment changed; start a fresh attempt`);
           }
-          return { claim, result };
-        },
-          error => ({ claim, result: { exitCode: null, timedOut: false,
-            run: { outcome: { kind: 'harness_failure',
-              reason: `campaign worker failed: ${error instanceof Error
-                ? error.message : String(error)}` } } } }));
-        active.set(claim.executionId, promise);
+          const credentialPath = contained(initialized.paths.root,
+            join('.private', `${pending.plan.id}.credentials.json`), 'attempt credentials');
+          const credentialPin = JSON.stringify({ assignment: credentials.assignment,
+            fingerprint: credentials.env.STACK_BENCH_CREDENTIAL_SECRET_SHA256 ?? null });
+          if (existsSync(credentialPath) && readFileSync(credentialPath, 'utf8') !== credentialPin) {
+            throw new Error(`attempt ${pending.plan.id} credential profile changed; start a fresh attempt`);
+          }
+          let admission: CampaignAdmissionAuthority;
+          try {
+            admission = admit(plan, initialized.paths.root, { env: credentials.env, attempt: pending.plan,
+              excludedRunIndices: state.attempts.flatMap(attempt => attempt.executions
+                .filter(execution => execution.status === 'running').map(execution => execution.runIndex)) });
+          } catch (error) {
+            if (!(error instanceof CampaignResourceUnavailable) || capacityPolicy === 'fail') throw error;
+            onCapacityWait?.(error.message);
+            if (active.size) break;
+            try { await delay(1000, undefined, { signal: signal ?? undefined }); }
+            catch (error) { if (!signal?.aborted) throw error; }
+            continue;
+          }
+          if (!admission?.payload?.ok || !admission.id) {
+            throw new Error('attempt preflight admission failed; no attempt was claimed');
+          }
+          const reservation = admission.reservation;
+          let claim: CampaignClaim;
+          try {
+            onCapacityWait?.(null);
+            const next = claimNextAttempt(state, { admissionId: admission.id, runIndex: admission.runIndices[0] });
+            if (!next.claim) throw new Error('attempt dispatch has no available worker');
+            state = next.state;
+            claim = next.claim;
+            state.attempts.find(attempt => attempt.plan.id === claim.attempt.id)!.executions.at(-1)!
+              .credentialAssignment = credentials.assignment;
+            mkdirSync(dirname(credentialPath), { recursive: true });
+            if (!existsSync(credentialPath)) writeFileSync(credentialPath, credentialPin, { flag: 'wx', mode: 0o600 });
+            writeCampaignState(initialized.paths.state, plan, state);
+          } catch (error) {
+            if (reservation) releaseCampaignReservation(reservation);
+            throw error;
+          }
+          const promise = runClaim(claim, admission, credentials.env).then(result => {
+            if (result.cleanupRequired) return { claim, result };
+            if (reservation) {
+              try {
+                closeCampaignDelegation(initialized.paths.root, claim.executionId);
+                releaseCampaignReservation(reservation);
+              } catch (error) {
+                return { claim, result: { cleanupRequired: true,
+                  reason: `attempt reservation cleanup failed: ${error instanceof Error ? error.message : String(error)}` } };
+              }
+            }
+            return { claim, result };
+          }, error => ({ claim, result: { cleanupRequired: true,
+            reason: `campaign worker failed; reservation retained: ${error instanceof Error
+              ? error.message : String(error)}` } }));
+          active.set(claim.executionId, promise);
+        }
+      } catch (error) {
+        stopLaunching = true;
+        dispatchFailure = error;
       }
-      if (!active.size) return state;
+      if (!active.size) {
+        if (dispatchFailure) throw dispatchFailure;
+        return state;
+      }
       const completed = await Promise.race(active.values());
       active.delete(completed.claim.executionId);
       if (signal?.aborted) stopLaunching = true;
@@ -613,11 +675,7 @@ export async function executeCampaign(campaignFile: string, directory: string,
   } finally {
     // An unexpected state-write failure must not free capacity under live children.
     await Promise.allSettled(active.values());
-    try {
-      if (reservation && !retained) releaseCampaignReservation(reservation);
-    } finally {
-      cancellation.close();
-      releaseCampaignLock(lock);
-    }
+    cancellation.close();
+    releaseCampaignLock(lock);
   }
 }

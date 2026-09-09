@@ -23,6 +23,7 @@ const COMMANDS = Object.freeze({
   'qualify-null': [join(RUNTIME_ROOT, 'commands', 'null-control.js')],
   'qualification': [join(RUNTIME_ROOT, 'commands', 'qualification-cli.js')],
   'pack-budget': [join(RUNTIME_ROOT, 'commands', 'pack-budget.js')],
+  'job': [join(RUNTIME_ROOT, 'commands', 'job-cli.js')],
   'campaign': [join(RUNTIME_ROOT, 'commands', 'campaign-cli.js')],
   'dashboard': [join(RUNTIME_ROOT, 'dashboard', 'dashboard-server.js')],
   'repair': [join(RUNTIME_ROOT, 'commands', 'repair-cli.js')],
@@ -36,6 +37,7 @@ const COMMANDS_REQUIRING_AGENT_AUTH = new Set(['preflight', 'run']);
 
 export function controllerCommandRequiresAgentAuth(command: string | undefined,
   args: string[] = []): boolean {
+  if (command === 'job' && args[0] === 'work') return true;
   if (command === 'run' && args.some(value => value === '--grade-from' || value.startsWith('--grade-from='))) {
     return !parseBenchArguments([process.execPath, 'bench', ...args]).gradeFrom;
   }
@@ -97,6 +99,13 @@ export function controllerChildEnvironment(source: NodeJS.ProcessEnv = process.e
     'openai-api-key': ['STACK_BENCH_OPENAI_API_KEY_FILE', 'OPENAI_API_KEY_FILE'],
     'openai-account': ['STACK_BENCH_CODEX_AUTH_FILE', 'CODEX_AUTH_FILE'],
   };
+  // Named jobs select per attempt. Keep the legacy default available without
+  // clearing credentials belonging to other providers.
+  if (source.STACK_BENCH_CREDENTIAL_PROFILES_FILE) {
+    const selected = modes[source.STACK_BENCH_AGENT_AUTH ?? 'subscription-token'];
+    if (selected && source[selected[0]]?.trim()) env[selected[1]] = source[selected[0]]!.trim();
+    return env;
+  }
   for (const [, variable] of Object.values(modes)) {
     delete env[variable];
     delete env[variable.replace(/_FILE$/, '')];
@@ -144,6 +153,9 @@ function help(): void {
     + 'commands at the durable plans/ and campaigns/ directories.\n'
     + '\n'
     + 'Run a campaign\n'
+    + '  job submit <json|->             submit an idempotent execution job\n'
+    + '  job work <id> --host <host>      claim and execute one submitted job\n'
+    + '  job list|status <id>|cancel <id> inspect or cancel submitted work\n'
     + '  preflight --backend <stacks> --track <track> --levels <range>\n'
     + '                                   verify the runner without creating an attempt\n'
     + '  campaign validate <plan>         compile a plan file and report what is wrong with it\n'
@@ -200,7 +212,7 @@ async function main(argv: string[]): Promise<void> {
     { requireAgentAuth: controllerCommandRequiresAgentAuth(command, argv.slice(3)) });
   const runtime = ['preflight', 'run', 'qualify-reference', 'qualify-null', 'recover', 'recover-lease']
     .includes(command ?? '') || (command === 'campaign'
-      && ['run', 'trial', 'resume', 'extend', 'reconcile'].includes(argv[3] ?? ''));
+      && ['run', 'trial', 'resume', 'extend', 'reconcile'].includes(argv[3] ?? '')) || (command === 'job' && argv[3] === 'work');
   if (runtime) env = controllerRuntimeEnvironment(env);
   const child = spawn(resolved.executable, resolved.args, { stdio: 'inherit', env });
   const stopForwardingSignals = forwardControllerSignals(child);

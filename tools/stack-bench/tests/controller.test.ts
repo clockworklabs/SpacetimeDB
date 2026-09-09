@@ -220,3 +220,16 @@ test('the delivered model-free plan uses a runtime adapter that survives removal
     assert.match(readFileSync(adapter.entrypoint, 'utf8'), /parseReferenceAgentArgs/);
   }
 });
+
+
+test('named jobs defer credential selection and preserve mixed provider file sources', () => {
+  const source = { STACK_BENCH_CREDENTIAL_PROFILES_FILE: '/private/profiles.json',
+    ANTHROPIC_API_KEY_FILE: '/private/anthropic', OPENAI_API_KEY_FILE: '/private/openai' };
+  assert.deepEqual(controllerChildEnvironment(source), source);
+  assert.deepEqual(controllerChildEnvironment(source, { requireAgentAuth: false }), source);
+  assert.equal(controllerChildEnvironment({ ...source,
+    STACK_BENCH_CLAUDE_OAUTH_TOKEN_FILE: '/private/default' }).CLAUDE_CODE_OAUTH_TOKEN_FILE, '/private/default');
+  assert.equal(controllerCommandRequiresAgentAuth('job', ['submit']), false);
+  assert.equal(controllerCommandRequiresAgentAuth('job', ['work']), true);
+  assert.match(resolveControllerCommand(['job', 'list'])!.args[0]!, /job-cli.js$/);
+});

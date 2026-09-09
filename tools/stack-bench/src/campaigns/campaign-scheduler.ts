@@ -1,3 +1,5 @@
+import type { CredentialAssignment } from '../agents/credential-profiles.js';
+import { assignmentSchema } from '../agents/credential-profiles.js';
 import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
@@ -97,6 +99,7 @@ export interface CampaignExtensionSeed {
 }
 
 export interface CampaignExecution {
+  credentialAssignment?: CredentialAssignment | null;
   timeExtensionSupported?: boolean;
   timeContinuation?: { grantId: string; stateSha256: string };
   id: string;
@@ -251,6 +254,7 @@ const executionSchema = z.strictObject({
   runIndex: z.number().int(),
   retry: retrySchema.nullable().optional(),
   continuation: continuationSchema.optional(),
+  credentialAssignment: assignmentSchema.nullable().optional(),
   timeExtensionSupported: z.boolean().optional(),
   timeContinuation: z.strictObject({ grantId: z.string().regex(SAFE_ID),
     stateSha256: z.string().regex(HASH) }).optional(),
@@ -488,22 +492,23 @@ export function createCampaignState(plan: CompiledCampaignPlan,
 }
 
 export function claimNextAttempt(input: CampaignState,
-  { now = new Date().toISOString(), admissionId, runIndices }:
-  { now?: string; admissionId?: string; runIndices?: number[] } = {}): {
+  { now = new Date().toISOString(), admissionId, runIndices, runIndex: assignedRunIndex }:
+  { now?: string; admissionId?: string; runIndices?: number[]; runIndex?: number } = {}): {
     state: CampaignState;
     claim: CampaignClaim | null;
     capacityFull: boolean;
   } {
   const state = structuredClone(input);
   const exactAdmissionId = string(admissionId, 'admissionId');
-  const availableSlots = runIndices
-    ?? Array.from({ length: state.maxParallel }, (_, index) => index);
-  if (availableSlots.length !== state.maxParallel
+  const availableSlots = assignedRunIndex === undefined ? runIndices
+    ?? Array.from({ length: state.maxParallel }, (_, index) => index) : [assignedRunIndex];
+  if ((assignedRunIndex === undefined && availableSlots.length !== state.maxParallel)
     || new Set(availableSlots).size !== availableSlots.length
     || availableSlots.some(index => !Number.isInteger(index) || index < 0
       || index > RUN_INDEX_CAP)) fail('runIndices must contain one unique valid slot per worker');
   const usedSlots = new Set(state.attempts.flatMap(attempt => attempt.executions
     .filter(execution => execution.status === 'running').map(execution => execution.runIndex)));
+  if (usedSlots.size >= state.maxParallel) return { state, claim: null, capacityFull: true };
   const runIndex = availableSlots.find(index => !usedSlots.has(index));
   if (runIndex === undefined) return { state, claim: null, capacityFull: true };
   const attempt = state.attempts.find(candidate => candidate.status === 'pending');

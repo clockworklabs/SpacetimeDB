@@ -1,3 +1,5 @@
+import { constants as bufferConstants } from 'node:buffer';
+import { getHeapStatistics } from 'node:v8';
 import { readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 
@@ -413,7 +415,7 @@ function version(value: unknown, at: string): string {
 
 function integer(value: unknown, at: string, { min = 0, max = Number.MAX_SAFE_INTEGER }:
   { min?: number; max?: number } = {}): number {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max) {
     throw new Error(`invalid campaign at ${at}: must be an integer from ${min} through ${max}`);
   }
   return value;
@@ -529,7 +531,7 @@ export function validateCampaignDefinition(input: unknown,
     identifier(stack.id, `${at}.id`);
     version(stack.adapterVersion, `${at}.adapterVersion`);
     if (stack.repetitions !== undefined) {
-      integer(stack.repetitions, `${at}.repetitions`, { min: 1, max: 100 });
+      integer(stack.repetitions, `${at}.repetitions`, { min: 1 });
     }
     return stack as unknown as CampaignStackSelection;
   }, { nonEmpty: true, sort: true });
@@ -550,7 +552,7 @@ export function validateCampaignDefinition(input: unknown,
   if (new Set(agentKeys).size !== agentKeys.length) fail(`${source}.agents`, 'contains a duplicate configuration');
   value.conditions = exactArray(value.conditions, `${source}.conditions`, (condition, at) =>
     validateConditionReference(condition, at), { nonEmpty: true, sort: true });
-  integer(value.repetitions, `${source}.repetitions`, { min: 1, max: 100 });
+  integer(value.repetitions, `${source}.repetitions`, { min: 1 });
   value.parallelism ??= 1;
   integer(value.parallelism, `${source}.parallelism`, { min: 1, max: RUN_INDEX_CAP + 1 });
   for (const stack of value.stacks) stack.repetitions ??= value.repetitions;
@@ -560,7 +562,10 @@ export function validateCampaignDefinition(input: unknown,
   string(value.ordering.seed, `${source}.ordering.seed`);
 
   strict(value.budgets, `${source}.budgets`, BUDGET_FIELDS);
-  integer(value.budgets.attemptTimeoutMinutes, `${source}.budgets.attemptTimeoutMinutes`, { min: 10, max: 720 });
+  integer(value.budgets.attemptTimeoutMinutes, `${source}.budgets.attemptTimeoutMinutes`, { min: 1 });
+  if (!Number.isSafeInteger(value.budgets.attemptTimeoutMinutes * 60_000 + Date.now())) {
+    fail(`${source}.budgets.attemptTimeoutMinutes`, 'duration exceeds safe millisecond deadline arithmetic');
+  }
   if (value.budgets.maxCostUsdPerAttempt !== null) {
     finite(value.budgets.maxCostUsdPerAttempt, `${source}.budgets.maxCostUsdPerAttempt`, { min: 0.01 });
   }
@@ -763,6 +768,11 @@ function expandAttempts(definition: CampaignDefinition, requestedLevels: number[
   studyConditions: ResolvedStudyCondition[]): CampaignAttemptPlan[] {
   const repetitionsByStack = new Map(definition.stacks.map(stack =>
     [stack.id, stack.repetitions ?? definition.repetitions]));
+  const attemptCount = [...repetitionsByStack.values()].reduce((sum, value) => sum + BigInt(value), 0n)
+    * BigInt(agents.length) * BigInt(studyConditions.length);
+  if (attemptCount > 0xffffffffn) {
+    fail('repetitions', `${attemptCount} attempts exceed the JavaScript array length limit`);
+  }
   const conditions = agents.flatMap((agent, agentIndex) => studyConditions.flatMap(
     (condition, conditionIndex) => stacks.map(stack => ({
       agent, agentIndex, condition, conditionIndex, stack,
@@ -775,31 +785,46 @@ function expandAttempts(definition: CampaignDefinition, requestedLevels: number[
     const rightHash = sha256(`${definition.ordering.seed}\0${right.key}`);
     return leftHash.localeCompare(rightHash) || left.key.localeCompare(right.key);
   });
+  const attempt = ({ agent, agentIndex, condition, conditionIndex, stack }: typeof conditions[number],
+    repetition: number, order: number): CampaignAttemptPlan => ({
+    id: `${definition.id}-r${repetition}-c${conditionIndex + 1}-a${agentIndex + 1}-${stack.id}`,
+    repetition,
+    order: order + 1,
+    stack: stack.id,
+    agentAdapter: agent.adapter,
+    model: agent.model,
+    ...(agent.providerRoute ? { providerRoute: agent.providerRoute } : {}),
+    ...(agent.maxOutputTokens ? { maxOutputTokens: agent.maxOutputTokens } : {}),
+    pricing: { unit: definition.pricing.unit,
+      rates: definition.pricing.models[agent.model]! },
+    condition,
+    guidance: condition.guidance.mode,
+    skills: condition.guidance.skills[stack.id]!.ids,
+    mode: definition.mode,
+    levels: requestedLevels,
+    ...(featureCatalogIdentity ? { featureCatalog: featureCatalogIdentity } : {}),
+    ...(dependencyPolicyIdentity ? { dependencyPolicy: dependencyPolicyIdentity } : {}),
+    parentAttemptId: definition.id,
+  });
+  // Plans repeat each condition in serialized attempts. Check actual engine storage
+  // limits before allocation; this is not a repetition policy or execution limit.
+  const serializedCharacters = conditions.reduce((sum, condition) => {
+    const repetitions = repetitionsByStack.get(condition.stack.id)!;
+    return sum + BigInt(JSON.stringify(attempt(condition, repetitions, conditions.length)).length + 1)
+      * BigInt(repetitions);
+  }, 2n);
+  const { heap_size_limit: heapLimit, used_heap_size: heapUsed } = getHeapStatistics();
+  if (serializedCharacters > BigInt(bufferConstants.MAX_STRING_LENGTH)
+    || serializedCharacters * 2n > BigInt(heapLimit - heapUsed)) {
+    fail('repetitions', `${attemptCount} materialized attempts need approximately ${serializedCharacters * 2n} serialized string bytes; `
+      + `this exceeds this compiler's string or available heap capacity. Compile smaller campaigns or increase compiler memory`);
+  }
   const attempts: CampaignAttemptPlan[] = [];
   const repetitions = Math.max(...repetitionsByStack.values());
   for (let repetition = 1; repetition <= repetitions; repetition += 1) {
     rotate(conditions, (repetition - 1) % conditions.length)
       .filter(({ stack }) => repetition <= (repetitionsByStack.get(stack.id) ?? 0))
-      .forEach(({ agent, agentIndex, condition, conditionIndex, stack }, order) => attempts.push({
-        id: `${definition.id}-r${repetition}-c${conditionIndex + 1}-a${agentIndex + 1}-${stack.id}`,
-        repetition,
-        order: order + 1,
-        stack: stack.id,
-        agentAdapter: agent.adapter,
-        model: agent.model,
-        ...(agent.providerRoute ? { providerRoute: agent.providerRoute } : {}),
-        ...(agent.maxOutputTokens ? { maxOutputTokens: agent.maxOutputTokens } : {}),
-        pricing: { unit: definition.pricing.unit,
-          rates: definition.pricing.models[agent.model]! },
-        condition,
-        guidance: condition.guidance.mode,
-        skills: condition.guidance.skills[stack.id]!.ids,
-        mode: definition.mode,
-        levels: requestedLevels,
-        ...(featureCatalogIdentity ? { featureCatalog: featureCatalogIdentity } : {}),
-        ...(dependencyPolicyIdentity ? { dependencyPolicy: dependencyPolicyIdentity } : {}),
-        parentAttemptId: definition.id,
-      }));
+      .forEach((condition, order) => attempts.push(attempt(condition, repetition, order)));
   }
   return attempts;
 }

@@ -331,8 +331,9 @@ bounded Docker checks. A clean appliance rehearsal remains a release gate.
 
 Set each plan's `parallelism` to the number of simultaneous attempts you want.
 Admission automatically leases unused run indices and host ports across campaigns.
-It reserves the full requested worker set or fails explicitly; it never lowers
-parallelism. No appliance worker-pool setting is needed. The startup baseline
+It reserves only each dispatched attempt's stack and releases the reservation after
+verified cleanup. [Jobs](../docs/execution-jobs.md) select explicit capacity wait/fail
+policy; requested parallelism never changes. No worker-pool setting is needed. The startup baseline
 remains 4 CPUs and 8 GiB RAM. Preflight reports the requested campaign's
 container caps and warns when their sum exceeds Docker's total allocation.
 These caps do not reserve CPU or RAM and are not measured hardware minimums.

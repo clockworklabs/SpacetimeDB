@@ -6,6 +6,8 @@ Use the root [README](../README.md) for the product summary.
 
 - [Development](development.md): local dependencies and source checks
 - [Appliance operation](../appliance/README.md): configure and run campaigns
+- [Execution jobs](execution-jobs.md): submit work, assign hosts, and integrate a task queue
+- [Credential profiles](credential-profiles.md): select and attribute account/API-key use
 - [Dashboard](../dashboard/README.md): optional web interface
 - [Recovery](../appliance/RECOVERY.md): interrupted runs and retained resources
 - [Release](../appliance/RELEASE.md): assemble and verify a release

@@ -1,0 +1,25 @@
+# Execution jobs
+
+The campaign fixes the experiment. A job assigns its execution policy and credentials. A worker runs the existing campaign engine. Secret values never belong in a campaign or job record.
+
+## Invariants
+
+- Preserve the full TypeScript server/client guidance selected by the campaign.
+- Preserve requested parallelism. Resource waits must be visible; do not rewrite concurrency.
+- Give each attempt only its selected credential. Record non-secret credential identity before execution.
+- Use immutable submissions and exclusive claims. A lost worker is not permission to run a duplicate.
+- Release resources only after verified cleanup. Keep host resource locks local.
+- Preserve existing evidence readers and the running campaigns' frozen images.
+
+## Delivery sequence
+
+1. Add named credential profiles and per-attempt assignments using the existing provider adapters and credential broker.
+2. Reserve only the dispatched attempt's stack resources. Release each reservation after verified cleanup. Support explicit wait/fail policy and cancellation.
+3. Remove arbitrary repetition, initial-duration, and broker-request ceilings. Retain numerical, memory, request-size, cost, authentication, and isolation checks.
+4. Add durable, idempotent job submission and a worker command. Snapshot the campaign input. Record the selected host and preserve a claim after worker loss. Reuse the existing atomic record writer and campaign runner.
+5. Expose the same submission operation through the authenticated dashboard controls. External services can call the exported submission/worker functions or CLI without implementing campaign internals.
+6. Verify synthetic credentials, duplicate submissions, competing workers, cancellation, resource reuse, failure ownership, and retained evidence. Run model-free integration before any paid execution.
+
+The first placement unit is a complete campaign on one worker host. Multiple hosts can claim different jobs. Splitting one campaign across hosts requires a separate distributed attempt coordinator and artifact-transfer contract; do not disguise filesystem locks as that coordinator.
+
+An existing service queue and secret store should call this boundary directly. The standalone job store requires a filesystem that supports atomic hard links and rename. It is not an internet-facing authentication service. Shared account spending and provider request coordination belong at the credential service boundary, not in grading.
