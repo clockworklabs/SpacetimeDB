@@ -1179,7 +1179,7 @@ jobs:
           cat manifest.json
 
       - name: Run Unity tests
-        uses: game-ci/unity-test-runner@70a43fd
+        uses: game-ci/unity-test-runner@70a43fd07570eba926a875a9708c5be06adb092d
         with:
           unityVersion: ${{ env.UNITY_VERSION }}
           projectPath: demo/Blackholio/client-unity # Path to the Unity project subdirectory
