@@ -32,6 +32,7 @@ This document contains the help content for the `spacetime` command-line program
 * [`spacetime container`↴](#spacetime-container)
 * [`spacetime container url`↴](#spacetime-container-url)
 * [`spacetime container exec`↴](#spacetime-container-exec)
+* [`spacetime container logs`↴](#spacetime-container-logs)
 * [`spacetime container build`↴](#spacetime-container-build)
 * [`spacetime container status`↴](#spacetime-container-status)
 * [`spacetime container start`↴](#spacetime-container-start)
@@ -596,6 +597,7 @@ Build and manage a database's container
 
 * `url` — Print a container's published HTTPS URL
 * `exec` — Run a literal command in the current running container
+* `logs` — Read retained stdout and stderr from one container attempt
 * `build` — Prepare verified OCI artifacts locally without publishing
 * `status` — Inspect container control state without opening its database
 * `start` — Request container execution
@@ -644,6 +646,29 @@ Requires database Admin permission. No shell, container start, or reconnect is i
 * `-t`, `--tty` — Allocate a PTY using this foreground terminal's dimensions
 * `--workdir <WORKDIR>` — Absolute working directory inside the container
 * `-e`, `--env <NAME=VALUE>` — Override a process environment variable; platform keys are reserved
+
+
+
+## `spacetime container logs`
+
+Read retained stdout and stderr from one container attempt
+
+**Usage:** `spacetime container logs [OPTIONS] <database>`
+
+A restart does not change the selected attempt. Without --json, stdout and stderr retain their original bytes and streams. Retention gaps and interrupted capture are reported on stderr.
+
+###### **Arguments:**
+
+* `<DATABASE>` — Database name or Identity
+
+###### **Options:**
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server
+* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--generation <GENERATION>` — Read this attempt; omitted selects the current generation once
+* `--cursor <CURSOR>` — Resume after an opaque cursor returned by --json
+* `-f`, `--follow` — Wait for further output from the selected attempt until it ends
+* `--json` — Print one JSON page per line, including timestamps, streams, and resume cursors
 
 
 
