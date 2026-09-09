@@ -44,6 +44,14 @@ Set a condition's `guidanceProfile` to `neutral-dev` to request the
 product guidance and adds a pinned workflow skill; other stacks are unchanged.
 It does not change grading or repair policy. The default remains `neutral`.
 
+`neutral-managed-dev` instead supplies `/deps/spacetime-dev start|status|stop`.
+The agent creates its project configuration, then starts the managed watcher.
+The helper serializes starts, reports initial readiness, and keeps a log in the
+agent home. It runs as the agent user, so normal container cleanup stops it.
+It supports one assigned database and TypeScript binding targets inside `/app`.
+Use a controller and coding image built with this support. This profile has a
+separate guidance identity; it does not change grading or repair policy.
+
 ## Start here
 
 From a clean checkout of the delivered branch, with Docker running, use one

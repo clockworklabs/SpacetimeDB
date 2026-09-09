@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CODING_CONTAINER_DEPENDENCY_READY_FILE,
   CODING_CONTAINER_RELEASE_DEPS_ROOT, CODING_CONTAINER_SPACETIME_CLI,
@@ -39,7 +40,7 @@ export interface BuildContainerPlan {
 const SPACETIME_CLI_BINARY = '/deps/.spacetimedb-cli';
 const SPACETIME_CLI_HOME = '/deps/.spacetime-owner';
 
-function spacetimeCliSetup(serverUri: URL): string {
+function spacetimeCliSetup(serverUri: URL, module: string | null): string {
   const uri = serverUri.toString().replace(/\/$/, '');
   const wrapper = `#!/bin/sh
 case " $* " in
@@ -51,13 +52,28 @@ esac
 exec env HOME=${SPACETIME_CLI_HOME} ${SPACETIME_CLI_BINARY} "$@"
 `;
   const encodedWrapper = Buffer.from(wrapper).toString('base64');
+  const managed = module ? managedDevSetup(uri, module) : '';
   return `mkdir -p ${SPACETIME_CLI_HOME}; `
     + `identity=$(curl -fsS -X POST ${uri}/v1/identity); `
     + `token=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).token)' "$identity"); `
     + `HOME=${SPACETIME_CLI_HOME} ${SPACETIME_CLI_BINARY} login --token "$token" >/dev/null; `
     + `chmod -R a-w ${SPACETIME_CLI_HOME}; `
     + `printf %s ${encodedWrapper} | base64 -d > ${CODING_CONTAINER_SPACETIME_CLI}; `
-    + `chmod 755 ${CODING_CONTAINER_SPACETIME_CLI}; `;
+    + `chmod 755 ${CODING_CONTAINER_SPACETIME_CLI}; ` + managed;
+}
+
+function managedDevSetup(server: string, database: string): string {
+  const program = readFileSync(new URL('../../container/spacetime-dev.js', import.meta.url));
+  const quote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
+  const wrapper = `#!/bin/sh
+set -eu
+state=/home/developer/.spacetime-dev
+mkdir -p "$state"
+exec flock -w 15 "$state/command.lock" node /deps/spacetime-dev.mjs /app "$state" /deps/spacetimedb-cli ${quote(server)} ${quote(database)} "$@"
+`;
+  return `printf %s ${program.toString('base64')} | base64 -d > /deps/spacetime-dev.mjs; `
+    + `printf %s ${Buffer.from(wrapper).toString('base64')} | base64 -d > /deps/spacetime-dev; `
+    + 'chmod 755 /deps/spacetime-dev; ';
 }
 
 export function postgresConnectionUrl({ dbPort, database, hostUrl }:
@@ -118,7 +134,9 @@ export function spacetimeBuildContainerPlan({ repo, env = {} }: {
   const standalone = join(repo, 'tools', 'stack-bench', 'container', 'bin', 'spacetimedb-standalone');
   const serverUri = loopbackHttpUri(env.STACK_BENCH_STDB_URI ?? DEFAULT_SPACETIME_SERVER_URI);
   if (env.STACK_BENCH_APPLIANCE !== '1') serverUri.hostname = 'host.docker.internal';
-  const cliSetup = spacetimeCliSetup(serverUri);
+  const module = env.STACK_BENCH_LEASE
+    ? leaseFromEnv(env, { backend: 'spacetime', active: true }).lease.resources.module : null;
+  const cliSetup = spacetimeCliSetup(serverUri, module);
   const releaseVolume = env.STACK_BENCH_RELEASE_DEPS_VOLUME?.trim() || null;
   if (releaseVolume) {
     return {

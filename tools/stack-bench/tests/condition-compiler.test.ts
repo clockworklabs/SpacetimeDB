@@ -50,6 +50,11 @@ test('dev workflow is opt-in and changes only the SpacetimeDB skill identity', (
     [...neutral.skills.spacetime!.ids, 'spacetime-dev']);
   assert.notEqual(dev.skills.spacetime!.sha256, neutral.skills.spacetime!.sha256);
   assert.notEqual(dev.contentSha256, neutral.contentSha256);
+  const managed = resolveGuidanceProfile('neutral-managed-dev', stacks);
+  assert.deepEqual(managed.documents, neutral.documents);
+  for (const stack of ['mongodb', 'postgres']) assert.deepEqual(managed.skills[stack], neutral.skills[stack]);
+  assert.deepEqual(managed.skills.spacetime!.ids, [...neutral.skills.spacetime!.ids, 'spacetime-managed-dev']);
+  assert.notEqual(managed.contentSha256, dev.contentSha256);
 });
 
 test('the prescribed condition binds independent guidance, repair, and document identities', () => {
