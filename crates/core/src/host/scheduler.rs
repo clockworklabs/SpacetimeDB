@@ -577,8 +577,17 @@ fn prepare_scheduled_procedure_call(
             // or its arguments do not match the current function definition.
             // TODO: Use a typed error to log internal failures at error! and stale/invalid schedules at warn! or lower.
             log::error!("could not determine scheduled procedure or its parameters: {err:#}");
-            let reschedule =
-                delete_scheduled_invocation_row(module_info, db, id, tx, invocation.as_ref(), inst_common, inst);
+            let reschedule = id.zip(invocation.as_ref()).and_then(|(id, invocation)| {
+                delete_scheduled_function_row(
+                    module_info,
+                    db,
+                    (id, invocation.row_hash),
+                    Some(tx),
+                    invocation.intended_at,
+                    inst_common,
+                    inst,
+                )
+            });
             return ScheduledProcedureStep::Done(CallScheduledFunctionResult { reschedule }, false);
         }
     };
@@ -589,7 +598,17 @@ fn prepare_scheduled_procedure_call(
 
     // For scheduled procedures, it's incorrect to retry them if execution aborts midway,
     // so we must remove the schedule row before executing.
-    let reschedule = delete_scheduled_invocation_row(module_info, db, id, tx, invocation.as_ref(), inst_common, inst);
+    let reschedule = id.zip(invocation.as_ref()).and_then(|(id, invocation)| {
+        delete_scheduled_function_row(
+            module_info,
+            db,
+            (id, invocation.row_hash),
+            Some(tx),
+            invocation.intended_at,
+            inst_common,
+            inst,
+        )
+    });
     let delay = invocation.map(|invocation| {
         (
             invocation.function_name,
@@ -628,8 +647,17 @@ fn call_scheduled_reducer_until_done(
             // or its arguments do not match the current function definition.
             // TODO: Use a typed error to log internal failures at error! and stale/invalid schedules at warn! or lower.
             log::error!("could not determine scheduled reducer or its parameters: {err:#}");
-            let reschedule =
-                delete_scheduled_invocation_row(module_info, db, id, tx, invocation.as_ref(), inst_common, inst);
+            let reschedule = id.zip(invocation.as_ref()).and_then(|(id, invocation)| {
+                delete_scheduled_function_row(
+                    module_info,
+                    db,
+                    (id, invocation.row_hash),
+                    Some(tx),
+                    invocation.intended_at,
+                    inst_common,
+                    inst,
+                )
+            });
             return (CallScheduledFunctionResult { reschedule }, false);
         }
     };
@@ -727,7 +755,15 @@ fn call_scheduled_reducer_with_tx(
         inst_common.call_reducer_with_tx(Some(tx), params, inst)
     }));
     let reschedule = scheduled.and_then(|(id, row_hash)| {
-        delete_scheduled_function_row(module_info, db, id, None, reschedule_from, row_hash, inst_common, inst)
+        delete_scheduled_function_row(
+            module_info,
+            db,
+            (id, row_hash),
+            None,
+            reschedule_from,
+            inst_common,
+            inst,
+        )
     });
     // Currently, we drop the return value from the function call. In the future,
     // we might want to handle it somehow.
@@ -747,10 +783,9 @@ fn call_scheduled_reducer_with_tx(
 fn delete_scheduled_function_row(
     module_info: &ModuleInfo,
     db: &RelationalDB,
-    id: ScheduledFunctionId,
+    (id, row_hash): (ScheduledFunctionId, Hash),
     tx: Option<MutTxId>,
     reschedule_from: Timestamp,
-    row_hash: Hash,
     inst_common: &mut InstanceCommon,
     inst: &mut impl WasmInstance,
 ) -> Option<Reschedule> {
@@ -761,28 +796,6 @@ fn delete_scheduled_function_row(
     };
     // Reschedule from the requested time so delays and jitter do not accumulate.
     Some(next_interval_reschedule(reschedule_from, dur))
-}
-
-fn delete_scheduled_invocation_row(
-    module_info: &ModuleInfo,
-    db: &RelationalDB,
-    id: Option<ScheduledFunctionId>,
-    tx: MutTxId,
-    invocation: Option<&ScheduledInvocation>,
-    inst_common: &mut InstanceCommon,
-    inst: &mut impl WasmInstance,
-) -> Option<Reschedule> {
-    let (id, invocation) = id.zip(invocation)?;
-    delete_scheduled_function_row(
-        module_info,
-        db,
-        id,
-        Some(tx),
-        invocation.intended_at,
-        invocation.row_hash,
-        inst_common,
-        inst,
-    )
 }
 
 fn next_interval_reschedule(last_intended_at: Timestamp, interval: TimeDuration) -> Reschedule {

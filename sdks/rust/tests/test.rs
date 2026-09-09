@@ -558,7 +558,6 @@ mod rust_procedure_concurrency {
     fn scheduled_procedure_update_while_inflight() {
         make_test("scheduled-procedure-update-while-inflight").run()
     }
-
 }
 
 macro_rules! view_tests {
