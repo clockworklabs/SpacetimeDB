@@ -91,8 +91,6 @@ jobs:
         run: exit 1
 
   upload-build-artifacts-linux:
-    needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Upload build artifacts (Linux)
     runs-on: spacetimedb-linux
     timeout-minutes: 15
@@ -1064,10 +1062,10 @@ jobs:
           retention-days: 14
 
   unity-testsuite:
-    needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
+    needs: [upload-build-artifacts-linux]
     # Skip if this is an external contribution.
     # The license secrets will be empty, so the step would fail anyway.
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
+    #if: ${{ needs.merge_queue_noop.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
     permissions:
       contents: read
       checks: write
@@ -1189,6 +1187,7 @@ jobs:
           testMode: playmode
           useHostNetwork: true
           artifactsPath: ""
+          cliVersion: v0.1.53
         env:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
