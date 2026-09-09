@@ -128,6 +128,11 @@ impl Child {
         environment.push(0);
         let mut startup: STARTUPINFOEXW = unsafe { std::mem::zeroed() };
         startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
+        // Without this flag, Windows can duplicate the parent's redirected
+        // handles even with bInheritHandles=false. Explicit null standard
+        // handles let the pseudoconsole supply its own console handles.
+        // https://github.com/microsoft/terminal/discussions/15814
+        startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
         startup.lpAttributeList = attributes.0;
         let mut process: PROCESS_INFORMATION = unsafe { std::mem::zeroed() };
         unsafe {
@@ -166,12 +171,17 @@ impl Child {
         if let Some(process) = &self.process
             && !self.waited
         {
-            errors.push(anyhow::anyhow!("owned console child required forced cleanup"));
             unsafe {
-                if let Err(error) = check(TerminateProcess(process.as_raw_handle(), 1)) {
-                    errors.push(error.context("cannot terminate owned console child"));
+                // An early fixture failure may already have exited before the
+                // ready marker. Observe that exact child before forcing it.
+                self.waited = WaitForSingleObject(process.as_raw_handle(), 0) == WAIT_OBJECT_0;
+                if !self.waited {
+                    errors.push(anyhow::anyhow!("owned console child required forced cleanup"));
+                    if let Err(error) = check(TerminateProcess(process.as_raw_handle(), 1)) {
+                        errors.push(error.context("cannot terminate owned console child"));
+                    }
+                    self.waited = WaitForSingleObject(process.as_raw_handle(), INFINITE) == WAIT_OBJECT_0;
                 }
-                self.waited = WaitForSingleObject(process.as_raw_handle(), INFINITE) == WAIT_OBJECT_0;
             }
             if !self.waited {
                 errors.push(anyhow::anyhow!("owned console child wait failed"));
@@ -259,10 +269,15 @@ fn windows_console_child() {
     };
     let original: Vec<_> = handles
         .iter()
-        .map(|handle| {
+        .enumerate()
+        .map(|(index, handle)| {
             let mut value = 0;
             unsafe {
-                check(GetConsoleMode(*handle, &mut value)).unwrap();
+                assert!(
+                    GetConsoleMode(*handle, &mut value) != 0,
+                    "owned console standard handle {index} is not a console: Win32 error {}",
+                    GetLastError()
+                );
             }
             value
         })
