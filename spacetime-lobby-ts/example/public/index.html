@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="A SpacetimeDB matchmaking example with queues, ratings, room assignment, and duel results."
+    />
+    <link rel="icon" href="data:," />
+    <title>Starclash</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="shell">
+        <section id="setupScreen" class="screen setup-screen active">
+          <section class="panel launch-card">
+            <div class="launch-controls">
+              <div class="launch-hero">
+                <h1>Starclash</h1>
+                <p>Pick your ship and find a match.</p>
+              </div>
+              <div class="field">
+                <label for="displayName">Name</label>
+                <input
+                  id="displayName"
+                  placeholder="Your name"
+                  autocomplete="off"
+                />
+              </div>
+              <div class="ranked-card">
+                <div>
+                  <span>Ranked rating</span>
+                  <strong id="myRating">1000</strong>
+                </div>
+                <small id="myRecord">0W 0L</small>
+              </div>
+              <button id="findDuel" class="primary queue-button">
+                Find Match
+              </button>
+              <div class="leaderboard-section">
+                <span class="eyebrow">Top Pilots</span>
+                <div id="leaderboard" class="leaderboard"></div>
+              </div>
+            </div>
+            <section class="ship-carousel" aria-label="Ship selection">
+              <div
+                id="selectedShipVisual"
+                class="ship-preview interceptor"
+              ></div>
+              <div
+                id="shipRoster"
+                class="ship-roster"
+                role="tablist"
+                aria-label="Ships"
+              ></div>
+              <div class="ship-details">
+                <span id="selectedShipRole" class="eyebrow">Fast attack</span>
+                <h2 id="selectedShipName">Interceptor</h2>
+                <p id="selectedShipDescription">
+                  Fast glass cannon. Hits hard before the enemy settles.
+                </p>
+              </div>
+              <div id="selectedShipStats" class="ship-stat-list"></div>
+              <div id="shipAbilities" class="ship-abilities"></div>
+            </section>
+          </section>
+        </section>
+
+        <section id="waitingScreen" class="screen waiting-screen">
+          <section class="waiting-card">
+            <div>
+              <div class="scanner"></div>
+              <h1>Searching for Rival</h1>
+              <button id="cancelSearch">Cancel</button>
+            </div>
+          </section>
+        </section>
+
+        <section id="duelScreen" class="screen duel-screen">
+          <section class="panel arena">
+            <div class="arena-head">
+              <span id="duelStatus"></span>
+            </div>
+            <div id="combatants" class="combatants"></div>
+            <div id="maneuverActions" class="maneuver-actions" hidden></div>
+            <div class="actions">
+              <button id="forfeitDuel" class="danger">Forfeit</button>
+              <button id="newDuel" class="primary" hidden>New Duel</button>
+              <button id="home" hidden>Home</button>
+            </div>
+          </section>
+        </section>
+      </section>
+
+      <dialog id="forfeitDialog" class="confirm-dialog">
+        <section class="confirm-card">
+          <div>
+            <span class="eyebrow">Confirm forfeit</span>
+            <h2>Leave this duel?</h2>
+          </div>
+          <p>
+            Forfeiting ends the match, gives your opponent the win, and returns
+            you to the hangar.
+          </p>
+          <div class="confirm-actions">
+            <button id="cancelForfeit" type="button">Cancel</button>
+            <button id="confirmForfeit" type="button" class="danger">
+              Forfeit Duel
+            </button>
+          </div>
+        </section>
+      </dialog>
+
+      <div id="toast" class="toast">Connecting to SpacetimeDB.</div>
+      <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+      <footer class="page-foot">
+        <span class="by">Built on</span>
+        <a
+          href="https://spacetimedb.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          style="display: inline-flex"
+          ><img src="/assets/brand.svg" alt="SpacetimeDB"
+        /></a>
+      </footer>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

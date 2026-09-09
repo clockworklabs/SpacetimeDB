@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A turn-based tactics example using SpacetimeDB grid storage, pathfinding, range queries, and movement validation."
+    />
+    <title>SpacetimeDB Grid</title>
+    <link rel="stylesheet" href="./app.css" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="auth-shell" id="auth-shell" role="main">
+      <div id="auth-panel"></div>
+    </div>
+
+    <!-- Signed-in shell -->
+    <div class="shell" id="shell" role="main" hidden>
+      <header class="topnav">
+        <div class="brand">
+          <a
+            href="https://spacetimedb.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            style="display: inline-flex"
+            ><img
+              class="brand-wordmark"
+              src="/assets/brand.svg"
+              alt="SpacetimeDB"
+          /></a>
+          <span class="brand-sub">Grid Example</span>
+        </div>
+        <div class="topnav-actions">
+          <span class="user-pill" id="user-pill">
+            <span class="user-avatar" id="user-avatar">?</span>
+            <span id="user-name">Unavailable</span>
+          </span>
+          <button class="btn small" id="btn-logout">Sign out</button>
+        </div>
+      </header>
+
+      <!-- Lobby view (no active match) -->
+      <section class="lobby" id="lobby" hidden>
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Sectors</h2>
+              <p class="panel-sub">
+                Deploy a new mission or join one already in progress.
+              </p>
+            </div>
+            <div class="create-actions">
+              <button class="btn" id="btn-create-match">+ vs Human</button>
+              <button class="btn primary" id="btn-create-match-ai">
+                + Deploy solo (vs aliens)
+              </button>
+            </div>
+          </div>
+          <div class="match-list" id="match-list">
+            <div class="lobby-empty">
+              No missions in this sector. Deploy one to begin.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Match view (active match) -->
+      <section class="match-view" id="match-view" hidden>
+        <div class="board-panel">
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              gap: 12px;
+            "
+          >
+            <div>
+              <strong id="match-title">Match</strong>
+              <span class="hint" id="match-subtitle"></span>
+            </div>
+            <button class="btn small" id="btn-leave-match">← Lobby</button>
+          </div>
+          <div class="board-canvas-wrap">
+            <canvas id="board-canvas" width="600" height="500"></canvas>
+          </div>
+        </div>
+
+        <aside class="info-panel">
+          <div class="turn-banner" id="turn-banner">
+            Waiting for mission data
+          </div>
+
+          <div>
+            <div
+              class="panel-sub"
+              style="
+                margin-bottom: 6px;
+                font-size: 11px;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+              "
+            >
+              Selected unit
+            </div>
+            <div id="selected-unit-info">
+              <div class="hint">click one of your units</div>
+            </div>
+          </div>
+
+          <div>
+            <div
+              class="panel-sub"
+              style="
+                margin-bottom: 6px;
+                font-size: 11px;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+              "
+            >
+              Your units
+            </div>
+            <div class="unit-list" id="my-units"></div>
+          </div>
+
+          <div>
+            <div
+              class="panel-sub"
+              style="
+                margin-bottom: 6px;
+                font-size: 11px;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+              "
+            >
+              Enemy units
+            </div>
+            <div class="unit-list" id="enemy-units"></div>
+          </div>
+
+          <button
+            class="btn primary"
+            id="btn-end-turn"
+            style="margin-top: auto"
+          >
+            End turn
+          </button>
+        </aside>
+      </section>
+    </div>
+
+    <!-- Win/lose modal -->
+    <div class="backdrop" id="end-backdrop">
+      <div class="modal">
+        <h2 id="end-title"></h2>
+        <p id="end-body"></p>
+        <div class="actions">
+          <button class="btn primary" id="end-back-to-lobby">
+            Back to lobby
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script type="module" src="/app.js"></script>
+    <script type="module" src="./ui.js"></script>
+  </body>
+</html>
