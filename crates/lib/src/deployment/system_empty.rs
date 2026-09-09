@@ -74,7 +74,7 @@ pub fn generate(environment: &EnvironmentSchema) -> ModuleResult<GeneratedModule
     name(&mut imports, b"spacetime_10.0");
     name(&mut imports, b"bytes_sink_write");
     imports.extend([0, 0]);
-    name(&mut imports, b"spacetime_10.6");
+    name(&mut imports, b"spacetime_10.7");
     name(&mut imports, b"get_call_auth_flags");
     imports.extend([0, 1]);
     section(&mut wasm, 2, &imports);

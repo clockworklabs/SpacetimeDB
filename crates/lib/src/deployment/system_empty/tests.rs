@@ -121,3 +121,42 @@ fn hostile_counts_lengths_and_noncanonical_metadata_fail_before_allocation() {
     let oversized = vec![0; MAX_PROGRAM_BYTES + 1];
     assert!(verify(&descriptor, &oversized).is_err());
 }
+
+#[test]
+fn platform_imports_use_the_current_authorization_namespace() {
+    let generated = empty();
+    let mut wasm = Reader(&generated.bytes);
+    wasm.expect(WASM_HEADER).unwrap();
+    let mut imports = None;
+    while !wasm.0.is_empty() {
+        let tag = wasm.byte().unwrap();
+        let length = wasm.leb().unwrap();
+        let payload = wasm.take(length).unwrap();
+        if tag == 2 {
+            assert!(imports.replace(payload).is_none());
+        }
+    }
+    let mut expected = vec![2];
+    name(&mut expected, b"spacetime_10.0");
+    name(&mut expected, b"bytes_sink_write");
+    expected.extend([0, 0]);
+    name(&mut expected, b"spacetime_10.7");
+    name(&mut expected, b"get_call_auth_flags");
+    expected.extend([0, 1]);
+    assert_eq!(imports, Some(expected.as_slice()));
+
+    // A correctly hashed prototype namespace cannot identify the current
+    // platform module, even when declarations and descriptor version match.
+    let mut old = generated.bytes.to_vec();
+    let namespace = b"spacetime_10.7";
+    let offset = old
+        .windows(namespace.len())
+        .position(|bytes| bytes == namespace)
+        .unwrap();
+    old[offset + namespace.len() - 1] = b'6';
+    let descriptor = SystemEmptyModule {
+        version: VERSION,
+        program_hash: hash_bytes(&old),
+    };
+    assert!(verify(&descriptor, &old).is_err());
+}

@@ -18,7 +18,7 @@ vi.mock('spacetime:sys@2.0', () => ({
     return new TextEncoder().encode(host.payload);
   },
 }));
-vi.mock('spacetime:sys@2.2', () => ({
+vi.mock('spacetime:sys@2.3', () => ({
   get_call_auth_flags: () => {
     host.flagReads++;
     return host.flags;

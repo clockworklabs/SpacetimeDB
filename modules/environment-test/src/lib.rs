@@ -3,12 +3,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 static VIEW_TRAP_ENTERED: AtomicBool = AtomicBool::new(false);
 
+type RequiredString = String;
+type OptionalString = Option<RequiredString>;
+
 #[spacetimedb::env]
 pub struct Env {
-    pub REQUIRED: String,
+    pub REQUIRED: RequiredString,
     #[env(values("ready", "other"))]
     pub MODE: String,
-    pub MISSING: Option<String>,
+    pub MISSING: OptionalString,
     pub EMPTY: Option<String>,
     pub UTF8: Option<String>,
     pub NUL: Option<String>,

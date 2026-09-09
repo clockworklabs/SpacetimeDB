@@ -28,7 +28,7 @@ fn program() -> Program {
             r#"
             import {{ register_hooks }} from "spacetime:sys@1.0";
             import {{ register_hooks as register_procedures }} from "spacetime:sys@1.2";
-            import {{ get_call_auth_flags }} from "spacetime:sys@2.2";
+            import {{ get_call_auth_flags }} from "spacetime:sys@2.3";
             register_hooks({{
                 __describe_module__: function() {{ return new Uint8Array({schema:?}); }},
                 __call_reducer__: function(id) {{
