@@ -73,7 +73,7 @@ function route(): Route {
     filter: pick(FILTERS, 'filter', 'all'),
     view: pick(VIEWS, 'questlines', 'grid'),
     chart: pick(['completion', 'cost', 'distribution'] as const, 'chart', 'completion'),
-    unit: pick(['checks', 'features'] as const, 'unit', 'checks'),
+    unit: pick(['checks', 'features'] as const, 'unit', 'features'),
     step: Math.max(0, Number(url.searchParams.get('step') ?? 0)),
     tab: pick(TABS, 'tab', 'checks'),
   };

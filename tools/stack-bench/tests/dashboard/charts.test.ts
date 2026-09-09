@@ -68,7 +68,7 @@ test('time chart uses measured elapsed time, preserves regressions, and labels e
     { completedAt: '2026-09-08T00:01:00Z', completion: 0.75 },
     { completedAt: '2026-09-08T00:02:00Z', completion: 0.5 },
   ] }] } as CampaignProgression;
-  const html = progressChart(sheet, progression);
+  const html = progressChart(sheet, progression, 'completion', 'grid', new Set(), 'checks');
   assert.match(html, /M48 190 L498 70 L948 110/);
   assert.match(html, /Run start; no checks graded/);
   assert.match(html, /Rep 1 · 50% · Excluded/);
@@ -77,7 +77,7 @@ test('time chart uses measured elapsed time, preserves regressions, and labels e
   for (const [stack, color] of Object.entries({ spacetime: '#4cf490', mongodb: '#b45af2', postgres: '#336791' })) {
     sheet.stacks[0]!.stack = stack;
     progression.stacks[0]!.stack = stack;
-    assert.ok(progressChart(sheet, progression).includes(`stroke="${color}"`));
+    assert.ok(progressChart(sheet, progression, 'completion', 'grid', new Set(), 'checks').includes(`stroke="${color}"`));
   }
 });
 
@@ -107,13 +107,13 @@ test('chart filters individual runs without changing the scale or hiding pending
   const progression = { stacks: [1, 2].map(repetition => ({ stack: 'custom-stack', attemptId: `run-${repetition}`,
     steps: [{ completedAt: `2026-09-08T00:0${repetition}:00Z`, completion: repetition / 4 }],
   })) } as CampaignProgression;
-  const html = progressChart(sheet, progression, 'completion', 'grid', new Set(['run-2']));
+  const html = progressChart(sheet, progression, 'completion', 'grid', new Set(['run-2']), 'checks');
   assert.match(html, /data-chart-stack="custom-stack" aria-pressed="mixed"/);
   assert.match(html, /class="progress-series" data-chart-series="run-1"/);
   assert.doesNotMatch(html, /class="progress-series" data-chart-series="run-2"|stroke-dasharray| style=/);
   assert.match(html, /M48 190 L498 150/); // Retains the two-minute extent of the hidden run.
   assert.match(html, /Rep 3 · Pending/);
-  const empty = progressChart(sheet, progression, 'completion', 'grid', new Set(['run-1', 'run-2', 'run-3']));
+  const empty = progressChart(sheet, progression, 'completion', 'grid', new Set(['run-1', 'run-2', 'run-3']), 'checks');
   assert.match(empty, /Select a run/);
   assert.match(empty, /data-chart-run="run-1"/); // Controls remain available to restore runs.
 });
@@ -122,7 +122,7 @@ test('distribution shows completed run percentages across providers and preserve
   const sheet = { stacks: ['spacetime', 'mongodb', 'postgres'].map(stack => ({ stack,
     attempts: [1, 2].map(repetition => ({ id: `${stack}-${repetition}`, repetition,
       status: repetition === 1 ? 'completed' : 'running', completion: { rate: 0.75 } })) })) } as CampaignSheet;
-  const html = progressChart(sheet, null, 'distribution', 'graph', new Set(['mongodb-1']));
+  const html = progressChart(sheet, null, 'distribution', 'graph', new Set(['mongodb-1']), 'checks');
   assert.match(html, /Completion distribution by provider/);
   assert.equal((html.match(/>75%<\/text><\/g>/g) ?? []).length, 2);
   assert.match(html, /Rep 2 .* Pending/);
@@ -146,6 +146,7 @@ test('completion units use distinct saved metrics in both chart views', () => {
     assert.match(features, new RegExp(`questlines=graph&amp;chart=${metric}&amp;unit=checks`));
     assert.match(features, /chart=distribution&amp;unit=features/);
   }
+  assert.match(progressChart(sheet, progression), /Rep 1[^<]*50%/);
   sheet.stacks[0]!.attempts[0]!.featureCompletion = null;
   progression.stacks[0]!.steps[0]!.featureCompletion = null;
   for (const metric of ['completion', 'distribution'] as const) {
@@ -153,5 +154,11 @@ test('completion units use distinct saved metrics in both chart views', () => {
     assert.doesNotMatch(html, /progress-series|>75%<\/text><\/g>/);
     assert.match(html, /Pending/);
   }
-  assert.doesNotMatch(progressChart(sheet, progression, 'cost'), /aria-label="Completion unit"/);
+  const cost = progressChart(sheet, progression, 'cost');
+  const units = cost.split('<nav aria-label="Completion unit">')[1]!.split('</nav>')[0]!;
+  assert.equal((units.match(/aria-disabled="true"/g) ?? []).length, 2);
+  assert.match(units, />Features</);
+  assert.match(units, />Checks</);
+  assert.doesNotMatch(units, /href=/);
+  assert.match(cost, /chart=completion&amp;unit=features/);
 });

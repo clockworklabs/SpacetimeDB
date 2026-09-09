@@ -2,7 +2,7 @@ import type { CampaignProgression, CampaignSheet } from '../dashboard-views.js';
 import { duration, esc, stackLabel } from './format.js';
 
 export function progressChart(sheet: CampaignSheet, progression: CampaignProgression | null,
-  metric: 'completion' | 'cost' | 'distribution' = 'completion', view = 'grid', hidden: ReadonlySet<string> = new Set(), unit: 'checks' | 'features' = 'checks'): string {
+  metric: 'completion' | 'cost' | 'distribution' = 'completion', view = 'grid', hidden: ReadonlySet<string> = new Set(), unit: 'checks' | 'features' = 'features'): string {
   const tracks = metric === 'distribution' ? sheet.stacks.flatMap(stack => stack.attempts.flatMap(attempt => {
     const rate = unit === 'features' ? attempt.featureCompletion?.rate : attempt.completion?.rate;
     return attempt.status === 'completed' && rate != null && Number.isFinite(rate)
@@ -36,8 +36,14 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
     : `${unitDescription} Each point is a saved grade. Zero marks run start. Each line is one repetition; elapsed time starts at that run. Excluded runs are labelled. Lines can fall after regressions. Intermediate values are not measured.`;
   const heading = `<div class="section-heading progress-heading"><h3 title="${description}">${label}${metric === 'distribution' ? '' : ' over time'}</h3><div class="chart-options"><nav aria-label="Chart metric">`
     + (['completion', 'cost', 'distribution'] as const).map(option => `<a class="chip sm${metric === option ? ' on' : ''}"${metric === option ? ' aria-current="page"' : ''} href="?questlines=${encodeURIComponent(view)}&amp;chart=${option}&amp;unit=${unit}">${option === 'distribution' ? 'Distribution' : option === 'cost' ? 'Cost' : 'Completion'}</a>`).join('') + '</nav>'
-    + (metric === 'cost' ? '' : '<nav aria-label="Completion unit">'
-      + (['features', 'checks'] as const).map(option => `<a class="chip sm${unit === option ? ' on' : ''}"${unit === option ? ' aria-current="page"' : ''} href="?questlines=${encodeURIComponent(view)}&amp;chart=${metric}&amp;unit=${option}">${option === 'features' ? 'Features' : 'Checks'}</a>`).join('') + '</nav>')
+    + '<nav aria-label="Completion unit">'
+    + (['features', 'checks'] as const).map(option => {
+      const classes = `chip sm${unit === option ? ' on' : ''}`;
+      const text = option === 'features' ? 'Features' : 'Checks';
+      return metric === 'cost'
+        ? `<span class="${classes}" role="link" aria-disabled="true">${text}</span>`
+        : `<a class="${classes}"${unit === option ? ' aria-current="page"' : ''} href="?questlines=${encodeURIComponent(view)}&amp;chart=${metric}&amp;unit=${option}">${text}</a>`;
+    }).join('') + '</nav>'
     + '</div></div>';
   const valueLabel = (value: number, upper = false, decimals = 1) => metric === 'cost'
     ? `${upper ? '≤' : ''}$${value.toFixed(2)}` : `${value.toFixed(decimals)}%`;

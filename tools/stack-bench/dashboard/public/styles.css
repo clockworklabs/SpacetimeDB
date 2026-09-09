@@ -326,3 +326,5 @@ main[aria-busy="true"]:not(:has(.loading))::before { content: ''; position: fixe
 .dag .passed-check { fill: none; stroke: var(--shade7); stroke-width: 1.2; }
 
 .chart-options { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+
+.chip[aria-disabled="true"] { opacity: .4; pointer-events: none; }
