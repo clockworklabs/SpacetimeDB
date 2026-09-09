@@ -144,7 +144,7 @@ table.plans td.name { color: var(--n1); font-weight: 600; min-width: 240px; max-
 .dot.o { background: transparent; border: 1.5px solid var(--n4); }
 
 /* graph */
-.dag { display: block; min-width: 100%; height: auto; }
+.dag { display: block; height: auto; }
 .dag .band { font: 11px var(--mono); fill: var(--n4); }
 .dag .col { font: 500 10.5px var(--mono); fill: var(--n4); letter-spacing: .08em; text-transform: uppercase; }
 .dag .sep { stroke: var(--shade4); }
