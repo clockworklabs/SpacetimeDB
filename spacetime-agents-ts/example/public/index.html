@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A runnable SpacetimeDB agents example with authentication, threads, tools, and provider-backed responses."
+    />
+    <title>SpacetimeDB Agents</title>
+    <link rel="stylesheet" href="./app.css" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="bootSplash" class="boot-splash">
+      <svg viewBox="0 0 497 332" width="84" height="56" aria-hidden="true">
+        <path
+          d="M316 166c0 37.3-30.2 67.5-67.5 67.5S181 203.3 181 166s30.2-67.5 67.5-67.5S316 128.7 316 166z"
+          stroke="currentColor"
+          stroke-width="5"
+          fill="none"
+        />
+        <path
+          d="M270 246c-40-3-79-21-96-48l-26 7c19 52 75 81 130 67s89-69 80-123l-27 7c6 40-19 79-61 90z"
+          fill="currentColor"
+        />
+        <path
+          d="M227 86c40-11 81 11 96 48l27-7c-19-52-75-81-130-67s-89 69-80 124l27-7c-6-40 19-79 60-91z"
+          fill="currentColor"
+        />
+      </svg>
+      <span class="boot-splash-label">SpacetimeDB Agents</span>
+    </div>
+
+    <div class="auth-shell" id="auth-shell" role="main">
+      <div id="auth-panel"></div>
+    </div>
+
+    <!-- Chat shell: hidden until session is bound. -->
+    <div class="shell" id="shell" role="main" hidden>
+      <aside class="sidebar" id="sidebar">
+        <header class="sidebar-head">
+          <div class="brand">
+            <a
+              href="https://spacetimedb.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              style="display: inline-flex"
+              ><img
+                class="brand-logo"
+                src="/assets/brand.svg"
+                alt="SpacetimeDB"
+            /></a>
+            <span class="brand-sub">Agents</span>
+          </div>
+          <button
+            class="btn toggle"
+            id="btn-toggle-sidebar"
+            title="Toggle sidebar"
+            aria-label="Toggle sidebar"
+          >
+            «
+          </button>
+        </header>
+        <div class="sidebar-new">
+          <button class="btn primary" id="btn-new-thread" disabled>
+            + New chat
+          </button>
+        </div>
+        <div class="threads" id="thread-list">
+          <div class="empty">no threads yet</div>
+        </div>
+        <footer class="user-panel" id="user-panel">
+          <div class="user-avatar" id="user-avatar">?</div>
+          <div class="user-meta">
+            <div class="user-name" id="user-name">Unavailable</div>
+            <div class="user-status" id="user-status">connecting…</div>
+          </div>
+          <button
+            class="btn icon"
+            id="btn-settings"
+            disabled
+            title="Settings"
+            aria-label="Settings"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path
+                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+              />
+            </svg>
+          </button>
+          <button
+            class="btn icon"
+            id="btn-logout"
+            title="Sign out"
+            aria-label="Sign out"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+          </button>
+        </footer>
+      </aside>
+
+      <section class="chat" id="chat">
+        <!-- header is set dynamically; hidden when no thread -->
+        <div class="head" id="chat-head" hidden>
+          <span id="chat-agent-label"></span>
+        </div>
+
+        <!-- either messages or the empty-hero, swapped by JS -->
+        <div class="messages" id="msg-list" style="display: none"></div>
+        <div class="empty-hero" id="empty-hero">
+          <a
+            href="https://spacetimedb.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            style="display: inline-flex"
+            ><img class="hero-logo" src="/assets/logo.svg" alt="SpacetimeDB"
+          /></a>
+          <h1>SpacetimeDB Agents</h1>
+          <p>
+            Multi-agent chat running inside an STDB module. Pick an agent and
+            start a conversation.
+          </p>
+          <button class="btn primary" id="btn-new-thread-hero" disabled>
+            + New chat
+          </button>
+        </div>
+
+        <!-- composer wrap is hidden when no thread; meta label + bordered card -->
+        <div class="composer-wrap" id="composer" hidden>
+          <div class="composer-meta">
+            <span id="composer-model-label">-</span>
+          </div>
+          <div class="composer">
+            <div
+              style="flex: 1; display: flex; flex-direction: column; gap: 6px"
+            >
+              <div
+                id="pending-attachments"
+                style="display: none; flex-wrap: wrap; gap: 6px"
+              ></div>
+              <textarea
+                id="composer-input"
+                aria-label="Message"
+                placeholder="Send a message…"
+                rows="1"
+                disabled
+              ></textarea>
+            </div>
+            <input
+              type="file"
+              id="file-input"
+              aria-label="Attach image"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              hidden
+            />
+            <button
+              class="btn icon"
+              id="btn-attach"
+              disabled
+              title="Attach image"
+              aria-label="Attach image"
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path
+                  d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.99 8.83l-8.58 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"
+                />
+              </svg>
+            </button>
+            <button class="btn primary" id="btn-send" disabled>Send</button>
+            <button class="btn danger" id="btn-stop" hidden>Stop</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="backdrop" id="setup-backdrop">
+      <form class="modal" id="setup-form">
+        <h2 id="setup-title">Set up your agent</h2>
+        <p>
+          Provide an API key for each provider you intend to use. Keys are
+          stored in a private STDB table; agent loops read them at call time.
+        </p>
+        <div class="field-row">
+          <div class="field" style="flex: 1">
+            <label for="cfg-provider">Provider</label>
+            <select id="cfg-provider">
+              <option value="openrouter">openrouter</option>
+              <option value="openai">openai</option>
+              <option value="anthropic">anthropic</option>
+            </select>
+          </div>
+          <div class="field" style="flex: 2">
+            <label for="cfg-apikey"
+              >API key (leave blank to keep existing)</label
+            >
+            <input
+              id="cfg-apikey"
+              type="password"
+              placeholder="sk-…"
+              autocomplete="off"
+            />
+          </div>
+        </div>
+        <div class="field">
+          <label>Configured providers</label>
+          <div
+            id="cfg-configured"
+            style="
+              font-family: var(--font-ibm);
+              font-size: 12px;
+              color: var(--color-muted);
+            "
+          >
+            none
+          </div>
+        </div>
+        <div class="field">
+          <label for="cfg-stalelock">Stale-lock threshold (seconds)</label>
+          <input
+            id="cfg-stalelock"
+            type="number"
+            min="30"
+            max="86400"
+            value="900"
+            required
+          />
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="cfg-rl-tokens">Per-user token cap (optional)</label>
+            <input
+              id="cfg-rl-tokens"
+              type="number"
+              min="1"
+              max="100000000"
+              placeholder="leave blank to disable"
+            />
+          </div>
+          <div class="field">
+            <label for="cfg-rl-window">Rate-limit window (seconds)</label>
+            <input
+              id="cfg-rl-window"
+              type="number"
+              min="1"
+              max="2592000"
+              placeholder="e.g. 3600"
+            />
+          </div>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn" id="setup-cancel">Cancel</button>
+          <button type="submit" class="btn primary" id="setup-save">
+            Save
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Generic confirm dialog -->
+    <div class="backdrop" id="confirm-backdrop">
+      <div class="modal" style="max-width: 420px">
+        <h2 id="confirm-title">Confirm</h2>
+        <p id="confirm-body"></p>
+        <div class="actions">
+          <button type="button" class="btn" id="confirm-cancel">Cancel</button>
+          <button type="button" class="btn danger" id="confirm-ok">
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Update thread modal (rename + edit prompt override + metadata) -->
+    <div class="backdrop" id="rename-backdrop">
+      <form class="modal" id="rename-form">
+        <h2>Update thread</h2>
+        <div class="field">
+          <label for="rename-title">Title</label>
+          <input id="rename-title" type="text" placeholder="Untitled" />
+        </div>
+        <div class="field">
+          <label for="rename-prompt">System prompt override</label>
+          <textarea
+            id="rename-prompt"
+            rows="3"
+            placeholder="leave blank to inherit from agent"
+          ></textarea>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn" id="rename-cancel">Cancel</button>
+          <button type="submit" class="btn primary" id="rename-save">
+            Save
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div class="backdrop" id="image-backdrop">
+      <div
+        class="modal image-viewer"
+        id="image-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="image-title"
+        tabindex="-1"
+      >
+        <div class="image-viewer-head">
+          <div class="image-viewer-title" id="image-title"></div>
+          <div class="image-viewer-actions">
+            <a
+              class="btn icon"
+              id="image-open"
+              href="#"
+              target="_blank"
+              rel="noopener"
+              title="Open original"
+              aria-label="Open original"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M15 3h6v6" />
+                <path d="M10 14 21 3" />
+                <path
+                  d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"
+                />
+              </svg>
+            </a>
+            <button
+              type="button"
+              class="btn icon"
+              id="image-close"
+              title="Close"
+              aria-label="Close"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M18 6 6 18" />
+                <path d="m6 6 12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="image-viewer-body">
+          <img id="image-full" alt="" />
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script type="module" src="/app.js"></script>
+    <script type="module" src="./ui.js"></script>
+  </body>
+</html>
