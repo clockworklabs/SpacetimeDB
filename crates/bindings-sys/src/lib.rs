@@ -883,7 +883,7 @@ pub mod raw {
         pub fn datastore_clear(table_id: TableId, out: *mut u64) -> u16;
     }
 
-    #[link(wasm_import_module = "spacetime_10.6")]
+    #[link(wasm_import_module = "spacetime_10.7")]
     unsafe extern "C" {
         /// Authentication flags for the active invocation. Bit 0 is INTERNAL.
         /// Read at context construction; neither a missing connection ID nor JWT
@@ -891,7 +891,7 @@ pub mod raw {
         pub fn get_call_auth_flags() -> u32;
     }
 
-    #[link(wasm_import_module = "spacetime_10.7")]
+    #[link(wasm_import_module = "spacetime_10.6")]
     unsafe extern "C" {
         /// Read a UTF-8 environment value. Writes INVALID for a missing key;
         /// present empty strings have a valid BytesSource. Returns ordinary errno.

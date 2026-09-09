@@ -124,12 +124,12 @@ declare module 'spacetime:sys@2.1' {
   export function datastore_clear(table_id: u32): u64;
 }
 
-declare module 'spacetime:sys@2.2' {
+declare module 'spacetime:sys@2.3' {
   /** Verified invocation flags. Bit 0 is INTERNAL; JWT presence is independent. */
   export function get_call_auth_flags(): number;
 }
 
-declare module 'spacetime:sys@2.3' {
+declare module 'spacetime:sys@2.2' {
   /** Null means missing; an empty string is a present value. */
   export function env_get(key: string): string | null;
 }

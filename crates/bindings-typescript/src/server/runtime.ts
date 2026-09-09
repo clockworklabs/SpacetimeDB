@@ -1,7 +1,7 @@
 import { environment, type EnvironmentFor } from './environment';
 import * as _syscalls2_0 from 'spacetime:sys@2.0';
 import * as _syscalls2_1 from 'spacetime:sys@2.1';
-import * as _syscalls2_2 from 'spacetime:sys@2.2';
+import * as _syscalls2_3 from 'spacetime:sys@2.3';
 
 import type { ModuleHooks, u128, u16, u256, u32 } from 'spacetime:sys@2.0';
 import {
@@ -81,7 +81,7 @@ import { HttpRequest, HttpResponse } from '../lib/autogen/types';
 
 const { freeze } = Object;
 
-export const sys = { ..._syscalls2_0, ..._syscalls2_1, ..._syscalls2_2 };
+export const sys = { ..._syscalls2_0, ..._syscalls2_1, ..._syscalls2_3 };
 
 function requestFromWire(request: HttpRequest, body: Uint8Array): Request {
   return Request[makeRequest](body, {

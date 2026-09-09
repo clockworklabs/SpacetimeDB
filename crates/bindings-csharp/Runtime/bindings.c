@@ -135,11 +135,11 @@ IMPORT(Status, datastore_clear,
        (table_id, count));
 #undef SPACETIME_MODULE_VERSION
 
-#define SPACETIME_MODULE_VERSION "spacetime_10.6"
+#define SPACETIME_MODULE_VERSION "spacetime_10.7"
 IMPORT(uint32_t, get_call_auth_flags, (void), ());
 #undef SPACETIME_MODULE_VERSION
 
-#define SPACETIME_MODULE_VERSION "spacetime_10.7"
+#define SPACETIME_MODULE_VERSION "spacetime_10.6"
 IMPORT(Status, env_get, (const uint8_t* key, uint32_t key_len, BytesSource* source), (key, key_len, source));
 #undef SPACETIME_MODULE_VERSION
 

@@ -173,8 +173,8 @@ impl Fixture {
         )
     }
 
-    fn list(&self) -> String {
-        self.success(
+    fn list(&self) -> Vec<String> {
+        let output = self.success(
             &[
                 "env",
                 "list",
@@ -184,7 +184,13 @@ impl Fixture {
                 "--no-config",
             ],
             &[],
-        )
+        );
+        let mut lines = output.lines().map(str::trim);
+        assert_eq!(lines.next(), Some("key"));
+        lines
+            .filter(|line| !line.is_empty() && !line.chars().all(|c| c == '-'))
+            .map(|line| serde_json::from_str::<String>(line).unwrap())
+            .collect()
     }
 
     fn typed(&self, required: &str, mode: &str, rest: [Option<&str>; 4]) {
@@ -334,7 +340,7 @@ fn cli_environment_layers_shell_and_exact_precompiled_declarations() {
     );
     let mut keys = KEYS.to_vec();
     keys.sort_unstable();
-    assert_eq!(f.list(), format!("{}\n", keys.join("\n")));
+    assert_eq!(f.list(), keys);
     let initial = f.sql("SELECT required, mode FROM initial_environment");
     assert!(initial.status.success());
     let initial = String::from_utf8(initial.stdout).unwrap();
@@ -353,7 +359,7 @@ fn cli_environment_replacement_rejection_and_read_only_commands() {
     ));
     f.published(&[], &[]);
     f.typed("replacement-sentinel", "other", [None; 4]);
-    assert_eq!(f.list(), "SMOKE_MODE\nSMOKE_REQUIRED\n");
+    assert_eq!(f.list(), ["SMOKE_MODE", "SMOKE_REQUIRED"]);
     assert!(!f
         .command(
             &[
@@ -386,7 +392,7 @@ fn cli_environment_replacement_rejection_and_read_only_commands() {
         f.typed("replacement-sentinel", "other", [None; 4]);
     }
     // Invalid local configuration must not prevent an explicit read-only target.
-    assert_eq!(f.list(), "SMOKE_MODE\nSMOKE_REQUIRED\n");
+    assert_eq!(f.list(), ["SMOKE_MODE", "SMOKE_REQUIRED"]);
     for statement in [
         "SET env.SMOKE_REQUIRED = 'bypass'",
         "DELETE env.SMOKE_REQUIRED",
@@ -435,5 +441,5 @@ fn cli_environment_initial_rejection_clear_and_omitted_payload() {
     f.config(None);
     f.wasm = modules::precompiled_module("noop");
     f.published(&[("SMOKE_REQUIRED", "must-not-be-ambient")], &["--delete-data"]);
-    assert_eq!(f.list(), "");
+    assert!(f.list().is_empty());
 }

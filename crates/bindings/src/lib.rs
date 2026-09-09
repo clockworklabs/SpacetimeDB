@@ -921,7 +921,8 @@ pub use query_builder::{Query, RawQuery};
 
 /// Declare the complete publish-time environment schema and generate named accessors.
 ///
-/// Fields must be `String` or `Option<String>`; `#[env(values("a", "b"))]`
+/// Fields must resolve to `String` or `Option<String>`, including type aliases;
+/// `#[env(values("a", "b"))]`
 /// constrains exact strings. Values are supplied on every publish, never in metadata.
 /// The macro generates an `EnvAccess` extension trait for a struct named `Env`.
 /// Import that trait when the declaration lives in a different Rust module.

@@ -109,14 +109,6 @@ internal static partial class FFI
 #endif
     ;
 
-    const string StdbNamespace10_6 =
-#if EXPERIMENTAL_WASM_AOT
-        "spacetime_10.6"
-#else
-        "bindings"
-#endif
-    ;
-
     const string StdbNamespace10_7 =
 #if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
         "spacetime_10.7"
@@ -125,14 +117,23 @@ internal static partial class FFI
 #endif
     ;
 
+    const string StdbNamespace10_6 =
+#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+        "spacetime_10.6"
+#else
+        "bindings"
+#endif
+    ;
+
     [WasmImportLinkage]
-    [LibraryImport(StdbNamespace10_7)]
+    [LibraryImport(StdbNamespace10_6)]
     public static unsafe partial CheckedStatus env_get(
         byte* key,
         uint keyLen,
         out BytesSource source
     );
-    [LibraryImport(StdbNamespace10_6)]
+    [WasmImportLinkage]
+    [LibraryImport(StdbNamespace10_7)]
     public static partial uint get_call_auth_flags();
 
 

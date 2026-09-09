@@ -9,9 +9,9 @@
 // with these standalone shim definitions. Use a distinct C++ name for the raw
 // host logging import; its WebAssembly signature is the same eight i32 values.
 extern "C" __attribute__((import_module("spacetime_10.0"), import_name("console_log")))
-void wasi_console_log(uint8_t level, const uint8_t* target_ptr, size_t target_len,
-                      const uint8_t* filename_ptr, size_t filename_len, uint32_t line_number,
-                      const uint8_t* message_ptr, size_t message_len);
+void wasi_console_log(uint8_t level, const uint8_t* target_ptr, uint32_t target_len,
+                      const uint8_t* filename_ptr, uint32_t filename_len, uint32_t line_number,
+                      const uint8_t* message_ptr, uint32_t message_len);
 
 // Helper macro for string literals
 #define CSTR(s) (uint8_t*)s, sizeof(s) - 1

@@ -1,4 +1,6 @@
 mod environment;
+#[cfg(test)]
+mod wire_tests;
 
 use anyhow::{ensure, Context};
 use clap::Arg;
@@ -322,7 +324,28 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
                 .help("Use NativeAOT-LLVM compilation for C# modules (experimental, Windows only)")
         )
         .arg(common_args::dotnet_version())
-        .after_help("Every publish replaces the complete declared environment. Put an env map in spacetime.json; declared shell variables override config values (including empty strings). The CLI displays supplied keys and sources, never values. Optional values omitted from every input are removed. --env selects config file layers. Run `spacetime help publish` for more detailed information.")
+        .after_help("Run `spacetime help publish` for more detailed information.")
+        .after_long_help("Every publish replaces the complete declared environment. Put an env map in spacetime.json; declared shell variables override config values (including empty strings). The CLI displays supplied keys and sources, never values. Optional values omitted from every input are removed. --env selects config file layers. Run `spacetime help publish` for more detailed information.")
+}
+
+fn publication_body(
+    module: &spacetimedb_schema::def::ModuleDef,
+    bytes: Vec<u8>,
+    environment: std::collections::BTreeMap<String, String>,
+) -> anyhow::Result<(&'static str, Vec<u8>)> {
+    if module.environment_declared() {
+        let body = spacetimedb_client_api_messages::publish::PublishRequest {
+            module: bytes,
+            environment,
+        }
+        .encode()?;
+        Ok((spacetimedb_client_api_messages::publish::CONTENT_TYPE, body))
+    } else {
+        anyhow::ensure!(environment.is_empty(), "Module does not declare environment keys");
+        // Preserve older servers for ordinary modules. Explicit empty ENV
+        // declarations still use the envelope, expressing replacement intent.
+        Ok(("application/octet-stream", bytes))
+    }
 }
 
 fn confirm_and_clear(
@@ -647,16 +670,9 @@ async fn execute_publish_configs<'a>(
         // Set the host type.
         builder = builder.query(&[("host_type", host_type)]);
 
-        let payload = spacetimedb_client_api_messages::publish::PublishRequest {
-            module: program_bytes,
-            environment: environment.values,
-        }
-        .encode()?;
+        let (content_type, payload) = publication_body(&module_schema, program_bytes, environment.values)?;
         let res = builder
-            .header(
-                reqwest::header::CONTENT_TYPE,
-                spacetimedb_client_api_messages::publish::CONTENT_TYPE,
-            )
+            .header(reqwest::header::CONTENT_TYPE, content_type)
             .body(payload)
             .send()
             .await?;
