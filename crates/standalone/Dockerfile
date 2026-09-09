@@ -1,6 +1,7 @@
 ARG CARGO_PROFILE=release
 
 
+# !rust-toolchain-sync
 FROM rust:1.93.0 AS chef
 RUN rust_target=$(rustc -vV | awk '/^host:/{ print $2 }') && \
   curl https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-$rust_target.tgz -fL | tar xz -C $CARGO_HOME/bin
