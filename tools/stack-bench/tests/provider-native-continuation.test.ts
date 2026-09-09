@@ -19,6 +19,32 @@ test('native continuation requires a complete conversation with settled tools', 
   assert.throws(() => validateClaudeContinuationTranscript(encode([{ ...rows[0], isSidechain: true }]), sessionId), /Sidechain/);
 });
 
+test('Claude compaction retains a connected history and settled tool exchanges', () => {
+  const rows = [
+    { uuid: 'root', parentUuid: null, type: 'user', message: { content: 'build the app' } },
+    { uuid: 'call', parentUuid: 'root', type: 'assistant', message: { content: [{ type: 'tool_use', id: 'tool' }] } },
+    { uuid: 'result', parentUuid: 'call', type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'tool' }] } },
+    { uuid: 'boundary', parentUuid: null, type: 'system', subtype: 'compact_boundary', logicalParentUuid: 'result' },
+    { uuid: 'summary', parentUuid: 'boundary', type: 'user', isCompactSummary: true, message: { content: 'Continue the app' } },
+    { uuid: 'next', parentUuid: 'summary', type: 'assistant', message: { content: 'Continuing' } },
+  ];
+  const validate = (value: unknown[]) => validateClaudeContinuationTranscript(value.map(row => JSON.stringify(row)).join('\n'), 'session');
+  assert.doesNotThrow(() => validate(rows));
+  assert.doesNotThrow(() => validate([...rows].reverse()));
+  assert.doesNotThrow(() => validate([...rows,
+    { ...rows[3], uuid: 'boundary2', logicalParentUuid: 'next' },
+    { ...rows[4], uuid: 'summary2', parentUuid: 'boundary2' }]));
+  for (const logicalParentUuid of [undefined, '', 'missing', 'summary']) {
+    assert.throws(() => validate(rows.map((row, i) => i === 3 ? { ...row, logicalParentUuid } : row)), /compaction|orphan|cycle/);
+  }
+  assert.throws(() => validate(rows.filter((_, i) => i !== 4)), /summary/);
+  assert.throws(() => validate(rows.map((row, i) => i === 4 ? { ...row, message: { content: '' } } : row)), /summary/);
+  assert.throws(() => validate(rows.map((row, i) => i === 3 ? { ...row, subtype: 'other' } : row)), /disconnected/);
+  assert.throws(() => validate(rows.map((row, i) => i === 2 ? { ...row, message: { content: [] } } : row)), /unresolved/);
+  assert.throws(() => validate(rows.map((row, i) => i === 2 ? { ...row, parentUuid: 'root' } : row)), /ancestor/);
+  assert.throws(() => validate(rows.map((row, i) => i === 3 ? { ...row, sessionId: 'different' } : row)), /identity/);
+});
+
 test('structured provider rejection distinguishes quota from rate limits and auth', () => {
   const body = (code: string) => Buffer.from(JSON.stringify({ error: { code } }));
   assert.equal(classifyProviderFailure(429, body('insufficient_quota')).category, 'quota');

@@ -27,9 +27,18 @@ export function validateClaudeContinuationTranscript(text: string, sessionId: st
       if (message) throw new Error('Native conversation is missing parent history');
       continue;
     }
-    if (parents.has(row.uuid) && parents.get(row.uuid) !== row.parentUuid) throw new Error('Native parent history conflicts');
-    parents.set(row.uuid, row.parentUuid);
-    if (row.parentUuid === null) {
+    // Compaction starts a new replay segment, but retains its historical parent.
+    // Follow that link for integrity checks; never rewrite the native transcript.
+    const compacted = row.type === 'system' && row.subtype === 'compact_boundary';
+    if (compacted && (row.parentUuid !== null || typeof row.logicalParentUuid !== 'string'
+      || !row.logicalParentUuid || !rows.some(summary => record(summary) && summary.type === 'user'
+        && summary.parentUuid === row.uuid && summary.isCompactSummary === true
+        && record(summary.message) && typeof summary.message.content === 'string'
+        && summary.message.content.trim()))) throw new Error('Native compaction is missing history or summary');
+    const parent = compacted ? row.logicalParentUuid as string : row.parentUuid;
+    if (parents.has(row.uuid) && parents.get(row.uuid) !== parent) throw new Error('Native parent history conflicts');
+    parents.set(row.uuid, parent);
+    if (parent === null) {
       if ((root !== null && root !== row.uuid) || row.type !== 'user') throw new Error('Native conversation has disconnected roots');
       const content = record(row.message) ? row.message.content : undefined;
       const task = typeof content === 'string' ? content.trim().length > 0
