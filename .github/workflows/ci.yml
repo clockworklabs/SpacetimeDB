@@ -24,7 +24,7 @@ permissions:
 jobs:
   merge_queue_noop:
     name: Merge queue no-op/reuse
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     permissions:
       actions: write
       contents: read
@@ -94,7 +94,7 @@ jobs:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Upload build artifacts (Linux)
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     timeout-minutes: 15
     env:
       RUST_BACKTRACE: full
@@ -286,7 +286,7 @@ jobs:
   smoketest_build_linux:
     needs: [upload-build-artifacts-linux]
     name: Build smoketests (Linux)
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     timeout-minutes: 15
     env:
       RUST_BACKTRACE: full
@@ -377,7 +377,7 @@ jobs:
       fail-fast: false
       matrix:
         partition: [1]
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     timeout-minutes: 30
     env:
       RUST_BACKTRACE: full
@@ -560,7 +560,7 @@ jobs:
           - name: Windows 2/4
           - name: Windows 3/4
           - name: Windows 4/4
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     steps:
       - name: Skip duplicate merge queue smoketest
         run: echo "Merge queue commit has the same tree as the PR head; smoketest already ran for the PR."
@@ -569,7 +569,7 @@ jobs:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Test Suite
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
 
     env:
       RUST_BACKTRACE: full
@@ -715,7 +715,7 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Lints
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     env:
       RUST_BACKTRACE: full
     steps:
@@ -759,7 +759,7 @@ jobs:
   codeowners_check:
     if: ${{ github.event_name == 'pull_request' }}
     name: CODEOWNERS check
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     permissions:
       contents: read
       pull-requests: read
@@ -796,7 +796,7 @@ jobs:
     needs: [merge_queue_noop, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Build and test wasm bindings
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     env:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
@@ -824,7 +824,7 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check that packages are publishable
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     permissions: read-all
     env:
       RUST_BACKTRACE: full
@@ -855,7 +855,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-linux }
+          - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-linux-staging }
           - { target: aarch64-apple-darwin, runner: macos-latest }
           - { target: x86_64-pc-windows-msvc, runner: windows-latest }
     runs-on: ${{ matrix.runner }}
@@ -905,7 +905,7 @@ jobs:
           - { target: x86_64-unknown-linux-gnu }
           - { target: aarch64-apple-darwin }
           - { target: x86_64-pc-windows-msvc }
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     steps:
       - name: Skip duplicate merge queue update test
         run: echo "Merge queue commit has the same tree as the PR head; update-flow already ran for the PR."
@@ -914,7 +914,7 @@ jobs:
     name: Unreal Engine Tests
     # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
     # a custom runner.
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     # Disable the tests because they are very flaky at the moment.
     # TODO: Remove this line and re-enable the `if` line just below here.
     if: false
@@ -1011,7 +1011,7 @@ jobs:
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check CLI docs
     permissions: read-all
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     env:
       RUST_BACKTRACE: full
     steps:
@@ -1266,7 +1266,7 @@ jobs:
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     permissions:
       contents: read
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     env:
       ARTIFACT_SUFFIX: linux
       UseLocalBsatnRuntime: true
@@ -1368,7 +1368,7 @@ jobs:
   csharp-testsuite:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     timeout-minutes: 30
     env:
       RUST_BACKTRACE: full
@@ -1485,7 +1485,7 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Verify global.json files are symlinks
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     permissions:
       contents: read
     env:
@@ -1529,7 +1529,7 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check smoketests/mod.rs is complete
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     permissions:
       contents: read
     env:
@@ -1565,7 +1565,7 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Docs build
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     env:
       RUST_BACKTRACE: full
     steps:
@@ -1605,7 +1605,7 @@ jobs:
     needs: [merge_queue_noop, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: TypeScript - Tests
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     env:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
