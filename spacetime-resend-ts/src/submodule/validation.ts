@@ -1,19 +1,6 @@
 import * as v from 'valibot';
 import { SenderError } from 'spacetimedb/server';
 
-export type ParseResult<T> =
-  | { kind: 'success'; data: T }
-  | { kind: 'error'; issues: v.BaseIssue<unknown>[] };
-
-export function parseWithSchema<TSchema extends v.GenericSchema>(
-  schema: TSchema,
-  input: unknown
-): ParseResult<v.InferOutput<TSchema>> {
-  const result = v.safeParse(schema, input);
-  if (result.success) return { kind: 'success', data: result.output };
-  return { kind: 'error', issues: result.issues };
-}
-
 export function assertExhaustive(value: never): never {
   throw new Error(`Unhandled discriminant: ${value as string}`);
 }

@@ -12,12 +12,7 @@ import {
   type WriteCtx,
 } from './schema';
 import { callResend, ensureOkOrThrow } from './http';
-import {
-  parseWithSchema,
-  safeJsonParse,
-  summarizeIssues,
-  throwSenderError,
-} from './validation';
+import { safeJsonParse, summarizeIssues, throwSenderError } from './validation';
 import { upsertEmail } from './email_writes';
 import { loadConfigOrThrowFromProcedure } from './config';
 import { adminVerdict, denyIfNotAdmin } from './auth';
@@ -51,11 +46,11 @@ function extractTagFieldsFromJson(tagsJson: string | undefined): {
   if (!tagsJson) return { userId: undefined, orgId: undefined };
   const parsed = safeJsonParse(tagsJson);
   if (parsed === undefined) return { userId: undefined, orgId: undefined };
-  const result = parseWithSchema(vTagsForExtraction, parsed);
-  if (result.kind === 'error') {
+  const result = v.safeParse(vTagsForExtraction, parsed);
+  if (!result.success) {
     return { userId: undefined, orgId: undefined };
   }
-  const tags = result.data;
+  const tags = result.output;
   if (Array.isArray(tags)) {
     let userId: string | undefined;
     let orgId: string | undefined;
@@ -214,14 +209,14 @@ export function sendEmail(ctx: ProcedureModuleCtx, args: SendEmailArgs) {
   const parsed = safeJsonParse(response.body);
   if (parsed === undefined)
     throwSenderError('resend.send_email_invalid_response');
-  const result = parseWithSchema(vSendEmailResponse, parsed);
-  if (result.kind === 'error') {
+  const result = v.safeParse(vSendEmailResponse, parsed);
+  if (!result.success) {
     throwSenderError(
       `resend.send_email_invalid_response:${summarizeIssues(result.issues)}`
     );
   }
 
-  const resendId = result.data.id;
+  const resendId = result.output.id;
   ctx.withTx(tx => {
     recordQueuedEmail(tx, ctx.timestamp, {
       resendId,

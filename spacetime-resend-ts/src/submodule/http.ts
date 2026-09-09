@@ -1,5 +1,6 @@
+import * as v from 'valibot';
 import { type ProcedureModuleCtx, vResendErrorBody } from './schema';
-import { parseWithSchema, safeJsonParse, throwSenderError } from './validation';
+import { safeJsonParse, throwSenderError } from './validation';
 import { buildResendHttpRequest } from './request';
 
 export type ResendHttpResponse = {
@@ -48,13 +49,13 @@ export function ensureOkOrThrow(
 export function resendErrorSuffix(body: string): string {
   const parsed = safeJsonParse(body);
   if (parsed !== undefined) {
-    const result = parseWithSchema(vResendErrorBody, parsed);
-    if (result.kind === 'success') {
+    const result = v.safeParse(vResendErrorBody, parsed);
+    if (result.success) {
       const parts: string[] = [];
-      if (result.data.name) parts.push(`name=${result.data.name}`);
-      if (result.data.message) {
+      if (result.output.name) parts.push(`name=${result.output.name}`);
+      if (result.output.message) {
         parts.push(
-          `msg=${result.data.message.replace(/\s+/g, ' ').slice(0, 240)}`
+          `msg=${result.output.message.replace(/\s+/g, ' ').slice(0, 240)}`
         );
       }
       if (parts.length > 0) return `:${parts.join('|')}`;

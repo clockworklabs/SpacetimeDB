@@ -1,3 +1,4 @@
+import * as v from 'valibot';
 import {
   EmailStatus,
   WebhookEventStatus,
@@ -21,7 +22,6 @@ import {
 } from 'spacetimedb/server';
 import {
   assertExhaustive,
-  parseWithSchema,
   safeJsonParse,
   summarizeIssues,
   throwSenderError,
@@ -209,15 +209,15 @@ function applyResendEvent(
     return { status: WebhookEventStatus.Failed, error: 'invalid JSON payload' };
   }
 
-  const result = parseWithSchema(vEmailEvent, parsed);
-  if (result.kind === 'error') {
+  const result = v.safeParse(vEmailEvent, parsed);
+  if (!result.success) {
     return {
       status: WebhookEventStatus.Failed,
       error: `payload validation failed: ${summarizeIssues(result.issues)}`,
     };
   }
 
-  const event = result.data;
+  const event = result.output;
   const now = ctx.timestamp;
   upsertEmail(ctx, now, makeEmailUpsertArgs(event, now));
   recordDeliveryEvent(ctx, now, {
