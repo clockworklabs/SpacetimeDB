@@ -48,6 +48,7 @@ fn fixture(
 ) {
     let inner = build_db_ctx_inner::<RemoteModule>(
         None,
+        NativeTasks::default(),
         None,
         None,
         Some(Box::new(move |_, error| {
