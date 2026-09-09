@@ -2657,6 +2657,7 @@ async function main() {
 
       const after = bundle?.totals?.score ?? 0;
       const afterMax = bundle?.totals?.max ?? 0;
+      const repairedBundle = bundle;
       // Lost or inconclusive evidence cannot hide a repair regression.
       let decision = repairEvidenceDecision(beforeBundle, bundle);
       const regressionDecision = repairRegressionDecision(acceptedBundle, bundle);
@@ -2682,7 +2683,7 @@ async function main() {
         await restoreAcceptedRepair(snapshot, gradingSnapshot);
         if (!restoreProgressionGrade(acceptedBundle,
           `${args.backend}-l${level}-rollback${repairs}`)) break;
-        repairHistory.push(repairHistoryEntry(repairs, beforeBundle, bundle,
+        repairHistory.push(repairHistoryEntry(repairs, beforeBundle, repairedBundle,
           'rolled back because the result could not be compared'));
         if (!recordRepairProgression({ completedRepair: true })) break;
         if (pauseForRepeatedFindings()) break;
@@ -2733,7 +2734,7 @@ async function main() {
         if (!restoreProgressionGrade(acceptedBundle,
           `${args.backend}-l${level}-rollback${repairs}`)) break;
         regressed = true;
-        repairHistory.push(repairHistoryEntry(repairs, beforeBundle, bundle,
+        repairHistory.push(repairHistoryEntry(repairs, beforeBundle, repairedBundle,
           'rolled back because earlier behavior regressed'));
         if (!recordRepairProgression({ repairRegression, completedRepair: true })) break;
         if (pauseForRepeatedFindings()) break;

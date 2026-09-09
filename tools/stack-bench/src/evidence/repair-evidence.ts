@@ -88,11 +88,19 @@ export interface RepairEvidenceDecision {
   shared: CriterionEvidenceComparison;
 }
 
+function selectedRepairChecks(bundle: RepairEvidenceBundle | null | undefined) {
+  const selected = bundle?.selection?.checks;
+  return Array.isArray(selected)
+    ? new Set(selected.flatMap(check => typeof check.stableKey === 'string'
+      ? [check.stableKey] : [])) : null;
+}
+
 export function repairEvidenceDecision(
   beforeBundle: RepairEvidenceBundle | null | undefined,
   afterBundle: RepairEvidenceBundle | null | undefined,
 ): RepairEvidenceDecision {
-  const shared = compareCriterionEvidence(beforeBundle, afterBundle);
+  const shared = compareCriterionEvidence(beforeBundle, afterBundle,
+    { previousStableKeys: selectedRepairChecks(afterBundle) });
   const startedFromApplicationSetup = beforeBundle?.outcome?.kind === 'app_failure'
     && typeof beforeBundle.outcome.phase === 'string'
     && APPLICATION_SETUP_PHASES.has(beforeBundle.outcome.phase);
@@ -116,12 +124,8 @@ export function repairRegressionDecision(
   acceptedBundle: RepairEvidenceBundle | null | undefined,
   repairedBundle: RepairEvidenceBundle | null | undefined,
 ): RepairEvidenceDecision {
-  const selected = repairedBundle?.selection?.checks;
-  const selectedKeys = Array.isArray(selected)
-    ? new Set(selected.flatMap(check => typeof check.stableKey === 'string'
-      ? [check.stableKey] : [])) : null;
   const shared = compareCriterionEvidence(acceptedBundle, repairedBundle,
-    { onlyPreviousPasses: true, previousStableKeys: selectedKeys });
+    { onlyPreviousPasses: true, previousStableKeys: selectedRepairChecks(repairedBundle) });
   const regressed = shared.lostEvidence.length > 0
     || shared.definitionChanges.length > 0
     || shared.regressions.length > 0;

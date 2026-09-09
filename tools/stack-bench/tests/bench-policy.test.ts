@@ -410,6 +410,30 @@ test('a repair cannot trade an earlier pass for a larger new gain', () => {
   assert.deepEqual(decision.shared.regressions, ['check.a']);
 });
 
+test('repair comparison respects declared scope without hiding missing or regressed evidence', () => {
+  const criterion = (id: string, status: 'passed' | 'failed') => ({
+    id, stableKey: `check.${id}`, points: 1,
+    evidence: createCheckEvidence({ status, code: 'test_result', phase: 'assertion',
+      startedAtMs: 1, completedAtMs: 2 }),
+  });
+  const bundle = (criteria: ReturnType<typeof criterion>[]) => ({
+    suites: { features: { features: [{ id: 'work', criteria }] } },
+  });
+  const before = bundle([criterion('retained', 'passed'), criterion('repair', 'failed'),
+    criterion('outside', 'passed')]);
+  const after = { ...bundle([criterion('retained', 'passed'), criterion('repair', 'passed')]),
+    selection: { checks: [{ stableKey: 'check.retained' }, { stableKey: 'check.repair' }] } };
+  for (const decide of [repairEvidenceDecision, repairRegressionDecision]) {
+    assert.equal(decide(before, after).action, 'keep');
+    assert.equal(decide(before, { ...after,
+      ...bundle([criterion('repair', 'passed')]) }).action, 'rollback-regression');
+    assert.equal(decide(before, { ...after,
+      ...bundle([criterion('retained', 'failed'), criterion('repair', 'passed')])
+    }).action, 'rollback-regression');
+    assert.equal(decide(before, { ...after, selection: undefined }).action, 'rollback-regression');
+  }
+});
+
 test('repair regression checks require earlier passes but ignore earlier failures', () => {
   const evidence = (status: 'passed' | 'failed') => createCheckEvidence({
     status, code: 'test_result', phase: 'assertion', startedAtMs: 1, completedAtMs: 2,
