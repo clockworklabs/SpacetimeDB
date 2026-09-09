@@ -87,7 +87,8 @@ partial class RawModuleDefV10
 
     internal void RegisterView(RawViewDefV10 view) => viewDefs.Add(view);
 
-    internal void RegisterEnvironment(EnvironmentDeclaration declaration) => environment.Add(declaration);
+    internal void RegisterEnvironment(EnvironmentDeclaration declaration) =>
+        environment.Add(declaration);
 
     internal void RegisterViewPrimaryKey(string viewSourceName, IEnumerable<string> columns) =>
         viewPrimaryKeyDefs.Add(new RawViewPrimaryKeyDefV10(viewSourceName, [.. columns]));
@@ -431,7 +432,8 @@ public static class Module
         moduleDef.RegisterView(def);
     }
 
-    public static void RegisterEnvironment(EnvironmentDeclaration declaration) => moduleDef.RegisterEnvironment(declaration);
+    public static void RegisterEnvironment(EnvironmentDeclaration declaration) =>
+        moduleDef.RegisterEnvironment(declaration);
 
     public static void RegisterViewPrimaryKey(string viewSourceName, string[] columns) =>
         moduleDef.RegisterViewPrimaryKey(viewSourceName, columns);

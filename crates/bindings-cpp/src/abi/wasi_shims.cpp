@@ -4,14 +4,13 @@
 
 #include <cstdint>
 #include <cstddef>
-// Keep this pure ABI translation unit independent of SDK opaque types: their
-// standard-library helpers include wasi/api.h in Emscripten, which conflicts
-// with these standalone shim definitions. Use a distinct C++ name for the raw
-// host logging import; its WebAssembly signature is the same eight i32 values.
+
+// SpacetimeDB imports we need for console output
+// Import from spacetime_10.0 module as required by SpacetimeDB ABI
 extern "C" __attribute__((import_module("spacetime_10.0"), import_name("console_log")))
-void wasi_console_log(uint8_t level, const uint8_t* target_ptr, uint32_t target_len,
-                      const uint8_t* filename_ptr, uint32_t filename_len, uint32_t line_number,
-                      const uint8_t* message_ptr, uint32_t message_len);
+void console_log(uint8_t log_level, const uint8_t* target, uint32_t target_len,
+                 const uint8_t* filename, uint32_t filename_len, uint32_t line_number,
+                 const uint8_t* message, uint32_t message_len);
 
 // Helper macro for string literals
 #define CSTR(s) (uint8_t*)s, sizeof(s) - 1
@@ -151,7 +150,7 @@ __wasi_errno_t __wasi_fd_write(__wasi_fd_t fd, const __wasi_ciovec_t* iovs,
     
     // Make a single console_log call with the complete message
     uint8_t log_level = (fd == STDERR_FILENO) ? 1 : 2; // 1=WARN, 2=INFO
-    wasi_console_log(log_level, CSTR("wasi"), CSTR(__FILE__), __LINE__,
+    console_log(log_level, CSTR("wasi"), CSTR(__FILE__), __LINE__,
                buffer, offset);
     
     // Clean up heap allocation if needed
