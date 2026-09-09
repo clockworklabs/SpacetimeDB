@@ -150,7 +150,7 @@ Inspect published database environment variables
 ###### **Subcommands:**
 
 * `get` — Read one published environment value
-* `list` — List published environment keys (never values)
+* `list` — List published environment keys and values
 
 
 
@@ -180,7 +180,7 @@ Read one published environment value
 
 ## `spacetime env list`
 
-List published environment keys (never values)
+List published environment keys and values
 
 **Usage:** `spacetime env list [OPTIONS] <database>`
 

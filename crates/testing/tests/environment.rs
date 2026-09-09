@@ -483,3 +483,79 @@ fn suspended_procedure_cannot_read_environment_from_a_replacement_program() {
         },
     );
 }
+
+// The actual host keeps ENV as exact strings; generated Rust accessors decode
+// the selected enum variant after initial publish and complete replacements.
+#[test]
+#[serial]
+fn rust_environment_enums_preserve_exact_typed_mappings() {
+    let initial = Values::from([
+        ("REQUIRED".into(), "initial-required".into()),
+        ("MODE".into(), "ready".into()),
+    ]);
+    CompiledModule::compile("environment-test", CompilationMode::Debug).with_module_async_with_environment(
+        DEFAULT_CONFIG,
+        initial.clone(),
+        |handle| async move {
+            let mut values = initial;
+            for (value, index) in [
+                ("ready", 0u8),
+                ("other", 1),
+                ("in progress", 2),
+                ("Ready", 3),
+                ("", 4),
+                ("héllo\0世界", 5),
+            ] {
+                values.insert("MODE".into(), value.into());
+                values.insert("TYPED".into(), value.into());
+                let module = publish(&handle, &values).await;
+                module
+                    .call_reducer(
+                        Identity::ZERO,
+                        None,
+                        None,
+                        None,
+                        None,
+                        "expect_typed_environment",
+                        FunctionArgs::Bsatn(bsatn::to_vec(&product![index, Some(index)]).unwrap().into()),
+                    )
+                    .await
+                    .unwrap()
+                    .outcome
+                    .into_result()
+                    .unwrap();
+                assert_eq!(
+                    read(&module, "MODE").await,
+                    AlgebraicValue::from(Some(value.to_string()))
+                );
+            }
+            for rejected in ["InProgress", "READY", "in progress "] {
+                let mut invalid = values.clone();
+                invalid.insert("TYPED".into(), rejected.into());
+                let result = handle.republish_environment(invalid).await;
+                assert!(result.as_ref().is_err() || !result.as_ref().unwrap().was_successful());
+                assert_eq!(
+                    read(&handle.client.module(), "TYPED").await,
+                    AlgebraicValue::from(Some("héllo\0世界".to_string()))
+                );
+            }
+            values.remove("TYPED");
+            let module = publish(&handle, &values).await;
+            module
+                .call_reducer(
+                    Identity::ZERO,
+                    None,
+                    None,
+                    None,
+                    None,
+                    "expect_typed_environment",
+                    FunctionArgs::Bsatn(bsatn::to_vec(&product![5u8, None::<u8>]).unwrap().into()),
+                )
+                .await
+                .unwrap()
+                .outcome
+                .into_result()
+                .unwrap();
+        },
+    );
+}

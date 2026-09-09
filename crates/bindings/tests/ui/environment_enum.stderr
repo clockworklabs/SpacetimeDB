@@ -1,0 +1,85 @@
+error: EnvironmentValue requires an enum with unit variants
+ --> tests/ui/environment_enum.rs:2:8
+  |
+2 | struct NotEnum;
+  |        ^^^^^^^
+
+error: environment value enums require 1 to 256 variants
+ --> tests/ui/environment_enum.rs:5:6
+  |
+5 | enum Empty {}
+  |      ^^^^^
+
+error: environment value enums cannot be generic
+ --> tests/ui/environment_enum.rs:8:13
+  |
+8 | enum Generic<T> {
+  |             ^^^
+
+error: environment value variants cannot have payloads
+  --> tests/ui/environment_enum.rs:14:10
+   |
+14 |     Value(String),
+   |          ^^^^^^^^
+
+error: environment variants must map to distinct strings
+  --> tests/ui/environment_enum.rs:21:5
+   |
+21 |     Same,
+   |     ^^^^
+
+error: expected one value = "literal" mapping
+  --> tests/ui/environment_enum.rs:26:24
+   |
+26 |     #[env(value = "x", value = "y")]
+   |                        ^^^^^
+
+error: expected one value = "literal" mapping
+  --> tests/ui/environment_enum.rs:32:11
+   |
+32 |     #[env(values("x"))]
+   |           ^^^^^^
+
+error: expected string literal
+  --> tests/ui/environment_enum.rs:38:19
+   |
+38 |     #[env(value = 1)]
+   |                   ^
+
+error[E0277]: the trait bound `Option<Mode>: RequiredEnvironmentValue` is not satisfied
+  --> tests/ui/environment_enum.rs:51:17
+   |
+51 |     pub NESTED: Option<Option<Mode>>,
+   |                 ^^^^^^^^^^^^^^^^^^^^ the trait `RequiredEnvironmentValue` is not implemented for `Option<Mode>`
+   |
+help: the following other types implement trait `RequiredEnvironmentValue`
+  --> tests/ui/environment_enum.rs:42:10
+   |
+42 | #[derive(spacetimedb::EnvironmentValue)]
+   |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Mode`
+   |
+  ::: src/rt.rs
+   |
+   | impl RequiredEnvironmentValue for String {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `std::string::String`
+   = note: required for `Option<Option<Mode>>` to implement `EnvironmentValue`
+   = note: this error originates in the derive macro `spacetimedb::EnvironmentValue` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `#[env(values(...))]` requires `String` or `Option<String>`; map enum variants with `#[env(value = "...")]` instead
+  --> tests/ui/environment_enum.rs:50:15
+   |
+50 |     pub MODE: Mode,
+   |               ^^^^ unsatisfied trait bound
+   |
+help: the trait `StringEnvironmentValue` is not implemented for `Mode`
+  --> tests/ui/environment_enum.rs:43:1
+   |
+43 | pub enum Mode {
+   | ^^^^^^^^^^^^^
+help: the following other types implement trait `StringEnvironmentValue`
+  --> src/rt.rs
+   |
+   | impl StringEnvironmentValue for String {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `std::string::String`
+   | impl StringEnvironmentValue for Option<String> {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Option<std::string::String>`

@@ -186,10 +186,19 @@ impl Fixture {
             &[],
         );
         let mut lines = output.lines().map(str::trim);
-        assert_eq!(lines.next(), Some("key"));
+        assert_eq!(
+            lines.next().unwrap().split('|').map(str::trim).collect::<Vec<_>>(),
+            ["key", "value"]
+        );
         lines
-            .filter(|line| !line.is_empty() && !line.chars().all(|c| c == '-'))
-            .map(|line| serde_json::from_str::<String>(line).unwrap())
+            .filter(|line| !line.is_empty() && !line.chars().all(|c| matches!(c, '-' | '+')))
+            .map(|line| {
+                let (key, value) = line.split_once('|').unwrap();
+                let key: String = serde_json::from_str(key.trim()).unwrap();
+                let value: String = serde_json::from_str(value.trim()).unwrap();
+                assert_eq!(self.get(&key), format!("{value}\n"));
+                key
+            })
             .collect()
     }
 
