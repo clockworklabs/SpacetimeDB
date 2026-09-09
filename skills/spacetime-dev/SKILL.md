@@ -10,10 +10,28 @@ watcher running for the assigned database. It builds module changes, publishes
 them, and generates client bindings. Use the supplied CLI, server URI, database
 name, and module directory. See the CLI skill for command syntax.
 
-Use `--yes --delete-data=never`, TypeScript client bindings, and the application's
-actual bindings directory. Use `--server-only` if you start the web client
-separately. If `spacetime.json` already defines publish targets, use those paths
-and omit `--module-path`. Do not run competing publish commands or watchers.
+Use the supplied server URL directly; do not register a server nickname or
+change the CLI login. Use a project configuration with both publish and generate
+targets. For example, in `/app/spacetime.json`, replacing the server, database,
+and client directory with the supplied settings and your actual paths:
+
+```json
+{
+  "server": "http://SERVER:PORT",
+  "database": "DATABASE",
+  "module-path": "backend/spacetimedb",
+  "generate": [
+    { "language": "typescript", "out-dir": "frontend/src/module_bindings" }
+  ]
+}
+```
+
+From `/app`, run the supplied CLI with `dev --yes --delete-data=never
+--server-only`. Start the web client separately. With these configured targets,
+omit `--module-path`, `--project-path`, and `--module-bindings-path` flags.
+Paths in this example are relative to the project directory.
+Do not run competing publish commands or watchers. If bindings generation is skipped,
+correct the generate target before continuing.
 
 Wait for the initial publish and bindings to succeed before opening the app.
 After a module edit, check that the watcher published it successfully before
