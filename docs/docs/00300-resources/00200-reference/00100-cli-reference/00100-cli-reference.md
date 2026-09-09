@@ -445,7 +445,7 @@ Run `spacetime help generate` for more detailed information.
 
   Default value: ``
 * `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.
-* `--include-private` — Include private tables and functions in generated code (types are always included).
+* `--include-private` — Include private tables and private/internal non-lifecycle functions (types are always included).
 
   Default value: `false`
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
