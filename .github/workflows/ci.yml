@@ -1187,7 +1187,7 @@ jobs:
           testMode: playmode
           useHostNetwork: true
           artifactsPath: ""
-          cliVersion: v0.1.53
+          cliVersion: v0.1.50
         env:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
