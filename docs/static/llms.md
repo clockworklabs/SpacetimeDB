@@ -171,8 +171,8 @@ This is a list of common problems when using SpacetimeDB and how to fix them.
 - [Godot Tutorial](/docs/tutorials/godot): Need help with the tutorial or CLI commands? Join our Discord server!
 - [1 - Setup](/docs/tutorials/godot/part-1): Unity Tutorial Hero Image
 - [2 - Connecting to SpacetimeDB](/docs/tutorials/godot/part-2): Need help with the tutorial? Join our Discord server!
-- [3 - Gameplay](/docs/tutorials/Godot/part-3): Need help with the tutorial? Join our Discord server!
-- [4 - Moving and Colliding](/docs/tutorials/Godot/part-4): Need help with the tutorial? Join our Discord server!
+- [3 - Gameplay](/docs/tutorials/godot/part-3): Need help with the tutorial? Join our Discord server!
+- [4 - Moving and Colliding](/docs/tutorials/godot/part-4): Need help with the tutorial? Join our Discord server!
 - [Unity Tutorial](/docs/tutorials/unity): Need help with the tutorial or CLI commands? Join our Discord server!
 - [1 - Setup](/docs/tutorials/unity/part-1): Unity Tutorial Hero Image
 - [2 - Connecting to SpacetimeDB](/docs/tutorials/unity/part-2): Need help with the tutorial? Join our Discord server!
