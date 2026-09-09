@@ -1270,7 +1270,7 @@ async fn select_database(config: &Config, server: &str, token: &str) -> Result<S
         // Fetch database names with HTTP queries to /database/{identity}/names
         // It's parallelyzed in case a user has a lot of databases
         // TODO: we should introduce an endpoint that returns user's databases with names
-        let databases: Vec<DatabaseRow> = stream::iter(result.identities.into_iter())
+        let databases: Vec<DatabaseRow> = stream::iter(result.identities)
             .map(|identity_str| {
                 let config = config.clone();
                 async move {

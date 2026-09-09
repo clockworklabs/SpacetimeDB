@@ -61,7 +61,7 @@ pub(crate) async fn exec(con: Connection, format: Format) -> Result<(), anyhow::
     let api = ClientApi::new(con);
 
     loop {
-        let readline = rl.readline(&format!("🪐{}>", &database).green());
+        let readline = rl.readline(&format!("🪐{}>", database).green());
         match readline {
             Ok(line) => match line.as_str() {
                 ".exit" => break,
