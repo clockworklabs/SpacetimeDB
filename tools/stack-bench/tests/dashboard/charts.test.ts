@@ -9,6 +9,7 @@ test('score charts explain missing grades and preserve circular marker geometry'
   const html = bigClimb(series, String);
   assert.match(html, /preserveAspectRatio="xMidYMid meet"/);
   assert.match(html, /1 \/ 2 points/);
+  assert.match(html, /Before repairs at this level; earlier fixes and feedback retained/);
   assert.doesNotMatch(html, /NaN|Infinity/);
   assert.match(html, /aria-label="Score history" tabindex="0"/);
 });

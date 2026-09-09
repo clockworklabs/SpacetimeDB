@@ -46,11 +46,13 @@ test('campaign separates aggregate scores from selected evidence and explains pe
   assert.doesNotMatch(selected, /82%|9<i>\/ 10|Questline average/);
   assert.match(page, /Valid runs/);
   const metricsTable = page.split('<table class="sheet">')[1]!.split('</table>')[0]!;
-  for (const label of ['Cost per valid run', 'Weighted score', 'Unaided', 'Regressions', 'Time', 'Valid runs', 'Excluded', 'Total spend']) {
+  for (const label of ['Cost per valid run', 'Weighted score', 'Before repairs', 'Regressions', 'Time', 'Valid runs', 'Excluded', 'Total spend']) {
     assert.ok(metricsTable.includes(label), `${label} belongs in the comparison table`);
   }
   assert.match(metricsTable, /\$6\.00/);
   assert.ok(metricsTable.indexOf('Cost per valid run') < metricsTable.indexOf('Total spend'));
+  assert.doesNotMatch(page, /Unaided/);
+  assert.match(page, /Later levels retain earlier fixes and feedback/);
   assert.doesNotMatch(page, /<h3>Selected repetition<\/h3>/);
   assert.ok(page.indexOf('<h3>Results</h3>') < page.indexOf('<h3>Runs</h3>'));
   assert.doesNotMatch(page, /More comparison metrics/);
@@ -64,6 +66,8 @@ test('campaign separates aggregate scores from selected evidence and explains pe
   assert.doesNotMatch(page, /<details class="metric-help"/);
   for (const tab of ['checks', 'screenshots', 'files', 'log'] as const) {
     const detail = attemptPage({ sheet, attemptId: attempt.id, tab, checks: null, evidence: null, log: '' });
+    assert.doesNotMatch(detail, /Unaided/);
+    assert.match(detail, /Later levels retain earlier fixes and feedback/);
     assert.match(detail, /No (check results|screenshots|files|log output)/);
     assert.match(detail, /aria-current="page"/);
     assert.match(detail, /popovertarget="help-completion"/);

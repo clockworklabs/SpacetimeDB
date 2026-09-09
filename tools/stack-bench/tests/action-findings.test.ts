@@ -7,7 +7,7 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 import { ActionApplicationFailure, ActionInconclusive } from '../src/actions/action-contract.js';
 import { FAILED_FINDING_KINDS, FINDING_KINDS, INCONCLUSIVE_FINDING_KINDS, finding, findingStatus,
-  isFinding, renderFinding } from '../src/actions/action-findings.js';
+  isFinding, renderFinding, renderRepairFinding } from '../src/actions/action-findings.js';
 import type { Finding, FindingKind } from '../src/actions/action-findings.js';
 import { fail, inconclusive } from '../src/actions/actor-action-runtime.js';
 import { assertAgentVisibleText } from '../src/composition/agent-visible-contract.js';
@@ -86,8 +86,25 @@ test('every kind renders one agent-visible sentence and never its detail', () =>
     assert.ok(sentence.length > 8, kind);
     assert.doesNotMatch(sentence, /RAW-DETAIL|data-testid|Timeout|\d+ms|undefined/, kind);
     assert.doesNotThrow(() => assertAgentVisibleText(sentence), kind);
+    assert.doesNotThrow(() => assertAgentVisibleText(renderRepairFinding(SAMPLES[kind])), kind);
     assert.ok(isFinding(SAMPLES[kind]), kind);
   }
+});
+
+test('repair findings omit private quantities but retain useful failure context', () => {
+  for (const kind of ['number-mismatch', 'count-mismatch', 'entries-missing',
+    'actors-with-control', 'too-many-per-actor', 'clicks-failed', 'concurrent-calls-mismatch'] as const) {
+    const original = structuredClone(SAMPLES[kind]);
+    assert.doesNotMatch(renderRepairFinding(original), /\d/);
+    assert.match(renderFinding(original), /\d/);
+    assert.deepEqual(original, SAMPLES[kind]);
+  }
+  assert.match(renderRepairFinding(SAMPLES['number-mismatch']), /order-total.*below/);
+  assert.match(renderRepairFinding(finding('number-mismatch', {
+    control: 'stock', observed: 52, expected: { atMost: 50 },
+  })), /stock.*above/);
+  assert.match(renderRepairFinding(SAMPLES['call-refused']), /HTTP 404/);
+  assert.match(renderRepairFinding(SAMPLES['entries-missing']), /missing.*duplicated/);
 });
 
 test('the catalog partitions into application failures and unmeasured outcomes', () => {

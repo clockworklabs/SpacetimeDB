@@ -13,7 +13,7 @@ to start or resume a run.
   build cannot read appears with the status `unreadable` and the reason in
   place of its title.
 - Campaign (`/c/:key`) — one sheet: the plan's facts across the top, then
-  check completion, weighted score, unaided score, repairs, time, spend, and attempt phase
+  check completion, weighted score, score before repairs, repairs, time, spend, and attempt phase
   per stack. Dependency campaigns add questline rows, which
   `?questlines=grid|graph|replay` switches between; `&step=N` moves the replay
   cursor. Sequential campaigns show one row pair per level instead.
@@ -23,6 +23,9 @@ to start or resume a run.
   and the form that starts one.
 
 ## Modes
+
+"Before repairs" uses first-build evidence before repairs at each level.
+Later levels retain earlier fixes and feedback; this is not a feedback-free run.
 
 Inside the appliance (`STACK_BENCH_APPLIANCE=1`) the dashboard runs in
 controller mode: Start and Resume launch the CLI in an owned controller

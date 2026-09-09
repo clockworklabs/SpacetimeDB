@@ -99,7 +99,7 @@ function levelRows(stacks: readonly SheetStack[]): string {
       return `<td><div class="q"><span class="v">${points
         ? ratio(points.score, points.max) : DASH}</span></div></td>`;
     }).join('');
-    return `<tr><th scope="row" class="q k">L${level.level} ${kind}</th>${cells}</tr>`;
+    return `<tr><th scope="row" class="q k">L${level.level} ${kind === 'unaided' ? 'before repairs' : 'score'}</th>${cells}</tr>`;
   }).join('')).join('');
 }
 
@@ -198,7 +198,7 @@ export function campaignPage(input: CampaignPageInput): string {
   const help: Record<string, string> = {
     Completion: 'Median checks passed divided by all selected checks, including checks not yet reached.',
     'Weighted score': 'Score weighted by check points. Final comparison values appear when usable attempts finish.',
-    Unaided: 'Score before repair, based on the recorded first-try evidence.',
+    'Before repairs': 'Score from the first build at each level, before repairs at that level. Later levels retain earlier fixes and feedback.',
     Regressions: 'Median regression count across recorded repetitions. A regression is a previously passing check that failed after a later change.',
     'Valid runs': 'Completed attempts with usable comparison evidence. A completed process alone does not guarantee a usable result.',
     Excluded: 'Attempts omitted from comparison because their evidence is invalid or incomplete. Their costs appear only in total spend and individual run details.',
@@ -228,7 +228,7 @@ export function campaignPage(input: CampaignPageInput): string {
     + row('Completion', stack => `<div class="big">${pct(stack.completionRate === null ? null : 100 * stack.completionRate)}</div>`)
     + row('Cost per valid run', stack => value(stack.costPerValidRun === null ? (stack.n ? 'Unknown' : 'Awaiting valid runs') : `$${stack.costPerValidRun.toFixed(2)}`))
     + row('Weighted score', stack => value(pct(stack.score)))
-    + row('Unaided', stack => value(pct(stack.unaided)))
+    + row('Before repairs', stack => value(pct(stack.unaided)))
     + row('Regressions', stack => value(num(stack.regressions)))
     + row('Time', stack => value(duration(stack.timeSec)))
     + repetitions

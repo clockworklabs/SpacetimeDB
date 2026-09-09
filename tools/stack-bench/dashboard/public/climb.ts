@@ -11,7 +11,7 @@ interface Plot {
 }
 
 function pointTitle(point: ClimbPoint): string {
-  return `<title>${point.score} / ${point.max} points${point.unaided ? ' · Before repair' : ''}</title>`;
+  return `<title>${point.score} / ${point.max} points${point.unaided ? ' · Before repairs at this level; earlier fixes and feedback retained' : ''}</title>`;
 }
 
 function plot(series: readonly ClimbPoint[], left: number, right: number,

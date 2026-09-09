@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 // Turns grading results into a behavioral BUG_REPORT.md for the fix agent.
 //
-// Every line the agent reads comes from one of three sources: the sentence
-// the agent was already given for the behavior (`statedBy`, else the
+// Behavior feedback uses the authored expectation (`statedBy`, else the
 // criterion's description), the rendered finding from the catalog, or the
 // application's own console errors. Harness prose never enters the report.
 
@@ -10,7 +9,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs as parseNodeArgs } from 'node:util';
-import { renderFinding } from '../src/actions/action-findings.js';
+import { renderRepairFinding } from '../src/actions/action-findings.js';
 import type { Finding } from '../src/actions/action-findings.js';
 import { sanitiseConsoleError, sanitiseDiagnostic } from '../src/evidence/diagnostic-sanitizer.js';
 import { ARTIFACT_FILE, readArtifactPayload } from '../src/evidence/artifacts.js';
@@ -112,7 +111,7 @@ function failedAction(action: string | undefined, finding: Finding | null): stri
 // finding (the feature's setup failed before this behavior was reached)
 // says so and nothing more.
 function observed(finding: Finding | null, phase: string): string {
-  if (finding) return renderFinding(finding);
+  if (finding) return renderRepairFinding(finding);
   return phase === 'setup'
     ? 'the application did not reach this behavior; an earlier step of the same feature failed'
     : 'the application did not do this';

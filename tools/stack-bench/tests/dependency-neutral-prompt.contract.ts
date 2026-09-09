@@ -127,6 +127,10 @@ test('neutral dependency prompts include only selected product and stack contrac
       observed: [],
     });
     assert(selected.grader.request.selection.requested.specifications.expected.length > 0);
+    if (level === 2) {
+      assert(selected.grader.selection.scoredChecks.some(check =>
+        check.stableKey.endsWith('.620a') && check.treatment === 'expected'));
+    }
     const moduleTypes = new Map(binding.release.components.packs
       .map(pack => [pack.id, pack.moduleType]));
     for (const check of selected.grader.selection.scoredChecks) {
@@ -136,6 +140,10 @@ test('neutral dependency prompts include only selected product and stack contrac
     for (const stack of STACKS) {
       const prompt = renderPrompt({ level, stack, task: selected.agent.request, guidance });
       const repair = renderPrompt({ level, stack, task: selected.agent.request, guidance, repair: true });
+      if (level === 2) {
+        assert.match(prompt, /Use `profile-address-summary` to display\s+the saved address in the profile view/);
+        assert.doesNotMatch(prompt, /in the same session or a new one/);
+      }
       // Retain process-boundary coverage for all stacks and all three modes.
       if ((level === 1 && stack === 'mongodb') || (level === 2 && stack === 'postgres')
         || (level === 3 && stack === 'spacetime')) {

@@ -2,9 +2,9 @@
 // fails with a sentence; it fails with a kind and its fields, and every reader
 // renders the finding from one template. Fields are things the coding agent
 // already has or the application produced: contract control names, action
-// ids, actor labels, numbers, counts, HTTP statuses. A scenario's own probe
-// text is never a field. `detail` is for a human reading the artifact and is
-// never rendered.
+// ids, actor labels, numbers, counts, HTTP statuses. Numeric fields can include
+// private scenario expectations; repair rendering omits their exact values.
+// A scenario's own probe text is never a field. `detail` is never rendered.
 
 import { z } from 'zod';
 
@@ -139,10 +139,42 @@ export function findingStatus(value: Finding): FindingStatus {
   return value.kind in FAILED_FINDINGS ? 'failed' : 'inconclusive';
 }
 
-// The one sentence every reader shows for a finding.
+// Full diagnostic sentence for private evidence readers.
 export function renderFinding(value: Finding): string {
   const renderers = { ...FAILED_FINDINGS, ...INCONCLUSIVE_FINDINGS } as Renderers<FindingFields>;
   return (renderers[value.kind] as (fields: unknown) => string)(value.fields);
+}
+
+// Keep scenario-derived quantities in evidence, not in the repair request.
+// Authored requirements are delivered separately and retain their public numbers.
+export function renderRepairFinding(value: Finding): string {
+  switch (value.kind) {
+    case 'number-mismatch': {
+      const { control: name, observed, expected } = value.fields;
+      if (observed === null) return `${control(name)} shows no number`;
+      const minimum = expected.equals ?? expected.atLeast;
+      const maximum = expected.equals ?? expected.atMost;
+      return `${control(name)} shows a value ${minimum !== undefined && observed < minimum
+        ? 'below the required value' : maximum !== undefined && observed > maximum
+          ? 'above the required value' : 'that does not meet the requirement'}`;
+    }
+    case 'count-mismatch':
+      return `too ${value.fields.observed < value.fields.expected ? 'few' : 'many'} ${value.fields.control} entries are shown`;
+    case 'entries-missing':
+      return [value.fields.missing > 0 ? 'required entries are missing' : null,
+        value.fields.duplicated > 0 ? 'entries are duplicated' : null]
+        .filter(Boolean).join(' and ') || 'the entries do not match the requirement';
+    case 'actors-with-control':
+      return `too ${value.fields.observed < value.fields.expected ? 'few' : 'many'} actors hold ${control(value.fields.control)}`;
+    case 'too-many-per-actor':
+      return `an actor holds more ${value.fields.control} entries than allowed`;
+    case 'clicks-failed':
+      return `some simultaneous clicks on ${control(value.fields.control)} did not go through`;
+    case 'concurrent-calls-mismatch':
+      return `too ${value.fields.accepted < value.fields.expected ? 'few' : 'many'} simultaneous ${value.fields.action} calls were accepted`;
+    default:
+      return renderFinding(value);
+  }
 }
 
 const controlSchema = z.strictObject({ control: z.string() });

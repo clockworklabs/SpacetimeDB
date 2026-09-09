@@ -237,14 +237,15 @@ The real report also identifies the affected product area and includes the
 current feature text and application interface. Provider failures, harness
 failures, and interrupted work do not become application bug reports.
 
-Every line of the report comes from one of three sources: the sentence the
-request already gave the agent for that behavior, a finding from the
+Behavior feedback uses the authored expectation for that behavior, a finding from the
 grader's closed catalog rendered as one sentence (a control that did not
-appear, a number that read 9 instead of 12, a request that was accepted
+appear, a number below its required value, a request that was accepted
 when it had to be refused), and the application's own console errors.
-The grader never writes prose into the report, and the values a scenario
-chose to probe a behavior are never among a finding's fields. A repair
-fixes the behavior, not the probe.
+Exact scenario quantities and counts remain in private finding fields, not
+agent-facing repair sentences. Reports retain the affected control, failure
+direction, missing or duplicate entries, and HTTP error statuses. Public numbers
+in authored requirements remain in the expected-behavior text. A repair fixes
+the behavior, not the probe. Private diagnostic rendering is unchanged.
 
 ## Authoring rules
 

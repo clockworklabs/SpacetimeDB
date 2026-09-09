@@ -130,7 +130,7 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log, tran
   const help: Record<string, string> = {
     Completion: 'Accepted checks passed out of every selected check, including checks not reached.',
     'Weighted score': 'Points earned across the selected grading scope. This differs from the number of checks passed.',
-    Unaided: 'Recorded score before repair. A dash means no usable first-try evidence.',
+    'Before repairs': 'Score from the first build at each level, before repairs at that level. Later levels retain earlier fixes and feedback. A dash means no usable first-build evidence.',
     Repairs: 'Completed repairs out of the planned allowance for this attempt. Per-feature limits still apply.',
     Elapsed: 'Consumed time across executions / effective time limit. Includes coding, grading, repairs, and host sleep. Time between executions is excluded.'
       + (timeBudget ? ` Original limit: ${duration(timeBudget.originalMinutes * 60)}. Accepted extensions: ${timeBudget.extensionCount}.` : ''),
@@ -162,7 +162,7 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log, tran
     + figure('Spend', spend(attempt.spend, attempt.spendPending))
     + figure('Status', esc(phrase(attempt)), attempt.stalling ? 'now warn' : 'now')
     + figure('Weighted score', pct(attempt.score))
-    + figure('Unaided', pct(attempt.unaided))
+    + figure('Before repairs', pct(attempt.unaided))
     + figure('Repairs', ratio(attempt.repairs.used, attempt.repairs.budget))
     + figure('Elapsed', attempt.status === 'running' || attempt.executionCompletedAt
       ? clock

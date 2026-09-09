@@ -101,7 +101,7 @@ test('repair feedback includes actionable runtime evidence without private artif
     });
     writeGrade(app, 'failed', 'cart total was wrong', {
       feature: 'Cart', criterion: 'total', stableKey: 'private.check.cart.total',
-      statedBy: 'the cart total equals the sum of its lines',
+      statedBy: 'the cart total equals the sum of its lines, with a 5 percent discount',
       url: 'http://app/cart', consoleErrors: ['POST /api/cart returned HTTP 500'], evidence,
     });
 
@@ -110,7 +110,10 @@ test('repair feedback includes actionable runtime evidence without private artif
     const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
     assert.match(repair, /Actor\/session:\*\* buyer/);
     assert.match(repair, /Expected:\*\* the cart total equals the sum of its lines/);
-    assert.match(repair, /Actual:\*\* the cart-total control reads 9, expected exactly 12/);
+    assert.match(repair, /Actual:\*\* the cart-total control shows a value below the required value/);
+    assert.match(repair, /5 percent discount/);
+    assert.doesNotMatch(repair, /\b(?:9|12)\b/);
+    assert.match(readFileSync(join(app, 'stack-bench', 'grading-features.json'), 'utf8'), /"equals": 12/);
     assert.doesNotMatch(repair, /cart total was wrong/);
     assert.doesNotMatch(repair, /Application URL|http:\/\//);
     assert.doesNotMatch(repair, /failure-buyer\.png/);
