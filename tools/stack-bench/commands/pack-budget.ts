@@ -50,7 +50,7 @@ function main(): void {
   if (!isDeclaredLevel(track, args.level)) throw new Error(`L${args.level} is not declared for ${args.track}`);
   const binding = resolveRecipeRelease(track, args.level, args.recipe);
   if (!binding) throw new Error(`${args.track} L${args.level} has no recipe release`);
-  const calibration = resolveCalibrationForRelease(binding.release, { trackRoot: track.dir });
+  const calibration = resolveCalibrationForRelease(binding.release, { trackRoot: track.dir, alias: `L${args.level}` });
   if (!calibration) throw new Error(`${binding.release.id} has no calibration`);
   const loaded = loadPackBudgetEvidence(args.evidence);
   const result = recommendPackBudgets({ binding, calibration, evidence: loaded });

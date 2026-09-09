@@ -45,8 +45,12 @@ test('qualification status rejects ambiguous or undeclared scope', () => {
   assert.deepEqual(parseQualificationArgs(['node', 'qualification-cli.mjs', 'status',
     '--track', 'ecommerce', '--level', '1']), { command: 'status', track: 'ecommerce', level: 1 });
   assert.throws(() => qualificationReadiness('ecommerce', 3), /has no L3 calibration/);
-  assert.throws(() => qualificationReadiness('ecommerce', 3,
-    'ecommerce.progression-catalog'), /has no L3 calibration/);
+  const dependency = qualificationReadiness('ecommerce', 3, 'ecommerce.progression-catalog');
+  assert.equal(dependency.defectChecks.totalChecks, 107);
+  assert.ok(dependency.commands.filter(command => command.startsWith('qualify-reference '))
+    .every(command => command.includes('--feature-catalog progression/ecommerce.json')));
+  assert.ok(dependency.commands.filter(command => command.startsWith('qualify-null '))
+    .every(command => !command.includes('--feature-catalog')));
   assert.throws(() => qualificationReadiness('ecommerce', 4), /not declared/);
   assert.throws(() => parseQualificationArgs(['node', 'qualification-cli.mjs', 'status',
     '--track', 'ecommerce']), /usage/);
@@ -84,4 +88,17 @@ test('pending modular L2 resolves only the current exact recipe', () => {
   assert.equal(qualificationReadiness('ecommerce', 2,
     'ecommerce.sequential-l2').scope.recipe.id, 'ecommerce.sequential-l2');
   assert.equal(qualificationReadiness('ecommerce', 2).scope.recipe.id, 'ecommerce.sequential-l2');
+});
+
+test('a shared progression recipe resolves qualification commands for each exact depth', () => {
+  const l2 = qualificationReadiness('ecommerce', 2, 'ecommerce.progression-catalog');
+  const l3 = qualificationReadiness('ecommerce', 3, 'ecommerce.progression-catalog');
+  assert.equal(l2.scope.calibration.id, 'ecommerce.dependency-l2-calibration');
+  assert.equal(l3.scope.calibration.id, 'ecommerce.dependency-l3-calibration');
+  assert.notDeepEqual(l2.requiredEvidence, []);
+  assert.notEqual(l2.defectChecks.totalChecks, l3.defectChecks.totalChecks);
+  for (const status of [l2, l3]) {
+    assert.ok(status.commands.filter(command => command.startsWith('qualify-reference '))
+      .every(command => command.includes('--feature-catalog progression/ecommerce.json')));
+  }
 });

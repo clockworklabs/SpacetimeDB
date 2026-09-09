@@ -182,7 +182,7 @@ async function main() {
         binding = resolveRecipeRelease(track, args.level, args.recipe);
         if (!binding) throw new Error(`${trackName} L${args.level} has no recipe release`);
         const calibration = resolveCalibrationForRelease(binding.release,
-          { trackRoot: track.dir, stackBenchRoot: ROOT });
+          { trackRoot: track.dir, stackBenchRoot: ROOT, alias: `L${args.level}` });
         if (!calibration) throw new Error(`${trackName} L${args.level} has no calibration`);
         qualification = createNullQualification(binding, calibration);
         binding = qualification.binding;

@@ -792,6 +792,7 @@ async function main() {
   const calibration = resolveCalibrationForRelease(recipeBinding?.release ?? null, {
     trackRoot: track.dir,
     stackBenchRoot: ROOT,
+    alias: `L${args.level}`,
   });
   const observationSuffix = args.observation === 'observed' ? '-observed' : '';
   const bundleArtifactId = `${args.parentAttemptId ?? args.label}-grade-bundle-l${args.level}${observationSuffix}`;

@@ -170,7 +170,7 @@ export function qualificationReadiness(trackName: string, level: number, recipe:
   const recipeOption = ` --recipe ${binding.release.id}`;
   const featureCatalog = calibration.qualification.featureCatalog;
   const featureCatalogOption = featureCatalog
-    ? ` --feature-catalog ${featureCatalog.id}` : '';
+    ? ` --feature-catalog ${featureCatalog.path}` : '';
   const combinedReferenceEvidence = calibration.qualification.referenceRepetitions
     === calibration.qualification.mutationRepetitions;
   const artifactStem = `${trackName}-l${level}-${binding.release.contentSha256.slice(0, 12)}`;

@@ -945,6 +945,7 @@ async function main(): Promise<void> {
     calibration = resolveCalibrationForRelease(recipeIdentityRelease, {
       trackRoot: track.dir,
       stackBenchRoot: ROOT,
+      alias: `L${args.level}`,
     });
   }
   spacetime = args.backend
