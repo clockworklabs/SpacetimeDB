@@ -88,6 +88,10 @@ impl Fixture {
             .env("NO_PROXY", "*")
             .env("no_proxy", "*")
             .envs(shell.iter().copied())
+            // Avoid platform directory discovery after clearing the environment,
+            // including Windows' known-folder lookup for LocalAppData.
+            .arg("--root-dir")
+            .arg(self.test.project_dir.path())
             .arg("--config-path")
             .arg(&self.test.config_path)
             .args(args)
