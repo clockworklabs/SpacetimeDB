@@ -18,7 +18,7 @@ import {
   buildSummarizerUserContent,
   augmentSystemWithSummary,
   formatMessagesForSummarizer,
-} from '../src/summarize.ts';
+} from '@spacetimedb/agents';
 import type { HttpLike } from '@spacetimedb/agents/openrouter';
 import type { InvokeResult } from '@spacetimedb/agents';
 

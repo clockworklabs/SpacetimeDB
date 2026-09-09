@@ -21,7 +21,7 @@ import {
   augmentSystemWithSummary,
   buildSummarizerUserContent,
   pickSummarizationCandidates,
-} from './summarize';
+} from '@spacetimedb/agents';
 import type { Tx } from './types';
 
 type WriteCtx = Tx;

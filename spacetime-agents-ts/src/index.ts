@@ -43,3 +43,10 @@ export {
   BUILT_IN_EMBEDDING_PROVIDERS,
 } from './embeddings.ts';
 export type { EmbeddingProvider, EmbeddingResult } from './embeddings.ts';
+
+export {
+  pickSummarizationCandidates,
+  formatMessagesForSummarizer,
+  buildSummarizerUserContent,
+  augmentSystemWithSummary,
+} from './submodule/summarize';
