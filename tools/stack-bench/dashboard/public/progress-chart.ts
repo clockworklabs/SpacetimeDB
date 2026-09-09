@@ -41,11 +41,11 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
     const shown = stack.attempts.filter(attempt => !hidden.has(attempt.id)).length;
     return `<div class="progress-stack" role="group" aria-label="${esc(stackLabel(stack.stack))}">`
       + `<button type="button" class="chart-stack-toggle" data-chart-stack="${esc(stack.stack)}" aria-pressed="${shown === 0 ? 'false' : shown === stack.attempts.length ? 'true' : 'mixed'}" title="Show or hide all ${esc(stackLabel(stack.stack))} runs"><svg class="chart-swatch" width="16" height="12" aria-hidden="true"><path d="M0 6 H16" stroke="${color(stack.stack)}" stroke-width="3"/></svg>${esc(stackLabel(stack.stack))}</button>`
-      + stack.attempts.map(attempt => {
+      + '<div class="chart-runs">' + stack.attempts.map(attempt => {
         const point = tracks.find(track => track.attempt.id === attempt.id)?.points.at(-1);
         const label = `Rep ${attempt.repetition} · ${point ? valueLabel(point.value, point.upper, 0) : 'Pending'}${attempt.excluded ? ' · Excluded' : ''}`;
         return `<button type="button" class="chart-run-toggle" data-chart-run="${esc(attempt.id)}" data-chart-series="${esc(attempt.id)}" aria-pressed="${!hidden.has(attempt.id)}" aria-label="${esc(stackLabel(stack.stack))} · ${esc(label)}" title="Show or hide ${esc(stackLabel(stack.stack))} repetition ${attempt.repetition}"><svg width="12" height="12" fill="${color(stack.stack)}" aria-hidden="true">${marker(attempt.repetition, 6, 6)}</svg>${esc(label)}</button>`;
-      }).join('') + '</div>';
+      }).join('') + '</div></div>';
   }).join('') + '</div>';
   const visible = tracks.filter(track => !hidden.has(track.attempt.id));
   if (!visible.length) return `<section class="progress-panel">${heading}${controls}<p class="chart-empty">${sheet.stacks.every(stack => stack.attempts.every(attempt => hidden.has(attempt.id))) ? 'Select a run to show its progress.' : metric === 'cost' ? 'Awaiting first timed cost receipt.' : 'Awaiting first timed grade.'}</p></section>`;

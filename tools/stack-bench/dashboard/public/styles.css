@@ -286,8 +286,11 @@ main[aria-busy="true"]:not(:has(.loading))::before { content: ''; position: fixe
 .progress-chart text { fill: var(--n3); font: 12px var(--sans); }
 .progress-grid { stroke: var(--n3); opacity: .15; }
 .progress-panel { margin-bottom: 24px; }
-.progress-controls { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 12px 0; }
-.progress-stack { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.progress-controls { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 8px; margin: 12px 0; }
+.progress-stack { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; align-items: start; }
+.chart-runs { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.progress-controls .chart-stack-toggle { max-width: 12rem; overflow-wrap: anywhere; }
+.progress-controls .chart-run-toggle { min-width: 7.5rem; font-variant-numeric: tabular-nums; }
 .progress-controls button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 8px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--n2); font: 12px var(--sans); cursor: pointer; }
 .progress-controls button:hover { background: var(--shade1); }
 .progress-controls button:focus-visible { outline: 2px solid var(--n2); outline-offset: 2px; }
