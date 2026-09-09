@@ -117,3 +117,15 @@ test('chart filters individual runs without changing the scale or hiding pending
   assert.match(empty, /Select a run/);
   assert.match(empty, /data-chart-run="run-1"/); // Controls remain available to restore runs.
 });
+
+test('distribution shows completed run percentages across providers and preserves filters', () => {
+  const sheet = { stacks: ['spacetime', 'mongodb', 'postgres'].map(stack => ({ stack,
+    attempts: [1, 2].map(repetition => ({ id: `${stack}-${repetition}`, repetition,
+      status: repetition === 1 ? 'completed' : 'running', completion: { rate: 0.75 } })) })) } as CampaignSheet;
+  const html = progressChart(sheet, null, 'distribution', 'graph', new Set(['mongodb-1']));
+  assert.match(html, /Completion distribution by provider/);
+  assert.equal((html.match(/>75%<\/text><\/g>/g) ?? []).length, 2);
+  assert.match(html, /Rep 2 .* Pending/);
+  assert.match(html, /questlines=graph&amp;chart=distribution/);
+  assert.doesNotMatch(html, /NaN|Infinity|Elapsed run time/);
+});

@@ -2,8 +2,12 @@ import type { CampaignProgression, CampaignSheet } from '../dashboard-views.js';
 import { duration, esc, stackLabel } from './format.js';
 
 export function progressChart(sheet: CampaignSheet, progression: CampaignProgression | null,
-  metric: 'completion' | 'cost' = 'completion', view = 'grid', hidden: ReadonlySet<string> = new Set()): string {
-  const tracks = (progression?.stacks ?? []).flatMap(track => {
+  metric: 'completion' | 'cost' | 'distribution' = 'completion', view = 'grid', hidden: ReadonlySet<string> = new Set()): string {
+  const tracks = metric === 'distribution' ? sheet.stacks.flatMap(stack => stack.attempts.flatMap(attempt => {
+    const rate = attempt.completion?.rate;
+    return attempt.status === 'completed' && rate != null && Number.isFinite(rate)
+      ? [{ stack: stack.stack, attempt, points: [{ elapsed: 0, value: rate * 100, upper: false }] }] : [];
+  })) : (progression?.stacks ?? []).flatMap(track => {
     const attempt = sheet.stacks.find(stack => stack.stack === track.stack)?.attempts
       .find(candidate => candidate.id === track.attemptId);
     const start = Date.parse(attempt?.executionStartedAt ?? '');
@@ -20,12 +24,14 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
     const points = [{ elapsed: 0, value: 0, upper: false }, ...observations];
     return observations.length ? [{ stack: track.stack, attempt, points }] : [];
   });
-  const label = metric === 'cost' ? 'Cost' : 'Completion';
-  const description = metric === 'cost'
+  const label = metric === 'distribution' ? 'Completion distribution' : metric === 'cost' ? 'Cost' : 'Completion';
+  const description = metric === 'distribution'
+    ? 'One point per completed run, grouped by provider. Percentage is accepted checks passed out of all selected checks. Running runs are omitted. Excluded runs are labelled.'
+    : metric === 'cost'
     ? 'Cumulative cost per run at saved grade checkpoints. Includes repairs and excluded runs. Subscription costs use the pinned API-equivalent price snapshot, not invoice charges. Unknown costs are not plotted; upper bounds are labelled. Time starts at the current execution. Lines connect recorded observations; intermediate values are not measured.'
     : 'Checks passed out of all selected checks at each saved grade. Zero marks run start before any checks pass. Each line is one repetition; elapsed time starts at that run. Excluded runs are labelled. Lines can fall after regressions. Lines connect recorded observations; intermediate values are not measured.';
-  const heading = `<div class="section-heading progress-heading"><h3 title="${description}">${label} over time</h3><nav aria-label="Chart metric">`
-    + (['completion', 'cost'] as const).map(option => `<a class="chip sm${metric === option ? ' on' : ''}"${metric === option ? ' aria-current="page"' : ''} href="?questlines=${encodeURIComponent(view)}&amp;chart=${option}">${option === 'cost' ? 'Cost' : 'Completion'}</a>`).join('') + '</nav></div>';
+  const heading = `<div class="section-heading progress-heading"><h3 title="${description}">${label}${metric === 'distribution' ? '' : ' over time'}</h3><nav aria-label="Chart metric">`
+    + (['completion', 'cost', 'distribution'] as const).map(option => `<a class="chip sm${metric === option ? ' on' : ''}"${metric === option ? ' aria-current="page"' : ''} href="?questlines=${encodeURIComponent(view)}&amp;chart=${option}">${option === 'distribution' ? 'Distribution' : option === 'cost' ? 'Cost' : 'Completion'}</a>`).join('') + '</nav></div>';
   const valueLabel = (value: number, upper = false, decimals = 1) => metric === 'cost'
     ? `${upper ? '≤' : ''}$${value.toFixed(2)}` : `${value.toFixed(decimals)}%`;
   const brandColors: Record<string, string> = { spacetime: '#4cf490', mongodb: '#b45af2', postgres: '#336791' };
@@ -48,7 +54,30 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
       }).join('') + '</div></div>';
   }).join('') + '</div>';
   const visible = tracks.filter(track => !hidden.has(track.attempt.id));
-  if (!visible.length) return `<section class="progress-panel">${heading}${controls}<p class="chart-empty">${sheet.stacks.every(stack => stack.attempts.every(attempt => hidden.has(attempt.id))) ? 'Select a run to show its progress.' : metric === 'cost' ? 'Awaiting first timed cost receipt.' : 'Awaiting first timed grade.'}</p></section>`;
+  if (!visible.length) return `<section class="progress-panel">${heading}${controls}<p class="chart-empty">${tracks.length > 0 && tracks.every(track => hidden.has(track.attempt.id)) ? 'Select a run to show its progress.' : metric === 'distribution' ? 'Awaiting first completed run.' : metric === 'cost' ? 'Awaiting first timed cost receipt.' : 'Awaiting first timed grade.'}</p></section>`;
+  if (metric === 'distribution') {
+    const axisLeft = 150;
+    const position = (value: number) => axisLeft + (910 - axisLeft) * value / 100;
+    const rowHeight = Math.max(70, ...sheet.stacks.map(stack => stack.attempts.length * 20 + 24));
+    const bottom = sheet.stacks.length * rowHeight + 24;
+    const ticks = [0, 25, 50, 75, 100].map(value =>
+      `<line class="progress-grid" x1="${position(value)}" x2="${position(value)}" y1="12" y2="${bottom}"/>`
+      + `<text x="${position(value)}" y="${bottom + 22}" text-anchor="middle">${value}%</text>`).join('');
+    const rows = sheet.stacks.map((stack, index) => {
+      const center = 24 + rowHeight * (index + 0.5);
+      const points = visible.filter(track => track.stack === stack.stack);
+      return `<text x="12" y="${center + 4}">${esc(stackLabel(stack.stack))}</text>`
+        + points.map(track => {
+          const value = track.points[0]!.value;
+          const at = center + (stack.attempts.findIndex(a => a.id === track.attempt.id) - (stack.attempts.length - 1) / 2) * 20;
+          return `<g data-chart-series="${esc(track.attempt.id)}" fill="${color(stack.stack)}">`
+            + marker(track.attempt.repetition, position(value), at, `<title>${esc(stackLabel(stack.stack))} / Rep ${track.attempt.repetition}: ${valueLabel(value)}${track.attempt.excluded ? ' / Excluded' : ''}</title>`)
+            + `<text x="${position(value) + 8}" y="${at + 4}">${valueLabel(value, false, 0)}</text></g>`;
+        }).join('');
+    }).join('');
+    return `<section class="progress-panel">${heading}${controls}<div class="chart-scroll" role="region" aria-label="Completion distribution by provider" tabindex="0">`
+      + `<svg class="progress-chart" viewBox="0 0 980 ${bottom + 45}" role="img" aria-label="Completion distribution by provider"><title>${description}</title>${ticks}${rows}</svg></div></section>`;
+  }
   const ceiling = metric === 'cost' ? Math.max(0.01, ...tracks.flatMap(track => track.points.map(point => point.value))) : 100;
   const maximum = Math.max(60, ...tracks.flatMap(track => track.points.map(point => point.elapsed)));
   const left = metric === 'cost' ? 80 : 48;

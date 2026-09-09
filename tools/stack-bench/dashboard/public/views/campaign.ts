@@ -13,7 +13,7 @@ export interface CampaignPageInput {
   sheet: CampaignSheet;
   progression: CampaignProgression | null;
   view: QuestlineView;
-  chart?: 'completion' | 'cost';
+  chart?: 'completion' | 'cost' | 'distribution';
   hiddenChartRuns?: ReadonlySet<string>;
   step: number;
 }
