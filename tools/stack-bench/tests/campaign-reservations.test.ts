@@ -15,11 +15,11 @@ import { backendResourceLockKeys, claimBackendResources, createBackendLease, rea
 
 const linux = { skip: process.platform !== 'linux' ? 'Kernel flock requires Linux' : false };
 
-test('one-use child delegation preserves parent reservations across successive attempts', linux, () => {
+test('one-use child delegation preserves parent reservations across successive attempts', linux, async () => {
   const root = mkdtempSync(join(tmpdir(), 'campaign-borrow-'));
   try {
     const plan = compileCampaignFile(join(STACK_BENCH_ROOT, 'tests', 'fixtures', 'campaign.deterministic.json'));
-    const admitted = runCampaignAdmission(plan, root, {
+    const admitted = await runCampaignAdmission(plan, root, {
       env: { STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') },
       probePort: () => ({ free: true }),
       preflight: request => ({ schemaVersion: 1, generatedAt: new Date().toISOString(),
@@ -105,7 +105,7 @@ test('three concurrent nine-worker campaigns claim 27 disjoint workers without a
   }
 });
 
-test('dynamic admission skips live legacy capacity and port reservations without reclaiming them', linux, () => {
+test('dynamic admission skips live legacy capacity and port reservations without reclaiming them', linux, async () => {
   const root = mkdtempSync(join(tmpdir(), 'campaign-legacy-reservation-'));
   const locks = join(root, 'locks');
   const plan = compileCampaignFile(join(STACK_BENCH_ROOT, 'tests', 'fixtures', 'campaign.deterministic.json'));
@@ -121,7 +121,7 @@ test('dynamic admission skips live legacy capacity and port reservations without
     ]).flat();
     claimBackendResources(join(root, 'legacy.json'), legacy, { root: locks, keys });
     const before = legacy.resources.locks.map(lock => readFileSync(lock.path, 'utf8'));
-    const admitted = runCampaignAdmission(plan, root, {
+    const admitted = await runCampaignAdmission(plan, root, {
       env: { STACK_BENCH_RESOURCE_LOCK_DIR: locks }, probePort: () => ({ free: true }),
       preflight: request => ({ schemaVersion: 1, generatedAt: new Date().toISOString(),
         request: { backends: request.backends, track: request.track, levels: request.levelList,
@@ -139,15 +139,15 @@ test('dynamic admission skips live legacy capacity and port reservations without
 });
 
 
-test('attempt admissions reserve only their stack and release slots for another campaign', linux, () => {
+test('attempt admissions reserve only their stack and release slots for another campaign', linux, async () => {
   const root = mkdtempSync(join(tmpdir(), 'campaign-attempt-reservation-'));
   const locks = join(root, 'locks');
   const plan = compileCampaignFile(join(STACK_BENCH_ROOT, 'tests', 'fixtures', 'campaign.deterministic.json'));
   const pg = plan.attempts.find(attempt => attempt.stack === 'postgres')!;
   const mongo = plan.attempts.find(attempt => attempt.stack === 'mongodb')!;
-  const reservations: NonNullable<ReturnType<typeof runCampaignAdmission>['reservation']>[] = [];
-  const admit = (attempt: typeof pg, directory: string) => {
-    const result = runCampaignAdmission(plan, join(root, directory), {
+  const reservations: NonNullable<Awaited<ReturnType<typeof runCampaignAdmission>>['reservation']>[] = [];
+  const admit = async (attempt: typeof pg, directory: string) => {
+    const result = await runCampaignAdmission(plan, join(root, directory), {
       attempt, env: { STACK_BENCH_RESOURCE_LOCK_DIR: locks }, probePort: () => ({ free: true }),
       preflight: request => {
         assert.deepEqual(request.backends, [attempt.stack]);
@@ -166,16 +166,16 @@ test('attempt admissions reserve only their stack and release slots for another 
     return result;
   };
   try {
-    const first = admit(pg, 'first');
-    const otherStack = admit(mongo, 'second');
+    const first = await admit(pg, 'first');
+    const otherStack = await admit(mongo, 'second');
     assert.deepEqual(first.runIndices, [0]);
     assert.deepEqual(otherStack.runIndices, [0]);
-    const otherPg = admit(pg, 'second');
+    const otherPg = await admit(pg, 'second');
     assert.deepEqual(otherPg.runIndices, [1]);
     const live = readBackendLease(otherPg.reservation!.path, { token: otherPg.reservation!.token });
     releaseCampaignReservation(first.reservation!);
     reservations.splice(reservations.indexOf(first.reservation!), 1);
-    assert.deepEqual(admit(pg, 'first').runIndices, [0]);
+    assert.deepEqual((await admit(pg, 'first')).runIndices, [0]);
     verifyResourceLocks(live);
   } finally {
     for (const reservation of reservations) releaseCampaignReservation(reservation);

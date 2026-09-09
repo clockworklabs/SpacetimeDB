@@ -70,6 +70,36 @@ fail before further provider calls. No automatic account rotation occurs.
 
 ## Ownership, waiting, and recovery
 
+### Automatic local dispatch
+
+Run a worker to pick up queued jobs without invoking `job work` for each submission:
+
+```sh
+job worker --host worker-east --concurrency 2
+```
+
+Concurrency here counts **campaign jobs**, not attempts. Two jobs can each run nine
+attempts. Each campaign retains its selected parallelism. There is no fixed job ceiling;
+set concurrency to the work the host and selected provider accounts can support.
+The worker checks host assignments and uses the same exclusive job claims as `job work`.
+It polls the local job store once per second when idle. No second queue or dependency is used.
+
+The appliance provides an opt-in `worker` Compose profile. Set `STACK_BENCH_HOST_ID`
+and `STACK_BENCH_JOB_CONCURRENCY`, then start the `worker` service with the normal setup
+environment. Starting it authorizes execution of eligible queued jobs. Do not point an
+experimental worker at a live queue. Use the controller image required by those plans.
+
+SIGTERM/SIGINT stops new claims and waits for active jobs. Use `job cancel` to stop a
+specific campaign. Compose allows 24 hours for draining; override `stop_grace_period`
+if admitted jobs can run longer. A forced kill retains claims and requires inspection.
+A job failure stays recorded while the worker continues. A store or pre-claim error
+stops admission and drains active work, so broken input does not enter a retry loop.
+
+This dispatcher is for the local appliance. At large backlog sizes, use the surrounding
+product's durable queue to call `job work`; the local store scans directories. A production
+multi-host deployment also needs shared credential quotas, a durable central job store,
+and explicit evidence transfer. These are not supplied by the local dispatcher.
+
 Workers claim jobs with an atomic immutable record. A second worker cannot launch the
 same job. Claims do not expire: a worker that loses contact may still have paid requests
 in flight. A killed worker therefore leaves a retained claim for investigation rather than

@@ -204,14 +204,14 @@ test('the model-free reference adapter can advance through progression levels', 
   assert.equal(parsed.level, 2);
 });
 
-test('campaign admission sends the exact catalog, mode, and default build image to preflight', () => {
+test('campaign admission sends the exact catalog, mode, and default build image to preflight', async () => {
   const output = mkdtempSync(join(tmpdir(), 'stack-bench-progression-admission-'));
   try {
     const plan = referencePlan();
     const featureCatalog = plan.featureCatalog;
     assert(featureCatalog);
     const calls: CampaignAdmissionPreflightRequest[] = [];
-    const admission = runCampaignAdmission(plan, output, {
+    const admission = await runCampaignAdmission(plan, output, {
       env: { STACK_BENCH_RESOURCE_LOCK_DIR: join(output, 'locks') }, now: '2026-08-25T00:00:00.000Z', uuid: () => 'test',
       preflight: request => {
         calls.push(request);

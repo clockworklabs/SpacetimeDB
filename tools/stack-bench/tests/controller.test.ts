@@ -231,5 +231,6 @@ test('named jobs defer credential selection and preserve mixed provider file sou
     STACK_BENCH_CLAUDE_OAUTH_TOKEN_FILE: '/private/default' }).CLAUDE_CODE_OAUTH_TOKEN_FILE, '/private/default');
   assert.equal(controllerCommandRequiresAgentAuth('job', ['submit']), false);
   assert.equal(controllerCommandRequiresAgentAuth('job', ['work']), true);
+  assert.equal(controllerCommandRequiresAgentAuth('job', ['worker']), true);
   assert.match(resolveControllerCommand(['job', 'list'])!.args[0]!, /job-cli.js$/);
 });

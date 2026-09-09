@@ -75,6 +75,14 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  worker:
+    extends:
+      service: controller
+    profiles: ["worker"]
+    # SIGTERM stops admission and drains claimed campaigns. Explicit job cancellation stops a run.
+    stop_grace_period: 24h
+    command: ["job", "worker", "--host", "${STACK_BENCH_HOST_ID:-}", "--concurrency", "${STACK_BENCH_JOB_CONCURRENCY:-}"]
+
   dashboard:
     extends:
       service: controller

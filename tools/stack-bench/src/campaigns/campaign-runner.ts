@@ -25,7 +25,7 @@ import { RUN_INDEX_CAP } from '../composition/tracks.js';
 import { readCampaignAdmission, runCampaignAdmission, delegateCampaignReservation,
   closeCampaignDelegation, releaseCampaignReservation, CampaignResourceUnavailable } from './campaign-admission.js';
 import { recoverCampaignReservations } from './campaign-admission.js';
-import { resolveExecutionCredentials } from '../agents/credential-profiles.js';
+import { resolveExecutionCredentials, validateExecutionCredentialTargets } from '../agents/credential-profiles.js';
 import type { ExecutionCredentials } from '../agents/credential-profiles.js';
 import type { CampaignReservation } from './campaign-admission.js';
 import { campaignChildPath as contained } from './campaign-path.js';
@@ -406,7 +406,7 @@ export async function executeCampaign(campaignFile: string, directory: string,
       env?: NodeJS.ProcessEnv;
       execute?: ExecuteProcess;
       admit?: (plan: CompiledCampaignPlan, directory: string,
-        options: { env: NodeJS.ProcessEnv; attempt: CampaignAttemptPlan; excludedRunIndices: number[] }) => CampaignAdmissionAuthority;
+        options: { env: NodeJS.ProcessEnv; attempt: CampaignAttemptPlan; excludedRunIndices: number[]; signal?: AbortSignal }) => CampaignAdmissionAuthority | Promise<CampaignAdmissionAuthority>;
       rescue?: (supervisorState: string, output: string) => void;
       signal?: AbortSignal | null;
       capacityPolicy?: 'wait' | 'fail';
@@ -437,6 +437,8 @@ export async function executeCampaign(campaignFile: string, directory: string,
     }
   }
   if (capacityPolicy !== 'wait' && capacityPolicy !== 'fail') throw new Error('capacityPolicy must be wait or fail');
+  validateExecutionCredentialTargets(executionCredentials, plan.agents.map(agent => agent.adapter),
+    plan.attempts.map(attempt => attempt.id));
   const executionEnv = campaignExecutionEnvironment(plan, env);
   const lock = acquireCampaignLock(directory, plan);
   const cancellation = watchCampaignCancellation(lock, signal);
@@ -578,6 +580,7 @@ export async function executeCampaign(campaignFile: string, directory: string,
     let stopLaunching = signal?.aborted === true;
     let dispatchFailure: unknown;
     while (true) {
+      let waitingForCapacity = false;
       try {
         while (!stopLaunching && !signal?.aborted && active.size < plan.summary.parallelism) {
           const pending = state.attempts.find(attempt => attempt.status === 'pending');
@@ -598,13 +601,15 @@ export async function executeCampaign(campaignFile: string, directory: string,
           }
           let admission: CampaignAdmissionAuthority;
           try {
-            admission = admit(plan, initialized.paths.root, { env: credentials.env, attempt: pending.plan,
+            admission = await admit(plan, initialized.paths.root, { env: credentials.env, attempt: pending.plan,
+              signal: signal ?? undefined,
               excludedRunIndices: state.attempts.flatMap(attempt => attempt.executions
                 .filter(execution => execution.status === 'running').map(execution => execution.runIndex)) });
           } catch (error) {
+            if (signal?.aborted) break;
             if (!(error instanceof CampaignResourceUnavailable) || capacityPolicy === 'fail') throw error;
             onCapacityWait?.(error.message);
-            if (active.size) break;
+            if (active.size) { waitingForCapacity = true; break; }
             try { await delay(1000, undefined, { signal: signal ?? undefined }); }
             catch (error) { if (!signal?.aborted) throw error; }
             continue;
@@ -613,6 +618,10 @@ export async function executeCampaign(campaignFile: string, directory: string,
             throw new Error('attempt preflight admission failed; no attempt was claimed');
           }
           const reservation = admission.reservation;
+          if (signal?.aborted) {
+            if (reservation) releaseCampaignReservation(reservation);
+            break;
+          }
           let claim: CampaignClaim;
           try {
             onCapacityWait?.(null);
@@ -654,7 +663,12 @@ export async function executeCampaign(campaignFile: string, directory: string,
         if (dispatchFailure) throw dispatchFailure;
         return state;
       }
-      const completed = await Promise.race(active.values());
+      const completed = await Promise.race([
+        ...active.values(),
+        ...(waitingForCapacity ? [delay(1000, null, { signal: signal ?? undefined, ref: false })
+          .catch(error => { if (!signal?.aborted) throw error; return null; })] : []),
+      ]);
+      if (!completed) continue;
       active.delete(completed.claim.executionId);
       if (signal?.aborted) stopLaunching = true;
       if (completed.result.cleanupRequired === true) {

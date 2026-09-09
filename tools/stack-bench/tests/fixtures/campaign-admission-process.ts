@@ -17,7 +17,7 @@ const plan = compileCampaignFile(manifestPath);
 process.send?.('ready');
 let reservation: CampaignReservation | undefined;
 let joinedRace = false;
-process.on('message', message => {
+process.on('message', async message => {
   if (message === 'release') {
     if (reservation) releaseCampaignReservation(reservation);
     reservation = undefined;
@@ -25,7 +25,7 @@ process.on('message', message => {
     return;
   }
   try {
-    const result = runCampaignAdmission(plan, directory, { env: { STACK_BENCH_RESOURCE_LOCK_DIR: locks,
+    const result = await runCampaignAdmission(plan, directory, { env: { STACK_BENCH_RESOURCE_LOCK_DIR: locks,
       STACK_BENCH_APPLIANCE: '1' },
     probePort: () => {
       if (racers && !joinedRace) {

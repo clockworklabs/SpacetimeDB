@@ -5,13 +5,15 @@ import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { cancelExecutionJob, listExecutionJobs, readExecutionJob,
   submitExecutionJob, workExecutionJob } from '../src/campaigns/execution-jobs.js';
+import { runExecutionWorker } from '../src/campaigns/execution-worker.js';
 
 export async function jobCommand(argv: string[], env: NodeJS.ProcessEnv = process.env) {
   const { values, positionals } = parseArgs({ args: argv, allowPositionals: true, options: {
     results: { type: 'string' }, host: { type: 'string' }, after: { type: 'string' },
-    limit: { type: 'string' },
+    limit: { type: 'string' }, concurrency: { type: 'string' },
   } });
   const [command, argument] = positionals;
+  if (argv[0] !== command) throw new Error('put the job command before its options');
   if (positionals.length > 2) throw new Error('unexpected job arguments');
   const results = resolve(values.results ?? env.STACK_BENCH_RESULTS_DIR ?? 'results');
   if (command === 'submit' && argument) return submitExecutionJob(results,
@@ -22,16 +24,23 @@ export async function jobCommand(argv: string[], env: NodeJS.ProcessEnv = proces
   }
   if (command === 'list' && !argument) return listExecutionJobs(results,
     { after: values.after, limit: values.limit === undefined ? undefined : Number(values.limit) });
-  if (command === 'work' && argument) {
+  if ((command === 'work' && argument) || (command === 'worker' && !argument)) {
     const host = values.host ?? env.STACK_BENCH_HOST_ID;
-    if (!host) throw new Error('job work requires --host or STACK_BENCH_HOST_ID');
+    if (!host) throw new Error('job work/worker requires --host or STACK_BENCH_HOST_ID');
     const controller = new AbortController();
     const stop = () => controller.abort();
     process.on('SIGTERM', stop); process.on('SIGINT', stop);
-    try { return await workExecutionJob(results, argument, host, { env, signal: controller.signal }); }
+    try {
+      if (command === 'worker') {
+        await runExecutionWorker(results, host, { env, signal: controller.signal,
+          concurrency: Number(values.concurrency) });
+        return { status: 'stopped' as const };
+      }
+      return await workExecutionJob(results, argument!, host, { env, signal: controller.signal });
+    }
     finally { process.off('SIGTERM', stop); process.off('SIGINT', stop); }
   }
-  throw new Error('use job submit <json|->, list, status <id>, cancel <id>, or work <id> --host <host>');
+  throw new Error('use job submit <json|->, list, status <id>, cancel <id>, work <id> --host <host>, or worker --host <host> --concurrency <jobs>');
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {

@@ -1047,7 +1047,7 @@ test('failed cleanup leaves supervisor authority reconcilable instead of finaliz
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('interrupted parallel work advances only after every exact cleanup is proven', () => {
+test('interrupted parallel work advances only after every exact cleanup is proven', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-reconcile-'));
   try {
     // Coding stacks admit one run at a time; the stub starts no coding
@@ -1060,7 +1060,7 @@ test('interrupted parallel work advances only after every exact cleanup is prove
     const plan = compileCampaignFile(campaignPath);
     const initialized = initializeCampaignDirectory(plan, root,
       { now: '2026-08-12T00:00:00.000Z' });
-    const admission = runCampaignAdmission(plan, root, {
+    const admission = await runCampaignAdmission(plan, root, {
       env: { STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') }, now: '2026-08-12T00:00:30.000Z', uuid: () => 'reconcile',
       preflight: request => ({ schemaVersion: 1, generatedAt: '2026-08-12T00:00:30.000Z',
         request: { backends: request.backends, track: request.track, levels: request.levelList,
@@ -1095,13 +1095,13 @@ test('interrupted parallel work advances only after every exact cleanup is prove
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('reconciliation accepts the clean public proof left by authenticated recovery', { skip: process.platform !== 'linux' ? 'Resource admission requires Linux flock' : false }, () => {
+test('reconciliation accepts the clean public proof left by authenticated recovery', { skip: process.platform !== 'linux' ? 'Resource admission requires Linux flock' : false }, async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-recovered-'));
   try {
     const plan = examplePlan();
     const initialized = initializeCampaignDirectory(plan, root,
       { now: '2026-08-12T00:00:00.000Z' });
-    const admission = runCampaignAdmission(plan, root, {
+    const admission = await runCampaignAdmission(plan, root, {
       env: { STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') }, now: '2026-08-12T00:00:30.000Z', uuid: () => 'recovered',
       preflight: request => ({ schemaVersion: 1, generatedAt: '2026-08-12T00:00:30.000Z',
         request: { backends: request.backends, track: request.track, levels: request.levelList,
@@ -1160,12 +1160,12 @@ test('reconciliation accepts the clean public proof left by authenticated recove
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('campaign admission covers every stack once per distinct agent adapter and writes typed evidence', { skip: process.platform !== 'linux' ? 'Resource admission requires Linux flock' : false }, () => {
+test('campaign admission covers every stack once per distinct agent adapter and writes typed evidence', { skip: process.platform !== 'linux' ? 'Resource admission requires Linux flock' : false }, async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-admission-'));
   try {
     const plan = examplePlan();
     const calls: PreflightRequest[] = [];
-    const admission = runCampaignAdmission(plan, root, {
+    const admission = await runCampaignAdmission(plan, root, {
       env: { STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') }, now: '2026-08-12T00:00:00.000Z', uuid: () => 'test',
       preflight: request => {
         calls.push(request);
@@ -1189,12 +1189,12 @@ test('campaign admission covers every stack once per distinct agent adapter and 
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('campaign admission accepts a modular level selection without legacy pack filters', { skip: process.platform !== 'linux' ? 'Resource admission requires Linux flock' : false }, () => {
+test('campaign admission accepts a modular level selection without legacy pack filters', { skip: process.platform !== 'linux' ? 'Resource admission requires Linux flock' : false }, async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-modular-campaign-admission-'));
   try {
     const plan = compileCampaignFile(productBrief);
     const calls: PreflightRequest[] = [];
-    const admission = runCampaignAdmission(plan, root, {
+    const admission = await runCampaignAdmission(plan, root, {
       env: { STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') }, now: '2026-08-12T00:00:00.000Z', uuid: () => 'modular',
       preflight: request => {
         calls.push(request);
@@ -1263,5 +1263,64 @@ test('failed dispatch drains and records already active attempts before returnin
     assert.equal(state.summary.executions, 1);
     assert.equal(state.summary.invalid, 1);
     assert.equal(state.summary.pending, state.summary.total - 1);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+
+test('capacity wait retries while an existing attempt is active and wakes on cancellation', async () => {
+  const { CampaignResourceUnavailable } = await import('../src/campaigns/campaign-admission.js');
+  const root = mkdtempSync(join(tmpdir(), 'campaign-active-capacity-wait-'));
+  try {
+    const definition = JSON.parse(readFileSync(example, 'utf8'));
+    definition.parallelism = 2;
+    const path = join(root, 'plan.json');
+    writeFileSync(path, JSON.stringify(definition));
+    for (const cancel of [false, true]) {
+      const controller = new AbortController();
+      let releaseFirst!: () => void;
+      const first = new Promise<void>(resolve => { releaseFirst = resolve; });
+      const deadline = setTimeout(releaseFirst, 5000);
+      let admissions = 0, started = 0, waits = 0;
+      try {
+        const state = await executeCampaign(path, join(root, cancel ? 'cancel' : 'resume'), {
+          mode: 'model-free-trial', capacityPolicy: 'wait', signal: controller.signal,
+          admit: (_plan, _directory, options) => {
+            admissions++;
+            if (admissions === 2) throw new CampaignResourceUnavailable('another campaign owns the slot');
+            return { id: `admission-${admissions}`, payload: { ok: true },
+              runIndices: [options.excludedRunIndices.includes(0) ? 1 : 0] };
+          },
+          onCapacityWait: reason => {
+            if (reason) { waits++; if (cancel) controller.abort(); }
+          },
+          execute: async (_command, _argv, options) => {
+            started++;
+            if (started === 1) {
+              options.signal?.addEventListener('abort', releaseFirst, { once: true });
+              await first;
+              options.signal?.removeEventListener('abort', releaseFirst);
+            } else releaseFirst();
+            return { code: 1, timedOut: false, cancelled: cancel };
+          },
+        });
+        assert.equal(waits, 1);
+        assert.equal(started, cancel ? 1 : 2);
+        assert.equal(state.summary.running, 0);
+        assert.equal(state.summary.executions, started);
+      } finally { clearTimeout(deadline); releaseFirst(); }
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+
+test('direct execution rejects unknown credential targets before admission', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'campaign-credential-targets-'));
+  try {
+    for (const executionCredentials of [{ adapters: { typo: 'work' } }, { attempts: { typo: 'work' } }]) {
+      await assert.rejects(executeCampaign(example, root, { mode: 'model-free-trial', executionCredentials,
+        admit: () => { throw new Error('admission must not run'); },
+      }), /unknown (adapter|attempt)/);
+    }
+    assert.equal(existsSync(join(root, 'state.json')), false);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

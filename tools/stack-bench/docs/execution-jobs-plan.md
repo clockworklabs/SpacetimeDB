@@ -19,6 +19,7 @@ The campaign fixes the experiment. A job assigns its execution policy and creden
 4. Add durable, idempotent job submission and a worker command. Snapshot the campaign input. Record the selected host and preserve a claim after worker loss. Reuse the existing atomic record writer and campaign runner.
 5. Expose the same submission operation through the authenticated dashboard controls. External services can call the exported submission/worker functions or CLI without implementing campaign internals.
 6. Verify synthetic credentials, duplicate submissions, competing workers, cancellation, resource reuse, failure ownership, and retained evidence. Run model-free integration before any paid execution.
+7. Supply an opt-in local worker service that polls submitted jobs, uses explicit job concurrency, and drains on shutdown. Reuse the same job claim and runner. Keep per-campaign attempt parallelism unchanged.
 
 The first placement unit is a complete campaign on one worker host. Multiple hosts can claim different jobs. Splitting one campaign across hosts requires a separate distributed attempt coordinator and artifact-transfer contract; do not disguise filesystem locks as that coordinator.
 

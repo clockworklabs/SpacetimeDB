@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -27,7 +27,7 @@ const passingPreflight = (request: CampaignAdmissionPreflightRequest) => ({
   checks: [{ id: 'smoke.container', status: 'pass' as const, summary: 'passed' }],
 });
 
-test('campaign admission receives only the feature catalog levels in the compiled plan', { skip: process.platform !== 'linux' ? 'Kernel flock requires Linux' : false }, () => {
+test('campaign admission receives only the feature catalog levels in the compiled plan', { skip: process.platform !== 'linux' ? 'Kernel flock requires Linux' : false }, async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-scoped-admission-'));
   try {
     const value = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, 'appliance',
@@ -39,7 +39,7 @@ test('campaign admission receives only the feature catalog levels in the compile
     writeFileSync(campaignPath, `${JSON.stringify(value, null, 2)}\n`);
     const plan = compileCampaignFile(campaignPath);
     const requests: CampaignAdmissionPreflightRequest[] = [];
-    const result = runCampaignAdmission(plan, root, {       now: createdAt,
+    const result = await runCampaignAdmission(plan, root, {       now: createdAt,
       uuid: () => 'scoped',
       env: { STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') },
       preflight: request => {
@@ -61,7 +61,7 @@ test('campaign admission receives only the feature catalog levels in the compile
   }
 });
 
-test('campaign admission selects a free run slot', { skip: process.platform !== 'linux' ? 'Kernel flock requires Linux' : false }, () => {
+test('campaign admission selects a free run slot', { skip: process.platform !== 'linux' ? 'Kernel flock requires Linux' : false }, async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-free-slot-admission-'));
   try {
     const value = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, 'tests', 'fixtures',
@@ -72,7 +72,7 @@ test('campaign admission selects a free run slot', { skip: process.platform !== 
     const plan = compileCampaignFile(campaignPath);
     const requests: CampaignAdmissionPreflightRequest[] = [];
     let portProbes = 0;
-    const result = runCampaignAdmission(plan, root, {       now: createdAt,
+    const result = await runCampaignAdmission(plan, root, {       now: createdAt,
       uuid: () => 'free-slot',
       env: { STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') },
       probePort: () => ({ free: ++portProbes > 1 }),
@@ -121,3 +121,40 @@ test('admission requires a distinct report for each provider route and rejects s
     assert.throws(() => validateCampaignAdmission(substituted, plan, root), /must contain one/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+
+test('occupied-port scans yield to cancellation before exhausting the TCP range', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'campaign-scan-cancel-'));
+  const controller = new AbortController();
+  try {
+    const plan = compileCampaignFile(join(STACK_BENCH_ROOT, 'tests', 'fixtures', 'campaign.deterministic.json'));
+    let probes = 0;
+    await assert.rejects(runCampaignAdmission(plan, root, {
+      signal: controller.signal, env: { STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') },
+      probePort: () => {
+        if (++probes === 1) setImmediate(() => controller.abort());
+        return { free: false };
+      },
+      preflight: () => { throw new Error('must not reach preflight'); },
+    }), { name: 'AbortError' });
+    assert(probes > 0 && probes <= 16, `scan did ${probes} probes without yielding`);
+    assert.equal(existsSync(join(root, 'admissions')), false);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('cancellation after reservation releases exact owned locks before admission returns',
+  { skip: process.platform !== 'linux' ? 'Kernel flock requires Linux' : false }, async () => {
+    const root = mkdtempSync(join(tmpdir(), 'campaign-preflight-cancel-'));
+    const controller = new AbortController();
+    const locks = join(root, 'locks');
+    try {
+      const plan = compileCampaignFile(join(STACK_BENCH_ROOT, 'tests', 'fixtures', 'campaign.deterministic.json'));
+      await assert.rejects(runCampaignAdmission(plan, root, {
+        signal: controller.signal, env: { STACK_BENCH_RESOURCE_LOCK_DIR: locks },
+        probePort: () => ({ free: true }),
+        preflight: request => { controller.abort(); return passingPreflight(request); },
+      }), { name: 'AbortError' });
+      assert.equal(readdirSync(locks).filter(name => name.endsWith('.lock.json')).length, 0);
+      assert.equal(existsSync(join(root, 'admissions')), false);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });

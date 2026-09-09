@@ -1,3 +1,4 @@
+import { readPinnedExecutionCredential } from '../src/agents/credential-profiles.js';
 import { existsSync, readFileSync } from 'node:fs';
 import type { PathLike } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
@@ -25,6 +26,17 @@ export interface ResolveContainerAuthOptions {
 
 export function resolveContainerAuth({ provider = 'anthropic', apiKey = '', env = process.env, credentialsPath,
   exists = existsSync, read = readFileSync as ReadTextFile }: ResolveContainerAuthOptions = {}): ContainerAuth {
+  const pinned = readPinnedExecutionCredential(env);
+  if (pinned) {
+    if (pinned.assignment.provider !== provider) throw new Error('Pinned credential provider does not match invocation');
+    apiKey = pinned.assignment.mode === 'api-key' ? pinned.secret : '';
+    // Resolve the broker credential from the same bytes that passed its pin check.
+    // Never reopen a file that an operator can replace between validation and use.
+    read = path => {
+      if (String(path) !== pinned.secretFile) throw new Error('Pinned credential file does not match invocation');
+      return pinned.secret;
+    };
+  }
   if (provider === 'openrouter') {
     if (!apiKey) throw new Error('OpenRouter requires an API key');
     return { provider, mode: 'api-key', credential: apiKey };

@@ -1,3 +1,4 @@
+import { setImmediate as yieldTurn } from 'node:timers/promises';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync } from 'node:fs';
 import { join, posix, resolve, win32 } from 'node:path';
@@ -268,10 +269,10 @@ function reservationLease(authority: CampaignReservation): ReservationLease {
   return lease as ReservationLease;
 }
 
-function reserveRunIndices(plan: CompiledCampaignPlan, directory: string, id: string,
+async function reserveRunIndices(plan: CompiledCampaignPlan, directory: string, id: string,
   env: NodeJS.ProcessEnv, probePort: (port: number | string) => { free: boolean },
-  excludedRunIndices: readonly number[] = [],
-): { runIndices: number[]; reservation: CampaignReservation } {
+  excludedRunIndices: readonly number[] = [], signal?: AbortSignal,
+): Promise<{ runIndices: number[]; reservation: CampaignReservation }> {
   const track = loadTrack(plan.definition.track);
   const scope = resourceLockScope(env);
   const path = contained(directory, join('.private', `${id}.reservation.json`), 'campaign reservation');
@@ -282,6 +283,8 @@ function reserveRunIndices(plan: CompiledCampaignPlan, directory: string, id: st
     const keys: string[] = [];
     const selectedKeys = new Set<string>();
     for (let runIndex = 0; runIndex <= RUN_INDEX_CAP; runIndex += 1) {
+      // Yield bounded scan batches so cancellation and other campaign workers can run.
+      if (runIndex % 16 === 0) await yieldTurn(undefined, { signal });
       if (excludedRunIndices.includes(runIndex)) continue;
       let candidateKeys: string[];
       let ports: Set<number>;
@@ -544,18 +547,20 @@ function resourceFreeAdmissionReport(request: CampaignAdmissionPreflightRequest,
   };
 }
 
-export function runCampaignAdmission(plan: CompiledCampaignPlan, directory: string,
+export async function runCampaignAdmission(plan: CompiledCampaignPlan, directory: string,
   { env = process.env, preflight = runPreflight, now = new Date().toISOString(),
-    uuid = randomUUID, probePort = probeLoopbackPort, attempt, excludedRunIndices = [] }: {
+    uuid = randomUUID, probePort = probeLoopbackPort, attempt, excludedRunIndices = [], signal }: {
       env?: NodeJS.ProcessEnv;
       attempt?: CampaignAttemptPlan;
       excludedRunIndices?: readonly number[];
+      signal?: AbortSignal;
       preflight?: (request: CampaignAdmissionPreflightRequest,
         options?: { env: NodeJS.ProcessEnv }) => PreflightReport;
       now?: string;
       uuid?: () => string;
       probePort?: (port: number | string) => { free: boolean };
-    } = {}): CampaignAdmissionResult {
+    } = {}): Promise<CampaignAdmissionResult> {
+  signal?.throwIfAborted();
   const executionEnv = campaignExecutionEnvironment(plan, env);
   const reports: PreflightReport[] = [];
   const id = `${plan.id}-admission-${now.replace(/[-:.TZ]/g, '').slice(0, 14)}-${uuid()}`;
@@ -569,15 +574,17 @@ export function runCampaignAdmission(plan: CompiledCampaignPlan, directory: stri
     attempts: [attempt], conditions: [attempt.condition], summary: { ...plan.summary, parallelism: 1 } } : plan;
   const resourceFree = campaignUsesNoExternalResources(scoped);
   const reserved = resourceFree ? null
-    : reserveRunIndices(scoped, directory, id, executionEnv, probePort, excludedRunIndices);
+    : await reserveRunIndices(scoped, directory, id, executionEnv, probePort, excludedRunIndices, signal);
   const runIndices = reserved?.runIndices
     ?? Array.from({ length: scoped.summary.parallelism + excludedRunIndices.length }, (_, index) => index)
       .filter(index => !excludedRunIndices.includes(index)).slice(0, scoped.summary.parallelism);
   try {
+  await yieldTurn(undefined, { signal });
   const guidanceModes = [...new Set(scoped.conditions.map(condition => condition.guidance.mode))];
   const agentSkills = [...new Set(scoped.attempts.flatMap(attempt => attempt.skills))].sort();
   for (const { adapter, providerRoute, maxOutputTokens } of admissionSelections(scoped.agents)) {
     for (const runIndex of runIndices) {
+      await yieldTurn(undefined, { signal });
       const request: CampaignAdmissionPreflightRequest = {
         backends: scoped.stacks.map(stack => stack.id),
         track: plan.definition.track,
@@ -605,6 +612,7 @@ export function runCampaignAdmission(plan: CompiledCampaignPlan, directory: stri
           scoped.stacks.some(stack => stack.id === 'spacetime') ? 'spacetime' : null, runIndex) }));
     }
   }
+  await yieldTurn(undefined, { signal });
   const payload = validateCampaignAdmission({ schemaVersion: 1, campaignId: plan.id,
     campaignSha256: plan.contentSha256, createdAt: now,
     ok: reports.every(report => report.ok),

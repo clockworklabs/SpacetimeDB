@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
-import { executionCredentialsSchema } from '../agents/credential-profiles.js';
+import { executionCredentialsSchema, validateExecutionCredentialTargets } from '../agents/credential-profiles.js';
 import { compileCampaignFile } from './campaign-compiler.js';
 import { writeCampaignRecord } from './campaign-lock.js';
 import { executeCampaign } from './campaign-runner.js';
@@ -55,12 +55,8 @@ export function submitExecutionJob(results: string, input: unknown): ExecutionJo
     || plan.agents.some(agent => agent.costLimit !== 'non-billable'))) {
     throw new Error('job submission requires a frozen campaign or a model-free draft');
   }
-  for (const adapter of Object.keys(request.credentials.adapters ?? {})) {
-    if (!plan.agents.some(agent => agent.adapter === adapter)) throw new Error(`credential assignment names unknown adapter ${adapter}`);
-  }
-  for (const attempt of Object.keys(request.credentials.attempts ?? {})) {
-    if (!plan.attempts.some(value => value.id === attempt)) throw new Error(`credential assignment names unknown attempt ${attempt}`);
-  }
+  validateExecutionCredentialTargets(request.credentials,
+    plan.agents.map(agent => agent.adapter), plan.attempts.map(attempt => attempt.id));
   const id = sha256(request.key);
   const { planFile: _planFile, ...policy } = request;
   const requestSha256 = sha256(canonicalDefinitionJson({ ...policy, planSha256: plan.contentSha256 }));
@@ -97,8 +93,10 @@ export function readExecutionJob(results: string, id: string) {
   const job = jobSchema.parse(read(join(directory, 'job.json')));
   if (job.id !== id || sha256(job.key) !== id) throw new Error('job identity does not match its directory');
   const claimPath = join(directory, 'claim.json'), resultPath = join(directory, 'result.json');
-  const claim = existsSync(claimPath) ? claimSchema.parse(read(claimPath)) : null;
+  // Results are published after their immutable claim. Read in that order so a
+  // worker completing during this read cannot produce a result without its claim.
   const result = existsSync(resultPath) ? resultSchema.parse(read(resultPath)) : null;
+  const claim = existsSync(claimPath) ? claimSchema.parse(read(claimPath)) : null;
   if (result && (!claim || result.token !== claim.token || result.hostId !== claim.hostId)) {
     throw new Error('job result does not belong to its worker claim');
   }

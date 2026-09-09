@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -63,5 +65,53 @@ test('job submission, exclusive workers, cancellation and retained failures use 
     writeFileSync(path, JSON.stringify(plan));
     await assert.rejects(workExecutionJob(root, modified.id, 'worker-a', { execute }), /identity changed/);
     assert.equal(readExecutionJob(root, modified.id).status, 'queued');
+
+    const stopping = submitExecutionJob(root, { ...request, key: 'request-stop' });
+    let activeCalls = 0;
+    const untilCancelled = (async (_plan, _directory, options) => {
+      activeCalls++;
+      await new Promise<void>(resolve => options!.signal!.addEventListener('abort', () => resolve(), { once: true }));
+      return { summary: { pending: 1, running: 0, invalid: 0 } };
+    }) as typeof executeCampaign;
+    const active = workExecutionJob(root, stopping.id, 'worker-a', { execute: untilCancelled });
+    cancelExecutionJob(root, stopping.id);
+    assert.equal(readExecutionJob(root, stopping.id).cancellationRequested, true);
+    assert.equal((await active).status, 'cancelled');
+    assert.equal((await workExecutionJob(root, stopping.id, 'worker-a', { execute: untilCancelled })).status, 'cancelled');
+    assert.equal(activeCalls, 1, 'cancellation retains ownership and cannot restart the worker');
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('job reads tolerate a worker publishing its claim and result between file reads', context => {
+  const root = mkdtempSync(join(tmpdir(), 'execution-job-read-'));
+  try {
+    mkdirSync(join(root, 'plans'));
+    copyFileSync(join(STACK_BENCH_ROOT, 'tests/fixtures/campaign.deterministic.json'), join(root, 'plans/test.json'));
+    const job = submitExecutionJob(root, { key: 'read-race', planFile: 'test.json' });
+    const directory = join(root, 'jobs', job.id);
+    const claimPath = join(directory, 'claim.json');
+    const resultPath = join(directory, 'result.json');
+    const owner = { hostId: 'worker-a', token: 'a'.repeat(64) };
+    const exists = fs.existsSync;
+    let published = false;
+    context.mock.method(fs, 'existsSync', (path: Parameters<typeof fs.existsSync>[0]) => {
+      const present = exists(path);
+      if (path === claimPath && !published) {
+        published = true;
+        writeFileSync(claimPath, JSON.stringify({ ...owner, startedAt: new Date().toISOString() }));
+        writeFileSync(resultPath, JSON.stringify({ ...owner, status: 'completed', completedAt: new Date().toISOString() }));
+      }
+      return present;
+    });
+    syncBuiltinESMExports();
+    assert.doesNotThrow(() => readExecutionJob(root, job.id));
+    assert.equal(published, true);
+    assert.equal(readExecutionJob(root, job.id).status, 'completed');
+    writeFileSync(resultPath, JSON.stringify({ ...owner, token: 'b'.repeat(64), status: 'completed', completedAt: new Date().toISOString() }));
+    assert.throws(() => readExecutionJob(root, job.id), /does not belong to its worker claim/);
+  } finally {
+    context.mock.restoreAll();
+    syncBuiltinESMExports();
+    rmSync(root, { recursive: true, force: true });
+  }
 });

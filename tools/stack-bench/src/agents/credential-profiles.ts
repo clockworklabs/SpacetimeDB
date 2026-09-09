@@ -46,7 +46,7 @@ function readProfile(id: string, env: NodeJS.ProcessEnv) {
   try { secret = readFileSync(profile.secretFile, 'utf8').trim(); }
   catch { throw new Error(`Credential profile ${id} secret file cannot be read`); }
   if (!secret) throw new Error(`Credential profile ${id} secret file is empty`);
-  return { profile, fingerprint: sha256(secret) };
+  return { profile, secret, fingerprint: sha256(secret) };
 }
 
 export function resolveExecutionCredentials(adapterId: string, attemptId: string,
@@ -69,6 +69,7 @@ export function resolveExecutionCredentials(adapterId: string, attemptId: string
   // Generic overrides apply to every adapter and must not override an explicit profile.
   delete env.STACK_BENCH_API_KEY_FILE;
   delete env.STACK_BENCH_AGENT_API_KEY;
+  delete env.STACK_BENCH_AGENT_API_KEY_FILE;
   const variable = profile.mode === 'api-key' ? authenticationVariables[profile.provider][0]
     : profile.provider === 'anthropic' ? 'CLAUDE_CODE_OAUTH_TOKEN' : 'CODEX_AUTH';
   env[`${variable}_FILE`] = profile.secretFile;
@@ -78,14 +79,27 @@ export function resolveExecutionCredentials(adapterId: string, attemptId: string
 }
 
 /** Fail before a provider invocation if a selected profile changed after admission. */
-export function assertExecutionCredentialUnchanged(env: NodeJS.ProcessEnv = process.env): void {
-  if (!env[ASSIGNMENT] && !env[FINGERPRINT]) return;
+export function readPinnedExecutionCredential(env: NodeJS.ProcessEnv = process.env):
+  { assignment: CredentialAssignment; secretFile: string; secret: string } | null {
+  if (!env[ASSIGNMENT] && !env[FINGERPRINT]) return null;
   let assignment: CredentialAssignment;
   try { assignment = assignmentSchema.parse(JSON.parse(env[ASSIGNMENT] ?? '')); }
   catch { throw new Error('Execution credential assignment is invalid'); }
-  const { profile, fingerprint } = readProfile(assignment.id, env);
+  const { profile, secret, fingerprint } = readProfile(assignment.id, env);
   if (profile.provider !== assignment.provider || profile.mode !== assignment.mode
     || profile.version !== assignment.version || fingerprint !== env[FINGERPRINT]) {
     throw new Error(`Credential profile ${assignment.id} changed after admission; explicitly select the new version before continuing`);
+  }
+  return { assignment, secretFile: profile.secretFile, secret };
+}
+
+export function validateExecutionCredentialTargets(assignments: ExecutionCredentials | undefined,
+  adapterIds: readonly string[], attemptIds: readonly string[]): void {
+  const selection = executionCredentialsSchema.parse(assignments ?? {});
+  for (const id of Object.keys(selection.adapters ?? {})) {
+    if (!adapterIds.includes(id)) throw new Error(`Credential assignment names unknown adapter ${id}`);
+  }
+  for (const id of Object.keys(selection.attempts ?? {})) {
+    if (!attemptIds.includes(id)) throw new Error(`Credential assignment names unknown attempt ${id}`);
   }
 }

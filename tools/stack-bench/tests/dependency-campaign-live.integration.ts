@@ -42,14 +42,14 @@ test('dependency campaign scope must match the graph-derived scope', () => {
     featureCatalog, tampered, 1), /graph-derived scope changed/);
 });
 
-test('real stack campaigns retain full preflight admission', () => {
+test('real stack campaigns retain full preflight admission', async () => {
   const output = mkdtempSync(join(tmpdir(), 'stack-bench-standard-admission-'));
   try {
     const plan = compileCampaignFile(join(STACK_BENCH_ROOT, 'tests', 'fixtures',
       'campaign.deterministic.json'));
     assert.equal(campaignUsesNoExternalResources(plan), false);
     let calls = 0;
-    const admission = runCampaignAdmission(plan, output, {
+    const admission = await runCampaignAdmission(plan, output, {
       preflight: request => {
         calls += 1;
         return {
