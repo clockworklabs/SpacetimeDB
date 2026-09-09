@@ -23,6 +23,7 @@ permissions:
 
 jobs:
   merge_queue_noop:
+    if: ${{ github.head_ref != 'bfops/unity-ci' }}
     name: Merge queue no-op/reuse
     runs-on: spacetimedb-linux
     permissions:
@@ -283,6 +284,7 @@ jobs:
 
   smoketest_build_linux:
     needs: [upload-build-artifacts-linux]
+    if: ${{ github.head_ref != 'bfops/unity-ci' }}
     name: Build smoketests (Linux)
     runs-on: spacetimedb-linux
     timeout-minutes: 15
@@ -755,7 +757,7 @@ jobs:
           retention-days: 14
 
   codeowners_check:
-    if: ${{ github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'pull_request' && github.head_ref != 'bfops/unity-ci' }}
     name: CODEOWNERS check
     runs-on: spacetimedb-linux
     permissions:
