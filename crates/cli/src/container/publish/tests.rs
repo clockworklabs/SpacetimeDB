@@ -1,5 +1,6 @@
 //! These fixtures own numeric-loopback sockets and in-memory credentials. They
 //! never load CLI configuration, environment endpoints, or external builders.
+pub(crate) mod environment_tests;
 use super::*;
 use axum::{
     body::Bytes,
@@ -47,6 +48,7 @@ pub(crate) struct Behavior {
     pub bad_receipt: bool,
     pub bad_completion: bool,
     pub bad_status: bool,
+    pub malformed_status: bool,
     pub wrong_reservation: bool,
     pub deny_preflight: bool,
     pub deny_upload: bool,
@@ -54,6 +56,9 @@ pub(crate) struct Behavior {
     pub fail_naming: bool,
     pub redirect: Option<String>,
     pub prior: Option<DeploymentStatus>,
+    pub selected_schema: Option<(spacetimedb_lib::Hash, Vec<u8>)>,
+    pub wrong_module_identity: bool,
+    pub module_gets: usize,
     pub uploads: BTreeMap<uuid::Uuid, (UploadStatus, Vec<u8>)>,
     pub submits: Vec<Vec<u8>>,
     pub reservations: Vec<ReserveDatabaseRequest>,
@@ -107,6 +112,7 @@ impl Fixture {
             version: PUBLISH_PROTOCOL_VERSION,
             operation_id: Uuid::from_u128(uuid::Uuid::now_v7().as_u128()),
             expected_revision: None,
+            expected_last_operation: None,
             module_action: ModuleAction::Set(UserModule {
                 kind: UserModuleKind::Wasm,
                 program_hash: spacetimedb_lib::hash_bytes(bytes),
@@ -115,6 +121,7 @@ impl Fixture {
         };
         let module_artifact = empty_module_artifact();
         let request = PublishRequest {
+            environment: Default::default(),
             manifest: PreparedDeploymentManifest::V1(PreparedDeploymentManifestV1 {
                 deployment: envelope.resolve(None, &Default::default()).unwrap(),
                 envelope,
@@ -131,7 +138,7 @@ impl Fixture {
         };
         let request_json = serde_json::to_string(&request).unwrap();
         Record {
-            version: 1,
+            version: 2,
             server: self.endpoint.clone(),
             artifact_endpoint: self.endpoint.clone(),
             publisher: publisher(),
@@ -251,6 +258,27 @@ async fn handler(
             .map(|status| Json(status).into_response())
             .unwrap_or_else(|| StatusCode::NOT_FOUND.into_response());
     }
+    if path.ends_with("/schema") && method == Method::GET {
+        state.module_gets += 1;
+        assert_eq!(uri.query(), Some("version=10"));
+        let Some((hash, bytes)) = state.selected_schema.clone() else {
+            return StatusCode::NOT_FOUND.into_response();
+        };
+        let identity = if state.wrong_module_identity {
+            publisher()
+        } else {
+            database()
+        };
+        return (
+            [
+                ("content-type", "application/json".to_owned()),
+                ("x-spacetimedb-module-hash", hash.to_string()),
+                ("x-spacetimedb-database-identity", identity.to_hex().to_string()),
+            ],
+            bytes,
+        )
+            .into_response();
+    }
     if path.ends_with("/deployment") {
         if method == Method::GET {
             return state
@@ -278,6 +306,8 @@ async fn handler(
             operation_id: request.manifest.current().envelope.operation_id,
             phase: PublicationPhase::Complete,
             expected_revision: request.manifest.current().envelope.expected_revision,
+            expected_last_operation: request.manifest.current().envelope.expected_last_operation,
+            publication_epoch: 1,
             proposed_revision: if state.bad_status {
                 spacetimedb_lib::Hash::ZERO
             } else {
@@ -286,6 +316,11 @@ async fn handler(
             error: None,
         };
         state.status = Some(status.clone());
+        if state.malformed_status {
+            let mut value = serde_json::to_value(status).unwrap();
+            value["phase"] = json!("secret-body-sentinel");
+            return Json(value).into_response();
+        }
         if std::mem::take(&mut state.lose_submit_after_commit) {
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }

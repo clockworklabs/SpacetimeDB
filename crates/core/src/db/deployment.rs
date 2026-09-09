@@ -30,7 +30,7 @@ pub enum DeploymentError {
     UnsupportedHostedModule,
     #[error("the publication coordinator no longer owns the database fence")]
     PublicationFenced,
-    #[error("the expected deployment revision does not match the database")]
+    #[error("the expected committed publication does not match the database")]
     RevisionConflict,
     #[error("operation ID is already bound to a different publication")]
     OperationConflict,
@@ -58,6 +58,7 @@ pub struct DeploymentCommit {
     pub publication_epoch: u64,
     pub publisher: Identity,
     pub expected_revision: Option<Hash>,
+    pub expected_last_operation: Option<Uuid>,
     pub prepared_manifest_hash: Hash,
     pub deployment: DeploymentSpec,
 }
@@ -69,6 +70,7 @@ pub struct DeploymentCommit {
 pub struct PublishResult {
     #[serde(with = "spacetimedb_lib::deployment::uuid_json")]
     pub operation_id: Uuid,
+    pub publication_epoch: u64,
     pub previous_revision: Option<Hash>,
     pub revision: Hash,
 }
@@ -179,6 +181,56 @@ pub fn current_deployment<S: StateView>(state: &S) -> Result<Option<(Hash, Deplo
     Ok(Some((row.revision, spec)))
 }
 
+/// The current committed cursor comes from its exact retained receipt, never
+/// from the attempt fence (which may belong to a later aborted publication).
+/// Keep this receipt while its operation is current, even after retry expiry.
+pub fn current_publication<S: StateView>(state: &S) -> Result<Option<PublishResult>, DeploymentError> {
+    let Some(row) = singleton(state, ST_DEPLOYMENT_ID)? else {
+        return Ok(None);
+    };
+    let row = StDeploymentRow::try_from(row)?;
+    let spec = DeploymentSpec::decode(&row.payload)?;
+    let operation = Uuid::from_u128(row.last_operation_id);
+    let receipt = retained_publication(state, operation)?.ok_or(DeploymentError::CorruptMetadata)?;
+    if spec.revision()? != row.revision || receipt.result.revision != row.revision {
+        return Err(DeploymentError::CorruptMetadata);
+    }
+    Ok(Some(receipt.result))
+}
+
+fn require_expected_publication<S: StateView>(state: &S, request: &DeploymentCommit) -> Result<(), DeploymentError> {
+    let current = current_publication(state)?;
+    if current.as_ref().map(|result| result.revision) != request.expected_revision
+        || current.as_ref().map(|result| result.operation_id) != request.expected_last_operation
+    {
+        return Err(DeploymentError::RevisionConflict);
+    }
+    Ok(())
+}
+
+fn retained_publication<S: StateView>(state: &S, operation: Uuid) -> Result<Option<CommitReceiptV1>, DeploymentError> {
+    let operation_key = AlgebraicValue::U128(operation.as_u128().into());
+    let Some(row) = state
+        .iter_by_col_eq(ST_DEPLOYMENT_OPERATION_ID, ColId(0), &operation_key)?
+        .next()
+    else {
+        return Ok(None);
+    };
+    let row = StDeploymentOperationRow::try_from(row)?;
+    let CommitReceipt::V1(receipt) =
+        bsatn::from_slice(&row.commit_result).map_err(|_| DeploymentError::CorruptMetadata)?;
+    if operation.get_version() != Some(spacetimedb_sats::uuid::Version::V7)
+        || row.operation_id != operation.as_u128()
+        || receipt.result.operation_id != operation
+        || receipt.result.publication_epoch == 0
+        || row.committed_revision != receipt.result.revision
+        || row.previous_revision != receipt.result.previous_revision
+    {
+        return Err(DeploymentError::CorruptMetadata);
+    }
+    Ok(Some(receipt))
+}
+
 /// Monotonic compare-and-set, serialized against user-database commits.
 /// Advancing this epoch does not itself quiesce a container or authorize launch.
 pub fn install_publication_fence(
@@ -235,9 +287,7 @@ pub fn abort_deployment_commit(tx: &mut MutTx, request: &DeploymentCommit) -> Re
                 && (row.operation_id == request.operation_id.as_u128() || row.operation_id == 0)
         })
         .ok_or(DeploymentError::PublicationFenced)?;
-    if current_deployment(tx)?.map(|(revision, _)| revision) != request.expected_revision {
-        return Err(DeploymentError::RevisionConflict);
-    }
+    require_expected_publication(tx, request)?;
     if fence.operation_id == 0 {
         return Ok(AbortResult::Aborted {
             previous_revision: request.expected_revision,
@@ -286,6 +336,7 @@ fn request_identity(request: &DeploymentCommit) -> Result<(Hash, Hash), Deployme
             request.publication_epoch,
             request.publisher,
             request.expected_revision,
+            request.expected_last_operation,
             request.prepared_manifest_hash,
             revision,
         ))
@@ -316,9 +367,7 @@ pub fn check_deployment_commit(
     }) {
         return Err(DeploymentError::PublicationFenced);
     }
-    if current_deployment(tx)?.map(|(revision, _)| revision) != request.expected_revision {
-        return Err(DeploymentError::RevisionConflict);
-    }
+    require_expected_publication(tx, request)?;
     Ok(CommitAdmission::Ready)
 }
 
@@ -332,22 +381,11 @@ pub fn committed_deployment_operation<S: StateView>(
     request: &DeploymentCommit,
 ) -> Result<Option<PublishResult>, DeploymentError> {
     let (revision, request_hash) = request_identity(request)?;
-    let operation_key = AlgebraicValue::U128(request.operation_id.as_u128().into());
-    if let Some(row) = state
-        .iter_by_col_eq(ST_DEPLOYMENT_OPERATION_ID, ColId(0), &operation_key)?
-        .next()
-    {
-        let row = StDeploymentOperationRow::try_from(row)?;
-        let CommitReceipt::V1(receipt) =
-            bsatn::from_slice(&row.commit_result).map_err(|_| DeploymentError::CorruptMetadata)?;
+    if let Some(receipt) = retained_publication(state, request.operation_id)? {
         if receipt.request_hash != request_hash || receipt.publisher != request.publisher {
             return Err(DeploymentError::OperationConflict);
         }
-        if receipt.result.revision != revision
-            || row.committed_revision != revision
-            || row.previous_revision != receipt.result.previous_revision
-            || receipt.result.operation_id != request.operation_id
-        {
+        if receipt.result.revision != revision || receipt.result.publication_epoch != request.publication_epoch {
             return Err(DeploymentError::CorruptMetadata);
         }
         return Ok(Some(receipt.result));
@@ -369,9 +407,7 @@ pub fn deployment_publication_aborted<S: StateView>(
     if !fence.is_some_and(|row| row.publication_epoch == request.publication_epoch && row.operation_id == 0) {
         return Ok(false);
     }
-    if current_deployment(state)?.map(|(revision, _)| revision) != request.expected_revision {
-        return Err(DeploymentError::RevisionConflict);
-    }
+    require_expected_publication(state, request)?;
     Ok(true)
 }
 
@@ -390,6 +426,7 @@ pub fn record_deployment_commit(
     let (spec, revision, request_hash) = normalized_request(request, limits)?;
     let result = PublishResult {
         operation_id: request.operation_id,
+        publication_epoch: request.publication_epoch,
         previous_revision: request.expected_revision,
         revision,
     };

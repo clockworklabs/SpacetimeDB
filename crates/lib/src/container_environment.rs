@@ -20,6 +20,9 @@ pub struct EnvironmentSnapshotScope {
     pub generation: u64,
     pub deployment_revision: Hash,
     #[cfg_attr(feature = "serde", serde(with = "crate::deployment::uuid_json"))]
+    pub publication_operation: Uuid,
+    pub publication_epoch: u64,
+    #[cfg_attr(feature = "serde", serde(with = "crate::deployment::uuid_json"))]
     pub start_request: Uuid,
     #[cfg_attr(feature = "serde", serde(with = "crate::deployment::uuid_json"))]
     pub env_generation: Uuid,

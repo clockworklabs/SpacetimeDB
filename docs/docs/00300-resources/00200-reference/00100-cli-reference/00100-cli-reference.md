@@ -154,7 +154,7 @@ Every publish replaces the complete declared environment. Put an env map in spac
 * `--artifact-endpoint <ARTIFACT_ENDPOINT>` — Explicitly authorize this exact artifact URL to receive the publisher credential
 * `--remove-container` — Explicitly remove the container while preserving the module unless separately changed
 * `--remove-module` — Replace the module with the versioned empty module after migration preflight
-* `--publication-state-dir <PUBLICATION_STATE_DIR>` — Private local directory retaining managed publication bytes and progress
+* `--publication-state-dir <PUBLICATION_STATE_DIR>` — Private local directory retaining complete managed publication inputs and progress. The protected submission file includes resolved environment values. Keep this directory private; do not commit it or share it. Resume reuses these exact values without rereading project configuration or shell variables.
 * `--resume-publication <RESUME_PUBLICATION>` — Resume this operation directory without rebuilding or reading spacetime.json
 * `--publication-wait <PUBLICATION_WAIT>` — Seconds to wait for managed activation; pending operations retain their resume directory
 

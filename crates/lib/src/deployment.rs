@@ -104,6 +104,10 @@ pub struct PublishEnvelope {
     /// Exact compare-and-set precondition. None means no deployment record has
     /// been installed yet, rather than permission to overwrite any revision.
     pub expected_revision: Option<Hash>,
+    /// Last committed operation paired with the revision; ENV-only publications
+    /// can retain the same revision while changing this cursor.
+    #[cfg_attr(feature = "serde", serde(with = "option_uuid_json"))]
+    pub expected_last_operation: Option<Uuid>,
     #[cfg_attr(feature = "serde", serde(default))]
     pub module_action: ModuleAction,
     #[cfg_attr(feature = "serde", serde(default))]
@@ -187,6 +191,15 @@ impl PublishEnvelope {
         if !matches!(self.operation_id.get_version(), Some(Version::V7)) {
             return Err(DeploymentValidationError::InvalidOperationId);
         }
+        if self.expected_revision.is_some() != self.expected_last_operation.is_some() {
+            return Err(DeploymentValidationError::InvalidEncoding);
+        }
+        if self
+            .expected_last_operation
+            .is_some_and(|id| id.get_version() != Some(Version::V7))
+        {
+            return Err(DeploymentValidationError::InvalidOperationId);
+        }
         let prior = previous.map(DeploymentSpec::current);
         let module = match &self.module_action {
             ModuleAction::Keep => prior
@@ -235,6 +248,23 @@ pub mod uuid_json {
     pub fn deserialize<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Uuid, D::Error> {
         let value = <String as serde::Deserialize>::deserialize(deserializer)?;
         Uuid::parse_str(&value).map_err(serde::de::Error::custom)
+    }
+}
+
+#[cfg(feature = "serde")]
+pub mod option_uuid_json {
+    use super::Uuid;
+    pub fn serialize<S: serde::Serializer>(id: &Option<Uuid>, serializer: S) -> Result<S::Ok, S::Error> {
+        match id {
+            Some(id) => serializer.serialize_some(&id.to_string()),
+            None => serializer.serialize_none(),
+        }
+    }
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<Uuid>, D::Error> {
+        let value = <Option<String> as serde::Deserialize>::deserialize(deserializer)?;
+        value
+            .map(|value| Uuid::parse_str(&value).map_err(serde::de::Error::custom))
+            .transpose()
     }
 }
 

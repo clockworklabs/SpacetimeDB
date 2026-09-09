@@ -34,7 +34,7 @@ pub enum EnvironmentSnapshotError {
     InvalidScope,
     #[error("container environment generation is fenced")]
     Fenced,
-    #[error("container environment deployment revision does not match")]
+    #[error("container environment committed publication does not match")]
     RevisionConflict,
     #[error("container environment snapshot belongs to another immutable scope")]
     ScopeConflict,
@@ -116,6 +116,8 @@ fn validate_scope(db: &RelationalDB, scope: &EnvironmentSnapshotScope) -> Result
         || scope.database_id == 0
         || scope.node_id == 0
         || scope.generation == 0
+        || scope.publication_epoch == 0
+        || scope.publication_operation.get_version() != Some(spacetimedb_sats::uuid::Version::V7)
         || scope.cluster.is_empty()
         || scope.cluster.len() > 256
         || scope.cluster.contains('\0')
@@ -162,7 +164,13 @@ fn admitted_spec(
     let (revision, deployment) = deployment::current_deployment(state)
         .map_err(|_| EnvironmentSnapshotError::CorruptMetadata)?
         .ok_or(EnvironmentSnapshotError::RevisionConflict)?;
-    if revision != scope.deployment_revision {
+    let publication = deployment::current_publication(state)
+        .map_err(|_| EnvironmentSnapshotError::CorruptMetadata)?
+        .ok_or(EnvironmentSnapshotError::RevisionConflict)?;
+    if revision != scope.deployment_revision
+        || publication.operation_id != scope.publication_operation
+        || publication.publication_epoch != scope.publication_epoch
+    {
         return Err(EnvironmentSnapshotError::RevisionConflict);
     }
     let spec = deployment

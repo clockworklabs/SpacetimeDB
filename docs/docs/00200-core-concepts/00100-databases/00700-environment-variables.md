@@ -198,6 +198,8 @@ Previously stored values are **not** defaults for the next publish. Every publis
 
 The same rules apply to precompiled modules published with `--bin-path`. The CLI reads declarations from the artifact being published.
 
+Managed publications also retain the complete resolved environment in the operation's private local `submission.json` file. Keep the publication directory private and out of source control. `--resume-publication` sends the original request bytes, including the original values, even if project files or shell variables have changed. Missing or altered retained input causes an error; resuming never substitutes an empty environment. When preserving the current module, the CLI checks its environment declarations against authenticated metadata for the selected database and program before creating this input.
+
 ## Inspect published values
 
 The database owner and collaborators with private-table read access can inspect the environment. For the local database above:

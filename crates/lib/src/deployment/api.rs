@@ -1,9 +1,16 @@
 //! HTTP publication messages shared by the CLI, dashboard and Cloud. Artifacts
-//! are uploaded separately; no message carries credentials or environment values.
+//! are uploaded separately. Complete environment values belong only to the
+//! protected publication request; public status and manifests remain value-free.
 
-use super::{manifest::PreparedDeploymentManifest, uuid_json, DeploymentSpec, PUBLISH_PROTOCOL_VERSION};
+use super::{
+    manifest::PreparedDeploymentManifest, option_uuid_json, uuid_json, DeploymentSpec, PUBLISH_PROTOCOL_VERSION,
+};
 use crate::{container::OciDigest, Hash, Identity, Uuid};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+mod request_decode;
+pub use request_decode::{PublishRequestError, MAX_PUBLISH_REQUEST_BYTES};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -12,7 +19,7 @@ pub struct ArtifactReference {
     pub size_bytes: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PublishRequest {
     pub manifest: PreparedDeploymentManifest,
@@ -21,6 +28,20 @@ pub struct PublishRequest {
     /// Original uploaded OCI index or executable manifest. Required for Set.
     /// Keep uses the prior retained executable manifest; Remove has no image.
     pub image_source: Option<ArtifactReference>,
+    /// Complete private values. Omission means an empty replacement, never Keep.
+    #[serde(default, deserialize_with = "request_decode::deserialize_environment")]
+    pub environment: BTreeMap<String, String>,
+}
+
+impl std::fmt::Debug for PublishRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PublishRequest")
+            .field("manifest", &self.manifest)
+            .field("creation", &self.creation)
+            .field("image_source", &self.image_source)
+            .field("environment", &"[redacted]")
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -75,6 +96,9 @@ pub struct PublicationStatus {
     pub operation_id: Uuid,
     pub phase: PublicationPhase,
     pub expected_revision: Option<Hash>,
+    #[serde(with = "option_uuid_json")]
+    pub expected_last_operation: Option<Uuid>,
+    pub publication_epoch: u64,
     pub proposed_revision: Hash,
     pub error: Option<String>,
 }
@@ -85,6 +109,8 @@ pub struct DeploymentStatus {
     pub database_identity: Identity,
     /// None means this database has not yet used managed publication.
     pub revision: Option<Hash>,
+    #[serde(with = "option_uuid_json")]
+    pub last_operation: Option<Uuid>,
     pub deployment: DeploymentSpec,
     /// Lets Keep select exactly the currently installed program bytes.
     pub module_artifact: ArtifactReference,

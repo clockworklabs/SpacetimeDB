@@ -9,12 +9,13 @@ use spacetimedb_lib::deployment::{
     DeploymentSpecV1, ModuleComponent, UserModule, UserModuleKind, PUBLISH_RETRY_WINDOW_MS,
 };
 
-fn request(sequence: u64, previous: Option<Hash>) -> DeploymentCommit {
+fn request(sequence: u64, previous: Option<&PublishResult>) -> DeploymentCommit {
     DeploymentCommit {
         operation_id: Uuid::from_u128(0x01991ec4000070008000000000000000 | u128::from(sequence)),
         publication_epoch: sequence,
         publisher: Identity::from_u256(55u64.into()),
-        expected_revision: previous,
+        expected_revision: previous.map(|result| result.revision),
+        expected_last_operation: previous.map(|result| result.operation_id),
         prepared_manifest_hash: hash_bytes(sequence.to_le_bytes()),
         deployment: DeploymentSpec::V1(DeploymentSpecV1 {
             module: ModuleComponent::User(UserModule {
@@ -47,7 +48,7 @@ fn deployment_retry_returns_original_result_after_later_publish_without_mutation
         record_deployment_commit(tx, &first, now(), &limits)
     })
     .unwrap();
-    let second = request(2, Some(accepted.revision));
+    let second = request(2, Some(&accepted));
     let later = transact(&db, |tx| {
         install_publication_fence(tx, second.publication_epoch, second.operation_id)?;
         record_deployment_commit(tx, &second, now(), &limits)
@@ -66,7 +67,9 @@ fn deployment_retry_returns_original_result_after_later_publish_without_mutation
 fn deployment_fence_and_revision_conflicts_fail_before_module_execution() {
     let db = TestDB::in_memory().unwrap();
     let first = request(1, None);
-    let mut second = request(2, Some(hash_bytes(b"not current")));
+    let mut second = request(2, None);
+    second.expected_revision = Some(hash_bytes(b"not current"));
+    second.expected_last_operation = Some(first.operation_id);
     let limits = ContainerSpecLimits::default();
     transact(&db, |tx| {
         install_publication_fence(tx, second.publication_epoch, second.operation_id)
@@ -86,6 +89,7 @@ fn deployment_fence_and_revision_conflicts_fail_before_module_execution() {
             Err(DeploymentError::PublicationFenced)
         ));
         second.expected_revision = None;
+        second.expected_last_operation = None;
         assert!(matches!(
             check_deployment_commit(tx, &second, now(), &limits)?,
             CommitAdmission::Ready
@@ -191,7 +195,7 @@ fn publication_commit_winning_abort_race_is_never_reported_as_aborted() {
         record_deployment_commit(tx, &first, now(), &limits)
     })
     .unwrap();
-    let second = request(2, Some(committed.revision));
+    let second = request(2, Some(&committed));
     transact(&db, |tx| {
         assert_eq!(
             abort_deployment_commit(tx, &first)?,
@@ -249,13 +253,14 @@ fn recovery_of_expired_publication_preserves_commits_and_closes_uncommitted_epoc
     let expired = Timestamp::from_micros_since_unix_epoch(
         now().to_micros_since_unix_epoch() + (PUBLISH_RETRY_WINDOW_MS * 1000) as i64,
     );
-    let second = request(2, Some(committed.revision));
+    let second = request(2, Some(&committed));
     transact(&db, |tx| {
         assert!(matches!(
             check_deployment_commit(tx, &first, expired, &limits),
             Err(DeploymentError::Validation(DeploymentValidationError::ExpiredOperation))
         ));
         assert_eq!(committed_deployment_operation(tx, &first)?, Some(committed.clone()));
+        assert_eq!(current_publication(tx)?, Some(committed.clone()));
         assert_eq!(
             abort_deployment_commit(tx, &first)?,
             AbortResult::AlreadyCommitted(committed.clone())
@@ -370,7 +375,7 @@ fn publication_recovery_does_not_reapply_tightened_resource_admission() {
     .unwrap();
     let mut tightened = original_limits;
     tightened.resources.cpu_millicores = 500;
-    let mut second = request(2, Some(committed.revision));
+    let mut second = request(2, Some(&committed));
     second.deployment = first.deployment.clone();
     transact(&db, |tx| {
         assert!(first.deployment.clone().normalize(&tightened).is_err());
@@ -628,6 +633,159 @@ fn container_fence_installation_serializes_with_admitted_transactions() {
             Err(DeploymentError::ContainerFenced)
         ));
         check_container_fence(tx, source, 2, 0)
+    })
+    .unwrap();
+}
+
+#[test]
+fn same_revision_environment_publications_compare_the_last_committed_operation() {
+    use crate::db::environment;
+    use spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration, EnvironmentSchema};
+    use std::collections::BTreeMap;
+    use std::sync::{Arc, Barrier};
+
+    let db = TestDB::in_memory().unwrap();
+    let limits = ContainerSpecLimits::default();
+    let first = request(1, None);
+    let schema = EnvironmentSchema::new(vec![EnvironmentDeclaration {
+        name: "TOKEN".into(),
+        constraint: EnvironmentConstraint::AnyString,
+        optional: false,
+    }])
+    .unwrap();
+    let accepted = transact(&db, |tx| {
+        install_publication_fence(tx, first.publication_epoch, first.operation_id)?;
+        environment::replace(&db, tx, &schema, &BTreeMap::from([("TOKEN".into(), "initial".into())]))
+            .map_err(|error| DeploymentError::Database(DBError::Other(error.into())))?;
+        record_deployment_commit(tx, &first, now(), &limits)
+    })
+    .unwrap();
+    let mut second = request(2, Some(&accepted));
+    second.deployment = first.deployment.clone();
+    let mut third = request(3, Some(&accepted));
+    third.deployment = first.deployment.clone();
+    let barrier = Arc::new(Barrier::new(3));
+    let writers: Vec<_> = [(second.clone(), "second"), (third.clone(), "third")]
+        .into_iter()
+        .map(|(request, value)| {
+            let db = db.db.clone();
+            let barrier = barrier.clone();
+            let schema = schema.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                transact(&db, |tx| {
+                    install_publication_fence(tx, request.publication_epoch, request.operation_id)?;
+                    check_deployment_commit(tx, &request, now(), &Default::default())?;
+                    environment::replace(&db, tx, &schema, &BTreeMap::from([("TOKEN".into(), value.into())]))
+                        .map_err(|error| DeploymentError::Database(DBError::Other(error.into())))?;
+                    record_deployment_commit(tx, &request, now(), &Default::default())
+                })
+            })
+        })
+        .collect();
+    barrier.wait();
+    // Join both physical writers before asserting, including when one failed.
+    let outcomes: Vec<_> = writers.into_iter().map(|writer| writer.join()).collect();
+    let outcomes: Vec<_> = outcomes.into_iter().map(Result::unwrap).collect();
+    assert_eq!(outcomes.iter().filter(|result| result.is_ok()).count(), 1);
+    let winner = outcomes.into_iter().find_map(Result::ok).unwrap();
+    assert_eq!(winner.revision, accepted.revision);
+    assert_ne!(winner.operation_id, accepted.operation_id);
+    transact(&db, |tx| {
+        assert_eq!(current_publication(tx)?, Some(winner.clone()));
+        let expected = if winner.operation_id == second.operation_id {
+            "second"
+        } else {
+            "third"
+        };
+        assert_eq!(
+            environment::snapshot(tx).map_err(|error| DeploymentError::Database(DBError::Other(error.into())))?
+                ["TOKEN"],
+            expected
+        );
+        assert_eq!(tx.table_row_count(ST_DEPLOYMENT_OPERATION_ID), Some(2));
+        // A later attempt has the current revision but an obsolete operation.
+        let mut stale = request(4, Some(&accepted));
+        stale.deployment = first.deployment.clone();
+        install_publication_fence(tx, stale.publication_epoch, stale.operation_id)?;
+        assert!(matches!(
+            check_deployment_commit(tx, &stale, now(), &limits),
+            Err(DeploymentError::RevisionConflict)
+        ));
+        assert!(matches!(
+            abort_deployment_commit(tx, &stale),
+            Err(DeploymentError::RevisionConflict)
+        ));
+        // The exact current pair can close this attempt; the old pair cannot
+        // interpret its closed marker as proof that its precondition survived.
+        let mut current = stale.clone();
+        current.expected_last_operation = Some(winner.operation_id);
+        abort_deployment_commit(tx, &current)?;
+        assert!(deployment_publication_aborted(tx, &current)?);
+        assert!(matches!(
+            deployment_publication_aborted(tx, &stale),
+            Err(DeploymentError::RevisionConflict)
+        ));
+        assert_eq!(current_publication(tx)?, Some(winner));
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn retained_receipt_binds_prior_operation_epoch_and_current_metadata() {
+    let db = TestDB::in_memory().unwrap();
+    let first = request(1, None);
+    let accepted = transact(&db, |tx| {
+        install_publication_fence(tx, first.publication_epoch, first.operation_id)?;
+        record_deployment_commit(tx, &first, now(), &Default::default())
+    })
+    .unwrap();
+    transact(&db, |tx| {
+        let mut changed = first.clone();
+        changed.expected_last_operation = Some(request(9, None).operation_id);
+        assert!(matches!(
+            committed_deployment_operation(tx, &changed),
+            Err(DeploymentError::OperationConflict)
+        ));
+        changed = first.clone();
+        changed.publication_epoch += 1;
+        assert!(matches!(
+            committed_deployment_operation(tx, &changed),
+            Err(DeploymentError::OperationConflict)
+        ));
+        assert_eq!(current_publication(tx)?, Some(accepted.clone()));
+        Ok(())
+    })
+    .unwrap();
+    // A corrupted result epoch must fail even when its request hash still
+    // matches. Do not derive a replacement epoch from the publication fence.
+    transact(&db, |tx| {
+        let row = tx.iter(ST_DEPLOYMENT_OPERATION_ID)?.next().unwrap();
+        let mut row = StDeploymentOperationRow::try_from(row)?;
+        let CommitReceipt::V1(mut receipt) = bsatn::from_slice(&row.commit_result).unwrap();
+        receipt.result.publication_epoch = 0;
+        row.commit_result = bsatn::to_vec(&CommitReceipt::V1(receipt)).unwrap().into();
+        tx.clear_table(ST_DEPLOYMENT_OPERATION_ID)?;
+        tx.insert_via_serialize_bsatn(ST_DEPLOYMENT_OPERATION_ID, &row)?;
+        assert!(matches!(current_publication(tx), Err(DeploymentError::CorruptMetadata)));
+        assert!(matches!(
+            committed_deployment_operation(tx, &first),
+            Err(DeploymentError::CorruptMetadata)
+        ));
+        tx.clear_table(ST_DEPLOYMENT_OPERATION_ID)?;
+        assert!(matches!(current_publication(tx), Err(DeploymentError::CorruptMetadata)));
+        let next = request(2, Some(&accepted));
+        install_publication_fence(tx, next.publication_epoch, next.operation_id)?;
+        assert!(matches!(
+            check_deployment_commit(tx, &next, now(), &Default::default()),
+            Err(DeploymentError::CorruptMetadata)
+        ));
+        assert!(matches!(
+            abort_deployment_commit(tx, &next),
+            Err(DeploymentError::CorruptMetadata)
+        ));
+        Ok(())
     })
     .unwrap();
 }

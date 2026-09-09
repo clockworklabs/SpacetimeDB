@@ -1,5 +1,6 @@
-//! A publication resume record contains exact request bytes and object
-//! descriptors, never credentials or resolved runtime environment values.
+//! Progress metadata is separate from the protected immutable submission body.
+//! Only that owner-readable body contains the complete resolved environment.
+mod protected;
 use super::client::{ObjectRef, UploadKind, UploadStatus};
 use crate::container::{oci, PreparedContainer};
 use anyhow::{ensure, Context, Result};
@@ -37,7 +38,9 @@ pub struct Record {
     pub reservation: Option<ReserveDatabaseRequest>,
     pub requested_name: Option<String>,
     /// UTF-8 JSON sent verbatim on every submission attempt.
+    #[serde(skip)]
     pub request_json: String,
+    /// Private local integrity check only; never included in a wire request.
     pub request_digest: OciDigest,
     pub uploads: Vec<UploadRecord>,
     pub submitted: bool,
@@ -48,14 +51,14 @@ pub struct Record {
 impl Record {
     pub fn request(&self) -> Result<PublishRequest> {
         ensure!(
-            self.version == 1 && self.request_json.len() <= 256 * 1024,
+            self.version == 2 && self.request_json.len() <= MAX_PUBLISH_REQUEST_BYTES,
             "unsupported or oversized publication resume record"
         );
         ensure!(
             spacetimedb_oci::sha256(self.request_json.as_bytes()) == self.request_digest,
             "publication request bytes changed"
         );
-        let request: PublishRequest = serde_json::from_str(&self.request_json)?;
+        let request = PublishRequest::decode(self.request_json.as_bytes())?;
         let envelope = &request.manifest.current().envelope;
         ensure!(
             envelope.version == PUBLISH_PROTOCOL_VERSION,
@@ -96,6 +99,12 @@ impl Record {
             Some(status.database_identity) == self.database
                 && status.operation_id == envelope.operation_id
                 && status.expected_revision == envelope.expected_revision
+                && status.expected_last_operation == envelope.expected_last_operation
+                && status.publication_epoch != 0
+                && self
+                    .status
+                    .as_ref()
+                    .is_none_or(|previous| previous.publication_epoch == status.publication_epoch)
                 && status.proposed_revision == request.manifest.current().deployment.revision()?,
             "publication response belongs to another operation or deployment"
         );
@@ -105,6 +114,7 @@ impl Record {
 
 pub struct Journal {
     directory: PathBuf,
+    _parents: Vec<File>,
     _lock: File,
     pub record: Record,
 }
@@ -127,17 +137,15 @@ impl Journal {
         let has_image = image.is_some();
         let directory = base.join(request.manifest.current().envelope.operation_id.to_string());
         fs::create_dir_all(base)?;
-        let mut builder = fs::DirBuilder::new();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::DirBuilderExt;
-            builder.mode(0o700);
-        }
-        builder
-            .create(&directory)
-            .context("publication resume directory already exists; resume it rather than reusing its operation")?;
+        let _base_parents = protected::pin_parents(base)?;
+        protected::create_directory(&directory)
+            .context("cannot create protected publication directory; resume an existing operation instead")?;
         let mut incomplete = IncompleteDirectory(Some(directory.clone()));
+        let parents = protected::pin_parents(&directory)?;
         let lock = Self::lock(&directory, true)?;
+        let mut submission = protected::file(&directory.join("submission.json"), true, true)?;
+        submission.write_all(record.request_json.as_bytes())?;
+        submission.sync_all()?;
         if let Some(image) = image {
             image.persist(&directory.join("image"))?;
         }
@@ -151,6 +159,7 @@ impl Journal {
         }
         let journal = Self {
             directory,
+            _parents: parents,
             _lock: lock,
             record,
         };
@@ -161,30 +170,37 @@ impl Journal {
         Ok(journal)
     }
     pub fn open(directory: &Path) -> Result<Self> {
+        let parents = protected::pin_parents(directory)?;
+        protected::directory(directory)?;
         let directory = directory
             .canonicalize()
             .context("publication resume directory not found")?;
         let lock = Self::lock(&directory, false)?;
         let path = directory.join("publication.json");
-        ensure!(
-            fs::symlink_metadata(&path)?.is_file(),
-            "publication resume record must be a regular file"
-        );
         let mut bytes = vec![];
-        File::open(path)?
+        protected::file(&path, false, false)?
             .take(MAX_RECORD_BYTES as u64 + 1)
             .read_to_end(&mut bytes)?;
         ensure!(
             bytes.len() <= MAX_RECORD_BYTES,
             "publication resume record is too large"
         );
-        let record: Record = serde_json::from_slice(&bytes)?;
-        record.request()?;
+        let mut record: Record =
+            serde_json::from_slice(&bytes).map_err(|_| anyhow::anyhow!("invalid publication progress record"))?;
+        record.request_json = String::from_utf8(read_submission(&directory)?)
+            .map_err(|_| anyhow::anyhow!("invalid protected publication body"))?;
+        let request = record.request()?;
+        ensure!(
+            directory.file_name().and_then(|name| name.to_str())
+                == Some(request.manifest.current().envelope.operation_id.to_string().as_str()),
+            "publication directory belongs to another operation"
+        );
         // Creation saves JSON only after artifact flush. Reconfirm the parent
         // link if its creator stopped before finishing that last barrier.
         sync_directory_chain(&directory)?;
         Ok(Self {
             directory,
+            _parents: parents,
             _lock: lock,
             record,
         })
@@ -225,11 +241,8 @@ impl Journal {
         Ok(())
     }
     fn lock(directory: &Path, create: bool) -> Result<File> {
-        let file = File::options()
-            .read(true)
-            .write(true)
-            .create_new(create)
-            .open(directory.join("publication.lock"))?;
+        protected::directory(directory)?;
+        let file = protected::file(&directory.join("publication.lock"), create, true)?;
         file.try_lock()
             .context("another process is using this publication resume directory")?;
         Ok(file)
@@ -240,14 +253,29 @@ impl Journal {
     pub fn operation(&self) -> Result<Uuid> {
         Ok(self.record.request()?.manifest.current().envelope.operation_id)
     }
-    pub fn save(&self) -> Result<()> {
+    /// Check the on-disk body even on status-only recovery: missing or altered
+    /// retained input must never silently become an empty environment.
+    pub fn submission_bytes(&self) -> Result<Vec<u8>> {
         self.record.request()?;
+        let bytes = read_submission(&self.directory)?;
+        ensure!(
+            bytes == self.record.request_json.as_bytes(),
+            "protected publication body changed"
+        );
+        Ok(bytes)
+    }
+    pub fn save(&self) -> Result<()> {
+        self.submission_bytes()?;
         let bytes = serde_json::to_vec_pretty(&self.record)?;
         ensure!(
             bytes.len() <= MAX_RECORD_BYTES,
             "publication resume record is too large"
         );
+        #[cfg(not(windows))]
         let mut file = tempfile::NamedTempFile::new_in(&self.directory)?;
+        #[cfg(windows)]
+        let mut file = protected::temporary(&self.directory)?;
+        protected::verify_file(file.as_file())?;
         file.write_all(&bytes)?;
         file.as_file().sync_all()?;
         file.persist(self.directory.join("publication.json"))?;
@@ -333,4 +361,17 @@ fn sync_directory_chain(directory: &Path) -> Result<()> {
         sync_directory(ancestor)?;
     }
     Ok(())
+}
+
+fn read_submission(directory: &Path) -> Result<Vec<u8>> {
+    protected::directory(directory)?;
+    let mut bytes = Vec::new();
+    protected::file(&directory.join("submission.json"), false, false)?
+        .take(MAX_PUBLISH_REQUEST_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    ensure!(
+        bytes.len() <= MAX_PUBLISH_REQUEST_BYTES,
+        "protected publication body exceeds its bound"
+    );
+    Ok(bytes)
 }

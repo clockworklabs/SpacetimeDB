@@ -37,6 +37,7 @@ fn request(program: &Program, sequence: u64, initial: bool) -> DeploymentCommit 
         publication_epoch: sequence,
         publisher: Identity::ONE,
         expected_revision: None,
+        expected_last_operation: None,
         prepared_manifest_hash: hash_bytes(sequence.to_le_bytes()),
         deployment: DeploymentSpec::V1(DeploymentSpecV1 {
             module: if initial {
@@ -335,6 +336,8 @@ async fn declared_builtin_publishes_complete_environment_atomically_and_reopens(
             module.relational_db().with_read_only(Workload::Internal, |tx| {
                 assert_eq!(db::environment::snapshot(tx).unwrap(), *expected);
                 assert_eq!(current_deployment(tx).unwrap().unwrap().0, revision);
+                let cursor = db::deployment::current_publication(tx).unwrap().unwrap();
+                assert_eq!(cursor.publication_epoch, receipts);
                 assert_eq!(tx.table_row_count(ST_DEPLOYMENT_OPERATION_ID), Some(receipts));
             });
         };
@@ -344,13 +347,15 @@ async fn declared_builtin_publishes_complete_environment_atomically_and_reopens(
             ("MODE".into(), "paused".into()),
             ("FIXED".into(), "constant".into()),
         ]);
-        let publish_request = |sequence| {
+        let publish_request = |sequence, previous_operation| {
             let mut publication = request(&program, sequence, true);
             publication.deployment = initial.deployment.clone();
             publication.expected_revision = Some(revision);
+            publication.expected_last_operation = Some(previous_operation);
             publication
         };
-        let publication = publish_request(2);
+        let publication = publish_request(2, initial.operation_id);
+        let accepted_operation = publication.operation_id;
         module
             .relational_db()
             .with_auto_commit(Workload::Internal, |tx| {
@@ -381,6 +386,29 @@ async fn declared_builtin_publishes_complete_environment_atomically_and_reopens(
         let module = controller.get_module_host(database.id).await.unwrap();
         assert_state(&module, &replacement, 2);
 
+        // The same normalized deployment revision does not authorize replacing
+        // ENV prepared against the earlier committed operation.
+        let stale = publish_request(3, initial.operation_id);
+        module
+            .relational_db()
+            .with_auto_commit(Workload::Internal, |tx| {
+                install_publication_fence(tx, stale.publication_epoch, stale.operation_id)
+            })
+            .unwrap();
+        assert!(controller
+            .update_module_host_with_environment_and_deployment(
+                database.clone(),
+                HostType::Wasm,
+                database.id,
+                program.bytes.clone(),
+                MigrationPolicy::Compatible,
+                initial_values.clone(),
+                Some(stale),
+            )
+            .await
+            .is_err());
+        assert_state(&controller.get_module_host(database.id).await.unwrap(), &replacement, 2);
+
         let mut invalid_sets = Vec::new();
         let mut invalid = replacement.clone();
         invalid.remove("REQUIRED");
@@ -391,7 +419,7 @@ async fn declared_builtin_publishes_complete_environment_atomically_and_reopens(
             invalid_sets.push(invalid);
         }
         for (index, invalid) in invalid_sets.into_iter().enumerate() {
-            let publication = publish_request(3 + index as u64);
+            let publication = publish_request(4 + index as u64, accepted_operation);
             module
                 .relational_db()
                 .with_auto_commit(Workload::Internal, |tx| {
@@ -417,7 +445,7 @@ async fn declared_builtin_publishes_complete_environment_atomically_and_reopens(
         // Wasm custom section would leave the extracted declarations unchanged.
         let mut different_bytes = program.bytes.to_vec();
         different_bytes.extend_from_slice(&[0, 3, 1, b'x', 1]);
-        let publication = publish_request(7);
+        let publication = publish_request(8, accepted_operation);
         module
             .relational_db()
             .with_auto_commit(Workload::Internal, |tx| {

@@ -60,6 +60,7 @@ fn setup(db: &RelationalDB, keys: Vec<String>) -> EnvironmentSnapshotScope {
         publication_epoch: 1,
         publisher: db.owner_identity(),
         expected_revision: None,
+        expected_last_operation: None,
         prepared_manifest_hash: hash_bytes(b"prepared"),
         deployment: DeploymentSpec::V1(DeploymentSpecV1 {
             module: ModuleComponent::SystemEmpty(generated.descriptor),
@@ -87,6 +88,8 @@ fn setup(db: &RelationalDB, keys: Vec<String>) -> EnvironmentSnapshotScope {
         node_incarnation: uuid(),
         generation: 1,
         deployment_revision: request.deployment.revision().unwrap(),
+        publication_operation: request.operation_id,
+        publication_epoch: request.publication_epoch,
         start_request: request.operation_id,
         env_generation: uuid(),
         env_keys: spec.env_keys,
@@ -472,4 +475,105 @@ fn container_environment_concurrent_closure_cannot_reopen_collected_generation()
     db.with_read_only(Workload::ForTests, |state| {
         assert_eq!(state.table_row_count(ST_CONTAINER_ENVIRONMENT_ID), Some(0))
     });
+}
+
+#[test]
+fn snapshots_bind_committed_operation_and_ignore_newer_aborted_attempt_epoch() {
+    use crate::db::deployment::{abort_deployment_commit, current_publication};
+    let db = TestDB::durable_without_snapshot_repo().unwrap();
+    let original = setup(&db, vec!["A".into()]);
+    let attempt = db
+        .with_auto_commit(Workload::ForTests, |tx| -> anyhow::Result<_> {
+            let current = current_publication(tx)?.unwrap();
+            let attempt = DeploymentCommit {
+                operation_id: uuid(),
+                publication_epoch: current.publication_epoch + 1,
+                publisher: db.owner_identity(),
+                expected_revision: Some(current.revision),
+                expected_last_operation: Some(current.operation_id),
+                prepared_manifest_hash: hash_bytes(b"aborted"),
+                deployment: deployment::current_deployment(tx)?.unwrap().1,
+            };
+            install_publication_fence(tx, attempt.publication_epoch, attempt.operation_id)?;
+            abort_deployment_commit(tx, &attempt)?;
+            install_container_fence(&db, tx, &self_fence(&db, 2, true))?;
+            Ok(attempt)
+        })
+        .unwrap();
+    let scope = EnvironmentSnapshotScope {
+        generation: 2,
+        env_generation: uuid(),
+        ..original
+    };
+    // Real commitlog replay retains the committed operation and an unrelated
+    // later closed attempt. A fresh generation still captures the old values.
+    let db = db.reopen().unwrap();
+    let receipt = tx(&db, |tx| capture(&db, tx, &scope)).unwrap();
+    let values = db
+        .with_read_only(Workload::ForTests, |state| read(&db, state, &receipt))
+        .unwrap();
+    assert_eq!(values.selected_values["A"], "before");
+    let mut wrong = scope.clone();
+    wrong.publication_epoch = attempt.publication_epoch;
+    assert_eq!(
+        tx(&db, |tx| capture(&db, tx, &wrong)),
+        Err(EnvironmentSnapshotError::RevisionConflict)
+    );
+    wrong.publication_operation = attempt.operation_id;
+    assert_eq!(
+        tx(&db, |tx| capture(&db, tx, &wrong)),
+        Err(EnvironmentSnapshotError::RevisionConflict)
+    );
+
+    let accepted = db
+        .with_auto_commit(Workload::ForTests, |tx| -> anyhow::Result<_> {
+            let mut next = attempt.clone();
+            next.operation_id = uuid();
+            next.publication_epoch += 1;
+            install_publication_fence(tx, next.publication_epoch, next.operation_id)?;
+            environment::replace(
+                &db,
+                tx,
+                &environment_schema(&scope.env_keys),
+                &BTreeMap::from([("A".into(), "new-secret".into())]),
+            )?;
+            Ok(record_deployment_commit(
+                tx,
+                &next,
+                Timestamp::now(),
+                &Default::default(),
+            )?)
+        })
+        .unwrap();
+    assert_eq!(accepted.revision, scope.deployment_revision);
+    // Keep the generation fence unchanged here to prove the publication cursor
+    // independently blocks both old capture and old immutable snapshot reads.
+    assert_eq!(
+        tx(&db, |tx| capture(&db, tx, &scope)),
+        Err(EnvironmentSnapshotError::RevisionConflict)
+    );
+    assert!(matches!(
+        db.with_read_only(Workload::ForTests, |state| read(&db, state, &receipt)),
+        Err(EnvironmentSnapshotError::RevisionConflict)
+    ));
+    db.with_auto_commit(Workload::ForTests, |tx| -> anyhow::Result<_> {
+        install_container_fence(&db, tx, &self_fence(&db, 3, true))?;
+        close(&db, tx, &scope, 3)?;
+        Ok(())
+    })
+    .unwrap();
+    let next_scope = EnvironmentSnapshotScope {
+        generation: 3,
+        env_generation: uuid(),
+        publication_operation: accepted.operation_id,
+        publication_epoch: accepted.publication_epoch,
+        ..scope
+    };
+    let receipt = tx(&db, |tx| capture(&db, tx, &next_scope)).unwrap();
+    assert_eq!(
+        db.with_read_only(Workload::ForTests, |state| read(&db, state, &receipt))
+            .unwrap()
+            .selected_values["A"],
+        "new-secret"
+    );
 }

@@ -66,6 +66,7 @@ fn setup(db: &RelationalDB, keys: Vec<String>) -> EnvironmentSnapshotScope {
         publication_epoch: 1,
         publisher: db.owner_identity(),
         expected_revision: None,
+        expected_last_operation: None,
         prepared_manifest_hash: hash_bytes(b"prepared"),
         deployment: DeploymentSpec::V1(DeploymentSpecV1 {
             module: ModuleComponent::SystemEmpty(generated.descriptor),
@@ -93,6 +94,8 @@ fn setup(db: &RelationalDB, keys: Vec<String>) -> EnvironmentSnapshotScope {
         node_incarnation: uuid(),
         generation: 1,
         deployment_revision: request.deployment.revision().unwrap(),
+        publication_operation: request.operation_id,
+        publication_epoch: request.publication_epoch,
         start_request: request.operation_id,
         env_generation: uuid(),
         env_keys: spec.env_keys,

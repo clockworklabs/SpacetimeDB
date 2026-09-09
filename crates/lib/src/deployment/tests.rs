@@ -9,6 +9,7 @@ fn request(module_action: ModuleAction) -> PublishEnvelope {
         version: PUBLISH_PROTOCOL_VERSION,
         operation_id: operation_id(),
         expected_revision: None,
+        expected_last_operation: None,
         module_action,
         container_action: ContainerAction::Keep,
     }

@@ -12,18 +12,19 @@ use spacetimedb_lib::container::{
     ContainerMode, ContainerResources, ContainerSpec, ImagePlatform, OciDigest, RestartPolicy,
 };
 use spacetimedb_lib::deployment::{DeploymentSpec, DeploymentSpecV1, ModuleComponent, UserModule, UserModuleKind};
-use spacetimedb_lib::{hash_bytes, sats::product, ConnectionId, Hash, Identity, Uuid};
+use spacetimedb_lib::{hash_bytes, sats::product, ConnectionId, Identity, Uuid};
 use spacetimedb_schema::auto_migrate::{MigrationPolicy, MigrationToken};
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule, DEFAULT_CONFIG};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-fn prepared(bytes: &[u8], epoch: u64, previous: Option<Hash>, command: &str) -> DeploymentCommit {
+fn prepared(bytes: &[u8], epoch: u64, previous: Option<&DeploymentCommit>, command: &str) -> DeploymentCommit {
     let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
     DeploymentCommit {
         operation_id: Uuid::from_u128((now_ms << 80) | (0x7000u128 << 64) | (0x8000u128 << 48) | u128::from(epoch)),
         publication_epoch: epoch,
         publisher: Identity::ZERO,
-        expected_revision: previous,
+        expected_revision: previous.map(|request| request.deployment.revision().unwrap()),
+        expected_last_operation: previous.map(|request| request.operation_id),
         prepared_manifest_hash: hash_bytes(epoch.to_le_bytes()),
         deployment: DeploymentSpec::V1(DeploymentSpecV1 {
             module: ModuleComponent::User(UserModule {
@@ -112,7 +113,7 @@ fn container_only_changes_and_old_retries_preserve_the_current_module() {
         let result = host.update_with_deployment(database.clone(), HostType::Wasm, bytes.to_vec().into(), MigrationPolicy::Compatible, first.clone()).await.unwrap();
         confirmed(result).await;
         let first_revision = first.deployment.revision().unwrap();
-        let second = prepared(&bytes, 2, Some(first_revision), "/app/second");
+        let second = prepared(&bytes, 2, Some(&first), "/app/second");
         fence(&host.module().await.unwrap(), &second);
         confirmed(host.update_with_deployment(database.clone(), HostType::Wasm, bytes.to_vec().into(), MigrationPolicy::Compatible, second.clone()).await.unwrap()).await;
         assert_ne!(first_revision, second.deployment.revision().unwrap());
@@ -121,7 +122,7 @@ fn container_only_changes_and_old_retries_preserve_the_current_module() {
         // its definition. This exercises the actual Wasm migration and swap.
         let mut newer_bytes = bytes.to_vec();
         newer_bytes.extend_from_slice(&[0, 3, 1, b'x', 1]);
-        let third = prepared(&newer_bytes, 3, Some(second.deployment.revision().unwrap()), "/app/third");
+        let third = prepared(&newer_bytes, 3, Some(&second), "/app/third");
         fence(&host.module().await.unwrap(), &third);
         confirmed(host.update_with_deployment(database.clone(), HostType::Wasm, newer_bytes.clone().into(), MigrationPolicy::Compatible, third.clone()).await.unwrap()).await;
         let newest = third.deployment.revision().unwrap();
@@ -140,10 +141,10 @@ fn container_only_changes_and_old_retries_preserve_the_current_module() {
 
         // A stale CAS and a forged association between bytes and declaration
         // cannot change either component, and rejection leaves service usable.
-        let stale = prepared(&bytes, 4, Some(first_revision), "/app/stale");
+        let stale = prepared(&bytes, 4, Some(&first), "/app/stale");
         fence(&current, &stale);
         assert!(host.update_with_deployment(database.clone(), HostType::Wasm, bytes.to_vec().into(), MigrationPolicy::Compatible, stale).await.is_err());
-        let mismatched = prepared(&bytes, 5, Some(newest), "/app/mismatch");
+        let mismatched = prepared(&bytes, 5, Some(&third), "/app/mismatch");
         fence(&current, &mismatched);
         assert!(host.update_with_deployment(database.clone(), HostType::Wasm, newer_bytes.clone().into(), MigrationPolicy::Compatible, mismatched).await.is_err());
         let current = host.module().await.unwrap();
@@ -154,7 +155,7 @@ fn container_only_changes_and_old_retries_preserve_the_current_module() {
         });
 
         let empty = spacetimedb::host::empty_module::program(spacetimedb::host::empty_module::VERSION).unwrap();
-        let mut remove_module = prepared(&empty.bytes, 6, Some(newest), "/app/image-only");
+        let mut remove_module = prepared(&empty.bytes, 6, Some(&third), "/app/image-only");
         let DeploymentSpec::V1(spec) = &mut remove_module.deployment;
         spec.module = ModuleComponent::SystemEmpty(spacetimedb_lib::deployment::system_empty::empty().descriptor);
         // An init request cannot execute this instance's schema while storing

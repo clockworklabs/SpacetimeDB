@@ -99,7 +99,7 @@ tikv-jemallocator = { workspace = true }
 rustix = { version = "1", features = ["fs", "process"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = ["Win32_System_Console"] }
+windows-sys = { workspace = true, features = ["Win32_System_Console", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Threading", "Win32_System_SystemServices"] }
 
 [build-dependencies]
 serde = { workspace = true, features = ["derive"] }

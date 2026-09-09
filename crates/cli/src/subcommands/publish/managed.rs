@@ -1,6 +1,6 @@
 //! Managed publication frontend. The resume journal owns every byte needed to
 //! retry; project configuration and mutable image tags are only read initially.
-use super::{confirm_major_version_upgrade, YesFlags};
+use super::{confirm_major_version_upgrade, environment, YesFlags};
 use crate::{
     common_args::ClearMode,
     config::Config,
@@ -91,7 +91,8 @@ pub(super) fn add_args(mut command: Command) -> Command {
             Arg::new("publication_state_dir")
                 .long("publication-state-dir")
                 .value_parser(clap::value_parser!(PathBuf))
-                .help("Private local directory retaining managed publication bytes and progress"),
+                .help("Private local directory retaining complete managed publication inputs and progress")
+                .long_help("Private local directory retaining complete managed publication inputs and progress. The protected submission file includes resolved environment values. Keep this directory private; do not commit it or share it. Resume reuses these exact values without rereading project configuration or shell variables."),
         )
         .arg(
             Arg::new("resume_publication")
@@ -433,6 +434,7 @@ async fn prepare_request(
         version: deployment::PUBLISH_PROTOCOL_VERSION,
         operation_id: Uuid::from_u128(uuid::Uuid::now_v7().as_u128()),
         expected_revision: prior.and_then(|p| p.revision),
+        expected_last_operation: prior.and_then(|p| p.last_operation),
         module_action,
         container_action,
     };
@@ -451,6 +453,18 @@ async fn prepare_request(
     } else {
         bail!("publication has no selected module artifact")
     };
+    // Resolve a complete replacement without consulting the stored values.
+    // For Keep, authenticated schema metadata is tied to the observed program;
+    // a changed committed operation is rejected by the later pair CAS.
+    let schema = if let Some((kind, bytes)) = &module {
+        selected_environment(*kind, bytes).await?
+    } else {
+        client
+            .selected_environment(prior.context("publication has no selected module")?)
+            .await?
+    };
+    let environment = environment::resolve(&schema, target.get_config_value("env"), |key| std::env::var_os(key))?;
+    print!("{}", environment.display());
     let migration_policy = if let Some(prior) = prior {
         if let Some((kind, bytes)) = &module {
             migration(client, prior.database_identity, *kind, bytes, target, yes).await?
@@ -490,6 +504,7 @@ async fn prepare_request(
         None
     };
     let request = PublishRequest {
+        environment: environment.values,
         manifest: PreparedDeploymentManifest::V1(PreparedDeploymentManifestV1 {
             envelope,
             deployment,
@@ -543,7 +558,7 @@ async fn prepare_request(
         None
     };
     let record = Record {
-        version: 1,
+        version: 2,
         server: client.server().to_string(),
         artifact_endpoint: artifact_endpoint.into(),
         publisher,
@@ -564,6 +579,29 @@ async fn prepare_request(
     };
     Journal::create(base, record, image, module.as_ref().map(|(_, bytes)| bytes.as_slice()))
 }
+async fn selected_environment(
+    kind: UserModuleKind,
+    bytes: &[u8],
+) -> Result<spacetimedb_lib::environment::EnvironmentSchema> {
+    // Canonical platform modules can be inspected without executing a helper.
+    // The verifier regenerates every byte; this is equally valid if a user
+    // explicitly selected those exact canonical Wasm bytes with --bin-path.
+    if kind == UserModuleKind::Wasm {
+        let descriptor = deployment::system_empty::SystemEmptyModule {
+            version: deployment::system_empty::VERSION,
+            program_hash: spacetimedb_lib::hash_bytes(bytes),
+        };
+        if let Ok(schema) = deployment::system_empty::verify(&descriptor, bytes) {
+            return Ok(schema);
+        }
+    }
+    let host_type = match kind {
+        UserModuleKind::Wasm => "Wasm",
+        UserModuleKind::Js => "Js",
+    };
+    Ok(environment::inspect(bytes, host_type).await?.environment().clone())
+}
+
 fn tools(args: &ArgMatches) -> Result<BuildTools> {
     let mut tools = BuildTools {
         buildctl: args.get_one::<PathBuf>("buildctl").unwrap().clone(),
@@ -704,6 +742,9 @@ async fn execute(client: &PublisherClient, journal: &mut Journal, args: &ArgMatc
 }
 
 #[cfg(test)]
+mod environment_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::container::publish::tests::{database, Fixture};
@@ -786,6 +827,7 @@ mod tests {
         let prior_request = fixture.record(false, false).request().unwrap();
         let prior = DeploymentStatus {
             database_identity: database(),
+            last_operation: Some(Uuid::from_u128(uuid::Uuid::now_v7().as_u128())),
             revision: Some(prior_request.manifest.current().deployment.revision().unwrap()),
             deployment: prior_request.manifest.current().deployment.clone(),
             module_artifact: ArtifactReference {
@@ -853,6 +895,7 @@ mod tests {
             state.deny_preflight = true;
             state.prior = Some(DeploymentStatus {
                 database_identity: database(),
+                last_operation: Some(Uuid::from_u128(uuid::Uuid::now_v7().as_u128())),
                 revision: Some(request.manifest.current().deployment.revision().unwrap()),
                 deployment: request.manifest.current().deployment.clone(),
                 module_artifact: ArtifactReference {
@@ -922,7 +965,13 @@ mod tests {
         let fixture = Fixture::new().await;
         fixture.state.lock().unwrap().lose_submit_before_commit = true;
         let temporary = tempfile::tempdir().unwrap();
-        let record = fixture.record(false, false);
+        let mut record = fixture.record(false, false);
+        let mut request = record.request().unwrap();
+        request
+            .environment
+            .insert("ORIGINAL_ENV".into(), "original-secret-value".into());
+        record.request_json = serde_json::to_string(&request).unwrap();
+        record.request_digest = spacetimedb_oci::sha256(record.request_json.as_bytes());
         let exact = record.request_json.clone();
         let mut journal = Journal::create(
             temporary.path(),
@@ -946,7 +995,7 @@ mod tests {
         std::fs::write(&cli_config, "spacetimedb_token = 'isolated-fixture-credential'\n").unwrap();
         let config = Config::load(spacetimedb_paths::cli::CliTomlPath::from_path_unchecked(cli_config)).unwrap();
         let changed_project = crate::spacetime_config::LoadedConfig {
-            config: serde_json::from_value(json!({"database":"different-target", "module_path":"missing-build-source", "server":"must-never-resolve-this-alias"})).unwrap(),
+            config: serde_json::from_value(json!({"database":"different-target", "module_path":"missing-build-source", "server":"must-never-resolve-this-alias", "env":{"ORIGINAL_ENV":"changed-secret-value"}})).unwrap(),
             config_dir: temporary.path().into(), loaded_files: vec![], has_dev_file: false,
         };
         let args = super::super::cli()

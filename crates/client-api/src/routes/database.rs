@@ -550,6 +550,13 @@ where
     Ok((
         TypedHeader(SpacetimeIdentity(auth.claims.identity)),
         TypedHeader(SpacetimeIdentityToken(auth.creds)),
+        [
+            ("x-spacetimedb-module-hash", module.info.module_hash.to_string()),
+            (
+                "x-spacetimedb-database-identity",
+                module.info.database_identity.to_string(),
+            ),
+        ],
         response_json,
     ))
 }

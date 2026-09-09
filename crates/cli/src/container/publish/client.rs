@@ -159,6 +159,71 @@ impl PublisherClient {
         )
         .await
     }
+    /// Keep inspects the existing metadata API, not a code-download permission.
+    /// Identity and program hash bind its declarations to the previously
+    /// observed deployment; the later revision/operation CAS closes the race.
+    pub async fn selected_environment(
+        &self,
+        prior: &DeploymentStatus,
+    ) -> Result<spacetimedb_lib::environment::EnvironmentSchema> {
+        const MAX_SCHEMA_BYTES: usize = 16 * 1024 * 1024;
+        let mut response = self
+            .request(
+                Method::GET,
+                route(
+                    &self.server,
+                    &["v1", "database", &prior.database_identity.to_hex(), "schema"],
+                )?,
+            )
+            .query(&[("version", "10")])
+            .send()
+            .await?;
+        ensure!(
+            response.status() == StatusCode::OK,
+            "selected module schema was not authorized or available"
+        );
+        let hash = match &prior.deployment.current().module {
+            spacetimedb_lib::deployment::ModuleComponent::User(module) => module.program_hash,
+            spacetimedb_lib::deployment::ModuleComponent::SystemEmpty(module) => module.program_hash,
+        };
+        ensure!(
+            response
+                .headers()
+                .get("x-spacetimedb-database-identity")
+                .and_then(|h| h.to_str().ok())
+                == Some(prior.database_identity.to_hex().as_str()),
+            "selected module database identity changed"
+        );
+        ensure!(
+            response
+                .headers()
+                .get("x-spacetimedb-module-hash")
+                .and_then(|h| h.to_str().ok())
+                == Some(hash.to_string().as_str()),
+            "selected module program hash changed"
+        );
+        ensure!(
+            response
+                .content_length()
+                .is_none_or(|length| length <= MAX_SCHEMA_BYTES as u64),
+            "selected module schema exceeds its bound"
+        );
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await? {
+            ensure!(
+                chunk.len() <= MAX_SCHEMA_BYTES.saturating_sub(bytes.len()),
+                "selected module schema exceeds its bound"
+            );
+            bytes.extend_from_slice(&chunk);
+        }
+        let spacetimedb_lib::sats::serde::SerdeWrapper(raw) = serde_json::from_slice::<
+            spacetimedb_lib::sats::serde::SerdeWrapper<spacetimedb_lib::db::raw_def::v10::RawModuleDefV10>,
+        >(&bytes)
+        .map_err(|_| anyhow::anyhow!("invalid selected module schema"))?;
+        let module = spacetimedb_schema::def::ModuleDef::try_from(spacetimedb_lib::RawModuleDef::V10(raw))
+            .map_err(|_| anyhow::anyhow!("invalid selected module schema"))?;
+        Ok(module.environment().clone())
+    }
     pub async fn reserve(&self, request: &ReserveDatabaseRequest) -> Result<DatabaseReservation> {
         json(
             self.request(
@@ -179,7 +244,11 @@ impl PublisherClient {
     /// Resume sends these same immutable bytes, without reconstructing a request
     /// from a changed tag, project configuration, or current deployment.
     pub async fn submit_bytes(&self, database: Identity, bytes: &[u8]) -> Result<PublicationStatus> {
-        ensure!(bytes.len() <= 256 * 1024, "publication HTTP body exceeds 256 KiB");
+        ensure!(
+            bytes.len() <= MAX_PUBLISH_REQUEST_BYTES,
+            "publication HTTP body exceeds its bound"
+        );
+        PublishRequest::decode(bytes)?;
         json(
             self.request(
                 Method::PUT,
@@ -430,5 +499,5 @@ async fn json<T: DeserializeOwned>(mut response: reqwest::Response, action: &'st
         );
         bytes.extend_from_slice(&chunk);
     }
-    serde_json::from_slice(&bytes).with_context(|| format!("invalid {action} response"))
+    serde_json::from_slice(&bytes).map_err(|_| anyhow::anyhow!("invalid {action} response"))
 }

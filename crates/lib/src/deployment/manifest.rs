@@ -122,6 +122,7 @@ mod tests {
                 version: super::super::PUBLISH_PROTOCOL_VERSION,
                 operation_id: crate::Uuid::from_u128(0x01991ec4000070008000000000000001),
                 expected_revision: None,
+                expected_last_operation: None,
                 module_action: super::super::ModuleAction::Keep,
                 container_action: crate::container::ContainerAction::Keep,
             },

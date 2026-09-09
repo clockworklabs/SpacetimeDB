@@ -42,6 +42,7 @@ pub async fn run(
         "resume server differs from the original publication endpoint"
     );
     let artifact = client.artifact_endpoint(&journal.record.artifact_endpoint, approved_artifact)?;
+    journal.submission_bytes()?;
     let request = journal.record.request()?;
     let operation = request.manifest.current().envelope.operation_id;
     let permission = client.permission().await?;
@@ -109,7 +110,7 @@ pub async fn run(
     journal.record.submitted = true;
     journal.save()?;
     let status = client
-        .submit_bytes(journal.record.database.unwrap(), journal.record.request_json.as_bytes())
+        .submit_bytes(journal.record.database.unwrap(), &journal.submission_bytes()?)
         .await
         .context("publication outcome is not confirmed; resume the same directory")?;
     journal.record.check_status(&request, &status)?;
@@ -134,7 +135,7 @@ async fn observe_or_replay(
                 .is_some_and(|error| error.status == reqwest::StatusCode::FORBIDDEN) =>
         {
             client
-                .submit_bytes(database, journal.record.request_json.as_bytes())
+                .submit_bytes(database, &journal.submission_bytes()?)
                 .await
                 .map(Some)
                 .context("exact publication replay was not confirmed; keep the same resume directory")
