@@ -173,6 +173,16 @@ impl Pages {
         assert!(newly_inserted_into_free_pages_set)
     }
 
+    /// Drops all pages, resetting `self` to its initial empty state.
+    ///
+    /// Unlike [`Self::clear`], which empties each page but keeps it allocated,
+    /// this removes the pages themselves,
+    /// so that [`Self::set_contents`] can be called afterwards.
+    pub fn reset(&mut self) {
+        self.pages.clear();
+        self.non_full_pages.clear();
+    }
+
     /// Get a reference to fixed-len row data.
     ///
     /// Used in benchmarks.

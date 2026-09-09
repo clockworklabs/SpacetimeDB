@@ -33,6 +33,8 @@ These changes are allowed by automatic migration, but may cause runtime errors f
 - **Changing or removing reducers.** Clients attempting to call the old version of a changed reducer or a removed reducer will receive runtime errors.
 - **Changing tables from public to private.** Clients subscribed to a newly-private table will receive runtime errors.
 - **Removing `Primary Key` annotations.** Non-updated clients will still use the old primary key as a unique key in their local cache, which can result in non-deterministic behavior when updates are received.
+- **Removing an empty table.** The publish fails if the table still contains rows; clear the table's rows first (e.g. via a reducer). All clients are disconnected, and non-updated clients subscribed to the removed table will receive runtime errors.
+- **Reordering the columns of an empty table.** The publish fails if the table contains rows; clear the table's rows first (e.g. via a reducer). All clients are disconnected, and clients must regenerate their bindings to read the table correctly.
 - **Removing indexes.** This is only breaking in specific situations. The main issue occurs with subscription queries involving semijoins, such as:
 
   ```typescript
@@ -48,8 +50,8 @@ These changes are allowed by automatic migration, but may cause runtime errors f
 
 The following changes cannot be performed with automatic migration and will cause the publish to fail:
 
-- **Removing tables.**
-- **Removing or modifying existing columns.** This includes changing the type, renaming, or reordering columns.
+- **Removing tables that contain data.** Empty tables can be removed (see above).
+- **Removing or modifying existing columns.** This includes changing the type or renaming columns. Reordering columns is only possible while the table is empty (see above).
 - **Adding columns without a default value.** New columns must have a default value so existing rows can be populated.
 - **Adding columns in the middle of a table.** New columns must be added at the end of the table definition.
 - **Changing whether a table is used for `scheduling`.**

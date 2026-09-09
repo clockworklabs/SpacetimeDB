@@ -856,6 +856,12 @@ impl CommittedState {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.table_access = access);
             }
+            // A table's `is_event` flag was changed. Change back to the old one.
+            TableAlterEventFlag(table_id, old_is_event) => {
+                let table = self.tables.get_mut(&table_id)?;
+                assert_eq!(table.row_count, 0);
+                table.with_mut_schema(|s| s.is_event = old_is_event);
+            }
             // A table's primary key was changed. Change back to the old one.
             TableAlterPrimaryKey(table_id, old_pk) => {
                 let table = self.tables.get_mut(&table_id)?;
@@ -879,7 +885,7 @@ impl CommittedState {
                 unsafe { table.change_columns_to_unchecked(column_schemas, |_, _, _| Ok::<_, Infallible>(())) }
                     .unwrap_or_else(|e| match e {});
             }
-            ReschemaEventTable(table_id, column_schemas) => {
+            ReschemaEmptyTable(table_id, column_schemas) => {
                 let table = self.tables.get_mut(&table_id)?;
                 // SAFETY:
                 // Same argument as in `TableAlterRowType` applies,

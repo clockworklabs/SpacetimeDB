@@ -97,6 +97,12 @@ fn format_step<F: MigrationFormatter>(
             let access_info = extract_access_change_info(*table, plan)?;
             f.format_change_access(&access_info)
         }
+        AutoMigrateStep::ChangeEventFlag(table) => {
+            let name = joined(*table);
+            let not_found = || FormattingErrors::TableNotFound { table: (&*name).into() };
+            let (_, new_table) = plan.new.find_table(*table).ok_or_else(not_found)?;
+            f.format_change_event_flag(&name, new_table.is_event)
+        }
         AutoMigrateStep::ChangePrimaryKey(table) => {
             let name = joined(*table);
             let not_found = || FormattingErrors::TableNotFound { table: (&*name).into() };
@@ -140,6 +146,8 @@ fn format_step<F: MigrationFormatter>(
         // TODO(format-event-table-reschema): I (pgoldman 2026-06-10) didn't have time to meaningfully format event table reschemas,
         // so for now we're just printing the table name.
         AutoMigrateStep::ReschemaEventTable(table) => f.format_event_table_reschema(&joined(*table)),
+
+        AutoMigrateStep::ReschemaEmptyTable(table) => f.format_empty_table_reschema(&joined(*table)),
     }?;
 
     Ok(())
@@ -187,6 +195,7 @@ pub trait MigrationFormatter {
     fn format_constraint(&mut self, constraint_info: &ConstraintInfo, action: Action) -> io::Result<()>;
     fn format_sequence(&mut self, sequence_info: &SequenceInfo, action: Action) -> io::Result<()>;
     fn format_change_access(&mut self, access_info: &AccessChangeInfo) -> io::Result<()>;
+    fn format_change_event_flag(&mut self, table_name: &NamespacedIdentifier, new_is_event: bool) -> io::Result<()>;
     fn format_change_primary_key(
         &mut self,
         table_name: &NamespacedIdentifier,
@@ -207,6 +216,8 @@ pub trait MigrationFormatter {
     // TODO(format-event-table-reschema): I (pgoldman 2026-06-10) didn't have time to meaningfully format event table reschemas,
     // so for now we're just printing the table name.
     fn format_event_table_reschema(&mut self, table_name: &NamespacedIdentifier) -> io::Result<()>;
+    /// Format a layout-incompatible reschema of an empty (non-event) table, e.g. a column reorder.
+    fn format_empty_table_reschema(&mut self, table_name: &NamespacedIdentifier) -> io::Result<()>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
