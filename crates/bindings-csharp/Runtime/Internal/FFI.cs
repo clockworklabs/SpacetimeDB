@@ -132,10 +132,10 @@ internal static partial class FFI
         uint keyLen,
         out BytesSource source
     );
+
     [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_7)]
     public static partial uint get_call_auth_flags();
-
 
     [NativeMarshalling(typeof(Marshaller))]
     public struct CheckedStatus
