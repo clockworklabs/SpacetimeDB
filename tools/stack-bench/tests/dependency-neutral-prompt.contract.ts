@@ -85,6 +85,27 @@ function renderPrompt({ level, stack, task, guidance, repair = false, cli = fals
   });
 }
 
+test('dev workflow reaches build, upgrade, and repair prompts only when selected', () => {
+  const track = loadTrack('ecommerce');
+  const catalog = resolveFeatureCatalog('progression/ecommerce.json', track);
+  const neutral = resolveGuidanceProfile('neutral', STACKS);
+  const dev = resolveGuidanceProfile('neutral-dev', STACKS);
+  for (const level of [1, 2] as const) {
+    const binding = resolveRecipeRelease(track, level, 'ecommerce.progression-catalog');
+    const task = resolveProgressionRecipeLevelSelection(binding, catalog, level,
+      { cumulative: true }).agent.request;
+    for (const stack of STACKS) for (const repair of [false, true]) {
+      const original = renderPrompt({ level, stack, task, guidance: neutral, repair });
+      const changed = renderPrompt({ level, stack, task, guidance: dev, repair });
+      if (stack === 'spacetime') {
+        assert.doesNotMatch(original, /# Development workflow/);
+        assert.match(changed, /# Development workflow/);
+        assert.match(changed, /Do not run competing publish commands or watchers/);
+      } else assert.equal(changed, original);
+    }
+  }
+});
+
 test('neutral dependency prompts include only selected product and stack contracts', () => {
   const track = loadTrack('ecommerce');
   const catalog = resolveFeatureCatalog('progression/ecommerce.json', track);

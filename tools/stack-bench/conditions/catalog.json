@@ -4,7 +4,8 @@
   "guidanceProfiles": {
     "model-free-stub": "guidance/model-free-stub.json",
     "prescribed": "guidance/prescribed.json",
-    "neutral": "guidance/neutral.json"
+    "neutral": "guidance/neutral.json",
+    "neutral-dev": "guidance/neutral-dev.json"
   },
   "repairPolicies": {
     "scored-only": "repairs/scored-only.json"

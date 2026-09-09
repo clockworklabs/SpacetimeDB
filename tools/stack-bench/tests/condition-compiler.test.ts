@@ -36,6 +36,22 @@ const writeJson = (path: string, value: unknown): void => {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 };
 
+test('dev workflow is opt-in and changes only the SpacetimeDB skill identity', () => {
+  const stacks = ['spacetime', 'mongodb', 'postgres'];
+  const neutral = resolveGuidanceProfile('neutral', stacks);
+  const dev = resolveGuidanceProfile('neutral-dev', stacks);
+  assert.deepEqual(dev.documents, neutral.documents);
+  assert.deepEqual(dev.credentialAliases, neutral.credentialAliases);
+  assert.deepEqual(dev.material, neutral.material);
+  for (const stack of ['mongodb', 'postgres']) {
+    assert.deepEqual(dev.skills[stack], neutral.skills[stack]);
+  }
+  assert.deepEqual(dev.skills.spacetime!.ids,
+    [...neutral.skills.spacetime!.ids, 'spacetime-dev']);
+  assert.notEqual(dev.skills.spacetime!.sha256, neutral.skills.spacetime!.sha256);
+  assert.notEqual(dev.contentSha256, neutral.contentSha256);
+});
+
 test('the prescribed condition binds independent guidance, repair, and document identities', () => {
   const [condition] = resolveStudyConditions([prescribed], ['mongodb', 'postgres', 'spacetime'],
     { requested });

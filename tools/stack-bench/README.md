@@ -39,6 +39,11 @@ Set `repair.budget.total` to `0` for a study with no repairs. Feature
 work stays incremental; grading rules and repair budgets stay separate. See the
 [prompting method](docs/prompting.md#dependency-progression).
 
+Set a condition's `guidanceProfile` to `neutral-dev` to request the
+`spacetime dev` watch workflow for SpacetimeDB. This opt-in profile reuses neutral
+product guidance and adds a pinned workflow skill; other stacks are unchanged.
+It does not change grading or repair policy. The default remains `neutral`.
+
 ## Start here
 
 From a clean checkout of the delivered branch, with Docker running, use one
