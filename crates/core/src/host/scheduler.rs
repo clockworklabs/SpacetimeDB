@@ -964,6 +964,7 @@ fn call_params_for_queued_item<T>(
                 return Ok(None);
             };
             let row = schedule_row.to_bsatn_vec()?;
+            // Ignore a stale queue entry if the scheduled row was updated after it was queued.
             if hash_bytes(&row) != row_hash {
                 return Ok(None);
             }
