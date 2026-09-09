@@ -18,6 +18,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Write};
 use std::hash::Hash;
+use std::sync::LazyLock;
 
 use crate::error::{IdentifierError, ValidationErrors};
 use crate::identifier::{Identifier, NamespacePath, NamespacedIdentifier};
@@ -44,6 +45,7 @@ use spacetimedb_lib::db::raw_def::v9::{
     RawUniqueConstraintDataV9, RawViewDefV9, TableAccess, TableType,
 };
 use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
+use spacetimedb_lib::environment::EnvironmentSchema;
 use spacetimedb_lib::{ProductType, RawModuleDef};
 use spacetimedb_primitives::{
     ColId, ColList, ColOrCols, ColSet, HttpHandlerId, ProcedureId, ReducerId, TableId, ViewFnPtr,
@@ -182,8 +184,8 @@ pub struct ModuleDef {
     /// Validated module bindings capabilities. Legacy modules have none.
     capabilities: BTreeSet<RawIdentifier>,
 
-    environment: spacetimedb_lib::environment::EnvironmentSchema,
-    environment_declared: bool,
+    /// `None` means undeclared; an explicitly empty declaration is `Some(empty)`.
+    environment: Option<EnvironmentSchema>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -204,13 +206,17 @@ impl ModuleDef {
     }
 
     /// The validated root environment schema. Legacy modules have an empty schema.
-    pub fn environment(&self) -> &spacetimedb_lib::environment::EnvironmentSchema {
-        &self.environment
+    pub fn environment(&self) -> &EnvironmentSchema {
+        static EMPTY: LazyLock<EnvironmentSchema> = LazyLock::new(EnvironmentSchema::default);
+        match &self.environment {
+            Some(schema) => schema,
+            None => &EMPTY,
+        }
     }
 
     /// Whether the raw module explicitly required environment support.
     pub fn environment_declared(&self) -> bool {
-        self.environment_declared
+        self.environment.is_some()
     }
 
     /// The raw module definition version this module was authored under.
@@ -1041,7 +1047,6 @@ impl TryFrom<ModuleDef> for RawModuleDefV9 {
             submodules: _,
             capabilities: _,
             environment: _,
-            environment_declared: _,
         } = val;
 
         // Extract column defaults from tables before consuming tables
@@ -1112,11 +1117,10 @@ impl From<ModuleDef> for RawModuleDefV10 {
             submodules,
             capabilities,
             environment,
-            environment_declared,
         } = val;
 
         let mut sections = Vec::new();
-        if environment_declared {
+        if let Some(environment) = environment {
             sections.push(RawModuleDefV10Section::Environment(environment.into_declarations()));
         }
         let mut explicit_names = ExplicitNames::default();

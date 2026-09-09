@@ -1,4 +1,18 @@
 //! Private bootstrap inputs, separate from the historical public Database encoding.
+//!
+//! Creation and reset atomically persist both database indexes, the generation
+//! and initial-program binding, the complete ENV input, and the nominated leader.
+//! The transaction is flushed before host launch, so a lost request response can
+//! recover the same generation through ordinary leader lookup.
+//!
+//! Reading the input rechecks the persisted owner, program, and generation in
+//! the same transaction. A legacy generation with neither metadata nor input has
+//! an empty environment; missing input for a recorded generation is an error.
+//!
+//! The host reads this input only before the database's first initialization.
+//! Reopening an initialized database uses its committed program and `st_env`,
+//! including later module updates. Reset replaces the bootstrap input, and
+//! database deletion removes it atomically with both indexes and the binding.
 use super::*;
 use spacetimedb_client_api_messages::publish::PublishRequest;
 use spacetimedb_lib::Hash;

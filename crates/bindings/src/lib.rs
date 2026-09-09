@@ -921,27 +921,51 @@ pub use query_builder::{Query, RawQuery};
 
 /// Declare the complete publish-time environment schema and generate named accessors.
 ///
-/// Fields must resolve to `String` or `Option<String>`, including type aliases;
-/// `#[env(values("a", "b"))]`
-/// constrains exact strings. Values are supplied on every publish, never in metadata.
-/// The macro generates an `EnvAccess` extension trait for a struct named `Env`.
-/// Import that trait when the declaration lives in a different Rust module.
+/// Fields may be `String`, enums deriving [`EnvironmentValue`], or `Option` of
+/// either, including type aliases. Values are supplied on every publish, never
+/// in metadata. The macro generates an `EnvAccess` extension trait for a struct
+/// named `Env`; import that trait if the declaration lives in another module.
 /// The name `get` is reserved for generic checked access.
 ///
 /// ```no_run
+/// #[derive(spacetimedb::EnvironmentValue)]
+/// pub enum LogLevel {
+///     #[env(value = "debug")]
+///     Debug,
+///     #[env(value = "info")]
+///     Info,
+/// }
 /// #[spacetimedb::env]
 /// pub struct Env {
 ///     pub API_KEY: String,
-///     #[env(values("debug", "info"))]
-///     pub LOG_LEVEL: Option<String>,
+///     pub LOG_LEVEL: Option<LogLevel>,
 /// }
 /// fn read(ctx: &spacetimedb::ReducerContext) {
 ///     let _: String = ctx.env.API_KEY();
-///     let _: Option<String> = ctx.env.LOG_LEVEL();
+///     let _: Option<LogLevel> = ctx.env.LOG_LEVEL();
 /// }
 /// ```
+///
+/// Existing `#[env(values("a", "b"))]` field constraints remain supported for
+/// `String` and `Option<String>`; enum constraints come from their variants.
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::env;
+
+/// Derive a typed environment value from an enum with unit variants.
+///
+/// Each variant accepts its exact Rust name by default. Use
+/// `#[env(value = "in progress")]` to map a variant to an arbitrary string,
+/// including spaces, capitalization, Unicode or the empty string. Mappings must
+/// be distinct, with 1 to 256 variants and at most 8192 UTF-8 bytes per string.
+/// Generic enums and variants with payloads are not supported.
+///
+/// The schema contains only allowed strings. A named environment accessor returns
+/// this enum, or `Option<Enum>` for an optional field; generic `env.get` still
+/// returns `Option<String>`. Missing required values and unmapped strings panic
+/// with the key name only. Other derives and the enum's ordinary serialization
+/// are unaffected.
+#[doc(inline)]
+pub use spacetimedb_bindings_macro::EnvironmentValue;
 
 /// Read-only access to this database's environment store.
 ///

@@ -188,7 +188,7 @@ impl NodeDelegate for StandaloneEnv {
         let owner = self.weak_self.upgrade().expect("standalone owner exists during lookup");
         tokio::spawn(async move {
             let _guard = guard;
-            owner.leader_under_publication(database_id).await
+            owner.leader_with_publication_lock_held(database_id).await
         })
         .await
         .map_err(|error| GetLeaderHostError::LaunchError { source: error.into() })?
@@ -403,7 +403,11 @@ impl StandaloneEnv {
         .await?
     }
 
-    async fn leader_under_publication(&self, database_id: u64) -> Result<Host, GetLeaderHostError> {
+    /// Look up or start the current leader while the caller holds the publication
+    /// lock. Retain the read or write guard through this future's completion.
+    /// Ordinary lookup holds a read guard; publication and reset hold a write
+    /// guard, so calling `leader()` here would acquire the lock again and deadlock.
+    async fn leader_with_publication_lock_held(&self, database_id: u64) -> Result<Host, GetLeaderHostError> {
         let Some(leader) = self.control_db.get_leader_replica_by_database(database_id) else {
             return Err(GetLeaderHostError::NoSuchReplica);
         };
@@ -477,7 +481,7 @@ impl StandaloneEnv {
                 let database_id = database.id;
                 let database_identity = database.database_identity;
 
-                let leader = self.leader_under_publication(database_id).await?;
+                let leader = self.leader_with_publication_lock_held(database_id).await?;
                 let update_result = leader
                     .update_with_environment(
                         database,
@@ -574,7 +578,11 @@ impl StandaloneEnv {
             None => {
                 // A reset without an artifact retains the currently committed
                 // module, not the original bootstrap program or its old values.
-                let module = self.leader_under_publication(database.id).await?.module().await?;
+                let module = self
+                    .leader_with_publication_lock_held(database.id)
+                    .await?
+                    .module()
+                    .await?;
                 module
                     .relational_db()
                     .program()?
@@ -671,16 +679,14 @@ impl StandaloneEnv {
 
     async fn on_insert_replica(&self, instance: &Replica) -> Result<(), anyhow::Error> {
         if instance.leader {
-            let database = self
-                .control_db
-                .get_database_by_id(instance.database_id)?
+            self.leader_with_publication_lock_held(instance.database_id)
+                .await
                 .with_context(|| {
                     format!(
-                        "unknown database: id: {}, instance: {}",
+                        "failed to start leader for database {}, replica {}",
                         instance.database_id, instance.id
                     )
                 })?;
-            self.leader_under_publication(database.id).await?;
         }
 
         Ok(())

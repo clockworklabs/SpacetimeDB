@@ -279,6 +279,7 @@ pub(crate) const ST_EVENT_TABLE_IDX: usize = 16;
 pub(crate) const ST_TABLE_ACCESSOR_IDX: usize = 17;
 pub(crate) const ST_INDEX_ACCESSOR_IDX: usize = 18;
 pub(crate) const ST_COLUMN_ACCESSOR_IDX: usize = 19;
+pub(crate) const ST_ENV_IDX: usize = 20;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
@@ -700,8 +701,8 @@ fn system_module_def() -> ModuleDef {
     validate_system_table::<StEventTableFields>(&result, ST_EVENT_TABLE_NAME);
     validate_system_table::<StTableAccessorFields>(&result, ST_TABLE_ACCESSOR_NAME);
     validate_system_table::<StIndexAccessorFields>(&result, ST_INDEX_ACCESSOR_NAME);
-    environment::validate_table(&result);
     validate_system_table::<StColumnAccessorFields>(&result, ST_COLUMN_ACCESSOR_NAME);
+    validate_system_table::<StEnvFields>(&result, ST_ENV_NAME);
 
     result
 }

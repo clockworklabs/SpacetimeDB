@@ -1,57 +1,24 @@
-error[E0277]: the trait bound `Custom: spacetimedb::rt::environment_value_sealed::Sealed` is not satisfied
-  --> tests/ui/environment_types.rs:30:44
-   |
-30 | impl spacetimedb::rt::EnvironmentValue for Custom {
-   |                                            ^^^^^^ unsatisfied trait bound
-   |
-help: the trait `spacetimedb::rt::environment_value_sealed::Sealed` is not implemented for `Custom`
-  --> tests/ui/environment_types.rs:27:1
-   |
-27 | struct Custom;
-   | ^^^^^^^^^^^^^
-help: the following other types implement trait `spacetimedb::rt::environment_value_sealed::Sealed`
-  --> src/rt.rs
-   |
-   |     impl Sealed for String {}
-   |     ^^^^^^^^^^^^^^^^^^^^^^ `std::string::String`
-   |     impl Sealed for Option<String> {}
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `std::option::Option<std::string::String>`
-note: required by a bound in `EnvironmentValue`
-  --> src/rt.rs
-   |
-   | pub trait EnvironmentValue: environment_value_sealed::Sealed + Sized {
-   |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `EnvironmentValue`
-   = note: `EnvironmentValue` is a "sealed trait", because to implement it you also need to implement `spacetimedb::rt::environment_value_sealed::Sealed`, which is not accessible; this is usually done to force you to use one of the provided types that already implement it
-   = help: the following types implement the trait:
-             std::string::String
-             std::option::Option<std::string::String>
-
-error[E0277]: environment fields must be `String` or `Option<String>`
-  --> tests/ui/environment_types.rs:6:20
-   |
- 6 |         pub VALUE: String,
-   |                    ^^^^^^ unsatisfied trait bound
-   |
+error[E0277]: environment fields must be `String`, an enum deriving `EnvironmentValue`, or an `Option` of either
+ --> tests/ui/environment_types.rs:6:20
+  |
+6 |         pub VALUE: String,
+  |                    ^^^^^^ unsatisfied trait bound
+  |
 help: the trait `EnvironmentValue` is not implemented for `shadowed_string::String`
-  --> tests/ui/environment_types.rs:2:5
-   |
- 2 |     pub struct String;
-   |     ^^^^^^^^^^^^^^^^^
+ --> tests/ui/environment_types.rs:2:5
+  |
+2 |     pub struct String;
+  |     ^^^^^^^^^^^^^^^^^
 help: the following other types implement trait `EnvironmentValue`
-  --> tests/ui/environment_types.rs:30:1
-   |
-30 | impl spacetimedb::rt::EnvironmentValue for Custom {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Custom`
-   |
-  ::: src/rt.rs
-   |
-   | impl EnvironmentValue for String {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `std::string::String`
+ --> src/rt.rs
+  |
+  | impl EnvironmentValue for String {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `std::string::String`
 ...
-   | impl EnvironmentValue for Option<String> {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `std::option::Option<std::string::String>`
+  | impl<T: RequiredEnvironmentValue> EnvironmentValue for Option<T> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `std::option::Option<T>`
 
-error[E0277]: environment fields must be `String` or `Option<String>`
+error[E0277]: environment fields must be `String`, an enum deriving `EnvironmentValue`, or an `Option` of either
   --> tests/ui/environment_types.rs:15:20
    |
 15 |         pub VALUE: Option<String>,
@@ -63,67 +30,53 @@ help: the trait `EnvironmentValue` is not implemented for `shadowed_option::Opti
 11 |     pub struct Option<T>(T);
    |     ^^^^^^^^^^^^^^^^^^^^
 help: the following other types implement trait `EnvironmentValue`
-  --> tests/ui/environment_types.rs:30:1
-   |
-30 | impl spacetimedb::rt::EnvironmentValue for Custom {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Custom`
-   |
-  ::: src/rt.rs
+  --> src/rt.rs
    |
    | impl EnvironmentValue for String {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `std::string::String`
 ...
-   | impl EnvironmentValue for Option<String> {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `std::option::Option<std::string::String>`
+   | impl<T: RequiredEnvironmentValue> EnvironmentValue for Option<T> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `std::option::Option<T>`
 
-error[E0277]: environment fields must be `String` or `Option<String>`
+error[E0277]: environment fields must be `String`, an enum deriving `EnvironmentValue`, or an `Option` of either
   --> tests/ui/environment_types.rs:21:15
    |
 21 |     pub BOOL: bool,
    |               ^^^^ the trait `EnvironmentValue` is not implemented for `bool`
    |
 help: the following other types implement trait `EnvironmentValue`
-  --> tests/ui/environment_types.rs:30:1
-   |
-30 | impl spacetimedb::rt::EnvironmentValue for Custom {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Custom`
-   |
-  ::: src/rt.rs
+  --> src/rt.rs
    |
    | impl EnvironmentValue for String {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `std::string::String`
 ...
-   | impl EnvironmentValue for Option<String> {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `std::option::Option<std::string::String>`
+   | impl<T: RequiredEnvironmentValue> EnvironmentValue for Option<T> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `std::option::Option<T>`
 
-error[E0277]: environment fields must be `String` or `Option<String>`
+error[E0277]: the trait bound `std::option::Option<std::string::String>: RequiredEnvironmentValue` is not satisfied
   --> tests/ui/environment_types.rs:22:17
    |
 22 |     pub NESTED: Option<Option<String>>,
-   |                 ^^^^^^^^^^^^^^^^^^^^^^ the trait `EnvironmentValue` is not implemented for `std::option::Option<std::option::Option<std::string::String>>`
+   |                 ^^^^^^^^^^^^^^^^^^^^^^ the trait `RequiredEnvironmentValue` is not implemented for `std::option::Option<std::string::String>`
    |
-help: the trait `EnvironmentValue` is implemented for `std::option::Option<std::string::String>`
+help: the trait `RequiredEnvironmentValue` is implemented for `std::string::String`
   --> src/rt.rs
    |
-   | impl EnvironmentValue for Option<String> {
+   | impl RequiredEnvironmentValue for String {}
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `std::option::Option<std::option::Option<std::string::String>>` to implement `EnvironmentValue`
 
-error[E0277]: environment fields must be `String` or `Option<String>`
+error[E0277]: environment fields must be `String`, an enum deriving `EnvironmentValue`, or an `Option` of either
   --> tests/ui/environment_types.rs:24:14
    |
 24 |     pub get: u32,
    |              ^^^ the trait `EnvironmentValue` is not implemented for `u32`
    |
 help: the following other types implement trait `EnvironmentValue`
-  --> tests/ui/environment_types.rs:30:1
-   |
-30 | impl spacetimedb::rt::EnvironmentValue for Custom {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Custom`
-   |
-  ::: src/rt.rs
+  --> src/rt.rs
    |
    | impl EnvironmentValue for String {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `std::string::String`
 ...
-   | impl EnvironmentValue for Option<String> {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `std::option::Option<std::string::String>`
+   | impl<T: RequiredEnvironmentValue> EnvironmentValue for Option<T> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `std::option::Option<T>`

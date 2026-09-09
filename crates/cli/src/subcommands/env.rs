@@ -41,7 +41,7 @@ pub fn cli() -> Command {
             ),
         ))
         .subcommand(target(
-            Command::new("list").about("List published environment keys (never values)"),
+            Command::new("list").about("List published environment keys and values"),
         ))
 }
 
@@ -53,7 +53,7 @@ enum Query {
 impl Query {
     fn sql(&self) -> anyhow::Result<String> {
         match self {
-            Self::List => Ok("SELECT key FROM st_env".into()),
+            Self::List => Ok("SELECT key, value FROM st_env".into()),
             Self::Get(key) => {
                 // POSIX names cannot contain quotes or SQL syntax.
                 validate_key(key).map_err(|_| anyhow::anyhow!("Invalid environment key name"))?;
@@ -117,41 +117,40 @@ async fn fetch(request: reqwest::RequestBuilder, query: Query) -> anyhow::Result
 }
 
 fn render(body: &[u8], query: &Query) -> anyhow::Result<String> {
-    // Only project the requested single string column; do not dump an error or
-    // unexpected response which could contain unrequested secret values.
+    // Validate the requested projection before rendering any response values.
     let results: Vec<spacetimedb_client_api_messages::http::SqlStmtResult<Vec<String>>> =
         serde_json::from_slice(body).map_err(|_| anyhow::anyhow!("Invalid environment read response"))?;
     ensure!(results.len() == 1, "Invalid environment read result count");
     let result = &results[0];
-    let expected = match query {
-        Query::List => "key",
-        Query::Get(_) => "value",
+    let expected: &[&str] = match query {
+        Query::List => &["key", "value"],
+        Query::Get(_) => &["value"],
     };
     ensure!(
-        result.schema.elements.len() == 1
-            && result.schema.elements[0].name.as_deref() == Some(expected)
-            && result.schema.elements[0].algebraic_type == spacetimedb_lib::AlgebraicType::String,
+        result.schema.elements.len() == expected.len()
+            && result.schema.elements.iter().zip(expected).all(|(column, name)| {
+                column.name.as_deref() == Some(*name) && column.algebraic_type == spacetimedb_lib::AlgebraicType::String
+            }),
         "Invalid environment read projection"
     );
-    let mut values = Vec::new();
+    ensure!(result.rows.len() <= MAX_ENV_VARS, "Environment key count exceeds limit");
     for row in &result.rows {
-        ensure!(row.len() == 1, "Invalid environment read row");
+        ensure!(row.len() == expected.len(), "Invalid environment read row");
         if matches!(query, Query::List) {
             validate_key(&row[0]).context("Invalid environment key in response")?;
         }
         ensure!(
-            row[0].len() <= MAX_ENV_VALUE_BYTES,
+            row.last().unwrap().len() <= MAX_ENV_VALUE_BYTES,
             "Environment read value exceeds limit"
         );
-        values.push(row[0].as_str());
     }
     match query {
         Query::List => {
-            ensure!(values.len() <= MAX_ENV_VARS, "Environment key count exceeds limit");
-            values.sort_unstable();
-            let rows = values
-                .into_iter()
-                .map(|key| Ok::<_, std::convert::Infallible>(spacetimedb_lib::sats::product![key]));
+            let mut rows: Vec<_> = result.rows.iter().collect();
+            rows.sort_unstable_by(|a, b| a[0].cmp(&b[0]));
+            let rows = rows.into_iter().map(|row| {
+                Ok::<_, std::convert::Infallible>(spacetimedb_lib::sats::product![row[0].as_str(), row[1].as_str()])
+            });
             let table = sql::build_table(
                 spacetimedb_lib::sats::satn::PsqlClient::SpacetimeDB,
                 &result.schema,
@@ -160,8 +159,8 @@ fn render(body: &[u8], query: &Query) -> anyhow::Result<String> {
             Ok(format!("{table}\n"))
         }
         Query::Get(_) => {
-            ensure!(values.len() == 1, "Environment key is absent");
-            Ok(format!("{}\n", values[0]))
+            ensure!(result.rows.len() == 1, "Environment key is absent");
+            Ok(format!("{}\n", result.rows[0][0]))
         }
     }
 }
@@ -169,9 +168,13 @@ fn render(body: &[u8], query: &Query) -> anyhow::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn body(column: &'static str, rows: Vec<Vec<&str>>) -> Vec<u8> {
+    fn body(columns: &[&'static str], rows: Vec<Vec<&str>>) -> Vec<u8> {
         serde_json::to_vec(&[spacetimedb_client_api_messages::http::SqlStmtResult {
-            schema: spacetimedb_lib::sats::ProductType::from([(column, spacetimedb_lib::AlgebraicType::String)]),
+            schema: spacetimedb_lib::sats::ProductType::from_iter(
+                columns
+                    .iter()
+                    .map(|column| (*column, spacetimedb_lib::AlgebraicType::String)),
+            ),
             rows,
             total_duration_micros: 0,
             stats: Default::default(),
@@ -197,7 +200,7 @@ mod tests {
         let get = matches.subcommand_matches("get").unwrap();
         assert_eq!(get.get_one::<String>("database").unwrap(), "db");
         assert_eq!(get.get_one::<String>("key").unwrap(), "KEY");
-        assert_eq!(Query::List.sql().unwrap(), "SELECT key FROM st_env");
+        assert_eq!(Query::List.sql().unwrap(), "SELECT key, value FROM st_env");
         assert_eq!(
             Query::Get("KEY".into()).sql().unwrap(),
             "SELECT value FROM st_env WHERE key = 'KEY'"
@@ -205,22 +208,27 @@ mod tests {
         assert!(Query::Get("x';DELETE FROM st_env;--".into()).sql().is_err());
     }
     #[test]
-    fn list_projects_keys_and_rejects_unexpected_secret_columns() {
+    fn list_renders_sorted_keys_and_values_and_rejects_unexpected_columns() {
         assert_eq!(
-            render(&body("key", vec![vec!["Z"], vec!["A"]]), &Query::List)
-                .unwrap()
-                .lines()
-                .map(str::trim)
-                .collect::<Vec<_>>(),
-            ["key", "-----", "\"A\"", "\"Z\""]
+            render(
+                &body(&["key", "value"], vec![vec!["Z", "last"], vec!["A", "first"]]),
+                &Query::List
+            )
+            .unwrap()
+            .lines()
+            .enumerate()
+            .filter(|(index, _)| *index != 1)
+            .map(|(_, line)| line.split('|').map(str::trim).collect::<Vec<_>>())
+            .collect::<Vec<_>>(),
+            [["key", "value"], ["\"A\"", "\"first\""], ["\"Z\"", "\"last\""]]
         );
-        let err = render(&body("value", vec![vec!["generated-secret-sentinel"]]), &Query::List).unwrap_err();
+        let err = render(&body(&["value"], vec![vec!["generated-secret-sentinel"]]), &Query::List).unwrap_err();
         assert!(!format!("{err:#}").contains("generated-secret-sentinel"));
         assert_eq!(
-            render(&body("value", vec![vec![""]]), &Query::Get("A".into())).unwrap(),
+            render(&body(&["value"], vec![vec![""]]), &Query::Get("A".into())).unwrap(),
             "\n"
         );
-        assert!(render(&body("value", vec![]), &Query::Get("A".into())).is_err());
+        assert!(render(&body(&["value"], vec![]), &Query::Get("A".into())).is_err());
     }
     #[tokio::test]
     async fn actual_loopback_queries_and_error_redaction() {
@@ -229,13 +237,13 @@ mod tests {
             (
                 Query::List,
                 "200 OK",
-                body("key", vec![vec!["KEY"]]),
-                Some(" key   \n-------\n \"KEY\" \n"),
+                body(&["key", "value"], vec![vec!["KEY", "generated-list-sentinel"]]),
+                Some("generated-list-sentinel"),
             ),
             (
                 Query::Get("KEY".into()),
                 "200 OK",
-                body("value", vec![vec!["generated-read-sentinel"]]),
+                body(&["value"], vec![vec!["generated-read-sentinel"]]),
                 Some("generated-read-sentinel\n"),
             ),
             (
@@ -290,8 +298,17 @@ mod tests {
                 .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .unwrap();
-            let result = fetch(client.post(format!("http://{address}/v1/database/owned/sql")), query).await;
+            let result = fetch(
+                client.post(format!("http://{address}/v1/database/owned/sql")),
+                query.clone(),
+            )
+            .await;
             match expected {
+                Some(expected) if matches!(query, Query::List) => {
+                    let output = result.unwrap();
+                    assert!(output.contains("key") && output.contains("value"));
+                    assert!(output.contains("KEY") && output.contains(expected));
+                }
                 Some(expected) => assert_eq!(result.unwrap(), expected),
                 None => assert!(!format!("{:#}", result.unwrap_err()).contains("generated-error-secret")),
             }
