@@ -20,6 +20,7 @@ import systemd from 'shiki/langs/systemd.mjs';
 import ogTheme from 'shiki/themes/dracula.mjs';
 import cpp from 'shiki/langs/cpp.mjs';
 import { InkeepConfig } from '@inkeep/cxkit-docusaurus';
+import { redirects } from './redirects';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
@@ -233,6 +234,12 @@ const config: Config = {
   } satisfies Preset.ThemeConfig,
 
   plugins: [
+    [
+      '@docusaurus/plugin-client-redirects',
+      {
+        redirects,
+      },
+    ],
     [
       '@inkeep/cxkit-docusaurus',
       {
