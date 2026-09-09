@@ -129,7 +129,10 @@ impl ClientSessionIndex {
         let mut sessions = self.sessions.lock().expect("session index poisoned");
         // Connections are told apart by their name, the host's per-connection
         // counter, rather than by their connection id, which a client may repeat.
-        if sessions.get(&key).is_some_and(|holder| holder.client.name == client.name) {
+        if sessions
+            .get(&key)
+            .is_some_and(|holder| holder.client.name == client.name)
+        {
             sessions.remove(&key);
         }
     }
@@ -238,7 +241,9 @@ mod tests {
         client: ClientActorId,
         session: SessionId,
     ) -> (SessionReservation, Arc<ClientConnectionSender>) {
-        let reservation = index.try_reserve(database, client, session).expect("session should be free");
+        let reservation = index
+            .try_reserve(database, client, session)
+            .expect("session should be free");
         let sender = sender(client);
         reservation.establish(&sender);
         (reservation, sender)
@@ -291,7 +296,9 @@ mod tests {
             .try_reserve(a_database(), client(an_identity(), 1), session())
             .unwrap();
 
-        assert!(index.try_reserve(a_database(), client(an_identity(), 2), session()).is_err());
+        assert!(index
+            .try_reserve(a_database(), client(an_identity(), 2), session())
+            .is_err());
         assert_eq!(index.len(), 1);
     }
 
@@ -332,7 +339,9 @@ mod tests {
     async fn dropping_the_reservation_frees_the_session() {
         let index = index();
         let (first, _) = connect(&index, a_database(), client(an_identity(), 1), session());
-        assert!(index.try_reserve(a_database(), client(an_identity(), 2), session()).is_err());
+        assert!(index
+            .try_reserve(a_database(), client(an_identity(), 2), session())
+            .is_err());
 
         drop(first);
 

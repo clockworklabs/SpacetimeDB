@@ -20,7 +20,7 @@ use derive_more::From;
 use futures::{pin_mut, Sink, SinkExt, Stream, StreamExt};
 use http::{HeaderValue, StatusCode};
 use prometheus::{Histogram, IntGauge};
-use scopeguard::{defer, ScopeGuard};
+use scopeguard::defer;
 use serde::Deserialize;
 use spacetimedb::client::messages::{
     serialize, serialize_v3, IdentityTokenMessage, InUseSerializeBuffer, SerializeBuffer, SwitchedServerMessage,
@@ -58,7 +58,7 @@ use crate::util::serde::humantime_duration;
 use crate::util::websocket::{
     CloseCode, CloseFrame, Message as WsMessage, WebSocketConfig, WebSocketStream, WebSocketUpgrade, WsError,
 };
-use crate::util::{NameOrIdentity, XForwardedFor};
+use crate::util::{async_cleanup_guard, NameOrIdentity, XForwardedFor};
 use crate::{log_and_500, Authorization, ControlStateDelegate, NodeDelegate};
 
 #[allow(clippy::declare_interior_mutable_const)]
@@ -298,7 +298,10 @@ where
             Some(session_id) => match sessions.try_reserve(db_identity, client_id, session_id) {
                 Ok(reservation) => Some(reservation),
                 Err(SessionBusy) => {
-                    WORKER_METRICS.ws_clients_session_busy.with_label_values(&db_identity).inc();
+                    WORKER_METRICS
+                        .ws_clients_session_busy
+                        .with_label_values(&db_identity)
+                        .inc();
                     log::debug!("websocket: Refusing connection for {client_log_string}: session {session_id} is busy");
                     let close = CloseFrame {
                         code: CloseCode::from(SESSION_BUSY_CLOSE_CODE),
@@ -575,14 +578,15 @@ async fn ws_client_actor(
     session: Option<SessionReservation>,
 ) {
     // Runs the module-side disconnect even if this task gets cancelled.
-    let mut client = scopeguard::guard((client, session), |(client, session)| {
-        tokio::spawn(ws_client_teardown(client, session));
+    let mut client = async_cleanup_guard((client, session), |(client, session)| {
+        ws_client_teardown(client, session)
     });
 
     ws_client_actor_inner(&mut client.0, options, ws, sendrx).await;
 
-    let (client, session) = ScopeGuard::into_inner(client);
-    ws_client_teardown(client, session).await;
+    if let Err(e) = client.cleanup().await {
+        log::error!("websocket client teardown task failed: {e}");
+    }
 }
 
 /// Run the module-side disconnect, then free the connection's session.

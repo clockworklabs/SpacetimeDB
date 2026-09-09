@@ -97,7 +97,13 @@ impl TestConnection {
                 Ok(Some(connection))
             }
             Ok(other) => bail!("expected InitialConnection, got {other:?}"),
-            Err(err) if err.downcast_ref::<Closed>().is_some_and(|closed| closed.is_session_busy()) => Ok(None),
+            Err(err)
+                if err
+                    .downcast_ref::<Closed>()
+                    .is_some_and(|closed| closed.is_session_busy()) =>
+            {
+                Ok(None)
+            }
             Err(err) => Err(err),
         }
     }
