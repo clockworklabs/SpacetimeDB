@@ -20,33 +20,7 @@ export function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
   return diff === 0;
 }
 
-/** Decode `01ab23cd` into Uint8Array. Throws on odd length or non-hex. */
-export function hexToBytes(hex: string): Uint8Array {
-  if (hex.length % 2 !== 0) throw new Error('hex: odd length');
-  const out = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < out.length; i++) {
-    const hi = hexNibble(hex.charCodeAt(i * 2));
-    const lo = hexNibble(hex.charCodeAt(i * 2 + 1));
-    out[i] = (hi << 4) | lo;
-  }
-  return out;
-}
-
-function hexNibble(code: number): number {
-  if (code >= 0x30 && code <= 0x39) return code - 0x30;
-  if (code >= 0x61 && code <= 0x66) return code - 0x61 + 10;
-  if (code >= 0x41 && code <= 0x46) return code - 0x41 + 10;
-  throw new Error(`hex: non-hex char ${String.fromCharCode(code)}`);
-}
-
-/** Encode bytes as lowercase hex. */
-export function bytesToHex(bytes: Uint8Array): string {
-  let s = '';
-  for (let i = 0; i < bytes.length; i++) {
-    s += bytes[i].toString(16).padStart(2, '0');
-  }
-  return s;
-}
+export { hexToBytes, bytesToHex } from '@noble/hashes/utils.js';
 
 /** Decode standard base64 (with or without padding). Throws on invalid input. */
 export function base64ToBytes(b64: string): Uint8Array {
