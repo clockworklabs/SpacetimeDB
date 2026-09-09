@@ -1,13 +1,12 @@
 use alloc::{boxed::Box, sync::Arc};
-use core::{
-    pin::Pin,
-    result::Result,
-    task::{Context, Poll},
-};
-use futures_channel::oneshot;
+use core::result::Result;
 use slab::Slab;
 
-use crate::{AlignedBytes, ErasedBox, ErrorWith, SpacetimeIO, Statx};
+use crate::{sim::completion::CompletionState, AlignedBytes, ErasedBox, ErrorWith, SpacetimeIO, Statx};
+
+mod completion;
+pub use completion::Completion;
+use completion::CompletionHandle;
 
 mod executor;
 use executor::{Cqe, Executor, Sqe};
@@ -53,14 +52,14 @@ pub struct SimulatorIO {
 impl SimulatorIO {
     pub fn tick(&self, task_selector: &impl TaskSelector, faults: &mut impl FaultInjector<usize>) -> bool {
         let mut executor = self.inner.executor.lock();
-        let mut pending = self.inner.pending.lock();
 
         let mut progress = executor.tick(task_selector, faults);
         for cqe in executor.completed() {
-            let completion = pending.remove(cqe.user_data().unwrap());
-            match cqe {
+            let mut pending = self.inner.pending.lock();
+            let completion = &mut pending[cqe.user_data().unwrap()];
+            let waker = match cqe {
                 Cqe::Write { result, buf, .. } => {
-                    let CompletionHandle::Write { tx } = completion else {
+                    let CompletionHandle::Write(state) = completion else {
                         unreachable!("invalid cqe / completion pairing")
                     };
                     let result = match result {
@@ -74,10 +73,10 @@ impl SimulatorIO {
                         }),
                         Err(error) => Err(ErrorWith { error, with: buf }),
                     };
-                    let _ = tx.send(result);
+                    state.complete(result)
                 }
                 Cqe::Read { result, buf, .. } => {
-                    let CompletionHandle::Read { tx } = completion else {
+                    let CompletionHandle::Read(state) = completion else {
                         unreachable!("invalid cqe / completion pairing")
                     };
                     let result = match result {
@@ -91,50 +90,56 @@ impl SimulatorIO {
                         }),
                         Err(error) => Err(ErrorWith { error, with: buf }),
                     };
-                    let _ = tx.send(result);
+                    state.complete(result)
                 }
                 Cqe::Open { result, .. } => {
-                    let CompletionHandle::Open { tx } = completion else {
+                    let CompletionHandle::Open(state) = completion else {
                         unreachable!("invalid cqe / completion pairing")
                     };
-                    let _ = tx.send(result);
+                    state.complete(result)
                 }
                 Cqe::Create { result, .. } => {
-                    let CompletionHandle::Create { tx } = completion else {
+                    let CompletionHandle::Create(state) = completion else {
                         unreachable!("invalid cqe / completion pairing")
                     };
-                    let _ = tx.send(result);
+                    state.complete(result)
                 }
                 Cqe::Stat { result, .. } => {
-                    let CompletionHandle::Stat { tx } = completion else {
+                    let CompletionHandle::Stat(state) = completion else {
                         unreachable!("invalid cqe / completion pairing")
                     };
-                    let _ = tx.send(result);
+                    state.complete(result)
                 }
                 Cqe::Fallocate { result, .. } => {
-                    let CompletionHandle::Fallocate { tx } = completion else {
+                    let CompletionHandle::Fallocate(state) = completion else {
                         unreachable!("invalid cqe / completion pairing")
                     };
-                    let _ = tx.send(result);
+                    state.complete(result)
                 }
                 Cqe::Fsync { result, .. } => {
-                    let CompletionHandle::Fsync { tx } = completion else {
+                    let CompletionHandle::Fsync(state) = completion else {
                         unreachable!("invalid cqe / completion pairing")
                     };
-                    let _ = tx.send(result);
+                    state.complete(result)
                 }
                 Cqe::Fdatasync { result, .. } => {
-                    let CompletionHandle::Fdatasync { tx } = completion else {
+                    let CompletionHandle::Fdatasync(state) = completion else {
                         unreachable!("invalid cqe / completion pairing")
                     };
-                    let _ = tx.send(result);
+                    state.complete(result)
                 }
                 Cqe::Noop { result, .. } => {
-                    let CompletionHandle::Noop { tx } = completion else {
+                    let CompletionHandle::Noop(state) = completion else {
                         unreachable!("invalid cqe / completion pairing")
                     };
-                    let _ = tx.send(result);
+                    state.complete(result)
                 }
+            };
+
+            // Release lock as waking the future will try to acquire it.
+            drop(pending);
+            if let Some(waker) = waker {
+                waker.wake();
             }
 
             progress |= true;
@@ -167,59 +172,52 @@ impl SimulatorIO {
         self.inner.pending.lock().clear();
     }
 
-    fn submit<T>(
+    fn submit<T, U>(
         &self,
         sqe: Sqe<usize>,
-        completion_handle: impl FnOnce(CompletionSender<T, Error>) -> CompletionHandle,
-    ) -> Completion<Result<T, Error>> {
-        let (tx, rx) = oneshot::channel();
-
+        completion: impl FnOnce(Arc<SimulatorInner>, usize) -> Completion<U>,
+        completion_handle: impl FnOnce(CompletionState<Result<T, Error>>) -> CompletionHandle,
+    ) -> Completion<U> {
         let mut executor = self.inner.executor.lock();
         let mut pending = self.inner.pending.lock();
         let pending_entry = pending.vacant_entry();
 
-        match executor.submit([sqe.attach(pending_entry.key())]) {
-            Err(_sqe) => tx
-                .send(Err(Error::SubmissionQueueOverflow))
-                .unwrap_or_else(|_| unreachable!("rx is alive")),
-            Ok(()) => {
-                pending_entry.insert(completion_handle(tx));
-            }
+        let mut state = CompletionState::Pending(None);
+        if let Err(_sqe) = executor.submit([sqe.attach(pending_entry.key())]) {
+            state = CompletionState::Ready(Err(Error::SubmissionQueueOverflow));
         }
+        let key = pending_entry.key();
+        pending_entry.insert(completion_handle(state));
 
-        rx.into()
+        completion(self.inner.clone(), key)
     }
 
     fn submit_with<B: AlignedBytes + 'static>(
         &self,
         sqe: Sqe<usize>,
-        completion_handle: impl FnOnce(CompletionSender<ErasedBox, ErrorWith<Error, ErasedBox>>) -> CompletionHandle,
+        completion: impl FnOnce(Arc<SimulatorInner>, usize) -> Completion<Result<B, ErrorWith<Error, B>>>,
+        completion_handle: impl FnOnce(CompletionState<Result<ErasedBox, ErrorWith<Error, ErasedBox>>>) -> CompletionHandle,
     ) -> Completion<Result<B, ErrorWith<Error, B>>> {
-        let (tx, rx) = oneshot::channel();
-
         let mut executor = self.inner.executor.lock();
         let mut pending = self.inner.pending.lock();
         let pending_entry = pending.vacant_entry();
 
-        match executor.submit([sqe.attach(pending_entry.key())]) {
-            Err(mut sqe) => {
-                let buf = sqe
-                    .next()
-                    .expect("submitted one sqe therefore one must be returned on overflow")
-                    .into_buf()
-                    .expect("sqe must have been buffer-carrying");
-                tx.send(Err(ErrorWith {
-                    error: Error::SubmissionQueueOverflow,
-                    with: buf,
-                }))
-                .unwrap_or_else(|_| unreachable!("rx is alive"))
-            }
-            Ok(()) => {
-                pending_entry.insert(completion_handle(tx));
-            }
+        let mut state = CompletionState::Pending(None);
+        if let Err(mut sqe) = executor.submit([sqe.attach(pending_entry.key())]) {
+            let buf = sqe
+                .next()
+                .expect("submitted one sqe therefore one must be returned on overflow")
+                .into_buf()
+                .expect("sqe must have been buffer-carrying");
+            state = CompletionState::Ready(Err(ErrorWith {
+                error: Error::SubmissionQueueOverflow,
+                with: buf,
+            }));
         }
+        let key = pending_entry.key();
+        pending_entry.insert(completion_handle(state));
 
-        Completion::mapped(rx, reify)
+        completion(self.inner.clone(), key)
     }
 }
 
@@ -237,106 +235,17 @@ impl Default for SimulatorInner {
     }
 }
 
-pub type CompletionReceiver<T, E> = oneshot::Receiver<Result<T, E>>;
-
-#[must_use = "completions must be polled to completion"]
-pub struct Completion<T>(CompletionInner<T>);
-
-impl<T> Completion<T> {
-    pub fn mapped(
-        rx: CompletionReceiver<ErasedBox, ErrorWith<Error, ErasedBox>>,
-        map: fn(Result<ErasedBox, ErrorWith<Error, ErasedBox>>) -> T,
-    ) -> Self {
-        Self(CompletionInner::Mapped { rx, map })
-    }
-}
-
-impl<T> From<oneshot::Receiver<T>> for Completion<T> {
-    fn from(rx: oneshot::Receiver<T>) -> Self {
-        Self(CompletionInner::Direct { rx })
-    }
-}
-
-impl<T> Future for Completion<T> {
-    type Output = T;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-        Pin::new(&mut this.0).poll(cx)
-    }
-}
-
-enum CompletionInner<T> {
-    Direct {
-        rx: oneshot::Receiver<T>,
-    },
-    Mapped {
-        rx: CompletionReceiver<ErasedBox, ErrorWith<Error, ErasedBox>>,
-        map: fn(Result<ErasedBox, ErrorWith<Error, ErasedBox>>) -> T,
-    },
-}
-
-impl<T> Future for CompletionInner<T> {
-    type Output = T;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-        match this {
-            Self::Direct { rx } => Pin::new(rx)
-                .poll(cx)
-                .map(|result| result.expect("lost completion sender")),
-            Self::Mapped { rx, map } => Pin::new(rx).poll(cx).map(|result| {
-                let result = result.expect("lost completion sender");
-                map(result)
-            }),
-        }
-    }
-}
-
-type CompletionSender<T, E> = oneshot::Sender<Result<T, E>>;
-enum CompletionHandle {
-    Write {
-        tx: CompletionSender<ErasedBox, ErrorWith<Error, ErasedBox>>,
-    },
-    Read {
-        tx: CompletionSender<ErasedBox, ErrorWith<Error, ErasedBox>>,
-    },
-    Open {
-        tx: CompletionSender<fs::File, Error>,
-    },
-    Create {
-        tx: CompletionSender<fs::File, Error>,
-    },
-    Stat {
-        tx: CompletionSender<Statx, Error>,
-    },
-    Fallocate {
-        tx: CompletionSender<(), Error>,
-    },
-    Fsync {
-        tx: CompletionSender<(), Error>,
-    },
-    Fdatasync {
-        tx: CompletionSender<(), Error>,
-    },
-    // TODO: We may use this for timeouts.
-    #[allow(unused)]
-    Noop {
-        tx: CompletionSender<(), Error>,
-    },
-}
-
 impl SpacetimeIO for SimulatorIO {
     type Fd = fs::File;
     type Error = Error;
     type Completion<T> = Completion<T>;
 
     fn open_file(&self, path: &str) -> Self::Completion<Result<Self::Fd, Self::Error>> {
-        self.submit(Sqe::open(path), |tx| CompletionHandle::Open { tx })
+        self.submit(Sqe::open(path), Completion::open, CompletionHandle::Open)
     }
 
     fn create_file(&self, path: &str) -> Self::Completion<Result<Self::Fd, Self::Error>> {
-        self.submit(Sqe::create(path), |tx| CompletionHandle::Create { tx })
+        self.submit(Sqe::create(path), Completion::create, CompletionHandle::Create)
     }
 
     fn write_all_at<B: AlignedBytes + Send + 'static>(
@@ -345,9 +254,11 @@ impl SpacetimeIO for SimulatorIO {
         buf: B,
         offset: u64,
     ) -> Self::Completion<Result<B, ErrorWith<Self::Error, B>>> {
-        self.submit_with(Sqe::write(fd, ErasedBox::from_aligned(buf), offset), |tx| {
-            CompletionHandle::Write { tx }
-        })
+        self.submit_with(
+            Sqe::write(fd, ErasedBox::from_aligned(buf), offset),
+            Completion::write,
+            CompletionHandle::Write,
+        )
     }
 
     fn read_exact_at<B: AlignedBytes + Send + 'static>(
@@ -356,37 +267,31 @@ impl SpacetimeIO for SimulatorIO {
         buf: B,
         offset: u64,
     ) -> Self::Completion<Result<B, ErrorWith<Self::Error, B>>> {
-        self.submit_with(Sqe::read(fd, ErasedBox::from_aligned(buf), offset), |tx| {
-            CompletionHandle::Read { tx }
-        })
+        self.submit_with(
+            Sqe::read(fd, ErasedBox::from_aligned(buf), offset),
+            Completion::read,
+            CompletionHandle::Read,
+        )
     }
 
     fn fsync(&self, fd: Self::Fd) -> Self::Completion<Result<(), Self::Error>> {
-        self.submit(Sqe::fsync(fd), |tx| CompletionHandle::Fsync { tx })
+        self.submit(Sqe::fsync(fd), Completion::fsync, CompletionHandle::Fsync)
     }
 
     fn fdatasync(&self, fd: Self::Fd) -> Self::Completion<Result<(), Self::Error>> {
-        self.submit(Sqe::fdatasync(fd), |tx| CompletionHandle::Fdatasync { tx })
+        self.submit(Sqe::fdatasync(fd), Completion::fdatasync, CompletionHandle::Fdatasync)
     }
 
     fn reserve(&self, fd: Self::Fd, total_size: u64) -> Self::Completion<Result<(), Self::Error>> {
-        self.submit(Sqe::fallocate(fd, total_size), |tx| CompletionHandle::Fallocate { tx })
+        self.submit(
+            Sqe::fallocate(fd, total_size),
+            Completion::fallocate,
+            CompletionHandle::Fallocate,
+        )
     }
 
     fn statx(&self, fd: Self::Fd) -> Self::Completion<Result<Statx, Self::Error>> {
-        self.submit(Sqe::stat(fd), |tx| CompletionHandle::Stat { tx })
-    }
-}
-
-fn reify<T: AlignedBytes + 'static>(
-    result: Result<ErasedBox, ErrorWith<Error, ErasedBox>>,
-) -> Result<T, ErrorWith<Error, T>> {
-    match result {
-        Ok(erased) => Ok(erased.into_aligned::<T>()),
-        Err(ErrorWith { error, with }) => Err(ErrorWith {
-            error,
-            with: with.into_aligned::<T>(),
-        }),
+        self.submit(Sqe::stat(fd), Completion::stat, CompletionHandle::Stat)
     }
 }
 
@@ -422,7 +327,7 @@ mod tests {
         fn run<T: 'static>(&self, f: impl FnOnce(&SimulatorIO) -> Completion<T>) -> T {
             let fut = self.rt.spawn_local(f(&self.io));
             while self.io.tick(&self.rng, &mut ()) {}
-            self.rt.block_on(fut).unwrap()
+            self.rt.block_on(fut).unwrap().unwrap()
         }
 
         fn power_loss(&self) {

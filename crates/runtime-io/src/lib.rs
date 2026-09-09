@@ -30,6 +30,10 @@ impl Statx {
     }
 }
 
+/// Cancellation result of a [SpacetimeIO::Completion] future.
+#[derive(Clone, Copy, Debug)]
+pub struct Cancelled;
+
 /// The canonical, low-level I/O API.
 ///
 /// Currently only supports file I/O, but eventually all I/O performed by
@@ -61,7 +65,7 @@ pub trait SpacetimeIO {
     /// [alloc_io]: https://github.com/rust-lang/rust/issues/154046
     type Error: core::error::Error;
     /// The completion [Future] of all methods in this trait.
-    type Completion<T>: Future<Output = T> + Unpin;
+    type Completion<T>: Future<Output = Result<T, Cancelled>> + Unpin;
 
     /// Open the file at `path`.
     fn open_file(&self, path: &str) -> Self::Completion<Result<Self::Fd, Self::Error>>;

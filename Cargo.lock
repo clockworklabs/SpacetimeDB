@@ -8254,7 +8254,7 @@ dependencies = [
   "zerocopy",
  ]
 
- [[package]]
+[[package]]
 name = "spacetimedb-dst-lib"
 version = "2.10.0"
 dependencies = [
@@ -8564,7 +8564,6 @@ dependencies = [
 name = "spacetimedb-runtime-io"
 version = "2.10.0"
 dependencies = [
- "futures-channel",
  "slab",
  "spacetimedb-runtime-core",
  "spacetimedb-runtime-io",

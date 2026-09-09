@@ -352,8 +352,8 @@ impl<UserData> Executor<UserData> {
         Self {
             submissions: VecDeque::with_capacity(sq_capacity),
             completions: VecDeque::with_capacity(cq_capacity),
-            in_flight: Slab::new(),
-            executing: VecDeque::new(),
+            in_flight: Slab::with_capacity(2 * sq_capacity),
+            executing: VecDeque::with_capacity(2 * sq_capacity),
             fstree: BTreeMap::new(),
             cq_overflow,
             cq_dropped: 0,
