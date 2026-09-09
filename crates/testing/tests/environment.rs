@@ -365,6 +365,12 @@ fn rust_environment_publish_is_atomic_and_reads_follow_declared_configuration() 
 
 #[test]
 #[serial]
+fn rust_module_test_environment_publish_and_checked_reads() {
+    exercise_fixture("module-test");
+}
+
+#[test]
+#[serial]
 fn typescript_environment_publish_and_checked_reads() {
     exercise_fixture("module-test-ts");
 }
