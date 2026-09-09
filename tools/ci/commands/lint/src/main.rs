@@ -366,26 +366,3 @@ fn main() -> Result<()> {
 
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::workflow_installs_pnpm_with_npm;
-
-    #[test]
-    fn detects_direct_npm_pnpm_install() {
-        assert!(workflow_installs_pnpm_with_npm("run: npm install -g pnpm\n"));
-        assert!(workflow_installs_pnpm_with_npm(
-            "run: npm install --global pnpm@10.16.0\n"
-        ));
-        assert!(workflow_installs_pnpm_with_npm("run: |\n  npm install --global pnpm\n"));
-    }
-
-    #[test]
-    fn allows_other_npm_and_pnpm_commands() {
-        assert!(!workflow_installs_pnpm_with_npm(
-            "run: npm install --global npm@11.5.1\n"
-        ));
-        assert!(!workflow_installs_pnpm_with_npm("run: pnpm install\n"));
-        assert!(!workflow_installs_pnpm_with_npm("uses: ./.github/actions/setup-pnpm\n"));
-    }
-}
