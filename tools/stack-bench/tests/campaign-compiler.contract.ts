@@ -26,6 +26,14 @@ function compile(value: unknown) {
   finally { rmSync(directory, { recursive: true, force: true }); }
 }
 
+test('campaigns accept a twelve-hour attempt allowance and reject values beyond it', () => {
+  const value = manifest('campaign.example.json');
+  const budgets = { ...(value.budgets as object), attemptTimeoutMinutes: 720 };
+  assert.equal(validateCampaignDefinition({ ...value, budgets }).budgets.attemptTimeoutMinutes, 720);
+  assert.throws(() => validateCampaignDefinition({ ...value,
+    budgets: { ...budgets, attemptTimeoutMinutes: 721 } }), /attemptTimeoutMinutes/);
+});
+
 test('a campaign preserves its own version and state while binding authored content by hash', () => {
   const plan = compile(manifest('campaign.example.json'));
   assert.equal(plan.definition.version, '2.0.0');

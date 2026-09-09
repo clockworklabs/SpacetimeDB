@@ -72,7 +72,7 @@ target contains the source, development dependencies, and compiled tests:
 ```sh
 # From the repository root; this target does not build the Rust binaries.
 docker build --platform linux/amd64 --target source -f tools/stack-bench/appliance/Controller.Dockerfile -t stack-bench-source-tests:local .
-docker run --rm --network none stack-bench-source-tests:local npm run test:all
+docker run --rm --init --network none stack-bench-source-tests:local npm run test:all
 ```
 
 The release source build requires a clean normal Git clone. During development,

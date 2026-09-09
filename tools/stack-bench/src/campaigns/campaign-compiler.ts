@@ -560,7 +560,7 @@ export function validateCampaignDefinition(input: unknown,
   string(value.ordering.seed, `${source}.ordering.seed`);
 
   strict(value.budgets, `${source}.budgets`, BUDGET_FIELDS);
-  integer(value.budgets.attemptTimeoutMinutes, `${source}.budgets.attemptTimeoutMinutes`, { min: 10, max: 480 });
+  integer(value.budgets.attemptTimeoutMinutes, `${source}.budgets.attemptTimeoutMinutes`, { min: 10, max: 720 });
   if (value.budgets.maxCostUsdPerAttempt !== null) {
     finite(value.budgets.maxCostUsdPerAttempt, `${source}.budgets.maxCostUsdPerAttempt`, { min: 0.01 });
   }
