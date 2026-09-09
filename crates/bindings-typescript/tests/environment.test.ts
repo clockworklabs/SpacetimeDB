@@ -6,9 +6,9 @@ import {
   environmentDeclarations,
 } from '../src/server/environment';
 import type { EnvironmentSchema } from '../src/lib/environment';
-import { env_get } from 'spacetime:sys@2.3';
+import { env_get } from 'spacetime:sys@2.2';
 
-vi.mock('spacetime:sys@2.3', async importOriginal => ({
+vi.mock('spacetime:sys@2.2', async importOriginal => ({
   ...(await importOriginal<object>()),
   env_get: vi.fn(),
 }));

@@ -169,8 +169,8 @@ pub(super) fn sys_v2_1<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
     )
 }
 
-pub(super) fn sys_v2_3<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
-    create_synthetic_module!(scope, "spacetime:sys@2.3", (with_sys_result, AbiCall::EnvGet, env_get),)
+pub(super) fn sys_v2_2<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
+    create_synthetic_module!(scope, "spacetime:sys@2.2", (with_sys_result, AbiCall::EnvGet, env_get),)
 }
 
 fn env_get<'s>(

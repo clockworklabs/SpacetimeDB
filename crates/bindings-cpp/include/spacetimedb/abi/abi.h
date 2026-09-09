@@ -39,9 +39,8 @@
 #define STDB_IMPORT_10_5(name) \
     __attribute__((import_module("spacetime_10.5"), import_name(#name))) extern
 
-// ABI10.6 is reserved for the separate invocation-authority extension.
-#define STDB_IMPORT_10_7(name) \
-    __attribute__((import_module("spacetime_10.7"), import_name(#name))) extern
+#define STDB_IMPORT_10_6(name) \
+    __attribute__((import_module("spacetime_10.6"), import_name(#name))) extern
 
 // Import opaque types into global namespace for C compatibility
 using SpacetimeDB::Status;
@@ -63,7 +62,7 @@ using SpacetimeDB::ConsoleTimerId;
 
 extern "C" {
 
-STDB_IMPORT_10_7(env_get)
+STDB_IMPORT_10_6(env_get)
 Status env_get(const uint8_t* key, uint32_t key_len, BytesSource* out);
 
 // ===== Table and Index Management =====

@@ -883,8 +883,7 @@ pub mod raw {
         pub fn datastore_clear(table_id: TableId, out: *mut u64) -> u16;
     }
 
-    // ABI10.6 is reserved for the separate invocation-authority extension.
-    #[link(wasm_import_module = "spacetime_10.7")]
+    #[link(wasm_import_module = "spacetime_10.6")]
     unsafe extern "C" {
         /// Read a UTF-8 environment value. Writes INVALID for a missing key;
         /// present empty strings have a valid BytesSource. Returns ordinary errno.

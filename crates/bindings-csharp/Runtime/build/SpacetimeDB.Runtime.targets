@@ -65,8 +65,7 @@
     <!-- spacetime_10.5 imports -->
     <WasmImport Include="spacetime_10.5!datastore_clear" />
 
-    <!-- 10.6 is reserved for the independent invocation-authorization ABI. -->
-    <WasmImport Include="spacetime_10.7!env_get" />
+    <WasmImport Include="spacetime_10.6!env_get" />
 
     <CustomLinkerArg Include="-DEXPERIMENTAL_WASM_AOT" />
   </ItemGroup>

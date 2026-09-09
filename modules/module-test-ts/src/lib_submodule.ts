@@ -1,6 +1,6 @@
 /// <reference path="./environment_sys.d.ts" />
 import { schema, table, t, SyncResponse } from 'spacetimedb/server';
-import { env_get } from 'spacetime:sys@2.3';
+import { env_get } from 'spacetime:sys@2.2';
 
 const libData = table(
   { name: 'libData', public: true },

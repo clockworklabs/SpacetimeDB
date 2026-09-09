@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::ext::IdentExt as _;
 use syn::punctuated::Punctuated;
-use syn::{Fields, GenericArgument, ItemStruct, LitStr, PathArguments, Token, Type};
+use syn::{Fields, ItemStruct, LitStr, Token};
 
 pub(crate) fn expand(args: TokenStream, mut item: ItemStruct) -> syn::Result<TokenStream> {
     if !args.is_empty() {
@@ -32,7 +32,7 @@ pub(crate) fn expand(args: TokenStream, mut item: ItemStruct) -> syn::Result<Tok
                 "environment keys must be POSIX names of at most 256 bytes",
             ));
         }
-        let optional = optional_string(&field.ty)?;
+        let ty = &field.ty;
         let mut values: Option<Vec<LitStr>> = None;
         for attr in field.attrs.iter().filter(|attr| attr.path().is_ident("env")) {
             attr.parse_nested_meta(|meta| {
@@ -71,28 +71,23 @@ pub(crate) fn expand(args: TokenStream, mut item: ItemStruct) -> syn::Result<Tok
         };
         declarations.push(
             quote!(::spacetimedb::spacetimedb_lib::environment::EnvironmentDeclaration {
-                name: #name.into(), constraint: #constraint, optional: #optional,
+                name: #name.into(),
+                constraint: #constraint,
+                optional: <#ty as ::spacetimedb::rt::EnvironmentValue>::OPTIONAL,
             }),
         );
         if name == "get" {
             continue;
         }
-        let (return_type, body) = if optional {
-            (
-                quote!(::std::option::Option<::std::string::String>),
-                quote!(::spacetimedb::Environment::get(self, #name)),
-            )
-        } else {
-            (
-                quote!(::std::string::String),
-                quote!(::spacetimedb::Environment::get(self, #name).expect(concat!("required environment key is missing: ", #name))),
-            )
-        };
         signatures.push(quote! {
             #[doc = concat!("Read the declared environment key `", #name, "` through the checked host ABI.")]
-            fn #ident(&self) -> #return_type;
+            fn #ident(&self) -> #ty;
         });
-        methods.push(quote!(fn #ident(&self) -> #return_type { #body }));
+        methods.push(quote! {
+            fn #ident(&self) -> #ty {
+                <#ty as ::spacetimedb::rt::EnvironmentValue>::get(self, #name)
+            }
+        });
     }
     let vis = &item.vis;
     let access = format_ident!("{}Access", item.ident.unraw());
@@ -119,65 +114,13 @@ pub(crate) fn expand(args: TokenStream, mut item: ItemStruct) -> syn::Result<Tok
     })
 }
 
-fn optional_string(ty: &Type) -> syn::Result<bool> {
-    let Type::Path(path) = ty else {
-        return Err(syn::Error::new_spanned(ty, "expected String or Option<String>"));
-    };
-    if path.qself.is_none() {
-        let segments: Vec<_> = path
-            .path
-            .segments
-            .iter()
-            .map(|segment| segment.ident.to_string())
-            .collect();
-        let names: Vec<_> = segments.iter().map(String::as_str).collect();
-        if matches!(names.as_slice(), ["String"] | ["std" | "alloc", "string", "String"])
-            && path
-                .path
-                .segments
-                .iter()
-                .all(|segment| matches!(segment.arguments, PathArguments::None))
-        {
-            return Ok(false);
-        }
-        if matches!(names.as_slice(), ["Option"] | ["std" | "core", "option", "Option"])
-            && path
-                .path
-                .segments
-                .iter()
-                .rev()
-                .skip(1)
-                .all(|segment| matches!(segment.arguments, PathArguments::None))
-            && let PathArguments::AngleBracketed(arguments) = &path.path.segments.last().unwrap().arguments
-            && let [GenericArgument::Type(inner)] = arguments.args.iter().collect::<Vec<_>>().as_slice()
-            && !optional_string(inner)?
-        {
-            return Ok(true);
-        }
-    }
-    Err(syn::Error::new_spanned(
-        ty,
-        "expected String or Option<String>; aliases and other types are not env constraints",
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn rejects_non_string_nested_optional_empty_union_and_invalid_names() {
+    fn rejects_empty_union_invalid_names_and_unsupported_struct_shapes() {
         for item in [
-            quote!(
-                struct Env {
-                    VALUE: bool,
-                }
-            ),
-            quote!(
-                struct Env {
-                    VALUE: Option<Option<String>>,
-                }
-            ),
             quote!(
                 struct Env {
                     #[env(values())]

@@ -149,10 +149,21 @@ fn render(body: &[u8], query: &Query) -> anyhow::Result<String> {
         Query::List => {
             ensure!(values.len() <= MAX_ENV_VARS, "Environment key count exceeds limit");
             values.sort_unstable();
+            let rows = values
+                .into_iter()
+                .map(|key| Ok::<_, std::convert::Infallible>(spacetimedb_lib::sats::product![key]));
+            let table = sql::build_table(
+                spacetimedb_lib::sats::satn::PsqlClient::SpacetimeDB,
+                &result.schema,
+                rows,
+            )?;
+            Ok(format!("{table}\n"))
         }
-        Query::Get(_) => ensure!(values.len() == 1, "Environment key is absent"),
+        Query::Get(_) => {
+            ensure!(values.len() == 1, "Environment key is absent");
+            Ok(format!("{}\n", values[0]))
+        }
     }
-    Ok(values.into_iter().map(|v| format!("{v}\n")).collect())
 }
 
 #[cfg(test)]
@@ -196,8 +207,12 @@ mod tests {
     #[test]
     fn list_projects_keys_and_rejects_unexpected_secret_columns() {
         assert_eq!(
-            render(&body("key", vec![vec!["Z"], vec!["A"]]), &Query::List).unwrap(),
-            "A\nZ\n"
+            render(&body("key", vec![vec!["Z"], vec!["A"]]), &Query::List)
+                .unwrap()
+                .lines()
+                .map(str::trim)
+                .collect::<Vec<_>>(),
+            ["key", "-----", "\"A\"", "\"Z\""]
         );
         let err = render(&body("value", vec![vec!["generated-secret-sentinel"]]), &Query::List).unwrap_err();
         assert!(!format!("{err:#}").contains("generated-secret-sentinel"));
@@ -211,7 +226,12 @@ mod tests {
     async fn actual_loopback_queries_and_error_redaction() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         for (query, status, response, expected) in [
-            (Query::List, "200 OK", body("key", vec![vec!["KEY"]]), Some("KEY\n")),
+            (
+                Query::List,
+                "200 OK",
+                body("key", vec![vec!["KEY"]]),
+                Some(" key   \n-------\n \"KEY\" \n"),
+            ),
             (
                 Query::Get("KEY".into()),
                 "200 OK",

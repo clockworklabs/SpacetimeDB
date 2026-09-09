@@ -109,16 +109,16 @@ internal static partial class FFI
 #endif
     ;
 
-    const string StdbNamespace10_7 =
+    const string StdbNamespace10_6 =
 #if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
-        "spacetime_10.7"
+        "spacetime_10.6"
 #else
         "bindings"
 #endif
     ;
 
     [WasmImportLinkage]
-    [LibraryImport(StdbNamespace10_7)]
+    [LibraryImport(StdbNamespace10_6)]
     public static unsafe partial CheckedStatus env_get(
         byte* key,
         uint keyLen,

@@ -917,6 +917,42 @@ pub fn register_case_conversion_policy(policy: CaseConversionPolicy) {
     })
 }
 
+mod environment_value_sealed {
+    pub trait Sealed {}
+
+    impl Sealed for String {}
+    impl Sealed for Option<String> {}
+}
+
+/// The compiler resolves declaration types, including aliases, before selecting
+/// their metadata and accessor. Sealing keeps the accepted types identical to
+/// the host's string and optional-string environment model.
+#[doc(hidden)]
+#[diagnostic::on_unimplemented(message = "environment fields must be `String` or `Option<String>`")]
+pub trait EnvironmentValue: environment_value_sealed::Sealed + Sized {
+    const OPTIONAL: bool;
+
+    fn get(environment: &crate::Environment, key: &str) -> Self;
+}
+
+impl EnvironmentValue for String {
+    const OPTIONAL: bool = false;
+
+    fn get(environment: &crate::Environment, key: &str) -> Self {
+        environment
+            .get(key)
+            .unwrap_or_else(|| panic!("required environment key is missing: {key}"))
+    }
+}
+
+impl EnvironmentValue for Option<String> {
+    const OPTIONAL: bool = true;
+
+    fn get(environment: &crate::Environment, key: &str) -> Self {
+        environment.get(key)
+    }
+}
+
 /// Register declarative ENV metadata without reading any environment values.
 #[doc(hidden)]
 pub fn register_environment(declarations: fn() -> Vec<spacetimedb_lib::environment::EnvironmentDeclaration>) {
