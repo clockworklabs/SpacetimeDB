@@ -84,6 +84,10 @@ const COMMANDS: &[Command] = &[
         path: &["other-workflows", "run-spacetime"],
         package: "ci-run-spacetime",
     },
+    Command {
+        path: &["other-workflows", "check-release-deps"],
+        package: "ci-check-release-deps",
+    },
 ];
 
 fn print_help() {

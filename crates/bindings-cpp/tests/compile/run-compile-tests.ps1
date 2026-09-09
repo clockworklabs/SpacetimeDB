@@ -103,6 +103,7 @@ $cases = switch ($Suite) {
     "indexes" {
         @(
             (New-CompileCase "ok_multi_column_range_prefixes" "cases/indexes/ok_multi_column_range_prefixes.cpp" "success")
+            (New-CompileCase "ok_autoinc_same_line" "cases/indexes/ok_autoinc_same_line.cpp" "success")
             (New-CompileCase "error_multi_column_range_not_terminal" "cases/indexes/error_multi_column_range_not_terminal.cpp" "failure" "Range<T> in a multi-column index filter must be the final supplied element")
         )
     }

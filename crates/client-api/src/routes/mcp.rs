@@ -13,8 +13,9 @@ use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::sats;
 
 use super::database::{
-    client_connected_error_to_response, client_disconnected_error_to_response, find_database_leader,
-    find_database_module, find_database_or_404, map_reducer_error, sql_direct, ResolvedDatabase, SqlQueryParams,
+    client_connected_error_to_response, client_disconnected_error_to_response, count_response_egress,
+    find_database_leader, find_database_module, find_database_or_404, map_reducer_error, sql_direct, ResolvedDatabase,
+    SqlQueryParams,
 };
 use crate::auth::SpacetimeAuth;
 use crate::routes::subscribe::generate_random_connection_id;
@@ -47,7 +48,10 @@ pub async fn mcp<S>(
 where
     S: ControlStateDelegate + NodeDelegate + Authorization + Clone + 'static,
 {
-    handle_mcp(&ctx, Some(database), auth, request).await
+    // the middleware counts this route, so the addressed database is discarded
+    let mut discarded = None;
+
+    handle_mcp(&ctx, Some(database), auth, request, &mut discarded).await
 }
 
 pub async fn mcp_root<S>(
@@ -58,7 +62,14 @@ pub async fn mcp_root<S>(
 where
     S: ControlStateDelegate + NodeDelegate + Authorization + Clone + 'static,
 {
-    handle_mcp(&ctx, None, auth, request).await
+    let mut addressed = None;
+    let response = handle_mcp(&ctx, None, auth, request, &mut addressed).await?;
+
+    // no path middleware can attribute this route, its database is named in the request body
+    Ok(match addressed {
+        Some(database_identity) => count_response_egress(database_identity, response),
+        None => response,
+    })
 }
 
 async fn handle_mcp<S>(
@@ -66,6 +77,8 @@ async fn handle_mcp<S>(
     scope: Option<Database>,
     auth: SpacetimeAuth,
     request: Value,
+    // set to the database a tool addressed, so mcp_root can attribute its egress
+    addressed: &mut Option<Identity>,
 ) -> axum::response::Result<Response>
 where
     S: ControlStateDelegate + NodeDelegate + Authorization + Clone + 'static,
@@ -85,7 +98,7 @@ where
         // protocol ping, distinct from the ping tool
         "ping" => jsonrpc_result(&id, json!({})),
         "tools/list" => jsonrpc_result(&id, tools_list(host_wide)),
-        "tools/call" => match tools_call(ctx, scope, auth, request.get("params")).await {
+        "tools/call" => match tools_call(ctx, scope, auth, request.get("params"), addressed).await {
             Ok(result) => jsonrpc_result(&id, result),
             Err((code, message)) => jsonrpc_error(&id, code, message),
         },
@@ -202,6 +215,7 @@ async fn tools_call<S>(
     scope: Option<Database>,
     auth: SpacetimeAuth,
     params: Option<&Value>,
+    addressed: &mut Option<Identity>,
 ) -> Result<Value, RpcError>
 where
     S: ControlStateDelegate + NodeDelegate + Authorization + Clone + 'static,
@@ -221,14 +235,14 @@ where
         }),
         // offered only host-wide
         "list_databases" if scope.is_none() => tool_list_databases(ctx, auth.claims.identity).await,
-        "get_schema" => tool_get_schema(ctx, target_database(&scope, arguments)?).await,
+        "get_schema" => tool_get_schema(ctx, target_database(&scope, arguments)?, addressed).await,
         "sql" => {
             let target = target_database(&scope, arguments)?;
             let Some(sql) = arguments.and_then(|a| a.get("sql")).and_then(Value::as_str) else {
                 return Err((INVALID_PARAMS, "sql argument must be a string".to_owned()));
             };
             let confirmed = arguments.and_then(|a| a.get("confirmed")).and_then(Value::as_bool);
-            tool_sql(ctx, target, auth, sql.to_owned(), confirmed).await
+            tool_sql(ctx, target, auth, sql.to_owned(), confirmed, addressed).await
         }
         "call" => {
             let target = target_database(&scope, arguments)?;
@@ -236,7 +250,7 @@ where
                 return Err((INVALID_PARAMS, "reducer argument must be a string".to_owned()));
             };
             let args_json = reducer_args_json(arguments)?;
-            tool_call_reducer(ctx, target, auth, reducer.to_owned(), args_json).await
+            tool_call_reducer(ctx, target, auth, reducer.to_owned(), args_json, addressed).await
         }
         other => return Err((INVALID_PARAMS, format!("unknown tool: {other}"))),
     };
@@ -254,11 +268,18 @@ enum Target {
 
 impl Target {
     /// an ErrorResponse here becomes an in-band tool error, an RpcError would be a protocol error
-    async fn resolve(self, ctx: &(impl ControlStateDelegate + ?Sized)) -> axum::response::Result<Database> {
-        match self {
-            Target::Resolved(database) => Ok(database),
-            Target::Named(name_or_identity) => find_database_or_404(ctx, name_or_identity).await,
-        }
+    async fn resolve(
+        self,
+        ctx: &(impl ControlStateDelegate + ?Sized),
+        addressed: &mut Option<Identity>,
+    ) -> axum::response::Result<Database> {
+        let database = match self {
+            Target::Resolved(database) => database,
+            Target::Named(name_or_identity) => find_database_or_404(ctx, name_or_identity).await?,
+        };
+        *addressed = Some(database.database_identity);
+
+        Ok(database)
     }
 }
 
@@ -322,11 +343,11 @@ where
     serde_json::to_string(&json!({ "databases": databases })).map_err(log_and_500)
 }
 
-async fn tool_get_schema<S>(ctx: &S, target: Target) -> axum::response::Result<String>
+async fn tool_get_schema<S>(ctx: &S, target: Target, addressed: &mut Option<Identity>) -> axum::response::Result<String>
 where
     S: ControlStateDelegate + NodeDelegate,
 {
-    let database = target.resolve(ctx).await?;
+    let database = target.resolve(ctx, addressed).await?;
     let leader = find_database_leader(ctx, &database).await?;
     let module = leader.wait_for_module(MODULE_WAIT_TIMEOUT).await.map_err(log_and_500)?;
     let raw = RawModuleDefV9::from(module.info.module_def.as_ref().clone());
@@ -340,13 +361,14 @@ async fn tool_sql<S>(
     auth: SpacetimeAuth,
     sql: String,
     confirmed: Option<bool>,
+    addressed: &mut Option<Identity>,
 ) -> axum::response::Result<String>
 where
     S: ControlStateDelegate + NodeDelegate + Authorization + Clone + 'static,
 {
     let caller_identity = auth.claims.identity;
     let caller_auth: ConnectionAuthCtx = auth.into();
-    let database = target.resolve(ctx).await?;
+    let database = target.resolve(ctx, addressed).await?;
     let rows = sql_direct(
         ctx.clone(),
         database,
@@ -366,13 +388,14 @@ async fn tool_call_reducer<S>(
     auth: SpacetimeAuth,
     reducer: String,
     args_json: String,
+    addressed: &mut Option<Identity>,
 ) -> axum::response::Result<String>
 where
     S: ControlStateDelegate + NodeDelegate + Authorization + Clone + 'static,
 {
     let caller_identity = auth.claims.identity;
     let caller_auth: ConnectionAuthCtx = auth.into();
-    let database = target.resolve(ctx).await?;
+    let database = target.resolve(ctx, addressed).await?;
     let module = find_database_module(ctx, &database).await?;
 
     let connection_id = generate_random_connection_id();
