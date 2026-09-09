@@ -92,10 +92,26 @@ pub(super) fn parse(content: &str) -> anyhow::Result<Value> {
 /// Deserialize through JSON text so Serde's flattened-field buffer does not
 /// receive visit_u128 from Value's deserializer. That buffer cannot represent
 /// u128, while the arbitrary-precision JSON parser preserves its decimal token.
-/// Diagnostics deliberately discard the original error, which may quote values.
+/// Diagnostics discard values while retaining a bounded, ordinary unknown field
+/// name, which is useful for correcting misspelled configuration options.
 pub(super) fn decode_config(value: Value) -> anyhow::Result<super::SpacetimeConfig> {
     let encoded = serde_json::to_vec(&value).map_err(|_| anyhow::anyhow!("Invalid configuration structure"))?;
-    serde_json::from_slice(&encoded).map_err(|_| anyhow::anyhow!("Invalid configuration structure"))
+    serde_json::from_slice(&encoded).map_err(|error| {
+        let diagnostic = error.to_string();
+        if let Some((field, suffix)) = diagnostic
+            .strip_prefix("unknown field `")
+            .and_then(|message| message.split_once('`'))
+            && suffix.starts_with(", expected ")
+            && !field.is_empty()
+            && field.len() <= 64
+            && field
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+        {
+            return anyhow::anyhow!("unknown field `{field}`");
+        }
+        anyhow::anyhow!("Invalid configuration structure")
+    })
 }
 
 fn is_space(ch: char) -> bool {
@@ -282,5 +298,33 @@ mod tests {
         let config: SpacetimeConfig =
             serde_json::from_value(serde_json::json!({"env":{"A":1},"children":[{"env":null}]})).unwrap();
         assert!(config.collect_all_targets_with_inheritance()[1].fields["env"].is_null());
+    }
+
+    #[test]
+    fn unknown_configuration_fields_are_actionable_without_exposing_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("spacetime.json");
+        let secret = "private-configuration-value-sentinel";
+        let value = serde_json::json!({"dev": {"run_command": secret}, "env": {"TOKEN": secret}});
+        std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+        for error in [
+            SpacetimeConfig::load(&path).unwrap_err(),
+            find_and_load_with_env_from(None, dir.path().to_owned()).err().unwrap(),
+        ] {
+            let diagnostic = format!("{error:#}");
+            assert!(diagnostic.contains("unknown field `run_command`"));
+            assert!(!diagnostic.contains(secret));
+        }
+
+        for field in [
+            "control\ncharacters".to_owned(),
+            "x".repeat(65),
+            "quote`injection".to_owned(),
+        ] {
+            let error = decode_config(serde_json::json!({"dev": {field: secret}})).unwrap_err();
+            assert_eq!(error.to_string(), "Invalid configuration structure");
+        }
+        let error = decode_config(serde_json::json!({"dev": {"run": [secret]}})).unwrap_err();
+        assert_eq!(error.to_string(), "Invalid configuration structure");
     }
 }
