@@ -114,7 +114,7 @@ impl PreparedDeploymentManifest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::deployment::{DeploymentSpecV1, ModuleComponent, SYSTEM_EMPTY_MODULE_VERSION};
+    use crate::deployment::{DeploymentSpecV1, ModuleComponent};
 
     fn manifest() -> PreparedDeploymentManifest {
         PreparedDeploymentManifest::V1(PreparedDeploymentManifestV1 {
@@ -126,7 +126,7 @@ mod tests {
                 container_action: crate::container::ContainerAction::Keep,
             },
             deployment: DeploymentSpec::V1(DeploymentSpecV1 {
-                module: ModuleComponent::SystemEmpty(SYSTEM_EMPTY_MODULE_VERSION),
+                module: ModuleComponent::SystemEmpty(crate::deployment::system_empty::empty().descriptor),
                 container: None,
             }),
             module_artifact: ModuleArtifact {

@@ -419,6 +419,7 @@ impl JsInstanceEnv {
     /// This resets all of the state associated to a single function call,
     /// and returns instrumentation records.
     fn finish_funcall(&mut self) -> ExecutionTimings {
+        self.instance_env.finish_funcall();
         let total_duration = self.reducer_start().elapsed();
         let func_name = self.log_record_function().unwrap_or("<unknown>").to_owned();
 
@@ -443,7 +444,9 @@ impl JsInstanceEnv {
         }
     }
 
-    fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
+    fn set_module_def(&mut self, module_def: Arc<ModuleDef>, module_hash: spacetimedb_lib::Hash) {
+        self.instance_env
+            .bind_environment_module(module_hash, module_def.clone());
         self.module_def = Some(module_def);
     }
 
@@ -527,12 +530,14 @@ impl JsMainInstance {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
         deployment: Option<crate::db::deployment::DeploymentCommit>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         self.request(UpdateDatabaseRequest {
             program,
             old_module_info,
             policy,
+            environment,
             deployment,
         })
         .await
@@ -592,9 +597,15 @@ impl JsMainInstance {
     pub async fn init_database(
         &self,
         program: Program,
+        environment: std::collections::BTreeMap<String, String>,
         deployment: Option<crate::db::deployment::DeploymentCommit>,
     ) -> anyhow::Result<InitDatabaseResult> {
-        self.request(InitDatabaseRequest { program, deployment }).await
+        self.request(InitDatabaseRequest {
+            program,
+            environment,
+            deployment,
+        })
+        .await
     }
 
     pub async fn call_view(&self, cmd: ViewCommand) -> ViewCommandResult {
@@ -678,6 +689,7 @@ js_main_request! {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
         deployment: Option<crate::db::deployment::DeploymentCommit>,
     } => "update_database", anyhow::Result<UpdateDatabaseResult>, UpdateDatabase
 }
@@ -721,6 +733,7 @@ js_main_request! {
 js_main_request! {
     InitDatabaseRequest {
         program: Program,
+        environment: std::collections::BTreeMap<String, String>,
         deployment: Option<crate::db::deployment::DeploymentCommit>,
     } => "init_database", anyhow::Result<InitDatabaseResult>, InitDatabase
 }
@@ -901,6 +914,7 @@ enum JsMainWorkerRequest {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
         deployment: Option<crate::db::deployment::DeploymentCommit>,
     },
     /// See [`JsMainInstance::call_reducer`].
@@ -962,6 +976,7 @@ enum JsMainWorkerRequest {
     InitDatabase {
         reply_tx: JsReplyTx<anyhow::Result<InitDatabaseResult>>,
         program: Program,
+        environment: std::collections::BTreeMap<String, String>,
         deployment: Option<crate::db::deployment::DeploymentCommit>,
     },
 }
@@ -1517,9 +1532,10 @@ fn handle_main_worker_request(
             program,
             old_module_info,
             policy,
+            environment,
             deployment,
         } => handle_worker_request("update_database", reply_tx, || {
-            let res = instance_common.update_database(program, old_module_info, policy, deployment, inst);
+            let res = instance_common.update_database(program, old_module_info, policy, environment, deployment, inst);
             (res, false)
         }),
         JsMainWorkerRequest::CallReducer { reply_tx, params } => {
@@ -1619,6 +1635,7 @@ fn handle_main_worker_request(
         JsMainWorkerRequest::InitDatabase {
             reply_tx,
             program,
+            environment,
             deployment,
         } => handle_worker_request("init_database", reply_tx, || {
             let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
@@ -1627,6 +1644,7 @@ fn handle_main_worker_request(
                 &info.module_def,
                 info.module_hash,
                 program,
+                environment,
                 deployment,
                 call_reducer,
             );
@@ -1803,7 +1821,10 @@ where
                         return;
                     }
                     Ok(Ok((crf, module_common))) => {
-                        env_on_isolate_unwrap(scope).set_module_def(module_common.info().module_def.clone());
+                        env_on_isolate_unwrap(scope).set_module_def(
+                            module_common.info().module_def.clone(),
+                            module_common.info().module_hash,
+                        );
 
                         if let Some(result_tx) = startup_result_tx.take()
                             && result_tx.send(Ok(module_common.clone())).is_err()
@@ -2013,8 +2034,8 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
         self.scope.get_slot::<JsInstanceEnv>().unwrap().instance_env.tx.clone()
     }
 
-    fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
-        env_on_isolate_unwrap(self.scope).set_module_def(module_def);
+    fn set_module_def(&mut self, module_def: Arc<ModuleDef>, module_hash: spacetimedb_lib::Hash) {
+        env_on_isolate_unwrap(self.scope).set_module_def(module_def, module_hash);
     }
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {

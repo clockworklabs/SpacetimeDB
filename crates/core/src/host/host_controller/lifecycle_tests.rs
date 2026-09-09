@@ -109,7 +109,7 @@ fn fixture(
 ) {
     let directory = tempfile::tempdir().unwrap();
     let data = Arc::new(ServerDataDir::from_path_unchecked(directory.path().to_owned()));
-    let program = empty_module::program(1).unwrap();
+    let program = empty_module::program(empty_module::VERSION).unwrap();
     let initial = program.clone();
     let lookups = Arc::new(AtomicUsize::new(0));
     let lookup_count = lookups.clone();
@@ -360,7 +360,7 @@ async fn lifecycle_stale_panic_callback_does_not_unregister_updated_or_reopened_
         let guard = controller.acquire_read_lock(database.id).await.unwrap();
         controller.unregister_fn(guard.as_ref().unwrap().registration.clone(), database.database_identity)
     };
-    let mut newer = empty_module::VERSION_1_BYTES.to_vec();
+    let mut newer = spacetimedb_lib::deployment::system_empty::empty().bytes.to_vec();
     newer.extend_from_slice(&[0, 3, 1, b'x', 1]);
     let newer_hash = spacetimedb_lib::hash_bytes(&newer);
     controller

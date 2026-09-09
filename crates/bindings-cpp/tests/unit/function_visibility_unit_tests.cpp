@@ -52,7 +52,7 @@ TEST_CASE(v10_retains_explicit_visibility_and_schedule_default) {
     bsatn::serialize(writer, versioned);
     ASSERT_EQ(uint8_t{2}, bytes.at(0));
     ASSERT_EQ(uint8_t{2}, versioned.get_tag());
-    bool saw_reducers = false, saw_procedure = false, saw_capability = false;
+    bool saw_reducers = false, saw_procedure = false, saw_environment = false, saw_capability = false;
     for (const auto& section : versioned.get<2>().sections) {
         if (section.get_tag() == 3) {
             const auto& reducers = section.get<3>();
@@ -66,11 +66,14 @@ TEST_CASE(v10_retains_explicit_visibility_and_schedule_default) {
             ASSERT_EQ(SpacetimeDB::Internal::FunctionVisibility::Internal, section.get<4>().at(0).visibility);
             saw_procedure = true;
         } else if (section.get_tag() == 15) {
-            ASSERT_EQ(std::vector<std::string>{"hosted_auth_v1"}, section.get<15>());
+            ASSERT_TRUE(section.get<15>().empty());
+            saw_environment = true;
+        } else if (section.get_tag() == 16) {
+            ASSERT_EQ(std::vector<std::string>{"hosted_auth_v1"}, section.get<16>());
             saw_capability = true;
         }
     }
-    ASSERT_TRUE(saw_reducers && saw_procedure && saw_capability);
+    ASSERT_TRUE(saw_reducers && saw_procedure && saw_environment && saw_capability);
 }
 
 TEST_CASE(v10_visibility_extends_enum_without_changing_reducer_field_layout) {
@@ -94,5 +97,19 @@ TEST_CASE(v10_visibility_extends_enum_without_changing_reducer_field_layout) {
             1, 0, 0, 0, 'p', 0, 0, 0, 0, 2, 0, 0, 0, 0, tag,
         };
         ASSERT_EQ(expected_procedure, procedure_bytes);
+    }
+}
+
+TEST_CASE(v10_environment_and_capabilities_have_distinct_appended_wire_tags) {
+    RawModuleDefV10Section environment;
+    environment.set<15>(std::vector<EnvironmentDeclaration>{});
+    RawModuleDefV10Section capabilities;
+    capabilities.set<16>(std::vector<std::string>{});
+    for (const auto& section : {environment, capabilities}) {
+        std::vector<uint8_t> bytes;
+        bsatn::Writer writer(bytes);
+        bsatn::serialize(writer, section);
+        const std::vector<uint8_t> expected{section.get_tag(), 0, 0, 0, 0};
+        ASSERT_EQ(expected, bytes);
     }
 }

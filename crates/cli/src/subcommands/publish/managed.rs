@@ -385,8 +385,32 @@ async fn prepare_request(
     } else {
         None
     };
-    let module_action = if args.get_flag("remove_module") {
-        ModuleAction::Remove
+    let declared_environment = target
+        .container()
+        .map(|config| config.environment_schema())
+        .transpose()?
+        .flatten();
+    ensure!(
+        declared_environment.is_none() || module.is_none(),
+        "container env_schema cannot override a user module's environment declarations"
+    );
+    ensure!(
+        declared_environment.is_none()
+            || args.get_flag("remove_module")
+            || !prior
+                .is_some_and(|prior| matches!(prior.deployment.current().module, deployment::ModuleComponent::User(_))),
+        "replacing a user module with container env_schema requires --remove-module"
+    );
+    let builtin =
+        if module.is_none() && (args.get_flag("remove_module") || declared_environment.is_some() || prior.is_none()) {
+            Some(deployment::system_empty::generate(
+                &declared_environment.unwrap_or_default(),
+            )?)
+        } else {
+            None
+        };
+    let module_action = if let Some(builtin) = &builtin {
+        ModuleAction::Remove(builtin.descriptor)
     } else if let Some((kind, bytes)) = &module {
         ModuleAction::Set(UserModule {
             kind: *kind,
@@ -395,6 +419,9 @@ async fn prepare_request(
     } else {
         ModuleAction::Keep
     };
+    let module = builtin
+        .map(|builtin| (UserModuleKind::Wasm, builtin.bytes.into_vec()))
+        .or(module);
     let container_action = if let Some(image) = &image {
         ContainerAction::Set(image.metadata.container.clone())
     } else if args.get_flag("remove_container") {
@@ -415,28 +442,18 @@ async fn prepare_request(
             digest: spacetimedb_oci::sha256(bytes),
             size_bytes: bytes.len() as u64,
         }
-    } else if let Some(prior) = prior.filter(|_| !matches!(envelope.module_action, ModuleAction::Remove)) {
+    } else if let Some(prior) = prior {
         let artifact = prior.module_artifact;
         ModuleArtifact {
             digest: artifact.digest,
             size_bytes: artifact.size_bytes,
         }
     } else {
-        deployment::SYSTEM_EMPTY_MODULE_V1_ARTIFACT
+        bail!("publication has no selected module artifact")
     };
     let migration_policy = if let Some(prior) = prior {
         if let Some((kind, bytes)) = &module {
             migration(client, prior.database_identity, *kind, bytes, target, yes).await?
-        } else if matches!(envelope.module_action, ModuleAction::Remove) {
-            migration(
-                client,
-                prior.database_identity,
-                UserModuleKind::Wasm,
-                deployment::SYSTEM_EMPTY_MODULE_V1_BYTES,
-                target,
-                yes,
-            )
-            .await?
         } else {
             PreparedMigrationPolicy::Compatible
         }
@@ -737,19 +754,19 @@ mod tests {
             let snapshot = fixture.state.lock().unwrap();
             assert_eq!(snapshot.reservations.len(), 1);
             assert_eq!(snapshot.submits.len(), 1);
-            assert_eq!(snapshot.begin_count, 3);
+            assert_eq!(snapshot.begin_count, 4);
             let request: PublishRequest = serde_json::from_slice(&snapshot.submits[0]).unwrap();
             assert!(matches!(
                 request.manifest.current().envelope.module_action,
-                ModuleAction::Keep
-            ));
-            assert!(matches!(
-                request.manifest.current().deployment.current().module,
-                deployment::ModuleComponent::SystemEmpty(1)
+                ModuleAction::Remove(_)
             ));
             assert_eq!(
+                request.manifest.current().deployment.current().module,
+                deployment::ModuleComponent::SystemEmpty(deployment::system_empty::empty().descriptor)
+            );
+            assert_eq!(
                 request.manifest.current().module_artifact,
-                deployment::SYSTEM_EMPTY_MODULE_V1_ARTIFACT
+                crate::container::publish::tests::empty_module_artifact()
             );
             assert_eq!(request.image_source.unwrap().digest, selected.digest);
             let dir = state.join(request.manifest.current().envelope.operation_id.to_string());
@@ -765,15 +782,15 @@ mod tests {
         let fixture = Fixture::new().await;
         let temporary = tempfile::tempdir().unwrap();
         let wasm = temporary.path().join("module.wasm");
-        std::fs::write(&wasm, deployment::SYSTEM_EMPTY_MODULE_V1_BYTES).unwrap();
+        std::fs::write(&wasm, deployment::system_empty::empty().bytes.as_ref()).unwrap();
         let prior_request = fixture.record(false, false).request().unwrap();
         let prior = DeploymentStatus {
             database_identity: database(),
             revision: Some(prior_request.manifest.current().deployment.revision().unwrap()),
             deployment: prior_request.manifest.current().deployment.clone(),
             module_artifact: ArtifactReference {
-                digest: deployment::SYSTEM_EMPTY_MODULE_V1_ARTIFACT.digest,
-                size_bytes: deployment::SYSTEM_EMPTY_MODULE_V1_ARTIFACT.size_bytes,
+                digest: crate::container::publish::tests::empty_module_artifact().digest,
+                size_bytes: crate::container::publish::tests::empty_module_artifact().size_bytes,
             },
         };
         {
@@ -839,8 +856,8 @@ mod tests {
                 revision: Some(request.manifest.current().deployment.revision().unwrap()),
                 deployment: request.manifest.current().deployment.clone(),
                 module_artifact: ArtifactReference {
-                    digest: deployment::SYSTEM_EMPTY_MODULE_V1_ARTIFACT.digest,
-                    size_bytes: deployment::SYSTEM_EMPTY_MODULE_V1_ARTIFACT.size_bytes,
+                    digest: crate::container::publish::tests::empty_module_artifact().digest,
+                    size_bytes: crate::container::publish::tests::empty_module_artifact().size_bytes,
                 },
             });
         }
@@ -911,7 +928,7 @@ mod tests {
             temporary.path(),
             record,
             None,
-            Some(deployment::SYSTEM_EMPTY_MODULE_V1_BYTES),
+            Some(deployment::system_empty::empty().bytes.as_ref()),
         )
         .unwrap();
         assert!(publish::run(

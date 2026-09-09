@@ -12,12 +12,26 @@ use crate::db::{environment, persistence::Persistence};
 use spacetimedb_datastore::system_tables::StContainerFenceRow;
 use spacetimedb_durability::{Close, Durability, DurableOffset, PreparedTx};
 use spacetimedb_lib::container::*;
-use spacetimedb_lib::deployment::{DeploymentSpec, DeploymentSpecV1, ModuleComponent, SYSTEM_EMPTY_MODULE_VERSION};
+use spacetimedb_lib::deployment::{DeploymentSpec, DeploymentSpecV1, ModuleComponent};
+use spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration, EnvironmentSchema};
 use spacetimedb_lib::{hash_bytes, Timestamp, Uuid};
 use std::time::Duration;
 
 fn uuid() -> Uuid {
     Uuid::from_u128(uuid::Uuid::now_v7().as_u128())
+}
+
+fn environment_schema(keys: &[String]) -> EnvironmentSchema {
+    EnvironmentSchema::new(
+        keys.iter()
+            .map(|name| EnvironmentDeclaration {
+                name: name.clone(),
+                constraint: EnvironmentConstraint::AnyString,
+                optional: true,
+            })
+            .collect(),
+    )
+    .unwrap()
 }
 
 fn setup(db: &RelationalDB, keys: Vec<String>) -> EnvironmentSnapshotScope {
@@ -45,6 +59,8 @@ fn setup(db: &RelationalDB, keys: Vec<String>) -> EnvironmentSnapshotScope {
     }
     .normalize(&Default::default())
     .unwrap();
+    let schema = environment_schema(&spec.env_keys);
+    let generated = spacetimedb_lib::deployment::system_empty::generate(&schema).unwrap();
     let request = DeploymentCommit {
         operation_id: uuid(),
         publication_epoch: 1,
@@ -52,7 +68,7 @@ fn setup(db: &RelationalDB, keys: Vec<String>) -> EnvironmentSnapshotScope {
         expected_revision: None,
         prepared_manifest_hash: hash_bytes(b"prepared"),
         deployment: DeploymentSpec::V1(DeploymentSpecV1 {
-            module: ModuleComponent::SystemEmpty(SYSTEM_EMPTY_MODULE_VERSION),
+            module: ModuleComponent::SystemEmpty(generated.descriptor),
             container: Some(spec.clone()),
         }),
     };
@@ -60,9 +76,12 @@ fn setup(db: &RelationalDB, keys: Vec<String>) -> EnvironmentSnapshotScope {
         install_publication_fence(tx, request.publication_epoch, request.operation_id)?;
         record_deployment_commit(tx, &request, Timestamp::now(), &Default::default())?;
         install_container_fence(db, tx, &self_fence(db, 1, true))?;
-        for key in &spec.env_keys {
-            environment::set(db, tx, key, "before")?;
-        }
+        environment::replace(
+            db,
+            tx,
+            &schema,
+            &spec.env_keys.iter().map(|key| (key.clone(), "before".into())).collect(),
+        )?;
         Ok(())
     })
     .unwrap();

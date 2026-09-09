@@ -1,3 +1,4 @@
+#include "spacetimedb/environment.h"
 #include "spacetimedb/internal/v10_builder.h"
 #include "spacetimedb/internal/autogen/AlgebraicType.g.h"
 #include "spacetimedb/internal/autogen/ProductType.g.h"
@@ -256,7 +257,7 @@ RawModuleDefV10 V10Builder::BuildModuleDef() const {
     section_typespace.set<0>(typespace_);
     v10_module.sections.push_back(section_typespace);
     RawModuleDefV10Section capabilities;
-    capabilities.set<15>(std::vector<std::string>{"hosted_auth_v1"});
+    capabilities.set<16>(std::vector<std::string>{"hosted_auth_v1"});
     v10_module.sections.push_back(std::move(capabilities));
 
     if (!types.empty()) {
@@ -325,6 +326,10 @@ RawModuleDefV10 V10Builder::BuildModuleDef() const {
         v10_module.sections.push_back(std::move(section_rls));
     }
 
+    validate_environment_declarations();
+    RawModuleDefV10Section section_environment;
+    section_environment.set<15>(environment_declarations());
+    v10_module.sections.push_back(std::move(section_environment));
     return v10_module;
 }
 

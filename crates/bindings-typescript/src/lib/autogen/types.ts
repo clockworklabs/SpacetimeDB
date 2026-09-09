@@ -51,6 +51,23 @@ export const CaseConversionPolicy = __t.enum('CaseConversionPolicy', {
 });
 export type CaseConversionPolicy = __Infer<typeof CaseConversionPolicy>;
 
+// The tagged union or sum type for the algebraic type `EnvironmentConstraint`.
+export const EnvironmentConstraint = __t.enum('EnvironmentConstraint', {
+  AnyString: __t.unit(),
+  Literal: __t.string(),
+  OneOf: __t.array(__t.string()),
+});
+export type EnvironmentConstraint = __Infer<typeof EnvironmentConstraint>;
+
+export const EnvironmentDeclaration = __t.object('EnvironmentDeclaration', {
+  name: __t.string(),
+  get constraint() {
+    return EnvironmentConstraint;
+  },
+  optional: __t.bool(),
+});
+export type EnvironmentDeclaration = __Infer<typeof EnvironmentDeclaration>;
+
 // The tagged union or sum type for the algebraic type `ExplicitNameEntry`.
 export const ExplicitNameEntry = __t.enum('ExplicitNameEntry', {
   get Table() {
@@ -394,6 +411,9 @@ export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
   },
   get Submodules() {
     return __t.array(RawSubmoduleV10);
+  },
+  get Environment() {
+    return __t.array(EnvironmentDeclaration);
   },
   Capabilities: __t.array(__t.string()),
 });

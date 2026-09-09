@@ -40,7 +40,7 @@ fn request(program: &Program, sequence: u64, initial: bool) -> DeploymentCommit 
         prepared_manifest_hash: hash_bytes(sequence.to_le_bytes()),
         deployment: DeploymentSpec::V1(DeploymentSpecV1 {
             module: if initial {
-                ModuleComponent::SystemEmpty(1)
+                ModuleComponent::SystemEmpty(spacetimedb_lib::deployment::system_empty::empty().descriptor)
             } else {
                 ModuleComponent::User(UserModule {
                     kind: UserModuleKind::Wasm,
@@ -76,7 +76,7 @@ fn request(program: &Program, sequence: u64, initial: bool) -> DeploymentCommit 
 fn fixture(id: u64, bootstrap: bool) -> (tempfile::TempDir, HostController, Database, Arc<InitialStorage>) {
     let directory = tempfile::tempdir().unwrap();
     let data_dir = Arc::new(ServerDataDir::from_path_unchecked(directory.path().to_owned()));
-    let program = empty_module::program(1).unwrap();
+    let program = empty_module::program(empty_module::VERSION).unwrap();
     let storage = Arc::new(InitialStorage {
         request: bootstrap.then(|| request(&program, 1, true)),
         program: program.clone(),
@@ -156,7 +156,7 @@ async fn activation_failure_after_commit_closes_old_host_and_recovers_committed_
         .await
         .unwrap();
     let watcher = controller.watch_module_host(database.id).await.unwrap();
-    let mut bytes = empty_module::VERSION_1_BYTES.to_vec();
+    let mut bytes = spacetimedb_lib::deployment::system_empty::empty().bytes.to_vec();
     bytes.extend_from_slice(&[0, 3, 1, b'x', 1]);
     let newer = Program::from_bytes(ModuleKind::WASM, bytes);
     let publication = request(&newer, 1, false);
@@ -212,4 +212,250 @@ async fn activation_failure_after_commit_closes_old_host_and_recovers_committed_
         .exit_module_host(database.id, Duration::from_secs(5))
         .await
         .unwrap();
+}
+
+struct DeclaredInitialEnvironment {
+    database: Database,
+    values: std::collections::BTreeMap<String, String>,
+    loads: AtomicUsize,
+}
+
+#[async_trait]
+impl InitialEnvironmentSource for DeclaredInitialEnvironment {
+    async fn load(&self, database: &Database) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
+        anyhow::ensure!(
+            database.id == self.database.id
+                && database.database_identity == self.database.database_identity
+                && database.owner_identity == self.database.owner_identity
+                && database.initial_program == self.database.initial_program
+                && database.bootstrap_generation == self.database.bootstrap_generation,
+            "bootstrap configuration does not match the exact persisted database generation"
+        );
+        self.loads.fetch_add(1, Ordering::SeqCst);
+        Ok(self.values.clone())
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn declared_builtin_publishes_complete_environment_atomically_and_reopens() {
+    use spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration, EnvironmentSchema};
+    use std::collections::BTreeMap;
+
+    let schema = EnvironmentSchema::new(vec![
+        EnvironmentDeclaration {
+            name: "REQUIRED".into(),
+            constraint: EnvironmentConstraint::AnyString,
+            optional: false,
+        },
+        EnvironmentDeclaration {
+            name: "MODE".into(),
+            constraint: EnvironmentConstraint::OneOf(vec!["ready".into(), "paused".into()]),
+            optional: false,
+        },
+        EnvironmentDeclaration {
+            name: "FIXED".into(),
+            constraint: EnvironmentConstraint::Literal("constant".into()),
+            optional: false,
+        },
+        EnvironmentDeclaration {
+            name: "OPTIONAL".into(),
+            constraint: EnvironmentConstraint::AnyString,
+            optional: true,
+        },
+    ])
+    .unwrap();
+    let initial_values = BTreeMap::from([
+        ("REQUIRED".into(), "initial".into()),
+        ("MODE".into(), "ready".into()),
+        ("FIXED".into(), "constant".into()),
+        ("OPTIONAL".into(), "remove-on-next-publish".into()),
+    ]);
+    let program = empty_module::declared_program(&schema).unwrap();
+    let database = Database {
+        id: 0xdd03,
+        database_identity: Identity::from_u256(0xdd03_u64.into()),
+        owner_identity: Identity::ONE,
+        host_type: HostType::Wasm,
+        initial_program: program.hash,
+        bootstrap_generation: 7,
+    };
+    let descriptor = spacetimedb_lib::deployment::SystemEmptyModule {
+        version: empty_module::VERSION,
+        program_hash: program.hash,
+    };
+    let mut initial = request(&program, 1, true);
+    let DeploymentSpec::V1(spec) = &mut initial.deployment;
+    spec.module = ModuleComponent::SystemEmpty(descriptor);
+    spec.container.as_mut().unwrap().env_keys = vec!["FIXED".into(), "MODE".into(), "REQUIRED".into()];
+    let revision = initial.deployment.revision().unwrap();
+    let storage = Arc::new(InitialStorage {
+        program: program.clone(),
+        request: Some(initial.clone()),
+        initial_lookups: AtomicUsize::new(0),
+    });
+    let environment = Arc::new(DeclaredInitialEnvironment {
+        database: database.clone(),
+        values: initial_values.clone(),
+        loads: AtomicUsize::new(0),
+    });
+    let directory = tempfile::tempdir().unwrap();
+    let data = Arc::new(ServerDataDir::from_path_unchecked(directory.path().to_owned()));
+    let controller = HostController::new(
+        data.clone(),
+        db::Config {
+            storage: db::Storage::Disk,
+            page_pool_max_size: None,
+        },
+        HostRuntimeConfig::default(),
+        storage.clone(),
+        Arc::new(NullEnergyMonitor),
+        Arc::new(()),
+        Arc::new(LocalPersistenceProvider::new(data)),
+        JobCores::without_pinned_cores(),
+    )
+    .with_initial_environment_source(environment.clone());
+
+    let result = std::panic::AssertUnwindSafe(async {
+        let launched = controller
+            .get_or_launch_module_host_with_bootstrap(database.clone(), database.id)
+            .await
+            .unwrap();
+        if let Some(completion) = launched.bootstrap_completion {
+            assert_eq!(completion.bootstrap_generation(), database.bootstrap_generation);
+            completion.wait().await.unwrap();
+        }
+        let module = launched.module;
+        assert_eq!(module.info.module_def.environment(), &schema);
+        assert!(module.info.module_def.tables().next().is_none());
+        let assert_state = |module: &ModuleHost, expected: &BTreeMap<String, String>, receipts| {
+            assert!(empty_module::matches_program(
+                &descriptor,
+                &module.relational_db().program().unwrap().unwrap()
+            ));
+            module.relational_db().with_read_only(Workload::Internal, |tx| {
+                assert_eq!(db::environment::snapshot(tx).unwrap(), *expected);
+                assert_eq!(current_deployment(tx).unwrap().unwrap().0, revision);
+                assert_eq!(tx.table_row_count(ST_DEPLOYMENT_OPERATION_ID), Some(receipts));
+            });
+        };
+        assert_state(&module, &initial_values, 1);
+        let replacement = BTreeMap::from([
+            ("REQUIRED".into(), "replaced".into()),
+            ("MODE".into(), "paused".into()),
+            ("FIXED".into(), "constant".into()),
+        ]);
+        let publish_request = |sequence| {
+            let mut publication = request(&program, sequence, true);
+            publication.deployment = initial.deployment.clone();
+            publication.expected_revision = Some(revision);
+            publication
+        };
+        let publication = publish_request(2);
+        module
+            .relational_db()
+            .with_auto_commit(Workload::Internal, |tx| {
+                install_publication_fence(tx, publication.publication_epoch, publication.operation_id)
+            })
+            .unwrap();
+        let updated = controller
+            .update_module_host_with_environment_and_deployment(
+                database.clone(),
+                HostType::Wasm,
+                database.id,
+                program.bytes.clone(),
+                MigrationPolicy::Compatible,
+                replacement.clone(),
+                Some(publication),
+            )
+            .await
+            .unwrap();
+        let UpdateDatabaseResult::UpdatePerformed {
+            tx_offset,
+            durable_offset,
+        } = updated
+        else {
+            panic!("unchanged-code ENV publication must commit a replacement: {updated:?}");
+        };
+        let offset = tx_offset.await.unwrap();
+        durable_offset.unwrap().wait_for(offset).await.unwrap();
+        let module = controller.get_module_host(database.id).await.unwrap();
+        assert_state(&module, &replacement, 2);
+
+        let mut invalid_sets = Vec::new();
+        let mut invalid = replacement.clone();
+        invalid.remove("REQUIRED");
+        invalid_sets.push(invalid);
+        for (key, value) in [("MODE", "unknown"), ("FIXED", "changed"), ("UNDECLARED", "denied")] {
+            let mut invalid = replacement.clone();
+            invalid.insert(key.into(), value.into());
+            invalid_sets.push(invalid);
+        }
+        for (index, invalid) in invalid_sets.into_iter().enumerate() {
+            let publication = publish_request(3 + index as u64);
+            module
+                .relational_db()
+                .with_auto_commit(Workload::Internal, |tx| {
+                    install_publication_fence(tx, publication.publication_epoch, publication.operation_id)
+                })
+                .unwrap();
+            assert!(controller
+                .update_module_host_with_environment_and_deployment(
+                    database.clone(),
+                    HostType::Wasm,
+                    database.id,
+                    program.bytes.clone(),
+                    MigrationPolicy::Compatible,
+                    invalid,
+                    Some(publication),
+                )
+                .await
+                .is_err());
+            let current = controller.get_module_host(database.id).await.unwrap();
+            assert_state(&current, &replacement, 2);
+        }
+        // The exact builtin bytes remain part of admission even though a valid
+        // Wasm custom section would leave the extracted declarations unchanged.
+        let mut different_bytes = program.bytes.to_vec();
+        different_bytes.extend_from_slice(&[0, 3, 1, b'x', 1]);
+        let publication = publish_request(7);
+        module
+            .relational_db()
+            .with_auto_commit(Workload::Internal, |tx| {
+                install_publication_fence(tx, publication.publication_epoch, publication.operation_id)
+            })
+            .unwrap();
+        assert!(controller
+            .update_module_host_with_environment_and_deployment(
+                database.clone(),
+                HostType::Wasm,
+                database.id,
+                different_bytes.into(),
+                MigrationPolicy::Compatible,
+                replacement.clone(),
+                Some(publication),
+            )
+            .await
+            .is_err());
+        assert_state(&controller.get_module_host(database.id).await.unwrap(), &replacement, 2);
+        drop(module);
+        controller.exit_module_host_and_join(database.id).await.unwrap();
+        let reopened = controller
+            .get_or_launch_module_host(database.clone(), database.id)
+            .await
+            .unwrap();
+        assert_state(&reopened, &replacement, 2);
+        assert_eq!(storage.initial_lookups.load(Ordering::SeqCst), 1);
+        assert_eq!(environment.loads.load(Ordering::SeqCst), 1);
+    })
+    .catch_unwind()
+    .await;
+    // Always join the existing close owner before releasing its filesystem.
+    let cleanup = controller.exit_module_host_and_join(database.id).await;
+    if let Err(panic) = result {
+        if let Err(error) = cleanup {
+            log::error!("declared-builtin fixture cleanup failed after assertion: {error:#}");
+        }
+        std::panic::resume_unwind(panic);
+    }
+    cleanup.unwrap();
 }

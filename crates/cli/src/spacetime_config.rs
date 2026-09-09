@@ -1,3 +1,5 @@
+mod environment;
+
 use anyhow::Context;
 use clap::{ArgMatches, Command};
 use path_clean::PathClean;
@@ -187,6 +189,14 @@ impl SpacetimeConfig {
         let mut fields = self.additional_fields.clone();
         if let Some(parent) = parent_fields {
             for (key, value) in parent {
+                if key == "env"
+                    && let Some(child) = fields.get_mut(key)
+                {
+                    let mut combined = value.clone();
+                    environment::overlay(&mut combined, child);
+                    *child = combined;
+                    continue;
+                }
                 if fields.contains_key(key) {
                     continue;
                 }
@@ -317,6 +327,9 @@ impl CommandSchemaBuilder {
 
         // Check that all the defined keys exist in clap
         for key in &self.keys {
+            if key.config_only {
+                continue;
+            }
             if !clap_arg_names.contains(key.clap_arg_name()) {
                 return Err(CommandConfigError::InvalidClapReference {
                     config_name: key.config_name().to_string(),
@@ -350,6 +363,9 @@ impl CommandSchemaBuilder {
         let mut config_to_alias_map = HashMap::new();
 
         for key in &self.keys {
+            if key.config_only {
+                continue;
+            }
             let config_name = key.config_name().to_string();
             let clap_name = key.clap_arg_name().to_string();
 
@@ -405,6 +421,13 @@ impl CommandSchema {
         matches: &ArgMatches,
         config_name: &str,
     ) -> Result<Option<T>, CommandConfigError> {
+        if self
+            .keys
+            .iter()
+            .any(|key| key.config_name() == config_name && key.config_only)
+        {
+            return Ok(None);
+        }
         // Check clap with mapped name (if from_clap was used, use that name, otherwise use config name)
         let clap_name = self
             .config_to_clap
@@ -435,6 +458,13 @@ impl CommandSchema {
     /// Check if a value was provided via CLI (not from config).
     /// Only returns true if the user explicitly provided the value, not if it came from a default.
     pub fn is_from_cli(&self, matches: &ArgMatches, config_name: &str) -> bool {
+        if self
+            .keys
+            .iter()
+            .any(|key| key.config_name() == config_name && key.config_only)
+        {
+            return false;
+        }
         // Check clap with mapped name
         let clap_name = self
             .config_to_clap
@@ -574,6 +604,8 @@ impl CommandSchema {
 pub struct Key {
     /// The key name in the config file (e.g., "module-path")
     config_name: String,
+    /// This field has no value-bearing CLI argument (even if a same-named selector exists).
+    config_only: bool,
     /// The corresponding clap argument name (e.g., "project-path"), if different
     clap_name: Option<String>,
     /// Alias for a clap argument, useful for example if we have to deprecate a clap
@@ -592,12 +624,19 @@ impl Key {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             config_name: name.into(),
+            config_only: false,
             clap_name: None,
             clap_alias: None,
             module_specific: false,
             generate_entry_specific: false,
             required: false,
         }
+    }
+
+    /// Read this key exclusively from project configuration.
+    pub fn config_only(mut self) -> Self {
+        self.config_only = true;
+        self
     }
 
     /// Map this config key to a different clap argument name. When fetching values
@@ -834,8 +873,10 @@ impl SpacetimeConfig {
         let content =
             std::fs::read_to_string(path).with_context(|| format!("Failed to read config file: {}", path.display()))?;
 
-        let config: Self = json5::from_str(&content)
-            .map_err(|e| anyhow::anyhow!("Failed to parse config file {}: {}", path.display(), e))?;
+        let value =
+            environment::parse(&content).with_context(|| format!("Failed to parse config file {}", path.display()))?;
+        let config: Self = environment::decode_config(value)
+            .map_err(|_| anyhow::anyhow!("Invalid configuration structure in {}", path.display()))?;
 
         Ok(config)
     }
@@ -932,8 +973,8 @@ fn load_json_value(path: &Path) -> anyhow::Result<Option<serde_json::Value>> {
     // comments and formatting since json5 crate doesn't support serialization.
     remove_source_config_from_text(path, &content);
 
-    let value: serde_json::Value = json5::from_str(&content)
-        .map_err(|e| anyhow::anyhow!("Failed to parse config file {}: {}", path.display(), e))?;
+    let value =
+        environment::parse(&content).with_context(|| format!("Failed to parse config file {}", path.display()))?;
     Ok(Some(value))
 }
 
@@ -1021,6 +1062,12 @@ fn overlay_json(base: &mut serde_json::Value, mut overlay: serde_json::Value, so
                         base_obj.insert(key.clone(), other);
                     }
                 }
+            } else if key == "env" {
+                if let Some(base_env) = base_obj.get_mut(key) {
+                    environment::overlay(base_env, value);
+                } else {
+                    base_obj.insert(key.clone(), value_owned);
+                }
             } else {
                 base_obj.insert(key.clone(), value_owned);
             }
@@ -1089,7 +1136,7 @@ pub fn find_and_load_with_env_from(env: Option<&str>, start_dir: PathBuf) -> any
         }
     }
 
-    let config: SpacetimeConfig = serde_json::from_value(merged).context("Failed to deserialize merged config")?;
+    let config = environment::decode_config(merged)?;
 
     Ok(Some(LoadedConfig {
         config,

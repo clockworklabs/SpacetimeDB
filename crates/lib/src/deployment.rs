@@ -9,27 +9,11 @@ use crate::{bsatn, hash_bytes, Hash, SpacetimeType, Uuid};
 #[cfg(feature = "serde")]
 pub mod api;
 pub mod manifest;
+pub mod system_empty;
+pub use system_empty::SystemEmptyModule;
 
 pub const PUBLISH_PROTOCOL_VERSION: u32 = 1;
-pub const SYSTEM_EMPTY_MODULE_VERSION: u32 = 1;
-/// Immutable built-in program, also used by clients for authorized migration
-/// preflight. Replacing these bytes requires a new system-module version.
-pub const SYSTEM_EMPTY_MODULE_V1_BYTES: &[u8] = include_bytes!("deployment/system_empty_v1.wasm");
-/// Immutable Keccak-256 program identity of the version-1 bundled empty Wasm
-/// module. Control can verify initial program bytes without linking the host.
-pub const SYSTEM_EMPTY_MODULE_V1_PROGRAM_HASH: Hash = Hash::from_byte_array([
-    0x83, 0xcc, 0x1c, 0xc8, 0x79, 0x4f, 0x7a, 0x9a, 0x54, 0x0a, 0x07, 0x43, 0xd0, 0xf8, 0x74, 0xbf, 0x61, 0x3b, 0x76,
-    0x67, 0x6c, 0xa9, 0xe8, 0xec, 0xbd, 0xc4, 0xcf, 0xca, 0x19, 0xc7, 0x09, 0xa5,
-]);
-/// SHA-256 descriptor of the same immutable bundled version-1 bytes. Clients
-/// can name SystemEmpty in a prepared manifest without linking the host.
-pub const SYSTEM_EMPTY_MODULE_V1_ARTIFACT: manifest::ModuleArtifact = manifest::ModuleArtifact {
-    digest: crate::container::OciDigest::sha256([
-        0x02, 0xbd, 0x77, 0xcf, 0x25, 0xb4, 0x79, 0x08, 0xf4, 0x06, 0x4c, 0x3d, 0xdf, 0x0f, 0xa7, 0xec, 0xcc, 0xa8,
-        0xc6, 0x16, 0x5d, 0x0a, 0x41, 0xc4, 0x45, 0x54, 0x69, 0x54, 0x6b, 0x14, 0xce, 0x02,
-    ]),
-    size_bytes: 250,
-};
+pub const SYSTEM_EMPTY_MODULE_VERSION: u32 = system_empty::VERSION;
 pub const MAX_DEPLOYMENT_BYTES: usize = 256 * 1024;
 pub const PUBLISH_RETRY_WINDOW_MS: u64 = 7 * 24 * 60 * 60 * 1000;
 pub const MAX_OPERATION_CLOCK_SKEW_MS: u64 = 5 * 60 * 1000;
@@ -65,7 +49,9 @@ pub enum ModuleAction {
     #[default]
     Keep,
     Set(UserModule),
-    Remove,
+    /// Remove user code and select the exact platform module generated from
+    /// container configuration. Schema changes use this explicit action too.
+    Remove(SystemEmptyModule),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, SpacetimeType)]
@@ -76,7 +62,7 @@ pub enum ModuleAction {
     serde(tag = "kind", content = "value", rename_all = "snake_case", deny_unknown_fields)
 )]
 pub enum ModuleComponent {
-    SystemEmpty(u32),
+    SystemEmpty(SystemEmptyModule),
     User(UserModule),
 }
 
@@ -153,8 +139,8 @@ impl DeploymentSpec {
 
     pub fn normalize(self, limits: &ContainerSpecLimits) -> Result<Self, DeploymentValidationError> {
         let Self::V1(mut spec) = self;
-        if let ModuleComponent::SystemEmpty(version) = spec.module
-            && version != SYSTEM_EMPTY_MODULE_VERSION
+        if let ModuleComponent::SystemEmpty(module) = &spec.module
+            && module.version != SYSTEM_EMPTY_MODULE_VERSION
         {
             return Err(DeploymentValidationError::UnsupportedEmptyModule);
         }
@@ -205,9 +191,9 @@ impl PublishEnvelope {
         let module = match &self.module_action {
             ModuleAction::Keep => prior
                 .map(|p| p.module.clone())
-                .unwrap_or(ModuleComponent::SystemEmpty(SYSTEM_EMPTY_MODULE_VERSION)),
+                .unwrap_or(ModuleComponent::SystemEmpty(system_empty::empty().descriptor)),
             ModuleAction::Set(module) => ModuleComponent::User(module.clone()),
-            ModuleAction::Remove => ModuleComponent::SystemEmpty(SYSTEM_EMPTY_MODULE_VERSION),
+            ModuleAction::Remove(module) => ModuleComponent::SystemEmpty(*module),
         };
         let container = match &self.container_action {
             ContainerAction::Keep => prior.and_then(|p| p.container.clone()),

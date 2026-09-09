@@ -34,6 +34,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 endif()
 
 
+# Declare the same context type in module and SDK compilation units.
+set(SPACETIMEDB_ENV_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/environment.h")
+
 # Link the SpacetimeDB library
 add_subdirectory(${SPACETIMEDB_CPP_LIBRARY_PATH} ${CMAKE_CURRENT_BINARY_DIR}/spacetimedb_cpp_library)
 target_link_libraries(${OUTPUT_NAME} PRIVATE spacetimedb_cpp_library)

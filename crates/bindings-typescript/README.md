@@ -229,3 +229,29 @@ To run the tests, do:
 ```sh
 pnpm build && pnpm test
 ```
+
+### Declared environment
+
+Pass the complete environment schema to `schema`. Values are supplied at publish
+time, not embedded in the module:
+
+```ts
+const db = schema(tables, {
+  env: {
+    API_URL: t.string(),
+    MODE: t.enum('Mode', ['prod', 'dev']),
+    LOG_LEVEL: t.enum('LogLevel', ['info', 'debug']).optional(),
+  },
+});
+```
+
+`ctx.env.MODE` has type `'prod' | 'dev'`; `ctx.env.LOG_LEVEL` also permits
+`undefined`. Simple enum cases mean allowed strings only in this declaration;
+ordinary enum values elsewhere retain their tagged representation. Payload enums
+are rejected. The checked `ctx.env.get('LOG_LEVEL')` returns `null` for an omitted
+optional value. A declared key named `get` remains accessible through the generic
+method. Omitted or empty schemas allow no keys. Undeclared reads and reads entered
+by the host in a submodule fail at runtime; ordinary helpers retain their caller's
+scope. Values are private, durable database configuration for secrets and other settings.
+Database owners and authorized collaborators can read them; module code can expose
+them through its own outputs.

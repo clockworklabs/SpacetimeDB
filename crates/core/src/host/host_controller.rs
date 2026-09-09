@@ -116,6 +116,14 @@ where
 
 pub type ProgramStorage = Arc<dyn ExternalStorage>;
 
+/// Private complete configuration for a not-yet-initialized database generation.
+/// Implementations must verify the exact persisted database identity, program and
+/// bootstrap generation. This source is never consulted during ordinary reopen.
+#[async_trait]
+pub trait InitialEnvironmentSource: Send + Sync {
+    async fn load(&self, database: &Database) -> anyhow::Result<std::collections::BTreeMap<String, String>>;
+}
+
 /// A launched module host plus any pending controldb program-bootstrap completion work.
 pub struct ModuleHostWithBootstrap {
     pub module: ModuleHost,
@@ -211,6 +219,7 @@ pub struct HostController {
     default_config: db::Config,
     /// The [`ProgramStorage`] to query when instantiating a module.
     program_storage: ProgramStorage,
+    initial_environment_source: Option<Arc<dyn InitialEnvironmentSource>>,
     /// The [`EnergyMonitor`] used by this controller.
     energy_monitor: Arc<dyn EnergyMonitor>,
     /// The [`MemoryObserver`] used by this controller.
@@ -381,6 +390,7 @@ impl HostController {
             hosts: <_>::default(),
             default_config,
             program_storage,
+            initial_environment_source: None,
             energy_monitor,
             memory_observer,
             persistence,
@@ -390,6 +400,12 @@ impl HostController {
             bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
             db_cores,
         }
+    }
+
+    /// Install the private bootstrap input source before this controller is shared.
+    pub fn with_initial_environment_source(mut self, source: Arc<dyn InitialEnvironmentSource>) -> Self {
+        self.initial_environment_source = Some(source);
+        self
     }
 
     /// Replace the [`ProgramStorage`] used by this controller.
@@ -538,6 +554,16 @@ impl HostController {
     /// This is not necessary during hotswap publishes,
     /// as the automigration planner and executor accomplish the same validity checks.
     pub async fn check_module_validity(&self, database: Database, program: Program) -> anyhow::Result<Arc<ModuleInfo>> {
+        self.check_module_validity_with_environment(database, program, Default::default())
+            .await
+    }
+
+    pub async fn check_module_validity_with_environment(
+        &self,
+        database: Database,
+        program: Program,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> anyhow::Result<Arc<ModuleInfo>> {
         let (program, launched) = Host::try_init_in_memory_to_check(
             &self.runtimes,
             self.page_pool.clone(),
@@ -553,12 +579,20 @@ impl HostController {
         )
         .await?;
 
-        let InitDatabaseResult { reducer, .. } = launched.module_host.init_database(program).await?;
+        let result = launched
+            .module_host
+            .init_database_with_environment(program, environment)
+            .await;
+        let info = launched.module_host.info.clone();
+        // Validation never starts scheduled work. Release its receiver before
+        // waiting for scheduler closure, including when initialization failed.
+        drop(launched.scheduler_starter);
+        launched.module_host.exit().await;
+        let InitDatabaseResult { reducer, .. } = result?;
         if let Some(call_result) = reducer {
             Result::from(call_result)?;
         }
-
-        Ok(launched.module_host.info)
+        Ok(info)
     }
 
     /// Update the [`ModuleHost`] identified by `replica_id` to the given
@@ -578,13 +612,45 @@ impl HostController {
         program_bytes: Box<[u8]>,
         policy: MigrationPolicy,
     ) -> anyhow::Result<UpdateDatabaseResult> {
-        self.update_module_host_with_deployment(database, host_type, replica_id, program_bytes, policy, None)
-            .await
+        self.update_module_host_with_environment_and_deployment(
+            database,
+            host_type,
+            replica_id,
+            program_bytes,
+            policy,
+            Default::default(),
+            None,
+        )
+        .await
     }
 
-    /// Authorized coordinator entry point. The deployment and its operation
-    /// receipt are committed in the module migration transaction. Process
-    /// startup and the control database mirror remain separate reconciliation.
+    /// Publish the complete environment with the module. No deployment action
+    /// is implied by this entry point.
+    #[tracing::instrument(level = "trace", skip_all, err)]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_module_host_with_environment(
+        &self,
+        database: Database,
+        host_type: HostType,
+        replica_id: u64,
+        program_bytes: Box<[u8]>,
+        policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.update_module_host_with_environment_and_deployment(
+            database,
+            host_type,
+            replica_id,
+            program_bytes,
+            policy,
+            environment,
+            None,
+        )
+        .await
+    }
+
+    /// Authorized coordinator entry point with an omitted, empty environment.
+    /// Deployment and operation receipt commit in the migration transaction.
     #[allow(clippy::too_many_arguments)]
     pub async fn update_module_host_with_deployment(
         &self,
@@ -593,6 +659,32 @@ impl HostController {
         replica_id: u64,
         program_bytes: Box<[u8]>,
         policy: MigrationPolicy,
+        deployment: Option<DeploymentCommit>,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.update_module_host_with_environment_and_deployment(
+            database,
+            host_type,
+            replica_id,
+            program_bytes,
+            policy,
+            Default::default(),
+            deployment,
+        )
+        .await
+    }
+
+    /// Publish the complete environment and authorized deployment in the same
+    /// module migration transaction, retaining ownership through activation.
+    #[tracing::instrument(level = "trace", skip_all, err)]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_module_host_with_environment_and_deployment(
+        &self,
+        database: Database,
+        host_type: HostType,
+        replica_id: u64,
+        program_bytes: Box<[u8]>,
+        policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
         deployment: Option<DeploymentCommit>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let program = Program::from_bytes(host_type.into(), program_bytes);
@@ -644,6 +736,7 @@ impl HostController {
                 this.runtimes.clone(),
                 program,
                 policy,
+                environment,
                 deployment,
                 this.energy_monitor.clone(),
                 this.unregister_fn(registration.clone(), database_identity),
@@ -731,17 +824,23 @@ impl HostController {
     /// confirms the configured storage writer has completed shutdown.
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn exit_module_host(&self, replica_id: u64, timeout: Duration) -> Result<(), anyhow::Error> {
+        tokio::time::timeout(timeout, self.exit_module_host_and_join(replica_id))
+            .await
+            .map_err(|_| anyhow!("replica {replica_id} shutdown is still pending after {timeout:?}"))?
+    }
+
+    /// Join the canonical owned close without a waiter deadline. Cancellation
+    /// leaves the close owner and its registry pin active; later callers join
+    /// the same completion before launch admission can reopen the replica.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub async fn exit_module_host_and_join(&self, replica_id: u64) -> Result<(), anyhow::Error> {
         let Some(request) = registry::close(&self.hosts, replica_id) else {
             return Ok(());
         };
         if let Some(owner) = request.owner {
-            // The close owns its registry pin independently of this waiter.
-            // Cancellation or timeout cannot release a still-running writer.
             tokio::spawn(owner.run());
         }
-        tokio::time::timeout(timeout, request.completion.wait())
-            .await
-            .map_err(|_| anyhow!("replica {replica_id} shutdown is still pending after {timeout:?}"))?
+        request.completion.wait().await
     }
 
     /// Get the [`ModuleHost`] identified by `replica_id` or return an error
@@ -1068,13 +1167,15 @@ fn repair_stale_view_backing_tables_on_launch(launched: &LaunchedModule) -> anyh
 /// return an error.
 ///
 /// Admission, including unchanged programs and idempotent deployment retries,
-/// is serialized inside the migration transaction.
+/// is serialized inside the migration transaction. Every accepted publication
+/// carries a complete replacement environment, even for unchanged programs.
 async fn update_module(
     db: &RelationalDB,
     module: &ModuleHost,
     program: Program,
     old_module_info: Arc<ModuleInfo>,
     policy: MigrationPolicy,
+    environment: std::collections::BTreeMap<String, String>,
     deployment: Option<DeploymentCommit>,
 ) -> anyhow::Result<UpdateDatabaseResult> {
     let addr = db.database_identity();
@@ -1083,7 +1184,13 @@ async fn update_module(
         Some(stored) => {
             info!("publishing `{}` from {} to {}", addr, stored, program.hash);
             module
-                .update_database_with_deployment(program, old_module_info, policy, deployment)
+                .update_database_with_environment_and_deployment(
+                    program,
+                    old_module_info,
+                    policy,
+                    environment,
+                    deployment,
+                )
                 .await
         }
     }
@@ -1184,6 +1291,15 @@ impl Host {
                 }
             };
 
+            let initial_environment = if program_needs_init {
+                match &host_controller.initial_environment_source {
+                    Some(source) => source.load(&database).await?,
+                    None => Default::default(),
+                }
+            } else {
+                Default::default()
+            };
+
             let relational_db = db.clone();
             let (program, launched) = match HostType::from(program.kind) {
                 HostType::Js => {
@@ -1281,7 +1397,7 @@ impl Host {
             if program_needs_init {
                 let InitDatabaseResult { reducer, tx_offset } = launched
                     .module_host
-                    .init_database_with_deployment(program, initial_deployment)
+                    .init_database_with_environment_and_deployment(program, initial_environment, initial_deployment)
                     .await?;
                 if let Some(call_result) = reducer {
                     validate_init_reducer_call_result(call_result)?;
@@ -1442,6 +1558,7 @@ impl Host {
         runtimes: Arc<HostRuntimes>,
         program: Program,
         policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
         deployment: Option<DeploymentCommit>,
         energy_monitor: Arc<dyn EnergyMonitor>,
         on_panic: impl Fn() + Send + Sync + 'static,
@@ -1466,15 +1583,26 @@ impl Host {
         // Get the old module info to diff against when building a migration plan.
         let old_module_info = self.module.borrow().info.clone();
 
-        let update_result = update_module(
+        let update_result = match update_module(
             replica_ctx.relational_db(),
             &module,
             program,
             old_module_info,
             policy,
+            environment,
             deployment,
         )
-        .await?;
+        .await
+        {
+            Ok(result) => result,
+            Err(error) => {
+                // An uninstalled candidate has no running scheduler. Release
+                // its receiver before positively closing the module actor.
+                drop(scheduler_starter);
+                module.exit().await;
+                return Err(error);
+            }
+        };
 
         *database_committed = matches!(
             update_result,
@@ -1533,7 +1661,10 @@ impl Host {
                 activation?;
                 self.scheduler = scheduler;
             }
-            _ => {}
+            _ => {
+                drop(scheduler_starter);
+                module.exit().await;
+            }
         }
 
         Ok(update_result)
@@ -1740,6 +1871,51 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn positive_close_stays_pending_past_a_waiter_deadline_until_host_ownership_is_released() {
+        use crate::db::persistence::LocalPersistenceProvider;
+        use spacetimedb_paths::FromPathUnchecked;
+        let temp = tempfile::tempdir().unwrap();
+        let directory = Arc::new(ServerDataDir::from_path_unchecked(temp.path().to_owned()));
+        let controller = HostController::new(
+            directory.clone(),
+            db::Config {
+                storage: db::Storage::Memory,
+                page_pool_max_size: None,
+            },
+            HostRuntimeConfig::new(WasmConfig::default(), V8Config::default(), ModuleHttpConfig::default()),
+            Arc::new(|_| std::future::ready(anyhow::Ok(None))),
+            Arc::new(NullEnergyMonitor),
+            Arc::new(()),
+            Arc::new(LocalPersistenceProvider::new(directory)),
+            JobCores::without_pinned_cores(),
+        );
+        let accepted_reader = controller.acquire_read_lock(17).await.unwrap();
+        let closing_controller = controller.clone();
+        let mut close = tokio::spawn(async move { closing_controller.exit_module_host_and_join(17).await });
+        assert!(tokio::time::timeout(Duration::from_millis(30), &mut close)
+            .await
+            .is_err());
+        assert!(!close.is_finished());
+        close.abort();
+        assert!(close.await.unwrap_err().is_cancelled());
+        // Neither a cancelled join waiter nor the legacy timed API can report
+        // positive closure while the accepted registry reader remains active.
+        assert!(controller.exit_module_host(17, Duration::from_millis(1)).await.is_err());
+        let joining_controller = controller.clone();
+        let mut joined = tokio::spawn(async move { joining_controller.exit_module_host_and_join(17).await });
+        assert!(tokio::time::timeout(Duration::from_millis(30), &mut joined)
+            .await
+            .is_err());
+        drop(accepted_reader);
+        tokio::time::timeout(Duration::from_secs(5), joined)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(controller.hosts.lock().is_empty());
+    }
 
     fn reducer_call_result(outcome: ReducerOutcome) -> ReducerCallResult {
         ReducerCallResult {

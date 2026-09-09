@@ -1,3 +1,5 @@
+mod environment;
+
 use anyhow::{ensure, Context};
 use clap::Arg;
 use clap::ArgAction::{self, Set, SetTrue};
@@ -6,8 +8,8 @@ use reqwest::{StatusCode, Url};
 use spacetimedb_client_api_messages::name::{is_identity, parse_database_name, PublishResult};
 use spacetimedb_client_api_messages::name::{DatabaseNameError, PrePublishResult, PrettyPrintStyle, PublishOp};
 use std::collections::HashMap;
+use std::env;
 use std::path::PathBuf;
-use std::{env, fs};
 
 use crate::common_args::parse_optional_dotnet_version;
 use crate::common_args::ClearMode;
@@ -89,6 +91,7 @@ pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, an
     managed::exclude_args(CommandSchemaBuilder::new())
         .key(Key::new("database").from_clap("name|identity").required())
         .key(Key::new("server"))
+        .key(Key::new("env").config_only())
         .key(Key::new("module_path").module_specific())
         .key(Key::new("build_options").module_specific())
         .key(Key::new("wasm_file").module_specific())
@@ -321,7 +324,7 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
                 .help("Use NativeAOT-LLVM compilation for C# modules (experimental, Windows only)")
         )
         .arg(common_args::dotnet_version())
-        .after_help("Run `spacetime help publish` for more detailed information."))
+        .after_help("Every publish replaces the complete declared environment. Put an env map in spacetime.json; declared shell variables override config values (including empty strings). The CLI displays supplied keys and sources, never values. Optional values omitted from every input are removed. --env selects config file layers. Run `spacetime help publish` for more detailed information."))
 }
 
 fn confirm_and_clear(
@@ -590,7 +593,14 @@ async fn execute_publish_configs<'a>(
             )
             .await?
         };
-        let program_bytes = fs::read(path_to_program)?;
+        let program_bytes = environment::read_program(&path_to_program)?;
+        let module_schema = environment::inspect(&program_bytes, host_type).await?;
+        let environment = environment::resolve(
+            module_schema.environment(),
+            command_config.get_config_value("env"),
+            |key| std::env::var_os(key),
+        )?;
+        print!("{}", environment.display());
 
         let server_address = {
             let url = Url::parse(&database_host)?;
@@ -609,7 +619,10 @@ async fn execute_publish_configs<'a>(
             database_host
         );
 
-        let client = reqwest::Client::new();
+        // The body contains secrets. Never replay it to a redirect destination.
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()?;
         // If a name was given, ensure to percent-encode it.
         // We also use PUT with a name or identity, and POST otherwise.
         let mut builder = if let Some(name_or_identity) = name_or_identity {
@@ -660,8 +673,24 @@ async fn execute_publish_configs<'a>(
         // Set the host type.
         builder = builder.query(&[("host_type", host_type)]);
 
-        let res = builder.body(program_bytes).send().await?;
-        let response: PublishResult = res.json_or_error().await?;
+        let payload = spacetimedb_client_api_messages::publish::PublishRequest {
+            module: program_bytes,
+            environment: environment.values,
+        }
+        .encode()?;
+        let res = builder
+            .header(
+                reqwest::header::CONTENT_TYPE,
+                spacetimedb_client_api_messages::publish::CONTENT_TYPE,
+            )
+            .body(payload)
+            .send()
+            .await?;
+        anyhow::ensure!(res.status().is_success(), "Publish failed with HTTP {}", res.status());
+        let response: PublishResult = res
+            .json()
+            .await
+            .map_err(|_| anyhow::anyhow!("Invalid publish response"))?;
         match response {
             PublishResult::Success {
                 domain,

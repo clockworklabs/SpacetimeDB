@@ -25,12 +25,41 @@ fn component_actions_preserve_or_explicitly_remove_the_module() {
     assert_eq!(set.current().module, ModuleComponent::User(user));
     let keep = request(ModuleAction::Keep).resolve(Some(&set), &limits).unwrap();
     assert_eq!(set, keep);
-    let remove = request(ModuleAction::Remove).resolve(Some(&set), &limits).unwrap();
+    let remove = request(ModuleAction::Remove(system_empty::empty().descriptor))
+        .resolve(Some(&set), &limits)
+        .unwrap();
     assert_eq!(
         remove.current().module,
-        ModuleComponent::SystemEmpty(SYSTEM_EMPTY_MODULE_VERSION)
+        ModuleComponent::SystemEmpty(crate::deployment::system_empty::empty().descriptor)
     );
     assert_ne!(remove.revision().unwrap(), keep.revision().unwrap());
+}
+
+#[test]
+fn declared_platform_schema_changes_revision_and_keep_retains_its_program() {
+    use crate::environment::{EnvironmentConstraint, EnvironmentDeclaration, EnvironmentSchema};
+    let initial = request(ModuleAction::Keep).resolve(None, &Default::default()).unwrap();
+    let schema = EnvironmentSchema::new(vec![EnvironmentDeclaration {
+        name: "TOKEN".into(),
+        constraint: EnvironmentConstraint::AnyString,
+        optional: false,
+    }])
+    .unwrap();
+    let configured = system_empty::generate(&schema).unwrap();
+    let selected = request(ModuleAction::Remove(configured.descriptor))
+        .resolve(Some(&initial), &Default::default())
+        .unwrap();
+    assert_eq!(
+        selected.current().module,
+        ModuleComponent::SystemEmpty(configured.descriptor)
+    );
+    assert_ne!(selected.revision().unwrap(), initial.revision().unwrap());
+    assert_eq!(
+        request(ModuleAction::Keep)
+            .resolve(Some(&selected), &Default::default())
+            .unwrap(),
+        selected
+    );
 }
 
 #[test]
@@ -40,7 +69,12 @@ fn concrete_module_actions_preserve_wire_tags_and_export_distinct_names() {
         program_hash: hash_bytes(b"module"),
     };
     assert_eq!(bsatn::to_vec(&ModuleAction::Keep).unwrap(), [0]);
-    assert_eq!(bsatn::to_vec(&ModuleAction::Remove).unwrap(), [2]);
+    let mut removed = vec![2];
+    removed.extend(bsatn::to_vec(&system_empty::empty().descriptor).unwrap());
+    assert_eq!(
+        bsatn::to_vec(&ModuleAction::Remove(system_empty::empty().descriptor)).unwrap(),
+        removed
+    );
     let mut expected = vec![1];
     expected.extend(bsatn::to_vec(&module).unwrap());
     assert_eq!(bsatn::to_vec(&ModuleAction::Set(module)).unwrap(), expected);
@@ -79,7 +113,10 @@ fn unknown_deployments_do_not_fall_back_to_an_empty_module() {
         Err(DeploymentValidationError::UnsupportedVersion)
     ));
     let spec = DeploymentSpec::V1(DeploymentSpecV1 {
-        module: ModuleComponent::SystemEmpty(9000),
+        module: ModuleComponent::SystemEmpty(SystemEmptyModule {
+            version: 9000,
+            program_hash: Hash::ZERO,
+        }),
         container: None,
     });
     assert!(matches!(

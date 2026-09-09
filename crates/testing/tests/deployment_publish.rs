@@ -153,10 +153,10 @@ fn container_only_changes_and_old_retries_preserve_the_current_module() {
             assert_eq!(tx.table_row_count(ST_DEPLOYMENT_OPERATION_ID), Some(3));
         });
 
-        let empty = spacetimedb::host::empty_module::program(1).unwrap();
+        let empty = spacetimedb::host::empty_module::program(spacetimedb::host::empty_module::VERSION).unwrap();
         let mut remove_module = prepared(&empty.bytes, 6, Some(newest), "/app/image-only");
         let DeploymentSpec::V1(spec) = &mut remove_module.deployment;
-        spec.module = ModuleComponent::SystemEmpty(1);
+        spec.module = ModuleComponent::SystemEmpty(spacetimedb_lib::deployment::system_empty::empty().descriptor);
         // An init request cannot execute this instance's schema while storing
         // the bytes of a different valid, prepared program.
         assert!(current.init_database_with_deployment(empty.clone(), Some(remove_module.clone())).await.is_err());
@@ -195,7 +195,7 @@ fn container_only_changes_and_old_retries_preserve_the_current_module() {
         confirmed(host.update_with_deployment(database, HostType::Wasm, empty.bytes.clone(), policy, remove_module.clone()).await.unwrap()).await;
         let current = host.module().await.unwrap();
         assert!(current.info.module_def.tables().next().is_none());
-        assert!(spacetimedb::host::empty_module::matches_program(1, &current.relational_db().program().unwrap().unwrap()));
+        assert!(spacetimedb::host::empty_module::matches_program(&spacetimedb_lib::deployment::system_empty::empty().descriptor, &current.relational_db().program().unwrap().unwrap()));
         current.relational_db().with_read_only(Workload::Internal, |tx| {
             assert_eq!(current_deployment(tx).unwrap().unwrap().0, remove_module.deployment.revision().unwrap());
             assert_eq!(tx.table_row_count(ST_DEPLOYMENT_OPERATION_ID), Some(4));

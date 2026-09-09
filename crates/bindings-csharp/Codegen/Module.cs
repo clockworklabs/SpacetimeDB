@@ -2603,7 +2603,7 @@ public class Module : IIncrementalGenerator
                             ))}}
                         }
                         public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext {
-                            public global::SpacetimeDB.DatabaseEnvironment Env => default;
+                            public global::SpacetimeDB.ModuleEnvironment Env => default;
                             public readonly Identity Sender;
                             public readonly ConnectionId? ConnectionId;
                             public readonly Random Rng;
@@ -2675,6 +2675,7 @@ public class Module : IIncrementalGenerator
                         }
                         
                         public sealed partial class ProcedureContext : global::SpacetimeDB.ProcedureContextBase {
+                            public new global::SpacetimeDB.ModuleEnvironment Env => default;
                             private readonly Local _db = new();
 
                             internal ProcedureContext(Identity identity, ConnectionId? connectionId, Random random, Timestamp time)
@@ -2745,6 +2746,7 @@ public class Module : IIncrementalGenerator
                         }
 
                         public sealed partial class HandlerContext : global::SpacetimeDB.HandlerContextBase {
+                            public new global::SpacetimeDB.ModuleEnvironment Env => default;
                             private readonly Local _db = new();
 
                             internal HandlerContext(Random random, Timestamp time)
@@ -2782,6 +2784,7 @@ public class Module : IIncrementalGenerator
                         }
 
                         public sealed class ProcedureTxContext : global::SpacetimeDB.ProcedureTxContextBase {
+                            public new global::SpacetimeDB.ModuleEnvironment Env => default;
                             internal ProcedureTxContext(Internal.TxContext inner) : base(inner) {}
 
                             public new Local Db => (Local)base.Db;
@@ -2789,6 +2792,7 @@ public class Module : IIncrementalGenerator
 
                         [Experimental("STDB_UNSTABLE")]
                         public sealed class HandlerTxContext : global::SpacetimeDB.HandlerTxContextBase {
+                            public new global::SpacetimeDB.ModuleEnvironment Env => default;
                             internal HandlerTxContext(Internal.TxContext inner) : base(inner) {}
 
                             public new Local Db => (Local)base.Db;
@@ -2802,7 +2806,7 @@ public class Module : IIncrementalGenerator
                         {
                             public Identity Sender { get; }
 
-                            public global::SpacetimeDB.DatabaseEnvironment Env => default;
+                            public global::SpacetimeDB.ModuleEnvironment Env => default;
                             public QueryBuilder From => default;
                         
                             internal ViewContext(Identity sender, Internal.LocalReadOnly db)
@@ -2814,7 +2818,7 @@ public class Module : IIncrementalGenerator
                         
                         public sealed record AnonymousViewContext : DbContext<Internal.LocalReadOnly>, Internal.IAnonymousViewContext 
                         {
-                            public global::SpacetimeDB.DatabaseEnvironment Env => default;
+                            public global::SpacetimeDB.ModuleEnvironment Env => default;
                             public QueryBuilder From => default;
 
                             internal AnonymousViewContext(Internal.LocalReadOnly db)

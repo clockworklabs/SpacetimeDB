@@ -29,8 +29,8 @@ mod wasm_common;
 pub use disk_storage::DiskStorage;
 pub use host_controller::{
     extract_schema, BootstrapCompletion, CallProcedureReturn, CallResult, ExternalDurability, ExternalStorage,
-    HostController, HostRuntimeConfig, MigratePlanResult, ModuleHostWithBootstrap, ProcedureCallResult, ProgramStorage,
-    ReducerCallResult, ReducerCallResultWithTxOffset, ReducerOutcome,
+    HostController, HostRuntimeConfig, InitialEnvironmentSource, MigratePlanResult, ModuleHostWithBootstrap,
+    ProcedureCallResult, ProgramStorage, ReducerCallResult, ReducerCallResultWithTxOffset, ReducerOutcome,
 };
 pub use module_host::{
     InitDatabaseResult, ModuleHost, NoSuchModule, ProcedureCallError, ReducerCallError, UpdateDatabaseResult,

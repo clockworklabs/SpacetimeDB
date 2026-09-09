@@ -7,6 +7,7 @@ use spacetimedb_auth::identity::SpacetimeIdentityClaims;
 use spacetimedb_datastore::system_tables::ModuleKind;
 use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
 use spacetimedb_paths::{server::ServerDataDir, FromPathUnchecked};
+use std::collections::BTreeMap;
 use tokio::time::timeout;
 
 fn javascript() -> Program {
@@ -93,7 +94,7 @@ async fn queued_disconnect(js: bool, cancel: bool, id: u64) {
     let program = if js {
         javascript()
     } else {
-        crate::host::empty_module::program(1).unwrap()
+        crate::host::empty_module::program(crate::host::empty_module::VERSION).unwrap()
     };
     let (_directory, controller, database) = fixture(id, program);
     let module = controller
@@ -164,7 +165,15 @@ async fn operation_drain_js_queued_disconnect_survives_cancellation() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn operation_drain_wasm_procedure_owns_external_wait_and_late_commit() {
     let id = 0xd104;
-    let (_directory, controller, database) = fixture(id, crate::host::empty_module::program(1).unwrap());
+    let schema = spacetimedb_lib::environment::EnvironmentSchema::new(vec![
+        spacetimedb_lib::environment::EnvironmentDeclaration {
+            name: "AFTER_IO".into(),
+            constraint: spacetimedb_lib::environment::EnvironmentConstraint::AnyString,
+            optional: true,
+        },
+    ])
+    .unwrap();
+    let (_directory, controller, database) = fixture(id, crate::host::empty_module::declared_program(&schema).unwrap());
     let module = controller.get_or_launch_module_host(database, id).await.unwrap();
     let db = module.relational_db().clone();
     let started = Arc::new(Semaphore::new(0));
@@ -183,7 +192,13 @@ async fn operation_drain_wasm_procedure_owns_external_wait_and_late_commit() {
                         started.add_permits(1);
                         release.acquire().await.unwrap().forget();
                         db.with_auto_commit(Workload::Internal, |tx| {
-                            crate::db::environment::set(&db, tx, "AFTER_IO", "committed").map_err(anyhow::Error::from)
+                            crate::db::environment::replace(
+                                &db,
+                                tx,
+                                &schema,
+                                &BTreeMap::from([("AFTER_IO".into(), "committed".into())]),
+                            )
+                            .map_err(anyhow::Error::from)
                         })
                         .unwrap();
                     },

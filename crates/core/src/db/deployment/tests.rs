@@ -404,7 +404,7 @@ fn deployment_operation_cannot_be_reused_by_another_publisher_or_changed_request
         ));
         changed = original.clone();
         changed.deployment = DeploymentSpec::V1(DeploymentSpecV1 {
-            module: ModuleComponent::SystemEmpty(1),
+            module: ModuleComponent::SystemEmpty(spacetimedb_lib::deployment::system_empty::empty().descriptor),
             container: None,
         });
         assert!(matches!(

@@ -13,7 +13,7 @@ fn operation_drain_retained_sql_and_subscription_handles_reject_after_writer_clo
         let subscriptions = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
         db.shutdown().await;
         let auth = spacetimedb_lib::identity::AuthCtx::new(db.owner_identity(), db.owner_identity());
-        for statement in ["SELECT * FROM st_client", "SET env.LATE = 'denied'"] {
+        for statement in ["SELECT * FROM st_client", "SELECT value FROM st_env WHERE key = 'LATE'"] {
             let error = crate::sql::execute::run(
                 db.clone(),
                 statement.into(),
@@ -28,7 +28,21 @@ fn operation_drain_retained_sql_and_subscription_handles_reject_after_writer_clo
             assert!(matches!(error, DBError::DatabaseClosed), "{error}");
         }
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Unsubscribe);
-        environment::set(&db, &mut tx, "LATE", "denied").unwrap();
+        let schema = spacetimedb_lib::environment::EnvironmentSchema::new(vec![
+            spacetimedb_lib::environment::EnvironmentDeclaration {
+                name: "LATE".into(),
+                constraint: spacetimedb_lib::environment::EnvironmentConstraint::AnyString,
+                optional: true,
+            },
+        ])
+        .unwrap();
+        environment::replace(
+            &db,
+            &mut tx,
+            &schema,
+            &std::collections::BTreeMap::from([("LATE".into(), "denied".into())]),
+        )
+        .unwrap();
         let event = ModuleEvent {
             timestamp: spacetimedb_lib::Timestamp::now(),
             caller_identity: db.owner_identity(),

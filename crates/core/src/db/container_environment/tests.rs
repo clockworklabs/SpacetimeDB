@@ -6,12 +6,26 @@ use crate::db::relational_db::tests_utils::TestDB;
 use crate::host::container_environment as host;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_lib::container::*;
-use spacetimedb_lib::deployment::{DeploymentSpec, DeploymentSpecV1, ModuleComponent, SYSTEM_EMPTY_MODULE_VERSION};
+use spacetimedb_lib::deployment::{DeploymentSpec, DeploymentSpecV1, ModuleComponent};
+use spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration, EnvironmentSchema};
 use spacetimedb_lib::{hash_bytes, Identity, Timestamp};
 use std::sync::{Arc, Barrier};
 
 fn uuid() -> Uuid {
     Uuid::from_u128(uuid::Uuid::now_v7().as_u128())
+}
+
+fn environment_schema(keys: &[String]) -> EnvironmentSchema {
+    EnvironmentSchema::new(
+        keys.iter()
+            .map(|name| EnvironmentDeclaration {
+                name: name.clone(),
+                constraint: EnvironmentConstraint::AnyString,
+                optional: true,
+            })
+            .collect(),
+    )
+    .unwrap()
 }
 
 fn setup(db: &RelationalDB, keys: Vec<String>) -> EnvironmentSnapshotScope {
@@ -39,6 +53,8 @@ fn setup(db: &RelationalDB, keys: Vec<String>) -> EnvironmentSnapshotScope {
     }
     .normalize(&Default::default())
     .unwrap();
+    let schema = environment_schema(&spec.env_keys);
+    let generated = spacetimedb_lib::deployment::system_empty::generate(&schema).unwrap();
     let request = DeploymentCommit {
         operation_id: uuid(),
         publication_epoch: 1,
@@ -46,7 +62,7 @@ fn setup(db: &RelationalDB, keys: Vec<String>) -> EnvironmentSnapshotScope {
         expected_revision: None,
         prepared_manifest_hash: hash_bytes(b"prepared"),
         deployment: DeploymentSpec::V1(DeploymentSpecV1 {
-            module: ModuleComponent::SystemEmpty(SYSTEM_EMPTY_MODULE_VERSION),
+            module: ModuleComponent::SystemEmpty(generated.descriptor),
             container: Some(spec.clone()),
         }),
     };
@@ -54,9 +70,12 @@ fn setup(db: &RelationalDB, keys: Vec<String>) -> EnvironmentSnapshotScope {
         install_publication_fence(tx, request.publication_epoch, request.operation_id)?;
         record_deployment_commit(tx, &request, Timestamp::now(), &Default::default())?;
         install_container_fence(db, tx, &self_fence(db, 1, true))?;
-        for key in &spec.env_keys {
-            environment::set(db, tx, key, "before")?;
-        }
+        environment::replace(
+            db,
+            tx,
+            &schema,
+            &spec.env_keys.iter().map(|key| (key.clone(), "before".into())).collect(),
+        )?;
         Ok(())
     })
     .unwrap();
@@ -101,8 +120,12 @@ fn container_environment_capture_retry_read_and_durable_reopen() {
         .block_on(host::capture(db.db.clone(), scope.clone()))
         .unwrap();
     db.with_auto_commit(Workload::ForTests, |tx| -> anyhow::Result<_> {
-        environment::set(&db, tx, "A", "changed")?;
-        environment::delete(&db, tx, "B")?;
+        environment::replace(
+            &db,
+            tx,
+            &environment_schema(&scope.env_keys),
+            &BTreeMap::from([("A".into(), "changed".into())]),
+        )?;
         Ok(())
     })
     .unwrap();
@@ -135,11 +158,16 @@ fn container_environment_capture_is_atomic_against_concurrent_environment_mutati
     let writer = {
         let db = db.db.clone();
         let barrier = barrier.clone();
+        let schema = environment_schema(&scope.env_keys);
         std::thread::spawn(move || {
             barrier.wait();
             db.with_auto_commit(Workload::ForTests, |tx| -> anyhow::Result<_> {
-                environment::set(&db, tx, "A", "after")?;
-                environment::set(&db, tx, "B", "after")?;
+                environment::replace(
+                    &db,
+                    tx,
+                    &schema,
+                    &BTreeMap::from([("A".into(), "after".into()), ("B".into(), "after".into())]),
+                )?;
                 Ok(())
             })
             .unwrap();
@@ -174,7 +202,12 @@ fn container_environment_closure_fences_delayed_capture_and_new_instance_observe
     );
     db.with_auto_commit(Workload::ForTests, |tx| -> anyhow::Result<_> {
         install_container_fence(&db, tx, &self_fence(&db, 2, true))?;
-        environment::set(&db, tx, "A", "new-boot")?;
+        environment::replace(
+            &db,
+            tx,
+            &environment_schema(&old.env_keys),
+            &BTreeMap::from([("A".into(), "new-boot".into())]),
+        )?;
         Ok(())
     })
     .unwrap();
@@ -280,7 +313,12 @@ fn container_environment_missing_empty_invalid_and_capacity_are_atomic_and_redac
     let db = TestDB::in_memory().unwrap();
     let scope = setup(&db, vec!["A".into(), "B".into()]);
     db.with_auto_commit(Workload::ForTests, |tx| -> anyhow::Result<_> {
-        environment::delete(&db, tx, "B")?;
+        environment::replace(
+            &db,
+            tx,
+            &environment_schema(&scope.env_keys),
+            &BTreeMap::from([("A".into(), "before".into())]),
+        )?;
         Ok(())
     })
     .unwrap();
@@ -289,7 +327,12 @@ fn container_environment_missing_empty_invalid_and_capacity_are_atomic_and_redac
         Err(EnvironmentSnapshotError::MissingKeys(vec!["B".into()]))
     );
     db.with_auto_commit(Workload::ForTests, |tx| -> anyhow::Result<_> {
-        environment::set(&db, tx, "B", "secret\0value")?;
+        environment::replace(
+            &db,
+            tx,
+            &environment_schema(&scope.env_keys),
+            &BTreeMap::from([("A".into(), "before".into()), ("B".into(), "secret\0value".into())]),
+        )?;
         Ok(())
     })
     .unwrap();
@@ -297,7 +340,12 @@ fn container_environment_missing_empty_invalid_and_capacity_are_atomic_and_redac
     assert_eq!(failure, EnvironmentSnapshotError::InvalidEnvironment);
     assert!(!format!("{failure:?}: {failure}").contains("secret"));
     db.with_auto_commit(Workload::ForTests, |tx| -> anyhow::Result<_> {
-        environment::set(&db, tx, "B", "")?;
+        environment::replace(
+            &db,
+            tx,
+            &environment_schema(&scope.env_keys),
+            &BTreeMap::from([("A".into(), "before".into()), ("B".into(), "".into())]),
+        )?;
         Ok(())
     })
     .unwrap();

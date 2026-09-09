@@ -56,6 +56,9 @@ pub struct InstanceEnv {
     /// and connection IDs. Cleared before each new function call.
     call_auth_flags: u32,
     hosted_auth: Option<std::sync::Arc<VerifiedHostedAuth>>,
+    /// Bound by the host after validating this instance's module metadata.
+    environment_module: Option<(spacetimedb_lib::Hash, Arc<spacetimedb_schema::def::ModuleDef>)>,
+    environment_call_active: bool,
     /// Are we in an anonymous tx context?
     in_anon_tx: bool,
     /// A procedure's last known transaction offset.
@@ -244,6 +247,8 @@ impl InstanceEnv {
             func_name: None,
             call_auth_flags: 0,
             hosted_auth: None,
+            environment_module: None,
+            environment_call_active: false,
             in_anon_tx: false,
             procedure_last_tx_offset: None,
         }
@@ -260,6 +265,7 @@ impl InstanceEnv {
         self.start_instant = Instant::now();
         self.func_type = func_type;
         self.func_name = Some(name);
+        self.environment_call_active = true;
         self.call_auth_flags = 0;
         self.hosted_auth = None;
     }
@@ -282,9 +288,29 @@ impl InstanceEnv {
         self.func_name.as_deref()
     }
 
-    /// Swap in a temporary function type, returning the previous one.
-    pub fn swap_func_type(&mut self, func_type: FuncCallType) -> FuncCallType {
-        mem::replace(&mut self.func_type, func_type)
+    pub(crate) fn bind_environment_module(
+        &mut self,
+        hash: spacetimedb_lib::Hash,
+        def: Arc<spacetimedb_schema::def::ModuleDef>,
+    ) {
+        self.environment_module = Some((hash, def));
+    }
+
+    pub(crate) fn finish_funcall(&mut self) {
+        self.environment_call_active = false;
+    }
+
+    /// Nested host-dispatched view refreshes must use the view's namespace,
+    /// then restore the enclosing procedure's namespace and dependency tracking.
+    pub(crate) fn swap_func_context(
+        &mut self,
+        name: Option<NamespacedIdentifier>,
+        func_type: FuncCallType,
+    ) -> (Option<NamespacedIdentifier>, FuncCallType) {
+        (
+            mem::replace(&mut self.func_name, name),
+            mem::replace(&mut self.func_type, func_type),
+        )
     }
 
     fn get_tx(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
@@ -304,16 +330,20 @@ impl InstanceEnv {
         self.replica_ctx.relational_db()
     }
 
-    /// Dedicated read-only environment access. Missing reads also register a
-    /// dependency so a later insert refreshes a view that observed absence.
+    /// Read configuration using the schema of this exact module instance.
+    /// Missing optional reads also register a view dependency on `st_env`.
     pub(crate) fn env_get(&self, key: &str) -> Result<Option<String>, NodesError> {
-        use crate::db::environment;
         use spacetimedb_datastore::system_tables::ST_ENV_ID;
         spacetimedb_lib::environment::validate_key(key).map_err(|_| NodesError::InvalidEnvironmentKey)?;
-        let read = |state: &_| environment::get(state, key).map_err(|err| NodesError::from(DBError::Other(err.into())));
+        if !self.environment_call_active || self.func_name.as_ref().is_none_or(|name| name.is_namespaced()) {
+            return Err(DBError::Other(anyhow::anyhow!(
+                "environment access requires a host-dispatched root module function"
+            ))
+            .into());
+        }
         if let Ok(mut tx) = self.get_tx() {
             tx.record_table_scan(&self.func_type, ST_ENV_ID);
-            return read(&*tx);
+            return self.read_declared_environment(&*tx, key);
         }
         if !matches!(self.func_type, FuncCallType::Procedure) {
             return Err(NodesError::NotInTransaction);
@@ -321,8 +351,40 @@ impl InstanceEnv {
         self.relational_db().with_read_only(Workload::Internal, |tx| {
             check_hosted_admission(tx, self.relational_db(), self.hosted_auth.as_deref())
                 .map_err(|err| NodesError::HostedInvocationRejected(err.to_string()))?;
-            environment::get(tx, key).map_err(|err| NodesError::from(DBError::Other(err.into())))
+            self.read_declared_environment(tx, key)
         })
+    }
+
+    fn read_declared_environment(&self, state: &impl StateView, key: &str) -> Result<Option<String>, NodesError> {
+        use spacetimedb_datastore::system_tables::{StModuleFields, ST_MODULE_ID};
+        let fail = |message| NodesError::from(DBError::Other(anyhow::anyhow!("{message}")));
+        let (hash, module) = self
+            .environment_module
+            .as_ref()
+            .ok_or_else(|| fail("environment schema is not available"))?;
+        let declaration = module
+            .environment()
+            .get(key)
+            .ok_or_else(|| fail("environment key is not declared"))?;
+        // Check inside this same snapshot. A suspended old procedure must never
+        // combine its declarations with values installed for a different module.
+        let row = state
+            .iter(ST_MODULE_ID)
+            .map_err(DBError::from)?
+            .next()
+            .ok_or_else(|| fail("database program is not initialized"))?;
+        let current_hash = spacetimedb_datastore::system_tables::read_hash_from_col(row, StModuleFields::ProgramHash)
+            .map_err(DBError::from)?;
+        if current_hash != *hash {
+            return Err(fail("module was replaced while this function was running"));
+        }
+        let value = crate::db::environment::get(state, key).map_err(|error| DBError::Other(error.into()))?;
+        if value.is_none() && !declaration.optional {
+            return Err(fail(
+                "required environment value is missing from the published configuration",
+            ));
+        }
+        Ok(value)
     }
 
     pub(crate) fn get_jwt_payload(&self, connection_id: ConnectionId) -> Result<Option<String>, NodesError> {
@@ -1523,33 +1585,145 @@ mod test {
         Ok(db)
     }
 
+    fn bind_test_environment(env: &mut InstanceEnv) -> Result<spacetimedb_datastore::traits::Program> {
+        use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+        use spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration};
+        let mut builder = RawModuleDefV10Builder::new();
+        builder.add_environment(
+            [("A", false), ("MISSING", true)]
+                .into_iter()
+                .map(|(name, optional)| EnvironmentDeclaration {
+                    name: name.into(),
+                    constraint: EnvironmentConstraint::AnyString,
+                    optional,
+                })
+                .collect(),
+        );
+        let module: spacetimedb_schema::def::ModuleDef = builder.finish().try_into()?;
+        let program = spacetimedb_datastore::traits::Program::from_bytes(
+            spacetimedb_datastore::system_tables::ModuleKind::WASM,
+            b"environment-unit-test".as_slice(),
+        );
+        env.bind_environment_module(program.hash, Arc::new(module));
+        Ok(program)
+    }
+
     #[test]
     fn environment_reads_use_active_transaction_and_track_missing_view_dependency() -> Result<()> {
         use crate::db::environment;
         use spacetimedb_datastore::locking_tx_datastore::ViewCallInfo;
         use spacetimedb_primitives::ViewId;
+        use std::collections::BTreeMap;
         let db = relational_db()?;
         let (mut env, _runtime) = instance_env(db.clone())?;
+        let program = bind_test_environment(&mut env)?;
+        let schema = env.environment_module.as_ref().unwrap().1.environment().clone();
+        env.start_funcall(
+            NamespacedIdentifier::from(spacetimedb_schema::identifier::Identifier::new("root".into())?),
+            Timestamp::now(),
+            FuncCallType::Reducer,
+        );
         assert!(matches!(env.env_get("A"), Err(NodesError::NotInTransaction)));
-        env.func_type = FuncCallType::Procedure;
-        assert_eq!(env.env_get("A")?, None);
         let mut tx = begin_mut_tx(&db);
-        environment::set(&db, &mut tx, "A", "uncommitted")?;
+        db.update_program(&mut tx, program)?;
+        environment::replace(
+            &db,
+            &mut tx,
+            &schema,
+            &BTreeMap::from([("A".into(), "uncommitted".into())]),
+        )?;
         env.tx.set_raw(tx);
         assert_eq!(env.env_get("A")?.as_deref(), Some("uncommitted"));
+        assert!(env.env_get("UNDECLARED").is_err());
         let view = ViewCallInfo::anonymous(ViewId(88));
-        env.func_type = FuncCallType::View(view.clone());
+        env.start_funcall(
+            NamespacedIdentifier::from(spacetimedb_schema::identifier::Identifier::new("view".into())?),
+            Timestamp::now(),
+            FuncCallType::View(view.clone()),
+        );
         assert_eq!(env.env_get("MISSING")?, None);
         let tx = env.tx.take()?;
         db.commit_tx(tx)?;
         let mut tx = begin_mut_tx(&db);
-        environment::set(&db, &mut tx, "MISSING", "")?;
+        environment::replace(
+            &db,
+            &mut tx,
+            &schema,
+            &BTreeMap::from([("A".into(), "uncommitted".into()), ("MISSING".into(), "".into())]),
+        )?;
         assert!(tx.views_for_refresh().any(|dependency| dependency == &view));
         let (_, metrics, reducer) = db.rollback_mut_tx(tx);
         db.report_mut_tx_metrics(reducer, metrics, None);
-        env.func_type = FuncCallType::Procedure;
+        env.start_funcall(
+            NamespacedIdentifier::from(spacetimedb_schema::identifier::Identifier::new("procedure".into())?),
+            Timestamp::now(),
+            FuncCallType::Procedure,
+        );
         assert_eq!(env.env_get("MISSING")?, None);
         assert!(matches!(env.env_get("A=B"), Err(NodesError::InvalidEnvironmentKey)));
+        Ok(())
+    }
+
+    #[test]
+    fn environment_rejects_submodules_finished_calls_and_replaced_programs() -> Result<()> {
+        use crate::db::environment;
+        use spacetimedb_datastore::traits::Program;
+        use std::collections::BTreeMap;
+        let db = relational_db()?;
+        let (mut env, _runtime) = instance_env(db.clone())?;
+        let program = bind_test_environment(&mut env)?;
+        let schema = env.environment_module.as_ref().unwrap().1.environment().clone();
+        let mut tx = begin_mut_tx(&db);
+        db.update_program(&mut tx, program)?;
+        environment::replace(
+            &db,
+            &mut tx,
+            &schema,
+            &BTreeMap::from([("A".into(), "old-value".into())]),
+        )?;
+        db.commit_tx(tx)?;
+        assert!(env.env_get("A").is_err());
+        env.start_funcall(
+            NamespacedIdentifier::from(spacetimedb_schema::identifier::Identifier::new("procedure".into())?),
+            Timestamp::now(),
+            FuncCallType::Procedure,
+        );
+        assert_eq!(env.env_get("A")?.as_deref(), Some("old-value"));
+        let previous = env.swap_func_context(
+            Some(NamespacedIdentifier::from_segments(vec![
+                spacetimedb_schema::identifier::Identifier::new("child".into())?,
+                spacetimedb_schema::identifier::Identifier::new("view".into())?,
+            ])),
+            FuncCallType::Procedure,
+        );
+        assert!(env.env_get("A").is_err());
+        env.swap_func_context(previous.0, previous.1);
+        assert_eq!(env.env_get("A")?.as_deref(), Some("old-value"));
+        env.finish_funcall();
+        assert!(env.env_get("A").is_err());
+        env.start_funcall(
+            NamespacedIdentifier::from(spacetimedb_schema::identifier::Identifier::new("procedure".into())?),
+            Timestamp::now(),
+            FuncCallType::Procedure,
+        );
+        let mut tx = begin_mut_tx(&db);
+        let newer = Program::from_bytes(
+            spacetimedb_datastore::system_tables::ModuleKind::WASM,
+            b"new-code".as_slice(),
+        );
+        db.update_program(&mut tx, newer)?;
+        environment::replace(
+            &db,
+            &mut tx,
+            &schema,
+            &BTreeMap::from([("A".into(), "new-secret".into())]),
+        )?;
+        db.commit_tx(tx)?;
+        assert!(env.env_get("A").is_err());
+        env.start_mutable_tx()?;
+        assert!(env.env_get("A").is_err());
+        let tx = env.take_mutable_tx_for_commit()?;
+        env.rollback_procedure_tx(tx);
         Ok(())
     }
 
@@ -1564,7 +1738,13 @@ mod test {
         use std::time::SystemTime;
         let db = relational_db()?;
         let (mut env, _runtime) = instance_env(db.clone())?;
-        env.func_type = FuncCallType::Procedure;
+        let program = bind_test_environment(&mut env)?;
+        let schema = env.environment_module.as_ref().unwrap().1.environment().clone();
+        env.start_funcall(
+            NamespacedIdentifier::from(spacetimedb_schema::identifier::Identifier::new("procedure".into())?),
+            Timestamp::now(),
+            FuncCallType::Procedure,
+        );
         let keys = JwtKeys::generate()?;
         let validator = HostedTokenValidator::new([("platform.test".into(), keys.public)])?;
         let mint = |issued: SystemTime| -> Result<_> {
@@ -1599,29 +1779,29 @@ mod test {
         };
         db.with_auto_commit(Workload::ForTests, |tx| -> Result<()> {
             install_container_fence(&db, tx, &fence(1, true))?;
-            environment::set(&db, tx, "VALUE", "available")?;
+            db.update_program(tx, program.clone())?;
+            environment::replace(
+                &db,
+                tx,
+                &schema,
+                &std::collections::BTreeMap::from([("A".into(), "available".into())]),
+            )?;
             Ok(())
         })?;
         db.with_read_only(Workload::ForTests, |_| db.hosted_admission().begin()?.complete())?;
         env.set_hosted_auth(Some(mint(SystemTime::now())?));
-        assert_eq!(env.env_get("VALUE")?.as_deref(), Some("available"));
+        assert_eq!(env.env_get("A")?.as_deref(), Some("available"));
         env.set_hosted_auth(Some(mint(SystemTime::now() - Duration::from_secs(60))?));
-        assert!(matches!(
-            env.env_get("VALUE"),
-            Err(NodesError::HostedInvocationRejected(_))
-        ));
+        assert!(matches!(env.env_get("A"), Err(NodesError::HostedInvocationRejected(_))));
         env.set_hosted_auth(Some(mint(SystemTime::now())?));
         db.with_auto_commit(Workload::ForTests, |tx| {
             install_container_fence(&db, tx, &fence(2, false))
         })?;
         // Reconciled database admission does not override a denied source fence.
         db.with_read_only(Workload::ForTests, |_| db.hosted_admission().begin()?.complete())?;
-        assert!(matches!(
-            env.env_get("VALUE"),
-            Err(NodesError::HostedInvocationRejected(_))
-        ));
+        assert!(matches!(env.env_get("A"), Err(NodesError::HostedInvocationRejected(_))));
         env.set_hosted_auth(None);
-        assert_eq!(env.env_get("VALUE")?.as_deref(), Some("available"));
+        assert_eq!(env.env_get("A")?.as_deref(), Some("available"));
         Ok(())
     }
 

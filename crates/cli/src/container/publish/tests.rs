@@ -21,6 +21,14 @@ use std::{
 };
 
 const TOKEN: &str = "Bearer isolated-fixture-credential";
+pub(crate) fn empty_module_artifact() -> ModuleArtifact {
+    let bytes = system_empty::empty().bytes.as_ref();
+    ModuleArtifact {
+        digest: spacetimedb_oci::sha256(bytes),
+        size_bytes: bytes.len() as u64,
+    }
+}
+
 pub(crate) fn publisher() -> Identity {
     Identity::from_be_byte_array([42; 32])
 }
@@ -94,7 +102,7 @@ impl Fixture {
         PublisherClient::new(&self.endpoint, TOKEN.parse().unwrap()).unwrap()
     }
     pub fn record(&self, new: bool, name: bool) -> Record {
-        let bytes = SYSTEM_EMPTY_MODULE_V1_BYTES;
+        let bytes = system_empty::empty().bytes.as_ref();
         let envelope = PublishEnvelope {
             version: PUBLISH_PROTOCOL_VERSION,
             operation_id: Uuid::from_u128(uuid::Uuid::now_v7().as_u128()),
@@ -105,7 +113,7 @@ impl Fixture {
             }),
             container_action: Default::default(),
         };
-        let module_artifact = SYSTEM_EMPTY_MODULE_V1_ARTIFACT;
+        let module_artifact = empty_module_artifact();
         let request = PublishRequest {
             manifest: PreparedDeploymentManifest::V1(PreparedDeploymentManifestV1 {
                 deployment: envelope.resolve(None, &Default::default()).unwrap(),
@@ -215,7 +223,7 @@ async fn handler(
         if state.deny_preflight {
             return StatusCode::FORBIDDEN.into_response();
         }
-        assert_eq!(body.as_ref(), SYSTEM_EMPTY_MODULE_V1_BYTES);
+        assert_eq!(body.as_ref(), system_empty::empty().bytes.as_ref());
         return Json(spacetimedb_client_api_messages::name::PrePublishResult::AutoMigrate(
             spacetimedb_client_api_messages::name::PrePublishAutoMigrateResult {
                 migrate_plan: "fixture migration".into(),
@@ -345,7 +353,7 @@ async fn run_now(client: &PublisherClient, journal: &mut Journal) -> Result<Outc
     run(client, journal, None, Duration::ZERO, CancellationToken::new()).await
 }
 fn journal(base: &Path, record: Record) -> Journal {
-    Journal::create(base, record, None, Some(SYSTEM_EMPTY_MODULE_V1_BYTES)).unwrap()
+    Journal::create(base, record, None, Some(system_empty::empty().bytes.as_ref())).unwrap()
 }
 use std::path::Path;
 
@@ -545,7 +553,11 @@ async fn journal_locks_and_reverifies_local_bytes_without_persisting_credentials
     assert!(Journal::open(&path).is_err());
     let bytes = std::fs::read_to_string(path.join("publication.json")).unwrap();
     assert!(!bytes.contains("isolated-fixture-credential"));
-    std::fs::write(path.join("module.blob"), vec![0; SYSTEM_EMPTY_MODULE_V1_BYTES.len()]).unwrap();
+    std::fs::write(
+        path.join("module.blob"),
+        vec![0; system_empty::empty().bytes.as_ref().len()],
+    )
+    .unwrap();
     assert!(run_now(&fixture.client(), &mut journal).await.is_err());
     assert_eq!(fixture.state.lock().unwrap().begin_count, 0);
     drop(journal);
@@ -569,7 +581,7 @@ fn endpoints_and_receipts_are_bounded_and_unambiguous() {
         assert!(client::endpoint(endpoint).is_ok());
     }
     let object = ObjectRef {
-        digest: SYSTEM_EMPTY_MODULE_V1_ARTIFACT.digest,
+        digest: empty_module_artifact().digest,
         size: 1,
     };
     let status = UploadStatus {

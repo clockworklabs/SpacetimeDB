@@ -216,6 +216,50 @@ impl Host {
             .await
     }
 
+    pub async fn update_with_environment(
+        &self,
+        database: Database,
+        host_type: HostType,
+        program_bytes: Box<[u8]>,
+        policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.host_controller
+            .update_module_host_with_environment(
+                database,
+                host_type,
+                self.replica_id,
+                program_bytes,
+                policy,
+                environment,
+            )
+            .await
+    }
+
+    /// Commit the complete environment and admitted deployment in one host transaction.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_with_environment_and_deployment(
+        &self,
+        database: Database,
+        host_type: HostType,
+        program_bytes: Box<[u8]>,
+        policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
+        deployment: spacetimedb::db::deployment::DeploymentCommit,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.host_controller
+            .update_module_host_with_environment_and_deployment(
+                database,
+                host_type,
+                self.replica_id,
+                program_bytes,
+                policy,
+                environment,
+                Some(deployment),
+            )
+            .await
+    }
+
     /// Used only by an authenticated publication coordinator after control
     /// admission and quiescing. This does not authorize or start a container.
     pub async fn update_with_deployment(
@@ -246,6 +290,8 @@ pub struct DatabaseDef {
     pub database_identity: Identity,
     /// The compiled program of the database module.
     pub program_bytes: Bytes,
+    /// Complete publish input, never persisted in the public Database record.
+    pub environment: std::collections::BTreeMap<String, String>,
     /// The desired number of replicas the database shall have.
     ///
     /// If `None`, the edition default is used.
@@ -263,6 +309,7 @@ pub struct DatabaseDef {
 pub struct DatabaseResetDef {
     pub database_identity: Identity,
     pub program_bytes: Option<Bytes>,
+    pub environment: std::collections::BTreeMap<String, String>,
     pub num_replicas: Option<NonZeroU8>,
     pub host_type: Option<HostType>,
 }

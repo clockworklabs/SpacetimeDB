@@ -122,7 +122,7 @@ pub fn validate_deployment_program(
                     (expected.kind, program.kind),
                     (UserModuleKind::Wasm, ModuleKind::WASM) | (UserModuleKind::Js, ModuleKind::JS)
                 ) => {}
-        ModuleComponent::SystemEmpty(version) if crate::host::empty_module::matches_program(*version, program) => {}
+        ModuleComponent::SystemEmpty(module) if crate::host::empty_module::matches_program(module, program) => {}
         _ => return Err(DeploymentError::ProgramMismatch),
     }
     if request.deployment.current().container.is_some() && !module.supports_hosted_auth_v1() {

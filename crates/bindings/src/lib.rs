@@ -919,6 +919,29 @@ pub use spacetimedb_bindings_macro::view;
 pub struct QueryBuilder {}
 pub use query_builder::{Query, RawQuery};
 
+/// Declare the complete publish-time environment schema and generate named accessors.
+///
+/// Fields must be `String` or `Option<String>`; `#[env(values("a", "b"))]`
+/// constrains exact strings. Values are supplied on every publish, never in metadata.
+/// The macro generates an `EnvAccess` extension trait for a struct named `Env`.
+/// Import that trait when the declaration lives in a different Rust module.
+/// The name `get` is reserved for generic checked access.
+///
+/// ```no_run
+/// #[spacetimedb::env]
+/// pub struct Env {
+///     pub API_KEY: String,
+///     #[env(values("debug", "info"))]
+///     pub LOG_LEVEL: Option<String>,
+/// }
+/// fn read(ctx: &spacetimedb::ReducerContext) {
+///     let _: String = ctx.env.API_KEY();
+///     let _: Option<String> = ctx.env.LOG_LEVEL();
+/// }
+/// ```
+#[doc(inline)]
+pub use spacetimedb_bindings_macro::env;
+
 /// Read-only access to this database's environment store.
 ///
 /// Reads use the current transaction. In a procedure outside a transaction,
@@ -930,8 +953,12 @@ pub struct Environment {
 }
 
 impl Environment {
-    /// Return None for a missing key and Some("") for a present empty value.
+    /// Return `None` for an absent declared optional key and `Some("")` for a present empty value.
     /// Keys must be POSIX environment names of at most 256 bytes.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the key is undeclared, invalid, or inaccessible in the current host call.
     pub fn get(&self, key: &str) -> Option<String> {
         rt::env_get(key)
     }
