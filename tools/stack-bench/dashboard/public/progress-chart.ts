@@ -2,7 +2,7 @@ import type { CampaignProgression, CampaignSheet } from '../dashboard-views.js';
 import { duration, esc, stackLabel } from './format.js';
 
 export function progressChart(sheet: CampaignSheet, progression: CampaignProgression | null,
-  metric: 'completion' | 'cost' = 'completion', view = 'grid'): string {
+  metric: 'completion' | 'cost' = 'completion', view = 'grid', hidden: ReadonlySet<string> = new Set()): string {
   const tracks = (progression?.stacks ?? []).flatMap(track => {
     const attempt = sheet.stacks.find(stack => stack.stack === track.stack)?.attempts
       .find(candidate => candidate.id === track.attemptId);
@@ -26,33 +26,48 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
     : 'Checks passed out of all selected checks at each saved grade. Zero marks run start before any checks pass. Each line is one repetition; elapsed time starts at that run. Excluded runs are labelled. Lines can fall after regressions. Lines connect recorded observations; intermediate values are not measured.';
   const heading = `<div class="section-heading progress-heading"><h3 title="${description}">${label} over time</h3><nav aria-label="Chart metric">`
     + (['completion', 'cost'] as const).map(option => `<a class="chip sm${metric === option ? ' on' : ''}"${metric === option ? ' aria-current="page"' : ''} href="?questlines=${encodeURIComponent(view)}&amp;chart=${option}">${option === 'cost' ? 'Cost' : 'Completion'}</a>`).join('') + '</nav></div>';
-  if (!tracks.length) return heading + `<p class="chart-empty">${metric === 'cost' ? 'Awaiting first timed cost receipt.' : 'Awaiting first timed grade.'}</p>`;
-  const ceiling = metric === 'cost' ? Math.max(0.01, ...tracks.flatMap(track => track.points.map(point => point.value))) : 100;
   const valueLabel = (value: number, upper = false, decimals = 1) => metric === 'cost'
     ? `${upper ? '≤' : ''}$${value.toFixed(2)}` : `${value.toFixed(decimals)}%`;
+  const brandColors: Record<string, string> = { spacetime: '#4cf490', mongodb: '#b45af2', postgres: '#336791' };
+  const color = (stack: string) => brandColors[stack]
+    ?? `hsl(${Array.from(stack).reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) % 360, 0)},65%,65%)`;
+  const marker = (repetition: number, x: number, y: number, title = '') => {
+    const shape = (repetition - 1) % 3;
+    return shape === 1 ? `<rect x="${x - 3}" y="${y - 3}" width="6" height="6">${title}</rect>`
+      : shape === 2 ? `<path d="M${x} ${y - 4} l4 4 -4 4 -4 -4 Z">${title}</path>`
+      : `<circle cx="${x}" cy="${y}" r="3">${title}</circle>`;
+  };
+  const controls = `<div class="progress-controls" aria-label="Chart visibility">` + sheet.stacks.map(stack => {
+    const shown = stack.attempts.filter(attempt => !hidden.has(attempt.id)).length;
+    return `<div class="progress-stack" role="group" aria-label="${esc(stackLabel(stack.stack))}">`
+      + `<button type="button" class="chart-stack-toggle" data-chart-stack="${esc(stack.stack)}" aria-pressed="${shown === 0 ? 'false' : shown === stack.attempts.length ? 'true' : 'mixed'}" title="Show or hide all ${esc(stackLabel(stack.stack))} runs"><svg class="chart-swatch" width="16" height="12" aria-hidden="true"><path d="M0 6 H16" stroke="${color(stack.stack)}" stroke-width="3"/></svg>${esc(stackLabel(stack.stack))}</button>`
+      + stack.attempts.map(attempt => {
+        const point = tracks.find(track => track.attempt.id === attempt.id)?.points.at(-1);
+        const label = `Rep ${attempt.repetition} · ${point ? valueLabel(point.value, point.upper, 0) : 'Pending'}${attempt.excluded ? ' · Excluded' : ''}`;
+        return `<button type="button" class="chart-run-toggle" data-chart-run="${esc(attempt.id)}" data-chart-series="${esc(attempt.id)}" aria-pressed="${!hidden.has(attempt.id)}" aria-label="${esc(stackLabel(stack.stack))} · ${esc(label)}" title="Show or hide ${esc(stackLabel(stack.stack))} repetition ${attempt.repetition}"><svg width="12" height="12" fill="${color(stack.stack)}" aria-hidden="true">${marker(attempt.repetition, 6, 6)}</svg>${esc(label)}</button>`;
+      }).join('') + '</div>';
+  }).join('') + '</div>';
+  const visible = tracks.filter(track => !hidden.has(track.attempt.id));
+  if (!visible.length) return `<section class="progress-panel">${heading}${controls}<p class="chart-empty">${sheet.stacks.every(stack => stack.attempts.every(attempt => hidden.has(attempt.id))) ? 'Select a run to show its progress.' : metric === 'cost' ? 'Awaiting first timed cost receipt.' : 'Awaiting first timed grade.'}</p></section>`;
+  const ceiling = metric === 'cost' ? Math.max(0.01, ...tracks.flatMap(track => track.points.map(point => point.value))) : 100;
   const maximum = Math.max(60, ...tracks.flatMap(track => track.points.map(point => point.elapsed)));
   const left = metric === 'cost' ? 80 : 48;
   const x = (seconds: number) => left + (948 - left) * seconds / maximum;
   const y = (value: number) => 190 - 160 * value / ceiling;
-  // Stack palette: STDB green, MongoDB tertiary purple, PostgreSQL blue.
-  const brandColors: Record<string, string> = { spacetime: '#4cf490', mongodb: '#b45af2', postgres: '#336791' };
-  const color = (stack: string) => brandColors[stack]
-    ?? `hsl(${Array.from(stack).reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) % 360, 0)},65%,65%)`;
   const grid = [0, 0.25, 0.5, 0.75, 1].map(part => part * ceiling).map(value =>
     `<line x1="${left}" x2="948" y1="${y(value)}" y2="${y(value)}" class="progress-grid"/><text x="${left - 10}" y="${y(value) + 4}" text-anchor="end">${valueLabel(value, false, 0)}</text>`).join('');
   const ticks = [0, 0.25, 0.5, 0.75, 1].map(part =>
     `<text x="${x(part * maximum)}" y="214" text-anchor="middle">${esc(part ? duration(part * maximum) : '0')}</text>`).join('');
-  const lines = tracks.map(({ stack, attempt, points }) => {
+  const lines = visible.map(({ stack, attempt, points }) => {
     // Saved observations are not continuous measurements. Stop at the last receipt.
     let path = '';
     const marks = points.map((point, index) => {
       path += index ? ` L${x(point.elapsed)} ${y(point.value)}` : `M${x(point.elapsed)} ${y(point.value)}`;
-      return `<circle cx="${x(point.elapsed)}" cy="${y(point.value)}" r="3" fill="${color(stack)}"><title>${esc(stackLabel(stack))} · Rep ${attempt.repetition}: ${valueLabel(point.value, point.upper)} at ${esc(duration(point.elapsed))}${index === 0 ? (metric === 'cost' ? ' · Run start; no recorded cost' : ' · Run start; no checks graded') : ''}${attempt.excluded ? ' · Excluded' : ''}</title></circle>`;
+      return marker(attempt.repetition, x(point.elapsed), y(point.value), `<title>${esc(stackLabel(stack))} · Rep ${attempt.repetition}: ${valueLabel(point.value, point.upper)} at ${esc(duration(point.elapsed))}${index === 0 ? (metric === 'cost' ? ' · Run start; no recorded cost' : ' · Run start; no checks graded') : ''}${attempt.excluded ? ' · Excluded' : ''}</title>`);
     }).join('');
-    return `<g><path d="${path}" fill="none" stroke="${color(stack)}" stroke-width="2"${attempt.repetition > 1 ? ' stroke-dasharray="6 4"' : ''}/>${marks}</g>`;
+    return `<g class="progress-series" data-chart-series="${esc(attempt.id)}" fill="${color(stack)}"><path class="progress-line" d="${path}" fill="none" stroke="${color(stack)}" stroke-width="2"/>${marks}</g>`;
   }).join('');
-  const legend = tracks.map(({ stack, attempt, points }) => `<a href="/c/${encodeURIComponent(sheet.key)}/a/${encodeURIComponent(attempt.id)}"><svg width="16" height="12" aria-hidden="true"><path d="M0 6 H16" stroke="${color(stack)}" stroke-width="2"${attempt.repetition > 1 ? ' stroke-dasharray="4 2"' : ''}/></svg> ${esc(stackLabel(stack))} · Rep ${attempt.repetition} · ${valueLabel(points.at(-1)!.value, points.at(-1)!.upper, 0)}${attempt.excluded ? ' · Excluded' : ''}</a>`).join('');
-  return heading + `<div class="chart-scroll" role="region" aria-label="${label} over elapsed time" tabindex="0">`
+  return `<section class="progress-panel">${heading}${controls}<div class="chart-scroll" role="region" aria-label="${label} over elapsed time" tabindex="0">`
     + `<svg class="progress-chart" viewBox="0 0 980 242" role="img" aria-label="${label} by elapsed run time"><title>${description} Hover a point for its time and value.</title>${grid}${ticks}${lines}<text x="498" y="237" text-anchor="middle">Elapsed run time</text></svg></div>`
-    + `<div class="progress-legend">${legend}</div>`;
+    + '</section>';
 }

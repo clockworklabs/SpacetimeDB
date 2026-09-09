@@ -45,6 +45,7 @@ const state = {
   form: { planId: '', outputName: '', secret: '', error: '' } as RunForm,
   sheets: new Map<string, CampaignSheet>(),
   progression: new Map<string, CampaignProgression | null>(),
+  hiddenChartRuns: new Map<string, Set<string>>(),
   checks: new Map<string, AttemptChecks>(),
   evidence: new Map<string, AttemptPackage>(),
   timeBudgets: new Map<string, ReturnType<typeof readCampaignTimeBudget>>(),
@@ -147,7 +148,8 @@ function page(current: Route): string {
       log: state.log.attempt === current.attempt ? state.log.text : '' });
   }
   return campaignPage({ sheet, progression: state.progression.get(current.key) ?? null,
-    view: current.view, step: current.step, chart: current.chart });
+    view: current.view, step: current.step, chart: current.chart,
+    hiddenChartRuns: state.hiddenChartRuns.get(current.key) });
 }
 
 function sync(current: Element, next: Element): void {
@@ -365,6 +367,18 @@ function subscribe(): void {
 }
 
 let helpClose = 0;
+for (const type of ['pointerover', 'pointerout', 'focusin', 'focusout']) document.addEventListener(type, event => {
+  if (!(event.target instanceof Element)) return;
+  const series = event.target.closest<HTMLElement>('[data-chart-series]');
+  if (!series) return;
+  const lines = [...series.closest('.progress-panel')?.querySelectorAll<HTMLElement>('.progress-series') ?? []];
+  const active = (type === 'pointerover' || type === 'focusin')
+    && lines.some(line => line.dataset.chartSeries === series.dataset.chartSeries);
+  for (const line of lines) {
+    line.classList.toggle('is-muted', active && line.dataset.chartSeries !== series.dataset.chartSeries);
+    line.classList.toggle('is-highlighted', active && line.dataset.chartSeries === series.dataset.chartSeries);
+  }
+});
 for (const type of ['pointerover', 'focusin']) document.addEventListener(type, event => {
   if (!(event.target instanceof Element)) return;
   if (!event.target.closest('.metric-help, .metric-tooltip')) return;
@@ -385,6 +399,19 @@ for (const type of ['pointerout', 'focusout']) document.addEventListener(type, e
 document.addEventListener('click', event => {
   if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey
     || event.shiftKey || event.altKey) return;
+  const chartToggle = (event.target as Element | null)?.closest<HTMLElement>('[data-chart-run], [data-chart-stack]');
+  if (chartToggle) {
+    const key = route().key;
+    const hidden = state.hiddenChartRuns.get(key) ?? new Set<string>();
+    const ids = chartToggle.dataset.chartRun !== undefined ? [chartToggle.dataset.chartRun]
+      : state.sheets.get(key)?.stacks.find(stack => stack.stack === chartToggle.dataset.chartStack)
+        ?.attempts.map(attempt => attempt.id) ?? [];
+    const hide = ids.some(id => !hidden.has(id));
+    for (const id of ids) { if (hide) hidden.add(id); else hidden.delete(id); }
+    state.hiddenChartRuns.set(key, hidden);
+    render();
+    return;
+  }
   if ((event.target as Element | null)?.closest('[data-retry]')) {
     void load(true);
     return;

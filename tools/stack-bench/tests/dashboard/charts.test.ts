@@ -98,3 +98,21 @@ test('cost chart uses cumulative checkpoint costs, labels bounds, and omits unkn
   assert.doesNotMatch(html, /NaN|Infinity/);
   assert.match(progressChart(sheet, null, 'cost'), /Awaiting first timed cost receipt/);
 });
+
+test('chart filters individual runs without changing the scale or hiding pending controls', () => {
+  const sheet = { key: 'test', stacks: [{ stack: 'custom-stack', attempts: [1, 2, 3].map(repetition => ({
+    id: `run-${repetition}`, repetition, executionStartedAt: '2026-09-08T00:00:00Z', excluded: null,
+  })) }] } as CampaignSheet;
+  const progression = { stacks: [1, 2].map(repetition => ({ stack: 'custom-stack', attemptId: `run-${repetition}`,
+    steps: [{ completedAt: `2026-09-08T00:0${repetition}:00Z`, completion: repetition / 4 }],
+  })) } as CampaignProgression;
+  const html = progressChart(sheet, progression, 'completion', 'grid', new Set(['run-2']));
+  assert.match(html, /data-chart-stack="custom-stack" aria-pressed="mixed"/);
+  assert.match(html, /class="progress-series" data-chart-series="run-1"/);
+  assert.doesNotMatch(html, /class="progress-series" data-chart-series="run-2"|stroke-dasharray| style=/);
+  assert.match(html, /M48 190 L498 150/); // Retains the two-minute extent of the hidden run.
+  assert.match(html, /Rep 3 · Pending/);
+  const empty = progressChart(sheet, progression, 'completion', 'grid', new Set(['run-1', 'run-2', 'run-3']));
+  assert.match(empty, /Select a run/);
+  assert.match(empty, /data-chart-run="run-1"/); // Controls remain available to restore runs.
+});

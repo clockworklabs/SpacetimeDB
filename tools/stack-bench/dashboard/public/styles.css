@@ -285,8 +285,19 @@ main[aria-busy="true"]:not(:has(.loading))::before { content: ''; position: fixe
 .progress-chart { display: block; width: 100%; min-width: 520px; max-height: 300px; }
 .progress-chart text { fill: var(--n3); font: 12px var(--sans); }
 .progress-grid { stroke: var(--n3); opacity: .15; }
-.progress-legend { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 4px 0 24px; font-size: 12px; }
-.progress-legend a { text-decoration: none; }
+.progress-panel { margin-bottom: 24px; }
+.progress-controls { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 12px 0; }
+.progress-stack { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.progress-controls button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 8px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--n2); font: 12px var(--sans); cursor: pointer; }
+.progress-controls button:hover { background: var(--shade1); }
+.progress-controls button:focus-visible { outline: 2px solid var(--n2); outline-offset: 2px; }
+.progress-controls button[aria-pressed="false"] { color: var(--n4); }
+.progress-controls button[aria-pressed="false"] svg, .progress-controls button[aria-pressed="false"] .chart-swatch { opacity: .25; }
+.progress-controls .chart-run-toggle[aria-pressed="true"] { border-color: var(--shade1); background: var(--shade5); }
+.chart-swatch { flex-shrink: 0; }
+.chart-run-toggle svg { flex-shrink: 0; }
+.progress-series.is-muted { opacity: .15; }
+.progress-series.is-highlighted .progress-line { stroke-width: 3; }
 
 .transcript-controls { margin-top: 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 12px; }
 .transcript-controls label { min-width: 0; flex: 1; }
@@ -301,7 +312,7 @@ main[aria-busy="true"]:not(:has(.loading))::before { content: ''; position: fixe
 
 @media (max-width: 600px) {
   .progress-chart { min-width: 640px; }
-  .progress-chart text { font-size: 20px; }
+  .progress-chart text { font-size: 16px; }
 }
 
 .spend-pending { display: inline-block; width: 6px; height: 6px; vertical-align: middle; margin-left: 3px; }
