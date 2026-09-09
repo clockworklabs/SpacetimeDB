@@ -82,11 +82,11 @@ const score = table(
     indexes: [{
       accessor: 'idx',
       algorithm: 'btree',
-      columns: ['player_id', 'level'],
+      columns: ['playerId', 'level'],
     }],
   },
   {
-    player_id: t.u64(),
+    playerId: t.u64(),
     level: t.u32(),
   }
 );
@@ -118,7 +118,7 @@ public partial struct Player
 
 // Multi-column index (use new[] for attribute params — collection expressions invalid in attributes)
 [SpacetimeDB.Table(Accessor = "Score")]
-[SpacetimeDB.Index.BTree(Accessor = "idx", Columns = new[] { "PlayerId", "Level" })]
+[SpacetimeDB.Index.BTree(Accessor = "Idx", Columns = new[] { "PlayerId", "Level" })]
 public partial struct Score
 {
     public ulong PlayerId;
@@ -216,12 +216,12 @@ const spacetimedb = schema({ player });
 export default spacetimedb;
 
 // Basic reducer
-export const create_player = spacetimedb.reducer({ username: t.string() }, (ctx, { username }) => {
+export const createPlayer = spacetimedb.reducer({ username: t.string() }, (ctx, { username }) => {
   ctx.db.player.insert({ id: 0n, username, score: 0 });
 });
 
 // With error handling
-export const update_score = spacetimedb.reducer({ id: t.u64(), points: t.i32() }, (ctx, { id, points }) => {
+export const updateScore = spacetimedb.reducer({ id: t.u64(), points: t.i32() }, (ctx, { id, points }) => {
   const player = ctx.db.player.id.find(id);
   if (!player) throw new Error('Player not found');
   player.score += points;
@@ -409,12 +409,12 @@ const reminder = table(
   {
     id: t.u64().primaryKey().autoInc(),
     message: t.string(),
-    scheduled_at: t.scheduleAt(),
+    scheduledAt: t.scheduleAt(),
   }
 );
 
 // `onSchedule` binds the reducer to the schedule table
-export const send_reminder = spacetimedb.reducer(
+export const sendReminder = spacetimedb.reducer(
   { onSchedule: reminder },
   { arg: reminder.rowType },
   (ctx, { arg }) => {
@@ -495,7 +495,7 @@ SPACETIMEDB_REDUCER(send_reminder, ReducerContext ctx, Reminder reminder) {
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-export const fetch_data = spacetimedb.procedure(
+export const fetchData = spacetimedb.procedure(
   { url: t.string() },
   t.string(),
   (ctx, { url }) => {
@@ -605,29 +605,29 @@ SPACETIMEDB_PROCEDURE(std::string, fetch_data, ProcedureContext ctx, std::string
 
 ```typescript
 // Return single row
-export const my_player = spacetimedb.view({ name: 'my_player', public: true }, t.option(player.rowType), ctx => {
+export const myPlayer = spacetimedb.view({ name: 'my_player', public: true }, t.option(player.rowType), ctx => {
   return ctx.db.player.identity.find(ctx.sender);
 });
 
 // Return potentially multiple rows
-export const top_players = spacetimedb.view({ name: 'top_players', public: true }, t.array(player.rowType), ctx => {
+export const topPlayers = spacetimedb.view({ name: 'top_players', public: true }, t.array(player.rowType), ctx => {
   return ctx.db.player.score.filter(1000);
 });
 
 // Procedural view with update callbacks.
 // The returned row type has exactly one `.primaryKey()` column.
-export const top_players_with_updates = spacetimedb.view({ name: 'top_players_with_updates', public: true }, t.array(player.rowType), ctx => {
+export const topPlayersWithUpdates = spacetimedb.view({ name: 'top_players_with_updates', public: true }, t.array(player.rowType), ctx => {
   return ctx.db.player.score.filter(1000);
 });
 
 // Perform a generic filter using the query builder.
 // Equivalent to `SELECT * FROM player WHERE score < 1000`.
-export const bottom_players = spacetimedb.view({ name: 'bottom_players', public: true }, t.array(player.rowType), ctx => {
+export const bottomPlayers = spacetimedb.view({ name: 'bottom_players', public: true }, t.array(player.rowType), ctx => {
   return ctx.from.player.where(p => p.score.lt(1000))
 });
 
 // Count rows in a table.
-export const player_count = spacetimedb.anonymousView({ name: 'player_count', public: true }, t.array(t.row('PlayerCount', {
+export const playerCount = spacetimedb.anonymousView({ name: 'player_count', public: true }, t.array(t.row('PlayerCount', {
   count: t.u64(),
 })), ctx => {
   return [{ count: ctx.db.player.count() }];
