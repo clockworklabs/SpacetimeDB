@@ -145,7 +145,7 @@ pub struct ContainerApiError {
     pub error: ContainerErrorCode,
 }
 
-mod decimal_u64 {
+pub(super) mod decimal_u64 {
     use serde::{Deserialize, Deserializer, Serializer};
     pub fn serialize<S: Serializer>(number: &u64, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.collect_str(number)

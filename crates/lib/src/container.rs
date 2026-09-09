@@ -10,6 +10,8 @@ use std::{collections::BTreeSet, fmt, str::FromStr};
 #[cfg(feature = "serde")]
 pub mod endpoints;
 #[cfg(feature = "serde")]
+pub mod exec;
+#[cfg(feature = "serde")]
 pub mod operations;
 
 /// Version of the normalized deployment encoding, independent of module ABI.
