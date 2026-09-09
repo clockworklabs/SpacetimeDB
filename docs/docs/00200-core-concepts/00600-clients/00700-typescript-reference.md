@@ -145,7 +145,7 @@ Configure the URI of the SpacetimeDB instance or cluster which hosts the remote 
 
 ```typescript
 class DbConnectionBuilder {
-  public withDatabaseName(name_or_identity: string): DbConnectionBuilder;
+  public withDatabaseName(nameOrIdentity: string): DbConnectionBuilder;
 }
 ```
 
@@ -545,7 +545,7 @@ Throws an error if the subscription has already ended, either due to a previous 
 
 ```typescript
 class SubscriptionHandle {
-  public unsubscribeThen(on_end: (ctx: SubscriptionEventContext) => void): void;
+  public unsubscribeThen(onEnd: (ctx: SubscriptionEventContext) => void): void;
 }
 ```
 

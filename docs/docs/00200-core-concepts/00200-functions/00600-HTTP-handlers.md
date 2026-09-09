@@ -33,7 +33,7 @@ import { schema, SyncResponse } from "spacetimedb/server";
 const spacetimedb = schema({});
 export default spacetimedb;
 
-export const say_hello = spacetimedb.httpHandler((_ctx, _req) => {
+export const sayHello = spacetimedb.httpHandler((_ctx, _req) => {
     return new SyncResponse("Hello!");
 });
 ```
@@ -146,7 +146,7 @@ import { Router } from "spacetimedb/server";
 
 export const router = spacetimedb.httpRouter(
     new Router()
-        .get("/say-hello", say_hello)
+        .get("/say-hello", sayHello)
 );
 ```
 
