@@ -298,13 +298,10 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .map(|rls| (rls.sql.clone(), rls.to_owned()))
         .collect();
 
-    let (
-        (tables, types, reducers, procedures, views, (http_handlers, http_routes)),
-        submodules,
-        (environment, environment_declared),
-    ) = (tables_types_reducers_procedures_views, submodules, environment)
-        .combine_errors()
-        .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
+    let ((tables, types, reducers, procedures, views, (http_handlers, http_routes)), submodules, environment) =
+        (tables_types_reducers_procedures_views, submodules, environment)
+            .combine_errors()
+            .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
 
     let typespace_for_generate = typespace_for_generate.finish();
 
@@ -327,7 +324,6 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         raw_module_def_version: RawModuleDefVersion::V10,
         submodules,
         environment,
-        environment_declared,
     };
 
     // Submodules were validated in isolation, so their defs carry root-relative names.
@@ -340,20 +336,20 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
     Ok(module_def)
 }
 
-fn validate_environment(def: &RawModuleDefV10) -> Result<(spacetimedb_lib::environment::EnvironmentSchema, bool)> {
+fn validate_environment(def: &RawModuleDefV10) -> Result<Option<spacetimedb_lib::environment::EnvironmentSchema>> {
     let mut sections = def.sections.iter().filter_map(|section| match section {
         RawModuleDefV10Section::Environment(declarations) => Some(declarations),
         _ => None,
     });
     let Some(declarations) = sections.next() else {
-        return Ok((Default::default(), false));
+        return Ok(None);
     };
     if sections.next().is_some() {
-        return Err(ValidationError::RepeatedEnvironmentSection.into());
+        return Err(ValidationError::RepeatedEnvironmentDeclaration.into());
     }
     let schema = spacetimedb_lib::environment::EnvironmentSchema::from_declarations(declarations)
         .map_err(|error| ValidationError::Environment { error })?;
-    Ok((schema, true))
+    Ok(Some(schema))
 }
 
 /// Validate that each submodule's namespace is a valid identifier of at most 63 characters,
@@ -2844,6 +2840,8 @@ mod environment_tests {
         let legacy = validate(RawModuleDefV10::default()).unwrap();
         assert!(legacy.environment().is_empty());
         assert!(!legacy.environment_declared());
+        let raw: RawModuleDefV10 = legacy.into();
+        assert!(!validate(raw).unwrap().environment_declared());
         let explicit = validate(RawModuleDefV10 {
             sections: vec![RawModuleDefV10Section::Environment(vec![])],
         })
@@ -2870,7 +2868,7 @@ mod environment_tests {
         assert!(validate(duplicate)
             .unwrap_err()
             .into_iter()
-            .any(|error| matches!(error, ValidationError::RepeatedEnvironmentSection)));
+            .any(|error| matches!(error, ValidationError::RepeatedEnvironmentDeclaration)));
         let nested = RawModuleDefV10 {
             sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
                 namespace: "outer".into(),

@@ -22,8 +22,8 @@ pub type ValidationErrors = ErrorStream<ValidationError>;
 #[derive(thiserror::Error, Debug, PartialOrd, Ord, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ValidationError {
-    #[error("module has repeated environment sections")]
-    RepeatedEnvironmentSection,
+    #[error("module has repeated environment declarations")]
+    RepeatedEnvironmentDeclaration,
     #[error("invalid environment declaration: {error}")]
     Environment {
         error: spacetimedb_lib::environment::EnvironmentSchemaError,

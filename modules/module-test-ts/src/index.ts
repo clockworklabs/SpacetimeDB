@@ -574,7 +574,8 @@ export const router = spacetimedb.httpRouter(
 );
 
 // Dedicated environment ABI integration exercised by crates/testing.
-export const expect_environment = spacetimedb.reducer(
+export const expectEnvironment = spacetimedb.reducer(
+  { name: 'expect_environment' },
   { key: t.string(), expected: t.option(t.string()) },
   (ctx, { key, expected }) => {
     if (libSubmodule.readRootEnvironmentHelper() !== ctx.env.get('EMPTY')) throw new Error('helper environment scope mismatch');
@@ -584,7 +585,8 @@ export const expect_environment = spacetimedb.reducer(
     }
   }
 );
-export const read_environment = spacetimedb.procedure(
+export const readEnvironment = spacetimedb.procedure(
+  { name: 'read_environment' },
   { key: t.string() },
   t.option(t.string()),
   (ctx, { key }) => {
