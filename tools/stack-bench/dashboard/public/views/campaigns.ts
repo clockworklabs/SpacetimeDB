@@ -94,7 +94,6 @@ export function campaignsPage({ campaigns, sheets, filter, loading = false }: {
     : shown.length ? shown.map(campaign => row(campaign, stacks)).join('')
     : `<tr><td colspan="${4 + stacks.length}">No campaigns match this filter.</td></tr>`;
   return `<div class="page"><div class="title"><h2>Campaigns</h2></div>${sheets.map(live).join('')}`
-    + '<p class="summary-note">Live rows show completion and spend for each running attempt. The table shows median weighted scores from usable completed results. Provisional scores still need qualification. A dash means no usable score yet.</p>'
     + `<div class="tablewrap"><div class="toolbar">${chips}</div><div class="wrap">`
     + '<table class="runs"><thead><tr><th>Campaign</th><th>Scope</th><th>Status</th>'
     + stacks.map(stack => `<th class="stack">${esc(stackLabel(stack))}</th>`).join('')
