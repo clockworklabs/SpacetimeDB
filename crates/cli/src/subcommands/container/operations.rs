@@ -121,9 +121,9 @@ pub(super) async fn exec(config: &mut crate::Config, name: &str, args: &ArgMatch
 }
 
 pub(super) struct ContainerClient {
-    http: Client,
+    pub(super) http: Client,
     server: Url,
-    authorization: HeaderValue,
+    pub(super) authorization: HeaderValue,
 }
 impl ContainerClient {
     pub(super) fn new(server: Url, mut authorization: HeaderValue) -> Result<Self> {

@@ -12,6 +12,8 @@ pub mod endpoints;
 #[cfg(feature = "serde")]
 pub mod exec;
 #[cfg(feature = "serde")]
+pub mod logs;
+#[cfg(feature = "serde")]
 pub mod operations;
 
 /// Version of the normalized deployment encoding, independent of module ABI.

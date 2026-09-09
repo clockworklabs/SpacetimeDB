@@ -2,6 +2,7 @@
 //! server credentials; network commands use the explicitly selected server.
 #[path = "container/exec.rs"]
 mod execute;
+mod logs;
 mod operations;
 mod url;
 
@@ -20,6 +21,7 @@ pub fn cli() -> Command {
         .subcommand_required(true)
         .subcommand(url::cli())
         .subcommand(execute::cli())
+        .subcommand(logs::cli())
         .subcommand(
             Command::new("build")
                 .about("Prepare verified OCI artifacts locally without publishing")
@@ -125,6 +127,7 @@ pub async fn exec(mut config: crate::Config, args: &ArgMatches) -> Result<()> {
         ("build", args) => exec_build(args).await,
         ("exec", args) => execute::exec(&mut config, args).await,
         ("url", args) => url::exec(&config, args).await,
+        ("logs", args) => logs::exec(&mut config, args).await,
         (name @ ("status" | "start" | "stop" | "restart"), args) => operations::exec(&mut config, name, args).await,
         _ => anyhow::bail!("unsupported container command"),
     }
