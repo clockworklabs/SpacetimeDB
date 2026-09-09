@@ -112,9 +112,10 @@ test('neutral dependency prompts include only selected product and stack contrac
   const guidance = resolveGuidanceProfile('neutral', STACKS);
   const spacetimeReference = readAgentSkillDocuments(
     resolve(STACK_BENCH_ROOT, '..', '..'), guidance.skills.spacetime?.ids ?? []);
-  assert.deepEqual(guidance.skills.spacetime?.ids, ['cli']);
+  assert.deepEqual(guidance.skills.spacetime?.ids, ['typescript-server', 'typescript-client', 'cli']);
   assert.match(spacetimeReference, /spacetime publish/);
-  assert.doesNotMatch(spacetimeReference, /clientVisibilityFilter|withToken|ctx\.sender/);
+  assert.match(spacetimeReference, /withToken/);
+  assert.match(spacetimeReference, /ctx\.sender/);
   for (const level of [1, 2, 3, 4, 5, 6] as const) {
     const binding = resolveRecipeRelease(track, level, 'ecommerce.progression-catalog');
     const selected = resolveProgressionRecipeLevelSelection(binding, catalog, level,
@@ -227,7 +228,8 @@ test('direct neutral guidance uses the current stack access documents', () => {
       assert.doesNotMatch(prompt, /Application service port/);
     } else {
       assert.match(prompt, /spacetime publish/);
-      assert.doesNotMatch(prompt, /withToken|ctx\.sender|clientVisibilityFilter/);
+      assert.match(prompt, /withToken/);
+      assert.match(prompt, /ctx\.sender/);
     }
   }
 });

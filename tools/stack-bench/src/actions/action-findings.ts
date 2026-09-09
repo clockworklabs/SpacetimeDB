@@ -89,8 +89,8 @@ export const FAILED_FINDINGS: Renderers<FailedFindingFields> = {
   'call-accepted': f => f.required === 'validation-refused'
     ? `the ${f.action} action accepted invalid input from ${f.actor}`
     : `the ${f.action} action was accepted for ${f.actor}, who must be refused`,
-  'call-error': f => `the ${f.action} action failed for ${f.actor} with ${http(f.status)} instead of `
-    + `${f.required === 'validation-refused' ? 'rejecting the input' : 'refusing the caller'}${operation(f.operation)}`,
+  'call-error': f => `the ${f.action} action returned ${http(f.status)} for ${f.actor}; `
+    + `this does not meet the ${f.required === 'validation-refused' ? 'input-error' : 'access-error'} status contract${operation(f.operation)}`,
   'concurrent-calls-mismatch': f => `${f.accepted} of ${f.fired} simultaneous ${f.action} calls were accepted, expected ${f.expected}`,
   'interface-missing': f => `${control(f.control)} exposes no ${f.attribute} for the ${f.action} action`,
   'interface-invalid': f => f.missing?.length
@@ -99,9 +99,9 @@ export const FAILED_FINDINGS: Renderers<FailedFindingFields> = {
       ? `${f.attribute} for the ${f.action} action contains unexpected ${names(f.unexpected)}`
       : `${f.attribute} for the ${f.action} action is not valid`,
   'replay-accepted': f => `a request replayed as ${f.actor}, who must be refused, was accepted (${http(f.status)})`,
-  'replay-error': f => `the replayed ${f.action ? `${f.action} action` : 'request'} failed with ${http(f.status)} instead of a refusal`,
+  'replay-error': f => `the replayed ${f.action ? `${f.action} action` : 'request'} returned ${http(f.status)}; this does not meet the access-error status contract`,
   'forgery-accepted': f => `a request with a tampered ${f.field} was accepted (${http(f.status)})`,
-  'forgery-error': f => `the tampered request failed with ${http(f.status)} instead of a refusal`,
+  'forgery-error': f => `the tampered request returned ${http(f.status)}; this does not meet the access-error status contract`,
   'message-delivered': f => `a private message was delivered to ${f.actor}, who is not a participant`,
   'stock-interface-missing': f => f.missingRow
     ? `the required ${f.missingRow} row was not found in the stock data interface; check the original starting data and the item/warehouse links`

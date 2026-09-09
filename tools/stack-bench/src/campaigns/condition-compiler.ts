@@ -213,9 +213,6 @@ function resolveGuidance(catalog: Catalog, reference: string, stacks: readonly s
   for (const field of ['accessFacts', 'apiReference', 'designAdvice'] as const) {
     if (typeof profile.material[field] !== 'boolean') fail(`${reference}.material.${field}`, 'must be boolean');
   }
-  if (mode === 'neutral' && profile.material.designAdvice) {
-    fail(`${reference}.material.designAdvice`, 'must be false for neutral guidance');
-  }
   if (!object(profile.documents)) fail(`${reference}.documents`, 'must be an object');
   if (!object(profile.applicationInterfaces)) {
     fail(`${reference}.applicationInterfaces`, 'must be an object');

@@ -81,13 +81,24 @@ export function setMongoDbStock({ item, warehouse, quantity, lease, exec = execF
   const script = `
     const collections = db.getCollectionNames();
     if (!['item', 'warehouse', 'stock'].every(name => collections.includes(name))) { print('MISSING'); quit(1); }
-    const it = db.item.findOne({ name: ${JSON.stringify(item)} });
-    const wh = db.warehouse.findOne({ name: ${JSON.stringify(warehouse)} });
-    if (!it || !wh) { print(!it ? 'MISSING_ITEM' : 'MISSING_WAREHOUSE'); quit(1); }
-    const iid = it.id ?? it._id, wid = wh.id ?? wh._id;
-    const r = db.stock.updateOne(
-      { $or: [ { item_id: iid, warehouse_id: wid }, { itemId: iid, warehouseId: wid } ] },
-      { $set: { quantity: ${quantity} } });
+    const items = db.item.find({ name: ${JSON.stringify(item)} }).limit(2).toArray();
+    const warehouses = db.warehouse.find({ name: ${JSON.stringify(warehouse)} }).limit(2).toArray();
+    if (!items.length || !warehouses.length) { print(!items.length ? 'MISSING_ITEM' : 'MISSING_WAREHOUSE'); quit(1); }
+    if (items.length !== 1 || warehouses.length !== 1) { print('AMBIGUOUS_PARENT'); quit(1); }
+    const it = items[0], wh = warehouses[0];
+    function references(id) {
+      if (id && id._bsontype === 'ObjectId') return [id, id.toHexString()];
+      if (typeof id === 'string' && /^[0-9a-f]{24}$/.test(id)) return [id, new ObjectId(id)];
+      return [id];
+    }
+    const iid = references(it.id ?? it._id), wid = references(wh.id ?? wh._id);
+    const matches = db.stock.find({ $or: [
+      { item_id: { $in: iid }, warehouse_id: { $in: wid } },
+      { itemId: { $in: iid }, warehouseId: { $in: wid } }
+    ] }).limit(2).toArray();
+    if (!matches.length) { print('NOMATCH'); quit(0); }
+    if (matches.length !== 1) { print('AMBIGUOUS_STOCK'); quit(1); }
+    const r = db.stock.updateOne({ _id: matches[0]._id }, { $set: { quantity: ${quantity} } });
     print(r.matchedCount === 1 ? 'OK' : 'NOMATCH');
   `;
   let output: string;
@@ -96,6 +107,9 @@ export function setMongoDbStock({ item, warehouse, quantity, lease, exec = execF
       ...mongoShell(lease), '--quiet', '--eval', script],
     { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
   } catch (error) {
+    if (/^AMBIGUOUS_(PARENT|STOCK)$/m.test(streams(error, 'stdout').trim())) {
+      throw new Error('MongoDB stock correction refused: multiple matching item, warehouse, or stock rows', { cause: error });
+    }
     const missingRow = /^MISSING_(ITEM|WAREHOUSE)$/m.exec(streams(error, 'stdout').trim())?.[1];
     if (missingRow) throw stockInterfaceError(`required ${missingRow.toLowerCase()} row is absent`,
       { cause: error, missingRow: missingRow === 'ITEM' ? 'item' : 'warehouse' });

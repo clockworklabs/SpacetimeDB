@@ -90,25 +90,34 @@ test('the prescribed condition binds independent guidance, repair, and document 
   assert.notEqual(changed.contentSha256, condition.contentSha256);
 });
 
-test('packaged neutral guidance exists symmetrically without architecture advice', () => {
+test('packaged neutral product guidance retains intentional SDK skills', () => {
   const neutral = { id: 'neutral', guidanceProfile: 'neutral', repairPolicy: 'scored-only' };
   const [condition] = resolveStudyConditions([neutral], ['mongodb', 'postgres', 'spacetime'],
     { requested });
   assert.equal(condition.guidance.mode, 'neutral');
-  assert.equal(condition.guidance.material.designAdvice, false);
+  assert.equal(condition.guidance.material.designAdvice, true);
   assert.deepEqual(Object.keys(condition.guidance.documents), ['mongodb', 'postgres', 'spacetime']);
 });
 
 test('neutral guidance uses current stack documents, skills, and credential aliases', () => {
   const profile = resolveGuidanceProfile('neutral', ['mongodb', 'postgres', 'spacetime']);
-  assert.equal(profile.material.designAdvice, false);
+  assert.equal(profile.material.designAdvice, true);
   assert.deepEqual(Object.keys(profile.documents), ['mongodb', 'postgres', 'spacetime']);
-  assert.deepEqual(profile.skills.spacetime?.ids, ['cli']);
+  assert.deepEqual(profile.skills.spacetime?.ids, ['typescript-server', 'typescript-client', 'cli']);
   assert.deepEqual(profile.credentialAliases, {
     'stackbench-admin-2026': 'store-admin-2026',
     'stackbench-customer-2026': 'store-customer-2026',
     'stackbench-staff-2026': 'store-staff-2026',
   });
+});
+
+test('all neutral profiles retain full TypeScript server and client skills', () => {
+  for (const [id, extra] of [['neutral', []], ['neutral-dev', ['spacetime-dev']],
+    ['neutral-managed-dev', ['spacetime-managed-dev']]] as const) {
+    const profile = resolveGuidanceProfile(id, ['spacetime']);
+    assert.deepEqual(profile.skills.spacetime?.ids, ['typescript-server', 'typescript-client', 'cli', ...extra]);
+    assert.equal(profile.material.designAdvice, true);
+  }
 });
 
 test('expected modular specifications are scored under the ordinary repair policy', () => {
@@ -164,14 +173,14 @@ function customCondition({ guidance = {}, repair = {} } = {}) {
   return { root, catalogPath: join(catalogRoot, 'catalog.json'), ref };
 }
 
-test('neutral guidance cannot smuggle design advice or omit a selected stack document', () => {
+test('guidance records selected design advice and requires each stack document', () => {
   const advice = customCondition({ guidance: {
     material: { accessFacts: true, apiReference: true, designAdvice: true },
   } });
   try {
-    assert.throws(() => resolveStudyConditions([advice.ref], ['fake'], {
+    assert.equal(resolveStudyConditions([advice.ref], ['fake'], {
       stackBenchRoot: advice.root, catalogPath: advice.catalogPath, requested,
-    }), /designAdvice.*false/);
+    })[0]!.guidance.material.designAdvice, true);
   } finally { rmSync(advice.root, { recursive: true, force: true }); }
 
   const missing = customCondition();

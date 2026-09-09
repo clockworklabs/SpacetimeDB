@@ -163,7 +163,7 @@ test('sample renderings read as behavior, not mechanics', () => {
     'a request replayed as customer, who must be refused, was accepted (HTTP 200)');
   assert.equal(renderFinding(SAMPLES['page-error']), 'the page did not behave as required');
   assert.equal(renderFinding(SAMPLES['forgery-error']),
-    'the tampered request failed with no server response instead of a refusal');
+    'the tampered request returned no server response; this does not meet the access-error status contract');
 });
 
 

@@ -6,7 +6,7 @@
   "material": {
     "accessFacts": true,
     "apiReference": true,
-    "designAdvice": false
+    "designAdvice": true
   },
   "documents": {
     "mongodb": "backends/minimal/mongodb.md",
@@ -22,6 +22,8 @@
     "mongodb": [],
     "postgres": [],
     "spacetime": [
+      "typescript-server",
+      "typescript-client",
       "cli",
       "spacetime-dev"
     ]

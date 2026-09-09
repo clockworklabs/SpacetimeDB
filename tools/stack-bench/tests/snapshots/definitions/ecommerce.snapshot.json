@@ -4844,6 +4844,7 @@
             ],
             "criteria": [
               {
+                "category": "production",
                 "desc": "revenue rises by what was bought and falls by what was cancelled",
                 "id": "203a",
                 "points": 3,
@@ -4907,6 +4908,7 @@
                 ]
               },
               {
+                "category": "production",
                 "desc": "a price change does not rewrite revenue already earned",
                 "id": "203b",
                 "points": 2,

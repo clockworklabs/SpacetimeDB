@@ -22,9 +22,9 @@ password of up to 64 characters.
 
 Expose the same account writes used by the UI.
 
-If the current session's bearer token is held only in memory, expose
-`window.getSessionToken()` as a synchronous function that returns that session's existing
-token, or `null` when no session is active. Return the caller's real credential;
+For bearer-token authentication, expose `window.getSessionToken()` as a synchronous
+function that returns the current session's existing token, or `null` when signed out.
+This hook does not prescribe credential storage. Return the caller's real credential;
 do not create a separate identity.
 
 <!-- interface:http -->

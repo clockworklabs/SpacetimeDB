@@ -49,12 +49,11 @@ fields from those arguments; no new runtime path is needed.
 
 ## Skills and interpretation
 
-The former neutral profile included full server and client skills. They contain useful
-production design advice, including session preservation and identity ownership. That was
-inconsistent with this study's goal, even though specification packs were not requested.
-Keep normal development skills intact. Neutral material selection must exclude design advice;
-CLI and selected dev-workflow instructions can remain as execution tooling. Pin that changed
-material as a new experimental condition. Historical frozen runs keep their original material.
+Full TypeScript server and client skills are intentional study inputs. All SpacetimeDB
+profiles must retain them, along with CLI and the selected dev workflow. Do not trim or
+replace these skills based on the product-request boundary. The short product request
+and the supplied SDK skills are separate inputs; material metadata records design advice
+as present. Historical runs that omitted these skills do not represent the intended setup.
 
 Repairs intentionally reveal observed defects. A run with repairs measures assisted recovery,
 not production guarantees supplied without feedback. Use first-build results or a no-repair

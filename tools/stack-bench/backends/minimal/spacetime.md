@@ -24,5 +24,5 @@ source checkout, it must install dependencies, build the complete application,
 and start it on `<VITE_PORT>`. The script must not change source files. Leave
 the application running when the work is complete.
 
-The included TypeScript core SDK reference describes the available core API syntax.
+The included TypeScript server and client skills provide SDK guidance.
 CLI `--help` is available for command syntax.

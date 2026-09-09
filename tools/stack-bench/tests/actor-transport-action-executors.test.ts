@@ -198,7 +198,8 @@ test('named action input uses declared defaults and a missing route is not mista
     input: { testid: 'row', attribute: 'data-action-input' }, authentication: 'none' }, missing);
   const checked = await run({ do: 'expectActionOutcome', actor: 'customer', outcome: 'refused' }, missing);
   assert.equal(checked.status, 'failed');
-  assert.match(checked.summary ?? '', /instead of refusing the caller/);
+  assert.match(checked.summary ?? '', /does not meet the access-error status contract/);
+  assert.doesNotMatch(checked.summary ?? '', /was accepted|instead of refus/);
   // A 404 names the operation the application interface requires, so a repair
   // round can create the missing endpoint instead of chasing authorization.
   assert.match(checked.summary ?? '', /the admin_restock reducer/);
@@ -225,7 +226,8 @@ test('generic client errors do not prove a named action was refused for authoriz
     const checked = await run({ do: 'expectActionOutcome', actor: 'customer',
       outcome: 'refused' }, provided);
     assert.equal(checked.status, 'failed');
-    assert.match(checked.summary ?? '', /instead of refusing the caller/);
+    assert.match(checked.summary ?? '', /does not meet the access-error status contract/);
+    assert.doesNotMatch(checked.summary ?? '', /was accepted|instead of refus/);
   }
 });
 
@@ -657,7 +659,8 @@ test('only an explicit authorization response proves a replay refusal', async ()
     const provided = services(new Map<string, unknown>([['customer', actor]]));
     const checked = await run({ do: 'expectReplayRejected', actor: 'customer' }, provided);
     assert.equal(checked.status, 'failed');
-    assert.match(checked.summary ?? '', /instead of a refusal/);
+    assert.match(checked.summary ?? '', /does not meet the access-error status contract/);
+    assert.doesNotMatch(checked.summary ?? '', /was accepted|instead of refus/);
     assert.equal(provided.verification.length, 0);
   }
 });
@@ -698,7 +701,8 @@ test('only an explicit authorization response proves a forged-write refusal', as
     const provided = services(new Map<string, unknown>([['attacker', actor]]));
     const checked = await run({ do: 'expectForgeryRejected', actor: 'attacker' }, provided);
     assert.equal(checked.status, 'failed');
-    assert.match(checked.summary ?? '', /instead of a refusal/);
+    assert.match(checked.summary ?? '', /does not meet the access-error status contract/);
+    assert.doesNotMatch(checked.summary ?? '', /was accepted|instead of refus/);
     assert.equal(provided.verification.length, 0);
   }
 });

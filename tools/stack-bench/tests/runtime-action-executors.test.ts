@@ -252,42 +252,64 @@ test('a database without the stock interface is an application failure that keep
 
 });
 
-test('direct MongoDB writes use public stock IDs and the container selected by the run lease', async () => {
-  const calls: Array<readonly [string, readonly string[]]> = [];
-  const stock = { item_id: 0, warehouse_id: 7, quantity: 1 };
-  const capability = createDatabaseWriteCapability({
-    backend: 'mongodb',
-    databaseLease: { resources: { database: 'bench',
-      container: { name: 'leased-mongodb', id: 'mongodb-id' } } },
-    expand: value => value,
-    exec: (command, args) => {
-      calls.push([command, args]);
-      if (args[0] === 'inspect') return 'mongodb-id\n';
-      let output = '';
-      runInNewContext(args.at(-1)!, {
-        db: {
-          getCollectionNames: () => ['item', 'warehouse', 'stock'],
-          item: { findOne: () => ({ id: stock.item_id, _id: 'generated-item-object-id' }) },
-          warehouse: { findOne: () => ({ id: stock.warehouse_id, _id: 'generated-warehouse-object-id' }) },
-          stock: { updateOne: (query: { $or: Array<{ item_id?: number; warehouse_id?: number }> },
-            update: { $set: { quantity: number } }) => {
-            const matched = query.$or.some(row => row.item_id === stock.item_id
-              && row.warehouse_id === stock.warehouse_id);
-            if (matched) stock.quantity = update.$set.quantity;
-            return { matchedCount: matched ? 1 : 0 };
-          } },
-        },
-        print: (value: string) => { output += value + '\n'; },
-      });
-      return output;
-    },
-  });
-  const result = await run({ do: 'dbSetStock', item: 'Desk Lamp', warehouse: 'East',
-    quantity: 5, settleMs: 0 }, services(new Map(), { databaseWrite: capability }));
-  assert.equal(result.status, 'passed');
-  assert.equal(stock.quantity, 5);
-  assert.deepEqual(calls.find(([, args]) => args.includes('mongosh'))?.[1].slice(0, 2),
-    ['exec', 'mongodb-id']);
+test('direct MongoDB writes preserve IDs and reject ambiguous stock rows', async () => {
+  class ObjectId {
+    readonly _bsontype = 'ObjectId';
+    constructor(readonly value: string) {}
+    toHexString(): string { return this.value; }
+  }
+  const hex = '0123456789abcdef01234567';
+  const bson = new ObjectId(hex);
+  const equal = (a: unknown, b: unknown): boolean => a instanceof ObjectId && b instanceof ObjectId
+    ? a.value === b.value : a === b;
+  for (const [parent, reference] of [[0, 0], [bson, hex], [hex, bson], [bson, bson]] as const) {
+  for (const duplicates of ['', 'stock', 'parent']) {
+    const calls: Array<readonly [string, readonly string[]]> = [];
+    const stock = { _id: 'stock-id', item_id: reference, warehouse_id: 7, quantity: 1 };
+    const cursor = (rows: unknown[]) => ({ limit: () => ({ toArray: () => rows }) });
+    const capability = createDatabaseWriteCapability({
+      backend: 'mongodb',
+      databaseLease: { resources: { database: 'bench',
+        container: { name: 'leased-mongodb', id: 'mongodb-id' } } },
+      expand: value => value,
+      exec: (command, args) => {
+        calls.push([command, args]);
+        if (args[0] === 'inspect') return 'mongodb-id\n';
+        let output = '';
+        runInNewContext(args.at(-1)!, {
+          ObjectId,
+          db: {
+            getCollectionNames: () => ['item', 'warehouse', 'stock'],
+            item: { find: () => cursor(Array(duplicates === 'parent' ? 2 : 1)
+              .fill({ id: parent, _id: 'generated-item-object-id' })) },
+            warehouse: { find: () => cursor([{ id: stock.warehouse_id, _id: 'generated-warehouse-object-id' }]) },
+            stock: {
+              find: (query: { $or: Array<{ item_id?: { $in: unknown[] }; warehouse_id?: { $in: unknown[] } }> }) => {
+                const matched = query.$or.some(row => row.item_id?.$in.some(id => equal(id, stock.item_id))
+                  && row.warehouse_id?.$in.includes(stock.warehouse_id));
+                return cursor(matched ? (duplicates === 'stock' ? [stock, stock] : [stock]) : []);
+              },
+              updateOne: (query: { _id: string }, update: { $set: { quantity: number } }) => {
+                assert.equal(query._id, stock._id);
+                stock.quantity = update.$set.quantity;
+                return { matchedCount: 1 };
+              },
+            },
+          },
+          quit: () => { throw Object.assign(new Error('refused'), { stdout: output }); },
+          print: (value: string) => { output += value + '\n'; },
+        });
+        return output;
+      },
+    });
+    const result = await run({ do: 'dbSetStock', item: 'Desk Lamp', warehouse: 'East',
+      quantity: 5, settleMs: 0 }, services(new Map(), { databaseWrite: capability }));
+    assert.equal(result.status, duplicates ? 'harness_failure' : 'passed');
+    assert.equal(stock.quantity, duplicates ? 1 : 5);
+    assert.deepEqual(calls.find(([, args]) => args.includes('mongosh'))?.[1].slice(0, 2),
+      ['exec', 'mongodb-id']);
+    }
+  }
 });
 
 test('MongoDB auth and command failures cannot be scored as missing stock data', async () => {
