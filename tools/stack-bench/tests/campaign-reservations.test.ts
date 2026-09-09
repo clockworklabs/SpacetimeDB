@@ -11,7 +11,7 @@ import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import { borrowCampaignReservation, closeCampaignDelegation, delegateCampaignReservation,
   releaseCampaignReservation, runCampaignAdmission } from '../src/campaigns/campaign-admission.js';
 import { backendResourceLockKeys, claimBackendResources, createBackendLease, readBackendLease,
-  releaseResourceLocks, verifyResourceLocks, writeBackendLease } from '../src/runtime/backend-lease.js';
+  releaseResourceLocks, runResourceLockKeys, verifyResourceLocks, writeBackendLease } from '../src/runtime/backend-lease.js';
 
 const linux = { skip: process.platform !== 'linux' ? 'Kernel flock requires Linux' : false };
 
@@ -114,10 +114,10 @@ test('dynamic admission skips live legacy capacity and port reservations without
   try {
     const keys = Array.from({ length: 9 }, (_, index) => [
       `capacity:runner:${index}`,
-      ...plan.stacks.flatMap(stack => backendResourceLockKeys(
-        createBackendLease({ runId: 'unused', backend: stack.id, track: track.name, runIndex: index,
-          serverUri: stack.id === 'spacetime' ? `http://127.0.0.1:${3210 + index}` : null }),
-        portsFor(track, stack.id, index))),
+      ...plan.stacks.flatMap(stack => runResourceLockKeys({
+        backend: stack.id, track: track.name, runIndex: index,
+        serverUri: stack.id === 'spacetime' ? `http://127.0.0.1:${3210 + index}` : null,
+        ports: portsFor(track, stack.id, index) })),
     ]).flat();
     claimBackendResources(join(root, 'legacy.json'), legacy, { root: locks, keys });
     const before = legacy.resources.locks.map(lock => readFileSync(lock.path, 'utf8'));
