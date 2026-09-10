@@ -186,6 +186,7 @@ fn status_requires_the_exact_running_generation_without_http_readiness() {
     let mut status = ContainerStatus {
         database_identity: Identity::ZERO,
         published: true,
+        configuration: None,
         endpoints: EndpointStatus::Pending,
         operational: Some(OperationalState {
             desired_revision: spacetimedb_lib::Hash::from_byte_array([0; 32]),
@@ -202,6 +203,7 @@ fn status_requires_the_exact_running_generation_without_http_readiness() {
                 applied_env_generation: None,
                 exit_code: None,
                 oom_killed: false,
+                usage: None,
                 condition: Condition::None,
             }),
         }),
@@ -367,6 +369,7 @@ async fn status_uses_authenticated_explicit_loopback_and_pins_the_resolved_ident
     let status = ContainerStatus {
         database_identity: identity,
         published: true,
+        configuration: None,
         operational: None,
         endpoints: EndpointStatus::Pending,
     };

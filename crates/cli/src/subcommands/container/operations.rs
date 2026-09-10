@@ -266,11 +266,40 @@ fn print_status(status: &ContainerStatus) {
     if !status.published {
         println!("Container: none published");
     }
+    if let Some(configuration) = &status.configuration {
+        println!("Published image: {}", configuration.image_digest);
+        let limits = &configuration.resources;
+        println!(
+            "Published limits: {} millicores, {} memory bytes, {} scratch bytes, {} tasks",
+            limits.cpu_millicores, limits.memory_bytes, limits.scratch_bytes, limits.pids_max
+        );
+    }
     if let Some(state) = &status.operational {
         println!("Desired: {:?} (generation {})", state.desired_state, state.generation);
         println!("Condition: {:?}", state.condition);
         if let Some(instance) = &state.current_instance {
             println!("Observed: {:?}", instance.state);
+            if let Some(usage) = &instance.usage {
+                println!(
+                    "Reported usage: sample {}{}",
+                    usage.sample_sequence,
+                    if usage.final_report { " (final totals)" } else { "" }
+                );
+                let totals = &usage.cumulative;
+                println!(
+                    "CPU: {} ns; memory: {} byte-seconds; scratch: {} byte-seconds; sent: {} bytes; received: {} bytes",
+                    totals.cpu_nanoseconds,
+                    totals.memory_byte_seconds,
+                    totals.scratch_byte_seconds,
+                    totals.transmitted_bytes,
+                    totals.received_bytes
+                );
+                if usage.measurement_interrupted {
+                    println!("Measurement interrupted by host restart; totals include known usage only.");
+                }
+            } else {
+                println!("Usage: not reported for this generation");
+            }
             if let Some(environment) = &instance.applied_env_generation {
                 println!("Environment generation: {environment}");
             }

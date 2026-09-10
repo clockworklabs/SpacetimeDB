@@ -2,6 +2,9 @@
 use crate::{container::endpoints::ContainerEndpoint, deployment::uuid_json, Hash, Identity, Uuid};
 use serde::{Deserialize, Serialize};
 
+mod resources;
+pub use resources::{ContainerConfiguration, ReportedUsage, ResourceLimits, UsageTotals};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ContainerAction {
@@ -91,6 +94,9 @@ pub struct CurrentInstance {
     pub exit_code: Option<i32>,
     pub oom_killed: bool,
     pub condition: Condition,
+    /// Last accepted cumulative measurement for this exact generation. Missing
+    /// or not-yet-reported usage is None, never manufactured zero consumption.
+    pub usage: Option<ReportedUsage>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -123,6 +129,9 @@ pub enum EndpointStatus {
 pub struct ContainerStatus {
     pub database_identity: Identity,
     pub published: bool,
+    /// Latest published image and limits, which may differ from a draining
+    /// instance. No argv, environment, credentials, or private node addresses.
+    pub configuration: Option<ContainerConfiguration>,
     pub operational: Option<OperationalState>,
     /// Address discovery is independent of readiness and remains available
     /// while stopped. Pending never means an empty declaration.
