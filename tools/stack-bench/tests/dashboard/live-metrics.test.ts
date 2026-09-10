@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseRunProgress } from '../../dashboard/dashboard-model.js';
 import { elapsed, executionClock } from '../../dashboard/public/format.js';
-import { compareCampaign, type MetricAttempt } from '../../dashboard/public/metrics.js';
+import { compareCampaign, outputSilentMinutes, type MetricAttempt } from '../../dashboard/public/metrics.js';
 import { recordedExecutionSpend } from '../../src/campaigns/campaign-inspection.js';
 import { runCostEvidence } from '../../src/evidence/cost-proof.js';
 
@@ -79,4 +79,14 @@ test('stopped attempts do not claim a previous grading or repair phase is live',
     assert.equal(parseRunProgress(log, { running: false, status: 'pending' }).phase, 'Waiting to start');
     assert.notEqual(parseRunProgress(log, { running: true, status: 'running' }).phase, 'Finished');
   }
+});
+
+test('activity warnings require agent evidence and exclude planned pauses', () => {
+  const now = Date.parse('2026-09-10T12:00:00Z');
+  const attempt = { status: 'running', activityUpdatedAt: '2026-09-10T11:40:00Z' };
+  assert.equal(outputSilentMinutes(attempt, now), 20);
+  assert.equal(outputSilentMinutes({ ...attempt, paused: true }, now), 0);
+  assert.equal(outputSilentMinutes({ ...attempt, status: 'completed' }, now), 0);
+  assert.equal(outputSilentMinutes({ status: 'running' }, now), 0);
+  assert.equal(outputSilentMinutes({ ...attempt, activityUpdatedAt: 'invalid' }, now), 0);
 });

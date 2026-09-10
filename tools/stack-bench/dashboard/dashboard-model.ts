@@ -8,7 +8,8 @@ import type { CompiledCampaignPlan }
 import type { CampaignAttemptState } from '../src/campaigns/campaign-scheduler.js';
 import { ARTIFACT_FILE } from '../src/evidence/artifacts.js';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
-import { campaignLockIsActive } from '../src/campaigns/campaign-lock.js';
+import { campaignLockIsActive, readCampaignLock } from '../src/campaigns/campaign-lock.js';
+import { readDepthPause } from '../src/campaigns/campaign-depth-pause.js';
 import { readCampaignState } from '../src/campaigns/campaign-scheduler.js';
 import { campaignFacts, inspectCampaignAttempt } from '../src/campaigns/campaign-inspection.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
@@ -279,6 +280,19 @@ export function parseRunProgress(log: string, { repairs = 0, running = true, sta
   };
 }
 
+export function attemptPause(plan: CompiledCampaignPlan, attempt: CampaignAttemptState,
+  directory: string) {
+  const depth = plan.definition.mode.pauseAfterDepth;
+  const execution = attempt.executions.at(-1);
+  const lock = depth === undefined ? null : readCampaignLock(directory);
+  if (depth === undefined || !execution || !lock) return null;
+  return readDepthPause(contained(directory, execution.output, 'campaign execution'), {
+    directory, depth, campaignSha256: plan.contentSha256,
+    ownershipMarkerSha256: lock.ownershipMarkerSha256,
+    attemptId: attempt.plan.id, executionId: execution.id,
+  });
+}
+
 function summarizeAttempt(plan: CompiledCampaignPlan, attempt: CampaignAttemptState,
   campaignDirectory: string, repairs: number, { includeLog = false }: {
     includeLog?: boolean;
@@ -298,10 +312,14 @@ function summarizeAttempt(plan: CompiledCampaignPlan, attempt: CampaignAttemptSt
   }
   const progress = parseRunProgress(log, { repairs, running: attempt.status === 'running',
     status: attempt.status, dependency: plan.definition.mode.id === 'dependency' });
+  const pause = attemptPause(plan, attempt, campaignDirectory);
+  const paused = attempt.status === 'running' && pause?.resumedAt === null;
+  if (paused) progress.phase = `Paused at L${pause.depth}`;
   if (inspected.result?.score) progress.latestScore = inspected.result.score;
   return {
     ...inspected,
     progress,
+    paused,
     logUpdatedAt,
     ...(includeLog ? { log: log.split(/\r?\n/).slice(-160).join('\n') } : {}),
   };

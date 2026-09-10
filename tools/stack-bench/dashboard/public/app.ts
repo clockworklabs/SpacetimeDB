@@ -60,6 +60,12 @@ let playing = 0;
 let submitting = false;
 let loading = false;
 let loadVersion = 0;
+let loadTask: Promise<void> | null = null;
+let loadController = new AbortController();
+let refreshPending = false;
+let pendingNavigation = false;
+let pendingKeys: Set<string> | null = new Set();
+let pendingOverview = false;
 
 function route(): Route {
   const url = new URL(location.href);
@@ -82,7 +88,8 @@ function route(): Route {
 async function read<Payload>(url: string): Promise<Payload | null> {
   const version = loadVersion;
   try {
-    const response = await fetch(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(30_000) });
+    const response = await fetch(url, { headers: { accept: 'application/json' },
+      signal: AbortSignal.any([loadController.signal, AbortSignal.timeout(30_000)]) });
     if (!response.ok) {
       const failure = await response.json().catch(() => ({})) as { error?: string };
       if (version === loadVersion) state.readError = failure.error ?? `Request failed (${response.status}).`;
@@ -102,16 +109,18 @@ function attemptUrl(current: Route, suffix: string): string {
 }
 
 async function readLog(current: Route): Promise<void> {
+  const version = loadVersion;
   if (state.log.attempt !== current.attempt) state.log = { attempt: current.attempt, text: '', offset: 0 };
   try {
-    const response = await fetch(attemptUrl(current, `log?from=${state.log.offset}`), { signal: AbortSignal.timeout(30_000) });
+    const response = await fetch(attemptUrl(current, `log?from=${state.log.offset}`),
+      { signal: AbortSignal.any([loadController.signal, AbortSignal.timeout(30_000)]) });
     if (!response.ok) throw new Error('Log request failed');
     const text = await response.text();
-    if (state.log.attempt !== current.attempt) return;
+    if (version !== loadVersion || state.log.attempt !== current.attempt) return;
     state.log.text += text;
     state.log.offset = Number(response.headers.get('x-stack-bench-log-offset') ?? state.log.offset);
   } catch {
-    if (route().attempt === current.attempt) state.readError = 'Could not load the run log. Try again.';
+    if (version === loadVersion) state.readError = 'Could not load the run log. Try again.';
   }
 }
 
@@ -241,25 +250,47 @@ function render(): void {
   }
 }
 
-async function load(navigation = false): Promise<void> {
-  if (loading && !navigation) return;
-  const version = ++loadVersion;
-  loading = navigation;
-  state.readError = '';
-  if (navigation) render();
-  try {
-    await loadData(version);
-  } catch {
-    if (version === loadVersion) state.readError = 'Could not load this page. Try again.';
-  } finally {
-    if (version === loadVersion) {
-      loading = false;
-      render();
-    }
+function load(navigation = false, changedKey?: string, liveOnly = false): Promise<void> {
+  refreshPending = true;
+  pendingNavigation ||= navigation;
+  pendingOverview ||= !liveOnly;
+  if (changedKey) pendingKeys?.add(changedKey);
+  else pendingKeys = null;
+  if (navigation) {
+    ++loadVersion;
+    loadController.abort();
   }
+  if (loadTask) return loadTask;
+  if (document.hidden && !navigation) return Promise.resolve();
+  loadTask = (async () => {
+    while (refreshPending && (!document.hidden || pendingNavigation)) {
+      const showLoading = pendingNavigation;
+      const keys = pendingKeys;
+      const refreshOverview = pendingOverview;
+      refreshPending = pendingNavigation = false;
+      pendingOverview = false;
+      pendingKeys = new Set();
+      const version = ++loadVersion;
+      loadController = new AbortController();
+      loading = true;
+      state.readError = '';
+      if (showLoading) render();
+      try {
+        await loadData(version, keys, refreshOverview);
+      } catch {
+        if (version === loadVersion) state.readError = 'Could not load this page. Try again.';
+      } finally {
+        if (version === loadVersion) {
+          loading = false;
+          render();
+        }
+      }
+    }
+  })().finally(() => { loadTask = null; });
+  return loadTask;
 }
 
-async function loadData(version: number): Promise<void> {
+async function loadData(version: number, changedKeys: Set<string> | null, refreshOverview: boolean): Promise<void> {
   const current = route();
   const plansRequest = current.plans ? read<DashboardPlan[]>('/api/plans').then(plans => {
     if (plans && version === loadVersion) {
@@ -268,7 +299,7 @@ async function loadData(version: number): Promise<void> {
       render();
     }
   }) : null;
-  if ((!current.key && !current.plans) || !state.csrfToken) {
+  if ((!current.key && !current.plans && refreshOverview) || !state.csrfToken) {
     const overview = await read<{ campaigns: OverviewEntry[]; canStart: boolean;
       csrfToken: string; }>('/api/overview');
     if (version !== loadVersion) return;
@@ -287,12 +318,14 @@ async function loadData(version: number): Promise<void> {
     return;
   }
   if (!current.key) {
-    for (const campaign of state.overview.filter(entry => entry.status === 'running')) {
+    const campaigns = state.overview.filter(entry => entry.status === 'running'
+      && (!changedKeys || changedKeys.has(entry.key) || !state.sheets.has(entry.key)));
+    await Promise.all(campaigns.map(async campaign => {
       const sheet = await read<CampaignSheet>(`/api/campaigns/${encodeURIComponent(campaign.key)}`);
       if (version !== loadVersion) return;
       if (sheet) state.sheets.set(campaign.key, sheet);
       render();
-    }
+    }));
     return;
   }
   const sheet = await read<CampaignSheet>(`/api/campaigns/${encodeURIComponent(current.key)}`);
@@ -314,11 +347,10 @@ async function loadData(version: number): Promise<void> {
     if (timeBudget.grants.some(grant => grant.request.grantId === state.timeGrantIds.get(current.attempt)
       && grant.disposition !== 'pending')) state.timeGrantIds.delete(current.attempt);
   }
-  if (current.tab === 'checks' && !state.checks.has(current.attempt)) {
+  if (current.tab === 'checks') {
     const checks = await read<AttemptChecks>(attemptUrl(current, 'checks'));
     if (checks) state.checks.set(current.attempt, checks);
-  } else if ((current.tab === 'screenshots' || current.tab === 'files')
-    && !state.evidence.has(current.attempt)) {
+  } else if (current.tab === 'screenshots' || current.tab === 'files') {
     const evidence = await read<AttemptPackage>(attemptUrl(current, 'package'));
     if (evidence) state.evidence.set(current.attempt, evidence);
   } else if (current.tab === 'transcript') {
@@ -352,18 +384,26 @@ function subscribe(): void {
   const changed = (event: MessageEvent<string>): void => {
     const current = route();
     const message = JSON.parse(event.data) as { key?: string; attemptId?: string };
-    if (current.key && message.key !== current.key) return;
-    if (message.attemptId && message.attemptId !== current.attempt) return;
-    if (message.attemptId) state.checks.delete(message.attemptId);
-    void load();
+    const ids = message.attemptId ? [message.attemptId]
+      : state.sheets.get(message.key ?? '')?.stacks.flatMap(stack => stack.attempts.map(attempt => attempt.id)) ?? [];
+    for (const id of ids) {
+      // Keep the visible tab stable until its replacement data arrives.
+      if (message.key === current.key && id === current.attempt) continue;
+      state.checks.delete(id);
+      state.evidence.delete(id);
+    }
+    if (current.plans || (current.key && message.key !== current.key)) return;
+    if (current.attempt && message.attemptId && message.attemptId !== current.attempt) return;
+    void load(false, message.key);
   };
   source.addEventListener('campaign', changed);
   source.addEventListener('log', changed);
   source.addEventListener('open', () => {
     if (fallback) clearInterval(fallback);
     fallback = 0;
+    void load();
   });
-  // Only while the stream is down: a served dashboard that is up pays nothing.
+  // Recover missed campaign changes while the stream is down.
   source.addEventListener('error', () => {
     fallback ||= window.setInterval(() => void load(), FALLBACK_MS);
   });
@@ -540,13 +580,18 @@ window.setInterval(() => {
   }
 }, 1000);
 window.addEventListener('popstate', () => void load(true));
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) void load();
+});
 subscribe();
 void load(true);
 
 let transcriptLoading = false;
+let transcriptReload = false;
 async function readTranscript(force = false): Promise<void> {
   const current = route();
-  if (current.tab !== 'transcript' || !current.attempt || transcriptLoading) return;
+  if (document.hidden || current.tab !== 'transcript' || !current.attempt) return;
+  if (transcriptLoading) { transcriptReload ||= force; return; }
   if (state.transcript.attempt !== current.attempt) state.transcript = {
     attempt: current.attempt, session: '', before: undefined, page: null };
   const pane = document.querySelector<HTMLElement>('.transcript');
@@ -559,10 +604,25 @@ async function readTranscript(force = false): Promise<void> {
     if (selected.before !== undefined) query.set('before', String(selected.before));
     const page = await read<TranscriptPage>(attemptUrl(current, `transcript?${query}`));
     if (page && state.transcript === selected) selected.page = page;
-  } finally { transcriptLoading = false; }
+  } finally {
+    transcriptLoading = false;
+    if (transcriptReload) {
+      transcriptReload = false;
+      await readTranscript(true);
+    }
+  }
 }
 setInterval(() => {
-  if (route().tab === 'transcript' && state.transcript.before === undefined) void readTranscript().then(render);
+  if (document.hidden) return;
+  const current = route();
+  if (current.plans) return;
+  if (current.key && state.sheets.get(current.key)?.status === 'running') {
+    void load(false, current.key, true);
+  } else if (!current.key && state.overview.some(entry => entry.status === 'running')) {
+    void load(false, undefined, true);
+  } else if (current.tab === 'transcript' && state.transcript.before === undefined) {
+    void readTranscript().then(render);
+  }
 }, 5000);
 document.addEventListener('change', event => {
   const target = event.target;

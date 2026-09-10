@@ -4,7 +4,7 @@
 import type { SheetAttempt } from '../dashboard-views.js';
 import type { CostEvidence } from '../../src/evidence/cost-proof.js';
 import { statusWord } from '../../src/evidence/status-words.js';
-import { stallRounds } from './metrics.js';
+import { outputSilentMinutes } from './metrics.js';
 
 export { statusWord };
 
@@ -49,8 +49,10 @@ export function money(value: number | null | undefined): string {
   return `$${value.toFixed(2)}`;
 }
 
-export function spend(value: CostEvidence, pending = false): string {
-  return (value.status === 'unknown' ? 'Unknown'
+export function spend(value: CostEvidence, pending = false, liveSpend?: number): string {
+  return (liveSpend !== undefined
+    ? `<span title="Live estimate from reported response usage; final receipts replace this value">~${money(liveSpend)}</span>`
+    : value.status === 'unknown' ? 'Unknown'
     : `${value.status === 'upper-bound' ? '≤' : ''}${money(value.costUsd)}`)
     + (pending ? ' <span class="spend-pending dot a" role="img" aria-label="Cost still updating" title="Cost still updating"></span>' : '');
 }
@@ -74,7 +76,7 @@ export function elapsed(startedAt: string | null, completedAt: string | null,
 }
 
 export function executionClock(startedAt: string | null, completedAt: string | null): string {
-  return `<span${startedAt && !completedAt ? ` data-started-at="${esc(startedAt)}"` : ''}>${elapsed(startedAt, completedAt)}</span>`;
+  return `<span title="Elapsed wall time, including pauses"${startedAt && !completedAt ? ` data-started-at="${esc(startedAt)}"` : ''}>${elapsed(startedAt, completedAt)}</span>`;
 }
 
 export function since(value: string | null | undefined, now = Date.now()): string {
@@ -85,15 +87,10 @@ export function since(value: string | null | undefined, now = Date.now()): strin
   return `${Math.floor(minutes / 1440)}d`;
 }
 
-// The phase, with the stall the operator would otherwise find by diffing round
-// logs: three identical grades, or ten minutes without output.
 export function phrase(attempt: SheetAttempt, now = Date.now()): string {
   const parts = [attempt.phase];
-  const flat = stallRounds(attempt.climb);
-  if (flat) parts.push(`same score for ${flat} grades`);
-  const silent = attempt.status === 'running' && attempt.logUpdatedAt
-    ? Math.floor((now - Date.parse(attempt.logUpdatedAt)) / 60000) : 0;
-  if (silent >= SILENCE_MINUTES) parts.push(`no output for ${silent}m`);
+  const silent = outputSilentMinutes(attempt, now);
+  if (silent >= SILENCE_MINUTES) parts.push(`no agent activity observed for ${silent}m`);
   return parts.join(' · ');
 }
 

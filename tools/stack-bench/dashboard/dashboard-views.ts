@@ -1,4 +1,5 @@
 import { readAttemptTranscript } from './dashboard-transcript.js';
+import { liveCostTotal, liveTranscriptCost } from './dashboard-live-cost.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { sha256 } from '../src/evidence/provenance.js';
 import { closeSync, existsSync, fstatSync, openSync, readFileSync, readSync, readdirSync, statSync }
@@ -29,7 +30,7 @@ import { readCampaignState } from '../src/campaigns/campaign-scheduler.js';
 import { readProgressionState } from '../src/progression/progression-state.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 import { repairBudgetLimit, type RepairBudget } from '../src/progression/repair-plan.js';
-import { MAX_LOG_BYTES, contained, parseRunProgress, readTextTail,
+import { MAX_LOG_BYTES, contained, parseRunProgress, readTextTail, attemptPause,
   walkPublicExecutionArtifacts } from './dashboard-model.js';
 import type { DashboardArtifact } from './dashboard-model.js';
 import { attemptExcluded, attemptMetrics, attemptStalling, compareCampaign, median }
@@ -228,6 +229,7 @@ export interface ClimbPoint {
 }
 
 export interface SheetAttempt {
+  liveSpend?: number;
   id: string;
   repetition: number;
   status: string;
@@ -236,6 +238,8 @@ export interface SheetAttempt {
   excluded: string | null;
   continued: boolean;
   logUpdatedAt: string | null;
+  activityUpdatedAt?: string | null;
+  paused?: boolean;
   score: number | null;
   unaided: number | null;
   repairs: { used: number; budget: number };
@@ -266,6 +270,7 @@ export interface SheetQuestline {
 }
 
 export interface SheetStack {
+  liveSpend?: number;
   stack: string;
   costPerValidRun: number | null;
   selectedAttemptId: string | null;
@@ -398,6 +403,8 @@ function sheetAttemptView(plan: CompiledCampaignPlan, state: CampaignAttemptStat
   const logUpdatedAt = logPath && existsSync(logPath)
     ? new Date(statSync(logPath).mtimeMs).toISOString() : null;
   const running = inspected.status === 'running' && !interrupted;
+  const pause = attemptPause(plan, state, directory);
+  const paused = running && pause?.resumedAt === null;
   const repairLimit = repairBudgetLimit(plan.definition.repair, {
     features: plan.featureCatalog?.definition.nodes.length ?? 1,
     depths: plan.definition.levels.length,
@@ -414,8 +421,9 @@ function sheetAttemptView(plan: CompiledCampaignPlan, state: CampaignAttemptStat
       repetition: inspected.repetition,
       status: interrupted && inspected.status === 'running' ? 'interrupted' : inspected.status,
       phase: interrupted && inspected.status === 'running'
-        ? 'Controller stopped before completion' : progress.phase,
-      stalling: attemptStalling({ ...inspected, logUpdatedAt }, progress.series),
+        ? 'Controller stopped before completion' : paused ? `Paused at L${pause.depth}` : progress.phase,
+      stalling: attemptStalling({ ...inspected, paused }),
+      paused,
       excluded: attemptExcluded(inspected),
       continued: attemptContinued(inspected),
       logUpdatedAt,
@@ -445,7 +453,7 @@ export function campaignSheet(resultsRoot: string, key: string,
   const directory = campaignDirectory(resultsRoot, key);
   const reportPaths = ['report/report.html', 'report/export-manifest.json'];
   const fingerprint = campaignFingerprint(directory, [CAMPAIGN_FILE.plan, CAMPAIGN_FILE.state, ...reportPaths],
-    [ARTIFACT_FILE.run, ARTIFACT_FILE.progressionState, LOG_FILE]);
+    [ARTIFACT_FILE.run, ARTIFACT_FILE.progressionState, LOG_FILE, 'depth-pause.json']);
   const { plan, state } = readCampaignState(directory, { requireCurrentInputs: false });
   const interrupted = controllerInterrupted(controllerActive, directory, plan, state.status);
   const controllerOwner = readCampaignLock(directory)?.ownershipMarkerSha256 ?? null;
@@ -731,6 +739,7 @@ export interface ProgressionStep {
 }
 
 export interface ProgressionTrack {
+  liveCosts?: Array<{ completedAt: string; costUsd: number }>;
   stack: string;
   attemptId: string;
   updatedAt: string;
@@ -853,6 +862,87 @@ export function campaignProgression(resultsRoot: string, key: string): CampaignP
   };
   progressionCache.set(directory, { fingerprint, view });
   return view;
+}
+
+type LiveCosts = Map<string, Awaited<ReturnType<typeof liveTranscriptCost>>>;
+const liveCampaignCache = new Map<string, { at: number; pending: boolean; value: LiveCosts }>();
+
+function campaignLiveCosts(resultsRoot: string, key: string) {
+  const directory = campaignDirectory(resultsRoot, key);
+  const cached = liveCampaignCache.get(directory);
+  if (cached && (cached.pending || Date.now() - cached.at < 5000)) return cached.value;
+  const { state } = readCampaignState(directory, { requireCurrentInputs: false });
+  const entry = { at: Date.now(), pending: true, value: cached?.value ?? new Map() as LiveCosts };
+  const refresh = async () => {
+    const costs = new Map<string, Awaited<ReturnType<typeof liveTranscriptCost>>>();
+    await Promise.all(state.attempts.map(async attempt => {
+      const execution = attempt.executions.at(-1);
+      // Restored executions can carry older transcript history. Keep their saved
+      // receipts until response identities are available across that boundary.
+      if (attempt.status !== 'running' || attempt.executions.length !== 1 || !execution?.startedAt
+        || attempt.plan.agentAdapter !== 'claude-code') return;
+      try {
+        costs.set(attempt.plan.id, await liveTranscriptCost(contained(directory, execution.output, 'campaign execution'),
+          attempt.plan.agentAdapter, attempt.plan.pricing.rates, attempt.plan.model, execution.startedAt));
+      } catch { /* Missing, conflicting, or unpriced usage leaves saved receipts visible. */ }
+    }));
+    entry.value = costs;
+  };
+  if (liveCampaignCache.size >= 32) liveCampaignCache.delete(liveCampaignCache.keys().next().value!);
+  liveCampaignCache.set(directory, entry);
+  void refresh().catch(() => { entry.value = new Map(); }).finally(() => {
+    entry.pending = false;
+    entry.at = Date.now();
+  });
+  return entry.value;
+}
+
+export function campaignLiveSheet(resultsRoot: string, key: string): CampaignSheet {
+  const sheet = structuredClone(campaignSheet(resultsRoot, key));
+  const live = campaignLiveCosts(resultsRoot, key);
+  for (const stack of sheet.stacks) {
+    for (const attempt of stack.attempts) {
+      if (attempt.status !== 'running') continue;
+      const snapshot = live.get(attempt.id);
+      if (snapshot?.activityUpdatedAt) {
+        attempt.activityUpdatedAt = snapshot.activityUpdatedAt;
+        attempt.stalling = attemptStalling(attempt);
+      }
+      const total = snapshot?.costs.at(-1)?.costUsd;
+      attempt.liveSpend = liveCostTotal(attempt.status, total, attempt.spend.costUsd);
+    }
+    if (stack.attempts.some(attempt => attempt.liveSpend !== undefined)
+      && stack.attempts.every(attempt => attempt.liveSpend !== undefined || attempt.spend.status === 'exact')) {
+      stack.liveSpend = stack.attempts.reduce((sum, attempt) => sum + (attempt.liveSpend ?? attempt.spend.costUsd!), 0);
+    }
+  }
+  return sheet;
+}
+
+export function campaignLiveProgression(resultsRoot: string, key: string): CampaignProgression | null {
+  const progression = structuredClone(campaignProgression(resultsRoot, key));
+  if (!progression) return null;
+  const live = campaignLiveCosts(resultsRoot, key);
+  const sheet = campaignSheet(resultsRoot, key);
+  const running = new Set(sheet.stacks.flatMap(stack =>
+    stack.attempts.filter(attempt => attempt.status === 'running').map(attempt => attempt.id)));
+  for (const stack of sheet.stacks) for (const attempt of stack.attempts) {
+    const snapshot = live.get(attempt.id);
+    if (running.has(attempt.id) && snapshot?.costs.length
+      && !progression.stacks.some(track => track.attemptId === attempt.id)) {
+      progression.stacks.push({ stack: stack.stack, attemptId: attempt.id,
+        updatedAt: snapshot.activityUpdatedAt ?? sheet.updatedAt, steps: [], costs: [] });
+    }
+  }
+  for (const track of progression.stacks) {
+    if (!running.has(track.attemptId)) continue;
+    const snapshot = live.get(track.attemptId);
+    if (snapshot?.costs.length && liveCostTotal('running', snapshot.costs.at(-1)!.costUsd,
+      track.costs?.at(-1)?.cost.costUsd ?? null) !== undefined) {
+      track.liveCosts = snapshot.costs;
+    }
+  }
+  return progression;
 }
 
 export function attemptTranscript(resultsRoot: string, key: string, attemptId: string,

@@ -132,6 +132,13 @@ Paid adapters share the coding runner and cost controls. Select Claude, OpenAI,
 or OpenRouter through the [appliance credential guide](appliance/README.md#openai-credentials).
 Current grading profiles are provisional until their qualification gates pass.
 
+The dashboard refreshes visible running campaigns every five seconds and follows
+saved evidence events. For single-execution Claude Code attempts, `~$` marks a
+live estimate from completed response usage at the plan's pinned rates. Final
+receipts replace that estimate. Unsupported or incomplete usage keeps the saved
+cost visible. Live estimates do not enter scores, reports, or budget enforcement.
+Planned depth holds show their paused state; elapsed time includes those holds.
+
 ## Ownership
 
 - `tracks/` owns product requests, feature definitions, checks, and scenarios.

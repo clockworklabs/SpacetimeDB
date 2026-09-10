@@ -13,7 +13,7 @@ import { contained, discoverPlans, readCampaignArtifactBody,
   readJsonLines, resolveCampaignArtifact, summarizeCampaign,
 } from './dashboard-model.js';
 import type { DashboardPlan } from './dashboard-model.js';
-import { attemptTranscript, attemptChecks, attemptLogSlice, attemptPackage, campaignProgression, campaignSheet,
+import { attemptTranscript, attemptChecks, attemptLogSlice, attemptPackage, campaignLiveProgression, campaignLiveSheet,
   overviewSummary } from './dashboard-views.js';
 import { watchCampaigns } from './dashboard-events.js';
 import type { CampaignChange, CampaignWatcher } from './dashboard-events.js';
@@ -496,9 +496,9 @@ export function createDashboardServer(options: DashboardServerOptions) {
           return json(response, 400, { error: 'The log offset must be a whole number of bytes.' });
         }
         try {
-          if (!rest) return json(response, 200, campaignSheet(resultsRoot, key));
+          if (!rest) return json(response, 200, await campaignLiveSheet(resultsRoot, key));
           if (rest === 'progression') {
-            const progression = campaignProgression(resultsRoot, key);
+            const progression = await campaignLiveProgression(resultsRoot, key);
             return progression
               ? json(response, 200, progression)
               : json(response, 404, { error: 'Progression is recorded for dependency campaigns only.' });
@@ -508,7 +508,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
             if (before !== null && (!/^\d+$/.test(before) || !Number.isSafeInteger(Number(before)))) {
               return json(response, 400, { error: 'Invalid transcript offset' });
             }
-            return json(response, 200, attemptTranscript(resultsRoot, key, attemptId,
+            return json(response, 200, await attemptTranscript(resultsRoot, key, attemptId,
               url.searchParams.get('session') ?? '', before === null ? undefined : Number(before)));
           }
           if (attemptRoute?.[2] === 'checks') {

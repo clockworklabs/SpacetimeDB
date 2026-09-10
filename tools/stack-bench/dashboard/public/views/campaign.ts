@@ -205,7 +205,7 @@ export function campaignPage(input: CampaignPageInput): string {
     Excluded: 'Attempts omitted from comparison because their evidence is invalid or incomplete. Their costs appear only in total spend and individual run details.',
     Time: 'Median duration of usable completed attempts. Live attempt status appears below.',
     'Cost per valid run': 'Mean cost of completed runs with valid comparison results. Excludes invalid and unfinished runs. Valid does not mean every check passed. All included runs must have exact cost evidence and the same comparison scope.',
-    'Total spend': 'Includes excluded attempts. During a run, this includes only saved cost receipts. Includes saved repair checkpoints in the active depth. Work since the last checkpoint is not yet counted. Unknown is not zero. Costs use the pinned price snapshot.',
+    'Total spend': 'Includes excluded attempts. Live estimates use reported response usage. Final receipts replace estimates. Unknown is not zero. Costs use the pinned price snapshot.',
   };
   const row = (label: string, render: (stack: SheetStack) => string): string =>
     `<tr><th scope="row" class="k">${metricLabel(label, help[label])}</th>${cell(render)}</tr>`;
@@ -233,7 +233,7 @@ export function campaignPage(input: CampaignPageInput): string {
     + row('Regressions', stack => value(num(stack.regressions)))
     + row('Time', stack => value(duration(stack.timeSec)))
     + repetitions
-    + row('Total spend', stack => value(spend(stack.spend, stack.spendPending)))
+    + row('Total spend', stack => value(spend(stack.spend, stack.spendPending, stack.liveSpend)))
     + '</tbody></table></div>'
     + (sheet.mode === 'dependency' ? progressChart(sheet, input.progression, input.chart, input.view, input.hiddenChartRuns, input.unit) : '')
     + '<h3>Runs</h3>'
@@ -242,7 +242,7 @@ export function campaignPage(input: CampaignPageInput): string {
       const href = `/c/${encodeURIComponent(sheet.key)}/a/${encodeURIComponent(attempt.id)}`;
       return `<tr><td><a href="${href}" title="${esc(attempt.variant)}">${esc(stackLabel(stack.stack))} · Rep ${attempt.repetition}</a></td>`
         + `<td>${attempt.completion ? ratio(attempt.completion.passed, attempt.completion.selected) : DASH}</td>`
-        + `<td title="Saved cost receipts through the latest grade checkpoint, including repairs. Work since that checkpoint is not yet counted.">${spend(attempt.spend, attempt.spendPending)}</td>`
+        + `<td title="Live estimates use reported response usage; final receipts replace estimates.">${spend(attempt.spend, attempt.spendPending, attempt.liveSpend)}</td>`
         + `<td>${ratio(attempt.repairs.used, attempt.repairs.budget)}</td>`
         + `<td>${attempt.status === 'running' || attempt.executionCompletedAt ? executionClock(attempt.executionStartedAt, attempt.executionCompletedAt) : DASH}</td>`
         + `<td class="run-status">${attempt.excluded

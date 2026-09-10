@@ -18,7 +18,7 @@ import { claimNextAttempt, createCampaignState, finishCampaignExecution }
 import { canonicalDefinitionJson } from '../../src/composition/definition-plan.js';
 import { attemptChecks, attemptLogSlice, attemptPackage, campaignProgression, campaignSheet,
   overviewSummary } from '../../dashboard/dashboard-views.js';
-import { parseRunProgress,
+import { parseRunProgress, attemptPause,
   discoverCampaigns, discoverPlans, readCampaignArtifactBody, readJsonLines,
   resolveCampaignArtifact, summarizeCampaign,
 } from '../../dashboard/dashboard-model.js';
@@ -819,6 +819,38 @@ test('attempt evidence is fetched per attempt, not per campaign', t => {
   const tail = attemptLogSlice(resultsRoot, 'attempt-run', attemptId, head.offset);
   assert.equal(tail.text, '');
   assert.equal(tail.offset, head.size);
+});
+
+test('dashboard pause state validates the receipt and observes resume changes', t => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-pause-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const plan = dependencyPlan();
+  const claimed = claimNextAttempt(createCampaignState(plan), { admissionId: 'pause-test' });
+  assert.ok(claimed.claim);
+  plan.definition.mode.pauseAfterDepth = 2;
+  const attempt = claimed.state.attempts.find(item => item.plan.id === claimed.claim!.attempt.id)!;
+  const marker = 'c'.repeat(64);
+  writeFileSync(join(root, '.campaign.lock.json'), JSON.stringify({ version: 2,
+    campaignId: plan.id, campaignSha256: plan.contentSha256, ownerPid: process.pid,
+    ownerInstance: 'dashboard-test', ownershipMarkerSha256: marker,
+    acquiredAt: new Date().toISOString() }));
+  const output = join(root, claimed.claim.output);
+  mkdirSync(output, { recursive: true });
+  assert.equal(attemptPause(plan, attempt, root), null);
+  const receipt = { campaignSha256: plan.contentSha256,
+    ownershipMarkerSha256: marker, depth: 2,
+    attemptId: attempt.plan.id, executionId: claimed.claim.executionId,
+    startedAt: 1000, resumedAt: null as number | null,
+    sourceSha256: 'a'.repeat(64), progressionSha256: 'b'.repeat(64) };
+  const path = join(output, 'depth-pause.json');
+  writeFileSync(path, JSON.stringify(receipt));
+  assert.equal(attemptPause(plan, attempt, root)?.resumedAt, null);
+  receipt.resumedAt = 2000;
+  writeFileSync(path, JSON.stringify(receipt));
+  assert.equal(attemptPause(plan, attempt, root)?.resumedAt, 2000);
+  receipt.attemptId = 'wrong-attempt';
+  writeFileSync(path, JSON.stringify(receipt));
+  assert.throws(() => attemptPause(plan, attempt, root), /attemptId changed/);
 });
 
 test('the sheet reports dependency submodes and questlines in definition order', t => {

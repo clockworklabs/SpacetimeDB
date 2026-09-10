@@ -8,8 +8,8 @@ import { CAMPAIGN_FILE } from '../src/campaigns/campaign-path.js';
 const DEBOUNCE_MS = 500;
 const POLL_MS = 5000;
 const LOG_FILE = 'process.stdout.log';
-const CAMPAIGN_FILES = [CAMPAIGN_FILE.plan, CAMPAIGN_FILE.state] as const;
-const EXECUTION_FILES = [ARTIFACT_FILE.run, ARTIFACT_FILE.progressionState] as const;
+const CAMPAIGN_FILES = [CAMPAIGN_FILE.plan, CAMPAIGN_FILE.state, 'depth-release.json'] as const;
+const EXECUTION_FILES = [ARTIFACT_FILE.run, ARTIFACT_FILE.progressionState, 'depth-pause.json'] as const;
 
 export interface CampaignChange {
   type: 'campaign' | 'log';

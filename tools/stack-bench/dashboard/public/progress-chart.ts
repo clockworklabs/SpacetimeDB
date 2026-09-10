@@ -12,9 +12,11 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
       .find(candidate => candidate.id === track.attemptId);
     const start = Date.parse(attempt?.executionStartedAt ?? '');
     if (!attempt || !Number.isFinite(start)) return [];
-    const observations = (metric === 'cost' ? (track.costs ?? []).map(point => ({
+    const observations = (metric === 'cost' ? (track.liveCosts?.map(point => ({
+      completedAt: point.completedAt, value: point.costUsd, upper: false,
+    })) ?? (track.costs ?? []).map(point => ({
       completedAt: point.completedAt, value: point.cost.costUsd, upper: point.cost.status === 'upper-bound',
-    })) : track.steps.map(step => ({ completedAt: step.completedAt,
+    }))) : track.steps.map(step => ({ completedAt: step.completedAt,
       value: (unit === 'features' ? step.featureCompletion : step.completion) == null ? null
         : (unit === 'features' ? step.featureCompletion! : step.completion!) * 100, upper: false }))).flatMap(step => {
       const elapsed = (Date.parse(step.completedAt ?? '') - start) / 1000;
@@ -32,7 +34,7 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
   const description = metric === 'distribution'
     ? `One point per completed run, grouped by provider. ${unitDescription} Running runs are omitted. Excluded runs are labelled.`
     : metric === 'cost'
-    ? 'Cumulative cost per run at saved grade checkpoints. Includes repairs and excluded runs. Subscription costs use the pinned API-equivalent price snapshot, not invoice charges. Unknown costs are not plotted; upper bounds are labelled. Time starts at the current execution. Lines connect recorded observations; intermediate values are not measured.'
+    ? 'Live cost estimates use reported response usage; final receipts replace estimates. Other runs show saved grade checkpoints. Includes repairs and excluded runs. Subscription costs use the pinned API-equivalent price snapshot, not invoice charges. Unknown costs are not plotted; upper bounds are labelled. Time starts at the current execution. Lines connect observations; intermediate values are not measured.'
     : `${unitDescription} Each point is a saved grade. Zero marks run start. Each line is one repetition; elapsed time starts at that run. Excluded runs are labelled. Lines can fall after regressions. Intermediate values are not measured.`;
   const heading = `<div class="section-heading progress-heading"><h3 title="${description}">${label}${metric === 'distribution' ? '' : ' over time'}</h3><div class="chart-options"><nav aria-label="Chart metric">`
     + (['completion', 'cost', 'distribution'] as const).map(option => `<a class="chip sm${metric === option ? ' on' : ''}"${metric === option ? ' aria-current="page"' : ''} href="?questlines=${encodeURIComponent(view)}&amp;chart=${option}&amp;unit=${unit}">${option === 'distribution' ? 'Distribution' : option === 'cost' ? 'Cost' : 'Completion'}</a>`).join('') + '</nav>'
@@ -62,7 +64,7 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
       + `<button type="button" class="chart-stack-toggle" data-chart-stack="${esc(stack.stack)}" aria-pressed="${shown === 0 ? 'false' : shown === stack.attempts.length ? 'true' : 'mixed'}" title="Show or hide all ${esc(stackLabel(stack.stack))} runs"><svg class="chart-swatch" width="16" height="12" aria-hidden="true"><path d="M0 6 H16" stroke="${color(stack.stack)}" stroke-width="3"/></svg>${esc(stackLabel(stack.stack))}</button>`
       + '<div class="chart-runs">' + stack.attempts.map(attempt => {
         const point = tracks.find(track => track.attempt.id === attempt.id)?.points.at(-1);
-        const label = `Rep ${attempt.repetition} · ${point ? valueLabel(point.value, point.upper, 0) : 'Pending'}${attempt.excluded ? ' · Excluded' : ''}`;
+        const label = `Rep ${attempt.repetition} · ${point ? (metric === 'cost' && attempt.liveSpend !== undefined ? '~' : '') + valueLabel(point.value, point.upper, 0) : 'Pending'}${attempt.excluded ? ' · Excluded' : ''}`;
         return `<button type="button" class="chart-run-toggle" data-chart-run="${esc(attempt.id)}" data-chart-series="${esc(attempt.id)}" aria-pressed="${!hidden.has(attempt.id)}" aria-label="${esc(stackLabel(stack.stack))} · ${esc(label)}" title="Show or hide ${esc(stackLabel(stack.stack))} repetition ${attempt.repetition}"><svg width="12" height="12" fill="${color(stack.stack)}" aria-hidden="true">${marker(attempt.repetition, 6, 6)}</svg>${esc(label)}</button>`;
       }).join('') + '</div></div>';
   }).join('') + '</div>';

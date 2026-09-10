@@ -166,7 +166,7 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log, tran
     + `<span>rep ${attempt.repetition}</span></h2></div>`
 
     + `<div class="figs">${figure('Completion', attempt.completion ? ratio(attempt.completion.passed, attempt.completion.selected) : DASH)}`
-    + figure('Spend', spend(attempt.spend, attempt.spendPending))
+    + figure('Spend', spend(attempt.spend, attempt.spendPending, attempt.liveSpend))
     + figure('Status', esc(phrase(attempt)), attempt.stalling ? 'now warn' : 'now')
     + figure('Weighted score', pct(attempt.score))
     + figure('Before repairs', pct(attempt.unaided))
@@ -180,7 +180,7 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log, tran
 }
 
 function transcriptPanel(page?: TranscriptPage | null): string {
-  if (!page) return '<div class="loading" role="status">Loading transcript…</div>';
+  if (!page) return '<div class="loading" role="status">Loading transcriptï¿½</div>';
   if (!page.sessions.length) return '<p class="summary-note">No transcript is available for this run yet.</p>';
   return '<div class="transcript-controls"><label>Session <select data-transcript-session aria-label="Transcript session">'
     + page.sessions.map(session => `<option value="${esc(session.id)}"${session.id === page.session ? ' selected' : ''}>${esc(session.label)}</option>`).join('')

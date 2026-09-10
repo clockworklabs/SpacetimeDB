@@ -8,7 +8,6 @@ import type { CheckCompletion } from '../../src/evidence/check-completion.js';
 // sheet and the browser read the same numbers from the same evidence.
 
 const EXCLUDED_OUTCOMES = new Set(['harness_failure', 'inconclusive', 'ungraded', 'contaminated']);
-const STALL_GRADES = 3;
 const SILENCE_MINUTES = 10;
 
 export interface MetricExecution {
@@ -22,6 +21,8 @@ export interface MetricAttempt {
   status: string;
   repetition?: number;
   logUpdatedAt?: string | null;
+  activityUpdatedAt?: string | null;
+  paused?: boolean;
   execution: MetricExecution | null;
   result: CampaignRunResult | null;
   dependency: DependencyProgress | null;
@@ -187,30 +188,15 @@ export function compareCampaign<Attempt extends MetricAttempt>(campaign: {
     comparable: priced.length > 1 && scopes.size === 1 };
 }
 
-// A trailing run of identical grades is the repair loop treading water.
-export function stallRounds(
-  series: readonly { score: number; max: number }[] | null | undefined): number {
-  if (!series || series.length < STALL_GRADES + 1) return 0;
-  const last = series.at(-1);
-  if (!last) return 0;
-  let flat = 0;
-  for (let index = series.length - 2; index >= 0; index--) {
-    const item = series[index];
-    if (item && item.score === last.score && item.max === last.max) flat += 1;
-    else break;
-  }
-  return flat >= STALL_GRADES ? flat : 0;
+export function outputSilentMinutes(attempt: Pick<MetricAttempt,
+  'status' | 'paused' | 'activityUpdatedAt'>, now = Date.now()): number {
+  if (attempt.status !== 'running' || attempt.paused || !attempt.activityUpdatedAt) return 0;
+  const updated = Date.parse(attempt.activityUpdatedAt);
+  return Number.isFinite(updated) ? Math.max(0, Math.floor((now - updated) / 60000)) : 0;
 }
 
-export function outputSilentMinutes(attempt: MetricAttempt, now = Date.now()): number {
-  if (attempt.status !== 'running' || !attempt.logUpdatedAt) return 0;
-  return Math.floor((now - Date.parse(attempt.logUpdatedAt)) / 60000);
-}
-
-// Stalling: three identical consecutive grades, or ten minutes of silence.
-export function attemptStalling(attempt: MetricAttempt,
-  series: readonly { score: number; max: number }[] | null | undefined,
+// Flag observed agent inactivity, never infer it from controller output or scores.
+export function attemptStalling(attempt: Pick<MetricAttempt, 'status' | 'paused' | 'activityUpdatedAt'>,
   now = Date.now()): boolean {
-  if (attempt.status !== 'running') return false;
-  return stallRounds(series) > 0 || outputSilentMinutes(attempt, now) >= SILENCE_MINUTES;
+  return outputSilentMinutes(attempt, now) >= SILENCE_MINUTES;
 }

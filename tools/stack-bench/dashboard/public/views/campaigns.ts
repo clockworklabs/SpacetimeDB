@@ -32,7 +32,7 @@ function lane(sheet: CampaignSheet, stack: string, attempt: SheetAttempt): strin
     + `<div class="lane-metric" title="Checks passed / all selected checks"><span class="lane-label">Completion</span>`
     + `<span class="big">${pct(attempt.completion?.rate == null ? null : 100 * attempt.completion.rate)}</span></div>`
     + `<div class="lane-metric" title="API-equivalent cost from recorded usage. Pending usage is not zero cost."><span class="lane-label">Cost</span>`
-    + `<span>${spend(attempt.spend, attempt.spendPending)}</span></div>`
+    + `<span>${spend(attempt.spend, attempt.spendPending, attempt.liveSpend)}</span></div>`
     + `<span class="phase${warn ? ' warn' : ''}">${esc(phrase(attempt))}</span></div>`;
 }
 
