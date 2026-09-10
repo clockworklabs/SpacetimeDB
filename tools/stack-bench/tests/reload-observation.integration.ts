@@ -64,11 +64,11 @@ test('order status probes reject negative labels that contain the expected statu
       const step = definition.features.flatMap(feature => feature.criteria.flatMap(criterion => criterion.steps))
         .find(step => step.testid === 'order-status' && step.value === status)!;
       assert(step);
-      for (const text of [status, `  ${status}  `, misleading]) {
+      for (const text of [status, `  ${status}  `, status!.toUpperCase(), misleading]) {
         await page.setContent(`<span id="order-status">${text}</span>`);
         const result = await executeAction(ACTION_REGISTRY, step.do, { ...step, within: 300 },
           { capabilities: { actors: { get: () => actor }, 'browser-observation': capability } });
-        assert.equal(result.status, text?.trim() === status ? 'passed' : 'failed', result.summary ?? undefined);
+        assert.equal(result.status, text?.trim().toLowerCase() === status ? 'passed' : 'failed', result.summary ?? undefined);
       }
     }
   } finally { await browser.close(); }

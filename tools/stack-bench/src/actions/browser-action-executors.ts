@@ -12,7 +12,11 @@ interface Locator {
   click(options?: unknown): Promise<void>;
   count(): Promise<number>;
   evaluate<Result>(callback: (element: { readonly tagName: string;
-    readonly options?: ArrayLike<{ value: string; label: string }> }) => Result): Promise<Result>;
+    readonly options?: ArrayLike<{ value: string; label: string }>;
+    readonly ownerDocument: { readonly defaultView: { readonly IntersectionObserver: new (
+      callback: (entries: Array<{ isIntersecting: boolean; intersectionRatio: number }>) => void,
+    ) => { observe(element: unknown): void; disconnect(): void } } };
+  }) => Result): Promise<Result>;
   fill(value: string): Promise<void>;
   filter(options: unknown): Locator;
   first(): Locator;
@@ -27,6 +31,7 @@ interface Locator {
   allInnerTexts(): Promise<string[]>;
   press(key: string): Promise<void>;
   selectOption(value: string | { readonly label: string }): Promise<unknown>;
+  scrollIntoViewIfNeeded(options?: unknown): Promise<void>;
   type(text: string, options?: unknown): Promise<void>;
   waitFor(options?: unknown): Promise<void>;
 }
@@ -94,6 +99,7 @@ type ExpectInput = CommonInput & {
   readonly absent?: boolean;
   readonly count?: number;
   readonly value?: string;
+  readonly ignoreCase?: boolean;
   readonly notContains?: string;
   readonly nonEmpty?: boolean;
 };
@@ -187,8 +193,21 @@ async function click({ input, capabilities, signal }:
     BrowserArguments<CommonInput & { settleMs?: number; ifAvailable?: boolean; unlessVisible?: string }>) {
   const actor = actorFor(capabilities, input.actor);
   const browser = interaction(capabilities);
-  if (input.unlessVisible && await actor.loc(input.unlessVisible).isVisible()) {
-    return { clicked: false, testid: input.testid, visible: input.unlessVisible };
+  if (input.unlessVisible) {
+    const sentinel = actor.loc(input.unlessVisible);
+    if (await sentinel.isVisible()) {
+      // A translated closed drawer is "visible" to Playwright. Scroll normal
+      // inline content first, then distinguish it from an offscreen drawer.
+      await sentinel.scrollIntoViewIfNeeded({ timeout: input.within ?? browser.defaultWithin });
+      const inViewport = await sentinel.evaluate(element => new Promise<boolean>(resolve => {
+        const observer = new element.ownerDocument.defaultView.IntersectionObserver(entries => {
+          observer.disconnect();
+          resolve(entries.some(entry => entry.isIntersecting && entry.intersectionRatio > 0));
+        });
+        observer.observe(element);
+      }));
+      if (inViewport) return { clicked: false, testid: input.testid, visible: input.unlessVisible };
+    }
   }
   const scope = inputScope(browser, input.in);
   const target = actor.loc(input.testid, { contains: browser.expand(input.contains), scope });
@@ -337,12 +356,14 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
     const read = async () => input.attribute
       ? await loc.getAttribute(input.attribute) ?? ''
       : readValue(loc);
+    const matches = (value: string) => input.ignoreCase
+      ? value.toLowerCase() === input.value!.toLowerCase() : value === input.value;
     let value = await read();
-    while (value !== input.value && Date.now() <= deadline) {
+    while (!matches(value) && Date.now() <= deadline) {
       await browser.sleep(250, signal);
       value = await read();
     }
-    if (value !== input.value) {
+    if (!matches(value)) {
       const sensitive = /^password$/i.test(await loc.getAttribute('type') ?? '') || /password|secret|token/i.test(input.testid);
       fail('value-mismatch', { control: input.testid,
         ...(!sensitive ? { observed: findingText(value), expected: findingText(input.value) } : {}) });

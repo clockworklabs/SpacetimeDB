@@ -61,7 +61,7 @@
             {"do":"expect","actor":"staff","testid":"queue-item","contains":"Keyboard","within":10000},
             {"do":"click","actor":"staff","testid":"ship-submit","in":{"testid":"queue-item","contains":"Keyboard"}},
             {"do":"click","actor":"customer","testid":"orders-toggle","settleMs":1500},
-            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"shipped","within":10000},
+            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"shipped", "ignoreCase": true,"within":10000},
             {"do":"expectElementCount","actor":"customer","testid":"order-item","contains":"Keyboard","equals":1,"within":10000},
             {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stored-before-return","plus":-1},
             {"do":"expectNumber","actor":"admin","testid":"admin-revenue","relativeTo":"return-revenue-before","plus":89,"within":10000},

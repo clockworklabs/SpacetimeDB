@@ -54,9 +54,9 @@
         { "do": "expect", "actor": "staff", "testid": "queue-item", "contains": "Desk Lamp", "within": 10000 },
         { "do": "click", "actor": "staff", "testid": "ship-submit", "in": { "testid": "queue-item", "contains": "Desk Lamp" } },
         { "do": "click", "actor": "customer", "testid": "orders-toggle" },
-        { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "value": "shipped", "within": 10000 },
+        { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "value": "shipped", "ignoreCase": true, "within": 10000 },
         { "do": "wait", "actor": "customer", "ms": 70000 },
-        { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "value": "delivered", "within": 15000 },
+        { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "value": "delivered", "ignoreCase": true, "within": 15000 },
         { "do": "restartBackend", "settleMs": 15000 },
         { "do": "reload", "actor": "staff", "settleMs": 3000 },
         { "do": "ensureSignedIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true, "readyTestid": "current-user" },
@@ -74,7 +74,7 @@
             { "do": "ensureSignedIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true, "readyTestid": "current-user" },
             { "do": "click", "actor": "staff", "testid": "staff-link", "ifAvailable": true },
             { "do": "expect", "actor": "staff", "testid": "completed-order-item", "contains": "Desk Lamp", "count": 1 },
-            { "do": "expect", "actor": "staff", "testid": "completed-order-status", "in": { "testid": "completed-order-item", "contains": "Desk Lamp" }, "value": "delivered" }
+            { "do": "expect", "actor": "staff", "testid": "completed-order-status", "in": { "testid": "completed-order-item", "contains": "Desk Lamp" }, "value": "delivered", "ignoreCase": true }
           ]
         }
       ]

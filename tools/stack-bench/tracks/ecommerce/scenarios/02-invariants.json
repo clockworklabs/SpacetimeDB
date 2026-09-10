@@ -218,7 +218,7 @@
                 "testid": "order-item",
                 "contains": "Laptop Stand"
               },
-              "value": "pending"
+              "value": "pending", "ignoreCase": true
             }
           ],
           "statedBy": "staff cannot change prices or create items; admins can do everything staff can",

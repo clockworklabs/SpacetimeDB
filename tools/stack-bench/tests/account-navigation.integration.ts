@@ -9,6 +9,32 @@ import { stableElementSelector } from '../src/actions/element-selector.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
+test('conditional navigation opens translated drawers but preserves below-fold inline content', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+    for (const layout of ['closed-drawer', 'open-drawer', 'below-fold', 'clipped'] as const) {
+      await page.setContent(`<style>
+        #panel { ${layout === 'below-fold' ? 'margin-top:1600px' : layout === 'clipped' ? 'height:100px' : 'position:fixed;right:0;top:0;width:200px;height:200px'} }
+        .closed { transform:translateX(100%) }
+        .clipped { height:0;overflow:clip }
+      </style><button id="orders-toggle" onclick="document.body.dataset.clicked='true';document.querySelector('#panel').classList.toggle('closed',false);document.querySelector('#wrapper').classList.remove('clipped')">Orders</button>
+      <div id="wrapper" class="${layout === 'clipped' ? 'clipped' : ''}"><section id="panel" class="${layout === 'closed-drawer' ? 'closed' : ''}"><span data-role="order-item">Keyboard</span><button id="cancel-order">Cancel</button></section></div>`);
+      const actor = { page, loc: (id: string) => page.locator(stableElementSelector(id)).filter({ visible: true }).first() };
+      assert.equal(await actor.loc('order-item').isVisible(), true, 'all layouts reproduce Playwright visibility');
+      const result = await executeAction(ACTION_REGISTRY, 'click', {
+        do: 'click', actor: 'customer', testid: 'orders-toggle', unlessVisible: 'order-item', within: 1000,
+      }, { capabilities: { actors: { get: () => actor }, 'browser-interaction': {
+        defaultWithin: 1000, expand: (value: string) => value, testId: stableElementSelector,
+      } } });
+      assert.equal(result.status, 'passed', result.summary ?? undefined);
+      assert.equal(await page.locator('body').getAttribute('data-clicked'), ['closed-drawer', 'clipped'].includes(layout) ? 'true' : null);
+      await actor.loc('cancel-order').click({ timeout: 1000 });
+      if (layout === 'below-fold') assert((await page.locator('#panel').boundingBox())!.y < 600, 'inline content was scrolled into view');
+    }
+  } finally { await browser.close(); }
+});
+
 test('cart, order, and settings probes preserve open inline panels and open closed dialogs', async () => {
   const root = join(STACK_BENCH_ROOT, 'tracks/ecommerce');
   const read = (path: string) => JSON.parse(readFileSync(join(root, path), 'utf8'));

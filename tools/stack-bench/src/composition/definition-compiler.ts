@@ -163,7 +163,7 @@ export const ACTION_DEFINITIONS = Object.freeze({
     { password: string, exact: boolean, readyTestid: nonEmptyString, ...settle }),
   enterRoom: fields({ ...actor, room: nonEmptyString }),
   expect: fields({ ...actor, testid: nonEmptyString },
-    { contains: string, notContains: string, value: string, nonEmpty: boolean,
+    { contains: string, notContains: string, value: string, ignoreCase: boolean, nonEmpty: boolean,
       count: nonNegativeInteger, attribute: nonEmptyString,
       absent: boolean, ...locator, ...within }),
   expectActorsWith: fields({ ...actors, testid: nonEmptyString, contains: string,
