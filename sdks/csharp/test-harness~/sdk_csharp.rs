@@ -8,6 +8,10 @@ const CONNECT_DISCONNECT_CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/co
 const PROCEDURE_CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/procedure-client");
 const VIEW_PK_CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/view-pk-client");
 const PROCEDURAL_VIEW_PK_CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/procedural-view-pk-client");
+#[cfg(windows)]
+const BUILD_CLIENT_COMMAND: &str = "cmd /C ..\\build-client.cmd";
+#[cfg(not(windows))]
+const BUILD_CLIENT_COMMAND: &str = "bash ../build-client.sh";
 
 fn make_test(subcommand: &str) -> Test {
     Test::builder()
@@ -16,7 +20,7 @@ fn make_test(subcommand: &str) -> Test {
         .with_client(TEST_CLIENT)
         .with_language("csharp")
         .with_bindings_dir("module_bindings")
-        .with_compile_command("bash ../build-client.sh")
+        .with_compile_command(BUILD_CLIENT_COMMAND)
         .with_run_command(format!("dotnet ./bin~/Debug/net8.0/sdk-test-client.dll {subcommand}"))
         .build()
 }
@@ -29,7 +33,7 @@ fn make_procedure_test(subcommand: &str) -> Test {
         .with_language("csharp")
         .with_generate_private_items(true)
         .with_bindings_dir("module_bindings")
-        .with_compile_command("bash ../build-client.sh")
+        .with_compile_command(BUILD_CLIENT_COMMAND)
         .with_run_command(format!("dotnet ./bin~/Debug/net8.0/procedure-client.dll {subcommand}"))
         .build()
 }
@@ -41,7 +45,7 @@ fn make_view_pk_test(subcommand: &str) -> Test {
         .with_client(VIEW_PK_CLIENT)
         .with_language("csharp")
         .with_bindings_dir("module_bindings")
-        .with_compile_command("bash ../build-client.sh")
+        .with_compile_command(BUILD_CLIENT_COMMAND)
         .with_run_command(format!("dotnet ./bin~/Debug/net8.0/view-pk-client.dll {subcommand}"))
         .build()
 }
@@ -53,7 +57,7 @@ fn make_procedural_view_pk_test(subcommand: &str) -> Test {
         .with_client(PROCEDURAL_VIEW_PK_CLIENT)
         .with_language("csharp")
         .with_bindings_dir("module_bindings")
-        .with_compile_command("bash ../build-client.sh")
+        .with_compile_command(BUILD_CLIENT_COMMAND)
         .with_run_command(format!(
             "dotnet ./bin~/Debug/net8.0/procedural-view-pk-client.dll {subcommand}"
         ))
@@ -471,7 +475,7 @@ fn csharp_connect_disconnect_callbacks() {
         .with_client(CONNECT_DISCONNECT_CLIENT)
         .with_language("csharp")
         .with_bindings_dir("module_bindings")
-        .with_compile_command("bash ../build-client.sh")
+        .with_compile_command(BUILD_CLIENT_COMMAND)
         .with_run_command("dotnet ./bin~/Debug/net8.0/connect-disconnect-client.dll")
         .build()
         .run();
