@@ -4,7 +4,7 @@
   "track": "ecommerce",
   "name": "Storefront and warehouse — restock during purchases",
   "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
-  "note": "Draft: matching reference and mutation qualification is pending. An ordinary restock is a setup prerequisite. The race checks stored total stock, each buyer order, and UI agreement. Concurrent client dispatch does not prove overlapping server execution.",
+  "note": "Draft: matching reference and mutation qualification is pending. An ordinary purchase and restock are setup prerequisites. The race checks stored total stock, each buyer order, and UI agreement. Concurrent client dispatch does not prove overlapping server execution.",
   "features": [
     {
       "id": 202,
@@ -13,7 +13,8 @@
         "admin",
         "a",
         "b",
-        "c"
+        "c",
+        "serial"
       ],
       "setup": [
         {
@@ -42,6 +43,53 @@
           "do": "signUp",
           "actor": "c",
           "name": "r3"
+        },
+        {
+          "do": "signUp",
+          "actor": "serial",
+          "name": "restock-serial"
+        },
+        {
+          "do": "dbRecordStock",
+          "item": "Bluetooth Speaker",
+          "as": "stored-before-serial-purchase"
+        },
+        {
+          "do": "click",
+          "actor": "serial",
+          "testid": "buy-now",
+          "in": {
+            "testid": "item-card",
+            "contains": "Bluetooth Speaker"
+          }
+        },
+        {
+          "do": "click",
+          "actor": "serial",
+          "testid": "orders-toggle"
+        },
+        {
+          "do": "expect",
+          "actor": "serial",
+          "testid": "order-item",
+          "contains": "Bluetooth Speaker",
+          "count": 1,
+          "within": 10000
+        },
+        {
+          "do": "dbExpectStock",
+          "item": "Bluetooth Speaker",
+          "relativeTo": "stored-before-serial-purchase",
+          "plus": -1
+        },
+        {
+          "do": "expectNumber",
+          "actor": "admin",
+          "testid": "admin-stock",
+          "in": { "testid": "admin-item-row", "contains": "Bluetooth Speaker" },
+          "relativeTo": "stored-before-serial-purchase",
+          "plus": -1,
+          "within": 10000
         },
         {
           "do": "dbRecordStock",

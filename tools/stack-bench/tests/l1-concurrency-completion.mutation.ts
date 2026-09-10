@@ -6,7 +6,7 @@ import test from 'node:test';
 import ts from 'typescript';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { mutationScenario, mutationTargetKeys,
+import { mutationFileEdits, mutationScenario, mutationTargetKeys,
   readMutationManifest, validateMutationDefinitions, type LoadedMutationDefinition }
   from '../src/evidence/mutation-analysis.js';
 import { loadReferenceRegistry, prepareReferenceFixtureSource,
@@ -104,6 +104,12 @@ test('the restock race retains its admin page prerequisite when selected alone',
     'the uncontended restock must run even when the zero-point control is not selected');
   assert(feature.setup.some(step => step.do === 'dbExpectStock' && step.plus === 5),
     'ordinary restocking must have a verified stored effect before the race');
+  assert(feature.setup.some(step => step.do === 'click' && step.actor === 'serial'
+    && step.testid === 'buy-now'), 'ordinary purchasing must precede the race');
+  assert(feature.setup.some(step => step.do === 'expect' && step.actor === 'serial'
+    && step.testid === 'order-item' && step.count === 1));
+  assert(feature.setup.some(step => step.do === 'dbExpectStock' && step.plus === -1),
+    'a missing serial decrement must be invalid setup, not a caught concurrency defect');
   const [criterion] = feature.criteria;
   assert(criterion, 'the selected feature must have a criterion');
   assert(criterion.steps.some(step => step.do === 'race'));
@@ -159,7 +165,11 @@ test(`${entry.backend} binds the current L1 mutation inventory to its effective 
         'tracks/ecommerce/scenarios/01-last-unit.json');
       assert.deepEqual(mutationTargetKeys(lastUnit), ['ecommerce.spec.concurrency-safety.last-unit.201a', 'ecommerce.spec.concurrency-safety.last-unit.201b', 'ecommerce.spec.concurrency-safety.last-unit.201c']);
 
-      const purchase = requiredMutation(mutations, 'purchase-does-not-reserve-stock-restock-race');
+      assert.equal(mutations.has('purchase-does-not-reserve-stock-restock-race'), false,
+        'a defect that breaks serial purchasing cannot qualify this race');
+      const purchase = requiredMutation(mutations, entry.backend === 'spacetime'
+        ? 'restock-client-snapshot-overwrites-concurrent-purchases'
+        : 'purchase-read-write-loses-concurrent-stock');
       assert.equal(mutationScenario(manifest, purchase),
         'tracks/ecommerce/scenarios/01-restock-race.json');
       assert.deepEqual(mutationTargetKeys(purchase), ['ecommerce.spec.concurrency-safety.restock-race.202a']);
@@ -171,14 +181,15 @@ test(`${entry.backend} binds the current L1 mutation inventory to its effective 
           `${mutation.id} must target an exact check in the current release`);
         }
         assert(mutation.file, `${mutation.id} must declare a source file`);
-        const source = readFileSync(join(app, mutation.file), 'utf8');
-        for (const edit of mutation.edits) {
+        for (const edit of mutationFileEdits(mutation)) {
+          const file = edit.file;
+          const source = readFileSync(join(app, file), 'utf8');
           assert.equal(source.split(edit.find).length - 1, 1,
             `${mutation.id} anchor must match exactly once`);
           const mutated = source.replace(edit.find, edit.replace);
           const transpiled = ts.transpileModule(mutated, {
             compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-            fileName: mutation.file,
+            fileName: file,
             reportDiagnostics: true,
           });
           assert.deepEqual((transpiled.diagnostics ?? [])

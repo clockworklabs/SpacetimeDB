@@ -1628,17 +1628,17 @@
       ]
     },
     {
-      "id": "purchase-does-not-reserve-stock-restock-race",
+      "id": "purchase-read-write-loses-concurrent-stock",
       "scenario": "tracks/ecommerce/scenarios/01-restock-race.json",
       "targets": [
         "ecommerce.spec.concurrency-safety.restock-race.202a"
       ],
-      "desc": "Purchases create orders without reducing stock, so the rush loses all three purchase decrements.",
+      "desc": "Replace atomic stock reservation with an unlocked read and absolute write. A fixed pause widens scheduling overlap; serial purchases and restocks retain their stock effects. Concurrent reservations or restocking can lose updates.",
       "file": "server/src/stock-reservations.ts",
       "edits": [
         {
-          "find": "      { $inc: { quantity: -1 } },",
-          "replace": "      { $inc: { quantity: 0 } },"
+          "find": "    const stock = await model.findOneAndUpdate(\n      { item_id: itemId, quantity: { $gte: 1 } },\n      { $inc: { quantity: -1 } },\n      { sort: { quantity: -1 } },\n    );\n    if (!stock) {\n      await releaseWithModel(model, itemId, warehouseIds);\n      return null;\n    }\n",
+          "replace": "    const stock = await model.findOneAndUpdate(\n      { item_id: itemId, quantity: { $gte: 1 } },\n      { $inc: { quantity: 0 } },\n      { sort: { quantity: -1 } },\n    );\n    if (!stock) {\n      await releaseWithModel(model, itemId, warehouseIds);\n      return null;\n    }\n    // Mutant: widen the unlocked read/write window without changing serial behavior.\n    await new Promise(resolve => setTimeout(resolve, 500));\n    await model.updateOne({ item_id: itemId, warehouse_id: stock.warehouse_id },\n      { $set: { quantity: stock.quantity - 1 } });\n"
         }
       ]
     },

@@ -171,9 +171,17 @@ These changes are draft. Compilation, synthetic transport tests, and isolated
 stock-reader checks do not replace live reference and targeted-defect evidence.
 For a race control, preserve ordinary serial behavior and challenge the concurrent
 case. For restart survival, preserve execution before restart. A disabled timer
-only proves detection of absent execution, not restart-specific loss. PostgreSQL
-and MongoDB have draft pending-work-loss controls; the SpacetimeDB delay control
-does not establish equivalent restart-loss coverage.
+only proves detection of absent execution, not restart-specific loss. The restart
+probe first completes an identical ordinary timer. PostgreSQL and MongoDB controls
+remove pending work at startup. The SpacetimeDB control keeps pending rows but loses
+its process-local execution queue; isolate replacement can also lose that queue.
+
+The restock probe first verifies an ordinary purchase and restock. PostgreSQL and
+MongoDB controls replace atomic reservation with an unlocked read and absolute
+write. Fixed delays widen overlap in defect controls only; they do not measure a
+natural failure rate. SpacetimeDB reducers remain atomic. Its control sends stale
+absolute stock from the client, then overwrites intervening purchases. These are
+distinct ways to break the same stock invariant, not equivalent internal races.
 
 Source coverage and executed controls are separate evidence. A declared mutation target is
 not a successful control, and a failed setup is not a target kill. Historical inventory

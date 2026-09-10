@@ -376,17 +376,17 @@
       ]
     },
     {
-      "id": "purchase-does-not-reserve-stock-restock-race",
+      "id": "purchase-read-write-loses-concurrent-stock",
       "scenario": "tracks/ecommerce/scenarios/01-restock-race.json",
       "targets": [
         "ecommerce.spec.concurrency-safety.restock-race.202a"
       ],
-      "desc": "Create each purchase without decrementing stock, breaking conservation during the restock race.",
+      "desc": "Replace atomic stock reservation with an unlocked read and absolute write. A fixed pause widens scheduling overlap; serial purchases and restocks retain their stock effects. Concurrent reservations or restocking can lose updates.",
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "         UPDATE stock s SET quantity = quantity - 1\n         FROM target t",
-          "replace": "         UPDATE stock s SET quantity = quantity\n         FROM target t"
+          "find": "      const decrement = await client.query(\n        `WITH target AS (\n           SELECT item_id, warehouse_id FROM stock\n           WHERE item_id = $1 AND quantity > 0\n           ORDER BY warehouse_id\n           FOR UPDATE\n           LIMIT 1\n         )\n         UPDATE stock s SET quantity = quantity - 1\n         FROM target t\n         WHERE s.item_id = t.item_id AND s.warehouse_id = t.warehouse_id\n         RETURNING s.item_id, s.warehouse_id`,\n        [itemId]\n      );\n",
+          "replace": "      const snapshot = await client.query(\n        `SELECT item_id, warehouse_id, quantity FROM stock\n         WHERE item_id = $1 AND quantity > 0 ORDER BY warehouse_id LIMIT 1`, [itemId]\n      );\n      // Mutant: widen the unlocked read/write window without changing serial behavior.\n      await new Promise(resolve => setTimeout(resolve, 500));\n      const decrement = snapshot.rowCount === 0 ? snapshot : await client.query(\n        `UPDATE stock SET quantity = $3 WHERE item_id = $1 AND warehouse_id = $2\n         RETURNING item_id, warehouse_id`,\n        [itemId, snapshot.rows[0].warehouse_id, snapshot.rows[0].quantity - 1]\n      );\n"
         }
       ]
     },

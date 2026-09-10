@@ -6,6 +6,26 @@
   "note": "Mutation definitions for the SpacetimeDB ecommerce reference.",
   "mutations": [
     {
+      "id": "restock-client-snapshot-overwrites-concurrent-purchases",
+      "scenario": "tracks/ecommerce/scenarios/01-restock-race.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.restock-race.202a"
+      ],
+      "desc": "Compute absolute restock quantity from the client snapshot and store it in the reducer. A 500 ms client pause widens the stale-write window. Serial purchases and restocks still work; intervening purchases can be overwritten. This is a client/server lost update, not a race inside an atomic reducer.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "ctx.db.stock.insert({ ...existing, quantity: existing.quantity + quantity });\n    } else {\n      ctx.db.stock.insert({ item_id: itemId, warehouse_id: warehouseId, quantity });\n    }\n    for (const alert of",
+          "replace": "ctx.db.stock.insert({ ...existing, quantity });\n    } else {\n      ctx.db.stock.insert({ item_id: itemId, warehouse_id: warehouseId, quantity });\n    }\n    for (const alert of"
+        },
+        {
+          "file": "client/src/App.tsx",
+          "find": "    await conn?.reducers.adminRestock({ itemId, warehouseId, quantity });",
+          "replace": "    const absoluteQuantity = (stockByItemWarehouse.get(`${itemId}-${warehouseId}`) ?? 0) + quantity;\n    // Mutant: widen the stale client snapshot window without changing serial behavior.\n    await new Promise(resolve => setTimeout(resolve, 500));\n    await conn?.reducers.adminRestock({ itemId, warehouseId, quantity: absoluteQuantity });"
+        }
+      ]
+    },
+    {
       "id": "signup-binds-the-new-account-to-the-admin-session",
       "scenario": "tracks/ecommerce/scenarios/01-account-create.json",
       "targets": [
@@ -537,21 +557,6 @@
       ]
     },
     {
-      "id": "purchase-does-not-reserve-stock-restock-race",
-      "scenario": "tracks/ecommerce/scenarios/01-restock-race.json",
-      "targets": [
-        "ecommerce.spec.concurrency-safety.restock-race.202a"
-      ],
-      "desc": "Create purchase orders without reserving stock, so the rush ends at start plus five instead of start plus two.",
-      "file": "backend/spacetimedb/src/index.ts",
-      "edits": [
-        {
-          "find": "  const allocations = decrementStockTracked(ctx, itemId, 1);",
-          "replace": "  const allocations: Array<{ warehouseId: bigint; quantity: number }> = [];"
-        }
-      ]
-    },
-    {
       "id": "existing-cart-line-does-not-increment",
       "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
       "targets": [
@@ -1050,17 +1055,25 @@
       ]
     },
     {
-      "id": "scheduled-restock-is-delayed-past-the-durability-window",
+      "id": "scheduled-restock-execution-queue-is-process-local",
       "scenario": "tracks/ecommerce/scenarios/03-deferred-durability.json",
       "targets": [
         "ecommerce.l3.deferred-durability.restart-survival.311a"
       ],
-      "desc": "Timing control only: persist a scheduled restock with an extra ten-minute delay. This does not isolate loss of pending work on restart.",
+      "desc": "Keep manual restock execution IDs only in the V8 process. Ordinary timers work, but restart loses the execution queue while pending rows remain. Isolate replacement can also lose this queue.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "dueMicros: nowMicros(ctx) + BigInt(input.delaySeconds) * SECOND,",
-          "replace": "dueMicros: nowMicros(ctx) + (BigInt(input.delaySeconds) + 600n) * SECOND,"
+          "find": "export const scheduleRestock = spacetimedb.reducer(",
+          "replace": "const pendingRestockExecution = new Set<bigint>();\n\nexport const scheduleRestock = spacetimedb.reducer("
+        },
+        {
+          "find": "    ctx.db.scheduledRestock.insert({\n      id: 0n,\n      itemId: item.id,\n      warehouseId: warehouse.id,\n      quantity: input.quantity,\n      dueMicros: nowMicros(ctx) + BigInt(input.delaySeconds) * SECOND,\n      status: 'pending',\n      reorderRuleId: undefined,\n    });",
+          "replace": "    const pending = ctx.db.scheduledRestock.insert({\n      id: 0n,\n      itemId: item.id,\n      warehouseId: warehouse.id,\n      quantity: input.quantity,\n      dueMicros: nowMicros(ctx) + BigInt(input.delaySeconds) * SECOND,\n      status: 'pending',\n      reorderRuleId: undefined,\n    });\n    pendingRestockExecution.add(pending.id);"
+        },
+        {
+          "find": "    if (pending.status !== 'pending' || pending.dueMicros > now) continue;\n    restoreStock(ctx, pending.itemId, pending.warehouseId, pending.quantity);",
+          "replace": "    if (pending.status !== 'pending' || pending.dueMicros > now) continue;\n    if (pending.reorderRuleId === undefined && !pendingRestockExecution.delete(pending.id)) continue;\n    restoreStock(ctx, pending.itemId, pending.warehouseId, pending.quantity);"
         }
       ]
     },

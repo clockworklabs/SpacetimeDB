@@ -28,6 +28,21 @@ const fixtures = new Map(loadReferenceRegistry().fixtures
   .filter(fixture => fixture.track === 'ecommerce')
   .map(fixture => [fixture.backend, fixture]));
 
+test('restart probe proves ordinary scheduled execution before measuring restart survival', () => {
+  const scenario = JSON.parse(readFileSync(join(TRACK, 'scenarios', '03-deferred-durability.json'), 'utf8'));
+  const setup: Array<Record<string, unknown>> = scenario.features.find((feature: { id: number }) => feature.id === 311).setup;
+  const firstSubmit = setup.findIndex(step => step.testid === 'schedule-restock-submit');
+  const ordinaryApplied = setup.findIndex(step => step.do === 'expectNumber' && step.relativeTo === 'ordinaryBefore');
+  const newBaseline = setup.findIndex(step => step.do === 'recordNumber' && step.as === 'before');
+  const secondSubmit = setup.findIndex((step, index) => index > firstSubmit && step.testid === 'schedule-restock-submit');
+  const restart = setup.findIndex(step => step.do === 'restartBackend');
+  assert(firstSubmit >= 0 && ordinaryApplied > firstSubmit && newBaseline > ordinaryApplied
+    && secondSubmit > newBaseline && restart > secondSubmit);
+  assert.equal(setup[ordinaryApplied]!.plus, 5);
+  assert.deepEqual(setup.filter(step => step.testid === 'schedule-restock-delay').map(step => step.text), ['45', '45']);
+  assert(setup.slice(ordinaryApplied, newBaseline).some(step => step.testid === 'pending-restock-item' && step.absent === true));
+});
+
 for (const backend of ['mongodb', 'postgres']) {
   test(`${backend} restart-loss control preserves timers and removes only pending work at startup`, () => {
     const mutation = mutationManifest(backend).mutations.find(candidate =>
