@@ -1671,6 +1671,9 @@ where
     V8HeapMetrics::remove_all_metric_label_values_for_database(db);
 
     let _ = WORKER_METRICS.v8_request_queue_length.remove_label_values(db);
+    let _ = WORKER_METRICS
+        .scheduler_active_scheduled_functions
+        .remove_label_values(db);
     let _ = DB_METRICS.http_response_size_bytes.remove_label_values(db);
 }
 
