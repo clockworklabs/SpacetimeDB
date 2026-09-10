@@ -70,6 +70,7 @@ const SAMPLES: { [K in FindingKind]: Finding } = {
   'replay-unavailable': finding('replay-unavailable', { actor: 'customer', detail: DETAIL }),
   'forgery-unverifiable': finding('forgery-unverifiable', { actor: 'customer', detail: DETAIL }),
   'not-observed': finding('not-observed', { actor: 'owner' }),
+  'transport-incomplete': finding('transport-incomplete', {}),
   'nothing-contended': finding('nothing-contended', { detail: DETAIL }),
   'no-backend-control': finding('no-backend-control', { target: 'backend-runtime' }),
   'control-refused': finding('control-refused', { target: 'app-server' }),
@@ -134,7 +135,7 @@ test('executors fail with a finding, and the message is its rendering', () => {
       && isFinding(error.details.finding) && error.details.finding.kind === 'count-mismatch');
   assert.throws(() => inconclusive('not-observed', { actor: 'owner' }),
     (error: unknown) => error instanceof ActionInconclusive
-      && error.message === 'the message could not be observed reaching owner'
+      && error.message === 'the expected data could not be observed reaching owner'
       && isFinding(error.details.finding) && error.details.finding.kind === 'not-observed');
 });
 

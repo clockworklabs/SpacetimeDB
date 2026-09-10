@@ -25,7 +25,9 @@
         { "do": "signUp", "actor": "customer", "name": "reorder-customer" },
         { "do": "signUp", "actor": "buyer-a", "name": "reorder-a" },
         { "do": "signUp", "actor": "buyer-b", "name": "reorder-b" },
-        { "do": "signUp", "actor": "buyer-c", "name": "reorder-c" }
+        { "do": "signUp", "actor": "buyer-c", "name": "reorder-c" },
+        { "do": "click", "actor": "buyer-a", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
+        { "do": "click", "actor": "buyer-b", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" } }
       ],
       "criteria": [
         {
@@ -35,8 +37,6 @@
           "points": 3,
           "statedBy": "Crossing a reorder threshold schedules a restock.",
           "steps": [
-            { "do": "click", "actor": "buyer-a", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
-            { "do": "click", "actor": "buyer-b", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
             { "do": "expectElementCount", "actor": "admin", "testid": "pending-restock-item", "equals": 1, "within": 10000 }
           ]
         },
@@ -47,6 +47,7 @@
           "points": 2,
           "statedBy": "A pending automatic restock is not scheduled twice.",
           "steps": [
+            { "do": "expectElementCount", "actor": "admin", "testid": "pending-restock-item", "equals": 1, "within": 10000 },
             { "do": "click", "actor": "buyer-c", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
             { "do": "expectElementCount", "actor": "admin", "testid": "pending-restock-item", "equals": 1, "within": 10000 }
           ]

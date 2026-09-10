@@ -9,7 +9,7 @@
   "conflictsWith": [],
   "capabilities": ["browser", "database-observation", "direct-server-call"],
   "evidence": ["browser-observation", "database-observation", "server-response"],
-  "budget": { "status": "bounded", "maxRuntimeMs": 75000 },
+  "budget": { "status": "bounded", "maxRuntimeMs": 100000 },
   "task": {
     "requirements": [
       { "id": "ecommerce.spec.transactional-integrity.reviews", "path": "prompts/modular/l1-specifications.md", "order": 1400, "from": "## Transactional integrity: reviews", "until": "## Transactional integrity: purchasing", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.reviews"] },

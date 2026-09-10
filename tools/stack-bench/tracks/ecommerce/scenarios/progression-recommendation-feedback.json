@@ -12,20 +12,27 @@
         { "do": "signUp", "actor": "customer", "name": "feedback-owner" },
         { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" } },
         { "do": "signUp", "actor": "other", "name": "feedback-other" },
-        { "do": "click", "actor": "other", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" } }
+        { "do": "click", "actor": "other", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" } },
+        { "do": "expect", "actor": "customer", "testid": "recommended-item", "contains": "Headphones" },
+        { "do": "expect", "actor": "other", "testid": "recommended-item", "contains": "Headphones" },
+        { "do": "click", "actor": "customer", "testid": "dismiss-recommendation", "in": { "testid": "recommended-item", "contains": "Headphones" } }
       ],
       "criteria": [
         {
           "id": "504a",
           "category": "production",
-          "desc": "a dismissed recommendation stays absent after reload",
+          "desc": "a dismissed recommendation stays absent after reload and backend restart in a fresh browser",
           "points": 2,
           "statedBy": "A dismissed recommendation stays dismissed for that customer.",
           "steps": [
-            { "do": "click", "actor": "customer", "testid": "dismiss-recommendation", "in": { "testid": "recommended-item", "contains": "Headphones" } },
             { "do": "reload", "actor": "customer", "settleMs": 3000 },
             { "do": "ensureSignedIn", "actor": "customer", "name": "feedback-owner", "readyTestid": "current-user" },
-            { "do": "expect", "actor": "customer", "testid": "recommended-item", "contains": "Headphones", "absent": true }
+            { "do": "expect", "actor": "customer", "testid": "recommended-item", "contains": "Headphones", "absent": true },
+            { "do": "restartBackend", "settleMs": 1000 },
+            { "do": "freshClient", "actor": "customer" },
+            { "do": "signIn", "actor": "customer-fresh", "name": "feedback-owner" },
+            { "do": "expect", "actor": "customer-fresh", "testid": "recommendations", "within": 10000 },
+            { "do": "expect", "actor": "customer-fresh", "testid": "recommended-item", "contains": "Headphones", "absent": true }
           ]
         },
         {
@@ -35,6 +42,7 @@
           "points": 2,
           "statedBy": "Recommendation feedback belongs to one customer.",
           "steps": [
+            { "do": "waitUntilAbsent", "actor": "customer", "testid": "recommended-item", "contains": "Headphones", "within": 10000 },
             { "do": "expect", "actor": "other", "testid": "recommended-item", "contains": "Headphones" }
           ]
         }

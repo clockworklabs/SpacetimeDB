@@ -75,3 +75,61 @@ test('cart validation sends only a negative quantity and restores actor identity
     });
   }
 });
+
+test('later-depth checks retain their own effects and independent controls', () => {
+  const reorder = read('progression-automatic-reorder.json').features[0]!;
+  assert.equal(reorder.setup.filter(step => step.testid === 'buy-now').length, 2);
+  assert.equal(reorder.criteria.find(c => c.id === '502a')!.steps.some(step => step.testid === 'buy-now'), false);
+  const duplicate = reorder.criteria.find(c => c.id === '502b')!.steps;
+  assert.equal(duplicate[0]!.do, 'expectElementCount');
+  assert.equal(duplicate[1]!.testid, 'buy-now');
+  const payment = read('progression-core-business.json').features.find(f => f.id === 623)!;
+  assert.equal(payment.setup.find(step => step.do === 'expectCallOutcomes')!.accepted, undefined);
+  assert(payment.setup.some(step => step.do === 'freshClient'));
+  assert(payment.setup.some(step => step.do === 'expectElementCount' && step.testid === 'order-item' && step.equals === 1));
+  const checkout = read('03-deferred-integrity.json').features.find(f => f.id === 314)!.criteria[0]!.steps;
+  assert(checkout.some(step => step.do === 'reload'));
+  assert(checkout.some(step => step.testid === 'order-item' && step.equals === 1));
+  const filters = read('progression-faceted-filters.json').features[0]!;
+  assert.equal(filters.setup.filter(step => step.do === 'dbSetStock' && step.item === 'Coffee Grinder' && step.quantity === 0).length, 2);
+  const steps = filters.criteria[0]!.steps;
+  assert.equal(steps[0]!.contains, 'Coffee Grinder');
+  assert.equal(steps[0]!.equals, 1);
+  assert.equal(steps[1]!.testid, 'in-stock-filter');
+  assert(steps.some(step => step.contains === 'Coffee Grinder' && step.absent === true));
+  const boundary = read('progression-order-support-boundary.json').features[0]!.criteria[0]!.steps;
+  const attack = boundary.find(step => step.do === 'callAction' && step.actor === 'other')!;
+  assert.deepEqual((attack.input as { overrides: unknown }).overrides, {
+    caseId: { actor: 'other', testid: 'support-ticket', contains: 'Other order case', attribute: 'data-entity-id' },
+  });
+  assert(boundary.some(step => step.do === 'expectActionOutcome' && step.actor === 'owner' && step.outcome === 'accepted'));
+});
+
+test('progression review eligibility proves the route and reads back persisted refusal', () => {
+  const steps = read('progression-review-access.json').features[0]!.criteria[0]!.steps;
+  assert.equal(steps[0]!.do, 'callAction');
+  assert.equal(steps[0]!.actor, 'owner');
+  assert.equal(steps[1]!.outcome, 'accepted');
+  const refused = steps.find(step => step.do === 'expectActionOutcome' && step.actor === 'stranger')!;
+  assert.equal(refused.outcome, 'application-refused');
+  assert.equal(refused.routeProvenBy, 'owner');
+  assert(steps.some(step => step.do === 'freshClient' && step.actor === 'stranger'));
+  assert(steps.some(step => step.actor === 'stranger-fresh' && step.contains === 'never bought this' && step.absent === true));
+});
+
+
+test('countdown displays decrease from observed baselines without setup-time assumptions', () => {
+  for (const [source, id] of [['03-reservations.json', '305a'], ['03-scheduled-restocks.json', '302a']]) {
+    const criterion = read(source!).features.flatMap(f => f.criteria).find(c => c.id === id)!;
+    const recordIndex = criterion.steps.findIndex(step => step.do === 'recordNumber' && step.as === 'initial-countdown');
+    assert(recordIndex > 0);
+    assert.equal(criterion.steps[recordIndex - 1]!.atLeast, 1);
+    assert.equal(criterion.steps[recordIndex - 1]!.atMost, 90);
+    assert.equal(criterion.steps[recordIndex + 1]!.ms, 1000);
+    const bound = criterion.steps[recordIndex + 2]!;
+    assert.equal(bound.relativeTo, 'initial-countdown');
+    assert.equal(bound.plus, -1);
+    assert.equal(bound.comparison, 'atMost');
+    assert.equal(bound.within, 10000);
+  }
+});

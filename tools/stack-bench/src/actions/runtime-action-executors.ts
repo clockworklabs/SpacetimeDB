@@ -10,7 +10,7 @@ import { evidenceDisposition } from '../evidence/check-evidence.js';
 import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
 import type { CheckEvidenceStatus } from '../evidence/check-evidence.js';
 import { replayHeaders } from './actor-transport-action-executors.js';
-import { browserApplicationBoundary } from './browser-action-executors.js';
+import { browserApplicationBoundary, numberMatches } from './browser-action-executors.js';
 import { harnessBrowserFailure, harnessProcessFailure } from '../evidence/harness-errors.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import type { LeasedDatabase } from '../stacks/backend-reset-guard.js';
@@ -158,6 +158,8 @@ interface ReadStockInput {
   readonly warehouse?: string;
   readonly as?: string;
   readonly equals?: number;
+  readonly atLeast?: number;
+  readonly atMost?: number;
   readonly relativeTo?: string;
   readonly plus?: number;
 }
@@ -174,12 +176,17 @@ async function dbExpectStock({ input, capabilities }: ActionArguments<ReadStockI
   if (input.relativeTo !== undefined && base === undefined) {
     inconclusive('assertion-without-action', { action: 'dbRecordStock' });
   }
-  const expected = input.relativeTo === undefined ? input.equals! : base! + (input.plus ?? 0);
-  if (!Number.isSafeInteger(expected)) throw new Error('expected stock is not an exact integer');
+  const equals = input.relativeTo === undefined ? input.equals : base! + (input.plus ?? 0);
+  const expected = { ...(equals === undefined ? {} : { equals }),
+    ...(input.atLeast === undefined ? {} : { atLeast: input.atLeast }),
+    ...(input.atMost === undefined ? {} : { atMost: input.atMost }) };
+  if (!Object.keys(expected).length || Object.values(expected).some(value => !Number.isSafeInteger(value))) {
+    throw new Error('expected stock is not an exact integer');
+  }
   const value = await capabilities['database-read'].getStock(input);
-  if (value.quantity !== expected) fail('number-mismatch', {
+  if (!numberMatches(value.quantity, expected)) fail('number-mismatch', {
     control: `stored stock for ${input.item}${input.warehouse ? ` in ${input.warehouse}` : ''}`,
-    observed: value.quantity, expected: { equals: expected },
+    observed: value.quantity, expected,
   });
   return { ...value, expected };
 }

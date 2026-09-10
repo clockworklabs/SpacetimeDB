@@ -1760,7 +1760,7 @@
     },
     {
       "id": "catalog-price-change-not-broadcast-to-open-carts",
-      "scenario": "tracks/ecommerce/scenarios/02-features.json",
+      "scenario": "tracks/ecommerce/scenarios/progression-price-cart-checkout.json",
       "targets": [
         "ecommerce.returns-pricing.price-history.4c"
       ],

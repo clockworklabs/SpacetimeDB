@@ -140,6 +140,20 @@
           "do": "enterRoom",
           "actor": "bob",
           "room": "resilience"
+        },
+        {
+          "do": "sendMany",
+          "actor": "bob",
+          "prefix": "BEFORE",
+          "count": 2,
+          "delayMs": 1400
+        },
+        {
+          "do": "expectAllPresent",
+          "actor": "alice",
+          "prefix": "BEFORE",
+          "count": 2,
+          "within": 10000
         }
       ],
       "criteria": [
@@ -201,6 +215,13 @@
               "prefix": "OFFLINE",
               "count": 3,
               "within": 5000
+            },
+            {
+              "do": "expectAllPresent",
+              "actor": "alice",
+              "prefix": "BEFORE",
+              "count": 2,
+              "within": 10000
             }
           ]
         }

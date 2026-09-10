@@ -245,10 +245,14 @@ test('timed and restarted work has conclusive before-and-after observations', ()
   for (const [packId, checkId] of timedChecks) {
     const pack = requiredPack(packId);
     const feature = featureFor(requiredCheck(pack, checkId));
-    const numbers = nestedSteps(feature).filter(step => step.do === 'expectNumber');
-    assert(numbers.some(step => atLeast(step.atLeast, 80)));
-    assert(numbers.some(step => atMost(step.atMost, 75)));
-    assert(nestedSteps(feature).some(step => step.do === 'wait' && atLeast(step.ms, 15000)));
+    const steps = nestedSteps(feature);
+    const baseline = steps.findIndex(step => step.do === 'recordNumber');
+    assert(baseline >= 0);
+    assert(steps.slice(0, baseline).some(step => step.do === 'expectNumber'
+      && atLeast(step.atLeast, 1) && atMost(step.atMost, 90)));
+    assert(steps.slice(baseline + 1).some(step => step.do === 'wait' && atLeast(step.ms, 1000)));
+    assert(steps.slice(baseline + 1).some(step => step.do === 'expectNumber'
+      && step.relativeTo === steps[baseline]?.as && step.comparison === 'atMost' && step.plus === -1));
   }
 });
 
@@ -318,7 +322,7 @@ test('the cumulative L3 recipe adds every L3 check', () => {
   );
   assert.equal(plan.checks.length, 98);
   assert.equal(plan.scoring.points, 180);
-  assert.equal(plan.execution.length, 56);
+  assert.equal(plan.execution.length, 57);
 
   const plannedKeys = new Set(plan.checks.map(check => check.stableKey));
   const expectedL3Keys = selected.flatMap(({ pack, check }) => {

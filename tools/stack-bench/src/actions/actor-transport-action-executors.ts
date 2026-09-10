@@ -300,7 +300,8 @@ async function replayAs({ input, capabilities, signal }: ReplayArguments) {
       const action = input.namedAction;
       const args = [...(action.args ?? [])];
       if (input.namedTarget) {
-        const target = source.loc(input.namedTarget.testid, { contains: input.namedTarget.contains });
+        const target = source.loc(input.namedTarget.testid, { contains: input.namedTarget.contains === undefined
+          ? undefined : transport.expand(input.namedTarget.contains) });
         await target.waitFor({ state: 'visible', timeout: transport.defaultWithin });
         const rawValue = await target.getAttribute(input.namedTarget.attribute);
         if (rawValue === null || rawValue === '') {
@@ -460,8 +461,8 @@ async function expectReceived({ input, capabilities, signal }: TransportArgument
   const transport = transportFor(capabilities);
   const needle = transport.expand(input.contains);
   const deadline = Date.now() + (input.within ?? transport.defaultWithin);
-  while (!actor.wasSent(needle) && Date.now() < deadline) await transport.sleep(250, signal);
-  if (!actor.wasSent(needle)) inconclusive('not-observed', { actor: actor.name });
+  while (!actor.wasSent(needle, false) && Date.now() < deadline) await transport.sleep(250, signal);
+  if (!actor.wasSent(needle, false)) inconclusive('not-observed', { actor: actor.name });
   return { received: true, contains: needle };
 }
 

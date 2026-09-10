@@ -87,7 +87,7 @@ export interface Actor {
   forge?: ForgeResult;
   replay?: ReplayResult;
   loc(testid: string, options?: UnknownRecord): Locator;
-  wasSent(value: string): boolean;
+  wasSent(value: string, requireComplete?: boolean): boolean;
 }
 
 export interface BrowserCapability {

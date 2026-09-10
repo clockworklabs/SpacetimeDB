@@ -124,7 +124,11 @@
             { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "relativeTo": "before", "plus": -1, "within": 10000 },
             { "do": "click", "actor": "customer", "testid": "checkout-submit" },
             { "do": "expectNumber", "actor": "customer", "testid": "cart-count", "equals": 0, "within": 10000 },
-            { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "relativeTo": "before", "plus": -1, "within": 10000 }
+            { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "relativeTo": "before", "plus": -1, "within": 10000 },
+            { "do": "reload", "actor": "customer", "settleMs": 1000 },
+            { "do": "ensureSignedIn", "actor": "customer", "name": "conserve-checkout", "readyTestid": "current-user" },
+            { "do": "click", "actor": "customer", "testid": "orders-toggle" },
+            { "do": "expectElementCount", "actor": "customer", "testid": "order-item", "contains": "Headphones", "equals": 1, "within": 10000 }
           ]
         }
       ]

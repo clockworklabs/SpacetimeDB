@@ -48,7 +48,7 @@ import { leaseFromEnv } from '../src/runtime/backend-lease.js';
 import type { LeasedSpacetimeTarget } from '../src/runtime/spacetime-target.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
-import { transportFrameText } from './transport-frames.js';
+import { captureResponses, ReceivedTransport } from './transport-frames.js';
 import type { ActionEvidence } from '../src/actions/action-contract.js';
 import type { CheckEvidence, CheckEvidenceAttachment, CheckEvidencePhase,
   CheckEvidenceStatus } from '../src/evidence/check-evidence.js';
@@ -240,7 +240,6 @@ export function parseGradeArgs(argv: readonly string[]): GradeArgs {
 
 const tid = stableElementSelector;
 const uniq = () => randomUUID().slice(0, 16);
-const MAX_RECEIVED_BYTES = 8 * 1024 * 1024;
 const MAX_CONSOLE_ERRORS = 200;
 
 // Isolated browser actor
@@ -257,9 +256,9 @@ class Actor {
   readonly context: BrowserContext;
   page!: Page;
   readonly consoleErrors: string[];
-  readonly received: string[];
-  receivedBytes = 0;
-  receivedOverflow = false;
+  private readonly transport = new ReceivedTransport();
+  readonly ready: Promise<void>;
+  get received(): readonly string[] { return this.transport.chunks; }
   lastWrite: ActorWrite | null = null;
   lastWrites: Record<string, ActorWrite> = {};
   writes: ActorWrite[] = [];
@@ -271,10 +270,9 @@ class Actor {
     this.context = context;
     this.consoleErrors = [];
     // Test privacy against delivered payloads, not rendered content.
-    this.received = [];
-    this.attach(page);
+    this.ready = this.attach(page);
   }
-  attach(page: Page): void {
+  async attach(page: Page): Promise<void> {
     this.page = page;
     // Capture writes so checks can replay them with changed fields or actors.
     this.lastWrite = null;
@@ -288,7 +286,7 @@ class Actor {
         if (this.consoleErrors.length > MAX_CONSOLE_ERRORS) this.consoleErrors.shift();
       });
     });
-    // A missing client identity in a WebSocket write proves server-derived identity.
+    // Capture wire data separately from what the application renders.
     page.on('websocket', ws => {
       ws.on('framesent', f => {
         const p = typeof f.payload === 'string' ? f.payload : '';
@@ -340,34 +338,13 @@ class Actor {
       this.consoleErrors.push(`pageerror: ${e.message.slice(0, 200)}`);
       if (this.consoleErrors.length > MAX_CONSOLE_ERRORS) this.consoleErrors.shift();
     });
-    page.on('response', async res => {
-      const type = res.headers()['content-type'] ?? '';
-      // Data only. Scripts and markup are served as text/* too, and a Vite
-      // bundle would bury the buffer in megabytes of application source.
-      if (!/(application\/json|application\/x-ndjson|text\/event-stream|text\/plain)/.test(type)) return;
-      const length = Number(res.headers()['content-length']);
-      if (Number.isFinite(length) && length > MAX_RECEIVED_BYTES) {
-        this.receivedOverflow = true;
-        return;
-      }
-      try { this.record(await res.text()); } catch { /* body gone, or page closed */ }
-    });
+    await captureResponses(page, this.transport);
   }
   record(payload: string | Buffer): void {
-    const text = transportFrameText(payload);
-    if (!text) return;
-    const chunk = text.slice(0, 200_000);
-    this.received.push(chunk);
-    this.receivedBytes += Buffer.byteLength(chunk);
-    while (this.receivedBytes > MAX_RECEIVED_BYTES && this.received.length > 1) {
-      this.receivedOverflow = true;
-      this.receivedBytes -= Buffer.byteLength(this.received.shift()!);
-    }
+    this.transport.record(payload);
   }
-  wasSent(needle: string): boolean {
-    if (this.received.some(chunk => chunk.includes(needle))) return true;
-    if (this.receivedOverflow) throw new Error('transport evidence exceeded its memory limit');
-    return false;
+  wasSent(needle: string, requireComplete = true): boolean {
+    return this.transport.contains(needle, requireComplete);
   }
   loc(testid: string, { contains, scope }:
     { contains?: string; scope?: { testid: string; contains?: string } } = {}) {
@@ -460,7 +437,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
       async open(actor: Actor, settleMs: number, signal: AbortSignal) {
         const fresh = await actor.context.newPage();
         fresh.setDefaultTimeout(defaultWithin);
-        actor.attach(fresh);
+        await actor.attach(fresh);
         await fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
         await abortableSleep(settleMs, signal);
       },
@@ -475,6 +452,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
         ctx.extraContexts?.push({ context, name, page: fresh });
         fresh.setDefaultTimeout(defaultWithin);
         const observer = new Actor(`${actor.name}-fresh`, fresh, context);
+        await observer.ready;
         await fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
         observer.annotate = actor.annotate;
         actors.set(name, observer);
@@ -745,6 +723,7 @@ async function gradeFeature(browser: Browser, feature: CompiledFeature, args: Gr
       contexts[contexts.length - 1]!.page = page;
       page.setDefaultTimeout(SETUP_WITHIN);
       const actor = new Actor(name, page, context);
+      await actor.ready;
       actor.annotate = Boolean(args.media);
       actors.set(name, actor);
       try {

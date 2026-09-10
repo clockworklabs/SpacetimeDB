@@ -29,14 +29,19 @@
         {
           "id": "630a",
           "category": "production",
-          "desc": "the owner's notification choice survives a reload",
+          "desc": "notification choices survive reload and backend restart in a fresh browser",
           "points": 2,
           "statedBy": "Notification choices persist for the account.",
           "steps": [
             { "do": "reload", "actor": "owner", "settleMs": 3000 },
             { "do": "ensureSignedIn", "actor": "owner", "name": "notification-owner", "readyTestid": "current-user" },
             { "do": "click", "actor": "owner", "testid": "notification-settings" },
-            { "do": "expect", "actor": "owner", "testid": "notification-order", "attribute": "data-state", "value": "on" }
+            { "do": "expect", "actor": "owner", "testid": "notification-order", "attribute": "data-state", "value": "on" },
+            { "do": "restartBackend", "settleMs": 1000 },
+            { "do": "freshClient", "actor": "owner" },
+            { "do": "signIn", "actor": "owner-fresh", "name": "notification-owner" },
+            { "do": "click", "actor": "owner-fresh", "testid": "notification-settings" },
+            { "do": "expect", "actor": "owner-fresh", "testid": "notification-order", "attribute": "data-state", "value": "on" }
           ]
         },
         {

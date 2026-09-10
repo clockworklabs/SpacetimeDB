@@ -17,7 +17,7 @@
         {
           "id": "4c",
           "category": "production",
-          "desc": "a price change updates an open cart and checkout charges the new price",
+          "desc": "a price change updates an open cart and direct checkout persists the new total",
           "points": 3,
           "statedBy": "The public catalog and every open cart show the new price without a reload. Checkout uses the current price.",
           "steps": [
@@ -28,9 +28,13 @@
             { "do": "fill", "actor": "admin", "testid": "price-input", "text": "52.00", "in": { "testid": "admin-item-row", "contains": "Desk Lamp" } },
             { "do": "click", "actor": "admin", "testid": "price-submit", "in": { "testid": "admin-item-row", "contains": "Desk Lamp" } },
             { "do": "expectNumber", "actor": "customer", "testid": "cart-total", "equals": 52, "within": 10000 },
-            { "do": "click", "actor": "customer", "testid": "checkout-submit" },
-            { "do": "click", "actor": "customer", "testid": "orders-toggle", "settleMs": 1500 },
-            { "do": "expectNumber", "actor": "customer", "testid": "order-total", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "equals": 52 }
+            { "do": "callAction", "actor": "customer", "action": "checkout", "namedAction": { "id": "checkout", "path": "/api/checkout", "method": "POST", "reducer": "checkout", "args": [] }, "settleMs": 1500 },
+            { "do": "expectActionOutcome", "actor": "customer", "outcome": "accepted" },
+            { "do": "freshClient", "actor": "customer" },
+            { "do": "signIn", "actor": "customer-fresh", "name": "price-cart" },
+            { "do": "click", "actor": "customer-fresh", "testid": "orders-toggle" },
+            { "do": "expect", "actor": "customer-fresh", "testid": "order-item", "contains": "Desk Lamp", "count": 1 },
+            { "do": "expectNumber", "actor": "customer-fresh", "testid": "order-total", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "equals": 52 }
           ]
         }
       ]

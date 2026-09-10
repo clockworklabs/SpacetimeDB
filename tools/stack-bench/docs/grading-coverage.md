@@ -213,7 +213,7 @@ The current specification families have a product reason. They do not need a gen
 
 | Specification family | Product reason and acceptance rule |
 | --- | --- |
-| `ecommerce.spec.state-durability` | Saved account, cart, and order state must survive a new read or reload. Observe stored state, not only an optimistic local update. |
+| `ecommerce.spec.state-durability` | Separate session continuity from saved data. Check cart, orders, profile, preferences, staff roles, and support history after runtime restart and fresh login. Retain reload checks for browser continuity. |
 | `ecommerce.spec.access-control` | Customer data and staff operations have different owners. Test direct server calls as well as the visible interface. A refusal must have a defined result; transport failure is not proof. |
 | `ecommerce.spec.live-state` | Shared catalog, inventory, cart, and operations views must reflect changes where the product calls for live information. Use distinct actors and bounded waits. Polling is acceptable when it meets the same observable rule. |
 | `ecommerce.spec.concurrency-safety` | Several valid customers can act at once. Classify every request, allow stack-specific conflict results, and prove stock/cart/order invariants. Do not prescribe locks, reducers, or queue design. |
@@ -228,7 +228,7 @@ The current specification families have a product reason. They do not need a gen
 | `ecommerce.l3.deferred-access-specifications` | Scheduled work is still an authorized business operation. Schedule creation and execution cannot bypass access rules. |
 | `ecommerce.l3.deferred-durability-specifications` | Reservations and scheduled restocks must survive the specified restart. Do not score a restart failure as an application assertion. |
 | `ecommerce.l3.deferred-integrity-specifications` | Deferred work must produce one business effect. A replay can return success when stored state still proves one effect. |
-| `ecommerce.l3.server-time-specifications` | Reservation validity must not depend on a customer's clock. Use controlled client clock changes and authoritative expiry observations. |
+| `ecommerce.l3.server-time-specifications` | Observe reservation expiry with its browser closed and scheduled work after restart. These probes do not change the host or client clock. They do not establish clock-skew tolerance. |
 | `ecommerce.progression.review-access-specifications` | Review ownership and visibility follow the product's role rules. Exercise the direct access path and an independent observer. |
 
 Keep these rules. Keep the workload breadth and intended SpacetimeDB skills. Keep first-build measurements separate from post-feedback repairs. Do not call a score “production readiness”: these checks cover the declared product behaviors, not all security, accessibility, operational, or performance requirements of a deployed service.
@@ -239,3 +239,48 @@ business record through a fresh authoritative read. Unauthorized replay remains 
 refusal check.
 
 Review limits remain: static source inspection cannot prove timing thresholds are attainable on the Docker appliance, that all reference stacks pass, or that a mutant fails only its target. Those are release qualification gates. Current qualification remains pending. No weight changes or broad feature removals are justified by the present evidence alone.
+
+## September 2026 probe audit
+
+The source review covers all four ecommerce recipes, the full dependency graph through
+depth five, both chat levels, and the separate contention diagnostics. Resolve depth from
+the graph; a scenario's level field is not its dependency depth. Review selected criteria,
+including their retained setup, rather than counting every criterion in a source file.
+
+The corrections reuse existing actors, actions, stock reads, and lifecycle controls:
+
+- Privacy observes scoped private data in responses as well as the page. Capture includes
+  HTML, JSON, text, native EventSource, and the existing WebSocket decoder. Positive owner
+  observations establish that the data was delivered. Dropped, unreadable, or unfinished
+  evidence cannot establish absence. Positive observations can wait for pending responses.
+- Price, transfer, cancellation, and return checks prove the original business effect before
+  its preservation or reversal. Transfer races check each stored warehouse quantity as well
+  as the total. Authorized operations establish a working route before refusal checks.
+- Cross-owner order checks combine the attacker's case with the other owner's order.
+  DOM parameter overrides preserve the caller's credentials and the adapter's wire types.
+- Reorder, recommendation dismissal, notification privacy, and resync checks retain the
+  prerequisites needed when only that criterion is selected. Idempotent success is accepted
+  when fresh observations prove one business effect.
+- Chat disappearance checks wait for the transition. Confidentiality checks retain a full
+  absence window. Room creation and room entry are separate actions.
+
+These changes follow the distinction between an interface check and a server authorization
+check in the [OWASP authorization testing guide](https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/05-Authorization_Testing/02-Testing_for_Bypassing_Authorization_Schema),
+and its advice to verify business data in [integrity tests](https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/10-Business_Logic_Testing/03-Test_Integrity_Checks).
+
+The supported claims remain finite:
+
+| Observation | Does not establish |
+| --- | --- |
+| Hosted app restart for PostgreSQL/MongoDB; SpacetimeDB runtime restart with retained data | Common database crash semantics, power-loss recovery, or corruption recovery |
+| Private marker absent from supported captured responses | All endpoints, encodings, binary formats, or arbitrary object-reference attacks |
+| Exact final stock, orders, and totals | Every intermediate state, general serializability, or an external payment ledger |
+| Bounded concurrent requests | Sustained throughput, many independent users, or server execution overlap |
+| Serial promotion redemption limit | Concurrent competition for the last redemption |
+| Hidden return/activity controls and displayed activity fields | Server-side return authorization, audit-log confidentiality, or tamper evidence |
+
+Changed calibration inputs remain drafts with no imported qualification evidence. Runtime
+budgets are planning ceilings; changed restart/observation allowances need fresh measurements.
+Matching live references and defect controls are still required before a verified comparison.
+Chat has additional qualification blockers recorded in [its level notes](../tracks/chat/LEVELS.md).
+Passing source checks or an exploratory paid cohort does not remove these limits.

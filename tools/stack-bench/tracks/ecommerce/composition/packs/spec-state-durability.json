@@ -4,7 +4,7 @@
   "id": "ecommerce.spec.state-durability",
   "title": "State durability",
   "moduleType": "specification",
-  "description": "Session and account-state continuity across reload and reconnect.",
+  "description": "Session continuity and persisted account state across reload, reconnect, and runtime restart.",
   "requiresPacks": [],
   "conflictsWith": [],
   "capabilities": [
@@ -17,7 +17,7 @@
   ],
   "budget": {
     "status": "bounded",
-    "maxRuntimeMs": 48000
+    "maxRuntimeMs": 408000
   },
   "task": {
     "requirements": [

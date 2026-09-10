@@ -91,13 +91,19 @@
       "name": "Session Durability",
       "max": 3,
       "actors": [
-        "alice"
+        "alice",
+        "bob"
       ],
       "setup": [
         {
           "do": "signUp",
           "actor": "alice",
           "name": "Alice"
+        },
+        {
+          "do": "signUp",
+          "actor": "bob",
+          "name": "Bob"
         },
         {
           "do": "createRoom",
@@ -113,6 +119,11 @@
           "do": "send",
           "actor": "alice",
           "text": "alice message"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "bob",
+          "room": "mine"
         }
       ],
       "criteria": [
@@ -164,7 +175,7 @@
         {
           "id": "own-content-still-owned-after-reconnect",
           "points": 1,
-          "desc": "After reconnecting the user still owns what they created \u2014 their room and their message are still theirs",
+          "desc": "After reconnecting, the room owner can still remove a member, and that member loses access.",
           "steps": [
             {
               "do": "enterRoom",
@@ -177,6 +188,28 @@
               "testid": "message-item",
               "contains": "alice message",
               "within": 15000
+            },
+            {
+              "do": "click",
+              "actor": "alice",
+              "testid": "member-remove",
+              "in": {
+                "testid": "member-item",
+                "contains": "Bob"
+              }
+            },
+            {
+              "do": "waitUntilAbsent",
+              "actor": "alice",
+              "testid": "member-item",
+              "contains": "Bob",
+              "within": 10000
+            },
+            {
+              "do": "waitUntilAbsent",
+              "actor": "bob",
+              "testid": "message-input",
+              "within": 10000
             }
           ]
         }
@@ -419,7 +452,8 @@
       "max": 2,
       "actors": [
         "alice",
-        "bob"
+        "bob",
+        "carol"
       ],
       "note": "Presence was wrong in six of the historically graded runs, and 'Seen by' lists were seen flickering between orderings. Neither is visible to a single assertion.",
       "setup": [
@@ -434,6 +468,11 @@
           "name": "Bob"
         },
         {
+          "do": "signUp",
+          "actor": "carol",
+          "name": "Carol"
+        },
+        {
           "do": "createRoom",
           "actor": "alice",
           "room": "lobby"
@@ -446,6 +485,11 @@
         {
           "do": "enterRoom",
           "actor": "bob",
+          "room": "lobby"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "carol",
           "room": "lobby"
         },
         {
@@ -464,6 +508,14 @@
               "do": "expect",
               "actor": "alice",
               "testid": "read-receipt",
+              "contains": "Bob",
+              "within": 10000
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "read-receipt",
+              "contains": "Carol",
               "within": 10000
             },
             {
@@ -493,11 +545,10 @@
               "testid": "signout"
             },
             {
-              "do": "expect",
+              "do": "waitUntilAbsent",
               "actor": "alice",
               "testid": "online-users",
               "contains": "Bob",
-              "absent": true,
               "within": 12000
             }
           ]
@@ -797,7 +848,7 @@
         "target",
         "outsider"
       ],
-      "note": "Each of these is an action the wrong person must not be able to take. Where the app writes over HTTP the request is re-issued with the wrong user's credentials, because a hidden control is not a check. Where identity comes from the live connection there is nothing to re-issue: that replay records as unverified and never scores or penalises, so the point rests on what the interface actually does.",
+      "note": "HTTP replays test authenticated server refusal when a matching request can be captured. Without an observable replay path, the criterion is inconclusive. DOM-only criteria establish interface behavior, not server authorization.",
       "setup": [
         {
           "do": "signUp",

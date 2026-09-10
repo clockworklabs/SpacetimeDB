@@ -153,7 +153,9 @@ test('extracted action inputs expose their runtime options without allowing scri
     actors: ['a', 'b'], action: 'checkout', settleMs: 0, requestTimeoutMs: 60001 })), /requestTimeoutMs/);
   assert.doesNotThrow(() => compileScenarioDefinition(scenario({ do: 'dbRecordStock', item: 'Keyboard', as: 'before' })));
   assert.doesNotThrow(() => compileScenarioDefinition(scenario({ do: 'dbExpectStock', item: 'Keyboard', relativeTo: 'before', plus: -1 })));
-  assert.throws(() => compileScenarioDefinition(scenario({ do: 'dbExpectStock', item: 'Keyboard' })), /exactly one/);
+  assert.throws(() => compileScenarioDefinition(scenario({ do: 'dbExpectStock', item: 'Keyboard' })), /requires equals/);
+  assert.doesNotThrow(() => compileScenarioDefinition(scenario({ do: 'dbExpectStock', item: 'Keyboard', atLeast: 74, atMost: 75 })));
+  assert.throws(() => compileScenarioDefinition(scenario({ do: 'dbExpectStock', item: 'Keyboard', atLeast: 75, atMost: 74 })), /lower bound/);
   assert.throws(() => compileScenarioDefinition(scenario({ do: 'dbExpectStock', item: 'Keyboard', equals: 0, plus: 1 })), /plus requires/);
   assert.throws(() => compileScenarioDefinition(scenario({ do: 'callConcurrently',
     actors: ['a', 'a'], action: 'checkout', settleMs: 1 })), /at least two distinct actors/);
@@ -176,6 +178,13 @@ test('extracted action inputs expose their runtime options without allowing scri
   assert.doesNotThrow(() => compileScenarioDefinition(scenario({ do: 'callAction', actor: 'a',
     action: 'buy', input: { testid: 'item-card', contains: 'Desk Lamp',
       attribute: 'data-buy-input' }, authentication: 'none' })));
+  const checkout = { do: 'callAction', actor: 'a', action: 'checkout',
+    namedAction: { id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] } };
+  assert.doesNotThrow(() => compileScenarioDefinition(scenario(checkout)));
+  assert.throws(() => compileScenarioDefinition(scenario({ ...checkout,
+    namedAction: { ...checkout.namedAction, args: [1] } })), /input: is required/);
+  assert.throws(() => compileScenarioDefinition(scenario({ do: 'callAction', actor: 'a',
+    action: 'checkout' })), /inline action/);
   assert.doesNotThrow(() => compileScenarioDefinition(scenario({ do: 'expectActionOutcome',
     actor: 'a', outcome: 'refused', routeProvenBy: 'owner' })));
   assert.throws(() => compileScenarioDefinition(scenario({ do: 'callAction', actor: 'a',
@@ -276,3 +285,26 @@ test('the live grader rejects malformed definitions before launching a browser',
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
+
+test('named-action overrides accept only declared locator fields', () => {
+  const input = { testid: 'support-link-order', attribute: 'data-action-input',
+    overrides: { caseId: { actor: 'b', testid: 'support-ticket', attribute: 'data-entity-id' } } };
+  const call = { do: 'callAction', actor: 'a', action: 'link', input };
+  assert.doesNotThrow(() => compileScenarioDefinition(scenario(call)));
+  for (const override of [{ ...input.overrides.caseId, actor: '' },
+    { ...input.overrides.caseId, value: 'untrusted literal' }]) {
+    assert.throws(() => compileScenarioDefinition(scenario({ ...call,
+      input: { ...input, overrides: { caseId: override } } })));
+  }
+});
+
+
+test('relative number comparisons require a baseline and one unambiguous bound', () => {
+  const step = { do: 'expectNumber', actor: 'a', testid: 'timer', relativeTo: 'initial', plus: -1 };
+  for (const comparison of ['atMost', 'atLeast']) {
+    assert.doesNotThrow(() => compileScenarioDefinition(scenario({ ...step, comparison })));
+    assert.throws(() => compileScenarioDefinition(scenario({ do: 'expectNumber', actor: 'a', testid: 'timer', equals: 2, comparison })), /requires relativeTo/);
+    assert.throws(() => compileScenarioDefinition(scenario({ ...step, comparison, [comparison]: 2 })), /same bound/);
+  }
+  assert.throws(() => compileScenarioDefinition(scenario({ ...step, comparison: 'less' })), /comparison/);
+});

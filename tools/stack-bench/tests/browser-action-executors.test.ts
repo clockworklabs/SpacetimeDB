@@ -432,3 +432,22 @@ test('browser timeouts are application evidence while crashes and code bugs rema
   assert.equal(bug.status, 'harness_failure');
   assert.equal(bug.code, 'unclassified_exception');
 });
+
+
+test('relative number bounds use recorded values and report the resolved bound', async () => {
+  let value = 70;
+  const provided = services({ loc: () => ({ waitFor: async () => {},
+    evaluate: async () => 'SPAN', innerText: async () => String(value) }) });
+  provided.recorded.set('initial', 72);
+  const step = { do: 'expectNumber', actor: 'a', testid: 'timer', relativeTo: 'initial', plus: -1, within: 1 };
+  assert.equal((await run({ ...step, comparison: 'atMost' }, provided)).status, 'passed');
+  value = 74;
+  assert.equal((await run({ ...step, plus: 1, comparison: 'atLeast' }, provided)).status, 'passed');
+  value = 72;
+  const failed = await run({ ...step, comparison: 'atMost' }, provided);
+  assert.equal(failed.status, 'failed');
+  assert.match(JSON.stringify(failed), /"atMost":71/);
+  assert.doesNotMatch(JSON.stringify(failed), /"equals":71/);
+  const missing = await run({ ...step, relativeTo: 'missing', comparison: 'atMost' }, provided);
+  assert.equal(missing.status, 'inconclusive');
+});

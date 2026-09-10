@@ -15,7 +15,7 @@
         {
           "id": "105a",
           "category": "production",
-          "desc": "cart and order history survive a reload as the same account",
+          "desc": "cart and order history survive reload and backend restart, including a fresh account login",
           "points": 1,
           "statedBy": "the signed-in account, cart, and orders persist across a page reload",
           "steps": [
@@ -33,7 +33,15 @@
             { "do": "expect", "actor": "shopper", "testid": "cart-item", "contains": "Keyboard" },
             { "do": "reload", "actor": "shopper", "settleMs": 2500 },
             { "do": "click", "actor": "shopper", "testid": "orders-toggle" },
-            { "do": "expect", "actor": "shopper", "testid": "order-item", "contains": "Headphones", "count": 1 }
+            { "do": "expect", "actor": "shopper", "testid": "order-item", "contains": "Headphones", "count": 1 },
+            { "do": "restartBackend", "settleMs": 1000 },
+            { "do": "freshClient", "actor": "shopper" },
+            { "do": "signIn", "actor": "shopper-fresh", "name": "pat" },
+            { "do": "click", "actor": "shopper-fresh", "testid": "cart-toggle" },
+            { "do": "expect", "actor": "shopper-fresh", "testid": "cart-item", "contains": "Keyboard", "count": 1 },
+            { "do": "click", "actor": "shopper-fresh", "testid": "overlay-close", "ifAvailable": true },
+            { "do": "click", "actor": "shopper-fresh", "testid": "orders-toggle" },
+            { "do": "expect", "actor": "shopper-fresh", "testid": "order-item", "contains": "Headphones", "count": 1 }
           ]
         }
       ]

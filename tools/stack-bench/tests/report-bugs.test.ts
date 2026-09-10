@@ -463,7 +463,7 @@ test('repair feedback uses behavioral expectations and findings without implemen
     const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
     assert.doesNotMatch(repair, /support-secret-619|ticket list|was delivered to other"/);
     assert.match(repair, /Expected:\*\* a support message is visible only to its customer and to staff/);
-    assert.match(repair, /Actual:\*\* a private message was delivered to other, who is not a participant/);
+    assert.match(repair, /Actual:\*\* private data was delivered to unauthorized actor other/);
     assert.match(repair, /Console or network errors:[\s\S]*POST \/api\/support returned 500/);
   } finally {
     rmSync(root, { recursive: true, force: true });

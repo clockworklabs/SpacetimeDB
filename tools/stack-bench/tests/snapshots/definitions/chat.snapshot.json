@@ -262,9 +262,8 @@
                     "testid": "leave-room"
                   },
                   {
-                    "absent": true,
                     "actor": "bob",
-                    "do": "expect",
+                    "do": "waitUntilAbsent",
                     "testid": "message-input",
                     "within": 5000
                   }
@@ -332,10 +331,9 @@
                     "do": "clearInput"
                   },
                   {
-                    "absent": true,
                     "actor": "alice",
                     "contains": "typing",
-                    "do": "expect",
+                    "do": "waitUntilAbsent",
                     "testid": "typing-indicator",
                     "within": 6500
                   }
@@ -564,9 +562,8 @@
                     "room": "unread-main"
                   },
                   {
-                    "absent": true,
                     "actor": "bob",
-                    "do": "expect",
+                    "do": "waitUntilAbsent",
                     "in": {
                       "contains": "{room:unread-main}",
                       "testid": "room-item"
@@ -670,10 +667,9 @@
                     "testid": "member-remove"
                   },
                   {
-                    "absent": true,
                     "actor": "alice",
                     "contains": "Bob",
-                    "do": "expect",
+                    "do": "waitUntilAbsent",
                     "testid": "member-item",
                     "within": 8000
                   }
@@ -1104,6 +1100,13 @@
                     "do": "expectAllPresent",
                     "prefix": "OFFLINE",
                     "within": 5000
+                  },
+                  {
+                    "actor": "alice",
+                    "count": 2,
+                    "do": "expectAllPresent",
+                    "prefix": "BEFORE",
+                    "within": 10000
                   }
                 ]
               }
@@ -1136,6 +1139,20 @@
                 "actor": "bob",
                 "do": "enterRoom",
                 "room": "resilience"
+              },
+              {
+                "actor": "bob",
+                "count": 2,
+                "delayMs": 1400,
+                "do": "sendMany",
+                "prefix": "BEFORE"
+              },
+              {
+                "actor": "alice",
+                "count": 2,
+                "do": "expectAllPresent",
+                "prefix": "BEFORE",
+                "within": 10000
               }
             ]
           }
@@ -1233,7 +1250,8 @@
           },
           {
             "actors": [
-              "alice"
+              "alice",
+              "bob"
             ],
             "criteria": [
               {
@@ -1282,7 +1300,7 @@
                 ]
               },
               {
-                "desc": "After reconnecting the user still owns what they created — their room and their message are still theirs",
+                "desc": "After reconnecting, the room owner can still remove a member, and that member loses access.",
                 "id": "own-content-still-owned-after-reconnect",
                 "points": 1,
                 "steps": [
@@ -1297,6 +1315,28 @@
                     "do": "expect",
                     "testid": "message-item",
                     "within": 15000
+                  },
+                  {
+                    "actor": "alice",
+                    "do": "click",
+                    "in": {
+                      "contains": "Bob",
+                      "testid": "member-item"
+                    },
+                    "testid": "member-remove"
+                  },
+                  {
+                    "actor": "alice",
+                    "contains": "Bob",
+                    "do": "waitUntilAbsent",
+                    "testid": "member-item",
+                    "within": 10000
+                  },
+                  {
+                    "actor": "bob",
+                    "do": "waitUntilAbsent",
+                    "testid": "message-input",
+                    "within": 10000
                   }
                 ]
               }
@@ -1312,6 +1352,11 @@
                 "name": "Alice"
               },
               {
+                "actor": "bob",
+                "do": "signUp",
+                "name": "Bob"
+              },
+              {
                 "actor": "alice",
                 "do": "createRoom",
                 "room": "mine"
@@ -1325,6 +1370,11 @@
                 "actor": "alice",
                 "do": "send",
                 "text": "alice message"
+              },
+              {
+                "actor": "bob",
+                "do": "enterRoom",
+                "room": "mine"
               }
             ]
           },
@@ -1561,7 +1611,8 @@
           {
             "actors": [
               "alice",
-              "bob"
+              "bob",
+              "carol"
             ],
             "criteria": [
               {
@@ -1571,6 +1622,14 @@
                 "steps": [
                   {
                     "actor": "alice",
+                    "contains": "Bob",
+                    "do": "expect",
+                    "testid": "read-receipt",
+                    "within": 10000
+                  },
+                  {
+                    "actor": "alice",
+                    "contains": "Carol",
                     "do": "expect",
                     "testid": "read-receipt",
                     "within": 10000
@@ -1602,10 +1661,9 @@
                     "testid": "signout"
                   },
                   {
-                    "absent": true,
                     "actor": "alice",
                     "contains": "Bob",
-                    "do": "expect",
+                    "do": "waitUntilAbsent",
                     "testid": "online-users",
                     "within": 12000
                   }
@@ -1628,6 +1686,11 @@
                 "name": "Bob"
               },
               {
+                "actor": "carol",
+                "do": "signUp",
+                "name": "Carol"
+              },
+              {
                 "actor": "alice",
                 "do": "createRoom",
                 "room": "lobby"
@@ -1639,6 +1702,11 @@
               },
               {
                 "actor": "bob",
+                "do": "enterRoom",
+                "room": "lobby"
+              },
+              {
+                "actor": "carol",
                 "do": "enterRoom",
                 "room": "lobby"
               },
@@ -2065,7 +2133,7 @@
             "id": 108,
             "max": 4,
             "name": "Authorization",
-            "note": "Each of these is an action the wrong person must not be able to take. Where the app writes over HTTP the request is re-issued with the wrong user's credentials, because a hidden control is not a check. Where identity comes from the live connection there is nothing to re-issue: that replay records as unverified and never scores or penalises, so the point rests on what the interface actually does.",
+            "note": "HTTP replays test authenticated server refusal when a matching request can be captured. Without an observable replay path, the criterion is inconclusive. DOM-only criteria establish interface behavior, not server authorization.",
             "setup": [
               {
                 "actor": "owner",
@@ -2250,6 +2318,11 @@
                 "room": "sysroom"
               },
               {
+                "actor": "alice",
+                "do": "enterRoom",
+                "room": "sysroom"
+              },
+              {
                 "actor": "bob",
                 "do": "enterRoom",
                 "room": "sysroom"
@@ -2352,6 +2425,11 @@
                 "actor": "host",
                 "do": "createRoom",
                 "room": "raceroom"
+              },
+              {
+                "actor": "host",
+                "do": "enterRoom",
+                "room": "raceroom"
               }
             ]
           }
@@ -2417,6 +2495,11 @@
                 "actor": "owner",
                 "do": "createRoom",
                 "private": true,
+                "room": "vault"
+              },
+              {
+                "actor": "owner",
+                "do": "enterRoom",
                 "room": "vault"
               },
               {
@@ -2520,6 +2603,11 @@
               },
               {
                 "actor": "owner",
+                "do": "enterRoom",
+                "room": "committee"
+              },
+              {
+                "actor": "owner",
                 "do": "send",
                 "text": "pre-invite-history"
               }
@@ -2608,9 +2696,8 @@
                     "testid": "profile-close"
                   },
                   {
-                    "absent": true,
                     "actor": "viewer",
-                    "do": "expect",
+                    "do": "waitUntilAbsent",
                     "testid": "profile-bio",
                     "within": 4000
                   },
@@ -2647,6 +2734,11 @@
               {
                 "actor": "subject",
                 "do": "createRoom",
+                "room": "profroom"
+              },
+              {
+                "actor": "subject",
+                "do": "enterRoom",
                 "room": "profroom"
               },
               {
@@ -2812,18 +2904,16 @@
                     "testid": "unfriend"
                   },
                   {
-                    "absent": true,
                     "actor": "asker",
                     "contains": "Freya",
-                    "do": "expect",
+                    "do": "waitUntilAbsent",
                     "testid": "friend-item",
                     "within": 8000
                   },
                   {
-                    "absent": true,
                     "actor": "asked",
                     "contains": "Finn",
-                    "do": "expect",
+                    "do": "waitUntilAbsent",
                     "testid": "friend-item",
                     "within": 8000
                   }
@@ -2851,6 +2941,11 @@
               {
                 "actor": "asker",
                 "do": "createRoom",
+                "room": "friendroom"
+              },
+              {
+                "actor": "asker",
+                "do": "enterRoom",
                 "room": "friendroom"
               },
               {
@@ -2941,6 +3036,11 @@
               {
                 "actor": "watcher",
                 "do": "createRoom",
+                "room": "presroom"
+              },
+              {
+                "actor": "watcher",
+                "do": "enterRoom",
                 "room": "presroom"
               },
               {
@@ -3080,6 +3180,11 @@
               },
               {
                 "actor": "owner",
+                "do": "enterRoom",
+                "room": "sealed"
+              },
+              {
+                "actor": "owner",
                 "do": "fill",
                 "testid": "invite-input",
                 "text": "{user:Mia}"
@@ -3139,6 +3244,10 @@
                   },
                   {
                     "actor": "b",
+                    "do": "expectReplayCompleted"
+                  },
+                  {
+                    "actor": "b",
                     "do": "wait",
                     "ms": 2500
                   },
@@ -3177,6 +3286,11 @@
               {
                 "actor": "a",
                 "do": "createRoom",
+                "room": "symroom"
+              },
+              {
+                "actor": "a",
+                "do": "enterRoom",
                 "room": "symroom"
               },
               {
@@ -3284,6 +3398,11 @@
                 "room": "bioroom"
               },
               {
+                "actor": "victim",
+                "do": "enterRoom",
+                "room": "bioroom"
+              },
+              {
                 "actor": "attacker",
                 "do": "enterRoom",
                 "room": "bioroom"
@@ -3383,6 +3502,11 @@
               {
                 "actor": "subject",
                 "do": "createRoom",
+                "room": "panelrace"
+              },
+              {
+                "actor": "subject",
+                "do": "enterRoom",
                 "room": "panelrace"
               },
               {
@@ -3510,6 +3634,11 @@
               {
                 "actor": "asker",
                 "do": "createRoom",
+                "room": "listrace"
+              },
+              {
+                "actor": "asker",
+                "do": "enterRoom",
                 "room": "listrace"
               },
               {

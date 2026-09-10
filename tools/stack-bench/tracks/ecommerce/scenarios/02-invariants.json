@@ -614,62 +614,22 @@
           "desc": "a price change does not rewrite revenue already earned",
           "points": 2,
           "steps": [
-            {
-              "do": "pressKey",
-              "actor": "customer",
-              "key": "Escape"
-            },
-            {
-              "do": "click",
-              "actor": "customer",
-              "testid": "buy-now",
-              "in": {
-                "testid": "item-card",
-                "contains": "Bluetooth Speaker"
-              }
-            },
-            {
-              "do": "wait",
-              "actor": "customer",
-              "ms": 2500
-            },
-            {
-              "do": "recordNumber",
-              "actor": "admin",
-              "testid": "admin-revenue",
-              "as": "rev-after-sale"
-            },
-            {
-              "do": "fill",
-              "actor": "admin",
-              "testid": "price-input",
-              "text": "5.00",
-              "in": {
-                "testid": "admin-item-row",
-                "contains": "Bluetooth Speaker"
-              }
-            },
-            {
-              "do": "click",
-              "actor": "admin",
-              "testid": "price-submit",
-              "in": {
-                "testid": "admin-item-row",
-                "contains": "Bluetooth Speaker"
-              }
-            },
-            {
-              "do": "wait",
-              "actor": "admin",
-              "ms": 3000
-            },
-            {
-              "do": "expectNumber",
-              "actor": "admin",
-              "testid": "admin-revenue",
-              "relativeTo": "rev-after-sale",
-              "plus": 0
-            }
+            {"do":"recordNumber","actor":"admin","testid":"admin-revenue","as":"history-revenue-before-sale"},
+            {"do":"pressKey","actor":"customer","key":"Escape"},
+            {"do":"click","actor":"customer","testid":"buy-now","in":{"testid":"item-card","contains":"Bluetooth Speaker"}},
+            {"do":"wait","actor":"customer","ms":2500},
+            {"do":"expectNumber","actor":"admin","testid":"admin-revenue","relativeTo":"history-revenue-before-sale","plus":79.5,"within":10000},
+            {"do":"click","actor":"customer","testid":"orders-toggle"},
+            {"do":"expect","actor":"customer","testid":"order-item","contains":"Bluetooth Speaker","count":1,"within":10000},
+            {"do":"recordNumber","actor":"admin","testid":"admin-revenue","as":"rev-after-sale"},
+            {"do":"fill","actor":"admin","testid":"price-input","text":"5.00","in":{"testid":"admin-item-row","contains":"Bluetooth Speaker"}},
+            {"do":"click","actor":"admin","testid":"price-submit","in":{"testid":"admin-item-row","contains":"Bluetooth Speaker"}},
+            {"do":"wait","actor":"admin","ms":3000},
+            {"do":"reload","actor":"admin","settleMs":2000},
+            {"do":"ensureSignedIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true,"readyTestid":"current-user"},
+            {"do":"click","actor":"admin","testid":"admin-link","ifAvailable":true},
+            {"do":"expectNumber","actor":"admin","testid":"price-input","in":{"testid":"admin-item-row","contains":"Bluetooth Speaker"},"equals":5,"within":10000},
+            {"do":"expectNumber","actor":"admin","testid":"admin-revenue","relativeTo":"rev-after-sale","plus":0}
           ],
           "statedBy": "changing a price never alters the history, the revenue already recorded"
         }

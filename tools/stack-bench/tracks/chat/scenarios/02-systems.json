@@ -11,6 +11,7 @@
         { "do": "signUp", "actor": "subject", "name": "Zed" },
         { "do": "signUp", "actor": "viewer", "name": "Yara" },
         { "do": "createRoom", "actor": "subject", "room": "panelrace" },
+        { "do": "enterRoom", "actor": "subject", "room": "panelrace" },
         { "do": "enterRoom", "actor": "viewer", "room": "panelrace" },
         { "do": "click", "actor": "subject", "testid": "profile-close", "ifAvailable": true },
         { "do": "click", "actor": "subject", "testid": "member-item", "contains": "Zed" },
@@ -52,10 +53,11 @@
         { "do": "signUp", "actor": "asker", "name": "Quin" },
         { "do": "signUp", "actor": "asked", "name": "Rune" },
         { "do": "createRoom", "actor": "asker", "room": "listrace" },
+        { "do": "enterRoom", "actor": "asker", "room": "listrace" },
         { "do": "enterRoom", "actor": "asked", "room": "listrace" },
         { "do": "click", "actor": "asker", "testid": "member-item", "contains": "Rune", "settleMs": 1200 },
         { "do": "click", "actor": "asker", "testid": "friend-request", "settleMs": 1500 },
-        {"do": "click", "actor": "asker", "testid": "profile-close", "ifAvailable": true}
+        { "do": "click", "actor": "asker", "testid": "profile-close", "ifAvailable": true }
       ],
       "criteria": [
         {

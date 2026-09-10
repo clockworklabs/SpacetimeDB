@@ -141,15 +141,15 @@ const within = { within: positiveNumber };
 const locator = { in: object };
 
 export const ACTION_DEFINITIONS = Object.freeze({
-  callAction: fields({ ...actor, action: nonEmptyString, input: object },
-    { from: nonEmptyString, authentication: nonEmptyString, namedAction: object, ...settle }),
+  callAction: fields({ ...actor, action: nonEmptyString },
+    { input: object, from: nonEmptyString, authentication: nonEmptyString, namedAction: object, ...settle }),
   callConcurrently: fields({ ...actors, action: nonEmptyString, settleMs: nonNegativeNumber },
     { args: anyArray, body: object, input: object, namedAction: object, from: nonEmptyString,
       requests: value => positiveInteger(value) && Number(value) <= 64,
       requestTimeoutMs: value => positiveInteger(value) && Number(value) <= 60000 }),
   dbRecordStock: fields({ item: nonEmptyString, as: nonEmptyString }, { warehouse: nonEmptyString }),
   dbExpectStock: fields({ item: nonEmptyString },
-    { warehouse: nonEmptyString, equals: integer, relativeTo: nonEmptyString, plus: integer }),
+    { warehouse: nonEmptyString, equals: integer, atLeast: integer, atMost: integer, relativeTo: nonEmptyString, plus: integer }),
   clearInput: fields(actor),
   click: fields({ ...actor, testid: nonEmptyString },
     { contains: string, ifAvailable: boolean, unlessVisible: nonEmptyString, ...locator, ...settle, ...within }),
@@ -183,6 +183,7 @@ export const ACTION_DEFINITIONS = Object.freeze({
   expectNotReceived: fields({ ...actor, contains: string }, within),
   expectNumber: fields({ ...actor, testid: nonEmptyString },
     { equals: number, atLeast: number, atMost: number, relativeTo: nonEmptyString, plus: number,
+      comparison: value => oneOf(value, ['atMost', 'atLeast']),
       ...locator, ...within }),
   expectOrderMatches: fields({ ...actors, prefix: string }),
   expectSequence: fields({ ...actor, testid: nonEmptyString, equals: stringArray },
@@ -277,10 +278,21 @@ function validateNamedTarget(value: unknown, at: string): void {
 }
 
 function validateActionInput(value: unknown, at: string): void {
-  strictObject(value, at, new Set(['testid', 'contains', 'attribute']));
+  strictObject(value, at, new Set(['testid', 'contains', 'attribute', 'overrides']));
   if (!nonEmptyString(value.testid)) fail(`${at}.testid`, 'must be a non-empty string');
   if (value.contains !== undefined && !string(value.contains)) fail(`${at}.contains`, 'must be a string');
   if (!nonEmptyString(value.attribute)) fail(`${at}.attribute`, 'must be a non-empty string');
+  if (value.overrides !== undefined) {
+    if (!object(value.overrides)) fail(`${at}.overrides`, 'must be an object');
+    for (const [name, override] of Object.entries(value.overrides)) {
+      const where = `${at}.overrides.${name}`;
+      if (!nonEmptyString(name)) fail(where, 'parameter name must be non-empty');
+      strictObject(override, where, new Set(['actor', 'testid', 'contains', 'attribute']));
+      if (!nonEmptyString(override.actor)) fail(`${where}.actor`, 'must be a non-empty string');
+      validateActionInput({ testid: override.testid, attribute: override.attribute,
+        ...(override.contains === undefined ? {} : { contains: override.contains }) }, where);
+    }
+  }
 }
 
 function validateNamedActionParams(value: unknown,
@@ -382,14 +394,20 @@ function validateStep(step: unknown, at: string): asserts step is CompiledStep {
   if (step.namedAction) validateInlineNamedAction(step.namedAction, `${at}.namedAction`);
   if (step.namedTarget) validateNamedTarget(step.namedTarget, `${at}.namedTarget`);
   if (step.do === 'callAction' || (step.do === 'callConcurrently' && step.input !== undefined)) {
-    validateActionInput(step.input, `${at}.input`);
+    if (step.input !== undefined) validateActionInput(step.input, `${at}.input`);
     const namedAction = step.namedAction;
     if (namedAction) {
       validateInlineNamedAction(namedAction, `${at}.namedAction`);
       if (namedAction.id !== step.action) fail(`${at}.namedAction.id`, 'must match action');
-      if (!namedAction.params?.length) {
+      if (step.input !== undefined && !namedAction.params?.length) {
         fail(`${at}.namedAction.params`, 'must be a non-empty array');
       }
+      if (step.input === undefined && (namedAction.params?.length || (Array.isArray(namedAction.args) && namedAction.args.length))) {
+        fail(`${at}.input`, 'is required for an action with parameters or arguments');
+      }
+    }
+    if (step.input === undefined && !namedAction) {
+      fail(`${at}.input`, 'may be omitted only for an inline action with no parameters or arguments');
     }
     if (step.authentication !== undefined && !oneOf(step.authentication, ['actor', 'none'])) {
       fail(`${at}.authentication`, 'must be "actor" or "none"');
@@ -424,8 +442,12 @@ function validateStep(step: unknown, at: string): asserts step is CompiledStep {
     }
   }
   if (step.do === 'dbExpectStock') {
-    if ((step.equals !== undefined) === (step.relativeTo !== undefined)) {
-      fail(at, 'dbExpectStock requires exactly one of equals or relativeTo');
+    if ((step.equals !== undefined && step.relativeTo !== undefined)
+      || !['equals', 'relativeTo', 'atLeast', 'atMost'].some(key => step[key] !== undefined)) {
+      fail(at, 'dbExpectStock requires equals, relativeTo, or bounds; equals and relativeTo are exclusive');
+    }
+    if (step.atLeast !== undefined && step.atMost !== undefined && Number(step.atLeast) > Number(step.atMost)) {
+      fail(at, 'dbExpectStock lower bound exceeds upper bound');
     }
     if (step.plus !== undefined && step.relativeTo === undefined) {
       fail(at, 'dbExpectStock plus requires relativeTo');
@@ -453,6 +475,12 @@ function validateStep(step: unknown, at: string): asserts step is CompiledStep {
   if (step.do === 'expectNumber'
     && !['equals', 'atLeast', 'atMost', 'relativeTo'].some(name => step[name] !== undefined)) {
     fail(at, 'expectNumber requires equals, atLeast, atMost, or relativeTo');
+  }
+  if (step.do === 'expectNumber' && step.comparison !== undefined) {
+    if (step.relativeTo === undefined) fail(at, 'expectNumber comparison requires relativeTo');
+    if (step.equals !== undefined || step[step.comparison as string] !== undefined) {
+      fail(at, 'expectNumber comparison cannot also specify equals or the same bound');
+    }
   }
   if (step.do === 'expectElementCount') {
     if ((step.equals !== undefined) === (step.relativeTo !== undefined)) {

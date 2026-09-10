@@ -111,6 +111,7 @@ interface AllPresentInput {
 type StableInput = CommonInput & { readonly samples?: number; readonly intervalMs?: number };
 type RecordNumberInput = CommonInput & { readonly as: string; readonly count?: boolean };
 type ExpectNumberInput = CommonInput & {
+  readonly comparison?: 'atMost' | 'atLeast';
   readonly equals?: number;
   readonly relativeTo?: string;
   readonly plus?: number;
@@ -499,6 +500,12 @@ async function recordNumber({ input, capabilities }: BrowserArguments<RecordNumb
   return { key: input.as, value };
 }
 
+export function numberMatches(value: number, expected: { equals?: number; atLeast?: number; atMost?: number }): boolean {
+  return (expected.equals === undefined || value === expected.equals)
+    && (expected.atLeast === undefined || value >= expected.atLeast)
+    && (expected.atMost === undefined || value <= expected.atMost);
+}
+
 async function expectNumber({ input, capabilities, signal }:
     BrowserArguments<ExpectNumberInput>) {
   const actor = actorFor(capabilities, input.actor);
@@ -516,10 +523,13 @@ async function expectNumber({ input, capabilities, signal }:
       ...(contains || scope?.contains ? { filtered: true } : {}) });
   });
 
-  const equals = expectedNumber(browser, input);
-  const matches = (number: number): boolean => (equals === undefined || number === equals)
-    && (input.atLeast === undefined || number >= input.atLeast)
-    && (input.atMost === undefined || number <= input.atMost);
+  const target = expectedNumber(browser, input);
+  const expected = {
+    ...(input.atLeast === undefined ? {} : { atLeast: input.atLeast }),
+    ...(input.atMost === undefined ? {} : { atMost: input.atMost }),
+    ...(target === undefined ? {} : { [input.comparison ?? 'equals']: target }),
+  };
+  const matches = (number: number): boolean => numberMatches(number, expected);
 
   const deadline = Date.now() + within;
   let last = null;
@@ -529,11 +539,7 @@ async function expectNumber({ input, capabilities, signal }:
     if (Date.now() > deadline) break;
     await browser.sleep(250, signal);
   }
-  fail('number-mismatch', { control: input.testid, observed: last, expected: {
-    ...(equals === undefined ? {} : { equals }),
-    ...(input.atLeast === undefined ? {} : { atLeast: input.atLeast }),
-    ...(input.atMost === undefined ? {} : { atMost: input.atMost }),
-  } });
+  fail('number-mismatch', { control: input.testid, observed: last, expected });
 }
 
 async function expectOrderMatches({ input, capabilities }:

@@ -10,12 +10,8 @@
     "ecommerce.operations-access-features"
   ],
   "conflictsWith": [],
-  "capabilities": [
-    "browser"
-  ],
-  "evidence": [
-    "browser-observation"
-  ],
+  "capabilities": ["browser","direct-server-call"],
+  "evidence": ["browser-observation","fresh-client-observation"],
   "budget": {
     "status": "bounded",
     "maxRuntimeMs": 94000
@@ -126,8 +122,8 @@
     {
       "id": "price-cart-checkout",
       "stableId": "price-history",
-      "source": "scenarios/02-features.json",
-      "feature": 4,
+      "source": "scenarios/progression-price-cart-checkout.json",
+      "feature": 420,
       "criteria": [
         "4c"
       ],

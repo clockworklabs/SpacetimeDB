@@ -115,7 +115,8 @@ test('named reducer scenarios match the SpacetimeDB reference handlers', () => {
     .join('\n');
 
   for (const [scenario, reducer, handler] of namedReducerCalls) {
-    assert(read(join(trackRoot, 'scenarios', scenario)).includes(`"reducer": "${reducer}"`));
+    assert(JSON.stringify(readJson(join(trackRoot, 'scenarios', scenario)))
+      .includes(`"reducer":"${reducer}"`), `${scenario}: ${reducer}`);
     assert(backend.includes(`export const ${handler} = spacetimedb.reducer`));
     assert.match(client, new RegExp(`\\breducers\\??\\.${handler}\\(`));
   }

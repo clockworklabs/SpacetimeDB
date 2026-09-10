@@ -41,9 +41,10 @@
         "points": 1,
         "statedBy": "The cart shows the remaining reservation time.",
         "steps": [
-          { "do": "expectNumber", "actor": "shopper", "testid": "cart-reservation-timer", "in": { "testid": "cart-item", "contains": "Gaming Mouse" }, "atLeast": 80 },
-          { "do": "wait", "actor": "shopper", "ms": 15000 },
-          { "do": "expectNumber", "actor": "shopper", "testid": "cart-reservation-timer", "in": { "testid": "cart-item", "contains": "Gaming Mouse" }, "atMost": 75 }
+          { "do": "expectNumber", "actor": "shopper", "testid": "cart-reservation-timer", "in": { "testid": "cart-item", "contains": "Gaming Mouse" }, "atLeast": 1, "atMost": 90 },
+          { "do": "recordNumber", "actor": "shopper", "testid": "cart-reservation-timer", "in": { "testid": "cart-item", "contains": "Gaming Mouse" }, "as": "initial-countdown" },
+          { "do": "wait", "actor": "shopper", "ms": 1000 },
+          { "do": "expectNumber", "actor": "shopper", "testid": "cart-reservation-timer", "in": { "testid": "cart-item", "contains": "Gaming Mouse" }, "relativeTo": "initial-countdown", "plus": -1, "comparison": "atMost", "within": 10000 }
         ]
       }]
     },

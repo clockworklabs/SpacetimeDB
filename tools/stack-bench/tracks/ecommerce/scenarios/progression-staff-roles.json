@@ -29,14 +29,19 @@
         {
           "id": "621a",
           "category": "production",
-          "desc": "an assigned staff role survives a reload",
+          "desc": "an assigned staff role survives reload and backend restart in a fresh browser",
           "points": 2,
           "statedBy": "Assigned staff roles persist.",
           "steps": [
             { "do": "reload", "actor": "admin", "settleMs": 2500 },
             { "do": "ensureSignedIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true, "readyTestid": "current-user" },
             { "do": "click", "actor": "admin", "testid": "admin-link", "ifAvailable": true },
-            { "do": "expect", "actor": "admin", "testid": "staff-role-select", "in": { "testid": "staff-role-account-staff" }, "value": "inventory", "within": 10000 }
+            { "do": "expect", "actor": "admin", "testid": "staff-role-select", "in": { "testid": "staff-role-account-staff" }, "value": "inventory", "within": 10000 },
+            { "do": "restartBackend", "settleMs": 1000 },
+            { "do": "freshClient", "actor": "admin" },
+            { "do": "signIn", "actor": "admin-fresh", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+            { "do": "click", "actor": "admin-fresh", "testid": "admin-link" },
+            { "do": "expect", "actor": "admin-fresh", "testid": "staff-role-select", "in": { "testid": "staff-role-account-staff" }, "value": "inventory", "within": 10000 }
           ]
         },
         {

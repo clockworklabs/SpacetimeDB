@@ -12,6 +12,7 @@
         { "do": "signUp", "actor": "member", "name": "Mia" },
         { "do": "signUp", "actor": "outsider", "name": "Xeno" },
         { "do": "createRoom", "actor": "owner", "room": "sealed", "private": true },
+        { "do": "enterRoom", "actor": "owner", "room": "sealed" },
         { "do": "fill", "actor": "owner", "testid": "invite-input", "text": "{user:Mia}" },
         { "do": "click", "actor": "owner", "testid": "invite-submit", "settleMs": 1500 },
         { "do": "enterRoom", "actor": "member", "room": "sealed" }
@@ -48,10 +49,11 @@
         { "do": "signUp", "actor": "a", "name": "Ada" },
         { "do": "signUp", "actor": "b", "name": "Ben" },
         { "do": "createRoom", "actor": "a", "room": "symroom" },
+        { "do": "enterRoom", "actor": "a", "room": "symroom" },
         { "do": "enterRoom", "actor": "b", "room": "symroom" },
         { "do": "click", "actor": "a", "testid": "member-item", "contains": "Ben", "settleMs": 1200 },
         { "do": "click", "actor": "a", "testid": "friend-request", "settleMs": 1200 },
-        {"do": "click", "actor": "a", "testid": "profile-close", "ifAvailable": true},
+        { "do": "click", "actor": "a", "testid": "profile-close", "ifAvailable": true },
         { "do": "click", "actor": "b", "testid": "friend-accept", "in": { "testid": "friend-pending", "contains": "Ada" }, "settleMs": 1500 }
       ],
       "criteria": [
@@ -70,6 +72,7 @@
           "points": 2,
           "steps": [
             { "do": "replayAs", "actor": "b", "from": "b", "match": "friend" },
+            { "do": "expectReplayCompleted", "actor": "b" },
             { "do": "wait", "actor": "b", "ms": 2500 },
             { "do": "expectElementCount", "actor": "a", "testid": "friend-item", "contains": "Ben", "equals": 1, "within": 8000 },
             { "do": "expectElementCount", "actor": "b", "testid": "friend-item", "contains": "Ada", "equals": 1, "within": 8000 }
@@ -85,6 +88,7 @@
         { "do": "signUp", "actor": "victim", "name": "Vik" },
         { "do": "signUp", "actor": "attacker", "name": "Axl" },
         { "do": "createRoom", "actor": "victim", "room": "bioroom" },
+        { "do": "enterRoom", "actor": "victim", "room": "bioroom" },
         { "do": "enterRoom", "actor": "attacker", "room": "bioroom" },
         { "do": "click", "actor": "victim", "testid": "profile-close", "ifAvailable": true },
         { "do": "click", "actor": "victim", "testid": "member-item", "contains": "Vik" },

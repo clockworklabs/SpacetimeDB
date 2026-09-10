@@ -94,6 +94,10 @@ test('stock observations compare authoritative quantities and cannot use a missi
   assert.equal(failed.status, 'failed');
   assert.match(failed.summary ?? '', /stored stock for Keyboard/);
   assert.equal((await run({ do: 'dbExpectStock', item: 'Keyboard', equals: 18 }, capabilities)).status, 'passed');
+  for (const [lower, upper, status] of [[18, 19, 'passed'], [17, 18, 'passed'],
+    [19, 20, 'failed'], [16, 17, 'failed']] as const) {
+    assert.equal((await run({ do: 'dbExpectStock', item: 'Keyboard', atLeast: lower, atMost: upper }, capabilities)).status, status);
+  }
   const disabled = { ...capabilities, 'database-read': createDatabaseReadCapability({
     backend: 'postgres', skip: true, expand: value => value,
   }) };

@@ -61,7 +61,7 @@ test('restock checks reopen and verify the admin destination after every admin r
 
 test('support privacy confirms persisted owner writes without requiring live refresh', () => {
   const privacy = scenario('progression-managed-support-privacy.json').features[0]!.criteria[0]!;
-  const tail = privacy.steps.slice(-6);
+  const tail = privacy.steps.slice(privacy.steps.findIndex(step => step.do === 'expectReplayRejected'));
   assert.equal(tail[0]!.do, 'expectReplayRejected');
   assert.deepEqual(tail[1], { do: 'reload', actor: 'staff', settleMs: 2000 });
   assert.deepEqual(tail[2],
@@ -70,7 +70,7 @@ test('support privacy confirms persisted owner writes without requiring live ref
   assert.deepEqual(tail[3],
     { do: 'click', actor: 'staff', testid: 'staff-link', ifAvailable: true });
   assert.deepEqual(tail[4],
-    { do: 'expect', actor: 'staff', testid: 'support-ticket', contains: 'Private managed case' });
+    { do: 'expect', actor: 'staff', testid: 'support-ticket', contains: 'Private managed case {user:casemarker}' });
   assert.equal(tail[5]!.do, 'expectElementCount');
   assert.equal(tail[5]!.equals, 1, 'an unauthorized replay must not add a second reply');
   const live = scenario('progression-managed-support-shared.json').features[0]!.criteria
@@ -126,5 +126,38 @@ test('the direct conservation race is observed on fresh pages', () => {
     assert.equal(before[reload + 1]!.do, 'ensureSignedIn');
     assert(before.slice(reload).every(step => step.actor === actor),
       `${actor}'s fresh page is not interleaved with the other actor`);
+  }
+  assert(race.steps.some(step => step.do === 'dbExpectStock' && step.warehouse === 'East'
+    && step.atLeast === 74 && step.atMost === 75));
+  assert(race.steps.some(step => step.do === 'dbExpectStock' && step.warehouse === 'West'
+    && step.atLeast === 124 && step.atMost === 125));
+  assert(race.steps.some(step => step.do === 'dbExpectStock' && step.equals === 199));
+  assert(race.steps.some(step => step.do === 'expect' && step.testid === 'order-item' && step.count === 1));
+});
+
+test('L2 direct authorization refusals follow accepted routes and fresh observations', () => {
+  for (const [file, ids] of [['02-server-actions.json', ['201c']], ['02-self-contained.json', ['1e']],
+    ['02-strengthened.json', ['201a', '201b']]] as const) {
+    for (const id of ids) {
+      const check = scenario(file).features.flatMap(feature => feature.criteria).find(criterion => criterion.id === id)!;
+      const refusal = check.steps.findIndex(step => step.do === 'expectActionOutcome' && step.outcome === 'refused');
+      assert(refusal > 0);
+      const proof = check.steps[refusal]!.routeProvenBy;
+      assert(check.steps.slice(0, refusal).some(step => step.do === 'expectActionOutcome'
+        && step.actor === proof && step.outcome === 'accepted'));
+      assert(check.steps.slice(refusal + 1).some(step => step.do === 'reload'));
+    }
+  }
+});
+
+test('cancellation conservation proves the sale before its reversal', () => {
+  for (const [file, ids] of [['02-features.json', ['3a']], ['02-self-contained.json', ['202b', '202c']]] as const) {
+    for (const id of ids) {
+      const check = scenario(file).features.flatMap(feature => feature.criteria).find(criterion => criterion.id === id)!;
+      const cancel = check.steps.findIndex(step => step.do === 'click' && step.testid === 'cancel-order');
+      assert(check.steps.slice(0, cancel).some(step => step.do === 'dbExpectStock' && step.plus === -1));
+      assert(check.steps.slice(0, cancel).some(step => step.do === 'expect' && step.testid === 'order-item' && step.count === 1));
+      assert(check.steps.slice(cancel + 1).some(step => step.do === 'dbExpectStock' && step.plus === 0));
+    }
   }
 });

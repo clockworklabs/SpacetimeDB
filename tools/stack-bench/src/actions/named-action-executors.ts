@@ -30,10 +30,16 @@ interface CallActionInput {
   readonly actor: string;
   readonly authentication?: 'actor' | 'none';
   readonly from?: string;
-  readonly input: {
+  readonly input?: {
     readonly attribute: string;
     readonly contains?: string;
     readonly testid: string;
+    readonly overrides?: Readonly<Record<string, {
+      readonly actor: string;
+      readonly testid: string;
+      readonly contains?: string;
+      readonly attribute: string;
+    }>>;
   };
   readonly namedAction?: NamedAction;
   readonly settleMs?: number;
@@ -71,8 +77,8 @@ type NamedTransportCapabilities = NamedActionCapabilities & TransportActorCapabi
 type NamedTransportArguments<Input> =
   ActorActionArguments<Input, NamedTransportCapabilities>;
 
-async function readActionValues(source: Actor, action: NamedAction,
-  input: Pick<CallActionInput, 'action' | 'input'>, within: number) {
+async function readActionValues(capabilities: ActorCapabilities, source: Actor, action: NamedAction,
+  input: { action: string; input: NonNullable<CallActionInput['input']> }, within: number) {
   if (!Array.isArray(action.params) || action.params.length === 0) {
     inconclusive('action-without-parameters', { action: input.action });
   }
@@ -100,6 +106,16 @@ async function readActionValues(source: Actor, action: NamedAction,
   const defaults = action.args ?? [];
   const actionValues = Object.fromEntries(expected.map((name, index) =>
     [name, Object.hasOwn(supplied, name) ? supplied[name] : defaults[index]]));
+  for (const [name, override] of Object.entries(input.input.overrides ?? {})) {
+    if (!expected.includes(name)) invalid(`override parameter ${name} is not declared`);
+    const target = actorFor(capabilities, override.actor).loc(override.testid, { contains: override.contains });
+    await target.waitFor({ state: 'attached', timeout: within });
+    const value = await target.getAttribute(override.attribute);
+    if (value === null || value === '') {
+      fail('interface-missing', { control: override.testid, attribute: override.attribute, action: input.action });
+    }
+    actionValues[name] = value;
+  }
   const missing = expected.filter(name => actionValues[name] === undefined);
   if (missing.length) {
     fail('interface-invalid', { action: input.action, attribute: input.input.attribute, missing });
@@ -115,7 +131,12 @@ async function callAction({ input, capabilities, signal }: NamedTransportArgumen
   const transport = transportFor(capabilities);
   const action = input.namedAction ?? named.resolve(input.action);
   if (!action) inconclusive('unknown-action', { action: input.action });
-  const actionValues = await readActionValues(source, action, input, transport.defaultWithin);
+  if (!input.input && (action.params?.length || action.args?.length)) {
+    inconclusive('unresolved-action', { action: input.action });
+  }
+  const actionValues = input.input
+    ? await readActionValues(capabilities, source, action, { action: input.action, input: input.input }, transport.defaultWithin)
+    : {};
 
   let credentials: HeaderRecord = {};
   if ((input.authentication ?? 'actor') === 'actor') {
@@ -219,7 +240,7 @@ async function callConcurrently({ input, capabilities, signal }: NamedArguments<
     prepared.push({ name, credentials });
   }
   const values = input.input ? await readActionValues(
-    actorFor(capabilities, input.from ?? input.actors[0]!), action,
+    capabilities, actorFor(capabilities, input.from ?? input.actors[0]!), action,
     { action: input.action, input: input.input }, input.requestTimeoutMs ?? 30000) : undefined;
   const request = namedActionRequest(named, action, values === undefined ? input : { values });
   const requestUrl = request?.url;

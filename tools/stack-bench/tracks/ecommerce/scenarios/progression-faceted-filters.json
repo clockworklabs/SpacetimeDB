@@ -9,10 +9,12 @@
       "name": "Filters compose",
       "actors": ["visitor"],
       "setup": [
+        { "do": "dbSetStock", "item": "Coffee Grinder", "warehouse": "East", "quantity": 0, "settleMs": 0 },
+        { "do": "dbSetStock", "item": "Coffee Grinder", "warehouse": "West", "quantity": 0, "settleMs": 1000 },
+        { "do": "reload", "actor": "visitor", "settleMs": 1000 },
         { "do": "fill", "actor": "visitor", "testid": "category-filter", "text": "Home" },
         { "do": "fill", "actor": "visitor", "testid": "minimum-price", "text": "50" },
         { "do": "fill", "actor": "visitor", "testid": "maximum-price", "text": "200" },
-        { "do": "click", "actor": "visitor", "testid": "in-stock-filter" },
         { "do": "click", "actor": "visitor", "testid": "filter-apply", "ifAvailable": true }
       ],
       "criteria": [
@@ -24,6 +26,9 @@
           "statedBy": "Apply all selected filters together",
           "steps": [
             { "do": "expectElementCount", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "Coffee Grinder", "equals": 1, "within": 10000 },
+            { "do": "click", "actor": "visitor", "testid": "in-stock-filter" },
+            { "do": "click", "actor": "visitor", "testid": "filter-apply", "ifAvailable": true },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "Coffee Grinder", "absent": true, "within": 10000 },
             { "do": "expectElementCount", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "Air Purifier", "equals": 1 },
             { "do": "expect", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "USB Cable", "absent": true },
             { "do": "expect", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "Desk Lamp", "absent": true },

@@ -116,6 +116,25 @@ test('the actor/transport executor registry is exact and capability-scoped', () 
   }
 });
 
+test('a parameterless action needs no DOM input; parameterized actions still do', async () => {
+  let calls = 0;
+  const provided = services(new Map([['guest', { name: 'guest' }]]), {
+    fetchImpl: async (url, options) => {
+      assert.equal(url, 'http://app.test/api/checkout');
+      assert.deepEqual(JSON.parse(String(options.body)), {});
+      calls++;
+      return namedResponse(200, true);
+    },
+  });
+  const input = { do: 'callAction', actor: 'guest', action: 'checkout', authentication: 'none',
+    namedAction: { id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] } };
+  const result = await run(input, provided);
+  assert.equal(result.status, 'passed', JSON.stringify(result));
+  assert.equal((await run({ ...input, namedAction: { ...input.namedAction, args: [1] } }, provided)).status,
+    'harness_failure');
+  assert.equal(calls, 1);
+});
+
 test('one named server action maps DOM input symmetrically and verifies its outcome', async () => {
   const requests: CapturedRequest[] = [];
   const source = {
@@ -554,7 +573,7 @@ test('replay uses an authenticated named action when the source write is an opaq
     lastWsWrite: { event: 'binary reducer call', body: {} },
     loc: (testid: string, options: UnknownRecord) => {
       assert.equal(testid, 'order-item');
-      assert.deepEqual(options, { contains: 'Webcam' });
+      assert.deepEqual(options, { contains: 'test-scoped' });
       return {
         waitFor: async (value: unknown) =>
           assert.deepEqual(value, { state: 'visible', timeout: 5000 }),
@@ -586,7 +605,7 @@ test('replay uses an authenticated named action when the source write is an opaq
   const replayed = await run({ do: 'replayAs', actor: 'customer', from: 'staff', match: 'ship',
     swap: { find: '52', with: '53' },
     namedAction: { id: 'ship', path: '/api/fulfilment/ship', reducer: 'ship_order', args: [0] },
-    namedTarget: { testid: 'order-item', contains: 'Webcam',
+    namedTarget: { testid: 'order-item', contains: '{room:test}',
       attribute: 'data-entity-id', valueType: 'number' }, settleMs: 0 }, provided);
   assert.equal(replayed.status, 'passed');
   assert.deepEqual(replayed.observation,
@@ -964,5 +983,48 @@ test('an application-owned script timeout is a scored application failure', asyn
     assert.match(result.summary ?? '', /failed|timed out/i);
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('named calls override one declared parameter from another actor without changing the caller', async () => {
+  for (const backend of ['postgres', 'mongodb', 'spacetime']) {
+    for (const doAction of ['callAction', 'callConcurrently']) {
+      const requests: CapturedRequest[] = [];
+      let targetId: string | null = '202';
+      const owner = { name: 'owner', writes: [{ headers: { Authorization: 'Bearer owner' } }], loc: () => ({ waitFor: async () => {},
+        getAttribute: async () => JSON.stringify({ caseId: '101', orderId: '303' }) }) };
+      const other = { name: 'other', writes: [{ headers: { Authorization: 'Bearer other' } }],
+        loc: () => ({ waitFor: async () => {}, getAttribute: async () => targetId }) };
+      const provided = services(new Map<string, unknown>([['owner', owner], ['other', other]]), {
+        backend, spacetime: { uri: 'http://127.0.0.1:3000', mod: 'shop' },
+        actions: [{ id: 'link', path: '/api/cases/{caseId}/order', reducer: 'link_support_order',
+          args: [0, 0], params: [{ name: 'caseId', in: 'path', placeholder: '{caseId}', wireType: 'u64' },
+            { name: 'orderId', in: 'body', wireType: 'u64' }] }],
+        fetchImpl: async (url, options) => {
+          requests.push({ url, options: options as unknown as UnknownRecord });
+          return namedResponse(200, true);
+        },
+      });
+      const selector = { actor: 'other', testid: 'support-ticket', attribute: 'data-entity-id' };
+      const input = { do: doAction, ...(doAction === 'callAction' ? { actor: 'other' } : { actors: ['other', 'owner'], requests: 1 }), from: 'owner', action: 'link',
+        input: { testid: 'support-link-order', attribute: 'data-action-input', overrides: { caseId: selector } },
+        settleMs: 0 };
+      const called = await run(input, provided);
+      assert.equal(called.status, 'passed', JSON.stringify({ backend, doAction, called }));
+      const request = requests[0]!;
+      assert.equal(record(request.options.headers).authorization, 'Bearer other');
+      if (backend === 'spacetime') {
+        assert.deepEqual(JSON.parse(String(request.options.body)), [202, 303]);
+      } else {
+        assert.equal(request.url, 'http://app.test/api/cases/202/order');
+        assert.deepEqual(JSON.parse(String(request.options.body)), { orderId: '303' });
+      }
+      const rejected = await run({ ...input, input: { ...input.input, overrides: { unknown: selector } } }, provided);
+      assert.equal(rejected.status, 'failed');
+      assert.match(JSON.stringify(rejected.finding), /not declared/);
+      targetId = null;
+      assert.equal((await run(input, provided)).status, 'failed');
+      assert.equal(requests.length, 1, 'invalid override must not send a request');
+    }
   }
 });

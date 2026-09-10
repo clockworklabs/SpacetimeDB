@@ -3593,6 +3593,11 @@
                 "statedBy": "the stock goes back to the warehouse it came from, the order leaves the fulfilment queue, and revenue falls",
                 "steps": [
                   {
+                    "as": "stored-before-cancel-3a",
+                    "do": "dbRecordStock",
+                    "item": "Coffee Grinder"
+                  },
+                  {
                     "actor": "admin",
                     "as": "rev-before",
                     "do": "recordNumber",
@@ -3634,6 +3639,36 @@
                     "actor": "customer",
                     "do": "click",
                     "testid": "orders-toggle"
+                  },
+                  {
+                    "actor": "customer",
+                    "contains": "Coffee Grinder",
+                    "count": 1,
+                    "do": "expect",
+                    "testid": "order-item",
+                    "within": 10000
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Coffee Grinder",
+                    "plus": -1,
+                    "relativeTo": "stored-before-cancel-3a"
+                  },
+                  {
+                    "actor": "staff",
+                    "contains": "Coffee Grinder",
+                    "count": 1,
+                    "do": "expect",
+                    "testid": "queue-item",
+                    "within": 10000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "expectNumber",
+                    "plus": 64,
+                    "relativeTo": "rev-before",
+                    "testid": "admin-revenue",
+                    "within": 10000
                   },
                   {
                     "actor": "customer",
@@ -3680,6 +3715,12 @@
                     "plus": 0,
                     "relativeTo": "stock-before",
                     "testid": "item-stock"
+                  },
+                  {
+                    "do": "dbExpectStock",
+                    "item": "Coffee Grinder",
+                    "plus": 0,
+                    "relativeTo": "stored-before-cancel-3a"
                   }
                 ]
               },
@@ -4915,6 +4956,12 @@
                 "statedBy": "changing a price never alters the history, the revenue already recorded",
                 "steps": [
                   {
+                    "actor": "admin",
+                    "as": "history-revenue-before-sale",
+                    "do": "recordNumber",
+                    "testid": "admin-revenue"
+                  },
+                  {
                     "actor": "customer",
                     "do": "pressKey",
                     "key": "Escape"
@@ -4932,6 +4979,27 @@
                     "actor": "customer",
                     "do": "wait",
                     "ms": 2500
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "expectNumber",
+                    "plus": 79.5,
+                    "relativeTo": "history-revenue-before-sale",
+                    "testid": "admin-revenue",
+                    "within": 10000
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "testid": "orders-toggle"
+                  },
+                  {
+                    "actor": "customer",
+                    "contains": "Bluetooth Speaker",
+                    "count": 1,
+                    "do": "expect",
+                    "testid": "order-item",
+                    "within": 10000
                   },
                   {
                     "actor": "admin",
@@ -4962,6 +5030,36 @@
                     "actor": "admin",
                     "do": "wait",
                     "ms": 3000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "reload",
+                    "settleMs": 2000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "ensureSignedIn",
+                    "exact": true,
+                    "name": "admin",
+                    "password": "stackbench-admin-2026",
+                    "readyTestid": "current-user"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "ifAvailable": true,
+                    "testid": "admin-link"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "expectNumber",
+                    "equals": 5,
+                    "in": {
+                      "contains": "Bluetooth Speaker",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "price-input",
+                    "within": 10000
                   },
                   {
                     "actor": "admin",

@@ -188,10 +188,9 @@
               "testid": "leave-room"
             },
             {
-              "do": "expect",
+              "do": "waitUntilAbsent",
               "actor": "bob",
               "testid": "message-input",
-              "absent": true,
               "within": 5000
             }
           ]
@@ -278,10 +277,9 @@
               "actor": "bob"
             },
             {
-              "do": "expect",
+              "do": "waitUntilAbsent",
               "actor": "alice",
               "testid": "typing-indicator",
-              "absent": true,
               "within": 6500,
               "contains": "typing"
             }
@@ -505,14 +503,13 @@
               "room": "unread-main"
             },
             {
-              "do": "expect",
+              "do": "waitUntilAbsent",
               "actor": "bob",
               "testid": "unread-badge",
               "in": {
                 "testid": "room-item",
                 "contains": "{room:unread-main}"
               },
-              "absent": true,
               "within": 5000
             }
           ]
@@ -596,11 +593,10 @@
               }
             },
             {
-              "do": "expect",
+              "do": "waitUntilAbsent",
               "actor": "alice",
               "testid": "member-item",
               "contains": "Bob",
-              "absent": true,
               "within": 8000
             }
           ]

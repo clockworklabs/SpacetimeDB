@@ -22,9 +22,16 @@
           "points": 2,
           "statedBy": "Only a customer who bought an item can review it.",
           "steps": [
-            { "do": "replayAs", "actor": "stranger", "from": "owner", "match": "never bought this", "namedAction": { "id": "submitReview", "path": "/api/items/:id/reviews", "method": "POST", "reducer": "submit_review", "args": [0, 5, "never bought this"], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }, { "name": "rating", "in": "body" }, { "name": "comment", "in": "body" }] }, "namedTarget": { "testid": "review-submit", "attribute": "data-review-item-id" }, "settleMs": 1500 },
-            { "do": "expectReplayRejected", "actor": "stranger" },
-            { "do": "expect", "actor": "owner", "testid": "review-item", "contains": "never bought this", "absent": true, "within": 3000 }
+            { "do": "callAction", "actor": "owner", "from": "owner", "action": "submitReview", "namedAction": { "id": "submitReview", "path": "/api/items/:id/reviews", "method": "POST", "reducer": "submit_review", "args": [0, 5, "eligible progression review"], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }, { "name": "rating", "in": "body" }, { "name": "comment", "in": "body" }] }, "input": { "testid": "item-card", "contains": "Keyboard", "attribute": "data-buy-input" }, "settleMs": 1500 },
+            { "do": "expectActionOutcome", "actor": "owner", "outcome": "accepted" },
+            { "do": "expect", "actor": "owner", "testid": "review-item", "contains": "eligible progression review", "within": 10000 },
+            { "do": "callAction", "actor": "stranger", "from": "owner", "action": "submitReview", "namedAction": { "id": "submitReview", "path": "/api/items/:id/reviews", "method": "POST", "reducer": "submit_review", "args": [0, 5, "never bought this"], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }, { "name": "rating", "in": "body" }, { "name": "comment", "in": "body" }] }, "input": { "testid": "item-card", "contains": "Keyboard", "attribute": "data-buy-input" }, "settleMs": 1500 },
+            { "do": "expectActionOutcome", "actor": "stranger", "outcome": "application-refused", "routeProvenBy": "owner" },
+            { "do": "freshClient", "actor": "stranger" },
+            { "do": "signIn", "actor": "stranger-fresh", "name": "review-stranger" },
+            { "do": "openItem", "actor": "stranger-fresh", "item": "Keyboard" },
+            { "do": "expect", "actor": "stranger-fresh", "testid": "review-item", "contains": "eligible progression review", "within": 10000 },
+            { "do": "expect", "actor": "stranger-fresh", "testid": "review-item", "contains": "never bought this", "absent": true, "within": 3000 }
           ]
         }
       ]

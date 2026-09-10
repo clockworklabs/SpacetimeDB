@@ -12,7 +12,7 @@
         { "do": "signUp", "actor": "owner", "name": "profile-owner" },
         { "do": "click", "actor": "owner", "testid": "profile-link" },
         { "do": "fill", "actor": "owner", "testid": "profile-name", "text": "Avery Stone" },
-        { "do": "fill", "actor": "owner", "testid": "profile-address", "text": "14 Market Street" },
+        { "do": "fill", "actor": "owner", "testid": "profile-address", "text": "14 Market Street {user:profilemarker}" },
         { "do": "click", "actor": "owner", "testid": "profile-save" }
       ],
       "criteria": [
@@ -23,37 +23,48 @@
           "points": 1,
           "statedBy": "A signed-in customer can save and view their name and shipping address.",
           "steps": [
-            { "do": "expect", "actor": "owner", "testid": "profile-address-summary", "contains": "14 Market Street" }
+            { "do": "expect", "actor": "owner", "testid": "profile-address-summary", "contains": "14 Market Street {user:profilemarker}" }
           ]
         },
         {
           "id": "620a",
           "category": "production",
-          "desc": "the owner sees the saved profile after reload",
+          "desc": "the saved profile survives reload and backend restart in a fresh browser",
           "points": 2,
           "statedBy": "The saved profile remains after a reload.",
           "steps": [
             { "do": "reload", "actor": "owner", "settleMs": 2500 },
             { "do": "ensureSignedIn", "actor": "owner", "name": "profile-owner", "readyTestid": "current-user" },
             { "do": "click", "actor": "owner", "testid": "profile-link" },
-            { "do": "expect", "actor": "owner", "testid": "profile-address-summary", "contains": "14 Market Street" }
+            { "do": "expect", "actor": "owner", "testid": "profile-address-summary", "contains": "14 Market Street {user:profilemarker}" },
+            { "do": "restartBackend", "settleMs": 1000 },
+            { "do": "freshClient", "actor": "owner" },
+            { "do": "signIn", "actor": "owner-fresh", "name": "profile-owner" },
+            { "do": "click", "actor": "owner-fresh", "testid": "profile-link" },
+            { "do": "expect", "actor": "owner-fresh", "testid": "profile-address-summary", "contains": "14 Market Street {user:profilemarker}" }
           ]
         },
         {
           "id": "620b",
           "category": "production",
-          "desc": "another customer cannot see the owner's profile",
+          "desc": "another customer neither sees nor receives the owner's private address",
           "points": 2,
           "statedBy": "Each customer can see only their own profile.",
           "steps": [
             { "do": "signUp", "actor": "privateOwner", "name": "profile-private-owner" },
             { "do": "click", "actor": "privateOwner", "testid": "profile-link" },
             { "do": "fill", "actor": "privateOwner", "testid": "profile-name", "text": "Avery Stone" },
-            { "do": "fill", "actor": "privateOwner", "testid": "profile-address", "text": "14 Market Street" },
+            { "do": "fill", "actor": "privateOwner", "testid": "profile-address", "text": "14 Market Street {user:profilemarker}" },
             { "do": "click", "actor": "privateOwner", "testid": "profile-save" },
+            { "do": "reload", "actor": "privateOwner", "settleMs": 1000 },
+            { "do": "ensureSignedIn", "actor": "privateOwner", "name": "profile-private-owner", "readyTestid": "current-user" },
+            { "do": "click", "actor": "privateOwner", "testid": "profile-link" },
+            { "do": "expect", "actor": "privateOwner", "testid": "profile-address-summary", "contains": "14 Market Street {user:profilemarker}" },
+            { "do": "expectReceived", "actor": "privateOwner", "contains": "14 Market Street {user:profilemarker}", "within": 10000 },
             { "do": "signUp", "actor": "other", "name": "profile-other" },
             { "do": "click", "actor": "other", "testid": "profile-link" },
-            { "do": "expect", "actor": "other", "testid": "profile-address-summary", "contains": "14 Market Street", "absent": true }
+            { "do": "expect", "actor": "other", "testid": "profile-address-summary", "contains": "14 Market Street {user:profilemarker}", "absent": true },
+            { "do": "expectNotReceived", "actor": "other", "contains": "14 Market Street {user:profilemarker}" }
           ]
         }
       ]

@@ -8,8 +8,8 @@
   "description": "Orders and carts keep the correct price through later changes.",
   "requiresPacks": [],
   "conflictsWith": [],
-  "capabilities": ["browser"],
-  "evidence": ["browser-observation"],
+  "capabilities": ["browser","direct-server-call"],
+  "evidence": ["browser-observation","fresh-client-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 94000 },
   "task": {
     "requirements": [

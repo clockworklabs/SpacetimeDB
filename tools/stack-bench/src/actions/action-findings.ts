@@ -22,7 +22,7 @@ export type FindingKind = keyof FindingFields;
 export type InconclusiveFindingKind =
   | 'assertion-without-action' | 'unknown-action' | 'action-without-parameters'
   | 'no-session' | 'unresolved-action' | 'replay-unavailable'
-  | 'forgery-unverifiable' | 'not-observed' | 'nothing-contended'
+  | 'forgery-unverifiable' | 'not-observed' | 'transport-incomplete' | 'nothing-contended'
   | 'no-backend-control' | 'control-refused' | 'database-write-failed'
   | 'stock-read-unavailable'
   | 'unsupported-backend' | 'app-directory-unknown' | 'invalid-input';
@@ -103,7 +103,7 @@ export const FAILED_FINDINGS: Renderers<FailedFindingFields> = {
   'replay-error': f => `the replayed ${f.action ? `${f.action} action` : 'request'} returned ${http(f.status)}; this does not meet the access-error status contract`,
   'forgery-accepted': f => `a request with a tampered ${f.field} was accepted (${http(f.status)})`,
   'forgery-error': f => `the tampered request returned ${http(f.status)}; this does not meet the access-error status contract`,
-  'message-delivered': f => `a private message was delivered to ${f.actor}, who is not a participant`,
+  'message-delivered': f => `private data was delivered to unauthorized actor ${f.actor}`,
   'stock-interface-missing': f => f.missingRow
     ? `the required ${f.missingRow} row was not found in the stock data interface; check the original starting data and the item/warehouse links`
     : 'the stock data interface (item, warehouse, stock) is not available in the database',
@@ -117,7 +117,8 @@ export const INCONCLUSIVE_FINDINGS: Renderers<InconclusiveFindingFields> = {
   'unresolved-action': f => `could not resolve where to send ${f.action ? `the ${f.action} action` : 'the action'} for this backend`,
   'replay-unavailable': f => `could not issue the replay as ${f.actor}`,
   'forgery-unverifiable': f => `could not verify the forgery refusal for ${f.actor}`,
-  'not-observed': f => `the message could not be observed reaching ${f.actor}`,
+  'not-observed': f => `the expected data could not be observed reaching ${f.actor}`,
+  'transport-incomplete': () => 'transport evidence is incomplete; absence cannot be established',
   'nothing-contended': () => 'the requests never contended',
   'no-backend-control': f => `no control over ${target(f.target)} was supplied`,
   'control-refused': f => `control over ${target(f.target)} was refused on this host`,
@@ -229,6 +230,7 @@ export const findingSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('replay-unavailable'), fields: z.strictObject({ actor: z.string(), detail: z.string().optional() }) }),
   z.strictObject({ kind: z.literal('forgery-unverifiable'), fields: z.strictObject({ actor: z.string(), detail: z.string().optional() }) }),
   z.strictObject({ kind: z.literal('not-observed'), fields: actorSchema }),
+  z.strictObject({ kind: z.literal('transport-incomplete'), fields: z.strictObject({}) }),
   z.strictObject({ kind: z.literal('nothing-contended'), fields: detailSchema }),
   z.strictObject({ kind: z.literal('no-backend-control'), fields: z.strictObject({ target: targetSchema }) }),
   z.strictObject({ kind: z.literal('control-refused'), fields: z.strictObject({ target: targetSchema }) }),

@@ -210,8 +210,11 @@ test('review access is verified at the server boundary', () => {
   const review = requiredPack('ecommerce.progression.review-access-specifications');
   const [reviewCriterion] = selectedCriteria(review);
   assert(reviewCriterion);
-  assert(reviewCriterion.steps.some(step => step.do === 'replayAs'));
-  assert(reviewCriterion.steps.some(step => step.do === 'expectReplayRejected'));
+  assert(reviewCriterion.steps.some(step => step.do === 'callAction' && step.actor === 'owner'));
+  assert(reviewCriterion.steps.some(step => step.do === 'expectActionOutcome' && step.outcome === 'accepted'));
+  assert(reviewCriterion.steps.some(step => step.do === 'callAction' && step.actor === 'stranger'));
+  assert(reviewCriterion.steps.some(step => step.do === 'expectActionOutcome'
+    && step.outcome === 'application-refused' && step.routeProvenBy === 'owner'));
 });
 
 test('promotion rules use values a date input accepts', () => {

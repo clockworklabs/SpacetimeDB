@@ -11,6 +11,7 @@
         { "do": "signUp", "actor": "owner", "name": "Pria" },
         { "do": "signUp", "actor": "outsider", "name": "Oleg" },
         { "do": "createRoom", "actor": "owner", "room": "vault", "private": true },
+        { "do": "enterRoom", "actor": "owner", "room": "vault" },
         { "do": "send", "actor": "owner", "text": "vault-secret-note" }
       ],
       "criteria": [
@@ -40,6 +41,7 @@
         { "do": "signUp", "actor": "owner", "name": "Held" },
         { "do": "signUp", "actor": "guest", "name": "Gina" },
         { "do": "createRoom", "actor": "owner", "room": "committee", "private": true },
+        { "do": "enterRoom", "actor": "owner", "room": "committee" },
         { "do": "send", "actor": "owner", "text": "pre-invite-history" }
       ],
       "criteria": [
@@ -75,6 +77,7 @@
         { "do": "signUp", "actor": "subject", "name": "Sana" },
         { "do": "signUp", "actor": "viewer", "name": "Vero" },
         { "do": "createRoom", "actor": "subject", "room": "profroom" },
+        { "do": "enterRoom", "actor": "subject", "room": "profroom" },
         { "do": "enterRoom", "actor": "viewer", "room": "profroom" },
         { "do": "click", "actor": "subject", "testid": "profile-close", "ifAvailable": true },
         { "do": "click", "actor": "subject", "testid": "member-item", "contains": "Sana" },
@@ -110,7 +113,7 @@
           "points": 1,
           "steps": [
             { "do": "click", "actor": "viewer", "testid": "profile-close", "settleMs": 800 },
-            { "do": "expect", "actor": "viewer", "testid": "profile-bio", "absent": true, "within": 4000 },
+            { "do": "waitUntilAbsent", "actor": "viewer", "testid": "profile-bio", "within": 4000 },
             { "do": "click", "actor": "viewer", "testid": "member-item", "contains": "Sana", "settleMs": 1200 },
             { "do": "expect", "actor": "viewer", "testid": "profile-bio", "contains": "second-bio-text", "within": 8000 }
           ]
@@ -126,6 +129,7 @@
         { "do": "signUp", "actor": "asked", "name": "Freya" },
         { "do": "signUp", "actor": "third", "name": "Falk" },
         { "do": "createRoom", "actor": "asker", "room": "friendroom" },
+        { "do": "enterRoom", "actor": "asker", "room": "friendroom" },
         { "do": "enterRoom", "actor": "asked", "room": "friendroom" },
         { "do": "enterRoom", "actor": "third", "room": "friendroom" }
       ],
@@ -137,7 +141,7 @@
           "steps": [
             { "do": "click", "actor": "asker", "testid": "member-item", "contains": "Freya", "settleMs": 1200 },
             { "do": "click", "actor": "asker", "testid": "friend-request", "settleMs": 1200 },
-            {"do": "click", "actor": "asker", "testid": "profile-close", "ifAvailable": true},
+            { "do": "click", "actor": "asker", "testid": "profile-close", "ifAvailable": true },
             { "do": "expect", "actor": "asked", "testid": "friend-pending", "contains": "Finn", "within": 10000 },
             { "do": "click", "actor": "asked", "testid": "friend-accept", "in": { "testid": "friend-pending", "contains": "Finn" }, "settleMs": 1500 },
             { "do": "expect", "actor": "asker", "testid": "friend-item", "contains": "Freya", "within": 10000 },
@@ -151,7 +155,7 @@
           "steps": [
             { "do": "click", "actor": "third", "testid": "member-item", "contains": "Freya", "settleMs": 1200 },
             { "do": "click", "actor": "third", "testid": "friend-request", "settleMs": 1200 },
-            {"do": "click", "actor": "third", "testid": "profile-close", "ifAvailable": true},
+            { "do": "click", "actor": "third", "testid": "profile-close", "ifAvailable": true },
             { "do": "click", "actor": "asked", "testid": "friend-decline", "in": { "testid": "friend-pending", "contains": "Falk" }, "settleMs": 1500 },
             { "do": "expect", "actor": "third", "testid": "friend-item", "contains": "Freya", "absent": true, "within": 5000 },
             { "do": "expect", "actor": "asked", "testid": "friend-item", "contains": "Falk", "absent": true, "within": 5000 }
@@ -163,8 +167,8 @@
           "points": 2,
           "steps": [
             { "do": "click", "actor": "asker", "testid": "unfriend", "in": { "testid": "friend-item", "contains": "Freya" }, "settleMs": 1500 },
-            { "do": "expect", "actor": "asker", "testid": "friend-item", "contains": "Freya", "absent": true, "within": 8000 },
-            { "do": "expect", "actor": "asked", "testid": "friend-item", "contains": "Finn", "absent": true, "within": 8000 }
+            { "do": "waitUntilAbsent", "actor": "asker", "testid": "friend-item", "contains": "Freya", "within": 8000 },
+            { "do": "waitUntilAbsent", "actor": "asked", "testid": "friend-item", "contains": "Finn", "within": 8000 }
           ]
         }
       ]
@@ -177,10 +181,11 @@
         { "do": "signUp", "actor": "watcher", "name": "Wava" },
         { "do": "signUp", "actor": "flapper", "name": "Flip" },
         { "do": "createRoom", "actor": "watcher", "room": "presroom" },
+        { "do": "enterRoom", "actor": "watcher", "room": "presroom" },
         { "do": "enterRoom", "actor": "flapper", "room": "presroom" },
         { "do": "click", "actor": "watcher", "testid": "member-item", "contains": "Flip", "settleMs": 1200 },
         { "do": "click", "actor": "watcher", "testid": "friend-request", "settleMs": 1200 },
-        {"do": "click", "actor": "watcher", "testid": "profile-close", "ifAvailable": true},
+        { "do": "click", "actor": "watcher", "testid": "profile-close", "ifAvailable": true },
         { "do": "click", "actor": "flapper", "testid": "friend-accept", "in": { "testid": "friend-pending", "contains": "Wava" }, "settleMs": 1500 }
       ],
       "criteria": [

@@ -3,7 +3,7 @@
   "track": "ecommerce",
   "level": 1,
   "name": "The price is the store's to set",
-  "note": "Refusal checks first prove the same valid route and input with an authorized actor. A missing or malformed endpoint therefore cannot earn authorization credit merely by returning an error.",
+  "note": "Two different prices and a fresh account session verify stored order totals. This does not claim to test arbitrary forged fields; the declared purchase accepts only an item identifier. The later price-change check exercises a changed price.",
   "features": [
     {
       "id": 104,
@@ -14,7 +14,7 @@
         {
           "id": "104a",
           "category": "production",
-          "desc": "the direct purchase operation creates exactly one order at the store's current price",
+          "desc": "direct purchases of two differently priced items persist exactly one correctly priced order each",
           "points": 2,
           "steps": [
             {
@@ -32,15 +32,27 @@
               "settleMs": 2000
             },
             {"do":"expectActionOutcome","actor":"buyer","outcome":"accepted"},
-            {"do":"click","actor":"buyer","testid":"orders-toggle"},
-            {"do":"expect","actor":"buyer","testid":"order-item","contains":"Espresso Machine","count":1},
+            {
+              "do": "callAction", "actor": "buyer", "action": "buy",
+              "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] },
+              "input": { "testid": "item-card", "contains": "Coffee Grinder", "attribute": "data-buy-input" },
+              "settleMs": 2000
+            },
+            { "do": "expectActionOutcome", "actor": "buyer", "outcome": "accepted" },
+            { "do": "freshClient", "actor": "buyer" },
+            { "do": "signIn", "actor": "buyer-fresh", "name": "oli" },
+            {"do":"click","actor":"buyer-fresh","testid":"orders-toggle"},
+            {"do":"expect","actor":"buyer-fresh","testid":"order-item","count":2},
+            {"do":"expect","actor":"buyer-fresh","testid":"order-item","contains":"Espresso Machine","count":1},
             {
               "do": "expectNumber",
-              "actor": "buyer",
+              "actor": "buyer-fresh",
               "testid": "order-total",
               "in": {"testid":"order-item","contains":"Espresso Machine"},
               "equals": 449
-            }
+            },
+            { "do": "expect", "actor": "buyer-fresh", "testid": "order-item", "contains": "Coffee Grinder", "count": 1 },
+            { "do": "expectNumber", "actor": "buyer-fresh", "testid": "order-total", "in": { "testid": "order-item", "contains": "Coffee Grinder" }, "equals": 64 }
           ],
           "statedBy": "the server uses the current stored price when it creates an order"
         }

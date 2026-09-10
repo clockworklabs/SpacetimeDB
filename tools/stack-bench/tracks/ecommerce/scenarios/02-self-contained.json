@@ -51,11 +51,25 @@
           "points": 2,
           "statedBy": "Staff mark an order shipped",
           "steps": [
-            { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" }, "settleMs": 2000 },
-            { "do": "click", "actor": "customer", "testid": "orders-toggle" },
-            { "do": "callAction", "actor": "customer", "action": "ship", "namedAction": { "id": "ship", "path": "/api/fulfilment/ship", "reducer": "ship_order", "args": [0], "params": [{ "name": "orderId", "in": "body", "wireType": "u64" }] }, "input": { "testid": "order-item", "contains": "Keyboard", "attribute": "data-ship-input" }, "settleMs": 2000 },
-            { "do": "expectActionOutcome", "actor": "customer", "outcome": "refused" },
-            { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "notContains": "hipped" }
+            {"do":"click","actor":"customer","testid":"buy-now","in":{"testid":"item-card","contains":"Keyboard"},"settleMs":2000},
+            {"do":"click","actor":"customer","testid":"orders-toggle"},
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true},
+            {"do":"click","actor":"customer","testid":"catalog-link","ifAvailable":true},
+            {"do":"click","actor":"customer","testid":"buy-now","in":{"testid":"item-card","contains":"Coffee Grinder"},"settleMs":2000},
+            {"do":"click","actor":"customer","testid":"orders-toggle"},
+            {"do":"expect","actor":"customer","testid":"order-item","contains":"Coffee Grinder","count":1,"within":10000},
+            {"do":"callAction","actor":"staff","action":"ship","namedAction":{"id":"ship","path":"/api/fulfilment/ship","reducer":"ship_order","args":[0],"params":[{"name":"orderId","in":"body","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Coffee Grinder","attribute":"data-ship-input"},"settleMs":2000,"from":"customer"},
+            {"do":"expectActionOutcome","actor":"staff","outcome":"accepted"},
+            {"do":"reload","actor":"customer","settleMs":2000},
+            {"do":"ensureSignedIn","actor":"customer","name":"fq-focused","readyTestid":"current-user"},
+            {"do":"click","actor":"customer","testid":"orders-toggle"},
+            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Coffee Grinder"},"contains":"hipped","within":10000},
+            {"do":"callAction","actor":"customer","action":"ship","namedAction":{"id":"ship","path":"/api/fulfilment/ship","reducer":"ship_order","args":[0],"params":[{"name":"orderId","in":"body","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Keyboard","attribute":"data-ship-input"},"settleMs":2000},
+            {"do":"expectActionOutcome","actor":"customer","outcome":"refused","routeProvenBy":"staff"},
+            {"do":"reload","actor":"customer","settleMs":2000},
+            {"do":"ensureSignedIn","actor":"customer","name":"fq-focused","readyTestid":"current-user"},
+            {"do":"click","actor":"customer","testid":"orders-toggle"},
+            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"notContains":"hipped"}
           ]
         }
       ]
@@ -147,14 +161,18 @@
           "points": 2,
           "statedBy": "the stock goes back to the warehouse it came from",
           "steps": [
-            { "do": "recordNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Induction Cooktop" }, "as": "cancel-stock-before" },
-            { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Induction Cooktop" }, "settleMs": 2000 },
-            { "do": "expectNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Induction Cooktop" }, "relativeTo": "cancel-stock-before", "plus": -1 },
-            { "do": "click", "actor": "customer", "testid": "orders-toggle" },
-            { "do": "click", "actor": "customer", "testid": "cancel-order", "in": { "testid": "order-item", "contains": "Induction Cooktop" }, "settleMs": 2000 },
-            { "do": "click", "actor": "customer", "testid": "overlay-close", "ifAvailable": true },
-            { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true },
-            { "do": "expectNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Induction Cooktop" }, "relativeTo": "cancel-stock-before", "plus": 0 }
+            {"do":"dbRecordStock","item":"Induction Cooktop","as":"stored-before-cancel-202b"},
+            {"do":"recordNumber","actor":"customer","testid":"item-stock","in":{"testid":"item-card","contains":"Induction Cooktop"},"as":"cancel-stock-before"},
+            {"do":"click","actor":"customer","testid":"buy-now","in":{"testid":"item-card","contains":"Induction Cooktop"},"settleMs":2000},
+            {"do":"expectNumber","actor":"customer","testid":"item-stock","in":{"testid":"item-card","contains":"Induction Cooktop"},"relativeTo":"cancel-stock-before","plus":-1},
+            {"do":"click","actor":"customer","testid":"orders-toggle"},
+            {"do":"expect","actor":"customer","testid":"order-item","contains":"Induction Cooktop","count":1,"within":10000},
+            {"do":"dbExpectStock","item":"Induction Cooktop","relativeTo":"stored-before-cancel-202b","plus":-1},
+            {"do":"click","actor":"customer","testid":"cancel-order","in":{"testid":"order-item","contains":"Induction Cooktop"},"settleMs":2000},
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true},
+            {"do":"click","actor":"customer","testid":"catalog-link","ifAvailable":true},
+            {"do":"expectNumber","actor":"customer","testid":"item-stock","in":{"testid":"item-card","contains":"Induction Cooktop"},"relativeTo":"cancel-stock-before","plus":0},
+            {"do":"dbExpectStock","item":"Induction Cooktop","relativeTo":"stored-before-cancel-202b","plus":0}
           ]
         },
         {
@@ -164,12 +182,16 @@
           "points": 1,
           "statedBy": "every one of these numbers is the same for every person looking at it",
           "steps": [
-            { "do": "recordNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "as": "fresh-stock-before" },
-            { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Headphones" }, "settleMs": 2000 },
-            { "do": "click", "actor": "customer", "testid": "orders-toggle" },
-            { "do": "click", "actor": "customer", "testid": "cancel-order", "in": { "testid": "order-item", "contains": "Headphones" }, "settleMs": 2000 },
-            { "do": "freshClient", "actor": "customer" },
-            { "do": "expectNumber", "actor": "customer-fresh", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "relativeTo": "fresh-stock-before", "plus": 0 }
+            {"do":"dbRecordStock","item":"Headphones","as":"stored-before-cancel-202c"},
+            {"do":"recordNumber","actor":"customer","testid":"item-stock","in":{"testid":"item-card","contains":"Headphones"},"as":"fresh-stock-before"},
+            {"do":"click","actor":"customer","testid":"buy-now","in":{"testid":"item-card","contains":"Headphones"},"settleMs":2000},
+            {"do":"click","actor":"customer","testid":"orders-toggle"},
+            {"do":"expect","actor":"customer","testid":"order-item","contains":"Headphones","count":1,"within":10000},
+            {"do":"dbExpectStock","item":"Headphones","relativeTo":"stored-before-cancel-202c","plus":-1},
+            {"do":"click","actor":"customer","testid":"cancel-order","in":{"testid":"order-item","contains":"Headphones"},"settleMs":2000},
+            {"do":"freshClient","actor":"customer"},
+            {"do":"expectNumber","actor":"customer-fresh","testid":"item-stock","in":{"testid":"item-card","contains":"Headphones"},"relativeTo":"fresh-stock-before","plus":0},
+            {"do":"dbExpectStock","item":"Headphones","relativeTo":"stored-before-cancel-202c","plus":0}
           ]
         }
       ]

@@ -9,15 +9,11 @@
     "ecommerce.progression.personalized-recommendations"
   ],
   "conflictsWith": [],
-  "capabilities": [
-    "browser"
-  ],
-  "evidence": [
-    "browser-observation"
-  ],
+  "capabilities": ["browser","backend-lifecycle"],
+  "evidence": ["browser-observation","fresh-client-observation"],
   "budget": {
     "status": "bounded",
-    "maxRuntimeMs": 70000
+    "maxRuntimeMs": 130000
   },
   "task": {
     "requirements": [

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "level": 1,
-  "note": "These contention criteria do not affect scoring. Browser clicks do not overlap enough to create a reliable race. Activate them only after parallel request replay passes on clean reference apps and detects exact known defects on every supported stack.",
+  "note": "Inactive WIP: not selected by track.json. Concurrent client dispatch does not prove overlapping server execution. Promotion requires matching reference and defect controls on every supported stack.",
   "features": [
     {
       "id": 106,
@@ -70,7 +70,7 @@
         {
           "id": "reaction-count-is-exact",
           "points": 1,
-          "desc": "Four users reacting to the same message at the same instant leave a count of exactly four. The reactions are issued together rather than clicked in sequence: clicks arrive milliseconds apart and each request finishes in less, so they never overlap and no race occurs.",
+          "desc": "Four concurrent reaction replays leave exactly four reactions; client dispatch alone does not prove server overlap.",
           "steps": [
             {
               "do": "clickConcurrently",
@@ -105,11 +105,11 @@
               "settleMs": 4000
             },
             {
-              "do": "expect",
+              "do": "expectNumber",
               "actor": "alice",
               "testid": "reaction-count",
-              "contains": "4",
-              "within": 12000
+              "within": 12000,
+              "equals": 4
             }
           ]
         },
@@ -147,11 +147,11 @@
               "ms": 3000
             },
             {
-              "do": "expect",
+              "do": "expectNumber",
               "actor": "alice",
               "testid": "reaction-count",
-              "contains": "3",
-              "within": 8000
+              "within": 8000,
+              "equals": 3
             },
             {
               "do": "expectAgreement",
@@ -169,7 +169,7 @@
         {
           "id": "pin-cap-holds-under-concurrency",
           "points": 1,
-          "desc": "Four users pinning four different messages at the same instant, against a cap of three, must leave exactly three. The pins are issued together rather than clicked in sequence, because clicks arrive milliseconds apart and never contend.",
+          "desc": "Four replayed pin requests against a cap of three leave three pinned messages.",
           "steps": [
             {
               "do": "sendMany",
@@ -217,6 +217,15 @@
             },
             {
               "do": "click",
+              "actor": "dave",
+              "testid": "pin-button",
+              "in": {
+                "testid": "message-item",
+                "contains": "PIN-4"
+              }
+            },
+            {
+              "do": "click",
               "actor": "alice",
               "testid": "pinned-unpin",
               "in": {
@@ -259,7 +268,8 @@
               "actors": [
                 "alice",
                 "bob",
-                "carol"
+                "carol",
+                "dave"
               ],
               "method": "POST",
               "settleMs": 5000

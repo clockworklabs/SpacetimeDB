@@ -8,11 +8,15 @@
     {
       "id": 201,
       "name": "Shipping requires an operator",
-      "actors": ["customer"],
+      "actors": [
+        "customer",
+        "staff"
+      ],
       "setup": [
-        { "do": "signUp", "actor": "customer", "name": "direct-notstaff" },
-        { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Laptop Stand" }, "settleMs": 2000 },
-        { "do": "click", "actor": "customer", "testid": "orders-toggle" }
+        {"do":"signIn","actor":"staff","name":"staff","password":"stackbench-staff-2026","exact":true},
+        {"do":"signUp","actor":"customer","name":"direct-notstaff"},
+        {"do":"click","actor":"customer","testid":"buy-now","in":{"testid":"item-card","contains":"Laptop Stand"},"settleMs":2000},
+        {"do":"click","actor":"customer","testid":"orders-toggle"}
       ],
       "criteria": [
         {
@@ -22,17 +26,23 @@
           "points": 2,
           "statedBy": "Staff mark an order shipped",
           "steps": [
-            {
-              "do": "callAction", "actor": "customer", "action": "ship",
-              "namedAction": {
-                "id": "ship", "path": "/api/fulfilment/ship", "reducer": "ship_order", "args": [0],
-                "params": [{ "name": "orderId", "in": "body", "wireType": "u64" }]
-              },
-              "input": { "testid": "order-item", "contains": "Laptop Stand", "attribute": "data-ship-input" },
-              "settleMs": 2000
-            },
-            { "do": "expectActionOutcome", "actor": "customer", "outcome": "refused" },
-            { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Laptop Stand" }, "notContains": "hipped" }
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true},
+            {"do":"click","actor":"customer","testid":"catalog-link","ifAvailable":true},
+            {"do":"click","actor":"customer","testid":"buy-now","in":{"testid":"item-card","contains":"Coffee Grinder"},"settleMs":2000},
+            {"do":"click","actor":"customer","testid":"orders-toggle"},
+            {"do":"expect","actor":"customer","testid":"order-item","contains":"Coffee Grinder","count":1,"within":10000},
+            {"do":"callAction","actor":"staff","action":"ship","namedAction":{"id":"ship","path":"/api/fulfilment/ship","reducer":"ship_order","args":[0],"params":[{"name":"orderId","in":"body","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Coffee Grinder","attribute":"data-ship-input"},"settleMs":2000,"from":"customer"},
+            {"do":"expectActionOutcome","actor":"staff","outcome":"accepted"},
+            {"do":"reload","actor":"customer","settleMs":2000},
+            {"do":"ensureSignedIn","actor":"customer","name":"direct-notstaff","readyTestid":"current-user"},
+            {"do":"click","actor":"customer","testid":"orders-toggle"},
+            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Coffee Grinder"},"contains":"hipped","within":10000},
+            {"do":"callAction","actor":"customer","action":"ship","namedAction":{"id":"ship","path":"/api/fulfilment/ship","reducer":"ship_order","args":[0],"params":[{"name":"orderId","in":"body","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Laptop Stand","attribute":"data-ship-input"},"settleMs":2000},
+            {"do":"expectActionOutcome","actor":"customer","outcome":"refused","routeProvenBy":"staff"},
+            {"do":"reload","actor":"customer","settleMs":2000},
+            {"do":"ensureSignedIn","actor":"customer","name":"direct-notstaff","readyTestid":"current-user"},
+            {"do":"click","actor":"customer","testid":"orders-toggle"},
+            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Laptop Stand"},"notContains":"hipped"}
           ]
         }
       ]
@@ -54,48 +64,35 @@
           "points": 2,
           "statedBy": "a transfer moves stock, it does not create or destroy it",
           "steps": [
-            { "do": "recordNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Headphones" }, "as": "direct-race-admin-before" },
-            { "do": "recordNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "as": "direct-race-customer-before" },
-            { "do": "fill", "actor": "admin", "testid": "transfer-from", "text": "East", "in": { "testid": "admin-item-row", "contains": "Headphones" } },
-            { "do": "fill", "actor": "admin", "testid": "transfer-to", "text": "West", "in": { "testid": "admin-item-row", "contains": "Headphones" } },
-            {
-              "do": "race",
-              "settleMs": 5000,
-              "branches": [
-                [{
-                  "do": "callAction", "actor": "admin", "action": "transfer",
-                  "namedAction": {
-                    "id": "transfer", "path": "/api/admin/transfer", "reducer": "admin_transfer_stock", "args": [0, 0, 0, 25],
-                    "params": [
-                      { "name": "itemId", "in": "body", "wireType": "u64" },
-                      { "name": "fromWarehouseId", "in": "body", "wireType": "u64" },
-                      { "name": "toWarehouseId", "in": "body", "wireType": "u64" },
-                      { "name": "quantity", "in": "body" }
-                    ]
-                  },
-                  "input": { "testid": "admin-item-row", "contains": "Headphones", "attribute": "data-transfer-input" }
-                }],
-                [{
-                  "do": "callAction", "actor": "customer", "action": "buy",
-                  "namedAction": {
-                    "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0],
-                    "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }]
-                  },
-                  "input": { "testid": "item-card", "contains": "Headphones", "attribute": "data-buy-input" }
-                }]
-              ]
-            },
-            { "do": "expectActionOutcome", "actor": "admin", "outcome": "accepted" },
-            { "do": "expectActionOutcome", "actor": "customer", "outcome": "accepted" },
-            { "do": "reload", "actor": "admin", "settleMs": 2000 },
-            { "do": "ensureSignedIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true, "readyTestid": "current-user" },
-            { "do": "click", "actor": "admin", "testid": "admin-link", "ifAvailable": true },
-            { "do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Headphones" }, "relativeTo": "direct-race-admin-before", "plus": -1, "within": 12000 },
-            { "do": "reload", "actor": "customer", "settleMs": 2000 },
-            { "do": "ensureSignedIn", "actor": "customer", "name": "direct-conserve", "readyTestid": "current-user" },
-            { "do": "click", "actor": "customer", "testid": "overlay-close", "ifAvailable": true },
-            { "do": "click", "actor": "customer", "testid": "catalog-link", "ifAvailable": true },
-            { "do": "expectNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "relativeTo": "direct-race-customer-before", "plus": -1, "within": 12000 }
+            {"do":"dbSetStock","item":"Headphones","warehouse":"East","quantity":100,"settleMs":1000},
+            {"do":"dbSetStock","item":"Headphones","warehouse":"West","quantity":100,"settleMs":1000},
+            {"do":"reload","actor":"admin","settleMs":2000},
+            {"do":"ensureSignedIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true,"readyTestid":"current-user"},
+            {"do":"click","actor":"admin","testid":"admin-link","ifAvailable":true},
+            {"do":"reload","actor":"customer","settleMs":2000},
+            {"do":"ensureSignedIn","actor":"customer","name":"direct-conserve","readyTestid":"current-user"},
+            {"do":"recordNumber","actor":"admin","testid":"admin-stock","in":{"testid":"admin-item-row","contains":"Headphones"},"as":"direct-race-admin-before"},
+            {"do":"recordNumber","actor":"customer","testid":"item-stock","in":{"testid":"item-card","contains":"Headphones"},"as":"direct-race-customer-before"},
+            {"do":"fill","actor":"admin","testid":"transfer-from","text":"East","in":{"testid":"admin-item-row","contains":"Headphones"}},
+            {"do":"fill","actor":"admin","testid":"transfer-to","text":"West","in":{"testid":"admin-item-row","contains":"Headphones"}},
+            {"do":"fill","actor":"admin","testid":"transfer-qty","text":"25","in":{"testid":"admin-item-row","contains":"Headphones"}},
+            {"do":"race","settleMs":5000,"branches":[[{"do":"callAction","actor":"admin","action":"transfer","namedAction":{"id":"transfer","path":"/api/admin/transfer","reducer":"admin_transfer_stock","args":[0,0,0,25],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"fromWarehouseId","in":"body","wireType":"u64"},{"name":"toWarehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-item-row","contains":"Headphones","attribute":"data-transfer-input"}}],[{"do":"callAction","actor":"customer","action":"buy","namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Headphones","attribute":"data-buy-input"}}]]},
+            {"do":"expectActionOutcome","actor":"admin","outcome":"accepted"},
+            {"do":"expectActionOutcome","actor":"customer","outcome":"accepted"},
+            {"do":"reload","actor":"admin","settleMs":2000},
+            {"do":"ensureSignedIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true,"readyTestid":"current-user"},
+            {"do":"click","actor":"admin","testid":"admin-link","ifAvailable":true},
+            {"do":"expectNumber","actor":"admin","testid":"admin-stock","in":{"testid":"admin-item-row","contains":"Headphones"},"relativeTo":"direct-race-admin-before","plus":-1,"within":12000},
+            {"do":"reload","actor":"customer","settleMs":2000},
+            {"do":"ensureSignedIn","actor":"customer","name":"direct-conserve","readyTestid":"current-user"},
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true},
+            {"do":"click","actor":"customer","testid":"catalog-link","ifAvailable":true},
+            {"do":"expectNumber","actor":"customer","testid":"item-stock","in":{"testid":"item-card","contains":"Headphones"},"relativeTo":"direct-race-customer-before","plus":-1,"within":12000},
+            {"do":"dbExpectStock","item":"Headphones","warehouse":"East","atLeast":74,"atMost":75},
+            {"do":"dbExpectStock","item":"Headphones","warehouse":"West","atLeast":124,"atMost":125},
+            {"do":"dbExpectStock","item":"Headphones","equals":199},
+            {"do":"click","actor":"customer","testid":"orders-toggle"},
+            {"do":"expect","actor":"customer","testid":"order-item","contains":"Headphones","count":1,"within":10000}
           ]
         }
       ]
