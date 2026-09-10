@@ -90,14 +90,18 @@ test('pending modular L2 resolves only the current exact recipe', () => {
   assert.equal(qualificationReadiness('ecommerce', 2).scope.recipe.id, 'ecommerce.sequential-l2');
 });
 
-test('a shared progression recipe resolves qualification commands for each exact depth', () => {
+test('cumulative L3 qualification covers earlier depths and always runs the full calibration', () => {
+  const l1 = qualificationReadiness('ecommerce', 1, 'ecommerce.progression-catalog');
   const l2 = qualificationReadiness('ecommerce', 2, 'ecommerce.progression-catalog');
   const l3 = qualificationReadiness('ecommerce', 3, 'ecommerce.progression-catalog');
-  assert.equal(l2.scope.calibration.id, 'ecommerce.dependency-l2-calibration');
+  assert.equal(l2.scope.level, 2);
   assert.equal(l3.scope.calibration.id, 'ecommerce.dependency-l3-calibration');
   assert.notDeepEqual(l2.requiredEvidence, []);
-  assert.notEqual(l2.defectChecks.totalChecks, l3.defectChecks.totalChecks);
-  for (const status of [l2, l3]) {
+  for (const status of [l1, l2, l3]) {
+    assert.deepEqual(status.scope.calibration, l3.scope.calibration);
+    assert.deepEqual(status.defectChecks, l3.defectChecks);
+    assert.deepEqual(status.artifactPaths, l3.artifactPaths);
+    assert.ok(status.commands.every(command => command.includes('--level 3 ')));
     assert.ok(status.commands.filter(command => command.startsWith('qualify-reference '))
       .every(command => command.includes('--feature-catalog progression/ecommerce.json')));
   }

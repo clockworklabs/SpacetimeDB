@@ -196,6 +196,7 @@
   "selection": {
     "path": "composition/dependency.json",
     "sha256": "e73002df8a7a42e612f2bd1ee5de1f9db2d6c13cb9c819e405a5f2512eca3048",
-    "alias": "L3"
+    "alias": "L3",
+    "coveredAliases": ["L1", "L2", "L3"]
   }
 }

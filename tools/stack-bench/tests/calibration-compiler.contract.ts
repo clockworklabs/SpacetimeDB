@@ -66,6 +66,17 @@ test('current calibration binds stable authored identities', () => {
   }
 });
 
+test('covered depth metadata preserves the qualification identity', () => {
+  const plan = compileCalibrationFile(join(TRACK.dir, 'composition/calibrations/dependency-l3.json'),
+    { trackRoot: TRACK.dir, stackBenchRoot: STACK_BENCH_ROOT,
+      release: requireRecipeRelease(TRACK, 3, 'ecommerce.progression-catalog').release });
+  assert.deepEqual(plan.selection.coveredAliases, ['L1', 'L2', 'L3']);
+  const exactDepthOnly = { ...plan, selection: { ...plan.selection } };
+  delete exactDepthOnly.selection.coveredAliases;
+  assert.deepEqual(calibrationQualificationIdentity(plan),
+    calibrationQualificationIdentity(exactDepthOnly));
+});
+
 test('calibration identity changes when selected checks change', () => {
   const value = compileCalibrationDefinition(calibrationSource());
   const identityInput = { ...value, mutations: value.mutations.map(mutation => ({
