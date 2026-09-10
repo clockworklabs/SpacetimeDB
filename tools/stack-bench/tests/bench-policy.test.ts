@@ -19,7 +19,7 @@ import { clearPrivateGradingEvidence, levelGradeIsUsable, repairEvidenceDecision
   from '../src/evidence/repair-evidence.js';
 import { finalPackageEvidenceRequired, preserveFinalPackageEvidence, sourceBoundFirstBuildOutcome }
   from '../src/runtime/source-checkpoint.js';
-import { materializationAppFailure, materializeAcceptedSource }
+import { materializationAppFailure, materializeAcceptedSource, restoreRepairSource }
   from '../src/runtime/source-materialization.js';
 import { dependencyLevelRepairRecords, dependencyRepairBudget, dependencyRepairRecords }
   from '../src/progression/dependency-mode.js';
@@ -139,6 +139,54 @@ test('accepted source is materialized through the application lifecycle before g
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('repair rollback restores schema before startup and stops on reset failure for every stack', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-schema-'));
+  try {
+    const source = join(root, 'accepted');
+    mkdirSync(source);
+    writeFileSync(join(source, 'schema.txt'), 'accepted');
+    writeFileSync(join(source, 'start.sh'), '#!/bin/sh\n');
+    for (const backend of ['spacetime', 'postgres', 'mongodb']) {
+      const app = join(root, backend);
+      mkdirSync(app);
+      writeFileSync(join(app, 'schema.txt'), 'rejected');
+      const application = { backend, app, port: 6573, probe: '' };
+      let databaseSchema = 'rejected';
+      let stopped = false;
+      const events: string[] = [];
+      const lifecycle: Parameters<typeof restoreRepairSource>[3] = async (_spec, mode) => {
+        events.push(mode ?? 'restart');
+        if (mode === 'stop') stopped = true;
+        if (mode === 'start') {
+          assert.equal(stopped, true);
+          assert.equal(readFileSync(join(app, 'schema.txt'), 'utf8'), 'accepted');
+          if (databaseSchema !== 'accepted') throw new Error('schema migration required');
+          stopped = false;
+        }
+      };
+      await assert.rejects(materializeAcceptedSource(source, app, application, lifecycle),
+        /schema migration required/);
+      events.length = 0;
+      await restoreRepairSource(source, app, application, lifecycle, request => {
+        assert.deepEqual(request, { backend, app });
+        assert.equal(stopped, true);
+        assert.equal(readFileSync(join(app, 'schema.txt'), 'utf8'), 'accepted');
+        events.push('reset');
+        databaseSchema = 'accepted';
+      });
+      assert.deepEqual(events, ['stop', 'reset', 'start']);
+      assert.equal(hashAppSource(app).sha256, hashAppSource(source).sha256);
+      events.length = 0;
+      await assert.rejects(restoreRepairSource(source, app, application, lifecycle, () => {
+        events.push('reset');
+        throw new Error('database reset failed');
+      }), /database reset failed/);
+      assert.deepEqual(events, ['stop', 'reset', 'stop']);
+      assert.equal(stopped, true);
+      assert.equal(hashAppSource(app).sha256, hashAppSource(source).sha256);
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 test('final package preservation verifies both source and grading before success', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-final-package-'));
   try {

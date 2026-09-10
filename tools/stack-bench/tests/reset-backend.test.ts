@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
-import { resetBackend } from '../src/stacks/backend-reset.js';
+import { resetBackend, resetRepairBackend } from '../src/stacks/backend-reset.js';
 import { prepareMongoDbDatabase, proveMongoDbUse, resetMongoDb } from '../src/stacks/backends/mongodb-operations.js';
 import { attemptDatabaseIdentity } from '../src/stacks/hosted-database-identity.js';
 import { provePostgresUse, resetPostgres } from '../src/stacks/backends/postgres-operations.js';
@@ -27,6 +27,38 @@ interface ArgvCall {
   argv: string[];
   options: TextCommandOptions;
 }
+
+test('repair rollback removes PostgreSQL schema changes only in the authenticated database', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-reset-'));
+  const path = join(root, 'lease.json');
+  const prior = { path: process.env.STACK_BENCH_LEASE, token: process.env.STACK_BENCH_LEASE_TOKEN };
+  const lease = createBackendLease({ runId: 'repair-reset', backend: 'postgres', track: 'ecommerce',
+    runIndex: 0, database: 'app_ecom_run0', container: { name: 'owned', id: 'a'.repeat(64) } });
+  lease.state = 'active';
+  writeBackendLease(path, lease);
+  process.env.STACK_BENCH_LEASE = path;
+  process.env.STACK_BENCH_LEASE_TOKEN = lease.ownershipToken;
+  try {
+    const commands: string[][] = [];
+    resetRepairBackend({ backend: 'postgres', app: root, exec: (_file, args) => {
+      commands.push([...args]);
+      return args[0] === 'inspect' ? lease.resources.container!.id : '';
+    } });
+    const wipe = commands.find(args => args.some(value => value.includes('DROP SCHEMA')));
+    assert(wipe);
+    assert.equal(wipe[wipe.indexOf('-d') + 1], lease.resources.database);
+    assert.match(wipe.at(-1)!, /CREATE SCHEMA public/);
+    assert.throws(() => resetRepairBackend({ backend: 'postgres', app: root,
+      exec: (_file, args) => { assert.equal(args[0], 'inspect'); return 'foreign'; } }),
+    /changed after lease creation/);
+  } finally {
+    if (prior.path === undefined) delete process.env.STACK_BENCH_LEASE;
+    else process.env.STACK_BENCH_LEASE = prior.path;
+    if (prior.token === undefined) delete process.env.STACK_BENCH_LEASE_TOKEN;
+    else process.env.STACK_BENCH_LEASE_TOKEN = prior.token;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 function writeModule(directory: string): void {
   mkdirSync(join(directory, 'src'), { recursive: true });

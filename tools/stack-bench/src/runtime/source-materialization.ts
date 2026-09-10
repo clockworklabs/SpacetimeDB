@@ -7,8 +7,22 @@ import { controlAppServer } from './backend-control.js';
 import type { RuntimeControlSpec } from './backend-control.js';
 import { hashAppSource, restoreAppSource } from './source-snapshot.js';
 import { CODING_CONTAINER_START_SCRIPT } from './coding-container-policy.js';
+import { resetRepairBackend } from '../stacks/backend-reset.js';
 
 const message = (error: unknown): string => error instanceof Error ? error.message : String(error);
+
+// A rejected repair may have published a different schema. Restore code and
+// recreate only its leased grading database before starting the accepted app.
+// This boundary is deliberately separate from restart/durability probes.
+export async function restoreRepairSource(sourcePath: string, appDir: string,
+  application: RuntimeControlSpec,
+  lifecycle: typeof controlAppServer = controlAppServer,
+  reset: typeof resetRepairBackend = resetRepairBackend): Promise<void> {
+  await materializeAcceptedSource(sourcePath, appDir, application, async (spec, mode, options) => {
+    if (mode === 'start') reset({ backend: spec.backend, app: appDir });
+    await lifecycle(spec, mode, options);
+  });
+}
 
 export async function materializeAcceptedSource(sourcePath: string, appDir: string,
   application: RuntimeControlSpec,

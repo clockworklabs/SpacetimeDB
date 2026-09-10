@@ -48,7 +48,7 @@ import { applyAgentCredential } from '../src/agents/agent-credentials.js';
 import { assertPlainAppSourceTree, hashAppSource, resetAppToSource, seedAppSource, snapshotAppSource } from '../src/runtime/source-snapshot.js';
 import { finalPackageEvidenceRequired, preserveFinalPackageEvidence, preserveLevelCheckpoint,
   sourceBoundFirstBuildOutcome } from '../src/runtime/source-checkpoint.js';
-import { materializationAppFailure, materializeAcceptedSource }
+import { materializationAppFailure, materializeAcceptedSource, restoreRepairSource }
   from '../src/runtime/source-materialization.js';
 import { compareRepairBaseline, createRepairGrant } from '../src/runtime/repair-grant.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
@@ -1728,22 +1728,29 @@ async function main() {
       if (typeof startLog !== 'string' || !startLog) return;
       writeFileSync(join(outputDir, `${label}-start.log`), `${startLog}\n`);
     };
-    const restoreFeatureAcceptedSource = async (): Promise<void> => {
+    const restoreFeatureAcceptedSource = async (resetDatabase = true): Promise<void> => {
       if (featureActionSequence === null) return;
       const source = join(outputDir, 'source');
-      if (applicationControl) {
-        try {
-          await materializeAcceptedSource(source, appDir, applicationControl);
-        } catch {
-          resetAppToSource(source, appDir);
-        }
-      } else resetAppToSource(source, appDir);
+      try {
+        if (applicationControl) {
+          const restore = resetDatabase ? restoreRepairSource : materializeAcceptedSource;
+          await restore(source, appDir, applicationControl);
+        } else resetAppToSource(source, appDir);
+      } catch (error) {
+        console.log(`  accepted feature restore failed: ${errorMessage(error)}`);
+        try { keepStartLog(error, `${args.backend}-l${level}${featureActionSuffix}-feature-restore`); }
+        catch (logError) { console.log(`  could not preserve start log: ${errorMessage(logError)}`); }
+        // Failed coding/grading callers must still finalize their original evidence.
+        // The durable accepted source remains in outputDir even if local restore fails.
+        try { resetAppToSource(source, appDir); }
+        catch (restoreError) { console.log(`  source restore failed: ${errorMessage(restoreError)}`); }
+      }
     };
     if (featureActionSequence !== null && progressionSelection
       && isProgressionWorkRecipeAction(progressionSelection)
       && !featureActionNeedsCoding(progressionSelection,
         requireProgressionState(progressionExecution?.state ?? null))) {
-      await restoreFeatureAcceptedSource();
+      await restoreFeatureAcceptedSource(false);
       const bundle = grade(args, appDir, url,
         `${args.backend}-l${level}${featureActionSuffix}-regrade`, level, track, runId);
       const outcome = classifyBundle(bundle);
@@ -2050,10 +2057,31 @@ async function main() {
           ? prompt.nodeIds.filter((id): id is string => typeof id === 'string') : [] });
       writeRunJson(join(outputDir, ARTIFACT_FILE.run), run);
     };
-    const restoreAcceptedRepair = async (sourcePath: string, gradingPath: string): Promise<void> => {
-      if (applicationControl) await materializeAcceptedSource(sourcePath, appDir, applicationControl);
-      else resetAppToSource(sourcePath, appDir);
-      restorePrivateGradingEvidence(appDir, gradingPath);
+    const restoreAcceptedRepair = async (sourcePath: string, gradingPath: string,
+      completedRepair = true): Promise<boolean> => {
+      try {
+        try {
+          if (applicationControl) await restoreRepairSource(sourcePath, appDir, applicationControl);
+          else resetAppToSource(sourcePath, appDir);
+        } finally {
+          restorePrivateGradingEvidence(appDir, gradingPath);
+        }
+        return true;
+      } catch (error) {
+        let reason = `could not restore the accepted repair source: ${errorMessage(error)}`;
+        const preserved = join(outputDir, `repair-rollback-l${level}${featureActionSuffix}-round${repairs}`);
+        try {
+          snapshotSource(sourcePath, join(preserved, 'source'));
+          if (existsSync(gradingPath)) cpSync(gradingPath, join(preserved, 'grading'), { recursive: true });
+          keepStartLog(error, `${args.backend}-l${level}${featureActionSuffix}-rollback${repairs}`);
+          reason += `; accepted source and available grading evidence kept at ${preserved}`;
+        } catch (preserveError) {
+          reason += `; could not preserve the accepted rollback snapshot: ${errorMessage(preserveError)}`;
+        }
+        console.log(`    ${reason}; stopping repairs`);
+        recordRepairHarnessFailure('repair-restore', reason, null, completedRepair);
+        return false;
+      }
     };
     // Keep a repaired source whose grade did not finish beside the run, bound
     // by hash, so a resume can grade exactly what the paid session produced.
@@ -2556,7 +2584,7 @@ async function main() {
       const fixFailure = agentSessionFailure(fix);
       if (fixFailure) {
         if (featureActionSequence !== null) {
-          await restoreAcceptedRepair(snapshot, gradingSnapshot);
+          if (!await restoreAcceptedRepair(snapshot, gradingSnapshot, false)) break;
         }
         console.log(`    coding session failed: ${fixFailure.reason}; stopping repairs`);
         bundle = { outcome: fixFailure };
@@ -2645,7 +2673,7 @@ async function main() {
           preserveFailure = errorMessage(error).split(/\r?\n/)[0]
             ?? 'could not keep the repaired source';
           console.log(`    repair grade failed: ${reason}; ${preserveFailure}; restoring the accepted source`);
-          await restoreAcceptedRepair(snapshot, gradingSnapshot);
+          if (!await restoreAcceptedRepair(snapshot, gradingSnapshot)) break;
         }
         repairHistory.push(repairHistoryEntry(repairs, beforeBundle, bundle,
           'repair completed; grading failed'));
@@ -2662,7 +2690,7 @@ async function main() {
         if (rejectedBundle) checkpointGrade('repair', rejectedBundle,
           [...(build && !resumedRepair ? [runSessionRecord(build)] : []), ...repairSessions], false);
         archiveCandidateGrade(appDir, outputDir, `l${level}${featureActionSuffix}-repair${repairs}`);
-        await restoreAcceptedRepair(snapshot, gradingSnapshot);
+        if (!await restoreAcceptedRepair(snapshot, gradingSnapshot)) break;
         if (!restoreProgressionGrade(acceptedBundle,
           `${args.backend}-l${level}${featureActionSuffix}-rollback${repairs}`)) break;
         repairHistory.push(repairHistoryEntry(repairs, beforeBundle, rejectedBundle,
@@ -2697,7 +2725,7 @@ async function main() {
       }
       if (decision.action === 'rollback-no-comparison') {
         console.log('    no criteria were conclusively scored in both rounds; rolling back this fix');
-        await restoreAcceptedRepair(snapshot, gradingSnapshot);
+        if (!await restoreAcceptedRepair(snapshot, gradingSnapshot)) break;
         if (!restoreProgressionGrade(acceptedBundle,
           `${args.backend}-l${level}-rollback${repairs}`)) break;
         repairHistory.push(repairHistoryEntry(repairs, beforeBundle, repairedBundle,
@@ -2738,9 +2766,8 @@ async function main() {
         } catch (error) {
           regressionReportFailure = errorMessage(error).split(/\r?\n/)[0]
             ?? 'regression report generation failed';
-        } finally {
-          await restoreAcceptedRepair(snapshot, gradingSnapshot);
         }
+        if (!await restoreAcceptedRepair(snapshot, gradingSnapshot)) break;
         if (regressionReportFailure) {
           repairHistory.push(repairHistoryEntry(repairs, beforeBundle, bundle,
             'repair completed; regression reporting failed'));

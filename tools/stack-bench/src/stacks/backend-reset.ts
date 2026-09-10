@@ -25,3 +25,16 @@ export function resetBackend({ backend, app, exec }: BackendResetRequest): unkno
   }
   throw new Error(`stack adapter ${backend} does not support reset`);
 }
+
+// Candidate rollback must remove schema changes too. Ordinary probe resets
+// retain the PostgreSQL schema; durability probes do not call either reset.
+export function resetRepairBackend(input: BackendResetRequest): unknown {
+  if (input.backend !== 'postgres') return resetBackend(input);
+  const { lease } = leaseFromEnv(process.env, { backend: input.backend, active: true });
+  const database = requireLeasedDatabase(lease);
+  return STACK_ADAPTER_REGISTRY.get('postgres').database.prepare({
+    lease: database, name: database.resources.database,
+    expectedName: database.resources.database, wipe: true,
+    ...(input.exec ? { exec: input.exec } : {}),
+  });
+}
