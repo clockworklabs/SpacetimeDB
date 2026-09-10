@@ -41,7 +41,8 @@
             {
               "do": "click",
               "actor": "staff",
-              "testid": "promotions-link"
+              "testid": "promotions-link",
+              "unlessVisible": "promotion-code"
             },
             {
               "do": "fill",
@@ -127,7 +128,7 @@
           "points": 2,
           "statedBy": "Customers cannot manage promotion rules.",
           "steps": [
-            { "do": "click", "actor": "staff", "testid": "promotions-link" },
+            { "do": "click", "actor": "staff", "testid": "promotions-link", "unlessVisible": "promotion-code" },
             { "do": "fill", "actor": "staff", "testid": "promotion-code", "text": "ACCESS10" },
             { "do": "fill", "actor": "staff", "testid": "promotion-discount", "text": "10" },
             { "do": "fill", "actor": "staff", "testid": "promotion-start", "text": "2099-01-01" },
@@ -136,8 +137,8 @@
             { "do": "click", "actor": "staff", "testid": "promotion-submit" },
             { "do": "reload", "actor": "staff", "settleMs": 1000 },
             { "do": "ensureSignedIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true, "readyTestid": "current-user" },
-            { "do": "click", "actor": "staff", "testid": "staff-link", "ifAvailable": true },
-            { "do": "click", "actor": "staff", "testid": "promotions-link" },
+            { "do": "click", "actor": "staff", "testid": "staff-link", "ifAvailable": true, "unlessVisible": "promotion-code" },
+            { "do": "click", "actor": "staff", "testid": "promotions-link", "unlessVisible": "promotion-code" },
             { "do": "expect", "actor": "staff", "testid": "promotion-item", "contains": "ACCESS10", "within": 10000 },
             {
               "do": "expect",

@@ -247,3 +247,37 @@ test('low-stock live observations stay open while another client restocks', asyn
     }
   } finally { await browser.close(); }
 });
+
+test('staff role reload keeps an open panel visible and opens a closed panel', async () => {
+  const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/progression-staff-roles.json');
+  const feature = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source }).features[0]!;
+  const criterion = feature.criteria.find(criterion => criterion.id === '621a')!;
+  const entry = criterion.steps.findIndex(step => step.testid === 'admin-link');
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    const actor = { page, loc: (id: string, options?: { scope?: { testid: string } }) => {
+      const root = options?.scope ? page.locator(stableElementSelector(options.scope.testid)) : page;
+      return root.locator(stableElementSelector(id));
+    } };
+    const capability = { defaultWithin: 300, expand: (value: string) => value,
+      testId: stableElementSelector, sleep: async () => {} };
+    for (const open of [true, false]) {
+      await page.route('http://role.test/', route => route.fulfill({ contentType: 'text/html',
+        body: `<button id="admin-link">Admin</button><section id="roles" ${open ? '' : 'hidden'}>
+          <div id="staff-role-account-staff"><select id="staff-role-select"><option>inventory</option></select></div>
+          </section><script>document.querySelector('#admin-link').onclick=()=>{
+            const panel=document.querySelector('#roles');panel.hidden=!panel.hidden;};</script>` }));
+      await page.goto('http://role.test/');
+      await page.reload();
+      for (const step of criterion.steps.slice(entry, entry + 2)) {
+        const result = await executeAction(ACTION_REGISTRY, step.do,
+          { ...step, ...(step.do === 'expect' ? { within: 300 } : {}) },
+          { capabilities: { actors: { get: () => actor }, 'browser-interaction': capability,
+            'browser-observation': capability } });
+        assert.equal(result.status, 'passed', result.summary ?? undefined);
+      }
+      await page.unroute('http://role.test/');
+    }
+  } finally { await browser.close(); }
+});

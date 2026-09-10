@@ -11,7 +11,7 @@
       "setup": [
         { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
         { "do": "expect", "actor": "admin", "testid": "admin-link", "within": 6000 },
-        { "do": "click", "actor": "admin", "testid": "admin-link" },
+        { "do": "click", "actor": "admin", "testid": "admin-link", "unlessVisible": "staff-role-account-staff" },
         { "do": "fill", "actor": "admin", "testid": "staff-role-select", "in": { "testid": "staff-role-account-staff" }, "text": "inventory" },
         { "do": "click", "actor": "admin", "testid": "staff-role-save", "in": { "testid": "staff-role-account-staff" } }
       ],
@@ -35,12 +35,12 @@
           "steps": [
             { "do": "reload", "actor": "admin", "settleMs": 2500 },
             { "do": "ensureSignedIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true, "readyTestid": "current-user" },
-            { "do": "click", "actor": "admin", "testid": "admin-link", "ifAvailable": true },
+            { "do": "click", "actor": "admin", "testid": "admin-link", "unlessVisible": "staff-role-account-staff", "ifAvailable": true },
             { "do": "expect", "actor": "admin", "testid": "staff-role-select", "in": { "testid": "staff-role-account-staff" }, "value": "inventory", "within": 10000 },
             { "do": "restartBackend", "settleMs": 1000 },
             { "do": "freshClient", "actor": "admin" },
             { "do": "signIn", "actor": "admin-fresh", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
-            { "do": "click", "actor": "admin-fresh", "testid": "admin-link" },
+            { "do": "click", "actor": "admin-fresh", "testid": "admin-link", "unlessVisible": "staff-role-account-staff" },
             { "do": "expect", "actor": "admin-fresh", "testid": "staff-role-select", "in": { "testid": "staff-role-account-staff" }, "value": "inventory", "within": 10000 }
           ]
         },
@@ -53,13 +53,13 @@
           "steps": [
             { "do": "signIn", "actor": "replayAdmin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
             { "do": "expect", "actor": "replayAdmin", "testid": "admin-link", "within": 6000 },
-            { "do": "click", "actor": "replayAdmin", "testid": "admin-link" },
+            { "do": "click", "actor": "replayAdmin", "testid": "admin-link", "unlessVisible": "staff-role-account-staff" },
             { "do": "expect", "actor": "replayAdmin", "testid": "staff-role-select", "in": { "testid": "staff-role-account-staff" }, "value": "inventory", "within": 10000 },
             { "do": "fill", "actor": "replayAdmin", "testid": "staff-role-select", "in": { "testid": "staff-role-account-staff" }, "text": "staff" },
             { "do": "click", "actor": "replayAdmin", "testid": "staff-role-save", "in": { "testid": "staff-role-account-staff" } },
             { "do": "reload", "actor": "replayAdmin", "settleMs": 1000 },
             { "do": "ensureSignedIn", "actor": "replayAdmin", "name": "admin", "password": "stackbench-admin-2026", "exact": true, "readyTestid": "current-user" },
-            { "do": "click", "actor": "replayAdmin", "testid": "admin-link", "ifAvailable": true },
+            { "do": "click", "actor": "replayAdmin", "testid": "admin-link", "unlessVisible": "staff-role-account-staff", "ifAvailable": true },
             { "do": "expect", "actor": "replayAdmin", "testid": "staff-role-select", "in": { "testid": "staff-role-account-staff" }, "value": "staff", "within": 10000 },
             { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
             { "do": "click", "actor": "staff", "testid": "staff-link", "ifAvailable": true },

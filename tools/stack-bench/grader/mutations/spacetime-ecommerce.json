@@ -1621,7 +1621,8 @@
       "id": "administrator-role-assignment-is-discarded",
       "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
       "targets": [
-        "ecommerce.spec.state-durability.staff-role-reload.621a"
+        "ecommerce.spec.state-durability.staff-role-reload.621a",
+        "ecommerce.spec.access-control.staff-role-boundary.621b"
       ],
       "desc": "Role assignment records activity but does not save the selected role.",
       "file": "backend/spacetimedb/src/index.ts",

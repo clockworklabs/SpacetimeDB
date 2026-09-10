@@ -136,6 +136,9 @@ function observationContext(evidence: CheckEvidence): string[] {
   if (evidence.finding?.kind === 'page-error') {
     context.push('The sequence stopped at this action; later behavior was not observed.');
   }
+  if (evidence.finding && ['value-mismatch', 'number-mismatch'].includes(evidence.finding.kind)) {
+    context.push('The sequence stopped at this value check; later behavior was not observed.');
+  }
   return context;
 }
 

@@ -1436,7 +1436,8 @@
       "id": "role-assignment-drops-role",
       "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
       "targets": [
-        "ecommerce.spec.state-durability.staff-role-reload.621a"
+        "ecommerce.spec.state-durability.staff-role-reload.621a",
+        "ecommerce.spec.access-control.staff-role-boundary.621b"
       ],
       "desc": "Administrator role assignments are discarded.",
       "file": "server/src/progression.ts",
@@ -1481,7 +1482,8 @@
       "id": "stock-alert-is-not-created",
       "scenario": "tracks/ecommerce/scenarios/progression-stock-alerts.json",
       "targets": [
-        "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a"
+        "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+        "ecommerce.spec.access-control.stock-alert-privacy.631b"
       ],
       "desc": "Restored stock does not create the requested alert.",
       "file": "server/src/progression.ts",

@@ -859,7 +859,8 @@
       "id": "progression-staff-role-is-lost-on-restart",
       "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
       "targets": [
-        "ecommerce.spec.state-durability.staff-role-reload.621a"
+        "ecommerce.spec.state-durability.staff-role-reload.621a",
+        "ecommerce.spec.access-control.staff-role-boundary.621b"
       ],
       "desc": "Clear stored staff roles on server initialization while preserving authorized assignment and staff access refusal.",
       "file": "server/src/progression.ts",
@@ -1132,7 +1133,8 @@
       "id": "progression-stock-alert-request-is-disabled",
       "scenario": "tracks/ecommerce/scenarios/progression-stock-alerts.json",
       "targets": [
-        "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a"
+        "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
+        "ecommerce.spec.access-control.stock-alert-privacy.631b"
       ],
       "desc": "Do not accept stock alert requests.",
       "file": "server/src/progression.ts",

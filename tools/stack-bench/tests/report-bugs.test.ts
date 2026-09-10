@@ -222,10 +222,12 @@ test('repair feedback refuses internal evaluation language', () => {
   }
 });
 
-test('repair context identifies an early missing control without claiming later durability was observed', () => {
+test('repair context identifies early control and value failures without claiming later durability was observed', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-context-'));
   try {
-    const missing = finding('control-missing', { control: 'cart-item', filtered: true });
+    for (const missing of [finding('control-missing', { control: 'cart-item', filtered: true }),
+      finding('value-mismatch', { control: 'staff-role-select', observed: 'staff', expected: 'inventory' }),
+      finding('number-mismatch', { control: 'item-stock', observed: 100, expected: { equals: 99 } })]) {
     const action = (id: string, observation: unknown, failed = false): { actor: string; evidence: ActionEvidence } => ({
       actor: 'shopper', evidence: {
         schemaVersion: 2, action: { id, version: '1.0.0' }, status: failed ? 'failed' : 'passed',
@@ -262,10 +264,11 @@ test('repair context identifies an early missing control without claiming later 
       assert.match(report, /Expected:\*\* cart and order history survive a page reload and runtime restart/);
       assert.match(report, /shopper: checkout-submit → shopper: catalog-link → shopper: add-to-cart → shopper: cart-toggle/);
       assert.match(report, /shopper: submitReview returned HTTP 201/);
-      assert.match(report, /The sequence stopped at this control; later behavior was not observed/);
+      assert.match(report, /The sequence stopped at this (control|value check); later behavior was not observed/);
       if (restarted) assert.match(report, /Completed lifecycle actions: page reloaded; application server stopped; application server started; database runtime restarted/);
       else assert.doesNotMatch(report, /Completed lifecycle actions/);
       assert.doesNotMatch(report, /PRIVATE_|FUTURE_STRANGER_REQUEST|SKIPPED_CONTROL|lost|use a transaction|implement|retry policy/i);
+    }
     }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
