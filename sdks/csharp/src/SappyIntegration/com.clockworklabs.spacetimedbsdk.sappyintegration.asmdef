@@ -1,0 +1,18 @@
+{
+    "name": "com.clockworklabs.spacetimedbsdk.sappyintegration",
+    "rootNamespace": "SpacetimeDB",
+    "references": [
+        "com.clockworklabs.spacetimedbsdk",
+        "ClockworkLabs.Sappy"
+    ],
+    "defineConstraints": [
+        "SAPPY"
+    ],
+    "versionDefines": [
+        {
+            "name": "io.clockworklabs.sappy",
+            "expression": "1.1.0",
+            "define": "SAPPY"
+        }
+    ]
+}

@@ -212,18 +212,8 @@ namespace SpacetimeDB
         // I didn't do that because that delays the index updates until after the row is processed.
         // In theory, that shouldn't be the issue, but I didn't want to break it right before leaving :)
         //          - Ingvar
-        private AbstractEventHandler<Row> OnInternalInsertHandler { get; } = new();
-        private event Action<Row> OnInternalInsert
-        {
-            add => OnInternalInsertHandler.AddListener(value);
-            remove => OnInternalInsertHandler.RemoveListener(value);
-        }
-        private AbstractEventHandler<Row> OnInternalDeleteHandler { get; } = new();
-        private event Action<Row> OnInternalDelete
-        {
-            add => OnInternalDeleteHandler.AddListener(value);
-            remove => OnInternalDeleteHandler.RemoveListener(value);
-        }
+        private event Action<Row> OnInternalInsert;
+        private event Action<Row> OnInternalDelete;
 
         // These are implementations of the type-erased interface.
         object? IRemoteTableHandle.GetPrimaryKey(IStructuralReadWrite row) => GetPrimaryKey((Row)row);
@@ -405,13 +395,17 @@ namespace SpacetimeDB
         }
 
         public delegate void RowEventHandler(EventContext context, Row row);
+        public delegate void UpdateEventHandler(EventContext context, Row oldRow, Row newRow);
+
         private CustomRowEventHandler OnInsertHandler { get; } = new();
         public event RowEventHandler OnInsert
         {
-            add => OnInsertHandler.AddListener(value);
-            remove => OnInsertHandler.RemoveListener(value);
+            add => OnInsertHandler.Add(value);
+            remove => OnInsertHandler.Remove(value);
         }
-        public delegate void UpdateEventHandler(EventContext context, Row oldRow, Row newRow);
+#if SAPPY
+        public IEventListeners<RowEventHandler> OnInsertListeners => OnInsertHandler.Listeners;
+#endif
 
         public int Count => (int)Entries.CountDistinct;
 
@@ -506,14 +500,14 @@ namespace SpacetimeDB
             {
                 if (value is Row oldRow)
                 {
-                    OnInternalDeleteHandler.Invoke(oldRow);
+                    OnInternalDelete?.Invoke(oldRow);
                 }
             }
             foreach (var (_, value) in wasInserted)
             {
                 if (value is Row newRow)
                 {
-                    OnInternalInsertHandler.Invoke(newRow);
+                    OnInternalInsert?.Invoke(newRow);
                 }
                 else
                 {
@@ -524,7 +518,7 @@ namespace SpacetimeDB
             {
                 if (oldValue is Row oldRow)
                 {
-                    OnInternalDeleteHandler.Invoke(oldRow);
+                    OnInternalDelete?.Invoke(oldRow);
                 }
                 else
                 {
@@ -534,7 +528,7 @@ namespace SpacetimeDB
 
                 if (newValue is Row newRow)
                 {
-                    OnInternalInsertHandler.Invoke(newRow);
+                    OnInternalInsert?.Invoke(newRow);
                 }
                 else
                 {
@@ -575,33 +569,115 @@ namespace SpacetimeDB
 
         protected class CustomRowEventHandler
         {
-            private EventListeners<RowEventHandler> Listeners { get; } = new();
+            private readonly bool _useNativeDispatch = Backend.UseNativeDispatch;
+            private RowEventHandler? _nativeListeners;
+            private readonly IEventListeners<RowEventHandler>? _indexedListeners;
+
+            public IEventListeners<RowEventHandler> Listeners => _indexedListeners ?? throw new InvalidOperationException(
+                "This event is using native C# event dispatch and does not expose indexed listeners. " +
+                "Use SpacetimeDB.EventHandling.Backend.UseCustomListeners() before creating table handles."
+            );
+
+            public CustomRowEventHandler()
+            {
+                if (!_useNativeDispatch)
+                {
+                    _indexedListeners = Backend.Create<RowEventHandler>();
+                }
+            }
+
+            public void Add(RowEventHandler listener)
+            {
+                if (_useNativeDispatch)
+                {
+                    _nativeListeners += listener;
+                    return;
+                }
+
+                _indexedListeners!.Add(listener);
+            }
+
+            public void Remove(RowEventHandler listener)
+            {
+                if (_useNativeDispatch)
+                {
+                    _nativeListeners -= listener;
+                    return;
+                }
+
+                _indexedListeners!.Remove(listener);
+            }
 
             public void Invoke(EventContext ctx, Row row)
             {
-                for (var i = Listeners.Count - 1; i >= 0; i--)
+                if (_useNativeDispatch)
                 {
-                    Listeners[i]?.Invoke(ctx, row);
+                    _nativeListeners?.Invoke(ctx, row);
+                    return;
+                }
+
+                var listeners = _indexedListeners!;
+                for (var i = listeners.Count - 1; i >= 0; i--)
+                {
+                    listeners[i].Invoke(ctx, row);
                 }
             }
-
-            public void AddListener(RowEventHandler listener) => Listeners.Add(listener);
-            public void RemoveListener(RowEventHandler listener) => Listeners.Remove(listener);
         }
         protected class CustomUpdateEventHandler
         {
-            private EventListeners<UpdateEventHandler> Listeners { get; } = new();
+            private readonly bool _useNativeDispatch = Backend.UseNativeDispatch;
+            private UpdateEventHandler? _nativeListeners;
+            private readonly IEventListeners<UpdateEventHandler>? _indexedListeners;
 
-            public void Invoke(EventContext ctx, Row oldRow, Row newRow)
+            public IEventListeners<UpdateEventHandler> Listeners => _indexedListeners ?? throw new InvalidOperationException(
+                "This event is using native C# event dispatch and does not expose indexed listeners. " +
+                "Use SpacetimeDB.EventHandling.Backend.UseCustomListeners() before creating table handles."
+            );
+
+            public CustomUpdateEventHandler()
             {
-                for (var i = Listeners.Count - 1; i >= 0; i--)
+                if (!_useNativeDispatch)
                 {
-                    Listeners[i]?.Invoke(ctx, oldRow, newRow);
+                    _indexedListeners = Backend.Create<UpdateEventHandler>();
                 }
             }
 
-            public void AddListener(UpdateEventHandler listener) => Listeners.Add(listener);
-            public void RemoveListener(UpdateEventHandler listener) => Listeners.Remove(listener);
+            public void Add(UpdateEventHandler listener)
+            {
+                if (_useNativeDispatch)
+                {
+                    _nativeListeners += listener;
+                    return;
+                }
+
+                _indexedListeners!.Add(listener);
+            }
+
+            public void Remove(UpdateEventHandler listener)
+            {
+                if (_useNativeDispatch)
+                {
+                    _nativeListeners -= listener;
+                    return;
+                }
+
+                _indexedListeners!.Remove(listener);
+            }
+
+            public void Invoke(EventContext ctx, Row oldRow, Row newRow)
+            {
+                if (_useNativeDispatch)
+                {
+                    _nativeListeners?.Invoke(ctx, oldRow, newRow);
+                    return;
+                }
+
+                var listeners = _indexedListeners!;
+                for (var i = listeners.Count - 1; i >= 0; i--)
+                {
+                    listeners[i].Invoke(ctx, oldRow, newRow);
+                }
+            }
         }
     }
 
@@ -617,21 +693,32 @@ namespace SpacetimeDB
         private CustomRowEventHandler OnDeleteHandler { get; } = new();
         public event RowEventHandler OnDelete
         {
-            add => OnDeleteHandler.AddListener(value);
-            remove => OnDeleteHandler.RemoveListener(value);
+            add => OnDeleteHandler.Add(value);
+            remove => OnDeleteHandler.Remove(value);
         }
+#if SAPPY
+        public IEventListeners<RowEventHandler> OnDeleteListeners => OnDeleteHandler.Listeners;
+#endif
+
         private CustomRowEventHandler OnBeforeDeleteHandler { get; } = new();
         public event RowEventHandler OnBeforeDelete
         {
-            add => OnBeforeDeleteHandler.AddListener(value);
-            remove => OnBeforeDeleteHandler.RemoveListener(value);
+            add => OnBeforeDeleteHandler.Add(value);
+            remove => OnBeforeDeleteHandler.Remove(value);
         }
+#if SAPPY
+        public IEventListeners<RowEventHandler> OnBeforeDeleteListeners => OnBeforeDeleteHandler.Listeners;
+#endif
+
         private CustomUpdateEventHandler OnUpdateHandler { get; } = new();
         public event UpdateEventHandler OnUpdate
         {
-            add => OnUpdateHandler.AddListener(value);
-            remove => OnUpdateHandler.RemoveListener(value);
+            add => OnUpdateHandler.Add(value);
+            remove => OnUpdateHandler.Remove(value);
         }
+#if SAPPY
+        public IEventListeners<UpdateEventHandler> OnUpdateListeners => OnUpdateHandler.Listeners;
+#endif
 
         protected override void InvokeDelete(IEventContext context, IStructuralReadWrite row)
         {
