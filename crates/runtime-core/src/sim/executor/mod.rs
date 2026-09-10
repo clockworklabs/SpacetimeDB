@@ -18,7 +18,7 @@ pub use task::{AbortHandle, JoinError, JoinHandle};
 
 type Runnable = async_task::Runnable<NodeId>;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RuntimeConfig {
     pub seed: u64,
 }

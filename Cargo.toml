@@ -29,6 +29,7 @@ members = [
   "crates/query",
   "crates/runtime",
   "crates/runtime-core",
+  "crates/runtime-io",
   "crates/sats",
   "crates/schema",
   "crates/smoketests",
@@ -175,6 +176,7 @@ spacetimedb-query = { path = "crates/query", version = "=2.10.0" }
 spacetimedb-query-builder = { path = "crates/query-builder", version = "=2.10.0" }
 spacetimedb-runtime = { path = "crates/runtime", version = "=2.10.0" }
 spacetimedb-runtime-core = { path = "crates/runtime-core", version = "=2.10.0" }
+spacetimedb-runtime-io = { path = "crates/runtime-io", version = "=2.10.0" }
 spacetimedb-sats = { path = "crates/sats", version = "=2.10.0" }
 spacetimedb-schema = { path = "crates/schema", version = "=2.10.0" }
 spacetimedb-snapshot = { path = "crates/snapshot", version = "=2.10.0" }

@@ -53,6 +53,8 @@ pub enum Handle {
     Simulation(sim::Handle),
 }
 
+pub mod io;
+
 pub struct JoinHandle<T> {
     inner: JoinHandleInner<T>,
 }

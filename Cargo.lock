@@ -8533,7 +8533,10 @@ dependencies = [
  "futures",
  "libc",
  "spacetimedb-runtime-core",
+ "spacetimedb-runtime-io",
+ "static_assertions",
  "tokio",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8542,6 +8545,20 @@ version = "2.10.0"
 dependencies = [
  "async-task",
  "spin",
+]
+
+[[package]]
+name = "spacetimedb-runtime-io"
+version = "2.10.0"
+dependencies = [
+ "futures-channel",
+ "slab",
+ "spacetimedb-runtime-core",
+ "spacetimedb-runtime-io",
+ "spin",
+ "thiserror 2.0.17",
+ "tokio",
+ "zerocopy",
 ]
 
 [[package]]
