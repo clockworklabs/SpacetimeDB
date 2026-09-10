@@ -206,7 +206,7 @@
   "execution": "all-selected-sources",
   "scoring": { "mode": "source-points" }
 }</code></pre></details>
-      <details><summary>Real code: compose only the fragments selected for this task</summary><pre><code>const applies = fragment =&gt; fragment.ownerConditions
+      <details><summary>Code sketch: compose only the fragments selected for this task</summary><pre><code>const applies = fragment =&gt; fragment.ownerConditions
   ? fragment.ownerConditions.some(entry =&gt; owners.has(entry.owner)
     &amp;&amp; entry.modes.includes(mode)
     &amp;&amp; entry.requiresFeatures.every(featureApplies))
@@ -241,7 +241,7 @@ const contracts = plan.recipe.task.contracts.filter(applies);</code></pre></deta
     { "id": "catalog", "reason": "A purchase needs an item." }
   ]
 }</code></pre></details>
-      <details><summary>Real code: prompt work and grading work are selected separately</summary><pre><code>function selectedPromptWork(state) {
+      <details><summary>Code sketch: prompt work and grading work are selected separately</summary><pre><code>function selectedPromptWork(state) {
   const nodeIds = selectedPromptNodeIds(state);
   return {
     nodeIds,
@@ -263,7 +263,7 @@ function selectedGradingWork(state) {
         .map(check =&gt; ({ ...check, nodeId: node.id })))
   };
 }</code></pre></details>
-      <details><summary>Real code: state changes append one event</summary><pre><code>export function recordDependencyResult(inputState, inputResult) {
+      <details><summary>Code sketch: state changes append one event</summary><pre><code>export function recordDependencyResult(inputState, inputResult) {
   const state = asDependencyState(inputState);
   const event = {
     sequence: state.events.length + 1,
@@ -278,7 +278,7 @@ function selectedGradingWork(state) {
         <div><span>✓</span><p>Every scored group can have only one owner. Duplicate ownership fails compilation.</p></div>
         <div><span>✓</span><p>Feature pack dependencies must exist in the node or one of its ancestors.</p></div>
         <div><span>✓</span><p>The persisted event history is hash-checked and replayed. A contradictory or corrupted state cannot resume silently.</p></div>
-        <div><span class="risk-mark">!</span><p>Changed definitions require fresh qualification evidence before a paid campaign.</p></div>
+        <div><span class="risk-mark">!</span><p>Changed definitions need matching qualification evidence before verified comparison claims. Paid runs may proceed with provisional scores.</p></div>
       </div>
     </section>
 
@@ -287,36 +287,38 @@ function selectedGradingWork(state) {
       <p class="section-intro">A compiled campaign fixes the scope, budget, repetitions, and parallelism.</p>
       <div class="grid two">
         <div class="card"><h3>Compilation</h3><ol><li>Validate the manifest schema.</li><li>Resolve current content and hashes.</li><li>Expand all stack, agent, condition, and repetition attempts.</li><li>Hash the definition and engine identity.</li></ol></div>
-        <div class="card"><h3>Execution</h3><ol><li>Run campaign-wide admission checks.</li><li>Claim up to the configured parallel slots.</li><li>Give each slot a distinct run index and resource scope.</li><li>Write attempt state after each completion.</li></ol></div>
+        <div class="card"><h3>Execution</h3><ol><li>Run campaign-wide admission checks.</li><li>Allocate resources up to the requested campaign parallelism.</li><li>Give each active attempt a distinct run index and resource lease.</li><li>Write attempt state after each completion.</li></ol></div>
       </div>
       <details open><summary>Example campaign excerpt</summary><pre><code>{
   "mode": { "id": "dependency", "workSelection": "feature" },
   "repair": { "selection": "feature", "budget": { "perFeature": 1 } },
   "levels": [1, 2, 3, 4, 5, 6],
-  "featureCatalog": "ecommerce.questlines",
+  "featureCatalog": "progression/ecommerce.json",
   "stacks": [
     { "id": "mongodb", "adapterVersion": "1.4.0" },
     { "id": "postgres", "adapterVersion": "1.5.0" },
     { "id": "spacetime", "adapterVersion": "1.3.0" }
   ],
-  "repetitions": 1,
-  "parallelism": 3,
-  "budgets": { "attemptTimeoutMinutes": 180 }
+  "repetitions": 3,
+  "parallelism": 9,
+  "budgets": { "attemptTimeoutMinutes": 240 }
 }</code></pre></details>
-      <div class="callout"><strong>Parallelism.</strong> Each active attempt gets separate ports, database names, containers, and resource locks.</div>
+      <div class="callout"><strong>Parallelism.</strong> Each active attempt gets separate ports, database names, containers, and resource locks. There is no manually sized runner pool. Host capacity and provider limits still apply. One execution job runs one campaign on one host; external dispatch can place separate jobs on different hosts.</div>
+      <div class="callout"><strong>Depth pause.</strong> A plan can select a later target and pause after an earlier depth. Release continues the retained run under the same definition and budget. Keep the controller alive: recovery of that pause after controller restart is unsupported. Prior repair feedback remains part of the continuation. See <a href="execution-jobs.md">execution jobs</a> and <a href="../appliance/RECOVERY.md">recovery</a>.</div>
       <div class="callout"><strong>Extension.</strong> <code>campaign extend target.json --from prior-results --depth 2 --out extended-results</code> copies each matching depth-2 source, regrades depths 1 and 2 on a fresh database, and starts depth 3 only after both rechecks pass.</div>
       <div class="audit">
         <div><span>✓</span><p>Model-free drafts use the trial path. Paid campaigns require a complete test plan.</p></div>
-        <div><span>✓</span><p>An unresolved running attempt must be reconciled before the controller resumes.</p></div>
+        <div><span>✓</span><p>After a controller interruption, reconcile ownership and cleanup state before further work. This does not resume an interrupted agent session or recover an in-process depth pause.</p></div>
         <div><span class="risk-mark">!</span><p>Single-attempt orchestration remains concentrated in <code>commands/bench.ts</code>. Focused tests must protect its boundaries with campaign, runtime, grading, and repair code.</p></div>
       </div>
     </section>
 
     <section id="agent">
       <h2>Agent adapters and prompt construction</h2>
+      <p>Claude Code, Codex, and OpenRouter are registered adapters. Registration does not establish live qualification. Selected SpacetimeDB guidance intentionally includes the TypeScript server and client references and CLI material, including design advice. Guidance is an experimental treatment, not equal text across stacks.</p>
       <p class="section-intro">Agent adapters define model access, limits, credentials, and result format.</p>
       <div class="grid two">
-        <div class="card"><h3>Agent receives</h3><ul><li>Product brief and current feature work</li><li>Selected stack access details</li><li>Selected SDK or skill material</li><li>Required application interface</li><li>On repair, failed checks and expected results</li></ul></div>
+        <div class="card"><h3>Agent receives</h3><ul><li>Product brief and current feature work</li><li>Selected stack access details</li><li>Selected SDK or skill material</li><li>Required application interface</li><li>With behavioral repair feedback, observed failed behavior and expected results; no implementation instructions</li></ul></div>
         <div class="card"><h3>Controller retains</h3><ul><li>Checks selected only for grading</li><li>Expected and observed specification sets</li><li>Reference and mutation evidence</li><li>Campaign state and prior artifacts</li><li>Docker control authority</li></ul></div>
       </div>
       <details open><summary>Adapter contract excerpt</summary><pre><code>export const AGENT_ADAPTER_SCHEMA_VERSION = 5;
@@ -332,7 +334,7 @@ export function defineAgentAdapter(value) {
   // Remaining identity, limit, credential, network, and executable fields
   // are also validated before the adapter is frozen.
 }</code></pre></details>
-      <details><summary>Real code: remove grader-only selections from the agent request</summary><pre><code>const requested = resolved.selection.requested;
+      <details><summary>Code sketch: remove grader-only selections from the agent request</summary><pre><code>const requested = resolved.selection.requested;
 const visible = createBoundRecipeTaskRequest(binding, {
   featureIds: requested.features,
   requestedSpecifications: requested.specifications?.requested ?? [],
@@ -356,25 +358,20 @@ if (visible.task.sha256 !== resolved.task.sha256) {
 
     <section id="runtime">
       <h2>Stack adapters and runtime isolation</h2>
+      <p>Optional SpacetimeDB dev guidance lets the agent run the development loop. The managed-dev treatment supplies a start/status/stop helper. The agent creates the project configuration, then invokes <code>/deps/spacetime-dev start</code>; the supervisor owns the watcher. Record the selected treatment; these modes are not interchangeable.</p>
       <p class="section-intro">Stack adapters provide setup, access, reset, grading, lifecycle, and cleanup operations.</p>
-      <details open><summary>Real code: one capability call instead of stack conditionals</summary><pre><code>export function executeStackCapability(adapter, capabilityName, operation, input = {}) {
-  const provider = adapter.capabilities[capabilityName];
-  if (!provider) {
-    throw new StackCapabilityUnsupportedError(
-      `stack adapter ${adapter.id} does not support capability ${capabilityName}`);
-  }
-  if (!provider.operations.includes(operation)) {
-    throw new StackCapabilityUnsupportedError(
-      `stack adapter ${adapter.id} capability ${capabilityName} does not support operation ${operation}`);
-  }
-  return provider.execute(operation, input);
-}</code></pre></details>
+      <details open><summary>Current registry: stack implementations share one contract</summary><pre><code>export const STACK_ADAPTER_REGISTRY = createStackAdapterRegistry([
+  spacetimeAdapter,
+  postgresAdapter,
+  mongodbAdapter,
+  stubAdapter,
+]);</code></pre></details>
       <div class="grid three">
         <div class="card"><div class="label">Lease</div><h3>Exact ownership</h3><p>A generated run ID, ownership token, database identity, container identity, ports, and locks bind all destructive operations.</p></div>
         <div class="card"><div class="label">Container</div><h3>Isolation</h3><p>The coding process does not receive the controller, grader, scenarios, old results, or Docker socket in appliance mode.</p></div>
         <div class="card"><div class="label">Recovery</div><h3>Cleanup proof</h3><p>A stopped controller must prove owned resources are released before a campaign attempt can be retried.</p></div>
       </div>
-      <details><summary>Real code: run IDs and ownership-bound leases</summary><pre><code>export function newRunId({ track, backend, runIndex,
+      <details><summary>Code sketch: run IDs and ownership-bound leases</summary><pre><code>export function newRunId({ track, backend, runIndex,
   now = new Date(), nonce = randomUUID() }) {
   const stamp = now.toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
   const safe = value =&gt; String(value).toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
@@ -436,7 +433,7 @@ return {
         <div class="example-step"><h3>Grade the changed source</h3><p>A repair is useful only if the new result is usable and the source is intact.</p></div>
         <div class="example-step"><h3>Accept or restore</h3><p>The checkpoint becomes the next source, or the controller restores the last accepted source.</p></div>
       </div>
-      <details><summary>Real code: source snapshots exclude runtime and harness files</summary><pre><code>const PRESERVED_DIRS = new Set(['node_modules']);
+      <details><summary>Code sketch: source snapshots exclude runtime and harness files</summary><pre><code>const PRESERVED_DIRS = new Set(['node_modules']);
 const ROOT_PRESERVED_DIRS = new Set(['.git', 'stack-bench']);
 const TRANSIENT_DIRS = new Set([
   'dist', '.vite', 'coverage',
@@ -466,7 +463,7 @@ export function hashAppSource(appDir) {
         <div class="step"><div class="label">4</div><b>Grade target</b><span>Run the selected scenario and checks</span></div>
         <div class="step"><div class="label">5</div><b>Classify</b><span>Expected catch, miss, collateral, or invalid evidence</span></div>
       </div>
-      <details open><summary>Real code: mutations are distributed across isolated workers</summary><pre><code>function shardAssignments(mutations, count, defaultScenario) {
+      <details open><summary>Code sketch: mutations are distributed across isolated workers</summary><pre><code>function shardAssignments(mutations, count, defaultScenario) {
   const workers = Array.from({ length: count }, () =&gt; []);
   mutations.forEach((mutation, position) =&gt; {
     const scenario = mutation.scenario ?? defaultScenario;

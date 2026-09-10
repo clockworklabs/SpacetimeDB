@@ -11,6 +11,10 @@ product, and how much of the selected behavior it completes. Compare delivered
 stack packages, including the intentional SpacetimeDB skills. This is not a
 database-only experiment.
 
+The no-repair question is which expected production behaviors appear without
+failure feedback. The repair question is how much completion and cost follow
+actionable failure reports. Neither question sets a preferred stack's outcome.
+
 Use general-purpose names for shipped campaigns, commands, reports, and examples.
 Describe the experiment or function, not a prospective customer or recipient.
 Keep private delivery context in local notes. This naming rule does not change
@@ -82,12 +86,15 @@ have separate tables and claims.
 
 ## Parallel execution and collection cost
 
-Three stacks by three repetitions gives nine attempts. It does not require nine
-simultaneous containers. Start producing data at safe capacity while testing
-greater capacity separately.
+Three stacks by three repetitions gives nine attempts. The current operating
+default is nine parallel attempts unless the operator specifies otherwise.
+Declare concurrency before launch. Resource or credential admission can delay
+dispatch; report that delay rather than silently reducing the experiment to
+three parallel attempts. Resource leases are allocated automatically and do not
+require a manually sized runner pool.
 
-Use the existing admission and resource controls. Select concurrency from measured
-capacity; do not repeat successful capacity checks for unchanged conditions.
+Use the existing admission and resource controls. Verify the selected concurrency
+against measured capacity; do not repeat successful capacity checks for unchanged conditions.
 A balanced wave contains equal numbers of all stacks. Do not assign each stack
 a different host or load level.
 Use the existing balanced-rotation order and retain its seed. A seed controls
@@ -159,12 +166,13 @@ Timing failures need evidence-based attribution; timing alone is not a harness f
 | Measure | Required interpretation |
 | --- | --- |
 | Check completion | Passed / selected checks, with both counts. Weighted points remain separate. |
+| Feature completion | Fully passed dependency nodes / selected nodes. A node with an unfinished guarantee is not fully complete. |
 | Build checkpoints | Show each measured progressive build. For repair cohorts, separate pre-repair and repaired checkpoints and include all repair cost. |
 | Feature and depth reach | Show nodes started, passed, failed, and blocked at each graph depth out of all assigned attempts. A reached depth need not mean all its nodes passed. |
 | Full target delivery | Fraction of assigned attempts that passed the complete target; show exclusions separately. |
 | API-equivalent cost | Use receipt status and frozen rates; distinguish exact, upper-bound, and unknown. It is not a subscription invoice. |
 | Token usage | Separate ordinary input, output, cache reads, and cache writes; retain receipt-level cache-write durations. |
-| Time | Show end-to-end wall time separately from reported execution duration, which excludes provider throttle waits. |
+| Time | Show end-to-end wall time, planned pause time, and execution duration separately. Campaign timeout excludes verified planned depth pauses; provider waits still consume the allowance. Retain the raw timestamps. |
 | Reliability | Harness/provider failures, evidence failures, OOMs, cleanup failures, and cap stops. |
 | Regression | Previously passed checks lost after new work or repair, with source/checkpoint identity. |
 
@@ -179,6 +187,13 @@ from any existing report metric with different semantics.
 A pre-repair checkpoint at a later depth can inherit guidance from earlier
 repairs. It is not an unsolicited-guarantee baseline. Preserve feedback history
 when extending or seeding from an existing attempt.
+
+A planned depth pause must be declared in the original full-target plan. It
+retains the live app, database, and cumulative budgets while the controller stays
+running. It is not restart recovery. Database timers and external services can
+advance during the hold. Compare staged and uninterrupted attempts as separate
+conditions until evidence supports a narrower equivalence claim. A source-seeded
+extension does not restore the original database or become a fresh 0-to-L3 run.
 
 Audit failures against the saved source, exact issued request, and check evidence.
 Record the measurement stage (setup, assertion, blocked, or inconclusive), the
@@ -241,6 +256,12 @@ Before verified publication, qualify every selected check: a valid reference,
 appropriate valid alternatives, declared defect controls, and the existing
 null/release gates. Check qualification coverage for the exact reported selection.
 Evidence for one recipe or depth does not qualify another.
+Static mutation coverage is an inventory, not proof of defect detection. A live
+control must fail at the intended assertion; setup failure, timeout, or missing
+evidence cannot substitute. Repeated clean reference passes check repeatability,
+but do not prove that timing failures are impossible. See the
+[reference qualification guide](../reference-apps/README.md) for exact scope and
+repetition requirements.
 Keep provisional evidence available with its label while this work
 proceeds. Explicitly justify expected production requirements and check weights;
 do not claim that this finite test proves an app is production-ready.

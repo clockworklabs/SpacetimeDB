@@ -44,14 +44,26 @@ registered fixture. Compile success is not live grading evidence.
 
 ## Live qualification
 
-Run the repetition plan declared by the selected calibration:
+Use a configured Linux appliance controller with immutable image identities.
+Read the selected calibration before launch. Set the recipe, depth, and repetition
+count explicitly; the command defaults are not the calibration policy. For example,
+the dependency L3 reference command has this shape:
 
 ```bash
-npm run qualify:reference -- --backend <mongodb|postgres|spacetime>
+node dist/src/references/reference-live.js --backend <mongodb|postgres|spacetime> \
+  --track ecommerce --level 3 --recipe ecommerce.progression-catalog \
+  --feature-catalog progression/ecommerce.json \
+  --repetitions <referenceRepetitions> --out <new-reference-artifact.json>
 ```
 
 The qualifier binds the exact recipe, fixture, source, engine, image, stack,
 runner, and check identities. It also verifies lease and resource cleanup.
+
+`referenceRepetitions` and `mutationRepetitions` come from the selected
+[calibration](../tracks/ecommerce/composition/calibrations/). Registered evidence
+must match these counts exactly. Extra repeated runs are useful stability
+diagnostics, but cannot be substituted for an artifact with a different declared
+repetition count. Two clean passes do not prove the absence of intermittent failures.
 
 For mutation evidence, combine `--mutations` with either `--mutation-id <id>`
 or `--full-mutations`. The qualifier first
@@ -61,6 +73,37 @@ isolated Docker lifecycle.
 During development, select only affected defects with `--mutation-id <id>`.
 Targeted output is diagnostic evidence. Use `--full-mutations` only when the
 complete defect set is required.
+
+For full mutation qualification, use the same scope, add
+`--mutations --full-mutations`, set `--repetitions` to `mutationRepetitions`, and
+choose a new output path. The runner can emit a companion clean-reference artifact
+when the baseline repetition count also matches `referenceRepetitions`.
+`--mutation-workers` runs independent defect controls with separate leases; it
+does not change the selected checks or their pass rules.
+
+The matching dependency L3 empty-app control is:
+
+```bash
+node dist/commands/null-control.js --track ecommerce --level 3 \
+  --recipe ecommerce.progression-catalog --out <new-null-artifact.json>
+```
+
+A scored check must fail conclusively on the empty app. Zero awarded points alone
+are insufficient if the result is a harness failure or inconclusive. Check the
+artifact's failure reasons, not only its process exit code. Reference, mutation,
+and null runs make no model calls, but still consume local compute. Obtain
+authorization before starting these long-running gates.
+
+Inspect the exact selected definition with:
+
+```bash
+node dist/commands/qualification-cli.js status --track ecommerce --level 3 \
+  --recipe ecommerce.progression-catalog
+```
+
+Static target coverage, a build pass, and historical reports cannot replace
+matching live evidence. Preserve failed artifacts and write corrections to new
+paths. Never edit old results to match a changed source or calibration.
 
 Do not edit a registered reference during qualification. A changed source hash
 requires new evidence.

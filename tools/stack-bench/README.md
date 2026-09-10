@@ -31,7 +31,7 @@ harness failures, and incomplete measurements remain separate.
 
 `mode.unchangedFailureLimit` controls early stopping independently of the repair budget.
 The initial failure counts as one observation. To allow all five repairs per feature,
-set this limit to `7`; a limit of `3` can stop after two unchanged repairs.
+set this limit to at least `6`; a limit of `3` can stop after two unchanged repairs.
 
 New dependency plans retain previously disclosed interface contracts in upgrade
 prompts by default. Set `mode.retainPriorContracts` to `false` to opt out.
@@ -43,6 +43,9 @@ Set a condition's `guidanceProfile` to `neutral-dev` to request the
 `spacetime dev` watch workflow for SpacetimeDB. This opt-in profile reuses neutral
 product guidance and adds a pinned workflow skill; other stacks are unchanged.
 It does not change grading or repair policy. The default remains `neutral`.
+All three neutral profiles retain the selected TypeScript server, TypeScript
+client, and CLI skills. Dev guidance adds a workflow; it does not replace the SDK
+references or start a watcher by itself.
 
 `neutral-managed-dev` instead supplies `/deps/spacetime-dev start|status|stop`.
 The agent creates its project configuration, then starts the managed watcher.
@@ -76,7 +79,9 @@ model configuration, and cumulative cost and repair budgets. Source and progress
 changes during the hold cause an error. `depth-pause.json` records each hold and
 `depth-release.json` records the cohort release. Working-time allowance excludes the
 planned wait; total wall duration and paused duration remain in the evidence.
-Cancellation still works. A controller loss is an interruption, not a completed pause.
+Cancellation still works. Keep the controller running throughout the hold.
+A controller loss is an interruption. `continue-depth` refuses a dead owner;
+it cannot restore the database or agent session after controller shutdown.
 Keep the full campaign directory for review; the partial research export omits
 the control receipts.
 
@@ -165,7 +170,8 @@ artifacts, uses these.
   scored).
 - **first build**: the score before any repair. **repair**: one paid
   session that reacts to a failure report, plus the regrade after it.
-  A repair that loses ground is rolled back.
+  A repair candidate is accepted only under the mode's regression rules;
+  rejected source remains available as evidence.
 - **passed** and **failed** are measured outcomes; failed is the
   application's fault. **inconclusive** means the harness could not
   measure the check: no credit, no blame, and the reason is recorded.

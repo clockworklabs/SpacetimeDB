@@ -1,5 +1,11 @@
 # Interruption and recovery
 
+Recovery here means authenticated cleanup and state reconciliation. It does not
+restore a database snapshot or restart an interrupted agent session. A planned
+[depth pause](../README.md#pause-before-a-later-depth) retains live processes and
+requires the original controller to stay running. After controller loss,
+`continue-depth` refuses release and keeps the pause evidence unchanged.
+
 Stack Bench never guesses that a container, listener, lock, database, or data
 directory is safe to delete. Normal teardown authenticates the run's private
 lease, compares exact owned container and network IDs, and releases only locks

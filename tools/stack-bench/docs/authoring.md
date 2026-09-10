@@ -52,6 +52,10 @@ Add a mutant that exposes the other customer's note while keeping sign-up and sa
   establish server persistence.
 - **Server persistence:** use an independent client without copied application storage, or
   suitable server evidence. Surviving a backend restart is a separate claim.
+- **Restart survival:** first prove the saved state or ordinary scheduled operation works.
+  Restart the owned runtime without reseeding its data, then use a fresh client to verify
+  the result. Record which process restarted. A runtime-control failure is not an app
+  defect. This does not establish power-loss, storage corruption, or database crash recovery.
 - **Shared live updates:** establish the observer's initial state, change data through another
   actor, then observe without reload or re-navigation during the measured interval. Setup
   reloads are valid. The initiating client's optimistic update is not sufficient evidence.
@@ -68,6 +72,10 @@ Add a mutant that exposes the other customer's note while keeping sign-up and sa
 - **Timing:** prefer completion signals. Keep elapsed-time waits when time is the behavior
   under test. Explain unavoidable fixed waits in the scenario. Budget the full execution
   path, including parallel branches, rather than only the longest individual wait.
+- **Contention:** establish a successful serial operation, use independent actors, classify
+  every request, and reconcile stored state after the burst. A timeout is an unknown
+  business outcome until reconciled. Request overlap does not prove server execution
+  overlap or sustained capacity. A race mutation must preserve the serial operation.
 - **Disclosure:** review the actual compiled request at the relevant step, including retained
   contracts. Requested features may state timing or safeguards. Specification packs can
   measure expected production behavior without requesting it. Disclose necessary interface

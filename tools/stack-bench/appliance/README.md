@@ -236,8 +236,8 @@ The campaign file is the run authority. Store it below
 and build image IDs, and freezes it for execution. It runs one fresh L1 build per stack,
 three in parallel, with no repairs or retries and a $10 limit per attempt
 ($30 maximum across the three attempts). It uses Sonnet 5 and includes the
-SpacetimeDB skills. Its results are provisional. Set
-the plan's `parallelism` to 3 before running this plan.
+SpacetimeDB skills. Its results are provisional. The example already sets
+`parallelism: 3`; change a draft and freeze it before execution if needed.
 Inspect its model, stacks, repetitions, spend limits, and pricing before launch.
 For a longer study, [`campaign.paid-l1-l3.json`](campaign.paid-l1-l3.json) is a
 draft three-stack progression pilot. It selects L1 through L3, six repairs total
@@ -436,7 +436,8 @@ Source files alone do not restore an interrupted agent.
 
 The initial limit comes from `budgets.attemptTimeoutMinutes` in the frozen
 plan. The Plans table shows it in hours and minutes. It includes coding,
-grading, repairs, and host sleep. Grant records retain the original limit and
+grading, repairs, and host sleep, except for a verified planned depth pause.
+Grant records retain the original limit and
 each accepted extension; adding time alone does not invalidate efficacy data.
 
 If the controller stopped while an attempt remained live, reconcile ownership
@@ -447,7 +448,9 @@ campaign reconcile <campaign.json> --out <campaign-directory>
 ```
 
 Reconciliation changes state only when private supervisor evidence proves that
-the exact owned resources are clean.
+the exact owned resources are clean. It does not restore an interrupted
+database or agent session. Do not remove a worker claim or alter completion and
+cost records to bypass continuation checks.
 
 Dependency campaigns can grant more repairs to selected exhausted features:
 
@@ -460,6 +463,10 @@ execution. Use `campaign resume <campaign.json> --out <campaign-directory>` to
 run scheduled dependency work.
 
 ## Continue to a higher level
+
+To keep the same live execution, select the full target before launch and use a
+[planned depth pause](../README.md#pause-before-a-later-depth). The controller
+must remain running. This differs from the source-seeded method below.
 
 Use a separate source-seeded campaign to continue a completed dependency campaign.
 For example, prepare an L3 campaign from its passed L2 source without starting work:
@@ -495,13 +502,17 @@ It validates orchestration but does not produce comparative model data.
 Check qualification requirements without starting work:
 
 ```sh
-docker compose --env-file operator.env -f appliance/docker-compose.yaml run --rm controller qualification status --track ecommerce --level <N>
+docker compose --env-file operator.env -f appliance/docker-compose.yaml run --rm controller qualification status --track ecommerce --level <N> --recipe <selected-recipe>
 ```
 
 Run only evidence required by that exact status. Do not repeat reference,
 mutation, or null work when its bound inputs have not changed. See the
 [reference app guide](../reference-apps/README.md) and
 [grader guide](../grader/README.md) for qualification rules.
+Use the recipe from the compiled plan; sequential levels and dependency depths
+can select different checks. Passing source tests or one reference trial does
+not qualify the full scope. Pending qualification permits provisional campaigns,
+but blocks verified comparison claims.
 
 ## Dashboard
 

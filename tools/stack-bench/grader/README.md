@@ -83,17 +83,23 @@ If the grader exits before writing JSON, inspect the retained
 
 ## Validate checks
 
-Reference apps prove that intended behavior passes. Null controls prove that a
-blank app cannot earn points. Mutations prove that each scored check detects its
-assigned defect.
+Live reference runs test that intended behavior passes. Null controls test that
+an empty app fails each selected scored check conclusively. Live mutations test
+that each selected check detects its assigned defect. These are finite controls
+for an exact definition, not proof of general production readiness.
+
+This command checks mutation definitions and source anchors only. It does not
+start an app or show that the grader detects a defect:
 
 ```bash
-npm run test:null
 npm run check:mutations -- --app <reference-app> --mutations <manifest>
 ```
 
-During development, run only mutations affected by the change. Use the full
-mutation set only when grader or check changes require it.
+For live controls, use the scoped commands in the
+[reference guide](../reference-apps/README.md#live-qualification). Declare the
+recipe and depth explicitly. A bare default command can measure a different scope.
+During development, run only affected mutations. The full selected mutation set
+is a release qualification gate and requires separate authorization.
 
 The mutation runner requires:
 
@@ -106,6 +112,12 @@ The mutation runner requires:
 Setup, infrastructure, and inconclusive failures do not count as defect
 detection. A surviving mutation can be equivalent, so confirm that its source
 edit changes observable behavior before changing the check.
+
+For concurrent checks, a defect control must preserve ordinary serial behavior.
+For restart checks, ordinary execution must work before the restart. A disabled
+operation does not isolate a race or a restart defect. Keep the baseline,
+mutation source, action evidence, and cleanup outcome together. A control for one
+defect does not validate all alternative implementations or failure modes.
 
 ## Media evidence
 

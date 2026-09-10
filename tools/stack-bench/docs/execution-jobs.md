@@ -26,7 +26,7 @@ Create a submission file:
 
 Only name adapters present in the plan. Credentials can also have a `default` and an
 `attempts` map keyed by exact compiled attempt IDs. Attempt selections take precedence.
-Omit `hostId` to let the external dispatcher choose a host. This field restricts placement;
+Omit `hostId` to let an eligible worker claim the job. This field restricts placement;
 it is not host authentication. Omitting credentials retains the existing operator environment.
 
 Through the controller:
@@ -105,6 +105,8 @@ same job. Claims do not expire: a worker that loses contact may still have paid 
 in flight. A killed worker therefore leaves a retained claim for investigation rather than
 an automatic duplicate. Use campaign status, stop, and authenticated reconciliation to
 resolve owned resources. Failed jobs are not automatically retried by `job work`.
+Reconciliation proves cleanup; it does not restore a live database or agent session.
+See [interruption and recovery](../appliance/RECOVERY.md) before releasing retained work.
 
 The worker reserves only the actual stack resources for a dispatched attempt. It releases
 them after verified cleanup. `capacityPolicy: "wait"` retains pending work and reports the

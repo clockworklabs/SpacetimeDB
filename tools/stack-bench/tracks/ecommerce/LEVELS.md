@@ -35,7 +35,7 @@ regression stays visible.
 - scheduled restocks;
 - automatic order delivery;
 - abandoned-cart cleanup;
-- restart durability and exactly-once execution.
+- restart survival and one business effect under the selected replay and timing probes.
 
 The sequential aliases are in `composition/sequential.json`. Dependency aliases
 are in `composition/dependency.json`.
@@ -69,11 +69,18 @@ Every check produces `passed`, `failed`, `inconclusive`, or `harness_failure`.
 Only passed checks add points. Missing or inconclusive evidence never changes
 the declared denominator.
 
-The score is passed points over every selected point in the graph, for the
-first build and for the final result alike. The questline average, each
-questline's own percentage averaged with equal weight, is reported beside it
-as a secondary view; questlines range from 9 to 59 points, so the two can
-differ. Blocked and unfinished work stays in the denominator.
+Weighted score is passed points over selected points. Check completion is passed
+checks over selected positive-point checks. Feature completion is fully passed
+nodes over selected nodes. The questline average gives each questline equal
+weight, so it can differ from whole-target weighted score. Blocked and unfinished
+work stays in the denominator. Later checkpoints can include earlier repair
+feedback; they are not fresh no-repair builds.
+
+These are finite behavioral probes. Hosted-app restart on PostgreSQL or MongoDB
+and SpacetimeDB runtime restart retain data but do not establish common database
+crash or power-loss behavior. Bounded contention does not measure sustained scale.
+See the [coverage review](../../docs/grading-coverage.md) for observation limits and
+the exact qualification requirements.
 
 See [composition/README.md](composition/README.md) for pack, recipe, and
 calibration ownership.

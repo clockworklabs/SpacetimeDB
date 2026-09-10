@@ -37,7 +37,11 @@ Use the root [README](../README.md) for the product summary.
 
 - [Dependency graph](dependency-graph.html): generated ecommerce feature graph
 - [Technical guide](technical-guide.html): current run path
-- [Presentation](stack-bench.html): product presentation
+- [Presentation](stack-bench.html): product presentation and illustrative checks
+
+Qualification status belongs to the current definition and evidence, not these illustrations.
+Use [Grading coverage](grading-coverage.md) for limits. A paused run requires its live
+controller; controller-restart recovery of the pause is not supported.
 
 `dependency-graph.html` is generated from the current graph with
 `npm run graph`. Do not edit it by hand.

@@ -1164,7 +1164,7 @@
     <article class="feature-item" role="listitem">
       <div class="feature-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M25 11a10 10 0 10.5 9"/><path d="M25 5v6h-6M12 12l8 8M20 12l-8 8"/></svg></div>
       <h3>Repair controller</h3>
-      <p>Returns failed checks when the plan enables repairs.</p>
+      <p>Returns observed failures when the plan enables repairs.</p>
     </article>
     <article class="feature-item" role="listitem">
       <div class="feature-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M8 4h12l5 5v19H8zM20 4v6h6"/><path d="M12 15h9M12 20h9M12 25h6"/></svg></div>
@@ -1560,7 +1560,7 @@
       <div class="atk-panel" id="c19">
         <div class="atk-head"><span>Scheduled work survives a restart</span><span>admin &middot; watcher</span></div>
         <div class="atk-body">
-          <div class="step"><span class="actor">311a</span><span class="what">a restock scheduled before a restart still fires after it, once, at its own time; an in-memory timer does not survive and must not be how this was built</span></div>
+          <div class="step"><span class="actor">311a</span><span class="what">a restock scheduled before a restart still fires after it, once, at its own time; the observation checks restart survival, not the implementation algorithm</span></div>
           <div class="step"><span class="actor">311b</span><span class="what">it fired exactly once; the restart did not replay it</span></div>
         </div>
         <div class="atk-verdict">2 checks, and the store has to hold every one</div>

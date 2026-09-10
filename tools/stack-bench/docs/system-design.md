@@ -10,6 +10,7 @@ using chat history or operator memory.
 |---|---|---|
 | Definitions | Product work, prompt modules, checks, stacks, models, and budgets | Versioned source files |
 | Compiler | The exact work matrix and all bound identities | `plan.json` |
+| Job store and worker | Immutable submission, host placement, credential references, and exclusive execution claim | Job and claim records |
 | Admission | Whether the exact plan can run on this appliance | Admission artifact |
 | Scheduler | Attempt order, concurrency, continuations, and terminal state | `state.json` |
 | Run engine | Build, grade, repair, resource ownership, and cleanup | Attempt directory |
@@ -49,12 +50,12 @@ An operator, human or agent, uses one loop:
    prompt policy, checks, points, budgets, images, and parallelism.
 3. **Admit.** Prove credentials, images, ports, resource capacity, and stack
    access before model work starts.
-4. **Run.** Start or resume the exact stored plan. A paid action is always
-   explicit.
+4. **Run.** Start the exact stored plan or use an eligible continuation. A paid
+   action is always explicit. Resume is not general process or database recovery.
 5. **Observe.** Read durable campaign state first. Open logs only to diagnose a
    live phase or failure.
 6. **Decide.** Continue only through a legal state transition. Never hide an
-   invalid attempt or retry it automatically.
+   invalid attempt or retry it outside the frozen policy.
 7. **Report.** Generate the result from retained run evidence. Publish it as
    verified comparison data only when grading qualification is complete.
 8. **Clean.** Remove temporary owned resources. Keep the campaign package.
@@ -94,7 +95,8 @@ state, not an accepted final explanation.
 - Reuse qualification evidence only when all bound hashes match.
 - Do not repeat reference, mutation, or null work for unchanged scope.
 - Stop new paid attempts after a harness, provider, host, or operator failure.
-- Do not retry or grant more repair work automatically.
+- Retry only when the frozen attempt policy permits it. Extra repair grants
+  require a separate operator action.
 - Run independent attempts in parallel only within the plan and admitted host
   capacity.
 - Preserve a failed package before a source or plan change.
@@ -104,7 +106,8 @@ state, not an accepted final explanation.
 Operational knowledge belongs in typed artifacts, not chat transcripts or a
 growing journal. Each completed action records its inputs, identity, outcome,
 cost, duration, evidence paths, and owner. A later operator can reconstruct the
-campaign from the retained package and continue from the last valid state.
+campaign from the retained package. Continuation still requires the engine's
+eligibility checks; evidence alone cannot restore a lost live database or session.
 
 Local notes can explain an active investigation. They cannot authorize a run,
 change a score, or replace a missing artifact.

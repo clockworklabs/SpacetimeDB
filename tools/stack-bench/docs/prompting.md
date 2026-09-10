@@ -15,7 +15,7 @@ Each request is assembled from these owners:
 | Requested production behavior | States production requirements that the campaign chose to disclose | Specification packs |
 | Stack material | Gives required access details and the selected level of technical guidance | Guidance profile and backend document |
 | API reference | Supplies selected SDK material, including SpacetimeDB skills | Guidance profile |
-| Starting data | Gives the fixed catalog for a new app | Fixture |
+| Starting data | Gives the new app's fixed catalog; later requests retain original entity names and relationships without resetting live data | Fixture |
 | Application interface | Names the controls or operations needed for reliable use | Feature contracts |
 | Repair report | Describes conclusive application failures from the last grade | Condition repair policy |
 
@@ -77,8 +77,10 @@ Each selected production expectation has one treatment:
 | `expected` | No | Yes | Yes, after a conclusive failure |
 | `observed` | No | No | No |
 
-`Expected` answers: "Does this stack produce sound production behavior when the
-user did not prescribe the mechanism?"
+`Expected` lets a no-repair study measure production behavior that was not
+explicitly requested as a specification. The supplied features, interfaces, and
+skills can still disclose related expectations. Audit their exact text before
+claiming a behavior was supplied without being asked.
 
 `Observed` is a separate first-build diagnostic. It cannot change the main
 score or steer repairs.
@@ -184,6 +186,8 @@ Dependency mode composes the request from features that are ready now.
   production expectations, starting data, and their interfaces.
 - An upgrade receives the newly ready feature work. By default, it also retains
   the interface contracts disclosed in earlier requests for the same app.
+- Upgrades and repairs retain the original catalog names and relationships.
+  They explicitly do not reset current stock, prices, or user data.
 - Earlier feature requirements are not repeated as new work. Retained contracts
   do not claim that the earlier implementation passed its checks.
 - Blocked descendants are not included until their dependencies pass.
@@ -223,7 +227,7 @@ account path.
 
 A repair starts only after Stack Bench completes grading and records a
 conclusive application failure. A repair report can name an expected
-production behavior that the initial request withheld; that disclosure
+production behavior not stated in the initial request; that disclosure
 happens only through the repair policy, after a conclusive failure, and under
 the same rule for every stack. The coding agent receives a plain bug report:
 
@@ -236,8 +240,8 @@ Actual: The page returned to the signed-out state after reload.
 Change only what is needed. Do not alter behavior that is already correct.
 ```
 
-The real report also identifies the affected product area and includes the
-current feature text and application interface. Provider failures, harness
+The repair request also supplies the affected product area, current feature text,
+application interface, and original catalog baseline. Provider failures, harness
 failures, and interrupted work do not become application bug reports.
 
 Behavior feedback uses the authored expectation for that behavior, a finding from the
@@ -288,7 +292,8 @@ not claim that an unperformed authorization or integrity assertion failed.
 - Give every replay, forgery, or direct call a named application action that
   declares both the HTTP route and the reducer. A campaign does not compile
   while a selected check cannot be measured on a selected stack.
-- Mark changed prompt inputs as draft until matching qualification is current.
+- Invalidate qualification tied to changed prompt inputs. Qualification comes
+  from matching evidence; do not add status fields to recipes or references.
 
 After a prompt change, run `npm run check:composition`, `npm run check:prompts`,
 and the exact scenario check for the affected recipe. Inspect the rendered

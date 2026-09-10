@@ -1,13 +1,15 @@
 # Ecommerce prompt boundary audit
 
-The neutral condition measures production guarantees supplied without explicit requests.
+This records the September 2026 product-prompt cleanup. It does not establish the
+disclosure or qualification status of later definitions; review each frozen request.
+The neutral no-repair condition measures expected behavior before failure feedback.
 It must not be designed to make a chosen stack fail. All stacks receive the same product
 work and equivalent application interfaces. Stack setup instructions remain stack-specific.
 
 ## What changed
 
-Reviewed the selected modular feature requests and contracts through all six dependency
-depths, plus sequential L1-L3 framing and action fragments. The exact rendered dependency
+Reviewed the selected modular feature requests and contracts across the dependency
+graph, plus sequential L1-L3 framing and action fragments. The exact rendered dependency
 request is checked for all three stacks at every depth.
 
 | Source | Removed from agent-facing product work | Retained |
@@ -55,9 +57,12 @@ replace these skills based on the product-request boundary. The short product re
 and the supplied SDK skills are separate inputs; material metadata records design advice
 as present. Historical runs that omitted these skills do not represent the intended setup.
 
-Repairs intentionally reveal observed defects. A run with repairs measures assisted recovery,
-not production guarantees supplied without feedback. Use first-build results or a no-repair
-condition for the primary unprompted-guarantee analysis.
+Repairs report conclusive failures, including expected production behavior, with the
+expected and observed result. They do not prescribe an algorithm or implementation.
+Do not withhold a guarantee failure merely because it was not in the initial request.
+A run with repairs measures assisted recovery. Use a no-repair condition for the
+primary analysis of behavior supplied without failure feedback. A later depth's
+first build can inherit earlier repair reports; it is not an independent no-repair trial.
 
 ## Reporting and next validation
 

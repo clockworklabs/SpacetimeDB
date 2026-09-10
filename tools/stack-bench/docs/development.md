@@ -23,7 +23,7 @@ npm run bootstrap:browsers
 Build the local coding image:
 
 ```bash
-docker build -t stack-bench-build:2.1.226 container
+docker build --platform linux/amd64 -t stack-bench-build:local container
 ```
 
 For real stack execution, use the [appliance build and setup](../appliance/README.md).

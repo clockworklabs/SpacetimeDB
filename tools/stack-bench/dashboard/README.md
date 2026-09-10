@@ -1,10 +1,10 @@
 # Stack Bench dashboard
 
 The dashboard is an optional local view over Stack Bench results. It does not
-schedule attempts, grade applications, operate Docker, or repair source itself.
+schedule attempts, grade applications, or repair source itself.
 Campaign plans, durable campaign state, and run artifacts remain the source of
-truth; the dashboard only reads them and, in the appliance, asks the controller
-to start or resume a run.
+truth. Appliance controls call the shared job and campaign operations. The
+dashboard does not have a separate execution engine.
 
 ## Pages
 
@@ -12,13 +12,19 @@ to start or resume a run.
   its shape, status, and per-stack score. A campaign whose plan or state this
   build cannot read appears with the status `unreadable` and the reason in
   place of its title.
-- Campaign (`/c/:key`) — one sheet: the plan's facts across the top, then
-  check completion, weighted score, score before repairs, repairs, time, spend, and attempt phase
-  per stack. Dependency campaigns add questline rows, which
+- Campaign (`/c/:key`) — plan facts, completion, scores, repairs, time, spend,
+  and attempts. The chart switches between completion, cost, and distribution
+  with `?chart=completion|cost|distribution`. Features are the default unit;
+  `&unit=features|checks` switches completion and distribution. Cost keeps these
+  controls visible but disabled. Toggle a stack or a repetition to show or hide it.
+  Dependency campaigns add questline rows, which
   `?questlines=grid|graph|replay` switches between; `&step=N` moves the replay
   cursor. Sequential campaigns show one row pair per level instead.
-- Attempt (`/c/:key/a/:attemptId`) — the attempt's figures, its climb, and
-  `?tab=checks|screenshots|files|log`. The log tab follows new bytes.
+- Attempt (`/c/:key/a/:attemptId`) — attempt figures, the dependency graph, and
+  `?tab=checks|transcript|screenshots|files|log`. The transcript shows build and
+  repair sessions, including tool calls. It follows live work at the newest
+  page and pauses updates while you read earlier messages. The log tab shows
+  controller output separately.
 - Plans (`/plans`) — the frozen campaign plans found under the plans directory,
   and the form that starts one.
 
@@ -32,6 +38,9 @@ controller mode: Start and Resume launch the CLI in an owned controller
 container. Stop sends a durable request to that controller instance.
 Stop interrupts the active attempt; it does not pause it. Resume starts
 scheduled dependency work and does not restart a stopped sequential attempt.
+It cannot restore a lost database or agent session. A planned depth pause uses
+the CLI's `pause-status` and `continue-depth` commands and requires the original
+controller to stay running. See [pause behavior](../README.md#pause-before-a-later-depth).
 Elsewhere it runs read-only and those controls are unavailable;
 `GET /api/health` reports which mode is active.
 
@@ -64,11 +73,16 @@ wrong secret is answered with 403 and nothing is started. Starting a campaign
 invokes the same `campaign run` command used by the CLI, so the CLI can inspect
 or resume the result normally and CLI-started campaigns appear here.
 
-The campaign page lists every attempt with its variant and repetition. Completion
-uses all selected scored checks, including checks not reached. Spend includes
+The campaign page lists every attempt with its variant and repetition. Check
+completion uses all selected checks, including checks not reached. Feature
+completion requires all selected checks of a feature to pass, including its
+production guarantees. Weighted score remains a separate measure. Spend includes
 all executions and shows upper bounds and unknown values. Different comparison
 conditions do not share one score average. Files links to the report and its
 public export manifest; the manifest lists evidence and any reconstruction gaps.
+Charts connect saved observations; intermediate values are not measured.
+Distribution includes completed attempts and labels excluded attempts. It is a
+view of the cohort, not proof that those results are qualified for comparison.
 
 ## Routes
 
@@ -81,12 +95,19 @@ public export manifest; the manifest lists evidence and any reconstruction gaps.
 | `GET /api/campaigns/:key/attempts/:id/checks` | per-check outcome and history |
 | `GET /api/campaigns/:key/attempts/:id/package` | the evidence listing |
 | `GET /api/campaigns/:key/attempts/:id/log?from=N` | log bytes after `N` |
+| `GET /api/campaigns/:key/attempts/:id/transcript` | selected session and paged transcript messages |
+| `GET /api/campaigns/:key/attempts/:id/time` | time allowance, grants, and continuation eligibility |
+| `POST /api/campaigns/:key/attempts/:id/time` | request additional time |
 | `GET /api/campaigns/:key/artifacts/:name` | one allowlisted artifact |
 | `GET /api/events` | the change stream |
 | `GET /api/plans` | the discovered plans |
 | `POST /api/campaigns` | start a run |
-| `POST /api/campaigns/:key/resume` | resume an interrupted dependency run |
+| `POST /api/campaigns/:key/resume` | run eligible scheduled dependency work |
 | `POST /api/campaigns/:key/stop` | stop the exact controller shown by the page |
+
+The [job API](../docs/execution-jobs.md#api-and-service-integration) adds durable
+submission, listing, status, and cancellation at `/api/jobs`. Submission queues
+work; an enabled worker must claim it before execution starts.
 
 Each payload covers one question, so opening a campaign or a tab is what pays
 for reading it. The overview and the sheet are cached against the size and
@@ -109,8 +130,10 @@ first client subscribes.
 
 ## What it touches
 
-It reads campaign plans from `<results>/plans` and campaigns from
-`<results>/campaigns`. It writes nothing under a campaign directory. The only
-file it appends to is `<results>/dashboard/operations.jsonl`, the record of
-runs submitted through the dashboard, and the controller it starts writes its
-own output under `<results>/dashboard/operations`.
+It reads plans from `<results>/plans`, campaigns from `<results>/campaigns`, and
+jobs from `<results>/jobs`. Authorized controls use the shared APIs to write job,
+cancellation, and time-grant records. The dashboard records direct controller
+operations in `<results>/dashboard/operations.jsonl` and retains their output
+under `<results>/dashboard/operations`. Live transcript reads inspect the exact
+owned coding container; saved transcripts use the attempt's transcript files.
+It does not edit grades or source.
