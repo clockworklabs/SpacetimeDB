@@ -67,6 +67,23 @@ function fileFingerprint(path: string): string | null {
   return `${stat.size}:${stat.mtimeMs}`;
 }
 
+const campaignStateCache = new Map<string, {
+  fingerprint: string;
+  value: ReturnType<typeof readCampaignState>;
+}>();
+
+// Share frozen plan/state validation across dashboard resources. Execution
+// evidence and controller liveness keep their own freshness checks.
+function dashboardCampaignState(directory: string): ReturnType<typeof readCampaignState> {
+  const fingerprint = [CAMPAIGN_FILE.plan, CAMPAIGN_FILE.state]
+    .map(file => fileFingerprint(join(directory, file))).join('|');
+  const cached = campaignStateCache.get(directory);
+  if (cached?.fingerprint === fingerprint) return cached.value;
+  const value = readCampaignState(directory, { requireCurrentInputs: false });
+  campaignStateCache.set(directory, { fingerprint, value });
+  return value;
+}
+
 // Every file whose change can move a number in the view, and nothing else: a
 // running campaign that has written nothing since the last read is unchanged.
 function executionFingerprints(directory: string, files: readonly string[]): string[] {
@@ -131,7 +148,7 @@ function overviewCampaign(directory: string): {
   plan: CompiledCampaignPlan;
   campaign: OverviewCampaign;
 } {
-  const { plan, state } = readCampaignState(directory, { requireCurrentInputs: false });
+  const { plan, state } = dashboardCampaignState(directory);
   const attempts = state.attempts.map(attempt =>
     inspectCampaignAttempt(plan, attempt, directory));
   const comparison = compareCampaign<InspectedAttempt>({ attempts });
@@ -454,7 +471,7 @@ export function campaignSheet(resultsRoot: string, key: string,
   const reportPaths = ['report/report.html', 'report/export-manifest.json'];
   const fingerprint = campaignFingerprint(directory, [CAMPAIGN_FILE.plan, CAMPAIGN_FILE.state, ...reportPaths],
     [ARTIFACT_FILE.run, ARTIFACT_FILE.progressionState, LOG_FILE, 'depth-pause.json']);
-  const { plan, state } = readCampaignState(directory, { requireCurrentInputs: false });
+  const { plan, state } = dashboardCampaignState(directory);
   const interrupted = controllerInterrupted(controllerActive, directory, plan, state.status);
   const controllerOwner = readCampaignLock(directory)?.ownershipMarkerSha256 ?? null;
   const cacheKey = `${directory}:${interrupted ? 'interrupted' : 'live'}:${controllerOwner ?? ''}`;
@@ -527,7 +544,7 @@ function uniquePoints(dependency: DependencyProgress | null): { score: number; m
 // Attempt sub-resources
 
 function attemptState(directory: string, attemptId: string): CampaignAttemptState {
-  const { state } = readCampaignState(directory, { requireCurrentInputs: false });
+  const { state } = dashboardCampaignState(directory);
   const attempt = state.attempts.find(item => item.plan.id === attemptId);
   if (!attempt) throw new Error('campaign attempt does not exist');
   return attempt;
@@ -599,7 +616,7 @@ export function attemptChecks(resultsRoot: string, key: string, attemptId: strin
   if (!execution) return { attemptId, stack: attempt.plan.stack, grades: [], checks: [] };
   const executionDirectory = contained(directory, execution.output, 'campaign execution');
   const grades = gradeDirectories(executionDirectory);
-  const { plan } = readCampaignState(directory, { requireCurrentInputs: false });
+  const { plan } = dashboardCampaignState(directory);
   const metadata = new Map(plan.featureCatalog?.definition.nodes.flatMap(node =>
     node.gradingChecks.map(check => [check.id, check] as const)) ?? []);
   const checks = new Map<string, AttemptCheck>();
@@ -795,7 +812,7 @@ const progressionCache = new Map<string, { fingerprint: string; view: CampaignPr
 // progression event: the graph and its replay come from the same read.
 export function campaignProgression(resultsRoot: string, key: string): CampaignProgression | null {
   const directory = campaignDirectory(resultsRoot, key);
-  const { plan, state } = readCampaignState(directory, { requireCurrentInputs: false });
+  const { plan, state } = dashboardCampaignState(directory);
   if (plan.definition.mode?.id !== 'dependency' || !plan.featureCatalog
     || !plan.dependencyPolicy) return null;
   const fingerprint = campaignFingerprint(directory, [CAMPAIGN_FILE.plan, CAMPAIGN_FILE.state],
@@ -871,7 +888,7 @@ function campaignLiveCosts(resultsRoot: string, key: string) {
   const directory = campaignDirectory(resultsRoot, key);
   const cached = liveCampaignCache.get(directory);
   if (cached && (cached.pending || Date.now() - cached.at < 5000)) return cached.value;
-  const { state } = readCampaignState(directory, { requireCurrentInputs: false });
+  const { state } = dashboardCampaignState(directory);
   const entry = { at: Date.now(), pending: true, value: cached?.value ?? new Map() as LiveCosts };
   const refresh = async () => {
     const costs = new Map<string, Awaited<ReturnType<typeof liveTranscriptCost>>>();
