@@ -51,7 +51,7 @@
     {
       "backend": "spacetime",
       "path": "grader/mutations/spacetime-ecommerce.json",
-      "sha256": "2c3ac965d82b5183dd25f9798f1e2554de5c3cc691c307793a9d83f1b4cec09f",
+      "sha256": "e7708276258287f86ce3451636421990ec7639f444e19c76e0ade9db9c1414fc",
       "referenceId": "ecommerce-reference-spacetime"
     }
   ],

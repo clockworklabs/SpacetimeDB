@@ -11,7 +11,7 @@
       "targets": [
         "ecommerce.spec.concurrency-safety.restock-race.202a"
       ],
-      "desc": "Compute absolute restock quantity from the client snapshot and store it in the reducer. A 500 ms client pause widens the stale-write window. Serial purchases and restocks still work; intervening purchases can be overwritten. This is a client/server lost update, not a race inside an atomic reducer.",
+      "desc": "Compute absolute restock quantity when the administrator edits the form and store that captured value in the reducer. A fixed 500 ms submission delay widens the stale-write window. Serial purchases and restocks still work; intervening purchases can be overwritten. This is a stale-form lost update, not a race inside an atomic reducer.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
@@ -19,9 +19,14 @@
           "replace": "ctx.db.stock.insert({ ...existing, quantity });\n    } else {\n      ctx.db.stock.insert({ item_id: itemId, warehouse_id: warehouseId, quantity });\n    }\n    for (const alert of"
         },
         {
+          "file": "client/src/components/AdminPanel.tsx",
+          "find": "onChange={(e) => setRestockInputs((v) => ({ ...v, [k]: e.target.value }))}",
+          "replace": "onChange={(e) => setRestockInputs((v) => ({ ...v, [k]: String(stockOf(item.id, wh.id) + Number(e.target.value)) }))}"
+        },
+        {
           "file": "client/src/App.tsx",
           "find": "    await conn?.reducers.adminRestock({ itemId, warehouseId, quantity });",
-          "replace": "    const absoluteQuantity = (stockByItemWarehouse.get(`${itemId}-${warehouseId}`) ?? 0) + quantity;\n    // Mutant: widen the stale client snapshot window without changing serial behavior.\n    await new Promise(resolve => setTimeout(resolve, 500));\n    await conn?.reducers.adminRestock({ itemId, warehouseId, quantity: absoluteQuantity });"
+          "replace": "    // Mutant: widen the stale form submission window without changing serial behavior.\n    await new Promise(resolve => setTimeout(resolve, 500));\n    await conn?.reducers.adminRestock({ itemId, warehouseId, quantity });"
         }
       ]
     },
