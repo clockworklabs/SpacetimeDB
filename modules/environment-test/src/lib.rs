@@ -1,7 +1,4 @@
 use spacetimedb::{AnonymousViewContext, ProcedureContext, ReducerContext, SpacetimeType};
-use std::sync::atomic::{AtomicBool, Ordering};
-
-static VIEW_TRAP_ENTERED: AtomicBool = AtomicBool::new(false);
 
 type RequiredString = String;
 type OptionalString = Option<RequiredString>;
@@ -65,10 +62,6 @@ pub fn expect_typed_environment(ctx: &ReducerContext, required: u8, optional: Op
 
 #[spacetimedb::reducer]
 pub fn expect_environment(ctx: &ReducerContext, key: String, expected: Option<String>) {
-    assert!(
-        !VIEW_TRAP_ENTERED.load(Ordering::Relaxed),
-        "trapped Wasm view instance was reused"
-    );
     assert_eq!(ctx.env.get(&key), expected);
     assert_eq!(ctx.as_read_only().env.get(&key), expected);
     assert_eq!(ctx.as_anonymous_read_only().env.get(&key), expected);
@@ -109,14 +102,6 @@ pub fn environment_value(ctx: &AnonymousViewContext) -> Option<EnvironmentValue>
     let value = ctx.env.WATCHED();
     assert_ne!(value.as_deref(), Some("fail-view"));
     Some(EnvironmentValue { value })
-}
-
-/// A Rust panic is a Wasm trap. The next main-instance reducer verifies that
-/// the guest-global marker did not survive the failed SQL/subscription call.
-#[spacetimedb::view(accessor = environment_trap, public)]
-pub fn environment_trap(_ctx: &AnonymousViewContext) -> Option<EnvironmentValue> {
-    VIEW_TRAP_ENTERED.store(true, Ordering::Relaxed);
-    panic!("intentional environment view trap");
 }
 
 /// Hand-written ABI callers cannot retain unbounded host allocations.

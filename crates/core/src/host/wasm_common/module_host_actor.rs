@@ -1212,7 +1212,6 @@ impl InstanceCommon {
         let mut inst = RefInstance {
             instance: inst,
             common: self,
-            trapped: false,
         };
         let (res, trapped) = match cmds {
             ViewCommand::AddSingleSubscription {
@@ -1299,7 +1298,7 @@ impl InstanceCommon {
         if let Err(err) = &res {
             error_target.send(&info.subscriptions, err);
         }
-        (res, trapped || inst.trapped)
+        (res, trapped)
     }
 
     pub(in crate::host) fn handle_sql_cmd<I: WasmInstance>(
@@ -1310,7 +1309,6 @@ impl InstanceCommon {
         let mut inst = RefInstance {
             instance: inst,
             common: self,
-            trapped: false,
         };
         let SqlCommand {
             db,
@@ -1327,9 +1325,9 @@ impl InstanceCommon {
                     result: Ok(result),
                     head,
                 },
-                trapped || inst.trapped,
+                trapped,
             ),
-            Err(err) => (SqlCommandResult { result: Err(err), head }, inst.trapped),
+            Err(err) => (SqlCommandResult { result: Err(err), head }, false),
         }
     }
 
@@ -1496,7 +1494,6 @@ impl InstanceCommon {
         let mut instance = RefInstance {
             common: self,
             instance: inst,
-            trapped: false,
         };
         ModuleHost::call_views_with_tx_at(tx, &mut instance, caller, timestamp)
     }

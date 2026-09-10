@@ -53,6 +53,12 @@ const checked: string | null = ctx.env.get('LOG_LEVEL');
 
 Within an environment declaration, a simple enum specifies allowed strings. Enums used elsewhere in the module retain their usual tagged representation. An enum with one case restricts the value to that string. Enums with payloads cannot be used as environment constraints.
 
+The string-key getter checks the same declaration and permissions as named accessors. Reading an undeclared key fails. Optional named accessors return `undefined`; `ctx.env.get` returns `null` for an absent optional value.
+
+Key names are exact and case-sensitive. The name `get` is reserved for the getter; read a declaration named `get` with `ctx.env.get('get')`. A module with no environment declarations accepts no keys.
+
+Reads inside a transaction use that transaction's snapshot. In a procedure outside a transaction, each read uses a separate snapshot. To read several keys consistently, group the reads in `withTx`.
+
 </TabItem>
 <TabItem value="rust" label="Rust">
 
@@ -96,6 +102,12 @@ let checked: Option<String> = ctx.env.get("LOG_LEVEL");
 
 Existing `#[env(values(...))]` constraints on `String` and `Option<String>` fields remain supported. Use enum variants to constrain typed enum fields.
 
+The string-key getter checks the same declaration and permissions as named accessors. Reading an undeclared key fails. Optional named accessors and `ctx.env.get` return `None` for an absent optional value.
+
+Key names are exact and case-sensitive. The name `get` is reserved for the getter; read a declaration named `get` with `ctx.env.get("get")`. A module with no environment declarations accepts no keys.
+
+Reads inside a transaction use that transaction's snapshot. In a procedure outside a transaction, each read uses a separate snapshot. To read several keys consistently, group the reads in `with_tx`.
+
 </TabItem>
 <TabItem value="csharp" label="C#">
 
@@ -125,6 +137,12 @@ string? checkedValue = ctx.Env.Get("LOG_LEVEL");
 ```
 
 `string` requires a value, and `string?` permits absence. `[SpacetimeDB.EnvValues(...)]` restricts the allowed strings. Supplying one string makes it an exact-value constraint.
+
+The string-key getter checks the same declaration and permissions as named accessors. Reading an undeclared key fails. Optional named accessors and `ctx.Env.Get` return `null` for an absent optional value.
+
+Key names are exact and case-sensitive. Names that collide with `Get`, `ModuleEnvironment`, or inherited `Object` methods are available through the string-key getter, for example `ctx.Env.Get("GetType")`. A module with no environment declarations accepts no keys.
+
+Reads inside a transaction use that transaction's snapshot. In a procedure outside a transaction, each read uses a separate snapshot. To read several keys consistently, group the reads in `WithTx`.
 
 </TabItem>
 <TabItem value="cpp" label="C++">
@@ -161,14 +179,14 @@ std::optional<std::string> checked = ctx.env.get("LOG_LEVEL");
 
 `std::string` requires a value, and `std::optional<std::string>` permits absence. The optional third element restricts the allowed strings. Supplying one string makes it an exact-value constraint.
 
+The string-key getter checks the same declaration and permissions as named accessors. Reading an undeclared key fails. Optional named accessors and `ctx.env.get` return `std::nullopt` for an absent optional value.
+
+Key names are exact and case-sensitive. Names reserved by the generated accessor type, including `get`, remain available through the string-key getter, for example `ctx.env.get("get")`. A module with no environment declarations accepts no keys.
+
+Reads inside a transaction use that transaction's snapshot. In a procedure outside a transaction, each read uses a separate snapshot. To read several keys consistently, group the reads in `with_tx`.
+
 </TabItem>
 </Tabs>
-
-The string-key getter checks the same declaration and permissions as named accessors. Reading an undeclared key fails; it does not return an absent value. Named optional accessors return `None`, `undefined`, `null`, or `std::nullopt`, depending on the language. The TypeScript string-key getter uses `null` for absence.
-
-Key names are exact and case-sensitive. The getter name `get`, or `Get` in C#, is reserved: a key with that name remains accessible through the string-key getter. A module with no environment declarations accepts no keys.
-
-Reads inside a transaction use that transaction's snapshot. In a procedure outside a transaction, each read uses a separate snapshot. To read several keys consistently, group the reads in `with_tx` in Rust or C++, `withTx` in TypeScript, or `WithTx` in C#.
 
 ## Supply values when publishing
 
@@ -192,7 +210,14 @@ With a local server running on port 3000, publish from the directory containing 
 API_KEY='development-only-key' spacetime publish
 ```
 
-For real credentials, supply the value through the publishing process's environment or an appropriately ignored local configuration file. Keep secrets out of checked-in configuration and module source.
+For real credentials, supply the value through the publishing process's environment, `spacetime.local.json`, or `spacetime.{environment}.local.json`. Keep checked-in `spacetime.json` and `spacetime.{environment}.json` limited to non-secret defaults. Ensure the local files are ignored by Git:
+
+```gitignore
+spacetime.local.json
+spacetime.*.local.json
+```
+
+The `.local` naming convention does not itself prevent a file from being committed.
 
 The CLI resolves each declared key in this order:
 
@@ -204,7 +229,7 @@ A shell value overrides JSON even when it is an empty string or the key is absen
 
 The configuration files `spacetime.json`, `spacetime.local.json`, `spacetime.{environment}.json`, and `spacetime.{environment}.local.json` apply in increasing precedence, where _environment_ is the environment selected with `--env`. Their `env` maps merge by key, as do maps inherited by child database targets. A higher-precedence value replaces that key while preserving unrelated keys. An empty map does not erase inherited keys.
 
-JSON strings pass through unchanged. Booleans and numbers are converted to strings, so `false` supplies `"false"`; declarations still validate strings. Use JSON strings when exact numeric spelling matters. Arrays, objects, and `null` are rejected, as are JSON keys the module has not declared. An invalid effective value rejects the publish rather than falling back to a lower-precedence value.
+JSON strings pass through unchanged. Booleans and numbers are converted to strings, so `false` supplies `"false"`; declarations still validate strings. Use JSON strings when exact numeric spelling matters. Arrays, objects, and `null` are rejected, as are JSON keys the module has not declared. An invalid effective value rejects the publish rather than falling back to a lower-precedence value. For an absent optional value, omit its property from the JSON object instead of setting it to `null`. Also remove any inherited or shell value for that key, as described below.
 
 ### Every publish replaces the complete environment
 
@@ -238,7 +263,7 @@ SQL writes to `st_env`, module-side writes, and separate CLI setters are not sup
 
 ## Access and limits
 
-Reducers, procedures, views, and HTTP handlers entered by the host in the root module can read its declared environment. Host-dispatched submodule entry points cannot read it, and submodules cannot declare a nonempty environment. Ordinary helper calls retain their calling entry point's access, including helpers defined in libraries or submodules. Root code can also pass a value to a helper explicitly.
+Reducers, procedures, views, and HTTP handlers entered by the host in the root module can read its declared environment. Host-dispatched submodule entry points cannot read it, and submodules cannot declare a nonempty environment. There is no separate environment-variable namespace to configure for a submodule. A module with environment declarations can be published independently as a root module, but cannot be included as a submodule with those declarations. See [Submodules](./00600-submodules.md) for this restriction. Ordinary helper calls retain their calling entry point's access, including helpers defined in libraries or submodules. Root code can also pass a value to a helper explicitly.
 
 A procedure suspended across a publish cannot read values belonging to a replacement program. Environment reads in views participate in dependency tracking, so publishing changed values refreshes affected views. Module code remains responsible for what it returns or logs: returning a secret from a public view exposes that value to clients.
 
@@ -250,4 +275,4 @@ Use an ordinary [private table](../00300-tables/00400-access-permissions.md) whe
 
 Update that table through reducers that explicitly authorize the caller. Keeping a table private controls direct client reads; it does not authorize calls to a reducer that modifies or returns its contents. Apply the same care to views, procedure results, and logs. Private tables follow the database's normal private-table permissions, including administrative reads.
 
-Unlike environment variables, these values follow the table's ordinary update and migration behavior. They do not receive environment schema validation or complete replacement on every publish.
+Both approaches are supported. Environment declarations additionally guarantee that required values are validated and available before `init` or migration runs. Private-table values follow the table's ordinary update and migration behavior. They do not receive environment schema validation or complete replacement on every publish.

@@ -114,35 +114,22 @@ Both publish endpoints accept `Content-Type: application/vnd.spacetimedb.publish
 
 `module` uses standard padded Base64. `environment` maps declared names to strings. The server validates the complete map against the module's declarations and installs both in one transaction. Missing required values reject the publish; omitted optional values are removed. Omitting `environment` is equivalent to `{}`, including when publishing unchanged module bytes.
 
-For example, this Python script publishes a Wasm module to a local server. Set `SPACETIME_TOKEN` to a token authorized to publish and `API_KEY` to the complete configuration's required value. Change the module path to the artifact you built.
+For example, use `curl`, `jq`, and `base64` to publish a Wasm module to a local server. Export `SPACETIME_TOKEN` with a token authorized to publish and `API_KEY` with the required value. Change `module.wasm` to the artifact you built.
 
-```python
-import base64
-import json
-import os
-from pathlib import Path
-from urllib.request import Request, urlopen
-
-body = json.dumps({
-    "module": base64.b64encode(Path("module.wasm").read_bytes()).decode("ascii"),
-    "environment": {
-        "API_KEY": os.environ["API_KEY"],
-        "MODE": "development",
-    },
-}).encode("utf-8")
-
-request = Request(
-    "http://127.0.0.1:3000/v1/database/env-example?host_type=wasm",
-    data=body,
-    method="PUT",
-    headers={
-        "Authorization": "Bearer " + os.environ["SPACETIME_TOKEN"],
-        "Content-Type": "application/vnd.spacetimedb.publish+json",
-    },
-)
-with urlopen(request, timeout=60) as response:
-    print(response.read().decode("utf-8"))
+```bash
+base64 < module.wasm |
+  jq --raw-input --slurp '{
+    module: gsub("[\\r\\n]"; ""),
+    environment: { API_KEY: env.API_KEY, MODE: "development" }
+  }' |
+  curl --fail-with-body --request PUT \
+    'http://127.0.0.1:3000/v1/database/env-example?host_type=wasm' \
+    --header "Authorization: Bearer $SPACETIME_TOKEN" \
+    --header 'Content-Type: application/vnd.spacetimedb.publish+json' \
+    --data-binary @-
 ```
+
+`jq` handles JSON escaping for the supplied value, including quotes and newlines. For a procedure or another HTTP client, construct the same JSON object with that language's JSON serializer and Base64 encoder.
 
 Direct HTTP callers, including module procedures, use this same format; the server does not load project configuration or shell values for them. See [Environment Variables](../../../00200-core-concepts/00100-databases/00700-environment-variables.md) for declaration syntax and value limits. The decoded module is limited to 128 MiB and the complete encoded request to 192 MiB.
 
