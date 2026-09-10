@@ -118,6 +118,28 @@ const legacyRedirects: Redirect[] = [
   // Appendix. Its one section documented `#[auto_inc]` sequences.
   { from: '/appendix', to: '/tables/auto-increment' },
 
+  // Never served, but published from this repo. The template README generator
+  // built the first three from file paths instead of slugs, and the rest were
+  // mistyped in hand-written READMEs. Every project created from a template
+  // keeps its own copy of the README, so these links outlive the fix.
+  {
+    from: '/intro/core-concepts/clients/typescript-reference',
+    to: '/clients/typescript',
+  },
+  {
+    from: '/intro/core-concepts/clients/rust-reference',
+    to: '/clients/rust',
+  },
+  {
+    from: '/intro/core-concepts/clients/csharp-reference',
+    to: '/clients/c-sharp',
+  },
+  { from: '/reference/cli-reference', to: '/cli-reference' },
+  { from: '/reference/sql-reference', to: '/reference/sql' },
+  { from: '/sdks/csharp/quickstart', to: '/quickstarts/c-sharp' },
+  // Installation is a page on the main site, outside the docs.
+  { from: '/install', to: 'https://spacetimedb.com/install' },
+
   // The Godot tutorial postdates the migration, so these were never live — but
   // they are the obvious guess next to `/unity/part-1` and `/unreal/part-1`,
   // and they are what people try.
