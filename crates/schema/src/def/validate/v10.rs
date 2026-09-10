@@ -339,6 +339,41 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
 
     let typespace_for_generate = typespace_for_generate.finish();
 
+    let migrations = def
+        .migrations()
+        .into_iter()
+        .flatten()
+        .cloned()
+        .map(|migration| {
+            let RawMigrationDefV10 {
+                schema_hash,
+                name,
+                dropped,
+            } = migration;
+            let submodule_validation = dropped
+                .sections
+                .iter()
+                .all(|section| {
+                    matches!(
+                        section,
+                        RawModuleDefV10Section::Tables(_)
+                            | RawModuleDefV10Section::Types(_)
+                            | RawModuleDefV10Section::Typespace(_)
+                    )
+                })
+                .then_some(())
+                .ok_or_else(|| ValidationError::InvalidMigrationSubmodule { schema_hash }.into());
+            let name = identifier(name);
+            let (name, (), dropped) = (name, submodule_validation, validate(dropped)).combine_errors()?;
+            let migration_def = MigrationDef {
+                name,
+                namespace: NamespacePath::root(),
+                dropped,
+            };
+            Ok((schema_hash, migration_def))
+        })
+        .collect_all_errors()?;
+
     let mut module_def = ModuleDef {
         // Set by `apply_namespace` below.
         path: NamespacePath::root(),
@@ -359,6 +394,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         raw_module_def_version: RawModuleDefVersion::V10,
         submodules,
         environment,
+        migrations,
     };
 
     // Submodules were validated in isolation, so their defs carry root-relative names.
@@ -417,7 +453,7 @@ fn validate_submodules(
     let mut accessors = std::collections::HashSet::with_capacity(submodules.len());
 
     for submodule in submodules {
-        let source = RawIdentifier::from(submodule.namespace.clone());
+        let source = RawIdentifier::new(&submodule.namespace);
         let accessor = match Identifier::new(source.clone()) {
             Ok(accessor) => accessor,
             Err(error) => {
@@ -464,14 +500,14 @@ fn validate_submodules(
                 Ok(mut def) => {
                     if !def.environment().is_empty() {
                         errors.push(ValidationError::EnvironmentInSubmodule {
-                            namespace: submodule.namespace.clone(),
+                            namespace: namespace.to_string(),
                         });
                     }
                     for (lifecycle, opt_id) in def.lifecycle_reducers_map() {
                         if opt_id.is_some() {
                             errors.push(ValidationError::LifecycleInSubmodule {
                                 lifecycle,
-                                namespace: submodule.namespace.clone(),
+                                namespace: namespace.to_string(),
                             });
                         }
                     }
@@ -3858,7 +3894,7 @@ mod cache_policy_tests {
         ] {
             let raw = table(policy);
             assert_eq!(
-                raw.table_cache_policies().count(),
+                raw.clone().table_cache_policies().count(),
                 usize::from(policy != TableCachePolicy::RequiredInMemory)
             );
             let def: ModuleDef = raw.try_into().unwrap();
