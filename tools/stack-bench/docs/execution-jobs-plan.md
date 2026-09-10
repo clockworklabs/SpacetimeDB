@@ -29,6 +29,8 @@ The seven steps above are implemented. The CLI, authenticated dashboard submissi
 
 Synthetic tests cover exclusive claims, cancellation, retained failures, placement, concurrent campaigns, graceful drain, and independent named account secrets. They also check that a pre-claim error stops admission and drains active work without cancelling it or retrying the bad job. These tests do not prove shared provider quota enforcement or multi-host operation.
 
+The Linux model-free integration check starts the actual worker CLI in a separate process. It checks two jobs with nine active attempts each, cancels one job, drains the other on SIGTERM, and restarts the worker to dispatch a queued job. Completed evidence must stay unchanged. Run it after building with `node --test dist/tests/execution-jobs.integration.js`. It uses isolated temporary data and the stub backend; it does not verify native database cleanup, paid credentials, or the Compose deployment.
+
 Recovery remains explicit. A retained claim is not a lease that can expire. Inspect the campaign and reconcile its resources before further execution. Do not delete a claim or resubmit the same work to bypass uncertain paid execution. The surrounding service must authorize account access and manage shared account quotas; the local worker supplies neither automatic account rotation nor account-wide spend limits.
 
 An existing service queue and secret store should call this boundary directly. The standalone job store requires a filesystem that supports atomic hard links and rename. It is not an internet-facing authentication service. Shared account spending and provider request coordination belong at the credential service boundary, not in grading.
