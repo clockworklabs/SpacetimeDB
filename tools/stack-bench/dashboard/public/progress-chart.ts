@@ -36,7 +36,7 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
     : metric === 'cost'
     ? 'Live cost estimates use reported response usage; final receipts replace estimates. Other runs show saved grade checkpoints. Includes repairs and excluded runs. Subscription costs use the pinned API-equivalent price snapshot, not invoice charges. Unknown costs are not plotted; upper bounds are labelled. Time starts at the current execution. Lines connect observations; intermediate values are not measured.'
     : `${unitDescription} Each point is a saved grade. Zero marks run start. Each line is one repetition; elapsed time starts at that run. Excluded runs are labelled. Lines can fall after regressions. Intermediate values are not measured.`;
-  const heading = `<div class="section-heading progress-heading"><h3 title="${description}">${label}${metric === 'distribution' ? '' : ' over time'}</h3><div class="chart-options"><nav aria-label="Chart metric">`
+  const heading = `<div class="section-heading progress-heading"><h3>${label}${metric === 'distribution' ? '' : ' over time'}</h3><div class="chart-options"><nav aria-label="Chart metric">`
     + (['completion', 'cost', 'distribution'] as const).map(option => `<a class="chip sm${metric === option ? ' on' : ''}"${metric === option ? ' aria-current="page"' : ''} href="?questlines=${encodeURIComponent(view)}&amp;chart=${option}&amp;unit=${unit}">${option === 'distribution' ? 'Distribution' : option === 'cost' ? 'Cost' : 'Completion'}</a>`).join('') + '</nav>'
     + '<nav aria-label="Completion unit">'
     + (['features', 'checks'] as const).map(option => {
@@ -91,7 +91,7 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
         }).join('');
     }).join('');
     return `<section class="progress-panel">${heading}${controls}<div class="chart-scroll" role="region" aria-label="Completion distribution by provider" tabindex="0">`
-      + `<svg class="progress-chart" viewBox="0 0 980 ${bottom + 45}" role="img" aria-label="Completion distribution by provider"><title>${description}</title>${ticks}${rows}</svg></div></section>`;
+      + `<svg class="progress-chart" viewBox="0 0 980 ${bottom + 45}" role="img" aria-label="Completion distribution by provider"><desc>${description}</desc>${ticks}${rows}</svg></div></section>`;
   }
   const ceiling = metric === 'cost' ? Math.max(0.01, ...tracks.flatMap(track => track.points.map(point => point.value))) : 100;
   const maximum = Math.max(60, ...tracks.flatMap(track => track.points.map(point => point.elapsed)));
@@ -112,6 +112,6 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
     return `<g class="progress-series" data-chart-series="${esc(attempt.id)}" fill="${color(stack)}"><path class="progress-line" d="${path}" fill="none" stroke="${color(stack)}" stroke-width="2"/>${marks}</g>`;
   }).join('');
   return `<section class="progress-panel">${heading}${controls}<div class="chart-scroll" role="region" aria-label="${label} over elapsed time" tabindex="0">`
-    + `<svg class="progress-chart" viewBox="0 0 980 242" role="img" aria-label="${label} by elapsed run time"><title>${description} Hover a point for its time and value.</title>${grid}${ticks}${lines}<text x="498" y="237" text-anchor="middle">Elapsed run time</text></svg></div>`
+    + `<svg class="progress-chart" viewBox="0 0 980 242" role="img" aria-label="${label} by elapsed run time"><desc>${description}</desc>${grid}${ticks}${lines}<text x="498" y="237" text-anchor="middle">Elapsed run time</text></svg></div>`
     + '</section>';
 }
