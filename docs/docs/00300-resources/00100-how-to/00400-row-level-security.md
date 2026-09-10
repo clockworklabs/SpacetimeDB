@@ -73,7 +73,7 @@ using SpacetimeDB;
 
 #pragma warning disable STDB_UNSTABLE
 
-public partial class Module
+public static partial class Module
 {
     /// <summary>
     /// A client can only see their account.
@@ -149,7 +149,7 @@ using SpacetimeDB;
 
 #pragma warning disable STDB_UNSTABLE
 
-public partial class Module
+public static partial class Module
 {
     /// <summary>
     /// A client can only see their account.
@@ -228,7 +228,7 @@ export const playerFilter = spacetimedb.clientVisibilityFilter.sql(
 ```cs
 using SpacetimeDB;
 
-public partial class Module
+public static partial class Module
 {
     /// <summary>
     /// A client can only see their account.
@@ -313,7 +313,7 @@ export const playerFilter = spacetimedb.clientVisibilityFilter.sql(`
 ```cs
 using SpacetimeDB;
 
-public partial class Module
+public static partial class Module
 {
     /// <summary>
     /// A client can only see players on their same level.
@@ -374,7 +374,7 @@ export const playerFilter = spacetimedb.clientVisibilityFilter.sql(
 ```cs
 using SpacetimeDB;
 
-public partial class Module
+public static partial class Module
 {
     /// <summary>
     /// An account must have a corresponding player.
@@ -388,7 +388,7 @@ public partial class Module
     /// A player must have a corresponding account.
     /// </summary>
     [SpacetimeDB.ClientVisibilityFilter]
-    public static readonly Filter ACCOUNT_FILTER = new Filter.Sql(
+    public static readonly Filter PLAYER_FILTER = new Filter.Sql(
         "SELECT p.* FROM account a JOIN player p ON a.id = p.id WHERE a.identity = :sender"
     );
 }

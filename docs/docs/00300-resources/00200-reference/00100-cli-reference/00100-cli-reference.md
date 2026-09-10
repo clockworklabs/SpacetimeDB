@@ -136,7 +136,7 @@ Every publish replaces the complete declared environment. Put an env map in spac
 
 * `--no-config` — Ignore spacetime.json configuration
 * `--env <ENV>` — Environment name for config file layering (e.g., dev, staging)
-* `--native-aot` — Use NativeAOT-LLVM compilation for C# modules (experimental, Windows only)
+* `--native-aot` — Use NativeAOT-LLVM compilation for C# modules (experimental; supported on Windows, and on Linux with .NET 10)
 * `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.
 
 
@@ -530,7 +530,7 @@ Initializes a new spacetime project.
 * `-t`, `--template <TEMPLATE>` — Template ID or GitHub repository (owner/repo or URL)
 * `--local` — Use local deployment instead of Maincloud
 * `--non-interactive` — Run in non-interactive mode
-* `--native-aot` — Configure C# project for NativeAOT-LLVM compilation (experimental, Windows only)
+* `--native-aot` — Configure C# project for NativeAOT-LLVM compilation (experimental; supported on Windows, and on Linux with .NET 10)
 * `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Defaults to 10 except on macOS or when only .NET 8 is installed.
 
 
@@ -805,4 +805,3 @@ Run `spacetime version --help` to see all options.
     This document was generated automatically by
     <a href="https://crates.io/crates/clap-markdown"><code>clap-markdown</code></a>.
 </i></small>
-
