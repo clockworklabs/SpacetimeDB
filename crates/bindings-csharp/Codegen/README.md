@@ -2,7 +2,7 @@
 >
 > This project is intended for internal use only. It is **not** stable and may change without notice.
 
-See the [C# module library reference](https://spacetimedb.com/docs/modules/c-sharp) for stable, user-facing documentation.
+See the [C# module library reference](https://spacetimedb.com/docs/core-concepts) for stable, user-facing documentation.
 
 ## Internal documentation
 

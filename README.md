@@ -241,8 +241,8 @@ Full documentation is available at **[spacetimedb.com/docs](https://spacetimedb.
 - [Core concepts](https://spacetimedb.com/docs/core-concepts): tables, reducers, subscriptions, authentication
 - [Tutorials](https://spacetimedb.com/docs/tutorials/chat-app): chat app, Unity multiplayer, Unreal Engine multiplayer
 - [Deployment guide](https://spacetimedb.com/docs/how-to/deploy/maincloud): publishing to Maincloud
-- [CLI reference](https://spacetimedb.com/docs/reference/cli-reference)
-- [SQL reference](https://spacetimedb.com/docs/reference/sql-reference)
+- [CLI reference](https://spacetimedb.com/docs/cli-reference)
+- [SQL reference](https://spacetimedb.com/docs/reference/sql)
 
 ## License
 
