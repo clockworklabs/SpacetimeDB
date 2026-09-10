@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Deterministic coding agent for repair-loop tests.
+// Model-free coding agent for diagnostics and repair-loop tests.
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 

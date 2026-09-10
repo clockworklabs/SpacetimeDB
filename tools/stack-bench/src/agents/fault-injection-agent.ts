@@ -4,9 +4,9 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { publicBackendLease, readBackendLease } from '../../src/runtime/backend-lease.js';
-import { compiledEntrypoint } from '../../src/package-root.js';
-import { controlSpacetime } from '../../src/stacks/spacetime-lifecycle.js';
+import { publicBackendLease, readBackendLease } from '../runtime/backend-lease.js';
+import { compiledEntrypoint } from '../package-root.js';
+import { controlSpacetime } from '../stacks/spacetime-lifecycle.js';
 const args: Record<string, string | undefined> = {};
 for (let i = 2; i < process.argv.length; i += 2) {
   const option = process.argv[i];

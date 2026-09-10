@@ -87,6 +87,7 @@ RUN node dist/container/binary-provenance.js verify \
       --root /opt/stack-bench --source-sha256 "$(node -p "require('./source-identity.json').binarySourceSha256")" \
     && test "$(node -p "require('playwright/package.json').version")" = "1.62.1" \
     && rm -rf tests dist/tests \
+    && node --input-type=module -e 'import {AGENT_ADAPTER_REGISTRY,agentAdapterIdentity} from "./dist/src/agents/agent-adapters.js"; for (const id of AGENT_ADAPTER_REGISTRY.ids) agentAdapterIdentity(AGENT_ADAPTER_REGISTRY.get(id));' \
     && install -m 0555 container/bin/spacetimedb-cli \
       /opt/stack-bench-embedded-deps/spacetimedb-cli \
     && install -m 0555 container/bin/spacetimedb-standalone \
