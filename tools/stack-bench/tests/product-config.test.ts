@@ -23,6 +23,6 @@ test('startup baseline stays separate from per-worker container caps', () => {
   });
   assert.deepEqual(ATTEMPT_CONTAINER_LIMIT_TOTALS, {
     cpuCount: 4,
-    memoryBytes: 6.25 * 1024 ** 3,
+    memoryBytes: 7.25 * 1024 ** 3,
   });
 });

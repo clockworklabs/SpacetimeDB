@@ -16,7 +16,7 @@ import { dockerNetworkMissing, releaseBackendLease } from '../src/runtime/backen
 import { requireLeasedDatabase, requireLeasedSpacetime } from '../src/stacks/backend-reset-guard.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { dbName, loadTrack, moduleName, portsFor } from '../src/composition/tracks.js';
-import { BUILD_CONTAINER_RESOURCE_LIMITS, SIDECAR_CONTAINER_RESOURCE_LIMITS }
+import { BROWSER_CONTAINER_RESOURCE_LIMITS, BUILD_CONTAINER_RESOURCE_LIMITS, SIDECAR_CONTAINER_RESOURCE_LIMITS }
   from '../src/composition/product-config.js';
 import { codingContainerAgentCommand, codingContainerAgentExecOptions }
   from '../src/runtime/coding-container-policy.js';
@@ -209,7 +209,8 @@ async function capacityCheck(): Promise<void> {
     const cgroup = resolve('/host/cgroup', `.${path}`);
     assert(cgroup.startsWith('/host/cgroup/'));
     if (kind !== 'controller' && kind !== 'cache') {
-      const limits = kind === 'buildContainer' ? BUILD_CONTAINER_RESOURCE_LIMITS : SIDECAR_CONTAINER_RESOURCE_LIMITS;
+      const limits = kind === 'buildContainer' ? BUILD_CONTAINER_RESOURCE_LIMITS
+        : kind === 'browserContainer' ? BROWSER_CONTAINER_RESOURCE_LIMITS : SIDECAR_CONTAINER_RESOURCE_LIMITS;
       assert.equal(detail.limits.Memory, limits.memoryBytes);
       assert.equal(detail.limits.NanoCpus, limits.cpuCount * 1e9);
       assert.equal(detail.limits.PidsLimit, limits.pids);

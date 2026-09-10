@@ -5,7 +5,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import { readBackendLease, updateBackendLease } from './backend-lease.js';
 import type { BackendCreationKind, BackendLease, BackendLeaseContainer } from './backend-lease.js';
-import { SIDECAR_CONTAINER_RESOURCE_LIMITS } from '../composition/product-config.js';
+import { BROWSER_CONTAINER_RESOURCE_LIMITS, SIDECAR_CONTAINER_RESOURCE_LIMITS } from '../composition/product-config.js';
 import { ATTEMPT_CREATION_LABEL } from './container-identity.js';
 export { ATTEMPT_CREATION_LABEL } from './container-identity.js';
 
@@ -123,15 +123,16 @@ export function createAttemptNetwork(leasePath: string, lease: BackendLease,
 }
 
 export function createAttemptContainer(leasePath: string, lease: BackendLease, kind: 'backend' | 'browser',
-  image: string, networkMode: string, args: string[]): BackendLeaseContainer {
+  image: string, networkMode: string, args: string[], docker: typeof attemptDocker = attemptDocker): BackendLeaseContainer {
+  const limits = kind === 'browser' ? BROWSER_CONTAINER_RESOURCE_LIMITS : SIDECAR_CONTAINER_RESOURCE_LIMITS;
   const intent = recordAttemptCreation(leasePath, lease, kind);
-  const id = attemptDocker(['create', '--name', intent.name,
+  const id = docker(['create', '--name', intent.name,
     '--label', `${ATTEMPT_CREATION_LABEL}=${intent.creationToken}`,
     '--network', networkMode, '--init', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true',
-    '--cpus', String(SIDECAR_CONTAINER_RESOURCE_LIMITS.cpuCount),
-    '--memory', String(SIDECAR_CONTAINER_RESOURCE_LIMITS.memoryBytes),
-    '--memory-swap', String(SIDECAR_CONTAINER_RESOURCE_LIMITS.memoryBytes),
-    '--pids-limit', String(SIDECAR_CONTAINER_RESOURCE_LIMITS.pids),
+    '--cpus', String(limits.cpuCount),
+    '--memory', String(limits.memoryBytes),
+    '--memory-swap', String(limits.memoryBytes),
+    '--pids-limit', String(limits.pids),
     ...args, '--entrypoint', '/bin/sh', image, '-c', 'exec sleep infinity']);
   const container: BackendLeaseContainer = { name: intent.name, id, image, owned: true, networkMode };
   updateBackendLease(leasePath, { token: lease.ownershipToken }, next => {
@@ -141,12 +142,12 @@ export function createAttemptContainer(leasePath: string, lease: BackendLease, k
     } else next.resources.browserContainer = container;
     return next;
   });
-  attemptDocker(['start', id]);
+  docker(['start', id]);
   if (kind === 'backend') {
     // Every container that joins this namespace shares the anchor's address on the
     // attempt network; a coding agent probing its own application there is not
     // reaching another run.
-    const joined = JSON.parse(attemptDocker(['inspect', '--format', '{{json .NetworkSettings.Networks}}', id]));
+    const joined = JSON.parse(docker(['inspect', '--format', '{{json .NetworkSettings.Networks}}', id]));
     const ownAddresses = Object.values(joined).flatMap((value: unknown) =>
       typeof value === 'object' && value !== null && 'IPAddress' in value
         && typeof value.IPAddress === 'string' && isIPv4(value.IPAddress) ? [value.IPAddress] : []);
@@ -154,7 +155,7 @@ export function createAttemptContainer(leasePath: string, lease: BackendLease, k
       next.resources.network!.ownAddresses = ownAddresses;
       return next;
     });
-    const startedAt = attemptDocker(['inspect', '--format', '{{.State.StartedAt}}', id]);
+    const startedAt = docker(['inspect', '--format', '{{.State.StartedAt}}', id]);
     updateBackendLease(leasePath, { token: lease.ownershipToken }, next => {
       next.resources.network!.namespaceStartedAt = startedAt;
       return next;
@@ -211,7 +212,7 @@ export function createAttemptBrowser(leasePath: string, lease: BackendLease): vo
   const current = readBackendLease(leasePath, { token: lease.ownershipToken });
   createAttemptContainer(leasePath, current, 'browser', attemptControllerImage(), requireAttemptNetwork(current),
     ['--read-only', '--tmpfs', '/tmp:rw,nosuid,size=512m',
-      '--shm-size', String(SIDECAR_CONTAINER_RESOURCE_LIMITS.memoryBytes),
+      '--shm-size', String(BROWSER_CONTAINER_RESOURCE_LIMITS.memoryBytes),
       '-e', 'HOME=/tmp', '-e', 'XDG_CONFIG_HOME=/tmp/.config', '-e', 'XDG_CACHE_HOME=/tmp/.cache']);
 }
 

@@ -7,7 +7,7 @@ import { createBackendLease, publicBackendLease, validateBackendLease, writeBack
 import { attemptBrowserLaunchOptions } from '../container/browser-pipe.js';
 
 import { attemptNetworkRules, dockerHostGatewayArguments, dockerHostServiceAddress,
-  installAttemptFirewall, createAttemptNetwork } from '../src/runtime/docker-network.js';
+  installAttemptFirewall, createAttemptNetwork, createAttemptContainer } from '../src/runtime/docker-network.js';
 
 test('only the authenticated owned browser uses its private shared memory', () => {
   const root = mkdtempSync(join(tmpdir(), 'browser-shm-'));
@@ -172,3 +172,34 @@ test('attempt subnets avoid host routes and Docker IPAM, and retry only overlap 
     } finally { rmSync(root, { recursive: true, force: true }); }
   }
 });
+
+for (const kind of ['backend', 'browser'] as const) {
+  test(`${kind} creation enforces its own memory cap without swap`, () => {
+    const root = mkdtempSync(join(tmpdir(), 'container-limits-'));
+    try {
+      const lease = createBackendLease({ backend: 'postgres', track: 'chat', runIndex: 0,
+        runId: 'container-limits', database: 'container_limits' });
+      const anchor = 'a'.repeat(64);
+      lease.resources.container = { name: 'anchor', id: anchor, owned: true };
+      lease.resources.network = { name: 'attempt', id: 'b'.repeat(64), namespaceContainerId: anchor,
+        hostAddresses: ['172.20.0.1'], services: [], firewallSha256: null, firewallInstalledAt: null };
+      const path = join(root, 'lease.json');
+      writeBackendLease(path, lease);
+      const commands: string[][] = [];
+      createAttemptContainer(path, lease, kind, `sha256:${'d'.repeat(64)}`, `container:${anchor}`, [], args => {
+        commands.push(args);
+        if (args[0] === 'create') return 'c'.repeat(64);
+        if (args[0] === 'inspect') return args[2] === '{{json .NetworkSettings.Networks}}' ? '{}' : '2026-09-10T00:00:00Z';
+        return '';
+      });
+      const command = commands.find(args => args[0] === 'create')!;
+      const memory = String((kind === 'browser' ? 2 : 1) * 1024 ** 3);
+      assert.equal(command[command.indexOf('--memory') + 1], memory);
+      assert.equal(command[command.indexOf('--memory-swap') + 1], memory);
+      assert.equal(command[command.indexOf('--cpus') + 1], '1');
+      assert.equal(command[command.indexOf('--pids-limit') + 1], '256');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+}
