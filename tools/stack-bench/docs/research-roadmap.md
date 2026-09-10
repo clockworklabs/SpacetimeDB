@@ -59,7 +59,13 @@ dataset and disclose the change. Each additional batch needs authorization.
 
 If selected work is blocked, report it. A repair-enabled dependency study is a
 separate optional experiment, with a new frozen allowance and all repair cost
-included. It is not the baseline protocol.
+included. It is not the baseline protocol. Its primary question is how much completion
+and total model cost each stack achieves under the same repair allowance.
+The no-repair baseline instead measures delivery without failed-check feedback.
+Neither experiment assumes which stack will win. A claim that repairs improve
+results needs separate comparable repair and no-repair cohorts. Comparing a
+repaired app with its own earlier checkpoint alone does not isolate feedback
+from additional work and model usage.
 
 ### Optional future sequential experiment
 
@@ -153,7 +159,7 @@ Timing failures need evidence-based attribution; timing alone is not a harness f
 | Measure | Required interpretation |
 | --- | --- |
 | Check completion | Passed / selected checks, with both counts. Weighted points remain separate. |
-| Build checkpoints | Show each measured progressive build. The active condition has no repairs. Report repair-enabled conditions separately if later collected. |
+| Build checkpoints | Show each measured progressive build. For repair cohorts, separate pre-repair and repaired checkpoints and include all repair cost. |
 | Feature and depth reach | Show nodes started, passed, failed, and blocked at each graph depth out of all assigned attempts. A reached depth need not mean all its nodes passed. |
 | Full target delivery | Fraction of assigned attempts that passed the complete target; show exclusions separately. |
 | API-equivalent cost | Use receipt status and frozen rates; distinguish exact, upper-bound, and unknown. It is not a subscription invoice. |
@@ -169,6 +175,10 @@ not reached gets no completion credit; label it blocked, not measured app failur
 Do not report completion only among apps that reached depth 3. Validate the
 denominator against the frozen selection and keep this research view distinct
 from any existing report metric with different semantics.
+
+A pre-repair checkpoint at a later depth can inherit guidance from earlier
+repairs. It is not an unsolicited-guarantee baseline. Preserve feedback history
+when extending or seeding from an existing attempt.
 
 Audit failures against the saved source, exact issued request, and check evidence.
 Record the measurement stage (setup, assertion, blocked, or inconclusive), the
@@ -220,6 +230,12 @@ primary dataset. Preserve the original grade before correcting a harness defect.
 A regrade of unchanged source is paired diagnostic evidence, not another trial.
 New prompt/interface requirements require a new cohort when old source is not
 compatible. Never rewrite historical results to fit a later contract.
+
+Before a public comparative claim, obtain independent external review of the
+frozen protocol, exclusions, scoring, and analysis. Record unresolved objections
+and disclose reviewer affiliations. Parallel agent review is an internal check;
+it is not independent external review or independent replication. Do not claim
+replication until another team reproduces the method and reports its results.
 
 Before verified publication, qualify every selected check: a valid reference,
 appropriate valid alternatives, declared defect controls, and the existing
@@ -274,54 +290,27 @@ paid work, budget controls, output location, and how to inspect/copy results.
 Rebuilding the same plan must be possible; identical stochastic outputs are not
 promised.
 
-## OpenAI and Anthropic support
+## Agent and model support
 
-Priority: after the current collection path is stable, before claiming results
-generalize across model providers. Anthropic and OpenAI are the first two targets.
-This work need not block the current Anthropic dataset.
+The registry includes Claude Code, Codex, and OpenRouter adapters. Registration
+is not qualification of every model, credential route, or execution mode.
+Before collection with a new adapter condition, verify its declared launch,
+repair, continuation, usage, budget, and failure paths with matching evidence.
+Any live pilot needs separate authorization.
 
-The code already has an agent adapter registry and shared request/result
-contracts. Claude Code is the only registered paid agent today. The container
-launcher still contains Claude-specific invocation, session paths, and pricing
-logic. Adding a model name alone does not add another provider.
+Keep provider, model, agent runtime/version, tools, reasoning settings, and
+context policy distinct in the frozen condition. Preserve and disclose the
+intentional SpacetimeDB skills. Compare stacks within each condition; do not
+pool different agent conditions into an unexplained stack average. Evidence
+from one model does not establish results for another.
 
-Implement one OpenAI-backed coding-agent adapter through those existing owners.
-Choose and document the actual agent runtime before implementation. Keep provider,
-model, and agent runtime/version distinct: changing the coding agent can change
-tool use, context management, and results even with comparable models.
+## Methods references
 
-Implementation order:
-
-1. Trace launch, credentials, network access, build/upgrade/repair/resume, usage
-   receipts, cancellation, and cleanup. Move only the provider-specific behavior
-   needed by the second adapter behind the existing adapter boundary. Keep one
-   shared runner, result schema, budget authority, and report path.
-2. Add the OpenAI adapter and pinned Docker dependency. Declare supported modes,
-   credential handling, allowed endpoints, and cost-limit capability. Unsupported
-   modes or unenforceable requested budgets must fail before paid work.
-3. Normalize provider usage into existing cost evidence without losing raw
-   receipts. Preserve cache and reasoning-token semantics; do not double-count
-   provider subtotals or invent equivalence between different tokenizers. Keep
-   unknown usage unknown and use a versioned pricing snapshot.
-4. Verify prompt and skill delivery, result parsing, failure classification,
-   interruption, and budget handling with focused adapter fixtures. Then run a
-   separately authorized bounded live pilot on each provider. Retain evidence
-   that the existing Anthropic path still works.
-5. Add a balanced research condition for each agent/model across all three
-   stacks. Compare stacks within each condition first. Report provider/agent
-   differences separately; never pool them into an unexplained stack average.
-
-Acceptance: an operator selects either supported adapter/model in a campaign;
-the same Docker, admission, grading, evidence, and report workflow applies.
-Supported build/upgrade/repair paths work, credentials remain isolated, spending
-is bounded, and errors retain evidence. Record reasoning settings, tools, skills,
-and context policy as treatment inputs. Preserve intentional STDB skills for
-both providers and disclose any material delivery difference.
-
-Further providers should require one adapter and its focused tests, not changes
-through every runner. Do not build a plugin marketplace, universal SDK wrapper,
-dynamic provider discovery, or a new agent framework. Add further capabilities
-only when a concrete provider needs them.
+[NIST AI RMF Measure](https://airc.nist.gov/airmf-resources/playbook/measure/)
+supports documented measurement validity and independent review.
+[NIST: Expanding the AI Evaluation Toolbox with Statistical Models](https://www.nist.gov/publications/expanding-ai-evaluation-toolbox-statistical-models)
+distinguishes fixed-benchmark accuracy from generalized performance; correlated
+checks from one app are not independent experimental replicates.
 
 ## Parallel work assignments
 

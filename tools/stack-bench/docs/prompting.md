@@ -126,13 +126,16 @@ a diagnostic, and does not include it in the score or repair report.
 Stack selection and guidance selection are separate.
 
 - Neutral guidance gives the required stack, connection details, startup
-  contract, and selected API reference. The coding agent chooses libraries,
-  architecture, and project structure.
+  contract, and selected stack material. The coding agent chooses libraries,
+  architecture, and project structure within those requirements.
 - Prescribed guidance can add design advice selected by the campaign.
 
-SpacetimeDB can include its TypeScript SDK skills in either condition. This is
-API reference for a less familiar stack. It does not expose grading logic or
-the implementation that a check expects.
+Neutral does not mean that the supplied skills contain no design advice.
+The `neutral-dev` profile explicitly records `designAdvice: true` and includes
+the intentional SpacetimeDB TypeScript server, TypeScript client, CLI, and dev
+skills. Keep this material intact and retain its exact text in the evidence.
+The experiment compares these delivered stack packages, not databases with
+identical guidance. These skills are not grader source or scenario scripts.
 
 An abridged neutral PostgreSQL section is:
 
@@ -265,7 +268,9 @@ No-repair runs measure behavior supplied without repair feedback. Normal repair
 runs report observed failures and expected behavior, including production
 guarantees, but do not prescribe algorithms or implementation changes. Their
 results measure remediation, not unprompted guarantees. Earlier repairs also
-carry into later levels and source-seeded campaigns.
+carry into later levels and source-seeded campaigns. A later depth's first
+build can therefore contain earlier repair guidance. Label it a pre-repair
+checkpoint at that depth, not a fresh measure of unsolicited guarantees.
 
 Put positive controls in scenario setup. If setup fails, preserve that actionable
 application failure and its setup phase. The check earns no credit, but the
