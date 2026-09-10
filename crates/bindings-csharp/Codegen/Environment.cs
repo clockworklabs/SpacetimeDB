@@ -123,8 +123,19 @@ public sealed class EnvironmentGenerator : IIncrementalGenerator
                 $"global::SpacetimeDB.Internal.Module.RegisterEnvironment(new({Literal(name)}, {constraint}, {(optional ? "true" : "false")}));"
             );
             // Preserve the checked generic method, including a key literally
-            // named Get. Keywords are escaped without renaming stored keys.
-            if (name is "Get" or "ModuleEnvironment" or "Equals" or "GetHashCode" or "ToString")
+            // named Get, and inherited object members. Keywords are escaped
+            // without renaming stored keys.
+            if (
+                name
+                is "Get"
+                    or "ModuleEnvironment"
+                    or "Equals"
+                    or "GetHashCode"
+                    or "ToString"
+                    or "Finalize"
+                    or "GetType"
+                    or "MemberwiseClone"
+            )
                 continue;
             var read = $"Get({Literal(name)})";
             if (!optional)
