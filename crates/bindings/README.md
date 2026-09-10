@@ -42,7 +42,7 @@ Rust modules are written with the the Rust Module Library (this crate). They are
 
 (Note: Rust can also be used to write **clients** of SpacetimeDB databases, but this requires using a different library, the SpacetimeDB Rust Client SDK. See the documentation on [clients] for more information.)
 
-This reference assumes you are familiar with the basics of Rust. If you aren't, check out Rust's [excellent documentation](https://www.rust-lang.org/learn). For a guided introduction to Rust Modules, see the [Rust Module Quickstart](https://spacetimedb.com/docs/modules/rust/quickstart).
+This reference assumes you are familiar with the basics of Rust. If you aren't, check out Rust's [excellent documentation](https://www.rust-lang.org/learn). For a guided introduction to Rust Modules, see the [Rust Module Quickstart](https://spacetimedb.com/docs/quickstarts/rust).
 
 ## Overview
 
@@ -334,7 +334,7 @@ pub struct LootItem {
 
 (Note that, when run by the module owner, the `spacetime sql <SQL_QUERY>` command can also read private tables. This is for debugging convenience. Only the module owner can see these tables. This is determined by the `Identity` stored by the `spacetime login` command. Run `spacetime login show` to print your current logged-in `Identity`.)
 
-To learn how to subscribe to a public table, see the [client SDK documentation](https://spacetimedb.com/docs/sdks). <!-- TODO: more specific link. -->
+To learn how to subscribe to a public table, see the [client SDK documentation](https://spacetimedb.com/docs/clients). <!-- TODO: more specific link. -->
 
 #### Unique and Primary Key Columns
 
@@ -697,8 +697,8 @@ Currently, manual migration support is limited. The `spacetime publish --delete-
 [macro library]: https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/bindings-macro
 [module library]: https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/lib
 [demo]: /#demo
-[client]: https://spacetimedb.com/docs/#client
-[clients]: https://spacetimedb.com/docs/#client
-[client SDK documentation]: https://spacetimedb.com/docs/#client
-[host]: https://spacetimedb.com/docs/#host
-[SEQUENCE]: https://spacetimedb.com/docs/appendix#sequence
+[client]: https://spacetimedb.com/docs/intro/key-architecture#client
+[clients]: https://spacetimedb.com/docs/intro/key-architecture#client
+[client SDK documentation]: https://spacetimedb.com/docs/clients
+[host]: https://spacetimedb.com/docs/intro/key-architecture#host
+[SEQUENCE]: https://spacetimedb.com/docs/tables/auto-increment#sequences

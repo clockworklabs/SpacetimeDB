@@ -33,7 +33,7 @@ namespace SpacetimeDB
     /// so that any row permitted by at least one filter is visible.
     ///
     /// The query follows the same syntax as a subscription query.
-    /// See the <see href="https://spacetimedb.com/docs/sql">SQL reference</see> for more information.
+    /// See the <see href="https://spacetimedb.com/docs/reference/sql">SQL reference</see> for more information.
     ///
     /// This is an experimental feature and subject to change in the future.
     /// </summary>
