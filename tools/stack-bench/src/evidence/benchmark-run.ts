@@ -156,6 +156,8 @@ export interface RunLevelRecord {
 }
 
 export interface RunTotals {
+  pausedDurationSec?: number;
+  activeDurationSec?: number;
   score: number;
   max: number;
   costUsd: number | null;
@@ -219,6 +221,7 @@ export interface RunContinuation {
 }
 
 export interface BenchmarkRunRecord {
+  pausedDurationMs?: number;
   checkpoints?: RunCheckpoint[];
   id: string;
   startedAt: string;
@@ -319,6 +322,7 @@ interface RunTotalsLevel {
 }
 
 export interface RunTotalsInput {
+  pausedDurationMs?: number;
   levels: RunTotalsLevel[];
   progressionStatus?: Pick<RunProgressionStatus, 'score'>;
   progressionResume?: {
@@ -368,6 +372,10 @@ export function finalizeRunTotals(
     modelDurationMs: run.levels.reduce((n, level) => n
       + (level.sessionTotals?.durationMs ?? 0), 0),
     durationSec: Math.round((now - started) / 1000),
+    ...(run.pausedDurationMs === undefined ? {} : {
+      pausedDurationSec: run.pausedDurationMs / 1000,
+      activeDurationSec: Math.max(0, now - started - run.pausedDurationMs) / 1000,
+    }),
     ungraded: run.levels.filter(level => !level.graded).map(level => level.level),
   };
   return run.totals;

@@ -55,6 +55,7 @@ type FeatureCatalogInput = ProgressionInput<CompiledProgressionDefinition>;
 type DependencyPolicyInput = ProgressionInput<CompiledDependencyPolicyDefinition>;
 
 interface CampaignMode extends CampaignModeInput {
+  pauseAfterDepth?: number;
   workSelection?: DependencyWorkSelection;
   retainPriorContracts?: boolean;
   unchangedFailureLimit?: number;
@@ -494,6 +495,11 @@ export function validateCampaignDefinition(input: unknown,
       fail(`${source}.levels`, 'must be ascending and contiguous');
     }
   }
+  const pauseDepth = value.mode.pauseAfterDepth;
+  if (pauseDepth !== undefined && (!value.levels.includes(pauseDepth)
+    || !value.levels.some(level => level > pauseDepth))) {
+    fail(`${source}.mode.pauseAfterDepth`, 'must precede a selected later depth');
+  }
 
   const modularSelection = object(value.selection)
     && Object.hasOwn(value.selection, 'levels');
@@ -556,6 +562,10 @@ export function validateCampaignDefinition(input: unknown,
   value.parallelism ??= 1;
   integer(value.parallelism, `${source}.parallelism`, { min: 1, max: RUN_INDEX_CAP + 1 });
   for (const stack of value.stacks) stack.repetitions ??= value.repetitions;
+  if (value.mode.pauseAfterDepth !== undefined && value.parallelism < value.stacks
+    .reduce((sum, stack) => sum + stack.repetitions!, 0) * value.agents.length * value.conditions.length) {
+    throw new Error('planned depth pause requires enough parallelism for the whole cohort');
+  }
 
   strict(value.ordering, `${source}.ordering`, ORDERING_FIELDS);
   if (value.ordering.method !== 'balanced-rotation') fail(`${source}.ordering.method`, 'must be balanced-rotation');

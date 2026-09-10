@@ -392,7 +392,8 @@ export function campaignRunMetrics(run: BenchmarkRun): Record<string, number | n
   const throttleWaitMs = levels.reduce((total, level) =>
     total + (number(level.sessionTotals?.providerThrottle?.waitedMs) ?? 0), 0);
   const durationMs = number(run.totals?.durationSec) === null
-    ? null : Math.max(0, (run.totals!.durationSec! * 1000) - throttleWaitMs);
+    ? null : Math.max(0, (run.totals!.durationSec! * 1000) - throttleWaitMs
+      - (number(run.totals?.pausedDurationSec) ?? 0) * 1000);
   return {
     checkCompletionRate: run.progressionStatus !== undefined && !terminal ? null
       : run.progressionStatus?.score?.completion?.rate

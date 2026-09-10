@@ -19,6 +19,7 @@ import { auditProgressionReferenceCampaign, formatProgressionReferenceCampaignAu
 import type { ReferenceCampaignAudit }
   from '../src/campaigns/progression-reference-campaign-audit.js';
 import { prepareCampaignExtension } from '../src/campaigns/campaign-extension.js';
+import { campaignDepthPauseStatus, continueCampaignDepth } from '../src/campaigns/campaign-depth-pause.js';
 import { statusWord } from '../src/evidence/status-words.js';
 import { readCampaignLock, requestCampaignCancellation } from '../src/campaigns/campaign-lock.js';
 
@@ -67,6 +68,8 @@ interface ResumeCampaign {
 type ReferenceCampaignAuditFunction = (directory: string) => ReferenceCampaignAudit | null;
 
 export type CampaignArgs =
+  | { command: 'pause-status'; directory: string }
+  | { command: 'continue-depth'; directory: string }
   | { command: 'continue-provider'; directory: string; attemptId: string; requestId: string }
   | { command: 'continuation-status'; directory: string; attemptId: string; json: boolean }
   | { command: 'grant-time'; directory: string; attemptId: string; grantId: string; minutes: number }
@@ -144,6 +147,9 @@ export function validateResumeCampaign(path: string, directory: string): ResumeC
 
 export function parseCampaignArgs(argv: string[]): CampaignArgs {
   const [command, path, ...rest] = argv.slice(2);
+  if ((command === 'pause-status' || command === 'continue-depth') && path && rest.length === 0) {
+    return { command, directory: resolve(path) };
+  }
   if ((command === 'continue-provider' || command === 'continuation-status') && path) {
     const options = new Map<string, string>();
     let json = false;
@@ -244,11 +250,17 @@ export function parseCampaignArgs(argv: string[]): CampaignArgs {
     + '--feature <id> [--feature <id> ...] --repairs <N> '
     + '| grant-time <directory> --attempt <id> --grant-id <id> --minutes <N> '
     + '| continue-provider <directory> --attempt <id> --request-id <id> '
-    + '| continuation-status <directory> --attempt <id> [--json]');
+    + '| continuation-status <directory> --attempt <id> [--json] '
+    + '| pause-status|continue-depth <directory>');
 }
 
 async function main() {
   const args = parseCampaignArgs(process.argv);
+  if (args.command === 'pause-status' || args.command === 'continue-depth') {
+    console.log(JSON.stringify(args.command === 'pause-status'
+      ? campaignDepthPauseStatus(args.directory) : continueCampaignDepth(args.directory), null, 2));
+    return;
+  }
   if (args.command === 'modes') {
     console.log(JSON.stringify(CAMPAIGN_MODE_REGISTRY.ids.map(value => {
       const [id, version] = value.split('@');

@@ -86,6 +86,7 @@ import type { RunOutcome } from '../src/evidence/outcomes.js';
 import type { GradeBundlePayload, BenchmarkRunRecord, RunLevelRecord,
   RunContinuation, RunRepairCandidate, RunSessionRecord, RunTotals }
   from '../src/evidence/benchmark-run.js';
+import { readDepthPauseContext, waitAtDepthBoundary } from '../src/campaigns/campaign-depth-pause.js';
 import { addCostUsd, finalizeRunTotals, runSessionRecord }
   from '../src/evidence/benchmark-run.js';
 import { formatLevelSummary } from '../src/evidence/evidence-presentation.js';
@@ -1667,6 +1668,19 @@ async function main() {
   };
 
   for (let levelIndex = 0; levelIndex < args.levelList.length; levelIndex += 1) {
+    const pauseDepth = args.pauseAfterDepth;
+    const activeState = progressionExecution?.state;
+    if (pauseDepth !== undefined && run.pausedDurationMs === undefined
+      && activeState?.phase === 'active' && activeState.level > pauseDepth
+      && run.levels.some(record => record.level === pauseDepth)) {
+      const context = readDepthPauseContext();
+      if (!context || context.depth !== pauseDepth) throw new Error('planned depth pause has no controller authority');
+      finalizeRunTotals(run, started, { costComplete: runCostComplete });
+      writeRunJson(join(outputDir, ARTIFACT_FILE.run), run);
+      run.pausedDurationMs = await waitAtDepthBoundary(outputDir, appDir, context);
+      finalizeRunTotals(run, started, { costComplete: runCostComplete });
+      writeRunJson(join(outputDir, ARTIFACT_FILE.run), run);
+    }
     // A previous checkpoint cannot cover a newer session or partial grade.
     clearTimeContinuationBoundary(outputDir);
     const level = args.levelList[levelIndex]!;

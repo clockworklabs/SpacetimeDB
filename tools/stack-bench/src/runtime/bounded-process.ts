@@ -14,6 +14,7 @@ export interface CapturedProcessLog {
 }
 
 export interface BoundedProcessResult {
+  pausedMs?: number;
   ok: boolean;
   code: number | null;
   signal: NodeJS.Signals | null;
@@ -32,6 +33,8 @@ export interface RunBoundedOptions {
   timeoutMs: number;
   /** Owner may increase the total allowance. Called before each deadline check. */
   refreshTimeoutMs?: (current: number, canExtend: boolean) => number;
+  /** A single planned hold. It must start before the working-time deadline. */
+  pauseInterval?: () => { startedAt: number; resumedAt: number | null } | null;
   logs?: { stdout: string; stderr: string; maxBytes?: number } | null;
   signal?: AbortSignal | null;
 }
@@ -58,7 +61,7 @@ function openCapture(path: string): CaptureState {
 export function runBounded(command: string, argv: readonly string[],
   { cwd = process.cwd(), env = process.env, stdio = 'inherit', timeoutMs,
     terminate = killTree, logs = null, signal = null, gracefulCancellationMs = 0,
-    refreshTimeoutMs }:
+    refreshTimeoutMs, pauseInterval }:
     RunBoundedOptions & {
       terminate?: (pid: number) => void; gracefulCancellationMs?: number;
     }): Promise<BoundedProcessResult> {
@@ -152,21 +155,39 @@ export function runBounded(command: string, argv: readonly string[],
     }
     const startedAt = Date.now();
     let deadline = startedAt + timeoutMs;
+    let pausedMs = 0;
+    let pauseStart: number | null = null;
+    let pauseEnd: number | null = null;
     let timer: NodeJS.Timeout;
-    const refresh = (): void => {
-      if (!refreshTimeoutMs) return;
+    const refresh = (closing = false): void => {
       try {
-        const allowed = !timedOut && !cancelled && !captureError && Date.now() < deadline;
-        const next = refreshTimeoutMs(timeoutMs, allowed);
+        const pause = pauseInterval?.();
+        if (pause) {
+          const now = Date.now();
+          const end = pause.resumedAt ?? now;
+          if (!Number.isSafeInteger(pause.startedAt) || !Number.isSafeInteger(end)
+            || pause.startedAt < startedAt || pause.startedAt >= startedAt + timeoutMs
+            || (pauseStart !== null && pause.startedAt !== pauseStart)
+            || (pauseEnd !== null && pause.resumedAt !== pauseEnd)
+            || end < pause.startedAt || end > now || end - pause.startedAt < pausedMs) {
+            throw new Error('invalid planned process pause');
+          }
+          pauseStart = pause.startedAt;
+          pauseEnd = pause.resumedAt;
+          pausedMs = end - pause.startedAt;
+        } else if (pauseStart !== null) throw new Error('planned process pause disappeared');
+        deadline = startedAt + timeoutMs + pausedMs;
+        const allowed = !closing && !timedOut && !cancelled && !captureError && Date.now() < deadline;
+        const next = refreshTimeoutMs?.(timeoutMs, allowed) ?? timeoutMs;
         if (!Number.isSafeInteger(next) || next < timeoutMs
           || !Number.isSafeInteger(startedAt + next)) throw new Error('invalid extended process timeout');
         if (allowed && next > timeoutMs) {
           timeoutMs = next;
-          deadline = startedAt + next;
+          deadline = startedAt + next + pausedMs;
         }
       } catch (error) {
         captureError = error instanceof Error ? error : new Error(String(error));
-        stop();
+        if (!closing) stop();
       }
     };
     const expire = (): void => {
@@ -189,6 +210,7 @@ export function runBounded(command: string, argv: readonly string[],
     wallTimer.unref();
     child.once('error', error => { spawnError = error; });
     child.once('close', (code, childSignal) => {
+      refresh(true);
       if (Date.now() >= deadline) timedOut = true;
       clearTimeout(timer);
       clearInterval(wallTimer);
@@ -201,6 +223,7 @@ export function runBounded(command: string, argv: readonly string[],
       })) : null;
       const error = captureError ?? spawnError;
       resolveRun({ ok: !timedOut && !cancelled && !error && code === 0,
+        ...(pauseInterval ? { pausedMs } : {}),
         code, signal: childSignal, timedOut, cancelled,
         error, logs: captured,
         stdoutTail: streams?.stdout.tail.trim() ?? '',

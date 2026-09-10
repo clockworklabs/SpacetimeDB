@@ -51,6 +51,7 @@ export interface BenchArguments {
   selectionRequest?: CampaignSelection;
   taskMode?: string;
   retainPriorContracts?: boolean;
+  pauseAfterDepth?: number;
   packIds: string[];
   checkKeys: string[];
   featureIds: string[];
@@ -349,6 +350,7 @@ function bindCampaign(args: BenchArguments): void {
     args.featureCatalog = validateFeatureCatalogInput(plan.featureCatalog);
   }
   if (attempt.mode.id === 'dependency') {
+    args.pauseAfterDepth = attempt.mode.pauseAfterDepth;
     args.retainPriorContracts = attempt.mode.retainPriorContracts === true;
     if (!plan.dependencyPolicy || !args.featureCatalog) {
       throw new Error('dependency campaign requires a feature catalog and dependency policy');

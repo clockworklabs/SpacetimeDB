@@ -166,6 +166,8 @@ function help(): void {
     + '  campaign resume <plan> --out <dir>  continue an interrupted dependency attempt from its saved state\n'
     + '  campaign extend <plan> --from <dir> --depth <n> --out <dir>  continue a finished campaign deeper\n'
     + '  campaign stop <dir>             stop owned active work and retain its evidence\n'
+    + '  campaign pause-status <dir>     inspect a planned between-depth hold\n'
+    + '  campaign continue-depth <dir>   release the cohort at its planned depth boundary\n'
     + '  campaign status <dir> [--full]   what the campaign is doing now, from its saved state\n'
     + '  campaign inspect <dir>           every attempt, level, and check with its evidence\n'
     + '  campaign report <dir>            write the JSON and HTML report\n'

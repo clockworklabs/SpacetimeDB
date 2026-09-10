@@ -27,6 +27,11 @@ test('grant-time parses one explicit positive duration increase', () => {
 });
 
 test('campaign CLI separates read-only, execution, and status commands', () => {
+  for (const command of ['pause-status', 'continue-depth'] as const) {
+    assert.deepEqual(parseCampaignArgs(argv(command, './results')),
+      { command, directory: resolve('./results') });
+    assert.throws(() => parseCampaignArgs(argv(command, './results', '--attempt', 'one')), /usage/);
+  }
   assert.equal(parseCampaignArgs(argv('modes')).command, 'modes');
   assert.equal(parseCampaignArgs(argv('show', './campaign.json')).command, 'show');
   assert.equal(parseCampaignArgs(argv('trial', './campaign.json', '--out', './results')).command,

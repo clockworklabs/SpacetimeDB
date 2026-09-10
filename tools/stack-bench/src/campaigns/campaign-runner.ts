@@ -18,6 +18,7 @@ import { rescueSupervisedLease } from '../runtime/recovery.js';
 import { runBounded } from '../runtime/bounded-process.js';
 import { campaignTimeBudget, readTimeGrantRequests } from './campaign-scheduler.js';
 import { timeContinuationEligibility } from '../progression/live-progression.js';
+import { depthPauseDurationMs, readDepthPause } from './campaign-depth-pause.js';
 import type { BoundedProcessResult, RunBoundedOptions }
   from '../runtime/bounded-process.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
@@ -61,6 +62,7 @@ interface CampaignProcessArtifact extends UnknownRecord {
 }
 
 interface RunnerProcessResult {
+  pausedMs?: number;
   ok?: boolean;
   code: number | null;
   signal?: NodeJS.Signals | null;
@@ -461,6 +463,13 @@ export async function executeCampaign(campaignFile: string, directory: string,
       const supervisorState = contained(initialized.paths.root,
         join('.private', `${claim.executionId}.supervisor.json`), 'supervisor state');
       let processResult: RunnerProcessResult;
+      const pauseContext = plan.definition.mode.pauseAfterDepth === undefined ? null : {
+        directory: initialized.paths.root, campaignSha256: plan.contentSha256,
+        ownershipMarkerSha256: lock.record.ownershipMarkerSha256,
+        attemptId: claim.attempt.id, executionId: claim.executionId,
+        depth: plan.definition.mode.pauseAfterDepth,
+      };
+      let pausedMs = 0;
       try {
         const previous = state.attempts.find(a => a.plan.id === claim.attempt.id)!.executions.at(-2);
         if (previous?.timeContinuation) {
@@ -479,6 +488,10 @@ export async function executeCampaign(campaignFile: string, directory: string,
         if (timeoutMs <= 0) throw new Error('attempt has no remaining duration allowance');
         const refreshTimeoutMs = (current: number, canExtend: boolean): number => {
           const attempt = attemptState();
+          if (pauseContext) {
+            pausedMs = depthPauseDurationMs(output, pauseContext);
+            attempt.executions.at(-1)!.pausedMs = pausedMs;
+          }
           for (const request of readTimeGrantRequests(initialized.paths.root)
             .filter(r => r.attemptId === claim.attempt.id)) {
             if (attempt.timeGrants?.some(g => g.request.grantId === request.grantId)) continue;
@@ -507,6 +520,7 @@ export async function executeCampaign(campaignFile: string, directory: string,
           cwd: ROOT,
           env: { ...campaignSlotEnvironment(attemptEnv, claim.attempt.stack, claim.runIndex),
             ...delegationEnv,
+            STACK_BENCH_DEPTH_PAUSE_CONTEXT: pauseContext ? JSON.stringify(pauseContext) : '',
             STACK_BENCH_PROVIDER_WAIT_CONTEXT: JSON.stringify({ directory: initialized.paths.root,
               campaignSha256: plan.contentSha256, attemptId: claim.attempt.id,
               executionId: claim.executionId, ownershipMarkerSha256: lock.record.ownershipMarkerSha256,
@@ -515,9 +529,14 @@ export async function executeCampaign(campaignFile: string, directory: string,
           stdio: 'inherit',
           logs: { stdout: join(output, 'process.stdout.log'), stderr: join(output, 'process.stderr.log') },
           timeoutMs, refreshTimeoutMs,
+          ...(pauseContext ? { pauseInterval: () => readDepthPause(output, pauseContext) } : {}),
           signal,
         });
         refreshTimeoutMs(timeoutMs, false);
+        if (pauseContext && processResult.pausedMs !== undefined) {
+          pausedMs = processResult.pausedMs;
+          attemptState().executions.at(-1)!.pausedMs = pausedMs;
+        }
         processResult.buildImage = attemptEnv.STACK_BENCH_IMAGE;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -572,8 +591,8 @@ export async function executeCampaign(campaignFile: string, directory: string,
         return { cleanupRequired: true,
           reason: `attempt cleanup failed: ${cleanupError.message}` };
       }
-      return readAttemptResult(plan, claim.attempt, claim.executionId, output, processResult,
-        claim.extension);
+      return { ...readAttemptResult(plan, claim.attempt, claim.executionId, output, processResult,
+        claim.extension), ...(pauseContext ? { pausedMs } : {}) };
     };
     cancellation.poll();
     const invalidAtStart = state.summary.invalid;

@@ -52,6 +52,42 @@ It supports one assigned database and TypeScript binding targets inside `/app`.
 Use a controller and coding image built with this support. This profile has a
 separate guidance identity; it does not change grading or repair policy.
 
+### Pause before a later depth
+
+For a planned staged run, select the full target (for example, `levels: [1, 2, 3]`)
+and set `mode.pauseAfterDepth: 2` with progressive dependency work. Each eligible
+attempt waits after its L2 work, before the L3 request. Use enough parallelism for
+the whole cohort: waiting attempts retain their processes and resource leases.
+
+Inside the same appliance release, use:
+
+```sh
+node dist/commands/campaign-cli.js pause-status /path/to/campaign
+node dist/commands/campaign-cli.js continue-depth /path/to/campaign
+```
+
+The release command waits for the cohort boundary: every attempt must be waiting
+or terminal. Failed attempts stay in the cohort. Releasing the boundary does not
+require 100% completion, grant repairs, restart earlier work, or change eligibility.
+The existing progression rules determine which L3 features can start.
+
+This keeps the same process, accepted source, live database, progression history,
+model configuration, and cumulative cost and repair budgets. Source and progression
+changes during the hold cause an error. `depth-pause.json` records each hold and
+`depth-release.json` records the cohort release. Working-time allowance excludes the
+planned wait; total wall duration and paused duration remain in the evidence.
+Cancellation still works. A controller loss is an interruption, not a completed pause.
+Keep the full campaign directory for review; the partial research export omits
+the control receipts.
+
+This is a planned staged experiment, not a promise of identical model output or
+wall-clock behavior. Database timers and external services can advance during a
+hold. Cache expiry, provider changes, and changing host load can affect cost and
+duration. Keep those limits in the study protocol and verify staged versus continuous
+behavior before claiming equivalence. No checkpoint feature can retroactively turn
+an already-started L2-only campaign into a predeclared L3 study. `campaign extend`
+remains a separate source-seeded study.
+
 ## Start here
 
 From a clean checkout of the delivered branch, with Docker running, use one

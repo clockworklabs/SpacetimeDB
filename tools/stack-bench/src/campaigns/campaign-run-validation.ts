@@ -23,6 +23,7 @@ import { campaignProgressionOwner } from './campaign-compiler.js';
 import type { CompiledCampaignPlan } from './campaign-compiler.js';
 import type { CampaignExtensionSeed } from './campaign-scheduler.js';
 import { repairBudgetLimit } from '../progression/repair-plan.js';
+import { validateDepthPauseEvidence } from './campaign-depth-pause.js';
 import type { RepairPlan } from '../progression/repair-plan.js';
 
 type UnknownRecord = Record<string, unknown>;
@@ -126,7 +127,8 @@ export interface BenchmarkRun extends Partial<Pick<BenchmarkRunRecord,
     blockedLevels?: unknown;
   } };
   runtime?: { buildImage?: string | null };
-  totals?: { score?: number; max?: number; costUsd?: number | null; costComplete?: boolean };
+  totals?: { score?: number; max?: number; costUsd?: number | null; costComplete?: boolean;
+    pausedDurationSec?: number };
   backendLease?: { runId?: string; backend?: string; state?: string;
     ownership?: { markerSha256?: string } };
   contaminated?: boolean;
@@ -344,6 +346,20 @@ export function validateCampaignRun(plan: CampaignValidationPlan, attempt: Campa
   progressionSeed?: CampaignExtensionSeed | null } = {}): BenchmarkRun {
   if (!record(input)) throw new Error('campaign run must be an object');
   const run = input as BenchmarkRun;
+  const pauseDepth = attempt.mode.pauseAfterDepth;
+  if (run.pausedDurationMs !== undefined) {
+    if (!safeInteger(pauseDepth) || !safeInteger(run.pausedDurationMs)
+      || run.pausedDurationMs < 0 || !resultDir) {
+      throw new Error('run paused time requires a planned boundary and evidence directory');
+    }
+    validateDepthPauseEvidence(resultDir, { campaignSha256: plan.contentSha256,
+      attemptId: attempt.id, depth: pauseDepth, durationMs: run.pausedDurationMs });
+    if (run.totals?.pausedDurationSec !== run.pausedDurationMs / 1000) {
+      throw new Error('run paused duration total does not match its receipt');
+    }
+  } else if (safeInteger(pauseDepth) && run.levels?.some(level => level.level > pauseDepth)) {
+    throw new Error('run advanced beyond its planned boundary without pause evidence');
+  }
   const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter
     && item.model === attempt.model && item.providerRoute === attempt.providerRoute
     && item.maxOutputTokens === attempt.maxOutputTokens);
