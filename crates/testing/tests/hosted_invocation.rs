@@ -112,6 +112,21 @@ fn hosted_wasm_calls_preserve_authority_and_disconnect_after_revocation() {
             install_fence(&module, foreign, 1, true);
             let self_auth = authenticate(target, target, Duration::from_secs(30));
             let foreign_auth = authenticate(foreign, target, Duration::from_secs(30));
+            // This in-process standalone fixture has no cloud reconciliation
+            // service. Grant rows alone must not open hosted admission.
+            assert!(!module.relational_db().hosted_admission().is_open());
+            assert!(module
+                .call_identity_connected(self_auth.clone(), self_connection)
+                .await
+                .is_err());
+            assert_connection_count(&module, 0);
+            module
+                .relational_db()
+                .hosted_admission()
+                .begin()
+                .unwrap()
+                .complete()
+                .unwrap();
             let expiring_auth = authenticate(target, target, Duration::from_secs(3));
             for (auth, connection) in [
                 (self_auth.clone(), self_connection),
@@ -197,6 +212,15 @@ fn hosted_wasm_calls_preserve_authority_and_disconnect_after_revocation() {
             // Tokens remain cryptographically valid, but their persisted grants are revoked.
             install_fence(&module, target, 2, false);
             install_fence(&module, foreign, 2, false);
+            assert!(!module.relational_db().hosted_admission().is_open());
+            // Reopening the database-wide gate must not restore a denied grant.
+            module
+                .relational_db()
+                .hosted_admission()
+                .begin()
+                .unwrap()
+                .complete()
+                .unwrap();
             assert!(
                 call(&module, &self_auth, Some(self_connection), "internal_only", product![])
                     .await
