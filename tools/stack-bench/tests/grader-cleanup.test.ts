@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { Browser } from 'playwright';
+import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 
-import { closeActorContexts } from '../grader/grade.js';
+import { closeActorContexts, gradeFeature } from '../grader/grade.js';
 import { harnessBrowserFailure,
   runBrowserInfrastructureOperation } from '../src/evidence/harness-errors.js';
 
@@ -53,4 +55,28 @@ test('browser setup operations are harness failures but app navigation is not', 
   } catch (error) { infrastructure = error; }
   assert.match(harnessBrowserFailure(infrastructure) ?? '', /browser page creation failed/);
   assert.equal(harnessBrowserFailure(new Error('net::ERR_CONNECTION_REFUSED')), null);
+});
+
+
+test('a cancelled browser session cannot start later feature work or media collection', async () => {
+  const calls: string[] = [];
+  const browser = new Proxy({} as Browser, { get(_target, property) {
+    calls.push(String(property));
+    throw new Error('cancelled browser must not be accessed');
+  } });
+  const scenario = compileScenarioDefinition({ schemaVersion: 1, track: 'ecommerce', level: 1,
+    name: 'cancelled feature', features: [{ id: 1, name: 'after cancellation', actors: ['buyer'],
+      setup: [{ do: 'signUp', actor: 'buyer', name: 'buyer' }],
+      criteria: [{ id: '1a', desc: 'account exists', points: 1,
+        steps: [{ do: 'expect', actor: 'buyer', testid: 'current-user' }] }] }] }, { source: 'cancelled.json' });
+  const result = await gradeFeature(browser, scenario.features[0]!, {
+    level: 1, headed: false, selectedCheckKeys: [], nullControl: false,
+    media: '/unused-media', failureMedia: '/unused-failure-media', trace: true,
+  }, { actionCancellation: { reason: 'previous action cleanup failed' }, runId: 'cancel-test',
+    roomName: name => name, url: 'http://unused', actions: [], spacetime: null, nullControl: false });
+  assert.deepEqual(calls, []);
+  assert.equal(result.score, 0);
+  assert.equal(result.setupEvidence.status, 'harness_failure');
+  assert(result.criteria.every(criterion => criterion.evidence.status === 'harness_failure'));
+  assert.equal(result.cleanupEvidence?.status, 'harness_failure');
 });

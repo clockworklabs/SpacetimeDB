@@ -32,27 +32,8 @@
             { "do": "expectNumber", "actor": "admin", "testid": "warehouse-total", "in": { "testid": "admin-warehouse-item", "contains": "West" }, "relativeTo": "transfer-west-before", "plus": 10, "within": 10000 },
             { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "relativeTo": "transfer-item-before", "plus": 0, "within": 10000 }
           ]
-        },
-        {
-          "id": "2c",
-          "category": "production",
-          "desc": "a transfer that would overdraw a warehouse is refused and changes neither warehouse nor the item total",
-          "points": 2,
-          "statedBy": "a transfer that would leave a warehouse short is refused and changes nothing",
-          "steps": [
-            { "do": "recordNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "as": "overdraw-item-before" },
-            { "do": "recordNumber", "actor": "admin", "testid": "warehouse-total", "in": { "testid": "admin-warehouse-item", "contains": "East" }, "as": "overdraw-east-before" },
-            { "do": "recordNumber", "actor": "admin", "testid": "warehouse-total", "in": { "testid": "admin-warehouse-item", "contains": "West" }, "as": "overdraw-west-before" },
-            { "do": "fill", "actor": "admin", "testid": "transfer-from", "text": "East", "in": { "testid": "admin-item-row", "contains": "Headphones" } },
-            { "do": "fill", "actor": "admin", "testid": "transfer-to", "text": "West", "in": { "testid": "admin-item-row", "contains": "Headphones" } },
-            { "do": "fill", "actor": "admin", "testid": "transfer-qty", "text": "99999", "in": { "testid": "admin-item-row", "contains": "Headphones" } },
-            { "do": "click", "actor": "admin", "testid": "transfer-submit", "in": { "testid": "admin-item-row", "contains": "Headphones" } },
-            { "do": "expect", "actor": "admin", "testid": "order-error", "within": 6000 },
-            { "do": "expectNumber", "actor": "admin", "testid": "warehouse-total", "in": { "testid": "admin-warehouse-item", "contains": "East" }, "relativeTo": "overdraw-east-before", "plus": 0 },
-            { "do": "expectNumber", "actor": "admin", "testid": "warehouse-total", "in": { "testid": "admin-warehouse-item", "contains": "West" }, "relativeTo": "overdraw-west-before", "plus": 0 },
-            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "relativeTo": "overdraw-item-before", "plus": 0 }
-          ]
         }
+
       ]
     },
     {

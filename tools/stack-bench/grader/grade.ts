@@ -108,6 +108,7 @@ type GradeArgs = {
   browserWsEndpoint?: string;
 };
 type GradeRunContext = {
+  actionCancellation?: { reason: string | null };
   runId: string;
   roomName: (base: string) => string;
   restartSpec?: RuntimeControlSpec;
@@ -543,10 +544,19 @@ function applicationLifecycle(ctx: GradeRunContext) {
 
 async function runRegisteredAction(step: CompiledStep, actors: Map<string, Actor>, ctx: GradeRunContext,
   signal: AbortSignal | null = null): Promise<unknown> {
+  if (ctx.actionCancellation?.reason) throw new Error(ctx.actionCancellation.reason);
   const actionEvidence = await executeAction(ACTION_REGISTRY, step.do, step,
     {
       capabilities: browserActionCapabilities(actors, ctx),
       signal,
+      // Closing this grader's connection cancels pending Playwright calls before
+      // the action executor drains them. It does not stop the app or its database.
+      onAbort: ACTION_REGISTRY.get(step.do).capabilities.includes('actors')
+        ? async () => {
+          if (ctx.actionCancellation) ctx.actionCancellation.reason = 'browser session cancelled; no further actions are permitted';
+          const browsers = new Set([...actors.values()].map(actor => actor.page.context().browser()));
+          await Promise.all([...browsers].map(browser => browser?.close()));
+        } : undefined,
     });
   ctx.actionEvidence?.push({ actor: step.actor ?? null, evidence: actionEvidence });
   if (actionEvidence.status === 'passed') return actionEvidence.observation;
@@ -663,7 +673,7 @@ function completedFeatureResult(result: FeatureResult): CompletedGradeFeatureRes
   return { ...result, setupEvidence: result.setupEvidence };
 }
 
-async function gradeFeature(browser: Browser, feature: CompiledFeature, args: GradeArgs,
+export async function gradeFeature(browser: Browser, feature: CompiledFeature, args: GradeArgs,
   runCtx: GradeRunContext): Promise<CompletedGradeFeatureResult> {
   // Features share the app's DATABASE even though each gets fresh browser
   // contexts, so user and room names are scoped per feature — otherwise a
@@ -685,6 +695,13 @@ async function gradeFeature(browser: Browser, feature: CompiledFeature, args: Gr
   };
   const restoreFailures: GradeCleanupFailure[] = [];
   const closeAll = async () => {
+    // The abort hook already closed this connection, or reported that closure
+    // could not be confirmed. Do not hang again while collecting browser media.
+    if (ctx.actionCancellation?.reason) {
+      const failures = [{ actor: null, stage: 'browser-cancel', reason: ctx.actionCancellation.reason }];
+      result.cleanupEvidence = { status: 'harness_failure', failures };
+      return failures;
+    }
     const failures = [...restoreFailures, ...await closeActorContexts([...contexts, ...extraContexts], {
       trace: args.trace, media: args.media, slug,
     })];
@@ -707,6 +724,7 @@ async function gradeFeature(browser: Browser, feature: CompiledFeature, args: Gr
   };
   const initializationStartedAtMs = evidenceNowMs();
   try {
+    if (ctx.actionCancellation?.reason) throw new Error(ctx.actionCancellation.reason);
     for (const name of feature.actors!) {
       // Isolated storage per actor. Video is per-context, so each actor gets its
       // own recording — you can watch what every participant saw, side by side.
@@ -755,7 +773,7 @@ async function gradeFeature(browser: Browser, feature: CompiledFeature, args: Gr
   }
 
   const captureFailureScreenshots = async (label: string): Promise<string[]> => {
-    if (!args.failureMedia) return [];
+    if (ctx.actionCancellation?.reason || !args.failureMedia) return [];
     mkdirSync(args.failureMedia, { recursive: true });
     const captured: string[] = [];
     for (const { name, page } of [...contexts, ...extraContexts]) {
@@ -774,6 +792,7 @@ async function gradeFeature(browser: Browser, feature: CompiledFeature, args: Gr
   try {
     // Setup is not scored, but a failure makes the feature untestable (0).
     for (const step of feature.setup) {
+      if (ctx.actionCancellation?.reason) throw new Error(ctx.actionCancellation.reason);
       await annotate(actors.get(step.actor), { feature: feature.name, criterion: 'setup', step: step.do });
       await runStep(step, actors, ctx);
     }
@@ -815,19 +834,22 @@ async function gradeFeature(browser: Browser, feature: CompiledFeature, args: Gr
     try {
       if (restoreFailures.length) throw new ApplicationNotRestored(restoreFailures[0]!.reason);
       for (const step of criterion.steps) {
+        if (ctx.actionCancellation?.reason) throw new Error(ctx.actionCancellation.reason);
         activeActor = step.actor ?? activeActor;
         await annotate(actors.get(step.actor) ?? actors.values().next().value,
           { feature: feature.name, criterion: criterion.id, step: step.do });
         await runStep(step, actors, ctx);
       }
       for (const a of actors.values()) {
+        if (ctx.actionCancellation?.reason) throw new Error(ctx.actionCancellation.reason);
         await annotate(a, { feature: feature.name, criterion: criterion.id, step: 'passed', status: 'pass' });
       }
     } catch (err) {
       failure = err;
       const classified = classifyCheckFailure(err, activeActor);
       detail = classified.summary;
-      if (args.media) {
+      // captureFailureScreenshots also refuses a cancelled session.
+      if (!ctx.actionCancellation?.reason && args.media) {
         for (const a of actors.values()) {
           await annotate(a, { feature: feature.name, criterion: criterion.id,
             step: errorMessage(err).slice(0, 120), status: 'fail' });
@@ -940,7 +962,7 @@ async function main(): Promise<void> {
     : null;
   const databaseLease = gradeDatabaseLease(args.backend);
 
-  const ctx: GradeRunContext = { runId, roomName: (base: string) => `${base}-${runId}`,
+  const ctx: GradeRunContext = { actionCancellation: { reason: null }, runId, roomName: (base: string) => `${base}-${runId}`,
     restartSpec: args.restartSpec, url: args.url!,
     backend: args.backend, actions, spacetime, dbName: args.dbName,
     databaseLease,
@@ -996,7 +1018,7 @@ async function main(): Promise<void> {
       }
     }
   } finally {
-    try { await browser.close(); }
+    try { if (!ctx.actionCancellation?.reason) await browser.close(); }
     catch (error) {
       report.cleanupEvidence = { status: 'harness_failure', failures: [{
         actor: null, stage: 'browser-close', reason: keepReason(errorMessage(error)),

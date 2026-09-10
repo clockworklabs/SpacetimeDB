@@ -53,14 +53,14 @@
     {
       "id": "applies",
       "stableId": "scheduled-restocks",
-      "source": "scenarios/03-scheduled-restocks.json",
+      "source": "scenarios/03-scheduled-restock-apply.json",
       "feature": 305,
       "role": "feature"
     },
     {
       "id": "cancels",
       "stableId": "scheduled-restocks",
-      "source": "scenarios/03-scheduled-restocks.json",
+      "source": "scenarios/03-scheduled-restock-cancel.json",
       "feature": 306,
       "role": "feature"
     }

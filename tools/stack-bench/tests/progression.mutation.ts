@@ -90,6 +90,44 @@ function syntaxErrors(source: string, file: string): string[] {
     .map(diagnostic => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'));
 }
 
+test('SpacetimeDB stale support control preserves initial and reloaded replies', () => {
+  const mutation = mutationManifest('spacetime').mutations.find(candidate =>
+    candidate.id === 'managed-support-live-replies-stay-at-initial-snapshot');
+  assert(mutation);
+  assert.deepEqual(mutation.targets, ['ecommerce.spec.live-state.managed-support.613a']);
+  const edits = mutationFileEdits(mutation);
+  assert.equal(edits.length, 1);
+  assert.equal(edits[0]!.file, 'client/src/App.tsx', 'reply persistence must remain intact');
+  const observe = new Function('useTable', 'useMemo', 'tables',
+    `${edits[0]!.replace}\nreturn supportReplyRows;`);
+  let previousReady: boolean | undefined;
+  let snapshot: unknown;
+  const memo = (read: () => unknown, [ready]: [boolean]) => {
+    if (previousReady !== ready) { snapshot = read(); previousReady = ready; }
+    return snapshot;
+  };
+  const render = (rows: string[], ready: boolean) => observe(() => [rows, ready], memo, {});
+  assert.deepEqual(render([], false), []);
+  const initial = ['saved reply'];
+  assert.deepEqual(render(initial, true), ['saved reply']);
+  initial.push('new live reply');
+  assert.deepEqual(render(initial, true), ['saved reply']);
+  assert.deepEqual(render(['saved reply', 'new live reply'], true), ['saved reply']);
+  previousReady = undefined; // A page reload creates a fresh hook state.
+  assert.deepEqual(render(['saved reply', 'new live reply'], true), ['saved reply', 'new live reply']);
+});
+
+test('SpacetimeDB guest purchase control reaches the reducer through the graded button', () => {
+  const mutation = mutationManifest('spacetime').mutations.find(candidate =>
+    candidate.id === 'signed-out-purchase-bypasses-account-check');
+  assert(mutation);
+  const edits = mutationFileEdits(mutation);
+  assert(edits.some(edit => edit.file === 'client/src/components/ItemCard.tsx'
+    && edit.find.includes('isSignedIn && (') && edit.replace.includes('true && (')));
+  assert(edits.some(edit => edit.file === 'backend/spacetimedb/src/index.ts'
+    && edit.find.includes('buyNow') && edit.replace.includes("getAccountId(ctx) === null")));
+});
+
 for (const backend of ['mongodb', 'postgres', 'spacetime']) {
   test(`${backend} stock delivery control targets the independent delivery observation`, () => {
     const mutation = mutationManifest(backend).mutations.find(candidate => candidate.id === 'stock-alert-delivery-is-suppressed');
@@ -160,7 +198,7 @@ for (const backend of ['mongodb', 'postgres', 'spacetime']) {
   });
 }
 
-test('SpacetimeDB reservation and catalog mutants affect only their owned checks', () => {
+test('SpacetimeDB reservation and catalog mutants declare their observed targets', () => {
   const fixture = fixtures.get('spacetime');
   assert(fixture, 'missing spacetime progression fixture');
   assert(fixture.targetPath, 'the spacetime fixture must have a target path');
@@ -187,7 +225,8 @@ test('SpacetimeDB reservation and catalog mutants affect only their owned checks
   const catalog = mutations.get('catalog-product-is-not-published');
   assert(catalog, 'the catalog mutation must exist');
   assert.deepEqual(catalog.targets,
-    ['ecommerce.progression.catalog-management.catalog-management.622a']);
+    ['ecommerce.progression.catalog-management.catalog-management.622a',
+      'ecommerce.progression.catalog-management.catalog-management.622b']);
   const catalogEdit = mutationFileEdits(catalog)[0];
   assert(catalogEdit, 'the catalog mutation must have an edit');
   const catalogPath = join(ROOT, fixture.targetPath, ...catalogEdit.file.split('/'));
@@ -196,11 +235,11 @@ test('SpacetimeDB reservation and catalog mutants affect only their owned checks
   const unpublished = catalogSource.replace(catalogEdit.find, catalogEdit.replace);
   assert.notEqual(unpublished, catalogSource);
   assert.match(unpublished, /variants\.map\(variant =>/,
-    'the product variants must remain public for their separate check');
+    'variant data is unchanged, but its check cannot locate the product without its name');
   assert.deepEqual(syntaxErrors(unpublished, catalogEdit.file), []);
 });
 
-test('catalog and duplicate-checkout mutants keep independent check ownership', () => {
+test('catalog targets include product lookup coupling and checkout targets stay separate', () => {
   const catalogCases = [
     { backend: 'mongodb', nameId: 'catalog-product-name-is-not-published',
       variantsId: 'catalog-variants-are-discarded' },
@@ -218,7 +257,8 @@ test('catalog and duplicate-checkout mutants keep independent check ownership', 
     assert(name, `missing ${item.nameId}`);
     assert(variants, `missing ${item.variantsId}`);
     assert.deepEqual(name.targets,
-      ['ecommerce.progression.catalog-management.catalog-management.622a']);
+      ['ecommerce.progression.catalog-management.catalog-management.622a',
+        'ecommerce.progression.catalog-management.catalog-management.622b']);
     assert.deepEqual(variants.targets,
       ['ecommerce.progression.catalog-management.catalog-management.622b']);
 

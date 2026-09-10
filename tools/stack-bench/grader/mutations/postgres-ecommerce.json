@@ -96,17 +96,22 @@
       ]
     },
     {
-      "id": "signed-out-visitors-see-purchase-controls",
+      "id": "signed-out-purchase-uses-default-account",
       "scenario": "tracks/ecommerce/scenarios/progression-signed-out-purchase.json",
       "targets": [
         "ecommerce.spec.access-control.signed-out-purchase.3a"
       ],
-      "desc": "Render purchasing controls without requiring a customer account.",
+      "desc": "Expose purchase controls to guests and let the purchase route charge the first stored account when no caller is authenticated.",
       "file": "client/src/App.tsx",
       "edits": [
         {
           "find": "  const canBuy = !!account && !account.isAdmin && !account.isStaff;",
           "replace": "  const canBuy = !account || (!account.isAdmin && !account.isStaff);"
+        },
+        {
+          "file": "server/src/index.ts",
+          "find": "  \"/api/items/:id/buy\",\n  requireAuth,\n  asyncHandler(async (req, res) => {\n    const itemId = Number(req.params.id);\n    const accountId = req.account!.id;",
+          "replace": "  \"/api/items/:id/buy\",\n  asyncHandler(async (req, res) => {\n    const itemId = Number(req.params.id);\n    const accountId = req.account?.id ?? (await pool.query(`SELECT id FROM account ORDER BY id LIMIT 1`)).rows[0].id;"
         }
       ]
     },
@@ -332,9 +337,10 @@
       "id": "only-shipped-orders-earn-review-eligibility",
       "scenario": "tracks/ecommerce/scenarios/01-review-eligibility.json",
       "targets": [
-        "ecommerce.spec.access-control.review-eligibility.108b"
+        "ecommerce.spec.access-control.review-eligibility.108b",
+        "ecommerce.spec.access-control.review-eligibility.108a"
       ],
-      "desc": "Incorrectly require an order to be shipped before its buyer may review the item.",
+      "desc": "Incorrectly require an order to be shipped before its buyer may review the item. The same restriction also rejects the required successful buyer control in 108a; it does not independently test non-buyer denial.",
       "file": "server/src/index.ts",
       "edits": [
         {
@@ -622,9 +628,10 @@
       "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
       "targets": [
         "ecommerce.inventory-operations.stock-conservation.202a",
-        "ecommerce.inventory-operations.warehouse-transfer.2a"
+        "ecommerce.inventory-operations.warehouse-transfer.2a",
+        "ecommerce.operations-access.operator-authorization.201a"
       ],
-      "desc": "A transfer debits the source row but inserts or increments the destination by zero, violating both directional movement and total conservation while still committing successfully.",
+      "desc": "A transfer debits the source row but inserts or increments the destination by zero, violating both directional movement and total conservation while still committing successfully. The missing credit also breaks the authorized administrator transfer control in 201a; it does not independently test unauthorized access.",
       "file": "server/src/index.ts",
       "edits": [
         {
@@ -650,7 +657,7 @@
     },
     {
       "id": "transfer-overdraft-guard-removed",
-      "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
+      "scenario": "tracks/ecommerce/scenarios/02-transfer-overdraw.json",
       "targets": [
         "ecommerce.inventory-operations.warehouse-transfer.2c"
       ],
@@ -775,12 +782,12 @@
       "targets": [
         "ecommerce.spec.state-durability.customer-profile-reload.620a"
       ],
-      "desc": "Discard the saved profile address.",
+      "desc": "Clear stored profile addresses on server initialization, after ordinary saves work. Reload retains the profile; a runtime restart loses it.",
       "file": "server/src/progression.ts",
       "edits": [
         {
-          "find": "      [name, address, req.account!.id]);",
-          "replace": "      [name, \"\", req.account!.id]);"
+          "find": "    ALTER TABLE account ADD COLUMN IF NOT EXISTS profile_address text NOT NULL DEFAULT '';",
+          "replace": "    ALTER TABLE account ADD COLUMN IF NOT EXISTS profile_address text NOT NULL DEFAULT '';\n    UPDATE account SET profile_address = '';"
         }
       ]
     },
@@ -834,17 +841,17 @@
       ]
     },
     {
-      "id": "progression-staff-role-update-is-disabled",
+      "id": "progression-staff-role-is-lost-on-restart",
       "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
       "targets": [
         "ecommerce.spec.state-durability.staff-role-reload.621a"
       ],
-      "desc": "Do not accept staff role updates.",
+      "desc": "Clear stored staff roles on server initialization while preserving authorized assignment and staff access refusal.",
       "file": "server/src/progression.ts",
       "edits": [
         {
-          "find": "app.put(\"/api/staff/:id/role\",",
-          "replace": "app.put(\"/api/mutation-disabled-staff/:id/role\","
+          "find": "    ALTER TABLE account ADD COLUMN IF NOT EXISTS staff_role text NOT NULL DEFAULT '';",
+          "replace": "    ALTER TABLE account ADD COLUMN IF NOT EXISTS staff_role text NOT NULL DEFAULT '';\n    UPDATE account SET staff_role = '';"
         }
       ]
     },
@@ -867,9 +874,10 @@
       "id": "progression-catalog-product-name-is-not-published",
       "scenario": "tracks/ecommerce/scenarios/progression-catalog-management.json",
       "targets": [
-        "ecommerce.progression.catalog-management.catalog-management.622a"
+        "ecommerce.progression.catalog-management.catalog-management.622a",
+        "ecommerce.progression.catalog-management.catalog-management.622b"
       ],
-      "desc": "The public product card omits the submitted name while retaining the product and its variants.",
+      "desc": "The public product card omits the submitted name while retaining the product and its variants. The variants assertion also cannot open that same named product card.",
       "file": "client/src/App.tsx",
       "edits": [
         {
@@ -961,12 +969,12 @@
       "targets": [
         "ecommerce.spec.state-durability.support-history-reload.612a"
       ],
-      "desc": "Hide saved support cases from their owner.",
+      "desc": "Delete stored support cases on server initialization, preserving case creation, initial history, and reload before a runtime restart.",
       "file": "server/src/progression.ts",
       "edits": [
         {
-          "find": "const where = account.isAdmin || account.isStaff ? \"TRUE\" : \"sc.account_id = $1\";",
-          "replace": "const where = account.isAdmin || account.isStaff ? \"TRUE\" : \"FALSE\";"
+          "find": "      UNIQUE (order_id)\n    );\n  `);",
+          "replace": "      UNIQUE (order_id)\n    );\n    DELETE FROM support_case;\n  `);"
         }
       ]
     },
@@ -991,12 +999,12 @@
       "targets": [
         "ecommerce.spec.live-state.managed-support.613a"
       ],
-      "desc": "Do not persist managed support replies.",
-      "file": "server/src/progression.ts",
+      "desc": "Retain the previous support snapshot on live socket updates. Explicit refresh still loads committed replies and status.",
+      "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "app.post(\"/api/support/:id/replies\",",
-          "replace": "app.post(\"/api/mutation-disabled-support/cases/:id/replies\","
+          "find": "    socket.on(\"progression:update\", setProgression);",
+          "replace": "    socket.on(\"progression:update\", (state: any) => setProgression((current: any) => ({ ...state, support: current.support })));"
         }
       ]
     },
@@ -1016,17 +1024,17 @@
       ]
     },
     {
-      "id": "progression-promotion-save-is-disabled",
+      "id": "progression-promotion-discount-is-offset",
       "scenario": "tracks/ecommerce/scenarios/progression-promotion-rules.json",
       "targets": [
         "ecommerce.progression.promotion-rules.promotion-rule-values.620a"
       ],
-      "desc": "Do not save promotion rules.",
+      "desc": "Save a promotion with an incorrect discount while preserving the route, other fields, and staff-only authorization.",
       "file": "server/src/progression.ts",
       "edits": [
         {
-          "find": "app.post(\"/api/promotions\",",
-          "replace": "app.post(\"/api/mutation-disabled-promotions\","
+          "find": "      [code, discount, start, end, limit, req.account!.id],",
+          "replace": "      [code, discount + 1, start, end, limit, req.account!.id],"
         }
       ]
     },
@@ -1212,7 +1220,7 @@
     },
     {
       "id": "progression-due-restock-does-not-run",
-      "scenario": "tracks/ecommerce/scenarios/03-scheduled-restocks.json",
+      "scenario": "tracks/ecommerce/scenarios/03-scheduled-restock-apply.json",
       "targets": [
         "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a"
       ],
@@ -1227,7 +1235,7 @@
     },
     {
       "id": "progression-cancelled-restock-still-runs",
-      "scenario": "tracks/ecommerce/scenarios/03-scheduled-restocks.json",
+      "scenario": "tracks/ecommerce/scenarios/03-scheduled-restock-cancel.json",
       "targets": [
         "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a"
       ],
@@ -1837,9 +1845,11 @@
       "id": "support-history-rows-are-hidden",
       "scenario": "tracks/ecommerce/scenarios/progression-support-history.json",
       "targets": [
-        "ecommerce.progression.support-history.support-history.612c"
+        "ecommerce.progression.support-history.support-history.612c",
+        "ecommerce.spec.state-durability.support-history-reload.612a",
+        "ecommerce.spec.access-control.support-history-privacy.612b"
       ],
-      "desc": "Hide submitted support ticket rows while leaving the submission reference available.",
+      "desc": "Hide submitted support ticket rows while leaving the submission reference available. Hidden owner rows also fail the visibility controls in 612a and 612b; this is a display defect, not independent evidence of lost storage or leaked data.",
       "file": "client/src/ProgressionPanel.tsx",
       "edits": [
         {
@@ -2013,7 +2023,7 @@
     },
     {
       "id": "transfer-overdraft-guard-skips-bulk-transfers",
-      "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
+      "scenario": "tracks/ecommerce/scenarios/02-transfer-overdraw.json",
       "targets": [
         "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
       ],

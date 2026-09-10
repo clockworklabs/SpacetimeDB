@@ -59,13 +59,17 @@ test('stock-alert uniqueness waits for the second restock update before counting
   const scenario = readJson('tracks', 'ecommerce', 'scenarios',
     'progression-stock-alerts.json');
   const steps = criterion(scenario, '631a').steps;
-  const secondRestock = steps.filter(step => step.do === 'click'
-    && step.testid === 'restock-submit')[0];
+  const restockIndex = steps.findIndex(step => step.do === 'callAction'
+    && step.action === 'restock');
+  const secondRestock = steps[restockIndex];
   const finalCount = steps.at(-1);
 
   assert(secondRestock, 'criterion 631a must contain a second restock');
-  assert(typeof secondRestock.settleMs === 'number');
-  assert(secondRestock.settleMs >= 1000);
+  assert.equal(steps[restockIndex + 1]?.do, 'expectActionOutcome');
+  assert.equal(steps[restockIndex + 1]?.outcome, 'accepted');
+  assert.equal(steps[restockIndex + 2]?.do, 'wait');
+  assert.equal(steps[restockIndex + 2]?.ms, 10000);
+  assert.equal(steps[restockIndex + 3]?.do, 'freshClient');
   assert(finalCount, 'criterion 631a must end with a count check');
   assert.equal(finalCount.do, 'expectElementCount');
   assert.equal(finalCount.equals, 1);
@@ -77,13 +81,16 @@ test('the duplicate-payment mutation remains visible through the payment view', 
   const compiled = compileScenarioDefinition(scenario);
   const feature = compiled.features.find(candidate => candidate.id === 623);
   assert(feature, 'the core business scenario must contain feature 623');
-  const concurrentCall = feature.setup.at(-3);
-  const callOutcome = feature.setup.at(-2);
-  const ordersToggle = feature.setup.at(-1);
+  const callIndex = feature.setup.findIndex(step => step.do === 'callConcurrently');
+  const concurrentCall = feature.setup[callIndex];
+  const callOutcome = feature.setup[callIndex + 1];
+  const ordersToggle = feature.setup.find(step => step.testid === 'orders-toggle');
   assert(concurrentCall && callOutcome && ordersToggle, 'feature 623 must contain its setup');
   assert.equal(concurrentCall.do, 'callConcurrently');
   assert.equal(callOutcome.do, 'expectCallOutcomes');
   assert.equal(ordersToggle.testid, 'orders-toggle');
+  assert.equal(feature.setup[callIndex + 2]?.do, 'freshClient');
+  assert.equal(ordersToggle.actor, 'owner-fresh');
   assert.equal(criterion(scenario, '623a').steps.some(step => step.do === 'callConcurrently'), false);
   assert.equal(criterion(scenario, '623b').steps.some(step => step.do === 'callConcurrently'), false);
 
@@ -160,7 +167,7 @@ test('staff role check reloads the saved value on each progression reference', (
   assert.equal(reload.do, 'reload');
   // Rows are addressed by the account's own element id, not by row text.
   assert.deepEqual(savedRole, {
-    do: 'expect', actor: 'admin', testid: 'staff-role-select',
+    do: 'expect', actor: 'admin-fresh', testid: 'staff-role-select',
     in: { testid: 'staff-role-account-staff' },
     value: 'inventory', within: 10000,
   });
@@ -177,10 +184,10 @@ test('staff role check reloads the saved value on each progression reference', (
     'spacetime', 'client', 'src', 'components', 'ProgressionWorkbench.tsx'), 'utf8');
   assert.match(spacetimePanel, /defaultValue=\{row\.role\}/);
 
-  const source = postgresMutationSource('progression-staff-role-update-is-disabled',
+  const source = postgresMutationSource('progression-staff-role-is-lost-on-restart',
     'server/src/progression.ts');
-  assert.doesNotMatch(source, /app\.put\("\/api\/staff\/:id\/role",/);
-  assert.match(source, /app\.put\("\/api\/mutation-disabled-staff\/:id\/role",/);
+  assert.match(source, /app\.put\("\/api\/staff\/:id\/role", dependencies\.requireAdmin,/);
+  assert.match(source, /ALTER TABLE account ADD COLUMN IF NOT EXISTS staff_role[^;]+;\n {4}UPDATE account SET staff_role = '';/);
 });
 
 test('PostgreSQL reservation mutation remains valid SQL and changes only stock reduction', () => {

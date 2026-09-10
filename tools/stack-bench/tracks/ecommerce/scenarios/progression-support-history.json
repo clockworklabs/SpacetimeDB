@@ -57,11 +57,19 @@
             { "do": "reload", "actor": "owner", "settleMs": 1000 },
             { "do": "ensureSignedIn", "actor": "owner", "name": "support-owner", "readyTestid": "current-user" },
             { "do": "click", "actor": "owner", "testid": "support-link" },
-            { "do": "expect", "actor": "owner", "testid": "support-ticket", "contains": "Owner ticket {user:ticketmarker}" },
-            { "do": "expectReceived", "actor": "owner", "contains": "Owner ticket {user:ticketmarker}", "within": 10000 },
+            { "do": "fill", "actor": "owner", "testid": "support-email", "text": "owner@example.com" },
+            { "do": "fill", "actor": "owner", "testid": "support-subject", "text": "Private ticket {user:privateticketmarker}" },
+            { "do": "fill", "actor": "owner", "testid": "support-message", "text": "Private account issue." },
+            { "do": "click", "actor": "owner", "testid": "support-submit" },
+            { "do": "expect", "actor": "owner", "testid": "support-reference", "nonEmpty": true },
+            { "do": "reload", "actor": "owner", "settleMs": 1000 },
+            { "do": "ensureSignedIn", "actor": "owner", "name": "support-owner", "readyTestid": "current-user" },
+            { "do": "click", "actor": "owner", "testid": "support-link" },
+            { "do": "expect", "actor": "owner", "testid": "support-ticket", "contains": "Private ticket {user:privateticketmarker}" },
+            { "do": "expectReceived", "actor": "owner", "contains": "Private ticket {user:privateticketmarker}", "within": 10000 },
             { "do": "click", "actor": "other", "testid": "support-link" },
-            { "do": "expect", "actor": "other", "testid": "support-ticket", "contains": "Owner ticket {user:ticketmarker}", "absent": true },
-            { "do": "expectNotReceived", "actor": "other", "contains": "Owner ticket {user:ticketmarker}" }
+            { "do": "expect", "actor": "other", "testid": "support-ticket", "contains": "Private ticket {user:privateticketmarker}", "absent": true },
+            { "do": "expectNotReceived", "actor": "other", "contains": "Private ticket {user:privateticketmarker}" }
           ]
         }
       ]

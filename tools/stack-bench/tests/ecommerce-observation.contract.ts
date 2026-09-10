@@ -21,18 +21,59 @@ test('catalog variants and pagination enter the declared observation surface', (
 });
 
 test('restock observations use one pending row and a ledger delta without item-name labels', () => {
-  const source = read('03-scheduled-restocks.json');
+  const source = read('03-scheduled-restock-apply.json');
   const due = source.features.find(feature => feature.id === 305)!.criteria[0]!.steps;
   const record = due.findIndex(step => step.do === 'recordNumber' && step.count === true);
   const submit = due.findIndex(step => step.testid === 'schedule-restock-submit');
   assert(record >= 0 && record < submit);
   assert(due.some(step => step.do === 'expectElementCount'
     && step.relativeTo === 'ledger-before' && step.plus === 1));
-  for (const name of ['03-scheduled-restocks.json', '03-deferred-access.json',
+  const pack = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+    'tracks/ecommerce/composition/packs/l3-scheduled-restocks-features.json'), 'utf8'));
+  const sources = pack.checks.map((check: { source: string }) => check.source);
+  assert.equal(new Set(sources).size, 3, 'each restock check needs its own database reset boundary');
+  for (const [index, name] of ['03-scheduled-restocks.json', '03-scheduled-restock-apply.json',
+    '03-scheduled-restock-cancel.json'].entries()) {
+    assert.equal(sources[index], `scenarios/${name}`);
+    assert.deepEqual(read(name).features.flatMap(feature => feature.criteria).map(check => check.id),
+      [['302a'], ['305a'], ['306a']][index]);
+  }
+  for (const name of ['03-scheduled-restocks.json', '03-scheduled-restock-apply.json',
+    '03-scheduled-restock-cancel.json', '03-deferred-access.json',
     '03-deferred-durability.json', '03-deferred-integrity.json', '03-server-time.json']) {
     const scenario = JSON.stringify(read(name));
     assert(!/"testid":"pending-restock-item","contains"/.test(scenario));
   }
+});
+
+test('overdraw failure cannot change the next transfer or authorization probe state', () => {
+  const isolated = read('02-transfer-overdraw.json');
+  const shared = read('02-strengthened.json');
+  assert.deepEqual(isolated.features.flatMap(feature => feature.criteria).map(check => check.id), ['2c']);
+  assert(!shared.features.flatMap(feature => feature.criteria).some(check => check.id === '2c'));
+  assert.deepEqual(isolated.features[0]!.setup, shared.features.find(feature => feature.id === 2)!.setup);
+  const pack = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+    'tracks/ecommerce/composition/packs/spec-transactional-integrity.json'), 'utf8'));
+  assert.equal(pack.checks.find((check: { id: string }) => check.id === 'stock-transfer-overdraw').source,
+    'scenarios/02-transfer-overdraw.json');
+});
+
+test('support privacy creates its own persisted ticket after the durability probe', () => {
+  const history = read('progression-support-history.json').features[0]!;
+  const privacy = history.criteria.find(check => check.id === '612b')!.steps;
+  const subject = privacy.find(step => step.testid === 'support-subject')!.text;
+  assert(subject);
+  assert.notEqual(subject, history.setup.find(step => step.testid === 'support-subject')!.text);
+  const submit = privacy.findIndex(step => step.testid === 'support-submit');
+  const reloaded = privacy.findIndex((step, index) => index > submit && step.do === 'reload');
+  const positive = privacy.findIndex(step => step.do === 'expect' && step.testid === 'support-ticket'
+    && step.contains === subject && step.absent !== true);
+  assert(submit >= 0 && reloaded > submit && positive > reloaded);
+  assert(privacy.slice(positive + 1).some(step => step.do === 'expectReceived' && step.contains === subject));
+  assert(privacy.some(step => step.actor === 'other' && step.do === 'expect'
+    && step.contains === subject && step.absent === true));
+  assert(privacy.some(step => step.actor === 'other' && step.do === 'expectNotReceived'
+    && step.contains === subject));
 });
 
 test('stock alerts use ready fresh account views after accepted restocks', () => {

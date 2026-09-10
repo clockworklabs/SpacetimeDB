@@ -90,7 +90,16 @@
       "source": "scenarios/02-strengthened.json",
       "feature": 2,
       "criteria": [
-        "2a",
+        "2a"
+      ],
+      "role": "feature"
+    },
+    {
+      "id": "warehouse-transfer-overdraw",
+      "stableId": "warehouse-transfer",
+      "source": "scenarios/02-transfer-overdraw.json",
+      "feature": 2,
+      "criteria": [
         "2c"
       ],
       "role": "feature"

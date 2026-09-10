@@ -56,6 +56,7 @@ export interface ActionRegistry {
 interface ActionRunContext {
   readonly capabilities: Readonly<Record<string, unknown>>;
   readonly signal: AbortSignal | null;
+  readonly onAbort?: () => Promise<void>;
 }
 
 type ActionRunContextInput = Partial<ActionRunContext>;
@@ -145,7 +146,7 @@ export function createActionRegistry(
 function createActionRunContext(value: ActionRunContextInput = {}): ActionRunContext {
   const capabilities = value.capabilities ?? {};
   return Object.freeze({ capabilities: Object.freeze({ ...capabilities }),
-    signal: value.signal ?? null });
+    signal: value.signal ?? null, onAbort: value.onAbort });
 }
 
 class ClassifiedActionError extends Error {
@@ -287,9 +288,26 @@ export async function executeAction(
     }
     return evidence(plugin, startedAtMs, now(), 'passed', 'completed', null, { observation });
   } catch (error: unknown) {
-    // Do not start the next action while a timed-out implementation still runs.
-    // Every implementation has a bounded operation or observes this signal.
-    if (termination.current) await execution.catch(() => undefined);
+    // Browser teardown cancels protocol operations that do not observe AbortSignal.
+    // Its owner must reject further actions if teardown cannot establish quiescence.
+    if (termination.current && context.onAbort) {
+      let cleanupTimer: TimerHandle | undefined;
+      try {
+        await Promise.race([
+          context.onAbort().then(() => execution.catch(() => undefined)),
+          new Promise<never>((_resolve, reject) => {
+            cleanupTimer = setTimer(() => reject(new Error('action cancellation cleanup exceeded 5000ms')), 5000);
+          }),
+        ]);
+      } catch (cleanupError) {
+        return evidence(plugin, startedAtMs, now(), 'harness_failure', 'cancellation_cleanup_failed',
+          cleanupError instanceof Error ? cleanupError.message : String(cleanupError), { retryable: false });
+      } finally {
+        if (cleanupTimer !== undefined) clearTimer(cleanupTimer);
+      }
+    } else if (termination.current) {
+      await execution.catch(() => undefined);
+    }
     if (termination.current?.kind === 'cancelled') {
       return evidence(plugin, startedAtMs, now(), 'inconclusive', 'cancelled',
         String(termination.current.reason), { retryable: true });

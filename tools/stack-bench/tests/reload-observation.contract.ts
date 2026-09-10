@@ -91,7 +91,9 @@ test('low-stock observations follow the optional in-area link the contract allow
 });
 
 test('scheduled-restock setups follow the optional in-area link the contract allows', () => {
-  for (const [name, featureIds] of [['03-scheduled-restocks.json', [302, 305, 306]], ['03-features.json', [302]]] as const) {
+  for (const [name, featureIds] of [['03-scheduled-restocks.json', [302]],
+    ['03-scheduled-restock-apply.json', [305]], ['03-scheduled-restock-cancel.json', [306]],
+    ['03-features.json', [302]]] as const) {
     for (const featureId of featureIds) {
       const feature = scenario(name).features.find(feature => feature.id === featureId)!;
       const area = feature.setup.findIndex(step => step.do === 'click' && step.testid === 'admin-link');

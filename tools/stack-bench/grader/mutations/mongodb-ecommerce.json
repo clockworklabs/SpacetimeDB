@@ -96,17 +96,22 @@
       ]
     },
     {
-      "id": "signed-out-visitors-see-purchase-controls",
+      "id": "signed-out-visitor-purchase-is-accepted",
       "scenario": "tracks/ecommerce/scenarios/progression-signed-out-purchase.json",
       "targets": [
         "ecommerce.spec.access-control.signed-out-purchase.3a"
       ],
-      "desc": "The client treats every non-admin state, including a signed-out visitor, as a customer allowed to see purchase controls.",
+      "desc": "The UI exposes purchase controls to visitors and the buy route assigns unauthenticated requests an unverified identity, allowing an actual stock-debiting order.",
       "file": "client/src/App.tsx",
       "edits": [
         {
           "find": "  const isCustomer = !!currentUser && !currentUser.isAdmin && !currentUser.isStaff;",
           "replace": "  const isCustomer = !currentUser?.isAdmin && !currentUser?.isStaff;"
+        },
+        {
+          "file": "server/src/index.ts",
+          "find": "app.post(\"/api/items/:id/buy\", requireAuth, async (req, res) => {",
+          "replace": "app.post(\"/api/items/:id/buy\", async (req, _res, next) => {\n  (req as any).user = await userFromToken(extractToken(req)) || { _id: new Types.ObjectId() };\n  next();\n}, async (req, res) => {"
         }
       ]
     },
@@ -340,17 +345,17 @@
       ]
     },
     {
-      "id": "purchased-review-eligibility-query-never-matches",
+      "id": "purchased-review-ui-does-not-submit",
       "scenario": "tracks/ecommerce/scenarios/01-review-eligibility.json",
       "targets": [
         "ecommerce.spec.access-control.review-eligibility.108b"
       ],
-      "desc": "The eligibility query requires an impossible negative order total, rejecting even a customer who bought the item.",
-      "file": "server/src/index.ts",
+      "desc": "The review form discards valid customer submissions. Direct authorized and unauthorized review calls retain their normal behavior.",
+      "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "  const hasPurchased = await Order.exists({ userId: user._id, \"items.itemId\": itemId });",
-          "replace": "  const hasPurchased = await Order.exists({ userId: user._id, \"items.itemId\": itemId, total: -1 });"
+          "find": "  const handleReviewSubmit = async (itemId: string, rating: number, comment: string) => {\n    setReviewError(\"\");",
+          "replace": "  const handleReviewSubmit = async (itemId: string, rating: number, comment: string) => {\n    setReviewError(\"Review submission unavailable\");\n    return;"
         }
       ]
     },
@@ -624,9 +629,10 @@
       "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
       "targets": [
         "ecommerce.inventory-operations.stock-conservation.202a",
-        "ecommerce.inventory-operations.warehouse-transfer.2a"
+        "ecommerce.inventory-operations.warehouse-transfer.2a",
+        "ecommerce.operations-access.operator-authorization.201a"
       ],
-      "desc": "A transfer debits the source row but adds zero units to an existing destination row, violating both directional movement and total conservation while still returning success.",
+      "desc": "A transfer debits the source but credits zero to the destination. This breaks both movement/conservation assertions and the authorized-transfer positive observation inside the authorization check; that last failure is not evidence of an unauthorized transfer.",
       "file": "server/src/index.ts",
       "edits": [
         {
@@ -652,7 +658,7 @@
     },
     {
       "id": "transfer-overdraft-guard-removed",
-      "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
+      "scenario": "tracks/ecommerce/scenarios/02-transfer-overdraw.json",
       "targets": [
         "ecommerce.inventory-operations.warehouse-transfer.2c"
       ],
@@ -1069,7 +1075,7 @@
     },
     {
       "id": "due-restock-does-not-change-stock",
-      "scenario": "tracks/ecommerce/scenarios/03-scheduled-restocks.json",
+      "scenario": "tracks/ecommerce/scenarios/03-scheduled-restock-apply.json",
       "targets": [
         "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a"
       ],
@@ -1084,7 +1090,7 @@
     },
     {
       "id": "cancelled-restock-remains-pending",
-      "scenario": "tracks/ecommerce/scenarios/03-scheduled-restocks.json",
+      "scenario": "tracks/ecommerce/scenarios/03-scheduled-restock-cancel.json",
       "targets": [
         "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a"
       ],
@@ -1131,9 +1137,10 @@
       "id": "catalog-product-name-is-not-published",
       "scenario": "tracks/ecommerce/scenarios/progression-catalog-management.json",
       "targets": [
-        "ecommerce.progression.catalog-management.catalog-management.622a"
+        "ecommerce.progression.catalog-management.catalog-management.622a",
+        "ecommerce.progression.catalog-management.catalog-management.622b"
       ],
-      "desc": "The public product card omits the submitted name while retaining the product and its variants.",
+      "desc": "The public product card omits the submitted name while retaining its product and variants. Both publication and named variant navigation fail because the latter locates the card by its product name; this does not claim the variants were lost.",
       "file": "client/src/App.tsx",
       "edits": [
         {
@@ -1188,17 +1195,21 @@
       ]
     },
     {
-      "id": "profile-save-drops-address",
+      "id": "profile-data-is-lost-on-server-restart",
       "scenario": "tracks/ecommerce/scenarios/progression-customer-profile.json",
       "targets": [
         "ecommerce.spec.state-durability.customer-profile-reload.620a"
       ],
-      "desc": "A saved profile stores the wrong address.",
-      "file": "server/src/progression.ts",
+      "desc": "Application startup discards saved profiles. Profile creation, reads, and browser reload work before runtime restart.",
+      "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "{ userId: req.progressionUser._id, name, address }, { upsert: true, new: true });",
-          "replace": "{ userId: req.progressionUser._id, name, address: \"Wrong address\" }, { upsert: true, new: true });"
+          "find": "import { Dismissal, Payment, Promotion } from \"./progression-models.js\";",
+          "replace": "import { Dismissal, Payment, Promotion, Profile } from \"./progression-models.js\";"
+        },
+        {
+          "find": "  await mongoose.connect(DATABASE_URL);",
+          "replace": "  await mongoose.connect(DATABASE_URL);\n  await Profile.deleteMany({});"
         }
       ]
     },
@@ -1248,17 +1259,25 @@
       ]
     },
     {
-      "id": "managed-support-reply-is-not-saved",
+      "id": "managed-support-live-refresh-keeps-stale-tickets",
       "scenario": "tracks/ecommerce/scenarios/progression-managed-support-shared.json",
       "targets": [
         "ecommerce.spec.live-state.managed-support.613a"
       ],
-      "desc": "Managed support saves the wrong reply text.",
-      "file": "server/src/progression.ts",
+      "desc": "Periodic refresh keeps the previous support ticket snapshot. Saved replies remain available on initial load and explicit action refresh, but another open client does not receive updates.",
+      "file": "client/src/ProgressionPanel.tsx",
       "edits": [
         {
-          "find": "    ticket.replies.push({ userId: req.progressionUser._id, username: req.progressionUser.username,\n      body } as any);",
-          "replace": "    ticket.replies.push({ userId: req.progressionUser._id, username: req.progressionUser.username,\n      body: \"Wrong reply\" } as any);"
+          "find": "  const refresh = useCallback(async () => {",
+          "replace": "  const refresh = useCallback(async (live = false) => {"
+        },
+        {
+          "find": "      setState({ ...next, loadedToken: token });",
+          "replace": "      setState((current: any) => ({ ...next, tickets: live ? current.tickets : next.tickets, loadedToken: token }));"
+        },
+        {
+          "find": "    const timer = setInterval(refresh, 1000);",
+          "replace": "    const timer = setInterval(() => refresh(true), 1000);"
         }
       ]
     },
@@ -1474,17 +1493,21 @@
       ]
     },
     {
-      "id": "support-history-is-not-persisted-for-owner",
+      "id": "support-history-is-lost-on-server-restart",
       "scenario": "tracks/ecommerce/scenarios/progression-support-history.json",
       "targets": [
         "ecommerce.spec.state-durability.support-history-reload.612a"
       ],
-      "desc": "Signed-in customers cannot reload their support history.",
-      "file": "server/src/progression.ts",
+      "desc": "Application startup discards support tickets. Ticket creation and owner reads work before runtime restart; privacy uses independently created history.",
+      "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "const ticketFilter = isStaff ? {} : user ? { userId: user._id } : { _id: null };",
-          "replace": "const ticketFilter = isStaff ? {} : { _id: null };"
+          "find": "import { Dismissal, Payment, Promotion } from \"./progression-models.js\";",
+          "replace": "import { Dismissal, Payment, Promotion, SupportTicket } from \"./progression-models.js\";"
+        },
+        {
+          "find": "  await mongoose.connect(DATABASE_URL);",
+          "replace": "  await mongoose.connect(DATABASE_URL);\n  await SupportTicket.deleteMany({});"
         }
       ]
     },
@@ -1808,17 +1831,17 @@
       ]
     },
     {
-      "id": "support-history-rows-are-hidden",
+      "id": "support-history-is-hidden-after-submission",
       "scenario": "tracks/ecommerce/scenarios/progression-support-history.json",
       "targets": [
         "ecommerce.progression.support-history.support-history.612c"
       ],
-      "desc": "Hide submitted support ticket rows while leaving the submission reference available.",
+      "desc": "The submission result view hides ticket history while retaining the submission reference. Reload restores the normal persisted list, leaving durability and privacy observations intact.",
       "file": "client/src/ProgressionPanel.tsx",
       "edits": [
         {
-          "find": "data-role=\"support-ticket\"",
-          "replace": "data-role=\"support-ticket\" style={{ display: \"none\" }}"
+          "find": "      {(state.tickets || []).map((ticket: any) => <SupportTicket key={ticket.id} ticket={ticket}\n        user={user} orders={state.orders || orders} act={act} />)}",
+          "replace": "      {!supportReference && (state.tickets || []).map((ticket: any) => <SupportTicket key={ticket.id} ticket={ticket}\n        user={user} orders={state.orders || orders} act={act} />)}"
         }
       ]
     },
@@ -1987,7 +2010,7 @@
     },
     {
       "id": "overdraw-transfer-is-accepted",
-      "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
+      "scenario": "tracks/ecommerce/scenarios/02-transfer-overdraw.json",
       "targets": [
         "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
       ],

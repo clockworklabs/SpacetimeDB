@@ -166,15 +166,20 @@
       ]
     },
     {
-      "id": "purchase-controls-are-rendered-for-signed-out-visitors",
+      "id": "signed-out-purchase-bypasses-account-check",
       "scenario": "tracks/ecommerce/scenarios/progression-signed-out-purchase.json",
       "targets": [
         "ecommerce.spec.access-control.signed-out-purchase.3a"
       ],
-      "desc": "Render buy and cart controls without requiring an account.",
-      "file": "client/src/components/ItemCard.tsx",
+      "desc": "Expose the guest purchase button and accept its purchase as the existing administrator. The stock observation then exercises the broken account boundary; normal signed-in purchases remain unchanged.",
+      "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
+          "find": "export const buyNow = spacetimedb.reducer({ itemId: t.u64() }, (ctx, { itemId }) => {\n  const acc = requireAccount(ctx);",
+          "replace": "export const buyNow = spacetimedb.reducer({ itemId: t.u64() }, (ctx, { itemId }) => {\n  const acc = getAccountId(ctx) === null ? ctx.db.account.username.find('admin')! : requireAccount(ctx);"
+        },
+        {
+          "file": "client/src/components/ItemCard.tsx",
           "find": "      {isSignedIn && (",
           "replace": "      {true && ("
         }
@@ -241,17 +246,17 @@
       ]
     },
     {
-      "id": "cart-owner-token-is-not-restored-after-reload",
+      "id": "cart-is-deleted-when-owner-disconnects",
       "scenario": "tracks/ecommerce/scenarios/01-cart.json",
       "targets": [
         "ecommerce.spec.state-durability.cart-reload.4b"
       ],
-      "desc": "Build a reload connection without the stored identity token, leaving the durable cart attached to a different session.",
-      "file": "client/src/main.tsx",
+      "desc": "Delete the account cart on transport disconnect. Reload loses stored cart contents even after the same account signs in again; account and session records remain intact.",
+      "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": ".withToken(localStorage.getItem('auth_token') || undefined)",
-          "replace": ".withToken(undefined)"
+          "find": "export const onDisconnect = spacetimedb.clientDisconnected((_ctx) => {});",
+          "replace": "export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {\n  const accountId = getAccountId(ctx);\n  if (accountId !== null) for (const row of [...ctx.db.cartItem.byAccountItem.filter(accountId)]) ctx.db.cartItem.id.delete(row.id);\n});"
         }
       ]
     },
@@ -518,9 +523,10 @@
       "id": "eligible-review-is-accepted-without-being-stored",
       "scenario": "tracks/ecommerce/scenarios/01-review-eligibility.json",
       "targets": [
-        "ecommerce.spec.access-control.review-eligibility.108b"
+        "ecommerce.spec.access-control.review-eligibility.108b",
+        "ecommerce.spec.access-control.review-eligibility.108a"
       ],
-      "desc": "Keep the non-buyer refusal but omit the insert for a buyer's eligible new review.",
+      "desc": "Keep the non-buyer refusal but omit the insert for a buyer's eligible new review. Both eligibility criteria require a successfully stored eligible review as a positive control; this does not establish a non-buyer authorization defect.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
@@ -616,16 +622,12 @@
       "targets": [
         "ecommerce.spec.external-data-sync.external-stock.901c"
       ],
-      "desc": "Freeze the already-open stock view at its first complete snapshot. SpacetimeDB durability and app-server independence remain structural; this mutation validates only the scored stale-view oracle.",
+      "desc": "Persist the first stock quantities in browser session storage and keep rendering them after app-server restart, including any frontend reload. Initial stock remains correct. This validates the stale-view oracle, not SpacetimeDB storage durability.",
       "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "import { useEffect, useMemo, useState } from 'react';",
-          "replace": "import { useEffect, useMemo, useRef, useState } from 'react';"
-        },
-        {
           "find": "  const [stocks] = useTable(tables.stock);",
-          "replace": "  const [liveStocks] = useTable(tables.stock);\n  const frozenStocks = useRef<typeof liveStocks | null>(null);\n  if (frozenStocks.current === null && liveStocks.length > 0) frozenStocks.current = liveStocks;\n  const stocks = frozenStocks.current ?? liveStocks;"
+          "replace": "  const [liveStocks] = useTable(tables.stock);\n  const cacheKey = 'stale-stock-quantities';\n  let savedQuantities = sessionStorage.getItem(cacheKey);\n  if (!savedQuantities && liveStocks.length > 0) {\n    savedQuantities = JSON.stringify(Object.fromEntries(liveStocks.map(row => [`${row.itemId}-${row.warehouseId}`, row.quantity])));\n    sessionStorage.setItem(cacheKey, savedQuantities);\n  }\n  const quantities: Record<string, number> = JSON.parse(savedQuantities ?? '{}');\n  const stocks = liveStocks.map(row => ({ ...row, quantity: quantities[`${row.itemId}-${row.warehouseId}`] ?? row.quantity }));"
         }
       ]
     },
@@ -883,9 +885,10 @@
       "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
       "targets": [
         "ecommerce.inventory-operations.stock-conservation.202a",
-        "ecommerce.inventory-operations.warehouse-transfer.2a"
+        "ecommerce.inventory-operations.warehouse-transfer.2a",
+        "ecommerce.operations-access.operator-authorization.201a"
       ],
-      "desc": "A transfer debits the source row but writes the existing destination quantity back unchanged, violating both directional movement and total conservation inside the serialized reducer.",
+      "desc": "A transfer debits the source row but writes the existing destination quantity back unchanged, violating both directional movement and total conservation inside the serialized reducer. It also breaks 201a's authorized-transfer positive control; that coupled failure is not independent evidence of an authorization defect.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
@@ -911,7 +914,7 @@
     },
     {
       "id": "transfer-overdraft-guard-removed",
-      "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
+      "scenario": "tracks/ecommerce/scenarios/02-transfer-overdraw.json",
       "targets": [
         "ecommerce.inventory-operations.warehouse-transfer.2c"
       ],
@@ -1234,7 +1237,7 @@
     },
     {
       "id": "due-restock-omits-ledger-entry",
-      "scenario": "tracks/ecommerce/scenarios/03-scheduled-restocks.json",
+      "scenario": "tracks/ecommerce/scenarios/03-scheduled-restock-apply.json",
       "targets": [
         "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a"
       ],
@@ -1249,7 +1252,7 @@
     },
     {
       "id": "cancelled-restock-remains-pending",
-      "scenario": "tracks/ecommerce/scenarios/03-scheduled-restocks.json",
+      "scenario": "tracks/ecommerce/scenarios/03-scheduled-restock-cancel.json",
       "targets": [
         "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a"
       ],
@@ -1296,9 +1299,10 @@
       "id": "catalog-product-is-not-published",
       "scenario": "tracks/ecommerce/scenarios/progression-catalog-management.json",
       "targets": [
-        "ecommerce.progression.catalog-management.catalog-management.622a"
+        "ecommerce.progression.catalog-management.catalog-management.622a",
+        "ecommerce.progression.catalog-management.catalog-management.622b"
       ],
-      "desc": "The public product card omits the submitted name.",
+      "desc": "The public product card omits the submitted name. Both create visibility and variant navigation locate the submitted product card by its name, so the hidden name prevents both required observations.",
       "file": "client/src/components/ItemCard.tsx",
       "edits": [
         {
@@ -1323,17 +1327,17 @@
       ]
     },
     {
-      "id": "customer-profile-is-not-saved",
+      "id": "profile-is-lost-on-fresh-account-login",
       "scenario": "tracks/ecommerce/scenarios/progression-customer-profile.json",
       "targets": [
         "ecommerce.spec.state-durability.customer-profile-reload.620a"
       ],
-      "desc": "Saving a customer profile does not persist its values.",
+      "desc": "Delete a saved profile when its owner signs in from a new transport identity. Initial save, same-identity reload, and the independent privacy owner remain intact.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "if (existing) ctx.db.customerProfile.accountId.update(row);\n    else ctx.db.customerProfile.insert(row);",
-          "replace": "void existing;\n    void row; // mutant: profile changes are discarded"
+          "find": "      throw new SenderError('Incorrect username or password.');\n    }\n\n    const existingSession = ctx.db.session.identity.find(ctx.sender);\n    if (existingSession) {\n      ctx.db.session.identity.update({ ...existingSession, accountId: acc.id });",
+          "replace": "      throw new SenderError('Incorrect username or password.');\n    }\n\n    const existingSession = ctx.db.session.identity.find(ctx.sender);\n    if (!existingSession) { ctx.db.customerProfile.accountId.delete(acc.id); }\n    if (existingSession) {\n      ctx.db.session.identity.update({ ...existingSession, accountId: acc.id });"
         }
       ]
     },
@@ -1406,14 +1410,30 @@
       "id": "managed-support-replies-are-empty",
       "scenario": "tracks/ecommerce/scenarios/progression-managed-support-shared.json",
       "targets": [
-        "ecommerce.spec.live-state.managed-support.613a"
+        "ecommerce.spec.live-state.managed-support.613a",
+        "ecommerce.progression.managed-support.managed-support.613c"
       ],
-      "desc": "Managed support stores replies without their message body.",
+      "desc": "Managed support stores replies without their message body. Both the ordinary reply and shared-live reply assertions require the stored message body; neither can pass an empty reply.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
           "find": "body: body.trim(),\n      createdMicros: nowMicros(ctx),",
           "replace": "body: '',\n      createdMicros: nowMicros(ctx),"
+        }
+      ]
+    },
+    {
+      "id": "managed-support-live-replies-stay-at-initial-snapshot",
+      "scenario": "tracks/ecommerce/scenarios/progression-managed-support-shared.json",
+      "targets": [
+        "ecommerce.spec.live-state.managed-support.613a"
+      ],
+      "desc": "Keep the initial subscribed reply snapshot on each page. Reducers still save replies, and a reload shows them, but later replies do not reach the rendered conversation live.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "  const [supportReplyRows] = useTable(tables.visibleSupportReplies);",
+          "replace": "  const [liveSupportReplyRows, supportRepliesReady] = useTable(tables.visibleSupportReplies);\n  const supportReplyRows = useMemo(() => [...liveSupportReplyRows], [supportRepliesReady]);"
         }
       ]
     },
@@ -1658,17 +1678,17 @@
       ]
     },
     {
-      "id": "support-history-disappears-after-reload",
+      "id": "support-history-is-lost-on-fresh-account-login",
       "scenario": "tracks/ecommerce/scenarios/progression-support-history.json",
       "targets": [
         "ecommerce.spec.state-durability.support-history-reload.612a"
       ],
-      "desc": "The customer support view hides every saved ticket.",
+      "desc": "Resolve customer support ownership by transport identity only, omitting the account ownership path. Initial submission, same-identity reload, and stored tickets remain intact; fresh account login cannot recover the history.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "return [...ctx.db.supportTicket.iter()]\n      .filter(row => isTicketCreator(sender, row.creatorIdentity.toHexString()) ||",
-          "replace": "return [...ctx.db.supportTicket.iter()]\n      .filter(() => false)\n      .filter(row => isTicketCreator(sender, row.creatorIdentity.toHexString()) ||"
+          "find": "!!actor && (actor.isAdmin || actor.isStaff || row.accountId === accountId))",
+          "replace": "!!actor && (actor.isAdmin || actor.isStaff))"
         }
       ]
     },
@@ -1909,9 +1929,11 @@
       "id": "support-history-rows-are-hidden",
       "scenario": "tracks/ecommerce/scenarios/progression-support-history.json",
       "targets": [
-        "ecommerce.progression.support-history.support-history.612c"
+        "ecommerce.progression.support-history.support-history.612c",
+        "ecommerce.spec.state-durability.support-history-reload.612a",
+        "ecommerce.spec.access-control.support-history-privacy.612b"
       ],
-      "desc": "Hide submitted support ticket rows while leaving the submission reference available.",
+      "desc": "Hide submitted support ticket rows while leaving the submission reference available. History, reload, and privacy each require the owner to see the ticket. Hiding every row breaks those positive observations; it does not create a privacy leak or remove stored data.",
       "file": "client/src/components/ProgressionWorkbench.tsx",
       "edits": [
         {
@@ -1980,16 +2002,20 @@
       "targets": [
         "ecommerce.progression.customer-profile.customer-profile.620c"
       ],
-      "desc": "The profile summary renders the profile row delivered with the page's initial subscription and ignores the row written by a save in the same session, so the owner cannot view a profile just saved. A reload delivers the stored row, so the reload and privacy checks are unaffected.",
-      "file": "client/src/App.tsx",
+      "desc": "Hide the profile summary immediately after saving in the current view. Stored profile data and a reopened or reloaded view remain correct, so fresh-login durability and privacy positive controls remain observable.",
+      "file": "client/src/components/ProgressionWorkbench.tsx",
       "edits": [
         {
-          "find": "import { useEffect, useMemo, useState } from 'react';",
-          "replace": "import { useEffect, useMemo, useRef, useState } from 'react';"
+          "find": "  const [profileName, setProfileName] = useState(profile?.name ?? '');",
+          "replace": "  const [profileName, setProfileName] = useState(profile?.name ?? '');\n  const [profileSavedHere, setProfileSavedHere] = useState(false);"
         },
         {
-          "find": "  const [profileRows] = useTable(tables.myProfile);",
-          "replace": "  const [liveProfileRows, profileReady] = useTable(tables.myProfile);\n  const openedProfileRows = useRef<typeof liveProfileRows | null>(null);\n  if (openedProfileRows.current === null && profileReady) openedProfileRows.current = liveProfileRows;\n  const profileRows = openedProfileRows.current ?? liveProfileRows;"
+          "find": "onClick={() => reducers?.saveProfile({ name: profileName, address: profileAddress })}",
+          "replace": "onClick={() => { setProfileSavedHere(true); return reducers?.saveProfile({ name: profileName, address: profileAddress }); }}"
+        },
+        {
+          "find": "<div data-role=\"profile-address-summary\">{profile?.name} {profile?.address}</div>",
+          "replace": "<div data-role=\"profile-address-summary\">{!profileSavedHere && <>{profile?.name} {profile?.address}</>}</div>"
         }
       ]
     },
@@ -2124,7 +2150,7 @@
     },
     {
       "id": "transfer-skips-the-source-holding-check",
-      "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
+      "scenario": "tracks/ecommerce/scenarios/02-transfer-overdraw.json",
       "targets": [
         "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
       ],

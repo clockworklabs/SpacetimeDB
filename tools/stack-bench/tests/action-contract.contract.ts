@@ -210,3 +210,43 @@ test('invalid input, missing services, and malformed observations never become p
     { do: 'fakeAction' }, context());
   assert.equal(nonSerializable.code, 'invalid_evidence');
 });
+
+
+test('deadline closes owned browser work before draining an operation that ignores abort', { timeout: 1000 }, async () => {
+  const events: string[] = [];
+  let rejectOperation!: (reason: Error) => void;
+  const run = executeAction(registry(() => new Promise((_resolve, reject) => {
+    rejectOperation = reject;
+    events.push('started');
+  }), { timeoutMs: 20 }), 'fakeAction', { do: 'fakeAction' }, {
+    capabilities: { clock: {} },
+    onAbort: async () => {
+      events.push('owned browser closed');
+      rejectOperation(new Error('connection closed'));
+    },
+  });
+  const result = await run;
+  events.push('returned');
+  assert.equal(result.code, 'deadline_exceeded');
+  assert.deepEqual(events, ['started', 'owned browser closed', 'returned']);
+});
+
+
+for (const teardown of ['rejects', 'hangs'] as const) {
+  test(`failed browser teardown ${teardown} returns structured evidence within cleanup grace`, { timeout: 1000 }, async () => {
+    let stopped = false;
+    const result = await executeAction(registry(() => new Promise(() => {}), { timeoutMs: 10 }),
+      'fakeAction', { do: 'fakeAction' }, {
+        capabilities: { clock: {} },
+        onAbort: async () => {
+          stopped = true;
+          if (teardown === 'rejects') throw new Error('browser close failed');
+          await new Promise(() => {});
+        },
+      }, { setTimer: (callback, ms) => setTimeout(callback, ms === 5000 ? 20 : ms) });
+    assert.equal(stopped, true);
+    assert.equal(result.status, 'harness_failure');
+    assert.equal(result.code, 'cancellation_cleanup_failed');
+    assert.equal(result.retryable, false);
+  });
+}

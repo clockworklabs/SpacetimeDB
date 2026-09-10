@@ -333,6 +333,7 @@ let spec!: MutationSpec;
 const gradeReports: MutationGradeReceipt[] = [];
 let priorMutationControl: { path: string; sha256: string } | null = null;
 let baselineBundleEvidence: { path: string; sha256: string } | null = null;
+let currentControlArtifact: (() => Record<string, unknown>) | null = null;
 
 function sha256(value: string | Buffer): string {
   return createHash('sha256').update(value).digest('hex');
@@ -381,6 +382,12 @@ function resumableEvidence(path: string | undefined, identity: MutationCheckpoin
   return { results, baselines };
 }
 
+export function mutationHarnessFailureArtifact(current: Record<string, unknown>, reason: string,
+  completedAt: string): Record<string, unknown> {
+  return { ...current, completedAt, ok: false,
+    outcome: { kind: 'harness_failure', phase: 'mutation-control', reason } };
+}
+
 function recordHarnessFailure(error: unknown): void {
   const generatedAt = new Date().toISOString();
   const id = args.mutationAttemptId;
@@ -413,7 +420,8 @@ function recordHarnessFailure(error: unknown): void {
   };
   try {
     const outputPath = artifactPath(id);
-    writeRunJson(outputPath, artifact);
+    writeRunJson(outputPath, mutationHarnessFailureArtifact(
+      currentControlArtifact?.() ?? artifact, mutationFailureMessage(error), generatedAt));
     console.error(
       `mutation harness failure: ${mutationFailureMessage(error)}\nartifact: ${outputPath}`,
     );
@@ -594,6 +602,8 @@ async function main(): Promise<void> {
         updatedAt: new Date().toISOString() },
     };
   };
+  currentControlArtifact = () => createControlArtifact('incomplete');
+
   const persist = (status: 'running' | 'incomplete' | 'complete', reason: string | null = null) => {
     assertAppSourceIdentity(args.app, spec.fixtureSha256,
       'mutation fixture before checkpoint');

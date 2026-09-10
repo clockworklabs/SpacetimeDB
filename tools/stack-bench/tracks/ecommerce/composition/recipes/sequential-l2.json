@@ -261,6 +261,7 @@
       ],
       "includeCheckGroups": [
         "warehouse-transfer-corrected",
+        "warehouse-transfer-overdraw",
         "warehouse-transfer-independent",
         "operational-views-low-stock",
         "operational-views-core",

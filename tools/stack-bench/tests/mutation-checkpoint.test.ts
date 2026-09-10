@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { mutationHarnessFailureArtifact } from '../grader/mutation-test.js';
 
 import { reusableMutationEvidence } from '../src/evidence/mutation-checkpoint.js';
 import type { MutationCheckpointEvidence, MutationCheckpointIdentity }
@@ -69,4 +70,20 @@ test('mutation checkpoints reject duplicate scenario groups', () => {
   const current = identity();
   current.groups.push({ ...current.groups[0]! });
   assert.throws(() => reusableMutationEvidence(evidence(), current), /duplicates scenario first\.json/);
+});
+
+
+test('a later grader failure preserves completed mutation evidence without claiming success', () => {
+  const current = { ...evidence(), ok: true,
+    summary: { caught: 2, completed: 2, total: 3, remaining: 1 },
+    gradeReports: [{ mutationId: 'm3', status: 'threw' }] };
+  const failed = mutationHarnessFailureArtifact(current, 'grader timed out', '2026-09-10T14:00:00Z');
+  assert.deepEqual(failed.results, current.results);
+  assert.deepEqual(failed.baseline, current.baseline);
+  assert.deepEqual(failed.checkpoint, current.checkpoint);
+  assert.deepEqual(failed.summary, current.summary);
+  assert.deepEqual(failed.gradeReports, current.gradeReports);
+  assert.equal(failed.ok, false);
+  assert.deepEqual(failed.outcome, { kind: 'harness_failure', phase: 'mutation-control', reason: 'grader timed out' });
+  assert.equal(current.ok, true);
 });
