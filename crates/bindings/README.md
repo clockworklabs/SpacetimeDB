@@ -38,7 +38,7 @@
 └───────────────────────┘                └───────────────────────┘
 ```
 
-Rust modules are written with the the Rust Module Library (this crate). They are built using [cargo](https://doc.rust-lang.org/cargo/) and deployed using the [`spacetime` CLI tool](https://spacetimedb.com/install). Rust modules can import any Rust [crate](https://crates.io/) that supports being compiled to WebAssembly.
+Rust modules are written with the Rust Module Library (this crate). They are built using [cargo](https://doc.rust-lang.org/cargo/) and deployed using the [`spacetime` CLI tool](https://spacetimedb.com/install). Rust modules can import any Rust [crate](https://crates.io/) that supports being compiled to WebAssembly.
 
 (Note: Rust can also be used to write **clients** of SpacetimeDB databases, but this requires using a different library, the SpacetimeDB Rust Client SDK. See the documentation on [clients] for more information.)
 
@@ -127,12 +127,12 @@ pub fn init(_ctx: &ReducerContext) {
 
 #[spacetimedb::reducer(client_connected)]
 pub fn identity_connected(_ctx: &ReducerContext) {
-    // Called everytime a new client connects
+    // Called every time a new client connects
 }
 
 #[spacetimedb::reducer(client_disconnected)]
 pub fn identity_disconnected(_ctx: &ReducerContext) {
-    // Called everytime a client disconnects
+    // Called every time a client disconnects
 }
 
 #[spacetimedb::reducer]
