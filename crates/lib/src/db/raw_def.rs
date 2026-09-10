@@ -8,6 +8,8 @@
 //! The `spacetimedb_schema` crate will in the future perform validation and normalization of these `Raw` types to a canonical form,
 //! which will be used everywhere.
 
+mod sections;
+
 pub mod v8;
 
 // for backwards-compatibility

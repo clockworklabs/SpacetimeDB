@@ -43,6 +43,7 @@ hex.workspace = true
 serde = { workspace = true, optional = true }
 blake3.workspace = true
 enum-map = { workspace = true, optional = true }
+paste.workspace = true
 
 # For the 'proptest' feature.
 proptest = { workspace = true, optional = true }
