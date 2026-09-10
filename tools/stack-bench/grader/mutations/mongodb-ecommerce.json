@@ -6,6 +6,21 @@
   "note": "Mutation definitions for the MongoDB ecommerce reference.",
   "mutations": [
     {
+      "id": "shipping-counts-sale-twice",
+      "scenario": "tracks/ecommerce/scenarios/progression-shipping-accounting.json",
+      "targets": [
+        "ecommerce.inventory-operations.shipping-accounting.202e"
+      ],
+      "desc": "Shipping succeeds but doubles the completed sale value in authoritative revenue.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  order.status = \"shipped\";\n  await order.save();",
+          "replace": "  order.status = \"shipped\";\n  for (const line of order.items) line.price *= 2;\n  await order.save();"
+        }
+      ]
+    },
+    {
       "id": "signup-does-not-expose-created-account",
       "scenario": "tracks/ecommerce/scenarios/01-account-create.json",
       "targets": [

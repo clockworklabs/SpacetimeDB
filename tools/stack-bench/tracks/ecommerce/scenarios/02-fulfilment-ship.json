@@ -24,7 +24,7 @@
           "steps": [
             { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" } },
             { "do": "click", "actor": "customer", "testid": "orders-toggle", "unlessVisible": "order-item" },
-            { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "contains": "ending", "within": 10000 },
+            { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "value": "pending", "within": 10000 },
             { "do": "reload", "actor": "staff", "settleMs": 2000 },
             { "do": "ensureSignedIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true, "readyTestid": "current-user" },
             { "do": "click", "actor": "staff", "testid": "staff-link", "ifAvailable": true },
@@ -37,7 +37,7 @@
             { "do": "reload", "actor": "customer", "settleMs": 2000 },
             { "do": "ensureSignedIn", "actor": "customer", "name": "fq-ship", "readyTestid": "current-user" },
             { "do": "click", "actor": "customer", "testid": "orders-toggle", "unlessVisible": "order-item" },
-            { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "contains": "hipped", "within": 10000 }
+            { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "value": "shipped", "within": 10000 }
           ]
         }
       ]

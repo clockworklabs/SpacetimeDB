@@ -104,6 +104,27 @@ test('stock observations compare authoritative quantities and cannot use a missi
   assert.equal((await run({ do: 'dbExpectStock', item: 'Keyboard', equals: 18 }, disabled)).status, 'inconclusive');
 });
 
+test('cancellation probes reject a refund to the wrong warehouse even when total stock is restored', async () => {
+  const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/02-self-contained.json');
+  const feature = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source })
+    .features.find(feature => feature.id === 202)!;
+  for (const criterion of feature.criteria) {
+    const stock = new Map([['East', 50], ['West', 50]]);
+    const capabilities = { 'browser-observation': { recorded: new Map<string, number>() },
+      'database-read': { getStock: async (input: { item: string; warehouse?: string }) => ({
+        backend: 'postgres', item: input.item,
+        quantity: input.warehouse ? stock.get(input.warehouse)! : [...stock.values()].reduce((a, b) => a + b, 0),
+      }) } };
+    const records = criterion.steps.filter(step => step.do === 'dbRecordStock');
+    const checks = criterion.steps.filter(step => step.do === 'dbExpectStock' && step.plus === 0);
+    for (const step of records) assert.equal((await run(step, capabilities)).status, 'passed');
+    for (const step of checks) assert.equal((await run(step, capabilities)).status, 'passed');
+    stock.set('East', 49); stock.set('West', 51);
+    const results = await Promise.all(checks.map(step => run(step, capabilities)));
+    assert.equal(results.filter(result => result.status === 'failed').length, 2);
+  }
+});
+
 test('optional checkout diagnostic has fresh-account cohorts and cannot pass by rejecting all work', () => {
   const path = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/diagnostic-checkout-contention.json');
   const scenario = compileScenarioDefinition(JSON.parse(readFileSync(path, 'utf8')), { source: path });

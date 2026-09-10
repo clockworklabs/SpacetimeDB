@@ -75,7 +75,11 @@
           "statedBy": "Pending reservations survive a backend restart.",
           "steps": [
             { "do": "reload", "actor": "watcher", "settleMs": 2000 },
-            { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Desk Lamp" }, "relativeTo": "before", "plus": 0, "within": 85000 }
+            { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Desk Lamp" }, "relativeTo": "before", "plus": 0, "within": 85000 },
+            { "do": "reload", "actor": "customer", "settleMs": 1000 },
+            { "do": "ensureSignedIn", "actor": "customer", "name": "durable-reservation", "readyTestid": "current-user" },
+            { "do": "click", "actor": "customer", "testid": "cart-toggle", "unlessVisible": "cart-item" },
+            { "do": "expect", "actor": "customer", "testid": "cart-item-expired", "in": { "testid": "cart-item", "contains": "Desk Lamp" }, "within": 10000 }
           ]
         }
       ]
@@ -92,7 +96,7 @@
         { "do": "expect", "actor": "staff", "testid": "queue-item", "contains": "Keyboard", "within": 10000 },
         { "do": "click", "actor": "staff", "testid": "ship-submit", "in": { "testid": "queue-item", "contains": "Keyboard" } },
         { "do": "click", "actor": "customer", "testid": "orders-toggle" },
-        { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "contains": "hipped", "within": 10000 },
+        { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "value": "shipped", "within": 10000 },
         { "do": "wait", "actor": "customer", "ms": 20000 },
         { "do": "restartBackend", "settleMs": 15000 },
         { "do": "reload", "actor": "customer", "settleMs": 3000 },
@@ -107,7 +111,7 @@
           "points": 4,
           "statedBy": "Pending order delivery survives a backend restart.",
           "steps": [
-            { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "contains": "elivered", "within": 65000 }
+            { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "value": "delivered", "within": 65000 }
           ]
         }
       ]

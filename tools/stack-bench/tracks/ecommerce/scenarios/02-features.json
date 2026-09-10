@@ -138,7 +138,7 @@
                 "testid": "order-item",
                 "contains": "Desk Lamp"
               },
-              "contains": "hipped",
+              "value": "shipped",
               "within": 10000
             }
           ],
@@ -243,7 +243,7 @@
                 "testid": "order-item",
                 "contains": "Webcam"
               },
-              "notContains": "hipped"
+              "value": "pending"
             }
           ]
         }
@@ -564,7 +564,7 @@
                 "testid": "order-item",
                 "contains": "Coffee Grinder"
               },
-              "contains": "ancel",
+              "value": "cancelled",
               "within": 8000
             }
           ],

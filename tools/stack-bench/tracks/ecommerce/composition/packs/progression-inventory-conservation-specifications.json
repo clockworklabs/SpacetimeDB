@@ -19,6 +19,7 @@
     "contracts": []
   },
   "checks": [
+    { "id": "shipping-accounting", "stableId": "shipping-accounting", "source": "scenarios/progression-shipping-accounting.json", "feature": 202, "criteria": ["202e"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.progression.fulfilment-queue", "ecommerce.feature.purchasing", "ecommerce.feature.warehouse-admin"] },
     { "id": "stock-conservation-directional", "stableId": "stock-conservation", "source": "scenarios/02-strengthened.json", "feature": 202, "criteria": ["202a"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l2.stock-transfers-features"] },
     { "id": "stock-conservation-cancel", "stableId": "stock-conservation", "source": "scenarios/02-self-contained.json", "feature": 202, "criteria": ["202b"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l2.order-cancellation-features"] },
     { "id": "stock-conservation-fresh-client", "stableId": "stock-conservation", "source": "scenarios/02-self-contained.json", "feature": 202, "criteria": ["202c"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l2.order-cancellation-features"] },

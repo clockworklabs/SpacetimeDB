@@ -53,6 +53,11 @@
           "points": 1,
           "statedBy": "Stock alerts are private to the requesting customer.",
           "steps": [
+            {"do":"freshClient","actor":"subscriber"},
+            {"do":"signIn","actor":"subscriber-fresh","name":"stock-subscriber"},
+            {"do":"click","actor":"subscriber-fresh","testid":"notifications-toggle","unlessVisible":"notifications-panel"},
+            {"do":"expect","actor":"subscriber-fresh","testid":"notifications-panel","attribute":"aria-busy","value":"false","within":10000},
+            {"do":"expect","actor":"subscriber-fresh","testid":"stock-alert-delivery","contains":"Air Purifier","within":10000},
             {"do":"freshClient","actor":"other"},
             {"do":"signIn","actor":"other-fresh","name":"stock-other"},
             {"do":"click","actor":"other-fresh","testid":"notifications-toggle","unlessVisible":"notifications-panel"},

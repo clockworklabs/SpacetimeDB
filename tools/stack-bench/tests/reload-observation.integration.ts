@@ -9,6 +9,71 @@ import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { executeAction } from '../src/actions/action-contract.js';
 import { stableElementSelector } from '../src/actions/element-selector.js';
 
+test('reservation restart readback rejects returned stock with a lost cart entry', async () => {
+  const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/03-deferred-durability.json');
+  const feature = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source })
+    .features.find(feature => feature.id === 314)!;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    for (const retained of [true, false]) {
+      const page = await browser.newPage();
+      await page.route('http://reservation.test/', route => route.fulfill({ contentType: 'text/html',
+        body: `<span id="current-user">durable-reservation</span>
+          <div id="item-card">Desk Lamp<span id="item-stock">100</span></div>
+          <button id="cart-toggle">Cart</button><section id="cart" hidden>
+          ${retained ? '<div id="cart-item">Desk Lamp<span id="cart-item-expired">Expired</span></div>' : ''}
+          </section><script>document.querySelector('#cart-toggle').onclick=()=>{document.querySelector('#cart').hidden=false;};</script>` }));
+      await page.goto('http://reservation.test/');
+      const actor = { page, loc: (id: string, options?: { contains?: string; scope?: { testid: string; contains?: string | RegExp } }) => {
+        const root = options?.scope ? page.locator(stableElementSelector(options.scope.testid),
+          { hasText: options.scope.contains }).first() : page;
+        return root.locator(stableElementSelector(id), { hasText: options?.contains }).first();
+      } };
+      const capability = { defaultWithin: 300, recorded: new Map([['before', 100]]),
+        expand: (value: string) => value, scopedUser: (value: string) => value,
+        testId: stableElementSelector, sleep: async () => {} };
+      let failed: string | undefined;
+      for (const step of feature.criteria[0]!.steps) {
+        const input = { ...step, ...(['expect', 'expectNumber'].includes(step.do) ? { within: 300 } : {}),
+          ...('settleMs' in step ? { settleMs: 0 } : {}) };
+        const result = await executeAction(ACTION_REGISTRY, step.do, input,
+          { capabilities: { actors: { get: () => actor }, 'browser-interaction': capability,
+            'browser-observation': capability } });
+        if (result.status !== 'passed') { failed = String(step.testid ?? step.do); break; }
+      }
+      assert.equal(failed, retained ? undefined : 'cart-item-expired');
+      await page.close();
+    }
+  } finally { await browser.close(); }
+});
+
+test('order status probes reject negative labels that contain the expected status', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    const actor = { page, loc: () => page.locator('#order-status') };
+    const capability = { defaultWithin: 300, expand: (value: string) => value,
+      testId: stableElementSelector, sleep: async () => {} };
+    for (const [file, status, misleading] of [
+      ['02-fulfilment-ship.json', 'shipped', 'not shipped'],
+      ['02-order-cancellation-history.json', 'cancelled', 'cancellation failed'],
+      ['03-order-delivery.json', 'delivered', 'not delivered'],
+    ]) {
+      const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios', file!);
+      const definition = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source });
+      const step = definition.features.flatMap(feature => feature.criteria.flatMap(criterion => criterion.steps))
+        .find(step => step.testid === 'order-status' && step.value === status)!;
+      assert(step);
+      for (const text of [status, `  ${status}  `, misleading]) {
+        await page.setContent(`<span id="order-status">${text}</span>`);
+        const result = await executeAction(ACTION_REGISTRY, step.do, { ...step, within: 300 },
+          { capabilities: { actors: { get: () => actor }, 'browser-observation': capability } });
+        assert.equal(result.status, text?.trim() === status ? 'passed' : 'failed', result.summary ?? undefined);
+      }
+    }
+  } finally { await browser.close(); }
+});
+
 test('restock reload observations work on persistent pages and reopened panels without hiding pending work', async () => {
   const browser = await chromium.launch({ headless: true });
   try {

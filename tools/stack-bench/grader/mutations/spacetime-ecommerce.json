@@ -6,6 +6,21 @@
   "note": "Mutation definitions for the SpacetimeDB ecommerce reference.",
   "mutations": [
     {
+      "id": "shipping-counts-sale-twice",
+      "scenario": "tracks/ecommerce/scenarios/progression-shipping-accounting.json",
+      "targets": [
+        "ecommerce.inventory-operations.shipping-accounting.202e"
+      ],
+      "desc": "Shipping succeeds but doubles the completed sale value in authoritative revenue.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  ctx.db.customerOrder.id.update({ ...order, status: 'shipped' });",
+          "replace": "  ctx.db.customerOrder.id.update({ ...order, status: 'shipped' });\n  for (const line of ctx.db.orderItem.orderId.filter(order.id)) {\n    ctx.db.orderItem.id.update({ ...line, unitPrice: line.unitPrice * 2 });\n  }"
+        }
+      ]
+    },
+    {
       "id": "restock-client-snapshot-overwrites-concurrent-purchases",
       "scenario": "tracks/ecommerce/scenarios/01-restock-race.json",
       "targets": [

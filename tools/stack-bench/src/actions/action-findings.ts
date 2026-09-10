@@ -76,7 +76,7 @@ export const FAILED_FINDINGS: Renderers<FailedFindingFields> = {
   'clients-disagree': f => `${names(f.actors)} see different values in ${control(f.control)}`,
   'number-missing': f => `${control(f.control)} shows no number`,
   'number-mismatch': f => `${control(f.control)} reads ${f.observed ?? 'no number'}, `
-    + `expected ${expectation(f.expected)}`,
+    + `expected ${expectation(f.expected)}${f.scopeText ? ` in the entry matching ${quoted(f.scopeText)}` : ''}`,
   'count-mismatch': f => `${f.observed} ${f.control} entries shown, expected ${f.expected}`,
   'order-mismatch': f => f.actors?.length
     ? `${names(f.actors)} see ${control(f.control)} entries in different orders`
@@ -202,7 +202,7 @@ export const findingSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('value-unstable'), fields: controlSchema }),
   z.strictObject({ kind: z.literal('clients-disagree'), fields: z.strictObject({ control: z.string(), actors: z.array(z.string()) }) }),
   z.strictObject({ kind: z.literal('number-missing'), fields: controlSchema }),
-  z.strictObject({ kind: z.literal('number-mismatch'), fields: z.strictObject({ control: z.string(), observed: z.number().nullable(), expected: expectationSchema }) }),
+  z.strictObject({ kind: z.literal('number-mismatch'), fields: z.strictObject({ control: z.string(), observed: z.number().nullable(), expected: expectationSchema, scopeText: observedTextSchema }) }),
   z.strictObject({ kind: z.literal('count-mismatch'), fields: z.strictObject({ control: z.string(), observed: z.number(), expected: z.number() }) }),
   z.strictObject({ kind: z.literal('order-mismatch'), fields: z.strictObject({ control: z.string(), actors: z.array(z.string()).optional() }) }),
   z.strictObject({ kind: z.literal('entries-missing'), fields: z.strictObject({ expected: z.number(), missing: z.number(), duplicated: z.number() }) }),

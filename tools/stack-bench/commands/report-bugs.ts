@@ -103,7 +103,9 @@ function observationContext(evidence: CheckEvidence): string[] {
   const actions = evidence.actions.map(entry => ({ actor: entry.actor,
     evidence: entry.evidence as ActionEvidence }));
   const failureIndex = actions.findLastIndex(entry => entry.evidence.status === 'failed');
-  if (failureIndex < 0) return [];
+  const context: string[] = evidence.phase === 'setup'
+    ? ['Setup stopped before the named behavior was reached.'] : [];
+  if (failureIndex < 0) return context;
   const completed: string[] = [];
   const lifecycle: string[] = [];
   for (const { actor, evidence: action } of actions.slice(0, failureIndex)) {
@@ -125,7 +127,6 @@ function observationContext(evidence: CheckEvidence): string[] {
     const operation = operations[action.action.id];
     if (operation) lifecycle.push(operation);
   }
-  const context: string[] = [];
   if (completed.length) context.push(`Recent completed actions: ${completed.slice(-8).join(' → ')}.`);
   if (lifecycle.length) context.push(`Completed lifecycle actions: ${[...new Set(lifecycle)].join('; ')}.`);
   if (evidence.finding && ['control-missing', 'control-not-ready', 'control-blocked', 'control-unreadable',

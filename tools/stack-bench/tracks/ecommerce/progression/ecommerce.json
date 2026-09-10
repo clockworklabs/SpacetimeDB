@@ -200,6 +200,7 @@
       ],
       "gradingGroups": [
         "ecommerce.progression.fulfilment-queue#fulfilment-ship",
+        "ecommerce.progression.inventory-conservation-specifications#shipping-accounting",
         "ecommerce.progression.fulfilment-queue#fulfilment-warehouse",
         "ecommerce.progression.operations-access-specifications#operator-authorization-direct",
         "ecommerce.spec.access-control#fulfilment-area-boundary",

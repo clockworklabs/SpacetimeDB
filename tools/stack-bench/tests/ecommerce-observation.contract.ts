@@ -8,6 +8,24 @@ import { compileScenarioDefinition } from '../src/composition/definition-compile
 const read = (name: string) => compileScenarioDefinition(JSON.parse(readFileSync(
   join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios', name), 'utf8')));
 
+test('selected privacy checks prove a working positive path without sibling criteria', () => {
+  const alerts = read('progression-stock-alerts.json').features[0]!.criteria.find(c => c.id === '631b')!.steps;
+  const delivered = alerts.findIndex(s => s.testid === 'stock-alert-delivery');
+  const absent = alerts.findIndex(s => s.absent === true);
+  assert(delivered >= 0 && absent > delivered);
+  assert.equal(alerts[delivered]!.actor, 'subscriber-fresh');
+  const promotions = read('progression-promotion-rules.json').features[0]!.criteria.find(c => c.id === '620b')!.steps;
+  const created = promotions.findIndex(s => s.do === 'expect' && s.testid === 'promotion-item' && s.contains === 'ACCESS10');
+  assert(created > promotions.findIndex(s => s.testid === 'promotion-submit'));
+  assert(created > promotions.findIndex(s => s.do === 'reload'));
+  assert(created < promotions.findIndex(s => s.do === 'replayAs'));
+  const roles = read('progression-staff-roles.json').features[0]!.criteria.find(c => c.id === '621b')!.steps;
+  const reload = roles.findIndex(s => s.do === 'reload');
+  const saved = roles.findIndex(s => s.do === 'expect' && s.testid === 'staff-role-select' && s.value === 'staff');
+  assert(reload > roles.findIndex(s => s.testid === 'staff-role-save'));
+  assert(saved > reload && saved < roles.findIndex(s => s.do === 'replayAs'));
+});
+
 test('catalog variants and pagination enter the declared observation surface', () => {
   const variants = read('progression-catalog-management.json').features[0]!.criteria
     .find(criterion => criterion.id === '622b')!;

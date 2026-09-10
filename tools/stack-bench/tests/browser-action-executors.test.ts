@@ -61,6 +61,15 @@ test('the extracted executor registry is exact and every migrated action has bou
 });
 
 test('UI failures retain bounded observations but exclude passwords and unproven missing choices', async () => {
+  for (const sensitive of [false, true]) {
+    const result = await run({ do: 'expectNumber', actor: 'a', testid: 'stock', equals: 99, within: 1,
+      in: { testid: sensitive ? 'secret' : 'item-card', contains: 'Bluetooth Speaker' } },
+    services({ loc: () => ({ waitFor: async () => {}, evaluate: async () => 'DIV',
+      innerText: async () => '100' }) }));
+    assert.equal(result.finding?.kind, 'number-mismatch');
+    if (sensitive) assert.doesNotMatch(result.summary ?? '', /Bluetooth Speaker/);
+    else assert.match(result.summary ?? '', /entry matching "Bluetooth Speaker"/);
+  }
   for (const operation of ['expect', 'expectNumber']) {
     const result = await run({ do: operation, actor: 'a', testid: 'stock',
       ...(operation === 'expect' ? { contains: 'Keyboard' } : {}),

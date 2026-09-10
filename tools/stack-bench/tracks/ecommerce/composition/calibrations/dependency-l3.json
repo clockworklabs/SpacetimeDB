@@ -7,9 +7,9 @@
   "recipe": {
     "path": "../recipes/progression-catalog.json",
     "id": "ecommerce.progression-catalog",
-    "meaningSha256": "9087bf23cc56052046ea90d1d2b18ebb98c80d8b0d6785455e31602433b596b3",
-    "executionSha256": "776ee727c77699d8b5038717af3cbaed342afc4584cba2cd53457ba6e840ee62",
-    "contentSha256": "c04041c14cfc90dfcda88e47256a1ac649810ff72f27e072ee61be67e8201c7a"
+    "meaningSha256": "3957c19f0ad1f4737570d7904ed274264f4d2f44313b80fffeb0c97125674005",
+    "executionSha256": "e28814d2f5130703d0ddf1fb68e60e94e16a21e3af1ced8db40a455b49a3fecf",
+    "contentSha256": "f2b30d4104a4a4337ea17c7c291393cd4d3e6eabb26687479f16a8fcc1f5279b"
   },
   "fixture": {
     "id": "ecommerce.operations",
@@ -39,19 +39,19 @@
     {
       "backend": "mongodb",
       "path": "grader/mutations/mongodb-ecommerce.json",
-      "sha256": "147e9627526a617c1be06256d1bfecd85c86eaf5c7caed09e3614fa3280f4c6a",
+      "sha256": "4d8dc847f4fce53e5b3c9151348339e02c4ec55ef48059cf8a64c68c82d34e3d",
       "referenceId": "ecommerce-reference-mongodb"
     },
     {
       "backend": "postgres",
       "path": "grader/mutations/postgres-ecommerce.json",
-      "sha256": "730e2ec60c582df8e3df1a802e748f90ec25cc31098934bb7aee711136d2aeb4",
+      "sha256": "672452112ac44f5f55ab3c6500260a183940ef3aceb9662106b2421f0d7a11a5",
       "referenceId": "ecommerce-reference-postgres"
     },
     {
       "backend": "spacetime",
       "path": "grader/mutations/spacetime-ecommerce.json",
-      "sha256": "aa3a5b7036e8821062e84a0e4732b3ba0297a6d90c0312668e5029d3616e299c",
+      "sha256": "1fd61e66bc31d19a5542d092ea37335dc60ee21da9e5270bf001cd93255e8b46",
       "referenceId": "ecommerce-reference-spacetime"
     }
   ],
@@ -66,6 +66,7 @@
     "referenceRepetitions": 1,
     "mutationRepetitions": 1,
     "checks": [
+      "ecommerce.inventory-operations.shipping-accounting.202e",
       "ecommerce.feature.accounts.accounts.1a",
       "ecommerce.feature.accounts.accounts.1b",
       "ecommerce.feature.accounts.accounts.1c",
@@ -188,7 +189,7 @@
     "evidence": [],
     "featureCatalog": {
       "path": "progression/ecommerce.json",
-      "contentSha256": "1b3e6e3b1b1f4193ceeb1fe227afcc77936db08721294b92d5effacd20c929e1",
+      "contentSha256": "ef7323a24d6b8ba4e99cd59fae671e604261f37c98c381a8b048e8f1cd2b2a5c",
       "id": "ecommerce.questlines"
     }
   },

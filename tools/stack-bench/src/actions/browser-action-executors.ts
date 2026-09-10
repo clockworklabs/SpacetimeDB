@@ -164,7 +164,7 @@ async function readValue(loc: Locator): Promise<string> {
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
     return (await loc.inputValue()) || '';
   }
-  return (await loc.innerText()) || '';
+  return ((await loc.innerText()) || '').trim();
 }
 
 export function parseRenderedNumber(text: string | null | undefined): number | null {
@@ -563,7 +563,9 @@ async function expectNumber({ input, capabilities, signal }:
     if (Date.now() > deadline) break;
     await browser.sleep(250, signal);
   }
-  fail('number-mismatch', { control: input.testid, observed: last, expected });
+  fail('number-mismatch', { control: input.testid, observed: last, expected,
+    ...(scope?.contains && !/password|secret|token/i.test(scope.testid)
+      ? { scopeText: findingText(scope.contains) } : {}) });
 }
 
 async function expectOrderMatches({ input, capabilities }:

@@ -10,6 +10,76 @@ import { stableElementSelector } from '../src/actions/element-selector.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
+test('promotion and role access controls reject optimistic writes that disappear on reload', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    for (const kind of ['promotion', 'role'] as const) for (const persists of [true, false]) {
+      const context = await browser.newContext();
+      try {
+        let saved = kind === 'role' ? 'inventory' : '';
+        let writes = 0;
+        let loads = 0;
+        await context.route('http://controls.test/**', async route => {
+          if (route.request().method() === 'POST') {
+            writes++;
+            if (persists) saved = route.request().postData()!;
+            await route.fulfill({ status: 200, body: '' });
+            return;
+          }
+          loads++;
+          await route.fulfill({ contentType: 'text/html', body: `
+            <form id="signin"><input id="signin-username"><input id="signin-password"><button id="signin-submit">Sign in</button></form>
+            <strong id="current-user" hidden></strong>
+            <button id="admin-link">Admin</button><button id="staff-link">Staff</button><button id="promotions-link">Promotions</button>
+            <input id="promotion-code"><input id="promotion-discount"><input id="promotion-start"><input id="promotion-end"><input id="promotion-limit">
+            <button id="promotion-submit">Save promotion</button><section id="promotions">${kind === 'promotion' && saved ? `<div data-role="promotion-item">${saved}</div>` : ''}</section>
+            <div data-role="staff-role-account-staff"><select id="staff-role-select"><option>inventory</option><option>staff</option></select><button id="staff-role-save">Save role</button></div>
+            <script>
+              document.querySelector('#staff-role-select').value = ${JSON.stringify(kind === 'role' ? saved : 'inventory')};
+              document.querySelector('#signin').onsubmit = event => { event.preventDefault(); const current = document.querySelector('#current-user'); current.textContent = document.querySelector('#signin-username').value; current.hidden = false; };
+              document.querySelector('#promotion-submit').onclick = async () => {
+                const code = document.querySelector('#promotion-code').value;
+                document.querySelector('#promotions').innerHTML = '<div data-role="promotion-item">' + code + '</div>';
+                await fetch('/write', { method: 'POST', body: code });
+              };
+              document.querySelector('#staff-role-save').onclick = async () => { await fetch('/write', { method: 'POST', body: document.querySelector('#staff-role-select').value }); };
+            </script>` });
+        });
+        const page = await context.newPage();
+        await page.goto('http://controls.test/');
+        const actor = { name: kind === 'role' ? 'replayAdmin' : 'staff', page,
+          loc: (id: string, options?: { contains?: string; scope?: { testid: string; contains?: string | RegExp } }) => {
+            const root = options?.scope ? page.locator(stableElementSelector(options.scope.testid), { hasText: options.scope.contains }).first() : page;
+            return root.locator(stableElementSelector(id), { hasText: options?.contains }).first();
+          } };
+        const capability = { defaultWithin: 300, recorded: new Map<string, number>(),
+          expand: (value: string) => value, scopedUser: (value: string) => value,
+          testId: stableElementSelector, sleep: async () => {} };
+        const capabilities = { actors: { get: () => actor },
+          'browser-interaction': capability, 'browser-observation': capability };
+        const scenario = compileScenarioDefinition(JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+          'tracks/ecommerce/scenarios', kind === 'role' ? 'progression-staff-roles.json' : 'progression-promotion-rules.json'), 'utf8')));
+        const criterion = scenario.features[0]!.criteria.find(c => c.id === (kind === 'role' ? '621b' : '620b'))!;
+        const steps = criterion.steps.slice(0, criterion.steps.findIndex(step => step.actor !== actor.name));
+        let failure: string | null = null;
+        for (const step of steps) {
+          if (step.do === 'reload') {
+            await page.waitForFunction(() => performance.getEntriesByType('resource').some(entry => entry.name.endsWith('/write')));
+            assert.equal(writes, 1);
+            assert.equal(kind === 'role' ? await page.locator('#staff-role-select').inputValue()
+              : await page.locator('[data-role="promotion-item"]').innerText(), kind === 'role' ? 'staff' : 'ACCESS10');
+          }
+          const input = ['expect', 'click'].includes(step.do) ? { ...step, within: 300 } : step;
+          const result = await executeAction(ACTION_REGISTRY, step.do, input, { capabilities });
+          if (result.status !== 'passed') { assert.equal(result.status, 'failed', result.summary ?? undefined); failure = String(step.testid); break; }
+        }
+        assert.equal(loads, 2, 'the control must read the server state after a real reload');
+        assert.equal(failure, persists ? null : kind === 'role' ? 'staff-role-select' : 'promotion-item');
+      } finally { await context.close(); }
+    }
+  } finally { await browser.close(); }
+});
+
 test('stock alerts accept fresh load-on-open views and reject missing, premature, late duplicate, or private delivery', async () => {
   const browser = await chromium.launch({ headless: true });
   try {
@@ -27,6 +97,7 @@ test('stock alerts accept fresh load-on-open views and reject missing, premature
       ['631a', 'pending', 'page', 'expectElementCount/before-restock'],
       ['631a', 'duplicate', 'page', 'expectElementCount/after-restock'],
       ['631b', 'private', 'page', null],
+      ['631b', 'pending', 'page', 'expect/before-restock'],
       ['631b', 'leak', 'page', 'expect/before-restock'],
     ] as const) {
       const contexts: BrowserContext[] = [];

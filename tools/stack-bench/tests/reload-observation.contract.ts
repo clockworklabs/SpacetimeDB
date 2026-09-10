@@ -10,6 +10,17 @@ function scenario(name: string) {
   return compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source });
 }
 
+test('reservation restart evidence retains the expired cart line after stock returns', () => {
+  const feature = scenario('03-deferred-durability.json').features.find(feature => feature.id === 314)!;
+  assert(feature.setup.some(step => step.do === 'restartBackend'));
+  const steps = feature.criteria.find(criterion => criterion.id === '314a')!.steps;
+  const restored = steps.findIndex(step => step.do === 'expectNumber' && step.testid === 'item-stock' && step.plus === 0);
+  const expired = steps.findIndex(step => step.do === 'expect' && step.testid === 'cart-item-expired');
+  assert(restored >= 0 && expired > restored);
+  assert(steps.slice(restored + 1, expired).some(step => step.do === 'reload' && step.actor === 'customer'));
+  assert.deepEqual(steps[expired]!.in, { testid: 'cart-item', contains: 'Desk Lamp' });
+});
+
 test('session-survival criteria observe the signed-in user without restoring the session', () => {
   // These IDs explicitly claim session survival. Do not infer that claim from wording
   // or apply this rule to independent data-retention checks that permit re-authentication.
@@ -153,6 +164,12 @@ test('L2 direct authorization refusals follow accepted routes and fresh observat
 });
 
 test('cancellation conservation proves the sale before its reversal', () => {
+  const core = scenario('02-order-cancellation-core.json').features[0]!.criteria[0]!;
+  const cancelCore = core.steps.findIndex(step => step.testid === 'cancel-order');
+  for (const [control, change] of [['item-stock', -1], ['admin-revenue', 64]] as const) {
+    assert(core.steps.slice(0, cancelCore).some(step => step.do === 'expectNumber'
+      && step.testid === control && step.plus === change));
+  }
   for (const [file, ids] of [['02-features.json', ['3a']], ['02-self-contained.json', ['202b', '202c']]] as const) {
     for (const id of ids) {
       const check = scenario(file).features.flatMap(feature => feature.criteria).find(criterion => criterion.id === id)!;
@@ -160,6 +177,12 @@ test('cancellation conservation proves the sale before its reversal', () => {
       assert(check.steps.slice(0, cancel).some(step => step.do === 'dbExpectStock' && step.plus === -1));
       assert(check.steps.slice(0, cancel).some(step => step.do === 'expect' && step.testid === 'order-item' && step.count === 1));
       assert(check.steps.slice(cancel + 1).some(step => step.do === 'dbExpectStock' && step.plus === 0));
+      if (file === '02-self-contained.json') for (const warehouse of ['East', 'West']) {
+        const recorded = check.steps.slice(0, cancel).find(step => step.do === 'dbRecordStock' && step.warehouse === warehouse);
+        assert(recorded);
+        assert(check.steps.slice(cancel + 1).some(step => step.do === 'dbExpectStock'
+          && step.warehouse === warehouse && step.relativeTo === recorded.as && step.plus === 0));
+      }
     }
   }
 });

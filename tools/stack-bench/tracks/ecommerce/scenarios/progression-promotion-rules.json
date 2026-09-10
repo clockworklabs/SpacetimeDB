@@ -127,6 +127,18 @@
           "points": 2,
           "statedBy": "Customers cannot manage promotion rules.",
           "steps": [
+            { "do": "click", "actor": "staff", "testid": "promotions-link" },
+            { "do": "fill", "actor": "staff", "testid": "promotion-code", "text": "ACCESS10" },
+            { "do": "fill", "actor": "staff", "testid": "promotion-discount", "text": "10" },
+            { "do": "fill", "actor": "staff", "testid": "promotion-start", "text": "2099-01-01" },
+            { "do": "fill", "actor": "staff", "testid": "promotion-end", "text": "2099-12-31" },
+            { "do": "fill", "actor": "staff", "testid": "promotion-limit", "text": "2" },
+            { "do": "click", "actor": "staff", "testid": "promotion-submit" },
+            { "do": "reload", "actor": "staff", "settleMs": 1000 },
+            { "do": "ensureSignedIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true, "readyTestid": "current-user" },
+            { "do": "click", "actor": "staff", "testid": "staff-link", "ifAvailable": true },
+            { "do": "click", "actor": "staff", "testid": "promotions-link" },
+            { "do": "expect", "actor": "staff", "testid": "promotion-item", "contains": "ACCESS10", "within": 10000 },
             {
               "do": "expect",
               "actor": "customer",
@@ -137,9 +149,9 @@
               "do": "replayAs",
               "actor": "customer",
               "from": "staff",
-              "match": "SAVE10",
+              "match": "ACCESS10",
               "swap": {
-                "find": "SAVE10",
+                "find": "ACCESS10",
                 "with": "HACK10"
               },
               "namedAction": {
@@ -147,7 +159,7 @@
                 "path": "/api/promotions",
                 "reducer": "create_promotion",
                 "args": [
-                  "SAVE10",
+                  "ACCESS10",
                   10,
                   4070908800000000,
                   4102444740000000,

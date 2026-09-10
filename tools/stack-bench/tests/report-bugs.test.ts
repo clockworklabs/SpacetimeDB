@@ -282,6 +282,7 @@ test('setup feedback reports the failed control without claiming the later guara
     assert.equal(reported.status, 0, reported.stderr);
     const report = readFileSync(join(root, 'BUG_REPORT.md'), 'utf8');
     assert.match(report, /item-stock control did not appear/);
+    assert.match(report, /Setup stopped before the named behavior was reached/);
     assert.doesNotMatch(report, /Expected:|unauthenticated purchase/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
@@ -294,7 +295,7 @@ test('copied setup failures use original observations once and retain distinct s
     const setup = createCheckEvidence({ status: 'failed', code: 'application_failure',
       phase: 'setup', actor: 'buyer', startedAtMs: 1, completedAtMs: 2,
       finding: finding('number-mismatch', { control: 'item-stock', observed: 100,
-        expected: { equals: 99 } }) });
+        expected: { equals: 99 }, scopeText: 'Bluetooth Speaker' }) });
     for (const criterion of ['authentication', 'ownership']) {
       writeGrade(root, 'failed', 'later behavior did not run', { criterion,
         file: `grading-${criterion}.json`, evidence: copied, setupEvidence: setup,
@@ -313,6 +314,8 @@ test('copied setup failures use original observations once and retain distinct s
     assert.equal((report.match(/### Bug /g) ?? []).length, 2);
     assert.equal((report.match(/item-stock control reads 100, expected exactly 99/g) ?? []).length, 1);
     assert.match(report, /orders-toggle control did not appear/);
+    assert.match(report, /entry matching "Bluetooth Speaker"/);
+    assert.equal((report.match(/Setup stopped before the named behavior was reached/g) ?? []).length, 2);
     assert.equal((report.match(/POST \/api\/buy returned 500/g) ?? []).length, 1);
     assert.doesNotMatch(report, /unauthorized purchases|orders must survive|Expected:\*\*/);
   } finally { rmSync(root, { recursive: true, force: true }); }

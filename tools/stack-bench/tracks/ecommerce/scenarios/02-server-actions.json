@@ -36,13 +36,13 @@
             {"do":"reload","actor":"customer","settleMs":2000},
             {"do":"ensureSignedIn","actor":"customer","name":"direct-notstaff","readyTestid":"current-user"},
             {"do":"click","actor":"customer","testid":"orders-toggle", "unlessVisible": "order-item" },
-            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Coffee Grinder"},"contains":"hipped","within":10000},
+            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Coffee Grinder"},"value":"shipped","within":10000},
             {"do":"callAction","actor":"customer","action":"ship","namedAction":{"id":"ship","path":"/api/fulfilment/ship","reducer":"ship_order","args":[0],"params":[{"name":"orderId","in":"body","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Laptop Stand","attribute":"data-ship-input"},"settleMs":2000},
             {"do":"expectActionOutcome","actor":"customer","outcome":"refused","routeProvenBy":"staff"},
             {"do":"reload","actor":"customer","settleMs":2000},
             {"do":"ensureSignedIn","actor":"customer","name":"direct-notstaff","readyTestid":"current-user"},
             {"do":"click","actor":"customer","testid":"orders-toggle", "unlessVisible": "order-item" },
-            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Laptop Stand"},"notContains":"hipped"}
+            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Laptop Stand"},"value":"pending"}
           ]
         }
       ]
@@ -136,7 +136,7 @@
               "settleMs": 2000
             },
             { "do": "expectActionOutcome", "actor": "other", "outcome": "refused", "routeProvenBy": "owner" },
-            { "do": "expect", "actor": "owner", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "notContains": "ancelled" }
+            { "do": "expect", "actor": "owner", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "value": "pending" }
           ]
         }
       ]

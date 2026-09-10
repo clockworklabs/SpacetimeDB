@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 3,
+  "name": "Shipping accounting",
+  "features": [
+    {
+      "id": 202,
+      "name": "Shipping preserves completed purchase accounting",
+      "actors": [
+        "customer",
+        "admin",
+        "staff"
+      ],
+      "setup": [
+        {"do":"signUp","actor":"customer","name":"shipping-accounting"},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"signIn","actor":"staff","name":"staff","password":"stackbench-staff-2026","exact":true},
+        {"do":"click","actor":"staff","testid":"staff-link"}
+      ],
+      "criteria": [
+        {
+          "id": "202e",
+          "category": "production",
+          "desc": "shipping a purchased order does not deduct stock or add revenue again",
+          "points": 2,
+          "statedBy": "Shipping preserves the stock and revenue recorded for the purchase.",
+          "steps": [
+            {"do":"dbRecordStock","item":"Keyboard","as":"stock-before-purchase"},
+            {"do":"recordNumber","actor":"admin","testid":"admin-revenue","as":"revenue-before-purchase"},
+            {"do":"click","actor":"customer","testid":"buy-now","in":{"testid":"item-card","contains":"Keyboard"}},
+            {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
+            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"pending","within":10000},
+            {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before-purchase","plus":-1},
+            {"do":"reload","actor":"admin","settleMs":2000},
+            {"do":"ensureSignedIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true,"readyTestid":"current-user"},
+            {"do":"click","actor":"admin","testid":"admin-link","ifAvailable":true},
+            {"do":"expectNumber","actor":"admin","testid":"admin-revenue","relativeTo":"revenue-before-purchase","plus":89,"within":10000},
+            {"do":"recordNumber","actor":"admin","testid":"admin-revenue","as":"revenue-before-ship"},
+            {"do":"dbRecordStock","item":"Keyboard","warehouse":"East","as":"East-before-ship"},
+            {"do":"dbRecordStock","item":"Keyboard","warehouse":"West","as":"West-before-ship"},
+            {"do":"reload","actor":"staff","settleMs":2000},
+            {"do":"ensureSignedIn","actor":"staff","name":"staff","password":"stackbench-staff-2026","exact":true,"readyTestid":"current-user"},
+            {"do":"click","actor":"staff","testid":"staff-link","ifAvailable":true},
+            {"do":"click","actor":"staff","testid":"ship-submit","in":{"testid":"queue-item","contains":"Keyboard"},"settleMs":2500},
+            {"do":"reload","actor":"customer","settleMs":2000},
+            {"do":"ensureSignedIn","actor":"customer","name":"shipping-accounting","readyTestid":"current-user"},
+            {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
+            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"shipped","within":10000},
+            {"do":"dbExpectStock","item":"Keyboard","warehouse":"East","relativeTo":"East-before-ship","plus":0},
+            {"do":"dbExpectStock","item":"Keyboard","warehouse":"West","relativeTo":"West-before-ship","plus":0},
+            {"do":"reload","actor":"admin","settleMs":2000},
+            {"do":"ensureSignedIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true,"readyTestid":"current-user"},
+            {"do":"click","actor":"admin","testid":"admin-link","ifAvailable":true},
+            {"do":"expectNumber","actor":"admin","testid":"admin-revenue","relativeTo":"revenue-before-ship","plus":0,"within":10000}
+          ]
+        }
+      ]
+    }
+  ]
+}

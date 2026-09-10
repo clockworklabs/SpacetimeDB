@@ -21,7 +21,7 @@
           "steps": [
             { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
             { "do": "click", "actor": "customer", "testid": "orders-toggle", "settleMs": 1500 },
-            { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "contains": "ending", "within": 10000 },
+            { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "value": "pending", "within": 10000 },
             { "do": "expect", "actor": "customer", "testid": "return-item", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "absent": true }
           ]
         }

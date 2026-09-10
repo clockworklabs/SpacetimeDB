@@ -27,6 +27,18 @@ const packs = new Map<string, CompiledPackDefinition>(readdirSync(packRoot)
 const definition = compileProgressionDefinitionFile(
   join(trackRoot, 'progression', 'ecommerce.json'), { trackRoot });
 
+test('shipping accounting is an unprompted production check owned only by fulfilment', () => {
+  const pack = packs.get('ecommerce.progression.inventory-conservation-specifications')!;
+  const check = pack.checks.find(check => check.id === 'shipping-accounting')!;
+  assert.equal(check.role, 'guarantee');
+  const stableKey = `${pack.stableId}.${check.stableId}.202e`;
+  assert.deepEqual(definition.nodes.filter(node => node.gradingChecks.some(check => check.id === stableKey))
+    .map(node => node.id), ['fulfilment-queue']);
+  const criterion = scenarioFeature(check, check.id).feature.criteria.find(criterion => criterion.id === '202e')!;
+  assert.equal(criterion.category, 'production');
+  assert(pack.task.requirements.every(fragment => !fragment.requiresFeatures?.includes('ecommerce.progression.fulfilment-queue')));
+});
+
 function requiredPack(reference: string): CompiledPackDefinition {
   const pack = packs.get(reference);
   if (!pack) throw new Error(`the catalog references missing pack ${reference}`);
