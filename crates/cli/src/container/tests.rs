@@ -413,6 +413,60 @@ async fn registry_import_uses_explicit_anonymous_auth_and_records_selected_diges
     assert_eq!(fs::read(auth).unwrap(), br#"{"auths":{}}"#);
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn registry_credentials_are_private_during_preparation_under_an_existing_readable_base() {
+    use std::os::unix::fs::PermissionsExt;
+    let _serial = TEST_PREPARATIONS.lock().await;
+    let root = crate::container::publish::tests::temporary_directory();
+    let input = root.path().join("image");
+    fixture(&input);
+    let base = root.path().join("existing");
+    fs::create_dir(&base).unwrap();
+    fs::set_permissions(&base, fs::Permissions::from_mode(0o755)).unwrap();
+    let credential = root.path().join("registry.json");
+    const AUTH: &[u8] = br#"{"auths":{"example.invalid":{"auth":"fixture-registry-secret"}}}"#;
+    fs::write(&credential, AUTH).unwrap();
+    fs::set_permissions(&credential, fs::Permissions::from_mode(0o600)).unwrap();
+    struct InspectingRunner {
+        inner: FakeRunner,
+        workspace: Mutex<Option<PathBuf>>,
+    }
+    impl Runner for InspectingRunner {
+        async fn run(&self, invocation: Invocation) -> Result<process::Output> {
+            let workspace = invocation.workspace.path();
+            assert_eq!(fs::metadata(workspace).unwrap().permissions().mode() & 0o777, 0o700);
+            assert_eq!(fs::read(workspace.join("auth/config.json")).unwrap(), AUTH);
+            *self.workspace.lock().unwrap() = Some(workspace.to_path_buf());
+            self.inner.run(invocation).await
+        }
+    }
+    let runner = InspectingRunner {
+        inner: FakeRunner::new(&input),
+        workspace: Mutex::new(None),
+    };
+    let tools = BuildTools {
+        registry_auth_file: Some(credential),
+        ..Default::default()
+    };
+    let prepared = prepare_container(
+        &declaration(json!({"oci_ref":"example.invalid/team/image:fixture"})),
+        root.path(),
+        platform(),
+        &tools,
+        &base,
+        &runner,
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(fs::metadata(&base).unwrap().permissions().mode() & 0o777, 0o755);
+    let workspace = runner.workspace.lock().unwrap().clone().unwrap();
+    assert!(workspace.exists());
+    drop(prepared);
+    assert!(!workspace.exists());
+}
+
 #[test]
 fn archive_rejects_links_and_cancelled_reads() {
     let root = tempfile::tempdir().unwrap();

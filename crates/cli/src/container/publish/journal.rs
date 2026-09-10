@@ -127,6 +127,22 @@ impl Drop for IncompleteDirectory {
     }
 }
 impl Journal {
+    /// Prepare ancestors before local image preparation. Keep the returned
+    /// directory handles alive while preparing or accessing retained inputs.
+    pub(crate) fn prepare_base(base: &Path) -> Result<Vec<File>> {
+        let mut directories = fs::DirBuilder::new();
+        directories.recursive(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            // New ancestors must protect retained environment values even
+            // when the user's umask permits group or other-user writes.
+            directories.mode(0o700);
+        }
+        directories.create(base)?;
+        protected::pin_parents(base)
+    }
+
     pub fn create(
         base: &Path,
         record: Record,
@@ -136,8 +152,7 @@ impl Journal {
         let request = record.request()?;
         let has_image = image.is_some();
         let directory = base.join(request.manifest.current().envelope.operation_id.to_string());
-        fs::create_dir_all(base)?;
-        let _base_parents = protected::pin_parents(base)?;
+        let _base_parents = Self::prepare_base(base)?;
         protected::create_directory(&directory)
             .context("cannot create protected publication directory; resume an existing operation instead")?;
         let mut incomplete = IncompleteDirectory(Some(directory.clone()));

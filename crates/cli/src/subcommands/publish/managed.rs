@@ -306,7 +306,7 @@ async fn try_execute_with_client(
         .get_one::<PathBuf>("publication_state_dir")
         .cloned()
         .unwrap_or_else(|| config_dir.unwrap_or(&cwd).join(".spacetime/publications"));
-    std::fs::create_dir_all(&base)?;
+    let _base_parents = Journal::prepare_base(&base)?;
     let cancel = CancellationToken::new();
     let prepare = prepare_request(
         &client,
@@ -756,13 +756,13 @@ mod tests {
     #[tokio::test]
     async fn container_only_frontend_uploads_verified_closure_with_server_reserved_identity() {
         let fixture = Fixture::new().await;
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::container::publish::tests::temporary_directory();
         let layout = temporary.path().join("layout");
         let selected = crate::container::tests::fixture(&layout);
         let declaration = crate::container::tests::declaration(json!({"oci_ref":"oci:layout"}));
         let command = super::super::cli();
         let schema = super::super::build_publish_schema(&command).unwrap();
-        let state = temporary.path().join("state");
+        let state = temporary.path().join("new/state");
         let args = command
             .try_get_matches_from([
                 "publish",
@@ -791,6 +791,13 @@ mod tests {
         )
         .await
         .unwrap());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for parent in [temporary.path().join("new"), state.clone()] {
+                assert_eq!(std::fs::metadata(parent).unwrap().permissions().mode() & 0o777, 0o700);
+            }
+        }
         {
             let snapshot = fixture.state.lock().unwrap();
             assert_eq!(snapshot.reservations.len(), 1);
@@ -818,10 +825,62 @@ mod tests {
         }
         fixture.close().await;
     }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn writable_publication_parent_is_rejected_before_image_preparation_or_submission() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = Fixture::new().await;
+        let temporary = crate::container::publish::tests::temporary_directory();
+        let state = temporary.path().join("state");
+        std::fs::create_dir(&state).unwrap();
+        std::fs::set_permissions(&state, std::fs::Permissions::from_mode(0o777)).unwrap();
+        let command = super::super::cli();
+        let schema = super::super::build_publish_schema(&command).unwrap();
+        let args = command
+            .try_get_matches_from([
+                "publish",
+                "fixture-name",
+                "--server",
+                fixture.endpoint.as_str(),
+                "--container-platform",
+                "linux/amd64",
+                "--publication-state-dir",
+                state.to_str().unwrap(),
+            ])
+            .unwrap();
+        // If preparation runs, this missing local source would fail first.
+        // No real image helper, registry, or saved configuration is used.
+        let declaration = crate::container::tests::declaration(json!({"oci_ref":"oci:missing-fixture"}));
+        let target = CommandConfig::new(&schema, HashMap::new(), &args)
+            .unwrap()
+            .with_container(Some(declaration));
+        let error = try_execute_with_client(
+            &target,
+            Some(temporary.path()),
+            fixture.client(),
+            Some("fixture-name"),
+            None,
+            ClearMode::Never,
+            YesFlags::all(),
+        )
+        .await
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("untrusted writable ancestor"));
+        assert_eq!(std::fs::metadata(&state).unwrap().permissions().mode() & 0o777, 0o777);
+        assert_eq!(std::fs::read_dir(&state).unwrap().count(), 0);
+        {
+            let state = fixture.state.lock().unwrap();
+            assert!(state.reservations.is_empty());
+            assert!(state.submits.is_empty());
+            assert_eq!(state.begin_count, 0);
+        }
+        fixture.close().await;
+    }
+
     #[tokio::test]
     async fn existing_managed_module_update_keeps_container_and_preflights_without_pro() {
         let fixture = Fixture::new().await;
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::container::publish::tests::temporary_directory();
         let wasm = temporary.path().join("module.wasm");
         std::fs::write(&wasm, deployment::system_empty::empty().bytes.as_ref()).unwrap();
         let prior_request = fixture.record(false, false).request().unwrap();
@@ -888,7 +947,7 @@ mod tests {
     #[tokio::test]
     async fn remove_module_requires_authorized_preflight_before_any_upload_or_submission() {
         let fixture = Fixture::new().await;
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::container::publish::tests::temporary_directory();
         let request = fixture.record(false, false).request().unwrap();
         {
             let mut state = fixture.state.lock().unwrap();
@@ -964,7 +1023,7 @@ mod tests {
     async fn resume_entrypoint_ignores_changed_project_and_reuses_original_bytes() {
         let fixture = Fixture::new().await;
         fixture.state.lock().unwrap().lose_submit_before_commit = true;
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::container::publish::tests::temporary_directory();
         let mut record = fixture.record(false, false);
         let mut request = record.request().unwrap();
         request

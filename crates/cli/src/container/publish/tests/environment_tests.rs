@@ -11,7 +11,7 @@ fn set_environment(record: &mut Record, values: BTreeMap<String, String>) {
 async fn complete_large_environment_is_private_and_exact_after_lost_reply_and_revocation() {
     let fixture = Fixture::new().await;
     fixture.state.lock().unwrap().lose_submit_after_commit = true;
-    let temporary = tempfile::tempdir().unwrap();
+    let temporary = crate::container::publish::tests::temporary_directory();
     let mut record = fixture.record(false, false);
     set_environment(
         &mut record,
@@ -55,7 +55,7 @@ async fn missing_changed_and_malformed_secret_body_never_becomes_empty_or_leaks_
         Some(b"{}".as_slice()),
         Some(br#"{"environment":{"KEY":"secret-body-sentinel", "KEY":17}}"#.as_slice()),
     ] {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::container::publish::tests::temporary_directory();
         let mut record = fixture.record(false, false);
         set_environment(&mut record, BTreeMap::from([("KEY".into(), "original-secret".into())]));
         let retained = journal(temporary.path(), record);
@@ -77,7 +77,7 @@ async fn missing_changed_and_malformed_secret_body_never_becomes_empty_or_leaks_
 #[tokio::test]
 async fn status_must_match_previous_operation_and_the_first_confirmed_epoch() {
     let fixture = Fixture::new().await;
-    let temporary = tempfile::tempdir().unwrap();
+    let temporary = crate::container::publish::tests::temporary_directory();
     let mut retained = journal(temporary.path(), fixture.record(false, false));
     run_now(&fixture.client(), &mut retained).await.unwrap();
     let request = retained.record.request().unwrap();
@@ -98,8 +98,12 @@ async fn status_must_match_previous_operation_and_the_first_confirmed_epoch() {
 async fn protected_storage_rejects_public_modes_symlinks_and_hardlinks() {
     use std::os::unix::fs::{symlink, PermissionsExt};
     let fixture = Fixture::new().await;
-    let temporary = tempfile::tempdir().unwrap();
-    let retained = journal(temporary.path(), fixture.record(false, false));
+    let temporary = crate::container::publish::tests::temporary_directory();
+    let base = temporary.path().join("new/retained");
+    let retained = journal(&base, fixture.record(false, false));
+    for parent in [temporary.path().join("new"), base] {
+        assert_eq!(std::fs::metadata(parent).unwrap().permissions().mode() & 0o777, 0o700);
+    }
     let path = retained.directory().to_owned();
     let body = path.join("submission.json");
     assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o700);
@@ -178,7 +182,7 @@ async fn kept_schema_checks_identity_program_hash_and_bounded_v10_metadata() {
 async fn malformed_server_response_cannot_disclose_echoed_environment_values() {
     let fixture = Fixture::new().await;
     fixture.state.lock().unwrap().malformed_status = true;
-    let temporary = tempfile::tempdir().unwrap();
+    let temporary = crate::container::publish::tests::temporary_directory();
     let mut retained = journal(temporary.path(), fixture.record(false, false));
     let error = run_now(&fixture.client(), &mut retained).await.unwrap_err();
     assert!(!format!("{error:#}").contains("secret-body-sentinel"));
@@ -191,7 +195,7 @@ async fn malformed_server_response_cannot_disclose_echoed_environment_values() {
 async fn untrusted_writable_parent_is_rejected_before_retaining_secrets() {
     use std::os::unix::fs::PermissionsExt;
     let fixture = Fixture::new().await;
-    let temporary = tempfile::tempdir().unwrap();
+    let temporary = crate::container::publish::tests::temporary_directory();
     let base = temporary.path().join("untrusted");
     std::fs::create_dir(&base).unwrap();
     std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o777)).unwrap();

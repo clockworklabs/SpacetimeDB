@@ -156,11 +156,16 @@ pub async fn prepare_container(
     );
     let cancel = cancel.child_token();
     let _cancel = CancelOnDrop(cancel.clone());
-    let workspace = Arc::new(
-        tempfile::Builder::new()
-            .prefix(".spacetime-image-")
-            .tempdir_in(workspace_parent)?,
-    );
+    let mut workspace = tempfile::Builder::new();
+    workspace.prefix(".spacetime-image-");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // Registry credentials and build secrets are copied here before a
+        // publication journal exists, including under an existing public base.
+        workspace.permissions(fs::Permissions::from_mode(0o700));
+    }
+    let workspace = Arc::new(workspace.tempdir_in(workspace_parent)?);
     let base = workspace.path();
     fs::create_dir(base.join("auth"))?;
     let auth_file = base.join("auth/config.json");

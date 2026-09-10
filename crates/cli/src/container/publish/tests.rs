@@ -22,6 +22,22 @@ use std::{
 };
 
 const TOKEN: &str = "Bearer isolated-fixture-credential";
+
+pub(crate) fn temporary_directory() -> tempfile::TempDir {
+    let mut builder = tempfile::Builder::new();
+    builder.prefix("publication-test-");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // The fixture itself must satisfy the production ancestor policy.
+        // tempfile's default directory mode depends on the process umask.
+        builder.permissions(std::fs::Permissions::from_mode(0o700));
+        builder.tempdir_in("/tmp").unwrap()
+    }
+    #[cfg(not(unix))]
+    builder.tempdir().unwrap()
+}
+
 pub(crate) fn empty_module_artifact() -> ModuleArtifact {
     let bytes = system_empty::empty().bytes.as_ref();
     ModuleArtifact {
@@ -400,7 +416,7 @@ async fn lost_append_and_committed_response_resume_without_reupload_or_current_p
         s.lose_append = true;
         s.lose_submit_after_commit = true;
     }
-    let temporary = tempfile::tempdir().unwrap();
+    let temporary = crate::container::publish::tests::temporary_directory();
     let mut journal = journal(temporary.path(), fixture.record(false, false));
     let exact = journal.record.request_json.clone();
     assert!(run_now(&fixture.client(), &mut journal).await.is_err());
@@ -430,7 +446,7 @@ async fn lost_reservation_and_unadmitted_put_replay_exact_request_and_generated_
         s.lose_reservation = true;
         s.lose_submit_before_commit = true;
     }
-    let temporary = tempfile::tempdir().unwrap();
+    let temporary = crate::container::publish::tests::temporary_directory();
     let mut journal = journal(temporary.path(), fixture.record(true, false));
     let exact = journal.record.request_json.clone();
     assert!(run_now(&fixture.client(), &mut journal).await.is_err());
@@ -453,7 +469,7 @@ async fn lost_reservation_and_unadmitted_put_replay_exact_request_and_generated_
 async fn stale_revision_preserves_operation_and_redacts_response_without_fallback() {
     let fixture = Fixture::new().await;
     fixture.state.lock().unwrap().stale = true;
-    let temporary = tempfile::tempdir().unwrap();
+    let temporary = crate::container::publish::tests::temporary_directory();
     let mut journal = journal(temporary.path(), fixture.record(false, false));
     let exact = journal.record.request_json.clone();
     let error = run_now(&fixture.client(), &mut journal).await.unwrap_err();
@@ -472,7 +488,7 @@ async fn mismatched_reservation_or_upload_receipt_never_reaches_admission() {
             s.wrong_reservation = reservation;
             s.bad_receipt = !reservation;
         }
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::container::publish::tests::temporary_directory();
         let mut journal = journal(temporary.path(), fixture.record(reservation, false));
         assert!(run_now(&fixture.client(), &mut journal).await.is_err());
         assert!(!journal.record.submitted);
@@ -484,7 +500,7 @@ async fn mismatched_reservation_or_upload_receipt_never_reaches_admission() {
 async fn completion_descriptor_must_match_before_admission() {
     let fixture = Fixture::new().await;
     fixture.state.lock().unwrap().bad_completion = true;
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::container::publish::tests::temporary_directory();
     let mut journal = journal(directory.path(), fixture.record(true, false));
     let error = run_now(&fixture.client(), &mut journal).await.unwrap_err();
     assert!(error.to_string().contains("completion descriptor changed"));
@@ -505,7 +521,7 @@ async fn completion_descriptor_must_match_before_admission() {
 async fn lost_completion_response_observes_the_same_complete_session() {
     let fixture = Fixture::new().await;
     fixture.state.lock().unwrap().lose_completion = true;
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::container::publish::tests::temporary_directory();
     let mut journal = journal(directory.path(), fixture.record(true, false));
     assert!(matches!(
         run_now(&fixture.client(), &mut journal).await.unwrap(),
@@ -531,7 +547,7 @@ async fn wrong_publication_scope_and_denied_upload_are_not_accepted() {
             s.deny_upload = denied;
             s.bad_status = !denied;
         }
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::container::publish::tests::temporary_directory();
         let mut journal = journal(temporary.path(), fixture.record(false, false));
         assert!(run_now(&fixture.client(), &mut journal).await.is_err());
         assert!(journal.record.status.is_none());
@@ -543,7 +559,7 @@ async fn wrong_publication_scope_and_denied_upload_are_not_accepted() {
 async fn naming_failure_reports_active_identity_without_republishing_or_overwriting_later_names() {
     let fixture = Fixture::new().await;
     fixture.state.lock().unwrap().fail_naming = true;
-    let temporary = tempfile::tempdir().unwrap();
+    let temporary = crate::container::publish::tests::temporary_directory();
     let mut journal = journal(temporary.path(), fixture.record(true, true));
     assert!(matches!(
         run_now(&fixture.client(), &mut journal).await.unwrap(),
@@ -582,7 +598,7 @@ async fn redirect_and_cross_origin_never_forward_credentials_without_exact_appro
 #[tokio::test]
 async fn journal_locks_and_reverifies_local_bytes_without_persisting_credentials() {
     let fixture = Fixture::new().await;
-    let temporary = tempfile::tempdir().unwrap();
+    let temporary = crate::container::publish::tests::temporary_directory();
     let mut journal = journal(temporary.path(), fixture.record(false, false));
     let path = journal.directory().to_owned();
     assert!(Journal::open(&path).is_err());
@@ -632,7 +648,7 @@ fn endpoints_and_receipts_are_bounded_and_unambiguous() {
 #[tokio::test]
 async fn incomplete_artifact_retention_never_publishes_a_resume_record_or_mutates_server() {
     let fixture = Fixture::new().await;
-    let temporary = tempfile::tempdir().unwrap();
+    let temporary = crate::container::publish::tests::temporary_directory();
     let base = temporary.path().join("new").join("nested").join("state");
     let record = fixture.record(false, false);
     let id = record.request().unwrap().manifest.current().envelope.operation_id;
@@ -648,7 +664,7 @@ async fn incomplete_artifact_retention_never_publishes_a_resume_record_or_mutate
 async fn revoked_status_access_replays_original_put_without_missing_local_artifacts_or_new_uploads() {
     let fixture = Fixture::new().await;
     fixture.state.lock().unwrap().lose_submit_after_commit = true;
-    let temporary = tempfile::tempdir().unwrap();
+    let temporary = crate::container::publish::tests::temporary_directory();
     let mut journal = journal(temporary.path(), fixture.record(false, false));
     let exact = journal.record.request_json.clone();
     assert!(run_now(&fixture.client(), &mut journal).await.is_err());

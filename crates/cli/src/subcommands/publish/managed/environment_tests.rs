@@ -21,7 +21,7 @@ fn declared_module() -> deployment::system_empty::GeneratedModule {
 #[tokio::test]
 async fn keep_resolves_program_bound_declarations_and_retains_complete_input() {
     let fixture = Fixture::new().await;
-    let temporary = tempfile::tempdir().unwrap();
+    let temporary = crate::container::publish::tests::temporary_directory();
     let module = declared_module();
     let deployment = deployment::DeploymentSpec::V1(deployment::DeploymentSpecV1 {
         module: deployment::ModuleComponent::SystemEmpty(module.descriptor),
@@ -105,7 +105,7 @@ async fn keep_resolves_program_bound_declarations_and_retains_complete_input() {
 #[tokio::test]
 async fn precompiled_exact_bytes_validate_required_invalid_unknown_and_explicit_values_before_mutation() {
     let fixture = Fixture::new().await;
-    let temporary = tempfile::tempdir().unwrap();
+    let temporary = crate::container::publish::tests::temporary_directory();
     let module = declared_module();
     let wasm = temporary.path().join("exact.wasm");
     std::fs::write(&wasm, &module.bytes).unwrap();
@@ -156,7 +156,7 @@ async fn precompiled_exact_bytes_validate_required_invalid_unknown_and_explicit_
 async fn fresh_process_resume_replays_original_values_after_shell_changes() {
     let fixture = Fixture::new().await;
     fixture.state.lock().unwrap().lose_submit_before_commit = true;
-    let temporary = tempfile::tempdir().unwrap();
+    let temporary = crate::container::publish::tests::temporary_directory();
     let mut record = fixture.record(false, false);
     let mut request = record.request().unwrap();
     request.environment.insert(KEY.into(), "first-secret".into());
