@@ -29,7 +29,7 @@
           {"do":"reload","actor":"b","settleMs":1000},
           {"do":"ensureSignedIn","actor":"b","name":"purchase-1-1-b","readyTestid":"current-user"},
           {"do":"click","actor":"b","testid":"orders-toggle"},
-          {"do":"expect","actor":"b","testid":"order-item","contains":"Keyboard","count":0,"within":10000}
+          {"do":"expect","actor":"b","testid":"order-item","contains":"Keyboard","absent":true,"within":10000}
         ]
       }]
     },
@@ -57,7 +57,7 @@
           {"do":"reload","actor":"b","settleMs":1000},
           {"do":"ensureSignedIn","actor":"b","name":"purchase-1-2-b","readyTestid":"current-user"},
           {"do":"click","actor":"b","testid":"orders-toggle"},
-          {"do":"expect","actor":"b","testid":"order-item","contains":"Keyboard","count":0,"within":10000}
+          {"do":"expect","actor":"b","testid":"order-item","contains":"Keyboard","absent":true,"within":10000}
         ]
       }]
     },
@@ -85,7 +85,7 @@
           {"do":"reload","actor":"b","settleMs":1000},
           {"do":"ensureSignedIn","actor":"b","name":"purchase-1-3-b","readyTestid":"current-user"},
           {"do":"click","actor":"b","testid":"orders-toggle"},
-          {"do":"expect","actor":"b","testid":"order-item","contains":"Keyboard","count":0,"within":10000}
+          {"do":"expect","actor":"b","testid":"order-item","contains":"Keyboard","absent":true,"within":10000}
         ]
       }]
     },

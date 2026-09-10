@@ -207,7 +207,7 @@ export function createBugReport(args: ReportBugsArgs): number {
         const actionId = actionEntry && typeof actionEntry.evidence === 'object' && actionEntry.evidence
           ? String((actionEntry.evidence as { action?: { id?: string } }).action?.id ?? '') : undefined;
         const expected = evidence.phase === 'setup' ? null
-          : (criterion.statedBy ?? criterion.desc ?? '').trim() || 'the requested behavior';
+          : (criterion.desc ?? criterion.statedBy ?? '').trim() || 'the requested behavior';
         bugs.push({
           area: sanitiseDiagnostic(feature.name, 120),
           actor: sanitiseDiagnostic(actionEntry?.actor ?? failure.actor, 120) || null,

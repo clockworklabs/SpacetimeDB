@@ -32,6 +32,7 @@ interface WriteGradeOptions {
   url?: string;
   consoleErrors?: string[];
   statedBy?: string;
+  desc?: string;
   evidence?: ReturnType<typeof createCheckEvidence>;
   setupEvidence?: ReturnType<typeof createCheckEvidence>;
 }
@@ -39,7 +40,7 @@ interface WriteGradeOptions {
 function writeGrade(app: string, status: EvidenceStatus, summary: string,
   { grading = join(app, 'stack-bench'), feature = 'Accounts', points = 1,
     criterion = 'owner', stableKey = criterion, file = 'grading-features.json',
-    url = 'http://app', consoleErrors = [], statedBy, evidence: suppliedEvidence,
+    url = 'http://app', consoleErrors = [], statedBy, desc, evidence: suppliedEvidence,
     setupEvidence: suppliedSetup }:
     WriteGradeOptions = {}): void {
   mkdirSync(grading, { recursive: true });
@@ -58,7 +59,7 @@ function writeGrade(app: string, status: EvidenceStatus, summary: string,
       features: [{ id: 1, name: feature, score: status === 'passed' ? points : 0,
         max: status === 'inconclusive' || status === 'harness_failure' ? 0 : points,
         setupEvidence, consoleErrors, criteria: [{ id: criterion, stableKey,
-          desc: `Expected ${criterion}`, ...(statedBy ? { statedBy } : {}), points, evidence }] }],
+          desc: desc ?? statedBy ?? `Expected ${criterion}`, ...(statedBy ? { statedBy } : {}), points, evidence }] }],
     },
   });
 }
@@ -104,7 +105,8 @@ test('repair feedback includes actionable runtime evidence without private artif
     });
     writeGrade(app, 'failed', 'cart total was wrong', {
       feature: 'Cart', criterion: 'total', stableKey: 'private.check.cart.total',
-      statedBy: 'the cart total equals the sum of its lines, with a 5 percent discount',
+      desc: 'the cart total equals the sum of its lines, with a 5 percent discount',
+      statedBy: 'the cart survives a reload',
       url: 'http://app/cart', consoleErrors: ['POST /api/cart returned HTTP 500'], evidence,
     });
 
@@ -115,6 +117,7 @@ test('repair feedback includes actionable runtime evidence without private artif
     assert.match(repair, /Expected:\*\* the cart total equals the sum of its lines/);
     assert.match(repair, /Actual:\*\* the cart-total control reads 9, expected exactly 12/);
     assert.match(repair, /5 percent discount/);
+    assert.doesNotMatch(repair, /the cart survives a reload/);
     assert.match(readFileSync(join(app, 'stack-bench', 'grading-features.json'), 'utf8'), /"equals": 12/);
     assert.doesNotMatch(repair, /cart total was wrong/);
     assert.doesNotMatch(repair, /Application URL|http:\/\//);

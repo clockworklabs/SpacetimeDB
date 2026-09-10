@@ -136,7 +136,8 @@ test('optional purchase cohorts require all affordable requests and stored effec
       assert(criterion.steps.some(step => step.do === 'expectCallOutcomes' && step.accepted === call.requests));
       assert(criterion.steps.some(step => step.do === 'dbExpectStock' && step.plus === -Number(call.requests)));
       const orders = criterion.steps.filter(step => step.do === 'expect' && step.testid === 'order-item');
-      assert.equal(orders.reduce((sum, step) => sum + Number(step.count), 0), call.requests);
+      assert(orders.every(step => step.absent === true || Number(step.count) > 0));
+      assert.equal(orders.reduce((sum, step) => sum + (step.absent ? 0 : Number(step.count)), 0), call.requests);
     }
   }
   assert.deepEqual(widths, [1, 1, 1, 4, 4, 4, 16, 16, 16, 64, 64, 64]);
