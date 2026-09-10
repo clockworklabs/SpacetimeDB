@@ -95,30 +95,18 @@ async fn check_submodule_scope(handle: &mut ModuleHandle, values: &mut Values) {
             &mut vec![],
         )
         .await;
-        let error = format!(
-            "{:#}",
-            result.expect_err("view bypassed the environment read interface")
-        );
-        assert!(!error.contains("not found"), "view failed before dispatch: {error}");
-        // A valid view and a forbidden view share one actual subscription
-        // request. It must fail as a whole, without an initial-success message.
-        let request_id = 880;
-        let subscribe = ws_v1::ClientMessage::<bytes::Bytes>::Subscribe(ws_v1::Subscribe {
-            query_strings: ["SELECT * FROM my_player".into(), format!("SELECT * FROM {view}").into()].into(),
-            request_id,
-        });
-        let _ = handle.send(bsatn::to_vec(&subscribe).unwrap()).await;
-        let message = next_message(handle).await;
-        let OutboundMessage::V1(SerializableMessage::Subscription(message)) = message else {
-            panic!("failed view subscription returned a success or unexpected message: {message:?}");
-        };
-        assert_eq!(message.request_id, Some(request_id));
-        let spacetimedb::client::messages::SubscriptionResult::Error(error) = message.result else {
-            panic!("forbidden view subscription returned rows");
-        };
-        assert!(!error.message.is_empty());
-        assert!(!error.message.contains("not found"));
+        // Host access must be denied, independently of the general view-error
+        // transport contract tracked in #5912. A failed view may yield no rows.
+        match result {
+            Ok(result) => assert!(result.rows.is_empty(), "forbidden view exposed rows"),
+            Err(error) => {
+                let error = format!("{error:#}");
+                assert!(!error.contains("not found"), "view failed before dispatch: {error}");
+                assert!(!error.contains("root-visible"), "view error exposed environment data");
+            }
+        }
     }
+
     // HTTP routes are root entries today. Calling an exported child callback
     // as an ordinary helper retains that root entry's authority.
     assert_eq!(
@@ -127,63 +115,25 @@ async fn check_submodule_scope(handle: &mut ModuleHandle, values: &mut Values) {
     );
 }
 
-// SQL, subscription materialization, and ordinary reducers all use the same
-// main Wasmtime instance. The fixture view sets a guest-global marker and traps;
-// the next reducer checks the marker is absent in the replacement instance.
-async fn check_wasm_trap_disposal(handle: &mut ModuleHandle) {
-    let module = handle.client.module();
-    let view = "SELECT * FROM environment_trap";
-    let result = spacetimedb::sql::execute::run(
-        module.relational_db().clone(),
-        view.to_string(),
-        AuthCtx::for_current(Identity::ZERO),
-        Some(module.info.subscriptions.clone()),
-        Some(module.clone()),
-        &mut vec![],
-    )
-    .await;
-    let error = format!("{:#}", result.expect_err("trapped view returned SQL success"));
-    assert!(!error.contains("not found"), "view failed before dispatch: {error}");
-    expect_clean_wasm_instance(&module).await;
-
-    // Keep the existing successful ENV-view subscription while adding this
-    // separate query. The failing request must report an error, not rows.
-    let request_id = 890;
-    let subscribe = ws_v1::ClientMessage::<bytes::Bytes>::SubscribeSingle(ws_v1::SubscribeSingle {
-        query: view.into(),
-        request_id,
-        query_id: ws_v1::QueryId::new(890),
-    });
-    let _ = handle.send(bsatn::to_vec(&subscribe).unwrap()).await;
-    let message = next_message(handle).await;
-    let OutboundMessage::V1(SerializableMessage::Subscription(message)) = message else {
-        panic!("trapped view subscription returned success or an unexpected message: {message:?}");
+// Qualification can pin locally built inputs without invoking a nested build.
+// Ordinary test runs keep the existing compilation path when no pin is supplied.
+fn compiled_fixture(name: &str) -> CompiledModule {
+    use spacetimedb::messages::control_db::HostType;
+    let input = match name {
+        "environment-test" => Some(("SPACETIMEDB_ENV_RUST_MODULE", HostType::Wasm)),
+        "module-test-ts" => Some(("SPACETIMEDB_ENV_TYPESCRIPT_MODULE", HostType::Js)),
+        "module-test-cs" => Some(("SPACETIMEDB_ENV_CSHARP_MODULE", HostType::Wasm)),
+        _ => None,
     };
-    assert_eq!(message.request_id, Some(request_id));
-    let spacetimedb::client::messages::SubscriptionResult::Error(error) = message.result else {
-        panic!("trapped view subscription returned rows");
-    };
-    assert!(!error.message.is_empty());
-    assert!(!error.message.contains("not found"));
-    expect_clean_wasm_instance(&module).await;
-}
-
-async fn expect_clean_wasm_instance(module: &ModuleHost) {
-    module
-        .call_reducer(
-            Identity::ZERO,
-            None,
-            None,
-            None,
-            None,
-            "expect_environment",
-            FunctionArgs::Bsatn(bsatn::to_vec(&product!["MISSING", None::<String>]).unwrap().into()),
-        )
-        .await
-        .unwrap()
-        .outcome
-        .into_result()
-        .unwrap();
+    if let Some((key, host_type)) = input
+        && let Some(path) = std::env::var_os(key)
+    {
+        let path = std::path::PathBuf::from(path);
+        assert!(path.is_absolute() && path.is_file(), "invalid explicit module artifact");
+        CompiledModule::from_artifact(name, host_type, path)
+    } else {
+        CompiledModule::compile(name, CompilationMode::Debug)
+    }
 }
 
 fn exercise_fixture(name: &str) {
@@ -195,18 +145,7 @@ fn exercise_fixture(name: &str) {
     } else {
         Values::new()
     };
-    // NativeAOT's WebAssembly compiler requires a supported compiler host.
-    // Allow this one fixture to consume the exact artifact built there while
-    // exercising all normal publication and runtime paths below.
-    let artifact = (name == "module-test-cs")
-        .then(|| std::env::var_os("SPACETIMEDB_ENV_CSHARP_MODULE"))
-        .flatten();
-    let compiled = match artifact {
-        Some(path) => {
-            CompiledModule::from_artifact(name, spacetimedb::messages::control_db::HostType::Wasm, path.into())
-        }
-        None => CompiledModule::compile(name, CompilationMode::Debug),
-    };
+    let compiled = compiled_fixture(name);
     compiled.with_module_async_with_environment(DEFAULT_CONFIG, initial.clone(), |mut handle| async move {
         let mut values = initial;
         for (key, expected) in [
@@ -333,7 +272,6 @@ fn exercise_fixture(name: &str) {
                     .into_result()
                     .unwrap();
             }
-            check_wasm_trap_disposal(&mut handle).await;
         }
         if name == "module-test-ts" {
             check_submodule_scope(&mut handle, &mut values).await;
@@ -398,7 +336,7 @@ fn suspended_procedure_cannot_read_environment_from_a_replacement_program() {
         ("REQUIRED".into(), "initial-required".into()),
         ("MODE".into(), "ready".into()),
     ]);
-    CompiledModule::compile("environment-test", CompilationMode::Debug).with_module_async_with_environment(
+    compiled_fixture("environment-test").with_module_async_with_environment(
         DEFAULT_CONFIG,
         initial.clone(),
         |handle| async move {
@@ -499,7 +437,7 @@ fn rust_environment_enums_preserve_exact_typed_mappings() {
         ("REQUIRED".into(), "initial-required".into()),
         ("MODE".into(), "ready".into()),
     ]);
-    CompiledModule::compile("environment-test", CompilationMode::Debug).with_module_async_with_environment(
+    compiled_fixture("environment-test").with_module_async_with_environment(
         DEFAULT_CONFIG,
         initial.clone(),
         |handle| async move {

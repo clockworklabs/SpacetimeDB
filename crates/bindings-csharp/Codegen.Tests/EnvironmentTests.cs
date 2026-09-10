@@ -25,6 +25,8 @@ public static class EnvironmentTests
                     return key switch {
                         "REQUIRED" => Reads.ToString(), "OPTIONAL" => null,
                         "MODE" => "prod", "Get" => "reserved", "class" => "keyword",
+                        "ModuleEnvironment" or "Equals" or "GetHashCode" or "ToString" or
+                        "Finalize" or "GetType" or "MemberwiseClone" => key,
                         _ => throw new System.InvalidOperationException("undeclared environment key")
                     };
                 }
@@ -102,6 +104,50 @@ public static class EnvironmentTests
         var assembly = Assembly.Load(stream.ToArray());
         assembly.GetType("Usage")!.GetMethod("Check")!.Invoke(null, null);
         Assert.Null(assembly.GetType("SpacetimeDB.ModuleEnvironment")!.GetProperty("Get"));
+    }
+
+    [Theory]
+    [InlineData("Get")]
+    [InlineData("ModuleEnvironment")]
+    [InlineData("Equals")]
+    [InlineData("GetHashCode")]
+    [InlineData("ToString")]
+    [InlineData("Finalize")]
+    [InlineData("GetType")]
+    [InlineData("MemberwiseClone")]
+    public static void ReservedAccessorNamesRemainAvailableThroughCheckedGet(string name)
+    {
+        var (compilation, result) = Generate(
+            $$"""
+            [SpacetimeDB.Env] public struct Declarations {
+                public string {{name}};
+            }
+            public static class Usage {
+                public static void Check() {
+                    var env = new SpacetimeDB.ModuleEnvironment();
+                    if (env.Get("{{name}}") != "{{(name == "Get" ? "reserved" : name)}}")
+                        throw new System.Exception("bad reserved accessor");
+                    var declarations = SpacetimeDB.Internal.Module.Declarations;
+                    if (declarations.Count != 1 || declarations[0].Name != "{{name}}")
+                        throw new System.Exception("missing reserved declaration");
+                }
+            }
+            """
+        );
+        Assert.Empty(result.Diagnostics);
+        Assert.DoesNotContain(
+            compilation.GetDiagnostics(),
+            diagnostic =>
+                diagnostic.Severity is DiagnosticSeverity.Warning or DiagnosticSeverity.Error
+                && diagnostic.Location.SourceTree is { } tree
+                && result.GeneratedTrees.Contains(tree)
+        );
+        using var stream = new MemoryStream();
+        var emitted = compilation.Emit(stream);
+        Assert.True(emitted.Success, string.Join("\n", emitted.Diagnostics));
+        var assembly = Assembly.Load(stream.ToArray());
+        assembly.GetType("Usage")!.GetMethod("Check")!.Invoke(null, null);
+        Assert.Null(assembly.GetType("SpacetimeDB.ModuleEnvironment")!.GetProperty(name));
     }
 
     [Theory]

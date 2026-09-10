@@ -175,7 +175,7 @@ impl Host {
         .await
         .map_err(|e| {
             // Parser diagnostics can quote values. Return them only to the caller.
-            log::warn!("SQL request rejected");
+            log::debug!("SQL request rejected");
             (StatusCode::BAD_REQUEST, e.to_string())
         })?;
 
