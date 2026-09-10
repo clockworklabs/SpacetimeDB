@@ -98,7 +98,7 @@ namespace SpacetimeDB
             var callbackResult = result.Status switch
             {
                 ProcedureStatus.Returned(var bytes) =>
-                    ProcedureCallbackResult<T>.Success(BSATNHelpers.Decode<T>(bytes.ToArray())),
+                    ProcedureCallbackResult<T>.Success(BSATNHelpers.Decode<T>(bytes)),
                 ProcedureStatus.InternalError(var error) =>
                     ProcedureCallbackResult<T>.Failure(new Exception($"Procedure failed: {error}")),
                 _ => ProcedureCallbackResult<T>.Failure(new Exception("Unknown procedure status"))
