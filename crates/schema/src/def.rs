@@ -33,10 +33,10 @@ use spacetimedb_data_structures::map::{Equivalent, HashMap};
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v10::{
     ExplicitNames, MethodOrAny, RawColumnDefaultValueV10, RawConstraintDefV10, RawHttpHandlerDefV10,
-    RawHttpRouteDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Sections,
-    RawOutboxDefV10, RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10,
-    RawScopedTypeNameV10, RawSequenceDefV10, RawSubmoduleV10, RawTableCachePolicyV10, RawTableDefV10, RawTypeDefV10,
-    RawViewDefV10, RawViewPrimaryKeyDefV10,
+    RawHttpRouteDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawMigrationDefV10, RawModuleDefV10,
+    RawModuleDefV10Sections, RawOutboxDefV10, RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10,
+    RawScheduleDefV10, RawScopedTypeNameV10, RawSequenceDefV10, RawSubmoduleV10, RawTableCachePolicyV10,
+    RawTableDefV10, RawTypeDefV10, RawViewDefV10, RawViewPrimaryKeyDefV10,
 };
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIndexAlgorithm, RawIndexDefV9,
@@ -187,6 +187,9 @@ pub struct ModuleDef {
 
     /// `None` means undeclared; an explicitly empty declaration is `Some(empty)`.
     environment: Option<EnvironmentSchema>,
+
+    /// Migrations, keyed by the schema hash of the old module.
+    migrations: IndexMap<spacetimedb_lib::Hash, ModuleDef>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -1051,6 +1054,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
             submodules: _,
             accessor_path: _,
             environment: _,
+            migrations: _,
         } = val;
 
         // Extract column defaults from tables before consuming tables
@@ -1113,6 +1117,7 @@ impl From<ModuleDef> for RawModuleDefV10 {
             submodules,
             accessor_path: _,
             environment,
+            migrations,
         } = val;
 
         // Names are already canonicalized. Disable further case conversion so revalidation
@@ -1272,6 +1277,14 @@ impl From<ModuleDef> for RawModuleDefV10 {
 
         let environment = environment.map(|env| env.into_declarations().into_iter().map(|x| x.into()).collect());
 
+        let migrations: Vec<RawMigrationDefV10> = migrations
+            .into_iter()
+            .map(|(schema_hash, dropped)| RawMigrationDefV10 {
+                schema_hash,
+                dropped: dropped.into(),
+            })
+            .collect();
+
         RawModuleDefV10Sections {
             typespace: Some(typespace),
             types: Some(raw_types),
@@ -1292,6 +1305,7 @@ impl From<ModuleDef> for RawModuleDefV10 {
             environment,
             outboxes: Some(outboxes),
             table_cache_policies: Some(cache_policies),
+            migrations: Some(migrations),
         }
         .into()
     }

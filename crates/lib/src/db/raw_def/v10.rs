@@ -109,6 +109,9 @@ define_section_types! {
 
     /// Residency requirements for tables that opt out of the in-memory default.
     TableCachePolicies(Vec<RawTableCachePolicyV10>),
+
+    /// Migrations from old schema versions, keyed by that schema version's hash.
+    Migrations(Vec<RawMigrationDefV10>),
 }
 
 /// The furthest storage tier a table's pages and blobs may reside in.
@@ -1268,4 +1271,12 @@ impl RawTableDefBuilderV10<'_> {
             .position(|x| x.has_name(column.as_ref()))
             .map(|i| ColId(i as u16))
     }
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawMigrationDefV10 {
+    pub schema_hash: Hash,
+    pub dropped: RawModuleDefV10,
 }
