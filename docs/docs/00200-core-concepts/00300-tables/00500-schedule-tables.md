@@ -409,6 +409,8 @@ ctx.db[reminder].insert(Reminder{
 
 For interval schedules, the current implementation calculates the next run from the previous intended run time. Missed interval ticks are skipped, so a delayed scheduled reducer or procedure resumes on the next future interval boundary.
 
+When multiple schedule rows have already expired by the time SpacetimeDB observes them, their dispatch order is not guaranteed to match `scheduled_at` order. If application behavior depends on ordering, store an explicit sequence or timestamp in the scheduled row and handle ordering in your module logic.
+
 ### Row Lifecycle
 
 SpacetimeDB passes the schedule row to the scheduled reducer or procedure as an argument. One-shot schedule rows are removed at different times depending on the kind of function being called:
