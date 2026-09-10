@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { auditFailureSummary, gradeArgv, parseAgentProcessResult }
+import { archiveCandidateGrade, auditFailureSummary, gradeArgv, parseAgentProcessResult }
   from '../commands/bench.js';
 import { finalizeRunTotals }
   from '../src/evidence/benchmark-run.js';
@@ -450,6 +450,39 @@ test('repair regression checks require earlier passes but ignore earlier failure
   ] }] } } };
   assert.equal(repairRegressionDecision(before, kept).action, 'keep');
   assert.equal(repairRegressionDecision(before, regressed).action, 'rollback-regression');
+});
+
+test('grade retries preserve the failed bundle and typed action evidence before replacement', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-grade-retry-'));
+  try {
+    const app = join(root, 'app');
+    const grading = join(app, 'stack-bench');
+    const output = join(root, 'run');
+    mkdirSync(join(grading, 'media'), { recursive: true });
+    const failed = JSON.stringify({ outcome: { kind: 'harness_failure' },
+      source: { sha256: 'same-source' }, totals: { score: 171, max: 173 } });
+    const actions = JSON.stringify({ evidence: { status: 'harness_failure',
+      code: 'deadline_exceeded', phase: 'action', action: 'signIn' } });
+    writeFileSync(join(grading, 'bundle.json'), failed);
+    writeFileSync(join(grading, 'grading-selected-source-093.json'), actions);
+    writeFileSync(join(grading, 'grader-selected-source-093.stderr.log'), 'first failure');
+    writeFileSync(join(grading, 'media', 'video.webm'), 'large media');
+
+    for (const label of ['l3-before-retry', 'l3-repair1-before-retry']) {
+      archiveCandidateGrade(app, output, label);
+    }
+    clearPrivateGradingEvidence(app);
+    mkdirSync(grading, { recursive: true });
+    writeFileSync(join(grading, 'bundle.json'), 'later passing grade');
+
+    for (const label of ['l3-before-retry', 'l3-repair1-before-retry']) {
+      const archive = join(output, 'candidate-grades', label);
+      assert.equal(readFileSync(join(archive, 'bundle.json'), 'utf8'), failed);
+      assert.equal(readFileSync(join(archive, 'grading-selected-source-093.json'), 'utf8'), actions);
+      assert.equal(readFileSync(join(archive, 'grader-selected-source-093.stderr.log'), 'utf8'), 'first failure');
+      assert.equal(existsSync(join(archive, 'media')), false);
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('repair rollback restores the accepted grading evidence without another grade', () => {

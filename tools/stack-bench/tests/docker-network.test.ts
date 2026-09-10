@@ -3,7 +3,7 @@ import test from 'node:test';
 import { tmpdir } from 'node:os';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { createBackendLease, publicBackendLease, validateBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
+import { createBackendLease, publicBackendLease, readBackendLease, validateBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { attemptBrowserLaunchOptions } from '../container/browser-pipe.js';
 
 import { attemptNetworkRules, dockerHostGatewayArguments, dockerHostServiceAddress,
@@ -174,6 +174,43 @@ test('attempt subnets avoid host routes and Docker IPAM, and retry only overlap 
 });
 
 for (const kind of ['backend', 'browser'] as const) {
+  test(`${kind} start failure retains sanitized Docker diagnostics before cleanup`, () => {
+    const root = mkdtempSync(join(tmpdir(), 'container-start-failure-'));
+    try {
+      const lease = createBackendLease({ backend: 'postgres', track: 'chat', runIndex: 0,
+        runId: 'container-start-failure', database: 'container_start_failure' });
+      const id = 'c'.repeat(64);
+      const anchor = 'a'.repeat(64);
+      lease.resources.container = { name: 'anchor', id: anchor, owned: true };
+      lease.resources.network = { name: 'attempt', id: 'b'.repeat(64), namespaceContainerId: anchor,
+        hostAddresses: [], services: [], firewallSha256: null, firewallInstalledAt: null };
+      const path = join(root, 'lease.json');
+      writeBackendLease(path, lease);
+      const commands: string[][] = [];
+      assert.throws(() => createAttemptContainer(path, lease, kind,
+        `sha256:${'d'.repeat(64)}`, kind === 'backend' ? 'attempt' : `container:${anchor}`, [], args => {
+          commands.push(args);
+          if (args[0] === 'create') return id;
+          if (args[0] === 'start') throw Object.assign(new Error('Command failed: docker start'),
+            { status: 1, signal: null, stderr: Buffer.from('password="private value"'), stdout: '' });
+          assert.deepEqual(args, ['inspect', '--format', '{{json .State}}', id]);
+          return JSON.stringify({ Status: 'created', Error: 'OCI start failed: api_key="private key"',
+            ExitCode: 128, OOMKilled: false });
+        }), error => {
+        const message = String(error);
+        assert.match(message, /OCI start failed/);
+        assert.match(message, /"status":1/);
+        assert.match(message, /"exitCode":128/);
+        assert.match(message, /"oomKilled":false/);
+        assert.doesNotMatch(message, /private|value|key/);
+        return true;
+      });
+      assert.equal(commands.filter(args => args[0] === 'start').length, 1, 'do not retry activation');
+      const retained = readBackendLease(path);
+      assert.equal((kind === 'backend' ? retained.resources.container : retained.resources.browserContainer)?.id, id);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
   test(`${kind} creation enforces its own memory cap without swap`, () => {
     const root = mkdtempSync(join(tmpdir(), 'container-limits-'));
     try {

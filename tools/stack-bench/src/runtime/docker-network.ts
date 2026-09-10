@@ -7,6 +7,7 @@ import { readBackendLease, updateBackendLease } from './backend-lease.js';
 import type { BackendCreationKind, BackendLease, BackendLeaseContainer } from './backend-lease.js';
 import { BROWSER_CONTAINER_RESOURCE_LIMITS, SIDECAR_CONTAINER_RESOURCE_LIMITS } from '../composition/product-config.js';
 import { ATTEMPT_CREATION_LABEL } from './container-identity.js';
+import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
 export { ATTEMPT_CREATION_LABEL } from './container-identity.js';
 
 export function attemptDocker(args: string[], input?: string): string {
@@ -142,7 +143,24 @@ export function createAttemptContainer(leasePath: string, lease: BackendLease, k
     } else next.resources.browserContainer = container;
     return next;
   });
-  docker(['start', id]);
+  try { docker(['start', id]); }
+  catch (error) {
+    const failure = error as { message?: unknown; status?: unknown; signal?: unknown;
+      stderr?: unknown; stdout?: unknown } | null;
+    let state: unknown;
+    try {
+      const inspected = JSON.parse(docker(['inspect', '--format', '{{json .State}}', id]));
+      state = { status: inspected.Status, error: redactCredentials(inspected.Error),
+        exitCode: inspected.ExitCode, oomKilled: inspected.OOMKilled };
+    } catch (inspectionError) {
+      state = { inspectionError: redactCredentials(inspectionError instanceof Error ? inspectionError.message : String(inspectionError)) };
+    }
+    const detail = JSON.stringify({
+      message: redactCredentials(failure?.message ?? error), status: failure?.status, signal: failure?.signal, state,
+      stderr: redactCredentials(failure?.stderr), stdout: redactCredentials(failure?.stdout),
+    });
+    throw new Error(`Docker could not start owned ${kind} container ${id}: ${detail.slice(0, 8192)}`);
+  }
   if (kind === 'backend') {
     // Every container that joins this namespace shares the anchor's address on the
     // attempt network; a coding agent probing its own application there is not

@@ -696,6 +696,15 @@ export function gradeArgv(
       : ['--restart-spec', JSON.stringify(restartSpec)])];
 }
 
+export function archiveCandidateGrade(appDir: string, outputDir: string, label: string): void {
+  const gradingDirectory = join(appDir, 'stack-bench');
+  if (!existsSync(gradingDirectory)) return;
+  cpSync(gradingDirectory, join(outputDir, 'candidate-grades', label), {
+    recursive: true,
+    filter: source => !/[\\/]media([\\/]|$)/.test(source),
+  });
+}
+
 function grade(
   args: BenchArgs,
   appDir: string,
@@ -2028,14 +2037,6 @@ async function main() {
           ? prompt.nodeIds.filter((id): id is string => typeof id === 'string') : [] });
       writeRunJson(join(outputDir, ARTIFACT_FILE.run), run);
     };
-    const archiveCandidateGrade = (label: string): void => {
-      const gradingDirectory = join(appDir, 'stack-bench');
-      if (!existsSync(gradingDirectory)) return;
-      cpSync(gradingDirectory, join(outputDir, 'candidate-grades', label), {
-        recursive: true,
-        filter: source => !/[\\/]media([\\/]|$)/.test(source),
-      });
-    };
     const restoreAcceptedRepair = async (sourcePath: string, gradingPath: string): Promise<void> => {
       if (applicationControl) await materializeAcceptedSource(sourcePath, appDir, applicationControl);
       else resetAppToSource(sourcePath, appDir);
@@ -2152,6 +2153,7 @@ async function main() {
     // A grader failure on unchanged source is retried once, as a repair grade is.
     if (firstBuildSource && !materializationOutcome
       && !levelGradeIsUsable(classifyBundle(bundle))) {
+      archiveCandidateGrade(appDir, outputDir, `l${level}${featureActionSuffix}-before-retry`);
       console.log('  grade did not complete; retrying the same source once');
       bundle = grade(args, appDir, url, `${firstBuildLabel}-retry`, level, track, runId);
     }
@@ -2254,7 +2256,7 @@ async function main() {
     if (featureActionSequence !== null && progressionSelection
       && isProgressionWorkRecipeAction(progressionSelection)) {
       const candidateOutcome = classifyBundle(bundle);
-      archiveCandidateGrade(`l${level}${featureActionSuffix}`);
+      archiveCandidateGrade(appDir, outputDir, `l${level}${featureActionSuffix}`);
       if (!levelGradeIsUsable(candidateOutcome)) {
         await restoreFeatureAcceptedSource();
         initialProgressionFailure = progressionFailure(candidateOutcome);
@@ -2614,6 +2616,8 @@ async function main() {
         bundle = await gradeAcceptedSource(repairedSource,
           `${args.backend}-l${level}-fix${repairs}`);
         if (!levelGradeIsUsable(classifyBundle(bundle))) {
+          archiveCandidateGrade(appDir, outputDir,
+            `l${level}${featureActionSuffix}-repair${repairs}-before-retry`);
           console.log('    repair grade did not complete; retrying the same source once');
           bundle = await gradeAcceptedSource(repairedSource,
             `${args.backend}-l${level}-fix${repairs}-retry`);
@@ -2655,7 +2659,7 @@ async function main() {
         const rejectedBundle = bundle;
         if (rejectedBundle) checkpointGrade('repair', rejectedBundle,
           [...(build && !resumedRepair ? [runSessionRecord(build)] : []), ...repairSessions], false);
-        archiveCandidateGrade(`l${level}${featureActionSuffix}-repair${repairs}`);
+        archiveCandidateGrade(appDir, outputDir, `l${level}${featureActionSuffix}-repair${repairs}`);
         await restoreAcceptedRepair(snapshot, gradingSnapshot);
         if (!restoreProgressionGrade(acceptedBundle,
           `${args.backend}-l${level}${featureActionSuffix}-rollback${repairs}`)) break;
