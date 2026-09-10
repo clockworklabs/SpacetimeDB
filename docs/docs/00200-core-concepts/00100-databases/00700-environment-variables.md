@@ -275,4 +275,8 @@ Use an ordinary [private table](../00300-tables/00400-access-permissions.md) whe
 
 Update that table through reducers that explicitly authorize the caller. Keeping a table private controls direct client reads; it does not authorize calls to a reducer that modifies or returns its contents. Apply the same care to views, procedure results, and logs. Private tables follow the database's normal private-table permissions, including administrative reads.
 
+:::warning Secret visibility
+Private tables can store dynamically editable secrets, but changing a table to public can expose its contents to clients. Environment variables have no public-table visibility setting. With either approach, module code can still expose secrets through return values or logs.
+:::
+
 Both approaches are supported. Environment declarations additionally guarantee that required values are validated and available before `init` or migration runs. Private-table values follow the table's ordinary update and migration behavior. They do not receive environment schema validation or complete replacement on every publish.

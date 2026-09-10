@@ -97,6 +97,16 @@ impl Observation {
     }
 }
 
+fn configure_inspector_environment(command: &mut tokio::process::Command) {
+    command.env_clear();
+    // Windows needs PATH to resolve the inspector's dependent DLLs. Keep
+    // other inherited variables, including publish-time secrets, isolated.
+    #[cfg(windows)]
+    if let Some(path) = std::env::var_os("PATH") {
+        command.env("PATH", path);
+    }
+}
+
 async fn inspect_observed(
     extractor: PathBuf,
     program: Vec<u8>,
@@ -114,18 +124,18 @@ async fn inspect_observed(
             tokio::fs::write(&module, program)
                 .await
                 .context("Cannot prepare module inspection input")?;
-            let mut child = tokio::process::Command::new(extractor)
+            let mut command = tokio::process::Command::new(extractor);
+            command
                 .arg("extract-schema")
                 .arg(&module)
                 .arg("--host-type")
                 .arg(host_type.to_ascii_lowercase())
-                .env_clear()
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::null())
-                .kill_on_drop(true)
-                .spawn()
-                .context("Cannot start local module schema inspection")?;
+                .kill_on_drop(true);
+            configure_inspector_environment(&mut command);
+            let mut child = command.spawn().context("Cannot start local module schema inspection")?;
             observation.started(child.id());
             let mut output = Vec::new();
             let mut stdout = child
