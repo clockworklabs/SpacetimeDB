@@ -355,7 +355,7 @@ export function resolveTaskFragment(fragmentInput: unknown,
   const sourceRef = contained(root, root, fragment.path, `${source}.path`);
   let sourceText = sourceCache.get(sourceRef.relative);
   if (sourceText === undefined) {
-    sourceText = readFileSync(sourceRef.absolute, 'utf8');
+    sourceText = readFileSync(sourceRef.absolute, 'utf8').replaceAll('\r\n', '\n');
     sourceCache.set(sourceRef.relative, sourceText);
   }
   let start = 0;

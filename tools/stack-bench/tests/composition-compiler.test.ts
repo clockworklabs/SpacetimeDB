@@ -93,6 +93,14 @@ test('source contracts reject unknown fields, malformed references, and duplicat
 test('task fragment markers are contained, unique, ordered, and non-empty', () => {
   const box = sandbox();
   try {
+    const fragment = { id: 'example.lines', path: 'prompts/task.md', order: 1,
+      from: '# Begin\n', until: '# End' };
+    const text = '# Begin\nA normal product request.\n# End\n';
+    writeFileSync(join(box.root, 'prompts', 'task.md'), text);
+    const expected = resolveTaskFragment(fragment, { trackRoot: box.root });
+    writeFileSync(join(box.root, 'prompts', 'task.md'), text.replaceAll('\n', '\r\n'));
+    assert.deepEqual(resolveTaskFragment(fragment, { trackRoot: box.root }), expected,
+      'checkout line endings must not change prompt text or multiline marker selection');
     assert.throws(() => resolveTaskFragment({ id: 'example.missing', path: 'prompts/task.md',
       order: 1, from: 'not present' }, { trackRoot: box.root }), /marker not found/);
     assert.throws(() => resolveTaskFragment({ id: 'example.escape', path: '../outside.md',
