@@ -2,12 +2,14 @@ import { sha256 } from '../src/evidence/provenance.js';
 import { loadTrack, workDirFor } from '../src/composition/tracks.js';
 import { execFile } from 'node:child_process';
 import { open, readdir, realpath, stat } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { existsSync, realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { CODING_PROVIDERS } from '../container/coding-providers.js';
 import { CONTAINER_CLAUDE_TRANSCRIPT_READ } from '../container/claude-transcript-reader.js';
 import { AGENT_ADAPTER_REGISTRY } from '../src/agents/agent-adapters.js';
 import type { PublicBackendLease } from '../src/runtime/backend-lease.js';
+import { publicBackendLease, readBackendLease } from '../src/runtime/backend-lease.js';
 import { readArtifactPayload } from '../src/evidence/artifacts.js';
 import { codingContainerAgentExecOptions } from '../src/runtime/coding-container-policy.js';
 import { inspectBuildContainer } from '../src/stacks/hosted-lifecycle.js';
@@ -84,6 +86,30 @@ function dockerRead(args: string[]): Promise<Buffer> {
   return result;
 }
 
+export function transcriptLease(directory: string, runtimeRoot = process.env.STACK_BENCH_RUNTIME_DIR
+  ?? join(tmpdir(), 'stack-bench-runtime')): PublicBackendLease | null {
+  const evidence = join(directory, 'backend-lease.json');
+  if (existsSync(evidence)) return readArtifactPayload<PublicBackendLease>(evidence,
+    { expectedKind: 'backend_lease_evidence' });
+  const runPath = join(directory, 'run.json');
+  if (!existsSync(runPath)) return null;
+  const initial = readArtifactPayload<{ backendLease?: PublicBackendLease }>(runPath,
+    { expectedKind: 'benchmark_run' }).backendLease;
+  if (!initial) return null;
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(initial.runId)) throw new Error('Invalid transcript run identity');
+  const runtime = resolve(runtimeRoot, initial.runId);
+  const path = join(runtime, 'backend-lease.json');
+  if (!existsSync(path)) return null;
+  if (dirname(realpathSync(runtime)) !== realpathSync(resolve(runtimeRoot))
+    || dirname(realpathSync(path)) !== realpathSync(runtime)) throw new Error('Transcript lease is outside runtime directory');
+  const current = publicBackendLease(readBackendLease(path, { runId: initial.runId, backend: initial.backend, active: true }));
+  if (current.ownership.markerSha256 !== initial.ownership?.markerSha256
+    || current.track !== initial.track || current.runIndex !== initial.runIndex) {
+    throw new Error('Transcript lease ownership changed');
+  }
+  return current;
+}
+
 // Reads only this attempt's transcript mounts. Never scans another account's sessions.
 export async function attemptTranscriptFiles(executions: Array<{ directory: string; label: string }>,
   adapterId: string): Promise<TranscriptFile[]> {
@@ -92,9 +118,8 @@ export async function attemptTranscriptFiles(executions: Array<{ directory: stri
   const config = CODING_PROVIDERS[provider as keyof typeof CODING_PROVIDERS];
   const files: TranscriptFile[] = [];
   for (const execution of executions) {
-    const leasePath = join(execution.directory, 'backend-lease.json');
-    if (!existsSync(leasePath)) continue;
-    const lease = readArtifactPayload<PublicBackendLease>(leasePath, { expectedKind: 'backend_lease_evidence' });
+    const lease = transcriptLease(execution.directory);
+    if (!lease) continue;
     const root = config.projects(join(workDirFor(loadTrack(lease.track), lease.backend, lease.runIndex, lease.runId), 'app'));
     let remote: ((name: string, start: number, count: number) => Promise<Buffer>) | null = null;
     if (lease.state === 'active' && lease.resources.buildContainer?.owned) {

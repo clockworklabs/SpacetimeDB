@@ -6,8 +6,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setImmediate as nextTurn } from 'node:timers/promises';
-import { attemptTranscriptFiles, readAttemptTranscript, transcriptMessages } from '../../dashboard/dashboard-transcript.js';
+import { attemptTranscriptFiles, readAttemptTranscript, transcriptMessages, transcriptLease } from '../../dashboard/dashboard-transcript.js';
 import { emptyArtifactIdentities, writeArtifact } from '../../src/evidence/artifacts.js';
+import { createBackendLease, publicBackendLease, writeBackendLease } from '../../src/runtime/backend-lease.js';
 
 test('transcript normalizes Claude and Codex text/tools, redacts credentials, and ignores metadata', () => {
   const rows = [
@@ -77,4 +78,26 @@ test('live transcript reads yield, share concurrent reads, and retain lease and 
     syncBuiltinESMExports();
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test('active transcript resolves the current runtime lease only for the saved owner', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'dashboard-active-transcript-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const runtimeRoot = join(directory, 'runtime');
+  const lease = createBackendLease({ runId: 'live-run', backend: 'postgres', track: 'ecommerce',
+    runIndex: 0, database: 'app_ecom_run0', container: { name: 'database', id: 'a'.repeat(64) } });
+  lease.state = 'active';
+  writeArtifact(join(directory, 'run.json'), { kind: 'benchmark_run', id: lease.runId,
+    identities: emptyArtifactIdentities(), payload: { backendLease: publicBackendLease(lease) } });
+  assert.equal(transcriptLease(directory, runtimeRoot), null);
+  lease.resources.buildContainer = { name: 'current-build', id: 'b'.repeat(64), image: 'build-image', owned: true,
+    resourceLimits: { cpuCount: 1, memoryBytes: 1024, memorySwapBytes: 1024, pids: 100 } };
+  const runtimePath = join(runtimeRoot, lease.runId, 'backend-lease.json');
+  writeBackendLease(runtimePath, lease);
+  const observed = transcriptLease(directory, runtimeRoot);
+  assert.equal(observed?.resources.buildContainer?.id, lease.resources.buildContainer.id);
+  assert.doesNotMatch(JSON.stringify(observed), /ownershipToken/);
+  lease.ownershipToken = 'different-owner';
+  writeBackendLease(runtimePath, lease);
+  assert.throws(() => transcriptLease(directory, runtimeRoot), /ownership changed/);
 });
