@@ -16,8 +16,10 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { dependencyRuntimeDefinition } from '../src/progression/progression-definition.js';
 import { progressionEngine } from '../src/progression/progression-engine.js';
 import { runBounded } from '../src/runtime/bounded-process.js';
+import { readCampaignTimeBudget } from '../src/campaigns/campaign-time-grant.js';
+import { campaignProviderContinuationContext } from '../src/campaigns/campaign-provider-continuation.js';
 
-test('planned hold preserves the L3 action, repair history, cohort and cost accounting', async () => {
+test('planned hold preserves the L3 action, repair history, cohort and cost accounting', async t => {
   const root = mkdtempSync(join(tmpdir(), 'depth-pause-'));
   let lock: ReturnType<typeof acquireCampaignLock> | undefined;
   const abort = new AbortController();
@@ -92,10 +94,25 @@ test('planned hold preserves the L3 action, repair history, cohort and cost acco
     }
     assert.equal(campaignDepthPauseStatus(results).attempts.filter(a => a.paused).length, 3);
     await delay(25);
+    let now = Date.now() + 8 * 60 * 60_000;
+    t.mock.method(Date, 'now', () => now);
+    const claim = claims[0]!;
+    const providerEnv = { STACK_BENCH_PROVIDER_WAIT_CONTEXT: JSON.stringify({ directory: results,
+      campaignSha256: plan.contentSha256, ownershipMarkerSha256: lock.record.ownershipMarkerSha256,
+      attemptId: claim.attempt.id, executionId: claim.executionId,
+      root: join(results, claim.output, 'provider-waits') }) };
+    const savedState = readFileSync(initialized.paths.state, 'utf8');
+    assert(readCampaignTimeBudget(results, claim.attempt.id).consumedMs < 60_000);
+    assert(campaignProviderContinuationContext(providerEnv), 'overnight hold does not exhaust provider allowance');
     const release = continueCampaignDepth(results);
     assert.deepEqual(continueCampaignDepth(results), release, 'release is idempotent');
     const durations = await Promise.all(waits);
     assert(durations.every(ms => ms > 0));
+    assert(campaignProviderContinuationContext(providerEnv), 'first L3 invocation uses the resumed receipt');
+    assert.equal(readFileSync(initialized.paths.state, 'utf8'), savedState, 'budget reads do not rewrite history');
+    now += plan.definition.budgets.attemptTimeoutMinutes * 60_000 + 1;
+    assert.throws(() => campaignProviderContinuationContext(providerEnv), /duration allowance is exhausted/);
+    t.mock.restoreAll();
     const proof = { campaignSha256: plan.contentSha256, attemptId: claims[0]!.attempt.id,
       depth: 2, durationMs: durations[0]! };
     validateDepthPauseEvidence(join(results, claims[0]!.output), proof);

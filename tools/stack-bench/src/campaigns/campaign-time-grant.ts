@@ -8,7 +8,8 @@ import { campaignProgressionOwner } from './campaign-compiler.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { ARTIFACT_FILE, readArtifactPayload } from '../evidence/artifacts.js';
 import { campaignChildPath } from './campaign-path.js';
-import { acquireCampaignLock, campaignLockIsActive, releaseCampaignLock, writeCampaignRecord } from './campaign-lock.js';
+import { acquireCampaignLock, campaignLockIsActive, readCampaignLock, releaseCampaignLock, writeCampaignRecord } from './campaign-lock.js';
+import { depthPauseDurationMs } from './campaign-depth-pause.js';
 import { timeContinuationEligibility } from '../progression/live-progression.js';
 import { publicRecoveryProvesCleanup, remainingAttemptCostBudget } from './campaign-runner.js';
 
@@ -23,8 +24,17 @@ export function readCampaignTimeBudget(directory: string, attemptId: string): Ca
   const { plan, state } = readCampaignState(directory, { requireCurrentInputs: false });
   const attempt = state.attempts.find(a => a.plan.id === attemptId);
   if (!attempt) throw new Error(`unknown attempt ${attemptId}`);
-  const budget = campaignTimeBudget(plan, attempt);
   const last = attempt.executions.at(-1);
+  const now = Date.now();
+  if (last?.status === 'running' && attempt.plan.mode.pauseAfterDepth !== undefined) {
+    const lock = readCampaignLock(directory);
+    if (!lock) throw new Error('live pause accounting requires its controller owner');
+    // The process writes its pause receipt before the controller persists campaign state.
+    last.pausedMs = depthPauseDurationMs(campaignChildPath(directory, last.output, 'depth pause execution'),
+      { directory, campaignSha256: plan.contentSha256, ownershipMarkerSha256: lock.ownershipMarkerSha256,
+        attemptId, executionId: last.id, depth: attempt.plan.mode.pauseAfterDepth }, now);
+  }
+  const budget = campaignTimeBudget(plan, attempt, now);
   if (last?.outcome === 'timed_out') {
     const eligibility = campaignTimeContinuationEligibility(directory, attemptId);
     budget.continuation = eligibility.eligible ? { eligible: true }

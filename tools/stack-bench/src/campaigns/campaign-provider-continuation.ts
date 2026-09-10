@@ -6,7 +6,7 @@ import { campaignChildPath } from './campaign-path.js';
 import { campaignCancellationRequested, campaignLockIsActive, readCampaignLock,
   writeCampaignRecord as write } from './campaign-lock.js';
 import { readCampaignState } from './campaign-scheduler.js';
-import { campaignTimeBudget } from './campaign-time-grant.js';
+import { readCampaignTimeBudget } from './campaign-time-grant.js';
 import { sleepSync } from '../runtime/platform.js';
 
 const ENV = 'STACK_BENCH_PROVIDER_WAIT_CONTEXT';
@@ -32,7 +32,7 @@ function activeContext(directory: string, attemptId: string): Context {
   if (attempt?.status !== 'running' || execution?.status !== 'running') {
     throw new Error('only a live running execution can continue; stopped executions cannot be restored');
   }
-  const budget = campaignTimeBudget(plan, attempt);
+  const budget = readCampaignTimeBudget(directory, attemptId);
   if (budget.consumedMs >= budget.effectiveMinutes * 60_000) {
     throw new Error('provider continuation duration allowance is exhausted');
   }
