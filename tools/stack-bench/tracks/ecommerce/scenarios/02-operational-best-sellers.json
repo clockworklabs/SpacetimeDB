@@ -12,7 +12,7 @@
       "setup": [
         { "do": "signUp", "actor": "buyer", "name": "best-seller-buyer" },
         { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Gaming Mouse" } },
-        { "do": "click", "actor": "buyer", "testid": "orders-toggle" },
+        { "do": "click", "actor": "buyer", "testid": "orders-toggle", "unlessVisible": "order-item" },
         { "do": "expect", "actor": "buyer", "testid": "order-item", "contains": "Gaming Mouse", "within": 10000 }
       ],
       "criteria": [

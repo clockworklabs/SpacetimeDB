@@ -9,6 +9,7 @@ import { writeArtifact } from '../src/evidence/artifacts.js';
 import { parseReportBugsArgs } from '../commands/report-bugs.js';
 import { createCheckEvidence } from '../src/evidence/check-evidence.js';
 import { finding } from '../src/actions/action-findings.js';
+import type { ActionEvidence } from '../src/actions/action-contract.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 const CLI = join(STACK_BENCH_ROOT, 'dist', 'commands', 'report-bugs.js');
@@ -78,8 +79,27 @@ test('repair report selection follows typed evidence even when prose claims the 
     const reported = spawnSync(process.execPath, [CLI, '--app', failedApp], { encoding: 'utf8' });
     assert.equal(reported.status, 0, reported.stderr);
     const repair = readFileSync(join(failedApp, 'BUG_REPORT.md'), 'utf8');
-    assert.match(repair, /Actual:\*\* the application did not do this/);
+    assert.match(repair, /Actual:\*\* a failure was recorded without a detailed observation/);
     assert.doesNotMatch(repair, /INCONCLUSIVE: this wording/);
+    for (const status of ['passed', 'inconclusive', 'harness_failure'] as const) {
+      const app = join(root, `setup-${status}`);
+      const copied = createCheckEvidence({ status: 'failed', code: 'test_result', phase: 'setup',
+        startedAtMs: 1, completedAtMs: 2 });
+      const setup = createCheckEvidence({ status, code: 'test_result', phase: 'setup',
+        startedAtMs: 1, completedAtMs: 2 });
+      writeGrade(app, 'failed', 'outer status cannot make setup repairable', { evidence: copied, setupEvidence: setup });
+      const result = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
+      assert.equal(result.status, 3, result.stderr);
+      assert.equal(existsSync(join(app, 'BUG_REPORT.md')), false);
+    }
+    const app = join(root, 'unmeasured-finding');
+    writeGrade(app, 'failed', 'status cannot make an inconclusive finding repairable', {
+      evidence: createCheckEvidence({ status: 'failed', code: 'test_result', phase: 'assertion',
+        finding: finding('no-backend-control', { target: 'backend-runtime' }), startedAtMs: 1, completedAtMs: 2 }),
+    });
+    const result = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
+    assert.equal(result.status, 3, result.stderr);
+    assert.equal(existsSync(join(app, 'BUG_REPORT.md')), false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -170,6 +190,54 @@ test('repair feedback refuses internal evaluation language', () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('repair context identifies an early missing control without claiming later durability was observed', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-context-'));
+  try {
+    const missing = finding('control-missing', { control: 'cart-item', filtered: true });
+    const action = (id: string, observation: unknown, failed = false): { actor: string; evidence: ActionEvidence } => ({
+      actor: 'shopper', evidence: {
+        schemaVersion: 2, action: { id, version: '1.0.0' }, status: failed ? 'failed' : 'passed',
+        type: 'test-evidence', code: failed ? 'application_failure' : 'completed', phase: 'execute',
+        summary: 'PRIVATE_DIAGNOSTIC', finding: failed ? missing : null,
+        observation, expected: { internal: 'PRIVATE_EXPECTATION' }, retryable: false,
+        timing: { startedAtMs: 1, completedAtMs: 2, durationMs: 1, deadlineMs: 100 },
+        attachments: [], sensitivity: [],
+      },
+    });
+    for (const restarted of [false, true]) {
+      const app = join(root, restarted ? 'after' : 'before');
+      const actions = ['add-to-cart', 'cart-toggle', 'checkout-submit', 'catalog-link', 'add-to-cart', 'cart-toggle']
+        .map(control => action('click', { clicked: control }));
+      actions.unshift(action('callAction', { action: 'submitReview', accepted: true, status: 201,
+        body: 'PRIVATE_BODY', url: 'http://PRIVATE_URL' }));
+      actions.push(action('click', { clicked: false, testid: 'SKIPPED_CONTROL' }),
+        action('fill', { value: 'PRIVATE_PASSWORD' }), action('runScript', { script: 'PRIVATE_SCRIPT' }));
+      if (restarted) actions.push(action('reload', { reloaded: true }),
+        action('stopAppServer', { operation: 'stop' }), action('startAppServer', { operation: 'start' }),
+        action('restartBackend', { operation: 'restart' }));
+      actions.push(action('expect', null, true));
+      // A later record must not be reported as a completed action before the failure.
+      actions.push(action('restartBackend', { operation: 'restart' }));
+      actions.push(action('callAction', { action: 'FUTURE_STRANGER_REQUEST', accepted: false, status: 403 }));
+      const evidence = createCheckEvidence({ status: 'failed', code: 'application_failure',
+        phase: 'assertion', actor: 'shopper', finding: missing, actions,
+        startedAtMs: 1, completedAtMs: 2 });
+      writeGrade(app, 'failed', 'missing item', { evidence, feature: 'Checkout',
+        desc: 'cart and order history survive a page reload and runtime restart' });
+      const result = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr);
+      const report = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
+      assert.match(report, /Expected:\*\* cart and order history survive a page reload and runtime restart/);
+      assert.match(report, /shopper: checkout-submit → shopper: catalog-link → shopper: add-to-cart → shopper: cart-toggle/);
+      assert.match(report, /shopper: submitReview returned HTTP 201/);
+      assert.match(report, /The sequence stopped at this control; later behavior was not observed/);
+      if (restarted) assert.match(report, /Completed lifecycle actions: page reloaded; application server stopped; application server started; database runtime restarted/);
+      else assert.doesNotMatch(report, /Completed lifecycle actions/);
+      assert.doesNotMatch(report, /PRIVATE_|FUTURE_STRANGER_REQUEST|SKIPPED_CONTROL|lost|use a transaction|implement|retry policy/i);
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('setup feedback reports the failed control without claiming the later guarantee failed', () => {
@@ -269,7 +337,7 @@ test('repair feedback includes failures caused by the rejected prior repair', ()
       '--prior-regression', regression], { encoding: 'utf8' });
     assert.equal(reported.status, 0, reported.stderr);
     const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
-    assert.match(repair, /Actual:\*\* the application did not do this/);
+    assert.match(repair, /Actual:\*\* a failure was recorded without a detailed observation/);
     assert.match(repair, /Previous repair regression/);
     assert.match(repair, /Accounts/);
     assert.match(repair, /owner was signed out/);

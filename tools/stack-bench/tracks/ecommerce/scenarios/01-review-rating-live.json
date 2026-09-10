@@ -13,7 +13,7 @@
         { "do": "signUp", "actor": "author", "name": "leon" },
         { "do": "signUp", "actor": "other", "name": "maya" },
         { "do": "click", "actor": "author", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Gaming Mouse" } },
-        { "do": "click", "actor": "author", "testid": "orders-toggle" },
+        { "do": "click", "actor": "author", "testid": "orders-toggle", "unlessVisible": "order-item" },
         { "do": "expect", "actor": "author", "testid": "order-item", "contains": "Gaming Mouse", "within": 10000 },
         { "do": "click", "actor": "author", "testid": "overlay-close", "ifAvailable": true },
         { "do": "click", "actor": "author", "testid": "catalog-link", "ifAvailable": true },
@@ -23,7 +23,7 @@
         { "do": "click", "actor": "author", "testid": "review-submit" },
         { "do": "expect", "actor": "author", "testid": "review-item", "contains": "works for travel" },
         { "do": "click", "actor": "other", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Gaming Mouse" } },
-        { "do": "click", "actor": "other", "testid": "orders-toggle" },
+        { "do": "click", "actor": "other", "testid": "orders-toggle", "unlessVisible": "order-item" },
         { "do": "expect", "actor": "other", "testid": "order-item", "contains": "Gaming Mouse", "within": 10000 },
         { "do": "click", "actor": "other", "testid": "overlay-close", "ifAvailable": true },
         { "do": "click", "actor": "other", "testid": "catalog-link", "ifAvailable": true }

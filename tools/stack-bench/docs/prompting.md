@@ -254,6 +254,11 @@ control, missing or duplicate entries, and HTTP error statuses. They do not copy
 scenario scripts, unrelated fixture data, or instructions for a particular
 algorithm or data structure.
 
+Reports also name the recent completed controls and lifecycle actions when these
+explain where execution stopped. A missing control before a reload, restart, or
+server request is not evidence that the later durability or access check failed.
+Keep that limit explicit instead of presenting the full requirement as an observed failure.
+
 The current repair policy records this disclosure as
 `scenarioValues: "failed-observations"`. This changes the condition identity
 from the earlier `"withheld"` policy. New plans must use the current identity;

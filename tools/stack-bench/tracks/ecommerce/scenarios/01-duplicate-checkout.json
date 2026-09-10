@@ -17,7 +17,7 @@
         { "do": "clickConcurrently", "testid": "add-to-cart", "actors": ["tab1", "tab2"], "in": { "testid": "item-card", "contains": "Gaming Mouse" }, "settleMs": 4000 },
         { "do": "reload", "actor": "tab1", "settleMs": 2500 },
         { "do": "ensureSignedIn", "actor": "tab1", "name": "twin", "readyTestid": "current-user" },
-        { "do": "click", "actor": "tab1", "testid": "cart-toggle" }
+        { "do": "click", "actor": "tab1", "testid": "cart-toggle", "unlessVisible": "cart-total" }
       ],
       "criteria": [
         {
@@ -44,7 +44,7 @@
             { "do": "wait", "actor": "filler", "ms": 2000 },
             { "do": "callConcurrently", "actors": ["tab1", "tab2"], "action": "checkout", "settleMs": 5000 },
             { "do": "expectCallOutcomes" },
-            { "do": "click", "actor": "filler", "testid": "orders-toggle" },
+            { "do": "click", "actor": "filler", "testid": "orders-toggle", "unlessVisible": "order-item" },
             { "do": "expect", "actor": "filler", "testid": "order-item", "contains": "Keyboard", "count": 1 },
             { "do": "reload", "actor": "filler", "settleMs": 2000 },
             { "do": "ensureSignedIn", "actor": "filler", "name": "twin", "readyTestid": "current-user" },

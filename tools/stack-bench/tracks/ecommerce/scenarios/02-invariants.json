@@ -201,7 +201,8 @@
             {
               "do": "click",
               "actor": "customer",
-              "testid": "orders-toggle"
+              "testid": "orders-toggle",
+              "unlessVisible": "order-item"
             },
             {
               "do": "expect",
@@ -368,7 +369,8 @@
             {
               "do": "click",
               "actor": "customer",
-              "testid": "orders-toggle"
+              "testid": "orders-toggle",
+              "unlessVisible": "order-item"
             },
             {
               "do": "click",
@@ -581,7 +583,8 @@
             {
               "do": "click",
               "actor": "customer",
-              "testid": "orders-toggle"
+              "testid": "orders-toggle",
+              "unlessVisible": "order-item"
             },
             {
               "do": "click",
@@ -619,7 +622,7 @@
             {"do":"click","actor":"customer","testid":"buy-now","in":{"testid":"item-card","contains":"Bluetooth Speaker"}},
             {"do":"wait","actor":"customer","ms":2500},
             {"do":"expectNumber","actor":"admin","testid":"admin-revenue","relativeTo":"history-revenue-before-sale","plus":79.5,"within":10000},
-            {"do":"click","actor":"customer","testid":"orders-toggle"},
+            {"do":"click","actor":"customer","testid":"orders-toggle", "unlessVisible": "order-item" },
             {"do":"expect","actor":"customer","testid":"order-item","contains":"Bluetooth Speaker","count":1,"within":10000},
             {"do":"recordNumber","actor":"admin","testid":"admin-revenue","as":"rev-after-sale"},
             {"do":"fill","actor":"admin","testid":"price-input","text":"5.00","in":{"testid":"admin-item-row","contains":"Bluetooth Speaker"}},

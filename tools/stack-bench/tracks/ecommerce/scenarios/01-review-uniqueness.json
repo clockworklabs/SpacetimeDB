@@ -12,7 +12,7 @@
       "setup": [
         { "do": "signUp", "actor": "author", "name": "kira" },
         { "do": "click", "actor": "author", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Air Purifier" } },
-        { "do": "click", "actor": "author", "testid": "orders-toggle" },
+        { "do": "click", "actor": "author", "testid": "orders-toggle", "unlessVisible": "order-item" },
         { "do": "expect", "actor": "author", "testid": "order-item", "contains": "Air Purifier", "within": 10000 },
         { "do": "click", "actor": "author", "testid": "overlay-close", "ifAvailable": true },
         { "do": "click", "actor": "author", "testid": "catalog-link", "ifAvailable": true },

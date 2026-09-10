@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -283,6 +283,27 @@ test('business outcomes allow deliberate refusals but never turn server errors i
     owner.actionCall.action = 'buy';
     assert.equal((await run({ do: 'expectActionOutcome', actor: 'customer', outcome,
       routeProvenBy: 'owner' }, provided)).status, 'failed');
+  }
+});
+
+test('purchase and restock privacy refusals require their successful control', async () => {
+  for (const [file, id] of [['01-purchase-session.json', '101a'], ['01-admin-write-staff.json', '103b']]) {
+    const scenario = JSON.parse(readFileSync(`tracks/ecommerce/scenarios/${file}`, 'utf8'));
+    const feature = scenario.features.find((feature: { criteria: { id: string }[] }) =>
+      feature.criteria.some(criterion => criterion.id === id));
+    const steps = [...feature.setup, ...feature.criteria.find((criterion: { id: string }) => criterion.id === id).steps];
+    const refusal = steps.find(step => step.do === 'expectActionOutcome' && step.outcome === 'refused');
+    const accepted = steps.findIndex(step => step.do === 'expectActionOutcome'
+      && step.outcome === 'accepted' && step.actor === refusal.routeProvenBy);
+    assert(accepted >= 0 && accepted < steps.indexOf(refusal));
+    const control = steps.slice(0, accepted).findLast(step => step.do === 'callAction');
+    const caller = { name: refusal.actor, actionCall: { action: control.action, status: 404, accepted: false } };
+    const owner = { name: refusal.routeProvenBy, actionCall: { action: control.action, status: 200, accepted: true } };
+    const provided = services(new Map<string, unknown>([[caller.name, caller], [owner.name, owner]]));
+    assert.equal((await run(refusal, provided)).status, 'passed');
+    owner.actionCall.accepted = false;
+    owner.actionCall.status = 404;
+    assert.equal((await run(refusal, provided)).status, 'failed');
   }
 });
 

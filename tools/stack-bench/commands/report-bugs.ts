@@ -8,8 +8,10 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs as parseNodeArgs } from 'node:util';
-import { renderRepairFinding } from '../src/actions/action-findings.js';
+import { findingStatus, renderRepairFinding } from '../src/actions/action-findings.js';
 import type { Finding } from '../src/actions/action-findings.js';
+import type { ActionEvidence } from '../src/actions/action-contract.js';
+import type { CheckEvidence } from '../src/evidence/check-evidence.js';
 import { sanitiseConsoleError, sanitiseDiagnostic } from '../src/evidence/diagnostic-sanitizer.js';
 import { ARTIFACT_FILE, readArtifactPayload } from '../src/evidence/artifacts.js';
 import { criterionEvidence, evidenceIsRepairable, validateCheckEvidence } from '../src/evidence/check-evidence.js';
@@ -92,6 +94,45 @@ interface RepairBug {
   observed: string;
   consoleErrors: string[];
   contract: boolean;
+  context?: string[];
+}
+
+// Only completed public interactions, never raw action inputs or diagnostics.
+// These observations explain where a sequence stopped without teaching a fix.
+function observationContext(evidence: CheckEvidence): string[] {
+  const actions = evidence.actions.map(entry => ({ actor: entry.actor,
+    evidence: entry.evidence as ActionEvidence }));
+  const failureIndex = actions.findLastIndex(entry => entry.evidence.status === 'failed');
+  if (failureIndex < 0) return [];
+  const completed: string[] = [];
+  const lifecycle: string[] = [];
+  for (const { actor, evidence: action } of actions.slice(0, failureIndex)) {
+    if (action.status !== 'passed') continue;
+    const observation = action.observation && typeof action.observation === 'object'
+      ? action.observation as Record<string, unknown> : {};
+    if (action.action.id === 'click' && typeof observation.clicked === 'string') {
+      completed.push(`${actor ? `${sanitiseDiagnostic(actor, 120)}: ` : ''}${sanitiseDiagnostic(observation.clicked, 120)}`);
+    }
+    if (action.action.id === 'callAction' && typeof observation.action === 'string'
+      && Number.isInteger(observation.status) && Number(observation.status) >= 100 && Number(observation.status) <= 599) {
+      completed.push(`${actor ? `${sanitiseDiagnostic(actor, 120)}: ` : ''}${sanitiseDiagnostic(observation.action, 120)} returned HTTP ${observation.status}`);
+    }
+    const account = ({ signIn: 'sign-in completed', signUp: 'account creation completed',
+      freshClient: 'fresh client opened' } as Record<string, string>)[action.action.id];
+    if (account) completed.push(`${actor ? `${sanitiseDiagnostic(actor, 120)}: ` : ''}${account}`);
+    const operations: Record<string, string> = { reload: 'page reloaded', stopAppServer: 'application server stopped',
+      startAppServer: 'application server started', restartBackend: 'database runtime restarted' };
+    const operation = operations[action.action.id];
+    if (operation) lifecycle.push(operation);
+  }
+  const context: string[] = [];
+  if (completed.length) context.push(`Recent completed actions: ${completed.slice(-8).join(' → ')}.`);
+  if (lifecycle.length) context.push(`Completed lifecycle actions: ${[...new Set(lifecycle)].join('; ')}.`);
+  if (evidence.finding && ['control-missing', 'control-not-ready', 'control-blocked', 'control-unreadable',
+    'choice-missing', 'page-timeout'].includes(evidence.finding.kind)) {
+    context.push('The sequence stopped at this control; later behavior was not observed.');
+  }
+  return context;
 }
 
 // The public verb for the step that failed. Control and action names are the
@@ -114,7 +155,7 @@ function observed(finding: Finding | null, phase: string): string {
   if (finding) return renderRepairFinding(finding);
   return phase === 'setup'
     ? 'the application did not reach this behavior; an earlier step of the same feature failed'
-    : 'the application did not do this';
+    : 'a failure was recorded without a detailed observation';
 }
 
 export function parseReportBugsArgs(argv: string[]): ReportBugsArgs {
@@ -194,6 +235,8 @@ export function createBugReport(args: ReportBugsArgs): number {
         if (!evidenceIsRepairable(evidence)) continue;
         const failure = evidence.phase === 'setup' && feature.setupEvidence
           ? validateCheckEvidence(feature.setupEvidence) : evidence;
+        if (!evidenceIsRepairable(failure)
+          || (failure.finding && findingStatus(failure.finding) !== 'failed')) continue;
         if (evidence.phase === 'setup') {
           // One failed setup is copied to each selected criterion it prevented.
           // Use full evidence, not rendered prose, so distinct failures stay separate.
@@ -214,6 +257,7 @@ export function createBugReport(args: ReportBugsArgs): number {
           action: failedAction(actionId, failure.finding),
           expected,
           observed: observed(failure.finding, evidence.phase),
+          context: observationContext(failure),
           consoleErrors: [...new Set((feature.consoleErrors ?? [])
             .map(sanitiseConsoleError).filter(Boolean))].slice(0, 3),
           contract: false,
@@ -295,6 +339,7 @@ export function createBugReport(args: ReportBugsArgs): number {
       if (bug.action) lines.push(`**Failed action:** ${bug.action}`, '');
       if (bug.expected) lines.push(`**Expected:** ${bug.expected}`, '');
       lines.push(`**Actual:** ${bug.observed}`, '');
+      if (bug.context?.length) lines.push(`**Observed context:** ${bug.context.join(' ')}`, '');
       if (bug.consoleErrors.length) {
         lines.push('**Console or network errors:**', '');
         bug.consoleErrors.forEach(error => lines.push(`- \`${error}\``));

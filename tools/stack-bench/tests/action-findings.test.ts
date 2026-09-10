@@ -181,4 +181,19 @@ test('missing rows and filtered controls give useful feedback without exposing p
   const text = renderFinding(finding('control-missing', { control: 'admin-warehouse-item', filtered: true }));
   assert.match(text, /matching the requested entry/);
   assert.doesNotMatch(text, /RAW-DETAIL/);
+  assert.match(renderRepairFinding(finding('control-missing', { control: 'cart-item', filtered: true,
+    matchingText: 'Keyboard', scope: 'cart-panel', scopeText: 'My cart' })), /My cart.*Keyboard/);
+  assert.match(renderRepairFinding(finding('value-mismatch', { control: 'status', observed: 'Pending',
+    expected: 'Approved' })), /shows "Pending", expected "Approved"/);
+  assert.match(renderRepairFinding(finding('text-unexpected', { control: 'ticket', matchedText: 'Private note' })),
+    /shows "Private note" that must not appear/);
+  assert.match(renderRepairFinding(finding('choice-missing', { control: 'frequency', requestedChoice: 'Weekly' })),
+    /required choice "Weekly"/);
+  assert.doesNotMatch(renderRepairFinding(finding('value-mismatch', { control: 'status',
+    observed: 'password=DO_NOT_DISCLOSE', expected: 'Approved' })), /DO_NOT_DISCLOSE/);
+  assert.equal(isFinding({ kind: 'value-mismatch', fields: { control: 'status', observed: 'x'.repeat(161) } }), false);
+  assert.match(renderRepairFinding(finding('value-mismatch', { control: 'latency', observed: '10ms', expected: '5ms' })),
+    /"10ms", expected "5ms"/);
+  assert.match(renderRepairFinding(finding('value-mismatch', { control: 'text', observed: ' a\nb ', expected: 'a b' })),
+    /" a\\nb ", expected "a b"/);
 });

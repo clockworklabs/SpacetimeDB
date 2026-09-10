@@ -15,7 +15,7 @@
         { "do": "signUp", "actor": "stranger", "name": "wes" },
         { "do": "click", "actor": "owner", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Coffee Grinder" } },
         { "do": "wait", "actor": "owner", "ms": 1500 },
-        { "do": "click", "actor": "owner", "testid": "cart-toggle" }
+        { "do": "click", "actor": "owner", "testid": "cart-toggle", "unlessVisible": "cart-total" }
       ],
       "criteria": [
         {
@@ -30,14 +30,14 @@
             { "do": "ensureSignedIn", "actor": "owner", "name": "vic", "readyTestid": "current-user" },
             { "do": "click", "actor": "owner", "testid": "overlay-close", "ifAvailable": true },
             { "do": "click", "actor": "owner", "testid": "catalog-link", "ifAvailable": true },
-            { "do": "click", "actor": "owner", "testid": "cart-toggle" },
+            { "do": "click", "actor": "owner", "testid": "cart-toggle", "unlessVisible": "cart-total" },
             { "do": "reload", "actor": "stranger", "settleMs": 1500 },
             { "do": "ensureSignedIn", "actor": "stranger", "name": "wes", "readyTestid": "current-user" },
             { "do": "click", "actor": "stranger", "testid": "overlay-close", "ifAvailable": true },
             { "do": "click", "actor": "stranger", "testid": "catalog-link", "ifAvailable": true },
             { "do": "expect", "actor": "owner", "testid": "cart-item", "contains": "Coffee Grinder", "count": 1 },
             { "do": "expectNumber", "actor": "owner", "testid": "cart-quantity", "in": { "testid": "cart-item", "contains": "Coffee Grinder" }, "equals": 1 },
-            { "do": "click", "actor": "stranger", "testid": "cart-toggle" },
+            { "do": "click", "actor": "stranger", "testid": "cart-toggle", "unlessVisible": "cart-total" },
             { "do": "expect", "actor": "stranger", "testid": "cart-item", "contains": "Coffee Grinder", "count": 1 },
             { "do": "expectNumber", "actor": "stranger", "testid": "cart-quantity", "in": { "testid": "cart-item", "contains": "Coffee Grinder" }, "equals": 1 }
           ],
@@ -57,7 +57,7 @@
             { "do": "ensureSignedIn", "actor": "owner", "name": "vic", "readyTestid": "current-user" },
             { "do": "click", "actor": "owner", "testid": "overlay-close", "ifAvailable": true },
             { "do": "click", "actor": "owner", "testid": "catalog-link", "ifAvailable": true },
-            { "do": "click", "actor": "owner", "testid": "cart-toggle" },
+            { "do": "click", "actor": "owner", "testid": "cart-toggle", "unlessVisible": "cart-total" },
             { "do": "expectNumber", "actor": "owner", "testid": "cart-total", "relativeTo": "cart-total-before-invalid", "plus": 0 },
             { "do": "expectNumber", "actor": "owner", "testid": "cart-quantity", "in": { "testid": "cart-item", "contains": "Coffee Grinder" }, "relativeTo": "cart-quantity-before-invalid", "plus": 0 }
           ],

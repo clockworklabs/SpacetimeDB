@@ -22,7 +22,7 @@
           "points": 2,
           "steps": [
             { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Air Purifier" } },
-            { "do": "click", "actor": "owner", "testid": "orders-toggle" },
+            { "do": "click", "actor": "owner", "testid": "orders-toggle", "unlessVisible": "order-item" },
             { "do": "expect", "actor": "owner", "testid": "order-item", "contains": "Air Purifier" },
             { "do": "click", "actor": "owner", "testid": "overlay-close", "ifAvailable": true },
             { "do": "click", "actor": "owner", "testid": "catalog-link", "ifAvailable": true },

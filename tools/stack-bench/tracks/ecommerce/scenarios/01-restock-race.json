@@ -60,7 +60,8 @@
         {
           "do": "click",
           "actor": "a",
-          "testid": "orders-toggle"
+          "testid": "orders-toggle",
+          "unlessVisible": "order-item"
         },
         {
           "do": "expect",
@@ -303,7 +304,8 @@
             {
               "do": "click",
               "actor": "a",
-              "testid": "orders-toggle"
+              "testid": "orders-toggle",
+              "unlessVisible": "order-item"
             },
             {
               "do": "expect",
@@ -327,7 +329,8 @@
             {
               "do": "click",
               "actor": "b",
-              "testid": "orders-toggle"
+              "testid": "orders-toggle",
+              "unlessVisible": "order-item"
             },
             {
               "do": "expect",
@@ -351,7 +354,8 @@
             {
               "do": "click",
               "actor": "c",
-              "testid": "orders-toggle"
+              "testid": "orders-toggle",
+              "unlessVisible": "order-item"
             },
             {
               "do": "expect",

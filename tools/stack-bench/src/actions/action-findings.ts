@@ -7,6 +7,7 @@
 // A scenario's own probe text is never a field. `detail` is never rendered.
 
 import { z } from 'zod';
+import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
 
 type Immutable<T> = T extends object ? { readonly [K in keyof T]: Immutable<T[K]> } : T;
 type SchemaFinding = z.infer<typeof findingSchema>;
@@ -52,17 +53,25 @@ const expectation = (value: NumberExpectation): string => [
 ].filter(Boolean).join(' and ') || 'a number';
 const target = (value: LifecycleTarget): string =>
   value === 'app-server' ? 'the application server' : 'the database runtime';
+export function findingText(value: string): string {
+  const text = redactCredentials(value);
+  return text.length > 160 ? `${text.slice(0, 157)}...` : text;
+}
+const quoted = (value: string): string => JSON.stringify(findingText(value));
 
 export const FAILED_FINDINGS: Renderers<FailedFindingFields> = {
-  'control-missing': f => `${scopedControl(f)}${f.filtered ? ' matching the requested entry' : ''} did not appear`,
+  'control-missing': f => `${scopedControl(f)}${f.scopeText ? ` in the entry matching ${quoted(f.scopeText)}` : ''}`
+    + `${f.matchingText ? ` matching ${quoted(f.matchingText)}` : f.filtered && !f.scopeText ? ' matching the requested entry' : ''} did not appear`,
   'control-present': f => `${control(f.control)} was shown when it must not be`,
   'control-available': f => `${control(f.control)} stayed available to ${f.actor}`,
   'control-not-ready': f => `${control(f.control)} never became usable for ${names(f.actors)}`,
   'control-blocked': f => `${scopedControl(f)} is covered by another element`,
   'control-empty': f => `${control(f.control)} is empty`,
   'control-unreadable': f => `${control(f.control)} is missing or unreadable for ${names(f.actors)}`,
-  'value-mismatch': f => `${control(f.control)} does not show the required value`,
-  'text-unexpected': f => `${control(f.control)} shows text that must not appear`,
+  'value-mismatch': f => f.observed !== undefined && f.expected !== undefined
+    ? `${control(f.control)} shows ${quoted(f.observed)}, expected ${quoted(f.expected)}`
+    : `${control(f.control)} does not show the required value`,
+  'text-unexpected': f => `${control(f.control)} shows ${f.matchedText === undefined ? 'text' : quoted(f.matchedText)} that must not appear`,
   'value-unstable': f => `${control(f.control)} changed while nothing happened`,
   'clients-disagree': f => `${names(f.actors)} see different values in ${control(f.control)}`,
   'number-missing': f => `${control(f.control)} shows no number`,
@@ -76,12 +85,12 @@ export const FAILED_FINDINGS: Renderers<FailedFindingFields> = {
   'actors-with-control': f => `${f.observed} actor(s) hold ${control(f.control)}, expected ${f.expected}`,
   'too-many-per-actor': f => `an actor holds more than ${f.maxEach} of ${control(f.control)}`,
   'clicks-failed': f => `${f.failed} of ${f.total} simultaneous clicks on ${control(f.control)} did not go through`,
-  'choice-missing': f => `${scopedControl(f)} did not offer the required choice`,
+  'choice-missing': f => `${scopedControl(f)} did not offer the required choice${f.requestedChoice === undefined ? '' : ` ${quoted(f.requestedChoice)}`}`,
   'page-timeout': f => f.control
     ? `${scopedControl(f)} did not become available in time`
     : 'the page did not respond in time',
   'page-crashed': () => 'the page crashed',
-  'page-error': f => `${f.control ? control(f.control) : 'the page'} did not behave as required`,
+  'page-error': f => `${f.control || f.scope ? scopedControl(f) : 'the page'} did not behave as required`,
   'app-control-failed': f => `${target(f.target)} could not ${f.mode}`,
   'script-failed': f => `${f.script} failed`,
   'script-invalid': f => `${f.script} is not a script inside the application directory`,
@@ -178,17 +187,18 @@ const expectationSchema = z.strictObject({
   atMost: z.number().optional(),
 });
 const targetSchema = z.enum(['app-server', 'backend-runtime']);
+const observedTextSchema = z.string().max(160).optional();
 
 export const findingSchema = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('control-missing'), fields: controlSchema.extend({ scope: z.string().optional(), filtered: z.boolean().optional() }) }),
+  z.strictObject({ kind: z.literal('control-missing'), fields: controlSchema.extend({ scope: z.string().optional(), filtered: z.boolean().optional(), matchingText: observedTextSchema, scopeText: observedTextSchema }) }),
   z.strictObject({ kind: z.literal('control-present'), fields: controlSchema }),
   z.strictObject({ kind: z.literal('control-available'), fields: z.strictObject({ control: z.string(), actor: z.string() }) }),
   z.strictObject({ kind: z.literal('control-not-ready'), fields: z.strictObject({ control: z.string(), actors: z.array(z.string()) }) }),
   z.strictObject({ kind: z.literal('control-blocked'), fields: z.strictObject({ control: z.string().optional(), scope: z.string().optional(), detail: z.string().optional() }) }),
   z.strictObject({ kind: z.literal('control-empty'), fields: controlSchema }),
   z.strictObject({ kind: z.literal('control-unreadable'), fields: z.strictObject({ control: z.string(), actors: z.array(z.string()) }) }),
-  z.strictObject({ kind: z.literal('value-mismatch'), fields: controlSchema }),
-  z.strictObject({ kind: z.literal('text-unexpected'), fields: controlSchema }),
+  z.strictObject({ kind: z.literal('value-mismatch'), fields: controlSchema.extend({ observed: observedTextSchema, expected: observedTextSchema }) }),
+  z.strictObject({ kind: z.literal('text-unexpected'), fields: controlSchema.extend({ matchedText: observedTextSchema }) }),
   z.strictObject({ kind: z.literal('value-unstable'), fields: controlSchema }),
   z.strictObject({ kind: z.literal('clients-disagree'), fields: z.strictObject({ control: z.string(), actors: z.array(z.string()) }) }),
   z.strictObject({ kind: z.literal('number-missing'), fields: controlSchema }),
@@ -199,7 +209,7 @@ export const findingSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('actors-with-control'), fields: z.strictObject({ control: z.string(), observed: z.number(), expected: z.number() }) }),
   z.strictObject({ kind: z.literal('too-many-per-actor'), fields: z.strictObject({ control: z.string(), maxEach: z.number() }) }),
   z.strictObject({ kind: z.literal('clicks-failed'), fields: z.strictObject({ control: z.string(), failed: z.number(), total: z.number(), detail: z.string().optional() }) }),
-  z.strictObject({ kind: z.literal('choice-missing'), fields: z.strictObject({ control: z.string().optional(), scope: z.string().optional(), detail: z.string().optional() }) }),
+  z.strictObject({ kind: z.literal('choice-missing'), fields: z.strictObject({ control: z.string().optional(), scope: z.string().optional(), detail: z.string().optional(), requestedChoice: observedTextSchema }) }),
   z.strictObject({ kind: z.literal('page-timeout'), fields: z.strictObject({ control: z.string().optional(), scope: z.string().optional(), detail: z.string().optional() }) }),
   z.strictObject({ kind: z.literal('page-crashed'), fields: detailSchema }),
   z.strictObject({ kind: z.literal('page-error'), fields: z.strictObject({ control: z.string().optional(), scope: z.string().optional(), detail: z.string().optional() }) }),

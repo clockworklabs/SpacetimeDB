@@ -9,7 +9,8 @@
       "id": 102,
       "name": "Purchases are attributed to whoever made them",
       "actors": ["victim","attacker"],
-      "setup": [{"do":"signUp","actor":"victim","name":"lee"},{"do":"signUp","actor":"attacker","name":"mel"}],
+      "setup": [{"do":"signUp","actor":"victim","name":"lee"},{"do":"signUp","actor":"attacker","name":"mel"},
+        {"do":"click","actor":"victim","testid":"buy-now","in":{"testid":"item-card","contains":"Coffee Grinder"}}],
       "criteria": [
         {
           "id": "102a",
@@ -32,9 +33,10 @@
               "settleMs": 2000
             },
             {"do":"expectActionOutcome","actor":"attacker","outcome":"accepted"},
-            {"do":"click","actor":"victim","testid":"orders-toggle"},
+            {"do":"click","actor":"victim","testid":"orders-toggle", "unlessVisible": "order-item" },
+            {"do":"expect","actor":"victim","testid":"order-item","contains":"Coffee Grinder","count":1},
             {"do":"expect","actor":"victim","testid":"order-item","contains":"Desk Lamp","absent":true},
-            {"do":"click","actor":"attacker","testid":"orders-toggle"},
+            {"do":"click","actor":"attacker","testid":"orders-toggle", "unlessVisible": "order-item" },
             {"do":"expect","actor":"attacker","testid":"order-item","contains":"Desk Lamp","count":1}
           ],
           "statedBy": "the authenticated caller, not a client-supplied identity, owns the order"

@@ -25,7 +25,7 @@
             { "do": "click", "actor": "peer", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Headphones" } },
             { "do": "setOffline", "actor": "shopper", "offline": false, "settleMs": 6000 },
             { "do": "expect", "actor": "shopper", "testid": "current-user", "contains": "pat" },
-            { "do": "click", "actor": "shopper", "testid": "cart-toggle" },
+            { "do": "click", "actor": "shopper", "testid": "cart-toggle", "unlessVisible": "cart-total" },
             { "do": "expect", "actor": "shopper", "testid": "cart-item", "contains": "Keyboard" },
             { "do": "expect", "actor": "shopper", "testid": "cart-item", "contains": "Headphones" }
           ]

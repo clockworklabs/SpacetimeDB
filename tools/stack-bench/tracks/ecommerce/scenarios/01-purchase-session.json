@@ -111,7 +111,8 @@
             {
               "do": "expectActionOutcome",
               "actor": "guest",
-              "outcome": "refused"
+              "outcome": "refused",
+              "routeProvenBy": "buyer"
             },
             {
               "do": "expectNumber",

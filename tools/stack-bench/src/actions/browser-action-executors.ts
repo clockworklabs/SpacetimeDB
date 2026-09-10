@@ -3,14 +3,16 @@ import type {
   ActionImplementation,
 } from './action-contract.js';
 import { actorFor, fail, inconclusive, pad } from './actor-action-runtime.js';
-import { finding, renderFinding } from './action-findings.js';
+import { finding, findingText, renderFinding } from './action-findings.js';
 import { settledLocatorCount } from '../evidence/browser-evidence.js';
 import { harnessBrowserFailure } from '../evidence/harness-errors.js';
+
 
 interface Locator {
   click(options?: unknown): Promise<void>;
   count(): Promise<number>;
-  evaluate<Result>(callback: (element: { readonly tagName: string }) => Result): Promise<Result>;
+  evaluate<Result>(callback: (element: { readonly tagName: string;
+    readonly options?: ArrayLike<{ value: string; label: string }> }) => Result): Promise<Result>;
   fill(value: string): Promise<void>;
   filter(options: unknown): Locator;
   first(): Locator;
@@ -226,7 +228,20 @@ async function fill({ input, capabilities, signal }: BrowserArguments<Interactio
   const text = browser.expand(input.text) ?? '';
   const tag = await loc.evaluate(element => element.tagName);
   if (tag === 'SELECT') {
-    await loc.selectOption(text).catch(async () => { await loc.selectOption({ label: text }); });
+    try {
+      await loc.selectOption(text).catch(async () => { await loc.selectOption({ label: text }); });
+    } catch (error) {
+      if (harnessBrowserFailure(error)) throw error;
+      const options = await loc.evaluate(element => element.tagName === 'SELECT'
+        ? Array.from(element.options ?? []).map(option => ({ value: option.value, label: option.label }))
+        : null).catch(() => null);
+      if (options && !options.some(option => option.value === text || option.label === text)) {
+        fail('choice-missing', { control: input.testid,
+          ...(input.in ? { scope: input.in.testid } : {}),
+          requestedChoice: findingText(text) });
+      }
+      throw error;
+    }
   } else {
     const type = tag === 'INPUT' ? await loc.getAttribute('type') : null;
     const value = type === 'datetime-local' && /^\d{4}-\d{2}-\d{2}$/.test(text)
@@ -299,6 +314,8 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
     });
   if (!visible) fail('control-missing', { control: input.testid,
       ...(scope ? { scope: scope.testid } : {}),
+      ...(contains ? { matchingText: findingText(contains) } : {}),
+      ...(scope?.contains ? { scopeText: findingText(scope.contains) } : {}),
       ...(contains || scope?.contains ? { filtered: true } : {}) });
 
   if (input.count !== undefined) {
@@ -325,11 +342,16 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
       await browser.sleep(250, signal);
       value = await read();
     }
-    if (value !== input.value) fail('value-mismatch', { control: input.testid });
+    if (value !== input.value) {
+      const sensitive = /^password$/i.test(await loc.getAttribute('type') ?? '') || /password|secret|token/i.test(input.testid);
+      fail('value-mismatch', { control: input.testid,
+        ...(!sensitive ? { observed: findingText(value), expected: findingText(input.value) } : {}) });
+    }
   }
   if (input.notContains) {
     const text = (await loc.innerText()) || '';
-    if (text.includes(input.notContains)) fail('text-unexpected', { control: input.testid });
+    if (text.includes(input.notContains)) fail('text-unexpected', { control: input.testid,
+      ...(!/password|secret|token/i.test(input.testid) ? { matchedText: findingText(input.notContains) } : {}) });
   }
   if (input.nonEmpty) {
     const text = (await readValue(loc)).trim();
@@ -520,6 +542,8 @@ async function expectNumber({ input, capabilities, signal }:
     if (harnessBrowserFailure(error)) throw error;
     fail('control-missing', { control: input.testid,
       ...(scope ? { scope: scope.testid } : {}),
+      ...(contains ? { matchingText: findingText(contains) } : {}),
+      ...(scope?.contains ? { scopeText: findingText(scope.contains) } : {}),
       ...(contains || scope?.contains ? { filtered: true } : {}) });
   });
 
@@ -660,7 +684,6 @@ export function pageFailure(message: string, scope?: string): ActionApplicationF
   scope ??= !combined && controls.length > 1 ? controls.at(-2) : undefined;
   const named = { ...(control ? { control } : {}), ...(scope ? { scope } : {}) };
   const value = /Page crashed/i.test(message) ? finding('page-crashed', { detail: message })
-    : /selectOption/i.test(message) ? finding('choice-missing', { ...named, detail: message })
     : /intercepts pointer events/i.test(message) ? finding('control-blocked', { ...named, detail: message })
     : /timeout/i.test(message) ? finding('page-timeout', { ...named, detail: message })
     : finding('page-error', { ...named, detail: message });

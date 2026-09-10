@@ -60,6 +60,35 @@ test('the extracted executor registry is exact and every migrated action has bou
   }
 });
 
+test('UI failures retain bounded observations but exclude passwords and unproven missing choices', async () => {
+  for (const operation of ['expect', 'expectNumber']) {
+    const result = await run({ do: operation, actor: 'a', testid: 'stock',
+      ...(operation === 'expect' ? { contains: 'Keyboard' } : {}),
+      in: { testid: 'warehouse', contains: 'East' }, ...(operation === 'expectNumber' ? { equals: 1 } : {}) },
+    services({ loc: () => ({ waitFor: async () => { throw new Error('not visible'); } }) }));
+    assert.equal(result.finding?.kind, 'control-missing');
+    assert.match(result.summary ?? '', operation === 'expect' ? /East.*Keyboard/ : /East/);
+  }
+  for (const password of [false, true]) {
+    const result = await run({ do: 'expect', actor: 'a', testid: 'field', value: 'Approved', within: 1 },
+      services({ loc: () => ({ waitFor: async () => {},
+        evaluate: async () => 'INPUT', inputValue: async () => password ? 'RAW_PASSWORD' : 'Pending',
+        getAttribute: async () => password ? 'password' : 'text' }) }));
+    assert.equal(result.finding?.kind, 'value-mismatch');
+    if (password) assert.doesNotMatch(JSON.stringify(result.finding), /RAW_PASSWORD|Approved/);
+    else assert.match(result.summary ?? '', /Pending.*Approved/);
+  }
+  for (const present of [false, true]) {
+    const select = { tagName: 'SELECT', options: [{ value: 'weekly', label: present ? 'Weekly' : 'Daily' }] };
+    const result = await run({ do: 'fill', actor: 'a', testid: 'frequency', text: 'Weekly' }, services({ loc: () => ({
+      waitFor: async () => {}, evaluate: async (read: (element: typeof select) => unknown) => read(select),
+      selectOption: async () => { throw new Error('locator.selectOption: Timeout exceeded'); },
+    }) }));
+    assert.equal(result.finding?.kind, present ? 'page-timeout' : 'choice-missing');
+    if (!present) assert.match(result.summary ?? '', /required choice "Weekly"/);
+  }
+});
+
 test('timing executes through the contract and still rejects an unknown actor', async () => {
   const slept: number[] = [];
   const provided = services({}, { clockSleep: async (ms) => { slept.push(ms); } });
@@ -223,7 +252,8 @@ test('an observation mismatch is application evidence, not a harness crash', asy
     notContains: 'private value' }, services(actor));
   assert.equal(result.status, 'failed');
   assert.equal(result.code, 'application_failure');
-  assert.match(result.summary ?? '', /shows text that must not appear/);
+  assert.match(result.summary ?? '', /shows "private value" that must not appear/);
+  assert.doesNotMatch(JSON.stringify(result.finding), /contains private value/);
 });
 
 test('a visible but blank field does not satisfy a non-empty assertion', async () => {
