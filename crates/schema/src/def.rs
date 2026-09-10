@@ -33,9 +33,10 @@ use spacetimedb_data_structures::map::{Equivalent, HashMap};
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v10::{
     ExplicitNames, MethodOrAny, RawColumnDefaultValueV10, RawConstraintDefV10, RawHttpHandlerDefV10,
-    RawHttpRouteDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Sections,
-    RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10, RawScopedTypeNameV10,
-    RawSequenceDefV10, RawSubmoduleV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10, RawViewPrimaryKeyDefV10,
+    RawHttpRouteDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawMigrationDefV10, RawModuleDefV10,
+    RawModuleDefV10Sections, RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10,
+    RawScopedTypeNameV10, RawSequenceDefV10, RawSubmoduleV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10,
+    RawViewPrimaryKeyDefV10,
 };
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIndexAlgorithm, RawIndexDefV9,
@@ -179,6 +180,9 @@ pub struct ModuleDef {
 
     /// Submodules, keyed by the namespace they are registered under.
     submodules: IndexMap<Identifier, ModuleDef>,
+
+    /// Migrations, keyed by the schema hash of the old module.
+    migrations: IndexMap<spacetimedb_lib::Hash, ModuleDef>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -986,6 +990,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
             http_routes: _,
             raw_module_def_version: _,
             submodules: _,
+            migrations: _,
         } = val;
 
         // Extract column defaults from tables before consuming tables
@@ -1046,6 +1051,7 @@ impl From<ModuleDef> for RawModuleDefV10 {
             http_routes,
             raw_module_def_version: _,
             submodules,
+            migrations,
         } = val;
 
         let mut explicit_names = ExplicitNames::default();
@@ -1172,6 +1178,14 @@ impl From<ModuleDef> for RawModuleDefV10 {
             })
             .collect();
 
+        let migrations: Vec<RawMigrationDefV10> = migrations
+            .into_iter()
+            .map(|(schema_hash, dropped)| RawMigrationDefV10 {
+                schema_hash,
+                dropped: dropped.into(),
+            })
+            .collect();
+
         RawModuleDefV10Sections {
             typespace: Some(typespace),
             types: Some(raw_types),
@@ -1189,6 +1203,7 @@ impl From<ModuleDef> for RawModuleDefV10 {
             http_routes: Some(raw_http_routes),
             view_primary_keys: Some(raw_view_primary_keys),
             submodules: Some(submodules),
+            migrations: Some(migrations),
         }
         .into()
     }

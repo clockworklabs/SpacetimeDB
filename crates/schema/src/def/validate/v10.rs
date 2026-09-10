@@ -94,6 +94,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         http_routes,
         view_primary_keys,
         submodules,
+        migrations,
     } = def.into_sections();
 
     let mut typespace = typespace.unwrap_or_default();
@@ -301,6 +302,20 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
 
     let typespace_for_generate = typespace_for_generate.finish();
 
+    let migrations = migrations
+        .into_iter()
+        .flatten()
+        .map(|RawMigrationDefV10 { schema_hash, dropped }| {
+            let submodule_validation = dropped
+                .sections
+                .iter()
+                .all(|section| section.is_tables() || section.is_types() || section.is_typespace())
+                .ok_or_else(|| ValidationError::InvalidMigrationSubmodule { schema_hash }.into());
+            let ((), submodule) = (submodule_validation, validate(dropped)).combine_errors()?;
+            Ok((schema_hash, submodule))
+        })
+        .collect_all_errors()?;
+
     let mut module_def = ModuleDef {
         // Set by `apply_namespace` below.
         path: NamespacePath::root(),
@@ -319,6 +334,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         http_routes,
         raw_module_def_version: RawModuleDefVersion::V10,
         submodules,
+        migrations,
     };
 
     // Submodules were validated in isolation, so their defs carry root-relative names.
@@ -340,25 +356,15 @@ fn validate_submodules(submodules: Vec<RawSubmoduleV10>) -> Result<IndexMap<Iden
     let mut map = IndexMap::with_capacity(submodules.len());
 
     for submodule in submodules {
-        if submodule.namespace.len() > 63 {
-            errors.push(ValidationError::NamespaceTooLong {
-                namespace: submodule.namespace.clone().into(),
-                len: submodule.namespace.len(),
-            });
-        }
-
-        let namespace = match Identifier::new(RawIdentifier::from(submodule.namespace.clone())) {
-            Ok(namespace) => namespace,
-            Err(error) => {
-                errors.push(ValidationError::IdentifierError { error });
+        let namespace = match validate_namespace(submodule.namespace.into()) {
+            Ok(ns) => ns,
+            Err(e) => {
+                errors.extend(e);
                 continue;
             }
         };
-
         if map.contains_key(&namespace) {
-            errors.push(ValidationError::DuplicateName {
-                name: submodule.namespace.into(),
-            });
+            errors.push(ValidationError::DuplicateName { name: namespace.into() });
         } else {
             match validate(submodule.module) {
                 Ok(def) => {
@@ -366,7 +372,7 @@ fn validate_submodules(submodules: Vec<RawSubmoduleV10>) -> Result<IndexMap<Iden
                         if opt_id.is_some() {
                             errors.push(ValidationError::LifecycleInSubmodule {
                                 lifecycle,
-                                namespace: submodule.namespace.clone(),
+                                namespace: namespace.to_string(),
                             });
                         }
                     }
@@ -378,6 +384,25 @@ fn validate_submodules(submodules: Vec<RawSubmoduleV10>) -> Result<IndexMap<Iden
     }
 
     ValidationErrors::add_extra_errors(Ok(map), errors)
+}
+
+fn validate_namespace(namespace: RawIdentifier) -> Result<Identifier> {
+    let len_error = (namespace.len() > 63).then(|| ValidationError::NamespaceTooLong {
+        namespace: namespace.clone(),
+        len: namespace.len(),
+    });
+
+    let namespace = Identifier::new(namespace)
+        .and_then(|ns| {
+            if &ns == "dropped" {
+                Err(IdentifierError::Reserved { name: ns.into() })
+            } else {
+                Ok(ns)
+            }
+        })
+        .map_err(|error| ValidationError::IdentifierError { error }.into());
+
+    ValidationErrors::add_extra_errors(namespace, len_error)
 }
 
 /// Change the visibility of scheduled functions and lifecycle reducers to Internal.

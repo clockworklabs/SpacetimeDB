@@ -2,7 +2,7 @@ use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_lib::db::raw_def::v10::MethodOrAny;
 use spacetimedb_lib::db::raw_def::v9::{Lifecycle, RawScopedTypeNameV9};
 use spacetimedb_lib::http::ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION;
-use spacetimedb_lib::{ProductType, SumType};
+use spacetimedb_lib::{Hash, ProductType, SumType};
 use spacetimedb_primitives::{ColId, ColList, ColSet};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::{bsatn::DecodeError, raw_identifier::RawIdentifier, AlgebraicType, AlgebraicTypeRef};
@@ -183,6 +183,8 @@ pub enum ValidationError {
     LifecycleInSubmodule { lifecycle: Lifecycle, namespace: String },
     #[error("submodule namespace `{namespace}` is {len} bytes, which exceeds the 63-byte limit")]
     NamespaceTooLong { namespace: RawIdentifier, len: usize },
+    #[error("submodule def for migration from schema with hash {schema_hash} contains disallowed sections")]
+    InvalidMigrationSubmodule { schema_hash: Hash },
 }
 
 /// A wrapper around an `AlgebraicType` that implements `fmt::Display`.
