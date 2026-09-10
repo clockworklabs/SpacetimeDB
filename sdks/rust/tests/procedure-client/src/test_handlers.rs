@@ -1,7 +1,7 @@
 use crate::module_bindings::*;
 use anyhow::Context;
 use core::time::Duration;
-use spacetimedb_lib::db::raw_def::v10::{RawModuleDefV10, RawModuleDefV10Section};
+use spacetimedb_lib::db::raw_def::v10::{ExplicitNameEntry, RawModuleDefV10};
 use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Table};
 use test_counter::{server_url, TestCounter};
 
@@ -265,14 +265,19 @@ async fn exec_procedure_http_ok(db_name: &str) {
                             let module_def: RawModuleDefV10 = spacetimedb_lib::de::serde::deserialize_from(
                                 &mut serde_json::Deserializer::from_str(&res.unwrap()),
                             )?;
-                            anyhow::ensure!(module_def.sections.iter().any(|section| {
-                                if let RawModuleDefV10Section::Procedures(procedures) = section {
-                                    procedures
-                                        .iter()
-                                        .any(|procedure| &*procedure.source_name == "read_my_schema")
-                                } else {
-                                    false
-                                }
+                            // The schema endpoint exports source-to-canonical name mappings.
+                            // C# uses `ReadMySchema` in source and `read_my_schema` on the wire.
+                            let names = module_def.explicit_names().cloned().unwrap_or_default().into_entries();
+                            anyhow::ensure!(names.iter().any(|entry| {
+                                let ExplicitNameEntry::Function(mapping) = entry else {
+                                    return false;
+                                };
+                                &*mapping.canonical_name == "read_my_schema"
+                                    && module_def
+                                        .procedures()
+                                        .into_iter()
+                                        .flatten()
+                                        .any(|procedure| procedure.source_name == mapping.source_name)
                             }));
                             Ok(())
                         })(),
