@@ -473,7 +473,7 @@ test('recipe execution keeps inherited suites out of the current-level score', (
     const inherited = suites.filter(suite => suite.inherited);
     assert.equal(inherited.length, 38);
     assert(inherited.every(suite => suite.fromLevel === 1));
-    assert.equal(suites.filter(suite => !suite.inherited).length, 11);
+    assert.equal(suites.filter(suite => !suite.inherited).length, 12);
   } finally { rmSync(temp, { recursive: true, force: true }); }
 });
 

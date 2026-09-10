@@ -322,7 +322,8 @@ test('the cumulative L3 recipe adds every L3 check', () => {
   );
   assert.equal(plan.checks.length, 98);
   assert.equal(plan.scoring.points, 180);
-  assert.equal(plan.execution.length, 57);
+  // Overdraw and the three restock checks use separate reset boundaries.
+  assert.equal(plan.execution.length, 60);
 
   const plannedKeys = new Set(plan.checks.map(check => check.stableKey));
   const expectedL3Keys = selected.flatMap(({ pack, check }) => {
