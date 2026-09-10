@@ -1630,18 +1630,6 @@ impl fmt::Debug for ViewCallResult {
 }
 
 impl ViewCallResult {
-    fn into_materialized_tx(self, db: &RelationalDB, trapped: bool) -> Result<MutTxId, ViewCallError> {
-        let error = match self.outcome {
-            ViewOutcome::Success if !trapped => return Ok(self.tx),
-            ViewOutcome::Success => "View instance trapped during materialization".to_owned(),
-            ViewOutcome::Failed(error) => error,
-            ViewOutcome::BudgetExceeded => "View terminated due to insufficient budget".to_owned(),
-        };
-        let (_, metrics, reducer) = db.rollback_mut_tx(self.tx);
-        db.report_mut_tx_metrics(reducer, metrics, None);
-        Err(ViewCallError::InternalError(error))
-    }
-
     pub fn default(tx: MutTxId) -> Self {
         Self {
             outcome: ViewOutcome::Success,
@@ -1721,9 +1709,6 @@ pub enum ClientConnectedError {
 pub struct RefInstance<'a, I: WasmInstance> {
     pub common: &'a mut InstanceCommon,
     pub instance: &'a mut I,
-    // Invocation-local disposal state survives errors propagated through SQL or
-    // subscription helpers, whose Result error does not carry a success tuple.
-    pub(crate) trapped: bool,
 }
 
 macro_rules! call_view_command_method {
@@ -2961,26 +2946,17 @@ impl ModuleHost {
     /// Passing [`Workload::Sql`] will update the instance's last-used timestamp.
     /// Passing [`Workload::Subscribe`] will also increment the subscriber's refcount.
     pub fn materialize_views<I: WasmInstance>(
-        tx: MutTxId,
+        mut tx: MutTxId,
         instance: &mut RefInstance<'_, I>,
         view_collector: &impl CollectViews,
         caller: Identity,
         workload: Workload,
     ) -> Result<(MutTxId, bool), ViewCallError> {
         use FunctionArgs::*;
-        let db = instance.instance.replica_ctx().relational_db().clone();
-        // Keep all earlier view materializations and subscription refcounts in
-        // the same rollback boundary if any later view fails.
-        let mut tx = scopeguard::guard(Some(tx), |tx| {
-            if let Some(tx) = tx {
-                let (_, metrics, reducer) = db.rollback_mut_tx(tx);
-                db.report_mut_tx_metrics(reducer, metrics, None);
-            }
-        });
         let mut view_ids = HashSet::new();
         view_collector.collect_views(&mut view_ids);
         for view_id in view_ids {
-            let st_view_row = tx.as_ref().unwrap().lookup_st_view(view_id)?;
+            let st_view_row = tx.lookup_st_view(view_id)?;
             let view_name: NamespacedIdentifier = st_view_row.view_name.into();
             let view_id = st_view_row.view_id;
             let table_id = st_view_row.table_id.ok_or(ViewCallError::TableDoesNotExist(view_id))?;
@@ -2992,30 +2968,25 @@ impl ModuleHost {
             };
             let view_call = ViewCallInfo::from_args(view_id, args);
             let sender = args.sender();
-            let is_materialized = tx.as_ref().unwrap().is_view_materialized(&view_call)?;
+            let is_materialized = tx.is_view_materialized(&view_call)?;
             if !is_materialized {
-                let (res, trapped) = Self::call_view(
-                    instance,
-                    tx.take().unwrap(),
-                    &view_name,
-                    view_id,
-                    table_id,
-                    Nullary,
-                    caller,
-                    sender,
-                )?;
-                *tx = Some(res.into_materialized_tx(&db, trapped)?);
+                let (res, trapped) =
+                    Self::call_view(instance, tx, &view_name, view_id, table_id, Nullary, caller, sender)?;
+                tx = res.tx;
+                if trapped {
+                    return Ok((tx, true));
+                }
             }
-            let tx = tx.as_mut().unwrap();
-            // These changes commit only after every requested view succeeds.
+            // If this is a sql call, we only update this view's "last called" timestamp
             if let Workload::Sql = workload {
                 tx.update_view_timestamp(view_call.clone(), args)?;
             }
+            // If this is a subscribe call, we also increment this view's subscriber count
             if let Workload::Subscribe = workload {
                 tx.subscribe_view(view_call, args, caller)?;
             }
         }
-        Ok((ScopeGuard::into_inner(tx).unwrap(), false))
+        Ok((tx, false))
     }
 
     /// Refreshes every view made stale by `tx`.
@@ -3162,11 +3133,6 @@ impl ModuleHost {
         sender: Option<Identity>,
         timestamp: Timestamp,
     ) -> Result<(ViewCallResult, bool), ViewCallError> {
-        let db = instance.instance.replica_ctx().relational_db().clone();
-        let tx = scopeguard::guard(tx, |tx| {
-            let (_, metrics, reducer) = db.rollback_mut_tx(tx);
-            db.report_mut_tx_metrics(reducer, metrics, None);
-        });
         let module_def = &instance.common.info().module_def;
         let (global_fn_ptr, view_def, owning_def) = module_def
             .view_by_name_with_global_fn_ptr(view_name)
@@ -3178,7 +3144,7 @@ impl ModuleHost {
 
         Ok(Self::call_view_inner(
             instance,
-            ScopeGuard::into_inner(tx),
+            tx,
             view_name,
             view_id,
             table_id,
@@ -3220,9 +3186,7 @@ impl ModuleHost {
             view_typespace,
         };
 
-        let (result, trapped) = instance.common.call_view_with_tx(tx, params, instance.instance);
-        instance.trapped |= trapped;
-        (result, trapped)
+        instance.common.call_view_with_tx(tx, params, instance.instance)
     }
 
     pub async fn init_database(&self, program: Program) -> Result<InitDatabaseResult, InitDatabaseError> {
@@ -3723,69 +3687,6 @@ mod tests {
     use spacetimedb_lib::{AlgebraicType, Identity};
     use spacetimedb_sats::product;
     use std::sync::Arc;
-
-    #[test]
-    fn failed_view_materialization_rolls_back_prior_rows_and_subscriber_counts() -> anyhow::Result<()> {
-        use super::{ViewCallResult, ViewOutcome};
-        use crate::db::relational_db::tests_utils::begin_mut_tx;
-        use spacetimedb_datastore::locking_tx_datastore::{ViewCallInfo, ViewInstanceArgs};
-        use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
-        use spacetimedb_lib::ProductType;
-        use spacetimedb_schema::def::ModuleDef;
-
-        let db = TestDB::in_memory()?;
-        let mut builder = RawModuleDefV10Builder::new();
-        let row = builder.add_algebraic_type(
-            [],
-            "Row",
-            AlgebraicType::Product(ProductType::from_iter([("value", AlgebraicType::U8)])),
-            true,
-        );
-        builder.add_view(
-            "earlier",
-            0,
-            true,
-            true,
-            ProductType::unit(),
-            AlgebraicType::array(row.into()),
-        );
-        let module: ModuleDef = builder.finish().try_into()?;
-        let mut tx = begin_mut_tx(&db);
-        let (view_id, table_id) = db.create_view(&mut tx, &module, module.view("earlier").unwrap())?;
-        db.commit_tx(tx)?;
-        let call = ViewCallInfo::anonymous(view_id);
-
-        for (outcome, trapped) in [
-            (ViewOutcome::Failed("denied".into()), false),
-            (ViewOutcome::Failed("trap".into()), true),
-            (ViewOutcome::BudgetExceeded, true),
-            (ViewOutcome::Success, true),
-        ] {
-            let mut tx = begin_mut_tx(&db);
-            // A preceding view succeeded in this same multi-view request.
-            db.materialize_view_call(&mut tx, table_id, call.clone(), vec![product![9_u8]])?;
-            tx.subscribe_view(call.clone(), ViewInstanceArgs::Anonymous, Identity::ZERO)?;
-            assert_eq!(tx.active_subscribers_for_view(view_id), vec![(Identity::ZERO, 1)]);
-            let mut result = ViewCallResult::default(tx);
-            result.outcome = outcome;
-            assert!(result.into_materialized_tx(&db, trapped).is_err());
-
-            let tx = begin_mut_tx(&db);
-            assert!(tx.active_subscribers_for_view(view_id).is_empty());
-            assert!(!tx.is_view_materialized(&call)?);
-            assert_eq!(db.iter_mut(&tx, table_id)?.count(), 0);
-            let _ = db.rollback_mut_tx(tx);
-        }
-        // Success retains the owned transaction for the normal commit path.
-        let mut tx = begin_mut_tx(&db);
-        db.materialize_view_call(&mut tx, table_id, call.clone(), vec![product![9_u8]])?;
-        tx.subscribe_view(call, ViewInstanceArgs::Anonymous, Identity::ZERO)?;
-        db.commit_tx(ViewCallResult::default(tx).into_materialized_tx(&db, false)?)?;
-        let tx = begin_mut_tx(&db);
-        assert_eq!(tx.active_subscribers_for_view(view_id), vec![(Identity::ZERO, 1)]);
-        let _ = db.rollback_mut_tx(tx);
-        Ok(())
-    }
 
     fn v2_client_config() -> ClientConfig {
         ClientConfig {
