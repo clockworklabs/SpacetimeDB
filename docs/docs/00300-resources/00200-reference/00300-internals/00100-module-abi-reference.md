@@ -59,7 +59,7 @@ const LOG_LEVEL_TRACE: u8 = 4;
 /// a fatal error causes the WASM module to trap.
 const LOG_LEVEL_PANIC: u8 = 101;
 
-/// Log at `level` a `text` message occuring in `filename:line_number`
+/// Log at `level` a `text` message occurring in `filename:line_number`
 /// with `target` being the module path at the `log!` invocation site.
 ///
 /// These various pointers are interpreted lossily as UTF-8 strings.
