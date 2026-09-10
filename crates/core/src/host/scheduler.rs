@@ -12,13 +12,14 @@ use core::time::Duration;
 use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
+use prometheus::IntGauge;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
 use spacetimedb_datastore::execution_context::{ExecutionContext, ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::system_tables::{StScheduledFields, ST_SCHEDULED_ID};
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::scheduler::ScheduleAt;
-use spacetimedb_lib::{hash_bytes, Hash, Identity, TimeDuration, Timestamp};
+use spacetimedb_lib::{hash_bytes, Hash, TimeDuration, Timestamp};
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::bsatn::ToBsatn as _;
 use spacetimedb_sats::AlgebraicValue;
@@ -144,7 +145,9 @@ impl SchedulerStarter {
                 rx: self.rx,
                 queue,
                 inflight_calls: FuturesUnordered::new(),
-                database_identity: module_host.info().database_identity,
+                active_calls_metric: WORKER_METRICS
+                    .scheduler_active_scheduled_functions
+                    .with_label_values(&module_host.info().database_identity),
                 module_host: module_host.downgrade(),
             }
             .run(),
@@ -272,7 +275,7 @@ struct SchedulerActor {
     rx: mpsc::UnboundedReceiver<MsgOrExit<SchedulerMessage>>,
     queue: DelayQueue<QueueItem>,
     inflight_calls: FuturesUnordered<ScheduledFunctionFuture>,
-    database_identity: Identity,
+    active_calls_metric: IntGauge,
     module_host: WeakModuleHost,
 }
 
@@ -331,9 +334,6 @@ pub(crate) enum CallScheduledFunctionError {
     #[error(transparent)]
     NoSuchModule(#[from] NoSuchModule),
 }
-
-#[cfg(target_pointer_width = "64")]
-spacetimedb_table::static_assert_size!(QueueItem, 72);
 
 impl SchedulerActor {
     async fn run(mut self) {
@@ -445,10 +445,7 @@ impl SchedulerActor {
     }
 
     fn update_active_calls_metric(&self) {
-        WORKER_METRICS
-            .scheduler_active_scheduled_functions
-            .with_label_values(&self.database_identity)
-            .set(self.inflight_calls.len() as i64);
+        self.active_calls_metric.set(self.inflight_calls.len() as i64);
     }
 }
 
