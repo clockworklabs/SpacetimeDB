@@ -155,3 +155,12 @@ export type {
   ContainerDiscovery,
   ContainerCredentialErrorCode,
 } from './container';
+
+export { ContainerSession, ContainerSessionError } from './container_session';
+export type {
+  ContainerGeneration,
+  ContainerSessionOptions,
+  ContainerSessionEvent,
+  ContainerSessionErrorCode,
+} from './container_session';
+export { ContainerSessionCallError } from '../managed_session_lifecycle';

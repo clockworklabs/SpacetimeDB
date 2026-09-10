@@ -343,3 +343,59 @@ most 30 seconds. `expiresAt` and `remainingLifetimeMs` expose their remaining
 validity; logging or serializing the token object redacts its value. Rebuild the
 database connection with a fresh token and restore subscriptions on expiry or
 disconnection. This helper does not manage connection renewal or replay calls.
+
+### Managed container connections in Node.js
+
+`ContainerSession` owns credential renewal and successive connections. Pass the
+unmodified generated `DbConnection` class so it can create a fresh builder,
+cache, and subscriptions for every generation:
+
+```ts
+import { Container, ContainerSession } from 'spacetimedb/sdk/node';
+import { DbConnection } from './module_bindings';
+
+const session = new ContainerSession(DbConnection, {
+  container: Container.fromEnvironment(),
+  onConnect(connection, { generation }) {
+    connection.subscriptionBuilder().subscribe('SELECT * FROM jobs');
+    console.log('Connected generation', generation);
+  },
+});
+const pause = new AbortController();
+process.once('SIGTERM', () => pause.abort());
+try {
+  await session.run(pause.signal);
+} finally {
+  await session.shutdown();
+}
+```
+
+The owner pins the database Identity and server before requesting credentials.
+Optional `target: Identity` and `serverUri` select another database and its
+trusted server. It verifies the connecting sender against the container's
+Identity before calling `onConnect`. Setup and event callbacks must be
+synchronous. Application asynchronous work must have its own cancellation and
+error handling.
+
+Renewal requests a fresh token before expiry. Both the returned expiry and its
+monotonic lifetime must extend materially before the owner rotates connections;
+the same lease expiry does not cause repeated rotations. A rejected credential
+is terminal. Transient broker failures retry while the current credential
+remains valid, and expiry seals the old generation even if a refresh stalls.
+The old WebSocket is closed and joined before a new one is opened. This causes a
+brief interruption and requires restoring subscriptions in every `onConnect`.
+
+Aborting `run(signal)` immediately seals that generation, then joins its broker
+request and WebSocket before resolving. Calling `run` again resumes with fresh
+credentials. `shutdown()` is permanent and also awaits cleanup. Concurrent
+`run` calls are rejected. Keep and await the owner; discarding its promise does
+not cancel it.
+
+No reducer or procedure is replayed. A pending call receives
+`ContainerSessionCallError`: `outcome: 'not_sent'` means it was never handed to
+the transport, while `outcome: 'unknown'` means no confirmed result was received
+after handoff. A confirmed result wins a later shutdown. Generation
+`disconnected` events also identify the interruption and warn about unconfirmed
+calls. Retained old connections reject new calls as `not_sent`, reject new
+subscriptions, and release their callbacks. Their cache is an old snapshot;
+the next generation starts with a separate empty cache.
