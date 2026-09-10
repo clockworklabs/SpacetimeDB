@@ -3,7 +3,7 @@
   "track": "ecommerce",
   "level": 3,
   "name": "Scheduled-work access",
-  "note": "The customer sends a direct cancellation for an admin-created pending restock.",
+  "note": "The customer attempts to schedule a restock and cancel an admin-created pending restock.",
   "features": [
     {
       "id": 317,
@@ -25,7 +25,7 @@
         {
           "id": "317a",
           "category": "production",
-          "desc": "the server refuses a customer cancellation of a scheduled restock",
+          "desc": "the server refuses customer scheduling and cancellation of restocks",
           "points": 3,
           "statedBy": "Only an admin can schedule or cancel a restock.",
           "steps": [

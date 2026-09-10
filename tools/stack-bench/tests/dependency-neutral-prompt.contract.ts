@@ -128,6 +128,24 @@ test('all stacks receive the same installed browser client in build, upgrade, an
   assert.equal(paragraphs.size, 1);
 });
 
+test('scheduled restock prompts define names and reducer argument types for every stack', () => {
+  const track = loadTrack('ecommerce');
+  const catalog = resolveFeatureCatalog('progression/ecommerce.json', track);
+  const guidance = resolveGuidanceProfile('neutral-dev', STACKS);
+  const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-catalog');
+  const task = resolveProgressionRecipeLevelSelection(binding, catalog, 3,
+    { cumulative: true }).agent.request;
+  for (const stack of STACKS) for (const repair of [false, true]) {
+    const prompt = renderPrompt({ level: 3, stack, task, guidance, repair });
+    assert.match(prompt, /`item` and `warehouse` are their names as strings/);
+    assert.match(prompt, /`delaySeconds` are JSON integers/);
+    if (stack === 'spacetime') {
+      assert.match(prompt, /`item: string`, `warehouse: string`/);
+      assert.match(prompt, /`quantity: u32`, `delaySeconds: u32`/);
+    }
+  }
+});
+
 test('neutral dependency prompts include only selected product and stack contracts', () => {
   const track = loadTrack('ecommerce');
   const catalog = resolveFeatureCatalog('progression/ecommerce.json', track);
