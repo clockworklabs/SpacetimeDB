@@ -328,10 +328,18 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           call.reject(
             new ContainerSessionCallError(call.sent ? 'unknown' : 'not_sent')
           );
+        const errorContext: ErrorContextInterface<RemoteModule> = {
+          ...this.#makeEventContext({
+            id: this.#nextEventId(),
+            tag: 'Error',
+            value: error,
+          }),
+          event: error,
+        };
         let callbackFailed = false;
         for (const { emitter } of subscriptions) {
           try {
-            emitter.emit('error', this, error);
+            emitter.emit('error', errorContext, error);
           } catch {
             callbackFailed = true;
           } finally {

@@ -408,12 +408,15 @@ describe('managed Node container sessions', () => {
     const applied = new Deferred<void>();
     let oldCall: Promise<unknown> | undefined;
     let laterSubscriptionErrors = 0;
+    const callbackErrors: unknown[] = [];
     const session = own(fixture, connection => {
       connection
         .subscriptionBuilder()
         .onApplied(() => applied.resolve())
-        .onError(() => {
-          oldCall = connection.reducers
+        .onError(context => {
+          callbackErrors.push(context.event);
+          expect(context.isActive).toBe(false);
+          oldCall = context.reducers
             .createPlayer({ name: 'after-seal', location: { x: 0, y: 0 } })
             .catch(error => error);
           throw new Error('application-private-error');
@@ -421,7 +424,10 @@ describe('managed Node container sessions', () => {
         .subscribe('SELECT * FROM player');
       connection
         .subscriptionBuilder()
-        .onError(() => laterSubscriptionErrors++)
+        .onError(context => {
+          callbackErrors.push(context.event);
+          laterSubscriptionErrors++;
+        })
         .subscribe('SELECT * FROM player');
     });
     const run = session.run().catch(error => error);
@@ -431,8 +437,13 @@ describe('managed Node container sessions', () => {
     expect(await oldCall).toBeInstanceOf(ContainerSessionCallError);
     expect(await oldCall).toMatchObject({ outcome: 'not_sent' });
     expect(laterSubscriptionErrors).toBe(1);
+    expect(callbackErrors).toHaveLength(2);
+    expect(callbackErrors[0]).toBeInstanceOf(ContainerSessionError);
+    expect(callbackErrors[0]).toMatchObject({ code: 'terminated' });
+    expect(callbackErrors[1]).toBe(callbackErrors[0]);
     await session.shutdown();
     expect(laterSubscriptionErrors).toBe(1);
+    expect(callbackErrors).toHaveLength(2);
     await fixture.joinPeers();
     expect(fixture.live).toBe(0);
   });
