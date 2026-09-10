@@ -8,6 +8,7 @@
 use crate::db::raw_def::v9::{Lifecycle, RawIndexAlgorithm, TableAccess, TableType};
 use core::fmt;
 use spacetimedb_primitives::{ColId, ColList};
+use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::typespace::TypespaceBuilder;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, SpacetimeType, Typespace};
@@ -102,6 +103,9 @@ define_section_types! {
 
     /// Declared publish-only configuration. Even an empty section requires ENV support.
     Environment(Vec<RawEnvironmentDeclarationV10>),
+
+    /// Migrations from old schema versions, keyed by that schema version's hash.
+    Migrations(Vec<RawMigrationDefV10>),
 }
 
 #[derive(Debug, Clone, SpacetimeType)]
@@ -1164,4 +1168,12 @@ impl RawTableDefBuilderV10<'_> {
             .position(|x| x.has_name(column.as_ref()))
             .map(|i| ColId(i as u16))
     }
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawMigrationDefV10 {
+    pub schema_hash: Hash,
+    pub dropped: RawModuleDefV10,
 }
