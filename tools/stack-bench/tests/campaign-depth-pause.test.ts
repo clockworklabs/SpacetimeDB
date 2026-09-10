@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
@@ -12,7 +15,7 @@ import { claimNextAttempt, initializeCampaignDirectory, writeCampaignState,
   campaignTimeBudget, type CampaignClaim } from '../src/campaigns/campaign-scheduler.js';
 import { ARTIFACT_FILE } from '../src/evidence/artifacts.js';
 import { finalizeRunTotals, type RunTotalsInput } from '../src/evidence/benchmark-run.js';
-import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { STACK_BENCH_ROOT, compiledEntrypoint } from '../src/package-root.js';
 import { dependencyRuntimeDefinition } from '../src/progression/progression-definition.js';
 import { progressionEngine } from '../src/progression/progression-engine.js';
 import { runBounded } from '../src/runtime/bounded-process.js';
@@ -195,4 +198,64 @@ test('a planned process hold preserves remaining working time and still permits 
     assert(cancelled.cancelled);
     assert.equal(cancelled.timedOut, false);
   } finally { clearTimeout(timer); }
+});
+
+test('killing the pause owner preserves evidence and refuses a false live continuation', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'depth-pause-owner-loss-'));
+  let child: ReturnType<typeof spawn> | undefined;
+  let exited: Promise<unknown> | undefined;
+  try {
+    const manifest = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+      'appliance/campaign.ecommerce-progression-reference.json'), 'utf8'));
+    manifest.levels = [1, 2, 3];
+    manifest.selection.levels = manifest.selection.levels.slice(0, 3);
+    manifest.parallelism = 3;
+    manifest.mode.pauseAfterDepth = 2;
+    const path = join(root, 'manifest.json');
+    writeFileSync(path, JSON.stringify(manifest));
+    const plan = compileCampaignFile(path);
+    const initialized = initializeCampaignDirectory(plan, join(root, 'results'));
+    const claimed = claimNextAttempt(initialized.state, { admissionId: 'owner-loss' });
+    assert(claimed.claim);
+    writeCampaignState(initialized.paths.state, plan, claimed.state);
+    const directory = initialized.paths.root;
+    const output = join(directory, claimed.claim.output);
+    const app = join(output, 'app');
+    mkdirSync(app, { recursive: true });
+    writeFileSync(join(app, 'index.js'), 'accepted L2 source');
+    writeFileSync(join(output, ARTIFACT_FILE.progressionState), '{}');
+    const before = readFileSync(initialized.paths.state, 'utf8');
+    const moduleUrl = (name: string) => pathToFileURL(compiledEntrypoint('src', 'campaigns', name)).href;
+    const script = `
+      const { readCampaignState } = await import(${JSON.stringify(moduleUrl('campaign-scheduler.js'))});
+      const { acquireCampaignLock } = await import(${JSON.stringify(moduleUrl('campaign-lock.js'))});
+      const { waitAtDepthBoundary } = await import(${JSON.stringify(moduleUrl('campaign-depth-pause.js'))});
+      const directory = ${JSON.stringify(directory)};
+      const { plan } = readCampaignState(directory);
+      const lock = acquireCampaignLock(directory, plan);
+      await waitAtDepthBoundary(${JSON.stringify(output)}, ${JSON.stringify(app)}, {
+        directory, campaignSha256: plan.contentSha256,
+        ownershipMarkerSha256: lock.record.ownershipMarkerSha256,
+        attemptId: ${JSON.stringify(claimed.claim.attempt.id)},
+        executionId: ${JSON.stringify(claimed.claim.executionId)}, depth: 2 });
+    `;
+    child = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: 'ignore' });
+    exited = once(child, 'exit');
+    const receiptPath = join(output, 'depth-pause.json');
+    const deadline = Date.now() + 30_000;
+    while (!existsSync(receiptPath) && child.exitCode === null && Date.now() < deadline) await delay(25);
+    assert(existsSync(receiptPath), 'child must reach the actual pause before termination');
+    assert.equal(campaignDepthPauseStatus(directory).attempts.filter(a => a.paused).length, 1);
+    child.kill('SIGKILL');
+    await exited;
+    assert.throws(() => continueCampaignDepth(directory), /live controller/);
+    assert.equal(JSON.parse(readFileSync(receiptPath, 'utf8')).resumedAt, null);
+    assert.equal(existsSync(join(directory, 'depth-release.json')), false);
+    assert.equal(readFileSync(initialized.paths.state, 'utf8'), before);
+    assert.equal(readFileSync(join(app, 'index.js'), 'utf8'), 'accepted L2 source');
+  } finally {
+    if (child && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    await exited;
+    rmSync(root, { recursive: true, force: true });
+  }
 });

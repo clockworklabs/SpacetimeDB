@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs as parseNodeArgs } from 'node:util';
+import { chromium, type BrowserServer } from 'playwright';
 import { readArtifactPayload, writeRunJson } from '../src/evidence/artifacts.js';
 import { calibrationQualificationIdentity, calibrationQualificationRelease,
   resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
@@ -172,9 +173,13 @@ async function main() {
   const started = Date.now();
   const suiteReports = [];
   let qualification: ReturnType<typeof createNullQualification> | null = null;
+  let browserServer: BrowserServer | undefined;
   try {
     const port = await listen(server);
     const url = `http://127.0.0.1:${port}`;
+    // This command owns the empty page; it has no generated app or attempt lease.
+    browserServer = await chromium.launchServer({ headless: true, host: '127.0.0.1' });
+    const browserEndpoint = browserServer.wsEndpoint();
     for (const trackName of args.tracks) {
       const track = loadTrack(trackName);
       let binding: RecipeBinding | null = null;
@@ -198,6 +203,7 @@ async function main() {
             await runGrade(['--url', url, '--level', String(suite.level), '--spec', suite.spec,
               '--backend', 'postgres', '--track', trackName, '--app', app, '--out', reportPath,
               '--null-control',
+              '--browser-ws-endpoint', browserEndpoint,
               '--parent-attempt-id', nullAttemptId,
               ...(resolvedRecipe ? ['--recipe', resolvedRecipe] : []),
               ...(binding ? ['--expected-recipe-sha256', binding.release.contentSha256] : []),
@@ -247,8 +253,11 @@ async function main() {
     }, null, 2));
     if (!analysis.ok && !args.audit) process.exitCode = 1;
   } finally {
-    await new Promise(resolve => server.close(resolve));
-    rmSync(work, { recursive: true, force: true });
+    try { await browserServer?.close(); }
+    finally {
+      await new Promise(resolve => server.close(resolve));
+      rmSync(work, { recursive: true, force: true });
+    }
   }
 }
 
