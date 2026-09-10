@@ -104,9 +104,9 @@ test('the restock race retains its admin page prerequisite when selected alone',
     'the uncontended restock must run even when the zero-point control is not selected');
   assert(feature.setup.some(step => step.do === 'dbExpectStock' && step.plus === 5),
     'ordinary restocking must have a verified stored effect before the race');
-  assert(feature.setup.some(step => step.do === 'click' && step.actor === 'serial'
+  assert(feature.setup.some(step => step.do === 'click' && step.actor === 'a'
     && step.testid === 'buy-now'), 'ordinary purchasing must precede the race');
-  assert(feature.setup.some(step => step.do === 'expect' && step.actor === 'serial'
+  assert(feature.setup.some(step => step.do === 'expect' && step.actor === 'a'
     && step.testid === 'order-item' && step.count === 1));
   assert(feature.setup.some(step => step.do === 'dbExpectStock' && step.plus === -1),
     'a missing serial decrement must be invalid setup, not a caught concurrency defect');
@@ -115,7 +115,7 @@ test('the restock race retains its admin page prerequisite when selected alone',
   assert(criterion.steps.some(step => step.do === 'race'));
   assert(criterion.steps.some(step => step.do === 'dbExpectStock' && step.plus === 2));
   for (const actor of ['a', 'b', 'c']) assert(criterion.steps.some(step => step.do === 'expect'
-    && step.actor === actor && step.testid === 'order-item' && step.count === 1));
+    && step.actor === actor && step.testid === 'order-item' && step.count === (actor === 'a' ? 2 : 1)));
 });
 
 test('duplicate checkout metadata describes the current cross-stack named action', () => {

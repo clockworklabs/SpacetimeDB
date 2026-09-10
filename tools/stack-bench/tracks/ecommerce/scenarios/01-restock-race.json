@@ -13,8 +13,7 @@
         "admin",
         "a",
         "b",
-        "c",
-        "serial"
+        "c"
       ],
       "setup": [
         {
@@ -45,18 +44,13 @@
           "name": "r3"
         },
         {
-          "do": "signUp",
-          "actor": "serial",
-          "name": "restock-serial"
-        },
-        {
           "do": "dbRecordStock",
           "item": "Bluetooth Speaker",
           "as": "stored-before-serial-purchase"
         },
         {
           "do": "click",
-          "actor": "serial",
+          "actor": "a",
           "testid": "buy-now",
           "in": {
             "testid": "item-card",
@@ -65,12 +59,12 @@
         },
         {
           "do": "click",
-          "actor": "serial",
+          "actor": "a",
           "testid": "orders-toggle"
         },
         {
           "do": "expect",
-          "actor": "serial",
+          "actor": "a",
           "testid": "order-item",
           "contains": "Bluetooth Speaker",
           "count": 1,
@@ -83,10 +77,24 @@
           "plus": -1
         },
         {
+          "do": "reload",
+          "actor": "a",
+          "settleMs": 1000
+        },
+        {
+          "do": "ensureSignedIn",
+          "actor": "a",
+          "name": "r1",
+          "readyTestid": "current-user"
+        },
+        {
           "do": "expectNumber",
           "actor": "admin",
           "testid": "admin-stock",
-          "in": { "testid": "admin-item-row", "contains": "Bluetooth Speaker" },
+          "in": {
+            "testid": "admin-item-row",
+            "contains": "Bluetooth Speaker"
+          },
           "relativeTo": "stored-before-serial-purchase",
           "plus": -1,
           "within": 10000
@@ -302,7 +310,7 @@
               "actor": "a",
               "testid": "order-item",
               "contains": "Bluetooth Speaker",
-              "count": 1,
+              "count": 2,
               "within": 10000
             },
             {
