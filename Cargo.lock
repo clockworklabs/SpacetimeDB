@@ -8523,6 +8523,7 @@ dependencies = [
  "enum-map",
  "hex",
  "insta",
+ "paste",
  "proptest",
  "proptest-derive",
  "ron",
