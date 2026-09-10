@@ -61,6 +61,8 @@ pub(crate) type SharedCell<T> = Arc<StdMutex<T>>;
 mod builder_tests;
 
 #[cfg(not(feature = "browser"))]
+pub(crate) mod container_session;
+#[cfg(not(feature = "browser"))]
 mod native_tasks;
 #[cfg(not(feature = "browser"))]
 use native_tasks::NativeTasks;
@@ -985,6 +987,9 @@ pub struct DbConnectionBuilder<M: SpacetimeModule> {
 
     token: Option<String>,
 
+    #[cfg(not(feature = "browser"))]
+    container_credentials: Option<crate::credentials::Container>,
+
     on_connect: Option<OnConnectCallback<M>>,
     on_connect_error: Option<OnConnectErrorCallback<M>>,
     on_disconnect: Option<OnDisconnectCallback<M>>,
@@ -1044,6 +1049,8 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
             uri: None,
             database_name: None,
             token: None,
+            #[cfg(not(feature = "browser"))]
+            container_credentials: None,
             on_connect: None,
             on_connect_error: None,
             on_disconnect: None,
@@ -1122,10 +1129,44 @@ but you must call one of them, or else the connection will never progress.
     }
 
     /// Share native construction between the synchronous and asynchronous API.
-    /// The handshake is the only suspension point. Until it succeeds, this
-    /// future owns the socket and callbacks without spawning background tasks.
+    /// Credential acquisition and the handshake precede background connection
+    /// tasks. Cancelling either operation releases the pending connection.
     #[cfg(not(feature = "browser"))]
-    async fn build_native_impl(self, handle: runtime::Handle) -> crate::Result<DbContextImpl<M>> {
+    async fn build_native_impl(mut self, handle: runtime::Handle) -> crate::Result<DbContextImpl<M>> {
+        let credential = if let Some(container) = &self.container_credentials {
+            use crate::credentials::ContainerCredentialError;
+            // Reject before any socket or debug file is opened. Debug records
+            // include InitialConnection tokens; ordinary clients retain their
+            // existing behavior, but hosted credentials cannot be persisted.
+            if self.token.is_some() {
+                return Err(container_connect_error(
+                    ContainerCredentialError::ConflictingCredentials,
+                ));
+            }
+            if self.additional_logging_path.is_some() {
+                return Err(container_connect_error(ContainerCredentialError::DebugLogging));
+            }
+            let prepared = container
+                .prepare_connection(self.uri.as_ref(), self.database_name.as_deref())
+                .await
+                .map_err(container_connect_error)?;
+            self.uri = Some(prepared.uri);
+            // Connect using the exact resolved Identity, so a later name
+            // reassignment cannot send this credential to another database.
+            self.database_name = Some(prepared.target);
+            Some(prepared.credential)
+        } else {
+            None
+        };
+        self.build_native_with_credential(handle, credential).await
+    }
+
+    #[cfg(not(feature = "browser"))]
+    async fn build_native_with_credential(
+        self,
+        handle: runtime::Handle,
+        credential: Option<crate::credentials::ContainerToken>,
+    ) -> crate::Result<DbContextImpl<M>> {
         let extra_logging = self
             .additional_logging_path
             .map(|path| {
@@ -1137,17 +1178,33 @@ but you must call one of them, or else the connection will never progress.
             .map(|file| Arc::new(StdMutex::new(file)));
 
         let connection_id_override = get_connection_id_override();
-        let ws_connection = WsConnection::connect(
+        let connect = WsConnection::connect(
             self.uri.unwrap(),
             self.database_name.as_ref().unwrap(),
-            self.token.as_deref(),
+            credential
+                .as_ref()
+                .map(|token| token.as_str())
+                .or(self.token.as_deref()),
             connection_id_override,
             self.params,
-        )
-        .await
-        .map_err(|source| crate::Error::FailedToConnect {
-            source: InternalError::new("Failed to initiate WebSocket connection").with_cause(source),
-        })?;
+        );
+        let ws_connection = if let Some(credential) = &credential {
+            use crate::credentials::ContainerCredentialError;
+            let connection = tokio::time::timeout_at(credential.deadline(), connect)
+                .await
+                .map_err(|_| container_connect_error(ContainerCredentialError::Expired))?
+                // HTTP upgrade errors may contain response bodies/headers that
+                // echo secrets. Never retain those diagnostics for this mode.
+                .map_err(|_| container_connect_error(ContainerCredentialError::Transport))?;
+            if credential.remaining_lifetime().is_zero() {
+                return Err(container_connect_error(ContainerCredentialError::Expired));
+            }
+            connection
+        } else {
+            connect.await.map_err(|source| crate::Error::FailedToConnect {
+                source: InternalError::new("Failed to initiate WebSocket connection").with_cause(source),
+            })?
+        };
 
         let (websocket_loop_handle, raw_msg_recv, raw_msg_send) =
             ws_connection.spawn_message_loop(&handle, extra_logging.clone());
@@ -1247,6 +1304,28 @@ but you must call one of them, or else the connection will never progress.
     /// is invoked.
     pub fn with_token(mut self, token: Option<impl Into<String>>) -> Self {
         self.token = token.map(|token| token.into());
+        self
+    }
+
+    /// Authenticate as the database backing this hosted container.
+    ///
+    /// Without explicit `with_uri` or `with_database_name` values, connect to
+    /// the database and server supplied by `container`. Other database names
+    /// are resolved on the selected server before requesting a target-specific
+    /// credential. The literal `self` resolves to the backing database Identity.
+    ///
+    /// Both `build` and `build_async` fetch a fresh credential on every call.
+    /// Failure never falls back to an anonymous Identity or saved owner token.
+    /// Combining this mode with a nonempty `with_token` or `with_debug_to_file`
+    /// is an error, regardless of the order of builder calls.
+    ///
+    /// The SDK does not automatically renew or reconnect this connection.
+    /// Handle expiration through `on_disconnect`, build a fresh connection,
+    /// and restore subscriptions as appropriate for your application. Tokens
+    /// returned through `on_connect` must not be saved or reused for reconnects.
+    #[cfg(not(feature = "browser"))]
+    pub fn with_container_credentials(mut self, container: crate::credentials::Container) -> Self {
+        self.container_credentials = Some(container);
         self
     }
 
@@ -1355,6 +1434,13 @@ Instead of registering multiple `on_disconnect` callbacks, register a single cal
         }
         self.on_disconnect = Some(Box::new(callback));
         self
+    }
+}
+
+#[cfg(not(feature = "browser"))]
+fn container_connect_error(error: crate::credentials::ContainerCredentialError) -> crate::Error {
+    crate::Error::FailedToConnect {
+        source: InternalError::new("Failed to obtain or use container credentials").with_cause(error),
     }
 }
 

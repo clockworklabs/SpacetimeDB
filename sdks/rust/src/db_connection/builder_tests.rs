@@ -87,3 +87,153 @@ fn sync_builder_returns_connect_errors_without_dropping_its_runtime_inside_block
         .build();
     assert!(matches!(result, Err(crate::Error::FailedToConnect { .. })));
 }
+
+#[tokio::test]
+async fn container_builds_fetch_fresh_tokens_and_send_only_to_the_concrete_target() {
+    use crate::credentials::{container_tests as fixture, Container};
+    use tokio::io::AsyncWriteExt;
+    let (broker, broker_task) = fixture::http_fixture(vec![
+        fixture::response(200, &fixture::token_body("first-private-token", 20)),
+        fixture::response(200, &fixture::token_body("second-private-token", 20)),
+    ])
+    .await;
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let server_uri = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        for expected in ["first-private-token", "second-private-token"] {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request = fixture::read_request(&mut socket).await;
+            assert!(request.starts_with(&format!("GET /v1/database/{}/subscribe?", fixture::SOURCE)));
+            assert!(request
+                .to_ascii_lowercase()
+                .contains(&format!("authorization: bearer {expected}\r\n")));
+            // Deliberately echo secret material in a failed upgrade. Hosted
+            // connection errors must not retain the response or its headers.
+            socket.write_all(&fixture::response(403, expected)).await.unwrap();
+            socket.shutdown().await.unwrap();
+        }
+    });
+    let container = Container::new(fixture::SOURCE, &server_uri, &broker).unwrap();
+    for _ in 0..2 {
+        let error = DbConnectionBuilder::<RemoteModule>::new()
+            .with_container_credentials(container.clone())
+            .with_database_name("self")
+            .build_async()
+            .await
+            .err()
+            .expect("fixture rejects the WebSocket upgrade");
+        assert!(!format!("{error:?} {error}").contains("private-token"));
+    }
+    assert_eq!(broker_task.await.unwrap().len(), 2);
+    tokio::time::timeout(Duration::from_secs(2), server)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
+async fn container_auth_rejects_static_credentials_and_debug_files_before_io() {
+    use crate::credentials::{container_tests as fixture, Container};
+    let container = Container::new(
+        fixture::SOURCE,
+        "https://must-not-contact.invalid",
+        "http://127.0.0.1:1/v1/credentials",
+    )
+    .unwrap();
+    let path = std::env::temp_dir().join(format!("must-not-write-sdk-credentials-{}", std::process::id()));
+    assert!(!path.exists());
+    let result = DbConnectionBuilder::<RemoteModule>::new()
+        .with_token(Some("owner-secret"))
+        .with_container_credentials(container.clone())
+        .build_async()
+        .await;
+    let error = result.err().unwrap();
+    assert!(error.to_string().contains("static token"));
+    assert!(!format!("{error:?} {error}").contains("owner-secret"));
+    let result = DbConnectionBuilder::<RemoteModule>::new()
+        .with_container_credentials(container)
+        .with_debug_to_file(&path)
+        .build_async()
+        .await;
+    assert!(result.err().unwrap().to_string().contains("debug files"));
+    assert!(!path.exists());
+}
+
+#[tokio::test]
+async fn cancelling_container_build_closes_broker_socket_and_releases_callbacks() {
+    use crate::credentials::{container_tests as fixture, Container};
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let broker = format!("http://{}/v1/credentials", listener.local_addr().unwrap());
+    let container = Container::new(fixture::SOURCE, "https://must-not-contact.invalid", &broker).unwrap();
+    let (ready_tx, ready_rx) = oneshot::channel();
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        fixture::read_request(&mut socket).await;
+        ready_tx.send(()).unwrap();
+        let mut byte = [0];
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), socket.read(&mut byte))
+                .await
+                .unwrap()
+                .unwrap(),
+            0
+        );
+    });
+    let capture = Arc::new(());
+    let weak = Arc::downgrade(&capture);
+    let mut connect = Box::pin(
+        DbConnectionBuilder::<RemoteModule>::new()
+            .with_container_credentials(container)
+            .on_connect(move |_, _, _| drop(capture))
+            .build_async(),
+    );
+    tokio::time::timeout(Duration::from_secs(2), async {
+        tokio::select! {
+            _ = &mut connect => panic!("stalled broker unexpectedly answered"),
+            ready = ready_rx => ready.unwrap(),
+        }
+    })
+    .await
+    .unwrap();
+    drop(connect);
+    assert!(weak.upgrade().is_none());
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn container_token_expiry_closes_a_stalled_websocket_handshake() {
+    use crate::credentials::{container_tests as fixture, Container};
+    let (broker, broker_task) =
+        fixture::http_fixture(vec![fixture::response(200, &fixture::token_body("expiring-token", 1))]).await;
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let server_uri = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        fixture::read_request(&mut socket).await;
+        let mut byte = [0];
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), socket.read(&mut byte))
+                .await
+                .unwrap()
+                .unwrap(),
+            0
+        );
+    });
+    let container = Container::new(fixture::SOURCE, &server_uri, &broker).unwrap();
+    let error = tokio::time::timeout(
+        Duration::from_secs(2),
+        DbConnectionBuilder::<RemoteModule>::new()
+            .with_container_credentials(container)
+            .build_async(),
+    )
+    .await
+    .unwrap()
+    .err()
+    .unwrap();
+    assert!(error.to_string().contains("expired"));
+    broker_task.await.unwrap();
+    tokio::time::timeout(Duration::from_secs(2), server)
+        .await
+        .unwrap()
+        .unwrap();
+}

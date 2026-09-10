@@ -28,6 +28,11 @@ pub mod error;
 pub mod event;
 pub mod table;
 
+#[cfg(not(feature = "browser"))]
+pub use db_connection::container_session::{
+    ContainerSession, ContainerSessionEndReason, ContainerSessionError, ContainerSessionEvent, ContainerSessionInfo,
+    ContainerSessionRetryReason, OutstandingCallOutcomes,
+};
 pub use db_connection::DbConnectionBuilder;
 pub use db_context::DbContext;
 pub use error::{Error, Result};

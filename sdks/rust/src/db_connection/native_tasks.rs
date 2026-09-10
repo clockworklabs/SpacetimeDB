@@ -22,6 +22,14 @@ impl NativeTasks {
         }
     }
 
+    pub fn abort_handles(&self) -> Vec<tokio::task::AbortHandle> {
+        [&self.websocket, &self.parser]
+            .into_iter()
+            .flatten()
+            .map(JoinHandle::abort_handle)
+            .collect()
+    }
+
     pub fn record_failure(&mut self, error: crate::Error) {
         // A cancelled terminal wait must not discard its original failure.
         self.failure.get_or_insert(error);

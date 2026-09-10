@@ -101,6 +101,12 @@
       "import": "./dist/solid/index.mjs",
       "require": "./dist/solid/index.cjs",
       "default": "./dist/solid/index.mjs"
+    },
+    "./sdk/node": {
+      "types": "./dist/sdk/node/index.d.ts",
+      "import": "./dist/sdk/node/index.mjs",
+      "require": "./dist/sdk/node/index.cjs",
+      "default": "./dist/sdk/node/index.mjs"
     }
   },
   "size-limit": [
@@ -189,7 +195,8 @@
     "pure-rand": "^7.0.1",
     "safe-stable-stringify": "^2.5.0",
     "statuses": "^2.0.2",
-    "url-polyfill": "^1.1.14"
+    "url-polyfill": "^1.1.14",
+    "@types/ws": "^8.18.1"
   },
   "peerDependencies": {
     "@angular/core": ">=17.0.0",
@@ -198,7 +205,8 @@
     "solid-js": "^1.6.0",
     "svelte": "^4.0.0 || ^5.0.0",
     "undici": "^6.19.2",
-    "vue": "^3.3.0"
+    "vue": "^3.3.0",
+    "ws": "^8.18.3"
   },
   "peerDependenciesMeta": {
     "@tanstack/react-query": {
@@ -220,6 +228,9 @@
       "optional": true
     },
     "@angular/core": {
+      "optional": true
+    },
+    "ws": {
       "optional": true
     }
   },
