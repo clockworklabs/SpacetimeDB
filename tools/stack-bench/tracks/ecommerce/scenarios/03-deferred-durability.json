@@ -21,7 +21,7 @@
         { "do": "click", "actor": "admin", "testid": "schedule-restock-submit" },
         { "do": "expect", "actor": "admin", "testid": "pending-restock-item", "count": 1, "within": 10000 },
         { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "relativeTo": "ordinaryBefore", "plus": 5, "within": 70000 },
-        { "do": "expect", "actor": "admin", "testid": "pending-restock-item", "absent": true, "within": 10000 },
+        { "do": "waitUntilAbsent", "actor": "admin", "testid": "pending-restock-item", "within": 10000 },
         { "do": "recordNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "as": "before" },
         { "do": "fill", "actor": "admin", "testid": "schedule-restock-item", "text": "Air Purifier" },
         { "do": "fill", "actor": "admin", "testid": "schedule-restock-warehouse", "text": "East" },

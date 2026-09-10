@@ -40,7 +40,7 @@ test('restart probe proves ordinary scheduled execution before measuring restart
     && secondSubmit > newBaseline && restart > secondSubmit);
   assert.equal(setup[ordinaryApplied]!.plus, 5);
   assert.deepEqual(setup.filter(step => step.testid === 'schedule-restock-delay').map(step => step.text), ['45', '45']);
-  assert(setup.slice(ordinaryApplied, newBaseline).some(step => step.testid === 'pending-restock-item' && step.absent === true));
+  assert(setup.slice(ordinaryApplied, newBaseline).some(step => step.testid === 'pending-restock-item' && step.do === 'waitUntilAbsent'));
 });
 
 for (const backend of ['mongodb', 'postgres']) {
