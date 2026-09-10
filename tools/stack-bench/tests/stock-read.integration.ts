@@ -34,13 +34,16 @@ for (const backend of ['postgres', 'mongodb'] as const) {
         run(`CREATE TABLE item (id integer PRIMARY KEY, name text);
 CREATE TABLE warehouse (id integer PRIMARY KEY, name text);
 CREATE TABLE stock (item_id integer REFERENCES item, warehouse_id integer REFERENCES warehouse, quantity integer);
+CREATE TABLE order_line (item_id integer REFERENCES item, warehouse_id integer REFERENCES warehouse, quantity integer);
 INSERT INTO item VALUES (0, 'Kid''s Keyboard');
 INSERT INTO warehouse VALUES (1, 'East'), (2, 'West');
-INSERT INTO stock VALUES (0, 1, 5), (0, 2, -1);`);
+INSERT INTO stock VALUES (0, 1, 5), (0, 2, -1);
+INSERT INTO order_line VALUES (0, 1, 17);`);
         assert.equal(getPostgresStock({ item: "Kid's Keyboard", lease }).quantity, 4);
         assert.equal(getPostgresStock({ item: "Kid's Keyboard", warehouse: 'West', lease }).quantity, -1);
         setPostgresStock({ item: "Kid's Keyboard", warehouse: 'East', quantity: 0, lease });
         assert.equal(getPostgresStock({ item: "Kid's Keyboard", warehouse: 'East', lease }).quantity, 0);
+        assert.equal(run('SELECT quantity FROM order_line;'), '17', 'stock setup must not alter order history');
         assert.throws(() => getPostgresStock({ item: 'Absent', lease }), /no stock data/);
         run("INSERT INTO item VALUES (1, 'Kid''s Keyboard');");
         assert.throws(() => getPostgresStock({ item: "Kid's Keyboard", lease }), /ambiguous/);

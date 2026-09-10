@@ -61,6 +61,11 @@ JOIN foreign_keys warehouse ON warehouse.source_schema = quantity.table_schema
   AND warehouse.source_column <> item.source_column
 JOIN named_tables warehouse_name ON warehouse_name.table_schema = warehouse.target_schema
   AND warehouse_name.table_name = warehouse.target_table
+WHERE quantity.table_name = 'stock' AND quantity.column_name = 'quantity'
+  AND item.target_schema = 'public' AND item.target_table = 'item'
+  AND item.source_column = 'item_id' AND item.target_column = 'id'
+  AND warehouse.target_schema = 'public' AND warehouse.target_table = 'warehouse'
+  AND warehouse.source_column = 'warehouse_id' AND warehouse.target_column = 'id'
 ORDER BY quantity.table_name, item.source_column, warehouse.source_column
 \\gexec
 `;
