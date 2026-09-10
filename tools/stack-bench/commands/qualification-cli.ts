@@ -11,7 +11,8 @@ import { isDeclaredLevel, listTracks, loadTrack } from '../src/composition/track
 import { PACK_BUDGET_POLICY } from '../src/composition/pack-budget.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { stackBenchResultsRoot } from '../src/runtime/operational-paths.js';
-import { companionReferenceArtifactPath } from '../src/references/reference-live.js';
+import { companionReferenceArtifactPath, MAX_MUTATION_WORKERS, validateMutationWorkerCount }
+  from '../src/references/reference-live.js';
 import type { CalibrationPlan } from '../src/composition/calibration-compiler.js';
 import type { RecipeBinding, RecipeRelease } from '../src/composition/recipe-release.js';
 
@@ -20,6 +21,7 @@ interface QualificationArgs {
   track: string | null;
   level: number | null;
   recipe?: string;
+  mutationWorkers?: number;
 }
 
 interface QualificationBlocker {
@@ -30,14 +32,17 @@ interface QualificationBlocker {
 
 export function parseQualificationArgs(argv: string[]): QualificationArgs {
   const { positionals, values } = parseNodeArgs({ args: argv.slice(2), allowPositionals: true,
-    options: { track: { type: 'string' }, level: { type: 'string' }, recipe: { type: 'string' } } });
+    options: { track: { type: 'string' }, level: { type: 'string' }, recipe: { type: 'string' },
+      'mutation-workers': { type: 'string' } } });
   const args: QualificationArgs = { command: positionals[0], track: values.track ?? null,
     level: values.level === undefined ? null : Number(values.level),
-    ...(values.recipe === undefined ? {} : { recipe: values.recipe }) };
+    ...(values.recipe === undefined ? {} : { recipe: values.recipe }),
+    ...(values['mutation-workers'] === undefined ? {} : {
+      mutationWorkers: validateMutationWorkerCount(Number(values['mutation-workers'])) }) };
   if (args.command !== 'status' || typeof args.track !== 'string' || !args.track
     || positionals.length !== 1 || args.level === null || !Number.isInteger(args.level) || args.level < 1) {
     throw new Error('usage: node dist/commands/qualification-cli.js status --track <name> --level <positive integer> '
-      + '[--recipe <id>]');
+      + '[--recipe <id>] [--mutation-workers <count>]');
   }
   return args;
 }
@@ -69,7 +74,9 @@ export interface CalibrationMutationSelection {
 
 export function mutationWorkerCount(calibration: CalibrationMutationSelection, stack: string,
   readManifest: (path: string) => { mutations?: { id: string }[] } = path =>
-    JSON.parse(readFileSync(resolve(STACK_BENCH_ROOT, path), 'utf8')) as { mutations?: { id: string }[] }) {
+    JSON.parse(readFileSync(resolve(STACK_BENCH_ROOT, path), 'utf8')) as { mutations?: { id: string }[] },
+  requestedWorkers = MAX_MUTATION_WORKERS) {
+  validateMutationWorkerCount(requestedWorkers);
   const entry = calibration.mutations.find(candidate => candidate.backend === stack);
   if (!entry) return 1;
   const manifest = readManifest(entry.path);
@@ -79,11 +86,11 @@ export function mutationWorkerCount(calibration: CalibrationMutationSelection, s
   if (selectedIds.size) {
     throw new Error(`${stack} calibration selects missing mutations: ${[...selectedIds].sort().join(', ')}`);
   }
-  return Math.min(4, Math.max(1, selectedMutations.length));
+  return Math.min(requestedWorkers, Math.max(1, selectedMutations.length));
 }
 
-function mutationWorkerOption(calibration: CalibrationPlan, stack: string) {
-  const workers = mutationWorkerCount(calibration, stack);
+function mutationWorkerOption(calibration: CalibrationPlan, stack: string, requestedWorkers: number) {
+  const workers = mutationWorkerCount(calibration, stack, undefined, requestedWorkers);
   return workers > 1 ? ` --mutation-workers ${workers}` : '';
 }
 
@@ -118,7 +125,9 @@ function defectCheckCoverage(release: RecipeRelease, calibration: CalibrationPla
   };
 }
 
-export function qualificationReadiness(trackName: string, level: number, recipe: string | null = null) {
+export function qualificationReadiness(trackName: string, level: number, recipe: string | null = null,
+  mutationWorkers = MAX_MUTATION_WORKERS) {
+  validateMutationWorkerCount(mutationWorkers);
   if (!listTracks().includes(trackName)) throw new Error(`unknown qualification track ${trackName}`);
   const track = loadTrack(trackName);
   if (!isDeclaredLevel(track, level)) {
@@ -224,7 +233,7 @@ export function qualificationReadiness(trackName: string, level: number, recipe:
         ...(!combinedReferenceEvidence ? [
           `qualify-reference --backend ${stack} --track ${trackName} --level ${qualificationLevel}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.referenceRepetitions} --out ${artifactPaths.references[stack]}`,
         ] : []),
-        `qualify-reference --backend ${stack} --track ${trackName} --level ${qualificationLevel}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.mutationRepetitions} --mutations --full-mutations${mutationWorkerOption(calibration, stack)} --out ${artifactPaths.mutations[stack]}`,
+        `qualify-reference --backend ${stack} --track ${trackName} --level ${qualificationLevel}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.mutationRepetitions} --mutations --full-mutations${mutationWorkerOption(calibration, stack, mutationWorkers)} --out ${artifactPaths.mutations[stack]}`,
       ]),
       `qualify-null --track ${trackName} --level ${qualificationLevel}${recipeOption} --out ${artifactPaths.null}`,
     ],
@@ -235,7 +244,7 @@ export function qualificationReadiness(trackName: string, level: number, recipe:
 function main() {
   const args = parseQualificationArgs(process.argv);
   if (!args.track || args.level === null) throw new Error('track and level are required');
-  console.log(JSON.stringify(qualificationReadiness(args.track, args.level, args.recipe), null, 2));
+  console.log(JSON.stringify(qualificationReadiness(args.track, args.level, args.recipe, args.mutationWorkers), null, 2));
 }
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {

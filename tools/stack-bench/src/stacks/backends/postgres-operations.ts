@@ -20,68 +20,32 @@ const streams = (error: unknown, ...keys: readonly string[]): string =>
 
 const POSTGRES_USER = POSTGRES_APPLICATION_IDENTITY.user;
 
-const STOCK_RELATIONS_SQL = `
-WITH foreign_keys AS (
-  SELECT source_ns.nspname AS source_schema, source.relname AS source_table,
-         source_column.attname AS source_column,
-         target_ns.nspname AS target_schema, target.relname AS target_table,
-         target_column.attname AS target_column
+// Keep the declared foreign-key interface check; table and column names are fixed.
+const STOCK_INTERFACE_SQL = `
+WITH stock_interface AS (
+  SELECT count(*) = 2 AND count(DISTINCT source_column.attname) = 2 AS valid
   FROM pg_constraint constraint_record
-  JOIN pg_class source ON source.oid = constraint_record.conrelid
-  JOIN pg_namespace source_ns ON source_ns.oid = source.relnamespace
-  JOIN pg_attribute source_column ON source_column.attrelid = source.oid
+  JOIN pg_attribute source_column ON source_column.attrelid = constraint_record.conrelid
     AND source_column.attnum = constraint_record.conkey[1]
-  JOIN pg_class target ON target.oid = constraint_record.confrelid
-  JOIN pg_namespace target_ns ON target_ns.oid = target.relnamespace
-  JOIN pg_attribute target_column ON target_column.attrelid = target.oid
+  JOIN pg_attribute target_column ON target_column.attrelid = constraint_record.confrelid
     AND target_column.attnum = constraint_record.confkey[1]
   WHERE constraint_record.contype = 'f'
+    AND constraint_record.conrelid = 'public.stock'::regclass
     AND cardinality(constraint_record.conkey) = 1
     AND cardinality(constraint_record.confkey) = 1
-), named_tables AS (
-  SELECT table_schema, table_name
-  FROM information_schema.columns
-  WHERE table_schema = 'public' AND column_name = 'name'
-), quantity_columns AS (
-  SELECT table_schema, table_name, column_name
-  FROM information_schema.columns
-  WHERE table_schema = 'public'
-    AND column_name IN ('quantity', 'qty', 'stock', 'on_hand', 'available')
+    AND target_column.attname = 'id'
+    AND ((source_column.attname = 'item_id' AND constraint_record.confrelid = 'public.item'::regclass)
+      OR (source_column.attname = 'warehouse_id' AND constraint_record.confrelid = 'public.warehouse'::regclass))
 )
 `;
 
-const STOCK_RELATION_JOINS = `
-FROM quantity_columns quantity
-JOIN foreign_keys item ON item.source_schema = quantity.table_schema
-  AND item.source_table = quantity.table_name
-JOIN named_tables item_name ON item_name.table_schema = item.target_schema
-  AND item_name.table_name = item.target_table
-JOIN foreign_keys warehouse ON warehouse.source_schema = quantity.table_schema
-  AND warehouse.source_table = quantity.table_name
-  AND warehouse.source_column <> item.source_column
-JOIN named_tables warehouse_name ON warehouse_name.table_schema = warehouse.target_schema
-  AND warehouse_name.table_name = warehouse.target_table
-WHERE quantity.table_name = 'stock' AND quantity.column_name = 'quantity'
-  AND item.target_schema = 'public' AND item.target_table = 'item'
-  AND item.source_column = 'item_id' AND item.target_column = 'id'
-  AND warehouse.target_schema = 'public' AND warehouse.target_table = 'warehouse'
-  AND warehouse.source_column = 'warehouse_id' AND warehouse.target_column = 'id'
-ORDER BY quantity.table_name, item.source_column, warehouse.source_column
-\\gexec
-`;
-
 const stockUpdateSql = (itemName: string, warehouseName: string, quantity: number): string => `
-${STOCK_RELATIONS_SQL}
-SELECT format(
-  'WITH target AS (SELECT item.%1$I AS item_id, warehouse.%2$I AS warehouse_id '
-  'FROM public.%3$I item, public.%4$I warehouse '
-  'WHERE item.name = %5$L AND warehouse.name = %6$L) '
-  'UPDATE public.%7$I stock SET %8$I = %9$s FROM target '
-  'WHERE stock.%10$I = target.item_id AND stock.%11$I = target.warehouse_id;',
-  item.target_column, warehouse.target_column, item.target_table, warehouse.target_table,
-  ${sqlString(itemName)}, ${sqlString(warehouseName)}, quantity.table_name, quantity.column_name,
-  ${quantity}, item.source_column, warehouse.source_column)
-${STOCK_RELATION_JOINS}
+${STOCK_INTERFACE_SQL}
+UPDATE public.stock SET quantity = ${quantity}
+FROM public.item, public.warehouse
+WHERE stock.item_id = item.id AND stock.warehouse_id = warehouse.id
+  AND item.name = ${sqlString(itemName)} AND warehouse.name = ${sqlString(warehouseName)}
+  AND (SELECT valid FROM stock_interface);
 `;
 
 export function getPostgresStock({ item, warehouse, lease, exec = execFileSync }: {
@@ -89,20 +53,16 @@ export function getPostgresStock({ item, warehouse, lease, exec = execFileSync }
 }): { backend: string; item: string; warehouse?: string; quantity: number } {
   const container = assertLeasedContainer(lease.resources.container, exec, WRITE_TIMEOUT_MS,
     'direct database read');
-  const sql = `${STOCK_RELATIONS_SQL}
-SELECT format(
-  'SELECT json_build_object(''items'', (SELECT count(*) FROM public.%5$I WHERE name = %9$L), '
-  ${warehouse === undefined ? "''" : "'''namedWarehouses'', (SELECT count(*) FROM public.%7$I WHERE name = %10$L), '"}
-  '''warehouses'', count(DISTINCT warehouse.%2$I), '
-  '''quantities'', json_agg(stock.%3$I))::text '
-  'FROM public.%4$I stock JOIN public.%5$I item ON stock.%6$I = item.%1$I '
-  'LEFT JOIN public.%7$I warehouse ON stock.%8$I = warehouse.%2$I '
-  'WHERE item.name = %9$L ${warehouse === undefined ? '' : 'AND warehouse.name = %10$L '}'
-  'HAVING count(*) > 0;',
-  item.target_column, warehouse.target_column, quantity.column_name, quantity.table_name,
-  item.target_table, item.source_column, warehouse.target_table, warehouse.source_column,
-  ${sqlString(item)}, ${warehouse === undefined ? 'NULL' : sqlString(warehouse)})
-${STOCK_RELATION_JOINS}`;
+  const sql = `${STOCK_INTERFACE_SQL}
+SELECT json_build_object(
+  'items', (SELECT count(*) FROM public.item WHERE name = ${sqlString(item)}),
+  ${warehouse === undefined ? '' : `'namedWarehouses', (SELECT count(*) FROM public.warehouse WHERE name = ${sqlString(warehouse)}),`}
+  'warehouses', count(DISTINCT warehouse.id), 'quantities', json_agg(stock.quantity))::text
+FROM public.stock JOIN public.item ON stock.item_id = item.id
+LEFT JOIN public.warehouse ON stock.warehouse_id = warehouse.id
+WHERE item.name = ${sqlString(item)} ${warehouse === undefined ? '' : `AND warehouse.name = ${sqlString(warehouse)}`}
+  AND (SELECT valid FROM stock_interface)
+HAVING count(*) > 0;`;
   let output: string;
   try {
     output = exec('docker', ['exec', '-i', container,

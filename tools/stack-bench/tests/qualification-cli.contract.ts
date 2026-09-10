@@ -25,7 +25,29 @@ test('mutation workers split defects even when they use one scenario', () => {
     targets: ['a', 'b', 'c', 'd', 'e'].map(id => ({ id })) }] };
   const manifest = { scenario: 'shared.json',
     mutations: ['a', 'b', 'c', 'd', 'e'].map(id => ({ id })) };
-  assert.equal(mutationWorkerCount(calibration, 'postgres', () => manifest), 4);
+  assert.equal(mutationWorkerCount(calibration, 'postgres', () => manifest), 5);
+  assert.equal(mutationWorkerCount(calibration, 'postgres', () => manifest, 2), 2);
+  for (const invalid of [0, -1, 1.5, 9, NaN]) {
+    assert.throws(() => mutationWorkerCount(calibration, 'postgres', () => manifest, invalid),
+      /--mutation-workers must be an integer from 1 through 8/);
+  }
+});
+
+test('qualification status forwards the requested worker count and defaults to eight', () => {
+  const argv = ['node', 'qualification-cli.js', 'status', '--track', 'ecommerce', '--level', '3',
+    '--recipe', 'ecommerce.progression-catalog'];
+  assert.equal(parseQualificationArgs([...argv, '--mutation-workers', '2']).mutationWorkers, 2);
+  assert.throws(() => parseQualificationArgs([...argv, '--mutation-workers', '9']), /--mutation-workers/);
+  const current = qualificationReadiness('ecommerce', 3, 'ecommerce.progression-catalog');
+  const limited = qualificationReadiness('ecommerce', 3, 'ecommerce.progression-catalog', 2);
+  for (const [status, workers] of [[current, 8], [limited, 2]] as const) {
+    assert(status.commands.filter(command => command.includes('--mutations '))
+      .every(command => command.includes(`--mutation-workers ${workers} `)));
+  }
+  assert.deepEqual(current.scope, limited.scope);
+  assert.deepEqual(current.requiredEvidence, limited.requiredEvidence);
+  assert.throws(() => qualificationReadiness('ecommerce', 3, 'ecommerce.progression-catalog', 0),
+    /--mutation-workers/);
 });
 
 test('pending L1 qualification lists the required evidence without writing', () => {

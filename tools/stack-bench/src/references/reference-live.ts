@@ -172,6 +172,15 @@ function qualificationInputs(): { sha256: string; files: string[] } {
   } });
 }
 
+export const MAX_MUTATION_WORKERS = 8;
+
+export function validateMutationWorkerCount(workers: number): number {
+  if (!Number.isInteger(workers) || workers < 1 || workers > MAX_MUTATION_WORKERS) {
+    throw new Error(`--mutation-workers must be an integer from 1 through ${MAX_MUTATION_WORKERS}`);
+  }
+  return workers;
+}
+
 export function parseReferenceQualificationArgs(argv: readonly string[]):
   ReferenceQualificationArgs {
   const { values } = parseNodeArgs({ args: [...argv.slice(2)], options: {
@@ -223,10 +232,7 @@ export function parseReferenceQualificationArgs(argv: readonly string[]):
   if (!Number.isInteger(args.runIndex) || args.runIndex < 0) {
     throw new Error('--run-index must be a non-negative integer');
   }
-  if (!Number.isInteger(args.mutationWorkers) || args.mutationWorkers < 1
-      || args.mutationWorkers > 8) {
-    throw new Error('--mutation-workers must be an integer from 1 through 8');
-  }
+  validateMutationWorkerCount(args.mutationWorkers);
   if (args.mutationWorkers > 1 && !args.mutations) {
     throw new Error('--mutation-workers above 1 requires --mutations');
   }

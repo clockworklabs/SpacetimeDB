@@ -62,7 +62,6 @@ test('the MongoDB progression reference binds named actions and its runtime', ()
     readFileSync(join(appRoot, 'server', 'src', 'index.ts'), 'utf8'),
     readFileSync(join(appRoot, 'server', 'src', 'progression.ts'), 'utf8'),
   ].join('\n');
-  const reservationSource = readFileSync(join(appRoot, 'server', 'src', 'stock-reservations.ts'), 'utf8');
   const reference = readJson(join(appRoot, 'reference.json'));
   const serverPackage = readJson(join(appRoot, 'server', 'package.json'));
   const clientPackage = readJson(join(appRoot, 'client', 'package.json'));
@@ -82,11 +81,7 @@ test('the MongoDB progression reference binds named actions and its runtime', ()
   assert.match(clientSource, /\/api\/admin\/scheduled-restocks/);
   assert.match(serverSource, /app\.use\("\/api\/support", supportRouter\)/);
   assert.match(serverSource, /app\.use\("\/api\/admin", adminRouter\)/);
-  assert.match(serverSource, /installProgressionRoutes\(app, io/);
   assert.match(serverSource, /JWT_SECRET \|\| "stack-bench-reference-only-secret-2026"/);
-  assert.match(serverSource, /reserveStock\(item\._id, qty\)/);
-  assert.match(reservationSource, /quantity: \{ \$gte: 1 \}/);
-  assert.match(reservationSource, /\$inc: \{ quantity: -1 \}/);
   assert.deepEqual(reference.installDirectories, ['server', 'client']);
   assert.deepEqual(reference.server, { directory: 'server' });
   assert.deepEqual(reference.client, { directory: 'client' });

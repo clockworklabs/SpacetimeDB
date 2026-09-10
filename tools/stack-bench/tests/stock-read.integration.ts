@@ -52,6 +52,11 @@ INSERT INTO order_line VALUES (0, 1, 17);`);
         run('DELETE FROM warehouse WHERE id = 3;');
         run('INSERT INTO stock VALUES (0, 1, 2);');
         assert.throws(() => getPostgresStock({ item: "Kid's Keyboard", lease }), /ambiguous/);
+        run('DELETE FROM stock WHERE quantity = 2; ALTER TABLE stock DROP CONSTRAINT stock_warehouse_id_fkey;');
+        assert.throws(() => getPostgresStock({ item: "Kid's Keyboard", lease }), /no stock data/);
+        assert.throws(() => setPostgresStock({ item: "Kid's Keyboard", warehouse: 'East', quantity: 9, lease }),
+          /could not locate one relational stock row/);
+        assert.equal(run('SELECT quantity FROM stock WHERE warehouse_id = 1;'), '0');
       } else {
         run(`const itemId = ObjectId('0123456789abcdef01234567');
 db.item.insertOne({_id:itemId, name:"Kid's Keyboard"});

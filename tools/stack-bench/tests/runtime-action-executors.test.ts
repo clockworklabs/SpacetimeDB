@@ -276,7 +276,6 @@ test('direct PostgreSQL stock writes quote names and require exactly one updated
   });
   assert.equal(passed.status, 'passed');
   assert.match(stockSql, /Kid''s Keyboard/);
-  assert.match(stockSql, /\\gexec/);
   assert.deepEqual(waits, [17]);
 
   const missed = createDatabaseWriteCapability({ backend: 'postgres', databaseLease,

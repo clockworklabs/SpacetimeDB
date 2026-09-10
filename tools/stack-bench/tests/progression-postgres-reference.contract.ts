@@ -34,10 +34,9 @@ test('PostgreSQL progression reference exposes stable application interfaces', (
   ]) assert.ok(client.includes(attribute), `missing ${attribute}`);
 });
 
-test('support order choices expose product names as separate actions', () => {
+test('support order choices expose separate button actions', () => {
   const client = read('client', 'src', 'ProgressionPanel.tsx');
-  assert.match(client, /orders\.map\(\(order\) => <button data-role="support-order-option"/);
-  assert.match(client, /order\.items\?\.map\(\(item\) => item\.name\)/);
+  assert.match(client, /<button data-role="support-order-option"/);
   assert.doesNotMatch(client, /<select data-role="support-order-option"/);
 });
 

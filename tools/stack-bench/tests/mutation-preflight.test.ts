@@ -10,11 +10,61 @@ import { MUTATION_GRADE_MAX_TIMEOUT_MS, mutationControlArgv, mutationControlTime
 import { loadTrack } from '../src/composition/tracks.js';
 import { STACK_BENCH_ROOT, compiledEntrypoint } from '../src/package-root.js';
 import { mutationClientCommand, mutationFailureMessage, mutationGradeArguments, restoreMutationSource,
-  retainMutationGrade } from '../grader/mutation-test.js';
+  retainMutationGrade, resetMutationDatabase } from '../grader/mutation-test.js';
+import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import type { TextCommandExecutor } from '../src/runtime/command-executor.js';
 import { parseGradeArgs } from '../grader/grade.js';
 import { createArtifact } from '../src/evidence/artifacts.js';
+
+test('mutation reset stops hosted apps before clearing data and fails closed', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'mutation-reset-order-'));
+  const path = join(root, 'lease.json');
+  const priorPath = process.env.STACK_BENCH_LEASE;
+  const priorToken = process.env.STACK_BENCH_LEASE_TOKEN;
+  t.after(() => {
+    if (priorPath === undefined) delete process.env.STACK_BENCH_LEASE;
+    else process.env.STACK_BENCH_LEASE = priorPath;
+    if (priorToken === undefined) delete process.env.STACK_BENCH_LEASE_TOKEN;
+    else process.env.STACK_BENCH_LEASE_TOKEN = priorToken;
+    rmSync(root, { recursive: true, force: true });
+  });
+  for (const backend of ['postgres', 'mongodb'] as const) {
+    const lease = createBackendLease({ runId: 'mutation-reset', backend,
+      track: 'ecommerce', runIndex: 0, database: 'mutation_reset',
+      container: { name: 'database', id: 'a'.repeat(64) } });
+    lease.state = 'active';
+    writeBackendLease(path, lease);
+    process.env.STACK_BENCH_LEASE = path;
+    process.env.STACK_BENCH_LEASE_TOKEN = lease.ownershipToken;
+    const calls: string[] = [];
+    let failure: string | null = null;
+    const adapter = STACK_ADAPTER_REGISTRY.get(backend);
+    const lifecycle = adapter.lifecycle as typeof adapter.lifecycle & {
+      control: NonNullable<typeof adapter.lifecycle.control> };
+    assert.equal(typeof lifecycle.control, 'function');
+    t.mock.method(lifecycle, 'control', async ({ mode }: { mode: string }) => {
+      calls.push(mode);
+      if (failure === mode) throw new Error(`${mode} failed`);
+    });
+    t.mock.method(adapter.reset, 'run', () => {
+      calls.push('reset');
+      if (failure === 'reset') throw new Error('reset failed');
+    });
+    const args = { backend, app: root, track: 'ecommerce', reseedOnReset: true,
+      restartSpec: { backend, app: root, port: 3000, probe: '/' } };
+    await resetMutationDatabase(args, null);
+    assert.deepEqual(calls.splice(0), ['stop', 'reset', 'start']);
+    for (const phase of ['stop', 'reset']) {
+      failure = phase;
+      await assert.rejects(resetMutationDatabase(args, null), new RegExp(`${phase} failed`));
+      assert.deepEqual(calls.splice(0), phase === 'stop' ? ['stop'] : ['stop', 'reset']);
+    }
+    await assert.rejects(resetMutationDatabase({ ...args, restartSpec: undefined }, null),
+      /requires a lease-authenticated --restart-spec/);
+    assert.deepEqual(calls, [], 'missing control must not clear the database');
+  }
+});
 
 test('mutation grading retains each report, including errors, without reusing stale output', async t => {
   const root = mkdtempSync(join(tmpdir(), 'mutation-retained-grades-'));

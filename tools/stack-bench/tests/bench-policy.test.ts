@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { archiveCandidateGrade, auditFailureSummary, gradeArgv, parseAgentProcessResult }
+import { gradeWithRetry, auditFailureSummary, gradeArgv, parseAgentProcessResult }
   from '../commands/bench.js';
 import { finalizeRunTotals }
   from '../src/evidence/benchmark-run.js';
@@ -452,7 +452,7 @@ test('repair regression checks require earlier passes but ignore earlier failure
   assert.equal(repairRegressionDecision(before, regressed).action, 'rollback-regression');
 });
 
-test('grade retries preserve the failed bundle and typed action evidence before replacement', () => {
+test('grade retries preserve evidence, retry once, and skip usable or excluded grades', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-grade-retry-'));
   try {
     const app = join(root, 'app');
@@ -469,7 +469,24 @@ test('grade retries preserve the failed bundle and typed action evidence before 
     writeFileSync(join(grading, 'media', 'video.webm'), 'large media');
 
     for (const label of ['l3-before-retry', 'l3-repair1-before-retry']) {
-      archiveCandidateGrade(app, output, label);
+      const calls: string[] = [];
+      await gradeWithRetry({ appDir: app, outputDir: output, label: 'grade', archiveLabel: label,
+        runGrade: gradeLabel => {
+          calls.push(gradeLabel);
+          if (gradeLabel.endsWith('-retry')) {
+            assert.equal(readFileSync(join(output, 'candidate-grades', label, 'bundle.json'), 'utf8'), failed);
+          }
+          return { outcome: { kind: 'harness_failure' } };
+        } });
+      assert.deepEqual(calls, ['grade', 'grade-retry']);
+    }
+    for (const retry of [true, false]) {
+      let calls = 0;
+      await gradeWithRetry({ appDir: app, outputDir: output, label: 'grade',
+        archiveLabel: 'must-not-archive', retry,
+        runGrade: () => { calls++; return { outcome: { kind: retry ? 'app_failure' : 'harness_failure' } }; } });
+      assert.equal(calls, 1);
+      assert.equal(existsSync(join(output, 'candidate-grades', 'must-not-archive')), false);
     }
     clearPrivateGradingEvidence(app);
     mkdirSync(grading, { recursive: true });

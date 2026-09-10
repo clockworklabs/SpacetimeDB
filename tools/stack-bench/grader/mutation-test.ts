@@ -187,23 +187,23 @@ export function remainingMutationBatchMs(deadlineMs: number, nowMs: number = Dat
   return remaining;
 }
 
-// Reset publishes SpacetimeDB source. Hosted stacks restart once to load source
-// and seed the empty database. A separate source-change restart is redundant.
-async function reset(a: MutationArgs, deadlineMs: number | null): Promise<void> {
+// Hosted apps must release database connections before reset, then start once
+// to load source and seed. SpacetimeDB reset publishes the changed source.
+export async function resetMutationDatabase(a: MutationArgs, deadlineMs: number | null): Promise<void> {
   const exec: TextCommandExecutor = deadlineMs === null ? execFileSync : ((file, commandArgs, options) =>
     execFileSync(file, commandArgs, { ...options,
       timeout: Math.min(options.timeout, remainingMutationBatchMs(deadlineMs)) }));
   try {
-    resetBackend({ backend: a.backend!, app: a.app!, exec });
     const requiresReseed = STACK_ADAPTER_REGISTRY.get(a.backend!).reset.requiresReseed;
-    if (a.reseedOnReset && requiresReseed) {
-      if (!a.restartSpec) {
-        throw new Error(`track ${a.track} requires a lease-authenticated --restart-spec to reseed after reset`);
-      }
-      const signal = deadlineMs === null ? null
-        : AbortSignal.timeout(remainingMutationBatchMs(deadlineMs));
-      await controlBackendRuntime(a.restartSpec, "restart", { signal, exec });
+    const restartSpec = a.reseedOnReset && requiresReseed ? a.restartSpec : undefined;
+    if (a.reseedOnReset && requiresReseed && !restartSpec) {
+      throw new Error(`track ${a.track} requires a lease-authenticated --restart-spec to reseed after reset`);
     }
+    const signal = deadlineMs === null ? null
+      : AbortSignal.timeout(remainingMutationBatchMs(deadlineMs));
+    if (restartSpec) await controlBackendRuntime(restartSpec, "stop", { signal, exec });
+    resetBackend({ backend: a.backend!, app: a.app!, exec });
+    if (restartSpec) await controlBackendRuntime(restartSpec, "start", { signal, exec });
   } catch (error) {
     if (deadlineMs !== null && Date.now() >= deadlineMs) {
       throw new MutationBatchDeadlineError('mutation batch deadline reached', { cause: error });
@@ -268,7 +268,7 @@ export function mutationGradeArguments(a: MutationArgs, reportPath: string): str
 }
 
 async function grade(a: MutationArgs, reportPath: string, deadlineMs: number | null = null): Promise<GradeReport> {
-  await reset(a, deadlineMs);
+  await resetMutationDatabase(a, deadlineMs);
   if (existsSync(reportPath)) unlinkSync(reportPath);
   const gradeArgs = mutationGradeArguments(a, reportPath);
   const timeout = deadlineMs === null
@@ -789,7 +789,7 @@ async function main(): Promise<void> {
       // deadline stop leaves clean source and lets the lease owner stop it.
       if (mutationError !== null && cleanupErrors.length === 0) {
         try {
-          await reset(args, deadline);
+          await resetMutationDatabase(args, deadline);
         } catch (error) {
           cleanupErrors.push(new Error(`cannot restore the clean runtime: ${errorMessage(error)}`,
             { cause: error }));
@@ -825,7 +825,7 @@ async function main(): Promise<void> {
   // Detect any source change outside the files restored above.
   assertAppSourceIdentity(args.app, spec.fixtureSha256, 'mutation fixture after worker completion');
   // Restore the clean runtime and database before releasing the worker lease.
-  await reset(args, null);
+  await resetMutationDatabase(args, null);
 
   if (cleanClientDist) mutationClientCommand(args.backend!, 'rm', ['-rf', '--', cleanClientDist], 120_000);
   const artifact = persist('complete');

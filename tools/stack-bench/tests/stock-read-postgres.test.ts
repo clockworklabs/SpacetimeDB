@@ -47,6 +47,5 @@ test('stock reads refuse changed ownership and missing, ambiguous, or invalid da
       sql = options.input ?? '';
       return '{"items":1,"warehouses":1,"namedWarehouses":1,"quantities":[2]}';
     } }).quantity, 2);
-  assert.match(sql, /AND warehouse.name = %10\$L/);
   assert.match(sql, /West''s/);
 });

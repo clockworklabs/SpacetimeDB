@@ -705,6 +705,19 @@ export function archiveCandidateGrade(appDir: string, outputDir: string, label: 
   });
 }
 
+export async function gradeWithRetry({ appDir, outputDir, label, archiveLabel, runGrade,
+  retry = true }: {
+  appDir: string; outputDir: string; label: string; archiveLabel: string;
+  runGrade: (label: string) => GradeBundlePayload | null | Promise<GradeBundlePayload | null>;
+  retry?: boolean;
+}): Promise<GradeBundlePayload | null> {
+  const bundle = await runGrade(label);
+  if (!retry || levelGradeIsUsable(classifyBundle(bundle))) return bundle;
+  archiveCandidateGrade(appDir, outputDir, archiveLabel);
+  console.log('  grade did not complete; retrying the same source once');
+  return runGrade(`${label}-retry`);
+}
+
 function grade(
   args: BenchArgs,
   appDir: string,
@@ -2148,23 +2161,17 @@ async function main() {
     }
     const firstBuildLabel = `${args.backend}-l${level}${featureActionSuffix}`;
     let bundle = firstBuildSource
-      ? grade(args, appDir, url, firstBuildLabel, level, track, runId,
-        { applicationFailure: materializationOutcome }) : null;
-    // A grader failure on unchanged source is retried once, as a repair grade is.
-    if (firstBuildSource && !materializationOutcome
-      && !levelGradeIsUsable(classifyBundle(bundle))) {
-      archiveCandidateGrade(appDir, outputDir, `l${level}${featureActionSuffix}-before-retry`);
-      console.log('  grade did not complete; retrying the same source once');
-      bundle = grade(args, appDir, url, `${firstBuildLabel}-retry`, level, track, runId);
-    }
+      ? await gradeWithRetry({ appDir, outputDir, label: firstBuildLabel,
+        archiveLabel: `l${level}${featureActionSuffix}-before-retry`,
+        retry: !materializationOutcome,
+        runGrade: label => grade(args, appDir, url, label, level, track, runId,
+          { applicationFailure: materializationOutcome }) }) : null;
     let reusableRepairEvidence: {
       bundle: GradeBundlePayload;
       results: string;
     } | null = null;
 
-    // What the model built BEFORE being handed the answers. Every backend can
-    // reach the same total given enough repairs, so the post-fix score stops
-    // discriminating — what it got right unaided is the comparison that survives.
+    // Keep the unaided result separate from the result after repairs.
     const firstBuild: FirstBuildRecord = {
       score: bundle?.totals?.score ?? null,
       max: bundle?.totals?.max ?? null,
@@ -2613,15 +2620,10 @@ async function main() {
       const repairedSource = `${snapshot}-accepted`;
       snapshotSource(appDir, repairedSource);
       try {
-        bundle = await gradeAcceptedSource(repairedSource,
-          `${args.backend}-l${level}-fix${repairs}`);
-        if (!levelGradeIsUsable(classifyBundle(bundle))) {
-          archiveCandidateGrade(appDir, outputDir,
-            `l${level}${featureActionSuffix}-repair${repairs}-before-retry`);
-          console.log('    repair grade did not complete; retrying the same source once');
-          bundle = await gradeAcceptedSource(repairedSource,
-            `${args.backend}-l${level}-fix${repairs}-retry`);
-        }
+        bundle = await gradeWithRetry({ appDir, outputDir,
+          label: `${args.backend}-l${level}-fix${repairs}`,
+          archiveLabel: `l${level}${featureActionSuffix}-repair${repairs}-before-retry`,
+          runGrade: label => gradeAcceptedSource(repairedSource, label) });
       } finally {
         rmSync(repairedSource, { recursive: true, force: true });
       }

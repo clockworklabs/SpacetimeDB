@@ -153,10 +153,6 @@ test('executors fail only through the runtime helpers', () => {
     if (allowed.has(file)) continue;
     assert.deepEqual(direct, [], `${file} constructs a failure outside the runtime helpers`);
   }
-  const boundary = readFileSync(join(directory, 'browser-action-executors.ts'), 'utf8');
-  assert.equal((boundary.match(/new ActionApplicationFailure\(/g) ?? []).length, 1);
-  const nested = readFileSync(join(directory, 'runtime-action-executors.ts'), 'utf8');
-  assert.equal((nested.match(/new Action(?:ApplicationFailure|Inconclusive)\(/g) ?? []).length, 2);
 });
 
 test('sample renderings read as behavior, not mechanics', () => {

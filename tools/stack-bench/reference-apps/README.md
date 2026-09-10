@@ -80,6 +80,8 @@ choose a new output path. The runner can emit a companion clean-reference artifa
 when the baseline repetition count also matches `referenceRepetitions`.
 `--mutation-workers` runs independent defect controls with separate leases; it
 does not change the selected checks or their pass rules.
+The qualification status command generates commands for up to eight workers by
+default. Use `qualification status ... --mutation-workers <1-8>` to select fewer.
 
 The matching dependency L3 empty-app control is:
 
