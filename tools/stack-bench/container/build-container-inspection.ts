@@ -80,17 +80,28 @@ export function waitForBuildContainerReady(id: string, readyFile: string, descri
   }
 }
 
-export function parseCgroupMemory(value: string) {
-  const bytes = (name: string): number | null => {
-    const match = value.match(new RegExp(`^\\[${name.replace('.', '\\.')}]\\r?\\n(\\d+)$`, 'm'));
+export function parseCgroupResources(value: string) {
+  const count = (name: string, key?: string): number | null => {
+    const section = (value.split(`[${name}]`)[1]?.split('[')[0] ?? '').replaceAll('\r', '');
+    const match = section.match(new RegExp(key ? `^${key} (\\d+)$` : '^(\\d+)$', 'm'));
     if (!match) return null;
     const parsed = Number(match[1]);
     return Number.isSafeInteger(parsed) ? parsed : null;
   };
   return {
-    currentBytes: bytes('memory.current'),
-    peakBytes: bytes('memory.peak'),
-    limitBytes: bytes('memory.max'),
+    buildContainerMemory: {
+      currentBytes: count('memory.current'),
+      peakBytes: count('memory.peak'),
+      limitBytes: count('memory.max'),
+      oomEvents: count('memory.events', 'oom'),
+      oomKillEvents: count('memory.events', 'oom_kill'),
+    },
+    buildContainerPids: {
+      current: count('pids.current'),
+      peak: count('pids.peak'),
+      limit: count('pids.max'),
+      limitEvents: count('pids.events', 'max'),
+    },
   };
 }
 

@@ -130,6 +130,15 @@ test('completion validation rejects wrong identity and malformed usage', () => {
   assert.deepEqual(normalized.transcript, { kind: 'provider-session', id: 'session-1' });
   assert.deepEqual(normalized.costReceipts, valid.costReceipts);
   assert.deepEqual(normalized.setup.resources, valid.setup.resources);
+  const resources = { ...valid.setup.resources,
+    buildContainerMemory: { ...valid.setup.resources.buildContainerMemory,
+      oomEvents: 2, oomKillEvents: 1 },
+    buildContainerPids: { current: 7, peak: 512, limit: 512, limitEvents: 129 } };
+  assert.deepEqual(validateAgentResult({ ...valid, setup: { resources } }, nativeRequest)
+    .setup.resources, resources);
+  assert.throws(() => validateAgentResult({ ...valid, setup: { resources: { ...resources,
+    buildContainerPids: { ...resources.buildContainerPids, limitEvents: -1 } } } }, nativeRequest),
+  /limitEvents/);
   assert.equal(normalized.costComplete, true);
   // Codex reports tokens, not dollar charges; the broker is the cost authority.
   assert.equal(validateAgentResult({ ...valid, costReceipts: [{ invocation: 1,

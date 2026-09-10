@@ -19,7 +19,7 @@ code. It builds the controller, SDK, and native binaries without host Node or
 Rust and without ignored binary files:
 
 ```sh
-docker build --platform linux/amd64 -f tools/stack-bench/container/Dockerfile -t stack-bench-build:local .
+docker build --platform linux/amd64 -t stack-bench-build:local tools/stack-bench/container
 docker build --platform linux/amd64 -f tools/stack-bench/appliance/Controller.Dockerfile -t stack-bench-controller:local .
 ```
 

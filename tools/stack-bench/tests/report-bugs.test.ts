@@ -178,6 +178,36 @@ test('repair feedback describes behavior instead of browser commands', () => {
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('failed reload reports its transport error without claiming later checks ran or leaking diagnostics', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-reload-'));
+  try {
+    for (const [code, expected] of [['ERR_CONNECTION_REFUSED', 'the browser request failed (ERR_CONNECTION_REFUSED)'],
+      ['ERR_PRIVATE_DIAGNOSTIC', 'the page did not behave as required']]) {
+      const app = join(root, code!);
+      const detail = `page.reload: net::${code} at http://user:password@app/private-probe?token=secret\nPRIVATE_STACK`;
+      const failure = finding('page-error', { detail });
+      const evidence = createCheckEvidence({ status: 'failed', code: 'test_result', phase: 'assertion',
+        actor: 'owner', summary: detail, finding: failure, startedAtMs: 1, completedAtMs: 2,
+        actions: [{ actor: 'owner', evidence: {
+          schemaVersion: 2, action: { id: 'reload', version: '1.0.0' }, status: 'failed',
+          type: 'browser-interaction-evidence', code: 'application_failure', phase: 'execute',
+          summary: detail, finding: failure, observation: null, expected: null, retryable: false,
+          timing: { startedAtMs: 1, completedAtMs: 2, durationMs: 1, deadlineMs: 5000 },
+          attachments: [], sensitivity: [],
+        } }],
+      });
+      writeGrade(app, 'failed', detail, { evidence, desc: 'saved history survives reload and a fresh login' });
+      const reported = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
+      assert.equal(reported.status, 0, reported.stderr);
+      const report = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
+      assert(report.includes(`**Actual:** ${expected}`));
+      assert.match(report, /Failed action:\*\* Reload the page/);
+      assert.match(report, /sequence stopped at this action; later behavior was not observed/);
+      assert.doesNotMatch(report, /Completed lifecycle actions|page reloaded|PRIVATE_|private-probe|password|secret|http:\/\//);
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('repair feedback refuses internal evaluation language', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-disclosure-'));
   try {

@@ -132,6 +132,9 @@ function observationContext(evidence: CheckEvidence): string[] {
     'choice-missing', 'page-timeout'].includes(evidence.finding.kind)) {
     context.push('The sequence stopped at this control; later behavior was not observed.');
   }
+  if (evidence.finding?.kind === 'page-error') {
+    context.push('The sequence stopped at this action; later behavior was not observed.');
+  }
   return context;
 }
 
@@ -152,6 +155,12 @@ function failedAction(action: string | undefined, finding: Finding | null): stri
 // finding (the feature's setup failed before this behavior was reached)
 // says so and nothing more.
 function observed(finding: Finding | null, phase: string): string {
+  if (finding?.kind === 'page-error') {
+    // Raw browser diagnostics can contain URLs, credentials and private probe text.
+    // Report only a recognized transport code, never the surrounding diagnostic.
+    const code = finding.fields.detail?.match(/\b(?:net::)?(ERR_CONNECTION_REFUSED|ERR_CONNECTION_RESET|ERR_CONNECTION_CLOSED|ERR_CONNECTION_TIMED_OUT|ERR_NAME_NOT_RESOLVED|ERR_ADDRESS_UNREACHABLE|ERR_EMPTY_RESPONSE|ERR_TIMED_OUT)\b/)?.[1];
+    if (code) return `the browser request failed (${code})`;
+  }
   if (finding) return renderRepairFinding(finding);
   return phase === 'setup'
     ? 'the application did not reach this behavior; an earlier step of the same feature failed'

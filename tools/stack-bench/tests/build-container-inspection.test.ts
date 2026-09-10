@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { hasRequiredBuildContainerIsolation, inspectBuildContainer, parseCgroupMemory,
+import { hasRequiredBuildContainerIsolation, inspectBuildContainer, parseCgroupResources,
   parsePublishedPorts, sameHostPath, waitForBuildContainerReady }
   from '../container/build-container-inspection.js';
 import type { InspectedBuildContainer } from '../container/build-container-inspection.js';
@@ -64,17 +64,22 @@ test('published ports must be valid and unique', () => {
   assert.throws(() => parsePublishedPorts('3000x'), /integers from 1 through 65535/);
 });
 
-test('cgroup memory reports current use, peak use, and the enforced limit', () => {
-  assert.deepEqual(parseCgroupMemory('[memory.events]\noom 0\n[memory.current]\n123\n'
-    + '[memory.peak]\n456\n[memory.max]\n4294967296\n'), {
-    currentBytes: 123,
-    peakBytes: 456,
-    limitBytes: 4 * 1024 ** 3,
-  });
-  assert.deepEqual(parseCgroupMemory('[memory.max]\nmax\n'), {
-    currentBytes: null,
-    peakBytes: null,
-    limitBytes: null,
+test('cgroup resources retain OOM and PID-limit events even when the coding CLI succeeds', () => {
+  const sample = '[memory.events]\noom 2\noom_kill 1\n[memory.current]\n123\n'
+    + '[memory.peak]\n456\n[memory.max]\n4294967296\n[pids.current]\n7\n'
+    + '[pids.peak]\n512\n[pids.max]\n512\n[pids.events]\nmax 129\n';
+  const expected = {
+    buildContainerMemory: { currentBytes: 123, peakBytes: 456, limitBytes: 4 * 1024 ** 3,
+      oomEvents: 2, oomKillEvents: 1 },
+    buildContainerPids: { current: 7, peak: 512, limit: 512, limitEvents: 129 },
+  };
+  assert.deepEqual(parseCgroupResources(sample), expected);
+  assert.deepEqual(parseCgroupResources(sample.replaceAll('\n', '\r\n')), expected);
+  assert.deepEqual(parseCgroupResources('[memory.max]\nmax\n[pids.current]\n-1\n'
+    + '[pids.peak]\n9007199254740992\n[pids.max]\nmax\n'), {
+    buildContainerMemory: { currentBytes: null, peakBytes: null, limitBytes: null,
+      oomEvents: null, oomKillEvents: null },
+    buildContainerPids: { current: null, peak: null, limit: null, limitEvents: null },
   });
 });
 

@@ -23,6 +23,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Browser testing uses the system browser; no downloads into the agent home are needed.
 ENV CHROME_BIN=/usr/bin/chromium
+COPY browser-tools/package*.json /opt/browser-tools/
+RUN npm ci --prefix /opt/browser-tools --omit=dev --ignore-scripts \
+    && node -e "require('/opt/browser-tools/node_modules/puppeteer-core')"
 
 # Pinned, and the auto-updater disabled: a CLI that updates itself mid-series
 # changes the thing under test between one backend and the next. Override at

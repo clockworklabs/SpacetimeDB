@@ -30,7 +30,9 @@ function session(marker: string,
     costReceipts: billable ? receipt() : [],
     setup: { resources: { buildContainerMemory: {
       currentBytes: 100, peakBytes: 200, limitBytes: 400,
-    }, memoryProbeError: null } }, tokens: 2, outputTokens: 1, turns: 1,
+      oomEvents: 0, oomKillEvents: 0,
+    }, buildContainerPids: { current: 8, peak: 512, limit: 512, limitEvents: 129 },
+    memoryProbeError: null } }, tokens: 2, outputTokens: 1, turns: 1,
     promptBytes: 20, thinking: null, transcript: { kind: 'test', id: marker },
     provenance: null, providerMetadata: null, costComplete };
 }

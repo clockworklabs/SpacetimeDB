@@ -106,6 +106,28 @@ test('dev workflow reaches build, upgrade, and repair prompts only when selected
   }
 });
 
+test('all stacks receive the same installed browser client in build, upgrade, and repair prompts', () => {
+  const track = loadTrack('ecommerce');
+  const catalog = resolveFeatureCatalog('progression/ecommerce.json', track);
+  const guidance = resolveGuidanceProfile('neutral', STACKS);
+  const paragraphs = new Set<string>();
+  for (const level of [1, 2, 3] as const) {
+    const binding = resolveRecipeRelease(track, level, 'ecommerce.progression-catalog');
+    const task = resolveProgressionRecipeLevelSelection(binding, catalog, level,
+      { cumulative: true }).agent.request;
+    for (const stack of STACKS) for (const repair of [false, true]) {
+      const paragraph = renderPrompt({ level, stack, task, guidance, repair })
+        .split('\n').find(line => line.startsWith('Chromium is installed'));
+      assert.ok(paragraph);
+      assert.match(paragraph, /require\("\/opt\/browser-tools\/node_modules\/puppeteer-core"\)/);
+      assert.match(paragraph, /executablePath: process.env.CHROME_BIN/);
+      assert.doesNotMatch(paragraph, EVALUATION_LANGUAGE);
+      paragraphs.add(paragraph);
+    }
+  }
+  assert.equal(paragraphs.size, 1);
+});
+
 test('neutral dependency prompts include only selected product and stack contracts', () => {
   const track = loadTrack('ecommerce');
   const catalog = resolveFeatureCatalog('progression/ecommerce.json', track);

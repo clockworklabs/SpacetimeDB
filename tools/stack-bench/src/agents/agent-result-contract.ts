@@ -52,6 +52,14 @@ export interface AgentSetup extends UnknownRecord {
       currentBytes: number | null;
       peakBytes: number | null;
       limitBytes: number | null;
+      oomEvents?: number | null;
+      oomKillEvents?: number | null;
+    } | null;
+    buildContainerPids?: {
+      current: number | null;
+      peak: number | null;
+      limit: number | null;
+      limitEvents: number | null;
     } | null;
     memoryProbeError: string | null;
   } | null;
@@ -143,7 +151,15 @@ const resultSchema = z.strictObject({
         currentBytes: nonNegativeNumber.nullable(),
         peakBytes: nonNegativeNumber.nullable(),
         limitBytes: nonNegativeNumber.nullable(),
+        oomEvents: nonNegativeInteger.nullable().optional(),
+        oomKillEvents: nonNegativeInteger.nullable().optional(),
       }).nullable(),
+      buildContainerPids: z.strictObject({
+        current: nonNegativeInteger.nullable(),
+        peak: nonNegativeInteger.nullable(),
+        limit: nonNegativeInteger.nullable(),
+        limitEvents: nonNegativeInteger.nullable(),
+      }).nullable().optional(),
       memoryProbeError: z.string().min(1).nullable(),
     }).nullable().optional(),
   }),

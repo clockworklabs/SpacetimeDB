@@ -16,7 +16,7 @@ import { dockerHostGatewayArguments, requireAttemptNetwork, attemptControllerIma
   recordAttemptCreation, ATTEMPT_CREATION_LABEL } from '../src/runtime/docker-network.js';
 import { packageRegistry, packageRegistryEnvironment } from '../src/runtime/package-registry.js';
 import { resolveContainerAuth } from './container-auth.js';
-import { hasRequiredBuildContainerIsolation, inspectBuildContainer, parseCgroupMemory,
+import { hasRequiredBuildContainerIsolation, inspectBuildContainer, parseCgroupResources,
   parsePublishedPorts, waitForBuildContainerReady }
   from './build-container-inspection.js';
 import { reconcileCredentialBrokerReceipt } from './credential-broker-accounting.js';
@@ -620,12 +620,13 @@ if (cleanupErrors.length) {
 const cliResult = codingProvider.result(String(res.stdout ?? '').trim(), appDir, invocationToken);
 if (cliResult) cliResult.stack_bench_auth_mode = auth.mode;
 const memory = spawnSync('docker', ['exec', containerName, 'sh', '-c',
-  'for f in memory.events memory.current memory.peak memory.max; do '
+  'for f in memory.events memory.current memory.peak memory.max pids.current pids.peak pids.max pids.events; do '
     + 'p="/sys/fs/cgroup/$f"; if test -r "$p"; then echo "[$f]"; cat "$p"; fi; done'], {
   encoding: 'utf8', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
 });
 const resources = {
-  buildContainerMemory: memory.status === 0 ? parseCgroupMemory(memory.stdout) : null,
+  ...(memory.status === 0 ? parseCgroupResources(memory.stdout)
+    : { buildContainerMemory: null, buildContainerPids: null }),
   memoryProbeError: memory.status === 0 ? null
     : memory.stderr?.trim() || (memory.error instanceof Error ? memory.error.message : null)
       || `exit ${memory.status}`,

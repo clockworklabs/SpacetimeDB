@@ -613,7 +613,10 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
       + 'When dependencies are current, reuse them instead of installing them again.',
     '',
     'Chromium is installed at /usr/bin/chromium (CHROME_BIN). '
-      + 'Use that executable with --no-sandbox in this isolated container; no browser download is needed.',
+      + 'Use that executable with --no-sandbox in this isolated container; no browser download is needed. '
+      + 'Puppeteer Core is installed at /opt/browser-tools/node_modules/puppeteer-core. '
+      + 'In a .cjs script, use const puppeteer = require("/opt/browser-tools/node_modules/puppeteer-core"); '
+      + 'then await puppeteer.launch({ executablePath: process.env.CHROME_BIN, args: ["--no-sandbox"] }).',
     '',
     '## Stack',
     '',
