@@ -41,70 +41,146 @@ pub struct RawModuleDefV10 {
     pub sections: Vec<RawModuleDefV10Section>,
 }
 
-/// A section of a V10 module definition.
-///
-/// New variants MUST be added to the END of this enum, to maintain ABI compatibility.
-#[derive(Debug, Clone, SpacetimeType)]
-#[sats(crate = crate)]
-#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
-#[non_exhaustive]
-pub enum RawModuleDefV10Section {
-    /// The `Typespace` used by the module.
-    ///
-    /// `AlgebraicTypeRef`s in other sections refer to this typespace.
-    /// See [`crate::db::raw_def::v9::RawModuleDefV9::typespace`] for validation requirements.
-    Typespace(Typespace),
+macro_rules! with_v10_sections {
+    ($mac:ident) => {
+        // New variants MUST be added to the END of this enum, to maintain ABI compatibility.
+        $mac! {
+            /// The `Typespace` used by the module.
+            ///
+            /// `AlgebraicTypeRef`s in other sections refer to this typespace.
+            /// See [`crate::db::raw_def::v9::RawModuleDefV9::typespace`] for validation requirements.
+            Typespace(Typespace),
 
-    /// Type definitions exported by the module.
-    Types(Vec<RawTypeDefV10>),
+            /// Type definitions exported by the module.
+            Types(Vec<RawTypeDefV10>),
 
-    /// Table definitions.
-    Tables(Vec<RawTableDefV10>),
+            /// Table definitions.
+            Tables(Vec<RawTableDefV10>),
 
-    /// Reducer definitions.
-    Reducers(Vec<RawReducerDefV10>),
+            /// Reducer definitions.
+            Reducers(Vec<RawReducerDefV10>),
 
-    /// Procedure definitions.
-    Procedures(Vec<RawProcedureDefV10>),
+            /// Procedure definitions.
+            Procedures(Vec<RawProcedureDefV10>),
 
-    /// View definitions.
-    Views(Vec<RawViewDefV10>),
+            /// View definitions.
+            Views(Vec<RawViewDefV10>),
 
-    /// Schedule definitions.
-    ///
-    /// Unlike V9 where schedules were embedded in table definitions,
-    /// V10 stores them in a dedicated section.
-    Schedules(Vec<RawScheduleDefV10>),
+            /// Schedule definitions.
+            ///
+            /// Unlike V9 where schedules were embedded in table definitions,
+            /// V10 stores them in a dedicated section.
+            Schedules(Vec<RawScheduleDefV10>),
 
-    /// Lifecycle reducer assignments.
-    ///
-    /// Unlike V9 where lifecycle was a field on reducers,
-    /// V10 stores lifecycle-to-reducer mappings separately.
-    LifeCycleReducers(Vec<RawLifeCycleReducerDefV10>),
+            /// Lifecycle reducer assignments.
+            ///
+            /// Unlike V9 where lifecycle was a field on reducers,
+            /// V10 stores lifecycle-to-reducer mappings separately.
+            LifeCycleReducers(Vec<RawLifeCycleReducerDefV10>),
 
-    RowLevelSecurity(Vec<RawRowLevelSecurityDefV10>), //TODO: Add section for Event tables, and Case conversion before exposing this from module
+            RowLevelSecurity(Vec<RawRowLevelSecurityDefV10>), //TODO: Add section for Event tables, and Case conversion before exposing this from module
 
-    /// Case conversion policy for identifiers in this module.
-    CaseConversionPolicy(CaseConversionPolicy),
+            /// Case conversion policy for identifiers in this module.
+            CaseConversionPolicy(CaseConversionPolicy),
 
-    /// Names provided explicitly by the user that do not follow from the case conversion policy.
-    ExplicitNames(ExplicitNames),
+            /// Names provided explicitly by the user that do not follow from the case conversion policy.
+            ExplicitNames(ExplicitNames),
 
-    /// HTTP handler function definitions.
-    HttpHandlers(Vec<RawHttpHandlerDefV10>),
+            /// HTTP handler function definitions.
+            HttpHandlers(Vec<RawHttpHandlerDefV10>),
 
-    /// HTTP route definitions.
-    HttpRoutes(Vec<RawHttpRouteDefV10>),
+            /// HTTP route definitions.
+            HttpRoutes(Vec<RawHttpRouteDefV10>),
 
-    /// Primary key metadata for views.
-    ViewPrimaryKeys(Vec<RawViewPrimaryKeyDefV10>),
+            /// Primary key metadata for views.
+            ViewPrimaryKeys(Vec<RawViewPrimaryKeyDefV10>),
 
-    /// Submodules, keyed by the namespace they are registered under.
-    Submodules(Vec<RawSubmoduleV10>),
+            /// Submodules, keyed by the namespace they are registered under.
+            Submodules(Vec<RawSubmoduleV10>),
 
-    /// Declared publish-only configuration. Even an empty section requires ENV support.
-    Environment(Vec<RawEnvironmentDeclarationV10>),
+            /// Declared publish-only configuration. Even an empty section requires ENV support.
+            Environment(Vec<RawEnvironmentDeclarationV10>),
+        }
+    };
 }
+
+trait SectionPayload {
+    fn skip_serializing(&self) -> bool {
+        false
+    }
+}
+
+impl<T> SectionPayload for Vec<T> {
+    fn skip_serializing(&self) -> bool {
+        self.is_empty()
+    }
+}
+
+impl SectionPayload for Typespace {
+    fn skip_serializing(&self) -> bool {
+        self.types.is_empty()
+    }
+}
+
+impl SectionPayload for CaseConversionPolicy {}
+
+impl SectionPayload for ExplicitNames {
+    fn skip_serializing(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
+macro_rules! define_section_types {
+    ($($(#[$attr:meta])* $name:ident($payload:ty),)*) => {
+        /// A section of a V10 module definition.
+        #[derive(Debug, Clone, SpacetimeType)]
+        #[sats(crate = crate)]
+        #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+        #[non_exhaustive]
+        pub enum RawModuleDefV10Section {
+            $( $(#[$attr])* $name($payload), )*
+        }
+
+        paste::paste! {
+            #[derive(Debug, Default)]
+            pub struct RawModuleDefV10Sections {
+                $($(#[$attr])* pub [< $name:snake >]: Option<$payload>,)*
+            }
+
+            impl FromIterator<RawModuleDefV10Section> for RawModuleDefV10Sections {
+                fn from_iter<I: IntoIterator<Item = RawModuleDefV10Section>>(iter: I) -> Self {
+                    let mut sections = Self::default();
+                    for section in iter {
+                        match section {
+                            // TODO(noa): should we error when coming across duplicate sections? merge them?
+                            $(RawModuleDefV10Section::$name(payload) => { sections.[< $name:snake >].get_or_insert(payload); })*
+                        }
+                    }
+                    sections
+                }
+            }
+
+            impl RawModuleDefV10Sections {
+                #[allow(path_statements)]
+                const NUM_SECTIONS: usize = [$({ RawModuleDefV10Section::$name; }),*].len();
+            }
+
+            impl IntoIterator for RawModuleDefV10Sections {
+                type Item = RawModuleDefV10Section;
+                type IntoIter = std::iter::Flatten<std::array::IntoIter<Option<RawModuleDefV10Section>, { Self::NUM_SECTIONS }>>;
+                fn into_iter(self) -> Self::IntoIter {
+                    [
+                        $(self.[< $name:snake >].filter(|x| !SectionPayload::skip_serializing(x)).map(RawModuleDefV10Section::$name),)*
+                    ]
+                    .into_iter()
+                    .flatten()
+                }
+            }
+        }
+    };
+}
+
+with_v10_sections!(define_section_types);
 
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
@@ -605,133 +681,16 @@ pub struct RawViewPrimaryKeyDefV10 {
 }
 
 impl RawModuleDefV10 {
-    /// Get the submodules for this module definition.
-    pub fn submodules(&self) -> Option<&Vec<RawSubmoduleV10>> {
-        self.sections.iter().find_map(|s| match s {
-            RawModuleDefV10Section::Submodules(submodules) => Some(submodules),
-            _ => None,
-        })
+    /// Convert the vec of sections into a struct for easier processing.
+    pub fn into_sections(self) -> RawModuleDefV10Sections {
+        self.sections.into_iter().collect()
     }
+}
 
-    /// Get the types section, if present.
-    pub fn types(&self) -> Option<&Vec<RawTypeDefV10>> {
-        self.sections.iter().find_map(|s| match s {
-            RawModuleDefV10Section::Types(types) => Some(types),
-            _ => None,
-        })
-    }
-
-    /// Get the tables section, if present.
-    pub fn tables(&self) -> Option<&Vec<RawTableDefV10>> {
-        self.sections.iter().find_map(|s| match s {
-            RawModuleDefV10Section::Tables(tables) => Some(tables),
-            _ => None,
-        })
-    }
-
-    /// Get the typespace section, if present.
-    pub fn typespace(&self) -> Option<&Typespace> {
-        self.sections.iter().find_map(|s| match s {
-            RawModuleDefV10Section::Typespace(ts) => Some(ts),
-            _ => None,
-        })
-    }
-
-    /// Get the reducers section, if present.
-    pub fn reducers(&self) -> Option<&Vec<RawReducerDefV10>> {
-        self.sections.iter().find_map(|s| match s {
-            RawModuleDefV10Section::Reducers(reducers) => Some(reducers),
-            _ => None,
-        })
-    }
-
-    /// Get the procedures section, if present.
-    pub fn procedures(&self) -> Option<&Vec<RawProcedureDefV10>> {
-        self.sections.iter().find_map(|s| match s {
-            RawModuleDefV10Section::Procedures(procedures) => Some(procedures),
-            _ => None,
-        })
-    }
-
-    /// Get the views section, if present.
-    pub fn views(&self) -> Option<&Vec<RawViewDefV10>> {
-        self.sections.iter().find_map(|s| match s {
-            RawModuleDefV10Section::Views(views) => Some(views),
-            _ => None,
-        })
-    }
-
-    /// Get the view primary keys section, if present.
-    pub fn view_primary_keys(&self) -> Option<&Vec<RawViewPrimaryKeyDefV10>> {
-        self.sections.iter().find_map(|s| match s {
-            RawModuleDefV10Section::ViewPrimaryKeys(primary_keys) => Some(primary_keys),
-            _ => None,
-        })
-    }
-
-    /// Get the schedules section, if present.
-    pub fn schedules(&self) -> Option<&Vec<RawScheduleDefV10>> {
-        self.sections.iter().find_map(|s| match s {
-            RawModuleDefV10Section::Schedules(schedules) => Some(schedules),
-            _ => None,
-        })
-    }
-
-    /// Get the lifecycle reducers section, if present.
-    pub fn lifecycle_reducers(&self) -> Option<&Vec<RawLifeCycleReducerDefV10>> {
-        self.sections.iter().find_map(|s| match s {
-            RawModuleDefV10Section::LifeCycleReducers(lcrs) => Some(lcrs),
-            _ => None,
-        })
-    }
-
-    pub fn tables_mut_for_tests(&mut self) -> &mut Vec<RawTableDefV10> {
-        self.sections
-            .iter_mut()
-            .find_map(|s| match s {
-                RawModuleDefV10Section::Tables(tables) => Some(tables),
-                _ => None,
-            })
-            .expect("Tables section must exist for tests")
-    }
-
-    // Get the row-level security section, if present.
-    pub fn row_level_security(&self) -> Option<&Vec<RawRowLevelSecurityDefV10>> {
-        self.sections.iter().find_map(|s| match s {
-            RawModuleDefV10Section::RowLevelSecurity(rls) => Some(rls),
-            _ => None,
-        })
-    }
-
-    pub fn case_conversion_policy(&self) -> CaseConversionPolicy {
-        self.sections
-            .iter()
-            .find_map(|s| match s {
-                RawModuleDefV10Section::CaseConversionPolicy(policy) => Some(*policy),
-                _ => None,
-            })
-            .unwrap_or_default()
-    }
-
-    pub fn explicit_names(&self) -> Option<&ExplicitNames> {
-        self.sections.iter().find_map(|s| match s {
-            RawModuleDefV10Section::ExplicitNames(names) => Some(names),
-            _ => None,
-        })
-    }
-
-    pub fn http_handlers(&self) -> Option<&Vec<RawHttpHandlerDefV10>> {
-        self.sections.iter().find_map(|s| match s {
-            RawModuleDefV10Section::HttpHandlers(handlers) => Some(handlers),
-            _ => None,
-        })
-    }
-
-    pub fn http_routes(&self) -> Option<&Vec<RawHttpRouteDefV10>> {
-        self.sections.iter().find_map(|s| match s {
-            RawModuleDefV10Section::HttpRoutes(routes) => Some(routes),
-            _ => None,
-        })
+impl From<RawModuleDefV10Sections> for RawModuleDefV10 {
+    fn from(sections: RawModuleDefV10Sections) -> Self {
+        let sections = sections.into_iter().collect();
+        Self { sections }
     }
 }
 
@@ -739,7 +698,7 @@ impl RawModuleDefV10 {
 #[derive(Default)]
 pub struct RawModuleDefV10Builder {
     /// The module definition being built.
-    module: RawModuleDefV10,
+    module: RawModuleDefV10Sections,
 
     /// The type map from `T: 'static` Rust types to sats types.
     type_map: BTreeMap<TypeId, AlgebraicTypeRef>,
@@ -753,154 +712,47 @@ impl RawModuleDefV10Builder {
 
     /// Get mutable access to the typespace section, creating it if missing.
     fn typespace_mut(&mut self) -> &mut Typespace {
-        let idx = self
-            .module
-            .sections
-            .iter()
-            .position(|s| matches!(s, RawModuleDefV10Section::Typespace(_)))
-            .unwrap_or_else(|| {
-                self.module
-                    .sections
-                    .push(RawModuleDefV10Section::Typespace(Typespace::EMPTY.clone()));
-                self.module.sections.len() - 1
-            });
+        self.module.typespace.get_or_insert_default()
+    }
 
-        match &mut self.module.sections[idx] {
-            RawModuleDefV10Section::Typespace(ts) => ts,
-            _ => unreachable!("Just ensured Typespace section exists"),
-        }
+    /// Get mutable access to the tables section, creating it if missing.
+    fn tables_mut(&mut self) -> &mut Vec<RawTableDefV10> {
+        self.module.tables.get_or_insert_default()
     }
 
     /// Get mutable access to the reducers section, creating it if missing.
     fn reducers_mut(&mut self) -> &mut Vec<RawReducerDefV10> {
-        let idx = self
-            .module
-            .sections
-            .iter()
-            .position(|s| matches!(s, RawModuleDefV10Section::Reducers(_)))
-            .unwrap_or_else(|| {
-                self.module.sections.push(RawModuleDefV10Section::Reducers(Vec::new()));
-                self.module.sections.len() - 1
-            });
-
-        match &mut self.module.sections[idx] {
-            RawModuleDefV10Section::Reducers(reducers) => reducers,
-            _ => unreachable!("Just ensured Reducers section exists"),
-        }
+        self.module.reducers.get_or_insert_default()
     }
 
     /// Get mutable access to the procedures section, creating it if missing.
     fn procedures_mut(&mut self) -> &mut Vec<RawProcedureDefV10> {
-        let idx = self
-            .module
-            .sections
-            .iter()
-            .position(|s| matches!(s, RawModuleDefV10Section::Procedures(_)))
-            .unwrap_or_else(|| {
-                self.module
-                    .sections
-                    .push(RawModuleDefV10Section::Procedures(Vec::new()));
-                self.module.sections.len() - 1
-            });
-
-        match &mut self.module.sections[idx] {
-            RawModuleDefV10Section::Procedures(procedures) => procedures,
-            _ => unreachable!("Just ensured Procedures section exists"),
-        }
+        self.module.procedures.get_or_insert_default()
     }
 
     /// Get mutable access to the views section, creating it if missing.
     fn views_mut(&mut self) -> &mut Vec<RawViewDefV10> {
-        let idx = self
-            .module
-            .sections
-            .iter()
-            .position(|s| matches!(s, RawModuleDefV10Section::Views(_)))
-            .unwrap_or_else(|| {
-                self.module.sections.push(RawModuleDefV10Section::Views(Vec::new()));
-                self.module.sections.len() - 1
-            });
-
-        match &mut self.module.sections[idx] {
-            RawModuleDefV10Section::Views(views) => views,
-            _ => unreachable!("Just ensured Views section exists"),
-        }
+        self.module.views.get_or_insert_default()
     }
 
     /// Get mutable access to the view primary keys section, creating it if missing.
     fn view_primary_keys_mut(&mut self) -> &mut Vec<RawViewPrimaryKeyDefV10> {
-        let idx = self
-            .module
-            .sections
-            .iter()
-            .position(|s| matches!(s, RawModuleDefV10Section::ViewPrimaryKeys(_)))
-            .unwrap_or_else(|| {
-                self.module
-                    .sections
-                    .push(RawModuleDefV10Section::ViewPrimaryKeys(Vec::new()));
-                self.module.sections.len() - 1
-            });
-
-        match &mut self.module.sections[idx] {
-            RawModuleDefV10Section::ViewPrimaryKeys(primary_keys) => primary_keys,
-            _ => unreachable!("Just ensured ViewPrimaryKeys section exists"),
-        }
+        self.module.view_primary_keys.get_or_insert_default()
     }
 
     /// Get mutable access to the schedules section, creating it if missing.
     fn schedules_mut(&mut self) -> &mut Vec<RawScheduleDefV10> {
-        let idx = self
-            .module
-            .sections
-            .iter()
-            .position(|s| matches!(s, RawModuleDefV10Section::Schedules(_)))
-            .unwrap_or_else(|| {
-                self.module.sections.push(RawModuleDefV10Section::Schedules(Vec::new()));
-                self.module.sections.len() - 1
-            });
-
-        match &mut self.module.sections[idx] {
-            RawModuleDefV10Section::Schedules(schedules) => schedules,
-            _ => unreachable!("Just ensured Schedules section exists"),
-        }
+        self.module.schedules.get_or_insert_default()
     }
 
     /// Get mutable access to the lifecycle reducers section, creating it if missing.
     fn lifecycle_reducers_mut(&mut self) -> &mut Vec<RawLifeCycleReducerDefV10> {
-        let idx = self
-            .module
-            .sections
-            .iter()
-            .position(|s| matches!(s, RawModuleDefV10Section::LifeCycleReducers(_)))
-            .unwrap_or_else(|| {
-                self.module
-                    .sections
-                    .push(RawModuleDefV10Section::LifeCycleReducers(Vec::new()));
-                self.module.sections.len() - 1
-            });
-
-        match &mut self.module.sections[idx] {
-            RawModuleDefV10Section::LifeCycleReducers(lcrs) => lcrs,
-            _ => unreachable!("Just ensured LifeCycleReducers section exists"),
-        }
+        self.module.life_cycle_reducers.get_or_insert_default()
     }
 
     /// Get mutable access to the types section, creating it if missing.
     fn types_mut(&mut self) -> &mut Vec<RawTypeDefV10> {
-        let idx = self
-            .module
-            .sections
-            .iter()
-            .position(|s| matches!(s, RawModuleDefV10Section::Types(_)))
-            .unwrap_or_else(|| {
-                self.module.sections.push(RawModuleDefV10Section::Types(Vec::new()));
-                self.module.sections.len() - 1
-            });
-
-        match &mut self.module.sections[idx] {
-            RawModuleDefV10Section::Types(types) => types,
-            _ => unreachable!("Just ensured Types section exists"),
-        }
+        self.module.types.get_or_insert_default()
     }
 
     /// Add a type to the in-progress module.
@@ -912,102 +764,27 @@ impl RawModuleDefV10Builder {
 
     /// Get mutable access to the row-level security section, creating it if missing.
     fn row_level_security_mut(&mut self) -> &mut Vec<RawRowLevelSecurityDefV10> {
-        let idx = self
-            .module
-            .sections
-            .iter()
-            .position(|s| matches!(s, RawModuleDefV10Section::RowLevelSecurity(_)))
-            .unwrap_or_else(|| {
-                self.module
-                    .sections
-                    .push(RawModuleDefV10Section::RowLevelSecurity(Vec::new()));
-                self.module.sections.len() - 1
-            });
-
-        match &mut self.module.sections[idx] {
-            RawModuleDefV10Section::RowLevelSecurity(rls) => rls,
-            _ => unreachable!("Just ensured RowLevelSecurity section exists"),
-        }
+        self.module.row_level_security.get_or_insert_default()
     }
 
     /// Get mutable access to the case conversion policy, creating it if missing.
     fn explicit_names_mut(&mut self) -> &mut ExplicitNames {
-        let idx = self
-            .module
-            .sections
-            .iter()
-            .position(|s| matches!(s, RawModuleDefV10Section::ExplicitNames(_)))
-            .unwrap_or_else(|| {
-                self.module
-                    .sections
-                    .push(RawModuleDefV10Section::ExplicitNames(ExplicitNames::default()));
-                self.module.sections.len() - 1
-            });
-
-        match &mut self.module.sections[idx] {
-            RawModuleDefV10Section::ExplicitNames(names) => names,
-            _ => unreachable!("Just ensured ExplicitNames section exists"),
-        }
+        self.module.explicit_names.get_or_insert_default()
     }
 
     /// Get mutable access to the HTTP handlers section, creating it if missing.
     fn http_handlers_mut(&mut self) -> &mut Vec<RawHttpHandlerDefV10> {
-        let idx = self
-            .module
-            .sections
-            .iter()
-            .position(|s| matches!(s, RawModuleDefV10Section::HttpHandlers(_)))
-            .unwrap_or_else(|| {
-                self.module
-                    .sections
-                    .push(RawModuleDefV10Section::HttpHandlers(Vec::new()));
-                self.module.sections.len() - 1
-            });
-
-        match &mut self.module.sections[idx] {
-            RawModuleDefV10Section::HttpHandlers(handlers) => handlers,
-            _ => unreachable!("Just ensured HttpHandlers section exists"),
-        }
+        self.module.http_handlers.get_or_insert_default()
     }
 
     /// Get mutable access to the HTTP routes section, creating it if missing.
     fn http_routes_mut(&mut self) -> &mut Vec<RawHttpRouteDefV10> {
-        let idx = self
-            .module
-            .sections
-            .iter()
-            .position(|s| matches!(s, RawModuleDefV10Section::HttpRoutes(_)))
-            .unwrap_or_else(|| {
-                self.module
-                    .sections
-                    .push(RawModuleDefV10Section::HttpRoutes(Vec::new()));
-                self.module.sections.len() - 1
-            });
-
-        match &mut self.module.sections[idx] {
-            RawModuleDefV10Section::HttpRoutes(routes) => routes,
-            _ => unreachable!("Just ensured HttpRoutes section exists"),
-        }
+        self.module.http_routes.get_or_insert_default()
     }
 
     /// Get mutable access to the environment section, creating it if missing.
     fn environment_mut(&mut self) -> &mut Vec<RawEnvironmentDeclarationV10> {
-        let idx = self
-            .module
-            .sections
-            .iter()
-            .position(|s| matches!(s, RawModuleDefV10Section::Environment(_)))
-            .unwrap_or_else(|| {
-                self.module
-                    .sections
-                    .push(RawModuleDefV10Section::Environment(Vec::new()));
-                self.module.sections.len() - 1
-            });
-
-        match &mut self.module.sections[idx] {
-            RawModuleDefV10Section::Environment(env) => env,
-            _ => unreachable!("Just ensured Environment section exists"),
-        }
+        self.module.environment.get_or_insert_default()
     }
 
     /// Create a table builder.
@@ -1020,7 +797,7 @@ impl RawModuleDefV10Builder {
     ) -> RawTableDefBuilderV10<'_> {
         let source_name = source_name.into();
         RawTableDefBuilderV10 {
-            module: &mut self.module,
+            module: self,
             table: RawTableDefV10 {
                 source_name,
                 product_type_ref,
@@ -1297,17 +1074,7 @@ impl RawModuleDefV10Builder {
             namespace: namespace.into(),
             module,
         };
-        let existing = self.module.sections.iter_mut().find_map(|s| match s {
-            RawModuleDefV10Section::Submodules(submodules) => Some(submodules),
-            _ => None,
-        });
-        match existing {
-            Some(submodules) => submodules.push(submodule),
-            None => self
-                .module
-                .sections
-                .push(RawModuleDefV10Section::Submodules(vec![submodule])),
-        }
+        self.module.submodules.get_or_insert_default().push(submodule);
     }
 
     /// Set the case conversion policy for this module.
@@ -1318,12 +1085,7 @@ impl RawModuleDefV10Builder {
     /// was stored under the original naming convention).
     pub fn set_case_conversion_policy(&mut self, policy: CaseConversionPolicy) {
         // Remove any existing policy section.
-        self.module
-            .sections
-            .retain(|s| !matches!(s, RawModuleDefV10Section::CaseConversionPolicy(_)));
-        self.module
-            .sections
-            .push(RawModuleDefV10Section::CaseConversionPolicy(policy));
+        self.module.case_conversion_policy = Some(policy);
     }
 
     /// Declare a complete environment schema.
@@ -1335,7 +1097,7 @@ impl RawModuleDefV10Builder {
     /// Finish building, consuming the builder and returning the module.
     /// The module should be validated before use.
     pub fn finish(self) -> RawModuleDefV10 {
-        self.module
+        self.module.into()
     }
 }
 
@@ -1410,7 +1172,7 @@ pub fn sats_name_to_scoped_name_v10(sats_name: &str) -> RawScopedTypeNameV10 {
 
 /// Builder for a `RawTableDefV10`.
 pub struct RawTableDefBuilderV10<'a> {
-    module: &'a mut RawModuleDefV10,
+    module: &'a mut RawModuleDefV10Builder,
     table: RawTableDefV10,
 }
 
@@ -1522,23 +1284,8 @@ impl RawTableDefBuilderV10<'_> {
     pub fn finish(self) -> AlgebraicTypeRef {
         let product_type_ref = self.table.product_type_ref;
 
-        let tables = match self
-            .module
-            .sections
-            .iter_mut()
-            .find(|s| matches!(s, RawModuleDefV10Section::Tables(_)))
-        {
-            Some(RawModuleDefV10Section::Tables(t)) => t,
-            _ => {
-                self.module.sections.push(RawModuleDefV10Section::Tables(Vec::new()));
-                match self.module.sections.last_mut().expect("Just pushed Tables section") {
-                    RawModuleDefV10Section::Tables(t) => t,
-                    _ => unreachable!(),
-                }
-            }
-        };
+        self.module.tables_mut().push(self.table);
 
-        tables.push(self.table);
         product_type_ref
     }
 
@@ -1546,13 +1293,7 @@ impl RawTableDefBuilderV10<'_> {
     pub fn find_col_pos_by_name(&self, column: impl AsRef<str>) -> Option<ColId> {
         let column = column.as_ref();
 
-        let typespace = self.module.sections.iter().find_map(|s| {
-            if let RawModuleDefV10Section::Typespace(ts) = s {
-                Some(ts)
-            } else {
-                None
-            }
-        })?;
+        let typespace = self.module.module.typespace.as_ref()?;
 
         typespace
             .get(self.table.product_type_ref)?
