@@ -34,7 +34,7 @@ const user = table(
 const spacetimedb = schema({ user });
 export default spacetimedb;
 
-export const create_user = spacetimedb.reducer({ name: t.string(), email: t.string() }, (ctx, { name, email }) => {
+export const createUser = spacetimedb.reducer({ name: t.string(), email: t.string() }, (ctx, { name, email }) => {
   // Validate input
   if (name === '') {
     throw new Error('Name cannot be empty');
@@ -600,7 +600,7 @@ export const queueFetch = spacetimedb.reducer({ url: t.string() }, (ctx, { url }
 #pragma warning disable STDB_UNSTABLE
 using SpacetimeDB;
 
-public partial class Module
+public static partial class Module
 {
     [SpacetimeDB.Table(Accessor = "FetchSchedule", Scheduled = "FetchExternalData", ScheduledAt = "ScheduledAt")]
     public partial struct FetchSchedule
