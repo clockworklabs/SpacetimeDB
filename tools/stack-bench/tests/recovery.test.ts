@@ -37,14 +37,28 @@ function fixture({ state = 'active' }: { state?: BackendLease['state'] } = {}) {
 test('recovery plans are deterministic, public, and actionable', { skip: process.platform !== 'linux' ? 'Authenticated resource recovery requires Linux flock' : false }, () => {
   const f = fixture();
   try {
-    const plan = recoveryPlan(f.lease, { cleanupSucceeded: false, reason: 'identity mismatch\nsecret tail' });
+    const plan = recoveryPlan(f.lease, { cleanupSucceeded: false, reason: 'identity mismatch\npassword="private value"' });
     assert.equal(plan.status, 'quarantined');
-    assert.equal(plan.reason, 'identity mismatch');
+    assert.equal(plan.reason, 'identity mismatch\n[redacted credential]');
     assert.deepEqual(plan.resources.locks,
       [{ key: 'slot:ecommerce:postgres:run0', released: false }]);
     assert.equal(JSON.stringify(plan).includes(f.lease.ownershipToken), false);
     assert.ok(plan.instructions.some(line => /Do not start another run/.test(line)));
   } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('recovery retains later-line diagnostics and redacts credentials before limiting output', () => {
+  const lease = createBackendLease({ runId: 'recovery-diagnostic', backend: 'postgres',
+    track: 'ecommerce', runIndex: 0, database: 'app_recovery' });
+  const reason = `Docker could not start owned backend container\nOCI runtime create failed\n`
+    + `ownership ${lease.ownershipToken}\npassword="private value"\n`
+    + `api_key="${'x'.repeat(9000)}"\nState.Error: resource temporarily unavailable`;
+  const plan = recoveryPlan(lease, { reason });
+  assert.match(plan.reason ?? '', /\nOCI runtime create failed\n/);
+  assert.match(plan.reason ?? '', /State.Error: resource temporarily unavailable$/);
+  assert.doesNotMatch(plan.reason ?? '', new RegExp(lease.ownershipToken));
+  assert.doesNotMatch(plan.reason ?? '', /private value|xxxx/);
+  assert.equal(recoveryPlan(lease, { reason: 'x'.repeat(9000) }).reason?.length, 8192);
 });
 
 test('authenticated recovery releases exact lease resources and removes private state', { skip: process.platform !== 'linux' ? 'Authenticated resource recovery requires Linux flock' : false }, () => {

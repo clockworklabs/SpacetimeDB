@@ -156,10 +156,10 @@ export function createAttemptContainer(leasePath: string, lease: BackendLease, k
       state = { inspectionError: redactCredentials(inspectionError instanceof Error ? inspectionError.message : String(inspectionError)) };
     }
     const detail = JSON.stringify({
-      message: redactCredentials(failure?.message ?? error), status: failure?.status, signal: failure?.signal, state,
+      state, status: failure?.status, signal: failure?.signal, message: redactCredentials(failure?.message ?? error),
       stderr: redactCredentials(failure?.stderr), stdout: redactCredentials(failure?.stdout),
     });
-    throw new Error(`Docker could not start owned ${kind} container ${id}: ${detail.slice(0, 8192)}`);
+    throw new Error(`Docker could not start owned ${kind} container ${id}\n${detail.slice(0, 8192)}`);
   }
   if (kind === 'backend') {
     // Every container that joins this namespace shares the anchor's address on the

@@ -173,7 +173,9 @@ export function recoveryPlan(
   ] : ['No recovery action is required.'];
   return { schemaVersion: 1, status, runId: publicLease.runId, backend: publicLease.backend,
     ownershipMarkerSha256: publicLease.ownership.markerSha256,
-    reason: reason ? String(reason).split(/\r?\n/, 1).join('').slice(0, 1024) : null,
+    reason: reason ? redactCredentials('ownershipToken' in lease
+      ? String(reason).replaceAll(lease.ownershipToken, '[redacted credential]')
+      : reason).slice(0, 8192) : null,
     cleanup: { succeeded: Boolean(cleanupSucceeded), retained: Boolean(retained) },
     resources, instructions };
 }
