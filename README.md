@@ -235,7 +235,7 @@ Verify with `spacetime --version`.
 
 ## Documentation
 
-To prepare your AI coding environment, follow the [agent setup guide](agent-setup.md).
+To prepare your AI coding environment, follow the [agent setup guide](docs/static/agent-setup.md).
 
 Full documentation is available at **[spacetimedb.com/docs](https://spacetimedb.com/docs)**, including:
 

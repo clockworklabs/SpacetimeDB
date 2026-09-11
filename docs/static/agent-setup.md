@@ -241,4 +241,4 @@ or interface actions for the user and report setup as partial.
 
 These instructions are published at <https://spacetimedb.com/agent-setup.md>.
 The source is maintained in
-[clockworklabs/SpacetimeDB](https://github.com/clockworklabs/SpacetimeDB/blob/master/agent-setup.md).
+[clockworklabs/SpacetimeDB](https://github.com/clockworklabs/SpacetimeDB/blob/master/docs/static/agent-setup.md).
