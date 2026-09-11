@@ -10,6 +10,8 @@ import {
   ServerMessage,
   TableUpdateRows,
   UnsubscribeFlags,
+  type SubscribeBatchApplied,
+  type SubscribeBatch,
 } from './client_api/types';
 import { ClientCache } from './client_cache.ts';
 import { DbConnectionBuilder } from './db_connection_builder.ts';
@@ -61,8 +63,19 @@ import type { UntypedSchemaDef } from '../lib/schema';
 import type { ProceduresView } from './procedures.ts';
 import type { Values } from '../lib/type_util.ts';
 import type { TransactionUpdate } from './client_api/types.ts';
-import { InternalError, SenderError } from '../lib/errors.ts';
-import type { WebSocketAdapter, WebSocketFactory } from './ws.ts';
+import type { SubscriptionEntry } from './subscription_builder_impl';
+import {
+  DisconnectedError,
+  IdentityChangedError,
+  InternalError,
+  SenderError,
+  UnknownCallResultError,
+} from '../lib/errors.ts';
+import {
+  WebSocketTokenError,
+  type WebSocketAdapter,
+  type WebSocketFactory,
+} from './ws.ts';
 import {
   normalizeWsProtocol,
   PREFERRED_WS_PROTOCOLS,
@@ -96,7 +109,21 @@ export type {
   ReducerEvent,
 };
 
-export type ConnectionEvent = 'connect' | 'disconnect' | 'connectError';
+export type ConnectionEventArgs = {
+  connect: [identity: Identity, token: string];
+  disconnect: [
+    error?: Error,
+    nextReconnectAttempt?: number,
+    nextReconnectDelayMs?: number,
+  ];
+  connectError: [
+    error: Error,
+    nextReconnectAttempt?: number,
+    nextReconnectDelayMs?: number,
+  ];
+};
+
+export type ConnectionEvent = keyof ConnectionEventArgs;
 
 export type DbConnectionConfig<RemoteModule extends UntypedRemoteModule> = {
   uri: URL;
@@ -109,14 +136,152 @@ export type DbConnectionConfig<RemoteModule extends UntypedRemoteModule> = {
   lightMode: boolean;
   confirmedReads?: boolean;
   remoteModule: RemoteModule;
+  /**
+   * Whether the connection reconnects on its own after losing its socket.
+   * Set by {@link DbConnectionBuilder.withAutomaticReconnect}.
+   */
+  automaticReconnect?: boolean;
+  /**
+   * Supplies a fresh token for a reconnect attempt.
+   * Set by {@link DbConnectionBuilder.withTokenProvider}.
+   */
+  tokenProvider?: TokenProvider;
 };
+
+/**
+ * Supplies an authentication token, called before a reconnect attempt whose
+ * retained token is close to expiring.
+ */
+export type TokenProvider = () => Promise<string>;
+
+/** The delay before the first reconnect attempt. */
+export const RECONNECT_INITIAL_DELAY_MS = 1_000;
+/** The upper bound on the delay between reconnect attempts. */
+export const RECONNECT_MAX_DELAY_MS = 30_000;
+/** The random spread applied to each reconnect delay. */
+export const RECONNECT_JITTER = 0.5;
+/**
+ * A token is refreshed when its remaining validity falls below this fraction
+ * of its lifetime, or below {@link TOKEN_REFRESH_MIN_MARGIN_MS}, whichever is
+ * larger.
+ */
+const TOKEN_REFRESH_MARGIN_FRACTION = 0.05;
+const TOKEN_REFRESH_MIN_MARGIN_MS = 30_000;
+
+/** Exponential backoff with jitter; attempt numbers start at one. */
+export function computeReconnectDelayMs(
+  attempt: number,
+  random: () => number = Math.random
+): number {
+  const base = Math.min(
+    RECONNECT_INITIAL_DELAY_MS * Math.pow(2, Math.max(0, attempt - 1)),
+    RECONNECT_MAX_DELAY_MS
+  );
+  const jittered = base * (1 + RECONNECT_JITTER * (2 * random() - 1));
+  return Math.max(0, Math.min(jittered, RECONNECT_MAX_DELAY_MS));
+}
+
+/** Refresh unreadable tokens, or tokens within 5% of expiry (at least 30 seconds). */
+export function tokenNeedsRefresh(
+  token: string | undefined,
+  nowMs: number = Date.now()
+): boolean {
+  if (!token) {
+    return true;
+  }
+  const claims = decodeJwtClaims(token);
+  if (claims === undefined || claims.exp === undefined) {
+    return true;
+  }
+  const expiryMs = claims.exp * 1000;
+  const lifetimeMs =
+    claims.iat !== undefined ? expiryMs - claims.iat * 1000 : undefined;
+  const margin = Math.max(
+    TOKEN_REFRESH_MIN_MARGIN_MS,
+    lifetimeMs !== undefined ? lifetimeMs * TOKEN_REFRESH_MARGIN_FRACTION : 0
+  );
+  return expiryMs - nowMs <= margin;
+}
+
+/** Normalize an unknown thrown value or error event into an `Error`. */
+function errorFromEvent(value: unknown, fallbackMessage: string): Error {
+  if (value instanceof Error) {
+    return value;
+  }
+  if (typeof value === 'object' && value !== null) {
+    const message = 'message' in value ? value.message : undefined;
+    const error = 'error' in value ? value.error : undefined;
+    if (error instanceof Error) {
+      return error;
+    }
+    if (typeof message === 'string' && message.length > 0) {
+      return new Error(message);
+    }
+  }
+  return new Error(fallbackMessage);
+}
+
+/**
+ * Whether a failure to connect is one that retrying cannot fix, so that the
+ * SDK stops rather than looping.
+ */
+function isTerminalConnectError(error: Error): boolean {
+  return (
+    error instanceof IdentityChangedError ||
+    error instanceof WebSocketProtocolError
+  );
+}
+
+/** Whether a failure looks like the server rejecting our credentials. */
+function isAuthError(error: Error): boolean {
+  return (
+    error instanceof WebSocketTokenError &&
+    (error.status === 401 || error.status === 403)
+  );
+}
+
+class WebSocketProtocolError extends Error {}
+
+const SESSION_BUSY_CLOSE_CODE = 4000;
+
+type JwtClaims = { exp?: number; iat?: number };
+
+function decodeJwtClaims(token: string): JwtClaims | undefined {
+  const parts = token.split('.');
+  if (parts.length < 2) {
+    return undefined;
+  }
+  try {
+    const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = payload.padEnd(
+      payload.length + ((4 - (payload.length % 4)) % 4),
+      '='
+    );
+    const json =
+      typeof atob === 'function'
+        ? atob(padded)
+        : Buffer.from(padded, 'base64').toString('binary');
+    const claims: unknown = JSON.parse(json);
+    if (typeof claims !== 'object' || claims === null) {
+      return undefined;
+    }
+    const exp = 'exp' in claims ? claims.exp : undefined;
+    const iat = 'iat' in claims ? claims.iat : undefined;
+    return {
+      exp: typeof exp === 'number' && Number.isFinite(exp) ? exp : undefined,
+      iat: typeof iat === 'number' && Number.isFinite(iat) ? iat : undefined,
+    };
+  } catch {
+    return undefined;
+  }
+}
 
 type ProcedureCallback = (result: ProcedureResultMessage['result']) => void;
 
 type Deferred<T> = {
   promise: Promise<T>;
   resolve: (value: T | PromiseLike<T>) => void;
-  reject: (reason?: unknown) => void;
+  reject: (reason: Error | string) => void;
 };
 
 const TEXT_ENCODER = new TextEncoder();
@@ -177,8 +342,9 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    * Whether the underlying websocket has entered `CLOSING` (2) or `CLOSED`
    * (3). This becomes true even when the browser never delivered an
    * `onclose` event, for example if the socket was torn down while the tab was
-   * frozen or the machine was asleep. The `ConnectionManager` uses this to detect
-   * such "zombie" connections when the page resumes and to force a reconnect.
+   * frozen or the machine was asleep. The liveness listeners (see
+   * {@link DbConnectionImpl.#installLivenessListeners}) use this to detect
+   * such "zombie" sockets when the page resumes and to force a reconnect.
    *
    * Returns false while the socket is still `CONNECTING`/`OPEN`, or before
    * the socket has been created.
@@ -231,6 +397,29 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   connectionId: ConnectionId = ConnectionId.random();
   #connectionIdHex = this.connectionId.toHexString();
 
+  // Stable across sockets; each attempt still gets a fresh ConnectionId.
+  #sessionIdHex = ConnectionId.random().toHexString();
+  #automaticReconnect: boolean;
+  #tokenProvider?: TokenProvider;
+  #wsBaseUrl: URL;
+  #nameOrAddress: string;
+  #createWSFn: WebSocketFactory;
+  #compression: 'gzip' | 'brotli' | 'none';
+  #lightMode: boolean;
+  #confirmedReads?: boolean;
+  // Invalidates events and asynchronous work from discarded sockets.
+  #socketGeneration = 0;
+  #hasEverConnected = false;
+  #connectionEnded = false;
+  #reconnectAttempt = 0;
+  #reconnectTimer?: ReturnType<typeof setTimeout>;
+  #forceTokenRefresh = false;
+  #usedFreshToken = false;
+  #livenessCleanup?: () => void;
+  #pendingReplay?: { requestId: number; querySetIds: Set<number> };
+  #preparingReplay = false;
+  #socketEstablished = false;
+
   // These fields are meant to be strictly private.
   #queryId = 0;
   #requestId = 0;
@@ -250,6 +439,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   >();
   #reducerCallInfo = new Map<number, { name: string; args: object }>();
   #procedureCallbacks = new Map<number, ProcedureCallback>();
+  /**
+   * Reject pending reducer and procedure calls when the socket drops.
+   */
+  #pendingCallRejecters = new Map<number, (reason: Error) => void>();
   #rowDeserializers: Record<string, Deserializer<any>>;
   #rowIdMetadata: Record<
     string,
@@ -291,6 +484,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     compression,
     lightMode,
     confirmedReads,
+    automaticReconnect,
+    tokenProvider,
   }: DbConnectionConfig<RemoteModule>) {
     stdbLogger('info', 'Connecting to SpacetimeDB WS...');
 
@@ -357,43 +552,323 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       );
     }
 
-    url.searchParams.set('connection_id', this.#connectionIdHex);
-
     this.clientCache = new ClientCache<RemoteModule>();
     this.db = this.#makeDbView();
     this.reducers = this.#makeReducers(remoteModule);
     this.procedures = this.#makeProcedures(remoteModule);
 
-    this.wsPromise = createWSFn({
-      url,
-      nameOrAddress,
-      wsProtocol: [...PREFERRED_WS_PROTOCOLS],
-      authToken: token,
-      compression: compression,
-      lightMode: lightMode,
-      confirmedReads: confirmedReads,
-    })
-      .then(v => {
-        this.ws = v;
+    this.#automaticReconnect = automaticReconnect ?? false;
+    this.#preparingReplay = this.#automaticReconnect;
+    this.#tokenProvider = tokenProvider;
+    this.#wsBaseUrl = url;
+    this.#nameOrAddress = nameOrAddress;
+    this.#createWSFn = createWSFn;
+    this.#compression = compression;
+    this.#lightMode = lightMode;
+    this.#confirmedReads = confirmedReads;
 
-        this.ws.onclose = () => {
-          this.isActive = false;
-          this.#emitter.emit('disconnect', this);
-        };
-        this.ws.onerror = (e: ErrorEvent) => {
-          this.isActive = false;
-          this.#emitter.emit('connectError', this, e);
-        };
-        this.ws.onopen = this.#handleOnOpen.bind(this);
-        this.ws.onmessage = this.#handleOnMessage.bind(this);
-        return v;
-      })
-      .catch(e => {
-        stdbLogger('error', 'Error connecting to SpacetimeDB WS');
-        this.#emitter.emit('connectError', this, e);
+    this.wsPromise = this.#openSocket();
+  }
 
+  async #openSocket(): Promise<WebSocketAdapter | undefined> {
+    const generation = ++this.#socketGeneration;
+    if (this.#hasEverConnected) {
+      this.#setConnectionId(ConnectionId.random());
+    }
+    this.#usedFreshToken = false;
+    const url = new URL(this.#wsBaseUrl.toString());
+    url.searchParams.set('connection_id', this.#connectionIdHex);
+
+    try {
+      const authToken = await this.#tokenForAttempt();
+      if (generation !== this.#socketGeneration || this.#connectionEnded) {
         return undefined;
+      }
+      this.token = authToken;
+      const ws = await this.#createWSFn({
+        url,
+        nameOrAddress: this.#nameOrAddress,
+        wsProtocol: [...PREFERRED_WS_PROTOCOLS],
+        authToken,
+        compression: this.#compression,
+        lightMode: this.#lightMode,
+        confirmedReads: this.#confirmedReads,
+        connectionId: this.#connectionIdHex,
+        sessionId: this.#automaticReconnect ? this.#sessionIdHex : undefined,
       });
+
+      if (generation !== this.#socketGeneration || this.#connectionEnded) {
+        // A newer attempt superseded this socket while it was opening, or the
+        // application disconnected in the meantime.
+        ws.close();
+        return undefined;
+      }
+
+      this.ws = ws;
+      this.#socketEstablished = false;
+      const isCurrent = (): boolean =>
+        generation === this.#socketGeneration && !this.#connectionEnded;
+      const handleLoss = (error: Error, isErrorEvent: boolean): void => {
+        if (!isCurrent()) return;
+        this.isActive = false;
+        if (!this.#automaticReconnect) {
+          this.#emitter.emit(
+            isErrorEvent ? 'connectError' : 'disconnect',
+            this,
+            isErrorEvent ? error : undefined
+          );
+        } else if (this.#socketEstablished) {
+          this.#handleConnectionLoss(error);
+        } else {
+          this.#handleAttemptFailure(error);
+        }
+      };
+
+      ws.onclose = event => {
+        if (!isCurrent()) return;
+        if (
+          this.#automaticReconnect &&
+          this.#hasEverConnected &&
+          !this.#socketEstablished &&
+          event.code === SESSION_BUSY_CLOSE_CODE
+        ) {
+          // The server is tearing down the previous session holder.
+          this.#discardSocket();
+          const delayMs = computeReconnectDelayMs(1);
+          this.#emitter.emit(
+            'connectError',
+            this,
+            new Error('Session busy'),
+            this.#reconnectAttempt,
+            delayMs
+          );
+          this.#scheduleReconnect(this.#reconnectAttempt, delayMs);
+          return;
+        }
+        const message = `WebSocket closed (code ${event.code}${event.reason ? `: ${event.reason}` : ''})`;
+        const error = [1002, 1003, 1007, 1008].includes(event.code)
+          ? new WebSocketProtocolError(message)
+          : new Error(message);
+        handleLoss(error, false);
+      };
+      ws.onerror = event =>
+        handleLoss(errorFromEvent(event, 'WebSocket error'), true);
+      ws.onopen = () => {
+        if (isCurrent()) this.#handleOnOpen();
+      };
+      ws.onmessage = message => {
+        if (isCurrent()) this.#handleOnMessage(message);
+      };
+      return ws;
+    } catch (e) {
+      if (generation !== this.#socketGeneration || this.#connectionEnded) {
+        return undefined;
+      }
+      stdbLogger('error', 'Error connecting to SpacetimeDB WS');
+      this.isActive = false;
+      this.#handleAttemptFailure(errorFromEvent(e, 'Failed to connect'));
+      return undefined;
+    }
+  }
+
+  async #tokenForAttempt(): Promise<string | undefined> {
+    // The initial connection uses the token the application configured.
+    if (!this.#tokenProvider || !this.#hasEverConnected) {
+      return this.token;
+    }
+    if (!this.#forceTokenRefresh && !tokenNeedsRefresh(this.token)) {
+      return this.token;
+    }
+    const token = await this.#tokenProvider();
+    this.#forceTokenRefresh = false;
+    this.#usedFreshToken = true;
+    return token;
+  }
+
+  #handleConnectionLoss(error: Error): void {
+    if (this.#connectionEnded) {
+      return;
+    }
+    this.#discardSocket();
+    this.#failInFlightCalls(new UnknownCallResultError());
+
+    const willReconnect =
+      this.#automaticReconnect &&
+      !this.isDisconnectRequested &&
+      !(error instanceof WebSocketProtocolError);
+
+    if (!willReconnect) {
+      this.#endConnection(error);
+      return;
+    }
+
+    const attempt = this.#reconnectAttempt + 1;
+    const delayMs = computeReconnectDelayMs(attempt);
+    this.#emitter.emit('disconnect', this, error, attempt, delayMs);
+    this.#scheduleReconnect(attempt, delayMs);
+  }
+
+  #handleAttemptFailure(error: Error): void {
+    if (this.#connectionEnded) {
+      return;
+    }
+    this.#discardSocket();
+    this.#failInFlightCalls(new UnknownCallResultError());
+
+    // A failed *initial* connection is not retried: the cause is usually a
+    // misconfigured URI or database name that no retry will fix.
+    const willReconnect =
+      this.#automaticReconnect &&
+      this.#hasEverConnected &&
+      !this.isDisconnectRequested &&
+      !isTerminalConnectError(error) &&
+      !(isAuthError(error) && (!this.#tokenProvider || this.#usedFreshToken));
+
+    if (!willReconnect) {
+      this.#endConnection(undefined, { alreadyReported: true });
+      this.#emitter.emit('connectError', this, error);
+      return;
+    }
+
+    // A rejected token is worth one forced refresh: the retained token may
+    // have been revoked, or the clock may be skewed.
+    if (this.#tokenProvider && isAuthError(error)) {
+      this.#forceTokenRefresh = true;
+    }
+
+    const attempt = this.#reconnectAttempt + 1;
+    const delayMs = computeReconnectDelayMs(attempt);
+    this.#emitter.emit('connectError', this, error, attempt, delayMs);
+    this.#scheduleReconnect(attempt, delayMs);
+  }
+
+  #scheduleReconnect(attempt: number, delayMs: number): void {
+    if (this.#connectionEnded || this.isDisconnectRequested) return;
+    this.#reconnectAttempt = attempt;
+    this.#clearReconnectTimer();
+    this.#reconnectTimer = setTimeout(() => {
+      this.#reconnectTimer = undefined;
+      if (this.#connectionEnded || this.isDisconnectRequested) {
+        return;
+      }
+      this.wsPromise = this.#openSocket();
+    }, delayMs);
+  }
+
+  #clearReconnectTimer(): void {
+    if (this.#reconnectTimer !== undefined) {
+      clearTimeout(this.#reconnectTimer);
+      this.#reconnectTimer = undefined;
+    }
+  }
+
+  #endConnection(
+    disconnectError: Error | undefined,
+    options?: { alreadyReported?: boolean }
+  ): void {
+    if (this.#connectionEnded) {
+      return;
+    }
+    this.#connectionEnded = true;
+    this.isActive = false;
+    this.#clearReconnectTimer();
+    this.#discardSocket();
+    this.#removeLivenessListeners();
+    this.#failInFlightCalls(new UnknownCallResultError());
+    if (!options?.alreadyReported) {
+      this.#emitter.emit('disconnect', this, disconnectError);
+    }
+  }
+
+  #failInFlightCalls(error: Error): void {
+    const rejecters = [...this.#pendingCallRejecters.values()];
+    this.#pendingCallRejecters.clear();
+    this.#reducerCallbacks.clear();
+    this.#reducerCallInfo.clear();
+    this.#procedureCallbacks.clear();
+
+    for (const reject of rejecters) {
+      reject(error);
+    }
+  }
+
+  /** True while the SDK is between a lost connection and a completed reconnect. */
+  get isReconnecting(): boolean {
+    return (
+      this.#automaticReconnect &&
+      this.#hasEverConnected &&
+      !this.isActive &&
+      !this.#connectionEnded
+    );
+  }
+
+  #discardSocket(): void {
+    this.#socketGeneration += 1;
+    this.isActive = false;
+    this.#socketEstablished = false;
+    this.#pendingReplay = undefined;
+    this.#preparingReplay = this.#hasEverConnected;
+    this.#outboundQueue.length = 0;
+    this.#inboundQueue.length = 0;
+    const ws = this.ws;
+    this.ws = undefined;
+    ws?.close();
+    for (const [id, entry] of this.#subscriptionManager.subscriptions) {
+      if (entry.unsubscribeRequested) this.#endSubscription(id);
+    }
+  }
+
+  // Resume events recover sockets that closed silently while the page was frozen.
+  #installLivenessListeners(): void {
+    if (!this.#automaticReconnect || this.#livenessCleanup) {
+      return;
+    }
+    const doc = typeof document !== 'undefined' ? document : undefined;
+    const win = typeof window !== 'undefined' ? window : undefined;
+    if (!doc && !win) {
+      return;
+    }
+
+    const onResume = (): void => this.#handleLivenessResume();
+    const onVisibilityChange = (): void => {
+      if (doc?.visibilityState === 'visible') {
+        onResume();
+      }
+    };
+
+    doc?.addEventListener('visibilitychange', onVisibilityChange);
+    win?.addEventListener('focus', onResume);
+    win?.addEventListener('online', onResume);
+    win?.addEventListener('pageshow', onResume);
+
+    this.#livenessCleanup = () => {
+      doc?.removeEventListener('visibilitychange', onVisibilityChange);
+      win?.removeEventListener('focus', onResume);
+      win?.removeEventListener('online', onResume);
+      win?.removeEventListener('pageshow', onResume);
+      this.#livenessCleanup = undefined;
+    };
+  }
+
+  #removeLivenessListeners(): void {
+    this.#livenessCleanup?.();
+  }
+
+  #handleLivenessResume(): void {
+    if (this.#connectionEnded || this.isDisconnectRequested) {
+      return;
+    }
+    if (this.isSocketClosed) {
+      const error = new Error('WebSocket closed while suspended');
+      if (this.#socketEstablished) this.#handleConnectionLoss(error);
+      else this.#handleAttemptFailure(error);
+      return;
+    }
+    if (this.#reconnectTimer !== undefined) {
+      // Retry now rather than waiting out a backoff computed before the pause.
+      this.#clearReconnectTimer();
+      this.wsPromise = this.#openSocket();
+    }
   }
 
   #getNextQueryId = () => {
@@ -531,7 +1006,14 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     this.#subscriptionManager.subscriptions.set(querySetId, {
       handle,
       emitter: handleEmitter,
+      // Retained so the subscription can be replayed after a reconnect.
+      querySql: [...querySql],
     });
+    if (!this.#preparingReplay) this.#sendSubscription(querySetId, querySql);
+    return querySetId;
+  }
+
+  #sendSubscription(querySetId: number, querySql: string[]): void {
     const requestId = this.#getNextRequestId();
     this.#sendMessage(
       ClientMessage.Subscribe({
@@ -540,10 +1022,145 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         requestId,
       })
     );
-    return querySetId;
+  }
+
+  #replaySubscriptions(): void {
+    const entries = [...this.#subscriptionManager.subscriptions.entries()];
+    const sets: SubscribeBatch['sets'] = [];
+    const replayed = new Map<number, SubscriptionEntry<RemoteModule>>();
+    for (const [, entry] of entries) {
+      const querySetId = this.#getNextQueryId();
+      entry.handle.rebindQuerySetId(querySetId);
+      replayed.set(querySetId, entry);
+      sets.push({
+        querySetId: { id: querySetId },
+        queryStrings: entry.querySql,
+      });
+    }
+    this.#subscriptionManager.subscriptions = replayed;
+
+    const requestId = this.#getNextRequestId();
+    this.#pendingReplay = {
+      requestId,
+      querySetIds: new Set(replayed.keys()),
+    };
+    this.#preparingReplay = false;
+    if (sets.length === 0) {
+      this.#applyReplayBatch({ requestId, results: [] });
+      return;
+    }
+    this.#sendMessage(
+      ClientMessage.SubscribeBatch({
+        requestId,
+        sets,
+      })
+    );
+  }
+
+  #applyReplayBatch(applied: SubscribeBatchApplied): void {
+    const pending = this.#pendingReplay;
+    const resultIds = new Set(
+      applied.results.map(result => result.querySetId.id)
+    );
+    if (
+      !pending ||
+      pending.requestId !== applied.requestId ||
+      resultIds.size !== applied.results.length ||
+      resultIds.size !== pending.querySetIds.size ||
+      [...resultIds].some(id => !pending.querySetIds.has(id))
+    ) {
+      this.#handleProtocolError(
+        new Error('Unexpected subscription replay response')
+      );
+      return;
+    }
+    this.#pendingReplay = undefined;
+
+    const event: Event<never> = {
+      id: this.#nextEventId(),
+      tag: 'SubscribeApplied',
+    };
+    const eventContext = this.#makeEventContext(event);
+
+    // The removal half: every row the cache holds from the old connection.
+    // Only tables which have been populated exist in the cache.
+    const tableUpdates: CacheTableUpdate<UntypedTableDef>[] = [];
+    for (const [tableName, table] of this.clientCache.tables) {
+      const operations = table.snapshotDeleteOperations();
+      if (operations.length > 0) {
+        tableUpdates.push({ tableName, operations });
+      }
+    }
+
+    // The addition half: the rows of every set which applied.
+    const failures: {
+      entry: SubscriptionEntry<RemoteModule>;
+      error: string;
+    }[] = [];
+    for (const result of applied.results) {
+      const entry = this.#subscriptionManager.subscriptions.get(
+        result.querySetId.id
+      );
+      if (!entry) {
+        continue;
+      }
+      if (result.outcome.tag === 'Error') {
+        // The set is not registered, so drop it and report it below.
+        this.#subscriptionManager.subscriptions.delete(result.querySetId.id);
+        failures.push({ entry, error: result.outcome.value });
+        continue;
+      }
+      tableUpdates.push(
+        ...this.#queryRowsToTableUpdates(result.outcome.value, 'insert')
+      );
+    }
+
+    const merged = this.#mergeTableUpdates(tableUpdates);
+    const callbacks = this.#applyTableUpdates(merged, eventContext, {
+      // A row which is unchanged across the outage appears as a
+      // delete/insert pair and must produce no callback.
+      skipIdenticalUpdates: true,
+    });
+    const { event: _, ...subscriptionEventContext } = eventContext;
+    for (const [querySetId, entry] of this.#subscriptionManager.subscriptions) {
+      if (pending.querySetIds.has(querySetId)) {
+        entry.emitter.emit('applied', subscriptionEventContext);
+      }
+    }
+    for (const { entry, error: message } of failures) {
+      const error = Error(message);
+      const errorEventContext = this.#makeEventContext({
+        id: this.#nextEventId(),
+        tag: 'Error',
+        value: error,
+      });
+      entry.emitter.emit(
+        'error',
+        { ...errorEventContext, event: error },
+        error
+      );
+    }
+    this.#dispatchPendingCallbacks(callbacks);
+  }
+
+  #endSubscription(querySetId: number): void {
+    const entry = this.#subscriptionManager.subscriptions.get(querySetId);
+    this.#subscriptionManager.subscriptions.delete(querySetId);
+    const { event: _, ...ctx } = this.#makeEventContext({
+      id: this.#nextEventId(),
+      tag: 'UnsubscribeApplied',
+    });
+    entry?.emitter.emit('end', ctx);
   }
 
   unregisterSubscription(querySetId: number): void {
+    const entry = this.#subscriptionManager.subscriptions.get(querySetId);
+    if (!entry) return;
+    entry.unsubscribeRequested = true;
+    if (this.#automaticReconnect && (!this.isActive || this.#preparingReplay)) {
+      this.#endSubscription(querySetId);
+      return;
+    }
     const requestId = this.#getNextRequestId();
     this.#sendMessage(
       ClientMessage.Unsubscribe({
@@ -772,6 +1389,12 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     }
   }
 
+  #rejectCallIfDisconnected(): DisconnectedError | undefined {
+    return this.#automaticReconnect && !this.isActive
+      ? new DisconnectedError()
+      : undefined;
+  }
+
   #sendMessage(message: ClientMessage): void {
     const writer = this.#clientMessageEncoder;
     writer.clear();
@@ -840,15 +1463,17 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     if (this.ws) {
       this.#negotiatedWsProtocol = normalizeWsProtocol(this.ws.protocol);
     }
-    this.isActive = true;
-    if (this.ws) {
+    this.isActive = !this.#automaticReconnect;
+    this.#installLivenessListeners();
+    if (this.ws && this.isActive) {
       this.#flushOutboundQueue(this.ws);
     }
   }
 
   #applyTableUpdates(
     tableUpdates: CacheTableUpdate<UntypedTableDef>[],
-    eventContext: EventContextInterface<RemoteModule>
+    eventContext: EventContextInterface<RemoteModule>,
+    options?: { skipIdenticalUpdates?: boolean }
   ): PendingCallback[] {
     const pendingCallbacks: PendingCallback[] = [];
     for (const tableUpdate of tableUpdates) {
@@ -860,7 +1485,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         tableUpdate.operations as Operation<
           RowType<Values<RemoteModule['tables']>>
         >[],
-        eventContext
+        eventContext,
+        options
       );
       for (const callback of newCallbacks) {
         pendingCallbacks.push(callback);
@@ -902,14 +1528,54 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       'trace',
       () => `Processing server message: ${stringify(serverMessage)}`
     );
+    if (
+      this.#automaticReconnect &&
+      (serverMessage.tag === 'InitialConnection') === this.#socketEstablished
+    ) {
+      this.#handleProtocolError(
+        new Error('Unexpected message during connection handshake')
+      );
+      return;
+    }
     switch (serverMessage.tag) {
       case 'InitialConnection': {
+        const isReconnect = this.#hasEverConnected;
+        if (
+          isReconnect &&
+          this.identity &&
+          !this.identity.isEqual(serverMessage.value.identity)
+        ) {
+          // Retrying cannot recover the old identity, so stop here rather
+          // than serving the application someone else's data.
+          const error = new IdentityChangedError();
+          this.#endConnection(undefined, { alreadyReported: true });
+          this.#emitter.emit('connectError', this, error);
+          break;
+        }
+
         this.identity = serverMessage.value.identity;
+        // The server issues a token on the first connection; retain it so
+        // reconnects present the same identity.
         if (!this.token && serverMessage.value.token) {
           this.token = serverMessage.value.token;
         }
         this.#setConnectionId(serverMessage.value.connectionId);
+        this.isActive = true;
+        this.#hasEverConnected = true;
+        this.#socketEstablished = true;
+        // A connection was established, so the backoff schedule starts over.
+        this.#reconnectAttempt = 0;
         this.#emitter.emit('connect', this, this.identity, this.token);
+        if (this.#connectionEnded) break;
+        if (isReconnect) {
+          this.#replaySubscriptions();
+        } else if (this.#preparingReplay) {
+          this.#preparingReplay = false;
+          for (const [id, entry] of this.#subscriptionManager.subscriptions) {
+            this.#sendSubscription(id, entry.querySql);
+          }
+        }
+        if (this.ws) this.#flushOutboundQueue(this.ws);
         break;
       }
       case 'SubscribeApplied': {
@@ -1073,13 +1739,24 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         );
         break;
       }
+      case 'SubscribeBatchApplied': {
+        this.#applyReplayBatch(serverMessage.value);
+        break;
+      }
     }
   }
 
   #processV2Message(data: Uint8Array): void {
     const reader = this.#messageReader;
     reader.reset(data);
-    this.#processServerMessage(ServerMessage.deserialize(reader));
+    let message: ServerMessage;
+    try {
+      message = ServerMessage.deserialize(reader);
+    } catch (cause) {
+      this.#handleProtocolError(cause);
+      return;
+    }
+    this.#processServerMessage(message);
   }
 
   #processMessage(data: Uint8Array): void {
@@ -1088,17 +1765,28 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       return;
     }
 
-    const messageCount = forEachServerMessageV3(
-      this.#messageReader,
-      data,
-      serverMessage => {
+    let dispatching = false;
+    const generation = this.#socketGeneration;
+    try {
+      forEachServerMessageV3(this.#messageReader, data, serverMessage => {
+        if (generation !== this.#socketGeneration) return;
+        dispatching = true;
         this.#processServerMessage(serverMessage);
-      }
-    );
-    stdbLogger(
-      'trace',
-      () => `Processing server v3 payload with ${messageCount} message(s)`
-    );
+        dispatching = false;
+      });
+    } catch (cause) {
+      if (dispatching) throw cause;
+      this.#handleProtocolError(cause);
+    }
+  }
+
+  #handleProtocolError(cause: unknown): void {
+    if (!this.#automaticReconnect) throw cause;
+    const error = new WebSocketProtocolError('Invalid server message', {
+      cause,
+    });
+    if (this.#socketEstablished) this.#handleConnectionLoss(error);
+    else this.#handleAttemptFailure(error);
   }
 
   /**
@@ -1166,6 +1854,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     argsBuffer: Uint8Array,
     reducerArgs?: object
   ): Promise<void> {
+    const rejected = this.#rejectCallIfDisconnected();
+    if (rejected) {
+      return Promise.reject(rejected);
+    }
     const { promise, resolve, reject } = createDeferred<void>();
     const requestId = this.#getNextRequestId();
     this.#sendCallReducerMessage(requestId, encodedReducerName, argsBuffer);
@@ -1175,7 +1867,9 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         args: reducerArgs,
       });
     }
+    this.#pendingCallRejecters.set(requestId, reject);
     this.#reducerCallbacks.set(requestId, result => {
+      this.#pendingCallRejecters.delete(requestId);
       if (result.tag === 'Ok' || result.tag === 'OkEmpty') {
         resolve();
       } else {
@@ -1201,6 +1895,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     argsBuffer: Uint8Array,
     reducerArgs?: object
   ): Promise<void> {
+    const rejected = this.#rejectCallIfDisconnected();
+    if (rejected) {
+      return Promise.reject(rejected);
+    }
     const { promise, resolve, reject } = createDeferred<void>();
     const requestId = this.#getNextRequestId();
     const message = ClientMessage.CallReducer({
@@ -1216,7 +1914,9 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         args: reducerArgs,
       });
     }
+    this.#pendingCallRejecters.set(requestId, reject);
     this.#reducerCallbacks.set(requestId, result => {
+      this.#pendingCallRejecters.delete(requestId);
       if (result.tag === 'Ok' || result.tag === 'OkEmpty') {
         resolve();
       } else {
@@ -1282,10 +1982,16 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     encodedProcedureName: Uint8Array,
     argsBuffer: Uint8Array
   ): Promise<Uint8Array> {
+    const rejected = this.#rejectCallIfDisconnected();
+    if (rejected) {
+      return Promise.reject(rejected);
+    }
     const { promise, resolve, reject } = createDeferred<Uint8Array>();
     const requestId = this.#getNextRequestId();
     this.#sendCallProcedureMessage(requestId, encodedProcedureName, argsBuffer);
+    this.#pendingCallRejecters.set(requestId, reject);
     this.#procedureCallbacks.set(requestId, result => {
+      this.#pendingCallRejecters.delete(requestId);
       if (result.tag === 'Ok') {
         resolve(result.value);
       } else {
@@ -1299,6 +2005,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     procedureName: string,
     argsBuffer: Uint8Array
   ): Promise<Uint8Array> {
+    const rejected = this.#rejectCallIfDisconnected();
+    if (rejected) {
+      return Promise.reject(rejected);
+    }
     const { promise, resolve, reject } = createDeferred<Uint8Array>();
     const requestId = this.#getNextRequestId();
     const message = ClientMessage.CallProcedure({
@@ -1309,7 +2019,9 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       flags: 0,
     });
     this.#sendMessage(message);
+    this.#pendingCallRejecters.set(requestId, reject);
     this.#procedureCallbacks.set(requestId, result => {
+      this.#pendingCallRejecters.delete(requestId);
       if (result.tag === 'Ok') {
         resolve(result.value);
       } else {
@@ -1355,55 +2067,87 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    */
   disconnect(): void {
     this.isDisconnectRequested = true;
-    this.wsPromise.then(ws => ws?.close());
+    if (this.#automaticReconnect) {
+      if (this.#connectionEnded) {
+        this.#emitter.emit('disconnect', this);
+      } else {
+        this.#endConnection(undefined);
+      }
+    } else {
+      this.wsPromise.then(ws => ws?.close());
+    }
   }
 
-  private on(
-    eventName: ConnectionEvent,
-    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
+  private on<E extends ConnectionEvent>(
+    eventName: E,
+    callback: (
+      ctx: DbConnectionImpl<RemoteModule>,
+      ...args: ConnectionEventArgs[E]
+    ) => void
   ): void {
     this.#emitter.on(eventName, callback);
   }
 
-  private off(
-    eventName: ConnectionEvent,
-    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
+  private off<E extends ConnectionEvent>(
+    eventName: E,
+    callback: (
+      ctx: DbConnectionImpl<RemoteModule>,
+      ...args: ConnectionEventArgs[E]
+    ) => void
   ): void {
     this.#emitter.off(eventName, callback);
   }
 
   private onConnect(
-    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
+    callback: (
+      ctx: DbConnectionImpl<RemoteModule>,
+      ...args: ConnectionEventArgs['connect']
+    ) => void
   ): void {
     this.#emitter.on('connect', callback);
   }
 
   private onDisconnect(
-    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
+    callback: (
+      ctx: DbConnectionImpl<RemoteModule>,
+      ...args: ConnectionEventArgs['disconnect']
+    ) => void
   ): void {
     this.#emitter.on('disconnect', callback);
   }
 
   private onConnectError(
-    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
+    callback: (
+      ctx: DbConnectionImpl<RemoteModule>,
+      ...args: ConnectionEventArgs['connectError']
+    ) => void
   ): void {
     this.#emitter.on('connectError', callback);
   }
 
   removeOnConnect(
-    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
+    callback: (
+      ctx: DbConnectionImpl<RemoteModule>,
+      ...args: ConnectionEventArgs['connect']
+    ) => void
   ): void {
     this.#emitter.off('connect', callback);
   }
 
   removeOnDisconnect(
-    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
+    callback: (
+      ctx: DbConnectionImpl<RemoteModule>,
+      ...args: ConnectionEventArgs['disconnect']
+    ) => void
   ): void {
     this.#emitter.off('disconnect', callback);
   }
 
   removeOnConnectError(
-    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
+    callback: (
+      ctx: DbConnectionImpl<RemoteModule>,
+      ...args: ConnectionEventArgs['connectError']
+    ) => void
   ): void {
     this.#emitter.off('connectError', callback);
   }

@@ -51,6 +51,9 @@ export const ClientMessage = __t.enum('ClientMessage', {
   get CallProcedure() {
     return CallProcedure;
   },
+  get SubscribeBatch() {
+    return SubscribeBatch;
+  },
 });
 export type ClientMessage = __Infer<typeof ClientMessage>;
 
@@ -192,6 +195,9 @@ export const ServerMessage = __t.enum('ServerMessage', {
   get ProcedureResult() {
     return ProcedureResult;
   },
+  get SubscribeBatchApplied() {
+    return SubscribeBatchApplied;
+  },
 });
 export type ServerMessage = __Infer<typeof ServerMessage>;
 
@@ -222,6 +228,48 @@ export const SubscribeApplied = __t.object('SubscribeApplied', {
   },
 });
 export type SubscribeApplied = __Infer<typeof SubscribeApplied>;
+
+export const SubscribeBatch = __t.object('SubscribeBatch', {
+  requestId: __t.u32(),
+  get sets() {
+    return __t.array(SubscribeSet);
+  },
+});
+export type SubscribeBatch = __Infer<typeof SubscribeBatch>;
+
+export const SubscribeBatchApplied = __t.object('SubscribeBatchApplied', {
+  requestId: __t.u32(),
+  get results() {
+    return __t.array(SubscribeSetResult);
+  },
+});
+export type SubscribeBatchApplied = __Infer<typeof SubscribeBatchApplied>;
+
+export const SubscribeSet = __t.object('SubscribeSet', {
+  get querySetId() {
+    return QuerySetId;
+  },
+  queryStrings: __t.array(__t.string()),
+});
+export type SubscribeSet = __Infer<typeof SubscribeSet>;
+
+export const SubscribeSetOutcome = __t.enum('SubscribeSetOutcome', {
+  get Applied() {
+    return QueryRows;
+  },
+  Error: __t.string(),
+});
+export type SubscribeSetOutcome = __Infer<typeof SubscribeSetOutcome>;
+
+export const SubscribeSetResult = __t.object('SubscribeSetResult', {
+  get querySetId() {
+    return QuerySetId;
+  },
+  get outcome() {
+    return SubscribeSetOutcome;
+  },
+});
+export type SubscribeSetResult = __Infer<typeof SubscribeSetResult>;
 
 export const SubscriptionError = __t.object('SubscriptionError', {
   requestId: __t.option(__t.u32()),
