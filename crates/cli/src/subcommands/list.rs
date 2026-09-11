@@ -1,11 +1,12 @@
 use crate::common_args;
+use crate::subcommands::db_arg_resolution::resolve_config_server;
 use crate::util;
 use crate::util::get_login_token_or_log_in;
 use crate::util::ResponseExt;
 use crate::util::UNSTABLE_WARNING;
 use crate::Config;
 use anyhow::Context;
-use clap::{ArgMatches, Command};
+use clap::{Arg, ArgMatches, Command};
 use futures::future::join_all;
 use serde::Deserialize;
 use spacetimedb_lib::Identity;
@@ -21,6 +22,12 @@ pub fn cli() -> Command {
         ))
         .arg(common_args::server().help("The nickname, host name or URL of the server from which to list databases"))
         .arg(common_args::yes())
+        .arg(
+            Arg::new("no_config")
+                .long("no-config")
+                .action(clap::ArgAction::SetTrue)
+                .help("Ignore spacetime.json configuration"),
+        )
 }
 
 #[derive(Deserialize)]
@@ -39,8 +46,17 @@ struct DatabaseRow {
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     eprintln!("{UNSTABLE_WARNING}\n");
 
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let force = args.get_flag("force");
+    let no_config = args.get_flag("no_config");
+
+    // `list` has no database argument, so unlike `call`/`logs`/`sql` it picks up the
+    // project's server directly from spacetime.json rather than from a database target.
+    let config_server = resolve_config_server(no_config)?;
+    let server = args
+        .get_one::<String>("server")
+        .map(|s| s.as_str())
+        .or(config_server.as_deref());
+
     let token = get_login_token_or_log_in(&mut config, server, !force).await?;
     let identity = util::decode_identity(&token)?;
 
