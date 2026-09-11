@@ -28,6 +28,8 @@ pub enum ClientMessage {
     CallProcedure(CallProcedure),
     /// Add multiple sets of subscribed queries in one atomic step.
     SubscribeBatch(SubscribeBatch),
+    /// Measure the connection's round-trip time and sample the server's clock.
+    Ping(Ping),
 }
 
 /// Sent by client to register a subscription to a new query set
@@ -203,6 +205,31 @@ pub struct CallProcedure {
     pub args: Bytes,
 }
 
+/// Sent by the client to measure round-trip time and sample the server's clock.
+///
+/// The server responds with a [`Pong`] which echoes `client_send_time`,
+/// and adds when the server received the `Ping` and how long it held it before replying.
+///
+/// When a `Ping` arrives alone in its websocket message,
+/// the server answers it as soon as it is read from the socket,
+/// ahead of any earlier client messages which are still being processed,
+/// so the measurement excludes e.g. query evaluation for a preceding [`Subscribe`].
+/// Its [`Pong`] may therefore arrive before the responses to those earlier messages.
+///
+/// A `Ping` batched with other messages in one v3 payload is instead answered in order,
+/// so clients should send each `Ping` in its own websocket message.
+#[derive(SpacetimeType, Clone, Copy, Debug)]
+#[sats(crate = spacetimedb_lib)]
+pub struct Ping {
+    /// An identifier for a client request.
+    pub request_id: u32,
+    /// A client-chosen value which the server echoes verbatim in its [`Pong`].
+    ///
+    /// Typically the time at which the client sent this `Ping`, read from a monotonic clock
+    /// in whatever unit the client finds convenient. The server assigns no meaning to it.
+    pub client_send_time: u64,
+}
+
 /// Messages sent by the server to the client in response to requests or database events.
 ///
 /// Server messages which are responses to client messages will contain a `request_id`.
@@ -233,6 +260,8 @@ pub enum ServerMessage {
     ProcedureResult(ProcedureResult),
     /// Sent in response to a [`SubscribeBatch`] message, containing a result per query set.
     SubscribeBatchApplied(SubscribeBatchApplied),
+    /// Sent in response to a [`Ping`] message, containing the server's receive time.
+    Pong(Pong),
 }
 
 #[derive(SpacetimeType, Debug)]
@@ -528,4 +557,23 @@ pub enum ProcedureStatus {
     Returned(Bytes),
     /// The call failed in the host, e.g. due to a type error or unknown procedure name.
     InternalError(Box<str>),
+}
+
+/// Response to a [`Ping`].
+///
+/// A client can compute the round-trip time as the time elapsed since `client_send_time`,
+/// less `server_hold_duration`.
+#[derive(SpacetimeType, Debug)]
+#[sats(crate = spacetimedb_lib)]
+pub struct Pong {
+    /// The request_id of the corresponding [`Ping`] message.
+    pub request_id: u32,
+    /// The `client_send_time` of the corresponding [`Ping`], echoed verbatim.
+    pub client_send_time: u64,
+    /// When the server read the [`Ping`] from the socket.
+    ///
+    /// This is on the same clock as the timestamps reducers observe.
+    pub server_receive_time: Timestamp,
+    /// How long the server held the [`Ping`] between reading it and replying.
+    pub server_hold_duration: TimeDuration,
 }
