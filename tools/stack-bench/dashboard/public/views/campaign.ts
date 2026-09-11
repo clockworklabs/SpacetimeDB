@@ -240,7 +240,7 @@ export function campaignPage(input: CampaignPageInput): string {
     + '<div class="tablewrap"><div class="wrap"><table class="runs attempt-list"><thead><tr><th>Run</th><th>Completion</th><th>Spend</th><th>Repairs</th><th>Elapsed</th><th>Status</th></tr></thead><tbody>'
     + stacks.flatMap(stack => stack.attempts.map(attempt => {
       const href = `/c/${encodeURIComponent(sheet.key)}/a/${encodeURIComponent(attempt.id)}`;
-      return `<tr><td><a href="${href}" title="${esc(attempt.variant)}">${esc(stackLabel(stack.stack))} · Rep ${attempt.repetition}</a></td>`
+      return `<tr data-chart-series="${esc(attempt.id)}"><td><a href="${href}" title="${esc(attempt.variant)}">${esc(stackLabel(stack.stack))} · Rep ${attempt.repetition}</a></td>`
         + `<td>${attempt.completion ? ratio(attempt.completion.passed, attempt.completion.selected) : DASH}</td>`
         + `<td title="Live estimates use reported response usage; final receipts replace estimates.">${spend(attempt.spend, attempt.spendPending, attempt.liveSpend)}</td>`
         + `<td>${ratio(attempt.repairs.used, attempt.repairs.budget)}</td>`

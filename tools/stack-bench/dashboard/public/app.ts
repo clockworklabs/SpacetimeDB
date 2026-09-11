@@ -414,7 +414,7 @@ for (const type of ['pointerover', 'pointerout', 'focusin', 'focusout']) documen
   if (!(event.target instanceof Element)) return;
   const series = event.target.closest<HTMLElement>('[data-chart-series]');
   if (!series) return;
-  const lines = [...series.closest('.progress-panel')?.querySelectorAll<HTMLElement>('.progress-series') ?? []];
+  const lines = [...series.closest('.page')?.querySelectorAll<HTMLElement>('[data-chart-series]') ?? []];
   const active = (type === 'pointerover' || type === 'focusin')
     && lines.some(line => line.dataset.chartSeries === series.dataset.chartSeries);
   for (const line of lines) {

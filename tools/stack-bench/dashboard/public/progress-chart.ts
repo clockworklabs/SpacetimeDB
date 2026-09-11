@@ -1,5 +1,5 @@
 import type { CampaignProgression, CampaignSheet } from '../dashboard-views.js';
-import { duration, esc, stackLabel } from './format.js';
+import { duration, esc, runLabel, stackLabel } from './format.js';
 
 export function progressChart(sheet: CampaignSheet, progression: CampaignProgression | null,
   metric: 'completion' | 'cost' | 'distribution' = 'completion', view = 'grid', hidden: ReadonlySet<string> = new Set(), unit: 'checks' | 'features' = 'features'): string {
@@ -85,8 +85,11 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
         + points.map(track => {
           const value = track.points[0]!.value;
           const at = center + (stack.attempts.findIndex(a => a.id === track.attempt.id) - (stack.attempts.length - 1) / 2) * 20;
-          return `<g data-chart-series="${esc(track.attempt.id)}" fill="${color(stack.stack)}">`
-            + marker(track.attempt.repetition, position(value), at, `<title>${esc(stackLabel(stack.stack))} / Rep ${track.attempt.repetition}: ${valueLabel(value)}${track.attempt.excluded ? ' / Excluded' : ''}</title>`)
+          const label = `${stackLabel(stack.stack)} · ${runLabel(track.attempt)}: ${valueLabel(value)}${track.attempt.excluded ? ' · Excluded' : ''}`;
+          return `<g class="progress-series" data-chart-series="${esc(track.attempt.id)}" fill="${color(stack.stack)}" tabindex="0" aria-label="${esc(label)}">`
+            + `<title>${esc(label)}</title><rect x="${position(value) - 8}" y="${at - 9}" width="58" height="18" fill="transparent"/>`
+            + marker(track.attempt.repetition, position(value), at)
+            + `<text class="distribution-run-label" x="${position(value) + (value > 50 ? -10 : 48)}" y="${at + 4}" text-anchor="${value > 50 ? 'end' : 'start'}">${esc(runLabel(track.attempt))}</text>`
             + `<text x="${position(value) + 8}" y="${at + 4}">${valueLabel(value, false, 0)}</text></g>`;
         }).join('');
     }).join('');

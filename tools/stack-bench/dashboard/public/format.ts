@@ -101,3 +101,11 @@ export function shape(mode: string, levels: readonly number[], repetitions: numb
     : levels.length > 1 ? `L${Math.min(...levels)}–L${depth}` : `L${depth}`;
   return `${span} · ${repetitions}×`;
 }
+
+export function modelLabel(model?: string): string {
+  return ({ 'claude-fable-5-1': 'Fable 5.1', 'claude-opus-5': 'Opus 5', 'gpt-5.6-sol': 'Sol', 'gpt-6-astra': 'Astra' } as Record<string, string>)[model ?? ''] ?? model ?? '';
+}
+
+export function runLabel(attempt: Pick<SheetAttempt, "repetition" | "model" | "effort">): string {
+  return `${modelLabel(attempt.model)}${attempt.effort ? ` (${attempt.effort})` : ''} · Rep ${attempt.repetition}`;
+}

@@ -124,6 +124,8 @@ test('distribution shows completed run percentages across providers and preserve
       status: repetition === 1 ? 'completed' : 'running', completion: { rate: 0.75 } })) })) } as CampaignSheet;
   const html = progressChart(sheet, null, 'distribution', 'graph', new Set(['mongodb-1']), 'checks');
   assert.match(html, /Completion distribution by provider/);
+  assert.match(html, /class="progress-series" data-chart-series="spacetime-1"[^>]*tabindex="0"/);
+  assert.match(html, /class="distribution-run-label"[^>]*>[^<]*Rep 1<\/text>/);
   assert.equal((html.match(/>75%<\/text><\/g>/g) ?? []).length, 2);
   assert.match(html, /Rep 2 .* Pending/);
   assert.match(html, /questlines=graph&amp;chart=distribution/);

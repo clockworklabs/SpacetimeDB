@@ -246,6 +246,8 @@ export interface ClimbPoint {
 }
 
 export interface SheetAttempt {
+  model?: string;
+  effort?: string;
   liveSpend?: number;
   id: string;
   repetition: number;
@@ -455,6 +457,8 @@ function sheetAttemptView(plan: CompiledCampaignPlan, state: CampaignAttemptStat
       completion: inspected.completion,
       featureCompletion: inspected.dependency?.featureCompletion ?? null,
       checkCategories: inspected.dependency?.checkCategories ?? null,
+      model: inspected.model,
+      effort: plan.attempts.find(entry => entry.id === inspected.id)?.effort,
       variant: inspected.variantLabel,
       climb: progress.series,
     },

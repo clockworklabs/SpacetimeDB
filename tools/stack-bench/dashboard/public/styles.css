@@ -301,6 +301,8 @@ main[aria-busy="true"]:not(:has(.loading))::before { content: ''; position: fixe
 .chart-run-toggle svg { flex-shrink: 0; }
 .progress-series.is-muted { opacity: .15; }
 .progress-series.is-highlighted .progress-line { stroke-width: 3; }
+.distribution-run-label { display: none; pointer-events: none; paint-order: stroke; stroke: var(--shade8); stroke-width: 4px; }
+.progress-series.is-highlighted .distribution-run-label { display: block; }
 
 .transcript-controls { margin-top: 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 12px; }
 .transcript-controls label { min-width: 0; flex: 1; }
@@ -328,3 +330,5 @@ main[aria-busy="true"]:not(:has(.loading))::before { content: ''; position: fixe
 .chart-options { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
 
 .chip[aria-disabled="true"] { opacity: .4; pointer-events: none; }
+
+.attempt-list tr.is-highlighted td, .chart-run-toggle.is-highlighted { background: var(--shade1); }
