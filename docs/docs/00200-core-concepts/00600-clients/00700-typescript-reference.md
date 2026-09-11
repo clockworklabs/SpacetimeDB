@@ -129,6 +129,8 @@ Construct a `DbConnection` by calling `DbConnection.builder()` and chaining conf
 | [`onConnectError` callback](#callback-onconnecterror)     | Register a callback to run if the connection is rejected or the host is unreachable. |
 | [`onDisconnect` callback](#callback-ondisconnect)         | Register a callback to run when the connection ends.                                 |
 | [`withToken` method](#method-withtoken)                   | Supply a token to authenticate with the remote database.                             |
+| [`withAutomaticReconnect` method](#method-withautomaticreconnect) | Keep the connection and subscriptions usable across connection loss. |
+| [`withTokenProvider` method](#method-withtokenprovider) | Refresh credentials before reconnecting. |
 | [`build` method](#method-build)                           | Finalize configuration and connect.                                                  |
 
 #### Method `withUri`
@@ -177,29 +179,41 @@ class DbConnectionBuilder {
 
 Chain a call to `.onConnect(callback)` to your builder to register a callback to run when your new `DbConnection` successfully initiates its connection to the remote database. The callback accepts three arguments: a reference to the `DbConnection`, the `Identity` by which SpacetimeDB identifies this connection, and a private access token which can be saved and later passed to [`withToken`](#method-withtoken) to authenticate the same user in future connections.
 
+`onConnect` fires again after each successful automatic reconnect. Register row callbacks and subscriptions once, outside this callback, to avoid accumulating duplicate listeners or subscriptions. Use `onConnect` for work needed on every connection, such as saving the token.
+
 #### Callback `onConnectError`
 
 ```typescript
 class DbConnectionBuilder {
   public onConnectError(
-    callback: (ctx: ErrorContext, error: Error) => void
+    callback: (
+      ctx: ErrorContext,
+      error: Error,
+      nextReconnectAttempt?: number,
+      nextReconnectDelayMs?: number
+    ) => void
   ): DbConnectionBuilder;
 }
 ```
 
-Chain a call to `.onConnectError(callback)` to your builder to register a callback to run when your connection fails.
+Called when the initial connection or a reconnect attempt fails before `onConnect`. When another attempt is scheduled, `nextReconnectAttempt` is its one-based number and `nextReconnectDelayMs` is the delay in milliseconds. Both are `undefined` when the SDK will not retry. Initial connection failures are never retried by the core SDK.
 
 #### Callback `onDisconnect`
 
 ```typescript
 class DbConnectionBuilder {
   public onDisconnect(
-    callback: (ctx: ErrorContext, error: Error | null) => void
+    callback: (
+      ctx: ErrorContext,
+      error?: Error,
+      nextReconnectAttempt?: number,
+      nextReconnectDelayMs?: number
+    ) => void
   ): DbConnectionBuilder;
 }
 ```
 
-Chain a call to `.onDisconnect(callback)` to your builder to register a callback to run when your `DbConnection` disconnects from the remote database, either as a result of a call to [`disconnect`](#method-disconnect) or due to an error.
+Called when an established connection is lost, or when the application calls [`disconnect`](#method-disconnect). With automatic reconnection enabled, the trailing parameters describe the next attempt and delay in milliseconds. Both are `undefined` when no retry is scheduled. An explicit `disconnect()` also passes `undefined` for `error`, including when called between reconnect attempts.
 
 #### Method `withToken`
 
@@ -209,7 +223,91 @@ class DbConnectionBuilder {
 }
 ```
 
-Chain a call to `.withToken(token)` to your builder to provide an OpenID Connect compliant JSON Web Token to authenticate with, or to explicitly select an anonymous connection. If this method is not called or `null` is passed, SpacetimeDB will generate a new `Identity` and sign a new private access token for the connection.
+Chain a call to `.withToken(token)` to your builder to provide an OpenID Connect compliant JSON Web Token to authenticate with, or to explicitly select an anonymous connection. If this method is not called or `undefined` is passed, SpacetimeDB will generate a new `Identity` and sign a new private access token for the connection.
+
+#### Method `withAutomaticReconnect`
+
+```typescript
+class DbConnectionBuilder {
+  public withAutomaticReconnect(): this;
+}
+```
+
+Enable automatic reconnection after an established connection drops. This is opt-in for plain TypeScript connections and requires a server with session IDs and batch subscription support.
+
+The SDK keeps the same connection object, table handles, subscription handles, and registered callbacks. Each new connection has a fresh `ConnectionId`, while the SDK retains the authentication token to preserve the client's `Identity`, including for anonymous clients.
+
+Retries continue until `disconnect()` or a recognized terminal failure, such as a changed identity, rejected credentials with no remaining refresh attempt, or a fatal protocol error. The base delays are 1, 2, 4, 8, 16, and 30 seconds, with ±50% jitter and a final 30-second cap. A successful connection resets the backoff. Initial connection failures do not retry. Browser resume events also check for silently closed sockets and bring scheduled retries forward.
+
+```typescript
+import { DbConnection, tables } from './module_bindings';
+
+const conn = DbConnection.builder()
+  .withUri('http://localhost:3000')
+  .withDatabaseName('my-database')
+  .withAutomaticReconnect()
+  .onConnect((_conn, identity) => {
+    console.log('Connected:', identity.toHexString());
+  })
+  .onDisconnect((_ctx, error, attempt, delayMs) => {
+    if (attempt !== undefined) {
+      console.log(`Disconnected; retry ${attempt} in ${delayMs} ms`, error);
+    } else {
+      console.log('Connection ended', error);
+    }
+  })
+  .onConnectError((_ctx, error, attempt, delayMs) => {
+    if (attempt !== undefined) {
+      console.log(`Connect failed; retry ${attempt} in ${delayMs} ms`, error);
+    } else {
+      console.error('Connection failed; no retry scheduled', error);
+    }
+  })
+  .build();
+
+conn.db.player.onInsert((_ctx, player) => console.log(player));
+conn.subscriptionBuilder()
+  .onApplied(() => console.log('Subscription applied'))
+  .subscribe(tables.player);
+```
+
+While reconnecting:
+
+- `conn.isActive` is `false` and `conn.isReconnecting` is `true`.
+- Cache reads still return the last known rows, which may be stale.
+- Reducer and procedure calls fail immediately with `DisconnectedError` and are not sent. Calls already in flight fail with `UnknownCallResultError`: they may have executed, so retrying them could repeat an effect.
+- New subscriptions are retained for the next connection. Unsubscribing ends the handle locally and removes it from replay.
+
+On reconnect, the SDK replays subscriptions in one batch and reconciles the cache before notifying callbacks. Unchanged rows produce no row callbacks; changed rows produce the usual insert, update, or delete callbacks. Each replayed subscription fires `onApplied` again, or `onError` if rejected. `onConnect` precedes subscription replay, so wait for `onApplied` when you need refreshed data.
+
+#### Method `withTokenProvider`
+
+```typescript
+class DbConnectionBuilder {
+  public withTokenProvider(provider: () => Promise<string>): this;
+}
+```
+
+Supply fresh credentials for reconnect attempts. This method does not enable automatic reconnection by itself, and the provider is not called for the initial connection. Obtain the initial token first and pass it to `withToken`:
+
+```typescript
+const initialToken = await auth.getAccessToken();
+const conn = DbConnection.builder()
+  .withUri('https://maincloud.spacetimedb.com')
+  .withDatabaseName('my-database')
+  .withToken(initialToken)
+  .withAutomaticReconnect()
+  .withTokenProvider(() => auth.getAccessToken())
+  .build();
+```
+
+Here `auth` is your application's authentication client. Its method should return a usable token, refreshing it through your identity provider when necessary. The returned token must identify the same user; use a new connection for sign-in or account changes.
+
+Before each reconnect attempt, the SDK reads the retained JWT's `exp` and `iat` claims. It calls the provider when the remaining validity is at most 5% of the token's lifetime, with a minimum margin of 30 seconds. Without `iat`, it uses the 30-second margin. If expiry cannot be read, it calls the provider on every attempt.
+
+A recognized rejection of the retained token forces a refresh on the next attempt. Rejection of a freshly supplied token is terminal. If the provider throws or rejects, the attempt fails and the SDK retries with backoff. A token exchange service outage is also retryable.
+
+Refresh happens before reconnecting, not on a periodic timer while connected. The SDK retains tokens in memory; persistence across page reloads remains the application's responsibility.
 
 #### Method `build`
 
@@ -292,7 +390,7 @@ interface DbContext {
 }
 ```
 
-Gracefully close the `DbConnection`. Throws an error if the connection is already disconnected.
+Close the `DbConnection`. With automatic reconnection enabled, this cancels any scheduled or pending reconnect and fires `onDisconnect` with no error or retry parameters. The connection cannot be restarted; build a new one to connect again.
 
 ### Subscribe to queries
 
@@ -563,7 +661,17 @@ interface DbContext {
 }
 ```
 
-`true` if the connection has not yet disconnected. Note that a connection `isActive` when it is constructed, before its [`onConnect` callback](#callback-onconnect) is invoked.
+Whether the connection is currently active. With automatic reconnection enabled, this remains `false` until the server's initial connection message arrives, and becomes `false` again during an outage. It does not indicate whether subscriptions have finished applying.
+
+#### Field `isReconnecting`
+
+```typescript
+class DbConnection {
+  readonly isReconnecting: boolean;
+}
+```
+
+`true` after losing an established connection while the SDK is waiting for or attempting a reconnect. It is `false` during the initial connection, after a successful reconnect, and after the connection ends. This field is on `DbConnection`, not the general `DbContext` interface.
 
 ## Type `EventContext`
 
@@ -1034,7 +1142,11 @@ The SpacetimeDB TypeScript SDK includes React bindings under the `spacetimedb/re
 
 The React integration is fully compatible with React StrictMode and correctly handles the double-mount behavior (only one WebSocket connection is created).
 
-While a `SpacetimeDBProvider` is mounted, the shared connection manager also replaces the managed `DbConnection` if the underlying WebSocket closes or reports a connection error. Reconnect attempts use exponential backoff, starting at 1 second and doubling after each consecutive failure up to a 30 second maximum; the backoff resets after a successful connection. In browser environments, the manager also re-checks connection liveness when the page becomes visible, regains focus, returns online, or is restored from the back-forward cache, so a stalled reconnect or silently closed socket can be rebuilt promptly after a suspended tab resumes. Hooks such as `useTable` observe the provider state, receive the fresh connection, and establish their subscriptions again; while the replacement connection is being established, `useTable` reports `isReady` as `false` until its subscription is applied on the new connection. This provider-level recovery does not change the lower-level `DbConnection` contract: applications that create a `DbConnection` directly are still responsible for creating a new connection if they need reconnection behavior.
+The React provider enables core automatic reconnection. After an established connection drops, it retains the same `DbConnection` and reflects its lifecycle events in provider state. `useSpacetimeDB().isActive` is `false` during the outage; `useTable` reports `isReady` as `false` until its subscription applies again. Cached rows can remain visible while stale, so use these flags for a connection-status indicator.
+
+The shared connection manager still creates a replacement connection when the core SDK reports that it will not retry, including initial connection failures. Those replacements use the manager's existing exponential backoff. Calling `disconnect()` explicitly prevents this recovery.
+
+Pass `withTokenProvider` on the provider's builder when your credentials expire. Keep the builder stable across renders, as in the example below.
 
 | Name                                                        | Description                                               |
 | ----------------------------------------------------------- | --------------------------------------------------------- |
@@ -1175,7 +1287,20 @@ An opaque identifier for a client connection to a database, intended to differen
 
 ## Framework Integrations
 
-The SpacetimeDB TypeScript SDK includes built-in integrations for React, SolidJS, Vue, and Svelte. These provide reactive hooks that automatically subscribe to queries and re-render when data changes.
+The SpacetimeDB TypeScript SDK includes built-in integrations for React, SolidJS, Vue, Svelte, and Angular.
+
+React, Solid, and Svelte use the shared connection manager, which enables automatic reconnection on their builders. Vue and Angular build connections directly: add `.withAutomaticReconnect()` to the builder passed to their provider. All integrations accept `.withTokenProvider(...)` on that builder. These settings belong on the builder, not on individual table hooks.
+
+For example, configure a Vue or Angular connection builder with:
+
+```typescript
+const connectionBuilder = DbConnection.builder()
+  .withUri('http://localhost:3000')
+  .withDatabaseName('my-database')
+  .withAutomaticReconnect();
+```
+
+For expiring credentials, obtain the initial token with your auth client, then add `.withToken(initialToken).withTokenProvider(() => auth.getAccessToken())`. See [token refresh](#method-withtokenprovider) for when the provider runs.
 
 ### React
 
