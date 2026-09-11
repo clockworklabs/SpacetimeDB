@@ -1,6 +1,7 @@
 use crate::api::{build_client, Connection};
 use crate::common_args;
 use crate::config::Config;
+use crate::subcommands::db_arg_resolution::resolve_config_server;
 use crate::util::{auth_header_from_saved_token, database_identity, ResponseExt, UNSTABLE_WARNING};
 use anyhow::Context;
 use clap::{Arg, ArgMatches};
@@ -17,6 +18,12 @@ pub fn cli() -> clap::Command {
         ))
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
         .arg(common_args::anonymous())
+        .arg(
+            Arg::new("no_config")
+                .long("no-config")
+                .action(clap::ArgAction::SetTrue)
+                .help("Ignore spacetime.json configuration"),
+        )
         .after_help("Run `spacetime help mcp` for more detailed information.\n")
 }
 
@@ -24,8 +31,16 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     eprintln!("{UNSTABLE_WARNING}\n");
 
     let database = args.get_one::<String>("database");
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let anon_identity = args.get_flag("anon_identity");
+    let no_config = args.get_flag("no_config");
+
+    // The database arg stays as given (omitting it deliberately serves the whole
+    // server), but the server it is served from follows the project's config.
+    let config_server = resolve_config_server(no_config)?;
+    let server = args
+        .get_one::<String>("server")
+        .map(|s| s.as_str())
+        .or(config_server.as_deref());
 
     let conn = Connection {
         host: config.get_host_url(server)?,
