@@ -21,12 +21,16 @@ const COMMANDS: &[Command] = &[
         package: "ci-lint",
     },
     Command {
-        path: &["wasm-bindings"],
-        package: "ci-wasm-bindings",
+        path: &["module-latest-deps"],
+        package: "ci-module-latest-deps",
     },
     Command {
         path: &["smoketests"],
         package: "ci-smoketests",
+    },
+    Command {
+        path: &["smoketests", "check-mod-list"],
+        package: "ci-smoketest-checks",
     },
     Command {
         path: &["keynote-bench"],
@@ -61,8 +65,8 @@ const COMMANDS: &[Command] = &[
         package: "ci-docs-build",
     },
     Command {
-        path: &["other-workflows", "coordinate-internal-tests"],
-        package: "ci-coordinate-internal-tests",
+        path: &["other-workflows", "coordinate"],
+        package: "ci-workflow-coordinator",
     },
     Command {
         path: &["other-workflows", "codeowners-check"],
@@ -75,6 +79,14 @@ const COMMANDS: &[Command] = &[
     Command {
         path: &["other-workflows", "watch"],
         package: "ci-workflow-watch",
+    },
+    Command {
+        path: &["other-workflows", "run-spacetime"],
+        package: "ci-run-spacetime",
+    },
+    Command {
+        path: &["other-workflows", "check-release-deps"],
+        package: "ci-check-release-deps",
     },
 ];
 

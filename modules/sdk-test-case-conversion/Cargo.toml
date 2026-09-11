@@ -8,7 +8,6 @@ license-file = "LICENSE"
 crate-type = ["cdylib"]
 
 [dependencies]
-log.workspace = true
 
 [dependencies.spacetimedb]
 workspace = true

@@ -15,4 +15,3 @@ path = "src/main.rs"
 clap.workspace = true
 regex.workspace = true
 ignore = "0.4"
-memchr = "2"

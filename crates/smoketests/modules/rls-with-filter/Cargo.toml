@@ -8,4 +8,3 @@ crate-type = ["cdylib"]
 
 [dependencies]
 spacetimedb.workspace = true
-log.workspace = true

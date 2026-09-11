@@ -28,7 +28,6 @@ spacetimedb-data-structures.workspace = true
 spacetimedb-fs-utils.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-paths.workspace = true
-spacetimedb-primitives.workspace = true
 spacetimedb-schema.workspace = true
 
 anyhow.workspace = true
@@ -41,9 +40,7 @@ colored.workspace = true
 convert_case.workspace = true
 dirs.workspace = true
 duct.workspace = true
-email_address.workspace = true
 futures.workspace = true
-flate2.workspace = true
 fs-err.workspace = true
 http.workspace = true
 is-terminal.workspace = true
@@ -60,19 +57,15 @@ rustyline.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["raw_value", "preserve_order", "arbitrary_precision"] }
 serde_with = { workspace = true, features = ["chrono_0_4"] }
-slab.workspace = true
 syntect.workspace = true
 tabled.workspace = true
-tar.workspace = true
 tempfile.workspace = true
 termcolor.workspace = true
 termtree.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
-toml.workspace = true
 toml_edit.workspace = true
-tracing = { workspace = true, features = ["release_max_level_off"] }
 walkdir.workspace = true
 wasmbin.workspace = true
 webbrowser.workspace = true
@@ -85,18 +78,15 @@ rolldown_common.workspace = true
 rolldown_error.workspace = true
 rolldown_utils.workspace = true
 xmltree.workspace = true
-quick-xml.workspace = true
 names.workspace = true
 notify.workspace = true
 path-clean = "1.0.1"
 
 [dev-dependencies]
 pretty_assertions.workspace = true
-fs_extra.workspace = true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { workspace = true }
-tikv-jemalloc-ctl = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = ["Win32_System_Console"] }

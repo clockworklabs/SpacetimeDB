@@ -46,26 +46,16 @@ fn run_inherit(cmd: impl AsRef<OsStr>, args: &[&str], cwd: Option<&Path>) -> Res
 fn main() -> Result<()> {
     let args = Cli::parse();
 
-    let workspace_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap();
-
-    // 1) Build prerequisite
-    run_inherit("cargo", &["build"], Some(workspace_dir))?;
-
-    // 2) Ensure output directory exists
+    // 1) Ensure output directory exists
     if !Path::new(&args.out_dir).exists() {
         fs::create_dir_all(&args.out_dir).context("create output directory")?;
     }
 
-    // 3) Generate TS client from project
+    // 2) Generate TS client from project
     run_inherit(
-        workspace_dir
-            .join("target/debug/spacetimedb-cli")
-            .with_extension(std::env::consts::EXE_EXTENSION),
+        "cargo",
         &[
+            "spacetime",
             "generate",
             "-y",
             "--lang",

@@ -181,11 +181,11 @@ const config: Config = {
   themeConfig: {
     navbar: {
       logo: {
-        alt: 'SpacetimeDB Logo',
-        src: '/images/brand.svg',
+        alt: 'Spacetime Logo',
+        src: 'https://spacetimedb.com/images/brand.svg',
         href: 'https://spacetimedb.com',
         target: '_self',
-        width: 152,
+        width: 133,
         height: 32,
       },
       hideOnScroll: false,

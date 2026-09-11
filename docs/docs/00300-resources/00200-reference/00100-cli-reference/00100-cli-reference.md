@@ -132,7 +132,7 @@ Run `spacetime help publish` for more detailed information.
 
 * `--no-config` — Ignore spacetime.json configuration
 * `--env <ENV>` — Environment name for config file layering (e.g., dev, staging)
-* `--native-aot` — Use NativeAOT-LLVM compilation for C# modules (experimental, Windows only)
+* `--native-aot` — Use NativeAOT-LLVM compilation for C# modules (experimental; supported on Windows, and on Linux with .NET 10)
 * `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.
 
 
@@ -268,6 +268,7 @@ Start development mode with auto-regenerate client module bindings, auto-rebuild
 
 * `-t`, `--template <TEMPLATE>` — Template ID or GitHub repository (owner/repo or URL) for project initialization
 * `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.
+* `--native-aot` — Build C# projects with NativeAOT-LLVM. Ignored with .NET 10 because NativeAOT-LLVM is always used.
 * `--run <COMMAND>` — Command to run the client development server (overrides spacetime.json config)
 * `--server-only` — Only run the server (module) without starting the client
 * `--no-config` — Ignore spacetime.json configuration
@@ -324,6 +325,7 @@ Run `spacetime help mcp` for more detailed information.
 
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
 * `--anonymous` — Perform this action with an anonymous identity
+* `--no-config` — Ignore spacetime.json configuration
 
 
 
@@ -345,6 +347,7 @@ Run `spacetime rename --help` for more detailed information.
 * `--to <NEW-NAME>` — The new name you would like to assign
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server on which to set the name
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--no-config` — Ignore spacetime.json configuration
 
 
 
@@ -399,6 +402,7 @@ Lists the databases attached to an identity. WARNING: This command is UNSTABLE a
 
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server from which to list databases
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--no-config` — Ignore spacetime.json configuration
 
 
 
@@ -465,7 +469,7 @@ Initializes a new spacetime project.
 * `-t`, `--template <TEMPLATE>` — Template ID or GitHub repository (owner/repo or URL)
 * `--local` — Use local deployment instead of Maincloud
 * `--non-interactive` — Run in non-interactive mode
-* `--native-aot` — Configure C# project for NativeAOT-LLVM compilation (experimental, Windows only)
+* `--native-aot` — Configure C# project for NativeAOT-LLVM compilation (experimental; supported on Windows, and on Linux with .NET 10)
 * `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Defaults to 10 except on macOS or when only .NET 8 is installed.
 
 
@@ -740,4 +744,3 @@ Run `spacetime version --help` to see all options.
     This document was generated automatically by
     <a href="https://crates.io/crates/clap-markdown"><code>clap-markdown</code></a>.
 </i></small>
-
