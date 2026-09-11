@@ -14,7 +14,8 @@ on:
 
 jobs:
   update-llms:
-    runs-on: spacetimedb-new-runner-2
+    # This builds documentation assets and updates one generated text file.
+    runs-on: spacetimedb-linux-small
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3

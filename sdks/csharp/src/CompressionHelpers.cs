@@ -55,10 +55,14 @@ namespace SpacetimeDB
 
             // The stream will never be empty. It will at least contain the compression algo.
             var compression = (CompressionAlgos)stream.ReadByte();
-            // Conditionally decompress and decode.
+
+            if (compression == CompressionAlgos.None)
+            {
+                return new ServerMessage.BSATN().Read(new BinaryReader(stream));
+            }
+
             Stream decompressedStream = compression switch
             {
-                CompressionAlgos.None => stream,
                 CompressionAlgos.Brotli => BrotliReader(stream),
                 CompressionAlgos.Gzip => GzipReader(stream),
                 _ => throw new InvalidOperationException("Unknown compression type"),
@@ -67,10 +71,13 @@ namespace SpacetimeDB
             // TODO: consider pooling these.
             // DO NOT TRY TO TAKE THIS OUT. The BrotliStream ReadByte() implementation allocates an array
             // PER BYTE READ. You have to do it all at once to avoid that problem.
-            MemoryStream memoryStream = new MemoryStream();
-            decompressedStream.CopyTo(memoryStream);
-            memoryStream.Seek(0, SeekOrigin.Begin);
-            return new ServerMessage.BSATN().Read(new BinaryReader(memoryStream));
+            using (decompressedStream)
+            using (MemoryStream memoryStream = new MemoryStream())
+            {
+                decompressedStream.CopyTo(memoryStream);
+                memoryStream.Seek(0, SeekOrigin.Begin);
+                return new ServerMessage.BSATN().Read(new BinaryReader(memoryStream));
+            }
         }
 
         /// <summary>

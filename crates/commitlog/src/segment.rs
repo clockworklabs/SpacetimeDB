@@ -12,7 +12,7 @@ use crate::{
     error,
     index::{IndexError, IndexFileMut},
     payload::Encode,
-    repo::{TxOffset, TxOffsetIndex, TxOffsetIndexMut},
+    repo::{SegmentPos, TxOffset, TxOffsetIndex, TxOffsetIndexMut},
     Options,
 };
 
@@ -144,10 +144,19 @@ impl<W: io::Write> Writer<W> {
         let checksum = self
             .commit
             .write(&mut self.inner)
-            // Panic here as we don't know how much of the commit has been
-            // written (if anything). Further commits would leave corrupted data
-            // in the log.
-            .unwrap_or_else(|e| panic!("failed to write commit {}: {:#}", self.commit.min_tx_offset, e));
+            // Panic here as the data remaining in the `BufWriter`'s buffer is
+            // probably not on a commit boundary. If the caller rotates segments
+            // and continues to commit, we'd write a torn commit.
+            //
+            // Panicking ensures that the buffer is discarded, and that the
+            // commitlog is reopened to recover the last durable commit.
+            .unwrap_or_else(|e| {
+                let buffered = self.inner.buffer().len();
+                panic!(
+                    "failed to write commit {} with {} bytes remaining buffered: {:#}",
+                    self.commit.min_tx_offset, buffered, e
+                )
+            });
         let commit_len = self.commit.encoded_len() as u64;
 
         if let Some(index) = self.offset_index_head.as_mut() {
@@ -571,7 +580,7 @@ pub struct Commits<R> {
     reader: R,
 }
 
-impl<R: io::BufRead> Iterator for Commits<R> {
+impl<R: io::BufRead + SegmentPos> Iterator for Commits<R> {
     type Item = io::Result<StoredCommit>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -580,7 +589,7 @@ impl<R: io::BufRead> Iterator for Commits<R> {
 }
 
 #[cfg(test)]
-impl<R: io::BufRead> Commits<R> {
+impl<R: io::BufRead + SegmentPos> Commits<R> {
     pub fn with_log_format_version(self) -> impl Iterator<Item = io::Result<(u8, StoredCommit)>> {
         CommitsWithVersion { inner: self }
     }
@@ -592,7 +601,7 @@ struct CommitsWithVersion<R> {
 }
 
 #[cfg(test)]
-impl<R: io::BufRead> Iterator for CommitsWithVersion<R> {
+impl<R: io::BufRead + SegmentPos> Iterator for CommitsWithVersion<R> {
     type Item = io::Result<(u8, StoredCommit)>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -663,7 +672,7 @@ impl Metadata {
 
         reader.seek(SeekFrom::Start(sofar.size_in_bytes))?;
 
-        fn commit_meta<R: io::Read>(
+        fn commit_meta<R: io::Read + SegmentPos>(
             reader: &mut R,
             sofar: &Metadata,
         ) -> Result<Option<commit::Metadata>, error::SegmentMetadata> {

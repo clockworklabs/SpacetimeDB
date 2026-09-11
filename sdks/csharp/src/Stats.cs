@@ -174,6 +174,17 @@ namespace SpacetimeDB
             }
         }
 
+        /// <summary>
+        /// Stop tracking an outstanding request that can no longer receive a response.
+        /// </summary>
+        internal bool RemoveRequestAwaitingResponse(uint requestId)
+        {
+            lock (this)
+            {
+                return _requests.Remove(requestId);
+            }
+        }
+
         internal void InsertRequest(TimeSpan duration, string metadata)
         {
             lock (this)
@@ -246,6 +257,17 @@ namespace SpacetimeDB
         /// </summary>
         /// <returns></returns>
         public int GetRequestsAwaitingResponse() => _requests.Count;
+
+        /// <summary>
+        /// Clear outstanding tracked requests that can no longer receive responses.
+        /// </summary>
+        internal void ClearRequestsAwaitingResponse()
+        {
+            lock (this)
+            {
+                _requests.Clear();
+            }
+        }
     }
 
     public class Stats
@@ -314,5 +336,18 @@ namespace SpacetimeDB
         /// Includes: apply time (on main thread).
         /// </summary>
         public readonly NetworkRequestTracker ApplyMessageTracker = new();
+
+        /// <summary>
+        /// Clear all outstanding tracked requests that can no longer receive responses.
+        /// </summary>
+        internal void ClearRequestsAwaitingResponse()
+        {
+            ReducerRequestTracker.ClearRequestsAwaitingResponse();
+            ProcedureRequestTracker.ClearRequestsAwaitingResponse();
+            SubscriptionRequestTracker.ClearRequestsAwaitingResponse();
+            OneOffRequestTracker.ClearRequestsAwaitingResponse();
+            ParseMessageQueueTracker.ClearRequestsAwaitingResponse();
+            ApplyMessageQueueTracker.ClearRequestsAwaitingResponse();
+        }
     }
 }

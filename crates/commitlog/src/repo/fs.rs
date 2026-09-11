@@ -130,6 +130,47 @@ impl Fs {
 
         Ok(size)
     }
+
+    /// Atomically install the temporary file `tmp` at `path`, ensuring that
+    /// both its contents and the directory entry naming it are fsync'd durably.
+    ///
+    /// Note that just fsyncing the file is not sufficient. A durable file in a not-yet-durable
+    /// directory would be reliably on disk, but not reliably reachable.
+    ///
+    /// Only the repository root is fsync'd, so `path` must name an entry directly
+    /// within it -- as [`Self::segment_path`] guarantees. Installing a file
+    /// elsewhere would need to sync that file's own parent directory instead.
+    fn persist_durably(&self, mut tmp: NamedTempFile, path: &SegmentFile) -> io::Result<File> {
+        tmp.as_file_mut().sync_all()?;
+        let file = tmp.persist(path)?;
+        sync_dir(&self.root.0)?;
+
+        Ok(file)
+    }
+}
+
+/// `fsync` the directory at `path`, making durable any directory entries
+/// created or removed within it (e.g. by `rename`).
+///
+/// On *nix, `fsync`ing a file does **not** make the directory entry pointing
+/// at it durable -- the enclosing directory must be `fsync`ed separately.
+///
+/// On Windows, directories cannot be opened as files and `fsync`ing one is an
+/// error, so this is a no-op there.
+#[cfg_attr(target_os = "windows", allow(unused_variables))]
+fn sync_dir(path: &std::path::Path) -> io::Result<()> {
+    #[cfg(not(target_os = "windows"))]
+    File::open(path)
+        .map_err(|e| {
+            io::Error::new(
+                e.kind(),
+                format!("failed to open directory {} for fsync: {}", path.display(), e),
+            )
+        })?
+        .sync_all()
+        .map_err(|e| io::Error::new(e.kind(), format!("failed to fsync directory {}: {}", path.display(), e)))?;
+
+    Ok(())
 }
 
 impl fmt::Display for Fs {
@@ -280,8 +321,7 @@ impl Repo for Fs {
             File::options().read(true).write(true).create_new(true).open(tmp_path)
         })?;
         header.write(&mut tmp)?;
-        tmp.as_file_mut().sync_all()?;
-        let segment = tmp.persist(path)?;
+        let segment = self.persist_durably(tmp, &path)?;
 
         // Notify subscribers.
         if let Some(on_new_segment) = self.on_new_segment.as_ref() {
@@ -295,7 +335,10 @@ impl Repo for Fs {
         // NOTE: We previously used `O_APPEND`, but Windows demands `write(true)`
         // so that we can truncate trailing garbage in [super::resume_segment_writer].
         let mut file = File::options().read(true).write(true).open(self.segment_path(offset))?;
+        // Ensure any outstanding writes from a crashed process are durable.
+        file.sync_data()?;
         file.seek(io::SeekFrom::End(0))?;
+
         Ok(file)
     }
 
@@ -306,7 +349,11 @@ impl Repo for Fs {
     fn open_segment_reader(&self, offset: u64) -> io::Result<Self::SegmentReader> {
         let path = self.segment_path(offset);
         debug!("fs: open segment at {}", path.display());
-        let file = File::open(&path)?;
+        // NOTE: Write access is required for `sync_data` on Windows .
+        let file = File::options().read(true).write(true).open(&path)?;
+        // Ensure any outstanding writes from a crashed process are durable.
+        file.sync_data()?;
+
         let len = file.metadata()?.len();
         CompressReader::new(file).map(|inner| ReadOnlySegment { inner, len })
     }
@@ -330,7 +377,7 @@ impl Repo for Fs {
 
         let mut dst = NamedTempFile::new_in(&self.root)?;
         let stats = f.compress(&mut src, &mut dst)?;
-        dst.persist(self.segment_path(offset))?;
+        self.persist_durably(dst, &self.segment_path(offset))?;
 
         Ok(stats)
     }
