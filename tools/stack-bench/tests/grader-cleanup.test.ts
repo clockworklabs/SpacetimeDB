@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Browser } from 'playwright';
+import { errors } from 'playwright';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 
 import { closeActorContexts, gradeFeature } from '../grader/grade.js';
@@ -55,6 +56,35 @@ test('browser setup operations are harness failures but app navigation is not', 
   } catch (error) { infrastructure = error; }
   assert.match(harnessBrowserFailure(infrastructure) ?? '', /browser page creation failed/);
   assert.equal(harnessBrowserFailure(new Error('net::ERR_CONNECTION_REFUSED')), null);
+});
+
+test('navigation timeouts are inconclusive; connection refusal and crashes keep distinct outcomes', async () => {
+  const scenario = compileScenarioDefinition({ schemaVersion: 1, track: 'ecommerce', level: 1,
+    name: 'navigation', features: [{ id: 1, name: 'account', actors: ['buyer'], setup: [],
+      criteria: [{ id: '1a', desc: 'account exists', points: 1,
+        steps: [{ do: 'expect', actor: 'buyer', testid: 'current-user' }] }] }] }, { source: 'navigation.json' });
+  for (const [error, expected] of [
+    [new errors.TimeoutError('page.goto: Timeout 20000ms exceeded'), 'inconclusive'],
+    [new Error('page.goto: net::ERR_CONNECTION_REFUSED'), 'failed'],
+    [new Error('page.goto: Target crashed'), 'harness_failure'],
+  ] as const) {
+    let closed = false;
+    const context = { newPage: async () => page,
+      newCDPSession: async () => ({ on() {}, async send() {} }),
+      close: async () => { closed = true; } };
+    const page = { on() {}, setDefaultTimeout() {}, context: () => context,
+      goto: async () => { throw error; }, video: () => null };
+    const browser = { newContext: async () => context } as unknown as Browser;
+    const result = await gradeFeature(browser, scenario.features[0]!, {
+      url: 'http://app', level: 1, headed: false, selectedCheckKeys: [], nullControl: false,
+    }, { runId: 'navigation-test', roomName: name => name, url: 'http://app',
+      actions: [], spacetime: null, nullControl: false });
+    assert.equal(result.setupEvidence.status, expected);
+    assert.equal(result.criteria[0]!.evidence.status, expected);
+    assert.equal(result.criteria[0]!.evidence.phase, 'setup');
+    assert.deepEqual(result.criteria[0]!.evidence.actions, []);
+    assert.equal(closed, true);
+  }
 });
 
 

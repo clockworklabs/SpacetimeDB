@@ -234,7 +234,7 @@ for (const kind of ['backend', 'browser'] as const) {
       assert.equal(command[command.indexOf('--memory') + 1], memory);
       assert.equal(command[command.indexOf('--memory-swap') + 1], memory);
       assert.equal(command[command.indexOf('--cpus') + 1], '1');
-      assert.equal(command[command.indexOf('--pids-limit') + 1], '256');
+      assert.equal(command[command.indexOf('--pids-limit') + 1], kind === 'browser' ? '512' : '256');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

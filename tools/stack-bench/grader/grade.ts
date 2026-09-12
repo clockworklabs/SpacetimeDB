@@ -2,7 +2,7 @@
 /// <reference lib="dom" />
 // Score declared criteria from one observed run in isolated actor contexts.
 //
-import { chromium } from 'playwright';
+import { chromium, errors } from 'playwright';
 import { attemptBrowserLaunchOptions } from '../container/browser-pipe.js';
 import type { Browser, BrowserContext, Page } from 'playwright';
 import { randomUUID } from 'node:crypto';
@@ -22,7 +22,7 @@ import { resolveCalibrationForRelease } from '../src/composition/calibration-com
 import { resolveGradeRecipeArtifactBinding } from '../src/composition/recipe-release.js';
 import { selectScenarioChecks } from '../src/composition/recipe-selection.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
-import { ActionApplicationFailure, executeAction } from '../src/actions/action-contract.js';
+import { ActionApplicationFailure, ActionInconclusive, executeAction } from '../src/actions/action-contract.js';
 import { createCheckEvidence, evidenceIsMeasured, evidencePassed } from '../src/evidence/check-evidence.js';
 import { evidenceNowMs } from '../src/evidence/evidence-timing.js';
 import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.js';
@@ -593,8 +593,9 @@ function classifyCheckFailure(error: unknown, fallbackActor: string | null = nul
   const browserFailure = harnessBrowserFailure(error);
   if (browserFailure) return { status: 'harness_failure', code: 'browser_failure', actor: fallbackActor,
     summary: browserFailure, finding: null, observation: null, expected: null, retryable: false };
-  if (error instanceof ActionApplicationFailure) {
-    return { status: 'failed', code: 'application_failure', actor: fallbackActor,
+  if (error instanceof ActionApplicationFailure || error instanceof ActionInconclusive) {
+    return { status: error instanceof ActionInconclusive ? 'inconclusive' : 'failed',
+      code: error.classification, actor: fallbackActor,
       summary: error.message, finding: isFinding(error.details.finding) ? error.details.finding : null,
       observation: error.details.observation ?? null,
       expected: error.details.expected ?? null, retryable: false };
@@ -751,6 +752,11 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
         await page.goto(args.url!, { waitUntil: 'domcontentloaded', timeout: 20000 });
       } catch (cause) {
         if (harnessBrowserFailure(cause)) throw cause;
+        if (cause instanceof errors.TimeoutError) {
+          throw new ActionInconclusive('browser navigation timed out before any application check', {
+            observation: errorMessage(cause), expected: 'a loaded application page',
+          });
+        }
         throw new ActionApplicationFailure('application did not load during browser setup', {
           observation: errorMessage(cause), expected: 'a reachable application page',
         });
