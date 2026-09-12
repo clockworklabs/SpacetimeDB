@@ -118,6 +118,11 @@ impl_filterable_value! {
     // &[u8] => Vec<u8>,
 }
 
+impl<T: FilterableValue> Private for Option<T> {}
+impl<T: FilterableValue> FilterableValue for Option<T> {
+    type Column = Option<T::Column>;
+}
+
 /// Marker trait for column types supported as procedural view primary keys.
 #[doc(hidden)]
 #[diagnostic::on_unimplemented(
