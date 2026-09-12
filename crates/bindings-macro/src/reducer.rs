@@ -10,6 +10,44 @@ use syn::{FnArg, Ident, ItemFn, LitStr, PatType};
 pub(crate) struct ReducerArgs {
     name: Option<LitStr>,
     lifecycle: Option<LifecycleReducer>,
+    visibility: Option<DeclaredVisibility>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DeclaredVisibility {
+    Internal,
+    Private,
+    Public,
+}
+
+impl DeclaredVisibility {
+    pub(crate) fn tokens(self) -> TokenStream {
+        let variant = match self {
+            Self::Internal => "Internal",
+            Self::Private => "Private",
+            Self::Public => "ClientCallable",
+        };
+        let variant = Ident::new(variant, Span::call_site());
+        quote!(spacetimedb::rt::FunctionVisibility::#variant)
+    }
+}
+
+pub(crate) fn parse_visibility(
+    meta: &syn::meta::ParseNestedMeta<'_>,
+    visibility: &mut Option<DeclaredVisibility>,
+) -> syn::Result<bool> {
+    let value = if meta.path.is_ident("internal") {
+        DeclaredVisibility::Internal
+    } else if meta.path.is_ident("private") {
+        DeclaredVisibility::Private
+    } else if meta.path.is_ident("public") {
+        DeclaredVisibility::Public
+    } else {
+        return Ok(false);
+    };
+    check_duplicate_msg(visibility, meta, "already specified a function visibility")?;
+    *visibility = Some(value);
+    Ok(true)
 }
 
 enum LifecycleReducer {
@@ -37,6 +75,9 @@ impl ReducerArgs {
     pub(crate) fn parse(input: TokenStream) -> syn::Result<Self> {
         let mut args = Self::default();
         syn::meta::parser(|meta| {
+            if parse_visibility(&meta, &mut args.visibility)? {
+                return Ok(());
+            }
             let mut set_lifecycle = |kind: fn(Span) -> _| -> syn::Result<()> {
                 check_duplicate_msg(&args.lifecycle, &meta, "already specified a lifecycle reducer kind")?;
                 args.lifecycle = Some(kind(meta.path.span()));
@@ -55,6 +96,12 @@ impl ReducerArgs {
             Ok(())
         })
         .parse2(input)?;
+        if args.lifecycle.is_some() && args.visibility.is_some_and(|v| v != DeclaredVisibility::Internal) {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                "lifecycle reducers must have internal visibility",
+            ));
+        }
         Ok(args)
     }
 }
@@ -101,6 +148,7 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
     assert_only_lifetime_generics(original_function, "reducers")?;
 
     let lifecycle = args.lifecycle.iter().filter_map(|lc| lc.to_lifecycle_value());
+    let visibility = args.visibility.map(DeclaredVisibility::tokens).into_iter();
 
     let typed_args = extract_typed_args(original_function)?;
 
@@ -165,6 +213,7 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
             /// The function kind, which will cause scheduled tables to accept reducers.
             type FnKind = spacetimedb::rt::FnKindReducer;
             const NAME: &'static str = #reducer_name;
+            #(const DECLARED_VISIBILITY: Option<spacetimedb::rt::FunctionVisibility> = Some(#visibility);)*
             #(const LIFECYCLE: Option<spacetimedb::rt::LifecycleReducer> = Some(#lifecycle);)*
             const ARG_NAMES: &'static [Option<&'static str>] = &[#(#opt_arg_names),*];
             const INVOKE: Self::Invoke = #func_name::invoke;
@@ -200,5 +249,45 @@ pub(crate) fn generate_explicit_names_impl(
                 names
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn visibility_declarations_are_unambiguous() {
+        for input in [
+            quote!(private, public),
+            quote!(internal, internal),
+            quote!(init, private),
+            quote!(public, client_connected),
+        ] {
+            assert!(ReducerArgs::parse(input).is_err());
+        }
+        for input in [
+            quote!(),
+            quote!(public),
+            quote!(private),
+            quote!(internal),
+            quote!(init, internal),
+        ] {
+            assert!(ReducerArgs::parse(input).is_ok());
+        }
+    }
+    #[test]
+    fn rust_item_visibility_does_not_select_database_visibility() {
+        let function: ItemFn = syn::parse_quote!(
+            pub fn example(ctx: &ReducerContext) {}
+        );
+        let implicit = reducer_impl(ReducerArgs::parse(quote!()).unwrap(), &function)
+            .unwrap()
+            .to_string();
+        assert!(!implicit.contains("DECLARED_VISIBILITY"));
+        let explicit = reducer_impl(ReducerArgs::parse(quote!(internal)).unwrap(), &function)
+            .unwrap()
+            .to_string();
+        assert!(explicit.contains("DECLARED_VISIBILITY"));
+        assert!(explicit.contains("FunctionVisibility :: Internal"));
     }
 }

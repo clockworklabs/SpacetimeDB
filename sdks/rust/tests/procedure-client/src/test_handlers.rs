@@ -1,7 +1,7 @@
 use crate::module_bindings::*;
 use anyhow::Context;
 use core::time::Duration;
-use spacetimedb_lib::db::raw_def::v9::{RawMiscModuleExportV9, RawModuleDefV9};
+use spacetimedb_lib::db::raw_def::v10::{ExplicitNameEntry, RawModuleDefV10};
 use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Table};
 use test_counter::{server_url, TestCounter};
 
@@ -247,7 +247,7 @@ async fn exec_insert_with_tx_rollback(db_name: &str) {
 /// Test that a procedure can perform an HTTP request and return a string derived from the response.
 ///
 /// Invoke the procedure `read_my_schema`,
-/// which does an HTTP request to the `/database/schema` route and returns a JSON-ified [`RawModuleDefV9`],
+/// which does an HTTP request to the `/database/schema` route and returns a JSON-ified [`RawModuleDefV10`],
 /// then (in the client) deserialize the response and assert that it contains a description of that procedure.
 async fn exec_procedure_http_ok(db_name: &str) {
     let test_counter = TestCounter::new();
@@ -262,15 +262,22 @@ async fn exec_procedure_http_ok(db_name: &str) {
                         #[allow(clippy::redundant_closure_call)]
                         (|| {
                             anyhow::ensure!(res.is_ok(), "Expected Ok result but got {res:?}");
-                            let module_def: RawModuleDefV9 = spacetimedb_lib::de::serde::deserialize_from(
+                            let module_def: RawModuleDefV10 = spacetimedb_lib::de::serde::deserialize_from(
                                 &mut serde_json::Deserializer::from_str(&res.unwrap()),
                             )?;
-                            anyhow::ensure!(module_def.misc_exports.iter().any(|misc_export| {
-                                if let RawMiscModuleExportV9::Procedure(procedure_def) = misc_export {
-                                    &*procedure_def.name == "read_my_schema"
-                                } else {
-                                    false
-                                }
+                            // The schema endpoint exports source-to-canonical name mappings.
+                            // C# uses `ReadMySchema` in source and `read_my_schema` on the wire.
+                            let names = module_def.explicit_names().cloned().unwrap_or_default().into_entries();
+                            anyhow::ensure!(names.iter().any(|entry| {
+                                let ExplicitNameEntry::Function(mapping) = entry else {
+                                    return false;
+                                };
+                                &*mapping.canonical_name == "read_my_schema"
+                                    && module_def
+                                        .procedures()
+                                        .into_iter()
+                                        .flatten()
+                                        .any(|procedure| procedure.source_name == mapping.source_name)
                             }));
                             Ok(())
                         })(),

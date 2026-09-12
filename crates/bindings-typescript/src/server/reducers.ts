@@ -1,5 +1,6 @@
 import { AlgebraicType } from '../lib/algebraic_type';
-import { FunctionVisibility, type Lifecycle } from '../lib/autogen/types';
+import { type Lifecycle } from '../lib/autogen/types';
+import { rawVisibility, type FunctionVisibility } from './function_visibility';
 import type { ParamsObj, Reducer } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
 import type { ScheduleTableForParams } from '../lib/table_schema';
@@ -19,7 +20,9 @@ export interface ReducerExport<
     ModuleExport {}
 
 export interface ReducerOpts<Params extends ParamsObj = ParamsObj> {
-  name: string;
+  name?: string;
+  /** Defaults to public, or private when scheduled. Lifecycle hooks are internal. */
+  visibility?: FunctionVisibility;
   onSchedule?: ScheduleTableForParams<Params>;
 }
 
@@ -84,12 +87,19 @@ export function registerReducer(
   const ref = ctx.registerTypesRecursively(params);
   const paramsType = ctx.resolveType(ref).value;
   const isLifecycle = lifecycle != null;
+  if (
+    isLifecycle &&
+    opts?.visibility != null &&
+    opts.visibility !== 'internal'
+  ) {
+    throw new TypeError('Lifecycle reducers only support internal visibility');
+  }
 
   ctx.moduleDef.reducers.push({
     sourceName: exportName,
     params: paramsType,
-    //ModuleDef validation code is responsible to mark private reducers
-    visibility: FunctionVisibility.ClientCallable,
+    // Keep the legacy default distinct from an explicit public declaration.
+    visibility: rawVisibility(opts?.visibility),
     //Hardcoded for now - reducers do not return values yet
     okReturnType: AlgebraicType.Product({ elements: [] }),
     errReturnType: AlgebraicType.String,

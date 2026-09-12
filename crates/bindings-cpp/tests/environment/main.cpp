@@ -28,6 +28,12 @@ extern "C" int16_t bytes_source_read(BytesSource, uint8_t* out, size_t* size) {
     position += *size;
     return position == payload.size() ? -1 : 0;
 }
+// The builder links the SDK module dispatcher; these unrelated host calls must
+// never execute in this declaration-only fixture.
+extern "C" uint32_t get_call_auth_flags() { std::abort(); }
+extern "C" Status get_jwt(const uint8_t*, BytesSource*) { std::abort(); }
+extern "C" int16_t bytes_source_remaining_length(BytesSource, uint32_t*) { std::abort(); }
+extern "C" Status bytes_sink_write(BytesSink, const uint8_t*, size_t*) { std::abort(); }
 extern "C" void console_log(LogLevel, const uint8_t*, size_t, const uint8_t*, size_t, uint32_t, const uint8_t*, size_t) {}
 
 int main() {
@@ -53,4 +59,16 @@ int main() {
     section.set<15>(entries);
     assert(section.get_tag() == 15);
     assert(section.get<15>() == entries);
+    const auto module = Internal::V10Builder{}.BuildModuleDef();
+    bool saw_environment = false, saw_capabilities = false;
+    for (const auto& emitted : module.sections) {
+        if (emitted.get_tag() == 15) {
+            assert(!saw_environment && emitted.get<15>() == entries);
+            saw_environment = true;
+        } else if (emitted.get_tag() == 16) {
+            assert(!saw_capabilities && emitted.get<16>() == std::vector<std::string>{"hosted_auth_v1"});
+            saw_capabilities = true;
+        }
+    }
+    assert(saw_environment && saw_capabilities);
 }

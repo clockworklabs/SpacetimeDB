@@ -220,6 +220,31 @@ pub struct AutoMigratePlan<'def> {
 }
 
 impl AutoMigratePlan<'_> {
+    /// Function authority changes include every namespace in the published API.
+    pub fn function_visibility_changes(
+        &self,
+    ) -> impl Iterator<Item = (String, &FunctionVisibility, &FunctionVisibility)> {
+        let reducers = self
+            .old
+            .all_reducers_with_prefix()
+            .into_iter()
+            .filter(|(_, _, old)| old.lifecycle.is_none())
+            .filter_map(|(_, _, old)| {
+                let name = old.name.to_string();
+                let (_, new) = self.new.reducer_by_name(&name)?;
+                (old.visibility != new.visibility).then_some((name, &old.visibility, &new.visibility))
+            });
+        let procedures = self
+            .old
+            .all_procedures_with_prefix()
+            .into_iter()
+            .filter_map(|(prefix, _, old)| {
+                let name = format!("{prefix}{}", old.name);
+                let (_, new) = self.new.procedure_by_name(&name)?;
+                (old.visibility != new.visibility).then_some((name, &old.visibility, &new.visibility))
+            });
+        reducers.chain(procedures)
+    }
     fn any_step(&self, f: impl Fn(&AutoMigrateStep<'_>) -> bool) -> bool {
         self.steps.iter().any(f)
     }
@@ -492,6 +517,15 @@ pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> 
         steps: Vec::new(),
         prechecks: Vec::new(),
     };
+
+    let restricts_function_access = plan.function_visibility_changes().any(|(_, old, new)| {
+        [false, true]
+            .into_iter()
+            .any(|owner| old.allows_invocation(false, owner) && !new.allows_invocation(false, owner))
+    });
+    if restricts_function_access {
+        plan.ensure_disconnect_all_users();
+    }
 
     let views_ok = auto_migrate_views(&mut plan);
     let tables_ok = auto_migrate_tables(&mut plan);
@@ -2907,6 +2941,33 @@ mod tests {
             raw.sections.push(RawModuleDefV10Section::Submodules(submodules));
         }
         raw.try_into().expect("should be a valid module definition")
+    }
+
+    #[test]
+    fn submodule_visibility_restrictions_disconnect_and_report_qualified_names() {
+        use spacetimedb_lib::db::raw_def::v10::FunctionVisibility as RawVisibility;
+        let module = |visibility| {
+            create_module_def_with_submodules(
+                |_| {},
+                vec![make_submodule("lib", |builder| {
+                    builder.add_reducer_with_visibility("job", ProductType::unit(), Some(visibility));
+                    builder.add_procedure_with_visibility(
+                        "read",
+                        ProductType::unit(),
+                        AlgebraicType::U8,
+                        Some(visibility),
+                    );
+                })],
+            )
+        };
+        let old = module(RawVisibility::ExplicitClientCallable);
+        let restricted = module(RawVisibility::Internal);
+        let plan = ponder_auto_migrate(&old, &restricted).unwrap();
+        assert!(plan.steps.contains(&AutoMigrateStep::DisconnectAllUsers));
+        let names: Vec<_> = plan.function_visibility_changes().map(|(name, _, _)| name).collect();
+        assert_eq!(names, ["lib.job", "lib.read"]);
+        let relaxed = ponder_auto_migrate(&restricted, &old).unwrap();
+        assert!(!relaxed.steps.contains(&AutoMigrateStep::DisconnectAllUsers));
     }
 
     #[test]

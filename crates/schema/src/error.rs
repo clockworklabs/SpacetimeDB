@@ -22,6 +22,14 @@ pub type ValidationErrors = ErrorStream<ValidationError>;
 #[derive(thiserror::Error, Debug, PartialOrd, Ord, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ValidationError {
+    #[error("unsupported module definition version")]
+    UnsupportedModuleVersion,
+    #[error("invalid module capabilities: at most 32 unique names of 1..64 lowercase ASCII letters, digits or underscores are allowed")]
+    InvalidModuleCapabilities,
+    #[error("lifecycle reducer `{function}` must have Internal visibility")]
+    InvalidLifecycleVisibility { function: RawIdentifier },
+    #[error("module contains repeated V10 section `{section}`")]
+    DuplicateModuleSection { section: String },
     #[error("module has repeated environment declarations")]
     RepeatedEnvironmentDeclaration,
     #[error("invalid environment declaration: {error}")]

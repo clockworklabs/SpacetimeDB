@@ -11,7 +11,7 @@ use crate::IterBuf;
 #[cfg(all(feature = "unstable", feature = "rand08"))]
 use crate::StdbRng;
 #[cfg(feature = "unstable")]
-use crate::{try_with_tx, with_tx, Timestamp, TxContext};
+use crate::{try_with_tx, with_tx, AuthCtx, Timestamp, TxContext};
 use bytes::Bytes;
 #[cfg(all(feature = "rand08", feature = "unstable"))]
 use rand08::RngCore;
@@ -106,6 +106,7 @@ pub struct HandlerContext {
 
     /// Methods for performing HTTP requests.
     pub http: HttpClient,
+    sender_auth: AuthCtx,
 
     #[cfg(feature = "rand08")]
     pub(crate) rng: OnceCell<StdbRng>,
@@ -123,6 +124,7 @@ impl HandlerContext {
             env: crate::Environment::default(),
             timestamp,
             http: HttpClient {},
+            sender_auth: AuthCtx::from_invocation(Identity::ZERO, None),
             #[cfg(feature = "rand08")]
             rng: OnceCell::new(),
             #[cfg(feature = "rand08")]
@@ -143,12 +145,12 @@ impl HandlerContext {
 
     /// Acquire a mutable transaction and execute `body` with read-write access.
     pub fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
-        with_tx(body, Identity::ZERO, None)
+        with_tx(Identity::ZERO, None, &self.sender_auth, body)
     }
 
     /// Acquire a mutable transaction and execute `body` with read-write access.
     pub fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
-        try_with_tx(body, Identity::ZERO, None)
+        try_with_tx(Identity::ZERO, None, &self.sender_auth, body)
     }
 
     /// Create a new random [`Uuid`] `v4` using the built-in RNG.

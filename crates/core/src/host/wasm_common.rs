@@ -445,6 +445,7 @@ macro_rules! abi_funcs {
 
             "spacetime_10.5"::datastore_clear,
             "spacetime_10.6"::env_get,
+            "spacetime_10.7"::get_call_auth_flags,
         }
 
         $link_async! {

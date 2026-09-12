@@ -831,7 +831,7 @@ public static partial class Module
         try
         {
             var moduleIdentity = ProcedureContext.Identity;
-            var uri = $"http://localhost:3000/v1/database/{moduleIdentity}/schema?version=9";
+            var uri = $"http://localhost:3000/v1/database/{moduleIdentity}/schema?version=10";
             var res = ctx.Http.Get(uri, System.TimeSpan.FromSeconds(2));
             return res switch
             {

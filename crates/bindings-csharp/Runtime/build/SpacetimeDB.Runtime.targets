@@ -66,6 +66,7 @@
     <WasmImport Include="spacetime_10.5!datastore_clear" />
 
     <WasmImport Include="spacetime_10.6!env_get" />
+    <WasmImport Include="spacetime_10.7!get_call_auth_flags" />
 
     <CustomLinkerArg Include="-DEXPERIMENTAL_WASM_AOT" />
   </ItemGroup>

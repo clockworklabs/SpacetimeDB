@@ -4,7 +4,7 @@ use anyhow::Context;
 use clap::{ArgMatches, CommandFactory, FromArgMatches};
 use spacetimedb::host::extract_schema;
 use spacetimedb::messages::control_db;
-use spacetimedb_lib::{db::raw_def::v10::RawModuleDefV10, sats, RawModuleDef};
+use spacetimedb_lib::sats;
 
 /// Extracts the module schema from a local module file.
 /// WARNING: This command is UNSTABLE and subject to breaking changes.
@@ -67,7 +67,7 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
 
     let module_def = extract_schema(program_bytes.into(), host_type.into()).await?;
 
-    let raw_def = RawModuleDef::V10(RawModuleDefV10::from(module_def));
+    let raw_def = module_def.into_raw();
 
     serde_json::to_writer(std::io::stdout().lock(), &sats::serde::SerdeWrapper(raw_def))?;
 

@@ -55,6 +55,9 @@ use tokio::sync::{watch, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock as 
 use tokio::time::error::Elapsed;
 use tokio::time::{interval_at, timeout, Instant};
 
+#[cfg(test)]
+mod invocation_flags_tests;
+
 // TODO:
 //
 // - [db::Config] should be per-[Database]

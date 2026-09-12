@@ -5,12 +5,12 @@ import {
   type Deserializer,
   type Serializer,
 } from '../lib/algebraic_type';
-import { FunctionVisibility } from '../lib/autogen/types';
+import { rawVisibility, type FunctionVisibility } from './function_visibility';
 import BinaryReader from '../lib/binary_reader';
 import BinaryWriter from '../lib/binary_writer';
 import type { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
-import type { ParamsObj, ReducerCtx } from '../lib/reducers';
+import type { AuthCtx, ParamsObj, ReducerCtx } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
 import type { ScheduleTableForParams } from '../lib/table_schema';
 import { Timestamp } from '../lib/timestamp';
@@ -28,6 +28,7 @@ import { makeRandom, type Random } from './rng';
 import {
   assignTxAliasViews,
   buildProcedureAliasCtxMap,
+  AuthCtxImpl,
   callUserFunction,
   ReducerCtxImpl,
   runWithTx,
@@ -58,21 +59,19 @@ export function makeProcedureExport<
   ret: Ret,
   fn: ProcedureFn<S, Params, Ret>
 ): ProcedureExport<S, Params, Ret> {
-  const name = opts?.name;
-
   const procedureExport: ProcedureExport<S, Params, Ret> = (...args) =>
     fn(...args);
   procedureExport[exportContext] = ctx;
   procedureExport[registerExport] = (ctx, exportName) => {
-    registerProcedure(ctx, name ?? exportName, params, ret, fn);
+    registerProcedure(ctx, exportName, params, ret, fn, opts);
     ctx.functionExports.set(
       procedureExport as ProcedureExport<any, any, any>,
-      name ?? exportName
+      exportName
     );
     if (opts?.onSchedule !== undefined) {
       ctx.pendingSchedules.push({
         table: opts.onSchedule,
-        functionName: name ?? exportName,
+        functionName: opts.name ?? exportName,
       });
     }
   };
@@ -90,7 +89,9 @@ export interface ProcedureOpts<
   Params extends ParamsObj = ParamsObj,
   Ret extends TypeBuilder<any, any> = TypeBuilder<any, any>,
 > {
-  name: string;
+  name?: string;
+  /** Defaults to public, or private when scheduled. */
+  visibility?: FunctionVisibility;
   onSchedule?: Ret extends ReturnType<typeof t.unit>
     ? ScheduleTableForParams<Params>
     : never;
@@ -116,6 +117,7 @@ export interface ProcedureCtx<S extends UntypedSchemaDef> {
   readonly identity: Identity;
   readonly timestamp: Timestamp;
   readonly connectionId: ConnectionId | null;
+  readonly senderAuth: AuthCtx;
   readonly http: HttpClient;
   readonly random: Random;
   readonly as: ProcedureAliasViews<S>;
@@ -127,12 +129,6 @@ export interface ProcedureCtx<S extends UntypedSchemaDef> {
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface TransactionCtx<S extends UntypedSchemaDef>
   extends ReducerCtx<S> {}
-
-type ITransactionCtx<S extends UntypedSchemaDef> = TransactionCtx<S>;
-
-const TransactionCtxImpl = class TransactionCtx<S extends UntypedSchemaDef>
-  extends ReducerCtxImpl<S>
-  implements ITransactionCtx<S> {};
 
 function registerProcedure<
   S extends UntypedSchemaDef,
@@ -161,7 +157,7 @@ function registerProcedure<
     sourceName: exportName,
     params: paramsType,
     returnType,
-    visibility: FunctionVisibility.ClientCallable,
+    visibility: rawVisibility(opts?.visibility),
   });
 
   if (opts?.name != null) {
@@ -232,6 +228,7 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   #dispatches: SubmoduleDispatchInfo[];
   #parentPrefix: string;
   #asViews: object | undefined;
+  readonly senderAuth: AuthCtx;
 
   constructor(
     readonly sender: Identity,
@@ -244,6 +241,11 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
     this.#dbView = dbView;
     this.#dispatches = dispatches;
     this.#parentPrefix = parentPrefix;
+    this.senderAuth = AuthCtxImpl.fromSystemTables(
+      connectionId,
+      sender,
+      sys.get_call_auth_flags()
+    );
   }
 
   get databaseIdentity() {
@@ -274,11 +276,13 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
     const dispatches = this.#dispatches;
     const parentPrefix = this.#parentPrefix;
     return runWithTx(timestamp => {
-      const tx = new TransactionCtxImpl(
+      const tx = new ReducerCtxImpl(
         this.sender,
         timestamp,
         this.connectionId,
-        this.#dbView()
+        this.#dbView(),
+        {},
+        this.senderAuth
       );
       assignTxAliasViews(tx, dispatches, parentPrefix);
       return tx as unknown as TransactionCtx<S>;
