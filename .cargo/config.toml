@@ -19,3 +19,6 @@ linker = "lld-link"
 # Without this, the linker complains that libc functions are undefined -
 # it probably signals to rustc and lld-link that libucrt should be included.
 rustflags = ["-Ctarget-feature=+crt-static"]
+
+[net]
+git-fetch-with-cli = true
