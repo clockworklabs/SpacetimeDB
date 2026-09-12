@@ -16,7 +16,7 @@ interface SupportReply { ticketId: bigint; author: string; body: string }
 interface Preferences { orderEnabled: boolean; stockEnabled: boolean }
 interface Notification { id: bigint; kind: string; message: string }
 interface ExpiredCartItem { itemId: bigint }
-interface Restock { id: bigint; itemId: bigint; dueMicros: bigint; status: string; reorderRuleId?: bigint }
+interface Restock { id: bigint; itemId: bigint; quantity: number; dueMicros: bigint; status: string; reorderRuleId?: bigint }
 interface StockLedgerEntry { itemId: bigint; quantity: number }
 interface Activity { actor: string; action: string; subject: string; createdMicros: bigint }
 interface PromotionReport { promotionId: bigint; code: string; redemptions: number; revenue: number }
