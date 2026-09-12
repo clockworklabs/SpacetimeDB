@@ -132,12 +132,17 @@ async fn response<T>(res: axum::response::Result<T>, database: &str) -> Result<T
                 )))
                 .into());
             }
+            let is_server_error = res.status().is_server_error();
             let bytes = to_bytes(res.into_body(), usize::MAX)
                 .await
                 .map_err(|err| PgWireError::ApiError(Box::new(err)))?;
             let err = String::from_utf8_lossy(&bytes);
-            // TODO: Review log level after client SQL errors can be distinguished from internal database failures.
-            log::warn!("PG: Error for database {database}: {err}");
+            // SQL execution failures mapped upstream to 400 still require finer classification.
+            if is_server_error {
+                log::error!("PG: Error for database {database}: {err}");
+            } else {
+                log::warn!("PG: Error for database {database}: {err}");
+            }
             Err(PgError::Sql(format!("{err}")))
         }
     }
@@ -405,6 +410,57 @@ where
                 log::info!("PG: Shutting down PostgreSQL server.");
                 break;
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{response, PgError};
+    use http::StatusCode;
+    use std::sync::Mutex;
+
+    struct Capture(Mutex<Vec<log::Level>>);
+    static LOGGER: Capture = Capture(Mutex::new(Vec::new()));
+    const DATABASE: &str = "pg-response-log-level-test";
+
+    impl log::Log for Capture {
+        fn enabled(&self, _: &log::Metadata<'_>) -> bool {
+            true
+        }
+
+        fn log(&self, record: &log::Record<'_>) {
+            // Ignore records from unrelated tests running in parallel.
+            if record.args().to_string().contains(DATABASE) {
+                self.0.lock().unwrap().push(record.level());
+            }
+        }
+
+        fn flush(&self) {}
+    }
+
+    #[tokio::test]
+    async fn response_distinguishes_client_and_server_failure_logs() {
+        log::set_logger(&LOGGER).unwrap();
+        log::set_max_level(log::LevelFilter::Trace);
+
+        for (status, message, expected_level) in [
+            (StatusCode::BAD_REQUEST, "invalid SQL", log::Level::Warn),
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal server error",
+                log::Level::Error,
+            ),
+        ] {
+            LOGGER.0.lock().unwrap().clear();
+            let result = response::<()>(Err((status, message).into()), DATABASE).await;
+
+            assert!(matches!(result, Err(PgError::Sql(ref text)) if text == message));
+            assert_eq!(
+                *LOGGER.0.lock().unwrap(),
+                vec![expected_level],
+                "unexpected log level for {status}"
+            );
         }
     }
 }
