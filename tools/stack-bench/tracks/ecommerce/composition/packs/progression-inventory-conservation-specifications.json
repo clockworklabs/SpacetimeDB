@@ -10,7 +10,7 @@
   "conflictsWith": [],
   "capabilities": ["browser", "concurrent-actors", "direct-server-call"],
   "evidence": ["browser-observation", "server-response"],
-  "budget": { "status": "bounded", "maxRuntimeMs": 52000 },
+  "budget": { "status": "bounded", "maxRuntimeMs": 138000 },
   "task": {
     "requirements": [
       { "id": "ecommerce.progression.transfer-conservation", "path": "prompts/modular/stock-conservation.md", "order": 2970, "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l2.stock-transfers-features"] },

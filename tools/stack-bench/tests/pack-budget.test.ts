@@ -35,7 +35,8 @@ function runtime(stackIndex: number, repetition: number): PackRuntime {
     counts.set(check.packId, (counts.get(check.packId) ?? 0) + 1);
   }
   return { schemaVersion: 1, metric: PACK_RUNTIME_METRIC,
-    packs: [...counts].sort(([a], [b]) => a.localeCompare(b)).map(([id, checkCount], packIndex) => {
+    packs: [...counts].filter(([, count]) => count > 0)
+      .sort(([a], [b]) => a.localeCompare(b)).map(([id, checkCount], packIndex) => {
       const measuredRuntimeMs = 1_000 + stackIndex * 100 + repetition * 10 + packIndex;
       return { id, checkCount, setupRuntimeMs: 100, criterionRuntimeMs: measuredRuntimeMs - 100,
         measuredRuntimeMs, budget: { status: 'unmeasured' }, exceeded: null };
@@ -80,14 +81,22 @@ function identity(value: ArtifactIdentity | null): ArtifactIdentity {
 }
 
 test('budget recommendation requires every exact reference repetition and applies the published rule', () => {
-  const result = recommendPackBudgets({ binding, calibration, evidence: exactEvidence() });
-  assert.equal(result.samples.length, binding.plan.packs.length * 3);
-  assert.equal(result.recommendations.length, binding.plan.packs.length);
+  const evidence = exactEvidence();
+  evidence.forEach((item, index) => {
+    assert(item.artifact.payload.runner);
+    item.artifact.payload.runner.containersRunning = 18 + index;
+  });
+  const original = structuredClone(evidence);
+  const result = recommendPackBudgets({ binding, calibration, evidence });
+  const measuredPackCount = new Set(binding.release.checkCatalog.map(check => check.packId)).size;
+  assert.equal(result.samples.length, measuredPackCount * 3);
+  assert.equal(result.recommendations.length, measuredPackCount);
   assert(result.recommendations.every(item => item.sampleCount === 3));
   assert(result.recommendations.every(item => item.maxRuntimeMs === 3_000));
   assert.equal(PACK_BUDGET_POLICY.multiplier, 2);
   assert.deepEqual(result.measuredEngine, currentEngineIdentity());
-  assert.deepEqual(result.measuredRunner, applianceRunner);
+  assert.deepEqual(result.measuredRunner, { ...applianceRunner, containersRunning: 18 });
+  assert.deepEqual(evidence, original);
 });
 
 test('budget recommendation rejects mutation, duplicate, incomplete, and cross-scope evidence', () => {
@@ -111,6 +120,47 @@ test('budget recommendation rejects mutation, duplicate, incomplete, and cross-s
     /retainedRuntimeCalibration.sha256/);
 });
 
+test('progression L3 budgets require exactly the selected pack counts, not the full catalog', () => {
+  const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-catalog');
+  const calibration = resolveCalibrationForRelease(binding.release, { trackRoot: track.dir, alias: 'L3' });
+  assert(calibration);
+  const selected = new Set(calibration.qualification.checks);
+  const counts = new Map<string, number>();
+  for (const check of binding.release.checkCatalog.filter(check => selected.has(check.stableKey))) {
+    assert(check.packId);
+    counts.set(check.packId, (counts.get(check.packId) ?? 0) + 1);
+  }
+  assert(selected.size < binding.release.checkCatalog.length);
+  const evidence = exactEvidence();
+  for (const item of evidence) {
+    const fixture = calibration.references.entries.find(entry => entry.backend === item.artifact.identities.stackAdapter?.id);
+    assert(fixture);
+    item.runtimeCalibration = { id: calibration.id, sha256: calibration.contentSha256 };
+    item.artifact.identities = recipeArtifactIdentities(binding.release, {
+      ...item.artifact.identities, recipe: { id: binding.release.id, sha256: binding.release.contentSha256 },
+      calibration: item.runtimeCalibration, fixture: { id: fixture.id, sha256: fixture.sourceSha256 },
+    });
+    item.artifact.payload.fixture = fixture.id;
+    item.artifact.payload.fixtureSha256 = fixture.sourceSha256;
+    for (const run of item.artifact.payload.runs) run.packRuntime.packs = [...counts].map(([id, checkCount]) => ({
+      id, checkCount, setupRuntimeMs: 100, criterionRuntimeMs: 900, measuredRuntimeMs: 1_000,
+    }));
+  }
+  assert.equal(recommendPackBudgets({ binding, calibration, evidence }).recommendations.length, counts.size);
+  const missing = structuredClone(evidence);
+  evidenceAt(missing, 0).artifact.payload.runs[0]!.packRuntime.packs.pop();
+  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: missing }), /missing packs/);
+  const extra = structuredClone(evidence);
+  const unselected = binding.plan.packs.find(pack => !counts.has(pack.id));
+  assert(unselected);
+  evidenceAt(extra, 0).artifact.payload.runs[0]!.packRuntime.packs.push({ id: unselected.id,
+    checkCount: 1, setupRuntimeMs: 100, criterionRuntimeMs: 900, measuredRuntimeMs: 1_000 });
+  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: extra }), /unknown pack/);
+  const wrongCount = structuredClone(evidence);
+  evidenceAt(wrongCount, 0).artifact.payload.runs[0]!.packRuntime.packs[0]!.checkCount = 0;
+  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: wrongCount }), /checks for .* expected/);
+});
+
 test('budget recommendation rejects timing captured outside the Linux appliance', () => {
   const local = exactEvidence();
   const localRunner = evidenceAt(local, 0).artifact.payload.runner;
@@ -130,12 +180,16 @@ test('budget recommendation rejects timing captured outside the Linux appliance'
   assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: unobserved }),
     /runner observation is missing/);
 
-  const mixed = exactEvidence();
-  const mixedRunner = evidenceAt(mixed, 1).artifact.payload.runner;
-  assert(mixedRunner);
-  mixedRunner.cpuCount = 16;
-  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: mixed }),
-    /different appliance runner environment/);
+  for (const [field, value] of Object.entries({ cpuCount: 16, memoryBytes: 32_000_000_000,
+    dockerEngineVersion: '30.0.0', kernelVersion: 'other-kernel', hostname: 'other-host',
+    packageRegistry: 'https://other-registry.example/', futureIdentityField: 'other-setting' })) {
+    const mixed = exactEvidence();
+    const mixedRunner = evidenceAt(mixed, 1).artifact.payload.runner;
+    assert(mixedRunner);
+    mixedRunner[field] = value;
+    assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: mixed }),
+      /different appliance runner environment/);
+  }
 });
 
 test('budget CLI parsing requires explicit unique evidence and output', () => {

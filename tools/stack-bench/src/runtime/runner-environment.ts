@@ -42,6 +42,13 @@ interface ControllerRunnerOptions {
   dockerInfo?: Record<string, unknown>;
 }
 
+export function runnerEnvironmentIdentity(runner: unknown): unknown {
+  if (!runner || typeof runner !== 'object' || Array.isArray(runner)) return runner;
+  // Live container count describes load, not the appliance or its configuration.
+  const { containersRunning: _containersRunning, ...identity } = runner as Record<string, unknown>;
+  return identity;
+}
+
 export function missingRunnerObservation(
   runner: Partial<Record<RunnerObservationField, unknown>> | null | undefined,
 ): RunnerObservationField[] {

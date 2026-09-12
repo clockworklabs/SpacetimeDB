@@ -5,11 +5,12 @@ import { ARTIFACT_FILE, currentEngineIdentity, readArtifact } from '../evidence/
 import type { Artifact, ArtifactIdentity }
   from '../evidence/artifacts.js';
 import type { CalibrationPlan } from './calibration-compiler.js';
+import { calibrationQualificationRelease } from './calibration-compiler.js';
 import { canonicalDefinitionJson } from './definition-plan.js';
 import { nonNegativeInteger, PACK_RUNTIME_METRIC } from './pack-runtime.js';
 import { sha256 } from '../evidence/provenance.js';
 import type { RecipeBinding } from './recipe-release.js';
-import { missingRunnerObservation } from '../runtime/runner-environment.js';
+import { missingRunnerObservation, runnerEnvironmentIdentity } from '../runtime/runner-environment.js';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -144,8 +145,11 @@ export function recommendPackBudgets({ binding, calibration, evidence }: {
   if (!Array.isArray(evidence) || evidence.length === 0) throw new Error('reference evidence is required');
   const calibrationIdentity = { id: calibration.id, sha256: calibration.contentSha256 };
   const expectedStacks = [...calibration.qualification.stacks].sort();
+  const { release: selectedRelease } = calibrationQualificationRelease(
+    calibration, binding.release, binding.execution);
   const expectedPackCounts = new Map(binding.plan.packs.map(pack => [pack.id,
-    binding.release.checkCatalog.filter(check => check.packId === pack.id).length]));
+    selectedRelease.checkCatalog.filter(check => check.packId === pack.id).length] as const)
+    .filter(([, count]) => count > 0));
   const stacks = new Set<string>();
   const samples: PackRuntimeSample[] = [];
   let measuredEngine: ArtifactIdentity | null = null;
@@ -184,7 +188,8 @@ export function recommendPackBudgets({ binding, calibration, evidence }: {
       if (!payload.runner) throw new Error(`${item.path} has no runner observation`);
       measuredRunner = payload.runner;
     }
-    else if (canonicalDefinitionJson(payload.runner) !== canonicalDefinitionJson(measuredRunner)) {
+    else if (canonicalDefinitionJson(runnerEnvironmentIdentity(payload.runner))
+      !== canonicalDefinitionJson(runnerEnvironmentIdentity(measuredRunner))) {
       throw new Error(`${item.path} was measured on a different appliance runner environment`);
     }
     if (payload.requiredRepetitions !== calibration.qualification.referenceRepetitions

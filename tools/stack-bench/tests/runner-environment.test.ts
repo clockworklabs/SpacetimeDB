@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { controllerRunner, missingRunnerObservation, RUNNER_OBSERVATION_FIELDS }
+import { controllerRunner, missingRunnerObservation, runnerEnvironmentIdentity, RUNNER_OBSERVATION_FIELDS }
   from '../src/runtime/runner-environment.js';
 
 test('local controllers record only host identity', () => {
@@ -47,6 +47,13 @@ test('appliance controllers record Docker daemon observations', () => {
   });
   assert.deepEqual(missingRunnerObservation(runner), []);
   assert.deepEqual(missingRunnerObservation(null), RUNNER_OBSERVATION_FIELDS);
+  const { containersRunning: count, ...identity } = runner;
+  assert.equal(count, 4);
+  assert.deepEqual(runnerEnvironmentIdentity(runner), identity);
+  assert.deepEqual(runnerEnvironmentIdentity({ ...runner, containersRunning: 9 }), identity);
+  assert.deepEqual(runnerEnvironmentIdentity({ ...runner, extraConfiguration: 'preserved' }),
+    { ...identity, extraConfiguration: 'preserved' });
+  assert.equal(runner.containersRunning, 4);
 });
 
 test('appliance controllers reject incomplete Docker observations', () => {

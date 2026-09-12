@@ -1195,18 +1195,21 @@
       ]
     },
     {
-      "id": "progression-stock-alert-request-is-disabled",
+      "id": "stock-alert-is-sent-after-every-restock",
       "scenario": "tracks/ecommerce/scenarios/progression-stock-alerts.json",
       "targets": [
-        "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
-        "ecommerce.spec.access-control.stock-alert-privacy.631b"
+        "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a"
       ],
-      "desc": "Do not accept stock alert requests.",
+      "desc": "Keep a delivered stock request active and use a new notification key on every restock, so its owner receives duplicate alerts.",
       "file": "server/src/progression.ts",
       "edits": [
         {
-          "find": "app.post(\"/api/items/:id/stock-alert\",",
-          "replace": "app.post(\"/api/mutation-disabled-items/:id/stock-alert\","
+          "find": "`UPDATE stock_alert_request SET fulfilled = true\n     WHERE item_id = $1 AND fulfilled = false RETURNING account_id`",
+          "replace": "`UPDATE stock_alert_request SET fulfilled = false\n     WHERE item_id = $1 AND fulfilled = false RETURNING account_id`"
+        },
+        {
+          "find": "VALUES ($1, 'stock', $2, $3) ON CONFLICT DO NOTHING",
+          "replace": "VALUES ($1, 'stock', $2::text || ':' || nextval('notification_id_seq')::text, $3) ON CONFLICT DO NOTHING"
         }
       ]
     },

@@ -10,7 +10,7 @@ import { sha256 } from '../evidence/provenance.js';
 import { loadReferenceRegistry, validateReferenceRegistry } from '../references/reference-fixtures.js';
 import { readArtifact } from '../evidence/artifacts.js';
 import { executionPlanForRelease } from './recipe-release.js';
-import { missingRunnerObservation } from '../runtime/runner-environment.js';
+import { missingRunnerObservation, runnerEnvironmentIdentity } from '../runtime/runner-environment.js';
 import { qualificationScopeIdentity, validateQualificationScopeIdentity } from './qualification-scope.js';
 import type { RecipeCheck, RecipeExecution, RecipeRelease } from './recipe-release.js';
 import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.js';
@@ -866,7 +866,7 @@ function verifyQualificationEvidence(entries: CalibrationEvidence[], stackBenchR
         repetition: entry.repetition, path: entry.path, reason: error.reason });
     }
     if (context.calibration.qualification.runner !== undefined) {
-      runners.add(canonicalDefinitionJson(read(artifact, 'payload', 'runner')));
+      runners.add(canonicalDefinitionJson(runnerEnvironmentIdentity(read(artifact, 'payload', 'runner'))));
     }
     if (entry.kind !== 'null') {
       const runs = read(artifact, 'payload', 'runs');

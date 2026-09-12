@@ -1544,18 +1544,21 @@
       ]
     },
     {
-      "id": "stock-alert-is-not-created",
+      "id": "stock-alert-repeats-while-in-stock",
       "scenario": "tracks/ecommerce/scenarios/progression-stock-alerts.json",
       "targets": [
-        "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
-        "ecommerce.spec.access-control.stock-alert-privacy.631b"
+        "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a"
       ],
-      "desc": "Restored stock does not create the requested alert.",
+      "desc": "Keep a delivered stock request active and create a notification with a new key on each timer tick while stock remains available, so its owner receives duplicate alerts.",
       "file": "server/src/progression.ts",
       "edits": [
         {
-          "find": "await Notification.updateOne({ userId: alert.userId, key: `stock:${alert.itemId}` },",
-          "replace": "if (false) await Notification.updateOne({ userId: alert.userId, key: `stock:${alert.itemId}` },"
+          "find": "      alert.sent = true;\n      await alert.save();",
+          "replace": "      alert.sent = false;\n      await alert.save();"
+        },
+        {
+          "find": "        await Notification.updateOne({ userId: alert.userId, key: `stock:${alert.itemId}` },\n          { $setOnInsert: { userId: alert.userId, key: `stock:${alert.itemId}`, type: \"stock\",\n            message: `${item?.name || \"Item\"} is back in stock` } }, { upsert: true });",
+          "replace": "        await Notification.create({ userId: alert.userId, key: `stock:${alert.itemId}:${new mongoose.Types.ObjectId()}`, type: \"stock\",\n          message: `${item?.name || \"Item\"} is back in stock` });"
         }
       ]
     },
