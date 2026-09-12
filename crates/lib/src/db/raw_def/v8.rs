@@ -80,7 +80,7 @@ impl RawSequenceDefV8 {
 ///
 /// Currently only `IndexType::BTree` is allowed.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Display, SpacetimeType)]
-#[sats(crate = crate)]
+#[sats(crate = crate, allow_discriminants)]
 pub enum IndexType {
     /// A BTree index.
     BTree = 0,
