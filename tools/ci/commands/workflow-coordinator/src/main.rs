@@ -197,8 +197,6 @@ struct Repository {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 struct PullRequestRef {
     sha: String,
-    #[serde(rename = "ref")]
-    branch_name: String,
     repo: Option<Repository>,
 }
 
@@ -207,6 +205,7 @@ struct PullRequest {
     number: u64,
     state: String,
     head: PullRequestRef,
+    body: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -338,33 +337,34 @@ fn related_private_pr(public_pr_number: Option<u64>) -> Result<Option<PullReques
     let mut pulls = Vec::new();
     for number in numbers {
         let pull = pull_request(PRIVATE_REPO, number)?;
-        if pull.state == "open" && pull.head.repo.as_ref().map(|repo| repo.full_name.as_str()) == Some(PRIVATE_REPO) {
+        if pull.state == "open"
+            && pull.head.repo.as_ref().map(|repo| repo.full_name.as_str()) == Some(PRIVATE_REPO)
+            && mentions_public_pr(pull.body.as_deref(), public_pr_number)
+        {
             pulls.push(pull);
         }
     }
-    let public_branch = if pulls.len() > 1 {
-        Some(pull_request(PUBLIC_REPO, public_pr_number)?.head.branch_name)
-    } else {
-        None
-    };
-    select_related_private_pr(pulls, public_branch.as_deref())
+    if pulls.len() > 1 {
+        bail!("found multiple open linked private PRs");
+    }
+    Ok(pulls.pop())
 }
 
-fn select_related_private_pr(mut pulls: Vec<PullRequest>, public_branch: Option<&str>) -> Result<Option<PullRequest>> {
-    if pulls.len() <= 1 {
-        return Ok(pulls.pop());
-    }
-
-    // Timeline references include historical links and links to other layers of
-    // a PR stack. A unique shared branch name identifies the companion PR; the
-    // exact public-submodule SHA is still checked before selecting its CI run.
-    if let Some(public_branch) = public_branch.filter(|branch| !branch.is_empty()) {
-        pulls.retain(|pull| pull.head.branch_name == public_branch);
-        if pulls.len() == 1 {
-            return Ok(pulls.pop());
-        }
-    }
-    bail!("found multiple open linked private PRs without a unique matching head branch")
+fn mentions_public_pr(body: Option<&str>, public_pr_number: u64) -> bool {
+    let Some(body) = body else {
+        return false;
+    };
+    let body = body.to_ascii_lowercase();
+    let public_repo_name = PUBLIC_REPO.rsplit_once('/').map_or(PUBLIC_REPO, |(_, repo)| repo);
+    [
+        format!("{PUBLIC_REPO}#{public_pr_number}"),
+        format!("{public_repo_name}#{public_pr_number}"),
+        format!("github.com/{PUBLIC_REPO}/pull/{public_pr_number}"),
+        format!("github.com/{PUBLIC_REPO}/issues/{public_pr_number}"),
+    ]
+    .into_iter()
+    .map(|reference| reference.to_ascii_lowercase())
+    .any(|reference| body.contains(&reference))
 }
 
 fn resolve_private_source(public_pr_number: Option<u64>) -> Result<PrivateSource> {
@@ -595,79 +595,12 @@ mod tests {
             state: "open".to_owned(),
             head: PullRequestRef {
                 sha: "private-sha".to_owned(),
-                branch_name: "tyler/environment-variables".to_owned(),
                 repo: Some(Repository {
                     full_name: PRIVATE_REPO.to_owned(),
                 }),
             },
+            body: Some(format!("{PUBLIC_REPO}#123")),
         }
-    }
-
-    #[test]
-    fn related_private_pr_prefers_the_unique_exact_public_head_branch() {
-        let matching = pull();
-        let mut downstream = pull();
-        downstream.number = 43;
-        downstream.head.branch_name = "tyler/environment-variables-followup".to_owned();
-        for candidates in [
-            vec![matching.clone(), downstream.clone()],
-            vec![downstream, matching.clone()],
-        ] {
-            assert_eq!(
-                select_related_private_pr(candidates, Some("tyler/environment-variables")).unwrap(),
-                Some(matching.clone())
-            );
-        }
-    }
-
-    #[test]
-    fn related_private_pr_preserves_absent_and_single_candidate_behavior() {
-        assert_eq!(select_related_private_pr(Vec::new(), None).unwrap(), None);
-        for public_branch in [None, Some("unrelated-branch")] {
-            assert_eq!(
-                select_related_private_pr(vec![pull()], public_branch).unwrap(),
-                Some(pull())
-            );
-        }
-    }
-
-    #[test]
-    fn related_private_pr_rejects_multiple_matching_branches() {
-        let mut duplicate = pull();
-        duplicate.number = 43;
-        assert!(select_related_private_pr(vec![pull(), duplicate], Some("tyler/environment-variables")).is_err());
-    }
-
-    #[test]
-    fn related_private_pr_rejects_missing_or_unmatched_public_branch() {
-        let mut downstream = pull();
-        downstream.number = 43;
-        downstream.head.branch_name = "tyler/v10-abi-extensions".to_owned();
-        for public_branch in [None, Some(""), Some("tyler/unrelated")] {
-            assert!(select_related_private_pr(vec![pull(), downstream.clone()], public_branch).is_err());
-        }
-    }
-
-    #[test]
-    fn selected_companion_still_requires_the_exact_public_submodule() {
-        let selected = select_related_private_pr(vec![pull()], None).unwrap().unwrap();
-        assert!(ensure_public_submodule_matches(selected.number, "old-public-sha", "requested-public-sha").is_err());
-        ensure_public_submodule_matches(selected.number, "requested-public-sha", "requested-public-sha").unwrap();
-    }
-
-    #[test]
-    fn pull_request_head_branch_uses_the_github_ref_field() {
-        let parsed: PullRequest = serde_json::from_value(serde_json::json!({
-            "number": 42,
-            "state": "open",
-            "head": {
-                "sha": "private-sha",
-                "ref": "tyler/environment-variables",
-                "repo": { "full_name": PRIVATE_REPO }
-            }
-        }))
-        .unwrap();
-        assert_eq!(parsed, pull());
     }
 
     fn run(id: u64, title: &str, created_at: &str) -> WorkflowRun {
@@ -750,5 +683,25 @@ mod tests {
                 "return_run_details": true,
             })
         );
+    }
+
+    #[test]
+    fn public_pr_mentions_include_github_reference_formats() {
+        for body in [
+            format!("Depends on {PUBLIC_REPO}#123"),
+            "Depends on SpacetimeDB#123".to_owned(),
+            format!("Depends on https://github.com/{PUBLIC_REPO}/pull/123"),
+            format!("Depends on https://github.com/{PUBLIC_REPO}/issues/123"),
+            format!("Depends on https://www.github.com/{PUBLIC_REPO}/pull/123"),
+        ] {
+            assert!(mentions_public_pr(Some(&body), 123), "{body}");
+        }
+    }
+
+    #[test]
+    fn public_pr_mentions_reject_missing_or_wrong_repo_mentions() {
+        for body in [None, Some(""), Some("clockworklabs/SpacetimeDBPrivate#123")] {
+            assert!(!mentions_public_pr(body, 123), "{body:?}");
+        }
     }
 }
