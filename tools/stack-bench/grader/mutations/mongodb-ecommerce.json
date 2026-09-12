@@ -1360,9 +1360,10 @@
       "id": "notification-preference-is-not-saved",
       "scenario": "tracks/ecommerce/scenarios/progression-notification-preferences.json",
       "targets": [
-        "ecommerce.spec.state-durability.notification-preferences-reload.630a"
+        "ecommerce.spec.state-durability.notification-preferences-reload.630a",
+        "ecommerce.progression.notification-preferences.notification-preferences.630c"
       ],
-      "desc": "Notification preferences are always saved as disabled.",
+      "desc": "Notification preferences are always saved as disabled, so both the saved-choice view and reload show the wrong value.",
       "file": "server/src/progression.ts",
       "edits": [
         {
@@ -1694,12 +1695,12 @@
       "targets": [
         "ecommerce.spec.concurrency-safety.duplicate-checkout.203a"
       ],
-      "desc": "Concurrent cart adds leave the line quantity unchanged.",
+      "desc": "Concurrent cart adds leave the line quantity and its reservation list unchanged, so the existing cart remains checkable at checkout.",
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "{ $inc: { \"items.$.quantity\": qty },",
-          "replace": "{ $inc: { \"items.$.quantity\": 0 },"
+          "find": "{ $inc: { \"items.$.quantity\": qty },\n        $set: { \"items.$.reservationExpiresAt\": new Date(Date.now() + 90_000),\n          inactiveExpiresAt: new Date(Date.now() + 300_000) },\n        $push: { \"items.$.reservedWarehouseIds\": { $each: reservedWarehouseIds } } }",
+          "replace": "{ $inc: { \"items.$.quantity\": 0 },\n        $set: { \"items.$.reservationExpiresAt\": new Date(Date.now() + 90_000),\n          inactiveExpiresAt: new Date(Date.now() + 300_000) },\n        $push: { \"items.$.reservedWarehouseIds\": { $each: [] } } }"
         }
       ]
     },
@@ -1916,17 +1917,19 @@
       ]
     },
     {
-      "id": "support-history-is-hidden-after-submission",
+      "id": "support-history-rows-are-hidden",
       "scenario": "tracks/ecommerce/scenarios/progression-support-history.json",
       "targets": [
-        "ecommerce.progression.support-history.support-history.612c"
+        "ecommerce.progression.support-history.support-history.612c",
+        "ecommerce.spec.state-durability.support-history-reload.612a",
+        "ecommerce.spec.access-control.support-history-privacy.612b"
       ],
-      "desc": "The submission result view hides ticket history while retaining the submission reference. Reload restores the normal persisted list, leaving durability and privacy observations intact.",
+      "desc": "Hide submitted support ticket rows while leaving the submission reference available. Hidden owner rows also fail the visibility controls in 612a and 612b; this is a display defect, not independent evidence of lost storage or leaked data.",
       "file": "client/src/ProgressionPanel.tsx",
       "edits": [
         {
-          "find": "      {(state.tickets || []).map((ticket: any) => <SupportTicket key={ticket.id} ticket={ticket}\n        user={user} orders={state.orders || orders} act={act} />)}",
-          "replace": "      {!supportReference && (state.tickets || []).map((ticket: any) => <SupportTicket key={ticket.id} ticket={ticket}\n        user={user} orders={state.orders || orders} act={act} />)}"
+          "find": "data-role=\"support-ticket\"",
+          "replace": "data-role=\"support-ticket\" style={{ display: \"none\" }}"
         }
       ]
     },
