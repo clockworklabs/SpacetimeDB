@@ -47,23 +47,11 @@ pub(crate) enum PendingUnsubscribeResult<M: SpacetimeModule> {
 
 impl<M: SpacetimeModule> SubscriptionManager<M> {
     pub(crate) fn on_disconnect(&mut self, _ctx: &M::ErrorContext) {
-        // We need to clear all the subscriptions.
-        // TODO: is this correct? We don't remove them from the client cache,
-        // we may want to resume them in the future if we impl reconnecting,
-        // and users can already register on-disconnect callbacks which will run in this case.
-
-        // NOTE(cloutiertyler)
-        // This function previously invoke `on_error` for all subscriptions.
-        // However, this is inconsistent behavior given that `on_disconnect` for
-        // connections no longer always has an error argument and that the user
-        // can add an `on_ended` callback when unsubscribing.
-        //
-        // We propose instead that `on_ended` be added to the subscription
-        // builder so that it can be invoked when the subscription is ended
-        // because of a normal disconnect, but without the user calling
-        // `unsubscribe_then`. This can be done in a non-breaking way.
-        //
-        // For now, we will just do nothing when a subscription ends normally.
+        // Disconnect does not synthesize on_error/on_ended callbacks. Retained
+        // handles must nevertheless stop retaining callback captures.
+        for (_, handle) in std::mem::take(&mut self.subscriptions) {
+            handle.cancel_pending_callbacks();
+        }
     }
 
     /// Register a new subscription. This does not send the subscription to the server.
@@ -187,13 +175,17 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
             self.on_applied,
             self.on_error,
         ));
-        self.conn
+        if self
+            .conn
             .pending_mutations_send
             .unbounded_send(PendingMutation::Subscribe {
                 query_set_id,
                 handle: handle.clone(),
             })
-            .unwrap();
+            .is_err()
+        {
+            handle.cancel_pending_callbacks();
+        }
         M::SubscriptionHandle::new(handle)
     }
 
@@ -469,6 +461,16 @@ impl<M: SpacetimeModule> SubscriptionHandleImpl<M> {
         Self {
             inner: Arc::new(Mutex::new(inner)),
         }
+    }
+
+    pub(crate) fn cancel_pending_callbacks(&self) {
+        let callbacks = {
+            let mut inner = self.inner.lock().unwrap();
+            inner.status = SubscriptionServerState::Ended;
+            (inner.on_applied.take(), inner.on_error.take(), inner.on_ended.take())
+        };
+        // Callback destructors may inspect or unsubscribe this same handle.
+        drop(callbacks);
     }
 
     pub(crate) fn start(&self) -> Option<ws::v2::Subscribe> {

@@ -110,6 +110,9 @@ pub enum CommandConfigError {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct SpacetimeConfig {
+    /// Container declaration belongs only to this database, never its children.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub container: Option<crate::container::config::ContainerConfig>,
     /// Configuration for the dev command. Root-level only, not inherited.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dev: Option<DevConfig>,
@@ -146,6 +149,7 @@ pub struct DevConfig {
 /// Contains all fields needed for both publish and generate operations.
 #[derive(Debug, Clone)]
 pub struct FlatTarget {
+    pub container: Option<crate::container::config::ContainerConfig>,
     /// All entity-level fields (database, module-path, server, etc.)
     pub fields: HashMap<String, Value>,
     /// Name of the config file from which this target's `database` value was merged.
@@ -211,6 +215,7 @@ impl SpacetimeConfig {
         let effective_generate = self.generate.clone();
 
         let target = FlatTarget {
+            container: self.container.clone(),
             fields: fields.clone(),
             source_config: self.source_config.clone(),
             generate: effective_generate,
@@ -263,6 +268,8 @@ pub struct CommandConfig<'a> {
     config_values: HashMap<String, Value>,
     /// CLI arguments
     matches: &'a ArgMatches,
+    /// A declaration belongs to this exact target and never inherits.
+    container: Option<crate::container::config::ContainerConfig>,
 }
 
 /// Schema that defines the contract between CLI arguments and config file keys.
@@ -738,7 +745,21 @@ impl<'a> CommandConfig<'a> {
             schema,
             config_values: normalized_values,
             matches,
+            container: None,
         })
+    }
+
+    pub fn with_container(mut self, container: Option<crate::container::config::ContainerConfig>) -> Self {
+        self.container = container;
+        self
+    }
+
+    pub fn container(&self) -> Option<&crate::container::config::ContainerConfig> {
+        self.container.as_ref()
+    }
+
+    pub(crate) fn matches(&self) -> &ArgMatches {
+        self.matches
     }
 
     /// Get a single value from the config as a specific type.

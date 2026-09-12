@@ -57,6 +57,9 @@ web-sys = { version = "0.3.77", features = ["HtmlDocument"], optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 home.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
 # native-tls 0.2.17 fails to compile with Rust 1.93.0 due non-exhaustive

@@ -29,6 +29,15 @@ This document contains the help content for the `spacetime` command-line program
 * [`spacetime logout`↴](#spacetime-logout)
 * [`spacetime init`↴](#spacetime-init)
 * [`spacetime build`↴](#spacetime-build)
+* [`spacetime container`↴](#spacetime-container)
+* [`spacetime container url`↴](#spacetime-container-url)
+* [`spacetime container exec`↴](#spacetime-container-exec)
+* [`spacetime container logs`↴](#spacetime-container-logs)
+* [`spacetime container build`↴](#spacetime-container-build)
+* [`spacetime container status`↴](#spacetime-container-status)
+* [`spacetime container start`↴](#spacetime-container-start)
+* [`spacetime container stop`↴](#spacetime-container-stop)
+* [`spacetime container restart`↴](#spacetime-container-restart)
 * [`spacetime server`↴](#spacetime-server)
 * [`spacetime server list`↴](#spacetime-server-list)
 * [`spacetime server set-default`↴](#spacetime-server-set-default)
@@ -66,6 +75,7 @@ This document contains the help content for the `spacetime` command-line program
 * `logout` — 
 * `init` — Initializes a new spacetime project.
 * `build` — Builds a spacetime module.
+* `container` — Build and manage a database's container
 * `server` — Manage the connection to the SpacetimeDB server. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `subscribe` — Subscribe to SQL queries on the database. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `start` — Start a local SpacetimeDB instance
@@ -141,6 +151,31 @@ Publishing preserves unspecified environment values. Put an env map in spacetime
 * `--env-only` — Update environment values without building or uploading a module.
 * `--unset-env <KEY>` — Delete an environment value. Repeat for multiple keys.
 * `--replace-env` — Replace all environment values, deleting every unspecified key.
+* `--managed` — Use managed deployment publication, including for a module-only database
+* `--container-platform <CONTAINER_PLATFORM>` — Required platform when publishing a container declaration
+
+  Possible values: `linux/amd64`, `linux/arm64`
+
+* `--artifact-endpoint <ARTIFACT_ENDPOINT>` — Explicitly authorize this exact artifact URL to receive the publisher credential
+* `--remove-container` — Explicitly remove the container while preserving the module unless separately changed
+* `--remove-module` — Replace the module with the versioned empty module after migration preflight
+* `--publication-state-dir <PUBLICATION_STATE_DIR>` — Private local directory retaining complete managed publication inputs and progress. The protected submission file includes resolved environment values. Keep this directory private; do not commit it or share it. Resume reuses these exact values without rereading project configuration or shell variables.
+* `--resume-publication <RESUME_PUBLICATION>` — Resume this operation directory without rebuilding or reading spacetime.json
+* `--publication-wait <PUBLICATION_WAIT>` — Seconds to wait for managed activation; pending operations retain their resume directory
+
+  Default value: `60`
+* `--buildkit-host <BUILDKIT_HOST>` — Explicit local BuildKit Unix socket for container source builds
+* `--registry-auth-file <REGISTRY_AUTH_FILE>` — Explicit registry auth JSON; otherwise image preparation is anonymous
+* `--build-secret <NAME=FILE>` — Build secret file, separate from runtime env_keys
+* `--buildctl <BUILDCTL>` — Path to the buildctl executable for Dockerfile or Railpack builds
+
+  Default value: `buildctl`
+* `--railpack <RAILPACK>` — Path to the Railpack executable for explicitly selected Railpack builds
+
+  Default value: `railpack`
+* `--skopeo <SKOPEO>` — Path to the skopeo executable for copying prebuilt OCI images
+
+  Default value: `skopeo`
 
 
 
@@ -555,6 +590,208 @@ Builds a spacetime module.
   Default value: `src`
 * `-d`, `--debug` — Builds the module using debug instead of release (intended to speed up local iteration, not recommended for CI)
 * `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.
+
+
+
+## `spacetime container`
+
+Build and manage a database's container
+
+**Usage:** `spacetime container <COMMAND>`
+
+###### **Subcommands:**
+
+* `url` — Print a container's published HTTPS URL
+* `exec` — Run a literal command in the current running container
+* `logs` — Read retained stdout and stderr from one container attempt
+* `build` — Prepare verified OCI artifacts locally without publishing
+* `status` — Inspect container control state without opening its database
+* `start` — Request container execution
+* `stop` — Request container stop
+* `restart` — Request a new container instance and environment snapshot
+
+
+
+## `spacetime container url`
+
+Print a container's published HTTPS URL
+
+**Usage:** `spacetime container url [OPTIONS] <database>`
+
+Discovery does not start the container or wait for readiness. No login is required.
+
+###### **Arguments:**
+
+* `<DATABASE>` — Database name or Identity
+
+###### **Options:**
+
+* `--port <PORT>` — Declared port name; required when several ports are published
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server
+
+
+
+## `spacetime container exec`
+
+Run a literal command in the current running container
+
+**Usage:** `spacetime container exec [OPTIONS] <database> -- <COMMAND>...`
+
+Requires database Admin permission. No shell, container start, or reconnect is implicit. Use -- before COMMAND; for a shell, name its executable explicitly. Linux, macOS, and Windows terminals are supported. Windows requires an attached VT-capable console for --tty; inherited asynchronous seekable files are unsupported. A lost connection does not establish that the process exited.
+
+###### **Arguments:**
+
+* `<DATABASE>` — Database name or Identity
+* `<COMMAND>` — Executable and literal arguments; no shell expansion
+
+###### **Options:**
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server
+* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `-i`, `--interactive` — Forward stdin and send EOF when it closes
+* `-t`, `--tty` — Allocate a PTY using this foreground terminal's dimensions
+* `--workdir <WORKDIR>` — Absolute working directory inside the container
+* `-e`, `--env <NAME=VALUE>` — Override a process environment variable; platform keys are reserved
+
+
+
+## `spacetime container logs`
+
+Read retained stdout and stderr from one container attempt
+
+**Usage:** `spacetime container logs [OPTIONS] <database>`
+
+A restart does not change the selected attempt. Without --json, stdout and stderr retain their original bytes and streams. Retention gaps and interrupted capture are reported on stderr.
+
+###### **Arguments:**
+
+* `<DATABASE>` — Database name or Identity
+
+###### **Options:**
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server
+* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--generation <GENERATION>` — Read this attempt; omitted selects the current generation once
+* `--cursor <CURSOR>` — Resume after an opaque cursor returned by --json
+* `-f`, `--follow` — Wait for further output from the selected attempt until it ends
+* `--json` — Print one JSON page per line, including timestamps, streams, and resume cursors
+
+
+
+## `spacetime container build`
+
+Prepare verified OCI artifacts locally without publishing
+
+**Usage:** `spacetime container build [OPTIONS] --out-dir <out_dir> --platform <platform> [database]`
+
+###### **Arguments:**
+
+* `<DATABASE>` — Database target in local spacetime.json; no server lookup
+
+###### **Options:**
+
+* `--project-path <PROJECT_PATH>` — Directory in which to find spacetime.json
+
+  Default value: `.`
+* `--out-dir <OUT_DIR>` — New directory for verified OCI artifacts and prepared.json
+* `--platform <PLATFORM>` — Target Linux platform, independent of this computer's architecture
+
+  Possible values: `linux/amd64`, `linux/arm64`
+
+* `--env <ENV>` — Local configuration overlay name
+* `--buildkit-host <BUILDKIT_HOST>` — Explicit local BuildKit Unix socket, required for source builds
+* `--buildctl <BUILDCTL>` — BuildKit client executable
+
+  Default value: `buildctl`
+* `--railpack <RAILPACK>` — Pinned Railpack executable for explicitly selected Railpack builds
+
+  Default value: `railpack`
+* `--skopeo <SKOPEO>` — Skopeo executable for prebuilt registry images
+
+  Default value: `skopeo`
+* `--registry-auth-file <REGISTRY_AUTH_FILE>` — Explicit registry auth JSON; omitted means anonymous, never saved Docker credentials
+* `--build-secret <NAME=FILE>` — Explicit build secret file; separate from runtime env_keys
+
+
+
+## `spacetime container status`
+
+Inspect container control state without opening its database
+
+**Usage:** `spacetime container status [OPTIONS] <database>`
+
+###### **Arguments:**
+
+* `<DATABASE>` — Database name or Identity
+
+###### **Options:**
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server
+* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--json` — Print the typed response as JSON
+
+
+
+## `spacetime container start`
+
+Request container execution
+
+**Usage:** `spacetime container start [OPTIONS] <database>`
+
+Acceptance records the desired action; physical stop and readiness are asynchronous. A timeout must be retried with the original Identity and request ID printed on stderr.
+
+###### **Arguments:**
+
+* `<DATABASE>` — Database name or Identity
+
+###### **Options:**
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server
+* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--json` — Print the typed response as JSON
+* `--request-id <REQUEST_ID>` — Retry an original UUIDv7 request; DATABASE must be its recorded Identity
+
+
+
+## `spacetime container stop`
+
+Request container stop
+
+**Usage:** `spacetime container stop [OPTIONS] <database>`
+
+Acceptance records the desired action; physical stop and readiness are asynchronous. A timeout must be retried with the original Identity and request ID printed on stderr.
+
+###### **Arguments:**
+
+* `<DATABASE>` — Database name or Identity
+
+###### **Options:**
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server
+* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--json` — Print the typed response as JSON
+* `--request-id <REQUEST_ID>` — Retry an original UUIDv7 request; DATABASE must be its recorded Identity
+
+
+
+## `spacetime container restart`
+
+Request a new container instance and environment snapshot
+
+**Usage:** `spacetime container restart [OPTIONS] <database>`
+
+Acceptance records the desired action; physical stop and readiness are asynchronous. A timeout must be retried with the original Identity and request ID printed on stderr.
+
+###### **Arguments:**
+
+* `<DATABASE>` — Database name or Identity
+
+###### **Options:**
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server
+* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--json` — Print the typed response as JSON
+* `--request-id <REQUEST_ID>` — Retry an original UUIDv7 request; DATABASE must be its recorded Identity
 
 
 

@@ -27,6 +27,7 @@ spacetimedb-codegen.workspace = true
 spacetimedb-data-structures.workspace = true
 spacetimedb-fs-utils.workspace = true
 spacetimedb-lib.workspace = true
+spacetimedb-oci = { path = "../oci" }
 spacetimedb-paths.workspace = true
 spacetimedb-schema.workspace = true
 
@@ -59,13 +60,18 @@ serde_json = { workspace = true, features = ["raw_value", "preserve_order", "arb
 serde_with = { workspace = true, features = ["chrono_0_4"] }
 syntect.workspace = true
 tabled.workspace = true
+tar.workspace = true
 tempfile.workspace = true
+sha2 = "0.10"
+tokio-util.workspace = true
 termcolor.workspace = true
 termtree.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
 toml_edit.workspace = true
+url.workspace = true
+uuid = { workspace = true, features = ["std", "serde", "v7"] }
 walkdir.workspace = true
 wasmbin.workspace = true
 webbrowser.workspace = true
@@ -83,13 +89,23 @@ notify.workspace = true
 path-clean = "1.0.1"
 
 [dev-dependencies]
+axum.workspace = true
 pretty_assertions.workspace = true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { workspace = true }
 
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+rustix = { version = "1", features = ["fs", "process", "termios", "event"] }
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dev-dependencies]
+rustix = { version = "1", features = ["pty"] }
+
 [target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = ["Win32_System_Console"] }
+windows-sys = { workspace = true, features = ["Win32_System_Console", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Threading", "Win32_System_SystemServices", "Win32_System_IO", "Wdk_Storage_FileSystem"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { workspace = true, features = ["Win32_System_Pipes"] }
 
 [build-dependencies]
 serde = { workspace = true, features = ["derive"] }

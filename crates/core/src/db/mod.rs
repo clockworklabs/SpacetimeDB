@@ -26,6 +26,15 @@ pub mod update {
     pub use spacetimedb_engine::update::*;
 }
 
+pub mod container_environment;
+pub mod deployment;
+pub mod hosted_admission {
+    pub use spacetimedb_engine::hosted_admission::*;
+}
+
+#[cfg(test)]
+mod retained_shutdown_tests;
+
 /// Whether SpacetimeDB is run in memory, or persists objects and
 /// a message log to disk.
 #[derive(Clone, Copy)]

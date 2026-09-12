@@ -175,7 +175,7 @@ pub fn is_built_in_meta_row(table_id: TableId, row: &ProductValue) -> Result<boo
             // in the sense that if they exist, they come from users.
             false
         }
-        ST_CONNECTION_CREDENTIALS_ID => false,
+        ST_CONNECTION_CREDENTIALS_ID | ST_CONNECTION_AUTH_ID | ST_CONTAINER_ENVIRONMENT_ID => false,
         // We don't define any system views, so none of the view-related tables can be system meta-descriptors.
         ST_VIEW_ID | ST_VIEW_PARAM_ID | ST_VIEW_COLUMN_ID | ST_VIEW_SUB_ID | ST_VIEW_ARG_ID => false,
         ST_EVENT_TABLE_ID => {
@@ -207,7 +207,9 @@ pub enum SystemTable {
     st_event_table = ST_EVENT_TABLE_ID.0 as _,
 }
 
-pub fn system_tables() -> [TableSchema; 21] {
+pub fn system_tables() -> [TableSchema; 27] {
+    let [deployment, publish_fence, deployment_operation, container_fence, connection_auth, container_environment] =
+        deployment_system_schemas();
     [
         // The order should match the `id` of the system table, that start with [ST_TABLE_IDX].
         st_table_schema(),
@@ -231,6 +233,12 @@ pub fn system_tables() -> [TableSchema; 21] {
         st_index_accessor_schema(),
         st_column_accessor_schema(),
         st_env_schema(),
+        deployment,
+        publish_fence,
+        deployment_operation,
+        container_fence,
+        connection_auth,
+        container_environment,
     ]
 }
 
@@ -317,6 +325,8 @@ macro_rules! st_fields_enum {
 
 mod environment;
 pub use environment::*;
+mod deployment;
+pub use deployment::*;
 
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StTableFields {
@@ -676,6 +686,7 @@ fn system_module_def() -> ModuleDef {
         .with_index_no_accessor_name(btree(st_column_accessor_table_alias_cols));
 
     environment::register_table(&mut builder);
+    deployment::register_tables(&mut builder);
 
     let result = builder
         .finish()
@@ -703,6 +714,7 @@ fn system_module_def() -> ModuleDef {
     validate_system_table::<StIndexAccessorFields>(&result, ST_INDEX_ACCESSOR_NAME);
     validate_system_table::<StColumnAccessorFields>(&result, ST_COLUMN_ACCESSOR_NAME);
     validate_system_table::<StEnvFields>(&result, ST_ENV_NAME);
+    deployment::validate_tables(&result);
 
     result
 }
@@ -752,6 +764,7 @@ lazy_static::lazy_static! {
         m.insert("st_column_accessor_table_name_col_name_key", ConstraintId(24));
         m.insert("st_column_accessor_table_name_accessor_name_key", ConstraintId(25));
         m.insert("st_env_key_key", ConstraintId(26));
+        m.extend(deployment::CONSTRAINTS);
         m
     };
 }
@@ -791,6 +804,7 @@ lazy_static::lazy_static! {
         m.insert("st_column_accessor_table_name_col_name_idx_btree", IndexId(28));
         m.insert("st_column_accessor_table_name_accessor_name_idx_btree", IndexId(29));
         m.insert("st_env_key_idx_btree", IndexId(30));
+        m.extend(deployment::INDEXES);
         m
     };
 }
@@ -981,7 +995,7 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
         ST_INDEX_ACCESSOR_ID => Some(st_index_accessor_schema()),
         ST_COLUMN_ACCESSOR_ID => Some(st_column_accessor_schema()),
         ST_ENV_ID => Some(st_env_schema()),
-        _ => None,
+        table => deployment::system_schema(table),
     }
 }
 

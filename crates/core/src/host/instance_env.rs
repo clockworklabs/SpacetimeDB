@@ -1,4 +1,6 @@
 use super::scheduler::{get_schedule_from_row, scheduled_row_hash, ScheduleError, Scheduler};
+use crate::auth::hosted_tokens::VerifiedHostedAuth;
+use crate::auth::invocation::check_hosted_admission;
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
@@ -50,6 +52,10 @@ pub struct InstanceEnv {
     pub func_type: FuncCallType,
     /// The name of the last, including current, function to be executed by this environment.
     pub func_name: Option<NamespacedIdentifier>,
+    /// Set by trusted host dispatch for this invocation, independently of JWTs
+    /// and connection IDs. Cleared before each new function call.
+    call_auth_flags: u32,
+    hosted_auth: Option<std::sync::Arc<VerifiedHostedAuth>>,
     /// Bound by the host after validating this instance's module metadata.
     environment_module: Option<(spacetimedb_lib::Hash, Arc<spacetimedb_schema::def::ModuleDef>)>,
     environment_call_active: bool,
@@ -57,7 +63,6 @@ pub struct InstanceEnv {
     in_anon_tx: bool,
     /// A procedure's last known transaction offset.
     procedure_last_tx_offset: Option<TransactionOffset>,
-    call_auth_flags: u32,
 }
 
 /// `InstanceEnv` needs to be `Send` because it is created on the host thread
@@ -240,11 +245,12 @@ impl InstanceEnv {
             // run a function
             func_type: FuncCallType::Reducer,
             func_name: None,
+            call_auth_flags: 0,
+            hosted_auth: None,
             environment_module: None,
             environment_call_active: false,
             in_anon_tx: false,
             procedure_last_tx_offset: None,
-            call_auth_flags: 0,
         }
     }
 
@@ -261,10 +267,15 @@ impl InstanceEnv {
         self.func_name = Some(name);
         self.environment_call_active = true;
         self.call_auth_flags = 0;
+        self.hosted_auth = None;
     }
 
     pub(crate) fn set_call_auth_flags(&mut self, flags: u32) {
         self.call_auth_flags = flags;
+    }
+
+    pub(crate) fn set_hosted_auth(&mut self, auth: Option<std::sync::Arc<VerifiedHostedAuth>>) {
+        self.hosted_auth = auth;
     }
 
     pub(crate) fn get_call_auth_flags(&self) -> u32 {
@@ -337,8 +348,11 @@ impl InstanceEnv {
         if !matches!(self.func_type, FuncCallType::Procedure) {
             return Err(NodesError::NotInTransaction);
         }
-        self.relational_db()
-            .with_read_only(Workload::Internal, |tx| self.read_declared_environment(tx, key))
+        self.relational_db().with_read_only(Workload::Internal, |tx| {
+            check_hosted_admission(tx, self.relational_db(), self.hosted_auth.as_deref())
+                .map_err(|err| NodesError::HostedInvocationRejected(err.to_string()))?;
+            self.read_declared_environment(tx, key)
+        })
     }
 
     fn read_declared_environment(&self, state: &impl StateView, key: &str) -> Result<Option<String>, NodesError> {
@@ -374,8 +388,15 @@ impl InstanceEnv {
     }
 
     pub(crate) fn get_jwt_payload(&self, connection_id: ConnectionId) -> Result<Option<String>, NodesError> {
-        let tx = &mut *self.get_tx()?;
-        Ok(tx.get_jwt_payload(connection_id).map_err(DBError::from)?)
+        if let Ok(tx) = self.get_tx() {
+            return Ok(tx.get_jwt_payload(connection_id).map_err(DBError::from)?);
+        }
+        // Procedures may inspect authentication before opening their first
+        // transaction. Use a short read transaction without manufacturing an
+        // internal caller or dropping the real connection's JWT.
+        Ok(self.relational_db().with_read_only(Workload::Internal, |tx| {
+            tx.get_jwt_payload(connection_id).map_err(DBError::from)
+        })?)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -447,7 +468,8 @@ impl InstanceEnv {
         count
     }
 
-    /// Environment values are reachable only through their dedicated host interface.
+    /// Engine-owned deployment/authentication records and environment values
+    /// are reachable only through their dedicated host interfaces.
     fn require_module_table(table_id: TableId) -> Result<(), NodesError> {
         if is_module_restricted_table(table_id) {
             Err(NodesError::TableNotFound)
@@ -856,6 +878,10 @@ impl InstanceEnv {
         let tx = self
             .relational_db()
             .begin_mut_tx(IsolationLevel::Serializable, Workload::Procedure);
+        if let Err(err) = check_hosted_admission(&tx, self.relational_db(), self.hosted_auth.as_deref()) {
+            let _ = tx.rollback();
+            return Err(NodesError::HostedInvocationRejected(err.to_string()));
+        }
         self.tx.set_raw(tx);
         self.in_anon_tx = true;
 
@@ -1705,12 +1731,113 @@ mod test {
     }
 
     #[test]
-    fn module_cannot_access_environment_by_guessed_table_and_index_ids() -> Result<()> {
-        use spacetimedb_datastore::system_tables::ST_ENV_ID;
+    fn procedure_environment_snapshot_rechecks_durable_fence_and_expiry() -> Result<()> {
+        use crate::auth::{
+            hosted_tokens::{sign_hosted_token, HostedTokenBinding, HostedTokenValidator},
+            JwtKeys,
+        };
+        use crate::db::{deployment::install_container_fence, environment};
+        use spacetimedb_datastore::system_tables::StContainerFenceRow;
+        use std::time::SystemTime;
+        let db = relational_db()?;
+        let (mut env, _runtime) = instance_env(db.clone())?;
+        let program = bind_test_environment(&mut env)?;
+        let schema = env.environment_module.as_ref().unwrap().1.environment().clone();
+        env.start_funcall(
+            NamespacedIdentifier::from(spacetimedb_schema::identifier::Identifier::new("procedure".into())?),
+            Timestamp::now(),
+            FuncCallType::Procedure,
+        );
+        let keys = JwtKeys::generate()?;
+        let validator = HostedTokenValidator::new([("platform.test".into(), keys.public)])?;
+        let mint = |issued: SystemTime| -> Result<_> {
+            let binding = HostedTokenBinding {
+                source_database: db.database_identity(),
+                target_database: db.database_identity(),
+                generation: 1,
+                grant_revision: 1,
+                lease_expires_at: issued + Duration::from_secs(30),
+            };
+            let token = sign_hosted_token(
+                &keys.private,
+                "platform.test",
+                &binding,
+                issued,
+                issued + Duration::from_secs(20),
+                "env-test",
+            )?;
+            Ok(Arc::new(validator.validate_token(
+                &token,
+                db.database_identity(),
+                issued,
+                |_, _, _| Some(binding),
+            )?))
+        };
+        let fence = |generation, allowed| StContainerFenceRow {
+            source_identity: db.database_identity().into(),
+            generation,
+            target_grant_revision: generation,
+            target_set_hash: Hash::ZERO,
+            allowed,
+        };
+        db.with_auto_commit(Workload::ForTests, |tx| -> Result<()> {
+            install_container_fence(&db, tx, &fence(1, true))?;
+            db.update_program(tx, program.clone())?;
+            environment::replace(
+                &db,
+                tx,
+                &schema,
+                &std::collections::BTreeMap::from([("A".into(), "available".into())]),
+            )?;
+            Ok(())
+        })?;
+        db.with_read_only(Workload::ForTests, |_| db.hosted_admission().begin()?.complete())?;
+        env.set_hosted_auth(Some(mint(SystemTime::now())?));
+        assert_eq!(env.env_get("A")?.as_deref(), Some("available"));
+        env.set_hosted_auth(Some(mint(SystemTime::now() - Duration::from_secs(60))?));
+        assert!(matches!(env.env_get("A"), Err(NodesError::HostedInvocationRejected(_))));
+        env.set_hosted_auth(Some(mint(SystemTime::now())?));
+        db.with_auto_commit(Workload::ForTests, |tx| {
+            install_container_fence(&db, tx, &fence(2, false))
+        })?;
+        // Reconciled database admission does not override a denied source fence.
+        db.with_read_only(Workload::ForTests, |_| db.hosted_admission().begin()?.complete())?;
+        assert!(matches!(env.env_get("A"), Err(NodesError::HostedInvocationRejected(_))));
+        env.set_hosted_auth(None);
+        assert_eq!(env.env_get("A")?.as_deref(), Some("available"));
+        Ok(())
+    }
+
+    /// Generate a `ProductValue` for use in [create_table_with_index]
+    fn product_row(i: usize) -> ProductValue {
+        let str = i.to_string();
+        let str = str.repeat(i);
+        let id = i as u64;
+        product!(id, str)
+    }
+
+    #[test]
+    fn module_cannot_access_hosted_system_records_by_guessed_ids() -> Result<()> {
+        use spacetimedb_datastore::system_tables::{
+            ST_CONNECTION_AUTH_ID, ST_CONTAINER_ENVIRONMENT_ID, ST_CONTAINER_FENCE_ID, ST_DEPLOYMENT_ID,
+            ST_DEPLOYMENT_OPERATION_ID, ST_ENV_ID, ST_PUBLISH_FENCE_ID,
+        };
         let db = relational_db()?;
         let (env, _runtime) = instance_env(db.clone())?;
         let mut slot = env.tx.clone();
-        let protected = [(ST_ENV_ID, "st_env", to_vec("TOKEN")?)];
+        let protected = [
+            (ST_ENV_ID, "st_env", to_vec("TOKEN")?),
+            (ST_DEPLOYMENT_ID, "st_deployment", to_vec(&0u8)?),
+            (ST_PUBLISH_FENCE_ID, "st_publish_fence", to_vec(&0u8)?),
+            (ST_DEPLOYMENT_OPERATION_ID, "st_deployment_operation", to_vec(&0u128)?),
+            (ST_CONNECTION_AUTH_ID, "st_connection_auth", to_vec(&0u128)?),
+            (ST_CONTAINER_ENVIRONMENT_ID, "st_container_environment", to_vec(&0u64)?),
+            (
+                ST_CONTAINER_FENCE_ID,
+                "st_container_fence",
+                to_vec(&spacetimedb_sats::u256::ZERO)?,
+            ),
+        ];
         let tx = begin_mut_tx(&db);
         let (tx, result) = slot.set(tx, || -> Result<()> {
             for (table, name, point) in &protected {
@@ -1773,14 +1900,6 @@ mod test {
         });
         let _ = db.rollback_mut_tx(tx);
         result
-    }
-
-    /// Generate a `ProductValue` for use in [create_table_with_index]
-    fn product_row(i: usize) -> ProductValue {
-        let str = i.to_string();
-        let str = str.repeat(i);
-        let id = i as u64;
-        product!(id, str)
     }
 
     /// Generate a BSATN encoded row for use in [create_table_with_index]

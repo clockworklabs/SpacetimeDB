@@ -68,6 +68,12 @@ pub struct ModuleHandle {
 }
 
 impl ModuleHandle {
+    /// Access the real standalone control/host environment for integration
+    /// tests that publish, migrate, or recover the running module.
+    pub fn environment(&self) -> &StandaloneEnv {
+        &self.env
+    }
+
     /// Publish a complete configuration through the standalone control API.
     pub async fn republish_environment(
         &self,

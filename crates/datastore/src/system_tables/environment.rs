@@ -35,8 +35,8 @@ pub(crate) fn st_env_schema() -> TableSchema {
 }
 /// Module code must use env_get even when it guesses numeric identifiers.
 pub fn is_module_restricted_table(table: TableId) -> bool {
-    table == ST_ENV_ID
+    table == ST_ENV_ID || super::deployment::is_module_restricted_deployment_table(table)
 }
 pub fn is_module_restricted_index(index: IndexId) -> bool {
-    index == IndexId(30)
+    index == IndexId(30) || super::deployment::is_module_restricted_deployment_index(index)
 }

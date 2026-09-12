@@ -11,9 +11,10 @@ use super::{
 use crate::{
     error::ViewError,
     system_tables::{
-        system_tables, ConnectionIdViaU128, StConnectionCredentialsFields, StConnectionCredentialsRow,
-        StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow, StViewSubFields,
-        ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID, ST_VIEW_SUB_ID,
+        system_tables, ConnectionIdViaU128, StConnectionAuthFields, StConnectionCredentialsFields,
+        StConnectionCredentialsRow, StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow,
+        StViewSubFields, ST_CONNECTION_AUTH_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID,
+        ST_VIEW_PARAM_ID, ST_VIEW_SUB_ID,
     },
 };
 use crate::{
@@ -3271,7 +3272,13 @@ impl MutTxId {
                 );
             }
         }
-        self.delete_st_client_credentials(database_identity, connection_id)
+        self.delete_st_client_credentials(database_identity, connection_id)?;
+        self.delete_col_eq(
+            ST_CONNECTION_AUTH_ID,
+            StConnectionAuthFields::ConnectionId.col_id(),
+            &ConnectionIdViaU128::from(connection_id).into(),
+        )?;
+        Ok(())
     }
 
     /// Look up a client row by identity and connection ID in the `st_clients` system table.
