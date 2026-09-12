@@ -21,7 +21,9 @@ use xtask_llm_benchmark::context::constants::ALL_MODES;
 use xtask_llm_benchmark::context::{build_context, compute_processed_context_hash};
 use xtask_llm_benchmark::eval::Lang;
 use xtask_llm_benchmark::llm::types::Vendor;
-use xtask_llm_benchmark::llm::{default_model_routes, make_provider_from_env, LlmProvider, ModelRoute};
+use xtask_llm_benchmark::llm::{
+    default_model_routes, make_provider_from_env, LlmProvider, ModelRoute, ReasoningEffort,
+};
 
 #[derive(Clone, Debug)]
 struct ModelGroup {
@@ -68,6 +70,10 @@ impl std::str::FromStr for ModelGroup {
     after_help = "Notes:\n  • Anthropic ids: claude-sonnet-4-5, claude-sonnet-4, claude-3-7-sonnet-latest, claude-3-5-sonnet-latest\n  • Base URLs must not include /v1; models must be valid for the chosen provider.\n"
 )]
 struct Cli {
+    /// Reasoning effort used for every model request
+    #[arg(long, value_enum, default_value_t = ReasoningEffort::Medium, global = true)]
+    reasoning: ReasoningEffort,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -138,6 +144,10 @@ struct RunArgs {
     /// Run benchmarks without uploading results
     #[arg(long)]
     dry_run: bool,
+
+    /// Skip uploading the benchmark task catalog
+    #[arg(long)]
+    skip_task_catalog_upload: bool,
 
     /// When used with --dry-run, also generate local markdown analysis files
     #[arg(long, requires = "dry_run")]
@@ -215,20 +225,20 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Run(args) => cmd_run(args),
-        Commands::Analyze(args) => cmd_analyze(args),
+        Commands::Run(args) => cmd_run(args, cli.reasoning),
+        Commands::Analyze(args) => cmd_analyze(args, cli.reasoning),
     }
 }
 
 /* ------------------------------ run ------------------------------ */
 
-fn cmd_run(args: RunArgs) -> Result<()> {
-    run_benchmarks(args)?;
+fn cmd_run(args: RunArgs, reasoning: ReasoningEffort) -> Result<()> {
+    run_benchmarks(args, reasoning)?;
     Ok(())
 }
 
 /// Core benchmark runner used by both `run` and `ci-quickfix`
-fn run_benchmarks(args: RunArgs) -> Result<()> {
+fn run_benchmarks(args: RunArgs, reasoning: ReasoningEffort) -> Result<()> {
     let dry_run = args.dry_run;
     let local_analysis = args.local_analysis;
     let dry_run_id = dry_run.then(|| {
@@ -281,7 +291,8 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
     let bench_root = find_bench_root();
 
     // Upload task catalog before running benchmarks
-    if let Some(ref api) = upload_client
+    if !args.skip_task_catalog_upload
+        && let Some(ref api) = upload_client
         && let Err(e) = api.upload_task_catalog(&bench_root)
     {
         eprintln!("[warn] failed to upload task catalog: {e}");
@@ -314,7 +325,7 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
     }
 
     let llm_provider = if !config.goldens_only && !config.hash_only {
-        let provider = make_provider_from_env()?;
+        let provider = make_provider_from_env(reasoning)?;
         let rt = runtime.as_ref().expect("failed to initialize runtime for preflight");
         let routes = filter_routes(&config);
         preflight_llm_routes(rt, provider.as_ref(), &routes, &modes)?;
@@ -378,7 +389,7 @@ fn report_server_status(guard: Option<&mut SpacetimeDbGuard>) {
 
 /* ------------------------------ analyze ------------------------------ */
 
-fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
+fn cmd_analyze(args: AnalyzeArgs, reasoning: ReasoningEffort) -> Result<()> {
     let api = ApiClient::from_env()
         .context("failed to initialize API client")?
         .context("LLM_BENCHMARK_UPLOAD_URL required for analyze")?;
@@ -434,7 +445,7 @@ fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
 
     // Initialize LLM provider for analysis
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
-    let provider = make_provider_from_env()?;
+    let provider = make_provider_from_env(reasoning)?;
 
     let analysis_route = ModelRoute::new(
         "gpt-5.4-mini",
@@ -964,6 +975,7 @@ mod tests {
             models: None,
             model_source: ModelSource::Static,
             dry_run: false,
+            skip_task_catalog_upload: false,
             local_analysis: false,
             route_overrides: None,
         }
@@ -987,6 +999,24 @@ mod tests {
             dry_run_id: None,
             route_overrides,
         }
+    }
+
+    #[test]
+    fn reasoning_defaults_to_medium_and_accepts_an_override() {
+        let default = Cli::try_parse_from(["llm", "run", "--hash-only"]).unwrap();
+        assert_eq!(default.reasoning, ReasoningEffort::Medium);
+
+        let overridden = Cli::try_parse_from(["llm", "run", "--hash-only", "--reasoning", "high"]).unwrap();
+        assert_eq!(overridden.reasoning, ReasoningEffort::High);
+    }
+
+    #[test]
+    fn task_catalog_upload_can_be_skipped() {
+        let cli = Cli::try_parse_from(["llm", "run", "--hash-only", "--skip-task-catalog-upload"]).unwrap();
+        let Commands::Run(args) = cli.command else {
+            panic!("expected run command");
+        };
+        assert!(args.skip_task_catalog_upload);
     }
 
     #[test]

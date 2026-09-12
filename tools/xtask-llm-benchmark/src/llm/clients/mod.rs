@@ -20,7 +20,7 @@ pub use openrouter::OpenRouterClient;
 pub use xai::XaiGrokClient;
 
 use crate::llm::prompt::BuiltPrompt;
-use crate::llm::types::LlmOutput;
+use crate::llm::types::{LlmOutput, ReasoningEffort};
 
 #[derive(Debug, Clone)]
 pub struct ClientPreflight {
@@ -51,7 +51,7 @@ pub trait LlmClient: Send + Sync {
         )))
     }
 
-    async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<LlmOutput>;
+    async fn generate(&self, model: &str, prompt: &BuiltPrompt, reasoning: ReasoningEffort) -> Result<LlmOutput>;
 }
 
 macro_rules! impl_direct_llm_client {
@@ -62,8 +62,13 @@ macro_rules! impl_direct_llm_client {
                 $provider_name
             }
 
-            async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<LlmOutput> {
-                <$ty>::generate(self, model, prompt).await
+            async fn generate(
+                &self,
+                model: &str,
+                prompt: &BuiltPrompt,
+                reasoning: ReasoningEffort,
+            ) -> Result<LlmOutput> {
+                <$ty>::generate(self, model, prompt, reasoning).await
             }
         }
     };
@@ -87,7 +92,7 @@ impl LlmClient for OpenRouterClient {
         Ok(ClientPreflight::new(status.summary()))
     }
 
-    async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<LlmOutput> {
-        OpenRouterClient::generate(self, model, prompt).await
+    async fn generate(&self, model: &str, prompt: &BuiltPrompt, reasoning: ReasoningEffort) -> Result<LlmOutput> {
+        OpenRouterClient::generate(self, model, prompt, reasoning).await
     }
 }
