@@ -95,7 +95,7 @@ jobs:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Upload build artifacts (Linux)
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     timeout-minutes: 15
     env:
       RUST_BACKTRACE: full
@@ -275,7 +275,7 @@ jobs:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Upload build artifacts (Windows)
-    runs-on: spacetimedb-windows-runner
+    runs-on: spacetimedb-windows-runner-staging
     timeout-minutes: 15
     env:
       RUST_BACKTRACE: full
@@ -287,7 +287,7 @@ jobs:
   smoketest_build_linux:
     needs: [upload-build-artifacts-linux]
     name: Build smoketests (Linux)
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     timeout-minutes: 15
     env:
       RUST_BACKTRACE: full
@@ -361,7 +361,7 @@ jobs:
   smoketest_build_windows:
     needs: [upload-build-artifacts-windows]
     name: Build smoketests (Windows)
-    runs-on: spacetimedb-windows-runner
+    runs-on: spacetimedb-windows-runner-staging
     timeout-minutes: 15
     env:
       RUST_BACKTRACE: full
@@ -378,7 +378,7 @@ jobs:
       fail-fast: false
       matrix:
         partition: [1]
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     timeout-minutes: 30
     env:
       RUST_BACKTRACE: full
@@ -537,7 +537,7 @@ jobs:
       fail-fast: false
       matrix:
         partition: [1, 2, 3, 4]
-    runs-on: spacetimedb-windows-runner
+    runs-on: spacetimedb-windows-runner-staging
     timeout-minutes: 30
     env:
       RUST_BACKTRACE: full
@@ -571,7 +571,7 @@ jobs:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Test Suite
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
 
     env:
       RUST_BACKTRACE: full
@@ -717,7 +717,7 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Lints
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     env:
       RUST_BACKTRACE: full
     steps:
@@ -799,7 +799,7 @@ jobs:
     needs: [merge_queue_noop, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Build and test wasm bindings
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     env:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
@@ -920,7 +920,7 @@ jobs:
     name: Unreal Engine Tests
     # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
     # a custom runner.
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     # Disable the tests because they are very flaky at the moment.
     # TODO: Remove this line and re-enable the `if` line just below here.
     if: false
@@ -1017,7 +1017,7 @@ jobs:
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check CLI docs
     permissions: read-all
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     env:
       RUST_BACKTRACE: full
     steps:
@@ -1616,7 +1616,7 @@ jobs:
     needs: [merge_queue_noop, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: TypeScript - Tests
-    runs-on: spacetimedb-linux
+    runs-on: spacetimedb-linux-staging
     env:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
