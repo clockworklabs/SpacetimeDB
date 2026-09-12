@@ -6,9 +6,9 @@
 //!
 //! # Pre-compiled Modules
 //!
-//! For better performance, modules can be pre-compiled during the warmup phase.
-//! Use `Smoketest::builder().precompiled_module("name")` to use a pre-compiled module
-//! instead of `module_code()` which compiles at runtime.
+//! Rust modules are pre-compiled during the warmup phase. Use
+//! `Smoketest::builder().precompiled_module("name")` to select a module from
+//! `crates/smoketests/modules/`. The default module is `noop`.
 //!
 //! # Running Smoketests
 //!
@@ -25,28 +25,13 @@
 //! ```ignore
 //! use spacetimedb_smoketests::Smoketest;
 //!
-//! const MODULE_CODE: &str = r#"
-//! use spacetimedb::{table, reducer};
-//!
-//! #[spacetimedb::table(accessor = person, public)]
-//! pub struct Person {
-//!     name: String,
-//! }
-//!
-//! #[spacetimedb::reducer]
-//! pub fn add(ctx: &ReducerContext, name: String) {
-//!     ctx.db.person().insert(Person { name });
-//! }
-//! "#;
-//!
 //! #[test]
 //! fn test_example() {
-//!     let mut test = Smoketest::builder()
-//!         .module_code(MODULE_CODE)
+//!     let test = Smoketest::builder()
+//!         .precompiled_module("noop")
 //!         .build();
 //!
-//!     test.call("add", &["Alice"]).unwrap();
-//!     test.assert_sql("SELECT * FROM person", "name\n-----\nAlice");
+//!     test.call("noop", &[]).unwrap();
 //! }
 //! ```
 
@@ -218,10 +203,8 @@ pub fn patch_module_cargo_to_local_bindings(module_dir: &Path) -> Result<()> {
 
 /// Returns the shared target directory for smoketest module builds.
 ///
-/// All tests share this directory to cache compiled dependencies. The warmup step
-/// pre-compiles dependencies, then each test only needs to compile its unique module.
-/// Cargo serializes builds due to directory locking, but this is still faster than
-/// each test compiling all dependencies from scratch.
+/// Explicit build-diagnostic tests share this directory to cache dependencies.
+/// Cargo serializes their builds through directory locking.
 fn shared_target_dir() -> PathBuf {
     static TARGET_DIR: OnceLock<PathBuf> = OnceLock::new();
     TARGET_DIR
@@ -231,6 +214,55 @@ fn shared_target_dir() -> PathBuf {
             target_dir
         })
         .clone()
+}
+
+/// Runs `spacetime build` on a temporary Rust project and returns its raw output.
+///
+/// Use this for tests of build diagnostics, such as rejected wasm-bindgen imports.
+/// Ordinary smoketests should add a precompiled fixture to `crates/smoketests/modules/`.
+/// This does not start a server or publish a module, and removes the source project
+/// after the command finishes. `extra_deps` is appended to `[dependencies]`.
+pub fn build_rust_module(source: &str, extra_deps: &str) -> Output {
+    let cli_path = ensure_binaries_built();
+    let project_dir = tempfile::tempdir().expect("Failed to create temporary Rust project");
+    let workspace_root = workspace_root();
+    let bindings_path = workspace_root
+        .join("crates/bindings")
+        .display()
+        .to_string()
+        .replace('\\', "/");
+    let module_name = format!("smoketest_module_{}", random_string());
+    let cargo_toml = format!(
+        r#"[package]
+name = "{module_name}"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+spacetimedb = {{ path = "{bindings_path}", features = ["unstable"] }}
+log = "0.4"
+{extra_deps}
+"#
+    );
+    fs::create_dir(project_dir.path().join("src")).expect("Failed to create Rust source directory");
+    fs::write(project_dir.path().join("Cargo.toml"), cargo_toml).expect("Failed to write Cargo.toml");
+    fs::write(project_dir.path().join("src/lib.rs"), source).expect("Failed to write Rust module source");
+    fs::copy(
+        workspace_root.join("rust-toolchain.toml"),
+        project_dir.path().join("rust-toolchain.toml"),
+    )
+    .expect("Failed to copy rust-toolchain.toml");
+
+    Command::new(cli_path)
+        .args(["build", "--module-path"])
+        .arg(project_dir.path())
+        .current_dir(project_dir.path())
+        .env("CARGO_TARGET_DIR", shared_target_dir())
+        .output()
+        .expect("Failed to execute spacetime build")
 }
 
 /// Generates a random lowercase alphabetic string suitable for database names.
@@ -470,19 +502,12 @@ pub struct Smoketest {
     _data_dir_fixture: Option<tempfile::TempDir>,
     /// Temporary directory containing the module project.
     pub project_dir: tempfile::TempDir,
-    /// Additional features for the spacetimedb bindings dependency.
-    pub bindings_features: Vec<String>,
-    /// Additional dependencies to add to the module's Cargo.toml.
-    pub extra_deps: String,
     /// Database identity after publishing (if any).
     pub database_identity: Option<String>,
     /// The server URL (e.g., "http://127.0.0.1:3000").
     pub server_url: String,
     /// Path to the test-specific CLI config file (isolates tests from user config).
     pub config_path: std::path::PathBuf,
-    /// Unique module name for this test instance.
-    /// Used to avoid wasm output conflicts when tests run in parallel.
-    module_name: String,
     /// Path to pre-compiled WASM file (if using precompiled_module).
     precompiled_wasm_path: Option<PathBuf>,
     /// Optional path to a specific CLI binary to run for this test.
@@ -674,8 +699,12 @@ impl<'a> PublishBuilder<'a> {
                     ];
                 }
             }
-        } else if let Some(module_path) = smoketest.precompiled_wasm_path.as_ref() {
+        } else {
             post_publish_step = None;
+            if smoketest.precompiled_wasm_path.is_none() {
+                smoketest.use_precompiled_module("noop");
+            }
+            let module_path = smoketest.precompiled_wasm_path.as_ref().unwrap();
             // Use pre-compiled WASM directly (no build needed)
             eprintln!("[TIMING] spacetime build: skipped (using precompiled)");
             module_args = vec![
@@ -683,18 +712,6 @@ impl<'a> PublishBuilder<'a> {
                 module_path
                     .to_str()
                     .context("Invalid precompiled module path")?
-                    .to_string(),
-            ];
-        } else {
-            post_publish_step = None;
-            // Rust is built separately to use the shared Cargo target cache; publishing the resulting WASM
-            // by path avoids rebuilding it. This is a harness optimization, not a Rust requirement.
-            module_args = vec![
-                "--bin-path".to_string(),
-                smoketest
-                    .prepare_rust_module_internal()?
-                    .to_str()
-                    .context("Invalid Rust module path")?
                     .to_string(),
             ];
         }
@@ -794,11 +811,8 @@ impl<'a> SubscribeBuilder<'a> {
 
 /// Builder for creating `Smoketest` instances.
 pub struct SmoketestBuilder {
-    module_code: Option<String>,
     precompiled_module: Option<String>,
     data_dir_fixture: Option<DataDirFixture>,
-    bindings_features: Vec<String>,
-    extra_deps: String,
     autopublish: bool,
     pg_port: Option<u16>,
     server_url_override: Option<String>,
@@ -820,11 +834,8 @@ impl SmoketestBuilder {
     /// Creates a new builder with default settings.
     pub fn new() -> Self {
         Self {
-            module_code: None,
             precompiled_module: None,
             data_dir_fixture: None,
-            bindings_features: vec!["unstable".to_string()],
-            extra_deps: String::new(),
             autopublish: true,
             pg_port: None,
             server_url_override: None,
@@ -861,13 +872,7 @@ impl SmoketestBuilder {
         self
     }
 
-    /// Sets the module code to compile and publish.
-    pub fn module_code(mut self, code: &str) -> Self {
-        self.module_code = Some(code.to_string());
-        self
-    }
-
-    /// Uses a pre-compiled module instead of runtime compilation.
+    /// Selects a pre-compiled module instead of the default `noop` module.
     ///
     /// Pre-compiled modules are built during the warmup phase and stored in
     /// `crates/smoketests/modules/target/`. This eliminates per-test compilation
@@ -889,18 +894,6 @@ impl SmoketestBuilder {
         self
     }
 
-    /// Sets additional features for the spacetimedb bindings dependency.
-    pub fn bindings_features(mut self, features: &[&str]) -> Self {
-        self.bindings_features = features.iter().map(|s| s.to_string()).collect();
-        self
-    }
-
-    /// Adds extra dependencies to the module's Cargo.toml.
-    pub fn extra_deps(mut self, deps: &str) -> Self {
-        self.extra_deps = deps.to_string();
-        self
-    }
-
     /// Sets whether to automatically publish the module on build.
     /// Default is true.
     pub fn autopublish(mut self, yes: bool) -> Self {
@@ -911,8 +904,9 @@ impl SmoketestBuilder {
     /// Builds the `Smoketest` instance.
     ///
     /// This spawns a SpacetimeDB server (unless `SPACETIME_REMOTE_SERVER` is set),
-    /// creates a temporary project directory, writes the module code, and optionally
-    /// publishes the module.
+    /// creates a temporary project directory, and optionally publishes a precompiled
+    /// module. The default `noop` module is only resolved when publishing, so tests
+    /// using `autopublish(false)` need no module artifacts unless they publish one.
     ///
     /// When `SPACETIME_REMOTE_SERVER` is set, tests run against the remote server
     /// instead of spawning a local server. Tests that require local server control
@@ -991,12 +985,6 @@ impl SmoketestBuilder {
             path
         });
 
-        let project_setup_start = Instant::now();
-
-        // Generate a unique module name to avoid wasm output conflicts in parallel tests.
-        // The format is smoketest_module_{random} which produces smoketest_module_{random}.wasm
-        let module_name = format!("smoketest_module_{}", random_string());
-
         let config_path = project_dir.path().join("config.toml");
         if let Ok(base_config_path) = std::env::var("SPACETIME_SMOKETEST_BASE_CONFIG_PATH") {
             fs::copy(&base_config_path, &config_path)
@@ -1009,27 +997,9 @@ impl SmoketestBuilder {
             database_identity: fixture_identity,
             server_url,
             config_path,
-            module_name,
             precompiled_wasm_path: precompiled_wasm_path.clone(),
             cli_path: self.cli_path.clone(),
-            bindings_features: self.bindings_features.clone(),
-            extra_deps: self.extra_deps.clone(),
         };
-
-        // Only set up project structure if not using precompiled module
-        if precompiled_wasm_path.is_none() {
-            let module_code = self.module_code.unwrap_or_else(|| {
-                r#"use spacetimedb::ReducerContext;
-
-#[spacetimedb::reducer]
-pub fn noop(_ctx: &ReducerContext) {}
-"#
-                .to_string()
-            });
-            smoketest.write_module_code(&module_code).unwrap();
-
-            eprintln!("[TIMING] project setup: {:?}", project_setup_start.elapsed());
-        }
 
         if self.autopublish {
             smoketest.publish().run().expect("Failed to publish module");
@@ -1328,57 +1298,6 @@ impl Smoketest {
         Ok(module_path)
     }
 
-    /// Writes new module code to the project.
-    ///
-    /// This switches from precompiled mode to runtime compilation mode.
-    /// If the project structure doesn't exist (e.g., started with `precompiled_module()`),
-    /// it will be created on demand.
-    pub fn write_module_code(&mut self, code: &str) -> Result<()> {
-        // Clear precompiled module path so we use the source code instead
-        self.precompiled_wasm_path = None;
-
-        // Create project structure on demand if it doesn't exist
-        // (happens when test started with precompiled_module)
-        let src_dir = self.project_dir.path().join("src");
-        if !src_dir.exists() {
-            fs::create_dir_all(&src_dir).context("Failed to create src directory")?;
-
-            // Write Cargo.toml with default settings
-            let workspace_root = workspace_root();
-            let bindings_path = workspace_root.join("crates/bindings");
-            let bindings_path_str = bindings_path.display().to_string().replace('\\', "/");
-            let features_str = format!("{:?}", self.bindings_features);
-
-            let cargo_toml = format!(
-                r#"[package]
-name = "{}"
-version = "0.1.0"
-edition = "2021"
-
-[lib]
-crate-type = ["cdylib"]
-
-[dependencies]
-spacetimedb = {{ path = "{}", features = {} }}
-log = "0.4"
-{}
-"#,
-                self.module_name, bindings_path_str, features_str, self.extra_deps
-            );
-            fs::write(self.project_dir.path().join("Cargo.toml"), cargo_toml).context("Failed to write Cargo.toml")?;
-
-            // Copy rust-toolchain.toml
-            let toolchain_src = workspace_root.join("rust-toolchain.toml");
-            if toolchain_src.exists() {
-                fs::copy(&toolchain_src, self.project_dir.path().join("rust-toolchain.toml"))
-                    .context("Failed to copy rust-toolchain.toml")?;
-            }
-        }
-
-        fs::write(self.project_dir.path().join("src/lib.rs"), code).context("Failed to write module code")?;
-        Ok(())
-    }
-
     /// Switches to using a precompiled module.
     ///
     /// After calling this, subsequent `publish_module*` calls will use the
@@ -1410,59 +1329,8 @@ log = "0.4"
         Ok(())
     }
 
-    /// Runs `spacetime build` and returns the raw output.
-    ///
-    /// Use this when you need to check for build failures (e.g., wasm_bindgen detection).
-    pub fn spacetime_build(&self) -> Output {
-        let start = Instant::now();
-        let project_path = self.project_dir.path().to_str().unwrap();
-        let cli_path = self.cli_path();
-
-        let mut cmd = Command::new(&cli_path);
-        cmd.args(["build", "--module-path", project_path])
-            .current_dir(self.project_dir.path())
-            .env("CARGO_TARGET_DIR", shared_target_dir());
-
-        let output = cmd.output().expect("Failed to execute spacetime build");
-        eprintln!("[TIMING] spacetime build: {:?}", start.elapsed());
-        output
-    }
-
     pub fn publish(&mut self) -> PublishBuilder<'_> {
         PublishBuilder::new(self)
-    }
-
-    /// Builds the Rust module using the target directory shared by smoketests.
-    ///
-    /// The caller publishes the resulting WASM with `--bin-path` to avoid a second build. Rust modules
-    /// could instead use `--module-path` if the publish command inherited this shared target directory.
-    fn prepare_rust_module_internal(&self) -> Result<PathBuf> {
-        // Build the WASM module from source
-        let project_path = self.project_dir.path().to_str().unwrap();
-        let build_start = Instant::now();
-        let cli_path = self.cli_path();
-        let target_dir = shared_target_dir();
-
-        let mut build_cmd = Command::new(&cli_path);
-        build_cmd
-            .args(["build", "--module-path", project_path])
-            .current_dir(self.project_dir.path())
-            .env("CARGO_TARGET_DIR", &target_dir);
-
-        let build_output = build_cmd.output().expect("Failed to execute spacetime build");
-        eprintln!("[TIMING] spacetime build: {:?}", build_start.elapsed());
-
-        if !build_output.status.success() {
-            bail!(
-                "spacetime build failed:\nstdout: {}\nstderr: {}",
-                String::from_utf8_lossy(&build_output.stdout),
-                String::from_utf8_lossy(&build_output.stderr)
-            );
-        }
-
-        // Construct the wasm path using the unique module name
-        let wasm_filename = format!("{}.wasm", self.module_name);
-        Ok(target_dir.join("wasm32-unknown-unknown/release").join(wasm_filename))
     }
 
     /// Publishes the prepared module and stores the database identity.
@@ -1942,6 +1810,19 @@ fn normalize_whitespace(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_unpublished_builder_needs_no_module() {
+        let test = Smoketest::builder()
+            .server_url("http://127.0.0.1:1")
+            .cli_path("unused-cli")
+            .autopublish(false)
+            .build();
+        assert!(test.database_identity.is_none());
+        assert!(test.precompiled_wasm_path.is_none());
+        assert!(!test.project_dir.path().join("Cargo.toml").exists());
+        assert!(!test.project_dir.path().join("src").exists());
+    }
 
     #[test]
     fn test_normalize_whitespace() {
