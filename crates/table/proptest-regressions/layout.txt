@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc a7ac978f9eb3af3c0079d880916cdf13ef2fb317561cad5068d0ad2d1e8b805a # shrinks to ty = Sum(SumType { variants: [SumTypeVariant { name: Some("variant_0"), algebraic_type: U16 }] })
+cc e2b5181b14c2bc8296e05653c5e03ff8f1d3425a6facddf85d0630d1e9a10e50 # shrinks to ty = Array(ArrayType { elem_ty: Bool })
