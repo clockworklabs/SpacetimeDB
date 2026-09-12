@@ -139,9 +139,12 @@ fn map_procedure_error(e: ProcedureCallError, procedure: &str) -> (StatusCode, S
             log::info!("Procedure {procedure} could not run because the module is out of energy");
             StatusCode::PAYMENT_REQUIRED
         }
+        ProcedureCallError::GuestPanic(_) => {
+            log::debug!("Guest error while invoking procedure {procedure}: {e:#}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
         ProcedureCallError::InternalError(_) => {
-            // TODO: May need to split this from module errors vs host errors
-            log::info!("Internal error while invoking procedure {procedure}: {e:#}");
+            log::error!("Internal error while invoking procedure {procedure}: {e:#}");
             StatusCode::INTERNAL_SERVER_ERROR
         }
     };
@@ -2454,6 +2457,21 @@ mod tests {
         remove_http_response_size_metric(database_identity);
     }
 
+    #[test]
+    fn test_map_procedure_error_distinguishes_guest_panic_and_internal_error() {
+        let (status, msg) = map_procedure_error(
+            ProcedureCallError::GuestPanic("panic in guest".to_string()),
+            "my_proc",
+        );
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(msg.contains("panic in guest"));
+
+        let (status, msg) = map_procedure_error(
+            ProcedureCallError::InternalError("host failure".to_string()),
+            "my_proc",
+        );
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(msg.contains("host failure"));
     fn root_router(root_routes: RootRoutes<DummyState>) -> axum::Router {
         let state = DummyState::new();
         router_with_root_routes(
