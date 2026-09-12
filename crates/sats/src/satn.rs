@@ -1,7 +1,7 @@
 use crate::time_duration::TimeDuration;
 use crate::timestamp::Timestamp;
 use crate::uuid::Uuid;
-use crate::{i256, u256, AlgebraicType, AlgebraicValue, ProductValue, Serialize, SumValue, ValueWithType};
+use crate::{i256, u256, AlgebraicType, AlgebraicValue, ArrayValue, ProductValue, Serialize, SumValue, ValueWithType};
 use crate::{ser, ProductType, ProductTypeElement};
 use core::fmt;
 use core::fmt::Write as _;
@@ -453,8 +453,10 @@ pub enum PsqlClient {
 
 pub struct PsqlChars {
     pub start: char,
+    pub start_array: &'static str,
     pub sep: &'static str,
     pub end: char,
+    pub end_array: &'static str,
     pub quote: &'static str,
 }
 
@@ -463,14 +465,18 @@ impl PsqlClient {
         match self {
             PsqlClient::SpacetimeDB => PsqlChars {
                 start: '(',
+                start_array: "[",
                 sep: " =",
                 end: ')',
+                end_array: "]",
                 quote: "",
             },
             PsqlClient::Postgres => PsqlChars {
                 start: '{',
+                start_array: "{",
                 sep: ":",
                 end: '}',
+                end_array: "}",
                 quote: "\"",
             },
         }
@@ -584,6 +590,17 @@ pub trait TypedWriter {
         &mut self,
         _ty: &PsqlType,
         _value: &ValueWithType<'_, ProductValue>,
+    ) -> Result<bool, Self::Error> {
+        Ok(false)
+    }
+
+    /// Writes an array as a single value. Returns `false` to use the default
+    /// typed serialization path instead.
+    fn write_array(
+        &mut self,
+        _value: &ValueWithType<'_, ArrayValue>,
+        _psql: &PsqlType,
+        _ty: &AlgebraicType,
     ) -> Result<bool, Self::Error> {
         Ok(false)
     }
@@ -764,6 +781,39 @@ impl<'a, 'f, F: TypedWriter> ser::Serializer for TypedSerializer<'a, 'f, F> {
         Ok(TypedArrayFormatter { ty: self.ty, f: self.f })
     }
 
+    fn serialize_array_raw(self, value: &ValueWithType<'_, ArrayValue>) -> Result<Self::Ok, Self::Error> {
+        let mut ty = &*value.ty().elem_ty;
+        while let AlgebraicType::Ref(r) = ty {
+            ty = &value.typespace()[*r];
+        }
+        if self.f.write_array(value, self.ty, ty)? {
+            return Ok(());
+        }
+        match (value.value(), ty) {
+            (ArrayValue::Sum(v), AlgebraicType::Sum(ty)) => value.with(ty, v).serialize(self),
+            (ArrayValue::Product(v), AlgebraicType::Product(ty)) => value.with(ty, v).serialize(self),
+            (ArrayValue::Bool(v), AlgebraicType::Bool) => v.serialize(self),
+            (ArrayValue::I8(v), AlgebraicType::I8) => v.serialize(self),
+            (ArrayValue::U8(v), AlgebraicType::U8) => v.serialize(self),
+            (ArrayValue::I16(v), AlgebraicType::I16) => v.serialize(self),
+            (ArrayValue::U16(v), AlgebraicType::U16) => v.serialize(self),
+            (ArrayValue::I32(v), AlgebraicType::I32) => v.serialize(self),
+            (ArrayValue::U32(v), AlgebraicType::U32) => v.serialize(self),
+            (ArrayValue::I64(v), AlgebraicType::I64) => v.serialize(self),
+            (ArrayValue::U64(v), AlgebraicType::U64) => v.serialize(self),
+            (ArrayValue::I128(v), AlgebraicType::I128) => v.serialize(self),
+            (ArrayValue::U128(v), AlgebraicType::U128) => v.serialize(self),
+            (ArrayValue::I256(v), AlgebraicType::I256) => v.serialize(self),
+            (ArrayValue::U256(v), AlgebraicType::U256) => v.serialize(self),
+            (ArrayValue::F32(v), AlgebraicType::F32) => v.serialize(self),
+            (ArrayValue::F64(v), AlgebraicType::F64) => v.serialize(self),
+            (ArrayValue::String(v), AlgebraicType::String) => v.serialize(self),
+            (ArrayValue::Array(v), AlgebraicType::Array(ty)) => value.with(ty, v).serialize(self),
+            (val, _) if val.is_empty() => ser::SerializeArray::end(self.serialize_array(0)?),
+            (val, ty) => panic!("mismatched value and schema: {val:?} {ty:?}"),
+        }
+    }
+
     fn serialize_seq_product(self, _len: usize) -> Result<Self::SerializeSeqProduct, Self::Error> {
         Ok(TypedSeqFormatter { ty: self.ty, f: self.f })
     }
@@ -893,11 +943,53 @@ impl TypedWriter for SqlFormatter<'_, '_> {
         write!(self.fmt, "\"{value}\"")
     }
 
+    fn write_array(
+        &mut self,
+        value: &ValueWithType<'_, ArrayValue>,
+        _psql: &PsqlType,
+        ty: &AlgebraicType,
+    ) -> Result<bool, Self::Error> {
+        // `array<u8>` is rendered as bytes in SQL output.
+        if *ty == AlgebraicType::U8 {
+            return Ok(false);
+        }
+
+        let PsqlChars {
+            start_array, end_array, ..
+        } = self.ty.client.format_chars();
+        write!(self.fmt, "{start_array}")?;
+        let tuple = ProductType::from([ty.clone()]);
+        let field = &tuple.elements[0];
+        for (idx, elem) in value.value().iter_cloned().enumerate() {
+            if idx > 0 {
+                write!(self.fmt, ", ")?;
+            }
+            let psql_ty = PsqlType {
+                client: self.ty.client,
+                tuple: &tuple,
+                field,
+                idx: 0,
+            };
+            write!(
+                self.fmt,
+                "{}",
+                PsqlWrapper {
+                    ty: psql_ty,
+                    value: value.with(ty, &elem)
+                }
+            )?;
+        }
+        write!(self.fmt, "{end_array}")?;
+        Ok(true)
+    }
+
     fn write_record(
         &mut self,
         fields: Vec<(Cow<str>, PsqlType<'_>, ValueWithType<AlgebraicValue>)>,
     ) -> Result<(), Self::Error> {
-        let PsqlChars { start, sep, end, quote } = self.ty.client.format_chars();
+        let PsqlChars {
+            start, sep, end, quote, ..
+        } = self.ty.client.format_chars();
         write!(self.fmt, "{start}")?;
         for (idx, (name, ty, value)) in fields.into_iter().enumerate() {
             if idx > 0 {
