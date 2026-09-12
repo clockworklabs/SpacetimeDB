@@ -139,6 +139,10 @@ fn map_procedure_error(e: ProcedureCallError, procedure: &str) -> (StatusCode, S
             log::info!("Procedure {procedure} could not run because the module is out of energy");
             StatusCode::PAYMENT_REQUIRED
         }
+        ProcedureCallError::PoolTimeout(_) => {
+            log::info!("Procedure {procedure} could not run because no procedure instance became free in time");
+            StatusCode::SERVICE_UNAVAILABLE
+        }
         ProcedureCallError::InternalError(_) => {
             // TODO: May need to split this from module errors vs host errors
             log::info!("Internal error while invoking procedure {procedure}: {e:#}");
@@ -297,6 +301,9 @@ async fn handle_http_route_impl<S: ControlStateDelegate + NodeDelegate>(
         }
         Err(spacetimedb::host::module_host::HttpHandlerCallError::NoSuchModule(_)) => {
             return Err(NO_SUCH_DATABASE.into());
+        }
+        Err(err @ spacetimedb::host::module_host::HttpHandlerCallError::PoolTimeout(_)) => {
+            return Err((StatusCode::SERVICE_UNAVAILABLE, err.to_string()).into());
         }
         Err(spacetimedb::host::module_host::HttpHandlerCallError::InternalError(err)) => {
             return Err((StatusCode::INTERNAL_SERVER_ERROR, err).into());
