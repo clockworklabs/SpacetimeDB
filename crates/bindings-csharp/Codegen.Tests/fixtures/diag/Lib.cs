@@ -518,7 +518,9 @@ public partial class ViewPrimaryKeyPartialRow
 [SpacetimeDB.Type]
 public partial struct NonEquatableViewPrimaryKey
 {
+
     public uint Value;
+    public uint Extra;
 }
 
 [SpacetimeDB.Type]

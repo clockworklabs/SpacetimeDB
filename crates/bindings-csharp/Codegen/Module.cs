@@ -174,8 +174,54 @@ static class ColumnTypeValidation
                         or "SpacetimeDB.Uuid",
                 _ => false,
             }
+            || IsNewtypeWrapper(type, out _)
         )
         && type.NullableAnnotation != NullableAnnotation.Annotated;
+
+    // Returns true when `type` is a [SpacetimeDB.Type] struct that wraps exactly one
+    // BSATN-annotated field whose own type passes IsEquatable.
+    public static bool IsNewtypeWrapper(ITypeSymbol type, out IFieldSymbol? underlyingField)
+    {
+        underlyingField = null;
+
+        if (type.TypeKind != Microsoft.CodeAnalysis.TypeKind.Struct)
+            return false;
+
+        if (type is not INamedTypeSymbol namedType)
+            return false;
+
+        // Only structs annotated with [SpacetimeDB.Type] produce BSATN fields.
+        var typeAttrSyntaxes = namedType
+            .GetAttributes()
+            .Where(a => a.AttributeClass?.ToString() == "SpacetimeDB.TypeAttribute")
+            .Select(a => a.ApplicationSyntaxReference?.GetSyntax())
+            .OfType<AttributeSyntax>()
+            .Select(a => a.FirstAncestorOrSelf<TypeDeclarationSyntax>())
+            .OfType<TypeDeclarationSyntax>()
+            .Distinct()
+            .ToList();
+
+        if (typeAttrSyntaxes.Count == 0)
+            return false;
+
+        var bsatnFields = typeAttrSyntaxes
+            .SelectMany(syntax =>
+                SpacetimeDbFieldDiscovery.GetFieldsDeclaredInAnnotatedPartial(syntax, namedType))
+            .ToList();
+
+        if (bsatnFields.Count != 1)
+            return false;
+
+        underlyingField = bsatnFields[0];
+        return IsEquatable(underlyingField.Type);
+    }
+
+    public static string GetNewtypeEffectiveBsatnName(ITypeSymbol type)
+    {
+        if (IsNewtypeWrapper(type, out var inner) && inner != null)
+            return GetNewtypeEffectiveBsatnName(inner.Type);
+        return GetTypeInfo(type);
+    }
 }
 
 /// <summary>
@@ -190,6 +236,9 @@ record ColumnDeclaration : MemberDeclaration
     public readonly string FullTableName;
     public readonly int ColumnIndex;
     public readonly string? ColumnDefaultValue;
+    // Non-null when the column type is a [SpacetimeDB.Type] newtype wrapper around a
+    // single equatable field.
+    public readonly string? NewtypeUnderlyingBsatnName;
 
     // A helper to combine multiple column attributes into a single mask.
     // Note: it doesn't check the table names, this is left up to the caller.
@@ -246,6 +295,21 @@ record ColumnDeclaration : MemberDeclaration
             diag.Report(ErrorDescriptor.UniqueNotEquatable, field);
         }
 
+        // When the column type is a newtype wrapper, capture the effective scalar's
+        if (ColumnTypeValidation.IsNewtypeWrapper(type, out _))
+        {
+            try
+            {
+                NewtypeUnderlyingBsatnName = ColumnTypeValidation.GetNewtypeEffectiveBsatnName(
+                    type
+                );
+            }
+            catch
+            {
+                NewtypeUnderlyingBsatnName = null;
+            }
+        }
+
         if (
             attrs.HasFlag(ColumnAttrs.Default)
             && (
@@ -264,7 +328,10 @@ record ColumnDeclaration : MemberDeclaration
 
     // For the `TableDesc` constructor.
     public string GenerateColumnDef() =>
-        $"new (nameof({Identifier}), BSATN.{Identifier}{TypeUse.BsatnFieldSuffix}.GetAlgebraicType(registrar))";
+        NewtypeUnderlyingBsatnName is { } underlyingBsatn
+            // Newtype wrapper: report the underlying scalar type so the server can build a B-tree PK index.
+            ? $"new (nameof({Identifier}), new {underlyingBsatn}().GetAlgebraicType(registrar))"
+            : $"new (nameof({Identifier}), BSATN.{Identifier}{TypeUse.BsatnFieldSuffix}.GetAlgebraicType(registrar))";
 }
 
 record Scheduled(string ReducerName, int ScheduledAtColumn);
@@ -297,7 +364,11 @@ record TableAccessor
                 Scheduled = new(reducer, scheduledAtIndex);
                 if (
                     table.GetPrimaryKey(this) is not { } pk
-                    || table.Members[pk].Type.Name != "ulong"
+                    || (
+                        table.Members[pk].Type.Name != "ulong"
+                        && table.Members[pk].NewtypeUnderlyingBsatnName
+                            != "SpacetimeDB.BSATN.U64"
+                    )
                 )
                 {
                     throw new InvalidOperationException(
