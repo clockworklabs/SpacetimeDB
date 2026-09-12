@@ -1205,6 +1205,18 @@ impl InstanceCommon {
                 Ok((metrics, trapped)) => (Ok(metrics), trapped),
                 Err(err) => (Err(err), false),
             },
+            ViewCommand::AddBatchSubscription {
+                sender,
+                auth,
+                request,
+                _timer: timer,
+            } => match info
+                .subscriptions
+                .add_batch_subscription_with_instance(&mut inst, sender, auth, request, timer, None)
+            {
+                Ok((metrics, trapped)) => (Ok(metrics), trapped),
+                Err(err) => (Err(err), false),
+            },
             ViewCommand::RemoveSingleSubscription {
                 sender,
                 auth,

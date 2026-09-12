@@ -32,6 +32,10 @@ pub(super) async fn handle_decoded_message(
             let res = client.subscribe_v2(subscribe, timer).await;
             res.map(drop).map_err(|e| (None, None, e.into()))
         }
+        ws_v2::ClientMessage::SubscribeBatch(subscribe_batch) => {
+            let res = client.subscribe_batch(subscribe_batch, timer).await;
+            res.map(drop).map_err(|e| (None, None, e.into()))
+        }
         ws_v2::ClientMessage::Unsubscribe(unsubscribe) => {
             let res = client.unsubscribe_v2(unsubscribe, timer).await;
             res.map(drop).map_err(|e| (None, None, e.into()))

@@ -104,6 +104,7 @@ members = [
 
     # Connection tests
     "connect-disconnect",
+    "connection-session",
     "confirmed-reads",
     "delete-database",
     "client-connection-reject",

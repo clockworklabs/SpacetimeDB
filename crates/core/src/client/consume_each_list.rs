@@ -52,6 +52,13 @@ impl ConsumeEachBuffer for ws_v2::ServerMessage {
         use ws_v2::ServerMessage::*;
         match self {
             SubscribeApplied(x) => x.rows.consume_each_list(each),
+            SubscribeBatchApplied(x) => {
+                for result in x.results {
+                    if let ws_v2::SubscribeSetOutcome::Applied(rows) = result.outcome {
+                        rows.consume_each_list(each);
+                    }
+                }
+            }
             OneOffQueryResult(x) => x.result.ok().consume_each_list(each),
             UnsubscribeApplied(x) => x.rows.consume_each_list(each),
             SubscriptionError(_) | InitialConnection(_) | ProcedureResult(_) => {}
