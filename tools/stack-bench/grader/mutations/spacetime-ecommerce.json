@@ -61,7 +61,7 @@
       "edits": [
         {
           "find": "  ctx.db.customerOrder.id.update({ ...order, status: 'shipped' });",
-          "replace": "  ctx.db.customerOrder.id.update({ ...order, status: 'shipped' });\n  for (const line of ctx.db.orderItem.orderId.filter(order.id)) {\n    ctx.db.orderItem.id.update({ ...line, unitPrice: line.unitPrice * 2 });\n  }"
+          "replace": "  ctx.db.customerOrder.id.update({ ...order, status: 'shipped', total: order.total * 2 });"
         }
       ]
     },
@@ -1666,15 +1666,14 @@
       "id": "administrator-role-assignment-is-discarded",
       "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
       "targets": [
-        "ecommerce.spec.state-durability.staff-role-reload.621a",
-        "ecommerce.spec.access-control.staff-role-boundary.621b"
+        "ecommerce.spec.state-durability.staff-role-reload.621a"
       ],
-      "desc": "Role assignment records activity but does not save the selected role.",
+      "desc": "Inventory role assignments are not saved; staff and administrator role transitions still work.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
           "find": "if (existing) ctx.db.staffRole.accountId.update(row);\n    else ctx.db.staffRole.insert(row);",
-          "replace": "void existing;\n    void row; // mutant: the assigned role is discarded"
+          "replace": "if (role !== 'inventory') {\n      if (existing) ctx.db.staffRole.accountId.update(row);\n      else ctx.db.staffRole.insert(row);\n    }"
         }
       ]
     },
@@ -1682,9 +1681,10 @@
       "id": "staff-can-assign-roles",
       "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
       "targets": [
-        "ecommerce.spec.access-control.staff-role-boundary.621b"
+        "ecommerce.spec.access-control.staff-role-boundary.621b",
+        "ecommerce.spec.access-control.staff-role-revocation.621d"
       ],
-      "desc": "Role assignment accepts staff callers instead of requiring an administrator.",
+      "desc": "Role assignment accepts staff callers instead of requiring an administrator, including after administrator access is revoked.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {

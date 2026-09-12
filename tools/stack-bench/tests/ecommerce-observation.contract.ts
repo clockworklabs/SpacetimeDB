@@ -20,6 +20,9 @@ test('selected privacy checks prove a working positive path without sibling crit
   assert(created > promotions.findIndex(s => s.do === 'reload'));
   assert(created < promotions.findIndex(s => s.do === 'replayAs'));
   const roles = read('progression-staff-roles.json').features[0]!.criteria.find(c => c.id === '621b')!.steps;
+  assert(!roles.slice(0, roles.findIndex(s => s.do === 'fill' && s.text === 'staff'))
+    .some(s => s.do === 'expect' && s.testid === 'staff-role-select' && s.value === 'inventory'),
+  'the role boundary check must establish its own role without requiring the prior inventory assignment');
   const reload = roles.findIndex(s => s.do === 'reload');
   const saved = roles.findIndex(s => s.do === 'expect' && s.testid === 'staff-role-select' && s.value === 'staff');
   assert(reload > roles.findIndex(s => s.testid === 'staff-role-save'));
