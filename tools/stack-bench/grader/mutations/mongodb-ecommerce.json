@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "e05c1517213d85ba9a55acf19e0417578d3d5bd9b95f076eee0544c806caa3a4",
+  "fixtureSha256": "eadfb93446768fca6b9bab67126a0dfaf811c77e104d29007613005c4c0dd8aa",
   "backend": "mongodb",
   "track": "ecommerce",
   "note": "Mutation definitions for the MongoDB ecommerce reference.",
@@ -581,8 +581,8 @@
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "      const value = orderId ? await Order.findOne({ _id: orderId, userId: user._id }).session(session) : null;\n      if (!value || value.status !== \"pending\") throw new Error(\"Order cannot be cancelled\");",
-          "replace": "      const value = orderId ? await Order.findOne({ _id: orderId }).session(session) : null;\n      if (!value || value.status !== \"pending\") throw new Error(\"Order cannot be cancelled\");"
+          "find": "      const value = orderId ? await Order.findOne({ _id: orderId, userId: user._id }).session(session) : null;\n      if (!value) return null;\n      if (value.status !== \"pending\") throw new Error(\"Order cannot be cancelled\");",
+          "replace": "      const value = orderId ? await Order.findOne({ _id: orderId }).session(session) : null;\n      if (!value) return null;\n      if (value.status !== \"pending\") throw new Error(\"Order cannot be cancelled\");"
         }
       ]
     },

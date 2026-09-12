@@ -726,7 +726,8 @@ app.post("/api/orders/:id/cancel", requireAuth, async (req, res) => {
   try {
     order = await mongoose.connection.transaction(async session => {
       const value = orderId ? await Order.findOne({ _id: orderId, userId: user._id }).session(session) : null;
-      if (!value || value.status !== "pending") throw new Error("Order cannot be cancelled");
+      if (!value) return null;
+      if (value.status !== "pending") throw new Error("Order cannot be cancelled");
       for (const line of value.items) {
         await releaseBundle(line.componentAllocations as any, session);
         for (const allocation of line.allocations) await Stock.updateOne(
@@ -738,6 +739,7 @@ app.post("/api/orders/:id/cancel", requireAuth, async (req, res) => {
       return value;
     });
   } catch (error) { return res.status(400).json({error:String(error)}); }
+  if (!order) return res.status(404).json({ error: "Order not found" });
 
   const userId = user._id.toString();
   await Promise.all([
@@ -757,7 +759,8 @@ app.post("/api/orders/:id/items/:itemId/return", requireAuth, async (req, res) =
   try {
     order = await mongoose.connection.transaction(async session => {
       const value = orderId ? await Order.findOne({ _id: orderId, userId: user._id }).session(session) : null;
-      if (!value || !['shipped', 'delivered'].includes(value.status)) throw new Error('No shipped order found');
+      if (!value) return null;
+      if (!['shipped', 'delivered'].includes(value.status)) throw new Error('No shipped order found');
       const line = value.items.find(l => l.itemId.toString() === req.params.itemId && !l.isBundle);
       if (!line || line.returned) throw new Error('No returnable item found');
       for (const allocation of line.allocations) await Stock.updateOne(
@@ -771,6 +774,7 @@ app.post("/api/orders/:id/items/:itemId/return", requireAuth, async (req, res) =
       return value;
     });
   } catch (error) { return res.status(409).json({ error: String(error) }); }
+  if (!order) return res.status(404).json({ error: "Order not found" });
 
   const userId = user._id.toString();
   await Promise.all([

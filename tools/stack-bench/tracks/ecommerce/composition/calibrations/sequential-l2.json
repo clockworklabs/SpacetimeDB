@@ -21,7 +21,7 @@
       {
         "backend": "mongodb",
         "id": "ecommerce-reference-mongodb",
-        "sourceSha256": "e05c1517213d85ba9a55acf19e0417578d3d5bd9b95f076eee0544c806caa3a4"
+        "sourceSha256": "eadfb93446768fca6b9bab67126a0dfaf811c77e104d29007613005c4c0dd8aa"
       },
       {
         "backend": "postgres",
@@ -39,7 +39,7 @@
     {
       "backend": "mongodb",
       "path": "grader/mutations/mongodb-ecommerce.json",
-      "sha256": "58a2a20ea218aae32a0d573c673640ff3ad24c690104a773a4299a0b68e9ed8f",
+      "sha256": "8e525953cbbfb820ee96f78703a0e254c8da3341d72e95e7a60e737d6d6f48a5",
       "referenceId": "ecommerce-reference-mongodb"
     },
     {
