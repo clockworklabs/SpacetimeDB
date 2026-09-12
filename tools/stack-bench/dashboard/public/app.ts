@@ -56,6 +56,7 @@ const state = {
   log: { attempt: '', text: '', offset: 0 },
 };
 let fallback = 0;
+let events: EventSource | null = null;
 let playing = 0;
 let submitting = false;
 let loading = false;
@@ -380,7 +381,8 @@ function stepTo(offset: number): void {
 }
 
 function subscribe(): void {
-  const source = new EventSource('/api/events');
+  if (document.hidden || events) return;
+  const source = events = new EventSource('/api/events');
   const changed = (event: MessageEvent<string>): void => {
     const current = route();
     const message = JSON.parse(event.data) as { key?: string; attemptId?: string };
@@ -581,7 +583,16 @@ window.setInterval(() => {
 }, 1000);
 window.addEventListener('popstate', () => void load(true));
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) void load();
+  if (document.hidden) {
+    // Hidden tabs must not consume the browser's limited HTTP connections.
+    events?.close();
+    events = null;
+    clearInterval(fallback);
+    fallback = 0;
+  } else {
+    subscribe();
+    void load();
+  }
 });
 subscribe();
 void load(true);

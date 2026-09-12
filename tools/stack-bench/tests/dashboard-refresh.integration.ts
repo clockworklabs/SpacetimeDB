@@ -34,11 +34,13 @@ test('dashboard refresh follows child events, coalesces bursts, and refreshes ca
   t.after(() => browser.close());
   const page = await browser.newPage();
   await page.addInitScript(() => {
-    const target = window as unknown as { events: EventTarget; hidden: boolean; EventSource: unknown };
+    const target = window as unknown as { events: EventTarget; hidden: boolean; EventSource: unknown; streams: number };
     target.hidden = false;
+    target.streams = 0;
     Object.defineProperty(document, 'hidden', { get: () => target.hidden });
     target.EventSource = class extends EventTarget {
-      constructor() { super(); target.events = this; }
+      constructor() { super(); target.events = this; target.streams++; }
+      close() { target.streams--; }
     };
   });
   const counts = new Map<string, number>();
@@ -91,7 +93,11 @@ test('dashboard refresh follows child events, coalesces bursts, and refreshes ca
     assert.equal(counts.get(path), previous + 1);
   }
   const previous = counts.get(campaignPath)!;
-  await page.evaluate(() => { (window as unknown as { hidden: boolean }).hidden = true; });
+  await page.evaluate(() => {
+    (window as unknown as { hidden: boolean }).hidden = true;
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  assert.equal(await page.evaluate(() => (window as unknown as { streams: number }).streams), 0);
   await change();
   assert.equal(counts.get(campaignPath), previous);
   const visible = page.waitForResponse(response => new URL(response.url()).pathname === campaignPath);
@@ -102,6 +108,9 @@ test('dashboard refresh follows child events, coalesces bursts, and refreshes ca
   await visible;
   await idle();
   assert.equal(counts.get(campaignPath), previous + 1);
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  assert.equal(await page.evaluate(() => (window as unknown as { streams: number }).streams), 1);
+  await idle();
 
   await page.goto(`http://127.0.0.1:${address.port}/c/${key}/a/${attemptId}?tab=transcript`);
   await idle();
