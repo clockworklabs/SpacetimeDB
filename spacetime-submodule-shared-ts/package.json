@@ -1,0 +1,34 @@
+{
+  "name": "@spacetimedb/submodule-shared",
+  "description": "Shared UI and server utilities for SpacetimeDB submodule examples.",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./server": {
+      "types": "./src/server.ts",
+      "default": "./src/server.ts"
+    },
+    "./styles.css": "./src/styles/index.css"
+  },
+  "scripts": {
+    "format": "prettier . --write --ignore-path ../.prettierignore",
+    "lint": "eslint . && prettier . --check --ignore-path ../.prettierignore",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "eslint": "^9.17.0",
+    "jsdom": "^26.1.0",
+    "prettier": "^3.3.3",
+    "typescript": "~5.6.2",
+    "vitest": "^3.2.4"
+  }
+}
