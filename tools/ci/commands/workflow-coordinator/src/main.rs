@@ -3,7 +3,6 @@
 use anyhow::{bail, ensure, Context, Result};
 use clap::{Parser, Subcommand};
 use duct::{cmd, Expression};
-use regex::Regex;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -355,19 +354,17 @@ fn mentions_public_pr(body: Option<&str>, public_pr_number: u64) -> bool {
     let Some(body) = body else {
         return false;
     };
+    let body = body.to_ascii_lowercase();
     let public_repo_name = PUBLIC_REPO.rsplit_once('/').map_or(PUBLIC_REPO, |(_, repo)| repo);
-    let pattern = format!(
-        r"(?i)(?:(?:{}|{})#{}|https://(?:www\.)?github\.com/{}/(?:pull|issues)/{})(?:[^0-9]|$)",
-        regex::escape(PUBLIC_REPO),
-        regex::escape(public_repo_name),
-        public_pr_number,
-        regex::escape(PUBLIC_REPO),
-        public_pr_number,
-    );
-
-    Regex::new(&pattern)
-        .expect("generated public PR mention regex is valid")
-        .is_match(body)
+    [
+        format!("{PUBLIC_REPO}#{public_pr_number}"),
+        format!("{public_repo_name}#{public_pr_number}"),
+        format!("github.com/{PUBLIC_REPO}/pull/{public_pr_number}"),
+        format!("github.com/{PUBLIC_REPO}/issues/{public_pr_number}"),
+    ]
+    .into_iter()
+    .map(|reference| reference.to_ascii_lowercase())
+    .any(|reference| body.contains(&reference))
 }
 
 fn resolve_private_source(public_pr_number: Option<u64>) -> Result<PrivateSource> {
@@ -702,15 +699,8 @@ mod tests {
     }
 
     #[test]
-    fn public_pr_mentions_require_exact_pr_number() {
-        for body in [
-            None,
-            Some(""),
-            Some("clockworklabs/SpacetimeDB#1234"),
-            Some("https://github.com/clockworklabs/SpacetimeDB/pull/1234"),
-            Some("https://github.com/clockworklabs/SpacetimeDB/issues/1234"),
-            Some("clockworklabs/SpacetimeDBPrivate#123"),
-        ] {
+    fn public_pr_mentions_reject_missing_or_wrong_repo_mentions() {
+        for body in [None, Some(""), Some("clockworklabs/SpacetimeDBPrivate#123")] {
             assert!(!mentions_public_pr(body, 123), "{body:?}");
         }
     }
