@@ -3,6 +3,7 @@
 use anyhow::{bail, ensure, Context, Result};
 use clap::{Parser, Subcommand};
 use duct::{cmd, Expression};
+use regex::Regex;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -354,32 +355,19 @@ fn mentions_public_pr(body: Option<&str>, public_pr_number: u64) -> bool {
     let Some(body) = body else {
         return false;
     };
-    let body = body.to_ascii_lowercase();
-    let public_repo = PUBLIC_REPO.to_ascii_lowercase();
-    let public_repo_name = PUBLIC_REPO
-        .rsplit_once('/')
-        .map_or(PUBLIC_REPO, |(_, repo)| repo)
-        .to_ascii_lowercase();
-    let number = public_pr_number.to_string();
+    let public_repo_name = PUBLIC_REPO.rsplit_once('/').map_or(PUBLIC_REPO, |(_, repo)| repo);
+    let pattern = format!(
+        r"(?i)(?:(?:{}|{})#{}|https://(?:www\.)?github\.com/{}/(?:pull|issues)/{})(?:[^0-9]|$)",
+        regex::escape(PUBLIC_REPO),
+        regex::escape(public_repo_name),
+        public_pr_number,
+        regex::escape(PUBLIC_REPO),
+        public_pr_number,
+    );
 
-    contains_numbered_reference(&body, &format!("{public_repo}#"), &number)
-        || contains_numbered_reference(&body, &format!("{public_repo_name}#"), &number)
-        || contains_numbered_reference(&body, &format!("github.com/{public_repo}/pull/"), &number)
-        || contains_numbered_reference(&body, &format!("github.com/{public_repo}/issues/"), &number)
-        || contains_numbered_reference(&body, &format!("www.github.com/{public_repo}/pull/"), &number)
-        || contains_numbered_reference(&body, &format!("www.github.com/{public_repo}/issues/"), &number)
-}
-
-fn contains_numbered_reference(text: &str, prefix: &str, number: &str) -> bool {
-    let mut remaining = text;
-    while let Some(start) = remaining.find(prefix) {
-        let candidate = &remaining[start + prefix.len()..];
-        if candidate.starts_with(number) && candidate[number.len()..].chars().next().is_none_or(|ch| !ch.is_ascii_digit()) {
-            return true;
-        }
-        remaining = &candidate[1..];
-    }
-    false
+    Regex::new(&pattern)
+        .expect("generated public PR mention regex is valid")
+        .is_match(body)
 }
 
 fn resolve_private_source(public_pr_number: Option<u64>) -> Result<PrivateSource> {
