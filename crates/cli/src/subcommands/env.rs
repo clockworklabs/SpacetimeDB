@@ -37,7 +37,7 @@ pub fn cli() -> Command {
                 Arg::new("key")
                     .index(2)
                     .required(true)
-                    .help("The declared environment key to read"),
+                    .help("The stored environment key to read"),
             ),
         ))
         .subcommand(target(

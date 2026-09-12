@@ -16,7 +16,7 @@ This guide assumes a module set up using a quickstart, such as the [Rust quickst
 
 ## Declare and read variables
 
-Declare every environment key in the module. All values are strings. A declaration can accept any string, one exact string, or a set of allowed strings. Optional declarations permit an absent value.
+Declare every environment key the module reads. All values are strings. A declaration can accept any string, one exact string, or a set of allowed strings. Optional declarations permit an absent value.
 
 These examples declare a required `API_KEY`, a required `MODE` restricted to `development` or `production`, and an optional `LOG_LEVEL` restricted to `info` or `debug`.
 
@@ -219,7 +219,7 @@ spacetime.*.local.json
 
 The `.local` naming convention does not itself prevent a file from being committed.
 
-The CLI resolves each declared key in this order:
+Publishing uses the first available value for each declared key in this order:
 
 1. A value in the publishing process's environment.
 2. A value in the resolved configuration's `env` map.
