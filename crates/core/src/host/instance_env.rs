@@ -1,4 +1,4 @@
-use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
+use super::scheduler::{get_schedule_from_row, scheduled_row_hash, ScheduleError, Scheduler};
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
@@ -520,6 +520,8 @@ impl InstanceEnv {
             // NOTE(centril): Should never happen,
             // as we successfully inserted and thus `ret` is verified against the table schema.
             .map_err(|e| NodesError::ScheduleError(ScheduleError::DecodingError(e)))?;
+        let row_hash =
+            scheduled_row_hash(&row_ref).map_err(|e| NodesError::ScheduleError(ScheduleError::DecodingError(e)))?;
         self.scheduler
             .schedule(
                 table_id,
@@ -528,6 +530,7 @@ impl InstanceEnv {
                 id_column,
                 at_column,
                 function_name,
+                row_hash,
                 self.start_time,
             )
             .map_err(NodesError::ScheduleError)?;

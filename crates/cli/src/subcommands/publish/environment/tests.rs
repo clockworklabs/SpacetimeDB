@@ -29,7 +29,7 @@ fn schema() -> EnvironmentSchema {
 }
 
 #[test]
-fn declared_shell_overrides_are_complete_and_redacted() {
+fn declared_shell_overrides_are_redacted() {
     let mut checked = Vec::new();
     let resolved = resolve(
         &schema(),
@@ -64,7 +64,7 @@ fn declared_shell_overrides_are_complete_and_redacted() {
 }
 
 #[test]
-fn missing_required_never_reuses_old_values_and_optional_disappears() {
+fn omitted_inputs_are_left_for_host_to_resolve() {
     let config = serde_json::json!({"A":"first","B":true,"C":"first","OPTIONAL":"old"});
     let first = resolve(&schema(), Some(&config), |_| None).unwrap();
     assert!(first.values.contains_key("OPTIONAL"));
@@ -75,10 +75,9 @@ fn missing_required_never_reuses_old_values_and_optional_disappears() {
     )
     .unwrap();
     assert!(!second.values.contains_key("OPTIONAL"));
-    let error = resolve(&schema(), Some(&serde_json::json!({"A":"first","B":true})), |_| None)
-        .err()
-        .unwrap();
-    assert!(error.to_string().contains('C'));
+    let partial = resolve(&schema(), Some(&serde_json::json!({"A":"first","B":true})), |_| None).unwrap();
+    assert!(!partial.values.contains_key("C"));
+    assert!(resolve(&schema(), None, |_| None).unwrap().values.is_empty());
 }
 
 #[test]
@@ -97,12 +96,15 @@ fn invalid_inputs_fail_without_values_or_lower_priority_fallback() {
     let error = format!("{error:#}");
     assert!(error.contains('B'));
     assert!(!error.contains("invalid-shell-secret") && !error.contains("private-sentinel"));
-    let error = resolve(&schema(), Some(&serde_json::json!({"UNDECLARED":"secret"})), |_| {
-        panic!("must fail first")
+    let mut looked_up = Vec::new();
+    let resolved = resolve(&schema(), Some(&serde_json::json!({"UNDECLARED":"secret"})), |key| {
+        looked_up.push(key.to_owned());
+        None
     })
-    .err()
     .unwrap();
-    assert!(error.to_string().contains("UNDECLARED"));
+    assert_eq!(resolved.values["UNDECLARED"], "secret");
+    assert!(!looked_up.iter().any(|key| key == "UNDECLARED"));
+    assert!(!resolved.display().contains("secret"));
 }
 
 #[test]
@@ -176,5 +178,26 @@ async fn actual_precompiled_declarations_are_inspected_without_server_or_values(
     let resolved = resolve(schema, Some(&config), |_| None).unwrap();
     assert_eq!(resolved.values.len(), 2);
     assert!(!resolved.display().contains("generated-local-inspection-sentinel"));
-    assert!(resolve(schema, None, |_| None).is_err());
+    assert!(resolve(schema, None, |_| None).unwrap().values.is_empty());
+}
+
+#[test]
+fn undeclared_inputs_still_obey_storage_limits_and_redact_invalid_keys() {
+    for input in [
+        serde_json::json!({"private-marker\ninvalid":null}),
+        serde_json::json!({"UNDECLARED":"x".repeat(8193)}),
+    ] {
+        let error = resolve(&EnvironmentSchema::default(), Some(&input), |_| {
+            panic!("no declared shell lookup")
+        })
+        .err()
+        .unwrap();
+        assert!(!format!("{error:#}").contains("private-marker"));
+    }
+    let input = Value::Object(
+        (0..257)
+            .map(|i| (format!("K{i}"), Value::String(String::new())))
+            .collect(),
+    );
+    assert!(resolve(&EnvironmentSchema::default(), Some(&input), |_| None).is_err());
 }

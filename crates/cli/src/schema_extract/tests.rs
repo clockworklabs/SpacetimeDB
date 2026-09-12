@@ -3,6 +3,51 @@ use spacetimedb_lib::environment::{
     EnvironmentConstraint as Constraint, EnvironmentDeclaration as Declaration, EnvironmentSchema,
 };
 
+#[tokio::test]
+async fn inspector_environment_excludes_secrets_and_preserves_windows_dll_search() {
+    let mut command = tokio::process::Command::new(std::env::current_exe().unwrap());
+    command
+        .args([
+            "--exact",
+            "schema_extract::tests::inspector_environment_child",
+            "--ignored",
+        ])
+        .env("STDB_INSPECTOR_TEST_SECRET", "must-not-reach-inspector");
+    configure_inspector_environment(&mut command);
+    let explicit: Vec<_> = command.as_std().get_envs().collect();
+    #[cfg(windows)]
+    {
+        let path = std::env::var_os("PATH");
+        let expected: Vec<_> = path
+            .as_deref()
+            .map(|value| (std::ffi::OsStr::new("PATH"), Some(value)))
+            .into_iter()
+            .collect();
+        assert_eq!(explicit, expected);
+    }
+    #[cfg(not(windows))]
+    assert!(explicit.is_empty());
+    let output = command.output().await.unwrap();
+    assert!(
+        output.status.success(),
+        "isolated inspector process failed: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+#[test]
+#[ignore = "invoked by the isolated inspector environment regression"]
+fn inspector_environment_child() {
+    // CoreFoundation adds this variable during process initialization on macOS,
+    // even when the parent supplies an empty environment.
+    #[cfg(target_os = "macos")]
+    assert!(std::env::vars_os().all(|(key, _)| key == "__CF_USER_TEXT_ENCODING"));
+    #[cfg(windows)]
+    assert!(std::env::vars_os().all(|(key, _)| key.as_encoded_bytes().eq_ignore_ascii_case(b"PATH")));
+    #[cfg(all(not(windows), not(target_os = "macos")))]
+    assert!(std::env::vars_os().next().is_none(), "unexpected inherited variable");
+}
+
 fn schema() -> EnvironmentSchema {
     EnvironmentSchema::new(vec![
         Declaration {

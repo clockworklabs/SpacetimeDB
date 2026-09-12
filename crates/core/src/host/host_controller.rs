@@ -95,6 +95,10 @@ where
 
 pub type ProgramStorage = Arc<dyn ExternalStorage>;
 
+#[derive(Debug, thiserror::Error)]
+#[error("database program changed before publication; reload environment metadata and retry")]
+pub struct EnvironmentVersionConflict;
+
 /// Private complete configuration for a not-yet-initialized database generation.
 /// Implementations must verify the exact persisted database identity, program and
 /// bootstrap generation. This source is never consulted during ordinary reopen.
@@ -612,6 +616,35 @@ impl HostController {
         policy: MigrationPolicy,
         environment: std::collections::BTreeMap<String, String>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.update_module_host_with_environment_options(
+            database,
+            host_type,
+            replica_id,
+            program_bytes,
+            policy,
+            environment.into(),
+            None,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_module_host_with_environment_options(
+        &self,
+        database: Database,
+        host_type: HostType,
+        replica_id: u64,
+        program_bytes: Box<[u8]>,
+        policy: MigrationPolicy,
+        environment: spacetimedb_lib::environment::EnvironmentUpdate,
+        expected_module_version: Option<spacetimedb_lib::Hash>,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        environment.validate()?;
+        let environment_only = program_bytes.is_empty();
+        anyhow::ensure!(
+            !environment_only || expected_module_version.is_some(),
+            "environment-only publication requires expected_module_version"
+        );
         let program = Program::from_bytes(host_type.into(), program_bytes);
         trace!(
             "update module host {}/{}: genesis={} update-to={}",
@@ -655,8 +688,28 @@ impl HostController {
                     host
                 }
             };
-            let update_result = host
-                .update_module(
+            let update_result = async {
+                let module = host.module.borrow().clone();
+                if let Some(expected) = expected_module_version
+                    && module.info.module_hash != expected
+                {
+                    return Err(EnvironmentVersionConflict.into());
+                }
+                let previous = host
+                    .replica_ctx
+                    .relational_db()
+                    .with_read_only(Workload::Internal, |tx| crate::db::environment::snapshot(tx))?;
+                let environment = environment.resulting_values(&previous)?;
+                if environment_only || program.hash == module.info.module_hash {
+                    let program = module
+                        .relational_db()
+                        .program()?
+                        .context("database program is not initialized")?;
+                    return module
+                        .update_database_with_environment(program, module.info.clone(), policy, environment)
+                        .await;
+                }
+                host.update_module(
                     this.runtimes.clone(),
                     program,
                     policy,
@@ -665,7 +718,9 @@ impl HostController {
                     this.db_cores.take(),
                     environment,
                 )
-                .await;
+                .await
+            }
+            .await;
 
             // Rejected publication leaves the existing host usable. Restore it
             // before propagating validation or migration failure to the caller.
@@ -793,6 +848,26 @@ impl HostController {
             .as_ref()
             .map(|Host { module, .. }| module.borrow().clone())
             .ok_or(NoSuchModule)
+    }
+
+    /// Run a publication operation while retaining the controller write lock.
+    /// Cancellation of the caller cannot release the lock before the operation finishes.
+    pub async fn with_publication_lock<T, F, Fut>(&self, replica_id: u64, operation: F) -> anyhow::Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(ModuleHost) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = anyhow::Result<T>> + Send + 'static,
+    {
+        let guard = self
+            .acquire_write_lock(replica_id)
+            .await
+            .map_err(|_| anyhow::anyhow!("unable to lock database for publication"))?;
+        let module = guard.as_ref().ok_or(NoSuchModule)?.module.borrow().clone();
+        tokio::spawn(async move {
+            let _guard = guard;
+            operation(module).await
+        })
+        .await?
     }
 
     /// Subscribe to updates of the [`ModuleHost`] identified by `replica_id`,
@@ -1764,6 +1839,9 @@ where
     V8HeapMetrics::remove_all_metric_label_values_for_database(db);
 
     let _ = WORKER_METRICS.v8_request_queue_length.remove_label_values(db);
+    let _ = WORKER_METRICS
+        .scheduler_active_scheduled_functions
+        .remove_label_values(db);
     let _ = DB_METRICS.http_response_size_bytes.remove_label_values(db);
 }
 

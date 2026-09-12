@@ -109,7 +109,7 @@ impl ControlDb {
             None => Ok(BTreeMap::new()),
             Some(bytes) => {
                 let request = PublishRequest::decode(&bytes).map_err(|_| invalid())?;
-                if !request.module.is_empty() {
+                if request.module.as_ref().is_some_and(|module| !module.is_empty()) {
                     return Err(invalid());
                 }
                 Ok(request.environment)
@@ -140,8 +140,9 @@ impl ControlDb {
             leader: true,
         };
         let input = PublishRequest {
-            module: Vec::new(),
+            module: None,
             environment,
+            ..Default::default()
         }
         .encode()
         .map_err(|_| invalid())?;
