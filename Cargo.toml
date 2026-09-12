@@ -281,6 +281,7 @@ quick-junit = { version = "0.3.2" }
 quote = "1.0.8"
 rand08 = { package = "rand", version = "0.8" }
 rand = "0.9"
+rand_xoshiro = "0.7"
 rayon = "1.8"
 rayon-core = "1.11.0"
 regex = "1"

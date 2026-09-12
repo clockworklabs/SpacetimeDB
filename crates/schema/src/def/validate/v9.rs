@@ -1154,41 +1154,53 @@ impl<'a, 'b> TableValidator<'a, 'b> {
             }
         });
 
-        /// Compare two `Option<i128>` values, returning `true` if `lo <= hi`,
-        /// or if either is `None`.
-        pub(crate) fn le(lo: Option<i128>, hi: Option<i128>) -> bool {
-            match (lo, hi) {
-                (Some(lo), Some(hi)) => lo <= hi,
-                _ => true,
-            }
-        }
-        let valid = le(min_value, start) && le(start, max_value) && le(min_value, max_value);
-
-        let min_start_max = if valid {
-            Ok((min_value, start, max_value))
+        let increment_is_one: Result<()> = if increment == 1 {
+            Ok(())
         } else {
-            Err(ValidationError::InvalidSequenceRange {
+            Err(ValidationError::InvalidSequenceDefOption {
                 sequence: name.clone(),
-                min_value,
-                start,
-                max_value,
+                option: "increment",
+                supplied_value: increment,
+                expected_value: "1",
             }
             .into())
         };
 
+        fn validate_option_typed_option_is_none(
+            name: &RawIdentifier,
+            option_name: &'static str,
+            supplied_value: Option<i128>,
+        ) -> Result<()> {
+            if let Some(supplied_value) = supplied_value {
+                Err(ValidationError::InvalidSequenceDefOption {
+                    sequence: name.clone(),
+                    option: option_name,
+                    supplied_value,
+                    expected_value: "None",
+                }
+                .into())
+            } else {
+                Ok(())
+            }
+        }
+
+        let no_supplied_removed_options = (
+            validate_option_typed_option_is_none(&name, "start", start),
+            validate_option_typed_option_is_none(&name, "min_value", min_value),
+            validate_option_typed_option_is_none(&name, "max_value", max_value),
+            increment_is_one,
+        )
+            .combine_errors();
+
         let name = self.add_to_global_namespace(name);
 
-        let (name, column, (min_value, start, max_value)) = (name, column, min_start_max).combine_errors()?;
+        let (name, column, ((), (), (), ())) = (name, column, no_supplied_removed_options).combine_errors()?;
 
         Ok(SequenceDef {
             // Set by `ModuleDef::apply_namespace` once the module tree is assembled.
             namespace: NamespacePath::root(),
             name,
             column,
-            min_value,
-            start,
-            max_value,
-            increment,
         })
     }
 

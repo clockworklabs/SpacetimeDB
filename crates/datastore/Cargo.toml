@@ -34,6 +34,11 @@ strum.workspace = true
 thiserror.workspace = true
 thin-vec.workspace = true
 
+# For simulating sequence value skips.
+# See `fn should_simulate_sequence_reallocation` in src/locking_tx_datastore/mut_tx.rs
+rand.workspace = true
+rand_xoshiro.workspace = true
+
 [features]
 # Print a warning when doing an unindexed `iter_by_col_range` on a large table.
 unindexed_iter_by_col_range_warn = []

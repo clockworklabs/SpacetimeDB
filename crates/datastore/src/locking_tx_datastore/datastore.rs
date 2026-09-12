@@ -1,9 +1,6 @@
-use super::{
-    committed_state::CommittedState, mut_tx::MutTxId, sequence::SequencesState, state_view::StateView, tx::TxId,
-    tx_state::TxState,
-};
+use super::{committed_state::CommittedState, mut_tx::MutTxId, state_view::StateView, tx::TxId, tx_state::TxState};
 use crate::execution_context::{Workload, WorkloadType};
-use crate::locking_tx_datastore::replay::{build_sequence_state, ErrorBehavior, Replay};
+use crate::locking_tx_datastore::replay::{ErrorBehavior, Replay};
 use crate::{
     db_metrics::DB_METRICS,
     error::{DatastoreError, TableError},
@@ -25,7 +22,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use core::ops::RangeBounds;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
@@ -57,7 +54,6 @@ pub type Result<T> = std::result::Result<T, DatastoreError>;
 /// Lock Acquisition Order:
 /// 1. `memory`
 /// 2. `committed_state`
-/// 3. `sequence_state`
 ///
 /// All locking mechanisms are encapsulated within the struct through local methods.
 #[derive(Clone)]
@@ -66,8 +62,6 @@ pub struct Locking {
     // TODO(cloutiertyler): This was made `pub` for the datastore split. This should be
     // made private again.
     pub committed_state: Arc<RwLock<CommittedState>>,
-    /// The state of sequence generation in this database.
-    pub(super) sequence_state: Arc<Mutex<SequencesState>>,
     /// The identity of this database.
     pub(crate) database_identity: Identity,
 }
@@ -76,14 +70,9 @@ impl MemoryUsage for Locking {
     fn heap_usage(&self) -> usize {
         let Self {
             committed_state,
-            sequence_state,
             database_identity,
         } = self;
-        std::mem::size_of_val(&**committed_state)
-            + committed_state.read().heap_usage()
-            + std::mem::size_of_val(&**sequence_state)
-            + sequence_state.lock().heap_usage()
-            + database_identity.heap_usage()
+        std::mem::size_of_val(&**committed_state) + committed_state.read().heap_usage() + database_identity.heap_usage()
     }
 }
 
@@ -91,7 +80,6 @@ impl Locking {
     pub fn new(database_identity: Identity, page_pool: PagePool) -> Self {
         Self {
             committed_state: Arc::new(RwLock::new(CommittedState::new(page_pool))),
-            sequence_state: <_>::default(),
             database_identity,
         }
     }
@@ -114,9 +102,6 @@ impl Locking {
 
         // Create the system tables and insert information about themselves into
         commit_state.bootstrap_system_tables(database_identity)?;
-        // The database tables are now initialized with the correct data.
-        // Now we have to build our in memory structures.
-        build_sequence_state(&datastore, &mut commit_state)?;
 
         // We don't want to build indexes here; we'll build those later,
         // in `rebuild_state_after_replay`.
@@ -202,11 +187,6 @@ impl Locking {
 
         // Double check that our in-memory system table ids match the on-disk schemas.
         // committed_state.assert_system_table_schemas_match()?;
-
-        // Set the sequence state. In practice we will end up doing this again after replaying
-        // the commit log, but we do it here too just to avoid having an incorrectly restored
-        // snapshot.
-        build_sequence_state(&datastore, &mut committed_state)?;
 
         // The next TX offset after restoring from a snapshot is one greater than the snapshotted offset.
         committed_state.next_tx_offset = tx_offset + 1;
@@ -979,12 +959,10 @@ impl MutTx for Locking {
 
         let timer = Instant::now();
         let committed_state_write_lock = self.committed_state.write_arc();
-        let sequence_state_lock = self.sequence_state.lock_arc();
         let lock_wait_time = timer.elapsed();
 
         MutTxId {
             committed_state_write_lock,
-            sequence_state_lock,
             tx_state: TxState::default(),
             lock_wait_time,
             read_sets: <_>::default(),
@@ -1015,12 +993,10 @@ impl Locking {
 
         let timer = Instant::now();
         let committed_state_write_lock = self.committed_state.try_write_arc()?;
-        let sequence_state_lock = self.sequence_state.try_lock_arc()?;
         let lock_wait_time = timer.elapsed();
 
         Some(MutTxId {
             committed_state_write_lock,
-            sequence_state_lock,
             tx_state: TxState::default(),
             lock_wait_time,
             read_sets: <_>::default(),
@@ -1324,10 +1300,7 @@ pub(crate) mod tests {
                 sequence_name: RawNamespacedIdentifier::new(value.name),
                 table_id: value.table.into(),
                 col_pos: value.col_pos.into(),
-                increment: 1,
                 start: value.start,
-                min_value: 1,
-                max_value: i128::MAX,
             }
         }
     }
@@ -1435,9 +1408,6 @@ pub(crate) mod tests {
             col_pos: 0.into(),
             sequence_name: "Foo_id_seq".into(),
             start: 1,
-            increment: 1,
-            min_value: 1,
-            max_value: i128::MAX,
         };
         user_public_table(
             map_array(basic_table_schema_cols()),
@@ -2127,9 +2097,40 @@ pub(crate) mod tests {
         let _ = datastore.rollback_mut_tx(tx);
         let mut tx = begin_mut_tx(&datastore);
         insert(&datastore, &mut tx, table_id, &row)?;
+        // The rolled-back insert did not consume the first auto-inc value.
         #[rustfmt::skip]
-        assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(2, "Foo", 18)]);
+        assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
+    }
+
+    #[test]
+    fn sequence_occasionally_skips_values_to_simulate_reallocation() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let mut schema = basic_table_schema_with_indices(basic_indices(), basic_constraints());
+        schema.primary_key = Some(0.into());
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        let mut previous_value = 0;
+
+        // Determined experimentally;
+        // the fixed seed we use for tests first hits a simulated reallocation point
+        // somewhere between rows 8192 and 16384.
+        const MAX_ROWS: u32 = 16384;
+
+        for row_number in 0..MAX_ROWS {
+            let row = product![0_u32, format!("row_{row_number}"), 0_u32];
+            let (_, row_ref) = insert(&datastore, &mut tx, table_id, &row)?;
+            let value = row_ref.read_col::<u32>(0).unwrap();
+            if value != previous_value + 1 {
+                return Ok(());
+            }
+            previous_value = value;
+        }
+
+        panic!("did not simulate a sequence reallocation after inserting {MAX_ROWS} rows");
     }
 
     fn assert_st_indices(tx: &MutTxId, include_age: bool) -> ResultTest<()> {
@@ -2325,9 +2326,6 @@ pub(crate) mod tests {
             col_pos: 0.into(),
             sequence_name: "seq".into(),
             start: 1,
-            increment: 1,
-            min_value: 1,
-            max_value: i128::MAX,
         };
         let seq_id = datastore.create_sequence_mut_tx(&mut tx, sequence.clone())?;
         assert_matches!(
@@ -2386,7 +2384,8 @@ pub(crate) mod tests {
         let _ = datastore.rollback_mut_tx(tx);
         let mut tx = begin_mut_tx(&datastore);
         assert_eq!(tx.pending_schema_changes(), []);
-        insert_assert_and_remove(&mut tx, &zero, &product![2])?;
+        // The auto-inc value generated before the rollback remains available.
+        insert_assert_and_remove(&mut tx, &zero, &one)?;
 
         // Drop the seq and commit this time around. In the next tx, we witness that there's no seq.
         datastore.drop_sequence_mut_tx(&mut tx, seq_id)?;
@@ -3500,10 +3499,12 @@ pub(crate) mod tests {
             "Unexpected delete entries after altering the table"
         );
 
+        // The rolled-back migration did not consume 7, so the committed migration uses it
+        // after the two initial committed rows with IDs 5 and 6.
         let inserted_rows = [
             product![5u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
             product![6u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
-            product![8u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
+            product![7u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
         ];
 
         let new_entry = tx_data
