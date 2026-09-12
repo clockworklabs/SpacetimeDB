@@ -23,6 +23,9 @@
           "points": 1,
           "statedBy": "Signed-in customers can turn order and stock notifications on or off.",
           "steps": [
+            { "do": "click", "actor": "owner", "testid": "overlay-close", "ifAvailable": true },
+            { "do": "click", "actor": "owner", "testid": "catalog-link", "ifAvailable": true },
+            { "do": "click", "actor": "owner", "testid": "notification-settings", "unlessVisible": "notification-order" },
             { "do": "expect", "actor": "owner", "testid": "notification-order", "attribute": "data-state", "value": "on" }
           ]
         },

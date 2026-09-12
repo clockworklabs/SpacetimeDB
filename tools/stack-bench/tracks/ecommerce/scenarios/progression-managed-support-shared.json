@@ -53,6 +53,13 @@
           "points": 2,
           "statedBy": "Customers and authorized staff use one shared support case.",
           "steps": [
+            { "do": "fill", "actor": "staff", "testid": "support-status-input", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "text": "open" },
+            { "do": "click", "actor": "staff", "testid": "support-update", "in": { "testid": "support-ticket", "contains": "Shared managed case" } },
+            { "do": "expect", "actor": "staff", "testid": "support-status", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "contains": "open" },
+            { "do": "reload", "actor": "owner", "settleMs": 1000 },
+            { "do": "ensureSignedIn", "actor": "owner", "name": "managed-shared-owner", "readyTestid": "current-user" },
+            { "do": "click", "actor": "owner", "testid": "support-link", "unlessVisible": "support-ticket" },
+            { "do": "expect", "actor": "owner", "testid": "support-status", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "contains": "open" },
             { "do": "fill", "actor": "staff", "testid": "support-status-input", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "text": "in progress" },
             { "do": "click", "actor": "staff", "testid": "support-update", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "settleMs": 1500 },
             { "do": "fill", "actor": "staff", "testid": "support-reply", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "text": "We are investigating." },

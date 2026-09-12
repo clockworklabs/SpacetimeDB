@@ -21,7 +21,9 @@
           "desc": "someone who never bought the item cannot review it",
           "points": 2,
           "steps": [
-            { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Air Purifier" } },
+            { "do": "callAction", "actor": "owner", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Air Purifier", "attribute": "data-buy-input" } },
+
+            { "do": "expectActionOutcome", "actor": "owner", "outcome": "accepted" },
             { "do": "click", "actor": "owner", "testid": "orders-toggle", "unlessVisible": "order-item" },
             { "do": "expect", "actor": "owner", "testid": "order-item", "contains": "Air Purifier" },
             { "do": "click", "actor": "owner", "testid": "overlay-close", "ifAvailable": true },
@@ -48,8 +50,9 @@
           "desc": "buying the item earns the right to review it",
           "points": 1,
           "steps": [
-            { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" } },
-            { "do": "wait", "actor": "owner", "ms": 2000 },
+            { "do": "callAction", "actor": "owner", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Keyboard", "attribute": "data-buy-input" } },
+
+            { "do": "expectActionOutcome", "actor": "owner", "outcome": "accepted" },
             { "do": "openItem", "actor": "owner", "item": "Keyboard" },
             {"do":"click","actor":"owner","testid":"review-toggle","unlessVisible":"review-rating","ifAvailable":true},
             { "do": "fill", "actor": "owner", "testid": "review-rating", "text": "4" },

@@ -11,7 +11,12 @@
       "setup": [
         { "do": "signUp", "actor": "owner", "name": "review-owner" },
         { "do": "signUp", "actor": "stranger", "name": "review-stranger" },
-        { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" } }
+        { "do": "callAction", "actor": "owner", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Keyboard", "attribute": "data-buy-input" } },
+        { "do": "expectActionOutcome", "actor": "owner", "outcome": "accepted" },
+        {"do":"click","actor":"owner","testid":"orders-toggle","unlessVisible":"order-item"},
+        {"do":"expect","actor":"owner","testid":"order-item","contains":"Keyboard","within":10000},
+        {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true},
+        {"do":"click","actor":"owner","testid":"catalog-link","ifAvailable":true}
       ],
       "criteria": [
         {

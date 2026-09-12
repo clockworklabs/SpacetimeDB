@@ -23,6 +23,9 @@
           "points": 1,
           "statedBy": "A signed-in customer can save and view their name and shipping address.",
           "steps": [
+            { "do": "click", "actor": "owner", "testid": "overlay-close", "ifAvailable": true },
+            { "do": "click", "actor": "owner", "testid": "catalog-link", "ifAvailable": true },
+            { "do": "click", "actor": "owner", "testid": "profile-link", "unlessVisible": "profile-address-summary" },
             { "do": "expect", "actor": "owner", "testid": "profile-address-summary", "contains": "14 Market Street {user:profilemarker}" }
           ]
         },

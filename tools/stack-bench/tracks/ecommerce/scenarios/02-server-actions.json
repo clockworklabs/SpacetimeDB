@@ -103,8 +103,12 @@
       "setup": [
         { "do": "signUp", "actor": "owner", "name": "direct-owner" },
         { "do": "signUp", "actor": "other", "name": "direct-other" },
-        { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" }, "settleMs": 1500 },
-        { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" }, "settleMs": 1500 },
+        { "do": "callAction", "actor": "owner", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Desk Lamp", "attribute": "data-buy-input" } },
+
+        { "do": "expectActionOutcome", "actor": "owner", "outcome": "accepted" },
+        { "do": "callAction", "actor": "owner", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Keyboard", "attribute": "data-buy-input" } },
+
+        { "do": "expectActionOutcome", "actor": "owner", "outcome": "accepted" },
         { "do": "click", "actor": "owner", "testid": "orders-toggle", "unlessVisible": "order-item" }
       ],
       "criteria": [

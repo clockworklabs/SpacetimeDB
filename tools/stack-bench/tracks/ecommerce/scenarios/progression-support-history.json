@@ -26,6 +26,9 @@
           "points": 1,
           "statedBy": "Signed-in customers can see their support ticket history.",
           "steps": [
+            { "do": "reload", "actor": "owner", "settleMs": 1000 },
+            { "do": "ensureSignedIn", "actor": "owner", "name": "support-owner", "readyTestid": "current-user" },
+            { "do": "click", "actor": "owner", "testid": "support-link", "unlessVisible": "support-ticket" },
             { "do": "expect", "actor": "owner", "testid": "support-ticket", "contains": "Owner ticket {user:ticketmarker}" }
           ]
         },

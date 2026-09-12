@@ -14,10 +14,12 @@
         { "do": "click", "actor": "admin", "testid": "admin-link" },
         { "do": "recordNumber", "actor": "admin", "testid": "admin-revenue", "as": "revenue-before" },
         { "do": "recordNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Laptop Stand" }, "as": "stand-before" },
-        { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Laptop Stand" } },
-        { "do": "wait", "actor": "buyer", "ms": 1000 },
-        { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Laptop Stand" } },
-        { "do": "wait", "actor": "buyer", "ms": 2000 }
+        { "do": "callAction", "actor": "buyer", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Laptop Stand", "attribute": "data-buy-input" } },
+
+        { "do": "expectActionOutcome", "actor": "buyer", "outcome": "accepted" },
+        { "do": "callAction", "actor": "buyer", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Laptop Stand", "attribute": "data-buy-input" } },
+
+        { "do": "expectActionOutcome", "actor": "buyer", "outcome": "accepted" }
       ],
       "criteria": [
         {

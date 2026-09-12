@@ -34,7 +34,7 @@ test('support reload checks restore the staff actor and still verify saved field
       { do: 'ensureSignedIn', actor: 'staff', name: 'staff', password: 'stackbench-staff-2026',
         exact: true, readyTestid: 'current-user' });
     assert.deepEqual(criterion.steps[reload + 2],
-      { do: 'click', actor: 'staff', testid: 'staff-link', ifAvailable: true });
+      { do: 'click', actor: 'staff', testid: 'staff-link', ifAvailable: true, unlessVisible: 'support-assignee' });
     assert(criterion.steps.slice(reload + 3).some(step => step.do === 'expect'
       && step.testid === field && step.value === value));
   }
@@ -115,11 +115,13 @@ test('access checks observe protected content and retain direct restock authoriz
   }
 });
 
-test('support history does not toggle its already-open entry after submitting', () => {
+test('support history opens the saved history after submission confirmation', () => {
   const history = feature('progression-support-history.json');
   assert(history.setup.some(step => step.do === 'click' && step.testid === 'support-link'));
   const visible = history.criteria.find(criterion => criterion.id === '612c')!;
-  assert(!visible.steps.some(step => step.do === 'click' && step.testid === 'support-link'));
+  assert.equal(visible.steps[0]!.do, 'reload');
+  assert(visible.steps.some(step => step.do === 'click' && step.testid === 'support-link'
+    && step.unlessVisible === 'support-ticket'));
   assert(visible.steps.some(step => step.do === 'expect' && step.testid === 'support-ticket'));
 });
 

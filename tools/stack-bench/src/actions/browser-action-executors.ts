@@ -193,23 +193,31 @@ async function click({ input, capabilities, signal }:
     BrowserArguments<CommonInput & { settleMs?: number; ifAvailable?: boolean; unlessVisible?: string }>) {
   const actor = actorFor(capabilities, input.actor);
   const browser = interaction(capabilities);
+  const deadline = Date.now() + (input.within ?? browser.defaultWithin);
   const destinationVisible = async (): Promise<boolean> => {
     if (!input.unlessVisible) return false;
-    const sentinel = actor.loc(input.unlessVisible);
-    if (await sentinel.isVisible()) {
-      // A translated closed drawer is "visible" to Playwright. Scroll normal
-      // inline content first, then distinguish it from an offscreen drawer.
-      await sentinel.scrollIntoViewIfNeeded({ timeout: input.within ?? browser.defaultWithin });
-      const inViewport = await sentinel.evaluate(element => new Promise<boolean>(resolve => {
-        const observer = new element.ownerDocument.defaultView.IntersectionObserver(entries => {
-          observer.disconnect();
-          resolve(entries.some(entry => entry.isIntersecting && entry.intersectionRatio > 0));
-        });
-        observer.observe(element);
-      }));
-      return inViewport;
+    while (true) {
+      try {
+        const sentinel = actor.loc(input.unlessVisible);
+        if (!await sentinel.isVisible()) return false;
+        // A translated closed drawer is "visible" to Playwright. Scroll normal
+        // inline content first, then distinguish it from an offscreen drawer.
+        await sentinel.scrollIntoViewIfNeeded({ timeout: Math.max(1, deadline - Date.now()) });
+        return await sentinel.evaluate(element => new Promise<boolean>(resolve => {
+          const observer = new element.ownerDocument.defaultView.IntersectionObserver(entries => {
+            observer.disconnect();
+            resolve(entries.some(entry => entry.isIntersecting && entry.intersectionRatio > 0));
+          });
+          observer.observe(element);
+        }));
+      } catch (error) {
+        // A render can replace the destination between visibility and scrolling.
+        // Retry that read only; never repeat the navigation click.
+        if (!/Element is not attached to the DOM/i.test(String(error))
+          || Date.now() >= deadline || signal.aborted) throw error;
+        await browser.sleep(Math.min(100, deadline - Date.now()), signal);
+      }
     }
-    return false;
   };
   if (await destinationVisible()) {
     return { clicked: false, testid: input.testid, visible: input.unlessVisible };
@@ -217,7 +225,6 @@ async function click({ input, capabilities, signal }:
   const scope = inputScope(browser, input.in);
   const target = actor.loc(input.testid, { contains: browser.expand(input.contains), scope });
   if (input.ifAvailable) {
-    const deadline = Date.now() + (input.within ?? browser.defaultWithin);
     while (!await target.isVisible() || await target.isDisabled()) {
       if (await destinationVisible()) {
         return { clicked: false, testid: input.testid, visible: input.unlessVisible };

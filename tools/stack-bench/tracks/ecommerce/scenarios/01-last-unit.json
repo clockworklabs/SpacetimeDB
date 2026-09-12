@@ -72,12 +72,12 @@
           "desc": "exactly three of the six customers have an order, and no customer has more than one order",
           "points": 1,
           "steps": [
-            {
-              "do": "clickConcurrently",
-              "testid": "orders-toggle",
-              "actors": ["a", "b", "c", "d", "e", "f"],
-              "settleMs": 2500
-            },
+            { "do": "click", "actor": "a", "testid": "orders-toggle", "unlessVisible": "order-item" },
+            { "do": "click", "actor": "b", "testid": "orders-toggle", "unlessVisible": "order-item" },
+            { "do": "click", "actor": "c", "testid": "orders-toggle", "unlessVisible": "order-item" },
+            { "do": "click", "actor": "d", "testid": "orders-toggle", "unlessVisible": "order-item" },
+            { "do": "click", "actor": "e", "testid": "orders-toggle", "unlessVisible": "order-item" },
+            { "do": "click", "actor": "f", "testid": "orders-toggle", "unlessVisible": "order-item" },
             {
               "do": "expectActorsWith",
               "actors": ["a", "b", "c", "d", "e", "f"],

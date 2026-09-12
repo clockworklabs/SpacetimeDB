@@ -9,6 +9,165 @@ import { stableElementSelector } from '../src/actions/element-selector.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
+test('saved views work after confirmation or closing and still reject missing content', async () => {
+  const cases = [
+    ['progression-support-history.json', '612c', 'support-link', 'support-ticket', 'support-owner', 'Owner ticket {user:ticketmarker}'],
+    ['progression-customer-profile.json', '620c', 'profile-link', 'profile-address-summary', 'profile-owner', '14 Market Street {user:profilemarker}'],
+    ['progression-notification-preferences.json', '630c', 'notification-settings', 'notification-order', 'notification-owner', 'on'],
+  ];
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    for (const [file, id, opener, target, user, value] of cases) {
+      const feature = compileScenarioDefinition(JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+        'tracks/ecommerce/scenarios', file!), 'utf8'))).features[0]!;
+      for (const layout of ['inline', 'closed', 'confirmation']) for (const missing of [false, true]) {
+        await page.unrouteAll();
+        await page.route('http://saved.test/**', route => route.fulfill({ contentType: 'text/html', body: `
+          <span id="current-user">${user}</span>
+          <button id="catalog-link">Catalog</button>
+          <button id="${opener}" onclick="document.querySelector('#panel').hidden = !document.querySelector('#panel').hidden">Open</button>
+          <section id="panel" ${layout === 'inline' ? '' : 'hidden'}>
+            ${missing ? '' : `<span id="${target}" data-state="${value}">${value}</span>`}
+          </section><dialog id="confirmation"><p id="support-reference">Saved reference</p>
+            <button id="overlay-close" onclick="document.querySelector('dialog').close()">Close</button></dialog>` }));
+        await page.goto('http://saved.test/');
+        if (layout === 'confirmation') {
+          await page.locator('dialog').evaluate(dialog => (dialog as HTMLDialogElement).showModal());
+          await assert.rejects(page.locator(`#${opener}`).click({ timeout: 100 }), /Timeout/,
+            'the confirmation dialog must block the view opener');
+        }
+        const actor = { page, loc: (name: string, options?: { contains?: string }) => {
+          let locator = page.locator(stableElementSelector(name)).filter({ visible: true });
+          if (options?.contains) locator = locator.filter({ hasText: options.contains });
+          return locator.first();
+        } };
+        const service = { defaultWithin: 150, scopedUser: (name: string) => name,
+          expand: (text: string) => text, testId: stableElementSelector,
+          sleep: (ms: number) => new Promise(resolve => setTimeout(resolve, Math.min(ms, 20))) };
+        const capabilities = { actors: { get: () => actor }, 'browser-interaction': service, 'browser-observation': service };
+        const statuses = [];
+        for (const step of feature.criteria.find(criterion => criterion.id === id)!.steps) {
+          const result = await executeAction(ACTION_REGISTRY, step.do,
+            { ...step, ...(step.testid ? { within: 150 } : {}) }, { capabilities });
+          statuses.push(result.status);
+          if (result.status !== 'passed') break;
+        }
+        assert.equal(statuses.at(-1), missing ? 'failed' : 'passed', `${id}/${layout}/missing=${missing}`);
+      }
+    }
+  } finally { await browser.close(); }
+});
+
+test('managed support live status observes a distinct change without reopening the observer', async () => {
+  const feature = compileScenarioDefinition(JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+    'tracks/ecommerce/scenarios/progression-managed-support-shared.json'), 'utf8'))).features[0]!;
+  const criterion = feature.criteria.find(criterion => criterion.id === '613a')!;
+  const last = criterion.steps.findIndex(step => step.do === 'expect' && step.testid === 'support-status'
+    && step.contains === 'in progress');
+  const steps = criterion.steps.slice(0, last + 1).filter(step => !['support-reply', 'support-reply-submit'].includes(step.testid ?? ''));
+  const browser = await chromium.launch({ headless: true });
+  try {
+    for (const initial of ['open', 'in progress']) for (const live of [false, true]) {
+      const context = await browser.newContext();
+      let savedStatus = initial;
+      let ownerLoads = 0;
+      const owner = await context.newPage();
+      const staff = await context.newPage();
+      await owner.route('http://support.test/**', route => {
+        ownerLoads++;
+        return route.fulfill({ contentType: 'text/html', body: `<span id="current-user">managed-shared-owner</span>
+          <button id="support-link" onclick="document.querySelector('#case').hidden=false">Support</button>
+          <section id="case" data-role="support-ticket" hidden>Shared managed case<span id="support-status">${savedStatus}</span></section>` });
+      });
+      await staff.exposeFunction('saveStatus', async (status: string) => {
+        savedStatus = status;
+        await staff.locator('#support-status').evaluate((element, value) => { element.textContent = value; }, status);
+        if (live) await owner.locator('#support-status').evaluate((element, value) => { element.textContent = value; }, status);
+      });
+      await staff.setContent(`<section data-role="support-ticket">Shared managed case
+        <span id="support-status">${initial}</span>
+        <select id="support-status-input"><option>open</option><option>in progress</option></select>
+        <button id="support-update" onclick="saveStatus(document.querySelector('select').value)">Update</button></section>`);
+      await owner.goto('http://support.test/');
+      const actors = new Map(([['owner', owner], ['staff', staff]] as const).map(([name, page]) => [String(name), {
+        page, loc: (id: string, options?: { contains?: string; scope?: { testid: string; contains?: string } }) => {
+          const root = options?.scope ? page.locator(stableElementSelector(options.scope.testid))
+            .filter({ hasText: options.scope.contains }).first() : page;
+          let locator = root.locator(stableElementSelector(id)).filter({ visible: true });
+          if (options?.contains) locator = locator.filter({ hasText: options.contains });
+          return locator.first();
+        },
+      }]));
+      const service = { defaultWithin: 200, scopedUser: (name: string) => name,
+        expand: (value: string) => value, testId: stableElementSelector,
+        sleep: (ms: number) => new Promise(resolve => setTimeout(resolve, Math.min(ms, 20))) };
+      const capabilities = { actors: { get: (name: string) => actors.get(name) },
+        'browser-interaction': service, 'browser-observation': service };
+      let status = '';
+      for (const step of steps) {
+        const result = await executeAction(ACTION_REGISTRY, step.do,
+          { ...step, ...(step.testid ? { within: 200 } : {}) }, { capabilities });
+        status = result.status;
+        if (status !== 'passed') break;
+      }
+      assert.equal(status, live ? 'passed' : 'failed', `${initial}/live=${live}`);
+      assert.equal(ownerLoads, 2, 'observer loads only for its baseline, never after the live mutation');
+      await context.close();
+    }
+  } finally { await browser.close(); }
+});
+
+test('cart and recommendation probes leave blocking overlays before the next catalog action', async () => {
+  const read = (file: string) => compileScenarioDefinition(JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+    'tracks/ecommerce/scenarios', file), 'utf8'))).features[0]!.criteria[0]!.steps;
+  const cases = [
+    { steps: read('progression-cart-checkout.json'), item: 'Headphones', action: 'add-to-cart' },
+    { steps: read('02-operational-recommendations.json').slice(0, 4), item: 'Bluetooth Speaker', action: 'buy-now' },
+  ];
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    for (const item of cases) for (const overlay of [false, true]) for (const broken of [false, true]) {
+      await page.setContent(`<button id="catalog-link" onclick="document.querySelector('#panel').hidden=true">Catalog</button>
+        <article data-role="item-card">${item.item}<button id="${item.action}" onclick="add()">Add</button></article>
+        <button id="cart-toggle" onclick="document.querySelector('#panel').hidden=!document.querySelector('#panel').hidden">Cart</button>
+        <section id="panel" hidden ${overlay ? 'style="position:fixed;inset:0;background:white"' : ''}>
+          ${overlay ? '<button id="overlay-close" onclick="document.querySelector(\'#panel\').hidden=true">Close</button>' : ''}
+          <span id="cart-total">10</span><div data-role="cart-item">${item.item}<span id="cart-quantity">0</span></div>
+        </section><span id="recommended-item" hidden>Headphones</span>
+        <script>
+          var count = 0;
+          function add() {
+            count++;
+            document.querySelector('#cart-quantity').textContent = ${broken} ? '0' : String(count);
+            document.querySelector('#recommended-item').hidden = ${broken};
+            document.querySelector('#panel').hidden = false;
+          }
+        </script>`);
+      const actor = { page, loc: (id: string, options?: { contains?: string; scope?: { testid: string; contains?: string } }) => {
+        const root = options?.scope ? page.locator(stableElementSelector(options.scope.testid))
+          .filter({ hasText: options.scope.contains }).first() : page;
+        let locator = root.locator(stableElementSelector(id)).filter({ visible: true });
+        if (options?.contains) locator = locator.filter({ hasText: options.contains });
+        return locator.first();
+      } };
+      const service = { defaultWithin: 150, expand: (value: string) => value, testId: stableElementSelector,
+        sleep: (ms: number) => new Promise(resolve => setTimeout(resolve, Math.min(ms, 20))) };
+      const capabilities = { actors: { get: () => actor }, 'browser-interaction': service,
+        'browser-observation': service, clock: service };
+      let status = '';
+      for (const step of item.steps) {
+        const result = await executeAction(ACTION_REGISTRY, step.do,
+          { ...step, ...(step.testid ? { within: 150 } : {}) }, { capabilities });
+        status = result.status;
+        if (status !== 'passed') break;
+      }
+      assert.equal(status, broken ? 'failed' : 'passed', `${item.action}/overlay=${overlay}/broken=${broken}`);
+    }
+  } finally { await browser.close(); }
+});
+
 test('reference order panel stays above a wrapped header and blocks the underlying page', async () => {
   const css = readFileSync(join(STACK_BENCH_ROOT,
     'reference-apps/ecommerce/spacetime/client/src/index.css'), 'utf8');

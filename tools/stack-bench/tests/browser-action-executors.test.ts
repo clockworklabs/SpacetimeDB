@@ -511,6 +511,28 @@ test('optional navigation waits for delayed controls or inline content', async (
   }
 });
 
+test('navigation retries a replaced destination without repeating clicks or hiding errors', async () => {
+  for (const failure of ['once', 'always', 'unrelated']) {
+    let reads = 0;
+    let clicks = 0;
+    const provided = services({ loc: () => ({
+      isVisible: async () => true,
+      scrollIntoViewIfNeeded: async () => {
+        reads += 1;
+        if (failure === 'unrelated') throw new Error('browser disconnected');
+        if (failure === 'always' || reads === 1) throw new Error('Element is not attached to the DOM');
+      },
+      evaluate: async () => true,
+      click: async () => { clicks += 1; },
+    }) }, { browser: { sleep: async (ms: number) => new Promise(resolve => setTimeout(resolve, ms)) } });
+    const result = await run({ do: 'click', actor: 'a', testid: 'low-stock-link',
+      unlessVisible: 'low-stock-item', within: failure === 'always' ? 30 : 1000 }, provided);
+    assert.equal(result.status, failure === 'once' ? 'passed' : 'harness_failure');
+    assert.equal(clicks, 0);
+    assert.equal(reads === 1, failure === 'unrelated');
+  }
+});
+
 test('failed disappearance identifies the matched entry and scope', async () => {
   const provided = services({ loc: () => ({ waitFor: async () => { throw new Error('Timeout'); } }) });
   const result = await run({ do: 'waitUntilAbsent', actor: 'a', testid: 'item-card',

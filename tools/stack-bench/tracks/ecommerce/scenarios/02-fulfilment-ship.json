@@ -22,7 +22,8 @@
           "points": 2,
           "statedBy": "Staff can mark an order as shipped; show the new status in the fulfilment area and the customer's order history.",
           "steps": [
-            { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" } },
+            { "do": "callAction", "actor": "customer", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Keyboard", "attribute": "data-buy-input" } },
+            { "do": "expectActionOutcome", "actor": "customer", "outcome": "accepted" },
             { "do": "click", "actor": "customer", "testid": "orders-toggle", "unlessVisible": "order-item" },
             { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "value": "pending", "ignoreCase": true, "within": 10000 },
             { "do": "reload", "actor": "staff", "settleMs": 2000 },

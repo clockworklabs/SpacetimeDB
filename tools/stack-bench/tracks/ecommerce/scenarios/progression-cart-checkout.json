@@ -22,6 +22,8 @@
           "steps": [
             { "do": "click", "actor": "quantity", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Headphones" } },
             { "do": "wait", "actor": "quantity", "ms": 800 },
+            { "do": "click", "actor": "quantity", "testid": "overlay-close", "ifAvailable": true },
+            { "do": "click", "actor": "quantity", "testid": "catalog-link", "ifAvailable": true },
             { "do": "click", "actor": "quantity", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Headphones" } },
             { "do": "click", "actor": "quantity", "testid": "cart-toggle", "unlessVisible": "cart-total" },
             { "do": "expect", "actor": "quantity", "testid": "cart-item", "contains": "Headphones", "count": 1 },
