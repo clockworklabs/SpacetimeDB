@@ -30,6 +30,10 @@ impl From<ViewCallError> for DBError {
 
 #[derive(Error, Debug)]
 pub enum NodesError {
+    #[error("invalid environment variable name")]
+    InvalidEnvironmentKey,
+    #[error("too many outstanding byte sources for environment read")]
+    EnvironmentSourceLimit,
     #[error("Failed to decode row: {0}")]
     DecodeRow(#[source] DecodeError),
     #[error("Failed to decode value: {0}")]

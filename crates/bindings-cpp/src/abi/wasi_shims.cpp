@@ -150,7 +150,7 @@ __wasi_errno_t __wasi_fd_write(__wasi_fd_t fd, const __wasi_ciovec_t* iovs,
     
     // Make a single console_log call with the complete message
     uint8_t log_level = (fd == STDERR_FILENO) ? 1 : 2; // 1=WARN, 2=INFO
-    console_log(log_level, CSTR("wasi"), CSTR(__FILE__), __LINE__, 
+    console_log(log_level, CSTR("wasi"), CSTR(__FILE__), __LINE__,
                buffer, offset);
     
     // Clean up heap allocation if needed

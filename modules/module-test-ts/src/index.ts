@@ -249,7 +249,13 @@ const spacetimedb = schema({
   ),
   tableToRemove: table({ name: 'table_to_remove' }, { id: t.u32() }),
   lib: libSubmodule,
-});
+}, { env: {
+  MISSING: t.string().optional(),
+  EMPTY: t.string().optional(),
+  UTF8: t.string().optional(),
+  NUL: t.string().optional(),
+  MAXIMUM: t.string().optional(),
+} });
 export default spacetimedb;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -549,6 +555,47 @@ export const libHello = spacetimedb.httpHandler((ctx, req) => {
   return libSubmodule.libHello(ctx.as.lib, req);
 });
 
+// Ordinary JS delegation retains this root host entry, even with ctx.as.lib.
+// Direct host dispatch to lib.envReadHandler is the separate denied case.
+export const envReadChildHandler = spacetimedb.httpHandler((ctx, req) =>
+  libSubmodule.envReadHandler(ctx.as.lib, req)
+);
+
+// Root entries must use the checked accessor too; returning raw st_env SQL is
+// forbidden even when the same entry could legitimately call ctx.env.get.
+export const envReadRootSqlView = spacetimedb.view(
+  { public: true },
+  t.array(t.object('EnvSqlRow', { key: t.string(), value: t.string() })),
+  ctx => libSubmodule.uncheckedEnvironmentQuery(ctx.from.player)
+);
+
 export const router = spacetimedb.httpRouter(
-  new Router().get('/get', getSimple).get('/lib-hello', libHello)
+  new Router().get('/get', getSimple).get('/lib-hello', libHello).get('/env-child', envReadChildHandler)
+);
+
+// Dedicated environment ABI integration exercised by crates/testing.
+export const expectEnvironment = spacetimedb.reducer(
+  { name: 'expect_environment' },
+  { key: t.string(), expected: t.option(t.string()) },
+  (ctx, { key, expected }) => {
+    if (libSubmodule.readRootEnvironmentHelper() !== ctx.env.get('EMPTY')) throw new Error('helper environment scope mismatch');
+    if (ctx.env.EMPTY !== (ctx.env.get('EMPTY') ?? undefined)) throw new Error('named environment mismatch');
+    if (ctx.env.get(key) !== (expected ?? null)) {
+      throw new Error('environment value mismatch');
+    }
+  }
+);
+export const readEnvironment = spacetimedb.procedure(
+  { name: 'read_environment' },
+  { key: t.string() },
+  t.option(t.string()),
+  (ctx, { key }) => {
+    const outside = ctx.env.get(key);
+    ctx.withTx(tx => {
+      if (tx.env.get(key) !== outside) {
+        throw new Error('transaction environment value mismatch');
+      }
+    });
+    return outside ?? undefined;
+  }
 );

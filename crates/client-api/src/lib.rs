@@ -146,7 +146,8 @@ impl Host {
             .await
             .map_err(|_| (StatusCode::NOT_FOUND, "module not found".to_string()))?;
 
-        tracing::debug!(sql = body);
+        // Environment SQL contains values; routine request logs must omit them.
+        tracing::debug!(sql_bytes = body.len(), "executing SQL");
         let mut header = vec![];
         let sql_start = std::time::Instant::now();
         let sql_span = tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty,);
@@ -164,8 +165,8 @@ impl Host {
         )
         .await
         .map_err(|e| {
-            // TODO: Review log level after user SQL errors can be distinguished from internal database failures.
-            log::warn!("{e}");
+            // Parser diagnostics can quote values. Return them only to the caller.
+            log::debug!("SQL request rejected");
             (StatusCode::BAD_REQUEST, e.to_string())
         })?;
 
@@ -205,6 +206,59 @@ impl Host {
             .update_module_host(database, host_type, self.replica_id, program_bytes, policy)
             .await
     }
+
+    pub async fn with_publication_lock<T, F, Fut>(&self, operation: F) -> anyhow::Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(ModuleHost) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = anyhow::Result<T>> + Send + 'static,
+    {
+        self.host_controller
+            .with_publication_lock(self.replica_id, operation)
+            .await
+    }
+
+    pub async fn update_with_environment_options(
+        &self,
+        database: Database,
+        host_type: HostType,
+        program_bytes: Box<[u8]>,
+        policy: MigrationPolicy,
+        environment: spacetimedb_lib::environment::EnvironmentUpdate,
+        expected_module_version: Option<spacetimedb_lib::Hash>,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.host_controller
+            .update_module_host_with_environment_options(
+                database,
+                host_type,
+                self.replica_id,
+                program_bytes,
+                policy,
+                environment,
+                expected_module_version,
+            )
+            .await
+    }
+
+    pub async fn update_with_environment(
+        &self,
+        database: Database,
+        host_type: HostType,
+        program_bytes: Box<[u8]>,
+        policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.host_controller
+            .update_module_host_with_environment(
+                database,
+                host_type,
+                self.replica_id,
+                program_bytes,
+                policy,
+                environment,
+            )
+            .await
+    }
 }
 /// Parameters for publishing a database.
 ///
@@ -214,6 +268,11 @@ pub struct DatabaseDef {
     pub database_identity: Identity,
     /// The compiled program of the database module.
     pub program_bytes: Bytes,
+    /// Supplied overrides, never persisted in the public Database record.
+    pub environment: std::collections::BTreeMap<String, String>,
+    pub environment_remove: Vec<String>,
+    pub environment_replace: bool,
+    pub expected_module_version: Option<spacetimedb_lib::Hash>,
     /// The desired number of replicas the database shall have.
     ///
     /// If `None`, the edition default is used.
@@ -231,6 +290,9 @@ pub struct DatabaseDef {
 pub struct DatabaseResetDef {
     pub database_identity: Identity,
     pub program_bytes: Option<Bytes>,
+    pub environment: std::collections::BTreeMap<String, String>,
+    pub environment_remove: Vec<String>,
+    pub environment_replace: bool,
     pub num_replicas: Option<NonZeroU8>,
     pub host_type: Option<HostType>,
 }

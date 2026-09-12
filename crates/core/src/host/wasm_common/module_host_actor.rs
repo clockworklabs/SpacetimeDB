@@ -37,6 +37,7 @@ use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, ViewError};
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo, ViewInstanceArgs};
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
 use spacetimedb_execution::ExecutionParams;
@@ -85,7 +86,7 @@ pub trait WasmInstance {
 
     fn tx_slot(&self) -> TxSlot;
 
-    fn set_module_def(&mut self, module_def: Arc<ModuleDef>);
+    fn set_module_def(&mut self, module_def: Arc<ModuleDef>, module_hash: Hash);
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult;
 
@@ -190,6 +191,15 @@ pub(crate) fn run_query_for_view(
 
     // Validate shape and disallow views-on-views.
     for plan in &plans {
+        // This SQL originates in module code, not an authenticated external
+        // query. Check every source, including non-returned join inputs, before
+        // any plan executes. The checked env accessor is the only module path.
+        ensure!(
+            !plan
+                .table_ids()
+                .any(spacetimedb_datastore::system_tables::is_module_restricted_table),
+            "module SQL views cannot read a module-restricted table"
+        );
         let Some(source_schema) = plan.return_table() else {
             bail!("query does not return plain table rows");
         };
@@ -431,7 +441,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 impl<T: WasmModule> WasmModuleHostActor<T> {
     fn make_from_instance(&self, mut instance: T::Instance) -> WasmModuleInstance<T::Instance> {
         let common = InstanceCommon::new(&self.common);
-        instance.set_module_def(common.info().module_def.clone());
+        instance.set_module_def(common.info().module_def.clone(), common.info().module_hash);
         WasmModuleInstance {
             instance,
             common,
@@ -489,9 +499,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         self.common
-            .update_database(program, old_module_info, policy, &mut self.instance)
+            .update_database(program, old_module_info, policy, environment, &mut self.instance)
     }
 
     pub fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult {
@@ -545,11 +556,15 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
-    pub fn init_database(&mut self, program: Program) -> anyhow::Result<InitDatabaseResult> {
+    pub fn init_database(
+        &mut self,
+        program: Program,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> anyhow::Result<InitDatabaseResult> {
         let module_def = &self.common.info.clone().module_def;
         let replica_ctx = &self.instance.replica_ctx().clone();
         let call_reducer = |tx, params| self.call_reducer_with_tx_offset(tx, params);
-        let (res, trapped) = init_database(replica_ctx, module_def, program, call_reducer);
+        let (res, trapped) = init_database(replica_ctx, module_def, program, environment, call_reducer);
         self.trapped = trapped;
         res
     }
@@ -621,6 +636,42 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 }
 
+/// Client disconnection and materialized-view refresh are independent effects.
+/// A breaking migration does not remove surviving cached view instances.
+struct UpdateEffects {
+    refresh_views: bool,
+    disconnect_clients: bool,
+}
+
+impl UpdateEffects {
+    fn after_migration(result: crate::db::update::UpdateResult, tx: &MutTxId) -> Self {
+        use crate::db::update::UpdateResult;
+        Self {
+            refresh_views: matches!(result, UpdateResult::EvaluateSubscribedViews)
+                || tx.views_for_refresh().next().is_some(),
+            disconnect_clients: matches!(result, UpdateResult::RequiresClientDisconnect),
+        }
+    }
+
+    fn committed(
+        &self,
+        tx_offset: TransactionOffset,
+        durable_offset: Option<crate::host::module_host::DurableOffset>,
+    ) -> UpdateDatabaseResult {
+        if self.disconnect_clients {
+            UpdateDatabaseResult::UpdatePerformedWithClientDisconnect {
+                tx_offset,
+                durable_offset,
+            }
+        } else {
+            UpdateDatabaseResult::UpdatePerformed {
+                tx_offset,
+                durable_offset,
+            }
+        }
+    }
+}
+
 pub struct InstanceCommon {
     info: Arc<ModuleInfo>,
     energy_monitor: Arc<dyn EnergyMonitor>,
@@ -649,8 +700,12 @@ impl InstanceCommon {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
         inst: &mut I,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        if program.hash == old_module_info.module_hash {
+            return self.update_environment(environment, inst);
+        }
         let replica_ctx = inst.replica_ctx().clone();
         let system_logger = replica_ctx.logger.system_logger();
         let stdb = &replica_ctx.relational_db();
@@ -674,7 +729,22 @@ impl InstanceCommon {
         let program_hash = program.hash;
         let host_type = HostType::from(program.kind);
         let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-        let (mut tx, _) = stdb.with_auto_rollback(tx, |tx| stdb.update_program(tx, program))?;
+        let (mut tx, _) = stdb.with_auto_rollback(tx, |tx| -> anyhow::Result<()> {
+            use spacetimedb_datastore::system_tables::{StModuleFields, ST_MODULE_ID};
+            let row = tx
+                .iter(ST_MODULE_ID)?
+                .next()
+                .context("database program is not initialized")?;
+            let current_hash =
+                spacetimedb_datastore::system_tables::read_hash_from_col(row, StModuleFields::ProgramHash)?;
+            anyhow::ensure!(
+                current_hash == old_module_info.module_hash,
+                "database program changed before publication"
+            );
+            crate::db::environment::replace(stdb, tx, self.info.module_def.environment(), &environment)?;
+            stdb.update_program(tx, program)?;
+            Ok(())
+        })?;
         system_logger.info(&format!("Updated program to {program_hash}"));
 
         let auth_ctx = AuthCtx::for_current(replica_ctx.database.owner_identity);
@@ -717,50 +787,88 @@ impl InstanceCommon {
                 };
                 let durable_offset = stdb.durable_tx_offset();
 
-                let res: UpdateDatabaseResult = match res {
-                    crate::db::update::UpdateResult::Success => {
-                        let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO, Duration::ZERO, tx);
-                        UpdateDatabaseResult::UpdatePerformed {
-                            tx_offset,
-                            durable_offset,
-                        }
-                    }
-                    crate::db::update::UpdateResult::EvaluateSubscribedViews => {
-                        let (out, _, trapped) = self.evaluate_subscribed_views(tx, inst)?;
-                        tx = out.tx;
-                        if trapped || out.outcome != ViewOutcome::Success {
-                            let msg = match trapped {
-                                true => "Trapped while evaluating views during database update".to_string(),
-                                false => format!(
-                                    "Views evaluation did not complete successfully during database update: {:?}",
-                                    out.outcome
-                                ),
-                            };
+                let effects = UpdateEffects::after_migration(res, &tx);
+                let res = if effects.refresh_views {
+                    // Resolve surviving materializations through the new module,
+                    // even when this migration also requires client disconnection.
+                    let (out, _, trapped) = self.evaluate_subscribed_views(tx, inst)?;
+                    tx = out.tx;
+                    if trapped || out.outcome != ViewOutcome::Success {
+                        let msg = match trapped {
+                            true => "Trapped while evaluating views during database update".to_string(),
+                            false => format!(
+                                "Views evaluation did not complete successfully during database update: {:?}",
+                                out.outcome
+                            ),
+                        };
 
-                            let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
-                            stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
-                            UpdateDatabaseResult::ErrorExecutingMigration(anyhow::anyhow!(msg))
-                        } else {
-                            let tx_offset =
-                                succeed(self.info.clone(), out.execution_budget_used, out.total_duration, tx);
-                            UpdateDatabaseResult::UpdatePerformed {
-                                tx_offset,
-                                durable_offset,
-                            }
-                        }
+                        let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
+                        stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
+                        UpdateDatabaseResult::ErrorExecutingMigration(anyhow::anyhow!(msg))
+                    } else {
+                        let tx_offset = succeed(self.info.clone(), out.execution_budget_used, out.total_duration, tx);
+                        effects.committed(tx_offset, durable_offset)
                     }
-                    crate::db::update::UpdateResult::RequiresClientDisconnect => {
-                        let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO, Duration::ZERO, tx);
-                        UpdateDatabaseResult::UpdatePerformedWithClientDisconnect {
-                            tx_offset,
-                            durable_offset,
-                        }
-                    }
+                } else {
+                    let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO, Duration::ZERO, tx);
+                    effects.committed(tx_offset, durable_offset)
                 };
 
                 Ok(res)
             }
         }
+    }
+
+    /// Apply an environment publication using the installed module instance. No
+    /// initialization, migration, program replacement, or scheduler restart occurs.
+    fn update_environment<I: WasmInstance>(
+        &mut self,
+        environment: std::collections::BTreeMap<String, String>,
+        inst: &mut I,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        let replica_ctx = inst.replica_ctx().clone();
+        let db = replica_ctx.relational_db();
+        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        let (tx, _) = db.with_auto_rollback(tx, |tx| -> anyhow::Result<()> {
+            use spacetimedb_datastore::system_tables::{read_hash_from_col, StModuleFields, ST_MODULE_ID};
+            let row = tx
+                .iter(ST_MODULE_ID)?
+                .next()
+                .context("database program is not initialized")?;
+            anyhow::ensure!(
+                read_hash_from_col(row, StModuleFields::ProgramHash)? == self.info.module_hash,
+                "database program changed before publication"
+            );
+            crate::db::environment::replace(db, tx, self.info.module_def.environment(), &environment)?;
+            Ok(())
+        })?;
+        let (out, _, trapped) = self.evaluate_subscribed_views(tx, inst)?;
+        if trapped || out.outcome != ViewOutcome::Success {
+            let (_, metrics, reducer) = db.rollback_mut_tx(out.tx);
+            db.report_mut_tx_metrics(reducer, metrics, None);
+            return Ok(UpdateDatabaseResult::ErrorExecutingMigration(anyhow::anyhow!(
+                "view evaluation failed during environment publication"
+            )));
+        }
+        let event = ModuleEvent {
+            timestamp: Timestamp::now(),
+            caller_identity: self.info.owner_identity,
+            caller_connection_id: None,
+            function_call: ModuleFunctionCall::update(),
+            status: EventStatus::Committed(DatabaseUpdate::default()),
+            reducer_return_value: None,
+            execution_budget_used: out.execution_budget_used,
+            host_execution_duration: out.total_duration,
+            request_id: None,
+            timer: None,
+        };
+        let durable_offset = db.durable_tx_offset();
+        let CommitAndBroadcastEventSuccess { tx_offset, .. } =
+            commit_and_broadcast_event(&self.info.subscriptions, None, event, out.tx);
+        Ok(UpdateDatabaseResult::UpdatePerformed {
+            tx_offset,
+            durable_offset,
+        })
     }
 
     /// Re-evaluates all materialized view instances tracked in view lifecycle state.
@@ -778,32 +886,22 @@ impl InstanceCommon {
         params: CallProcedureParams,
         inst: &mut I,
     ) -> (CallProcedureReturn, bool) {
+        // Resolve authority and type refs from the same canonical flattened ID.
+        // A ProcedureDef's local name alone does not identify its host scope.
+        let (op, procedure_def, owning_def) =
+            ProcedureOp::for_module(&self.info.module_def, &params).expect("validated procedure id should resolve");
+        let procedure_name = op.name.clone();
         let CallProcedureParams {
             timestamp,
             caller_identity,
-            caller_connection_id,
             timer,
-            procedure_id,
-            args,
+            ..
         } = params;
-
-        // We've already validated by this point that the procedure exists,
-        // so it's fine to use the panicking `procedure_by_id`.
-        let procedure_def = self.info.module_def.procedure_by_id(procedure_id);
-        let procedure_name = &procedure_def.name;
 
         // TODO(observability): Add tracing spans, energy, metrics?
         // These will require further thinking once we implement procedure suspend/resume,
         // and so are not worth doing yet.
 
-        let op = ProcedureOp {
-            id: procedure_id,
-            name: procedure_name.clone().into(),
-            caller_identity,
-            caller_connection_id,
-            timestamp,
-            arg_bytes: args.get_bsatn().clone(),
-        };
         let energy_fingerprint = FunctionFingerprint {
             module_hash: self.info.module_hash,
             module_identity: self.info.owner_identity,
@@ -833,7 +931,7 @@ impl InstanceCommon {
 
                 WORKER_METRICS
                     .wasm_instance_errors
-                    .with_label_values(&self.info.database_identity, &self.info.module_hash, procedure_name)
+                    .with_label_values(&self.info.database_identity, &self.info.module_hash, &procedure_name)
                     .inc();
 
                 // TODO(procedure-energy):
@@ -846,7 +944,7 @@ impl InstanceCommon {
             }
             Ok(return_val) => {
                 let return_type = &procedure_def.return_type;
-                let seed = spacetimedb_sats::WithTypespace::new(self.info.module_def.typespace(), return_type);
+                let seed = spacetimedb_sats::WithTypespace::new(owning_def.typespace(), return_type);
                 seed.deserialize(bsatn::Deserializer::new(&mut &return_val[..]))
                     .map_err(|err| ProcedureCallError::InternalError(format!("{err}")))
                     .map(|return_val| ProcedureCallResult {
@@ -1962,6 +2060,27 @@ pub struct ProcedureOp {
     pub arg_bytes: Bytes,
 }
 
+impl ProcedureOp {
+    fn for_module<'a>(
+        module: &'a ModuleDef,
+        params: &CallProcedureParams,
+    ) -> Option<(Self, &'a spacetimedb_schema::def::ProcedureDef, &'a ModuleDef)> {
+        let (name, def, owning) = module.get_procedure_by_id_with_module(params.procedure_id)?;
+        Some((
+            Self {
+                id: params.procedure_id,
+                name,
+                caller_identity: params.caller_identity,
+                caller_connection_id: params.caller_connection_id,
+                timestamp: params.timestamp,
+                arg_bytes: params.args.get_bsatn().clone(),
+            },
+            def,
+            owning,
+        ))
+    }
+}
+
 impl InstanceOp for ProcedureOp {
     fn name(&self) -> &NamespacedIdentifier {
         &self.name
@@ -2005,6 +2124,242 @@ mod tests {
     use spacetimedb_lib::{AlgebraicType, Identity, ProductType};
     use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_schema::def::ModuleDef;
+
+    #[test]
+    fn breaking_migration_preserves_disconnect_and_refreshes_surviving_environment_view() -> anyhow::Result<()> {
+        use super::UpdateEffects;
+        use crate::db::{environment, update};
+        use crate::host::UpdateDatabaseResult;
+        use spacetimedb_datastore::execution_context::Workload;
+        use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
+        use spacetimedb_datastore::system_tables::{ModuleKind, ST_ENV_ID};
+        use spacetimedb_datastore::traits::Program;
+        use spacetimedb_lib::db::raw_def::{
+            v10::{RawModuleDefV10Builder, RawModuleDefV10Section},
+            v9::TableAccess,
+        };
+        use spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration};
+        use spacetimedb_lib::identity::AuthCtx;
+        use spacetimedb_schema::auto_migrate::ponder_migrate;
+        use std::collections::BTreeMap;
+
+        struct TestLogger;
+        impl update::UpdateLogger for TestLogger {
+            fn info(&self, _: &str) {}
+        }
+        fn module(include_obsolete_table: bool) -> ModuleDef {
+            let mut builder = RawModuleDefV10Builder::new();
+            let row = builder.add_algebraic_type(
+                [],
+                "EnvironmentViewRow",
+                AlgebraicType::Product(ProductType::from_iter([("value", AlgebraicType::String)])),
+                true,
+            );
+            builder.add_view(
+                "environment_view",
+                0,
+                true,
+                true,
+                ProductType::unit(),
+                AlgebraicType::array(AlgebraicType::Ref(row)),
+            );
+            if include_obsolete_table {
+                builder
+                    .build_table_with_new_type("obsolete", ProductType::from_iter([("id", AlgebraicType::U64)]), true)
+                    .with_access(TableAccess::Public)
+                    .finish();
+            }
+            let mut raw = builder.finish();
+            raw.sections
+                .push(RawModuleDefV10Section::Environment(vec![EnvironmentDeclaration {
+                    name: "TOKEN".into(),
+                    constraint: EnvironmentConstraint::AnyString,
+                    optional: false,
+                }]));
+            raw.try_into().expect("valid ENV view module")
+        }
+
+        let db = TestDB::in_memory()?;
+        let old = module(true);
+        let new = module(false);
+        let before = BTreeMap::from([("TOKEN".into(), "before".into())]);
+        let after = BTreeMap::from([("TOKEN".into(), "after".into())]);
+        let mut tx = begin_mut_tx(&db);
+        db.update_program(
+            &mut tx,
+            Program::from_bytes(ModuleKind::WASM, b"old-program".as_slice()),
+        )?;
+        for table in old.tables() {
+            update::create_table_from_def(&db, &mut tx, &old, table)?;
+        }
+        let (view_id, _) = db.create_view(&mut tx, &old, old.view("environment_view").unwrap())?;
+        let call = ViewCallInfo::anonymous(view_id);
+        // Ordinary SQL materialization has no live subscriber to disconnect.
+        tx.update_view_timestamp(call.clone(), ViewInstanceArgs::Anonymous)?;
+        tx.record_table_scan(&FuncCallType::View(call.clone()), ST_ENV_ID);
+        environment::replace(&db, &mut tx, old.environment(), &before)?;
+        db.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&db);
+        environment::replace(&db, &mut tx, new.environment(), &after)?;
+        db.update_program(
+            &mut tx,
+            Program::from_bytes(ModuleKind::WASM, b"new-program".as_slice()),
+        )?;
+        let plan = ponder_migrate(&old, &new)?;
+        assert!(
+            plan.breaks_client(),
+            "removing the unrelated table must require disconnection"
+        );
+        let result = update::update_database(&db, &mut tx, AuthCtx::for_testing(), plan, &TestLogger)?;
+        assert!(matches!(result, update::UpdateResult::RequiresClientDisconnect));
+        assert!(tx.views_for_refresh().any(|dirty| *dirty == call));
+        let effects = UpdateEffects::after_migration(result, &tx);
+        assert!(effects.refresh_views);
+        assert!(effects.disconnect_clients);
+        let calls = collect_subscribed_view_calls(&tx, &new, Identity::ZERO)?;
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].view_id, view_id);
+        assert_eq!(&*calls[0].view_name, "environment_view");
+        assert!(tx.active_subscribers_for_view(view_id).is_empty());
+        let (_send, receive) = tokio::sync::oneshot::channel();
+        assert!(matches!(
+            effects.committed(receive, None),
+            UpdateDatabaseResult::UpdatePerformedWithClientDisconnect { .. }
+        ));
+
+        // The failed-view branch can roll back the same complete migration tx.
+        let _ = db.rollback_mut_tx(tx);
+        db.with_read_only(Workload::ForTests, |tx| {
+            assert_eq!(environment::snapshot(tx).unwrap(), before);
+        });
+        let tx = begin_mut_tx(&db);
+        assert!(db.table_id_from_name_mut(&tx, "obsolete")?.is_some());
+        let _ = db.rollback_mut_tx(tx);
+        Ok(())
+    }
+
+    #[test]
+    fn module_sql_views_cannot_read_environment_directly_or_through_a_join() -> anyhow::Result<()> {
+        use super::run_query_for_view;
+        use crate::db::environment;
+        use spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration, EnvironmentSchema};
+        use spacetimedb_primitives::ViewId;
+        use spacetimedb_sats::product;
+        use std::collections::BTreeMap;
+
+        let db = TestDB::in_memory()?;
+        let visible = db.create_table_for_test(
+            "visible",
+            &[("key", AlgebraicType::String), ("value", AlgebraicType::String)],
+            &[0.into()],
+        )?;
+        let mut tx = begin_mut_tx(&db);
+        tx.insert_via_serialize_bsatn(visible, &product!("TOKEN", "ordinary-value"))?;
+        let schema = EnvironmentSchema::new(vec![EnvironmentDeclaration {
+            name: "TOKEN".into(),
+            constraint: EnvironmentConstraint::AnyString,
+            optional: false,
+        }])?;
+        environment::replace(
+            &db,
+            &mut tx,
+            &schema,
+            &BTreeMap::from([("TOKEN".into(), "private-value".into())]),
+        )?;
+        let row_type = ProductType::from_iter([("key", AlgebraicType::String), ("value", AlgebraicType::String)]);
+        let call = ViewCallInfo::anonymous(ViewId(99));
+        let run = |tx: &mut _, query| run_query_for_view(tx, query, &row_type, &call, db.database_identity());
+        assert_eq!(
+            run(&mut tx, "SELECT * FROM visible")?,
+            vec![product!("TOKEN", "ordinary-value")]
+        );
+        for query in [
+            "SELECT * FROM st_env",
+            "SELECT e.* FROM st_env AS e",
+            "SELECT v.* FROM visible AS v JOIN st_env AS e ON v.key = e.key",
+            "SELECT e.* FROM visible AS v JOIN st_env AS e ON v.key = e.key",
+        ] {
+            let error = run(&mut tx, query).expect_err("module SQL must use the checked environment accessor");
+            assert!(
+                error.to_string().contains("module-restricted table"),
+                "unexpected query failure for {query}: {error:#}"
+            );
+            assert!(!error.to_string().contains("private-value"));
+        }
+        let _ = db.rollback_mut_tx(tx);
+        Ok(())
+    }
+
+    #[test]
+    fn procedure_operations_resolve_root_and_nested_host_scope_and_typespace() {
+        use super::{CallProcedureParams, InstanceOp, ProcedureOp};
+        use crate::host::ArgsTuple;
+        use spacetimedb_lib::db::raw_def::v10::{
+            RawModuleDefV10, RawModuleDefV10Builder, RawModuleDefV10Section, RawSubmoduleV10,
+        };
+        use spacetimedb_lib::de::DeserializeSeed;
+        use spacetimedb_lib::Timestamp;
+        use spacetimedb_primitives::ProcedureId;
+        use spacetimedb_sats::{bsatn, AlgebraicValue, ProductValue, WithTypespace};
+
+        fn module(value_type: AlgebraicType) -> RawModuleDefV10 {
+            let mut builder = RawModuleDefV10Builder::new();
+            let result_type = builder.add_algebraic_type(
+                [],
+                "ResultRow",
+                AlgebraicType::Product(ProductType::from_iter([("value", value_type)])),
+                true,
+            );
+            builder.add_procedure("read_env", ProductType::unit(), AlgebraicType::Ref(result_type));
+            builder.finish()
+        }
+
+        let mut child = module(AlgebraicType::String);
+        child
+            .sections
+            .push(RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "nested".into(),
+                module: module(AlgebraicType::Bool),
+            }]));
+        let mut root = module(AlgebraicType::U64);
+        root.sections
+            .push(RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "lib".into(),
+                module: child,
+            }]));
+        let module: ModuleDef = root.try_into().expect("valid nested module");
+        for (index, expected_name) in ["read_env", "lib.read_env", "lib.nested.read_env"]
+            .into_iter()
+            .enumerate()
+        {
+            let params = CallProcedureParams::from_system(
+                Timestamp::UNIX_EPOCH,
+                Identity::ZERO,
+                ProcedureId::from(index),
+                ArgsTuple::nullary(),
+            );
+            let (op, def, owning) = ProcedureOp::for_module(&module, &params).unwrap();
+            assert_eq!(&**op.name(), expected_name);
+            assert_eq!(op.name().is_namespaced(), index != 0);
+            assert_eq!(op.id, params.procedure_id);
+            assert_eq!(&*def.name, "read_env", "declaration names remain local");
+            if index == 2 {
+                let expected = AlgebraicValue::Product(ProductValue::from_iter([AlgebraicValue::Bool(true)]));
+                let bytes = bsatn::to_vec(&expected).unwrap();
+                let decoded = WithTypespace::new(owning.typespace(), &def.return_type)
+                    .deserialize(bsatn::Deserializer::new(&mut &bytes[..]))
+                    .unwrap();
+                assert_eq!(
+                    decoded, expected,
+                    "nested type refs must not use the root U64 typespace"
+                );
+            }
+        }
+        assert!(module
+            .get_procedure_by_id_with_module(ProcedureId::from(3usize))
+            .is_none());
+    }
 
     fn module_def_for_view(name: &str, is_anonymous: bool) -> ModuleDef {
         let mut builder = RawModuleDefV9Builder::new();

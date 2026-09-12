@@ -207,7 +207,7 @@ pub enum SystemTable {
     st_event_table = ST_EVENT_TABLE_ID.0 as _,
 }
 
-pub fn system_tables() -> [TableSchema; 20] {
+pub fn system_tables() -> [TableSchema; 21] {
     [
         // The order should match the `id` of the system table, that start with [ST_TABLE_IDX].
         st_table_schema(),
@@ -230,6 +230,7 @@ pub fn system_tables() -> [TableSchema; 20] {
         st_table_accessor_schema(),
         st_index_accessor_schema(),
         st_column_accessor_schema(),
+        st_env_schema(),
     ]
 }
 
@@ -278,6 +279,7 @@ pub(crate) const ST_EVENT_TABLE_IDX: usize = 16;
 pub(crate) const ST_TABLE_ACCESSOR_IDX: usize = 17;
 pub(crate) const ST_INDEX_ACCESSOR_IDX: usize = 18;
 pub(crate) const ST_COLUMN_ACCESSOR_IDX: usize = 19;
+pub(crate) const ST_ENV_IDX: usize = 20;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
@@ -312,6 +314,9 @@ macro_rules! st_fields_enum {
         }
     }
 }
+
+mod environment;
+pub use environment::*;
 
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StTableFields {
@@ -670,6 +675,8 @@ fn system_module_def() -> ModuleDef {
         .with_unique_constraint(st_column_accessor_table_alias_cols)
         .with_index_no_accessor_name(btree(st_column_accessor_table_alias_cols));
 
+    environment::register_table(&mut builder);
+
     let result = builder
         .finish()
         .try_into()
@@ -695,6 +702,7 @@ fn system_module_def() -> ModuleDef {
     validate_system_table::<StTableAccessorFields>(&result, ST_TABLE_ACCESSOR_NAME);
     validate_system_table::<StIndexAccessorFields>(&result, ST_INDEX_ACCESSOR_NAME);
     validate_system_table::<StColumnAccessorFields>(&result, ST_COLUMN_ACCESSOR_NAME);
+    validate_system_table::<StEnvFields>(&result, ST_ENV_NAME);
 
     result
 }
@@ -743,6 +751,7 @@ lazy_static::lazy_static! {
         m.insert("st_index_accessor_accessor_name_key", ConstraintId(23));
         m.insert("st_column_accessor_table_name_col_name_key", ConstraintId(24));
         m.insert("st_column_accessor_table_name_accessor_name_key", ConstraintId(25));
+        m.insert("st_env_key_key", ConstraintId(26));
         m
     };
 }
@@ -781,6 +790,7 @@ lazy_static::lazy_static! {
         m.insert("st_index_accessor_accessor_name_idx_btree", IndexId(27));
         m.insert("st_column_accessor_table_name_col_name_idx_btree", IndexId(28));
         m.insert("st_column_accessor_table_name_accessor_name_idx_btree", IndexId(29));
+        m.insert("st_env_key_idx_btree", IndexId(30));
         m
     };
 }
@@ -970,6 +980,7 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
         ST_TABLE_ACCESSOR_ID => Some(st_table_accessor_schema()),
         ST_INDEX_ACCESSOR_ID => Some(st_index_accessor_schema()),
         ST_COLUMN_ACCESSOR_ID => Some(st_column_accessor_schema()),
+        ST_ENV_ID => Some(st_env_schema()),
         _ => None,
     }
 }

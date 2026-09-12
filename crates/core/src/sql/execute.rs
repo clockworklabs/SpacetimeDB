@@ -88,7 +88,23 @@ fn run_inner<I: WasmInstance>(
     // We parse the sql statement in a mutable transaction.
     // If it turns out to be a query, we downgrade the tx.
     let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
-        compile_sql_stmt(&sql_text, &SchemaViewer::new(tx, &auth), &auth)
+        let stmt = compile_sql_stmt(&sql_text, &SchemaViewer::new(tx, &auth), &auth)?;
+        // Check mutation authority while the automatic rollback guard owns
+        // the transaction, including rejected administrative statements.
+        if matches!(&stmt, Statement::DML(_)) && !auth.has_write_access() {
+            return Err(anyhow!(
+                "Caller {} is not authorized to run SQL mutations",
+                auth.caller()
+            ));
+        }
+        if let Statement::DML(dml) = &stmt
+            && dml.table_id() == spacetimedb_datastore::system_tables::ST_ENV_ID
+        {
+            return Err(anyhow!(
+                "Database environment variables can only be changed by publishing"
+            ));
+        }
+        Ok(stmt)
     })?;
 
     let mut metrics = ExecutionMetrics::default();
@@ -142,13 +158,10 @@ fn run_inner<I: WasmInstance>(
             ))
         }
         Statement::DML(stmt) => {
-            // An extra layer of auth is required for DML
-            if !auth.has_write_access() {
-                return Err(anyhow!("Caller {} is not authorized to run SQL DML statements", auth.caller()).into());
-            }
-
-            // Evaluate the mutation
-            let (mut tx, _) = db.with_auto_rollback(tx, |tx| execute_dml_stmt(&auth, stmt, tx, &mut metrics))?;
+            let (mut tx, _) = db.with_auto_rollback(tx, |tx| -> anyhow::Result<()> {
+                execute_dml_stmt(&auth, stmt, tx, &mut metrics)?;
+                Ok(())
+            })?;
 
             // Update transaction metrics
             tx.metrics.merge(metrics);
@@ -242,6 +255,63 @@ pub(crate) mod tests {
     use spacetimedb_schema::identifier::Identifier;
     use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
     use spacetimedb_schema::table_name::TableName;
+
+    #[test]
+    fn environment_sql_is_read_only_including_for_owner() {
+        use spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration, EnvironmentSchema};
+        use spacetimedb_lib::identity::SqlPermission;
+        use std::collections::BTreeMap;
+        let db = TestDB::in_memory().unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let owner = AuthCtx::for_current(Identity::ZERO);
+        let viewer = AuthCtx::with_permissions(
+            Identity::ONE,
+            Arc::new(|permission| matches!(permission, SqlPermission::Read(_))),
+        );
+        let outsider = AuthCtx::new(Identity::ZERO, Identity::ONE);
+        let value = "secret-marker";
+        let schema = EnvironmentSchema::new(vec![EnvironmentDeclaration {
+            name: "TOKEN".into(),
+            constraint: EnvironmentConstraint::AnyString,
+            optional: false,
+        }])
+        .unwrap();
+        db.with_auto_commit(Workload::ForTests, |tx| {
+            crate::db::environment::replace(&db, tx, &schema, &BTreeMap::from([("TOKEN".into(), value.into())]))
+        })
+        .unwrap();
+        let execute = |statement: &str, auth: AuthCtx| {
+            runtime.block_on(run(db.clone(), statement.to_string(), auth, None, None, &mut vec![]))
+        };
+        assert_eq!(
+            execute("SELECT value FROM st_env WHERE key = 'TOKEN'", viewer.clone())
+                .unwrap()
+                .rows,
+            vec![product![value]]
+        );
+        assert!(execute("SELECT * FROM st_env", outsider.clone()).is_err());
+        for auth in [owner.clone(), viewer, outsider] {
+            for statement in [
+                "SET env.TOKEN = 'forbidden'",
+                "DELETE env.TOKEN",
+                "INSERT INTO st_env (key, value) VALUES ('BYPASS', 'value')",
+                "UPDATE st_env SET value = 'bypass'",
+                "DELETE FROM st_env",
+            ] {
+                assert!(
+                    execute(statement, auth.clone()).is_err(),
+                    "unexpectedly accepted {statement}"
+                );
+            }
+        }
+        // Rejected writes must release their transactions and preserve data.
+        assert_eq!(
+            execute("SELECT value FROM st_env WHERE key = 'TOKEN'", owner)
+                .unwrap()
+                .rows,
+            vec![product![value]]
+        );
+    }
 
     /// Short-cut for simplify test execution
     pub(crate) fn run_for_testing(db: &Arc<RelationalDB>, sql_text: &str) -> Result<Vec<ProductValue>, DBError> {

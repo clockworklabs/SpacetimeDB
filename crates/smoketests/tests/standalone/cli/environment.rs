@@ -1,0 +1,571 @@
+//! Publish-only environment configuration through the real CLI and local server.
+use serde_json::{json, Value};
+use spacetimedb_guard::ensure_binaries_built;
+use spacetimedb_smoketests::{modules, random_string, Smoketest};
+use std::{
+    fs,
+    io::{Read as _, Seek as _},
+    path::PathBuf,
+    process::{Child, Command, Output, Stdio},
+    time::{Duration, Instant},
+};
+
+const KEYS: &[&str] = &[
+    "SMOKE_REQUIRED",
+    "SMOKE_MODE",
+    "SMOKE_OPTIONAL",
+    "SMOKE_EMPTY",
+    "SMOKE_NUMBER",
+    "SMOKE_FLAG",
+];
+
+struct EnvironmentFixture {
+    test: Smoketest,
+    database: String,
+    wasm: PathBuf,
+}
+
+impl EnvironmentFixture {
+    fn new() -> Self {
+        // Private CI supplies remote cluster settings to the same test binary.
+        // This fixture must still create its own server and fresh credentials,
+        // without changing those settings for other tests in the process.
+        let remote_settings = [
+            "SPACETIME_REMOTE_SERVER",
+            "SPACETIME_USE_AUTH_HOST",
+            "SPACETIME_SMOKETEST_BASE_CONFIG_PATH",
+        ];
+        let inherited = remote_settings.map(std::env::var_os);
+        let test = Smoketest::builder()
+            .isolated_local_server()
+            .precompiled_module("environment-publish")
+            .autopublish(false)
+            .build();
+        assert_eq!(remote_settings.map(std::env::var_os), inherited);
+        assert!(test.guard.is_some());
+        assert!(!test.config_path.exists(), "local fixture copied inherited credentials");
+        let address = test
+            .server_url
+            .strip_prefix("http://")
+            .unwrap()
+            .parse::<std::net::SocketAddr>()
+            .unwrap();
+        assert_eq!(address.ip(), std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+        assert_ne!(address.port(), 0);
+        let wasm = test.project_dir.path().join("published.wasm");
+        fs::copy(modules::precompiled_module("environment-publish"), &wasm).unwrap();
+        // A misleading local source proves --bin-path reads declarations from
+        // these exact bytes, rather than trusting nearby source/config metadata.
+        fs::create_dir(test.project_dir.path().join("src")).unwrap();
+        fs::write(
+            test.project_dir.path().join("src/lib.rs"),
+            "#[spacetimedb::env] pub struct Env { pub WRONG_SOURCE_DECLARATION: String }",
+        )
+        .unwrap();
+        let fixture = Self {
+            test,
+            database: format!("environment-{}", random_string()),
+            wasm,
+        };
+        fixture.success(&["login", "--server-issued-login", &fixture.test.server_url], &[]);
+        fixture
+    }
+
+    fn command(&self, args: &[&str], shell: &[(&str, &str)]) -> Output {
+        let mut command = Command::new(ensure_binaries_built());
+        command.env_clear();
+        // Runtime executables are already built. No user credentials, remote
+        // settings, or ambient module variables enter these child processes.
+        for key in ["PATH", "SystemRoot", "WINDIR", "TMP", "TEMP", "TMPDIR"] {
+            if let Some(value) = std::env::var_os(key) {
+                command.env(key, value);
+            }
+        }
+        command
+            .env("HOME", self.test.project_dir.path())
+            .env("USERPROFILE", self.test.project_dir.path())
+            .env("XDG_CONFIG_HOME", self.test.project_dir.path())
+            .env("NO_PROXY", "*")
+            .env("no_proxy", "*")
+            .envs(shell.iter().copied())
+            // Avoid platform directory discovery after clearing the environment,
+            // including Windows' known-folder lookup for LocalAppData.
+            .arg("--root-dir")
+            .arg(self.test.project_dir.path())
+            .arg("--config-path")
+            .arg(&self.test.config_path)
+            .args(args)
+            .current_dir(self.test.project_dir.path())
+            .stdin(Stdio::null());
+        bounded_output(command)
+    }
+
+    fn success(&self, args: &[&str], shell: &[(&str, &str)]) -> String {
+        let output = self.command(args, shell);
+        assert!(
+            output.status.success(),
+            "local ENV CLI command failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).unwrap()
+    }
+
+    fn config(&self, environment: Option<Value>) {
+        for file in [
+            "spacetime.local.json",
+            "spacetime.prod.json",
+            "spacetime.prod.local.json",
+        ] {
+            let path = self.test.project_dir.path().join(file);
+            if path.exists() {
+                fs::remove_file(path).unwrap();
+            }
+        }
+        let mut config = json!({"database": self.database});
+        if let Some(environment) = environment {
+            config["env"] = environment;
+        }
+        self.write("spacetime.json", config);
+    }
+
+    fn write(&self, file: &str, value: Value) {
+        fs::write(
+            self.test.project_dir.path().join(file),
+            serde_json::to_vec(&value).unwrap(),
+        )
+        .unwrap();
+    }
+
+    fn publish(&self, shell: &[(&str, &str)], extra: &[&str]) -> Output {
+        let mut args = vec![
+            "publish",
+            &self.database,
+            "--bin-path",
+            self.wasm.to_str().unwrap(),
+            "--server",
+            &self.test.server_url,
+            "--yes",
+        ];
+        args.extend_from_slice(extra);
+        self.command(&args, shell)
+    }
+
+    fn publish_environment(&self, shell: &[(&str, &str)], extra: &[&str]) -> Output {
+        let mut args = vec![
+            "publish",
+            &self.database,
+            "--env-only",
+            "--server",
+            &self.test.server_url,
+            "--yes",
+        ];
+        args.extend_from_slice(extra);
+        self.command(&args, shell)
+    }
+
+    fn published(&self, shell: &[(&str, &str)], extra: &[&str]) -> String {
+        let before = fs::read(&self.wasm).unwrap();
+        let output = self.publish(shell, extra);
+        assert!(
+            output.status.success(),
+            "publish failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fs::read(&self.wasm).unwrap(), before);
+        String::from_utf8(output.stdout).unwrap()
+    }
+
+    fn get(&self, key: &str) -> String {
+        self.success(
+            &[
+                "env",
+                "get",
+                &self.database,
+                key,
+                "--server",
+                &self.test.server_url,
+                "--no-config",
+            ],
+            &[],
+        )
+    }
+
+    fn list(&self) -> Vec<String> {
+        let output = self.success(
+            &[
+                "env",
+                "list",
+                &self.database,
+                "--server",
+                &self.test.server_url,
+                "--no-config",
+            ],
+            &[],
+        );
+        let mut lines = output.lines().map(str::trim);
+        assert_eq!(
+            lines.next().unwrap().split('|').map(str::trim).collect::<Vec<_>>(),
+            ["key", "value"]
+        );
+        lines
+            .filter(|line| !line.is_empty() && !line.chars().all(|c| matches!(c, '-' | '+')))
+            .map(|line| {
+                let (key, value) = line.split_once('|').unwrap();
+                let key: String = serde_json::from_str(key.trim()).unwrap();
+                let value: String = serde_json::from_str(value.trim()).unwrap();
+                assert_eq!(self.get(&key), format!("{value}\n"));
+                key
+            })
+            .collect()
+    }
+
+    fn typed(&self, required: &str, mode: &str, rest: [Option<&str>; 4]) {
+        let option = |value: Option<&str>| match value {
+            Some(value) => json!({"some": value}),
+            None => json!({"none": []}),
+        };
+        let arguments = [
+            json!(required),
+            json!(mode),
+            option(rest[0]),
+            option(rest[1]),
+            option(rest[2]),
+            option(rest[3]),
+        ]
+        .map(|value| value.to_string());
+        let mut args = vec![
+            "call",
+            &self.database,
+            "check_environment",
+            "--no-config",
+            "--server",
+            &self.test.server_url,
+        ];
+        args.extend(arguments.iter().map(String::as_str));
+        self.success(&args, &[]);
+    }
+
+    fn sql(&self, statement: &str) -> Output {
+        self.command(
+            &[
+                "sql",
+                &self.database,
+                statement,
+                "--server",
+                &self.test.server_url,
+                "--no-config",
+            ],
+            &[],
+        )
+    }
+}
+
+// Keep ownership through failure/timeout and avoid pipe backpressure. Output is
+// generated fixture data; the cap also prevents accidental unbounded diagnostics.
+fn bounded_output(mut command: Command) -> Output {
+    struct OwnedChild(Option<Child>);
+    impl Drop for OwnedChild {
+        fn drop(&mut self) {
+            if let Some(child) = self.0.as_mut() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+        }
+    }
+    let mut stdout = tempfile::tempfile().unwrap();
+    let mut stderr = tempfile::tempfile().unwrap();
+    let mut child = OwnedChild(Some(
+        command
+            .stdout(Stdio::from(stdout.try_clone().unwrap()))
+            .stderr(Stdio::from(stderr.try_clone().unwrap()))
+            .spawn()
+            .unwrap(),
+    ));
+    let deadline = Instant::now() + Duration::from_secs(90);
+    let status = loop {
+        assert!(
+            stdout.metadata().unwrap().len() <= 1024 * 1024 && stderr.metadata().unwrap().len() <= 1024 * 1024,
+            "local ENV CLI output exceeds bound"
+        );
+        if let Some(status) = child.0.as_mut().unwrap().try_wait().unwrap() {
+            child.0.take(); // Already reaped: never signal this process identifier again.
+            break status;
+        }
+        assert!(Instant::now() < deadline, "local ENV CLI command timed out");
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    stdout.rewind().unwrap();
+    stderr.rewind().unwrap();
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    stdout.read_to_end(&mut out).unwrap();
+    stderr.read_to_end(&mut err).unwrap();
+    Output {
+        status,
+        stdout: out,
+        stderr: err,
+    }
+}
+
+#[test]
+fn cli_environment_layers_shell_and_exact_precompiled_declarations() {
+    let f = EnvironmentFixture::new();
+    f.write(
+        "spacetime.json",
+        json!({"database":"unused-parent", "env":{
+        "SMOKE_REQUIRED":"base-required", "SMOKE_MODE":"ready", "SMOKE_OPTIONAL":"base-optional",
+        "SMOKE_EMPTY":"base-empty", "SMOKE_FLAG": false
+    }, "children":[{"database":f.database,"env":{"SMOKE_OPTIONAL":"child-optional"}}]}),
+    );
+    // Use a raw JSON number to verify there is no f64 round trip.
+    fs::write(f.test.project_dir.path().join("spacetime.local.json"),
+        r#"{"env":{"SMOKE_REQUIRED":"local-required","SMOKE_NUMBER":9007199254740993123456789},"children":[{"env":{"SMOKE_OPTIONAL":"child-local"}}]}"#).unwrap();
+    f.write(
+        "spacetime.prod.json",
+        json!({"env":{"SMOKE_REQUIRED":"prod-required","SMOKE_MODE":"other"},
+        "children":[{"env":{"SMOKE_EMPTY":"child-prod"}}]}),
+    );
+    f.write(
+        "spacetime.prod.local.json",
+        json!({"env":{"SMOKE_REQUIRED":"prod-local-required"},
+        "children":[{"env":{"SMOKE_OPTIONAL":"child-final"}}]}),
+    );
+    let output = f.published(
+        &[
+            ("SMOKE_REQUIRED", "shell-required"),
+            ("SMOKE_EMPTY", ""),
+            ("SMOKE_UNDECLARED", "ambient-not-published"),
+        ],
+        &["--env", "prod"],
+    );
+    for key in KEYS {
+        assert!(output.contains(key));
+    }
+    for value in [
+        "shell-required",
+        "child-final",
+        "9007199254740993123456789",
+        "ambient-not-published",
+    ] {
+        assert!(!output.contains(value), "publish display leaked a fixture value");
+    }
+    assert!(output.contains("SMOKE_REQUIRED (shell)"));
+    assert!(output.contains("SMOKE_NUMBER (config)"));
+    assert_eq!(f.get("SMOKE_EMPTY"), "\n");
+    assert_eq!(f.get("SMOKE_NUMBER"), "9007199254740993123456789\n");
+    assert_eq!(f.get("SMOKE_FLAG"), "false\n");
+    f.typed(
+        "shell-required",
+        "other",
+        [
+            Some("child-final"),
+            Some(""),
+            Some("9007199254740993123456789"),
+            Some("false"),
+        ],
+    );
+    let mut keys = KEYS.to_vec();
+    keys.sort_unstable();
+    assert_eq!(f.list(), keys);
+    let initial = f.sql("SELECT required, mode FROM initial_environment");
+    assert!(initial.status.success());
+    let initial = String::from_utf8(initial.stdout).unwrap();
+    assert!(initial.contains("shell-required") && initial.contains("other"));
+}
+
+#[test]
+fn cli_environment_replacement_rejection_and_read_only_commands() {
+    let f = EnvironmentFixture::new();
+    f.config(Some(
+        json!({"SMOKE_REQUIRED":"initial-sentinel","SMOKE_MODE":"ready","SMOKE_OPTIONAL":"remove-me"}),
+    ));
+    f.published(&[], &["--replace-env"]);
+    f.config(Some(
+        json!({"SMOKE_REQUIRED":"replacement-sentinel","SMOKE_MODE":"other"}),
+    ));
+    f.published(&[], &["--replace-env"]);
+    f.typed("replacement-sentinel", "other", [None; 4]);
+    assert_eq!(f.list(), ["SMOKE_MODE", "SMOKE_REQUIRED"]);
+    assert!(!f
+        .command(
+            &[
+                "env",
+                "get",
+                &f.database,
+                "SMOKE_OPTIONAL",
+                "--server",
+                &f.test.server_url,
+                "--no-config"
+            ],
+            &[]
+        )
+        .status
+        .success());
+    for input in [
+        json!({"SMOKE_MODE":"ready"}),
+        json!({"SMOKE_REQUIRED":"rejected-sentinel","SMOKE_MODE":"invalid-sentinel"}),
+        json!({"SMOKE_REQUIRED":"rejected-sentinel","SMOKE_MODE":"ready","SMOKE_OPTIONAL":{}}),
+    ] {
+        f.config(Some(input));
+        let output = f.publish(&[], &["--replace-env"]);
+        assert!(!output.status.success());
+        for value in ["rejected-sentinel", "invalid-sentinel", "unknown-sentinel"] {
+            assert!(!String::from_utf8_lossy(&output.stdout).contains(value));
+            assert!(!String::from_utf8_lossy(&output.stderr).contains(value));
+        }
+        assert_eq!(f.get("SMOKE_REQUIRED"), "replacement-sentinel\n");
+        f.typed("replacement-sentinel", "other", [None; 4]);
+    }
+    // Invalid local configuration must not prevent an explicit read-only target.
+    assert_eq!(f.list(), ["SMOKE_MODE", "SMOKE_REQUIRED"]);
+    for statement in [
+        "SET env.SMOKE_REQUIRED = 'bypass'",
+        "DELETE env.SMOKE_REQUIRED",
+        "INSERT INTO st_env (key, value) VALUES ('BYPASS', 'value')",
+        "UPDATE st_env SET value = 'bypass'",
+        "DELETE FROM st_env",
+    ] {
+        assert!(!f.sql(statement).status.success());
+        assert_eq!(f.get("SMOKE_REQUIRED"), "replacement-sentinel\n");
+    }
+    for operation in ["set", "delete", "unset"] {
+        assert!(!f
+            .command(
+                &[
+                    "env",
+                    operation,
+                    &f.database,
+                    "SMOKE_REQUIRED",
+                    "--server",
+                    &f.test.server_url
+                ],
+                &[]
+            )
+            .status
+            .success());
+    }
+}
+
+#[test]
+fn cli_environment_initial_rejection_clear_and_omitted_payload() {
+    let mut f = EnvironmentFixture::new();
+    f.config(None);
+    assert!(!f.publish(&[], &[]).status.success());
+    f.config(Some(json!({"SMOKE_REQUIRED":"clear-initial","SMOKE_MODE":"ready"})));
+    f.published(&[], &[]);
+    f.config(Some(
+        json!({"SMOKE_REQUIRED":"clear-replaced","SMOKE_MODE":"other","SMOKE_EMPTY":""}),
+    ));
+    f.published(&[], &["--delete-data"]);
+    f.typed("clear-replaced", "other", [None, Some(""), None, None]);
+    let initial = f.sql("SELECT required FROM initial_environment");
+    assert!(initial.status.success());
+    let initial = String::from_utf8(initial.stdout).unwrap();
+    assert!(initial.contains("clear-replaced") && !initial.contains("clear-initial"));
+    // A legacy module with no ENV declaration receives an empty complete input.
+    f.config(None);
+    f.wasm = modules::precompiled_module("noop");
+    f.published(&[("SMOKE_REQUIRED", "must-not-be-ambient")], &["--delete-data"]);
+    assert!(f.list().is_empty());
+}
+
+#[test]
+fn cli_environment_preservation_and_environment_only_updates() {
+    let f = EnvironmentFixture::new();
+    f.config(Some(
+        json!({"SMOKE_REQUIRED":"persisted-required", "SMOKE_MODE":"ready", "SMOKE_OPTIONAL":"keep-optional"}),
+    ));
+    f.published(&[], &[]);
+    let client = reqwest::blocking::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(20))
+        .build()
+        .unwrap();
+    let url = format!("{}/v1/database/{}", f.test.server_url, f.database);
+    let denied = client.get(format!("{url}/environment")).send().unwrap();
+    assert!(matches!(denied.status().as_u16(), 401 | 403));
+    // This config and token were created by the fixture's isolated local login.
+    let config: toml::Value = toml::from_str(&fs::read_to_string(&f.test.config_path).unwrap()).unwrap();
+    let token = config["spacetimedb_token"].as_str().unwrap();
+    let metadata = client
+        .get(format!("{url}/environment"))
+        .bearer_auth(token)
+        .send()
+        .unwrap();
+    assert!(metadata.status().is_success());
+    assert_eq!(metadata.headers()["cache-control"], "no-store");
+    let metadata = metadata.text().unwrap();
+    assert!(!metadata.contains("persisted-required") && !metadata.contains("keep-optional"));
+    let metadata: Value = serde_json::from_str(&metadata).unwrap();
+    assert!(metadata["stored_keys"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("SMOKE_REQUIRED")));
+    for (body, status) in [
+        (
+            json!({"environment":{"SMOKE_REQUIRED":"stale-replacement"},"expected_module_version":"00".repeat(32)}),
+            409,
+        ),
+        (json!({"environment":{"SMOKE_REQUIRED":"missing-version"}}), 400),
+        (json!({"module":""}), 400),
+    ] {
+        let response = client
+            .put(&url)
+            .bearer_auth(token)
+            .header("Content-Type", "application/vnd.spacetimedb.publish+json")
+            .body(body.to_string())
+            .send()
+            .unwrap();
+        assert_eq!(response.status().as_u16(), status);
+    }
+    f.config(Some(json!({"FUTURE_KEY":"stored-future"})));
+    f.published(&[("FUTURE_KEY", "must-not-import-undeclared")], &[]);
+    assert_eq!(f.get("FUTURE_KEY"), "stored-future\n");
+    f.typed("persisted-required", "ready", [Some("keep-optional"), None, None, None]);
+
+    // No local bundle or valid module source is available for env-only publishing.
+    fs::remove_file(&f.wasm).unwrap();
+    f.config(Some(json!({"SMOKE_MODE":"other", "UNDECLARED":"new-value"})));
+    let output = f.publish_environment(&[], &["--unset-env", "SMOKE_OPTIONAL"]);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    f.typed("persisted-required", "other", [None; 4]);
+    assert_eq!(f.get("UNDECLARED"), "new-value\n");
+    assert_eq!(f.get("FUTURE_KEY"), "stored-future\n");
+    let initial = f.sql("SELECT required, mode FROM initial_environment");
+    assert!(initial.status.success());
+    let initial = String::from_utf8(initial.stdout).unwrap();
+    assert!(initial.contains("persisted-required") && initial.contains("ready"));
+    assert!(!initial.contains("other"), "env-only reran init");
+
+    f.config(None);
+    for flags in [vec!["--unset-env", "SMOKE_REQUIRED"], vec!["--replace-env"]] {
+        assert!(!f.publish_environment(&[], &flags).status.success());
+        f.typed("persisted-required", "other", [None; 4]);
+        assert_eq!(f.get("UNDECLARED"), "new-value\n");
+    }
+    f.config(Some(json!({"SMOKE_REQUIRED":"replace-required", "SMOKE_MODE":"ready"})));
+    assert!(f.publish_environment(&[], &["--replace-env"]).status.success());
+    assert_eq!(f.list(), ["SMOKE_MODE", "SMOKE_REQUIRED"]);
+    f.typed("replace-required", "ready", [None; 4]);
+}
+
+#[test]
+fn cli_environment_preloaded_values_are_checked_when_declared() {
+    let mut f = EnvironmentFixture::new();
+    let declared_module = f.wasm.clone();
+    f.wasm = modules::precompiled_module("noop");
+    f.config(Some(
+        json!({"SMOKE_REQUIRED":"preloaded", "SMOKE_MODE":"not-an-allowed-mode"}),
+    ));
+    f.published(&[], &[]);
+    f.config(None);
+    f.wasm = declared_module;
+    assert!(!f.publish(&[], &[]).status.success());
+    assert_eq!(f.get("SMOKE_MODE"), "not-an-allowed-mode\n");
+    f.config(Some(json!({"SMOKE_MODE":"ready"})));
+    assert!(f.publish_environment(&[], &[]).status.success());
+    f.config(None);
+    f.published(&[], &[]);
+    f.typed("preloaded", "ready", [None; 4]);
+}

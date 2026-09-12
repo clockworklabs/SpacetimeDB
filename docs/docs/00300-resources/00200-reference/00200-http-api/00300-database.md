@@ -41,7 +41,7 @@ If no `Authorization` header is provided, a new anonymous identity will be creat
 
 #### Data
 
-A WebAssembly module in the [binary format](https://webassembly.github.io/spec/core/binary/index.html).
+A WebAssembly module in the [binary format](https://webassembly.github.io/spec/core/binary/index.html), or a [publish request with environment values](#publishing-with-environment-values).
 
 #### Returns
 
@@ -76,7 +76,7 @@ If no `Authorization` header is provided, a new anonymous identity will be creat
 
 #### Data
 
-A WebAssembly module in the [binary format](https://webassembly.github.io/spec/core/binary/index.html).
+A WebAssembly module in the [binary format](https://webassembly.github.io/spec/core/binary/index.html), or a [publish request with environment values](#publishing-with-environment-values).
 
 #### Returns
 
@@ -97,6 +97,60 @@ If a database with the given name exists, but the identity provided in the `Auth
     "name": string
 } }
 ```
+
+### Publishing with environment values
+
+Both publish endpoints accept `Content-Type: application/vnd.spacetimedb.publish+json` with this JSON body:
+
+```json
+{
+  "module": "<base64-encoded module bytes>",
+  "environment": {
+    "API_KEY": "development-only-key",
+    "MODE": "development"
+  }
+}
+```
+
+`module` uses standard padded Base64. `environment` supplies string overrides for declared or undeclared names. Unspecified stored values survive by default. The server validates the resulting environment against the module's declarations and installs both in one transaction: all required values must exist and all present declared values must satisfy their constraints. An empty or omitted map preserves stored values, including when publishing unchanged module bytes.
+
+A missing required value returns HTTP 400 with `Content-Type: application/json` and `{"error":"missing_required_environment","key":"API_KEY"}` identifying the missing key. Clients can prompt for that value and retry the publish. Other validation and module failures do not use this error code.
+
+Optional fields `environment_remove` (an array of keys) and `environment_replace` (a boolean, default `false`) request explicit deletion or complete replacement. A key cannot be both supplied and removed. Replacement uses only the supplied map, deleting every unspecified declared and undeclared key, and rejects any nonempty removal list. Invalid updates leave the database unchanged.
+
+To update an existing database without a module, omit `module` and provide `expected_module_version` from `GET /v1/database/{name_or_identity}/environment`. That authorized endpoint returns `module_version`, `declarations`, and `stored_keys`, without secret values. Each declaration contains `name`, `optional`, and `constraint`: `"AnyString"`, `{"Literal":"value"}`, or `{"OneOf":["a","b"]}`. Metadata comes from one database version. For example:
+
+```json
+{
+  "expected_module_version": "<module hash from environment metadata>",
+  "environment": { "FUTURE_KEY": "development-only-value" },
+  "environment_remove": ["OLD_OPTIONAL_KEY"],
+  "environment_replace": false
+}
+```
+
+Send this body to the existing database's PUT endpoint with the same content type and publish authorization. Environment-only updates validate against the deployed schema, never invoke initialization or migration, and reject stale module versions. A new database still requires a module and all initially required values in its initial publish.
+
+For example, use `curl`, `jq`, and `base64` to publish a Wasm module to a local server. Export `SPACETIME_TOKEN` with a token authorized to publish and `API_KEY` with the required value. Change `module.wasm` to the artifact you built.
+
+```bash
+base64 < module.wasm |
+  jq --raw-input --slurp '{
+    module: gsub("[\\r\\n]"; ""),
+    environment: { API_KEY: env.API_KEY, MODE: "development" }
+  }' |
+  curl --fail-with-body --request PUT \
+    'http://127.0.0.1:3000/v1/database/env-example?host_type=wasm' \
+    --header "Authorization: Bearer $SPACETIME_TOKEN" \
+    --header 'Content-Type: application/vnd.spacetimedb.publish+json' \
+    --data-binary @-
+```
+
+`jq` handles JSON escaping for the supplied value, including quotes and newlines. For a procedure or another HTTP client, construct the same JSON object with that language's JSON serializer and Base64 encoder.
+
+Direct HTTP callers, including module procedures, use this same format; the server does not load project configuration or shell values for them. See [Environment Variables](../../../00200-core-concepts/00100-databases/00700-environment-variables.md) for declaration syntax and value limits. The decoded module is limited to 128 MiB and the complete encoded request to 192 MiB.
+
+Raw module bodies continue to work and supply no environment overrides, retaining stored values on ordinary publishes. A destructive clear/reset still removes stored values and requires all initially required values again. Use `application/octet-stream` for that format. This preserves compatibility with older servers for modules that do not require ENV support; older servers do not support the JSON publish format.
 
 ## `GET /v1/database/:name_or_identity`
 

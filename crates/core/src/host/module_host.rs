@@ -608,15 +608,23 @@ pub(crate) fn init_database(
     replica_ctx: &ReplicaContext,
     module_def: &ModuleDef,
     program: Program,
+    environment: std::collections::BTreeMap<String, String>,
     call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResultWithTxOffset, bool),
 ) -> (anyhow::Result<InitDatabaseResult>, bool) {
-    extract_trapped(init_database_inner(replica_ctx, module_def, program, call_reducer))
+    extract_trapped(init_database_inner(
+        replica_ctx,
+        module_def,
+        program,
+        environment,
+        call_reducer,
+    ))
 }
 
 fn init_database_inner(
     replica_ctx: &ReplicaContext,
     module_def: &ModuleDef,
     program: Program,
+    environment: std::collections::BTreeMap<String, String>,
     call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResultWithTxOffset, bool),
 ) -> anyhow::Result<(InitDatabaseResult, bool)> {
     log::debug!("init database");
@@ -674,6 +682,7 @@ fn init_database_inner(
                     .with_context(|| format!("failed to create row-level security for table `{table_id}`: `{sql}`",))?;
             }
 
+            crate::db::environment::replace(stdb, tx, module_def.environment(), &environment)?;
             stdb.set_initialized(tx, program)?;
 
             anyhow::Ok(())
@@ -3181,12 +3190,20 @@ impl ModuleHost {
     }
 
     pub async fn init_database(&self, program: Program) -> Result<InitDatabaseResult, InitDatabaseError> {
+        self.init_database_with_environment(program, Default::default()).await
+    }
+
+    pub async fn init_database_with_environment(
+        &self,
+        program: Program,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> Result<InitDatabaseResult, InitDatabaseError> {
         call_instance!(
             self,
             "<init_database>",
-            program,
-            |p, inst| inst.init_database(p),
-            |p, inst| inst.init_database(p).await,
+            (program, environment),
+            |(program, environment), inst| inst.init_database(program, environment),
+            |(program, environment), inst| inst.init_database(program, environment).await,
         )?
         .map_err(InitDatabaseError::Other)
     }
@@ -3197,12 +3214,23 @@ impl ModuleHost {
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        self.update_database_with_environment(program, old_module_info, policy, Default::default())
+            .await
+    }
+
+    pub async fn update_database_with_environment(
+        &self,
+        program: Program,
+        old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> Result<UpdateDatabaseResult, anyhow::Error> {
         call_instance!(
             self,
             "<update_database>",
-            (program, old_module_info, policy),
-            |(a, b, c), inst| inst.update_database(a, b, c),
-            |(a, b, c), inst| inst.update_database(a, b, c).await,
+            (program, old_module_info, policy, environment),
+            |(a, b, c, d), inst| inst.update_database(a, b, c, d),
+            |(a, b, c, d), inst| inst.update_database(a, b, c, d).await,
         )?
     }
 

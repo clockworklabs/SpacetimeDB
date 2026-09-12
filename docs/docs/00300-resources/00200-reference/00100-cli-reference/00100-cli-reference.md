@@ -11,6 +11,9 @@ This document contains the help content for the `spacetime` command-line program
 
 * [`spacetime`↴](#spacetime)
 * [`spacetime publish`↴](#spacetime-publish)
+* [`spacetime env`↴](#spacetime-env)
+* [`spacetime env get`↴](#spacetime-env-get)
+* [`spacetime env list`↴](#spacetime-env-list)
 * [`spacetime delete`↴](#spacetime-delete)
 * [`spacetime logs`↴](#spacetime-logs)
 * [`spacetime call`↴](#spacetime-call)
@@ -48,6 +51,7 @@ This document contains the help content for the `spacetime` command-line program
 ###### **Subcommands:**
 
 * `publish` — Create and update a SpacetimeDB database
+* `env` — Inspect published database environment variables
 * `delete` — Deletes a SpacetimeDB database
 * `logs` — Prints logs from a SpacetimeDB database
 * `call` — Invokes a function (reducer or procedure) in a database. WARNING: This command is UNSTABLE and subject to breaking changes.
@@ -82,7 +86,7 @@ Create and update a SpacetimeDB database
 
 **Usage:** `spacetime publish [OPTIONS] [name|identity]`
 
-Run `spacetime help publish` for more detailed information.
+Publishing preserves unspecified environment values. Put an env map in spacetime.json; explicit undeclared keys are allowed, and declared shell variables override config values (including empty strings). The CLI displays supplied keys and sources, never values. --env-only updates an existing database without a module. --unset-env explicitly deletes a value; required values cannot be removed. --replace-env replaces all stored values with the supplied set, including deleting unspecified undeclared keys, and cannot be combined with --unset-env. The host validates the resulting environment atomically. --env selects config file layers.
 
 ###### **Arguments:**
 
@@ -134,6 +138,69 @@ Run `spacetime help publish` for more detailed information.
 * `--env <ENV>` — Environment name for config file layering (e.g., dev, staging)
 * `--native-aot` — Use NativeAOT-LLVM compilation for C# modules (experimental; supported on Windows, and on Linux with .NET 10)
 * `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.
+* `--env-only` — Update environment values without building or uploading a module.
+* `--unset-env <KEY>` — Delete an environment value. Repeat for multiple keys.
+* `--replace-env` — Replace all environment values, deleting every unspecified key.
+
+
+
+## `spacetime env`
+
+Inspect published database environment variables
+
+**Usage:** `spacetime env <COMMAND>`
+
+###### **Subcommands:**
+
+* `get` — Read one published environment value
+* `list` — List published environment keys and values
+
+
+
+## `spacetime env get`
+
+Read one published environment value
+
+**Usage:** `spacetime env get [OPTIONS] <database> <key>`
+
+###### **Arguments:**
+
+* `<KEY>` — The stored environment key to read
+* `<DATABASE>` — The database name, identity, or configured target
+
+###### **Options:**
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server
+* `--anonymous` — Perform this action with an anonymous identity
+* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--confirmed <CONFIRMED>` — Instruct the server to deliver only updates of confirmed transactions
+
+  Possible values: `true`, `false`
+
+* `--no-config` — Ignore project configuration when resolving the database target
+
+
+
+## `spacetime env list`
+
+List published environment keys and values
+
+**Usage:** `spacetime env list [OPTIONS] <database>`
+
+###### **Arguments:**
+
+* `<DATABASE>` — The database name, identity, or configured target
+
+###### **Options:**
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server
+* `--anonymous` — Perform this action with an anonymous identity
+* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--confirmed <CONFIRMED>` — Instruct the server to deliver only updates of confirmed transactions
+
+  Possible values: `true`, `false`
+
+* `--no-config` — Ignore project configuration when resolving the database target
 
 
 

@@ -51,6 +51,7 @@ namespace SpacetimeDB
 
     public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
     {
+        public global::SpacetimeDB.ModuleEnvironment Env => default;
         public readonly Identity Sender;
         public readonly ConnectionId? ConnectionId;
         public readonly Random Rng;
@@ -133,6 +134,7 @@ namespace SpacetimeDB
 
     public sealed partial class ProcedureContext : global::SpacetimeDB.ProcedureContextBase
     {
+        public new global::SpacetimeDB.ModuleEnvironment Env => default;
         private readonly Local _db = new();
 
         internal ProcedureContext(
@@ -211,6 +213,7 @@ namespace SpacetimeDB
 
     public sealed partial class HandlerContext : global::SpacetimeDB.HandlerContextBase
     {
+        public new global::SpacetimeDB.ModuleEnvironment Env => default;
         private readonly Local _db = new();
 
         internal HandlerContext(Random random, Timestamp time)
@@ -251,6 +254,8 @@ namespace SpacetimeDB
 
     public sealed class ProcedureTxContext : global::SpacetimeDB.ProcedureTxContextBase
     {
+        public new global::SpacetimeDB.ModuleEnvironment Env => default;
+
         internal ProcedureTxContext(Internal.TxContext inner)
             : base(inner) { }
 
@@ -260,6 +265,8 @@ namespace SpacetimeDB
     [Experimental("STDB_UNSTABLE")]
     public sealed class HandlerTxContext : global::SpacetimeDB.HandlerTxContextBase
     {
+        public new global::SpacetimeDB.ModuleEnvironment Env => default;
+
         internal HandlerTxContext(Internal.TxContext inner)
             : base(inner) { }
 
@@ -275,6 +282,7 @@ namespace SpacetimeDB
     {
         public Identity Sender { get; }
 
+        public global::SpacetimeDB.ModuleEnvironment Env => default;
         public QueryBuilder From => default;
 
         internal ViewContext(Identity sender, Internal.LocalReadOnly db)
@@ -288,6 +296,7 @@ namespace SpacetimeDB
         : DbContext<Internal.LocalReadOnly>,
             Internal.IAnonymousViewContext
     {
+        public global::SpacetimeDB.ModuleEnvironment Env => default;
         public QueryBuilder From => default;
 
         internal AnonymousViewContext(Internal.LocalReadOnly db)

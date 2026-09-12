@@ -10,11 +10,10 @@ use spacetimedb_codegen::{
     UnrealCpp, AUTO_GENERATED_PREFIX,
 };
 use spacetimedb_lib::de::serde::DeserializeWrapper;
-use spacetimedb_lib::{sats, RawModuleDef};
+use spacetimedb_lib::RawModuleDef;
 use spacetimedb_schema;
 use spacetimedb_schema::def::ModuleDef;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 
 use crate::common_args::parse_optional_dotnet_version;
 use crate::spacetime_config::{
@@ -22,7 +21,7 @@ use crate::spacetime_config::{
 };
 use crate::tasks::csharp::dotnet_format;
 use crate::tasks::rust::rustfmt;
-use crate::util::{resolve_sibling_binary, y_or_n};
+use crate::util::y_or_n;
 use crate::Config;
 use crate::{build, common_args};
 use clap::builder::PossibleValue;
@@ -750,18 +749,7 @@ impl Language {
 
 pub type ExtractDescriptions = fn(&Path) -> anyhow::Result<ModuleDef>;
 pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<ModuleDef> {
-    let bin_path = std::env::var_os("SPACETIMEDB_SCHEMA_EXTRACTOR")
-        .map(PathBuf::from)
-        .map(Ok)
-        .unwrap_or_else(|| resolve_sibling_binary("spacetimedb-standalone"))?;
-    let child = Command::new(&bin_path)
-        .arg("extract-schema")
-        .arg(wasm_file)
-        .stdout(Stdio::piped())
-        .spawn()
-        .with_context(|| format!("failed to spawn {}", bin_path.display()))?;
-    let sats::serde::SerdeWrapper::<RawModuleDef>(module) = serde_json::from_reader(child.stdout.unwrap())?;
-    Ok(module.try_into()?)
+    crate::schema_extract::from_path(wasm_file)
 }
 
 #[cfg(test)]
