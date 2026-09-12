@@ -160,9 +160,22 @@ static class ColumnTypeValidation
             && variants.All(field => field.Type.ToString() == "SpacetimeDB.Unit");
     }
 
-    public static bool IsEquatable(ITypeSymbol type) =>
-        (
-            IsInteger(type)
+    private static ITypeSymbol UnwrapNullable(ITypeSymbol type) =>
+        type switch
+        {
+            INamedTypeSymbol
+            {
+                OriginalDefinition.SpecialType: SpecialType.System_Nullable_T
+            } nullable => nullable.TypeArguments[0],
+            _ when type.NullableAnnotation == NullableAnnotation.Annotated =>
+                type.WithNullableAnnotation(NullableAnnotation.None),
+            _ => type,
+        };
+
+    public static bool IsEquatable(ITypeSymbol type)
+    {
+        type = UnwrapNullable(type);
+        return IsInteger(type)
             || IsNoPayloadEnum(type)
             || type.SpecialType switch
             {
@@ -173,9 +186,8 @@ static class ColumnTypeValidation
                         or "SpacetimeDB.Timestamp"
                         or "SpacetimeDB.Uuid",
                 _ => false,
-            }
-        )
-        && type.NullableAnnotation != NullableAnnotation.Annotated;
+            };
+    }
 }
 
 /// <summary>

@@ -348,6 +348,120 @@ public static class GeneratorSnapshotTests
     }
 
     [Fact]
+    public static async Task NullableBTreeIndexesCompile()
+    {
+        var fixture = await Fixture.Compile("server");
+
+        const string source = """
+            using SpacetimeDB;
+
+            [SpacetimeDB.Table]
+            public partial struct NullableBTreeIndex
+            {
+                [SpacetimeDB.PrimaryKey]
+                public uint Id;
+
+                [SpacetimeDB.Index.BTree]
+                public uint? AccountId;
+
+                [SpacetimeDB.Reducer]
+                public static void TestNullableBTreeIndex(ReducerContext ctx)
+                {
+                    _ = ctx.Db.NullableBTreeIndex.AccountId.Filter((uint?)null);
+                    _ = ctx.Db.NullableBTreeIndex.AccountId.Filter((uint?)55);
+                    _ = ctx.Db.NullableBTreeIndex.AccountId.Filter(new Bound<uint?>(null, 99));
+                }
+            }
+
+            [SpacetimeDB.Table]
+            public partial struct NullableUniqueIndex
+            {
+                [SpacetimeDB.PrimaryKey]
+                public uint Id;
+
+                [SpacetimeDB.Unique]
+                public uint? AccountId;
+
+                [SpacetimeDB.Unique]
+                public string? Name;
+
+                [SpacetimeDB.Unique]
+                public SpacetimeDB.Uuid? ExternalId;
+
+                [SpacetimeDB.Reducer]
+                public static void TestNullableUniqueIndex(ReducerContext ctx)
+                {
+                    _ = ctx.Db.NullableUniqueIndex.AccountId.Find((uint?)null);
+                    _ = ctx.Db.NullableUniqueIndex.AccountId.Find((uint?)55);
+                    _ = ctx.Db.NullableUniqueIndex.Name.Find((string?)null);
+                    _ = ctx.Db.NullableUniqueIndex.Name.Find("name");
+                    _ = ctx.Db.NullableUniqueIndex.ExternalId.Find((SpacetimeDB.Uuid?)null);
+                    _ = ctx.Db.NullableUniqueIndex.ExternalId.Find(SpacetimeDB.Uuid.NIL);
+                }
+            }
+
+            [SpacetimeDB.Table]
+            public partial struct ExplicitNullableBTreeIndex
+            {
+                [SpacetimeDB.PrimaryKey]
+                public uint Id;
+
+                [SpacetimeDB.Index.BTree]
+                public System.Nullable<uint> AccountId;
+
+                [SpacetimeDB.Reducer]
+                public static void TestExplicitNullableBTreeIndex(ReducerContext ctx)
+                {
+                    _ = ctx.Db.ExplicitNullableBTreeIndex.AccountId.Filter((uint?)null);
+                    _ = ctx.Db.ExplicitNullableBTreeIndex.AccountId.Filter((uint?)55);
+                    _ = ctx.Db.ExplicitNullableBTreeIndex.AccountId.Filter(new Bound<uint?>(null, 99));
+                }
+            }
+
+            [SpacetimeDB.Table]
+            public partial struct ExplicitNullableUniqueIndex
+            {
+                [SpacetimeDB.PrimaryKey]
+                public uint Id;
+
+                [SpacetimeDB.Unique]
+                public System.Nullable<uint> AccountId;
+
+                [SpacetimeDB.Reducer]
+                public static void TestExplicitNullableUniqueIndex(ReducerContext ctx)
+                {
+                    _ = ctx.Db.ExplicitNullableUniqueIndex.AccountId.Find((uint?)null);
+                    _ = ctx.Db.ExplicitNullableUniqueIndex.AccountId.Find((uint?)55);
+                }
+            }
+            """;
+
+        var tree = CSharpSyntaxTree.ParseText(
+            source,
+            fixture.ParseOptions,
+            path: "NullableBTreeIndex.cs"
+        );
+        var compilation = fixture.SampleCompilation.AddSyntaxTrees(tree);
+
+        var driver = CSharpGeneratorDriver.Create(
+            [
+                new SpacetimeDB.Codegen.Type().AsSourceGenerator(),
+                new SpacetimeDB.Codegen.Module().AsSourceGenerator(),
+            ],
+            driverOptions: new(
+                disabledOutputs: IncrementalGeneratorOutputKind.None,
+                trackIncrementalGeneratorSteps: true
+            ),
+            parseOptions: fixture.ParseOptions
+        );
+
+        var runResult = driver.RunGenerators(compilation).GetRunResult();
+        var compilationAfterGen = compilation.AddSyntaxTrees(runResult.GeneratedTrees);
+
+        Assert.Empty(GetCompilationErrors(compilationAfterGen));
+    }
+
+    [Fact]
     public static async Task TestDiagnostics()
     {
         var fixture = await Fixture.Compile("diag");
