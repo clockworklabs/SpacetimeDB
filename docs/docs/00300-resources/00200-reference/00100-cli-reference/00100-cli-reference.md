@@ -165,7 +165,7 @@ Read one published environment value
 
 ###### **Arguments:**
 
-* `<KEY>` — The declared environment key to read
+* `<KEY>` — The stored environment key to read
 * `<DATABASE>` — The database name, identity, or configured target
 
 ###### **Options:**
