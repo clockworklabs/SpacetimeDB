@@ -11,7 +11,7 @@ import cookieParser from "cookie-parser";
 import { parse as parseCookie } from "cookie";
 import { Server as SocketIOServer } from "socket.io";
 import { sql, eq, and } from "drizzle-orm";
-import { db, pool } from "./db.js";
+import { db, pool, initializeCoreSchema } from "./db.js";
 import { item, warehouse, stock, account, session, cart, cartItem, orders, orderItem, review } from "./schema.js";
 import { hashPassword, verifyPassword, newToken } from "./auth.js";
 import { seed } from "./seed.js";
@@ -1046,6 +1046,7 @@ setInterval(() => {
 }, POLL_INTERVAL_MS);
 
 async function main() {
+  await initializeCoreSchema();
   await initializeProgressionSchema(pool);
   await initializeBundles(pool);
   await initializeCredit(pool);
