@@ -47,6 +47,45 @@ export function cumulativeResponseCosts(points: readonly UsagePoint[]): Array<{ 
   }));
 }
 
+interface CodexUsageState { session?: string; model?: string; totals?: [number, number, number] }
+
+export function codexResponseCosts(text: string, rates: PricingRates, model: string, startedAt: string): UsagePoint[] {
+  const state: CodexUsageState = {};
+  const points: UsagePoint[] = [];
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    const event: unknown = JSON.parse(line);
+    if (!object(event) || !object(event.payload)) continue;
+    const payload = event.payload;
+    if (event.type === 'session_meta') {
+      if (typeof payload.id !== 'string' || !payload.id) throw new Error('Usage session identity unavailable');
+      if (state.session && state.session !== payload.id) throw new Error('Usage session changed');
+      state.session = payload.id;
+    }
+    if (event.type === 'turn_context') state.model = typeof payload.model === 'string' ? payload.model : undefined;
+    if (event.type !== 'event_msg' || payload.type !== 'token_count' || payload.info === null) continue;
+    const usage = object(payload.info) && object(payload.info.total_token_usage)
+      ? payload.info.total_token_usage : {};
+    const totals = [usage.input_tokens, usage.cached_input_tokens, usage.output_tokens];
+    if (!totals.every(value => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0)
+      || Number(totals[1]) > Number(totals[0])) throw new Error('Invalid Codex token usage');
+    const counts = totals as [number, number, number];
+    const previous = state.totals ?? [0, 0, 0];
+    const delta = [counts[0] - previous[0], counts[1] - previous[1], counts[2] - previous[2]] as const;
+    if (delta.some(value => value < 0) || delta[1] > delta[0]) throw new Error('Codex usage totals decreased');
+    state.totals = counts;
+    const timestamp = typeof event.timestamp === 'string' ? Date.parse(event.timestamp) : NaN;
+    if (!Number.isFinite(timestamp)) throw new Error('Usage timestamp unavailable');
+    if (timestamp < Date.parse(startedAt) || delta.every(value => value === 0)) continue;
+    if (!state.session) throw new Error('Usage session identity unavailable');
+    if (state.model !== model) throw new Error('No pinned price for transcript model');
+    points.push({ id: `${state.session}:${counts.join(':')}`, completedAt: new Date(timestamp).toISOString(),
+      costUsd: ((delta[0] - delta[1]) * rates.input + delta[1] * rates.cacheRead + delta[2] * rates.output) / 1e6,
+      signature: JSON.stringify([state.model, delta]) });
+  }
+  return points;
+}
+
 const cache = new Map<string, { size: number; modified: number; offset: number; points: UsagePoint[] }>();
 
 export async function liveTranscriptCost(directory: string, adapter: string, rates: PricingRates,
@@ -58,7 +97,8 @@ export async function liveTranscriptCost(directory: string, adapter: string, rat
     const key = `${directory}/${file.id}/${startedAt}/${JSON.stringify(rates)}/${model}`;
     const prior = cache.get(key);
     if (prior?.size === file.size && prior.modified === file.modified) { points.push(...prior.points); continue; }
-    const offsetStart = prior && file.size > prior.size ? prior.offset : 0;
+    // Read Codex session metadata and cumulative counters together.
+    const offsetStart = adapter !== 'codex' && prior && file.size > prior.size ? prior.offset : 0;
     // Bound catch-up work; do not label a partial file as a complete live total.
     if (file.size - offsetStart > 16 * 1024 * 1024) return { activityUpdatedAt, costs: [] };
     const chunks: Buffer[] = [];
@@ -67,8 +107,10 @@ export async function liveTranscriptCost(directory: string, adapter: string, rat
     }
     const bytes = Buffer.concat(chunks);
     const end = bytes.lastIndexOf(10);
-    const parsed = [...(offsetStart ? prior!.points : []),
-      ...responseCosts(end < 0 ? '' : bytes.subarray(0, end + 1).toString(), rates, model, startedAt)];
+    const text = end < 0 ? '' : bytes.subarray(0, end + 1).toString();
+    const parsed = [...(offsetStart ? prior!.points : []), ...(adapter === 'codex'
+      ? codexResponseCosts(text, rates, model, startedAt)
+      : responseCosts(text, rates, model, startedAt))];
     if (cache.size >= 128) cache.delete(cache.keys().next().value!);
     cache.set(key, { size: file.size, modified: file.modified, offset: offsetStart + end + 1, points: parsed });
     points.push(...parsed);

@@ -901,7 +901,7 @@ function campaignLiveCosts(resultsRoot: string, key: string) {
       // Restored executions can carry older transcript history. Keep their saved
       // receipts until response identities are available across that boundary.
       if (attempt.status !== 'running' || attempt.executions.length !== 1 || !execution?.startedAt
-        || attempt.plan.agentAdapter !== 'claude-code') return;
+        || !['claude-code', 'codex'].includes(attempt.plan.agentAdapter)) return;
       try {
         costs.set(attempt.plan.id, await liveTranscriptCost(contained(directory, execution.output, 'campaign execution'),
           attempt.plan.agentAdapter, attempt.plan.pricing.rates, attempt.plan.model, execution.startedAt));

@@ -79,7 +79,7 @@ function dockerRead(args: string[]): Promise<Buffer> {
   const pending = pendingReads.get(key);
   if (pending) return pending;
   const result = new Promise<Buffer>((resolve, reject) => {
-    execFile('docker', args, { timeout: 5000, maxBuffer: 2 * 1024 * 1024, encoding: 'buffer' },
+    execFile('docker', args, { timeout: 30_000, maxBuffer: 2 * 1024 * 1024, encoding: 'buffer' },
       (error, stdout) => error ? reject(error) : resolve(stdout));
   }).finally(() => pendingReads.delete(key));
   pendingReads.set(key, result);
