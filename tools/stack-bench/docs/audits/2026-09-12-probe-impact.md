@@ -196,3 +196,17 @@ Control artifacts are under the state volume's `results/diagnostics/` directory:
 and individual defect evidence. `results/diagnostics/probe-controls-audit.json`
 records the source identities and inspected failures, with a local copy at
 `local-notes/probe-control-audit.json`.
+
+## Live-observation ordering review
+
+A follow-up review found that the new stored-stock reads preceded the live transfer
+assertions. Slow database reads could therefore give the UI extra time. The reads
+now follow both live assertions, preserving their original observation order and
+waits. A focused contract check protects this ordering; scenario and calibration
+validation pass. This edit does not promote qualification evidence from older revisions.
+
+The eight saved regrades already observed both live totals within 630–1,775 ms of
+starting the transfer click. All were within 10 seconds, including the database-read
+time. These passes did not depend on the extra time that the ordering could allow.
+The action-timestamp audit is retained at
+`results/diagnostics/probe-transfer-timing-audit.json`.

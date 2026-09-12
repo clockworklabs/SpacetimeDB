@@ -32,11 +32,11 @@
             {"do":"fill","actor":"admin","testid":"transfer-qty","text":"10","in":{"testid":"admin-item-row","contains":"Headphones"}},
             {"do":"click","actor":"admin","testid":"transfer-submit","in":{"testid":"admin-item-row","contains":"Headphones"}},
             {"do":"expect","actor":"admin","testid":"admin-warehouse-item","contains":"East","count":1},
-            {"do":"dbExpectStock","item":"Headphones","warehouse":"East","relativeTo":"product-East","plus":-10,"within":10000},
-            {"do":"dbExpectStock","item":"Headphones","warehouse":"West","relativeTo":"product-West","plus":10,"within":10000},
             {"do":"expectNumber","actor":"admin","testid":"warehouse-total","in":{"testid":"admin-warehouse-item","contains":"East"},"relativeTo":"warehouse-east-before","plus":-10,"within":10000},
             {"do":"expect","actor":"admin","testid":"admin-warehouse-item","contains":"West","count":1},
-            {"do":"expectNumber","actor":"admin","testid":"warehouse-total","in":{"testid":"admin-warehouse-item","contains":"West"},"relativeTo":"warehouse-west-before","plus":10,"within":10000}
+            {"do":"expectNumber","actor":"admin","testid":"warehouse-total","in":{"testid":"admin-warehouse-item","contains":"West"},"relativeTo":"warehouse-west-before","plus":10,"within":10000},
+            {"do":"dbExpectStock","item":"Headphones","warehouse":"East","relativeTo":"product-East","plus":-10,"within":10000},
+            {"do":"dbExpectStock","item":"Headphones","warehouse":"West","relativeTo":"product-West","plus":10,"within":10000}
           ]
         }
       ]

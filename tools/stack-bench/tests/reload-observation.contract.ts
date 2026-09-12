@@ -10,6 +10,16 @@ function scenario(name: string) {
   return compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source });
 }
 
+test('stored-stock validation does not delay live transfer observations', () => {
+  const steps = scenario('02-transfer-totals.json').features[0]!.criteria[0]!.steps;
+  const transfer = steps.findIndex(step => step.do === 'click' && step.testid === 'transfer-submit');
+  const observations = steps.slice(transfer + 1);
+  const live = observations.findLastIndex(step => step.do === 'expectNumber' && step.testid === 'warehouse-total');
+  const stored = observations.findIndex(step => step.do === 'dbExpectStock');
+  assert(transfer >= 0 && live >= 0 && stored > live);
+  assert(!observations.slice(0, live + 1).some(step => ['reload', 'wait'].includes(step.do)));
+});
+
 test('reservation restart evidence retains the expired cart line after stock returns', () => {
   const feature = scenario('03-deferred-durability.json').features.find(feature => feature.id === 314)!;
   assert(feature.setup.some(step => step.do === 'restartBackend'));
