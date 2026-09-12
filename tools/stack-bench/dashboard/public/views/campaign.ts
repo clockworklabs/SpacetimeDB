@@ -199,15 +199,15 @@ export function campaignPage(input: CampaignPageInput): string {
   const cell = (render: (stack: SheetStack) => string): string =>
     stacks.map(stack => `<td>${render(stack)}</td>`).join('');
   const help: Record<string, string> = {
-    Completion: 'Median checks passed divided by all selected checks, including checks not yet reached.',
-    'Weighted score': 'Score weighted by check points. Final comparison values appear when usable attempts finish.',
-    'Before repairs': 'Score from the first build at each level, before repairs at that level. Later levels retain earlier fixes and feedback.',
-    Regressions: 'Median regression count across recorded repetitions. A regression is a previously passing check that failed after a later change.',
-    'Valid runs': 'Completed attempts with usable comparison evidence. A completed process alone does not guarantee a usable result.',
-    Excluded: 'Attempts omitted from comparison because their evidence is invalid or incomplete. Their costs appear only in total spend and individual run details.',
-    Time: 'Median duration of usable completed attempts. Live attempt status appears below.',
-    'Cost per valid run': 'Mean cost of completed runs with valid comparison results. Excludes invalid and unfinished runs. Valid does not mean every check passed. All included runs must have exact cost evidence and the same comparison scope.',
-    'Total spend': 'Includes excluded attempts. Live estimates use reported response usage. Final receipts replace estimates. Unknown is not zero. Costs use the pinned price snapshot.',
+    Completion: 'Median checks passed / selected, across valid completed runs.',
+    'Weighted score': 'Median score weighted by check points, across valid completed runs.',
+    'Before repairs': 'First build at each level. Earlier fixes and feedback are retained.',
+    Regressions: 'Median count of previously passing checks that later failed, across valid completed runs.',
+    'Valid runs': 'Completed runs with usable evidence; not necessarily all checks passed.',
+    Excluded: 'Invalid or incomplete evidence. Spend is retained in Total spend.',
+    Time: 'Median duration of valid completed runs.',
+    'Cost per valid run': 'Mean exact spend of valid completed runs with matching scope.',
+    'Total spend': 'All runs, including excluded. ~ estimate; ≤ upper bound. Pinned prices.',
   };
   const row = (label: string, render: (stack: SheetStack) => string): string =>
     `<tr><th scope="row" class="k">${metricLabel(label, help[label])}</th>${cell(render)}</tr>`;
@@ -246,7 +246,7 @@ export function campaignPage(input: CampaignPageInput): string {
       return `<tr data-chart-series="${esc(attempt.id)}"><td><a class="run-name" href="${href}">${esc(stackLabel(stack.stack))} ${attempt.repetition}</a></td>`
         + `<td title="${esc(attempt.model ?? attempt.variant)}">${esc(modelLabel(attempt.model))}<span class="run-effort">${esc(effort)}</span></td>`
         + `<td>${completionLabel(attempt)}</td>`
-        + `<td title="Live estimates use reported response usage; final receipts replace estimates.">${spend(attempt.spend, attempt.spendPending, attempt.liveSpend)}</td>`
+        + `<td>${spend(attempt.spend, attempt.spendPending, attempt.liveSpend)}</td>`
         + (showRepairs ? `<td>${ratio(attempt.repairs.used, attempt.repairs.budget)}</td>` : '')
         + `<td>${attempt.status === 'running' || attempt.executionCompletedAt ? executionClock(attempt.executionStartedAt, attempt.executionCompletedAt) : DASH}</td>`
         + `<td class="run-status">${attempt.excluded

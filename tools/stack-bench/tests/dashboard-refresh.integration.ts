@@ -61,7 +61,7 @@ test('dashboard refresh follows child events, coalesces bursts, and refreshes ca
     await request.continue();
   });
   const idle = () => page.locator('main[aria-busy="false"]').waitFor();
-  const change = (type = 'log', id: string | null = attemptId) => page.evaluate(({ type, key, id }) => {
+  const change = (type = 'campaign', id: string | null = attemptId) => page.evaluate(({ type, key, id }) => {
     (window as unknown as { events: EventTarget }).events.dispatchEvent(
       new MessageEvent(type, { data: JSON.stringify({ key, ...(id ? { attemptId: id } : {}) }) }));
   }, { type, key, id });
@@ -80,6 +80,13 @@ test('dashboard refresh follows child events, coalesces bursts, and refreshes ca
   await page.waitForResponse(response => new URL(response.url()).pathname === campaignPath);
   await idle();
   assert.equal(counts.get(campaignPath), before + 2);
+
+  const fullReads = counts.get(campaignPath);
+  const liveRead = page.waitForResponse(response => new URL(response.url()).pathname === `${campaignPath}/live`);
+  await change('log');
+  await liveRead;
+  await idle();
+  assert.equal(counts.get(campaignPath), fullReads, 'log changes fetch live fields, not the full evidence');
 
   for (const [tab, endpoint] of [['checks', 'checks'], ['files', 'package']] as const) {
     await page.goto(`http://127.0.0.1:${address.port}/c/${key}/a/${attemptId}?tab=${tab}`);

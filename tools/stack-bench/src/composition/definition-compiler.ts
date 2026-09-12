@@ -164,7 +164,7 @@ export const ACTION_DEFINITIONS = Object.freeze({
     { password: string, exact: boolean, readyTestid: nonEmptyString, ...settle }),
   enterRoom: fields({ ...actor, room: nonEmptyString }),
   expect: fields({ ...actor, testid: nonEmptyString },
-    { contains: string, notContains: string, value: string, ignoreCase: boolean, nonEmpty: boolean,
+    { contains: string, containsText: nonEmptyString, notContains: string, value: string, ignoreCase: boolean, nonEmpty: boolean,
       count: nonNegativeInteger, attribute: nonEmptyString,
       absent: boolean, ...locator, ...within }),
   expectActorsWith: fields({ ...actors, testid: nonEmptyString, contains: string,
@@ -455,6 +455,10 @@ function validateStep(step: unknown, at: string): asserts step is CompiledStep {
     if (step.plus !== undefined && step.relativeTo === undefined) {
       fail(at, 'dbExpectStock plus requires relativeTo');
     }
+  }
+  if (step.do === 'expect' && step.containsText !== undefined
+    && (step.value !== undefined || step.attribute !== undefined || step.absent === true)) {
+    fail(at, 'containsText cannot be combined with value, attribute, or absent');
   }
   if (step.do === 'expectAgreement' || step.do === 'expectOrderMatches') {
     const population = step.actors;

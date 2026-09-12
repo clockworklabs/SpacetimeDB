@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 
 import { currentEngineIdentity } from '../evidence/artifacts.js';
 import { sha256 } from '../evidence/provenance.js';
+import { RESTRICTED_PORTS } from '../composition/product-config.js';
 import { validateReleaseManifest } from '../releases/release-manifest.js';
 import { DEFAULT_SPACETIME_SERVER_URI, loopbackHttpUri } from '../runtime/backend-lease.js';
 
@@ -79,7 +80,7 @@ export function campaignSlotEnvironment(env: NodeJS.ProcessEnv, stack: string | 
   if (stack !== 'spacetime') return executionEnv;
   const base = loopbackHttpUri(executionEnv.STACK_BENCH_STDB_URI ?? DEFAULT_SPACETIME_SERVER_URI);
   const port = Number(base.port) + runIndex;
-  if (!Number.isInteger(runIndex) || runIndex < 0 || port > 65535) {
+  if (!Number.isInteger(runIndex) || runIndex < 0 || port > 65535 || RESTRICTED_PORTS.has(port)) {
     throw new RangeError(`campaign run slot ${runIndex} cannot allocate a SpacetimeDB host port`);
   }
   base.port = String(port);

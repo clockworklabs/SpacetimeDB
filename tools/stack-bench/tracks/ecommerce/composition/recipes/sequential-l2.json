@@ -261,7 +261,6 @@
       ],
       "includeCheckGroups": [
         "warehouse-transfer-corrected",
-        "warehouse-transfer-overdraw",
         "warehouse-transfer-independent",
         "operational-views-low-stock",
         "operational-views-core",
@@ -278,7 +277,8 @@
         "stock-conservation-directional",
         "stock-conservation-cancel",
         "stock-conservation-fresh-client",
-        "stock-conservation-contention"
+        "stock-conservation-contention",
+        "warehouse-transfer-overdraw"
       ]
     },
     {
@@ -292,8 +292,7 @@
         "cancellation-history",
         "return-complete",
         "price-history-exact",
-        "price-live-independent",
-        "price-cart-checkout"
+        "price-live-independent"
       ]
     },
     {
@@ -303,7 +302,8 @@
         "guarantee"
       ],
       "includeCheckGroups": [
-        "refund-accounting"
+        "refund-accounting",
+        "price-cart-checkout"
       ]
     },
     {
@@ -371,13 +371,11 @@
       "ecommerce.operations-access.fulfilment-queue.1e": 2,
       "ecommerce.inventory-operations.warehouse-transfer.2a": 3,
       "ecommerce.inventory-operations.warehouse-transfer.2b": 2,
-      "ecommerce.inventory-operations.warehouse-transfer.2c": 2,
       "ecommerce.returns-pricing.cancellation-and-return.3a": 3,
       "ecommerce.returns-pricing.cancellation-and-return.3b": 1,
       "ecommerce.returns-pricing.cancellation-and-return.3c": 3,
       "ecommerce.returns-pricing.price-history.4a": 3,
       "ecommerce.returns-pricing.price-history.4b": 2,
-      "ecommerce.returns-pricing.price-history.4c": 3,
       "ecommerce.inventory-operations.operational-views.5a": 3,
       "ecommerce.inventory-operations.operational-views.5b": 3,
       "ecommerce.inventory-operations.operational-views.5c": 2,
@@ -391,7 +389,9 @@
       "ecommerce.returns-pricing.refund-accounting.203b": 2,
       "ecommerce.operations-access.operator-authorization.201c": 2,
       "ecommerce.inventory-operations.stock-conservation.202d": 2,
-      "ecommerce.operations-access.order-owner.204a": 2
+      "ecommerce.operations-access.order-owner.204a": 2,
+      "ecommerce.returns-pricing.price-history.4c": 3,
+      "ecommerce.inventory-operations.warehouse-transfer.2c": 2
     }
   }
 }

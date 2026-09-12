@@ -1,7 +1,7 @@
 // Called only under the persistent kernel flock in backend-lease.ts.
 import { createHash, randomUUID } from 'node:crypto';
 import { closeSync, existsSync, fsyncSync, linkSync, openSync, readFileSync,
-  rmSync, writeFileSync } from 'node:fs';
+  rmSync, writeFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { processIdentity } from './platform.js';
@@ -12,6 +12,7 @@ export interface ResourceLockTransaction {
   root: string;
   lease: BackendLease;
   keys: string[];
+  capacity?: number;
 }
 
 const hash = (value: string): string => createHash('sha256').update(value).digest('hex');
@@ -39,6 +40,22 @@ export function resourceLockTransaction(input: ResourceLockTransaction): Backend
   const owned = (record: Record<string, unknown>): boolean => record.runId === lease.runId
     && record.ownerPid === lease.ownerPid
     && record.ownershipMarkerSha256 === hash(lease.ownershipToken);
+  if (operation === 'acquire' && input.capacity !== undefined) {
+    if (!Number.isSafeInteger(input.capacity) || input.capacity < 0) throw new Error('invalid runner capacity');
+    const slots = new Set<string>();
+    const add = (key: unknown, owner: unknown): void => {
+      const slot = typeof key === 'string' ? /^slot:([^:]+):[^:]+:run(\d+)$/.exec(key) : null;
+      if (slot) slots.add(`${owner}:${slot[1]}:${slot[2]}`);
+    };
+    for (const name of readdirSync(root).filter(name => name.endsWith('.lock.json'))) {
+      const record: unknown = JSON.parse(readFileSync(resolve(root, name), 'utf8'));
+      if (!object(record) || typeof record.key !== 'string'
+        || typeof record.ownershipMarkerSha256 !== 'string') throw new Error('unreadable host resource claim');
+      add(record.key, record.ownershipMarkerSha256);
+    }
+    for (const key of keys) add(key, hash(lease.ownershipToken));
+    if (slots.size > input.capacity) throw new Error(`host capacity unavailable: ${slots.size} reservations exceed capacity ${input.capacity}`);
+  }
   const existing = locks.map(lock => {
     if (!existsSync(lock.path)) return null;
     let record: unknown;

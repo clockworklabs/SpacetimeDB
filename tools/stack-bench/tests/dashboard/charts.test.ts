@@ -182,5 +182,19 @@ test('cost chart includes excluded receipts and uses model effort labels', () =>
   sheet.repetitions = 1;
   const compact = progressChart(sheet, null, 'cost').match(/<button[^>]*data-chart-run="failed"[^>]*>(.*?)<\/button>/)![1]!;
   assert.match(compact, /Astra \(medium\) · \$3.25/);
-  assert.doesNotMatch(compact, /Rep 1|Pending|Excluded/);
+  assert.match(compact, /· Excluded/);
+  assert.doesNotMatch(compact, /Rep 1|Pending/);
+});
+
+test('distribution omits excluded measurements but identifies both exclusion statuses visibly', () => {
+  const sheet = { repetitions: 3, stacks: [{ stack: 'postgres', attempts: [
+    { id: 'valid', repetition: 1, status: 'completed', completion: { rate: 0.75 } },
+    { id: 'invalid', repetition: 2, status: 'invalid', excluded: 'Missing evidence', completion: { rate: 0.1 } },
+    { id: 'failed', repetition: 3, status: 'completed', excluded: 'harness_failure', completion: { rate: 0.2 } },
+  ] }] } as CampaignSheet;
+  const html = progressChart(sheet, null, 'distribution', 'grid', new Set(), 'checks');
+  assert.match(html, /class="progress-series" data-chart-series="valid"/);
+  assert.doesNotMatch(html, /class="progress-series" data-chart-series="(?:invalid|failed)"/);
+  assert.match(html, /Rep 2 · Excluded<\/button>/);
+  assert.match(html, /Rep 3 · Excluded<\/button>/);
 });

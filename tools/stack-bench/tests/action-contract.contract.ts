@@ -96,12 +96,12 @@ test('action policy is explicit for each behavior category', () => {
     click: ['browser-interaction', 60_000, ['actors', 'browser-interaction']],
     dbSetStock: ['database', 90_000, ['clock', 'database-write']],
     dbRecordStock: ['database', 90_000, ['database-read', 'browser-observation']],
-    dbExpectStock: ['database', 90_000, ['database-read', 'browser-observation']],
+    dbExpectStock: ['database', 90_000, ['database-read', 'browser-observation', 'clock']],
     expect: ['browser-observation', 300_000, ['actors', 'browser-observation']],
     restartBackend: ['lifecycle', 900_000, ['backend-lifecycle']],
     runScript: ['application-process', 90_000, ['application-files', 'subprocess']],
     startAppServer: ['lifecycle', 900_000, ['application-lifecycle']],
-    wait: ['timing', 360_000, ['actors', 'clock']],
+    wait: ['timing', 360_000, ['actors', 'clock', 'browser-observation']],
   } as const;
   for (const [id, [category, timeoutMs, capabilities]] of Object.entries(expected)) {
     const action = ACTION_REGISTRY.get(id);

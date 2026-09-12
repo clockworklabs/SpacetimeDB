@@ -194,10 +194,14 @@ export function createCredentialBroker(configInput: unknown, {
       const budget = config.maxBudgetUsd;
       if (billable && budget !== null && budget !== undefined
         && spentUsd + reservedUsd + costCeiling > budget) {
-        recordFailure(requestOrdinal, { category: 'broker-budget', status: 402, code: null });
+        const measuredSpend = config.provider === 'openrouter' ? providerReportedCostUsd
+          : priceNormalizedClaudeUsage(usageTotals, config.pricingRates as PricingRates);
+        recordFailure(requestOrdinal, { category: 'broker-budget', status: 402, code: 'reservation-exceeds-budget',
+          budget: { maxBudgetUsd: budget, spentUsd, reservedUsd, requestCeilingUsd: costCeiling,
+            estimatedSpendUsd: roundUsd(Math.max(0, spentUsd - measuredSpend)) } });
         recordLedger();
         writeHead(402, { 'content-type': 'text/plain' });
-        endResponse('session cost limit reached');
+        endResponse('session budget cannot cover the next request reservation');
         return;
       }
       if (billable) billableRequests += 1;

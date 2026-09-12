@@ -1,7 +1,7 @@
 import type { Express, RequestHandler } from 'express';
 import mongoose, { Types, type ClientSession } from 'mongoose';
 import { Cart, Item, Order, Stock } from './models.js';
-import { refundCredit } from './credit.js';
+import { refundCredit, refundForReturn } from './credit.js';
 import { reserveStock } from './stock-reservations.js';
 
 type Allocation = { itemId: Types.ObjectId; warehouseId: Types.ObjectId; quantity: number };
@@ -96,10 +96,12 @@ export function installBundleRoutes(app: Express, auth: RequestHandler,
         const order = await Order.findOne({ _id: req.params.orderId, userId, status: { $in: ['shipped', 'delivered'] } }).session(session);
         const bundles = order?.items.filter(line => line.isBundle && !line.returned) ?? [];
         if (!order || !bundles.length) throw new Error('No returnable bundle on this account');
-        if ((order.creditMinor || order.discount) && order.items.some(line => !line.isBundle)) throw new Error('Use a full support refund for mixed-item discounted or credit orders');
-        if (order.creditMinor) await refundCredit(order, session);
+        const gross = order.items.reduce((sum, line) => sum + line.price * line.quantity, 0);
+        const returnedGross = bundles.reduce((sum, line) => sum + line.price * line.quantity, 0);
         for (const line of bundles) { await releaseBundle(line.componentAllocations as Allocation[], session); line.returned = true; }
-        order.refundTotal = Math.min(order.total, order.refundTotal + (order.discount ? order.total - order.refundTotal : bundles.reduce((sum, line) => sum + line.price * line.quantity, 0)));
+        const refund = refundForReturn(order.total, order.refundTotal, gross, returnedGross, order.items.every(line => line.returned));
+        order.refundTotal = Math.min(order.total, order.refundTotal + refund);
+        await refundCredit(order, session, order.refundTotal);
         await order.save({ session });
       });
     } catch (error) { return res.status(403).json({ error: String(error) }); }

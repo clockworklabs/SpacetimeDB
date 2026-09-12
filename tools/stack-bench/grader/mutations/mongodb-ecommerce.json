@@ -1,10 +1,40 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "eadfb93446768fca6b9bab67126a0dfaf811c77e104d29007613005c4c0dd8aa",
+  "fixtureSha256": "9dd093bb5e533e3f02c79326acdec1da1151c14dda55ffc9816c87e37504af93",
   "backend": "mongodb",
   "track": "ecommerce",
   "note": "Mutation definitions for the MongoDB ecommerce reference.",
   "mutations": [
+    {
+      "id": "recommendation-dismissal-lost-on-restart",
+      "scenario": "tracks/ecommerce/scenarios/progression-recommendation-feedback.json",
+      "targets": [
+        "ecommerce.spec.state-durability.recommendation-feedback-restart.504c"
+      ],
+      "desc": "Erase saved recommendation dismissals when the application starts again.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  await mongoose.connect(DATABASE_URL);",
+          "replace": "  await mongoose.connect(DATABASE_URL);\n  await Dismissal.deleteMany({});"
+        }
+      ]
+    },
+    {
+      "id": "pending-order-item-return-accepted",
+      "scenario": "tracks/ecommerce/scenarios/progression-order-return-boundary.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3f"
+      ],
+      "desc": "Accept a pending order return and restore its stock before shipment.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "if (!['shipped', 'delivered'].includes(value.status)) throw new Error('No shipped order found');",
+          "replace": "if (!['pending', 'shipped', 'delivered'].includes(value.status)) throw new Error('No shipped order found');"
+        }
+      ]
+    },
     {
       "id": "staff-admin-access-survives-role-removal",
       "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
@@ -1213,7 +1243,7 @@
       "id": "payment-state-repeats-each-record",
       "scenario": "tracks/ecommerce/scenarios/progression-core-business.json",
       "targets": [
-        "ecommerce.progression.payment-records.payment-records.623b"
+        "ecommerce.spec.transactional-integrity.payment-deduplication.623b"
       ],
       "desc": "The order response repeats every payment record.",
       "file": "server/src/index.ts",
@@ -2394,7 +2424,7 @@
       "id": "return-after-support-refund-is-blocked",
       "scenario": "tracks/ecommerce/scenarios/progression-support-return-interaction.json",
       "targets": [
-        "ecommerce.spec.split-tender-refunds.return-refund-interaction.757a"
+        "ecommerce.feature.split-tender-refunds.return-refund-interaction.757a"
       ],
       "desc": "Reject a valid physical return after a financial refund.",
       "file": "server/src/index.ts",
@@ -2409,7 +2439,7 @@
       "id": "support-refund-after-return-pays-twice",
       "scenario": "tracks/ecommerce/scenarios/progression-support-return-interaction.json",
       "targets": [
-        "ecommerce.spec.split-tender-refunds.return-refund-interaction.757b"
+        "ecommerce.feature.split-tender-refunds.return-refund-interaction.757b"
       ],
       "desc": "Pay the full order again after a physical return.",
       "file": "server/src/progression.ts",

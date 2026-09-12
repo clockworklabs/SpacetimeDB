@@ -101,7 +101,7 @@ const PAYLOAD_FIELDS = Object.freeze({
   campaign_admission: new Set(['schemaVersion', 'campaignId', 'campaignSha256', 'createdAt',
     'ok', 'runtime', 'agents', 'conditions', 'reports', 'attemptId']),
   campaign_process: new Set(['schemaVersion', 'executionId', 'runIndex', 'exitCode', 'signal', 'timedOut',
-    'streams']),
+    'streams', 'error']),
   campaign_plan: new Set(['campaignSchemaVersion', 'id', 'version', 'state', 'title', 'source',
     'contentSha256', 'definition', 'identities', 'bindings', 'stacks', 'agents', 'conditions',
     'attempts', 'summary', 'featureCatalog', 'dependencyPolicy']),
@@ -515,6 +515,10 @@ function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
       fail('campaign_process payload.signal must be a string or null');
     }
     if (typeof payload.timedOut !== 'boolean') fail('campaign_process payload.timedOut must be boolean');
+    if (payload.error !== undefined && payload.error !== null
+      && (typeof payload.error !== 'string' || payload.error.length > 8_192)) {
+      fail('campaign_process payload.error must be a bounded string or null');
+    }
     if (payload.streams !== null) {
       const streams = objectWhenPresent('streams');
       if (streams === undefined) fail('campaign_process payload.streams must be an object or null');

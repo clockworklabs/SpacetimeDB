@@ -52,6 +52,8 @@
             { "do": "pressKey", "actor": "a", "key": "Enter" },
             { "do": "race", "branches": [[{ "do": "wait", "actor": "a", "ms": 1 }], [{ "do": "wait", "actor": "b", "ms": 1 }]], "settleMs": 1 },
             { "do": "recordNumber", "actor": "a", "testid": "count", "as": "before" },
+            { "do": "recordTime", "as": "started" },
+            { "do": "expectElapsed", "since": "started", "atMost": 1000 },
             { "do": "reload", "actor": "a", "settleMs": 1 },
             { "do": "replayAs", "actor": "a", "from": "b", "match": "write" },
             { "do": "replayConcurrently", "actors": ["a", "b"], "settleMs": 1 },

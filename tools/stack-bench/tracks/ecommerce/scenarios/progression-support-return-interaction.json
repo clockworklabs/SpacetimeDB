@@ -32,8 +32,19 @@
           "password": "stackbench-admin-2026",
           "exact": true
         },
-        {"do":"click","actor":"staff","testid":"staff-link","unlessVisible":"support-assignee"},
-        {"do":"click","actor":"staff","testid":"support-queue-link","unlessVisible":"support-assignee","ifAvailable":true},
+        {
+          "do": "click",
+          "actor": "staff",
+          "testid": "staff-link",
+          "unlessVisible": "support-assignee"
+        },
+        {
+          "do": "click",
+          "actor": "staff",
+          "testid": "support-queue-link",
+          "unlessVisible": "support-assignee",
+          "ifAvailable": true
+        },
         {
           "do": "click",
           "actor": "admin",
@@ -97,7 +108,14 @@
                 "contains": "Keyboard"
               }
             },
-            {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "overlay-close",
+              "ifAvailable": true,
+              "unlessVisible": "order-item",
+              "within": 1000
+            },
             {
               "do": "click",
               "actor": "owner",
@@ -286,7 +304,14 @@
               "relativeTo": "757atotal",
               "plus": -1
             },
-            {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "overlay-close",
+              "ifAvailable": true,
+              "unlessVisible": "order-item",
+              "within": 1000
+            },
             {
               "do": "click",
               "actor": "owner",
@@ -305,14 +330,11 @@
             {
               "do": "expect",
               "actor": "owner",
-              "testid": "order-status",
+              "testid": "order-item",
               "within": 10000,
-              "in": {
-                "testid": "order-item",
-                "contains": "Keyboard"
-              },
-              "contains": "returned",
-              "ignoreCase": true
+              "contains": "Keyboard",
+              "ignoreCase": true,
+              "containsText": "returned"
             },
             {
               "do": "freshClient",
@@ -323,7 +345,14 @@
               "actor": "owner-fresh",
               "name": "return-refund-owner"
             },
-            {"do":"click","actor":"owner-fresh","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {
+              "do": "click",
+              "actor": "owner-fresh",
+              "testid": "overlay-close",
+              "ifAvailable": true,
+              "unlessVisible": "order-item",
+              "within": 1000
+            },
             {
               "do": "click",
               "actor": "owner-fresh",
@@ -332,14 +361,11 @@
             {
               "do": "expect",
               "actor": "owner-fresh",
-              "testid": "order-status",
+              "testid": "order-item",
               "within": 10000,
-              "in": {
-                "testid": "order-item",
-                "contains": "Keyboard"
-              },
-              "contains": "returned",
-              "ignoreCase": true
+              "contains": "Keyboard",
+              "ignoreCase": true,
+              "containsText": "returned"
             },
             {
               "do": "expectNumber",
@@ -452,7 +478,14 @@
                 "contains": "Desk Lamp"
               }
             },
-            {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "overlay-close",
+              "ifAvailable": true,
+              "unlessVisible": "order-item",
+              "within": 1000
+            },
             {
               "do": "click",
               "actor": "owner",
@@ -601,7 +634,14 @@
                 "contains": "Return refund 757b"
               }
             },
-            {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "overlay-close",
+              "ifAvailable": true,
+              "unlessVisible": "order-item",
+              "within": 1000
+            },
             {
               "do": "click",
               "actor": "owner",
@@ -620,14 +660,11 @@
             {
               "do": "expect",
               "actor": "owner",
-              "testid": "order-status",
+              "testid": "order-item",
               "within": 10000,
-              "in": {
-                "testid": "order-item",
-                "contains": "Desk Lamp"
-              },
-              "contains": "returned",
-              "ignoreCase": true
+              "contains": "Desk Lamp",
+              "ignoreCase": true,
+              "containsText": "returned"
             },
             {
               "do": "callAction",
@@ -672,7 +709,14 @@
               "actor": "owner-fresh",
               "name": "return-refund-owner"
             },
-            {"do":"click","actor":"owner-fresh","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {
+              "do": "click",
+              "actor": "owner-fresh",
+              "testid": "overlay-close",
+              "ifAvailable": true,
+              "unlessVisible": "order-item",
+              "within": 1000
+            },
             {
               "do": "click",
               "actor": "owner-fresh",
@@ -681,14 +725,11 @@
             {
               "do": "expect",
               "actor": "owner-fresh",
-              "testid": "order-status",
+              "testid": "order-item",
               "within": 10000,
-              "in": {
-                "testid": "order-item",
-                "contains": "Desk Lamp"
-              },
-              "contains": "returned",
-              "ignoreCase": true
+              "contains": "Desk Lamp",
+              "ignoreCase": true,
+              "containsText": "returned"
             },
             {
               "do": "expectNumber",

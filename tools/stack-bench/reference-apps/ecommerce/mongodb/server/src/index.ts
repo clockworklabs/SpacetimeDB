@@ -14,7 +14,7 @@ import { installProgressionRoutes } from "./progression.js";
 import { releaseStock, reserveStock } from "./stock-reservations.js";
 import { installBundleRoutes, releaseBundle } from "./bundles.js";
 import { installSubscriptionRoutes, processSubscriptions } from "./subscriptions.js";
-import { checkoutAtomic, refundCredit, registerCredit } from "./credit.js";
+import { checkoutAtomic, refundCredit, refundForReturn, registerCredit } from "./credit.js";
 
 const PORT = Number(process.env.PORT) || 6401;
 const DATABASE_URL = process.env.DATABASE_URL || "mongodb://localhost:6537/stackbench_ecom_run0";
@@ -767,7 +767,7 @@ app.post("/api/orders/:id/items/:itemId/return", requireAuth, async (req, res) =
         { item_id: line.itemId, warehouse_id: allocation.warehouseId }, { $inc: { quantity: allocation.quantity } }, { session });
       line.returned = true;
       const gross = value.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-      const amount = Math.min(value.total - value.refundTotal, Math.round(line.price * line.quantity * value.total / gross * 100) / 100);
+      const amount = refundForReturn(value.total, value.refundTotal, gross, line.price * line.quantity, value.items.every(item => item.returned));
       value.refundTotal += amount;
       await refundCredit(value, session, value.refundTotal);
       await value.save({ session });

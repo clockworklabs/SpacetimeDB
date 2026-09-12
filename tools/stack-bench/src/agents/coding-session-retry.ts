@@ -195,6 +195,11 @@ function codingSessionResult(value: unknown): CodingSessionResult | null {
     if (!object(failure) || !['rate-limit', 'quota', 'authentication', 'transport', 'request', 'broker-budget']
       .includes(String(failure.category)) || !(failure.status === null || Number.isInteger(failure.status))
       || !(failure.code === null || typeof failure.code === 'string')) return null;
+    const budget = failure.budget;
+    if (budget !== undefined && (!object(budget)
+      || ['maxBudgetUsd', 'spentUsd', 'estimatedSpendUsd', 'reservedUsd', 'requestCeilingUsd']
+        .some(key => typeof budget[key] !== 'number' || !Number.isFinite(budget[key])
+          || budget[key] < 0))) return null;
   }
   if (value.api_error_status !== undefined && value.api_error_status !== null
     && typeof value.api_error_status !== 'number') return null;
@@ -463,7 +468,15 @@ export function runCodingSessionWithRetries({ invoke, prompt, model, retryLimit,
       spawnError ??= `provider continuation unavailable (${providerFailure.code})`;
       break;
     }
-    if (result?.stack_bench_provider_failure && ['transport', 'request', 'broker-budget']
+    if (result?.stack_bench_provider_failure?.category === 'broker-budget') {
+      const budget = result.stack_bench_provider_failure.budget;
+      spawnError = 'session budget cannot cover the next request reservation'
+        + (budget ? ` (spent $${budget.spentUsd.toFixed(2)}, including $${budget.estimatedSpendUsd.toFixed(2)} estimated;`
+          + ` reserved $${budget.reservedUsd.toFixed(2)}; next request ceiling $${budget.requestCeilingUsd.toFixed(2)};`
+          + ` limit $${budget.maxBudgetUsd.toFixed(2)})` : ' (broker-budget)');
+      break;
+    }
+    if (result?.stack_bench_provider_failure && ['transport', 'request']
       .includes(result.stack_bench_provider_failure.category)) {
       spawnError = `provider failure is not eligible for continuation (${result.stack_bench_provider_failure.category})`;
       break;

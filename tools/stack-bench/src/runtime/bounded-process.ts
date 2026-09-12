@@ -31,6 +31,8 @@ export interface RunBoundedOptions {
   env?: NodeJS.ProcessEnv;
   stdio?: 'inherit' | 'ignore';
   timeoutMs: number;
+  /** Shared claim time, so launcher setup consumes the same allowance as the child. */
+  startedAt?: number;
   /** Owner may increase the total allowance. Called before each deadline check. */
   refreshTimeoutMs?: (current: number, canExtend: boolean) => number;
   /** A single planned hold. It must start before the working-time deadline. */
@@ -61,13 +63,16 @@ function openCapture(path: string): CaptureState {
 export function runBounded(command: string, argv: readonly string[],
   { cwd = process.cwd(), env = process.env, stdio = 'inherit', timeoutMs,
     terminate = killTree, logs = null, signal = null, gracefulCancellationMs = 0,
-    refreshTimeoutMs, pauseInterval }:
+    refreshTimeoutMs, pauseInterval, startedAt = Date.now() }:
     RunBoundedOptions & {
       terminate?: (pid: number) => void; gracefulCancellationMs?: number;
     }): Promise<BoundedProcessResult> {
   return new Promise(resolveRun => {
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
       throw new Error('runBounded timeoutMs must be a positive safe integer');
+    }
+    if (!Number.isSafeInteger(startedAt) || startedAt > Date.now()) {
+      throw new Error('runBounded startedAt must be a past timestamp');
     }
     if (!Number.isSafeInteger(gracefulCancellationMs) || gracefulCancellationMs < 0) {
       throw new Error('runBounded gracefulCancellationMs must be a non-negative safe integer');
@@ -153,7 +158,6 @@ export function runBounded(command: string, argv: readonly string[],
       if (signal.aborted) cancel();
       else signal.addEventListener('abort', cancel, { once: true });
     }
-    const startedAt = Date.now();
     let deadline = startedAt + timeoutMs;
     let pausedMs = 0;
     let pauseStart: number | null = null;
@@ -201,7 +205,7 @@ export function runBounded(command: string, argv: readonly string[],
       timedOut = true;
       stop();
     };
-    timer = setTimeout(expire, Math.min(timeoutMs, 2_147_483_647));
+    timer = setTimeout(expire, Math.max(0, Math.min(deadline - Date.now(), 2_147_483_647)));
     // Monotonic timers can pause during host sleep. Enforce the wall deadline on resume too.
     const wallTimer = setInterval(() => {
       refresh();

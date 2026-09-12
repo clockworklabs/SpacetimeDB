@@ -501,7 +501,7 @@ test('optional navigation waits for delayed controls or inline content', async (
     const provided = services({ loc: (id: string) => ({
       isVisible: async () => ready && (inline ? id === 'low-stock-item' : id === 'low-stock-link'),
       isDisabled: async () => false,
-      scrollIntoViewIfNeeded: async () => {}, evaluate: async () => true,
+      evaluate: async () => true,
       click: async () => { clicks += 1; },
     }) }, { browser: { sleep: async () => { ready = true; } } });
     const result = await run({ do: 'click', actor: 'a', testid: 'low-stock-link',
@@ -517,12 +517,12 @@ test('navigation retries a replaced destination without repeating clicks or hidi
     let clicks = 0;
     const provided = services({ loc: () => ({
       isVisible: async () => true,
-      scrollIntoViewIfNeeded: async () => {
+      evaluate: async () => {
         reads += 1;
         if (failure === 'unrelated') throw new Error('browser disconnected');
         if (failure === 'always' || reads === 1) throw new Error('Element is not attached to the DOM');
+        return true;
       },
-      evaluate: async () => true,
       click: async () => { clicks += 1; },
     }) }, { browser: { sleep: async (ms: number) => new Promise(resolve => setTimeout(resolve, ms)) } });
     const result = await run({ do: 'click', actor: 'a', testid: 'low-stock-link',
@@ -533,19 +533,52 @@ test('navigation retries a replaced destination without repeating clicks or hidi
   }
 });
 
-test('destination observation timeout does not fail optional navigation or hide a required click', async () => {
+test('unreadable destinations never trigger a blind toggle click', async () => {
   for (const optional of [false, true]) {
     let clicks = 0;
     const provided = services({ loc: (id: string) => ({
       isVisible: async () => id === 'order-item',
       isDisabled: async () => false,
-      scrollIntoViewIfNeeded: async () => { throw Object.assign(new Error('scroll timed out'), { name: 'TimeoutError' }); },
+      evaluate: async () => { throw Object.assign(new Error('observation timed out'), { name: 'TimeoutError' }); },
       click: async () => { clicks += 1; throw Object.assign(new Error('required control missing'), { name: 'TimeoutError' }); },
     }) });
     const result = await run({ do: 'click', actor: 'a', testid: 'orders-toggle',
       unlessVisible: 'order-item', ifAvailable: optional, within: 10 }, provided);
-    assert.equal(result.status, optional ? 'passed' : 'failed');
-    assert.equal(clicks, optional ? 0 : 1);
+    assert.equal(result.status, 'failed');
+    assert.equal(clicks, 0);
+  }
+});
+
+test('reload timeouts fail the app while proven browser crashes stay harness failures', async () => {
+  for (const [message, expected] of [
+    ['page.reload: Timeout 20000ms exceeded', 'failed'],
+    ['page.reload: Target crashed', 'harness_failure'],
+  ]) {
+    const provided = services({ loc: () => ({}), page: { reload: async () => {
+      throw Object.assign(new Error(message), { name: 'TimeoutError' });
+    } } });
+    const result = await run({ do: 'reload', actor: 'a', settleMs: 0 }, provided);
+    assert.equal(result.status, expected);
+  }
+});
+
+test('containsText polls the selected item without requiring an exact status value', async () => {
+  const step = { do: 'expect', actor: 'a', testid: 'order-item', contains: 'Keyboard',
+    containsText: 'returned', ignoreCase: true, within: 1 };
+  assert.doesNotThrow(() => compileActionInput(step));
+  for (const conflict of [{ value: 'returned' }, { attribute: 'data-state' }, { absent: true }, { containsText: '' }]) {
+    assert.throws(() => compileActionInput({ ...step, ...conflict }));
+  }
+  for (const returned of [false, true]) {
+    let ready = false;
+    const provided = services({ loc: (_id: string, options: { contains: string }) => {
+      assert.equal(options.contains, 'Keyboard');
+      return { waitFor: async () => {}, evaluate: async () => 'ARTICLE', getAttribute: async () => null,
+        innerText: async () => `Keyboard · shipped${ready && returned ? ' · Returned' : ''}` };
+    } }, { browser: { sleep: async () => { ready = true; } } });
+    const result = await run(step, provided);
+    assert.equal(result.status, returned ? 'passed' : 'failed');
+    if (!returned) assert.match(result.summary!, /Keyboard.*does not contain "returned"/);
   }
 });
 

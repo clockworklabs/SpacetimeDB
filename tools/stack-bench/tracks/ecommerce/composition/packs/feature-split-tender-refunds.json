@@ -13,10 +13,12 @@
   "conflictsWith": [],
   "capabilities": [
     "browser",
+    "database-observation",
     "direct-server-call"
   ],
   "evidence": [
     "browser-observation",
+    "database-observation",
     "fresh-client-observation"
   ],
   "budget": {
@@ -60,6 +62,22 @@
         "ecommerce.feature.store-credit",
         "ecommerce.progression.support-refunds"
       ]
+    },
+    {
+      "id": "return-refund-interaction",
+      "source": "scenarios/progression-support-return-interaction.json",
+      "feature": 757,
+      "criteria": [
+        "757a",
+        "757b"
+      ],
+      "role": "feature",
+      "requiresFeatures": [
+        "ecommerce.l3.order-returns-features",
+        "ecommerce.progression.support-refunds",
+        "ecommerce.progression.fulfilment-queue"
+      ],
+      "stableId": "return-refund-interaction"
     }
   ]
 }

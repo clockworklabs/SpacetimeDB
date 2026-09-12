@@ -10,7 +10,7 @@
   "conflictsWith": [],
   "capabilities": ["browser"],
   "evidence": ["browser-observation"],
-  "budget": { "status": "bounded", "maxRuntimeMs": 36000 },
+  "budget": { "status": "bounded", "maxRuntimeMs": 66000 },
   "task": {
     "requirements": [
       { "id": "ecommerce.l2.refund-invariants", "path": "prompts/02-operations.md", "order": 61, "from": "- Revenue always", "until": "## Starting data", "modes": ["upgrade"], "requiresFeatures": ["ecommerce.returns-pricing-features"] }
@@ -18,6 +18,36 @@
     "contracts": []
   },
   "checks": [
-    { "id": "refund-accounting", "stableId": "refund-accounting", "source": "scenarios/02-invariants.json", "feature": 203, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.returns-pricing-features"] }
+    {
+      "id": "refund-accounting",
+      "stableId": "refund-accounting",
+      "source": "scenarios/02-invariants.json",
+      "feature": 203,
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.returns-pricing-features"
+      ]
+    },
+    {
+      "id": "price-cart-checkout",
+      "stableId": "price-history",
+      "source": "scenarios/progression-price-cart-checkout.json",
+      "feature": 420,
+      "criteria": [
+        "4c"
+      ],
+      "role": "guarantee",
+      "requiresFeatures": [
+        "ecommerce.returns-pricing-features"
+      ],
+      "observations": [
+        "requested",
+        "unmentioned"
+      ]
+    }
   ]
 }

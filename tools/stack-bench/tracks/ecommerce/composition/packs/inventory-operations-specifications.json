@@ -18,9 +18,92 @@
     "contracts": []
   },
   "checks": [
-    { "id": "stock-conservation-directional", "stableId": "stock-conservation", "source": "scenarios/02-strengthened.json", "feature": 202, "criteria": ["202a"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.inventory-operations-features"] },
-    { "id": "stock-conservation-cancel", "stableId": "stock-conservation", "source": "scenarios/02-self-contained.json", "feature": 202, "criteria": ["202b"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.inventory-operations-features", "ecommerce.returns-pricing-features"] },
-    { "id": "stock-conservation-fresh-client", "stableId": "stock-conservation", "source": "scenarios/02-self-contained.json", "feature": 202, "criteria": ["202c"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.inventory-operations-features", "ecommerce.returns-pricing-features"] },
-    { "id": "stock-conservation-contention", "stableId": "stock-conservation", "source": "scenarios/02-server-actions.json", "feature": 202, "criteria": ["202d"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.inventory-operations-features"] }
+    {
+      "id": "stock-conservation-directional",
+      "stableId": "stock-conservation",
+      "source": "scenarios/02-strengthened.json",
+      "feature": 202,
+      "criteria": [
+        "202a"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.inventory-operations-features"
+      ]
+    },
+    {
+      "id": "stock-conservation-cancel",
+      "stableId": "stock-conservation",
+      "source": "scenarios/02-self-contained.json",
+      "feature": 202,
+      "criteria": [
+        "202b"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.inventory-operations-features",
+        "ecommerce.returns-pricing-features"
+      ]
+    },
+    {
+      "id": "stock-conservation-fresh-client",
+      "stableId": "stock-conservation",
+      "source": "scenarios/02-self-contained.json",
+      "feature": 202,
+      "criteria": [
+        "202c"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.inventory-operations-features",
+        "ecommerce.returns-pricing-features"
+      ]
+    },
+    {
+      "id": "stock-conservation-contention",
+      "stableId": "stock-conservation",
+      "source": "scenarios/02-server-actions.json",
+      "feature": 202,
+      "criteria": [
+        "202d"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.inventory-operations-features"
+      ]
+    },
+    {
+      "id": "warehouse-transfer-overdraw",
+      "stableId": "warehouse-transfer",
+      "source": "scenarios/02-transfer-overdraw.json",
+      "feature": 2,
+      "criteria": [
+        "2c"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.inventory-operations-features"
+      ]
+    }
   ]
 }

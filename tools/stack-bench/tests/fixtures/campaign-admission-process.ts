@@ -25,7 +25,7 @@ process.on('message', async message => {
     return;
   }
   try {
-    const result = await runCampaignAdmission(plan, directory, { env: { STACK_BENCH_RESOURCE_LOCK_DIR: locks,
+    const result = await runCampaignAdmission(plan, directory, { env: { STACK_BENCH_RUNNER_CAPACITY: '64', STACK_BENCH_RESOURCE_LOCK_DIR: locks,
       STACK_BENCH_APPLIANCE: '1' },
     probePort: () => {
       if (racers && !joinedRace) {

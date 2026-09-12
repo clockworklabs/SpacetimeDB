@@ -1,7 +1,8 @@
+import { RESTRICTED_PORTS } from '../src/composition/product-config.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { RESTRICTED_PORTS, RUN_INDEX_CAP, listTracks, loadTrack,
+import { RUN_INDEX_CAP, listTracks, loadTrack,
   portsFor } from '../src/composition/tracks.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 

@@ -61,7 +61,7 @@ type CampaignStatus = 'prepared' | 'running' | 'completed' | 'attention-required
 type TerminalOutcome = 'passed' | 'app_failure';
 type InvalidOutcome = 'provider_failure' | 'harness_failure' | 'inconclusive'
   | 'ungraded' | 'incomplete' | 'contaminated' | 'timed_out' | 'missing_artifact'
-  | 'scheduler_interrupted';
+  | 'scheduler_interrupted' | 'interrupted';
 type CampaignOutcome = TerminalOutcome | InvalidOutcome;
 
 export interface CampaignRetry {
@@ -182,7 +182,7 @@ export interface CampaignExecutionResult {
 const ATTEMPT_STATUSES = new Set<AttemptStatus>(['pending', 'running', 'completed', 'invalid']);
 const TERMINAL_OUTCOMES = new Set<string>(['passed', 'app_failure']);
 const INVALID_OUTCOMES = new Set<string>(['provider_failure', 'harness_failure', 'inconclusive',
-  'ungraded', 'incomplete', 'contaminated', 'timed_out', 'missing_artifact', 'scheduler_interrupted']);
+  'ungraded', 'incomplete', 'contaminated', 'timed_out', 'missing_artifact', 'scheduler_interrupted', 'interrupted']);
 const SAFE_ID = /^[a-z0-9][a-z0-9.-]*$/;
 const FEATURE_ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 const HASH = /^[a-f0-9]{64}$/;
@@ -252,7 +252,7 @@ const executionSchema = z.strictObject({
   exitCode: z.number().int().nullable(),
   outcome: z.enum(['passed', 'app_failure', 'provider_failure', 'harness_failure',
     'inconclusive', 'ungraded', 'incomplete', 'contaminated', 'timed_out', 'missing_artifact',
-    'scheduler_interrupted']).nullable(),
+    'scheduler_interrupted', 'interrupted']).nullable(),
   reason: z.string().min(1).nullable(),
   admissionId: z.string().min(1),
   runIndex: z.number().int(),
@@ -363,7 +363,7 @@ export function validateCampaignState(input: unknown): CampaignState {
     for (const [executionIndex, execution] of attempt.executions.entries()) {
       const executionAt = `${at}.executions[${executionIndex}]`;
       if (execution.timeContinuation && (attempt.plan.mode?.id !== 'dependency'
-        || execution.outcome !== 'timed_out'
+        || !['timed_out', 'interrupted'].includes(execution.outcome ?? '')
         || !attempt.timeGrants?.some(g => g.disposition === 'accepted'
           && g.request.executionId === execution.id && g.request.grantId === execution.timeContinuation!.grantId))) {
         fail(`${executionAt} has an unbound time continuation`);
@@ -565,7 +565,7 @@ export function scheduleTimeContinuation(input: unknown, attemptId: string,
   if (state.attempts.some(a => a.status === 'running')) throw new Error('campaign still has running work');
   const attempt = state.attempts.find(a => a.plan.id === attemptId);
   const execution = attempt?.executions.at(-1);
-  if (!attempt || attempt.plan.mode?.id !== 'dependency' || execution?.outcome !== 'timed_out'
+  if (!attempt || !execution || attempt.plan.mode?.id !== 'dependency' || !['timed_out', 'interrupted'].includes(execution.outcome ?? '')
     || execution.id !== receipt.request.executionId || execution.timeContinuation
     || attempt.timeGrants?.some(g => g.request.grantId === receipt.request.grantId)) {
     throw new Error('time continuation requires the latest unextended timed-out dependency execution');

@@ -335,7 +335,10 @@ test('credential broker enforces model, output token, and session cost limits', 
   }, { maxBudgetUsd: 0.01, pricingRates: rates });
 });
 
-test('credential broker charges reported usage and reserves enough for the next request', async () => {
+test('credential broker charges reported usage and reserves enough for the next request', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'broker-budget-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const ledgerPath = join(root, 'ledger.json');
   const rates = { input: 3, output: 15, cacheWrite5m: 3.75, cacheWrite1h: 6, cacheRead: 0.3 };
   const upstreamBody = JSON.stringify({ usage: { input_tokens: 100, output_tokens: 100,
     cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } });
@@ -351,7 +354,15 @@ test('credential broker charges reported usage and reserves enough for the next 
     assert.deepEqual(stats(), { acceptedRequests: 4, billableRequests: 3,
       completedBillableRequests: 3, estimatedBillableRequests: 0, estimatedByReason: NO_ESTIMATES,
       spentUsd: 0.0054, reservedUsd: 0 });
-  }, { maxBudgetUsd: 0.02, pricingRates: rates, upstreamBody });
+    const failure = readCredentialBrokerLedger(ledgerPath).providerFailure!;
+    assert.equal(failure.category, 'broker-budget');
+    assert.equal(failure.code, 'reservation-exceeds-budget');
+    assert.equal(failure.budget?.spentUsd, 0.0054);
+    assert.equal(failure.budget?.estimatedSpendUsd, 0);
+    assert.equal(failure.budget?.reservedUsd, 0);
+    assert.equal(failure.budget?.maxBudgetUsd, 0.02);
+    assert.ok(failure.budget!.spentUsd + failure.budget!.requestCeilingUsd > 0.02);
+  }, { ledgerPath, maxBudgetUsd: 0.02, pricingRates: rates, upstreamBody });
 });
 
 test('credential broker clears different concurrent reservations before the next request', async () => {
@@ -1122,5 +1133,17 @@ test('OpenAI inline screenshots retain input and reserve bounded vision tokens',
       'a large screenshot must not reserve its base64 bytes as text tokens');
     assert.throws(() => protocol.parseRequest(Buffer.from(JSON.stringify({ model,
       input: [{ ...image, image_url: 'https://example.com/image.png' }] })), '/v1/responses'), /inline data/);
+  }
+});
+
+test('output reservations honor API caps without assuming account endpoints enforce them', () => {
+  for (const mode of ['api-key', 'subscription-token'] as const) {
+    const protocol = brokerProtocol({ provider: 'openai', mode, model: 'gpt-6-astra',
+      accountId: 'test', maxOutputTokens: 4096 } as BrokerConfig);
+    const payload = protocol.parseRequest(Buffer.from(JSON.stringify({ model: 'gpt-6-astra',
+      input: 'hello', max_output_tokens: 1024, reasoning: { effort: 'medium' } })), '/v1/responses');
+    assert.equal(protocol.outputLimit(payload), mode === 'api-key' ? 1024 : 128_000);
+    assert.deepEqual(payload.reasoning, { effort: 'medium' });
+    assert.equal(payload.model, 'gpt-6-astra');
   }
 });

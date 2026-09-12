@@ -5,7 +5,7 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
   metric: 'completion' | 'cost' | 'distribution' = 'completion', view = 'grid', hidden: ReadonlySet<string> = new Set(), unit: 'checks' | 'features' = 'features'): string {
   const tracks = metric === 'distribution' ? sheet.stacks.flatMap(stack => stack.attempts.flatMap(attempt => {
     const rate = unit === 'features' ? attempt.featureCompletion?.rate : attempt.completion?.rate;
-    return attempt.status === 'completed' && rate != null && Number.isFinite(rate)
+    return attempt.status === 'completed' && !attempt.excluded && rate != null && Number.isFinite(rate)
       ? [{ stack: stack.stack, attempt, points: [{ elapsed: 0, value: rate * 100, upper: false }] }] : [];
   })) : sheet.stacks.flatMap(stack => stack.attempts.map(attempt =>
     progression?.stacks.find(track => track.attemptId === attempt.id)
@@ -44,7 +44,7 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
     : 'Accepted checks passed out of all selected checks.';
   const label = metric === 'distribution' ? 'Completion distribution' : metric === 'cost' ? 'Cost' : 'Completion';
   const description = metric === 'distribution'
-    ? `One point per completed run, grouped by provider. ${unitDescription} Running runs are omitted. Excluded runs are labelled.`
+    ? `One point per eligible completed run, grouped by stack. ${unitDescription} Running and excluded runs are not plotted.`
     : metric === 'cost'
     ? 'Live cost estimates use reported response usage; final receipts replace estimates. Other runs show saved grade checkpoints. Includes repairs and excluded runs. Subscription costs use the pinned API-equivalent price snapshot, not invoice charges. Unknown costs are not plotted; upper bounds are labelled. Time starts at the current execution. Lines connect observations; intermediate values are not measured.'
     : `${unitDescription} Each point is a saved grade. Zero marks run start. Each line is one repetition; elapsed time starts at that run. Excluded runs are labelled. Lines can fall after regressions. Intermediate values are not measured.`;
@@ -78,8 +78,8 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
         const point = tracks.find(track => track.attempt.id === attempt.id)?.points.at(-1);
         const label = runLabel(attempt, sheet.repetitions > 1)
           + (point ? ` · ${metric === 'cost' && attempt.liveSpend !== undefined ? '~' : ''}${valueLabel(point.value, point.upper, 0)}` : '');
-        const status = attempt.excluded ? ' · Excluded' : '';
-        return `<button type="button" class="chart-run-toggle" data-chart-run="${esc(attempt.id)}" data-chart-series="${esc(attempt.id)}" aria-pressed="${!hidden.has(attempt.id)}" aria-label="${esc(stackLabel(stack.stack))} · ${esc(label + status)}" title="Show or hide ${esc(stackLabel(stack.stack))} ${esc(runLabel(attempt) + status)}"><svg width="12" height="12" fill="${color(stack.stack)}" aria-hidden="true">${marker(attempt.repetition, 6, 6)}</svg>${esc(label)}</button>`;
+        const status = attempt.excluded || attempt.status === 'invalid' ? ' · Excluded' : '';
+        return `<button type="button" class="chart-run-toggle" data-chart-run="${esc(attempt.id)}" data-chart-series="${esc(attempt.id)}" aria-pressed="${!hidden.has(attempt.id)}" aria-label="${esc(stackLabel(stack.stack))} · ${esc(label + status)}" title="Show or hide ${esc(stackLabel(stack.stack))} ${esc(runLabel(attempt) + status)}"><svg width="12" height="12" fill="${color(stack.stack)}" aria-hidden="true">${marker(attempt.repetition, 6, 6)}</svg>${esc(label + status)}</button>`;
       }).join('') + '</div></div>';
   }).join('') + '</div>';
   const visible = tracks.filter(track => !hidden.has(track.attempt.id));

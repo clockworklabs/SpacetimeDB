@@ -20,7 +20,7 @@ test('one-use child delegation preserves parent reservations across successive a
   try {
     const plan = compileCampaignFile(join(STACK_BENCH_ROOT, 'tests', 'fixtures', 'campaign.deterministic.json'));
     const admitted = await runCampaignAdmission(plan, root, {
-      env: { STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') },
+      env: { STACK_BENCH_RUNNER_CAPACITY: '64', STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') },
       probePort: () => ({ free: true }),
       preflight: request => ({ schemaVersion: 1, generatedAt: new Date().toISOString(),
         request: { backends: request.backends, track: request.track, levels: request.levelList,
@@ -61,7 +61,7 @@ test('one-use child delegation preserves parent reservations across successive a
 });
 
 
-test('three concurrent nine-worker campaigns claim 27 disjoint workers without a pool setting', linux, async () => {
+test('three concurrent nine-worker campaigns claim 27 disjoint workers within host capacity', linux, async () => {
   const root = mkdtempSync(join(tmpdir(), 'campaign-dynamic-admission-'));
   const locks = join(root, 'locks');
   const helper = compiledEntrypoint('tests', 'fixtures', 'campaign-admission-process.js');
@@ -122,7 +122,7 @@ test('dynamic admission skips live legacy capacity and port reservations without
     claimBackendResources(join(root, 'legacy.json'), legacy, { root: locks, keys });
     const before = legacy.resources.locks.map(lock => readFileSync(lock.path, 'utf8'));
     const admitted = await runCampaignAdmission(plan, root, {
-      env: { STACK_BENCH_RESOURCE_LOCK_DIR: locks }, probePort: () => ({ free: true }),
+      env: { STACK_BENCH_RUNNER_CAPACITY: '64', STACK_BENCH_RESOURCE_LOCK_DIR: locks }, probePort: () => ({ free: true }),
       preflight: request => ({ schemaVersion: 1, generatedAt: new Date().toISOString(),
         request: { backends: request.backends, track: request.track, levels: request.levelList,
           runIndex: request.runIndex, parallelism: request.parallelism, agentAdapter: request.agentAdapter,
@@ -148,7 +148,7 @@ test('attempt admissions reserve only their stack and release slots for another 
   const reservations: NonNullable<Awaited<ReturnType<typeof runCampaignAdmission>>['reservation']>[] = [];
   const admit = async (attempt: typeof pg, directory: string) => {
     const result = await runCampaignAdmission(plan, join(root, directory), {
-      attempt, env: { STACK_BENCH_RESOURCE_LOCK_DIR: locks }, probePort: () => ({ free: true }),
+      attempt, env: { STACK_BENCH_RUNNER_CAPACITY: '64', STACK_BENCH_RESOURCE_LOCK_DIR: locks }, probePort: () => ({ free: true }),
       preflight: request => {
         assert.deepEqual(request.backends, [attempt.stack]);
         assert.deepEqual(request.agentSkills, attempt.skills.slice().sort());

@@ -12,6 +12,7 @@ interface Locator {
   click(options?: unknown): Promise<void>;
   count(): Promise<number>;
   evaluate<Result>(callback: (element: { readonly tagName: string;
+    scrollIntoView(options: { block: 'nearest'; inline: 'nearest'; behavior: 'instant' }): void;
     readonly options?: ArrayLike<{ value: string; label: string }>;
     readonly ownerDocument: { readonly defaultView: { readonly IntersectionObserver: new (
       callback: (entries: Array<{ isIntersecting: boolean; intersectionRatio: number }>) => void,
@@ -31,7 +32,6 @@ interface Locator {
   allInnerTexts(): Promise<string[]>;
   press(key: string): Promise<void>;
   selectOption(value: string | { readonly label: string }): Promise<unknown>;
-  scrollIntoViewIfNeeded(options?: unknown): Promise<void>;
   type(text: string, options?: unknown): Promise<void>;
   waitFor(options?: unknown): Promise<void>;
 }
@@ -99,6 +99,7 @@ type ExpectInput = CommonInput & {
   readonly absent?: boolean;
   readonly count?: number;
   readonly value?: string;
+  readonly containsText?: string;
   readonly ignoreCase?: boolean;
   readonly notContains?: string;
   readonly nonEmpty?: boolean;
@@ -200,10 +201,10 @@ async function click({ input, capabilities, signal }:
       try {
         const sentinel = actor.loc(input.unlessVisible);
         if (!await sentinel.isVisible()) return false;
-        // A translated closed drawer is "visible" to Playwright. Scroll normal
-        // inline content first, then distinguish it from an offscreen drawer.
-        await sentinel.scrollIntoViewIfNeeded({ timeout: Math.max(1, deadline - Date.now()) });
+        // Native scrolling does not wait for animation stability. A translated
+        // closed drawer remains offscreen; ordinary inline content becomes visible.
         return await sentinel.evaluate(element => new Promise<boolean>(resolve => {
+          element.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
           const observer = new element.ownerDocument.defaultView.IntersectionObserver(entries => {
             observer.disconnect();
             resolve(entries.some(entry => entry.isIntersecting && entry.intersectionRatio > 0));
@@ -211,8 +212,8 @@ async function click({ input, capabilities, signal }:
           observer.observe(element);
         }));
       } catch (error) {
-        // The destination is only a reason to skip navigation, not an assertion.
-        if (!signal.aborted && errorField(error, 'name') === 'TimeoutError') return false;
+        // An unreadable destination does not establish whether a toggle is open.
+        // Preserve that failure instead of clicking blindly and changing app state.
         // A render can replace the destination between visibility and scrolling.
         // Retry that read only; never repeat the navigation click.
         if (!/Element is not attached to the DOM/i.test(String(error))
@@ -397,13 +398,17 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
   }
   if (!visible) return { visible: false };
 
-  if (input.value !== undefined) {
+  const expectedText = input.value ?? input.containsText;
+  if (expectedText !== undefined) {
     const deadline = Date.now() + within;
     const read = async () => input.attribute
       ? await loc.getAttribute(input.attribute) ?? ''
       : readValue(loc);
-    const matches = (value: string) => input.ignoreCase
-      ? value.toLowerCase() === input.value!.toLowerCase() : value === input.value;
+    const matches = (value: string) => {
+      const actual = input.ignoreCase ? value.toLowerCase() : value;
+      const expected = input.ignoreCase ? expectedText.toLowerCase() : expectedText;
+      return input.containsText === undefined ? actual === expected : actual.includes(expected);
+    };
     let value = await read();
     while (!matches(value) && Date.now() <= deadline) {
       await browser.sleep(250, signal);
@@ -411,8 +416,9 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
     }
     if (!matches(value)) {
       const sensitive = /^password$/i.test(await loc.getAttribute('type') ?? '') || /password|secret|token/i.test(input.testid);
-      fail('value-mismatch', { control: input.testid,
-        ...(!sensitive ? { observed: findingText(value), expected: findingText(input.value) } : {}) });
+      fail(input.containsText === undefined ? 'value-mismatch' : 'text-missing', { control: input.testid,
+        ...(input.containsText !== undefined && contains ? { matchingText: findingText(contains) } : {}),
+        ...(!sensitive ? { observed: findingText(value), expected: findingText(expectedText) } : {}) });
     }
   }
   if (input.notContains) {

@@ -11,7 +11,7 @@ import { loadTrack, portsFor, RUN_INDEX_CAP } from '../composition/tracks.js';
 import { emptyArtifactIdentities, readArtifact, writeArtifact } from '../evidence/artifacts.js';
 import { claimBackendResources, createBackendLease, runResourceLockKeys,
   readBackendLease, writeBackendLease, releaseResourceLocks, verifyResourceLocks, resourceLockScope,
-  loopbackHttpUri, existingResourceLockKeys } from '../runtime/backend-lease.js';
+  loopbackHttpUri, existingResourceLockKeys, runnerCapacity } from '../runtime/backend-lease.js';
 import type { BackendLease } from '../runtime/backend-lease.js';
 import { releaseBackendLease } from '../runtime/backend-teardown.js';
 import { probeLoopbackPort, runPreflight } from '../runtime/preflight.js';
@@ -272,9 +272,14 @@ function reservationLease(authority: CampaignReservation): ReservationLease {
 async function reserveRunIndices(plan: CompiledCampaignPlan, directory: string, id: string,
   env: NodeJS.ProcessEnv, probePort: (port: number | string) => { free: boolean },
   excludedRunIndices: readonly number[] = [], signal?: AbortSignal,
+  requestedParallelism = plan.summary.parallelism,
 ): Promise<{ runIndices: number[]; reservation: CampaignReservation }> {
   const track = loadTrack(plan.definition.track);
   const scope = resourceLockScope(env);
+  const capacity = runnerCapacity(env);
+  if (requestedParallelism > capacity) {
+    throw new Error(`requested parallelism ${requestedParallelism} exceeds Docker host capacity ${capacity}; choose a smaller campaign or configure STACK_BENCH_RUNNER_CAPACITY from measured resources`);
+  }
   const path = contained(directory, join('.private', `${id}.reservation.json`), 'campaign reservation');
   // Selection is a hint. The kernel-locked claim below admits the complete set
   // or none of it. A competing campaign can win between selection and claim.
@@ -321,13 +326,16 @@ async function reserveRunIndices(plan: CompiledCampaignPlan, directory: string, 
       track: plan.definition.track, runIndex: selected[0]! }),
       campaign: { sha256: plan.contentSha256, admissionId: id, runIndices: selected } };
     try {
-      claimBackendResources(path, lease, { ...scope, keys });
+      claimBackendResources(path, lease, { ...scope, keys, capacity });
       return { runIndices: selected, reservation: { path, token: lease.ownershipToken } };
     } catch (error) {
       // Do not overwrite private intent until every possible claim is released.
       releaseResourceLocks(lease);
       lease.state = 'released';
       writeBackendLease(path, lease);
+      if (error instanceof Error && error.message.includes('host capacity unavailable:')) {
+        throw new CampaignResourceUnavailable(error.message);
+      }
       if (!existingResourceLockKeys({ ...scope, keys }).length) throw error;
     }
   }
@@ -575,7 +583,8 @@ export async function runCampaignAdmission(plan: CompiledCampaignPlan, directory
     attempts: [attempt], conditions: [attempt.condition], summary: { ...plan.summary, parallelism: 1 } } : plan;
   const resourceFree = campaignUsesNoExternalResources(scoped);
   const reserved = resourceFree ? null
-    : await reserveRunIndices(scoped, directory, id, executionEnv, probePort, excludedRunIndices, signal);
+    : await reserveRunIndices(scoped, directory, id, executionEnv, probePort, excludedRunIndices, signal,
+      plan.summary.parallelism);
   const runIndices = reserved?.runIndices
     ?? Array.from({ length: scoped.summary.parallelism + excludedRunIndices.length }, (_, index) => index)
       .filter(index => !excludedRunIndices.includes(index)).slice(0, scoped.summary.parallelism);

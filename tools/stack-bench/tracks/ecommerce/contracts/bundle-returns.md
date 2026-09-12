@@ -1,7 +1,9 @@
 # Bundle return interface
 
-Use `return-bundle` inside the existing `order-item`. Its `order-status` is exactly
-`returned` after return. `bundle-refund-amount` shows the refunded amount in currency units.
+Use `return-bundle` inside the existing `order-item`. Mark each returned bundle line
+`returned`. The order's `order-status` reads `returned` when all its lines have been
+returned; otherwise keep its current fulfilment status. `bundle-refund-amount` shows
+the refunded amount in currency units.
 Each bundle `order-item` exposes `data-bundle-return-input` as JSON `{ "orderId": "..." }`.
 
 <!-- interface:http -->

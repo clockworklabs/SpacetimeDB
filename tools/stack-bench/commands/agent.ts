@@ -970,6 +970,7 @@ async function main() {
         providerStatus: result.api_error_status ?? null,
         waitedMs: throttle?.waitedMs ?? 0,
         waits: throttle?.waits ?? 0,
+        ...(result.stack_bench_provider_failure?.budget ? { budget: result.stack_bench_provider_failure.budget } : {}),
       } : null,
       interruptions, invocations: sessionResults.length,
       providerWaits: coding.providerWaits ?? [],

@@ -37,6 +37,7 @@ services:
       STACK_BENCH_IMAGE: ${STACK_BENCH_BUILD_IMAGE:?set STACK_BENCH_BUILD_IMAGE to the manifest digest reference}
       STACK_BENCH_RELEASE_MANIFEST: ${STACK_BENCH_RELEASE_MANIFEST:-}
       STACK_BENCH_APPLIANCE: "1"
+      STACK_BENCH_RUNNER_CAPACITY: ${STACK_BENCH_RUNNER_CAPACITY:-}
       STACK_BENCH_COMPOSE_FILE: /opt/stack-bench/appliance/docker-compose.yaml
       STACK_BENCH_WORK_DIR: ${STACK_BENCH_STATE_ROOT:?run controller setup}/work
       STACK_BENCH_RESULTS_DIR: ${STACK_BENCH_STATE_ROOT:?run controller setup}/results
@@ -76,6 +77,7 @@ services:
         max-file: "3"
 
   worker:
+    restart: on-failure:3
     extends:
       service: controller
     profiles: ["worker"]

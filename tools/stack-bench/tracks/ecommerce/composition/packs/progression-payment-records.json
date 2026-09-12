@@ -48,7 +48,10 @@
       "stableId": "payment-records",
       "source": "scenarios/progression-core-business.json",
       "feature": 623,
-      "role": "feature"
+      "role": "feature",
+      "criteria": [
+        "623a"
+      ]
     }
   ]
 }

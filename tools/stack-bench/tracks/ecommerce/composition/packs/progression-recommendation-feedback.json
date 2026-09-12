@@ -43,7 +43,10 @@
       "stableId": "recommendation-feedback",
       "source": "scenarios/progression-recommendation-feedback.json",
       "feature": 504,
-      "role": "feature"
+      "role": "feature",
+      "criteria": [
+        "504a"
+      ]
     }
   ]
 }

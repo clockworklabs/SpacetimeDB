@@ -58,13 +58,13 @@ test('browser setup operations are harness failures but app navigation is not', 
   assert.equal(harnessBrowserFailure(new Error('net::ERR_CONNECTION_REFUSED')), null);
 });
 
-test('navigation timeouts are inconclusive; connection refusal and crashes keep distinct outcomes', async () => {
+test('navigation timeouts and connection refusal fail setup; proven browser crashes remain harness failures', async () => {
   const scenario = compileScenarioDefinition({ schemaVersion: 1, track: 'ecommerce', level: 1,
     name: 'navigation', features: [{ id: 1, name: 'account', actors: ['buyer'], setup: [],
       criteria: [{ id: '1a', desc: 'account exists', points: 1,
         steps: [{ do: 'expect', actor: 'buyer', testid: 'current-user' }] }] }] }, { source: 'navigation.json' });
   for (const [error, expected] of [
-    [new errors.TimeoutError('page.goto: Timeout 20000ms exceeded'), 'inconclusive'],
+    [new errors.TimeoutError('page.goto: Timeout 20000ms exceeded'), 'failed'],
     [new Error('page.goto: net::ERR_CONNECTION_REFUSED'), 'failed'],
     [new Error('page.goto: Target crashed'), 'harness_failure'],
   ] as const) {

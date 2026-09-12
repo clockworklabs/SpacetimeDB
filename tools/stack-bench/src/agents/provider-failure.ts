@@ -3,6 +3,13 @@ export interface ProviderFailure {
   category: 'rate-limit' | 'quota' | 'authentication' | 'transport' | 'request' | 'broker-budget';
   status: number | null;
   code: string | null;
+  budget?: {
+    maxBudgetUsd: number;
+    spentUsd: number;
+    estimatedSpendUsd: number;
+    reservedUsd: number;
+    requestCeilingUsd: number;
+  };
 }
 
 export function classifyProviderFailure(status: number, body: Buffer): ProviderFailure {

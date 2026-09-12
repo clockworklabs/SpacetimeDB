@@ -3,8 +3,27 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { createBackendLease, publicBackendLease } from '../src/runtime/backend-lease.js';
+import { createBackendLease, publicBackendLease, runnerCapacity } from '../src/runtime/backend-lease.js';
 import { resourceLockDescriptors, resourceLockTransaction } from '../src/runtime/resource-lock-worker.js';
+
+test('host admission counts a campaign reservation once per index across backends', () => {
+  const root = mkdtempSync(join(tmpdir(), 'host-capacity-'));
+  const first = createBackendLease({ runId: 'first', backend: 'stub', track: 'loop', runIndex: 0 });
+  const next = createBackendLease({ runId: 'next', backend: 'stub', track: 'loop', runIndex: 1 });
+  const keys = ['slot:loop:postgres:run0', 'slot:loop:mongodb:run0', 'slot:loop:spacetime:run0'];
+  try {
+    resourceLockTransaction({ root, lease: first, keys, operation: 'acquire', capacity: 1 });
+    resourceLockTransaction({ root, lease: first, keys, operation: 'acquire', capacity: 1 });
+    assert.throws(() => resourceLockTransaction({ root, lease: next,
+      keys: ['slot:loop:postgres:run1', 'port:5999'], operation: 'acquire', capacity: 1 }), /host capacity unavailable/);
+    assert.equal(readdirSync(root).length, 3, 'no partial claim when host capacity is exhausted');
+    resourceLockTransaction({ root, lease: first, keys, operation: 'release' });
+    resourceLockTransaction({ root, lease: next, keys: ['slot:loop:postgres:run1'], operation: 'acquire', capacity: 1 });
+    assert.equal(runnerCapacity({}, { NCPU: 16, MemTotal: 64 * 1024 ** 3 }), 3);
+    assert.equal(runnerCapacity({ STACK_BENCH_RUNNER_CAPACITY: '9' }), 9);
+    assert.throws(() => runnerCapacity({ STACK_BENCH_RUNNER_CAPACITY: '0' }), /positive safe integer/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 test('port and workspace claims remain exclusive across acquisition and intent recovery', () => {
   const root = mkdtempSync(join(tmpdir(), 'lock-resources-'));

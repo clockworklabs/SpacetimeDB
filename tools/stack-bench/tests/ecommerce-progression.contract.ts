@@ -54,9 +54,9 @@ test('the ecommerce progression definition is complete and calculated from its d
   ])), { 1: 4, 2: 10, 3: 13, 4: 10, 5: 9, 6: 3 });
   assert.equal(definition.questlines.length, 12);
   assert.equal(new Set(definition.nodes.flatMap(node => node.gradingChecks.map(check => check.id))).size,
-    181);
+    183);
   assert.equal(definition.nodes.flatMap(node => node.gradingChecks)
-    .reduce((total, check) => total + check.points, 0), 349);
+    .reduce((total, check) => total + check.points, 0), 353);
   assert(definition.nodes.every(node => Object.keys(node.dependencyReasons).length
     === node.dependencies.length));
   assert(definition.questlines.every(questline =>

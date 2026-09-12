@@ -62,8 +62,9 @@ test('restock checks reopen and verify the admin destination after every admin r
         // A fresh page may first restore the admin session; the destination is then reopened
         // and verified before any observation.
         const next = steps[index + 1]!.do === 'ensureSignedIn' ? index + 2 : index + 1;
-        assert.deepEqual(steps[next],
-          { do: 'click', actor: 'admin', testid: 'admin-link', ifAvailable: true });
+        assert.equal(steps[next]!.do, 'click');
+        assert.equal(steps[next]!.actor, 'admin');
+        assert.equal(steps[next]!.testid, 'admin-link');
         // An optional in-area navigation hook may sit between the area and its controls.
         const after = steps[next + 1]!.testid === 'restocks-link' ? next + 2 : next + 1;
         assert.deepEqual(steps[after],
@@ -71,10 +72,10 @@ test('restock checks reopen and verify the admin destination after every admin r
       }
     }
   }
-  assert.equal(reloads, 3, 'cover both server-time reloads and the durability cleanup observation');
+  assert.equal(reloads, 4, 'cover server-time, ordinary execution, and durability cleanup observations');
   const delivery = scenario('03-deferred-integrity.json').features.find(feature => feature.id === 312)!;
   assert.deepEqual(delivery.setup.at(-1),
-    { do: 'click', actor: 'staff', testid: 'staff-link', ifAvailable: true });
+    { do: 'click', actor: 'staff', testid: 'staff-link', ifAvailable: true, within: 1000 });
   const firstObservation = delivery.criteria[0]!.steps.find(step => step.do === 'expect')!;
   assert.equal(firstObservation.testid, 'completed-order-item');
   assert.equal(firstObservation.absent, undefined);
@@ -98,7 +99,9 @@ test('support privacy confirms persisted owner writes without requiring live ref
   assert.equal(tail[6]!.equals, 1, 'an unauthorized replay must not add a second reply');
   const live = scenario('progression-managed-support-shared.json').features[0]!.criteria
     .find(criterion => criterion.id === '613a')!;
-  assert.equal(live.steps.some(step => step.do === 'reload'), false);
+  const write = live.steps.findIndex(step => step.do === 'click' && step.testid === 'support-reply-submit');
+  assert(write >= 0);
+  assert.equal(live.steps.slice(write).some(step => step.do === 'reload'), false);
   assert.equal(live.steps.filter(step => step.do === 'expect'
     && step.testid === 'support-reply-item').length, 2, 'both open clients must still receive live replies');
 });

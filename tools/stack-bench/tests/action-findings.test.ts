@@ -26,6 +26,8 @@ const SAMPLES: { [K in FindingKind]: Finding } = {
   'control-unreadable': finding('control-unreadable', { control: 'stock', actors: ['a'] }),
   'value-mismatch': finding('value-mismatch', { control: 'support-status' }),
   'text-unexpected': finding('text-unexpected', { control: 'support-ticket' }),
+  'text-missing': finding('text-missing', { control: 'order-item', matchingText: 'Keyboard',
+    observed: 'Keyboard · shipped', expected: 'returned' }),
   'value-unstable': finding('value-unstable', { control: 'stock' }),
   'clients-disagree': finding('clients-disagree', { control: 'stock', actors: ['a', 'b'] }),
   'number-missing': finding('number-missing', { control: 'order-total' }),

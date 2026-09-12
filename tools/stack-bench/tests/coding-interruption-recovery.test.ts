@@ -75,6 +75,9 @@ test('provider mid-response errors resume the exact paid session', () => {
 test('coding result parsing rejects non-object and malformed output', () => {
   assert.equal(parseCodingSessionResult('true'), null);
   assert.equal(parseCodingSessionResult('{"is_error":"no"}'), null);
+  assert.equal(parseCodingSessionResult(JSON.stringify({ stack_bench_provider_failure: {
+    category: 'broker-budget', status: 402, code: null, budget: { spentUsd: 'unknown' },
+  } })), null);
   assert.deepEqual(parseCodingSessionResult('noise\n{"is_error":false,"session_id":"done"}'),
     { is_error: false, session_id: 'done' });
 });
@@ -322,9 +325,20 @@ test('structured transport, permanent request and broker budget failures never e
       waitForProvider: () => { throw new Error('must not wait'); },
       invoke: () => { calls++; return JSON.stringify({ is_error: true, session_id: 'native',
         total_cost_usd: 0.5, stack_bench_cost_receipt: brokerReceipt(0.5),
-        stack_bench_provider_failure: { category, status: 429, code: null } }); } });
+        stack_bench_provider_failure: { category, status: category === 'broker-budget' ? 402 : 429, code: null,
+          ...(category === 'broker-budget' ? { budget: { spentUsd: 0.5, estimatedSpendUsd: 0,
+            reservedUsd: 0, requestCeilingUsd: 10, maxBudgetUsd: 10 } } : {}) } }); } });
     assert.equal(calls, 1);
-    assert.match(coding.spawnError!, /not eligible for continuation/);
+    assert.match(coding.spawnError!, category === 'broker-budget' ? /budget cannot cover the next request reservation/ : /not eligible for continuation/);
+    if (category === 'broker-budget') {
+      const code = providerSessionFailure(coding.result)!.code;
+      const failure = agentSessionFailure({ ok: false,
+        providerMetadata: { failureCode: code, diagnostic: coding.spawnError } });
+      assert.equal(code, 'broker-budget');
+      assert.equal(failure?.kind, 'provider_failure', 'a budget stop is not a harness defect or app failure');
+      assert.match(failure!.reason, /budget/);
+      assert.match(failure!.reason, /spent \$0.50.*next request ceiling \$10.00.*limit \$10.00/);
+    }
     assert.deepEqual(coding.providerWaits, []);
   }
 });

@@ -51,16 +51,6 @@
         "403a"
       ],
       "role": "feature"
-    },
-    {
-      "id": "isolation",
-      "stableId": "personalized-recommendations",
-      "source": "scenarios/progression-personalized-recommendations.json",
-      "feature": 403,
-      "criteria": [
-        "403b"
-      ],
-      "role": "feature"
     }
   ]
 }

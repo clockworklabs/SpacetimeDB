@@ -64,6 +64,7 @@
     }
   ],
   "repetitions": 2,
+  "parallelism": 1,
   "ordering": {
     "method": "balanced-rotation",
     "seed": "product-brief-quality-reference-1"

@@ -16,7 +16,7 @@ import { campaignComparisonKey } from '../../src/campaigns/campaign-report.js';
 import { claimNextAttempt, createCampaignState, finishCampaignExecution }
   from '../../src/campaigns/campaign-scheduler.js';
 import { canonicalDefinitionJson } from '../../src/composition/definition-plan.js';
-import { attemptChecks, attemptLogSlice, attemptPackage, campaignProgression, campaignSheet,
+import { attemptChecks, attemptLogSlice, attemptPackage, campaignLiveUpdate, campaignProgression, campaignSheet,
   overviewSummary } from '../../dashboard/dashboard-views.js';
 import { parseRunProgress, attemptPause,
   discoverCampaigns, discoverPlans, readCampaignArtifactBody, readJsonLines,
@@ -895,9 +895,44 @@ test('the sheet reports dependency submodes and questlines in definition order',
   assert.ok(questline.nodes.length > 0);
   assert.ok(questline.nodes.every(node => typeof node.status === 'string'));
   assert.equal(stack.attempts.find(attempt => attempt.id === stack.selectedAttemptId)?.repairs.budget, 0);
-  assert.equal(stack.regressions, 0);
+  assert.equal(stack.n, 0);
+  assert.equal(stack.completionRate, null, 'running progress is not a completed comparison');
+  assert.equal(stack.regressions, null, 'no eligible runs means no regression statistic');
   const bytes = Buffer.byteLength(JSON.stringify(sheet));
   assert.ok(bytes < 60 * 1024, `dependency sheet is ${bytes} bytes`);
+});
+
+test('log-only refresh keeps the evidence sheet cached and returns live fields only', t => {
+  const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-live-fields-'));
+  t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
+  const key = 'live-fields';
+  const plan = examplePlan();
+  const claimed = claimNextAttempt(createCampaignState(plan), { admissionId: 'test' });
+  assert.ok(claimed.claim);
+  const directory = join(resultsRoot, 'campaigns', key);
+  writeCampaign(directory, plan, claimed.state);
+  const output = join(directory, claimed.claim.output);
+  writeRunEvidence(output, plan, claimed.claim.attempt, 0);
+  const options = { controllerActive: () => true };
+  const sheet = campaignSheet(resultsRoot, key, options);
+  appendFileSync(join(output, 'process.stdout.log'), '\n--- repair 2/3 ---\n');
+  const later = new Date(Date.now() + 1000);
+  utimesSync(join(output, 'process.stdout.log'), later, later);
+  const update = campaignLiveUpdate(resultsRoot, key, options);
+  assert.equal(campaignSheet(resultsRoot, key, options), sheet, 'log writes must not replay the evidence');
+  const attempt = update.stacks.flatMap(stack => stack.attempts).find(entry => entry.id === claimed.claim!.attempt.id)!;
+  assert.equal(attempt.logUpdatedAt, later.toISOString());
+  assert.match(attempt.phase, /repair/i);
+  assert.ok(!('completion' in attempt) && !('checks' in attempt) && !('nodes' in update));
+  assert.ok(Buffer.byteLength(JSON.stringify(update)) < 4096);
+  writeCampaign(directory, plan, finishCampaignExecution(claimed.state, claimed.claim.executionId,
+    { exitCode: 0, run: { outcome: { kind: 'passed' } } }));
+  const finished = campaignSheet(resultsRoot, key, options);
+  appendFileSync(join(output, 'process.stdout.log'), '  TOTAL ... 1/1\n');
+  utimesSync(join(output, 'process.stdout.log'), new Date(later.getTime() + 1000), new Date(later.getTime() + 1000));
+  const finalLog = campaignLiveUpdate(resultsRoot, key, options).stacks.flatMap(stack => stack.attempts)[0]!;
+  assert.equal(finalLog.climb.length, attempt.climb.length + 1, 'a late final log write must remain visible');
+  assert.equal(campaignSheet(resultsRoot, key, options), finished);
 });
 
 function writeSingleAttemptCampaign(resultsRoot: string, key: string): string {

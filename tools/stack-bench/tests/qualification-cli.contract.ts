@@ -68,7 +68,7 @@ test('qualification status rejects ambiguous or undeclared scope', () => {
     '--track', 'ecommerce', '--level', '1']), { command: 'status', track: 'ecommerce', level: 1 });
   assert.throws(() => qualificationReadiness('ecommerce', 3), /has no L3 calibration/);
   const dependency = qualificationReadiness('ecommerce', 3, 'ecommerce.progression-catalog');
-  assert.equal(dependency.defectChecks.totalChecks, 107);
+  assert.equal(dependency.defectChecks.totalChecks, 109);
   assert.ok(dependency.commands.filter(command => command.startsWith('qualify-reference '))
     .every(command => command.includes('--feature-catalog progression/ecommerce.json')));
   assert.ok(dependency.commands.filter(command => command.startsWith('qualify-null '))

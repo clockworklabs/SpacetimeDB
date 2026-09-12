@@ -7,8 +7,14 @@ const creditEntrySchema = new Schema({ userId: Schema.Types.ObjectId, reference:
 creditEntrySchema.index({ userId: 1, reference: 1 }, { unique: true });
 export const CreditEntry = mongoose.model('CreditEntry', creditEntrySchema);
 
+export function refundForReturn(total: number, refundedTotal: number, gross: number, returnedGross: number, allReturned: boolean): number {
+  const remaining = Math.max(0, Math.round((total - refundedTotal) * 100) / 100);
+  return allReturned ? remaining : gross > 0
+    ? Math.min(remaining, Math.round(returnedGross * total / gross * 100) / 100) : 0;
+}
+
 export async function refundCredit(order: any, session: ClientSession, refundedTotal = order.total) {
-  if (!order.creditMinor) return;
+  if (!order.creditMinor || order.total <= 0) return;
   const reference = `refund:${order._id}`;
   const entry = await CreditEntry.findOne({ userId: order.userId, reference }).session(session);
   const amountMinor = Math.min(order.creditMinor, Math.round(order.creditMinor * refundedTotal / order.total));

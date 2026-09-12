@@ -212,7 +212,7 @@ test('campaign admission sends the exact catalog, mode, and default build image 
     assert(featureCatalog);
     const calls: CampaignAdmissionPreflightRequest[] = [];
     const admission = await runCampaignAdmission(plan, output, {
-      env: { STACK_BENCH_RESOURCE_LOCK_DIR: join(output, 'locks') }, now: '2026-08-25T00:00:00.000Z', uuid: () => 'test',
+      env: { STACK_BENCH_RUNNER_CAPACITY: '64', STACK_BENCH_RESOURCE_LOCK_DIR: join(output, 'locks') }, now: '2026-08-25T00:00:00.000Z', uuid: () => 'test',
       preflight: request => {
         calls.push(request);
         return { schemaVersion: 1, generatedAt: '2026-08-25T00:00:00.000Z',

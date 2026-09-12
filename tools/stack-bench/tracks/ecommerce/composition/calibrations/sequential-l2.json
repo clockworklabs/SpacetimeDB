@@ -7,9 +7,9 @@
   "recipe": {
     "path": "../recipes/sequential-l2.json",
     "id": "ecommerce.sequential-l2",
-    "meaningSha256": "3b11d17c7daec58efbbc602379fbae2d50585de00d05b5e7b62126001e5d85bc",
-    "executionSha256": "d8be43e4449edaaedd9e7a9c9e4866e8ac91931b0ea6a4d9162ef6b3a02c3774",
-    "contentSha256": "453cb47bb11e2c03554c9b4800ceb96878c1731d8e440b544aa5eaddf5b16884"
+    "meaningSha256": "154d2821dccfbe0611cf8b769f1cbb16c4456a8558f0028e349589a78d4011cd",
+    "executionSha256": "5b63dcd101a490584c766ec8d00e4fb7e065e000c7230aa5abd878c3b140cbc6",
+    "contentSha256": "8029360ce7a7144a4a213edb62149c673bc91cd6c1c5332a6253976c6690bf72"
   },
   "fixture": {
     "id": "ecommerce.operations",
@@ -21,17 +21,17 @@
       {
         "backend": "mongodb",
         "id": "ecommerce-reference-mongodb",
-        "sourceSha256": "eadfb93446768fca6b9bab67126a0dfaf811c77e104d29007613005c4c0dd8aa"
+        "sourceSha256": "9dd093bb5e533e3f02c79326acdec1da1151c14dda55ffc9816c87e37504af93"
       },
       {
         "backend": "postgres",
         "id": "ecommerce-reference-postgres",
-        "sourceSha256": "5d186b3c4df9828d4098e132853401c34c39c82fb495e285238505dfed7e6e13"
+        "sourceSha256": "787d5573f6e807db6068feba4314075f98de571f5337834f6132c7928ce2d8ca"
       },
       {
         "backend": "spacetime",
         "id": "ecommerce-reference-spacetime",
-        "sourceSha256": "c57869396f2b0c29f227856a9bf493fb2efad91c9889c1ffcb81a57d2ab58fb6"
+        "sourceSha256": "77b93a0422ca3a85105290ee5fa0cdd99993209bf3d99d8330f97eac4628d183"
       }
     ]
   },
@@ -39,19 +39,19 @@
     {
       "backend": "mongodb",
       "path": "grader/mutations/mongodb-ecommerce.json",
-      "sha256": "8e525953cbbfb820ee96f78703a0e254c8da3341d72e95e7a60e737d6d6f48a5",
+      "sha256": "2ae0bed2afbfd3ad108e18a5a331298de118a331f61ca7707f6dba2197d362bc",
       "referenceId": "ecommerce-reference-mongodb"
     },
     {
       "backend": "postgres",
       "path": "grader/mutations/postgres-ecommerce.json",
-      "sha256": "e43be6fb1f23a4de11464d71ea88cf304416e9ad215f8bcd39a54359d07b79e0",
+      "sha256": "9d629b36f39e85a750b78d0ae90698bd55ea533129dad04bd1edcee60d97a379",
       "referenceId": "ecommerce-reference-postgres"
     },
     {
       "backend": "spacetime",
       "path": "grader/mutations/spacetime-ecommerce.json",
-      "sha256": "9702ee2f6d2a904cf2af5d1bc93a9de0206bd8d773bab53eeb6cf1764d980e20",
+      "sha256": "8571fa0b47da725af3d83030281a322b4d0c068d40c70e582af9b7f50d3209a1",
       "referenceId": "ecommerce-reference-spacetime"
     }
   ],
@@ -142,7 +142,6 @@
       "ecommerce.inventory-operations.stock-conservation.202d",
       "ecommerce.operations-access.order-owner.204a",
       "ecommerce.inventory-operations.warehouse-transfer.2a",
-      "ecommerce.inventory-operations.warehouse-transfer.2c",
       "ecommerce.returns-pricing.cancellation-and-return.3c",
       "ecommerce.inventory-operations.operational-views.5d",
       "ecommerce.operations-access.operator-authorization.201a",
@@ -156,7 +155,8 @@
       "ecommerce.spec.live-state.open-list.902a",
       "ecommerce.feature.purchasing.purchase-order.3c",
       "ecommerce.spec.access-control.signed-out-purchase.3a",
-      "ecommerce.spec.concurrency-safety.stock-limit.3d"
+      "ecommerce.spec.concurrency-safety.stock-limit.3d",
+      "ecommerce.inventory-operations.warehouse-transfer.2c"
     ],
     "runner": {
       "schemaVersion": 1,

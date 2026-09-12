@@ -20,6 +20,15 @@ import { parseReferenceQualificationArgs,
 import { auditMutationWorkerRun, auditReferenceRun }
   from '../src/references/reference-qualification-audit.js';
 import { runBounded } from '../src/runtime/bounded-process.js';
+
+test('bounded process charges launcher time from the shared claim timestamp', async () => {
+  const start = Date.now();
+  const result = await runBounded(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
+    timeoutMs: 60_000, startedAt: start - 60_001, stdio: 'ignore',
+  });
+  assert.equal(result.timedOut, true);
+  assert(Date.now() - start < 10_000, 'must not give the process a fresh 60-second allowance');
+});
 import { rescueSupervisedLease } from '../src/runtime/recovery.js';
 import { emptyArtifactIdentities, readArtifact, writeArtifact, writeRunJson }
   from '../src/evidence/artifacts.js';

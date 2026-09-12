@@ -61,7 +61,7 @@ test('campaign separates aggregate scores from selected evidence and explains pe
   assert.match(metricsTable, /\$6\.00/);
   assert.ok(metricsTable.indexOf('Cost per valid run') < metricsTable.indexOf('Total spend'));
   assert.doesNotMatch(page, /Unaided/);
-  assert.match(page, /Later levels retain earlier fixes and feedback/);
+  assert.match(page, /Earlier fixes and feedback are retained/);
   assert.doesNotMatch(page, /<h3>Selected repetition<\/h3>/);
   assert.ok(page.indexOf('<h3>Results</h3>') < page.indexOf('<h3>Runs</h3>'));
   assert.doesNotMatch(page, /More comparison metrics/);
@@ -82,7 +82,7 @@ test('campaign separates aggregate scores from selected evidence and explains pe
   for (const tab of ['checks', 'screenshots', 'files', 'log'] as const) {
     const detail = attemptPage({ sheet, attemptId: attempt.id, tab, checks: null, evidence: null, log: '' });
     assert.doesNotMatch(detail, /Unaided/);
-    assert.match(detail, /Later levels retain earlier fixes and feedback/);
+    assert.match(detail, /Earlier fixes and feedback are retained/);
     assert.match(detail, /No (check results|screenshots|files|log output)/);
     assert.match(detail, /aria-current="page"/);
     assert.match(detail, /popovertarget="help-completion"/);

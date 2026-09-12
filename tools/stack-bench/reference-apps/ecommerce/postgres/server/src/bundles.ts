@@ -1,4 +1,4 @@
-import { refundCredit } from './credit.js';
+import { refundCredit, refundForReturn } from './credit.js';
 import type { Express, RequestHandler } from 'express';
 import type { Pool, PoolClient } from 'pg';
 
@@ -112,19 +112,15 @@ export function registerBundles(app: Express, pool: Pool, auth: RequestHandler,
       if (!order.rows.length) throw new Error('No returnable bundle on this account');
       const lines = await client.query('SELECT * FROM order_item WHERE order_id=$1 AND is_bundle AND NOT returned FOR UPDATE', [orderId]);
       if (!lines.rows.length) throw new Error('Bundle already returned');
-      if (Number(order.rows[0].credit_minor) || Number(order.rows[0].discount)) {
-        const other = await client.query('SELECT id FROM order_item WHERE order_id=$1 AND NOT is_bundle', [orderId]);
-        if (other.rows.length) throw new Error('Use a full support refund for mixed-item discounted or credit orders');
-        await refundCredit(client, order.rows[0]);
-      }
       let refund = 0;
       for (const line of lines.rows) {
         await releaseBundle(client, line.component_allocations);
         await client.query('UPDATE order_item SET returned=true WHERE id=$1', [line.id]);
         refund += Number(line.price) * line.quantity;
       }
-      if (Number(order.rows[0].discount)) refund = Number(order.rows[0].total) - Number(order.rows[0].refund_total);
-      refund = Math.min(refund, Number(order.rows[0].total) - Number(order.rows[0].refund_total));
+      const gross = await client.query('SELECT SUM(price * quantity) AS total, BOOL_AND(returned) AS all_returned FROM order_item WHERE order_id=$1', [orderId]);
+      refund = refundForReturn(Number(order.rows[0].total), Number(order.rows[0].refund_total), Number(gross.rows[0].total), refund, gross.rows[0].all_returned);
+      await refundCredit(client, order.rows[0], Number(order.rows[0].refund_total) + refund);
       await client.query('UPDATE orders SET refund_total=refund_total+$1 WHERE id=$2', [refund, orderId]);
       await client.query('COMMIT'); await changed(accountId); res.json({ ok: true });
     } catch (error) { await client.query('ROLLBACK'); res.status(403).json({ error: String(error) }); }

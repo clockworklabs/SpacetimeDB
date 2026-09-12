@@ -56,6 +56,8 @@ function frozenRuntime(root: string) {
 }
 
 test('parallel SpacetimeDB slots receive distinct dedicated host ports', () => {
+  assert.throws(() => campaignSlotEnvironment({ STACK_BENCH_STDB_URI: 'http://localhost:5999' },
+    'spacetime', 1), /cannot allocate/);
   assert.equal(campaignSlotEnvironment({}, 'spacetime', 0).STACK_BENCH_STDB_URI,
     'http://127.0.0.1:3210');
   assert.equal(campaignSlotEnvironment({}, 'spacetime', 7).STACK_BENCH_STDB_URI,

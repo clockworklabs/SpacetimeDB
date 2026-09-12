@@ -128,7 +128,8 @@ access. The pinned CLI reports missing model metadata and uses fallback settings
 for the selected model. Confirm those settings in a qualification run before
 using this adapter for a published comparison.
 
-Account mode supports `gpt-5.3-codex`, `gpt-5.4`, and `gpt-5.4-2026-03-05`.
+Account mode supports `gpt-5.3-codex`, `gpt-5.4`, `gpt-5.4-2026-03-05`,
+`gpt-5.6-sol`, and `gpt-6-astra`.
 The broker reserves each request against the documented 128,000-token output
 bound. Unknown account models fail before a provider request. API mode uses an
 explicit `max_output_tokens` limit. Both modes still require explicit campaign

@@ -52,26 +52,6 @@
         "615a"
       ],
       "role": "feature"
-    },
-    {
-      "id": "accounting",
-      "stableId": "support-refunds-accounting",
-      "source": "scenarios/progression-support-refunds-accounting.json",
-      "feature": 615,
-      "criteria": [
-        "615b"
-      ],
-      "role": "feature"
-    },
-    {
-      "id": "access",
-      "stableId": "support-refunds-access",
-      "source": "scenarios/progression-support-refunds-access.json",
-      "feature": 615,
-      "criteria": [
-        "615c"
-      ],
-      "role": "feature"
     }
   ]
 }

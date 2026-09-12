@@ -52,16 +52,6 @@
         "614a"
       ],
       "role": "feature"
-    },
-    {
-      "id": "ownership-boundary",
-      "stableId": "order-support-boundary",
-      "source": "scenarios/progression-order-support-boundary.json",
-      "feature": 614,
-      "criteria": [
-        "614b"
-      ],
-      "role": "feature"
     }
   ]
 }

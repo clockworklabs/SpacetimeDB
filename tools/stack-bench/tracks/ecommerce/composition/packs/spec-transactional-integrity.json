@@ -12,17 +12,217 @@
   "budget": { "status": "bounded", "maxRuntimeMs": 100000 },
   "task": {
     "requirements": [
-      { "id": "ecommerce.spec.transactional-integrity.reviews", "path": "prompts/modular/l1-specifications.md", "order": 1400, "from": "## Transactional integrity: reviews", "until": "## Transactional integrity: purchasing", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.reviews"] },
-      { "id": "ecommerce.spec.transactional-integrity.purchasing", "path": "prompts/modular/l1-specifications.md", "order": 1410, "from": "## Transactional integrity: purchasing", "until": "## Transactional integrity: warehouse accounting", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.purchasing"] },
-      { "id": "ecommerce.spec.transactional-integrity.warehouse-accounting", "path": "prompts/modular/l1-specifications.md", "order": 1420, "from": "## Transactional integrity: warehouse accounting", "until": "## External data synchronization", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.purchasing", "ecommerce.feature.warehouse-admin"] }
+      {
+        "id": "ecommerce.spec.transactional-integrity.reviews",
+        "path": "prompts/modular/l1-specifications.md",
+        "order": 1400,
+        "from": "## Transactional integrity: reviews",
+        "until": "## Transactional integrity: purchasing",
+        "modes": [
+          "fresh"
+        ],
+        "requiresFeatures": [
+          "ecommerce.feature.reviews"
+        ]
+      },
+      {
+        "id": "ecommerce.spec.transactional-integrity.purchasing",
+        "path": "prompts/modular/l1-specifications.md",
+        "order": 1410,
+        "from": "## Transactional integrity: purchasing",
+        "until": "## Transactional integrity: warehouse accounting",
+        "modes": [
+          "fresh"
+        ],
+        "requiresFeatures": [
+          "ecommerce.feature.purchasing"
+        ]
+      },
+      {
+        "id": "ecommerce.spec.transactional-integrity.warehouse-accounting",
+        "path": "prompts/modular/l1-specifications.md",
+        "order": 1420,
+        "from": "## Transactional integrity: warehouse accounting",
+        "until": "## External data synchronization",
+        "modes": [
+          "fresh"
+        ],
+        "requiresFeatures": [
+          "ecommerce.feature.purchasing",
+          "ecommerce.feature.warehouse-admin"
+        ]
+      },
+      {
+        "id": "ecommerce.spec.transactional-integrity.automatic-reorder-deduplication",
+        "path": "prompts/modular/production-specifications.md",
+        "order": 6009,
+        "from": "## automatic-reorder-deduplication",
+        "until": "## payment-deduplication",
+        "modes": [
+          "upgrade"
+        ],
+        "requiresFeatures": [
+          "ecommerce.progression.automatic-reorder",
+          "ecommerce.feature.purchasing"
+        ]
+      },
+      {
+        "id": "ecommerce.spec.transactional-integrity.payment-deduplication",
+        "path": "prompts/modular/production-specifications.md",
+        "order": 6010,
+        "from": "## payment-deduplication",
+        "until": "## support-refund-accounting",
+        "modes": [
+          "upgrade"
+        ],
+        "requiresFeatures": [
+          "ecommerce.progression.payment-records"
+        ]
+      },
+      {
+        "id": "ecommerce.spec.transactional-integrity.support-refund-accounting",
+        "path": "prompts/modular/production-specifications.md",
+        "order": 6011,
+        "from": "## support-refund-accounting",
+        "modes": [
+          "upgrade"
+        ],
+        "requiresFeatures": [
+          "ecommerce.progression.support-refunds"
+        ]
+      }
     ],
     "contracts": []
   },
   "checks": [
-    { "id": "unique-review", "source": "scenarios/01-review-uniqueness.json", "feature": 6, "criteria": ["6b"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.reviews", "ecommerce.feature.purchasing"] },
-    { "id": "server-price", "source": "scenarios/01-server-price.json", "feature": 104, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.purchasing"] },
-    { "id": "books-balance", "source": "scenarios/progression-books-balance.json", "feature": 107, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.purchasing", "ecommerce.feature.warehouse-admin"] },
-    { "id": "stock-transfer-overdraw", "source": "scenarios/02-transfer-overdraw.json", "feature": 2, "criteria": ["2c"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l2.stock-transfers-features"] },
-    { "id": "stock-alert-deduplication", "source": "scenarios/progression-stock-alerts.json", "feature": 631, "criteria": ["631a"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.progression.stock-alerts", "ecommerce.feature.warehouse-admin"] }
+    {
+      "id": "unique-review",
+      "source": "scenarios/01-review-uniqueness.json",
+      "feature": 6,
+      "criteria": [
+        "6b"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.feature.reviews",
+        "ecommerce.feature.purchasing"
+      ]
+    },
+    {
+      "id": "server-price",
+      "source": "scenarios/01-server-price.json",
+      "feature": 104,
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.feature.purchasing"
+      ]
+    },
+    {
+      "id": "books-balance",
+      "source": "scenarios/progression-books-balance.json",
+      "feature": 107,
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.feature.purchasing",
+        "ecommerce.feature.warehouse-admin"
+      ]
+    },
+    {
+      "id": "stock-transfer-overdraw",
+      "source": "scenarios/02-transfer-overdraw.json",
+      "feature": 2,
+      "criteria": [
+        "2c"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.l2.stock-transfers-features"
+      ]
+    },
+    {
+      "id": "stock-alert-deduplication",
+      "source": "scenarios/progression-stock-alerts.json",
+      "feature": 631,
+      "criteria": [
+        "631a"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.progression.stock-alerts",
+        "ecommerce.feature.warehouse-admin"
+      ]
+    },
+    {
+      "id": "automatic-reorder-deduplication",
+      "stableId": "automatic-reorder-deduplication",
+      "source": "scenarios/progression-automatic-reorder-duplicate.json",
+      "feature": 502,
+      "criteria": [
+        "502b"
+      ],
+      "role": "guarantee",
+      "requiresFeatures": [
+        "ecommerce.progression.automatic-reorder",
+        "ecommerce.feature.purchasing"
+      ],
+      "observations": [
+        "requested",
+        "unmentioned"
+      ]
+    },
+    {
+      "id": "payment-deduplication",
+      "stableId": "payment-deduplication",
+      "source": "scenarios/progression-core-business.json",
+      "feature": 623,
+      "role": "guarantee",
+      "criteria": [
+        "623b"
+      ],
+      "requiresFeatures": [
+        "ecommerce.progression.payment-records"
+      ],
+      "observations": [
+        "requested",
+        "unmentioned"
+      ]
+    },
+    {
+      "id": "support-refund-accounting",
+      "stableId": "support-refund-accounting",
+      "source": "scenarios/progression-support-refunds-accounting.json",
+      "feature": 615,
+      "criteria": [
+        "615b"
+      ],
+      "role": "guarantee",
+      "requiresFeatures": [
+        "ecommerce.progression.support-refunds"
+      ],
+      "observations": [
+        "requested",
+        "unmentioned"
+      ]
+    }
   ]
 }

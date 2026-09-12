@@ -7,7 +7,7 @@ import type { TranscriptPage } from '../dashboard-transcript.js';
 // refresh does not move what the pointer is on. Every view is a pure function
 // of data; the only DOM work in the dashboard happens here.
 
-import type { AttemptChecks, AttemptPackage, CampaignProgression, CampaignSheet, OverviewEntry }
+import type { AttemptChecks, AttemptPackage, CampaignLiveUpdate, CampaignProgression, CampaignSheet, OverviewEntry }
   from '../dashboard-views.js';
 import type { DashboardPlan } from '../dashboard-model.js';
 import type { readCampaignTimeBudget } from '../../src/campaigns/campaign-time-grant.js';
@@ -293,6 +293,41 @@ function load(navigation = false, changedKey?: string, liveOnly = false): Promis
 
 async function loadData(version: number, changedKeys: Set<string> | null, refreshOverview: boolean): Promise<void> {
   const current = route();
+  if (!refreshOverview) {
+    const keys = current.key ? [current.key] : [...state.sheets.keys()]
+      .filter(key => state.sheets.get(key)?.status === 'running' && (!changedKeys || changedKeys.has(key)));
+    await Promise.all(keys.map(async key => {
+      const sheet = state.sheets.get(key);
+      if (!sheet) return;
+      const update = await read<CampaignLiveUpdate>(`/api/campaigns/${encodeURIComponent(key)}/live`);
+      if (!update || version !== loadVersion) return;
+      if (update.updatedAt !== sheet.updatedAt || update.status !== sheet.status) {
+        void load(false, key); // Evidence changed while a log refresh was in flight.
+        return;
+      }
+      const progression = state.progression.get(key);
+      for (const stack of sheet.stacks) {
+        const fresh = update.stacks.find(entry => entry.stack === stack.stack);
+        stack.liveSpend = fresh?.liveSpend ?? undefined;
+        for (const attempt of stack.attempts) {
+          const live = fresh?.attempts.find(entry => entry.id === attempt.id);
+          if (!live) continue;
+          const { liveCosts, liveSpend, ...fields } = live;
+          Object.assign(attempt, fields, { liveSpend: liveSpend ?? undefined });
+          let track = progression?.stacks.find(entry => entry.attemptId === attempt.id);
+          if (!track && progression && liveCosts.length) {
+            track = { stack: stack.stack, attemptId: attempt.id, updatedAt: update.updatedAt, steps: [], costs: [] };
+            progression.stacks.push(track);
+          }
+          if (track) track.liveCosts = liveCosts.length ? liveCosts : undefined;
+        }
+      }
+    }));
+    if (version !== loadVersion) return;
+    if (current.tab === 'transcript') await readTranscript();
+    else if (current.attempt && current.tab === 'log') await readLog(current);
+    return;
+  }
   const plansRequest = current.plans ? read<DashboardPlan[]>('/api/plans').then(plans => {
     if (plans && version === loadVersion) {
       state.plans = plans;
@@ -399,7 +434,11 @@ function subscribe(): void {
     void load(false, message.key);
   };
   source.addEventListener('campaign', changed);
-  source.addEventListener('log', changed);
+  source.addEventListener('log', event => {
+    const current = route();
+    const message = JSON.parse((event as MessageEvent<string>).data) as { key: string };
+    if (!current.plans && (!current.key || message.key === current.key)) void load(false, message.key, true);
+  });
   source.addEventListener('open', () => {
     if (fallback) clearInterval(fallback);
     fallback = 0;

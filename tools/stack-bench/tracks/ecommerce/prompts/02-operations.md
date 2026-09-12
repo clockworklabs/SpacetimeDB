@@ -36,7 +36,7 @@ price and the item is restocked. Show cancelled and returned states in order his
 
 An admin can change an item's price. Show prices in the catalog.
 
-### Live operational views
+### Operational views
 
 - Low stock: items with 10 units or fewer, most urgent first.
 - Warehouse utilisation: total units in each warehouse.

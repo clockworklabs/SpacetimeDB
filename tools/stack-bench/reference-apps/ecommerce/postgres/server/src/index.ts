@@ -1,4 +1,4 @@
-import { initializeCredit, registerCredit, refundCredit } from "./credit.js";
+import { initializeCredit, registerCredit, refundCredit, refundForReturn } from "./credit.js";
 import { initializeBundles, registerBundles, releaseBundle } from "./bundles.js";
 import { initializeSubscriptions, registerSubscriptions, processSubscriptions } from "./subscriptions.js";
 import "dotenv/config";
@@ -737,9 +737,9 @@ app.post(
       );
       await client.query(`UPDATE order_item SET returned = true WHERE id = $1`, [orderItemId]);
       const order = orderRow.rows[0];
-      const gross = await client.query('SELECT SUM(price * quantity) AS total FROM order_item WHERE order_id=$1', [orderId]);
-      const amount = Math.min(Number(order.total) - Number(order.refund_total),
-        Math.round(Number(lineRow.rows[0].price) * quantity * Number(order.total) / Number(gross.rows[0].total) * 100) / 100);
+      const gross = await client.query('SELECT SUM(price * quantity) AS total, BOOL_AND(returned) AS all_returned FROM order_item WHERE order_id=$1', [orderId]);
+      const amount = refundForReturn(Number(order.total), Number(order.refund_total),
+        Number(gross.rows[0].total), Number(lineRow.rows[0].price) * quantity, gross.rows[0].all_returned);
       const refundedTotal = Number(order.refund_total) + amount;
       await refundCredit(client, order, refundedTotal);
       await client.query('UPDATE orders SET refund_total=$1 WHERE id=$2', [refundedTotal, orderId]);

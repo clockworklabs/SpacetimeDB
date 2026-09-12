@@ -133,14 +133,14 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log, tran
     + `${entry[0]!.toUpperCase()}${entry.slice(1)}`
     + `${counts[entry] ? `<i>${esc(counts[entry])}</i>` : ''}</a>`).join('');
   const help: Record<string, string> = {
-    Completion: 'Accepted checks passed out of every selected check, including checks not reached.',
-    'Weighted score': 'Points earned across the selected grading scope. This differs from the number of checks passed.',
-    'Before repairs': 'Score from the first build at each level, before repairs at that level. Later levels retain earlier fixes and feedback. A dash means no usable first-build evidence.',
-    Repairs: 'Completed repairs out of the planned allowance for this attempt. Per-feature limits still apply.',
+    Completion: 'Accepted checks passed / selected, including checks not reached.',
+    'Weighted score': 'Earned points / available points.',
+    'Before repairs': 'First build at each level. Earlier fixes and feedback are retained.',
+    Repairs: 'Completed repairs / allowance. Per-feature limits apply.',
     Elapsed: 'Consumed time across executions / effective time limit. Includes coding, grading, repairs, and host sleep. Time between executions is excluded.'
       + (timeBudget ? ` Original limit: ${duration(timeBudget.originalMinutes * 60)}. Accepted extensions: ${timeBudget.extensionCount}.` : ''),
-    Time: 'Recorded attempt duration. A dash means duration evidence is not yet available.',
-    Spend: 'Cost from saved receipts and the pinned price snapshot. Work since the last checkpoint can include an unfinished depth and is not yet counted. Unknown is not zero; an upper bound starts with an inequality sign.',
+    Time: 'Recorded attempt duration.',
+    Spend: 'Saved receipts or live usage at pinned prices. ~ estimate; ≤ upper bound.',
   };
   const figure = (label: string, text: string, tone = ''): string =>
     `<div><div class="metric-label">${metricLabel(label, help[label])}</div><b class="${tone}">${text}</b></div>`;

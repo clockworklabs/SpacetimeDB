@@ -12,3 +12,5 @@ For error responses, use HTTP 401 or 403 for access errors and 400, 409, or 422 
 <!-- interface:reducer -->
 Report reducer errors by failing the call.
 <!-- /interface -->
+
+Human-readable status text is case-insensitive. Machine identifiers and protocol values keep their specified spelling.

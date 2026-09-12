@@ -764,21 +764,41 @@ function validateConclusiveResult(state: DependencyState,
   return actualNodes;
 }
 
-function failureFingerprint(state: DependencyState, nodeIds: string[]): string {
-  const failedChecks = nodeIds.map(nodeId => ({
+function failureFingerprint(nodeId: string, checks: Record<string, StoredCheckOutcome>): string {
+  const failedChecks = [{
     nodeId,
-    checks: Object.entries(getNodeState(state, nodeId).checks)
+    checks: Object.entries(checks)
       .filter(([, outcome]) => failedCheck(outcome))
       .map(([checkId, outcome]) => outcome === 'blocked' ? `${checkId}:blocked` : checkId)
       .sort(),
-  })).filter(node => node.checks.length > 0);
+  }].filter(node => node.checks.length > 0);
   return createHash('sha256').update(JSON.stringify(failedChecks)).digest('hex');
 }
 
-// The stall detector counts consecutive repairs that leave a feature's
-// findings unchanged. The first observation of the findings, usually the
-// initial grade, seeds the count; only a completed repair can raise it, so a
-// regrade of unchanged source neither charges the detector nor resets it.
+function madeNewProgress(state: DependencyState, nodeId: string): boolean {
+  const rank = (outcome: unknown): number => outcome === 'pass' ? 3
+    : outcome === 'fail' ? 2 : outcome === 'blocked' ? 1 : 0;
+  const best = new Map<string, number>();
+  for (let index = state.events.length - 1; index >= 0; index--) {
+    const event = state.events[index]!;
+    if (event.type === 'repairs-granted') {
+      if (event.grant.nodeIds.includes(nodeId)) break;
+      continue;
+    }
+    if (event.result.outcome !== 'conclusive') continue;
+    const node = event.result.nodes.find(node => node.id === nodeId);
+    if (!node) continue;
+    if (node.checks.every(check => check.outcome === 'pass')) break;
+    for (const check of node.checks) best.set(check.id, Math.max(best.get(check.id) ?? 0, rank(check.outcome)));
+  }
+  return Object.entries(getNodeState(state, nodeId).checks)
+    .some(([id, outcome]) => rank(outcome) > (best.get(id) ?? 0));
+}
+
+// A newly passed check or first recovery from blocked setup starts a fresh window.
+// Regaining an earlier result is a cycle, not fresh progress. Reuse the event
+// log so replay/resume applies the same rule without another persisted counter.
+// Only completed repairs increment the count; inconclusive grades never enter it.
 function observeUnchangedFailures(state: DependencyState, promptedNodeIds: ReadonlySet<string>,
   repaired: boolean): void {
   const failed = new Set<string>();
@@ -789,9 +809,9 @@ function observeUnchangedFailures(state: DependencyState, promptedNodeIds: Reado
       && hasFailedCheck(state, node);
   });
   for (const node of failedNodes) {
-    const fingerprint = failureFingerprint(state, [node.id]);
+    const fingerprint = failureFingerprint(node.id, getNodeState(state, node.id).checks);
     const prior = getNodeState(state, node.id).unchangedFailure;
-    const count = prior.fingerprint !== fingerprint ? 1
+    const count = prior.count === 0 || madeNewProgress(state, node.id) ? 1
       : repaired ? prior.count + 1 : prior.count;
     getNodeState(state, node.id).unchangedFailure = {
       fingerprint,

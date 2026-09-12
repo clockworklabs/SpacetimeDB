@@ -778,7 +778,7 @@ export default function App() {
                       Cancel order
                     </button>
                   )}
-                  {order.status === "shipped" &&
+                  {["shipped", "delivered"].includes(order.status) &&
                     order.items
                       .filter((l) => !l.returned && !l.isBundle)
                       .map((l) => (

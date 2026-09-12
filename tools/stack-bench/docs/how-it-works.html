@@ -31,11 +31,15 @@
 html, body { height: 100%; }
 body { margin: 0; background: var(--shade8); color: var(--n3); font: 14px/1.5 var(--sans); overflow: hidden; }
 .scene { position: fixed; inset: 0; }
-.scene svg { width: 100%; height: 100%; display: block; }
+.scene svg { width: 100%; height: 100%; display: block; transition: opacity .35s ease; }
+.scene svg.out { opacity: 0; }
 .top { position: fixed; inset: 0 0 auto 0; z-index: 5; display: flex; align-items: center; gap: 12px; height: 52px; padding: 0 28px; }
 .top svg { width: 26px; height: 24px; }
 .top b { color: var(--n1); font: 600 12px/1 var(--mono); letter-spacing: .12em; }
-.top span { margin-left: 10px; color: var(--n4); font: 500 11.7px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+.crumbs { display: flex; align-items: center; gap: 8px; margin-left: 10px; color: var(--n4); font: 500 11.7px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+.crumbs a { color: var(--n4); text-decoration: none; cursor: pointer; }
+.crumbs a:hover { color: var(--n1); }
+.crumbs b { color: var(--n3); font-weight: 500; }
 .card { position: fixed; left: 40px; top: 84px; z-index: 5; max-width: 480px; pointer-events: none; }
 .card .k { color: var(--green); font: 500 11.7px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; }
 .card h1 { margin: 10px 0 8px; color: var(--n1); font-size: 34px; line-height: 38px; font-weight: 600; letter-spacing: -.025em; text-wrap: balance; }
@@ -43,6 +47,8 @@ body { margin: 0; background: var(--shade8); color: var(--n3); font: 14px/1.5 va
 .card .k, .card h1, .card p { opacity: 0; transform: translateY(8px); transition: opacity .5s ease, transform .5s ease; }
 .card.on .k, .card.on h1, .card.on p { opacity: 1; transform: none; }
 .card.on h1 { transition-delay: .06s; } .card.on p { transition-delay: .14s; }
+.hint { position: fixed; left: 40px; bottom: 48px; z-index: 5; color: var(--n4); font: 500 11.7px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; opacity: 0; transition: opacity .5s; }
+.hint.on { opacity: 1; }
 .ctl { position: fixed; right: 40px; bottom: 48px; z-index: 5; display: flex; align-items: center; gap: 14px; }
 .ctl button { width: 34px; height: 34px; border-radius: 4px; border: 1px solid var(--shade1); background: rgba(11,17,20,.7); color: var(--n1); font: 13px/1 var(--mono); cursor: pointer; }
 .ctl button:hover { border-color: var(--n3); }
@@ -51,209 +57,438 @@ body { margin: 0; background: var(--shade8); color: var(--n3); font: 14px/1.5 va
 .dots i.on { background: var(--green); }
 .dots i.done { background: var(--shade1); }
 :focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
-svg text { font: 11px var(--mono); fill: var(--n3); }
+svg text { font: 11px var(--mono); fill: var(--n3); pointer-events: none; }
 svg .lab { font-size: 10.5px; fill: var(--n4); letter-spacing: .12em; text-transform: uppercase; }
 svg .title { font: 600 13px var(--sans); fill: var(--n1); }
+svg .title.door { fill: var(--n1); }
 svg .num { font: 600 15px var(--sans); fill: var(--n1); }
 svg .grid { stroke: #142129; stroke-width: 1; }
 svg .lane { fill: none; stroke: #172a33; stroke-width: 10; stroke-linejoin: round; stroke-linecap: round; }
-svg .pk { filter: url(#glow); }
+svg .lane.on { stroke: #1e3844; }
+svg .chip rect { fill: #0b1114; stroke-width: 1; }
+svg .chip text { font: 500 9px var(--mono); letter-spacing: .1em; text-transform: uppercase; fill: var(--n1); }
 svg .dim { transition: opacity .6s ease; }
-@media (max-width: 900px) { .card { left: 20px; right: 20px; top: 64px; } .card h1 { font-size: 26px; line-height: 30px; } .ctl { right: 20px; bottom: 28px; } }
+svg .door { cursor: pointer; }
+svg .door.hot polygon { filter: url(#lift); }
+@media (max-width: 900px) { .card { left: 20px; right: 20px; top: 64px; } .card h1 { font-size: 26px; line-height: 30px; } .ctl { right: 20px; bottom: 28px; } .hint { left: 20px; bottom: 28px; } }
 </style>
 </head>
 <body>
 <header class="top">
   <svg viewBox="0 0 35 32" fill="none" aria-hidden="true"><path d="M28.8 15.317C28.55 9.532 29.63 6.19 35 0L24.265 10.911c2.569 3.345 2.34 8.189-.688 11.266-3.027 3.077-7.794 3.31-11.085.699l-1.988 2.02.007.007-3.158 3.233c2.385-1.404 6.068-1.001 8.29-.758.615.067 1.118.122 1.451.123 3.043.152 6.136-.953 8.46-3.315 2.393-2.431 3.475-5.69 3.247-8.869Z" fill="#D7D8D9"/><path d="M17.906 4.499c.333.001.836.056 1.452.123 2.221.243 5.904.646 8.289-.758l-3.159 3.234.008.006-1.988 2.02c-3.291-2.611-8.058-2.378-11.085.7-3.028 3.077-3.257 7.92-.688 11.265L0 32c5.37-6.19 6.447-9.532 6.2-15.317-.228-3.18.854-6.438 3.246-8.869 2.324-2.362 5.417-3.467 8.46-3.315Z" fill="#D7D8D9"/><path fill-rule="evenodd" d="M24.749 16c0 4.069-3.246 7.367-7.249 7.367-4.003 0-7.249-3.298-7.249-7.367s3.246-7.367 7.249-7.367c4.003 0 7.249 3.298 7.249 7.367Zm-7.249 5.6c3.075 0 5.568-2.507 5.568-5.6s-2.493-5.6-5.568-5.6-5.568 2.507-5.568 5.6 2.493 5.6 5.568 5.6Z" fill="#D7D8D9"/></svg>
-  <b>STACK BENCH</b><span>the proving ground</span>
+  <b>STACK BENCH</b><nav class="crumbs" id="crumbs"></nav>
 </header>
 <div class="scene"><svg id="map" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Isometric map of Stack Bench"></svg></div>
 <div class="card" id="card"><div class="k"></div><h1></h1><p></p></div>
+<div class="hint" id="hint"></div>
 <div class="ctl"><div class="dots" id="dots"></div><button id="play" type="button" aria-label="Pause">❚❚</button></div>
 
 <script>
-/* ------------------------------------------------------------ projection */
+/* ================================================================ engine */
 const NS = 'http://www.w3.org/2000/svg';
-const U = 26, OX = 800, OY = 168, CX = Math.cos(Math.PI / 6), SY = 0.5;
-const iso = (x, y, z = 0) => [OX + (x - y) * U * CX, OY + (x + y) * U * SY - z * U];
+const U = 26, CX = Math.cos(Math.PI / 6);
+let OX = 800, OY = 168;
+const iso = (x, y, z = 0) => [OX + (x - y) * U * CX, OY + (x + y) * U * .5 - z * U];
 const P = pts => pts.map(p => p.map(v => v.toFixed(1)).join(',')).join(' ');
 const el = (tag, attrs = {}, txt) => { const n = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); if (txt !== undefined) n.textContent = txt; return n; };
-const map = document.getElementById('map');
-const defs = el('defs'); map.append(defs);
-defs.innerHTML = `<filter id="glow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="2.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>`;
-const layers = { ground: el('g'), lanes: el('g'), slabs: el('g'), shadows: el('g'), blocks: el('g'), packets: el('g'), labels: el('g') };
-Object.values(layers).forEach(g => map.append(g));
-
 const hex = c => [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)];
 const mix = (c, k) => { const [r, g, b] = hex(c); const f = v => Math.round(Math.max(0, Math.min(255, v))); return `rgb(${f(r * k)},${f(g * k)},${f(b * k)})`; };
-const districts = {};
+const easeIO = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+const map = document.getElementById('map');
+const defs = el('defs'); map.append(defs);
+defs.innerHTML = `<filter id="glow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="2.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="3"/></filter>
+<filter id="lift" x="-10%" y="-10%" width="120%" height="120%"><feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#4cf490" flood-opacity=".35"/></filter>
+<linearGradient id="lightTop" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+<linearGradient id="shadeRight" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".28"/></linearGradient>
+<linearGradient id="drum" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity=".12"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".35"/></linearGradient>`;
+const root = el('g'); map.append(root);
+let layers = null, districts = {}, risers = [], anim = [], pulses = [], doors = [];
+
+const SLATE = '#1c2f3a', BLUE = '#1d8fc2', GREEN = '#2fbf74', WHITE = '#c9ced8', RED = '#d84545', DARK = '#1a2027', INK = '#0f181e';
+const TOKEN = { request: '#5fd0ff', probe: '#4cf490', finding: '#fbdc8e', evidence: '#b6c0cf', seal: '#4cf490', token: '#fbdc8e', blocked: '#ff4c4c', scenario: '#b6c0cf', outcome: '#4cf490', defect: '#ff4c4c', verdict: '#4cf490', hash: '#b6c0cf', artifact: '#b6c0cf', signature: '#4cf490' };
+
 const tag = (node, d) => { node.classList.add('dim'); (districts[d] ??= []).push(node); return node; };
 
-/* one shape: a box with a lit top, a mid left face, a dark right face */
-function box({ x, y, w, d, h, z0 = 0, color, top = 1.3, side = 1, back = .66, district = 'base', rise = false, shadow = false, layer = 'blocks' }) {
+function box({ x, y, w, d, h, z0 = 0, color, top = 1.3, side = 1, back = .66, district = 'base', rise = false, shadow = false, layer = 'blocks', lit = true }) {
   const g = el('g'); g.dataset.depth = x + y + w + d + z0 * .01 + h * .001;
   const faces = [el('polygon', { fill: mix(color, side) }), el('polygon', { fill: mix(color, back) }), el('polygon', { fill: mix(color, top) })];
-  faces.forEach(f => f.setAttribute('stroke', 'rgba(0,0,0,.28)')); faces.forEach(f => f.setAttribute('stroke-width', '.6'));
-  g.append(...faces); layers[layer].append(g); tag(g, district);
-  let sh = null;
-  if (shadow) { sh = el('polygon', { fill: 'rgba(0,0,0,.32)', points: P([iso(x + .25, y + .25, z0), iso(x + w + .25, y + .25, z0), iso(x + w + .25, y + d + .25, z0), iso(x + .25, y + d + .25, z0)]) }); layers.shadows.append(tag(sh, district)); }
+  const light = lit ? [el('polygon', { fill: 'url(#shadeRight)' }), el('polygon', { fill: 'url(#lightTop)' })] : [];
+  faces.forEach(f => { f.setAttribute('stroke', 'rgba(0,0,0,.3)'); f.setAttribute('stroke-width', '.6'); });
+  g.append(...faces, ...light); layers[layer].append(g); tag(g, district);
+  if (shadow) { const sh = el('polygon', { fill: 'rgba(0,0,0,.45)', filter: 'url(#soft)', points: P([iso(x + .3, y + .3, z0), iso(x + w + .4, y + .3, z0), iso(x + w + .4, y + d + .4, z0), iso(x + .3, y + d + .4, z0)]) }); layers.shadows.append(tag(sh, district)); }
   const shape = hh => {
-    faces[2].setAttribute('points', P([iso(x, y, z0 + hh), iso(x + w, y, z0 + hh), iso(x + w, y + d, z0 + hh), iso(x, y + d, z0 + hh)]));
+    const T = [iso(x, y, z0 + hh), iso(x + w, y, z0 + hh), iso(x + w, y + d, z0 + hh), iso(x, y + d, z0 + hh)];
+    const R = [iso(x + w, y + d, z0), iso(x + w, y, z0), iso(x + w, y, z0 + hh), iso(x + w, y + d, z0 + hh)];
+    faces[2].setAttribute('points', P(T)); faces[1].setAttribute('points', P(R));
     faces[0].setAttribute('points', P([iso(x, y + d, z0), iso(x + w, y + d, z0), iso(x + w, y + d, z0 + hh), iso(x, y + d, z0 + hh)]));
-    faces[1].setAttribute('points', P([iso(x + w, y + d, z0), iso(x + w, y, z0), iso(x + w, y, z0 + hh), iso(x + w, y + d, z0 + hh)]));
+    if (lit) { light[0].setAttribute('points', P(R)); light[1].setAttribute('points', P(T)); }
   };
   shape(rise ? .01 : h);
   return { g, shape, h, x, y, w, d, z0, faces };
 }
+/* silhouettes */
+function tower(o) { const b = box({ ...o }); const cap = box({ x: o.x + .25, y: o.y + .25, w: o.w - .5, d: o.d - .5, h: .18, z0: o.z0 + o.h, color: o.color, top: 1.9, side: 1.4, back: 1.1, district: o.district, lit: false }); const s = b.shape; b.shape = hh => { s(hh); }; return b; }
+function drum({ x, y, r, h, z0, color, district, rise = false }) {
+  const g = el('g'); g.dataset.depth = x + y + r * 2 + z0 * .01 + h * .001; const rx = r * U * CX * Math.SQRT2, ry = r * U * .5 * Math.SQRT2;
+  const body = el('path', { fill: mix(color, .95), stroke: 'rgba(0,0,0,.3)', 'stroke-width': .6 }), sheen = el('path', { fill: 'url(#drum)' }), top = el('ellipse', { fill: mix(color, 1.3), stroke: 'rgba(0,0,0,.3)', 'stroke-width': .6 }), ring = el('ellipse', { fill: 'none', stroke: 'rgba(255,255,255,.12)' });
+  g.append(body, sheen, top, ring); layers.blocks.append(g); tag(g, district);
+  const sh = el('ellipse', { fill: 'rgba(0,0,0,.45)', filter: 'url(#soft)' }); const [sx0, sy0] = iso(x + .35, y + .35, z0); sh.setAttribute('cx', sx0); sh.setAttribute('cy', sy0); sh.setAttribute('rx', rx); sh.setAttribute('ry', ry); layers.shadows.append(tag(sh, district));
+  const shape = hh => { const [cx, cb] = iso(x, y, z0); const ct = cb - hh * U; body.setAttribute('d', `M${cx - rx} ${ct} L${cx - rx} ${cb} A${rx} ${ry} 0 0 0 ${cx + rx} ${cb} L${cx + rx} ${ct} A${rx} ${ry} 0 0 1 ${cx - rx} ${ct} Z`); sheen.setAttribute('d', body.getAttribute('d')); top.setAttribute('cx', cx); top.setAttribute('cy', ct); top.setAttribute('rx', rx); top.setAttribute('ry', ry); ring.setAttribute('cx', cx); ring.setAttribute('cy', ct + hh * U * .5); ring.setAttribute('rx', rx); ring.setAttribute('ry', ry); };
+  shape(rise ? .01 : h); return { g, shape, h, x, y, w: r * 2, d: r * 2, z0 };
+}
+function ledger(o) { const n = o.n ?? 3; const sh = o.h / n; let last; for (let i = 0; i < n; i++) last = box({ ...o, h: sh - .06, z0: o.z0 + i * sh, shadow: i === 0 && o.shadow, rise: false }); return last; }
+function rack(o) { const b = box(o); for (let i = 1; i < 6; i++) { const t = i / 6; const a = iso(o.x, o.y + o.d * t, o.z0), c = iso(o.x, o.y + o.d * t, o.z0 + o.h); b.g.append(el('line', { x1: a[0], y1: a[1], x2: c[0], y2: c[1], stroke: 'rgba(255,255,255,.12)' })); } return b; }
+const KINDS = { block: box, tower, drum, ledger, rack };
+
 function label(x, y, z, txt, cls, district, anchor = 'start', dx = 0, dy = 0) {
   const [sx, sy] = iso(x, y, z); const t = el('text', { x: sx + dx, y: sy + dy, class: cls, 'text-anchor': anchor }, txt); layers.labels.append(tag(t, district)); return t;
 }
-function lane(points, district = 'base') {
-  const pts = points.map(([x, y]) => iso(x, y, Z)); const p = el('path', { d: 'M' + pts.map(q => q.map(v => v.toFixed(1)).join(' ')).join(' L'), class: 'lane' }); layers.lanes.append(tag(p, district)); return p;
+function lane(points, district, z) {
+  const pts = points.map(([x, y]) => iso(x, y, z)); const p = el('path', { d: 'M' + pts.map(q => q.map(v => v.toFixed(1)).join(' ')).join(' L'), class: 'lane' }); layers.lanes.append(tag(p, district)); return p;
 }
-function packet(path, { color, r = 3.5, speed = 1, offset = 0, district = 'base' }) {
-  const c = el('circle', { r, fill: color, class: 'pk' }); layers.packets.append(tag(c, district)); const len = path.getTotalLength();
-  return { tick(t) { const u = ((t * speed + offset) % 1 + 1) % 1; const q = path.getPointAtLength(u * len); c.setAttribute('cx', q.x); c.setAttribute('cy', q.y); } };
+function token(path, { kind, speed = .3, offset = 0, district, r = 3.5, onEnd = null }) {
+  const color = TOKEN[kind]; const g = el('g', { class: 'chip' }); const dot = el('circle', { r, fill: color, class: 'pk', filter: 'url(#glow)' });
+  const w = kind.length * 6.2 + 14; const rect = el('rect', { x: 8, y: -8, width: w, height: 16, rx: 3, stroke: color }); const txt = el('text', { x: 8 + w / 2, y: 3.5, 'text-anchor': 'middle' }, kind);
+  const chip = el('g', { opacity: 0 }); chip.append(rect, txt); g.append(dot, chip); layers.packets.append(tag(g, district));
+  const len = path.getTotalLength(); let prev = 0;
+  return { chip, district, tick(t) { const u = ((t * speed + offset) % 1 + 1) % 1; if (u < prev && onEnd) onEnd(); prev = u; const q = path.getPointAtLength(u * len); g.setAttribute('transform', `translate(${q.x.toFixed(1)} ${q.y.toFixed(1)})`); } };
+}
+function pulse(node) { pulses.push({ node, t0: performance.now() }); }
+
+/* ================================================================ scenes */
+const scenes = {};
+function build(scene) {
+  root.replaceChildren(); layers = { ground: el('g'), lanes: el('g'), slabs: el('g'), shadows: el('g'), blocks: el('g'), packets: el('g'), labels: el('g') }; Object.values(layers).forEach(g => root.append(g));
+  districts = {}; risers = []; anim = []; pulses = []; doors = [];
+  const [W, D] = scene.plate; OX = 940 - ((W - D) * U * CX) / 2; OY = 520 - ((W + D) * U * .5) / 2;
+  const Z = .4; box({ x: 0, y: 0, w: W, d: D, h: Z, color: '#0e1a21', top: 1.25, side: .8, back: .6, layer: 'ground', lit: false });
+  const clip = el('clipPath', { id: 'plate' }); clip.replaceChildren(el('polygon', { points: P([iso(0, 0, Z), iso(W, 0, Z), iso(W, D, Z), iso(0, D, Z)]) })); defs.querySelector('#plate')?.remove(); defs.append(clip);
+  const grid = el('g', { 'clip-path': 'url(#plate)' }); layers.ground.append(grid);
+  for (let i = 0; i <= W; i += 2) { const a = iso(i, 0, Z), b = iso(i, D, Z); grid.append(el('line', { x1: a[0], y1: a[1], x2: b[0], y2: b[1], class: 'grid' })); }
+  for (let j = 0; j <= D; j += 2) { const a = iso(0, j, Z), b = iso(W, j, Z); grid.append(el('line', { x1: a[0], y1: a[1], x2: b[0], y2: b[1], class: 'grid' })); }
+  const ZS = Z + .35; scene.ZS = ZS;
+  for (const s of scene.slabs) {
+    const b = box({ x: s.x, y: s.y, w: s.w, d: s.d, h: .35, z0: Z, color: '#132129', top: 1.35, side: .95, back: .7, district: s.id, layer: 'slabs', lit: false });
+    const [lx, ly, anchor, dx, dy] = s.labelAt ?? [s.x + s.w, s.y + s.d, 'middle', 0, 18];
+    const t = label(lx, ly, Z, s.label, 'title' + (s.detail ? ' door' : ''), s.id, anchor, dx, dy);
+    if (s.detail) { b.g.classList.add('door'); b.g.addEventListener('click', () => enter(s.detail)); b.g.addEventListener('mouseenter', () => b.g.classList.add('hot')); b.g.addEventListener('mouseleave', () => b.g.classList.remove('hot')); t.style.pointerEvents = 'auto'; t.style.cursor = 'pointer'; t.addEventListener('click', () => enter(s.detail)); doors.push(b); }
+    s.node = b;
+  }
+  for (const u of scene.units) {
+    const kind = KINDS[u.kind ?? 'block']; const o = { w: 1.6, d: 1.6, h: 1.4, z0: ZS, rise: true, shadow: true, ...u };
+    const b = kind(o); if (o.rise) risers.push(b); u.node = b;
+  }
+  for (const l of scene.labels ?? []) label(...l);
+  scene.extra?.({ iso, label, el, layers, ZS });
+  for (const l of scene.lanes) {
+    const p = lane(l.pts, l.district, Z + .02); const n = l.n ?? 1;
+    for (let i = 0; i < n; i++) anim.push(token(p, { kind: l.token, speed: l.speed ?? .3, offset: (l.offset ?? 0) + i / n, district: l.district, onEnd: l.pulse ? () => { const target = scene.slabs.find(s => s.id === l.pulse); if (target) pulse(target.node); } : null }));
+  }
+  [...layers.blocks.children].sort((a, b) => Number(a.dataset.depth) - Number(b.dataset.depth)).forEach(n => layers.blocks.append(n));
 }
 
-/* ------------------------------------------------------------ ground */
-const Z = .4;                                     // top of the ground plate
-box({ x: 0, y: 0, w: 30, d: 20, h: Z, color: '#0e1a21', top: 1.25, side: .8, back: .6, layer: 'ground' });
-const clip = el('clipPath', { id: 'plate' }); clip.append(el('polygon', { points: P([iso(0, 0, Z), iso(30, 0, Z), iso(30, 20, Z), iso(0, 20, Z)]) })); defs.append(clip);
-const grid = el('g', { 'clip-path': 'url(#plate)' }); layers.ground.append(grid);
-for (let i = 0; i <= 30; i += 2) { const a = iso(i, 0, Z), b = iso(i, 20, Z); grid.append(el('line', { x1: a[0], y1: a[1], x2: b[0], y2: b[1], class: 'grid' })); }
-for (let j = 0; j <= 20; j += 2) { const a = iso(0, j, Z), b = iso(30, j, Z); grid.append(el('line', { x1: a[0], y1: a[1], x2: b[0], y2: b[1], class: 'grid' })); }
-
-/* ------------------------------------------------------------ districts */
-const STACKS = ['SpacetimeDB', 'PostgreSQL', 'MongoDB'];
-const SLAB = { h: .35, color: '#132129', top: 1.35, side: .95, back: .7 };
-const slab = (x, y, w, d, district) => box({ x, y, w, d, z0: Z, district, layer: 'slabs', ...SLAB });
-const ZS = Z + SLAB.h;                            // top of a district slab
-const risers = [];
-const unit = o => { const b = box({ w: 1.6, d: 1.6, h: 1.4, z0: ZS, rise: true, shadow: true, ...o }); risers.push(b); return b; };
-const SLATE = '#1c2f3a', BLUE = '#1d8fc2', GREEN = '#2fbf74', WHITE = '#c9ced8', RED = '#d84545', DARK = '#1a2027';
-
-// campaign plan
-slab(1, 8, 4, 4, 'plan'); unit({ x: 2.2, y: 9.2, h: 2.4, color: BLUE, district: 'plan' });
-label(1, 12, Z, 'campaign plan', 'title', 'plan', 'end', -12, 4);
-
-// three cells
-const cells = STACKS.map((name, i) => {
-  const x = 8 + i * 6, y = 8, d = 'cell'; slab(x, y, 5, 4, d);
-  const agent = unit({ x: x + .6, y: y + .5, color: BLUE, district: d });
-  const app = unit({ x: x + 2.8, y: y + .5, color: SLATE, district: d });
-  const db = unit({ x: x + 1.7, y: y + 2.1, w: 1.6, d: 1.4, h: 1.0, color: SLATE, district: d });
-  label(x + 5, y + 4, Z, name, 'title', d, 'middle', 0, 18);
-  label(x + .6, y + 2.1, ZS + .7, 'agent', 'lab', 'celltags', 'end', -10, 0);
-  label(x + 4.4, y + .5, ZS + .6, 'app', 'lab', 'celltags', 'start', 8, 0);
-  label(x + 3.3, y + 3.5, ZS, 'database', 'lab', 'celltags', 'middle', 0, 16);
-  return { x, y, agent, app, db };
-});
-
-// grader
-slab(12, 1, 6, 4, 'grader'); unit({ x: 14.2, y: 1.6, h: 2.0, color: GREEN, district: 'grader' });
-[0, 1, 2].forEach(i => unit({ x: 12.6 + i * 1.7, y: 3.9, w: .8, d: .8, h: .7, color: GREEN, district: 'grader' }));
-label(12, 5, Z, 'grader', 'title', 'grader', 'end', -12, 4);
-label(12.6, 3.9, ZS + 1.1, '120 scenarios · real browsers', 'lab', 'gradertags', 'end', -8, 0);
-
-// proving ground
-slab(20, 1, 8, 4, 'qual');
-unit({ x: 20.8, y: 2.2, color: GREEN, district: 'qual' }); unit({ x: 23.2, y: 2.2, color: DARK, district: 'qual' });
-[0, 1, 2, 3].forEach(i => unit({ x: 25.5 + i * .65, y: 2.6, w: .5, d: .5, h: .5, color: RED, district: 'qual' }));
-label(28, 1, Z, 'proving ground', 'title', 'qual', 'start', 12, 4);
-label(20.8, 2.2, ZS + 1.8, 'correct app', 'lab', 'qualtags', 'end', -8, 0);
-label(23.2, 2.2, ZS + 1.8, 'empty app', 'lab', 'qualtags', 'middle', 20, -10);
-label(27.5, 2.6, ZS + .9, '472 defects', 'lab', 'qualtags', 'start', 8, 0);
-
-// evidence
-slab(24, 8, 4, 4, 'vault');
-[0, 1, 2].forEach(i => unit({ x: 24.8, y: 8.8, w: 2.4, d: 2.4, h: .55, z0: ZS + i * .62, color: SLATE, district: 'vault', shadow: i === 0 }));
-label(28, 8, Z, 'evidence', 'title', 'vault', 'start', 12, 4);
-label(28, 8, Z, 'screenshots · traces', 'lab', 'vaulttags', 'start', 12, 22);
-label(28, 8, Z, 'receipts · hashes', 'lab', 'vaulttags', 'start', 12, 38);
-
-// result
-slab(25, 15, 5, 4, 'score');
-const SCORES = [[.76, .90], [.58, .76], [.62, .82]]; const COST = ['$41 · 1h 48m', '$58 · 2h 10m', '$63 · 2h 21m'];
-const board = SCORES.map(([ua, re], i) => {
-  const col = unit({ x: 25.6 + i * 1.55, y: 16.6, w: .8, d: .8, h: 3 * re, color: WHITE, top: 1.1, side: .85, back: .62, district: 'score' });
-  const band = el('path', { fill: 'none', stroke: '#0b1114', 'stroke-width': 2 }); col.g.append(band);
-  const zr = ZS + 3 * ua; const [a1, a2, a3] = [iso(col.x, col.y + .8, zr), iso(col.x + .8, col.y + .8, zr), iso(col.x + .8, col.y, zr)];
-  band.setAttribute('d', `M${a1[0]} ${a1[1]} L${a2[0]} ${a2[1]} L${a3[0]} ${a3[1]}`);
-  label(col.x + .4, col.y + .4, ZS + 3 * re + .5, Math.round(re * 100) + '%', 'num', 'scoretags', 'middle', 0, 0);
-  return col;
-});
-label(30, 15, Z, 'result', 'title', 'score', 'start', 12, 4);
-STACKS.forEach((s, i) => label(30, 19, Z, `${s}  ${COST[i]}`, 'lab', 'scoretags', 'middle', 0, 24 + i * 16));
-label(30, 19, Z, 'line = unaided · top = repaired', 'lab', 'scoretags', 'middle', 0, 80);
-
-[...layers.blocks.children].sort((a, b) => Number(a.dataset.depth) - Number(b.dataset.depth)).forEach(n => layers.blocks.append(n));
-
-/* ------------------------------------------------------------ lanes + tokens */
-const anim = [];
-const L1 = cells.map(c => lane([[3, 12.4], [3, 13.6], [c.x + 2.5, 13.6], [c.x + 2.5, 12.4]], 'plan'));
-L1.forEach((p, i) => anim.push(packet(p, { color: '#5fd0ff', speed: .28, offset: i * .33, district: 'plan' })));
-const L2 = cells.map(c => lane([[15, 5.4], [15, 6.6], [c.x + 2.5, 6.6], [c.x + 2.5, 7.6]], 'grader'));
-L2.forEach((p, i) => anim.push(packet(p, { color: '#4cf490', speed: .4, offset: i * .33, district: 'grader' })));
-const L3 = cells.map(c => lane([[c.x + 4.6, 12.4], [c.x + 4.6, 13.6], [26, 13.6], [26, 12.4]], 'vault'));
-L3.forEach((p, i) => anim.push(packet(p, { color: '#b6c0cf', speed: .22, offset: i * .3, district: 'vault', r: 2.8 })));
-const L4 = lane([[26, 12.4], [26, 15.4]], 'score'); anim.push(packet(L4, { color: '#e6e9f0', speed: .35, district: 'score', r: 2.8 }));
-const L5 = lane([[20, 3], [18.4, 3]], 'qual'); anim.push(packet(L5, { color: '#4cf490', speed: .5, district: 'qual', r: 4 }));
-const L6 = cells.map(c => lane([[c.x + 3.6, 8.4], [c.x + 3.6, 7.2], [c.x + 1.4, 7.2], [c.x + 1.4, 8.4]], 'repair'));
-L6.forEach((p, i) => anim.push(packet(p, { color: '#4cf490', speed: .45, offset: i * .4, district: 'repair', r: 3 })));
-
-/* ------------------------------------------------------------ tour */
-const chapters = [
-  { k: 'stack bench', h: 'Three stacks build the same product. A machine grades every one.', p: 'One benchmark for the whole question: how well do coding agents ship on SpacetimeDB, PostgreSQL, and MongoDB, and what does it cost.', focus: null, view: null },
-  { k: 'one plan', h: 'Same request. Three stacks. Nothing else changes.', p: 'A frozen plan fixes the product, the model, the checks, and the budget. Each stack builds it in parallel from the identical request.', focus: ['plan', 'cell'], view: [0, 7, 24, 14.5, 3] },
-  { k: 'sealed cells', h: 'The agent never sees the exam.', p: 'Each attempt runs in an isolated container with the product request and its stack material. No grader, no answers, no keys.', focus: ['cell', 'celltags'], view: [7, 7, 26, 14.5, 2.5] },
-  { k: 'real tests', h: 'Real browsers use the real app.', p: '120 scenarios drive the running application as customers and staff would: buy, restock, reload, reconnect, race. Passed, failed, or inconclusive. Never a guess.', focus: ['grader', 'gradertags', 'cell'], view: [7, 0, 26, 14.5, 3] },
-  { k: 'bounded repairs', h: 'Failures go back. Repairs are counted.', p: 'A conclusive failure returns to the agent as a finding. Every repair is a paid session, regraded from clean source, and accepted only if nothing regresses.', focus: ['repair', 'cell', 'celltags'], view: [7, 7, 26, 14.5, 2.5] },
-  { k: 'the grader is proven', h: 'Before it grades anyone, it grades itself.', p: 'A correct reference app must pass every check. An empty app must fail every check. 472 planted defects must each be caught at exactly the check meant to catch them.', focus: ['qual', 'qualtags', 'grader'], view: [11, 0, 33, 7, 3, .06] },
-  { k: 'evidence', h: 'Every number comes with its proof.', p: 'Screenshots, traces, transcripts, cost receipts, and a hash chain from plan to report. A result can be rebuilt from its package, not remembered.', focus: ['vault', 'vaulttags', 'score'], view: [20, 7, 33, 21, 3, .08] },
-  { k: 'the result', h: 'Unaided. Repaired. Cost. Time.', p: 'The line is what each stack scored before any help. The top is where it ended. The comparison is what the board decides with.', focus: ['score', 'scoretags'], view: [21, 14, 33, 22, 4, .06] },
-];
-function viewFor(x0, y0, x1, y1, zmax, shift = .17) {
+function viewFor(x0, y0, x1, y1, zmax, shift = .2) {
   const pts = [iso(x0, y0, zmax), iso(x1, y0, zmax), iso(x1, y1, 0), iso(x0, y1, 0), iso(x0, y0, 0), iso(x1, y1, zmax)];
   let minX = Math.min(...pts.map(p => p[0])), maxX = Math.max(...pts.map(p => p[0])), minY = Math.min(...pts.map(p => p[1])), maxY = Math.max(...pts.map(p => p[1]));
-  let w = (maxX - minX) * 1.3, h = (maxY - minY) * 1.3; if (w / h < 16 / 9) w = h * 16 / 9; else h = w * 9 / 16;
-  const cx = (minX + maxX) / 2 - w * shift, cy = (minY + maxY) / 2; return [cx - w / 2, cy - h / 2, w, h];
+  let w = (maxX - minX) * 1.4, h = (maxY - minY) * 1.4; if (w / h < 16 / 9) w = h * 16 / 9; else h = w * 9 / 16;
+  const cx = (minX + maxX) / 2 - w * shift, cy = (minY + maxY) / 2 - h * .04; return [cx - w / 2, cy - h / 2, w, h];
 }
-const card = document.getElementById('card'), dots = document.getElementById('dots'), playBtn = document.getElementById('play');
-let chapter = 0, playing = true, since = performance.now();
+
+/* ================================================================ tour */
+const card = document.getElementById('card'), dots = document.getElementById('dots'), playBtn = document.getElementById('play'), crumbs = document.getElementById('crumbs'), hint = document.getElementById('hint');
+let scene = null, chapter = 0, playing = true, since = performance.now(), sceneT0 = performance.now();
 const HOLD = 8000;
 const view = { cur: [0, 0, 1600, 900], from: [0, 0, 1600, 900], to: [0, 0, 1600, 900], t0: 0 };
-chapters.forEach((c, i) => { const d = document.createElement('i'); d.addEventListener('click', () => go(i)); dots.append(d); });
-function go(i) {
-  chapter = (i + chapters.length) % chapters.length; since = performance.now(); const c = chapters[chapter];
+function enter(id, ch = 0) {
+  const next = scenes[id]; if (!next) return;
+  map.classList.add('out');
+  setTimeout(() => { scene = next; build(scene); sceneT0 = performance.now(); view.cur = [0, 0, 1600, 900]; dots.replaceChildren(); scene.chapters.forEach((c, i) => { const d = document.createElement('i'); d.addEventListener('click', () => go(i)); dots.append(d); });
+    crumbs.replaceChildren(); const trail = []; let s = scene; while (s) { trail.unshift(s); s = s.parent ? scenes[s.parent] : null; }
+    trail.forEach((s, i) => { if (i) crumbs.append(Object.assign(document.createElement('span'), { textContent: '›' })); const a = document.createElement(i === trail.length - 1 ? 'b' : 'a'); a.textContent = s.name; if (i < trail.length - 1) a.addEventListener('click', () => enter(s.id)); crumbs.append(a); });
+    hint.textContent = scene.slabs.some(s => s.detail) ? 'click a district to open it' : 'esc returns'; hint.classList.add('on');
+    map.classList.remove('out'); go(ch, true); }, 360);
+}
+function go(i, jump = false) {
+  chapter = (i + scene.chapters.length) % scene.chapters.length; since = performance.now(); const c = scene.chapters[chapter];
   card.classList.remove('on'); setTimeout(() => { card.querySelector('.k').textContent = c.k; card.querySelector('h1').textContent = c.h; card.querySelector('p').textContent = c.p; card.classList.add('on'); }, 220);
   [...dots.children].forEach((d, j) => { d.className = j === chapter ? 'on' : j < chapter ? 'done' : ''; });
-  view.from = view.cur.slice(); view.to = c.view ? viewFor(...c.view) : [0, 0, 1600, 900]; view.t0 = performance.now();
+  view.from = jump ? [0, 0, 1600, 900] : view.cur.slice(); view.to = c.view ? viewFor(...c.view) : [0, 0, 1600, 900]; view.t0 = performance.now() - (jump ? 1400 : 0);
   for (const [name, nodes] of Object.entries(districts)) {
     const tagd = name.endsWith('tags'); const on = c.focus ? c.focus.includes(name) || name === 'base' : !tagd;
     nodes.forEach(n => n.style.opacity = on ? 1 : tagd || n.tagName === 'text' ? 0 : .22);
   }
-  history.replaceState(null, '', '#' + chapter);
+  anim.forEach(a => a.chip.setAttribute('opacity', c.focus && c.focus.includes(a.district) ? 1 : 0));
+  scene.onChapter?.(chapter);
+  history.replaceState(null, '', `#${scene.id}/${chapter}`);
 }
 playBtn.addEventListener('click', () => { playing = !playing; playBtn.textContent = playing ? '❚❚' : '▶'; playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play'); since = performance.now(); });
-window.addEventListener('hashchange', () => { const n = Number(location.hash.slice(1)); if (Number.isInteger(n) && n !== chapter) go(n); });
-document.addEventListener('keydown', e => { if (e.key === 'ArrowRight') go(chapter + 1); if (e.key === 'ArrowLeft') go(chapter - 1); if (e.key === ' ') { e.preventDefault(); playBtn.click(); } });
+document.addEventListener('keydown', e => { if (e.key === 'ArrowRight') go(chapter + 1); if (e.key === 'ArrowLeft') go(chapter - 1); if (e.key === ' ') { e.preventDefault(); playBtn.click(); } if (e.key === 'Escape' && scene.parent) enter(scene.parent); });
+window.addEventListener('hashchange', () => { const [id, n] = location.hash.slice(1).split('/'); if (scenes[id] && (id !== scene.id)) enter(id, Number(n) || 0); else if (Number.isInteger(Number(n)) && Number(n) !== chapter) go(Number(n)); });
 const STILL = matchMedia('(prefers-reduced-motion: reduce)').matches;
-const easeIO = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-const t0 = performance.now();
 function frame(now) {
-  const t = (now - t0) / 1000;
+  if (!scene || !layers) { requestAnimationFrame(frame); return; }
+  const t = (now - sceneT0) / 1000;
   const rise = STILL ? 1 : Math.min(1, t / 1.6);
   risers.forEach((b, i) => { const u = Math.max(0, Math.min(1, rise * 1.3 - (i / risers.length) * .3)); b.shape(Math.max(.01, b.h * easeIO(u))); });
   if (!STILL) anim.forEach(a => a.tick(t * .06));
+  pulses = pulses.filter(p => now - p.t0 < 700); for (const p of pulses) { const k = 1 - (now - p.t0) / 700; p.node.faces[2].setAttribute('stroke', `rgba(76,244,144,${(k * .9).toFixed(2)})`); p.node.faces[2].setAttribute('stroke-width', (1 + 2 * k).toFixed(1)); if (k < .02) { p.node.faces[2].setAttribute('stroke', 'rgba(0,0,0,.3)'); p.node.faces[2].setAttribute('stroke-width', '.6'); } }
   const vu = Math.min(1, (now - view.t0) / 1400); const e = easeIO(vu);
-  view.cur = view.from.map((v, i) => v + (view.to[i] - v) * e); map.setAttribute('viewBox', view.cur.join(' '));
+  let cur = view.from.map((v, i) => v + (view.to[i] - v) * e);
+  if (!scene.chapters[chapter].view && !STILL) { const dx = Math.sin(t * .25) * 10, dy = Math.cos(t * .2) * 6; cur = [cur[0] + dx, cur[1] + dy, cur[2], cur[3]]; }
+  view.cur = cur; map.setAttribute('viewBox', cur.join(' '));
   if (playing && now - since > HOLD && t > 2.5) go(chapter + 1);
   requestAnimationFrame(frame);
 }
-const start = Number(location.hash.slice(1)); if (Number.isInteger(start) && start >= 0 && start < chapters.length) { chapter = start; playing = !new URLSearchParams(location.search).has('still'); }
-if (!playing) playBtn.textContent = '▶';
-go(chapter); requestAnimationFrame(frame);
+/* ================================================================ scene data */
+const Z = .4, ZS = .75;
+const STACKS = ['SpacetimeDB', 'PostgreSQL', 'MongoDB'];
+
+/* ---- the run (overview) ---- */
+(() => {
+  const cells = [0, 1, 2].map(i => ({ x: 8 + i * 6, y: 8 }));
+  const units = [
+    { kind: 'tower', x: 2.2, y: 9.2, h: 2.4, color: BLUE, district: 'plan' },
+    ...cells.flatMap((c, i) => [
+      { x: c.x + .6, y: c.y + .5, color: BLUE, district: 'cell' + i },
+      { x: c.x + 2.8, y: c.y + .5, color: SLATE, district: 'cell' + i },
+      { kind: 'drum', x: c.x + 2.5, y: c.y + 3.0, r: .75, h: 1.0, color: SLATE, district: 'cell' + i },
+    ]),
+    { kind: 'tower', x: 14.2, y: 1.6, h: 2.0, color: GREEN, district: 'grader' },
+    ...[0, 1, 2].map(i => ({ x: 12.6 + i * 1.7, y: 3.9, w: .8, d: .8, h: .7, color: GREEN, district: 'grader' })),
+    { x: 20.8, y: 2.2, color: GREEN, district: 'qual' }, { x: 23.2, y: 2.2, color: DARK, district: 'qual' },
+    ...[0, 1, 2, 3].map(i => ({ x: 25.5 + i * .65, y: 2.6, w: .5, d: .5, h: .5, color: RED, district: 'qual' })),
+    { kind: 'ledger', x: 24.8, y: 8.8, w: 2.4, d: 2.4, h: 1.9, n: 3, color: SLATE, district: 'vault' },
+  ];
+  const SCORES = [[.76, .90], [.58, .76], [.62, .82]]; const COST = ['$41 · 1h 48m', '$58 · 2h 10m', '$63 · 2h 21m'];
+  SCORES.forEach(([ua, re], i) => units.push({ id: 'col' + i, x: 25.3 + i * 1.8, y: 16.6, w: .8, d: .8, h: 3 * re, color: WHITE, top: 1.1, side: .85, back: .62, district: 'score', ua, re }));
+  scenes.run = {
+    id: 'run', name: 'the run', plate: [30, 20],
+    slabs: [
+      { id: 'plan', x: 1, y: 8, w: 4, d: 4, label: 'campaign plan', labelAt: [1, 12, 'end', -12, 4] },
+      ...cells.map((c, i) => ({ id: 'cell' + i, x: c.x, y: c.y, w: 5, d: 4, label: STACKS[i], detail: 'cell' })),
+      { id: 'grader', x: 12, y: 1, w: 6, d: 4, label: 'grader', labelAt: [12, 5, 'end', -12, 4], detail: 'grader' },
+      { id: 'qual', x: 20, y: 1, w: 8, d: 4, label: 'proving ground', labelAt: [28, 1, 'start', 12, 4], detail: 'qual' },
+      { id: 'vault', x: 24, y: 8, w: 4, d: 4, label: 'evidence', labelAt: [28, 8, 'start', 12, 4], detail: 'evidence' },
+      { id: 'score', x: 25, y: 15, w: 5, d: 4, label: 'result', labelAt: [30, 15, 'start', 12, 4] },
+    ],
+    units,
+    labels: [
+      ...cells.flatMap(c => [[c.x + .6, c.y + 2.1, ZS + .7, 'agent', 'lab', 'celltags', 'end', -10, 0], [c.x + 4.4, c.y + .5, ZS + .6, 'app', 'lab', 'celltags', 'start', 8, 0], [c.x + 2.5, c.y + 3.9, Z, 'database', 'lab', 'celltags', 'middle', 0, 16]]),
+      [12.6, 3.9, ZS + 1.1, '120 scenarios · real browsers', 'lab', 'gradertags', 'end', -8, 0],
+      [20.8, 2.2, ZS + 1.8, 'correct app', 'lab', 'qualtags', 'end', -8, 0], [23.2, 2.2, ZS + 1.8, 'empty app', 'lab', 'qualtags', 'middle', 20, -10], [27.5, 2.6, ZS + .9, '472 defects', 'lab', 'qualtags', 'start', 8, 0],
+      [28, 8, Z, 'screenshots · traces', 'lab', 'vaulttags', 'start', 12, 22], [28, 8, Z, 'receipts · hashes', 'lab', 'vaulttags', 'start', 12, 38],
+      ...STACKS.map((s, i) => [30, 19, Z, `${s}  ${COST[i]}`, 'lab', 'scoretags', 'middle', 0, 24 + i * 16]),
+      [30, 19, Z, 'line = unaided · top = repaired', 'lab', 'scoretags', 'middle', 0, 80],
+    ],
+    lanes: [
+      ...cells.map((c, i) => ({ district: 'plan', pts: [[3, 12.4], [3, 13.6], [c.x + 2.5, 13.6], [c.x + 2.5, 12.4]], token: 'request', speed: .28, offset: i * .33, pulse: 'cell' + i })),
+      ...cells.map((c, i) => ({ district: 'grader', pts: [[15, 5.4], [15, 6.6], [c.x + 2.5, 6.6], [c.x + 2.5, 7.6]], token: 'probe', speed: .4, offset: i * .33, pulse: 'cell' + i })),
+      ...cells.map((c, i) => ({ district: 'repair', pts: [[c.x + 3.6, 8.4], [c.x + 3.6, 7.2], [c.x + 1.4, 7.2], [c.x + 1.4, 8.4]], token: 'finding', speed: .45, offset: i * .4 })),
+      ...cells.map((c, i) => ({ district: 'vault', pts: [[c.x + 4.6, 12.4], [c.x + 4.6, 13.6], [26, 13.6], [26, 12.4]], token: 'evidence', speed: .22, offset: i * .3 })),
+      { district: 'score', pts: [[26, 12.4], [26, 15.4]], token: 'evidence', speed: .35 },
+      { district: 'qual', pts: [[20, 3], [18.4, 3]], token: 'seal', speed: .5 },
+    ],
+    extra({ iso, label, el, layers }) {
+      for (const u of units.filter(u => u.ua)) {
+        const c = u.node; const zr = ZS + 3 * u.ua; const [a1, a2, a3] = [iso(c.x, c.y + .8, zr), iso(c.x + .8, c.y + .8, zr), iso(c.x + .8, c.y, zr)];
+        c.g.append(el('path', { fill: 'none', stroke: '#0b1114', 'stroke-width': 2, d: `M${a1[0]} ${a1[1]} L${a2[0]} ${a2[1]} L${a3[0]} ${a3[1]}` }));
+        label(c.x + .4, c.y + .4, ZS + 3 * u.re + .5, Math.round(u.re * 100) + '%', 'num', 'scoretags', 'middle', 0, 0);
+      }
+    },
+    chapters: [
+      { k: 'stack bench', h: 'Three stacks build the same product. A machine grades every one.', p: 'One benchmark for the whole question: how well do coding agents ship on SpacetimeDB, PostgreSQL, and MongoDB, and what does it cost. Click any district to open it.', focus: null, view: null },
+      { k: 'one plan', h: 'Same request. Three stacks. Nothing else changes.', p: 'A frozen plan fixes the product, the model, the checks, and the budget. The blue token is that request, delivered identically to each cell.', focus: ['plan', 'cell0', 'cell1', 'cell2'], view: [0, 7, 24, 14.5, 3] },
+      { k: 'sealed cells', h: 'The agent never sees the exam.', p: 'Each attempt runs in an isolated container with the product request and its stack material. No grader, no answers, no keys.', focus: ['cell0', 'cell1', 'cell2', 'celltags'], view: [7, 7, 26, 14.5, 2.5] },
+      { k: 'real tests', h: 'Real browsers use the real app.', p: 'The green tokens are probes: 120 scenarios driving the running application as customers and staff would. Passed, failed, or inconclusive. Never a guess.', focus: ['grader', 'gradertags', 'cell0', 'cell1', 'cell2'], view: [7, 0, 26, 14.5, 3] },
+      { k: 'bounded repairs', h: 'Failures go back. Repairs are counted.', p: 'The yellow token is a finding: a conclusive failure returned to the agent. Every repair is a paid session, regraded from clean source, accepted only if nothing regresses.', focus: ['repair', 'cell0', 'cell1', 'cell2', 'celltags'], view: [7, 7, 26, 14.5, 2.5] },
+      { k: 'the grader is proven', h: 'Before it grades anyone, it grades itself.', p: 'A correct app must pass every check, an empty app must fail every check, and 472 planted defects must each be caught. The seal token is that proof reaching the grader.', focus: ['qual', 'qualtags', 'grader'], view: [11, 0, 33, 7, 3, .06] },
+      { k: 'evidence', h: 'Every number comes with its proof.', p: 'The grey tokens are evidence: screenshots, traces, transcripts, cost receipts, and a hash chain from plan to report. A result can be rebuilt from its package.', focus: ['vault', 'vaulttags', 'score'], view: [20, 7, 33, 21, 3, .08] },
+      { k: 'the result', h: 'Unaided. Repaired. Cost. Time.', p: 'The line is what each stack scored before any help. The top is where it ended. The comparison is what the board decides with.', focus: ['score', 'scoretags'], view: [21, 14, 33, 22, 4, .06] },
+    ],
+  };
+})();
+
+/* ---- the cell ---- */
+scenes.cell = {
+  id: 'cell', name: 'a cell', parent: 'run', plate: [26, 16],
+  slabs: [
+    { id: 'controller', x: 1, y: 3, w: 6, d: 10, label: 'trusted controller', labelAt: [1, 13, 'end', -12, 4] },
+    { id: 'cell', x: 10, y: 2, w: 14, d: 12, label: 'attempt namespace', labelAt: [24, 14, 'middle', 0, 18] },
+  ],
+  units: [
+    { kind: 'tower', x: 2, y: 4, h: 2.0, color: GREEN, district: 'controller' },
+    { kind: 'ledger', x: 2, y: 7.8, w: 2, d: 2, h: 1.5, n: 3, color: SLATE, district: 'controller' },
+    { x: 4.8, y: 4.6, w: .9, d: .9, h: .7, color: RED, district: 'controller' },
+    { x: 4.8, y: 8.2, w: 1, d: 1, h: .7, color: DARK, district: 'controller' },
+    { x: 10.15, y: 2.2, w: .3, d: 11.6, h: 2.2, color: INK, district: 'wall', rise: false, shadow: false },
+    { kind: 'drum', x: 14.2, y: 9.6, r: 1.1, h: 1.6, color: SLATE, district: 'cell' },
+    { kind: 'tower', x: 13.2, y: 4, w: 2, d: 2, h: 2.4, color: BLUE, district: 'cell' },
+    { x: 17.6, y: 4, color: SLATE, district: 'cell' },
+    { x: 17.6, y: 8.6, h: 1.0, color: SLATE, district: 'cell' },
+    { x: 21.6, y: 10.6, w: .7, d: .7, h: 2.2, color: '#6f7987', district: 'cell' },
+    { x: 18.4, y: 12.1, w: 1.2, d: 1.2, h: .8, color: SLATE, district: 'cell' },
+  ],
+  labels: [
+    [2, 5.6, ZS + 1.0, 'grader · scenarios', 'lab', 'ctltags', 'end', -8, 0], [2, 9.8, ZS + .6, 'results', 'lab', 'ctltags', 'end', -8, 0],
+    [5.7, 4.6, ZS + .4, 'provider key', 'lab', 'ctltags', 'start', 8, 0], [5.8, 8.2, ZS + .4, 'docker socket', 'lab', 'ctltags', 'start', 8, 0],
+    [13.2, 6, ZS + 1.45, 'coding container', 'lab', 'celltags', 'end', -8, 0], [13.2, 6, ZS + .75, 'read-only root · reduced user', 'lab', 'celltags', 'end', -8, 0],
+    [19.2, 4, ZS + .8, 'the app', 'lab', 'celltags', 'start', 8, 0], [19.2, 8.6, ZS + .6, 'browser · control over a pipe', 'lab', 'celltags', 'start', 8, 0],
+    [14.2, 10.7, Z, 'backend · namespace anchor', 'lab', 'celltags', 'middle', 0, 18], [22.3, 11.3, ZS + 1.2, 'credential broker', 'lab', 'celltags', 'start', 8, 0],
+    [19.0, 13.3, Z, 'npm cache', 'lab', 'celltags', 'middle', 0, 16], [10.3, 13.8, Z, 'nftables wall', 'lab', 'walltags', 'end', -10, 4],
+  ],
+  lanes: [
+    { district: 'request', pts: [[7, 5], [8.5, 5], [8.5, 6.8], [13, 6.8]], token: 'request', speed: .3, pulse: 'cell' },
+    { district: 'probe', pts: [[3.6, 5.2], [8.5, 5.2], [8.5, 9.4], [17.4, 9.4]], token: 'probe', speed: .35, n: 2, pulse: 'cell' },
+    { district: 'out', pts: [[17.6, 10.4], [17.6, 12.8], [8.5, 12.8], [8.5, 8.8], [4.2, 8.8]], token: 'evidence', speed: .22, n: 2 },
+    { district: 'broker', pts: [[21.5, 10.5], [21.5, 7.6], [15.4, 7.6]], token: 'token', speed: .5 },
+    { district: 'wall', pts: [[13, 5.2], [10.7, 5.2]], token: 'blocked', speed: .6 },
+  ],
+  chapters: [
+    { k: 'a cell', h: 'One attempt, one sealed namespace.', p: 'A backend container anchors the network namespace. The coding container, the browser, and the credential broker join it. Nothing else does.', focus: null, view: null },
+    { k: 'what comes in', h: 'The request, the stack material, and nothing more.', p: 'The blue token is the product request. It carries the current feature, the fixed starting catalog, and the stack guidance. It never carries checks, points, or future work.', focus: ['controller', 'cell', 'request', 'celltags'], view: [0, 2, 25, 15, 3] },
+    { k: 'what never comes in', h: 'The key, the grader, and the results stay outside the wall.', p: 'The red token is the agent reaching for the results and hitting nftables. Host, private networks, and other attempts are unreachable. Public HTTP is allowed on purpose.', focus: ['controller', 'ctltags', 'wall', 'walltags', 'cell'], view: [0, 2, 25, 15, 3] },
+    { k: 'tested through the browser', h: 'The grader drives a browser inside the cell.', p: 'Playwright carries its control through a pipe, not a port. The browser has no socket, no key, no mount. Page scripts run in the namespace; the grader reads the app over its own loopback port.', focus: ['controller', 'probe', 'cell', 'celltags'], view: [0, 2, 25, 15, 3] },
+    { k: 'what leaves', h: 'Only evidence leaves.', p: 'Grey tokens are grade bundles, screenshots, traces, and logs, written to results the agent cannot read. Public artifacts omit lease tokens and redact credentials.', focus: ['controller', 'ctltags', 'out', 'cell'], view: [0, 2, 25, 15, 3] },
+    { k: 'paid through the broker', h: 'The agent gets a session token, never the key.', p: 'The yellow token is a short-lived session token from the broker. The broker holds the provider credential, forwards the calls, and records usage as a cost receipt that reconciles the spend.', focus: ['cell', 'celltags', 'broker'], view: [9, 2, 25, 15, 3, .06] },
+  ],
+};
+
+/* ---- the grader ---- */
+scenes.grader = {
+  id: 'grader', name: 'the grader', parent: 'run', plate: [28, 16],
+  slabs: [
+    { id: 'shelf', x: 1, y: 2, w: 6, d: 5, label: 'scenarios', labelAt: [1, 7, 'end', -12, 4] },
+    { id: 'actors', x: 9, y: 2, w: 8, d: 5, label: 'actors', labelAt: [17, 2, 'start', 12, 4] },
+    { id: 'app', x: 19, y: 2, w: 8, d: 5, label: 'the app under test', labelAt: [27, 2, 'start', 12, 4] },
+    { id: 'exec', x: 9, y: 9, w: 18, d: 5, label: 'five ways to act', labelAt: [27, 14, 'middle', 0, 18] },
+    { id: 'outcomes', x: 1, y: 9, w: 6, d: 5, label: 'outcomes', labelAt: [1, 14, 'end', -12, 4] },
+  ],
+  units: [
+    { kind: 'rack', x: 1.8, y: 2.8, w: 4.4, d: 3.2, h: 1.6, color: SLATE, district: 'shelf' },
+    ...[0, 1, 2].map(i => ({ x: 10 + i * 2.4, y: 3.8, w: .9, d: .9, h: .8, color: GREEN, district: 'actors' })),
+    { x: 20.4, y: 3, color: SLATE, district: 'app' }, { kind: 'drum', x: 24.6, y: 4.6, r: .9, h: 1.2, color: SLATE, district: 'app' },
+    ...[0, 1, 2, 3, 4].map(i => ({ x: 9.8 + i * 3.4, y: 10.6, h: 1.2, color: SLATE, district: 'exec' })),
+    { x: 1.8, y: 10, w: 1.2, d: 1.2, h: .9, color: GREEN, district: 'outcomes' }, { x: 3.8, y: 10, w: 1.2, d: 1.2, h: .9, color: RED, district: 'outcomes' },
+    { x: 1.8, y: 12, w: 1.2, d: 1.2, h: .9, color: '#6f7987', district: 'outcomes' }, { x: 3.8, y: 12, w: 1.2, d: 1.2, h: .9, color: DARK, district: 'outcomes' },
+    { kind: 'ledger', x: 5.6, y: 12.2, w: 1.1, d: 1.1, h: 1.2, n: 3, color: SLATE, district: 'outcomes' },
+  ],
+  labels: [
+    [1.8, 6, ZS + .9, '120 versioned json files', 'lab', 'shelftags', 'end', -8, 0],
+    ...['alice', 'bob', 'staff'].map((n, i) => [10.45 + i * 2.4, 4.7, Z, n, 'lab', 'actortags', 'middle', 0, 16]),
+    [22, 3, ZS + .8, 'built by the agent', 'lab', 'apptags', 'start', 8, 0], [24.6, 5.5, Z, 'its database', 'lab', 'apptags', 'middle', 0, 16],
+    ...['browser', 'transport', 'lifecycle', 'database', 'concurrency'].map((n, i) => [10.6 + i * 3.4, 12.2, Z, n, 'lab', 'exectags', 'middle', 0, 16]),
+    [2.4, 11.2, Z, 'passed', 'lab', 'outtags', 'middle', 0, 14], [4.4, 11.2, Z, 'failed', 'lab', 'outtags', 'middle', 0, 14],
+    [2.4, 13.2, Z, 'inconclusive', 'lab', 'outtags', 'middle', 0, 14], [4.4, 13.2, Z, 'harness', 'lab', 'outtags', 'middle', 0, 14], [6.15, 13.3, Z, 'findings', 'lab', 'outtags', 'middle', 0, 14],
+  ],
+  lanes: [
+    { district: 'scenario', pts: [[7, 4.5], [9, 4.5]], token: 'scenario', speed: .5, n: 2, pulse: 'actors' },
+    { district: 'probe', pts: [[13, 7], [13, 8.6], [22, 8.6], [22, 7]], token: 'probe', speed: .35, n: 2, pulse: 'app' },
+    { district: 'outcome', pts: [[19, 5.5], [17.6, 5.5], [17.6, 8.4], [7.8, 8.4], [7.8, 11], [7, 11]], token: 'outcome', speed: .25, n: 2, pulse: 'outcomes' },
+    { district: 'finding', pts: [[4.4, 11.4], [4.4, 13.6], [5.4, 13.6]], token: 'finding', speed: .5 },
+  ],
+  chapters: [
+    { k: 'the grader', h: 'A machine that uses the app, then keeps the receipts.', p: 'Scenarios become actors, actors act on the running app through five kinds of action, and every check ends as one of four outcomes.', focus: null, view: null },
+    { k: 'scenarios', h: 'Every test is a versioned file, not a script someone remembers.', p: '120 scenario files name their actors, setup, actions, and scored checks. Their hash is bound into the plan. Prose in a scenario is not executable; only the declared actions run.', focus: ['shelf', 'shelftags', 'actors', 'scenario'], view: [0, 1, 18, 8, 2.5] },
+    { k: 'actors', h: 'Each actor is a separate browser.', p: 'A customer, a second customer, and a staff member each get their own browser context. A live-update check passes only when a page that was already open changes. Nothing is reloaded to try again.', focus: ['actors', 'actortags', 'app', 'apptags', 'probe'], view: [8, 1, 28, 9, 2.5, .06] },
+    { k: 'five ways to act', h: 'Browser, transport, lifecycle, database, concurrency.', p: 'Clicks and reads through the browser. Direct calls through the stack\'s declared interface. Restarts and reconnects. Reads of stored state. Races between actors. One typed result contract for all five.', focus: ['exec', 'exectags', 'app', 'probe'], view: [8, 1, 28, 15, 2.5, .06] },
+    { k: 'outcomes', h: 'Passed, failed, inconclusive, or the harness failed. Never a guess.', p: 'Only a pass earns points. Inconclusive means the harness could not measure it: no credit, no blame, reason recorded. A harness failure is Stack Bench\'s fault and never becomes the app\'s.', focus: ['outcomes', 'outtags', 'outcome'], view: [0, 8, 12, 15, 2.5] },
+    { k: 'findings', h: 'A failure is a finding from a closed catalog, not a sentence.', p: 'The yellow token is a finding: a kind and its fields, a control name, an action, an actor, a number. Every reader renders it from one template. That is what a repair session receives.', focus: ['outcomes', 'outtags', 'finding'], view: [0, 8, 12, 15, 2.5] },
+  ],
+};
+
+/* ---- the proving ground ---- */
+scenes.qual = {
+  id: 'qual', name: 'the proving ground', parent: 'run', plate: [28, 16],
+  slabs: [
+    { id: 'refs', x: 1, y: 2, w: 8, d: 4, label: 'reference apps', labelAt: [1, 6, 'end', -12, 4] },
+    { id: 'press', x: 11, y: 2, w: 8, d: 4, label: 'planted defects', labelAt: [19, 2, 'start', 12, 4] },
+    { id: 'null', x: 21, y: 2, w: 6, d: 4, label: 'empty app', labelAt: [27, 2, 'start', 12, 4] },
+    { id: 'grader', x: 11, y: 9, w: 8, d: 5, label: 'grader', labelAt: [19, 14, 'middle', 0, 18] },
+    { id: 'calib', x: 1, y: 9, w: 8, d: 5, label: 'calibration', labelAt: [1, 14, 'end', -12, 4] },
+    { id: 'ladder', x: 21, y: 9, w: 6, d: 5, label: 'promotion', labelAt: [27, 14, 'middle', 0, 18] },
+  ],
+  units: [
+    ...[0, 1, 2].map(i => ({ x: 1.8 + i * 2.2, y: 3, w: 1.4, d: 1.4, h: 1.2, color: GREEN, district: 'refs' })),
+    { kind: 'ledger', x: 7.6, y: 3.2, w: 1.1, d: 1.1, h: 1.0, n: 3, color: SLATE, district: 'refs' },
+    { kind: 'tower', x: 12, y: 2.6, w: 2, d: 2, h: 2, color: DARK, district: 'press' },
+    ...[0, 1, 2, 3].map(i => ({ x: 15.2 + i * .8, y: 3.4, w: .55, d: .55, h: .55, color: RED, district: 'press' })),
+    { x: 23, y: 3, color: DARK, district: 'null' },
+    { kind: 'tower', x: 14, y: 10.2, w: 1.8, d: 1.8, h: 2, color: GREEN, district: 'grader' },
+    ...[0, 1].map(i => ({ x: 11.8 + i * 5.4, y: 11.9, w: .8, d: .8, h: .7, color: GREEN, district: 'grader' })),
+    { kind: 'ledger', x: 2.6, y: 10.4, w: 2.4, d: 2.4, h: 1.8, n: 3, color: SLATE, district: 'calib' },
+    { x: 22, y: 10.2, w: 1.3, d: 1.3, h: .5, color: SLATE, district: 'ladder' }, { x: 23.7, y: 10.2, w: 1.3, d: 1.3, h: 1.0, color: SLATE, district: 'ladder' }, { x: 25.4, y: 10.2, w: 1.3, d: 1.3, h: 1.5, color: GREEN, district: 'ladder' },
+  ],
+  labels: [
+    ...STACKS.map((s, i) => [2.5 + i * 2.2, 4.4, Z, s, 'lab', 'reftags', 'middle', 0, 14]), [8.15, 3.2, ZS + 1.2, 'registry', 'lab', 'reftags', 'middle', 0, -6],
+    [14, 2.6, ZS + 2.2, '161 · 156 · 155 per stack · one check each', 'lab', 'presstags', 'start', 10, -4],
+    [23.8, 4.6, Z, 'must fail every check', 'lab', 'nulltags', 'middle', 0, 16],
+    [2.6, 12.8, Z, 'recipe · fixture · defects · runner · image', 'lab', 'calibtags', 'start', 0, 16],
+    [22.65, 11.5, Z, 'draft', 'lab', 'laddertags', 'middle', 0, 14], [24.35, 11.5, Z, 'candidate', 'lab', 'laddertags', 'middle', 0, 14], [26.05, 11.5, Z, 'qualified', 'lab', 'laddertags', 'middle', 0, 14],
+  ],
+  lanes: [
+    { district: 'refs', pts: [[5, 6.2], [5, 7.6], [13.5, 7.6], [13.5, 9]], token: 'verdict', speed: .3, pulse: 'grader' },
+    { district: 'press', pts: [[15, 6.2], [15, 9]], token: 'defect', speed: .45, n: 2, pulse: 'grader' },
+    { district: 'null', pts: [[24, 6.2], [24, 7.6], [16.5, 7.6], [16.5, 9]], token: 'verdict', speed: .3, pulse: 'grader' },
+    { district: 'calib', pts: [[11, 11.5], [9, 11.5]], token: 'seal', speed: .5 },
+    { district: 'ladder', pts: [[5, 14.2], [5, 15.2], [24, 15.2], [24, 14]], token: 'seal', speed: .22 },
+  ],
+  chapters: [
+    { k: 'the proving ground', h: 'The grader earns its authority here, before any paid run.', p: 'Three controls, each finite and exact: a correct app, an empty app, and a catalog of planted defects. Their verdicts bind into a calibration that can be promoted.', focus: null, view: null },
+    { k: 'reference apps', h: 'A correct app must pass every check.', p: 'One auditable reference implementation per stack, registered by source hash. It installs from committed lockfiles, starts in Docker, and must pass every required check for the exact recipe.', focus: ['refs', 'reftags', 'grader'], view: [0, 1, 20, 15, 3] },
+    { k: 'empty app', h: 'An empty app must fail every check conclusively.', p: 'Zero points is not enough. Each scored check must fail on its own, with a recorded reason, not as an inconclusive or a harness failure.', focus: ['null', 'nulltags', 'grader'], view: [10, 1, 28, 15, 3, .06] },
+    { k: 'planted defects', h: '472 known defects, each caught at exactly one check.', p: 'Every mutation has one exact source anchor. It must produce a conclusive failure at the intended check and no unrelated failure, then the source restores and the app resets. A surviving mutation is investigated, not ignored.', focus: ['press', 'presstags', 'grader'], view: [10, 1, 28, 15, 3, .06] },
+    { k: 'fault probes', h: 'A probe counts only when it is proven three ways.', p: 'Normal operation must succeed. A known defect must be caught at the intended check. A correct implementation must pass under the same injected fault and recover after it is released. Until then the probe stays draft.', focus: ['refs', 'press', 'grader'], view: [0, 1, 21, 15, 3, .12] },
+    { k: 'calibration', h: 'One seal binds the recipe, the fixtures, the defects, and the runner.', p: 'The calibration pins every hash and repetition count. Evidence must match those counts exactly; an older score cannot promote a fixture. Draft, candidate, qualified, and only qualified scores are publishable.', focus: ['calib', 'calibtags', 'ladder', 'laddertags'], view: [0, 8, 28, 16, 2.5] },
+  ],
+};
+
+/* ---- evidence ---- */
+scenes.evidence = {
+  id: 'evidence', name: 'evidence', parent: 'run', plate: [30, 14],
+  slabs: [
+    { id: 'chain', x: 1, y: 2, w: 22, d: 4, label: 'the chain', labelAt: [1, 6, 'end', -12, 4] },
+    { id: 'release', x: 25, y: 2, w: 4, d: 4, label: 'release', labelAt: [29, 2, 'start', 12, 4] },
+    { id: 'package', x: 1, y: 8, w: 10, d: 4, label: 'retained package', labelAt: [1, 12, 'end', -12, 4] },
+    { id: 'audit', x: 13, y: 8, w: 5, d: 4, label: 'transcript audit', labelAt: [18, 12, 'middle', 0, 18] },
+    { id: 'bins', x: 20, y: 8, w: 9, d: 4, label: 'what counts', labelAt: [29, 8, 'start', 12, 4] },
+  ],
+  units: [
+    ...['definitions', 'plan', 'admission', 'state', 'run', 'bundle', 'report'].map((n, i) => ({ kind: i === 6 ? 'block' : 'ledger', x: 1.8 + i * 3.1, y: 2.9, w: 1.5, d: 1.5, h: i === 6 ? 1.4 : 1.2, n: 2, color: i === 6 ? WHITE : SLATE, top: i === 6 ? 1.1 : 1.3, district: 'chain' })),
+    { x: 25.7, y: 2.7, w: 1.2, d: 1.2, h: .8, color: SLATE, district: 'release' }, { x: 27.3, y: 2.7, w: 1.2, d: 1.2, h: 1.4, color: GREEN, district: 'release' },
+    { kind: 'ledger', x: 2, y: 8.8, w: 2.4, d: 2.4, h: 1.8, n: 3, color: SLATE, district: 'package' },
+    ...[0, 1, 2].map(i => ({ x: 5.6 + i * 1.7, y: 9.6, w: .9, d: .9, h: .7, color: SLATE, district: 'package' })),
+    { kind: 'tower', x: 14.7, y: 9.2, w: 1.6, d: 1.6, h: 1.6, color: GREEN, district: 'audit' },
+    { x: 20.8, y: 9.2, w: 3, d: 1.8, h: .6, color: WHITE, top: 1.1, side: .85, back: .62, district: 'bins' }, { x: 25.2, y: 9.2, w: 3, d: 1.8, h: .6, color: DARK, district: 'bins' },
+  ],
+  labels: [
+    ...['definitions', 'plan.json', 'admission', 'state.json', 'run.json', 'bundle.json', 'report'].map((n, i) => [2.55 + i * 3.1, 3.65, ZS + (i === 6 ? 1.4 : 1.2) + .35, n, 'lab', 'chaintags', 'middle', 0, -4]),
+    [26.3, 3.9, Z, 'candidate', 'lab', 'reltags', 'middle', 0, 14], [27.9, 3.9, Z, 'qualified', 'lab', 'reltags', 'middle', 0, 14], [27, 6, Z, 'sbom · signature · exact digests', 'lab', 'reltags', 'middle', 0, 16],
+    [3.2, 11.2, Z, 'transcripts', 'lab', 'pkgtags', 'middle', 0, 14], ...['screenshots', 'traces', 'receipts'].map((n, i) => [6.05 + i * 1.7, 10.5, Z, n, 'lab', 'pkgtags', 'middle', 0, 14]),
+    [15.5, 10.8, Z, 'did the agent read grading material?', 'lab', 'audittags', 'middle', 0, 18],
+    [22.3, 11, Z, 'comparison data', 'lab', 'bintags', 'middle', 0, 14], [26.7, 11, Z, 'excluded', 'lab', 'bintags', 'middle', 0, 14],
+    [22.3, 11, Z, 'compatible · validated', 'lab', 'bintags', 'middle', 0, 30], [26.7, 11, Z, 'harness · provider · contaminated', 'lab', 'bintags', 'middle', 0, 30],
+  ],
+  lanes: [
+    { district: 'chain', pts: [[3.3, 4.8], [20.5, 4.8]], token: 'hash', speed: .16, n: 3, pulse: 'chain' },
+    { district: 'release', pts: [[23, 4], [25, 4]], token: 'signature', speed: .5 },
+    { district: 'package', pts: [[10, 6.2], [10, 7.4], [6, 7.4], [6, 8]], token: 'artifact', speed: .3 },
+    { district: 'audit', pts: [[11, 10], [13, 10]], token: 'artifact', speed: .5 },
+    { district: 'bins', pts: [[18, 10], [20, 10]], token: 'verdict', speed: .5, pulse: 'bins' },
+  ],
+  chapters: [
+    { k: 'evidence', h: 'Every fact has one owner, and every owner leaves a record.', p: 'Definitions compile to a plan. Admission, scheduling, each run, and each grade write their own artifact. The report is a view of those records; it cannot create state.', focus: null, view: null },
+    { k: 'the chain', h: 'Hashes bind each record to the one before it.', p: 'The grey token is a hash. The plan carries the content hash of every definition; every artifact carries the plan\'s identity, the engine, the recipe, the fixture, the adapter, and the image that produced it.', focus: ['chain', 'chaintags'], view: [0, 1, 24, 7, 2.5] },
+    { k: 'the package', h: 'A result can be rebuilt from its package, not remembered.', p: 'Screenshots, videos, Playwright traces, agent transcripts, cost receipts, and the source hash of every grade stay with the run. Public artifacts omit tokens and redact credentials.', focus: ['package', 'pkgtags'], view: [0, 7, 14, 13, 2.5] },
+    { k: 'the audit', h: 'The transcript is read for what the agent read.', p: 'An attempt whose agent opened grading material is contaminated. It is excluded from comparison data, and its evidence is kept, because the audit itself has to be reproducible.', focus: ['audit', 'audittags', 'package'], view: [0, 7, 20, 13, 2.5] },
+    { k: 'what counts', h: 'Only compatible, validated attempts are compared.', p: 'Harness failures, provider failures, and contaminated attempts are excluded and kept. Passed and failed are the application\'s own outcomes. The two bins are never mixed.', focus: ['bins', 'bintags', 'audit'], view: [12, 7, 30, 13, 2.5, .06] },
+    { k: 'release', h: 'A release is qualified, or it is a candidate.', p: 'A candidate has exact image digests, checksummed files, and digest-bound SBOMs. A qualified release adds a public key and a detached signature. Provisional data can come from a branch build; publishable data cannot.', focus: ['release', 'reltags'], view: [16, 1, 30, 7, 2.5, .06] },
+  ],
+};
+
+const startHash = location.hash.slice(1).split('/'); const startId = scenes[startHash[0]] ? startHash[0] : 'run';
+if (new URLSearchParams(location.search).has('still')) { playing = false; playBtn.textContent = '▶'; }
+enter(startId, Number(startHash[1]) || 0); requestAnimationFrame(frame);
 </script>
 </body>
 </html>

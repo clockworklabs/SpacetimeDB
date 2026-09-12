@@ -115,11 +115,17 @@ export function listExecutionJobs(results: string, { after = '', limit = 50 } = 
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw new Error('job page size must be 1–200');
   if (after) digest.parse(after);
   const root = rootFor(results);
-  if (!existsSync(root)) return { jobs: [], next: null };
+  if (!existsSync(root)) return { jobs: [], errors: [], next: null };
   const ids = readdirSync(root).filter(id => digest.safeParse(id).success
     && id > after && existsSync(join(root, id, 'job.json'))).sort();
   const page = ids.slice(0, limit);
-  return { jobs: page.map(id => readExecutionJob(results, id)), next: ids.length > limit ? page.at(-1)! : null };
+  const jobs: ReturnType<typeof readExecutionJob>[] = [];
+  const errors: Array<{ id: string; error: string }> = [];
+  for (const id of page) {
+    try { jobs.push(readExecutionJob(results, id)); }
+    catch (error) { errors.push({ id, error: redactCredentials(error instanceof Error ? error.message : String(error)) }); }
+  }
+  return { jobs, errors, next: ids.length > limit ? page.at(-1)! : null };
 }
 
 export function cancelExecutionJob(results: string, id: string): void {

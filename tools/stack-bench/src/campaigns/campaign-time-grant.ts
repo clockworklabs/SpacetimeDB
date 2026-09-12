@@ -35,7 +35,7 @@ export function readCampaignTimeBudget(directory: string, attemptId: string): Ca
         attemptId, executionId: last.id, depth: attempt.plan.mode.pauseAfterDepth }, now);
   }
   const budget = campaignTimeBudget(plan, attempt, now);
-  if (last?.outcome === 'timed_out') {
+  if (['timed_out', 'interrupted'].includes(last?.outcome ?? '')) {
     const eligibility = campaignTimeContinuationEligibility(directory, attemptId);
     budget.continuation = eligibility.eligible ? { eligible: true }
       : { eligible: false, reason: eligibility.reason };
@@ -53,8 +53,8 @@ export function campaignTimeContinuationEligibility(directory: string, attemptId
     if (current.state.attempts.some(a => a.status === 'running')) throw new Error('campaign still has running work');
     const target = current.state.attempts.find(a => a.plan.id === attemptId);
     const last = target?.executions.at(-1);
-    if (!target || target.plan.mode?.id !== 'dependency' || last?.outcome !== 'timed_out'
-      || last.timeContinuation) throw new Error('only unextended timed-out dependency attempts can continue');
+    if (!target || !last || target.plan.mode?.id !== 'dependency' || !['timed_out', 'interrupted'].includes(last.outcome ?? '')
+      || last.timeContinuation) throw new Error('only unextended timed-out or interrupted dependency attempts can continue');
     const output = campaignChildPath(directory, last.output, 'continuation execution');
     const eligibility = timeContinuationEligibility(output);
     if (!eligibility.eligible) return eligibility;
@@ -97,7 +97,7 @@ export function requestCampaignTimeGrant(directory: string,
         return duplicate;
       }
       const last = target.executions.at(-1);
-      if (!last || last.outcome !== 'timed_out') throw new Error('only timed-out attempts can continue with added time');
+      if (!last || !['timed_out', 'interrupted'].includes(last.outcome ?? '')) throw new Error('only timed-out or interrupted attempts can continue with added time');
       const eligibility = campaignTimeContinuationEligibility(directory, input.attemptId);
       if (!eligibility.eligible) throw new Error(eligibility.reason);
       const previousMinutes = campaignTimeBudget(current.plan, target).effectiveMinutes;

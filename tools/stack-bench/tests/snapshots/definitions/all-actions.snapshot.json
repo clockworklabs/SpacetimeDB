@@ -250,6 +250,15 @@
               "testid": "count"
             },
             {
+              "as": "started",
+              "do": "recordTime"
+            },
+            {
+              "atMost": 1000,
+              "do": "expectElapsed",
+              "since": "started"
+            },
+            {
               "actor": "a",
               "do": "reload",
               "settleMs": 1

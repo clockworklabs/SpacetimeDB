@@ -36,7 +36,7 @@
         "id": "ecommerce.l2.operational-views",
         "path": "prompts/02-operations.md",
         "order": 50,
-        "from": "### Live operational views",
+        "from": "### Operational views",
         "until": "### What must stay true",
         "modes": [
           "upgrade"
@@ -91,16 +91,6 @@
       "feature": 2,
       "criteria": [
         "2a"
-      ],
-      "role": "feature"
-    },
-    {
-      "id": "warehouse-transfer-overdraw",
-      "stableId": "warehouse-transfer",
-      "source": "scenarios/02-transfer-overdraw.json",
-      "feature": 2,
-      "criteria": [
-        "2c"
       ],
       "role": "feature"
     },

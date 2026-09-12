@@ -86,8 +86,9 @@ have separate tables and claims.
 
 ## Parallel execution and collection cost
 
-Three stacks by three repetitions gives nine attempts. The current operating
-default is nine parallel attempts unless the operator specifies otherwise.
+Three stacks by three repetitions gives nine attempts. Each campaign explicitly
+sets its parallelism. Shared host capacity determines when the campaign can start;
+it does not silently change the requested parallelism.
 Declare concurrency before launch. Resource or credential admission can delay
 dispatch; report that delay rather than silently reducing the experiment to
 three parallel attempts. Resource leases are allocated automatically and do not

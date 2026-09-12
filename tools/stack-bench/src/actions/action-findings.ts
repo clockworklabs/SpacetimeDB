@@ -73,6 +73,9 @@ export const FAILED_FINDINGS: Renderers<FailedFindingFields> = {
     ? `${control(f.control)} shows ${quoted(f.observed)}, expected ${quoted(f.expected)}`
     : `${control(f.control)} does not show the required value`,
   'text-unexpected': f => `${control(f.control)} shows ${f.matchedText === undefined ? 'text' : quoted(f.matchedText)} that must not appear`,
+  'text-missing': f => `${control(f.control)}${f.matchingText ? ` matching ${quoted(f.matchingText)}` : ''}`
+    + ` does not contain ${f.expected === undefined ? 'the required text' : quoted(f.expected)}`
+    + `${f.observed === undefined ? '' : `; observed ${quoted(f.observed)}`}`,
   'value-unstable': f => `${control(f.control)} changed while nothing happened`,
   'clients-disagree': f => `${names(f.actors)} see different values in ${control(f.control)}`,
   'number-missing': f => `${control(f.control)} shows no number`,
@@ -202,6 +205,7 @@ export const findingSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('control-unreadable'), fields: z.strictObject({ control: z.string(), actors: z.array(z.string()) }) }),
   z.strictObject({ kind: z.literal('value-mismatch'), fields: controlSchema.extend({ observed: observedTextSchema, expected: observedTextSchema }) }),
   z.strictObject({ kind: z.literal('text-unexpected'), fields: controlSchema.extend({ matchedText: observedTextSchema }) }),
+  z.strictObject({ kind: z.literal('text-missing'), fields: controlSchema.extend({ matchingText: observedTextSchema, observed: observedTextSchema, expected: observedTextSchema }) }),
   z.strictObject({ kind: z.literal('value-unstable'), fields: controlSchema }),
   z.strictObject({ kind: z.literal('clients-disagree'), fields: z.strictObject({ control: z.string(), actors: z.array(z.string()) }) }),
   z.strictObject({ kind: z.literal('number-missing'), fields: controlSchema }),

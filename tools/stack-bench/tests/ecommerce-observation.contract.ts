@@ -137,11 +137,11 @@ test('cart validation sends only a negative quantity and restores actor identity
 
 test('later-depth checks retain their own effects and independent controls', () => {
   const reorder = read('progression-automatic-reorder.json').features[0]!;
-  assert.equal(reorder.setup.filter(step => step.testid === 'buy-now').length, 2);
-  assert.equal(reorder.criteria.find(c => c.id === '502a')!.steps.some(step => step.testid === 'buy-now'), false);
-  const duplicate = reorder.criteria.find(c => c.id === '502b')!.steps;
-  assert.equal(duplicate[0]!.do, 'expectElementCount');
-  assert.equal(duplicate[1]!.testid, 'buy-now');
+  assert(!reorder.setup.some(step => step.do === 'callAction' && step.action === 'buy'));
+  assert(reorder.criteria.find(c => c.id === '502a')!.steps.some(step => step.do === 'callAction' && step.action === 'buy'));
+  const duplicate = read('progression-automatic-reorder-duplicate.json').features[0]!;
+  assert(duplicate.setup.some(step => step.do === 'expectElementCount' && step.testid === 'pending-restock-item' && step.equals === 1));
+  assert.equal(duplicate.criteria[0]!.steps.filter(step => step.do === 'callAction' && step.action === 'buy').length, 2);
   const payment = read('progression-core-business.json').features.find(f => f.id === 623)!;
   assert.equal(payment.setup.find(step => step.do === 'expectCallOutcomes')!.accepted, undefined);
   assert(payment.setup.some(step => step.do === 'freshClient'));

@@ -641,7 +641,8 @@
       ],
       "gradingGroups": [
         "ecommerce.progression.payment-records#payment",
-        "ecommerce.spec.concurrency-safety#stock-limit"
+        "ecommerce.spec.concurrency-safety#stock-limit",
+        "ecommerce.spec.transactional-integrity#payment-deduplication"
       ],
       "dependencies": [
         {
@@ -732,7 +733,7 @@
       ],
       "gradingGroups": [
         "ecommerce.progression.personalized-recommendations#ordering",
-        "ecommerce.progression.personalized-recommendations#isolation"
+        "ecommerce.spec.access-control#recommendation-profile-isolation"
       ],
       "dependencies": [
         {
@@ -749,7 +750,8 @@
         "ecommerce.progression.staff-activity"
       ],
       "gradingGroups": [
-        "ecommerce.progression.staff-activity#activity"
+        "ecommerce.progression.staff-activity#activity",
+        "ecommerce.spec.access-control#staff-activity-privacy"
       ],
       "dependencies": [
         {
@@ -767,7 +769,7 @@
       ],
       "gradingGroups": [
         "ecommerce.progression.order-support#owned-order",
-        "ecommerce.progression.order-support#ownership-boundary"
+        "ecommerce.spec.access-control#order-support-ownership"
       ],
       "dependencies": [
         {
@@ -807,8 +809,8 @@
       ],
       "gradingGroups": [
         "ecommerce.progression.automatic-reorder#threshold",
-        "ecommerce.progression.automatic-reorder#access",
-        "ecommerce.progression.automatic-reorder#no-duplicate"
+        "ecommerce.spec.access-control#automatic-reorder-access",
+        "ecommerce.spec.transactional-integrity#automatic-reorder-deduplication"
       ],
       "dependencies": [
         {
@@ -852,7 +854,7 @@
       ],
       "gradingGroups": [
         "ecommerce.progression.delivery-notifications#delivery",
-        "ecommerce.progression.delivery-notifications#privacy"
+        "ecommerce.spec.access-control#delivery-notification-privacy"
       ],
       "dependencies": [
         {
@@ -873,7 +875,9 @@
         "ecommerce.progression.recommendation-feedback"
       ],
       "gradingGroups": [
-        "ecommerce.progression.recommendation-feedback#dismissal"
+        "ecommerce.progression.recommendation-feedback#dismissal",
+        "ecommerce.spec.access-control#recommendation-feedback-privacy",
+        "ecommerce.spec.state-durability#recommendation-feedback-restart"
       ],
       "dependencies": [
         {
@@ -891,8 +895,8 @@
       ],
       "gradingGroups": [
         "ecommerce.progression.support-refunds#resolution",
-        "ecommerce.progression.support-refunds#accounting",
-        "ecommerce.progression.support-refunds#access"
+        "ecommerce.spec.transactional-integrity#support-refund-accounting",
+        "ecommerce.spec.access-control#support-refund-access"
       ],
       "dependencies": [
         {
@@ -1006,7 +1010,7 @@
       "gradingGroups": [
         "ecommerce.feature.split-tender-refunds#feature-751",
         "ecommerce.spec.split-tender-refunds#production-756",
-        "ecommerce.spec.split-tender-refunds#return-refund-interaction"
+        "ecommerce.feature.split-tender-refunds#return-refund-interaction"
       ],
       "dependencies": [
         {

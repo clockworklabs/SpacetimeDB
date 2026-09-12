@@ -2010,7 +2010,8 @@ async function main() {
       if (!build) throw new Error(`level ${level} has no coding session`);
       return build;
     };
-    const buildLeak = build ? auditContamination(appDir, auditNetwork(), auditsTranscripts) : null;
+    const buildFailure = build ? agentSessionFailure(build) : null;
+    const buildLeak = build && !buildFailure ? auditContamination(appDir, auditNetwork(), auditsTranscripts) : null;
     if (buildLeak) {
       const session = requireBuild();
       const buildSession = runSessionRecord(session,
@@ -2040,7 +2041,6 @@ async function main() {
     }
     // No session, no app. Grading an empty directory yields a real-looking zero
     // that is a harness failure, not a result for this backend.
-    const buildFailure = build ? agentSessionFailure(build) : null;
     if (buildFailure) {
       const session = requireBuild();
       await restoreFeatureAcceptedSource();

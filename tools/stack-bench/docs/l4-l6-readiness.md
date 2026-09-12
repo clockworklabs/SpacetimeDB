@@ -51,7 +51,8 @@ and blocked work separately. Keep metric definitions fixed before collecting dat
 - Subscription checks cover scheduled order/payment counts, stock consumption,
   restart, owner cancellation, and pause/resume across restart.
 
-The current full catalog has 180 checks, including 21 added by these six features.
+The full catalog includes 21 checks added by these six features. Use the compiled
+graph for current totals; later probe changes can add or reclassify checks.
 Every added check has a declared defect target for all three stacks.
 
 These are executable definitions with reference implementations for each stack.

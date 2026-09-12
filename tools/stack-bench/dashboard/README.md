@@ -81,8 +81,11 @@ all executions and shows upper bounds and unknown values. Different comparison
 conditions do not share one score average. Files links to the report and its
 public export manifest; the manifest lists evidence and any reconstruction gaps.
 Charts connect saved observations; intermediate values are not measured.
-Distribution includes completed attempts and labels excluded attempts. It is a
-view of the cohort, not proof that those results are qualified for comparison.
+Comparison summaries and the distribution use eligible completed attempts.
+Excluded attempts remain labelled in chart controls and the Runs table. Cost and
+progress-over-time charts retain their observations, with the same exclusion label.
+Live progress and total spend include unfinished work; total spend also includes
+excluded attempts. These operational values are separate from comparison metrics.
 
 ## Routes
 
@@ -91,6 +94,7 @@ view of the cohort, not proof that those results are qualified for comparison.
 | `GET /api/health` | `read-only` or `controller` |
 | `GET /api/overview` | one summary per campaign |
 | `GET /api/campaigns/:key` | the campaign sheet |
+| `GET /api/campaigns/:key/live` | live spend, cost observations, activity, and phase |
 | `GET /api/campaigns/:key/progression` | the dependency graph and its replay |
 | `GET /api/campaigns/:key/attempts/:id/checks` | per-check outcome and history |
 | `GET /api/campaigns/:key/attempts/:id/package` | the evidence listing |
@@ -119,9 +123,14 @@ modification time of the evidence they read, including while a campaign runs.
 campaign whose plan, state, run output, or progression state changed; a `log`
 event names an attempt whose stdout grew. Changes are debounced for 500 ms and
 the stream sends a comment every 25 seconds so an idle connection stays open.
-The client loads the overview once, then refetches only what an event names.
-While the stream is down it falls back to polling the overview every 15
-seconds.
+Campaign events refresh the affected evidence. Log events fetch only live fields
+and the open log or transcript. The client also refreshes live fields every five
+seconds while runs are active; Claude Code and Codex usage can advance without a
+controller log write. Live-cost reads share a server cache and concurrent reads.
+Docker transcript reads time out after five seconds; a failed read keeps saved
+receipts visible. Logs do not invalidate the evidence sheet or graph replay.
+While the stream is down, a full refresh every 15 seconds recovers missed evidence
+changes. Hidden tabs stop both the event stream and refresh work.
 
 The watcher uses a recursive `fs.watch` per campaign directory. Where the
 platform or the mount does not support one it polls the same file fingerprints

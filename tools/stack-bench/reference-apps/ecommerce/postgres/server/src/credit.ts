@@ -21,7 +21,14 @@ export async function spendCredit(client: PoolClient, accountId: number, totalMi
   return creditMinor;
 }
 
+export function refundForReturn(total: number, refundedTotal: number, gross: number, returnedGross: number, allReturned: boolean): number {
+  const remaining = Math.max(0, Math.round((total - refundedTotal) * 100) / 100);
+  return allReturned ? remaining : gross > 0
+    ? Math.min(remaining, Math.round(returnedGross * total / gross * 100) / 100) : 0;
+}
+
 export async function refundCredit(client: PoolClient, order: any, refundedTotal = Number(order.total)) {
+  if (Number(order.total) <= 0) return;
   const amount = Math.min(Number(order.credit_minor), Math.round(Number(order.credit_minor) * refundedTotal / Number(order.total)));
   if (!amount) return;
   const previous = await client.query('SELECT amount_minor FROM credit_entry WHERE account_id=$1 AND reference=$2', [order.account_id, `refund:${order.id}`]);

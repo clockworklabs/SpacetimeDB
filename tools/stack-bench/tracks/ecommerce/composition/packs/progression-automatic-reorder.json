@@ -56,29 +56,6 @@
       "requiresFeatures": [
         "ecommerce.feature.purchasing"
       ]
-    },
-    {
-      "id": "access",
-      "stableId": "automatic-reorder",
-      "source": "scenarios/progression-automatic-reorder-access.json",
-      "feature": 502,
-      "criteria": [
-        "502c"
-      ],
-      "role": "feature"
-    },
-    {
-      "id": "no-duplicate",
-      "stableId": "automatic-reorder",
-      "source": "scenarios/progression-automatic-reorder-duplicate.json",
-      "feature": 502,
-      "criteria": [
-        "502b"
-      ],
-      "role": "feature",
-      "requiresFeatures": [
-        "ecommerce.feature.purchasing"
-      ]
     }
   ]
 }

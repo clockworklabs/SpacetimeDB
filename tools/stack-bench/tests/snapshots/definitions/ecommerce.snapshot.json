@@ -5111,6 +5111,32 @@
                   },
                   {
                     "actor": "admin",
+                    "do": "reload",
+                    "settleMs": 1000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "ensureSignedIn",
+                    "exact": true,
+                    "name": "admin",
+                    "password": "stackbench-admin-2026",
+                    "readyTestid": "current-user"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "within": 1000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "testid": "admin-link",
+                    "unlessVisible": "admin-revenue"
+                  },
+                  {
+                    "actor": "admin",
                     "do": "expectNumber",
                     "plus": 42,
                     "relativeTo": "rev-start",
@@ -5144,6 +5170,32 @@
                     "actor": "customer",
                     "do": "wait",
                     "ms": 2500
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "reload",
+                    "settleMs": 1000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "ensureSignedIn",
+                    "exact": true,
+                    "name": "admin",
+                    "password": "stackbench-admin-2026",
+                    "readyTestid": "current-user"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "within": 1000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "testid": "admin-link",
+                    "unlessVisible": "admin-revenue"
                   },
                   {
                     "actor": "admin",
@@ -5186,6 +5238,32 @@
                     "actor": "customer",
                     "do": "wait",
                     "ms": 2500
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "reload",
+                    "settleMs": 1000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "ensureSignedIn",
+                    "exact": true,
+                    "name": "admin",
+                    "password": "stackbench-admin-2026",
+                    "readyTestid": "current-user"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "within": 1000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "testid": "admin-link",
+                    "unlessVisible": "admin-revenue"
                   },
                   {
                     "actor": "admin",
@@ -5264,7 +5342,8 @@
                     "actor": "admin",
                     "do": "click",
                     "ifAvailable": true,
-                    "testid": "admin-link"
+                    "testid": "admin-link",
+                    "within": 1000
                   },
                   {
                     "actor": "admin",
@@ -5276,6 +5355,32 @@
                     },
                     "testid": "price-input",
                     "within": 10000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "reload",
+                    "settleMs": 1000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "ensureSignedIn",
+                    "exact": true,
+                    "name": "admin",
+                    "password": "stackbench-admin-2026",
+                    "readyTestid": "current-user"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "within": 1000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "testid": "admin-link",
+                    "unlessVisible": "admin-revenue"
                   },
                   {
                     "actor": "admin",
@@ -5415,7 +5520,7 @@
         ],
         "level": 2,
         "name": "Running the business — invariants",
-        "note": "Properties that must survive the new operations regardless of which feature works. Level 2 adds two roles and six ways to move stock or money, so the questions are: can someone do an operator's job without being an operator, does conservation still hold once stock can flow backwards, and does anything a customer sends decide what the store charges. Stated as outcomes a person would recognise, and scored so a backend is never penalised for a check the harness could not run against it.",
+        "note": "Draft: revised observations require matching reference and defect-control qualification.",
         "schemaVersion": 1,
         "track": "ecommerce",
         "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses|\\/transfer|\\/cancel|\\/return|\\/ship|\\/price|\\/fulfil"

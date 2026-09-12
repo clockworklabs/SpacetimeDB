@@ -564,7 +564,6 @@ export function validateCampaignDefinition(input: unknown,
   value.conditions = exactArray(value.conditions, `${source}.conditions`, (condition, at) =>
     validateConditionReference(condition, at), { nonEmpty: true, sort: true });
   integer(value.repetitions, `${source}.repetitions`, { min: 1 });
-  value.parallelism ??= 1;
   integer(value.parallelism, `${source}.parallelism`, { min: 1, max: RUN_INDEX_CAP + 1 });
   for (const stack of value.stacks) stack.repetitions ??= value.repetitions;
   if (value.mode.pauseAfterDepth !== undefined && value.parallelism < value.stacks
@@ -1200,7 +1199,7 @@ export function compileCampaignFile(path: string, {
     attempts,
     summary: { attempts: attempts.length, stacks: stacks.length, agents: agents.length,
       conditions: conditions.length, repetitions: definition.repetitions,
-      repetitionsByStack, parallelism: definition.parallelism ?? 1 },
+      repetitionsByStack, parallelism: definition.parallelism },
   }) as unknown as CompiledCampaignPlan;
 }
 
@@ -1282,7 +1281,7 @@ export function validateCompiledCampaignPlan(input: unknown, {
   const expectedSummary = { attempts: expectedAttempts.length, stacks: plan.stacks.length,
     agents: plan.agents.length, conditions: plan.conditions.length,
     repetitions: definition.repetitions, repetitionsByStack,
-    parallelism: definition.parallelism ?? 1 };
+    parallelism: definition.parallelism };
   if (canonicalDefinitionJson(plan.summary) !== canonicalDefinitionJson(expectedSummary)) {
     throw new Error('compiled campaign summary does not match its inputs');
   }

@@ -1016,7 +1016,6 @@ export const returnBundle = spacetimedb.reducer({ orderId: t.u64() }, (ctx, { or
   const order = ctx.db.customerOrder.id.find(orderId);
   if (!order || order.accountId !== account.id || !['shipped', 'delivered'].includes(order.status)) throw new SenderError('No returnable bundle on this account.');
   const bundles = [...ctx.db.orderItem.orderId.filter(orderId)].filter(row => row.isBundle && !row.returned);
-  if ((order.creditMinor || order.discount) && [...ctx.db.orderItem.orderId.filter(orderId)].some(line => !line.isBundle)) throw new SenderError('Use a full support refund for mixed-item discounted or credit orders.');
   if (!bundles.length) throw new SenderError('Bundle already returned.');
   let refund = 0;
   for (const line of bundles) {
@@ -1025,7 +1024,10 @@ export const returnBundle = spacetimedb.reducer({ orderId: t.u64() }, (ctx, { or
     refund += line.unitPrice * line.quantity;
     decrementPurchaseCount(ctx, line.itemId, line.quantity);
   }
-  const refundedTotal = Math.min(order.total, order.discount ? order.total : order.refundedTotal + refund);
+  const orderLines = [...ctx.db.orderItem.orderId.filter(orderId)];
+  const gross = orderLines.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0);
+  refund = refundForReturn(order.total, order.refundedTotal, gross, refund, orderLines.every(line => line.returned));
+  const refundedTotal = Math.min(order.total, order.refundedTotal + refund);
   refundOrderCredit(ctx, order, refundedTotal);
   ctx.db.customerOrder.id.update({ ...order, refundedTotal });
 });
@@ -1198,9 +1200,9 @@ export const returnOrderItem = spacetimedb.reducer(
     restoreOrderItemStock(ctx, target);
     decrementPurchaseCount(ctx, target.itemId, target.quantity);
     ctx.db.orderItem.id.update({ ...target, returned: true });
-    const gross = [...ctx.db.orderItem.orderId.filter(order.id)].reduce((sum, line) => sum + line.unitPrice * line.quantity, 0);
-    const amount = Math.min(order.total - order.refundedTotal,
-      Math.round(target.unitPrice * target.quantity * order.total / gross * 100) / 100);
+    const orderLines = [...ctx.db.orderItem.orderId.filter(order.id)];
+    const gross = orderLines.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0);
+    const amount = refundForReturn(order.total, order.refundedTotal, gross, target.unitPrice * target.quantity, orderLines.every(line => line.returned));
     const refundedTotal = order.refundedTotal + amount;
     refundOrderCredit(ctx, order, refundedTotal);
     ctx.db.customerOrder.id.update({ ...order, refundedTotal });
@@ -1341,7 +1343,14 @@ export const linkSupportOrder = spacetimedb.reducer(
   }
 );
 
+function refundForReturn(total: number, refundedTotal: number, gross: number, returnedGross: number, allReturned: boolean): number {
+  const remaining = Math.max(0, Math.round((total - refundedTotal) * 100) / 100);
+  return allReturned ? remaining : gross > 0
+    ? Math.min(remaining, Math.round(returnedGross * total / gross * 100) / 100) : 0;
+}
+
 function refundOrderCredit(ctx: Ctx, order: { id: bigint; accountId: bigint; total: number; creditMinor: number }, refundedTotal: number) {
+  if (!order.creditMinor || order.total <= 0) return;
   const amountMinor = Math.min(order.creditMinor, Math.round(order.creditMinor * refundedTotal / order.total));
   const reference = 'refund:' + order.id;
   const entry = [...ctx.db.creditEntry.byAccountReference.filter([order.accountId, reference])][0];
@@ -1474,7 +1483,7 @@ export const saveReorderRule = spacetimedb.reducer(
   { itemId: t.u64(), threshold: t.u32(), quantity: t.u32() },
   (ctx, input) => {
     requireStaffOrAdmin(ctx);
-    const warehouse = [...ctx.db.warehouse.iter()].find(row => row.name === 'East');
+    const warehouse = [...ctx.db.warehouse.iter()].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)[0];
     if (!warehouse || !ctx.db.item.id.find(input.itemId) || input.quantity < 1) throw new SenderError('Invalid reorder rule');
     const existing = [...ctx.db.reorderRule.iter()].find(row => row.itemId === input.itemId);
     if (existing) ctx.db.reorderRule.id.update({ ...existing, ...input });

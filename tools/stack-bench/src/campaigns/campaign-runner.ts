@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import { ARTIFACT_FILE, emptyArtifactIdentities, readArtifact, readArtifactPayload,
   writeArtifact } from '../evidence/artifacts.js';
 import { durableCostLedger } from '../evidence/cost-proof.js';
+import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
 import { acquireCampaignLock, releaseCampaignLock, watchCampaignCancellation } from './campaign-lock.js';
 import { compileCampaignFile } from './campaign-compiler.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
@@ -177,7 +178,7 @@ export function attemptArgv(plan: CompiledCampaignPlan, attempt: CampaignAttempt
 }
 
 
-const TRANSIENT_PROVIDER_STATUSES = new Set([500, 502, 503, 504, 529]);
+const TRANSIENT_PROVIDER_STATUSES = new Set([500, 502, 503, 504]);
 
 export function campaignRetryAuthority(run: BenchmarkRun | null | undefined, {
   recoveryClean = false, requireCostReceipt = false,
@@ -186,6 +187,7 @@ export function campaignRetryAuthority(run: BenchmarkRun | null | undefined, {
   const providerStatus = outcome?.provider?.providerStatus;
   const providerTransient = outcome?.kind === 'provider_failure'
     && outcome.phase === 'coding-session'
+    && providerStatus !== 429 && providerStatus !== 529
     && outcome.reason !== 'provider-throttle-exhausted'
     && ((typeof providerStatus === 'number' && TRANSIENT_PROVIDER_STATUSES.has(providerStatus))
       || ['provider-api-error', 'provider-connection-error'].includes(outcome.reason ?? ''));
@@ -232,6 +234,13 @@ function readAttemptResult(plan: CompiledCampaignPlan, attempt: CampaignAttemptP
     }
     catch (error) { artifactError = error instanceof Error ? error : new Error(String(error)); }
   }
+  if (!processResult.timedOut && !processResult.error && !run?.contaminated
+    && !['provider_failure', 'harness_failure'].includes(run?.outcome?.kind ?? '')
+    && (processResult.signal || processResult.code === 130 || processResult.code === 143)) {
+    const signal = processResult.signal ?? (processResult.code === 130 ? 'SIGINT' : 'SIGTERM');
+    return withRetryAuthority({ exitCode: processResult.code, timedOut: false,
+      run: { outcome: { kind: 'interrupted', reason: `attempt interrupted by ${signal}; source unknown` } } });
+  }
   if (artifactError) {
     // Preserve the reported trigger for diagnosis, never as accepted evidence.
     const reported = run?.contaminated ? run.contamination?.verdict : run?.outcome?.reason;
@@ -240,6 +249,10 @@ function readAttemptResult(plan: CompiledCampaignPlan, attempt: CampaignAttemptP
     return withRetryAuthority({ exitCode: processResult.code, timedOut: processResult.timedOut,
       run: { outcome: { kind: 'harness_failure',
         reason: `${processDetail ? `Reported failure: ${processDetail}; ` : ''}partial ${ARTIFACT_FILE.run} is invalid: ${artifactError.message}` } } });
+  }
+  if (processResult.error) {
+    return withRetryAuthority({ exitCode: processResult.code, timedOut: processResult.timedOut,
+      run: { outcome: { kind: 'harness_failure', reason: processFailureDetail(processResult) } } });
   }
   if (!run && processResult.code !== 0 && !processResult.timedOut) {
     const detail = processFailureDetail(processResult);
@@ -276,9 +289,11 @@ export function remainingAttemptCostBudget(
 }
 
 export function processFailureDetail(processResult: Partial<RunnerProcessResult>): string {
+  if (processResult.error?.message) return processResult.error.message.slice(0, 800);
   const text = processResult.stderrTail || processResult.stdoutTail
-    || processResult.error?.message || '';
-  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    || '';
+  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line
+    && !/^(?:removed the leased run container|\d+ transcript\(s\) archived|wiped |interrupted by SIG)/.test(line));
   const explicit = lines.filter(line => /^(?:Error:|ABORTED:|CONTAMINATED\b)/.test(line)).at(-1);
   return (explicit ?? lines.slice(-4).join(' | ')).slice(0, 800);
 }
@@ -529,10 +544,12 @@ export async function executeCampaign(campaignFile: string, directory: string,
           stdio: 'inherit',
           logs: { stdout: join(output, 'process.stdout.log'), stderr: join(output, 'process.stderr.log') },
           timeoutMs, refreshTimeoutMs,
+          startedAt: Date.parse(attemptState().executions.at(-1)!.startedAt),
           ...(pauseContext ? { pauseInterval: () => readDepthPause(output, pauseContext) } : {}),
           signal,
         });
-        refreshTimeoutMs(timeoutMs, false);
+        try { refreshTimeoutMs(timeoutMs, false); }
+        catch (error) { processResult.error ??= error instanceof Error ? error : new Error(String(error)); }
         if (pauseContext && processResult.pausedMs !== undefined) {
           pausedMs = processResult.pausedMs;
           attemptState().executions.at(-1)!.pausedMs = pausedMs;
@@ -563,6 +580,7 @@ export async function executeCampaign(campaignFile: string, directory: string,
           payload: { schemaVersion: 1, executionId: claim.executionId, runIndex: claim.runIndex,
             exitCode: processResult.code ?? null, signal: processResult.signal ?? null,
             timedOut: processResult.timedOut === true,
+            error: processResult.error ? redactCredentials(processResult.error.message).slice(0, 8_192) : null,
             streams: processResult.logs ? Object.fromEntries(Object.entries(processResult.logs)
               .map(([name, log]) => [name, { ...log, path: `process.${name}.log` }])) : null } });
       } catch (error) {

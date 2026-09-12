@@ -297,7 +297,7 @@ export interface SheetStack {
   points: { score: number; max: number } | null;
   unaided: number | null;
   continued: boolean;
-  regressions: number;
+  regressions: number | null;
   timeSec: number | null;
   spend: CostEvidence;
   spendPending: boolean;
@@ -474,7 +474,7 @@ export function campaignSheet(resultsRoot: string, key: string,
   const directory = campaignDirectory(resultsRoot, key);
   const reportPaths = ['report/report.html', 'report/export-manifest.json'];
   const fingerprint = campaignFingerprint(directory, [CAMPAIGN_FILE.plan, CAMPAIGN_FILE.state, ...reportPaths],
-    [ARTIFACT_FILE.run, ARTIFACT_FILE.progressionState, LOG_FILE, 'depth-pause.json']);
+    [ARTIFACT_FILE.run, ARTIFACT_FILE.progressionState, 'depth-pause.json']);
   const { plan, state } = dashboardCampaignState(directory);
   const interrupted = controllerInterrupted(controllerActive, directory, plan, state.status);
   const controllerOwner = readCampaignLock(directory)?.ownershipMarkerSha256 ?? null;
@@ -489,6 +489,7 @@ export function campaignSheet(resultsRoot: string, key: string,
   const stacks = plan.stacks.map(stack => {
     const owned = views.filter(view => view.inspected.stack === stack.id);
     const row = comparison.rows.find(entry => entry.stack === stack.id);
+    const eligible = row?.scopes.length === 1 ? row.runs.map(run => run.attempt) : [];
     // Figures a repetition cannot average — the climb, the questline board, the
     // per-level rows — come from the newest attempt that actually ran.
     const latest = owned.findLast(view => view.inspected.execution !== null) ?? null;
@@ -502,14 +503,13 @@ export function campaignSheet(resultsRoot: string, key: string,
       points: dependency ? uniquePoints(lead?.dependency ?? null) : metrics?.raw.final ?? null,
       unaided: percentage(row?.first ?? null),
       continued: owned.some(view => view.attempt.continued),
-      regressions: Math.round(median(owned.map(view => attemptRegressions(view.inspected))) ?? 0),
+      regressions: median(eligible.map(attemptRegressions)),
       timeSec: row?.duration ?? null,
       spend: executionSpend(owned.map(view => ({ cost: view.inspected.spend, knownCostUsd: view.inspected.spend.knownCostUsd }))),
       spendPending: owned.some(view => view.attempt.spendPending),
-        completionRate: new Set(owned.map(view => view.inspected.cohortKey)).size === 1
-          && owned.every(view => view.inspected.completion?.rate != null)
-        ? median(owned.flatMap(view => view.inspected.completion?.rate == null
-          ? [] : [view.inspected.completion.rate])) : null,
+      completionRate: eligible.every(attempt => attempt.completion?.rate != null)
+        ? median(eligible.flatMap(attempt => attempt.completion?.rate == null
+          ? [] : [attempt.completion.rate])) : null,
       n: row?.n ?? 0,
       attempts: owned.map(view => view.attempt),
       levels: dependency ? null : sheetLevels(lead),
@@ -918,11 +918,27 @@ function campaignLiveCosts(resultsRoot: string, key: string) {
   return entry.value;
 }
 
-export function campaignLiveSheet(resultsRoot: string, key: string): CampaignSheet {
-  const sheet = structuredClone(campaignSheet(resultsRoot, key));
+export function campaignLiveSheet(resultsRoot: string, key: string, options: ViewOptions = {}): CampaignSheet {
+  const sheet = structuredClone(campaignSheet(resultsRoot, key, options));
   const live = campaignLiveCosts(resultsRoot, key);
+  const directory = campaignDirectory(resultsRoot, key);
+  const { state } = dashboardCampaignState(directory);
   for (const stack of sheet.stacks) {
     for (const attempt of stack.attempts) {
+      const execution = state.attempts.find(entry => entry.plan.id === attempt.id)?.executions.at(-1);
+      if (execution) {
+        const path = join(contained(directory, execution.output, 'campaign execution'), LOG_FILE);
+        if (existsSync(path)) {
+          const updatedAt = new Date(statSync(path).mtimeMs).toISOString();
+          if (attempt.logUpdatedAt !== updatedAt) {
+            attempt.logUpdatedAt = updatedAt;
+            const progress = parseRunProgress(readTextTail(path), { repairs: attempt.repairs.budget,
+              running: attempt.status === 'running', status: attempt.status, dependency: sheet.mode === 'dependency' });
+            if (attempt.status === 'running' && !attempt.paused) attempt.phase = progress.phase;
+            attempt.climb = progress.series;
+          }
+        }
+      }
       if (attempt.status !== 'running') continue;
       const snapshot = live.get(attempt.id);
       if (snapshot?.activityUpdatedAt) {
@@ -939,6 +955,22 @@ export function campaignLiveSheet(resultsRoot: string, key: string): CampaignShe
   }
   return sheet;
 }
+
+// Transcript and log updates do not need another graph replay or evidence payload.
+export function campaignLiveUpdate(resultsRoot: string, key: string, options: ViewOptions = {}) {
+  const sheet = campaignLiveSheet(resultsRoot, key, options);
+  const live = campaignLiveCosts(resultsRoot, key);
+  return { updatedAt: sheet.updatedAt, status: sheet.status, stacks: sheet.stacks.map(stack => ({
+    stack: stack.stack, liveSpend: stack.liveSpend ?? null,
+    attempts: stack.attempts.filter(attempt => attempt.executionStartedAt !== null).map(attempt => ({
+      id: attempt.id, phase: attempt.phase, logUpdatedAt: attempt.logUpdatedAt,
+      activityUpdatedAt: attempt.activityUpdatedAt ?? null, stalling: attempt.stalling,
+      climb: attempt.climb, liveSpend: attempt.liveSpend ?? null,
+      liveCosts: attempt.liveSpend === undefined ? [] : live.get(attempt.id)?.costs ?? [],
+    })),
+  })) };
+}
+export type CampaignLiveUpdate = ReturnType<typeof campaignLiveUpdate>;
 
 export function campaignLiveProgression(resultsRoot: string, key: string): CampaignProgression | null {
   const progression = structuredClone(campaignProgression(resultsRoot, key));

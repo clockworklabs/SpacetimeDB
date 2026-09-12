@@ -144,6 +144,9 @@ function writeFakePackageEvidence(output: string, level: MutableLevel,
 }
 
 test('campaign failures prefer the last explicit error over stack and exit noise', () => {
+  assert.equal(processFailureDetail({ error: new Error('invalid planned process pause'),
+    stdoutTail: 'removed the leased run container x' }), 'invalid planned process pause');
+  assert.equal(processFailureDetail({ stdoutTail: 'wiped app\ninterrupted by SIGTERM' }), '');
   const stderrTail = [
     'Error: Command failed: node agent.mjs --large-private-request',
     '[reference-agent] starting',
@@ -801,6 +804,8 @@ test('only explicit transient provider failures receive campaign retry authority
     cause: 'provider-connection-error',
   });
   for (const outcome of [
+    { kind: 'provider_failure', phase: 'coding-session', reason: 'provider-api-error',
+      provider: { providerStatus: 529 } },
     { kind: 'harness_failure', phase: 'coding-session', reason: 'coding-process-killed',
       provider: { providerStatus: null } },
     { kind: 'harness_failure', phase: 'preflight', reason: 'configuration invalid' },
@@ -932,6 +937,30 @@ test('campaign cancellation stops new claims and reaches the active process tree
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('signal interruption preserves unknown cause and supervisor errors remain harness failures', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'campaign-signals-'));
+  try {
+    const state = await executeCampaign(example, root, { mode: 'model-free-trial',
+      admit: () => ({ id: 'signal-admission', payload: { ok: true }, runIndices: [0] }),
+      execute: async () => ({ code: 143, timedOut: false,
+        stdoutTail: 'removed the leased run container x' }) });
+    assert.equal(state.attempts[0]!.executions[0]!.outcome, 'interrupted');
+    assert.match(state.attempts[0]!.executions[0]!.reason!, /SIGTERM; source unknown/);
+    // Unknown interruption stops further dispatch. Test supervisor failure in
+    // a separate campaign so it does not depend on resuming interrupted work.
+    const failureRoot = join(root, 'supervisor-failure');
+    const failureState = await executeCampaign(example, failureRoot, { mode: 'model-free-trial',
+      admit: () => ({ id: 'failure-admission', payload: { ok: true }, runIndices: [0] }),
+      execute: async () => ({ code: 0, timedOut: false,
+        error: new Error('invalid planned process pause') }) });
+    const failed = failureState.attempts[0]!.executions[0]!;
+    assert.equal(failed.outcome, 'harness_failure');
+    assert.match(failed.reason!, /invalid planned process pause/);
+    const evidence = readArtifact(join(failureRoot, failed.output, 'process.json'), { expectedKind: 'campaign_process' });
+    assert.equal(evidence.payload.error, 'invalid planned process pause');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('one campaign runs multiple attempts of the same stack concurrently in isolated slots', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-parallel-'));
   try {
@@ -1015,7 +1044,7 @@ test('failed cleanup leaves supervisor authority reconcilable instead of finaliz
     writeFileSync(campaignPath, `${JSON.stringify(definition, null, 2)}\n`);
     const state = await executeCampaign(campaignPath, results, { mode: 'model-free-trial',
       admit: (plan, directory) => runCampaignAdmission(plan, directory, {
-        env: { STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') }, now: '2026-08-12T00:00:30.000Z', uuid: () => 'cleanup',
+        env: { STACK_BENCH_RUNNER_CAPACITY: '64', STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') }, now: '2026-08-12T00:00:30.000Z', uuid: () => 'cleanup',
         preflight: request => ({ schemaVersion: 1, generatedAt: '2026-08-12T00:00:30.000Z',
           request: { backends: request.backends, track: request.track, levels: request.levelList,
             runIndex: request.runIndex, parallelism: request.parallelism,
@@ -1061,7 +1090,7 @@ test('interrupted parallel work advances only after every exact cleanup is prove
     const initialized = initializeCampaignDirectory(plan, root,
       { now: '2026-08-12T00:00:00.000Z' });
     const admission = await runCampaignAdmission(plan, root, {
-      env: { STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') }, now: '2026-08-12T00:00:30.000Z', uuid: () => 'reconcile',
+      env: { STACK_BENCH_RUNNER_CAPACITY: '64', STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') }, now: '2026-08-12T00:00:30.000Z', uuid: () => 'reconcile',
       preflight: request => ({ schemaVersion: 1, generatedAt: '2026-08-12T00:00:30.000Z',
         request: { backends: request.backends, track: request.track, levels: request.levelList,
           runIndex: request.runIndex, parallelism: request.parallelism,
@@ -1102,7 +1131,7 @@ test('reconciliation accepts the clean public proof left by authenticated recove
     const initialized = initializeCampaignDirectory(plan, root,
       { now: '2026-08-12T00:00:00.000Z' });
     const admission = await runCampaignAdmission(plan, root, {
-      env: { STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') }, now: '2026-08-12T00:00:30.000Z', uuid: () => 'recovered',
+      env: { STACK_BENCH_RUNNER_CAPACITY: '64', STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') }, now: '2026-08-12T00:00:30.000Z', uuid: () => 'recovered',
       preflight: request => ({ schemaVersion: 1, generatedAt: '2026-08-12T00:00:30.000Z',
         request: { backends: request.backends, track: request.track, levels: request.levelList,
           runIndex: request.runIndex, parallelism: request.parallelism,
@@ -1166,7 +1195,7 @@ test('campaign admission covers every stack once per distinct agent adapter and 
     const plan = examplePlan();
     const calls: PreflightRequest[] = [];
     const admission = await runCampaignAdmission(plan, root, {
-      env: { STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') }, now: '2026-08-12T00:00:00.000Z', uuid: () => 'test',
+      env: { STACK_BENCH_RUNNER_CAPACITY: '64', STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') }, now: '2026-08-12T00:00:00.000Z', uuid: () => 'test',
       preflight: request => {
         calls.push(request);
         return { schemaVersion: 1, generatedAt: '2026-08-12T00:00:00.000Z',
@@ -1195,7 +1224,7 @@ test('campaign admission accepts a modular level selection without legacy pack f
     const plan = compileCampaignFile(productBrief);
     const calls: PreflightRequest[] = [];
     const admission = await runCampaignAdmission(plan, root, {
-      env: { STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') }, now: '2026-08-12T00:00:00.000Z', uuid: () => 'modular',
+      env: { STACK_BENCH_RUNNER_CAPACITY: '64', STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') }, now: '2026-08-12T00:00:00.000Z', uuid: () => 'modular',
       preflight: request => {
         calls.push(request);
         return { schemaVersion: 1, generatedAt: '2026-08-12T00:00:00.000Z',

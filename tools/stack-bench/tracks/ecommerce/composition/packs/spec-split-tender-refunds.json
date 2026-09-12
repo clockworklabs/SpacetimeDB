@@ -59,26 +59,6 @@
         "ecommerce.feature.store-credit",
         "ecommerce.progression.support-refunds"
       ]
-    },
-    {
-      "id": "return-refund-interaction",
-      "source": "scenarios/progression-support-return-interaction.json",
-      "feature": 757,
-      "criteria": [
-        "757a",
-        "757b"
-      ],
-      "role": "guarantee",
-      "observations": [
-        "requested",
-        "unmentioned"
-      ],
-      "requiresFeatures": [
-        "ecommerce.feature.split-tender-refunds",
-        "ecommerce.progression.support-refunds",
-        "ecommerce.l3.order-returns-features",
-        "ecommerce.progression.fulfilment-queue"
-      ]
     }
   ]
 }

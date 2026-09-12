@@ -273,7 +273,7 @@ test('pending-work checks cancel or complete the work they create', () => {
 
   const timePack = requiredPack('ecommerce.l3.server-time-specifications');
   const timeSteps = nestedSteps(featureFor(requiredCheck(timePack, 'not-early')));
-  assert(timeSteps.some(step => step.do === 'expectNumber' && step.plus === 4));
+  assert(timeSteps.some(step => step.do === 'dbExpectStock' && step.plus === 4));
   assert.equal(timeSteps.some(step => step.testid === 'pending-restock-remaining'), false);
   assert.equal(lastStep(timeSteps).do, 'expect');
   assert.equal(lastStep(timeSteps).absent, true);
@@ -284,8 +284,18 @@ test('L3 budgets cover declared waits without becoming unbounded estimates', () 
     const declaredDelay = selected.filter(entry => entry.pack.id === pack.id)
       .reduce((total, entry) => {
         const steps = nestedSteps(featureFor(entry.check));
-        const fixed = steps.reduce((sum, step) =>
-          sum + Number(step.ms ?? 0) + Number(step.settleMs ?? 0), 0);
+        let fixed = 0;
+        const recorded = new Map<string, number>();
+        for (const step of steps) {
+          if (step.do === 'recordTime') recorded.set(String(step.as), fixed);
+          if (step.do === 'wait') {
+            if (typeof step.since === 'string') {
+              assert(recorded.has(step.since), `missing clock ${step.since}`);
+              fixed = Math.max(fixed, recorded.get(step.since)! + Number(step.ms));
+            } else fixed += Number(step.ms);
+          }
+          fixed += Number(step.settleMs ?? 0);
+        }
         const longestObservation = Math.max(0, ...steps.map(step => Number(step.within ?? 0)));
         return total + fixed + longestObservation;
       }, 0);

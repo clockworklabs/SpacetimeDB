@@ -10,12 +10,14 @@
   "capabilities": [
     "browser",
     "direct-server-call",
-    "request-replay"
+    "request-replay",
+    "backend-lifecycle"
   ],
   "evidence": [
     "browser-observation",
     "server-response",
-    "database-observation"
+    "database-observation",
+    "fresh-client-observation"
   ],
   "budget": {
     "status": "bounded",
@@ -73,6 +75,99 @@
         ],
         "requiresFeatures": [
           "ecommerce.feature.cart"
+        ]
+      },
+      {
+        "id": "ecommerce.spec.access-control.automatic-reorder-access",
+        "path": "prompts/modular/production-specifications.md",
+        "order": 6001,
+        "from": "## automatic-reorder-access",
+        "until": "## recommendation-profile-isolation",
+        "modes": [
+          "upgrade"
+        ],
+        "requiresFeatures": [
+          "ecommerce.progression.automatic-reorder"
+        ]
+      },
+      {
+        "id": "ecommerce.spec.access-control.recommendation-profile-isolation",
+        "path": "prompts/modular/production-specifications.md",
+        "order": 6002,
+        "from": "## recommendation-profile-isolation",
+        "until": "## staff-activity-privacy",
+        "modes": [
+          "upgrade"
+        ],
+        "requiresFeatures": [
+          "ecommerce.progression.personalized-recommendations"
+        ]
+      },
+      {
+        "id": "ecommerce.spec.access-control.staff-activity-privacy",
+        "path": "prompts/modular/production-specifications.md",
+        "order": 6003,
+        "from": "## staff-activity-privacy",
+        "until": "## order-support-ownership",
+        "modes": [
+          "upgrade"
+        ],
+        "requiresFeatures": [
+          "ecommerce.progression.staff-activity"
+        ]
+      },
+      {
+        "id": "ecommerce.spec.access-control.order-support-ownership",
+        "path": "prompts/modular/production-specifications.md",
+        "order": 6004,
+        "from": "## order-support-ownership",
+        "until": "## delivery-notification-privacy",
+        "modes": [
+          "upgrade"
+        ],
+        "requiresFeatures": [
+          "ecommerce.progression.order-support"
+        ]
+      },
+      {
+        "id": "ecommerce.spec.access-control.delivery-notification-privacy",
+        "path": "prompts/modular/production-specifications.md",
+        "order": 6005,
+        "from": "## delivery-notification-privacy",
+        "until": "## support-refund-access",
+        "modes": [
+          "upgrade"
+        ],
+        "requiresFeatures": [
+          "ecommerce.progression.delivery-notifications",
+          "ecommerce.feature.purchasing",
+          "ecommerce.progression.fulfilment-queue"
+        ]
+      },
+      {
+        "id": "ecommerce.spec.access-control.support-refund-access",
+        "path": "prompts/modular/production-specifications.md",
+        "order": 6006,
+        "from": "## support-refund-access",
+        "until": "## recommendation-feedback-privacy",
+        "modes": [
+          "upgrade"
+        ],
+        "requiresFeatures": [
+          "ecommerce.progression.support-refunds"
+        ]
+      },
+      {
+        "id": "ecommerce.spec.access-control.recommendation-feedback-privacy",
+        "path": "prompts/modular/production-specifications.md",
+        "order": 6007,
+        "from": "## recommendation-feedback-privacy",
+        "until": "## recommendation-feedback-restart",
+        "modes": [
+          "upgrade"
+        ],
+        "requiresFeatures": [
+          "ecommerce.progression.recommendation-feedback"
         ]
       }
     ],
@@ -165,64 +260,113 @@
       "id": "staff-area-boundary",
       "source": "scenarios/progression-staff-access.json",
       "feature": 601,
-      "criteria": ["601b"],
+      "criteria": [
+        "601b"
+      ],
       "role": "guarantee",
-      "observations": ["requested", "unmentioned"],
-      "requiresFeatures": ["ecommerce.progression.staff-access"]
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.progression.staff-access"
+      ]
     },
     {
       "id": "warehouse-area-boundary",
       "source": "scenarios/01-warehouse-admin-staff.json",
       "feature": 7,
-      "criteria": ["7a"],
+      "criteria": [
+        "7a"
+      ],
       "role": "guarantee",
-      "observations": ["requested", "unmentioned"],
-      "requiresFeatures": ["ecommerce.feature.warehouse-admin"]
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.feature.warehouse-admin"
+      ]
     },
     {
       "id": "warehouse-write-boundary",
       "source": "scenarios/01-admin-write-staff.json",
       "feature": 103,
-      "criteria": ["103b"],
+      "criteria": [
+        "103b"
+      ],
       "role": "guarantee",
-      "observations": ["requested", "unmentioned"],
-      "requiresFeatures": ["ecommerce.feature.warehouse-admin"]
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.feature.warehouse-admin"
+      ]
     },
     {
       "id": "fulfilment-area-boundary",
       "source": "scenarios/02-fulfilment-access.json",
       "feature": 1,
-      "criteria": ["1d"],
+      "criteria": [
+        "1d"
+      ],
       "role": "guarantee",
-      "observations": ["requested", "unmentioned"],
-      "requiresFeatures": ["ecommerce.progression.fulfilment-queue"]
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.progression.fulfilment-queue"
+      ]
     },
     {
       "id": "customer-profile-privacy",
       "source": "scenarios/progression-customer-profile.json",
       "feature": 620,
-      "criteria": ["620b"],
+      "criteria": [
+        "620b"
+      ],
       "role": "guarantee",
-      "observations": ["requested", "unmentioned"],
-      "requiresFeatures": ["ecommerce.progression.customer-profile"]
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.progression.customer-profile"
+      ]
     },
     {
       "id": "notification-preferences-privacy",
       "source": "scenarios/progression-notification-preferences.json",
       "feature": 630,
-      "criteria": ["630b"],
+      "criteria": [
+        "630b"
+      ],
       "role": "guarantee",
-      "observations": ["requested", "unmentioned"],
-      "requiresFeatures": ["ecommerce.progression.notification-preferences"]
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.progression.notification-preferences"
+      ]
     },
     {
       "id": "promotion-management-boundary",
       "source": "scenarios/progression-promotion-rules.json",
       "feature": 620,
-      "criteria": ["620b"],
+      "criteria": [
+        "620b"
+      ],
       "role": "guarantee",
-      "observations": ["requested", "unmentioned"],
-      "requiresFeatures": ["ecommerce.progression.promotion-rules"]
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.progression.promotion-rules"
+      ]
     },
     {
       "id": "staff-role-revocation",
@@ -244,37 +388,187 @@
       "id": "staff-role-boundary",
       "source": "scenarios/progression-staff-roles.json",
       "feature": 621,
-      "criteria": ["621b"],
+      "criteria": [
+        "621b"
+      ],
       "role": "guarantee",
-      "observations": ["requested", "unmentioned"],
-      "requiresFeatures": ["ecommerce.progression.staff-roles"]
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.progression.staff-roles"
+      ]
     },
     {
       "id": "support-history-privacy",
       "source": "scenarios/progression-support-history.json",
       "feature": 612,
-      "criteria": ["612b"],
+      "criteria": [
+        "612b"
+      ],
       "role": "guarantee",
-      "observations": ["requested", "unmentioned"],
-      "requiresFeatures": ["ecommerce.progression.support-history"]
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.progression.support-history"
+      ]
     },
     {
       "id": "managed-support-privacy",
       "source": "scenarios/progression-managed-support-privacy.json",
       "feature": 613,
-      "criteria": ["613b"],
+      "criteria": [
+        "613b"
+      ],
       "role": "guarantee",
-      "observations": ["requested", "unmentioned"],
-      "requiresFeatures": ["ecommerce.progression.managed-support"]
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.progression.managed-support"
+      ]
     },
     {
       "id": "stock-alert-privacy",
       "source": "scenarios/progression-stock-alerts.json",
       "feature": 631,
-      "criteria": ["631b"],
+      "criteria": [
+        "631b"
+      ],
       "role": "guarantee",
-      "observations": ["requested", "unmentioned"],
-      "requiresFeatures": ["ecommerce.progression.stock-alerts", "ecommerce.feature.warehouse-admin"]
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.progression.stock-alerts",
+        "ecommerce.feature.warehouse-admin"
+      ]
+    },
+    {
+      "id": "automatic-reorder-access",
+      "stableId": "automatic-reorder-access",
+      "source": "scenarios/progression-automatic-reorder-access.json",
+      "feature": 502,
+      "criteria": [
+        "502c"
+      ],
+      "role": "guarantee",
+      "requiresFeatures": [
+        "ecommerce.progression.automatic-reorder"
+      ],
+      "observations": [
+        "requested",
+        "unmentioned"
+      ]
+    },
+    {
+      "id": "recommendation-profile-isolation",
+      "stableId": "recommendation-profile-isolation",
+      "source": "scenarios/progression-personalized-recommendations.json",
+      "feature": 403,
+      "criteria": [
+        "403b"
+      ],
+      "role": "guarantee",
+      "requiresFeatures": [
+        "ecommerce.progression.personalized-recommendations"
+      ],
+      "observations": [
+        "requested",
+        "unmentioned"
+      ]
+    },
+    {
+      "id": "staff-activity-privacy",
+      "stableId": "staff-activity-privacy",
+      "source": "scenarios/progression-staff-activity.json",
+      "feature": 624,
+      "role": "guarantee",
+      "criteria": [
+        "624b"
+      ],
+      "requiresFeatures": [
+        "ecommerce.progression.staff-activity"
+      ],
+      "observations": [
+        "requested",
+        "unmentioned"
+      ]
+    },
+    {
+      "id": "order-support-ownership",
+      "stableId": "order-support-ownership",
+      "source": "scenarios/progression-order-support-boundary.json",
+      "feature": 614,
+      "criteria": [
+        "614b"
+      ],
+      "role": "guarantee",
+      "requiresFeatures": [
+        "ecommerce.progression.order-support"
+      ],
+      "observations": [
+        "requested",
+        "unmentioned"
+      ]
+    },
+    {
+      "id": "delivery-notification-privacy",
+      "stableId": "delivery-notification-privacy",
+      "source": "scenarios/progression-delivery-notifications.json",
+      "feature": 501,
+      "criteria": [
+        "501b"
+      ],
+      "role": "guarantee",
+      "requiresFeatures": [
+        "ecommerce.progression.delivery-notifications",
+        "ecommerce.feature.purchasing",
+        "ecommerce.progression.fulfilment-queue"
+      ],
+      "observations": [
+        "requested",
+        "unmentioned"
+      ]
+    },
+    {
+      "id": "support-refund-access",
+      "stableId": "support-refund-access",
+      "source": "scenarios/progression-support-refunds-access.json",
+      "feature": 615,
+      "criteria": [
+        "615c"
+      ],
+      "role": "guarantee",
+      "requiresFeatures": [
+        "ecommerce.progression.support-refunds"
+      ],
+      "observations": [
+        "requested",
+        "unmentioned"
+      ]
+    },
+    {
+      "id": "recommendation-feedback-privacy",
+      "stableId": "recommendation-feedback-privacy",
+      "source": "scenarios/progression-recommendation-feedback.json",
+      "feature": 504,
+      "role": "guarantee",
+      "criteria": [
+        "504b"
+      ],
+      "requiresFeatures": [
+        "ecommerce.progression.recommendation-feedback"
+      ],
+      "observations": [
+        "requested",
+        "unmentioned"
+      ]
     }
   ]
 }

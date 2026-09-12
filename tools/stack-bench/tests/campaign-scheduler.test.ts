@@ -39,6 +39,15 @@ const initialState = createCampaignState(compiledExample,
 const plan = () => structuredClone(compiledExample);
 const prepared = () => structuredClone(initialState);
 
+test('campaign parallelism is explicit and does not depend on the host default', () => {
+  const definition = JSON.parse(readFileSync(example, 'utf8'));
+  delete definition.parallelism;
+  assert.throws(() => validateCampaignDefinition(definition, { source: example }), /parallelism/);
+  for (const parallelism of [2, 9, 12]) {
+    assert.equal(validateCampaignDefinition({ ...definition, parallelism }, { source: example }).parallelism, parallelism);
+  }
+});
+
 test('time grants are idempotent requests and retain cumulative elapsed time', () => {
   const directory = mkdtempSync(join(tmpdir(), 'campaign-time-grant-'));
   try {

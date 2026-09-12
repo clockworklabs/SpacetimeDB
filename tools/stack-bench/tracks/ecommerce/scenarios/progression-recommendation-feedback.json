@@ -6,7 +6,7 @@
   "features": [
     {
       "id": 504,
-      "name": "Dismissal is durable and private",
+      "name": "Recommendation dismissal",
       "actors": ["customer", "other"],
       "setup": [
         { "do": "signUp", "actor": "customer", "name": "feedback-owner" },
@@ -20,19 +20,19 @@
       "criteria": [
         {
           "id": "504a",
-          "category": "production",
-          "desc": "a dismissed recommendation stays absent after reload and backend restart in a fresh browser",
+          "category": "feature",
+          "desc": "dismissing a recommendation removes it from the customer view",
           "points": 2,
-          "statedBy": "A dismissed recommendation stays dismissed for that customer.",
+          "statedBy": "Customers can dismiss a recommendation.",
           "steps": [
-            { "do": "reload", "actor": "customer", "settleMs": 3000 },
-            { "do": "ensureSignedIn", "actor": "customer", "name": "feedback-owner", "readyTestid": "current-user" },
-            { "do": "expect", "actor": "customer", "testid": "recommended-item", "contains": "Headphones", "absent": true },
-            { "do": "restartBackend", "settleMs": 1000 },
-            { "do": "freshClient", "actor": "customer" },
-            { "do": "signIn", "actor": "customer-fresh", "name": "feedback-owner" },
-            { "do": "expect", "actor": "customer-fresh", "testid": "recommendations", "within": 10000 },
-            { "do": "expect", "actor": "customer-fresh", "testid": "recommended-item", "contains": "Headphones", "absent": true }
+            {
+              "do": "expect",
+              "actor": "customer",
+              "testid": "recommended-item",
+              "contains": "Headphones",
+              "absent": true,
+              "within": 10000
+            }
           ]
         },
         {
@@ -42,8 +42,72 @@
           "points": 2,
           "statedBy": "Recommendation feedback belongs to one customer.",
           "steps": [
-            { "do": "waitUntilAbsent", "actor": "customer", "testid": "recommended-item", "contains": "Headphones", "within": 10000 },
-            { "do": "expect", "actor": "other", "testid": "recommended-item", "contains": "Headphones" }
+            {
+              "do": "waitUntilAbsent",
+              "actor": "customer",
+              "testid": "recommended-item",
+              "contains": "Headphones",
+              "within": 10000
+            },
+            {
+              "do": "expect",
+              "actor": "other",
+              "testid": "recommended-item",
+              "contains": "Headphones"
+            }
+          ]
+        },
+        {
+          "id": "504c",
+          "category": "production",
+          "desc": "a dismissed recommendation stays absent after reload and backend restart in a fresh browser",
+          "points": 2,
+          "statedBy": "A dismissed recommendation stays dismissed for that customer.",
+          "steps": [
+            {
+              "do": "reload",
+              "actor": "customer",
+              "settleMs": 3000
+            },
+            {
+              "do": "ensureSignedIn",
+              "actor": "customer",
+              "name": "feedback-owner",
+              "readyTestid": "current-user"
+            },
+            {
+              "do": "expect",
+              "actor": "customer",
+              "testid": "recommended-item",
+              "contains": "Headphones",
+              "absent": true
+            },
+            {
+              "do": "restartBackend",
+              "settleMs": 1000
+            },
+            {
+              "do": "freshClient",
+              "actor": "customer"
+            },
+            {
+              "do": "signIn",
+              "actor": "customer-fresh",
+              "name": "feedback-owner"
+            },
+            {
+              "do": "expect",
+              "actor": "customer-fresh",
+              "testid": "recommendations",
+              "within": 10000
+            },
+            {
+              "do": "expect",
+              "actor": "customer-fresh",
+              "testid": "recommended-item",
+              "contains": "Headphones",
+              "absent": true
+            }
           ]
         }
       ]

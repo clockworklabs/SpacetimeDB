@@ -118,7 +118,7 @@ export default function OrdersPanel({ orders, onClose, onCancel, onReturn, onRet
                       {item.name} × {item.quantity}
                       {item.returned && <span className="badge badge-muted" style={{ marginLeft: 6 }}>Returned</span>}
                     </span>
-                    {order.status === 'shipped' && !item.returned && !item.isBundle && (
+                    {['shipped', 'delivered'].includes(order.status) && !item.returned && !item.isBundle && (
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"

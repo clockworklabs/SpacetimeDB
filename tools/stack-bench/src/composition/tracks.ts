@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
+import { RESTRICTED_PORTS } from './product-config.js';
 import { compileTrackManifest } from './definition-compiler.js';
 import type { StackRunPorts } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
@@ -151,17 +152,6 @@ export function portsFor(track: TrackDefinition, backend: string, runIndex: numb
   }
   return ports;
 }
-
-// Actual host ports are leased atomically, including overlaps between indices.
-// Browsers and the Fetch standard refuse connections to these ports; an
-// application leased one of them can never be reached by the grader.
-export const RESTRICTED_PORTS: ReadonlySet<number> = new Set([
-  1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95, 101, 102,
-  103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179, 389, 427, 465,
-  512, 513, 514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990, 993,
-  995, 1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668,
-  6669, 6679, 6697, 10080,
-]);
 
 // Keep builds outside the harness tree and below the platform path limit.
 export function workRoot(): string {

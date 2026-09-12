@@ -56,20 +56,6 @@
         "ecommerce.feature.purchasing",
         "ecommerce.progression.fulfilment-queue"
       ]
-    },
-    {
-      "id": "privacy",
-      "stableId": "delivery-notification-privacy",
-      "source": "scenarios/progression-delivery-notifications.json",
-      "feature": 501,
-      "criteria": [
-        "501b"
-      ],
-      "role": "feature",
-      "requiresFeatures": [
-        "ecommerce.feature.purchasing",
-        "ecommerce.progression.fulfilment-queue"
-      ]
     }
   ]
 }

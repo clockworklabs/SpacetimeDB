@@ -174,6 +174,7 @@ interface CampaignReportExecution {
   firstBuildObservations: CampaignRunObservationSummary | null;
   metrics?: Record<string, number | null> | null;
   cost: CostEvidence;
+  recorded?: CostEvidence;
   usage: ExecutionUsage;
   providerContinuation?: HistoricalProviderContinuation | null;
   providerWaits?: ProviderWaitSummary | null;
@@ -786,6 +787,7 @@ export function validateCampaignReport(input: unknown): CampaignReport {
         throw new Error(`campaign report.attempts[${index}].executions[${executionIndex}] is invalid`);
       }
       costEvidenceSchema.parse(execution.cost);
+      if (execution.recorded !== undefined) costEvidenceSchema.parse(execution.recorded);
       if (execution.providerContinuation) {
         const assessment = execution.providerContinuation;
         if (assessment.eligible !== false || !['paid', 'zero-usage-candidate', 'unknown'].includes(assessment.work)
@@ -873,7 +875,7 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
         admissionId: execution.admissionId,
         admissionEvidence: `admissions/${execution.admissionId}.json`,
         cost: retainedCost?.cost ?? runCostEvidence(run, 'execution'),
-        recorded: retainedCost?.recorded,
+        ...(retainedCost ? { recorded: retainedCost.recorded } : {}),
         usage: executionUsage(run),
         providerContinuation: ['running', 'pending'].includes(execution.status)
           ? null : assessStoppedProviderContinuation(run),

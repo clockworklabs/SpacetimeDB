@@ -145,6 +145,13 @@ const brokerLedgerSchema = z.strictObject({
     category: z.enum(['rate-limit', 'quota', 'authentication', 'transport', 'request', 'broker-budget']),
     status: z.number().int().min(100).max(599).nullable(),
     code: z.string().regex(/^[a-zA-Z0-9_.-]{1,100}$/).nullable(),
+    budget: z.strictObject({
+      maxBudgetUsd: positiveFinite,
+      spentUsd: nonNegativeFinite,
+      estimatedSpendUsd: nonNegativeFinite,
+      reservedUsd: nonNegativeFinite,
+      requestCeilingUsd: nonNegativeFinite,
+    }).optional(),
   }).nullable().optional(),
   schemaVersion: z.literal(BROKER_LEDGER_SCHEMA_VERSION),
   model: z.string().min(1),

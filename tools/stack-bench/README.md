@@ -157,7 +157,7 @@ or OpenRouter through the [appliance credential guide](appliance/README.md#opena
 Current grading profiles are provisional until their qualification gates pass.
 
 The dashboard refreshes visible running campaigns every five seconds and follows
-saved evidence events. For single-execution Claude Code attempts, `~$` marks a
+saved evidence events. For single-execution Claude Code and Codex attempts, `~$` marks a
 live estimate from completed response usage at the plan's pinned rates. Final
 receipts replace that estimate. Unsupported or incomplete usage keeps the saved
 cost visible. Live estimates do not enter scores, reports, or budget enforcement.

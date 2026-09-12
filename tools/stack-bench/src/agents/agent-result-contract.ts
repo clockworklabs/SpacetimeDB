@@ -313,7 +313,7 @@ export function agentSessionFailure(value: unknown): AgentSessionFailure | null 
   const providerMetadata = object(result.providerMetadata) ? result.providerMetadata : null;
   const failureCode = providerMetadata?.failureCode;
   const diagnostic = providerMetadata?.diagnostic;
-  const kind = typeof failureCode === 'string' && failureCode.startsWith('provider-')
+  const kind = typeof failureCode === 'string' && (failureCode.startsWith('provider-') || failureCode === 'broker-budget')
     ? 'provider_failure' : 'harness_failure';
   return { kind, phase: 'coding-session',
     reason: typeof diagnostic === 'string' && diagnostic ? diagnostic

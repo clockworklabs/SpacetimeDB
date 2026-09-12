@@ -543,6 +543,33 @@ test('only a completed repair can count as a repeated finding', () => {
   assert.equal(state.nodes.accounts!.exhaustionReason, 'repeated-findings');
 });
 
+test('setup recovery is progress once; cycling through blocked and failed findings stops', () => {
+  const definition = fixture();
+  definition.unchangedFailureLimit = 3;
+  definition.repair.budget = { perFeature: 10 };
+  let state = progressionEngine.initialize(definition);
+  state = progressionEngine.recordResult(state, grade(state, 'initial-blocked', {
+    accounts: 'blocked', catalog: 'pass',
+  }));
+  state = progressionEngine.recordResult(state, repairedGrade(state, 'setup-recovered', {
+    accounts: 'fail', catalog: 'pass',
+  }));
+  assert.equal(state.nodes.accounts!.unchangedFailure.count, 1);
+  state = progressionEngine.recordResult(state, repairedGrade(state, 'setup-broken-again', {
+    accounts: 'blocked', catalog: 'pass',
+  }));
+  assert.equal(state.nodes.accounts!.unchangedFailure.count, 2);
+  state = progressionEngine.recordResult(state, {
+    attemptId: 'inconclusive', outcome: 'inconclusive', category: 'harness_failure', reason: 'browser crashed',
+  });
+  assert.equal(state.nodes.accounts!.unchangedFailure.count, 2);
+  state = progressionEngine.recordResult(state, repairedGrade(state, 'setup-recovered-again', {
+    accounts: 'fail', catalog: 'pass',
+  }));
+  assert.equal(state.nodes.accounts!.exhaustionReason, 'repeated-findings');
+  assert.deepEqual(progressionEngine.replay(definition, state.events), state);
+});
+
 test('repair order follows dependency depth, then the declared catalog order', () => {
   // The queue repairs the first failed feature by depth, then declared order,
   // until it passes or stops, then moves to the next. Alphabetical id order

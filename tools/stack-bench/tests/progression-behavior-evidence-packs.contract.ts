@@ -28,8 +28,8 @@ function fragmentText(
   return resolveTaskFragment(fragment, { trackRoot, source: fragment.id }).text;
 }
 
-function featureFor(pack: CompiledPackDefinition): CompiledFeature {
-  const check = pack.checks[0];
+function featureFor(pack: CompiledPackDefinition, checkId?: string): CompiledFeature {
+  const check = checkId === undefined ? pack.checks[0] : pack.checks.find(check => check.id === checkId);
   if (!check) throw new Error(`${pack.id} must have a check`);
   const source = check.source;
   const scenario = compileScenarioDefinition(readJson(join(trackRoot, source)), { source });
@@ -56,7 +56,7 @@ test('the three behavior packs have isolated, non-prescriptive contracts', () =>
       assert.equal(fragment.until, undefined);
     }
     const text = `${fragmentText(requiredRequirement(pack))}\n${fragmentText(requiredContract(pack))}`;
-    assert.doesNotMatch(text, /framework|ORM|database|websocket|table|query|endpoint/i);
+    assert.doesNotMatch(text, /\b(?:framework|ORM|database|websocket|table|query|endpoint)\b/i);
   }
   assert.equal(new Set(packs.map(pack => requiredRequirement(pack).path)).size, packs.length);
   assert.equal(new Set(packs.map(pack => requiredContract(pack).path)).size, packs.length);
@@ -79,18 +79,37 @@ test('the three behavior packs declare exact dependencies and check ownership', 
 
   assert.deepEqual(reorder.checks
     .map(check => [check.id, check.criteria]),
-  [['threshold', ['502a', '502b']], ['access', ['502c']]]);
+  [['threshold', ['502a']]]);
   assert.deepEqual(recovery.checks
     .map(check => [check.id, check.criteria]),
   [['available', ['503a']], ['partial', ['503b']]]);
   assert.deepEqual(recommendations.checks
     .map(check => [check.id, check.criteria]),
-  [['ordering', ['403a']], ['isolation', ['403b']]]);
+  [['ordering', ['403a']]]);
+
+  const access = readPack('spec-access-control.json');
+  const integrity = readPack('spec-transactional-integrity.json');
+  for (const [owner, group, ids, required] of [
+    [access, 'automatic-reorder-access', ['502c'], reorder.id],
+    [integrity, 'automatic-reorder-deduplication', ['502b'], reorder.id],
+    [access, 'recommendation-profile-isolation', ['403b'], recommendations.id],
+  ] as const) {
+    const check = owner.checks.find(check => check.id === group);
+    assert(check, `${owner.id} owns ${group}`);
+    assert.equal(owner.moduleType, 'specification');
+    assert.equal(check.role, 'guarantee');
+    assert.deepEqual(check.criteria, ids);
+    assert(check.requiresFeatures?.includes(required));
+    assert.deepEqual(featureFor(owner, group).criteria.filter(criterion => ids.some(id => id === criterion.id))
+      .map(criterion => criterion.id), ids);
+  }
 
   for (const pack of packs.values()) {
     const feature = featureFor(pack);
     const criteria = new Set(feature.criteria.map(item => item.id));
-    const selected = pack.checks.flatMap(check => {
+    const source = pack.checks[0]!.source;
+    const selected = [pack, access, integrity].flatMap(owner => owner.checks)
+      .filter(check => check.source === source && check.feature === feature.id).flatMap(check => {
       if (!check.criteria) throw new Error(`${pack.id}.${check.id} must select criteria`);
       return check.criteria;
     });
@@ -106,16 +125,25 @@ test('automatic reorder proves staff access and rejects a customer replay', () =
     && step.item === 'Desk Lamp').reduce((total, step) =>
     total + (typeof step.quantity === 'number' ? step.quantity : 0), 0), 3);
   assert(feature.setup.some(step => step.do === 'signIn' && step.actor === 'staff'));
-  assert(feature.setup.some(step => step.do === 'click' && step.actor === 'staff'
-    && step.testid === 'reorder-submit'));
-  const access = criterion(feature, '502c').steps;
+  assert(feature.setup.some(step => step.do === 'callAction' && step.actor === 'staff'
+    && step.action === 'saveReorderRule' && step.input?.testid === 'reorder-submit'));
+  assert(feature.setup.some(step => step.do === 'expectActionOutcome' && step.actor === 'staff'
+    && step.outcome === 'accepted'));
+  const accessFeature = featureFor(readPack('spec-access-control.json'), 'automatic-reorder-access');
+  assert(accessFeature.setup.some(step => step.do === 'expectActionOutcome'
+    && step.actor === 'staff' && step.outcome === 'accepted'));
+  const access = criterion(accessFeature, '502c').steps;
   assert(access.some(step => step.do === 'expect' && step.actor === 'customer'
     && step.testid === 'reorder-link' && step.absent === true));
-  assert(access.some(step => step.do === 'replayAs' && step.actor === 'customer'
-    && step.from === 'staff'));
-  assert(access.some(step => step.do === 'expectReplayRejected' && step.actor === 'customer'));
-  assert(access.some(step => step.do === 'expectElementCount'
-    && step.testid === 'reorder-rule-item' && step.equals === 1));
+  assert(access.some(step => step.do === 'callAction' && step.actor === 'customer'
+    && step.from === 'staff' && step.action === 'saveReorderRule'));
+  assert(access.some(step => step.do === 'expectActionOutcome' && step.actor === 'customer'
+    && step.outcome === 'refused' && step.routeProvenBy === 'staff'));
+  assert(access.some(step => step.do === 'expect'
+    && step.testid === 'reorder-rule-item' && step.count === 1
+    && step.attribute === 'data-threshold' && step.value === '2'));
+  assert(access.some(step => step.do === 'expect'
+    && step.testid === 'reorder-rule-item' && step.attribute === 'data-quantity' && step.value === '5'));
 });
 
 test('cart recovery proves complete and partial restoration', () => {

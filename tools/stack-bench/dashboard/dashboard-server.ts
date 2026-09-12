@@ -13,7 +13,7 @@ import { contained, discoverPlans, readCampaignArtifactBody,
   readJsonLines, resolveCampaignArtifact, summarizeCampaign,
 } from './dashboard-model.js';
 import type { DashboardPlan } from './dashboard-model.js';
-import { attemptTranscript, attemptChecks, attemptLogSlice, attemptPackage, campaignLiveProgression, campaignLiveSheet,
+import { attemptTranscript, attemptChecks, attemptLogSlice, attemptPackage, campaignLiveProgression, campaignLiveSheet, campaignLiveUpdate,
   overviewSummary } from './dashboard-views.js';
 import { watchCampaigns } from './dashboard-events.js';
 import type { CampaignChange, CampaignWatcher } from './dashboard-events.js';
@@ -497,6 +497,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
         }
         try {
           if (!rest) return json(response, 200, await campaignLiveSheet(resultsRoot, key));
+          if (rest === 'live') return json(response, 200, campaignLiveUpdate(resultsRoot, key));
           if (rest === 'progression') {
             const progression = await campaignLiveProgression(resultsRoot, key);
             return progression

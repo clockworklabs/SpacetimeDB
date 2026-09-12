@@ -45,7 +45,11 @@ test('PostgreSQL reference starts its schema through the normal startup path', a
   assert.equal(starts[0]?.[4]?.script, 'start');
   const serverPackage = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
     'reference-apps/ecommerce/postgres/server/package.json'), 'utf8'));
-  assert.equal(serverPackage.scripts.prestart, 'drizzle-kit push --force');
+  assert.equal(serverPackage.scripts.prestart, undefined, 'restarts must not push over extension data');
+  const serverSource = readFileSync(join(STACK_BENCH_ROOT,
+    'reference-apps/ecommerce/postgres/server/src/index.ts'), 'utf8');
+  const initialize = serverSource.indexOf('await initializeCoreSchema()');
+  assert(initialize >= 0 && initialize < serverSource.indexOf('httpServer.listen('));
   assert(serverPackage.devDependencies['drizzle-kit']);
 
 });

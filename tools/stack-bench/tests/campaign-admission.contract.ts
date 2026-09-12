@@ -12,6 +12,21 @@ import type { CampaignAdmissionPreflightRequest }
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 const createdAt = '2026-08-27T12:00:00.000Z';
+
+test('single-attempt admission rejects an impossible full campaign parallelism', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'campaign-capacity-plan-'));
+  try {
+    const source = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, 'tests/fixtures/campaign.deterministic.json'), 'utf8'));
+    source.parallelism = 2;
+    const path = join(root, 'plan.json');
+    writeFileSync(path, JSON.stringify(source));
+    const plan = compileCampaignFile(path);
+    await assert.rejects(runCampaignAdmission(plan, root, {
+      attempt: plan.attempts[0], env: { STACK_BENCH_RUNNER_CAPACITY: '1' },
+      preflight: () => { throw new Error('must reject before preflight'); },
+    }), /requested parallelism 2 exceeds Docker host capacity 1/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 const passingPreflight = (request: CampaignAdmissionPreflightRequest) => ({
   schemaVersion: 1 as const,
   generatedAt: createdAt,
@@ -41,7 +56,7 @@ test('campaign admission receives only the feature catalog levels in the compile
     const requests: CampaignAdmissionPreflightRequest[] = [];
     const result = await runCampaignAdmission(plan, root, {       now: createdAt,
       uuid: () => 'scoped',
-      env: { STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') },
+      env: { STACK_BENCH_RUNNER_CAPACITY: '64', STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') },
       preflight: request => {
         requests.push(request);
         return passingPreflight(request);
@@ -74,7 +89,7 @@ test('campaign admission selects a free run slot', { skip: process.platform !== 
     let portProbes = 0;
     const result = await runCampaignAdmission(plan, root, {       now: createdAt,
       uuid: () => 'free-slot',
-      env: { STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') },
+      env: { STACK_BENCH_RUNNER_CAPACITY: '64', STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') },
       probePort: () => ({ free: ++portProbes > 1 }),
       preflight: request => {
         requests.push(request);
@@ -130,7 +145,7 @@ test('occupied-port scans yield to cancellation before exhausting the TCP range'
     const plan = compileCampaignFile(join(STACK_BENCH_ROOT, 'tests', 'fixtures', 'campaign.deterministic.json'));
     let probes = 0;
     await assert.rejects(runCampaignAdmission(plan, root, {
-      signal: controller.signal, env: { STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') },
+      signal: controller.signal, env: { STACK_BENCH_RUNNER_CAPACITY: '64', STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') },
       probePort: () => {
         if (++probes === 1) setImmediate(() => controller.abort());
         return { free: false };
@@ -150,7 +165,7 @@ test('cancellation after reservation releases exact owned locks before admission
     try {
       const plan = compileCampaignFile(join(STACK_BENCH_ROOT, 'tests', 'fixtures', 'campaign.deterministic.json'));
       await assert.rejects(runCampaignAdmission(plan, root, {
-        signal: controller.signal, env: { STACK_BENCH_RESOURCE_LOCK_DIR: locks },
+        signal: controller.signal, env: { STACK_BENCH_RUNNER_CAPACITY: '64', STACK_BENCH_RESOURCE_LOCK_DIR: locks },
         probePort: () => ({ free: true }),
         preflight: request => { controller.abort(); return passingPreflight(request); },
       }), { name: 'AbortError' });

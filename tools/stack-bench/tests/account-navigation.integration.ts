@@ -387,15 +387,17 @@ test('promotions follow the staff path and delivery setup returns from persisten
   } finally { await browser.close(); }
 });
 
-test('conditional navigation opens translated drawers but preserves below-fold inline content', async () => {
+test('conditional navigation opens closed drawers and preserves inline or animated open panels', async () => {
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
-    for (const layout of ['closed-drawer', 'open-drawer', 'below-fold', 'clipped'] as const) {
+    for (const layout of ['closed-drawer', 'open-drawer', 'animated-open', 'below-fold', 'clipped'] as const) {
       await page.setContent(`<style>
         #panel { ${layout === 'below-fold' ? 'margin-top:1600px' : layout === 'clipped' ? 'height:100px' : 'position:fixed;right:0;top:0;width:200px;height:200px'} }
         .closed { transform:translateX(100%) }
         .clipped { height:0;overflow:clip }
+        @keyframes moving { from { transform:translateY(0) } to { transform:translateY(20px) } }
+        ${layout === 'animated-open' ? '[data-role="order-item"] { display:inline-block; animation:moving .5s infinite alternate linear }' : ''}
       </style><button id="orders-toggle" onclick="document.body.dataset.clicked='true';document.querySelector('#panel').classList.toggle('closed',false);document.querySelector('#wrapper').classList.remove('clipped')">Orders</button>
       <div id="wrapper" class="${layout === 'clipped' ? 'clipped' : ''}"><section id="panel" class="${layout === 'closed-drawer' ? 'closed' : ''}"><span data-role="order-item">Keyboard</span><button id="cancel-order">Cancel</button></section></div>`);
       const actor = { page, loc: (id: string) => page.locator(stableElementSelector(id)).filter({ visible: true }).first() };
@@ -409,6 +411,28 @@ test('conditional navigation opens translated drawers but preserves below-fold i
       assert.equal(await page.locator('body').getAttribute('data-clicked'), ['closed-drawer', 'clipped'].includes(layout) ? 'true' : null);
       await actor.loc('cancel-order').click({ timeout: 1000 });
       if (layout === 'below-fold') assert((await page.locator('#panel').boundingBox())!.y < 600, 'inline content was scrolled into view');
+    }
+  } finally { await browser.close(); }
+});
+
+test('return observation accepts a line marker only within the selected order', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    for (const returned of [false, true]) {
+      await page.setContent(`<article data-role="order-item">Keyboard
+        <span data-role="order-status">shipped</span>${returned ? '<span>Returned</span>' : ''}</article>
+        <article data-role="order-item">Desk Lamp <span>Returned</span></article>`);
+      const actor = { page, loc: (id: string, options?: { contains?: string }) =>
+        page.locator(stableElementSelector(id)).filter({ hasText: options?.contains, visible: true }).first() };
+      const result = await executeAction(ACTION_REGISTRY, 'expect', {
+        do: 'expect', actor: 'customer', testid: 'order-item', contains: 'Keyboard',
+        containsText: 'returned', ignoreCase: true, within: 50,
+      }, { capabilities: { actors: { get: () => actor }, 'browser-observation': {
+        defaultWithin: 50, expand: (value: string) => value, testId: stableElementSelector,
+        sleep: (ms: number) => page.waitForTimeout(ms),
+      } } });
+      assert.equal(result.status, returned ? 'passed' : 'failed', result.summary ?? undefined);
     }
   } finally { await browser.close(); }
 });
