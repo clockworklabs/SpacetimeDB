@@ -1,4 +1,6 @@
 import type { Request, RequestHandler, Response } from "express";
+import { releaseBundle, reserveBundle } from "./bundles.js";
+import { refundCredit, spendCredit } from "./credit.js";
 import type { Express } from "express";
 import type { Pool, PoolClient } from "pg";
 import type { Server as SocketIOServer, Socket } from "socket.io";
@@ -339,6 +341,12 @@ async function processStockAlerts(client: PoolClient | Pool, itemId: number) {
 }
 
 async function releaseReservation(client: PoolClient, cartItemId: number) {
+  const bundle = await client.query("SELECT component_allocations FROM cart_item WHERE id=$1 FOR UPDATE", [cartItemId]);
+  if (bundle.rows[0]?.component_allocations.length) {
+    await releaseBundle(client, bundle.rows[0].component_allocations);
+    await client.query("UPDATE cart_item SET component_allocations='[]'::jsonb WHERE id=$1", [cartItemId]);
+  }
+
   const allocations = await client.query(
     `DELETE FROM cart_reservation_allocation WHERE cart_item_id = $1
      RETURNING warehouse_id, quantity`,
@@ -397,9 +405,10 @@ export function registerProgression(app: Express, dependencies: Dependencies) {
 
   app.put("/api/staff/:id/role", dependencies.requireAdmin, asyncRoute(async (req, res) => {
     const role = String(req.body?.role ?? "").trim();
+    if (!["staff", "inventory", "admin"].includes(role)) { res.status(400).json({ error: "Invalid staff role" }); return; }
     const targetId = Number(req.params.id);
     const updated = await deps.pool.query(
-      `UPDATE account SET staff_role = $1 WHERE id = $2 AND is_staff = true RETURNING username`,
+      `UPDATE account SET staff_role = $1, is_admin = ($1 = 'admin') WHERE id = $2 AND is_staff = true RETURNING username`,
       [role, targetId],
     );
     if (updated.rowCount === 0) { res.status(404).json({ error: "staff account not found" }); return; }
@@ -504,12 +513,13 @@ export function registerProgression(app: Express, dependencies: Dependencies) {
       const support = await client.query(`SELECT * FROM support_case WHERE id = $1 FOR UPDATE`, [caseId]);
       if (!support.rows[0]?.order_id) { await client.query("ROLLBACK"); res.status(409).json({ error: "case has no order" }); return; }
       const order = await client.query(`SELECT * FROM orders WHERE id = $1 FOR UPDATE`, [support.rows[0].order_id]);
-      if (Number(order.rows[0].refund_total) > 0) { await client.query("ROLLBACK"); res.status(409).json({ error: "order already refunded" }); return; }
-      const amount = Number(order.rows[0].payment_amount || order.rows[0].total);
+      if (order.rows[0].status === 'cancelled' || Number(support.rows[0].refund_total) > 0) { await client.query("ROLLBACK"); res.status(409).json({ error: "order already refunded" }); return; }
+      const amount = Number(order.rows[0].total) - Number(order.rows[0].refund_total);
       accountId = order.rows[0].account_id;
-      await client.query(`UPDATE orders SET refund_total = $1 WHERE id = $2`, [amount, order.rows[0].id]);
+      await refundCredit(client, order.rows[0]);
+      await client.query(`UPDATE orders SET refund_total = total, status = CASE WHEN status='pending' THEN 'refunded' ELSE status END WHERE id = $1`, [order.rows[0].id]);
       await client.query(`UPDATE support_case SET refund_total = $1, status = 'resolved', updated_at = now() WHERE id = $2`, [amount, caseId]);
-      await client.query(`INSERT INTO refund_entry (order_id, support_case_id, amount) VALUES ($1, $2, $3)`, [order.rows[0].id, caseId, amount]);
+      if (amount > 0) await client.query(`INSERT INTO refund_entry (order_id, support_case_id, amount) VALUES ($1, $2, $3)`, [order.rows[0].id, caseId, amount]);
       await recordActivity(client, req.account!.id, "refund order", String(order.rows[0].id));
       await client.query("COMMIT");
     } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
@@ -630,7 +640,18 @@ export function registerProgression(app: Express, dependencies: Dependencies) {
          ON CONFLICT (account_id) DO UPDATE SET last_activity = now(), expired_at = null RETURNING id`,
         [req.account!.id],
       );
-      for (const saved of expired.rows[0].items as Array<{ itemId: number; name: string; quantity: number }>) {
+      for (const saved of expired.rows[0].items as Array<{ itemId: number; name: string; quantity: number; bundlePrice?: number; bundleComponentsJson?: string }>) {
+        if (saved.bundleComponentsJson) {
+          await client.query('SAVEPOINT restore_bundle');
+          try {
+            const existing=await client.query('SELECT id FROM cart_item WHERE cart_id=$1 AND item_id=$2',[cartResult.rows[0].id,saved.itemId]);
+            if(existing.rows.length) throw new Error('Bundle already in cart');
+            const allocations = await reserveBundle(client, JSON.parse(saved.bundleComponentsJson));
+            await client.query(`INSERT INTO cart_item(cart_id,item_id,quantity,bundle_price,bundle_components_json,component_allocations,reserved_until,expired)
+              VALUES($1,$2,1,$3,$4,$5,now()+interval '90 seconds',false)`,[cartResult.rows[0].id,saved.itemId,saved.bundlePrice,saved.bundleComponentsJson,JSON.stringify(allocations)]);
+          }catch(error){await client.query('ROLLBACK TO SAVEPOINT restore_bundle');unavailable.push(saved.name);}
+          await client.query('RELEASE SAVEPOINT restore_bundle');continue;
+        }
         const inserted = await client.query(
           `INSERT INTO cart_item (cart_id, item_id, quantity, reserved_until, expired)
            VALUES ($1, $2, $3, now() + interval '90 seconds', false)
@@ -697,13 +718,13 @@ export async function processProgressionTimers() {
     );
     for (const cart of expiredCarts.rows) {
       const lines = await client.query(
-        `SELECT ci.id, ci.item_id, i.name, ci.quantity, ci.expired FROM cart_item ci JOIN item i ON i.id = ci.item_id
+        `SELECT ci.id, ci.item_id, i.name, ci.quantity, ci.expired, ci.bundle_price, ci.bundle_components_json FROM cart_item ci JOIN item i ON i.id = ci.item_id
          WHERE ci.cart_id = $1 FOR UPDATE OF ci`, [cart.id]);
       for (const line of lines.rows.filter((entry) => !entry.expired)) {
         await releaseReservation(client, line.id);
       }
       await client.query(`INSERT INTO expired_cart (account_id, items) VALUES ($1, $2)`,
-        [cart.account_id, JSON.stringify(lines.rows.map((line) => ({ itemId: line.item_id, name: line.name, quantity: line.quantity })))]);
+        [cart.account_id, JSON.stringify(lines.rows.map((line) => ({ itemId: line.item_id, name: line.name, quantity: line.quantity, bundlePrice: line.bundle_price, bundleComponentsJson: line.bundle_components_json })))]);
       await client.query(`DELETE FROM cart_item WHERE cart_id = $1`, [cart.id]);
       await client.query(`UPDATE cart SET expired_at = now() WHERE id = $1`, [cart.id]);
       changedAccounts.add(cart.account_id); catalogChanged = true;
@@ -827,7 +848,7 @@ export async function removeReservedCartItem(accountId: number, itemId: number) 
   } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
 }
 
-export async function checkoutReservedCart(accountId: number) {
+export async function checkoutReservedCart(accountId: number, useCredit = false) {
   const client = await deps.pool.connect();
   try {
     await client.query("BEGIN");
@@ -835,7 +856,7 @@ export async function checkoutReservedCart(accountId: number) {
       `SELECT id, promotion_id FROM cart WHERE account_id = $1 FOR UPDATE`, [accountId]);
     if (!cart.rows[0]) throw new Error("cart is empty");
     const lines = await client.query(
-      `SELECT ci.id, ci.item_id, ci.quantity, ci.expired, ci.reserved_until, i.name, i.price
+      `SELECT ci.id, ci.item_id, ci.quantity, ci.expired, ci.reserved_until, ci.bundle_price, ci.component_allocations, i.name, COALESCE(ci.bundle_price,i.price) AS price
        FROM cart_item ci JOIN item i ON i.id = ci.item_id
        WHERE ci.cart_id = $1 ORDER BY ci.item_id FOR UPDATE OF ci`, [cart.rows[0].id]);
     if (lines.rows.length === 0) throw new Error("cart is empty");
@@ -861,7 +882,15 @@ export async function checkoutReservedCart(accountId: number) {
        VALUES ($1, $2, 'pending', $3, $4, 'paid', $2) RETURNING id`,
       [accountId, total, promotionId, discount],
     );
+    const totalMinor = Math.round(total * 100);
+    const creditMinor = useCredit ? await spendCredit(client, accountId, totalMinor, created.rows[0].id) : 0;
+    await client.query("UPDATE orders SET credit_minor=$1,external_minor=$2 WHERE id=$3", [creditMinor,totalMinor-creditMinor,created.rows[0].id]);
     for (const line of lines.rows) {
+      if (line.bundle_price !== null) {
+        if (!line.component_allocations.length) throw new Error("Bundle reservation incomplete");
+        await client.query(`INSERT INTO order_item(order_id,item_id,item_name,quantity,price,warehouse_id,is_bundle,component_allocations) VALUES($1,$2,$3,1,$4,$5,true,$6)`, [created.rows[0].id,line.item_id,line.name,line.price,line.component_allocations[0].warehouseId,JSON.stringify(line.component_allocations)]);
+        continue;
+      }
       const allocations = await client.query(
         `SELECT warehouse_id, quantity FROM cart_reservation_allocation WHERE cart_item_id = $1 ORDER BY warehouse_id`,
         [line.id],

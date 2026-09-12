@@ -17,7 +17,7 @@ test('grader context cleanup records browser failures instead of throwing away t
     delete: async () => { throw new Error('video already removed'); },
   };
   const failures = await closeActorContexts([
-    { context, name: 'buyer', page: { video: () => video } },
+    { context, name: 'buyer', page: { video: () => video }, traceStarted: true },
   ], { trace: true, media: '/tmp/media', slug: 'account-create' });
 
   assert.deepEqual(failures.map(failure => failure.stage),
@@ -26,7 +26,7 @@ test('grader context cleanup records browser failures instead of throwing away t
 });
 
 test('grader context cleanup stays silent when cleanup succeeds', async () => {
-  const context = { tracing: { stop: async () => {} }, close: async () => {} };
+  const context = { tracing: { stop: async () => { throw new Error('trace was never started'); } }, close: async () => {} };
   const failures = await closeActorContexts([
     { context, name: 'buyer', page: { video: () => null } },
   ], { trace: true, media: '/tmp/media', slug: 'account-create' });

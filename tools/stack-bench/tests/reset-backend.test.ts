@@ -323,6 +323,13 @@ test('Spacetime reset publishes inside the exact leased build container', () => 
     assert.ok(publish.argv.includes('http://host.docker.internal:3310'));
     assert.equal(publish.argv.includes(join(app, 'backend', 'spacetimedb')), false);
     assert.equal(calls.every(call => call.options.timeout === 120_000), true);
+    calls.length = 0;
+    resetRepairBackend({ backend: 'spacetime', app, exec });
+    const handoffIndex = calls.findIndex(call => call.argv.some(arg => arg.includes('chown')));
+    const publishIndex = calls.findIndex(call => call.argv.includes('publish'));
+    assert(handoffIndex >= 0 && publishIndex > handoffIndex,
+      'restored source ownership must be assigned before unprivileged publish');
+
   } finally {
     if (previousLease === undefined) delete process.env.STACK_BENCH_LEASE;
     else process.env.STACK_BENCH_LEASE = previousLease;
@@ -407,10 +414,14 @@ test('Spacetime layout resolution rejects missing, escaping, and ambiguous modul
   }
 });
 
-test('Spacetime layout resolution maps container-absolute module paths into the mounted app', () => {
+test('Spacetime root target takes precedence over nested scaffolds and stays inside the mounted app', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-layout-container-path-'));
   try {
     writeModule(join(root, 'backend', 'spacetimedb'));
+    writeModule(join(root, 'backend', 'spacetimedb', 'spacetimedb'));
+    writeFileSync(join(root, 'backend', 'spacetimedb', 'spacetime.json'), JSON.stringify({
+      'module-path': './spacetimedb',
+    }));
     writeFileSync(join(root, 'spacetime.json'), JSON.stringify({
       'module-path': '/app/backend/spacetimedb',
     }));
@@ -418,6 +429,10 @@ test('Spacetime layout resolution maps container-absolute module paths into the 
     assert.equal(layout.moduleDirectory, 'backend/spacetimedb');
     assert.equal(layout.containerPath, '/app/backend/spacetimedb');
     assert.equal(layout.source, 'spacetime.json');
+    writeFileSync(join(root, 'spacetime.json'), JSON.stringify({ 'module-path': '../outside' }));
+    assert.throws(() => resolveSpacetimeModuleLayout(root), /escapes the application/);
+    writeFileSync(join(root, 'spacetime.json'), JSON.stringify({ 'module-path': 'missing' }));
+    assert.throws(() => resolveSpacetimeModuleLayout(root), /module directory is missing/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

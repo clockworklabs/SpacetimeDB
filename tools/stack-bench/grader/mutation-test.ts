@@ -16,7 +16,7 @@ import { execFileSync } from "node:child_process";
 import { parseArgs as parseNodeArgs } from "node:util";
 import { currentEngineIdentity, emptyArtifactIdentities, readArtifactPayload,
   writeRunJson } from "../src/evidence/artifacts.js";
-import { controlBackendRuntime, parseRuntimeControlSpec } from "../src/runtime/backend-control.js";
+import { controlAppServer, parseRuntimeControlSpec } from "../src/runtime/backend-control.js";
 import type { RuntimeControlSpec } from "../src/runtime/backend-control.js";
 import { leaseFromEnv } from '../src/runtime/backend-lease.js';
 import { inspectBuildContainer } from '../src/stacks/hosted-lifecycle.js';
@@ -187,9 +187,9 @@ export function remainingMutationBatchMs(deadlineMs: number, nowMs: number = Dat
   return remaining;
 }
 
-// Hosted apps must release database connections before reset, then start once
-// to load source and seed. SpacetimeDB reset publishes the changed source.
-export async function resetMutationDatabase(a: MutationArgs, deadlineMs: number | null): Promise<void> {
+// Startup owns application initialization, including migrations outside module init.
+export async function resetMutationDatabase(a: MutationArgs, deadlineMs: number | null,
+  control = controlAppServer): Promise<void> {
   const exec: TextCommandExecutor = deadlineMs === null ? execFileSync : ((file, commandArgs, options) =>
     execFileSync(file, commandArgs, { ...options,
       timeout: Math.min(options.timeout, remainingMutationBatchMs(deadlineMs)) }));
@@ -201,9 +201,9 @@ export async function resetMutationDatabase(a: MutationArgs, deadlineMs: number 
     }
     const signal = deadlineMs === null ? null
       : AbortSignal.timeout(remainingMutationBatchMs(deadlineMs));
-    if (restartSpec) await controlBackendRuntime(restartSpec, "stop", { signal, exec });
+    if (restartSpec) await control(restartSpec, "stop", { signal, exec });
     resetBackend({ backend: a.backend!, app: a.app!, exec });
-    if (restartSpec) await controlBackendRuntime(restartSpec, "start", { signal, exec });
+    if (restartSpec) await control(restartSpec, "start", { signal, exec });
   } catch (error) {
     if (deadlineMs !== null && Date.now() >= deadlineMs) {
       throw new MutationBatchDeadlineError('mutation batch deadline reached', { cause: error });

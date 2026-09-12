@@ -1,17 +1,10 @@
+import { request } from "./request";
 import React, { useCallback, useEffect, useState } from "react";
 
 type User = { username: string; isAdmin: boolean; isStaff: boolean; roles?: string[] };
 type Item = { id: string; name: string };
 type Order = { id: string; items: Array<{ name: string }>; total: number };
 
-async function request(path: string, token: string | null, options: RequestInit = {}) {
-  const response = await fetch(path, { ...options, headers: {
-    "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  } });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || "Request failed");
-  return data;
-}
 
 function nameFor(items: Item[], id: unknown) {
   return items.find(item => item.id === String(id))?.name || String(id || "Unknown item");
@@ -173,7 +166,7 @@ function SupportTicket({ ticket, user, orders, act }: any) {
   const staff = user?.isStaff || user?.isAdmin;
   const order = ticket.order;
   const actionInput = JSON.stringify({ caseId: ticket.id, orderId });
-  return <article data-role="support-ticket" data-entity-id={ticket.id} className="support-ticket">
+  return <article data-role="support-ticket" data-entity-id={ticket.id} data-refund-input={JSON.stringify({caseId: ticket.id})} className="support-ticket">
     <strong>{ticket.subject}</strong> <span data-role="support-status">{ticket.status}</span>
     <span>{ticket.reference}</span>
     {staff && <>

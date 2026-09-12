@@ -13,6 +13,8 @@ and project structure.
 The PostgreSQL service is already running. Use the exact `DATABASE_URL`. Do not
 start another PostgreSQL server, connect to another instance, or create another
 database. Serve the complete application on `<VITE_PORT>`.
+Read `DATABASE_URL` from the process environment at startup. It can change between
+launches; do not embed it in source or override it with a saved value.
 Create `/app/start.sh`. From a clean source checkout, it must install
 dependencies, build the complete application, and start it on `<VITE_PORT>`.
 The script must not change source files. Leave the application running when the

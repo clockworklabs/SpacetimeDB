@@ -25,8 +25,8 @@ Rules:
 | `signup-username` | username input on the sign-up form |
 | `signup-password` | password input on the sign-up form |
 | `signup-submit` | button that submits the sign-up form |
-| `signin-toggle` | control that reveals the sign-in form; the sign-up form must remain usable after it is clicked |
-| `signup-toggle` | control that reveals the sign-up form when its inputs are not shown; omit it when a signed-out visitor already sees them |
+| `signin-toggle` | available on the signed-out page to reveal sign-in; omit when sign-in inputs are already visible |
+| `signup-toggle` | reveals sign-up; available on the signed-out page or after opening `signin-toggle`; omit when sign-up inputs are already visible |
 | `signin-username` | username input on the sign-in form |
 | `signin-password` | password input on the sign-in form |
 | `signin-submit` | button that submits the sign-in form |
@@ -64,6 +64,7 @@ Rules:
 | `buy-error` | appears when buying an out-of-stock item, or checking out more than is available |
 | `auth-error` | appears on a taken username or a wrong password |
 | `review-error` | visible review error |
+| `review-toggle` | opens the review form on item details for eligible customers; omit when already shown |
 | `out-of-stock` | visible out-of-stock state |
 | `empty-cart` | shown before anything is added, and again after checkout empties the cart |
 | `cart-remove` | checked with a populated cart by the application |
@@ -85,6 +86,7 @@ Rules:
 | `low-stock-item` | one low-stock item |
 | `warehouse-total` | the number of units a warehouse holds, inside its admin-warehouse-item |
 | `category-row` | one per category in the admin totals, naming the category; present for a category with no sales yet, reading 0 |
+| `sales-link` | opens category totals from the admin area when they are on a separate tab or screen; omit when already shown |
 | `category-units` | units sold in that category, as a number, inside its category-row |
 | `category-revenue` | revenue earned by that category, as a number, inside its category-row |
 | `recommended-list` | the container holding a signed-in customer's recommendations |

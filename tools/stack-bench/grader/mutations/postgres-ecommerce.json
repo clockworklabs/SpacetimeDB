@@ -1,10 +1,25 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "efed4ed2c1f9ae8d2a34d57dffebbbe9b06bd17a477a91ce20a5c194398b65e7",
+  "fixtureSha256": "77187c7eef144a61cfd4d5f44efa172d8310f4db3254588677db213bf8fa246a",
   "backend": "postgres",
   "track": "ecommerce",
   "note": "Mutation definitions for the PostgreSQL ecommerce reference.",
   "mutations": [
+    {
+      "id": "staff-admin-access-survives-role-removal",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
+      "targets": [
+        "ecommerce.spec.access-control.staff-role-revocation.621d"
+      ],
+      "desc": "Keep administrator access after changing the assigned role back to staff.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "is_admin = ($1 = 'admin')",
+          "replace": "is_admin = (is_admin OR $1 = 'admin')"
+        }
+      ]
+    },
     {
       "id": "shipping-counts-sale-twice",
       "scenario": "tracks/ecommerce/scenarios/progression-shipping-accounting.json",
@@ -504,8 +519,8 @@
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "          [l.item_id, l.warehouse_id, l.quantity]\n        );\n      }\n      await client.query(`UPDATE orders SET status = 'cancelled' WHERE id = $1`, [orderId]);",
-          "replace": "          [l.item_id, l.warehouse_id, 0]\n        );\n      }\n      await client.query(`UPDATE orders SET status = 'cancelled' WHERE id = $1`, [orderId]);"
+          "find": "          [l.item_id, l.warehouse_id, l.quantity]\n        );\n      }\n      await refundCredit(client, orderRow.rows[0]);\n      await client.query(`UPDATE orders SET status = 'cancelled' WHERE id = $1`, [orderId]);",
+          "replace": "          [l.item_id, l.warehouse_id, 0]\n        );\n      }\n      await refundCredit(client, orderRow.rows[0]);\n      await client.query(`UPDATE orders SET status = 'cancelled' WHERE id = $1`, [orderId]);"
         }
       ]
     },
@@ -520,8 +535,8 @@
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "          [l.item_id, l.warehouse_id, l.quantity]\n        );\n      }\n      await client.query(`UPDATE orders SET status = 'cancelled' WHERE id = $1`, [orderId]);",
-          "replace": "          [l.item_id, l.warehouse_id, 0]\n        );\n      }\n      await client.query(`UPDATE orders SET status = 'cancelled' WHERE id = $1`, [orderId]);"
+          "find": "          [l.item_id, l.warehouse_id, l.quantity]\n        );\n      }\n      await refundCredit(client, orderRow.rows[0]);\n      await client.query(`UPDATE orders SET status = 'cancelled' WHERE id = $1`, [orderId]);",
+          "replace": "          [l.item_id, l.warehouse_id, 0]\n        );\n      }\n      await refundCredit(client, orderRow.rows[0]);\n      await client.query(`UPDATE orders SET status = 'cancelled' WHERE id = $1`, [orderId]);"
         }
       ]
     },
@@ -580,8 +595,8 @@
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "app.post(\n  \"/api/orders/:id/cancel\",\n  requireAuth,\n  asyncHandler(async (req, res) => {\n    const orderId = Number(req.params.id);\n    const accountId = req.account!.id;\n    const client = await pool.connect();\n    try {\n      await client.query(\"BEGIN\");\n      const orderRow = await client.query(`SELECT id, account_id, status FROM orders WHERE id = $1 FOR UPDATE`, [orderId]);\n      if (orderRow.rowCount === 0 || orderRow.rows[0].account_id !== accountId) {",
-          "replace": "app.post(\n  \"/api/orders/:id/cancel\",\n  requireAuth,\n  asyncHandler(async (req, res) => {\n    const orderId = Number(req.params.id);\n    const accountId = req.account!.id;\n    const client = await pool.connect();\n    try {\n      await client.query(\"BEGIN\");\n      const orderRow = await client.query(`SELECT id, account_id, status FROM orders WHERE id = $1 FOR UPDATE`, [orderId]);\n      if (orderRow.rowCount === 0) {"
+          "find": "app.post(\n  \"/api/orders/:id/cancel\",\n  requireAuth,\n  asyncHandler(async (req, res) => {\n    const orderId = Number(req.params.id);\n    const accountId = req.account!.id;\n    const client = await pool.connect();\n    try {\n      await client.query(\"BEGIN\");\n      const orderRow = await client.query(`SELECT * FROM orders WHERE id = $1 FOR UPDATE`, [orderId]);\n      if (orderRow.rowCount === 0 || orderRow.rows[0].account_id !== accountId) {",
+          "replace": "app.post(\n  \"/api/orders/:id/cancel\",\n  requireAuth,\n  asyncHandler(async (req, res) => {\n    const orderId = Number(req.params.id);\n    const accountId = req.account!.id;\n    const client = await pool.connect();\n    try {\n      await client.query(\"BEGIN\");\n      const orderRow = await client.query(`SELECT * FROM orders WHERE id = $1 FOR UPDATE`, [orderId]);\n      if (orderRow.rowCount === 0) {"
         }
       ]
     },
@@ -868,6 +883,25 @@
         {
           "find": "    ALTER TABLE account ADD COLUMN IF NOT EXISTS staff_role text NOT NULL DEFAULT '';",
           "replace": "    ALTER TABLE account ADD COLUMN IF NOT EXISTS staff_role text NOT NULL DEFAULT '';\n    UPDATE account SET staff_role = '';"
+        }
+      ]
+    },
+    {
+      "id": "staff-role-write-precedes-denial",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
+      "targets": [
+        "ecommerce.spec.access-control.staff-role-boundary.621b"
+      ],
+      "desc": "Save an unauthorized role change before returning a forbidden response.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "app.put(\"/api/staff/:id/role\", dependencies.requireAdmin,",
+          "replace": "app.put(\"/api/staff/:id/role\", dependencies.requireStaff,"
+        },
+        {
+          "find": "    await recordActivity(deps.pool, req.account!.id, \"assign role\", updated.rows[0].username);",
+          "replace": "    if (!req.account!.isAdmin) { res.status(403).json({ error: \"admin only\" }); return; }\n    await recordActivity(deps.pool, req.account!.id, \"assign role\", updated.rows[0].username);"
         }
       ]
     },
@@ -2073,6 +2107,337 @@
         {
           "find": "    lastAdminJson = adminJson;\n    io.to(\"admin\").emit(\"admin:update\", adminState);",
           "replace": "    lastAdminJson = adminJson;\n    // mutant: changed admin state is not broadcast"
+        }
+      ]
+    },
+    {
+      "id": "credit-checkout-ignores-wallet",
+      "desc": "A credit checkout pays entirely externally despite available credit.",
+      "scenario": "tracks/ecommerce/scenarios/progression-store-credit.json",
+      "targets": [
+        "ecommerce.feature.store-credit.store-credit-750.750a"
+      ],
+      "file": "server/src/credit.ts",
+      "edits": [
+        {
+          "find": "  const creditMinor = Math.min(Number(account.rows[0].credit_minor), totalMinor);",
+          "replace": "  const creditMinor = 0;"
+        }
+      ]
+    },
+    {
+      "id": "credit-grant-replay-increments-balance",
+      "desc": "Replaying a grant applies its credit to the wallet again.",
+      "scenario": "tracks/ecommerce/scenarios/progression-store-credit.json",
+      "targets": [
+        "ecommerce.spec.store-credit.production-752.752a"
+      ],
+      "file": "server/src/credit.ts",
+      "edits": [
+        {
+          "find": "      if (!existing.rows.length) {",
+          "replace": "      if (existing.rows.length) await client.query('UPDATE account SET credit_minor=credit_minor+$1 WHERE id=$2', [amountMinor, accountId]);\n      if (!existing.rows.length) {"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-grant-credit",
+      "desc": "Customer authentication is accepted without staff authorization.",
+      "scenario": "tracks/ecommerce/scenarios/progression-store-credit.json",
+      "targets": [
+        "ecommerce.spec.store-credit.production-753.753a"
+      ],
+      "file": "server/src/credit.ts",
+      "edits": [
+        {
+          "find": "  app.post('/api/staff/credit', auth, staff, async (req, res) => {",
+          "replace": "  app.post('/api/staff/credit', auth, async (req, res) => {"
+        }
+      ]
+    },
+    {
+      "id": "split-refund-does-not-restore-credit",
+      "desc": "The refund is recorded but its original wallet credit is not restored.",
+      "scenario": "tracks/ecommerce/scenarios/progression-split-tender-refunds.json",
+      "targets": [
+        "ecommerce.feature.split-tender-refunds.split-tender-refunds-751.751a"
+      ],
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "      await refundCredit(client, order.rows[0]);",
+          "replace": "      // mutant: omit wallet restoration"
+        }
+      ]
+    },
+    {
+      "id": "split-refund-duplicates-credit",
+      "desc": "A refund credits the wallet twice while recording one refund.",
+      "scenario": "tracks/ecommerce/scenarios/progression-split-tender-refunds.json",
+      "targets": [
+        "ecommerce.spec.split-tender-refunds.production-756.756a"
+      ],
+      "file": "server/src/credit.ts",
+      "edits": [
+        {
+          "find": "[delta, order.account_id]);",
+          "replace": "[delta * 2, order.account_id]);"
+        }
+      ]
+    },
+    {
+      "id": "subscription-skips-due-purchase",
+      "desc": "Due deliveries are recorded as skipped although stock is available.",
+      "scenario": "tracks/ecommerce/scenarios/progression-subscriptions.json",
+      "targets": [
+        "ecommerce.feature.subscriptions.subscriptions-760.760a"
+      ],
+      "file": "server/src/subscriptions.ts",
+      "edits": [
+        {
+          "find": "      if (stock.rows.reduce((sum, row) => sum + row.quantity, 0) >= subscription.quantity) {",
+          "replace": "      if (false && stock.rows.reduce((sum, row) => sum + row.quantity, 0) >= subscription.quantity) {"
+        }
+      ]
+    },
+    {
+      "id": "subscription-allows-foreign-cancellation",
+      "desc": "A customer can cancel another customer subscription.",
+      "scenario": "tracks/ecommerce/scenarios/progression-subscriptions.json",
+      "targets": [
+        "ecommerce.spec.subscriptions.production-762.762a"
+      ],
+      "file": "server/src/subscriptions.ts",
+      "edits": [
+        {
+          "find": "        if (!row || row.account_id !== req.account!.id) {",
+          "replace": "        if (!row) {"
+        }
+      ]
+    },
+    {
+      "id": "subscription-pause-is-not-recorded",
+      "desc": "Pause acknowledges the request but the subscription remains active.",
+      "scenario": "tracks/ecommerce/scenarios/progression-subscriptions.json",
+      "targets": [
+        "ecommerce.spec.subscriptions.production-763.763a"
+      ],
+      "file": "server/src/subscriptions.ts",
+      "edits": [
+        {
+          "find": "UPDATE purchase_subscription SET status='paused',paused_at=now() WHERE id=$1",
+          "replace": "UPDATE purchase_subscription SET status='active',paused_at=now() WHERE id=$1"
+        }
+      ]
+    },
+    {
+      "id": "credit-checkout-retains-purchased-cart",
+      "scenario": "tracks/ecommerce/scenarios/progression-store-credit.json",
+      "targets": [
+        "ecommerce.spec.store-credit.production-754.754a"
+      ],
+      "desc": "The purchased cart remains available instead of being consumed by checkout.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "    await client.query(`DELETE FROM cart_item WHERE cart_id = $1`, [cart.rows[0].id]);",
+          "replace": "    // Mutation: keep checked-out cart lines."
+        }
+      ]
+    },
+    {
+      "id": "pending-subscriptions-are-cleared-at-startup",
+      "desc": "Restart erases pending subscription work while preserving ordinary timer execution.",
+      "file": "server/src/subscriptions.ts",
+      "scenario": "tracks/ecommerce/scenarios/progression-subscriptions.json",
+      "targets": [
+        "ecommerce.spec.subscriptions.production-761.761a"
+      ],
+      "edits": [
+        {
+          "find": "  `);\n}\n\nexport function registerSubscriptions",
+          "replace": "  `);\n  await pool.query(\"UPDATE purchase_subscription SET status='cancelled' WHERE status='active'\");\n}\n\nexport function registerSubscriptions"
+        }
+      ]
+    },
+    {
+      "id": "credit-balance-is-cleared-at-startup",
+      "desc": "Restart clears an issued wallet balance while leaving accounts present.",
+      "file": "server/src/credit.ts",
+      "scenario": "tracks/ecommerce/scenarios/progression-store-credit.json",
+      "targets": [
+        "ecommerce.spec.store-credit.production-755.755a"
+      ],
+      "edits": [
+        {
+          "find": "  `);\n}\n\nexport async function spendCredit",
+          "replace": "  `);\n  await pool.query(\"UPDATE account SET credit_minor=0\");\n}\n\nexport async function spendCredit"
+        }
+      ]
+    },
+    {
+      "id": "bundle-definition-loses-component-quantity",
+      "scenario": "tracks/ecommerce/scenarios/progression-product-bundles.json",
+      "targets": [
+        "ecommerce.feature.product-bundles.product-bundles.740a"
+      ],
+      "desc": "definition loses component quantity",
+      "file": "server/src/bundles.ts",
+      "edits": [
+        {
+          "find": "values.push({ ...component, itemId: item.rows[0].id });",
+          "replace": "values.push({ ...component, quantity: 1, itemId: item.rows[0].id });"
+        }
+      ]
+    },
+    {
+      "id": "bundle-catalog-write-allows-customers",
+      "scenario": "tracks/ecommerce/scenarios/progression-product-bundles.json",
+      "targets": [
+        "ecommerce.spec.bundle-integrity.bundle-743.743a"
+      ],
+      "desc": "catalog write allows customers",
+      "file": "server/src/bundles.ts",
+      "edits": [
+        {
+          "find": "if (!actor?.is_admin && actor?.staff_role !== 'catalog')",
+          "replace": "if (false)"
+        }
+      ]
+    },
+    {
+      "id": "bundle-checkout-price-not-snapshot",
+      "scenario": "tracks/ecommerce/scenarios/progression-bundle-checkout.json",
+      "targets": [
+        "ecommerce.feature.bundle-checkout.bundle-checkout.741a"
+      ],
+      "desc": "checkout price not snapshot",
+      "file": "server/src/bundles.ts",
+      "edits": [
+        {
+          "find": "[cart.rows[0].id, bundleId, bundle.price, JSON.stringify(allocations), JSON.stringify(bundle.bundle_components)]",
+          "replace": "[cart.rows[0].id, bundleId, bundle.price + 1, JSON.stringify(allocations), JSON.stringify(bundle.bundle_components)]"
+        }
+      ]
+    },
+    {
+      "id": "bundle-expiry-does-not-release-components",
+      "scenario": "tracks/ecommerce/scenarios/progression-bundle-checkout.json",
+      "targets": [
+        "ecommerce.spec.bundle-integrity.bundle-746.746a"
+      ],
+      "desc": "expiry does not release components",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "await releaseBundle(client, bundle.rows[0].component_allocations);",
+          "replace": "/* mutant: component holds leak after expiration */"
+        }
+      ]
+    },
+    {
+      "id": "bundle-return-loses-original-components",
+      "scenario": "tracks/ecommerce/scenarios/progression-bundle-returns.json",
+      "targets": [
+        "ecommerce.feature.bundle-returns.bundle-returns.742a"
+      ],
+      "desc": "return loses original components",
+      "file": "server/src/bundles.ts",
+      "edits": [
+        {
+          "find": "await releaseBundle(client, line.component_allocations);",
+          "replace": "/* mutant: purchased components are not restored */"
+        }
+      ]
+    },
+    {
+      "id": "bundle-return-replay-restocks-again",
+      "scenario": "tracks/ecommerce/scenarios/progression-bundle-returns.json",
+      "targets": [
+        "ecommerce.spec.bundle-integrity.bundle-742.742b"
+      ],
+      "desc": "return replay restocks again",
+      "file": "server/src/bundles.ts",
+      "edits": [
+        {
+          "find": "WHERE order_id=$1 AND is_bundle AND NOT returned FOR UPDATE",
+          "replace": "WHERE order_id=$1 AND is_bundle FOR UPDATE"
+        }
+      ]
+    },
+    {
+      "id": "bundle-return-crosses-account-boundary",
+      "scenario": "tracks/ecommerce/scenarios/progression-bundle-returns.json",
+      "targets": [
+        "ecommerce.spec.bundle-integrity.bundle-748.748a"
+      ],
+      "desc": "return crosses account boundary",
+      "file": "server/src/bundles.ts",
+      "edits": [
+        {
+          "find": "WHERE id=$1 AND account_id=$2 AND status IN ('shipped','delivered')",
+          "replace": "WHERE id=$1 AND $2::integer=$2::integer AND status IN ('shipped','delivered')"
+        }
+      ]
+    },
+    {
+      "id": "bundle-components-can-overdraw",
+      "scenario": "tracks/ecommerce/scenarios/progression-bundle-checkout.json",
+      "targets": [
+        "ecommerce.spec.bundle-integrity.bundle-744.744a",
+        "ecommerce.spec.bundle-integrity.bundle-745.745a"
+      ],
+      "desc": "components can overdraw",
+      "file": "server/src/bundles.ts",
+      "edits": [
+        {
+          "find": "if (rows.rows.reduce((sum, row) => sum + row.quantity, 0) < component.quantity) throw new Error('A component is unavailable');",
+          "replace": "// mutant: incomplete component reservation is accepted"
+        }
+      ]
+    },
+    {
+      "id": "bundle-checkout-reuses-reservation",
+      "scenario": "tracks/ecommerce/scenarios/progression-bundle-checkout.json",
+      "targets": [
+        "ecommerce.spec.bundle-integrity.bundle-747.747a"
+      ],
+      "desc": "checkout reuses reservation",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "await client.query(`DELETE FROM cart_item WHERE cart_id = $1`, [cart.rows[0].id]);",
+          "replace": "// mutant: cart survives checkout"
+        }
+      ]
+    },
+    {
+      "id": "return-after-support-refund-is-blocked",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-return-interaction.json",
+      "targets": [
+        "ecommerce.spec.split-tender-refunds.return-refund-interaction.757a"
+      ],
+      "desc": "Reject a valid physical return after a financial refund.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "      if (lineRow.rows[0].returned) {",
+          "replace": "      if (lineRow.rows[0].returned || Number(orderRow.rows[0].refund_total) > 0) {"
+        }
+      ]
+    },
+    {
+      "id": "support-refund-after-return-pays-twice",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-return-interaction.json",
+      "targets": [
+        "ecommerce.spec.split-tender-refunds.return-refund-interaction.757b"
+      ],
+      "desc": "Pay the full order again after a physical return.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "      await client.query(`UPDATE orders SET refund_total = total, status = CASE",
+          "replace": "      await client.query(`UPDATE orders SET refund_total = refund_total + total, status = CASE"
         }
       ]
     }

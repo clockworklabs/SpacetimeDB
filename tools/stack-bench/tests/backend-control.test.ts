@@ -82,6 +82,7 @@ test('clean-source application start uses the private attempt database URL', asy
       assert(launch.includes(`DATABASE_URL=${attemptDatabaseUrl({ backend, database,
         ownershipToken: lease.ownershipToken })}`));
       assert(launch.includes('VITE_PORT=65534'));
+      assert(launch.includes('APP_WARM_START=1'));
     }
   } finally {
     if (priorPath === undefined) delete process.env.STACK_BENCH_LEASE;

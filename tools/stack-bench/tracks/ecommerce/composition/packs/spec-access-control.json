@@ -223,6 +223,22 @@
       "requiresFeatures": ["ecommerce.progression.promotion-rules"]
     },
     {
+      "id": "staff-role-revocation",
+      "source": "scenarios/progression-staff-roles.json",
+      "feature": 621,
+      "criteria": [
+        "621d"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.progression.staff-roles"
+      ]
+    },
+    {
       "id": "staff-role-boundary",
       "source": "scenarios/progression-staff-roles.json",
       "feature": 621,

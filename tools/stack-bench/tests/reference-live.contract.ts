@@ -97,6 +97,8 @@ test('targeted mutation diagnostics grade only their scored target checks', () =
 });
 
 test('reference qualification requires an explicit valid stack scope', () => {
+  assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.js', '--backend', 'postgres',
+    '--track', 'ecommerce', '--level', '6', '--recipe', 'ecommerce.progression-catalog']).level, 6);
   const args = parseReferenceQualificationArgs(['node', 'reference-live.js', '--backend', 'postgres',
     '--track', 'ecommerce', '--level', '2']);
   assert.equal(args.track, 'ecommerce');
@@ -433,13 +435,13 @@ test('progression reference qualification follows the catalog check selection', 
   assert.deepEqual(valuesAfter(argv, '--expect-spec').sort(),
     [...selection.grader.selection.requested.specifications.expected].sort());
   assert.equal(required(valuesAfter(argv, '--task-mode')[0], 'task mode'), 'upgrade');
-  assert.equal(selection.grader.checkKeys.length, 107);
+  assert.equal(selection.grader.checkKeys.length, 109);
   assert.equal(selection.grader.checkKeys.some(key => key.includes('automatic-reorder')), false);
   assert.deepEqual(referenceQualificationSelectionArgs(binding, selection,
     [required(selection.grader.checkKeys[0], 'first check key')]).filter((_value, index, argv) =>
     argv[index - 1] === '--check'), [required(selection.grader.checkKeys[0], 'first check key')]);
   const scoped = referenceQualificationRelease(binding.release, selection.grader.checkKeys);
-  assert.equal(scoped.checkCatalog.length, 107);
+  assert.equal(scoped.checkCatalog.length, 109);
   assert.throws(() => referenceQualificationRelease(binding.release,
     [...selection.grader.checkKeys, 'missing.check']), /unknown checks/);
 });

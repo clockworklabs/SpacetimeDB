@@ -464,6 +464,76 @@
       "includeRoles": [
         "guarantee"
       ]
+    },
+    {
+      "path": "../packs/feature-product-bundles.json",
+      "id": "ecommerce.feature.product-bundles",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/feature-bundle-checkout.json",
+      "id": "ecommerce.feature.bundle-checkout",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/feature-bundle-returns.json",
+      "id": "ecommerce.feature.bundle-returns",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/feature-store-credit.json",
+      "id": "ecommerce.feature.store-credit",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/feature-split-tender-refunds.json",
+      "id": "ecommerce.feature.split-tender-refunds",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/feature-subscriptions.json",
+      "id": "ecommerce.feature.subscriptions",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/spec-bundle-integrity.json",
+      "id": "ecommerce.spec.bundle-integrity",
+      "includeRoles": [
+        "guarantee"
+      ]
+    },
+    {
+      "path": "../packs/spec-store-credit.json",
+      "id": "ecommerce.spec.store-credit",
+      "includeRoles": [
+        "guarantee"
+      ]
+    },
+    {
+      "path": "../packs/spec-split-tender-refunds.json",
+      "id": "ecommerce.spec.split-tender-refunds",
+      "includeRoles": [
+        "guarantee"
+      ]
+    },
+    {
+      "path": "../packs/spec-subscriptions.json",
+      "id": "ecommerce.spec.subscriptions",
+      "includeRoles": [
+        "guarantee"
+      ]
     }
   ],
   "execution": "all-selected-sources",

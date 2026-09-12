@@ -16,6 +16,6 @@ export function attemptDatabaseUrl({ backend, database, ownershipToken }: {
 }): string {
   const { user, password } = attemptDatabaseIdentity(ownershipToken);
   if (backend === 'postgres') return `postgresql://${user}:${password}@127.0.0.1:5432/${database}`;
-  if (backend === 'mongodb') return `mongodb://${user}:${password}@127.0.0.1:27017/${database}?authSource=${database}`;
+  if (backend === 'mongodb') return `mongodb://${user}:${password}@127.0.0.1:27017/${database}?authSource=${database}&replicaSet=rs0&directConnection=true`;
   throw new Error(`no hosted database URL for ${backend}`);
 }

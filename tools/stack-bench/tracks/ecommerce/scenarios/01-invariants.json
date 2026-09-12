@@ -224,6 +224,7 @@
           "steps": [
             { "do": "fill", "actor": "stranger", "testid": "search-input", "text": "Webcam", "enter": true, "settleMs": 1500 },
             { "do": "openItem", "actor": "stranger", "item": "Webcam" },
+            {"do":"click","actor":"stranger","testid":"review-toggle","unlessVisible":"review-rating","ifAvailable":true},
             { "do": "fill", "actor": "stranger", "testid": "review-rating", "text": "5" },
             { "do": "fill", "actor": "stranger", "testid": "review-input", "text": "never bought this" },
             { "do": "click", "actor": "stranger", "testid": "review-submit" },
@@ -241,6 +242,7 @@
             { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Webcam" } },
             { "do": "wait", "actor": "owner", "ms": 2000 },
             { "do": "openItem", "actor": "owner", "item": "Webcam" },
+            {"do":"click","actor":"owner","testid":"review-toggle","unlessVisible":"review-rating","ifAvailable":true},
             { "do": "fill", "actor": "owner", "testid": "review-rating", "text": "4" },
             { "do": "fill", "actor": "owner", "testid": "review-input", "text": "bought and used it" },
             { "do": "click", "actor": "owner", "testid": "review-submit" },

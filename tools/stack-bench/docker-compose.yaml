@@ -26,18 +26,18 @@ services:
       timeout: 5s
       retries: 12
 
-  # Single node, no replica set: change streams would give MongoDB a push
-  # mechanism the Postgres backend does not have, and the comparison is about
-  # what an agent builds on a standard stack.
+  # One local replica-set member exposes native transactions and change streams.
+  # This provides neither failover nor a multi-node availability test.
   mongodb:
     image: mongo:7@sha256:554a9bb1ec6e00c40ba078a41974a834d1a9a8ab1772645b69142afecc87f082
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
     container_name: stack-bench-dev-mongodb
     ports:
       - "127.0.0.1:6537:27017"
     volumes:
       - mongodata:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1})"]
+      test: ["CMD", "mongosh", "--quiet", "--eval", "try { rs.status(); } catch (e) { if (e.code !== 94) throw e; rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]}); } if (!db.hello().isWritablePrimary) quit(1)"]
       interval: 5s
       timeout: 5s
       retries: 12

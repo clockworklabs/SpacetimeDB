@@ -1,3 +1,6 @@
+import { initializeCredit, registerCredit, refundCredit } from "./credit.js";
+import { initializeBundles, registerBundles, releaseBundle } from "./bundles.js";
+import { initializeSubscriptions, registerSubscriptions, processSubscriptions } from "./subscriptions.js";
 import "dotenv/config";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -142,12 +145,7 @@ async function buildAdminState() {
   `);
   const revenueResult = await pool.query(`
     SELECT
-      COALESCE((SELECT SUM(total - refund_total) FROM orders WHERE status != 'cancelled'), 0)
-      - COALESCE((
-          SELECT SUM(oi.quantity * oi.price)
-          FROM order_item oi JOIN orders o ON o.id = oi.order_id
-          WHERE oi.returned = true AND o.status != 'cancelled'
-        ), 0) AS revenue
+      COALESCE((SELECT SUM(total - refund_total) FROM orders WHERE status != 'cancelled'), 0) AS revenue
   `);
   const categoryResult = await pool.query(`
     SELECT i.category,
@@ -263,7 +261,7 @@ async function buildItemReviews(itemId: number) {
 async function buildCartState(accountId: number) {
   const cartMeta = await pool.query(`SELECT expired_at FROM cart WHERE account_id = $1`, [accountId]);
   const rows = await pool.query(
-    `SELECT ci.item_id, i.name, i.price, ci.quantity, ci.expired, ci.reserved_until,
+    `SELECT ci.item_id, i.name, COALESCE(ci.bundle_price,i.price) AS price, ci.bundle_price, ci.quantity, ci.expired, ci.reserved_until,
             EXTRACT(EPOCH FROM (ci.reserved_until - now()))::int AS reservation_seconds
      FROM cart c
      JOIN cart_item ci ON ci.cart_id = c.id
@@ -276,6 +274,7 @@ async function buildCartState(accountId: number) {
     itemId: r.item_id,
     name: r.name,
     price: Number(r.price),
+    isBundle: r.bundle_price !== null,
     quantity: r.quantity,
     expired: r.expired,
     reservationSeconds: Math.max(0, r.reservation_seconds ?? 0),
@@ -287,14 +286,14 @@ async function buildCartState(accountId: number) {
 
 async function buildOrders(accountId: number) {
   const ordersResult = await pool.query(
-    `SELECT id, created_at, total, status, discount, payment_status, payment_amount, refund_total
+    `SELECT id, created_at, total, status, discount, payment_status, payment_amount, refund_total, credit_minor, external_minor
      FROM orders WHERE account_id = $1 ORDER BY created_at DESC`,
     [accountId]
   );
   const out = [];
   for (const o of ordersResult.rows) {
     const linesResult = await pool.query(
-      `SELECT id, item_id, item_name, quantity, price, returned FROM order_item WHERE order_id = $1 ORDER BY id ASC`,
+      `SELECT id, item_id, item_name, quantity, price, returned, is_bundle FROM order_item WHERE order_id = $1 ORDER BY id ASC`,
       [o.id]
     );
     out.push({
@@ -306,6 +305,8 @@ async function buildOrders(accountId: number) {
       paymentStatus: o.payment_status,
       paymentAmount: Number(o.payment_amount),
       refundTotal: Number(o.refund_total),
+      creditMinor: Number(o.credit_minor),
+      externalMinor: Number(o.external_minor),
       items: linesResult.rows.map((l) => ({
         orderItemId: l.id,
         itemId: l.item_id,
@@ -313,6 +314,7 @@ async function buildOrders(accountId: number) {
         quantity: l.quantity,
         price: Number(l.price),
         returned: l.returned,
+        isBundle: l.is_bundle,
       })),
     });
   }
@@ -650,7 +652,7 @@ app.post(
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      const orderRow = await client.query(`SELECT id, account_id, status FROM orders WHERE id = $1 FOR UPDATE`, [orderId]);
+      const orderRow = await client.query(`SELECT * FROM orders WHERE id = $1 FOR UPDATE`, [orderId]);
       if (orderRow.rowCount === 0 || orderRow.rows[0].account_id !== accountId) {
         await client.query("ROLLBACK");
         res.status(404).json({ error: "order not found" });
@@ -661,14 +663,16 @@ app.post(
         res.status(409).json({ error: "order has already shipped" });
         return;
       }
-      const lines = await client.query(`SELECT item_id, quantity, warehouse_id FROM order_item WHERE order_id = $1`, [orderId]);
+      const lines = await client.query(`SELECT item_id, quantity, warehouse_id, is_bundle, component_allocations FROM order_item WHERE order_id = $1`, [orderId]);
       for (const l of lines.rows) {
+        if (l.is_bundle) { await releaseBundle(client, l.component_allocations); continue; }
         await client.query(
           `INSERT INTO stock (item_id, warehouse_id, quantity) VALUES ($1, $2, $3)
            ON CONFLICT (item_id, warehouse_id) DO UPDATE SET quantity = stock.quantity + excluded.quantity`,
           [l.item_id, l.warehouse_id, l.quantity]
         );
       }
+      await refundCredit(client, orderRow.rows[0]);
       await client.query(`UPDATE orders SET status = 'cancelled' WHERE id = $1`, [orderId]);
       await client.query("COMMIT");
     } catch (err) {
@@ -700,7 +704,7 @@ app.post(
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      const orderRow = await client.query(`SELECT id, account_id, status FROM orders WHERE id = $1 FOR UPDATE`, [orderId]);
+      const orderRow = await client.query(`SELECT * FROM orders WHERE id = $1 FOR UPDATE`, [orderId]);
       if (orderRow.rowCount === 0 || orderRow.rows[0].account_id !== accountId) {
         await client.query("ROLLBACK");
         res.status(404).json({ error: "order not found" });
@@ -712,7 +716,7 @@ app.post(
         return;
       }
       const lineRow = await client.query(
-        `SELECT id, item_id, quantity, warehouse_id, returned FROM order_item WHERE id = $1 AND order_id = $2 FOR UPDATE`,
+        `SELECT id, item_id, quantity, price, warehouse_id, returned FROM order_item WHERE id = $1 AND order_id = $2 FOR UPDATE`,
         [orderItemId, orderId]
       );
       if (lineRow.rowCount === 0) {
@@ -732,6 +736,13 @@ app.post(
         [item_id, warehouse_id, quantity]
       );
       await client.query(`UPDATE order_item SET returned = true WHERE id = $1`, [orderItemId]);
+      const order = orderRow.rows[0];
+      const gross = await client.query('SELECT SUM(price * quantity) AS total FROM order_item WHERE order_id=$1', [orderId]);
+      const amount = Math.min(Number(order.total) - Number(order.refund_total),
+        Math.round(Number(lineRow.rows[0].price) * quantity * Number(order.total) / Number(gross.rows[0].total) * 100) / 100);
+      const refundedTotal = Number(order.refund_total) + amount;
+      await refundCredit(client, order, refundedTotal);
+      await client.query('UPDATE orders SET refund_total=$1 WHERE id=$2', [refundedTotal, orderId]);
       await client.query("COMMIT");
     } catch (err) {
       await client.query("ROLLBACK");
@@ -945,6 +956,13 @@ app.post(
   })
 );
 
+registerCredit(app, pool, requireAuth, requireStaff, checkoutReservedCart, async accountId => {
+  await Promise.all([broadcastCart(accountId),broadcastOrders(accountId),broadcastCatalog(),broadcastFulfilment()]);
+});
+registerBundles(app, pool, requireAuth, async accountId => {
+  await Promise.all([broadcastCart(accountId),broadcastOrders(accountId),broadcastCatalog(),broadcastFulfilment()]);
+});
+registerSubscriptions(app, pool, requireAuth);
 registerProgression(app, {
   pool,
   requireAuth,
@@ -1022,10 +1040,16 @@ const POLL_INTERVAL_MS = 2000;
 setInterval(() => {
   broadcastCatalog().catch((err) => console.error("poll broadcast failed", err));
   processProgressionTimers().catch((err) => console.error("progression timer failed", err));
+  processSubscriptions(pool, async accountId => {
+    await Promise.all([broadcastOrders(accountId), broadcastCatalog(), broadcastFulfilment()]);
+  }).catch(err => console.error("subscription timer failed", err));
 }, POLL_INTERVAL_MS);
 
 async function main() {
   await initializeProgressionSchema(pool);
+  await initializeBundles(pool);
+  await initializeCredit(pool);
+  await initializeSubscriptions(pool);
   await seed();
   httpServer.listen(PORT, () => {
     console.log(`PostgreSQL Shop server listening on port ${PORT}`);

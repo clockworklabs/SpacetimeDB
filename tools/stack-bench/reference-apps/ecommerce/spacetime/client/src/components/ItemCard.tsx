@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ItemRow } from '../types';
 import { formatMoney } from '../types';
 
@@ -8,7 +9,7 @@ interface ItemCardProps {
   onOpen: (itemId: bigint) => void;
   onBuyNow: (itemId: bigint) => void;
   onAddToCart: (itemId: bigint) => void;
-  onStockAlert: (itemId: bigint) => void;
+  onStockAlert: (itemId: bigint) => Promise<void>;
   variants: readonly string[];
 }
 
@@ -24,9 +25,15 @@ export default function ItemCard({
 }: ItemCardProps) {
   const outOfStock = stock <= 0;
   const lowStock = !outOfStock && stock <= 5;
+  const [submitState, setSubmitState] = useState('idle');
+  const requestAlert = async () => {
+    setSubmitState('pending');
+    try { await onStockAlert(item.id); setSubmitState('succeeded'); }
+    catch { setSubmitState('failed'); }
+  };
 
   return (
-    <div className={`item-card${outOfStock ? ' out-of-stock-card' : ''}`} data-role="item-card" data-buy-input={JSON.stringify({ itemId: Number(item.id) })}>
+    <div className={`item-card${outOfStock ? ' out-of-stock-card' : ''}`} data-role="item-card" data-submit-state={submitState} data-buy-input={JSON.stringify({ itemId: Number(item.id) })}>
       <button
         type="button"
         className="item-card-name"
@@ -83,7 +90,7 @@ export default function ItemCard({
         </div>
       )}
       {isSignedIn && outOfStock && (
-        <button type="button" className="btn btn-ghost" data-role="stock-alert" onClick={() => onStockAlert(item.id)}>
+        <button type="button" className="btn btn-ghost" data-role="stock-alert" disabled={submitState === 'pending'} onClick={requestAlert}>
           Alert me
         </button>
       )}

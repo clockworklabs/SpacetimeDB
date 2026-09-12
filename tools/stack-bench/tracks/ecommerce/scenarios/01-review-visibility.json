@@ -25,6 +25,7 @@
           "points": 2,
           "steps": [
             { "do": "openItem", "actor": "author", "item": "Induction Cooktop" },
+            {"do":"click","actor":"author","testid":"review-toggle","unlessVisible":"review-rating","ifAvailable":true},
             { "do": "fill", "actor": "author", "testid": "review-rating", "text": "4" },
             { "do": "fill", "actor": "author", "testid": "review-input", "text": "solid mold" },
             { "do": "click", "actor": "author", "testid": "review-submit" },

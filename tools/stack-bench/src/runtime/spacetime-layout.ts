@@ -76,8 +76,7 @@ function configuredPath(appRoot: string, configPath: string, modulePath: string)
 
 function configTargets(appRoot: string): ModuleTarget[] {
   const targets: ModuleTarget[] = [];
-  walk(appRoot, (path, name) => {
-    if (name !== 'spacetime.json') return;
+  const addConfig = (path: string): void => {
     const config = readConfig(appRoot, path);
     const modulePath = config['module-path'];
     if (modulePath === undefined) return;
@@ -85,6 +84,15 @@ function configTargets(appRoot: string): ModuleTarget[] {
       fail(`${relative(appRoot, path)} has an invalid module-path`);
     }
     targets.push({ path: configuredPath(appRoot, path, modulePath), configPath: path });
+  };
+  // The app's explicit target takes precedence over unused nested projects.
+  const rootConfig = join(appRoot, 'spacetime.json');
+  if (existsSync(rootConfig)) {
+    addConfig(rootConfig);
+    if (targets.length) return targets;
+  }
+  walk(appRoot, (path, name) => {
+    if (name === 'spacetime.json' && path !== rootConfig) addConfig(path);
   });
   return targets;
 }

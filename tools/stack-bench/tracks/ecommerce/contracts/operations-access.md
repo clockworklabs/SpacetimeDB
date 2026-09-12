@@ -9,6 +9,11 @@
 | `queue-warehouse` | Shows the selected warehouse inside its `queue-item`. |
 | `ship-submit` | Marks the order in its `queue-item` as shipped. |
 
+On `fulfilment-panel`, expose `data-submit-state` for the latest shipping submission:
+`idle` initially, `pending` immediately when submitted, `succeeded` only after the server
+confirms success, or `failed` after rejection or transport failure. Keep the terminal state
+on the panel when the shipped row disappears. A new submission must replace the old state.
+
 `order-status` reads `pending` until the order ships, `shipped` once it has, and `cancelled`
 after a cancellation. Later features may add further states after `shipped`.
 

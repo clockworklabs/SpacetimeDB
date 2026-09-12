@@ -16,6 +16,7 @@
         { "do": "expectNumber", "actor": "reviewer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Keyboard" }, "relativeTo": "keyboard-before-review-purchase", "plus": -1, "within": 10000 },
         {"do": "openItem", "actor": "reviewer", "item": "Keyboard"},
         { "do": "expect", "actor": "reviewer", "testid": "item-detail", "within": 10000 },
+        {"do":"click","actor":"reviewer","testid":"review-toggle","unlessVisible":"review-rating","ifAvailable":true},
         { "do": "fill", "actor": "reviewer", "testid": "review-rating", "text": "5" }
       ],
       "criteria": [
@@ -28,6 +29,7 @@
           "steps": [
             {"do": "openItem", "actor": "reader", "item": "Keyboard"},
             { "do": "expect", "actor": "reader", "testid": "item-detail", "within": 10000 },
+            {"do":"click","actor":"reviewer","testid":"review-toggle","unlessVisible":"review-rating","ifAvailable":true},
             { "do": "fill", "actor": "reviewer", "testid": "review-input", "text": "live-review-kbd" },
             { "do": "click", "actor": "reviewer", "testid": "review-submit" },
             { "do": "expectElementCount", "actor": "reviewer", "testid": "review-item", "contains": "live-review-kbd", "equals": 1, "within": 10000 },

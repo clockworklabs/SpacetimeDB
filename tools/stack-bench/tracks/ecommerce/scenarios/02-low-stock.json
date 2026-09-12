@@ -3,7 +3,7 @@
   "track": "ecommerce",
   "level": 2,
   "name": "Ecommerce L2 low-stock boundary",
-  "note": "This scenario owns only the low-stock boundary check so a failure cannot prevent unrelated operational-view checks from running.",
+  "note": "Draft: repaired probe behavior needs matching qualification evidence. This scenario owns only the low-stock boundary check so a failure cannot prevent unrelated operational-view checks from running.",
   "features": [
     {
       "id": 5,
@@ -19,7 +19,7 @@
         { "do": "reload", "actor": "customer", "settleMs": 1000 },
         { "do": "ensureSignedIn", "actor": "customer", "name": "low-stock-focused", "readyTestid": "current-user" },
         { "do": "click", "actor": "admin", "testid": "admin-link" },
-        { "do": "click", "actor": "admin", "testid": "low-stock-link", "ifAvailable": true }
+        { "do": "click", "actor": "admin", "testid": "low-stock-link", "ifAvailable": true, "unlessVisible": "low-stock-item", "within": 10000 }
       ],
       "criteria": [
         {

@@ -226,7 +226,7 @@ export async function startCredentialBroker(selectedAuth: ContainerAuth, { netwo
       await wait(100);
     }
     if (spawnError) throw spawnError;
-    if (!existsSync(readyPath)) throw new Error('credential broker did not become ready');
+    if (!existsSync(readyPath)) throw new Error(`credential broker did not become ready${processState.stderrTail ? `: ${processState.stderrTail}` : ''}`);
     const ready: unknown = JSON.parse(readFileSync(readyPath, 'utf8'));
     if (!isRecord(ready) || typeof ready.port !== 'number' || !Number.isInteger(ready.port)
       || ready.port < 1 || ready.port > 65_535) throw new Error('credential broker returned an invalid port');

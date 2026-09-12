@@ -247,7 +247,7 @@
   "schemaVersion": 1,
   "definition": {
     "id": "ecommerce.questlines",
-    "contentSha256": "506cfd1af567f0b0dc3d80a5332a3f74a473413edc76aa93c663da21082b983a"
+    "contentSha256": "0b15ad1ba5f8eb39da0e1e73768f8ac67e37dc753df307cfdb3839403de7aa81"
   },
   "levels": 6,
   "questlines": [
@@ -526,8 +526,8 @@
       "featureRefs": [
         "ecommerce.progression.staff-roles"
       ],
-      "checks": 3,
-      "points": 5
+      "checks": 4,
+      "points": 7
     },
     {
       "id": "support-triage",
@@ -954,6 +954,24 @@
       "points": 5
     },
     {
+      "id": "product-bundles",
+      "name": "Catalog bundles",
+      "description": "Product bundles using existing products and orders.",
+      "level": 4,
+      "parents": [
+        "catalog-management"
+      ],
+      "dependencyReasons": {
+        "catalog-management": "Uses catalog management."
+      },
+      "questline": "catalog-discovery",
+      "featureRefs": [
+        "ecommerce.feature.product-bundles"
+      ],
+      "checks": 2,
+      "points": 5
+    },
+    {
       "id": "price-history",
       "name": "Price history",
       "description": "Administrators update prices and public prices update live.",
@@ -992,6 +1010,26 @@
       "points": 5
     },
     {
+      "id": "store-credit",
+      "name": "Store credit",
+      "description": "Store credit",
+      "level": 5,
+      "parents": [
+        "payment-records",
+        "staff-roles"
+      ],
+      "dependencyReasons": {
+        "payment-records": "Uses payment records.",
+        "staff-roles": "Uses staff roles."
+      },
+      "questline": "business-operations",
+      "featureRefs": [
+        "ecommerce.feature.store-credit"
+      ],
+      "checks": 5,
+      "points": 10
+    },
+    {
       "id": "support-refunds",
       "name": "Support refunds",
       "description": "Authorized, exact, and single-application support refunds.",
@@ -1010,6 +1048,24 @@
       ],
       "checks": 3,
       "points": 4
+    },
+    {
+      "id": "subscriptions",
+      "name": "Scheduled purchases",
+      "description": "Scheduled purchases",
+      "level": 5,
+      "parents": [
+        "payment-records"
+      ],
+      "dependencyReasons": {
+        "payment-records": "Uses payment records."
+      },
+      "questline": "orders-fulfillment",
+      "featureRefs": [
+        "ecommerce.feature.subscriptions"
+      ],
+      "checks": 4,
+      "points": 8
     },
     {
       "id": "cart-expiration",
@@ -1048,6 +1104,26 @@
       "points": 3
     },
     {
+      "id": "bundle-checkout",
+      "name": "Bundle checkout",
+      "description": "Bundle checkout using existing products and orders.",
+      "level": 5,
+      "parents": [
+        "product-bundles",
+        "reservations"
+      ],
+      "dependencyReasons": {
+        "product-bundles": "Uses catalog bundles.",
+        "reservations": "Uses reservations."
+      },
+      "questline": "shopping-checkout",
+      "featureRefs": [
+        "ecommerce.feature.bundle-checkout"
+      ],
+      "checks": 5,
+      "points": 14
+    },
+    {
       "id": "recommendation-feedback",
       "name": "Recommendation feedback",
       "description": "Durable customer-specific recommendation dismissal.",
@@ -1084,6 +1160,28 @@
       "points": 4
     },
     {
+      "id": "split-tender-refunds",
+      "name": "Split-tender refunds",
+      "description": "Split-tender refunds",
+      "level": 6,
+      "parents": [
+        "order-returns",
+        "store-credit",
+        "support-refunds"
+      ],
+      "dependencyReasons": {
+        "order-returns": "Checks that returns and refunds share one financial total while stock is restored once.",
+        "store-credit": "Uses store credit.",
+        "support-refunds": "Uses support refunds."
+      },
+      "questline": "customer-support",
+      "featureRefs": [
+        "ecommerce.feature.split-tender-refunds"
+      ],
+      "checks": 4,
+      "points": 8
+    },
+    {
       "id": "cart-recovery",
       "name": "Cart recovery",
       "description": "Safe restoration of available items from an expired cart.",
@@ -1100,6 +1198,26 @@
       ],
       "checks": 2,
       "points": 6
+    },
+    {
+      "id": "bundle-returns",
+      "name": "Bundle returns",
+      "description": "Bundle returns using existing products and orders.",
+      "level": 6,
+      "parents": [
+        "bundle-checkout",
+        "order-returns"
+      ],
+      "dependencyReasons": {
+        "bundle-checkout": "Uses bundle checkout.",
+        "order-returns": "Uses returns."
+      },
+      "questline": "orders-fulfillment",
+      "featureRefs": [
+        "ecommerce.feature.bundle-returns"
+      ],
+      "checks": 3,
+      "points": 8
     }
   ]
 };

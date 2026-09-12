@@ -1,5 +1,8 @@
 # Review application interface
 
+On item details, show the review form for eligible customers or expose
+`review-toggle` to open it. Omit this control when the form is already shown.
+
 Use `review-rating` on an input or select with values 1 through 5, `review-input` for the comment, and
 `review-submit` to submit it. Put the item's server identifier in
 `data-review-item-id` on `review-submit`. Use `review-average` for the numeric average,

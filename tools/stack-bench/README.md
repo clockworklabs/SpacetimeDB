@@ -38,6 +38,10 @@ database before restarting the app. This reset is between candidates, not inside
 durability probes. A failed rollback preserves the accepted source, grade evidence,
 and repair costs, and stops the attempt as a harness failure.
 
+Between isolated ecommerce scenarios, every stack runs its normal application
+startup after the database reset. This includes SpacetimeDB apps that perform
+initialization outside module `init`. The harness does not guess migration names.
+
 New dependency plans retain previously disclosed interface contracts in upgrade
 prompts by default. Set `mode.retainPriorContracts` to `false` to opt out.
 Set `repair.budget.total` to `0` for a study with no repairs. Feature
@@ -48,9 +52,13 @@ Set a condition's `guidanceProfile` to `neutral-dev` to request the
 `spacetime dev` watch workflow for SpacetimeDB. This opt-in profile reuses neutral
 product guidance and adds a pinned workflow skill; other stacks are unchanged.
 It does not change grading or repair policy. The default remains `neutral`.
-All three neutral profiles retain the selected TypeScript server, TypeScript
-client, and CLI skills. Dev guidance adds a workflow; it does not replace the SDK
+The `neutral`, `neutral-dev`, and `neutral-managed-dev` profiles retain the selected
+TypeScript server, TypeScript client, and CLI skills. Dev guidance adds a workflow; it does not replace the SDK
 references or start a watcher by itself.
+
+For a skill ablation, `neutral-dev-no-sdk` keeps the same backend document and
+dev workflow but omits the TypeScript server, client, and CLI reference skills.
+Label this condition separately from standard guidance in comparisons.
 
 `neutral-managed-dev` instead supplies `/deps/spacetime-dev start|status|stop`.
 The agent creates its project configuration, then starts the managed watcher.

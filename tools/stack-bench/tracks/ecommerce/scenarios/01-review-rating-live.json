@@ -18,6 +18,7 @@
         { "do": "click", "actor": "author", "testid": "overlay-close", "ifAvailable": true },
         { "do": "click", "actor": "author", "testid": "catalog-link", "ifAvailable": true },
         { "do": "openItem", "actor": "author", "item": "Gaming Mouse" },
+        {"do":"click","actor":"author","testid":"review-toggle","unlessVisible":"review-rating","ifAvailable":true},
         { "do": "fill", "actor": "author", "testid": "review-rating", "text": "2" },
         { "do": "fill", "actor": "author", "testid": "review-input", "text": "works for travel" },
         { "do": "click", "actor": "author", "testid": "review-submit" },
@@ -36,6 +37,7 @@
           "points": 1,
           "steps": [
             { "do": "openItem", "actor": "other", "item": "Gaming Mouse" },
+            {"do":"click","actor":"other","testid":"review-toggle","unlessVisible":"review-rating","ifAvailable":true},
             { "do": "fill", "actor": "other", "testid": "review-rating", "text": "4" },
             { "do": "fill", "actor": "other", "testid": "review-input", "text": "does the job" },
             { "do": "click", "actor": "other", "testid": "review-submit" },

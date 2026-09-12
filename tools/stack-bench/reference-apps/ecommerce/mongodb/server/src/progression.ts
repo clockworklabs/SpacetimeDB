@@ -2,7 +2,8 @@ import type express from "express";
 import { Router } from "express";
 import type { Server as SocketIOServer } from "socket.io";
 import jwt from "jsonwebtoken";
-import { Types } from "mongoose";
+import mongoose, { Types } from "mongoose";
+import { refundCredit } from "./credit.js";
 
 import { Cart, Item, Order, Stock, User, Warehouse } from "./models.js";
 import {
@@ -10,6 +11,7 @@ import {
   ReorderRule, ScheduledRestock, StockAlert, StockLedger, SupportTicket,
 } from "./progression-models.js";
 import { releaseStock, reserveStock } from "./stock-reservations.js";
+import { expireBundleReservations, releaseBundle } from "./bundles.js";
 
 type Request = express.Request & { progressionUser?: any };
 
@@ -164,6 +166,7 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
     const target = accountId && await User.findById(accountId);
     if (!target) return res.status(404).json({ error: "Account not found" });
     target.roles = roles;
+    target.isAdmin = role === "admin";
     target.isStaff = true;
     await target.save();
     await recordActivity(req.progressionUser, "updated roles", target.username);
@@ -244,26 +247,30 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
 
   supportRouter.post("/cases/:caseId/refund", auth, staff, async (req: Request, res) => {
     const ticketId = objectId(req.params.caseId);
-    const ticket = ticketId ? await SupportTicket.findById(ticketId) : null;
-    if (!ticket?.orderId) return res.status(404).json({ error: "Order-linked case not found" });
-    if (ticket.refundTotal > 0) {
-      return res.status(409).json({ error: "Order has already been refunded" });
-    }
-    const order = await Order.findOneAndUpdate({ _id: ticket.orderId,
-      status: { $nin: ["refunded", "cancelled"] } }, { $set: { status: "refunded" } }, { new: true });
-    if (!order) return res.status(409).json({ error: "Order has already been refunded" });
-    for (const line of order.items) {
-      if (line.returned) continue;
-      for (const allocation of line.allocations) {
-        await Stock.updateOne({ item_id: line.itemId, warehouse_id: allocation.warehouseId },
-          { $inc: { quantity: allocation.quantity } });
-      }
-    }
-    order.refundTotal = order.total;
-    ticket.status = "resolved";
-    ticket.refundTotal = order.total;
-    await Promise.all([order.save(), ticket.save(), Payment.updateOne({ orderId: order._id },
-      { $set: { status: "refunded" } })]);
+    if (!ticketId) return res.status(404).json({ error: 'Order-linked case not found' });
+    let refunded;
+    try {
+      refunded = await mongoose.connection.transaction(async session => {
+        const ticket = await SupportTicket.findById(ticketId).session(session);
+        if (!ticket?.orderId || ticket.refundTotal > 0) throw new Error('No refundable order-linked case');
+        const order = await Order.findById(ticket.orderId).session(session);
+        if (!order || order.status === 'cancelled') throw new Error('Order already cancelled');
+        const amount = order.total - order.refundTotal;
+        for (const line of order.status === 'pending' ? order.items : []) {
+          if (line.returned) continue;
+          await releaseBundle(line.componentAllocations as any, session);
+          for (const allocation of line.allocations) await Stock.updateOne({ item_id: line.itemId, warehouse_id: allocation.warehouseId }, { $inc: { quantity: allocation.quantity } }, { session });
+        }
+        await refundCredit(order, session);
+        if (order.status === 'pending') order.status = 'refunded';
+        order.refundTotal = order.total;
+        ticket.status = 'resolved'; ticket.refundTotal = amount;
+        await order.save({ session }); await ticket.save({ session });
+        await Payment.updateOne({ orderId: order._id }, { $set: { status: 'refunded' } }, { session });
+        return { ticket, order };
+      });
+    } catch (error) { return res.status(409).json({ error: String(error) }); }
+    const { ticket, order } = refunded!;
     await Notification.updateOne({ userId: order.userId, key: `refund:${order._id}` }, {
       $setOnInsert: { userId: order.userId, key: `refund:${order._id}`, type: "refund",
         message: `Refunded ${order.items.map(item => item.name).join(", ")}` },
@@ -377,36 +384,47 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
   });
 
   router.post("/cart/restore", auth, async (req: Request, res) => {
-    const currentCart = await Cart.findOne({ userId: req.progressionUser._id });
-    if (currentCart?.items.length) {
-      return res.status(409).json({ error: "Empty the current cart before restoring an expired cart" });
-    }
-    const archive = await CartArchive.findOneAndDelete({ userId: req.progressionUser._id });
-    if (!archive) return res.status(404).json({ error: "No expired cart is available" });
-    const restored: any[] = [];
     const unavailable: string[] = [];
-    for (const archived of archive.items) {
-      const item = await Item.findById(archived.itemId);
-      const total = await Stock.aggregate([{ $match: { item_id: archived.itemId } },
-        { $group: { _id: null, total: { $sum: "$quantity" } } }]);
-      const quantity = Math.min(Number(archived.quantity), total[0]?.total || 0);
-      const reservedWarehouseIds = item && quantity > 0
-        ? await reserveStock(archived.itemId as Types.ObjectId, quantity) : null;
-      if (!item || !reservedWarehouseIds) unavailable.push(item?.name || "Unavailable item");
-      else restored.push({ itemId: archived.itemId, quantity,
-        reservationExpiresAt: new Date(Date.now() + 90_000), reservedWarehouseIds });
-    }
-    const restoredCart = await Cart.findOneAndUpdate({ userId: req.progressionUser._id,
-      items: { $size: 0 } }, { $set: { items: restored,
-      inactiveExpiresAt: new Date(Date.now() + 300_000) } });
-    if (!restoredCart) {
-      for (const line of restored) await releaseStock(line.itemId,
-        line.reservedWarehouseIds as Types.ObjectId[]);
-      await CartArchive.create({ userId: req.progressionUser._id, items: archive.items });
-      return res.status(409).json({ error: "The cart changed while it was being restored" });
-    }
+    let restoredCount = 0;
+    try {
+      await mongoose.connection.transaction(async session => {
+        unavailable.length = 0; restoredCount = 0;
+        const cart = await Cart.findOne({userId:req.progressionUser._id}).session(session);
+        if (!cart || cart.items.length) throw new Error("Empty the current cart before restoring an expired cart");
+        const archive = await CartArchive.findOne({userId:req.progressionUser._id}).session(session);
+        if (!archive) throw new Error("No expired cart is available");
+        for (const archived of archive.items) {
+          const item = await Item.findById(archived.itemId).session(session);
+          if (!item) { unavailable.push("Unavailable item"); continue; }
+          if (archived.bundleComponentsJson) {
+            const allocations: any[] = [];
+            let available = true;
+            for (const component of JSON.parse(archived.bundleComponentsJson)) {
+              const itemId = new Types.ObjectId(component.itemId);
+              const held = await reserveStock(itemId, component.quantity, session);
+              if (!held) { available = false; break; }
+              allocations.push(...held.map(warehouseId=>({itemId,warehouseId,quantity:1})));
+            }
+            if (!available) { await releaseBundle(allocations,session); unavailable.push(item.name); continue; }
+            cart.items.push({itemId:item._id,quantity:1,bundlePrice:archived.bundlePrice,
+              bundleComponentsJson:archived.bundleComponentsJson,componentAllocations:allocations,
+              reservedWarehouseIds:[],reservationExpiresAt:new Date(Date.now()+90_000)} as any);
+          } else {
+            const rows = await Stock.find({item_id:archived.itemId}).session(session);
+            const quantity = Math.min(Number(archived.quantity),rows.reduce((sum,row)=>sum+row.quantity,0));
+            const held = quantity > 0 ? await reserveStock(item._id,quantity,session) : null;
+            if (!held) { unavailable.push(item.name); continue; }
+            cart.items.push({itemId:item._id,quantity,reservedWarehouseIds:held,
+              reservationExpiresAt:new Date(Date.now()+90_000)} as any);
+          }
+          restoredCount++;
+        }
+        cart.inactiveExpiresAt=new Date(Date.now()+300_000);
+        await cart.save({session}); await archive.deleteOne({session});
+      });
+    } catch(error) { return res.status(409).json({error:String(error)}); }
     changed(String(req.progressionUser._id));
-    res.json({ restored: restored.length, unavailable });
+    res.json({restored:restoredCount,unavailable});
   });
 
   app.use("/api/progression", router);
@@ -415,6 +433,7 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
 
   async function processTimers() {
     const now = new Date();
+    await expireBundleReservations();
 
     const reservationCarts = await Cart.find({ items: { $elemMatch: {
       reservationExpiresAt: { $lte: now }, "reservedWarehouseIds.0": { $exists: true },
@@ -457,18 +476,18 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
     }
 
     const expiredCarts = await Cart.find({ items: { $ne: [] }, inactiveExpiresAt: { $lte: now } });
-    for (const cart of expiredCarts) {
-      const claimed = await Cart.findOneAndUpdate({ _id: cart._id, items: { $ne: [] },
-        inactiveExpiresAt: { $lte: now } }, { $set: { items: [], inactiveExpiresAt: null } });
-      if (!claimed) continue;
-      const expired = claimed.items.map(item => ({ itemId: item.itemId, quantity: item.quantity }));
-      if (!expired.length) continue;
-      for (const line of claimed.items) await releaseStock(line.itemId as Types.ObjectId,
-        [...(line.reservedWarehouseIds || [])] as Types.ObjectId[]);
-      await CartArchive.updateOne({ userId: cart.userId },
-        { $set: { userId: cart.userId, items: expired } },
-        { upsert: true });
-    }
+    for (const cart of expiredCarts) await mongoose.connection.transaction(async session => {
+      const claimed = await Cart.findOne({_id:cart._id,items:{$ne:[]},inactiveExpiresAt:{$lte:now}}).session(session);
+      if (!claimed) return;
+      const expired=claimed.items.map(item=>({itemId:item.itemId,quantity:item.quantity,
+        bundlePrice:item.bundlePrice,bundleComponentsJson:item.bundleComponentsJson}));
+      for(const line of claimed.items) {
+        await releaseBundle(line.componentAllocations as any,session);
+        await releaseStock(line.itemId as Types.ObjectId,[...(line.reservedWarehouseIds||[])] as Types.ObjectId[],session);
+      }
+      await CartArchive.updateOne({userId:cart.userId},{$set:{userId:cart.userId,items:expired}},{upsert:true,session});
+      claimed.items=[] as any;claimed.inactiveExpiresAt=null;await claimed.save({session});
+    });
 
     const rules = await ReorderRule.find();
     for (const rule of rules) {

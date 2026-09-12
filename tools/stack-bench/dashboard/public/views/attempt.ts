@@ -7,7 +7,7 @@ import type { AttemptCheck, AttemptChecks, AttemptPackage, CampaignProgression, 
 import type { readCampaignTimeBudget } from '../../../src/campaigns/campaign-time-grant.js';
 import { graph } from '../graph.js';
 import { bigClimb } from '../climb.js';
-import { DASH, duration, executionClock, esc, metricLabel, spend, pct, phrase, ratio, stackLabel } from '../format.js';
+import { DASH, completionLabel, duration, executionClock, esc, metricLabel, spend, pct, phrase, ratio, stackLabel } from '../format.js';
 
 export type AttemptTab = 'checks' | 'screenshots' | 'files' | 'log' | 'transcript';
 
@@ -165,7 +165,7 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log, tran
     + `<div class="title"><h2>${esc(stackLabel(stack.stack))} `
     + `<span>rep ${attempt.repetition}</span></h2></div>`
 
-    + `<div class="figs">${figure('Completion', attempt.completion ? ratio(attempt.completion.passed, attempt.completion.selected) : DASH)}`
+    + `<div class="figs">${figure('Completion', completionLabel(attempt))}`
     + figure('Spend', spend(attempt.spend, attempt.spendPending, attempt.liveSpend))
     + figure('Status', esc(phrase(attempt)), attempt.stalling ? 'now warn' : 'now')
     + figure('Weighted score', pct(attempt.score))

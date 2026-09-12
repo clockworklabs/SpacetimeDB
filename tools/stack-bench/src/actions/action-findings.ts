@@ -62,7 +62,8 @@ const quoted = (value: string): string => JSON.stringify(findingText(value));
 export const FAILED_FINDINGS: Renderers<FailedFindingFields> = {
   'control-missing': f => `${scopedControl(f)}${f.scopeText ? ` in the entry matching ${quoted(f.scopeText)}` : ''}`
     + `${f.matchingText ? ` matching ${quoted(f.matchingText)}` : f.filtered && !f.scopeText ? ' matching the requested entry' : ''} did not appear`,
-  'control-present': f => `${control(f.control)} was shown when it must not be`,
+  'control-present': f => `${scopedControl(f)}${f.scopeText ? ` in the entry matching ${quoted(f.scopeText)}` : ''}`
+    + `${f.matchingText ? ` matching ${quoted(f.matchingText)}` : ''} was shown when it must not be`,
   'control-available': f => `${control(f.control)} stayed available to ${f.actor}`,
   'control-not-ready': f => `${control(f.control)} never became usable for ${names(f.actors)}`,
   'control-blocked': f => `${scopedControl(f)} is covered by another element`,
@@ -77,7 +78,7 @@ export const FAILED_FINDINGS: Renderers<FailedFindingFields> = {
   'number-missing': f => `${control(f.control)} shows no number`,
   'number-mismatch': f => `${control(f.control)} reads ${f.observed ?? 'no number'}, `
     + `expected ${expectation(f.expected)}${f.scopeText ? ` in the entry matching ${quoted(f.scopeText)}` : ''}`,
-  'count-mismatch': f => `${f.observed} ${f.control} entries shown, expected ${f.expected}`,
+  'count-mismatch': f => `${f.observed} ${f.control} entries${f.matchingText ? ` matching "${f.matchingText}"` : ''} shown, expected ${f.expected}`,
   'order-mismatch': f => f.actors?.length
     ? `${names(f.actors)} see ${control(f.control)} entries in different orders`
     : `${control(f.control)} entries are not in the required order`,
@@ -88,6 +89,7 @@ export const FAILED_FINDINGS: Renderers<FailedFindingFields> = {
   'choice-missing': f => `${scopedControl(f)} did not offer the required choice${f.requestedChoice === undefined ? '' : ` ${quoted(f.requestedChoice)}`}`,
   'page-timeout': f => f.control
     ? `${scopedControl(f)} did not become available in time`
+    : f.alternatives?.length ? `none of the ${f.alternatives.join(', ')} controls became visible in time`
     : 'the page did not respond in time',
   'page-crashed': () => 'the page crashed',
   'page-error': f => `${f.control || f.scope ? scopedControl(f) : 'the page'} did not behave as required`,
@@ -100,7 +102,7 @@ export const FAILED_FINDINGS: Renderers<FailedFindingFields> = {
     ? `the ${f.action} action accepted invalid input from ${f.actor}`
     : `the ${f.action} action was accepted for ${f.actor}, who must be refused`,
   'call-error': f => `the ${f.action} action returned ${http(f.status)} for ${f.actor}; `
-    + `this does not meet the ${f.required === 'validation-refused' ? 'input-error' : 'access-error'} status contract${operation(f.operation)}`,
+    + `this does not meet the ${f.required === 'accepted' ? 'success' : f.required === 'validation-refused' ? 'input-error' : 'access-error'} status contract${operation(f.operation)}`,
   'concurrent-calls-mismatch': f => `${f.accepted} of ${f.fired} simultaneous ${f.action} calls were accepted, expected ${f.expected}`,
   'interface-missing': f => `${control(f.control)} exposes no ${f.attribute} for the ${f.action} action`,
   'interface-invalid': f => f.missing?.length
@@ -191,7 +193,7 @@ const observedTextSchema = z.string().max(160).optional();
 
 export const findingSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('control-missing'), fields: controlSchema.extend({ scope: z.string().optional(), filtered: z.boolean().optional(), matchingText: observedTextSchema, scopeText: observedTextSchema }) }),
-  z.strictObject({ kind: z.literal('control-present'), fields: controlSchema }),
+  z.strictObject({ kind: z.literal('control-present'), fields: controlSchema.extend({ scope: z.string().optional(), matchingText: observedTextSchema, scopeText: observedTextSchema }) }),
   z.strictObject({ kind: z.literal('control-available'), fields: z.strictObject({ control: z.string(), actor: z.string() }) }),
   z.strictObject({ kind: z.literal('control-not-ready'), fields: z.strictObject({ control: z.string(), actors: z.array(z.string()) }) }),
   z.strictObject({ kind: z.literal('control-blocked'), fields: z.strictObject({ control: z.string().optional(), scope: z.string().optional(), detail: z.string().optional() }) }),
@@ -203,14 +205,14 @@ export const findingSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('clients-disagree'), fields: z.strictObject({ control: z.string(), actors: z.array(z.string()) }) }),
   z.strictObject({ kind: z.literal('number-missing'), fields: controlSchema }),
   z.strictObject({ kind: z.literal('number-mismatch'), fields: z.strictObject({ control: z.string(), observed: z.number().nullable(), expected: expectationSchema, scopeText: observedTextSchema }) }),
-  z.strictObject({ kind: z.literal('count-mismatch'), fields: z.strictObject({ control: z.string(), observed: z.number(), expected: z.number() }) }),
+  z.strictObject({ kind: z.literal('count-mismatch'), fields: z.strictObject({ control: z.string(), observed: z.number(), expected: z.number(), matchingText: z.string().max(160).optional() }) }),
   z.strictObject({ kind: z.literal('order-mismatch'), fields: z.strictObject({ control: z.string(), actors: z.array(z.string()).optional() }) }),
   z.strictObject({ kind: z.literal('entries-missing'), fields: z.strictObject({ expected: z.number(), missing: z.number(), duplicated: z.number() }) }),
   z.strictObject({ kind: z.literal('actors-with-control'), fields: z.strictObject({ control: z.string(), observed: z.number(), expected: z.number() }) }),
   z.strictObject({ kind: z.literal('too-many-per-actor'), fields: z.strictObject({ control: z.string(), maxEach: z.number() }) }),
   z.strictObject({ kind: z.literal('clicks-failed'), fields: z.strictObject({ control: z.string(), failed: z.number(), total: z.number(), detail: z.string().optional() }) }),
   z.strictObject({ kind: z.literal('choice-missing'), fields: z.strictObject({ control: z.string().optional(), scope: z.string().optional(), detail: z.string().optional(), requestedChoice: observedTextSchema }) }),
-  z.strictObject({ kind: z.literal('page-timeout'), fields: z.strictObject({ control: z.string().optional(), scope: z.string().optional(), detail: z.string().optional() }) }),
+  z.strictObject({ kind: z.literal('page-timeout'), fields: z.strictObject({ control: z.string().optional(), alternatives: z.array(z.string()).optional(), scope: z.string().optional(), detail: z.string().optional() }) }),
   z.strictObject({ kind: z.literal('page-crashed'), fields: detailSchema }),
   z.strictObject({ kind: z.literal('page-error'), fields: z.strictObject({ control: z.string().optional(), scope: z.string().optional(), detail: z.string().optional() }) }),
   z.strictObject({ kind: z.literal('app-control-failed'), fields: z.strictObject({ mode: z.string(), target: targetSchema, detail: z.string().optional() }) }),
@@ -219,7 +221,7 @@ export const findingSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('action-failed'), fields: actionSchema }),
   z.strictObject({ kind: z.literal('call-refused'), fields: z.strictObject({ action: z.string(), actor: z.string(), status: z.number().nullable(), operation: operationSchema.nullable() }) }),
   z.strictObject({ kind: z.literal('call-accepted'), fields: z.strictObject({ action: z.string(), actor: z.string(), status: z.number().nullable(), required: z.enum(['refused', 'validation-refused']) }) }),
-  z.strictObject({ kind: z.literal('call-error'), fields: z.strictObject({ action: z.string(), actor: z.string(), status: z.number().nullable(), required: z.enum(['refused', 'validation-refused']), operation: operationSchema.nullable() }) }),
+  z.strictObject({ kind: z.literal('call-error'), fields: z.strictObject({ action: z.string(), actor: z.string(), status: z.number().nullable(), required: z.enum(['refused', 'validation-refused', 'accepted']), operation: operationSchema.nullable() }) }),
   z.strictObject({ kind: z.literal('concurrent-calls-mismatch'), fields: z.strictObject({ action: z.string(), expected: z.number(), accepted: z.number(), fired: z.number(), detail: z.string().optional() }) }),
   z.strictObject({ kind: z.literal('interface-missing'), fields: z.strictObject({ control: z.string(), action: z.string(), attribute: z.string() }) }),
   z.strictObject({ kind: z.literal('interface-invalid'), fields: z.strictObject({ action: z.string(), attribute: z.string(), missing: z.array(z.string()).optional(), unexpected: z.array(z.string()).optional(), detail: z.string().optional() }) }),

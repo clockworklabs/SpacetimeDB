@@ -47,16 +47,16 @@ function packChecks(pack: CompiledPackDefinition): string[] {
 
 test('the ecommerce progression definition is complete and calculated from its dependencies', () => {
   const definition = compileProgressionDefinitionFile(definitionPath, { trackRoot });
-  assert.equal(definition.nodes.length, 43);
+  assert.equal(definition.nodes.length, 49);
   assert.deepEqual(Object.fromEntries([1, 2, 3, 4, 5, 6].map(level => [
     level,
     definition.nodes.filter(node => node.level === level).length,
-  ])), { 1: 4, 2: 10, 3: 13, 4: 9, 5: 6, 6: 1 });
+  ])), { 1: 4, 2: 10, 3: 13, 4: 10, 5: 9, 6: 3 });
   assert.equal(definition.questlines.length, 12);
   assert.equal(new Set(definition.nodes.flatMap(node => node.gradingChecks.map(check => check.id))).size,
-    156);
+    181);
   assert.equal(definition.nodes.flatMap(node => node.gradingChecks)
-    .reduce((total, check) => total + check.points, 0), 292);
+    .reduce((total, check) => total + check.points, 0), 349);
   assert(definition.nodes.every(node => Object.keys(node.dependencyReasons).length
     === node.dependencies.length));
   assert(definition.questlines.every(questline =>
@@ -371,7 +371,8 @@ test('the current campaign binds the full graph to one catalog across six levels
     'campaign.ecommerce-progression-reference.json'));
   assert.deepEqual(plan.definition.levels, [1, 2, 3, 4, 5, 6]);
   assert(plan.featureCatalog, 'the campaign must compile its feature catalog');
-  assert.equal(plan.featureCatalog.definition.nodes.length, 43);
+  assert.equal(plan.featureCatalog.definition.nodes.length,
+    compileProgressionDefinitionFile(definitionPath, { trackRoot }).nodes.length);
   assert.equal(new Set(plan.bindings.map(binding => binding.recipe.contentSha256)).size, 1);
   const condition = plan.conditions[0];
   assert(condition, 'the campaign must have a condition');

@@ -18,7 +18,8 @@
         { "do": "click", "actor": "owner", "testid": "support-order-option", "contains": "Keyboard", "in": { "testid": "support-ticket", "contains": "Access refund case" } },
         { "do": "click", "actor": "owner", "testid": "support-link-order", "in": { "testid": "support-ticket", "contains": "Access refund case" } },
         { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
-        { "do": "click", "actor": "staff", "testid": "staff-link" }
+        {"do":"click","actor":"staff","testid":"staff-link","unlessVisible":"support-assignee"},
+        {"do":"click","actor":"staff","testid":"support-queue-link","unlessVisible":"support-assignee","ifAvailable":true}
       ],
       "criteria": [
         {

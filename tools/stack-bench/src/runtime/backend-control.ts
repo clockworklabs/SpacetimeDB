@@ -73,6 +73,7 @@ export async function controlAppServer(
       lease,
     }),
     ...adapter.lifecycle.applicationEnvironment?.(lease),
+    APP_WARM_START: '1',
     VITE_PORT: String(spec.port),
   };
   await controlHostedAppServer({

@@ -30,6 +30,30 @@ const UNSTATED_QUALITY_LANGUAGE = [
 type Stack = typeof STACKS[number];
 type Level = 1 | 2 | 3 | 4 | 5 | 6;
 
+test('dev SDK ablation removes only the three reference skills', () => {
+  const standard = resolveGuidanceProfile('neutral-dev', STACKS);
+  const ablation = resolveGuidanceProfile('neutral-dev-no-sdk', STACKS);
+  for (const key of ['mode', 'material', 'documents', 'credentialAliases'] as const)
+    assert.deepEqual(ablation[key], standard[key]);
+  assert.deepEqual(standard.skills.spacetime!.ids,
+    ['typescript-server', 'typescript-client', 'cli', 'spacetime-dev']);
+  assert.deepEqual(ablation.skills.spacetime!.ids, ['spacetime-dev']);
+  for (const stack of ['mongodb', 'postgres']) assert.deepEqual(ablation.skills[stack], standard.skills[stack]);
+  const track = loadTrack('ecommerce');
+  const catalog = resolveFeatureCatalog('progression/ecommerce.json', track);
+  for (const level of [1, 2, 3] as const) {
+    const binding = resolveRecipeRelease(track, level, 'ecommerce.progression-catalog');
+    const task = resolveProgressionRecipeLevelSelection(binding, catalog, level, { cumulative: true }).agent.request;
+    const prompts = [standard, ablation].map(guidance => {
+      const skills = readAgentSkillDocuments(resolve(STACK_BENCH_ROOT, '..', '..'), guidance.skills.spacetime!.ids);
+      const prompt = renderPrompt({ level, stack: 'spacetime', task, guidance });
+      assert(prompt.includes(skills));
+      return prompt.replace(skills, '<skill material>');
+    });
+    assert.equal(prompts[0], prompts[1], `L${level} differs outside the supplied skills`);
+  }
+});
+
 test('agent contract validation leaves product language unchanged', () => {
   assert.equal(agentVisibleContractText('Use this application action. Keep the contest action.'),
     'Use this application action. Keep the contest action.');

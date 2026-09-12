@@ -38,6 +38,20 @@ test('campaign duration follows safe deadline arithmetic rather than a twelve-ho
   }
 });
 
+test('campaign effort is retained per attempt and changes campaign identity', () => {
+  const value = manifest('campaign.example.json');
+  value.stacks = (value.stacks as Array<{ id: string }>).filter(stack => stack.id === 'postgres');
+  const agents = value.agents as Array<Record<string, unknown>>;
+  const medium = compile({ ...value, agents: agents.map(agent => ({ ...agent, effort: 'medium' })) });
+  const high = compile({ ...value, agents: agents.map(agent => ({ ...agent, effort: 'high' })) });
+  assert(medium.attempts.every(attempt => attempt.effort === 'medium'));
+  assert(high.attempts.every(attempt => attempt.effort === 'high'));
+  assert.notEqual(medium.contentSha256, high.contentSha256);
+  assert.deepEqual(validateCompiledCampaignPlan(medium), medium);
+  assert.throws(() => compile({ ...value,
+    agents: agents.map(agent => ({ ...agent, effort: 'invalid' })) }), /effort/);
+});
+
 test('campaign repetitions use checked expansion rather than a hundred-run policy', () => {
   const value = manifest('campaign.example.json');
   const expanded = compile({ ...value, repetitions: 101 });

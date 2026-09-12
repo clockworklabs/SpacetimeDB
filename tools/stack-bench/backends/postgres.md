@@ -46,3 +46,5 @@ recreate tables during upgrades or repairs.
 
 Use this exact `DATABASE_URL`. Do not point at another PostgreSQL instance and do
 not create databases outside it.
+Read `DATABASE_URL` from the process environment at startup. It can change between
+launches; do not embed it in source or override it with a saved value.

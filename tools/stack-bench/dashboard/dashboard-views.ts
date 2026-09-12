@@ -13,7 +13,7 @@ import type { ProgressionState } from '../src/progression/progression-state.js';
 import type { CompiledCampaignPlan } from '../src/campaigns/campaign-compiler.js';
 import type { DependencyProgress } from '../src/campaigns/campaign-inspection.js';
 import type { GradeBundlePayload } from '../src/evidence/benchmark-run.js';
-import { sumCostEvidence } from '../src/evidence/cost-proof.js';
+import { executionSpend } from '../src/campaigns/campaign-report.js';
 import type { CostEvidence } from '../src/evidence/cost-proof.js';
 import type { RunCheckpoint } from '../src/evidence/run-checkpoints.js';
 import { scoreDependencyState, dependencyCompletionBreakdown, type DependencyCompletionBreakdown } from '../src/progression/dependency-score.js';
@@ -504,7 +504,7 @@ export function campaignSheet(resultsRoot: string, key: string,
       continued: owned.some(view => view.attempt.continued),
       regressions: Math.round(median(owned.map(view => attemptRegressions(view.inspected))) ?? 0),
       timeSec: row?.duration ?? null,
-      spend: sumCostEvidence(owned.map(view => view.inspected.spend)),
+      spend: executionSpend(owned.map(view => ({ cost: view.inspected.spend, knownCostUsd: view.inspected.spend.knownCostUsd }))),
       spendPending: owned.some(view => view.attempt.spendPending),
         completionRate: new Set(owned.map(view => view.inspected.cohortKey)).size === 1
           && owned.every(view => view.inspected.completion?.rate != null)

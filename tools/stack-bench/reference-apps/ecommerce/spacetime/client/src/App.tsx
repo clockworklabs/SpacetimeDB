@@ -9,6 +9,9 @@ import AdminPanel from './components/AdminPanel';
 import FulfilmentPanel from './components/FulfilmentPanel';
 import AuthWidget from './components/AuthWidget';
 import ProgressionWorkbench from './components/ProgressionWorkbench';
+import BundlePanel from './components/BundlePanel';
+import CreditPanel from './components/CreditPanel';
+import SubscriptionPanel from './components/SubscriptionPanel';
 import { formatMoney } from './types';
 
 const LOW_STOCK_THRESHOLD = 10;
@@ -28,6 +31,7 @@ export default function App() {
   }, [token]);
 
   const [items] = useTable(tables.item);
+  const [bundleDefinitions] = useTable(tables.bundleDefinition);
   const [warehouses] = useTable(tables.warehouse);
   const [stocks] = useTable(tables.stock);
   const [reviews] = useTable(tables.review);
@@ -186,7 +190,8 @@ export default function App() {
           return {
             itemId: c.itemId,
             name: item.name,
-            price: item.price,
+            price: c.bundlePrice || item.price,
+            isBundle: c.bundlePrice > 0,
             quantity: c.quantity,
             stock: stockByItem.get(c.itemId) ?? 0,
           };
@@ -206,6 +211,8 @@ export default function App() {
         status: o.status,
         discount: o.discount,
         refundedTotal: o.refundedTotal,
+        creditMinor: o.creditMinor,
+        externalMinor: o.externalMinor,
         payments: paymentRows
           .filter(payment => payment.orderId === o.orderId)
           .map(payment => ({ amount: payment.amount, status: payment.status })),
@@ -216,6 +223,7 @@ export default function App() {
             name: li.itemName,
             quantity: li.quantity,
             returned: li.returned,
+            isBundle: li.isBundle,
           })),
       })),
     [orderRows, orderItemRows, paymentRows]
@@ -245,7 +253,8 @@ export default function App() {
   };
 
   const handleStockAlert = async (itemId: bigint) => {
-    await conn?.reducers.requestStockAlert({ itemId });
+    if (!conn) throw new Error('Not connected.');
+    await conn.reducers.requestStockAlert({ itemId });
   };
 
   const handleSignUp = async (username: string, password: string) => {
@@ -299,7 +308,8 @@ export default function App() {
   };
 
   const handleShipOrder = async (orderId: bigint) => {
-    await conn?.reducers.shipOrder({ orderId });
+    if (!conn) throw new Error('Not connected.');
+    await conn.reducers.shipOrder({ orderId });
   };
 
   const handleCancelOrder = async (orderId: bigint) => {
@@ -349,6 +359,9 @@ export default function App() {
 
   return (
     <div className="app">
+      <CreditPanel conn={conn} staff={isAdmin || isStaff} />
+      <BundlePanel conn={conn} canManage={isAdmin} signedIn={isSignedIn} bundles={bundleDefinitions.flatMap(definition => { const product = items.find(item => item.id === definition.itemId); return product ? [{ id: product.id, name: product.name, price: product.price, components: JSON.parse(definition.componentsJson) }] : []; })} />
+      <SubscriptionPanel conn={conn} signedIn={isSignedIn} />
       <header className="header">
         <span className="app-title" data-role="app-title">
           Storefront
@@ -502,6 +515,7 @@ export default function App() {
           onChangeQuantity={handleChangeQuantity}
           onRemove={handleRemove}
           onCheckout={handleCheckout}
+          onCreditCheckout={async () => { await conn?.reducers.checkoutCredit({}); }}
           reservations={reservationRows}
           onApplyPromotion={(code) => conn?.reducers.applyPromotion({ code })}
         />
@@ -513,6 +527,7 @@ export default function App() {
           onClose={() => setActivePanel(null)}
           onCancel={handleCancelOrder}
           onReturn={handleReturnItem}
+          onReturnBundle={async orderId => { await conn?.reducers.returnBundle({ orderId }); }}
         />
       )}
 
@@ -525,7 +540,7 @@ export default function App() {
               <button
                 type="button"
                 className="close-btn"
-                aria-label="Close"
+                aria-label="Close" data-role="overlay-close"
                 onClick={() => setActivePanel(null)}
               >
                 ×
@@ -563,7 +578,7 @@ export default function App() {
               <button
                 type="button"
                 className="close-btn"
-                aria-label="Close"
+                aria-label="Close" data-role="overlay-close"
                 onClick={() => setActivePanel(null)}
               >
                 ×

@@ -11,9 +11,11 @@
       "setup": [
         { "do": "signUp", "actor": "owner", "name": "delivery-owner" },
         { "do": "signUp", "actor": "other", "name": "delivery-other" },
-        { "do": "click", "actor": "owner", "testid": "notification-settings" },
+        {"do":"click","actor":"owner","testid":"notification-settings","unlessVisible":"notification-order"},
         { "do": "click", "actor": "owner", "testid": "notification-order" },
         { "do": "click", "actor": "owner", "testid": "notification-save" },
+        {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true},
+        {"do":"click","actor":"owner","testid":"catalog-link"},
         { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
         { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
         { "do": "click", "actor": "staff", "testid": "staff-link" },
@@ -28,7 +30,8 @@
           "points": 3,
           "statedBy": "A delivered order creates one notification for its owner.",
           "steps": [
-            { "do": "click", "actor": "owner", "testid": "notifications-toggle" },
+            {"do":"click","actor":"owner","testid":"notifications-toggle","unlessVisible":"notifications-panel"},
+            { "do": "expect", "actor": "owner", "testid": "notifications-panel", "attribute": "aria-busy", "value": "false", "within": 10000 },
             { "do": "expectElementCount", "actor": "owner", "testid": "notification-item", "contains": "Desk Lamp", "equals": 1, "within": 10000 }
           ]
         },
@@ -39,9 +42,10 @@
           "points": 2,
           "statedBy": "Delivery notifications are private to the order owner.",
           "steps": [
-            { "do": "click", "actor": "owner", "testid": "notifications-toggle", "unlessVisible": "notification-item" },
+            {"do":"click","actor":"owner","testid":"notifications-toggle","unlessVisible":"notifications-panel"},
             { "do": "expectElementCount", "actor": "owner", "testid": "notification-item", "contains": "Desk Lamp", "equals": 1, "within": 10000 },
-            { "do": "click", "actor": "other", "testid": "notifications-toggle" },
+            {"do":"click","actor":"other","testid":"notifications-toggle","unlessVisible":"notifications-panel"},
+            { "do": "expect", "actor": "other", "testid": "notifications-panel", "attribute": "aria-busy", "value": "false", "within": 10000 },
             { "do": "expect", "actor": "other", "testid": "notification-item", "contains": "Desk Lamp", "absent": true }
           ]
         }

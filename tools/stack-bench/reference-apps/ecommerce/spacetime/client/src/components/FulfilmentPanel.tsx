@@ -8,19 +8,23 @@ interface FulfilmentPanelProps {
 
 export default function FulfilmentPanel({ queue, onShip }: FulfilmentPanelProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitState, setSubmitState] = useState('idle');
 
   const handleShip = async (orderId: bigint) => {
     const k = String(orderId);
+    setSubmitState('pending');
     setErrors((e) => ({ ...e, [k]: '' }));
     try {
       await onShip(orderId);
+      setSubmitState('succeeded');
     } catch (err) {
+      setSubmitState('failed');
       setErrors((e) => ({ ...e, [k]: err instanceof Error ? err.message : 'Could not ship order.' }));
     }
   };
 
   return (
-    <div className="fulfilment-panel" data-role="fulfilment-panel" id="staff-area">
+    <div className="fulfilment-panel" data-role="fulfilment-panel" id="staff-area" data-submit-state={submitState}>
       <div className="fulfilment-header">
         <h2 className="section-title">Fulfilment queue</h2>
         <span className="muted">
@@ -42,6 +46,7 @@ export default function FulfilmentPanel({ queue, onShip }: FulfilmentPanelProps)
             type="button"
             className="btn btn-primary btn-sm"
             data-role="ship-submit"
+            disabled={submitState === 'pending'}
             onClick={() => handleShip(order.orderId)}
           >
             Mark shipped

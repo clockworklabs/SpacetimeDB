@@ -105,7 +105,7 @@ DismissalSchema.index({ userId: 1, itemId: 1 }, { unique: true });
 
 const CartArchiveSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: "User", required: true, unique: true },
-  items: { type: [{ itemId: Schema.Types.ObjectId, quantity: Number }], default: [] },
+  items: { type: [{ itemId: Schema.Types.ObjectId, quantity: Number, bundlePrice: Number, bundleComponentsJson: String }], default: [] },
 }, options);
 
 export const Profile = mongoose.model("ProgressionProfile", ProfileSchema);

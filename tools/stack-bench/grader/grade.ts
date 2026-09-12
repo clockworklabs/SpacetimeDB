@@ -67,7 +67,7 @@ type ActorWrite = {
   body: JsonRecord | null;
 };
 type ActorWebSocketWrite = { event: unknown; body: JsonRecord };
-type ActorContextEntry = { context: BrowserContext; name: string; page: Page | null };
+type ActorContextEntry = { context: BrowserContext; name: string; page: Page | null; traceStarted?: boolean };
 type CleanupBrowserContext = {
   tracing: { stop(options: { path: string }): Promise<void> };
   close(): Promise<void>;
@@ -75,6 +75,7 @@ type CleanupBrowserContext = {
 type CleanupVideo = { saveAs(path: string): Promise<void>; delete(): Promise<void> };
 type CleanupPage = { video(): CleanupVideo | null };
 type CleanupActorContextEntry = {
+  traceStarted?: boolean;
   context: CleanupBrowserContext;
   name: string;
   page: CleanupPage | null;
@@ -446,11 +447,12 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
         const browser = actor.page.context().browser();
         if (!browser) throw new Error('actor browser is unavailable');
         const context = await browser.newContext();
-        const fresh = await context.newPage();
         const name = `${sourceName}-fresh`;
-        // Register teardown ownership before navigation. If goto fails, the
-        // partially opened context must still be closed with the feature.
-        ctx.extraContexts?.push({ context, name, page: fresh });
+        // Own cleanup before page creation or navigation can fail.
+        const entry: ActorContextEntry = { context, name, page: null };
+        ctx.extraContexts?.push(entry);
+        const fresh = await context.newPage();
+        entry.page = fresh;
         fresh.setDefaultTimeout(defaultWithin);
         const observer = new Actor(`${actor.name}-fresh`, fresh, context);
         await observer.ready;
@@ -641,8 +643,8 @@ export async function closeActorContexts(entries: readonly CleanupActorContextEn
     stage,
     reason: keepReason(errorMessage(error)),
   }); };
-  for (const { context, name, page } of entries) {
-    if (trace) {
+  for (const { context, name, page, traceStarted } of entries) {
+    if (trace && traceStarted) {
       try {
         await context.tracing.stop({ path: join(media ?? '.', `${slug}-${name}.trace.zip`) });
       } catch (error) { record(name, 'trace', error); }
@@ -736,6 +738,7 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
       if (args.trace) {
         await runBrowserInfrastructureOperation('trace start', () =>
           context.tracing.start({ screenshots: true, snapshots: true }));
+        contexts[contexts.length - 1]!.traceStarted = true;
       }
       const page = await runBrowserInfrastructureOperation('page creation', () => context.newPage());
       contexts[contexts.length - 1]!.page = page;

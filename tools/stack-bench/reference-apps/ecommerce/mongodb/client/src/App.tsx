@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
 import { ProgressionPanel } from "./ProgressionPanel";
+import { BundlePanel } from "./BundlePanel";
+import { CreditPanel } from "./CreditPanel";
+import { SubscriptionPanel } from "./SubscriptionPanel";
 
 const TOKEN_KEY = "mongodb_shop_token";
 const CATALOG_PAGE_SIZE = 10;
@@ -37,6 +40,7 @@ interface ItemDetailT {
 }
 
 interface CartLineT {
+  isBundle?: boolean;
   itemId: string;
   name: string;
   price: number;
@@ -54,6 +58,7 @@ interface CartT {
 }
 
 interface OrderLineT {
+  isBundle?: boolean;
   itemId: string;
   name: string;
   price: number;
@@ -68,6 +73,8 @@ interface OrderT {
   total: number;
   status: "pending" | "shipped" | "delivered" | "cancelled" | "refunded";
   discount?: number;
+  creditMinor?: number;
+  externalMinor?: number;
   refundTotal?: number;
   createdAt: string;
   payments?: Array<{ id: string; amount: number; status: string }>;
@@ -483,6 +490,7 @@ export default function App() {
       });
     } catch (err: any) {
       showOrderError(err.message);
+      throw err;
     }
   };
 
@@ -521,6 +529,9 @@ export default function App() {
 
   return (
     <div className="app">
+      <CreditPanel token={token} staff={Boolean(currentUser?.isAdmin || currentUser?.isStaff)} />
+      <BundlePanel token={token} canManage={Boolean(currentUser?.isAdmin)} onAdded={() => token ? refreshCart(token) : Promise.resolve()} />
+      <SubscriptionPanel key={token ?? 'guest'} signedIn={Boolean(currentUser)} token={token} />
       {initializing && (
         <div className="loading-screen">
           <div className="spinner" />
@@ -710,6 +721,7 @@ export default function App() {
                 <span>Total</span>
                 <span data-role="cart-total">${cart.total.toFixed(2)}</span>
               </div>
+              <button data-role="credit-checkout" onClick={async () => { try { await apiFetch("/api/checkout/credit", token, { method: "POST" }); if (token) await refreshCart(token); await openOrders(); } catch(error) { showOrderError(String(error)); } }}>Pay with credit</button>
               <button className="btn btn-primary" data-role="checkout-submit" style={{ marginTop: 16, width: "100%" }} onClick={handleCheckout}>
                 Checkout
               </button>
@@ -738,26 +750,29 @@ export default function App() {
             orders.map((order) => (
               <div className="order-item" data-role="order-item" data-entity-id={String(order.id)}
                 data-ship-input={JSON.stringify({ orderId: order.id })}
-                data-cancel-input={JSON.stringify({ orderId: order.id })} key={order.id}>
+                data-cancel-input={JSON.stringify({ orderId: order.id })} data-bundle-return-input={JSON.stringify({ orderId: order.id })} key={order.id}>
                 <div className="order-item-header">
                   <span>{new Date(order.createdAt).toLocaleString()}</span>
-                  <span data-role="order-status">{order.status}</span>
+                  <span data-role="order-status">{order.items.length > 0 && order.items.every(line => line.returned) ? "returned" : order.status}</span>
                 </div>
                 <div>{order.items.map((l) => `${l.name} ×${l.quantity}${l.returned ? " (returned)" : ""}`).join(", ")}</div>
                 <div className="order-total" data-role="order-total">
                   ${order.total.toFixed(2)}
                 </div>
+                <span data-role="payment-credit-amount">{Number(order.creditMinor || 0) / 100}</span>
+                <span data-role="payment-external-amount">{order.externalMinor ? order.externalMinor / 100 : order.total - Number(order.creditMinor || 0) / 100}</span>
                 <div data-role="order-discount">{Number(order.discount || 0).toFixed(2)}</div>
                 <div data-role="order-refund-total">{Number(order.refundTotal || 0).toFixed(2)}</div>
+                {order.items.some(line => line.isBundle) && <span data-role="bundle-refund-amount">{Number(order.refundTotal || 0).toFixed(2)}</span>}
                 {(order.payments ?? []).map((payment) => (
                   <div data-role="payment-record" key={payment.id}>
                     <span data-role="payment-status">{payment.status}</span>
                     <span data-role="payment-amount">{Number(payment.amount).toFixed(2)}</span>
                   </div>
                 ))}
-                {order.status === "refunded" && order.items.map(line =>
-                  <div data-role="refund-entry" key={`refund-${line.itemId}`}>{line.name}</div>)}
+                {Number(order.refundTotal || 0) > 0 && <div data-role="refund-entry">{order.items.map(line => line.name).join(", ")}<span data-role="refund-credit-amount">{Math.round(Number(order.creditMinor || 0) * Number(order.refundTotal || 0) / order.total) / 100}</span><span data-role="refund-external-amount">{Number(order.refundTotal || 0) - Math.round(Number(order.creditMinor || 0) * Number(order.refundTotal || 0) / order.total) / 100}</span></div>}
                 <div className="order-item-actions">
+                  {["shipped", "delivered"].includes(order.status) && order.items.some(line => line.isBundle && !line.returned) && <button data-role="return-bundle" onClick={async () => { try { await apiFetch(`/api/bundle-orders/${order.id}/return`, token, { method: "POST" }); await openOrders(); } catch (error) { showOrderError(String(error)); } }}>Return bundle</button>}
                   {order.status === "pending" && (
                     <button className="btn btn-danger btn-sm" data-role="cancel-order" onClick={() => handleCancelOrder(order.id)}>
                       Cancel order
@@ -765,7 +780,7 @@ export default function App() {
                   )}
                   {order.status === "shipped" &&
                     order.items
-                      .filter((l) => !l.returned)
+                      .filter((l) => !l.returned && !l.isBundle)
                       .map((l) => (
                         <button
                           key={l.itemId}
@@ -826,8 +841,19 @@ function ItemCard({
   testId?: string | null;
 }) {
   const outOfStock = item.stock === 0;
+  const [submitState, setSubmitState] = useState('idle');
+  const requestAlert = async (event: React.MouseEvent) => {
+    event.stopPropagation();
+    setSubmitState('pending');
+    try {
+      await apiFetch('/api/progression/stock-alerts', localStorage.getItem(TOKEN_KEY),
+        { method: 'POST', body: JSON.stringify({ itemId: item.id }) });
+      setSubmitState('succeeded');
+    } catch { setSubmitState('failed'); }
+  };
   return (
     <div className={`item-card${outOfStock ? " out-of-stock-card" : ""}`} data-role={testId ?? undefined}
+      data-submit-state={submitState}
       data-buy-input={JSON.stringify({ itemId: item.id })} onClick={onOpen}>
       <div className="item-name" data-role="item-name">
         {item.name}
@@ -860,8 +886,7 @@ function ItemCard({
       {(item.variants || []).map(variant =>
         <span data-role="item-variant" className="pill-warning" key={variant}>{variant}</span>)}
       {isCustomer && outOfStock && <button data-role="stock-alert" className="btn btn-ghost btn-sm"
-        onClick={async () => { await apiFetch("/api/progression/stock-alerts", localStorage.getItem(TOKEN_KEY),
-          { method: "POST", body: JSON.stringify({ itemId: item.id }) }); }}>Notify me</button>}
+        disabled={submitState === 'pending'} onClick={requestAlert}>Notify me</button>}
     </div>
   );
 }
@@ -1022,7 +1047,7 @@ function CartLineRow({
         }}
       />
       <span className="cart-line-price">${(line.price * line.quantity).toFixed(2)}</span>
-      <button className="btn btn-danger btn-sm" data-role="cart-remove" onClick={onRemove}>
+      <button className="btn btn-danger btn-sm" data-role={line.isBundle ? "bundle-remove" : "cart-remove"} onClick={onRemove}>
         Remove
       </button>
     </div>
@@ -1398,12 +1423,18 @@ function FulfilmentPanel({
 }: {
   queue: FulfilmentQueueT;
   onClose: () => void;
-  onShip: (orderId: string) => void;
+  onShip: (orderId: string) => Promise<void>;
   orderError: string;
   children?: React.ReactNode;
 }) {
+  const [submitState, setSubmitState] = useState('idle');
+  const ship = async (orderId: string) => {
+    setSubmitState('pending');
+    try { await onShip(orderId); setSubmitState('succeeded'); }
+    catch { setSubmitState('failed'); }
+  };
   return (
-    <div className="admin-panel" data-role="fulfilment-panel" id="staff-area">
+    <div className="admin-panel" data-role="fulfilment-panel" id="staff-area" data-submit-state={submitState}>
       <div className="panel-header">
         <h2>Fulfilment queue</h2>
         <button className="close-btn" onClick={onClose}>
@@ -1437,7 +1468,7 @@ function FulfilmentPanel({
                 </span>
               ))}
             </div>
-            <button className="btn btn-primary btn-sm" data-role="ship-submit" style={{ marginTop: 8 }} onClick={() => onShip(order.id)}>
+            <button className="btn btn-primary btn-sm" data-role="ship-submit" disabled={submitState === 'pending'} style={{ marginTop: 8 }} onClick={() => ship(order.id)}>
               Mark shipped
             </button>
           </div>

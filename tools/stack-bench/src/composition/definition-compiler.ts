@@ -189,7 +189,7 @@ export const ACTION_DEFINITIONS = Object.freeze({
   expectSequence: fields({ ...actor, testid: nonEmptyString, equals: stringArray },
     { ...locator, ...within }),
   expectReceived: fields({ ...actor, contains: string, within: positiveNumber }),
-  expectReplayCompleted: fields(actor),
+  expectReplayCompleted: fields(actor, { requireAccepted: boolean }),
   expectReplayRejected: fields(actor, { allowNotFound: boolean }),
   expectStable: fields({ ...actor, testid: nonEmptyString },
     { samples: positiveInteger, intervalMs: positiveNumber, ...within }),

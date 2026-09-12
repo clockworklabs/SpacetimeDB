@@ -10,7 +10,8 @@
       "actors": ["staff", "activeBuyer", "expiredBuyer", "firstBuyer", "secondBuyer"],
       "setup": [
         { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
-        { "do": "click", "actor": "staff", "testid": "promotions-link" },
+        {"do":"click","actor":"staff","testid":"staff-link","unlessVisible":"promotions-link"},
+        {"do":"click","actor":"staff","testid":"promotions-link","unlessVisible":"promotion-code"},
         { "do": "fill", "actor": "staff", "testid": "promotion-code", "text": "LIVE10" },
         { "do": "fill", "actor": "staff", "testid": "promotion-discount", "text": "10" },
         { "do": "fill", "actor": "staff", "testid": "promotion-start", "text": "2020-01-01" },

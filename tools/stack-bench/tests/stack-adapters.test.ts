@@ -31,8 +31,8 @@ const FULL_GRADING_CAPABILITIES = [
 test('built-in adapters preserve the port grid and lease identity', () => {
   assert.deepEqual(STACK_ADAPTER_REGISTRY.ids, ['mongodb', 'postgres', 'spacetime', 'stub']);
   assert.equal(stackAdapterVersion('postgres'), '1.5.0');
-  assert.equal(STACK_ADAPTER_REGISTRY.get('mongodb').version, '1.4.0');
-  assert.equal(STACK_ADAPTER_REGISTRY.get('spacetime').version, '1.3.0');
+  assert.equal(STACK_ADAPTER_REGISTRY.get('mongodb').version, '1.5.0');
+  assert.equal(STACK_ADAPTER_REGISTRY.get('spacetime').version, '1.4.0');
   assert.equal(STACK_ADAPTER_REGISTRY.get('stub').version, '1.1.0');
   assert.throws(() => stackAdapterVersion('unknown'), /unknown stack adapter/);
 
@@ -97,7 +97,7 @@ test('hosted stacks receive the exact leased database environment', () => {
   }), { DATABASE_URL: 'postgresql://appuser:local-app-password@127.0.0.1:6532/app_ecom_run6' });
   assert.deepEqual(leasedDatabaseEnvironment(STACK_ADAPTER_REGISTRY.get('mongodb'), {
     database: 'app_ecom_run7', networkMode: 'bridge',
-  }), { DATABASE_URL: 'mongodb://host.docker.internal:6537/app_ecom_run7' });
+  }), { DATABASE_URL: 'mongodb://host.docker.internal:6537/app_ecom_run7?replicaSet=rs0&directConnection=true' });
   assert.deepEqual(leasedDatabaseEnvironment(STACK_ADAPTER_REGISTRY.get('spacetime'), {
     database: null, networkMode: 'host',
   }), {});
@@ -107,18 +107,20 @@ test('SpacetimeDB container operations use the isolated agent identity', () => {
   const calls: Array<[string, readonly string[]]> = [];
   const exec = (command: string, args: readonly string[]): string => {
     calls.push([command, args]);
+    if (args[0] === 'inspect') return 'leased-build-id';
     const sql = args.at(-1);
     assert(sql);
-    if (/select id from item/.test(sql)) return '1\n';
-    if (/select id from warehouse/.test(sql)) return '2\n';
+    if (/select id from item/.test(sql)) return 'id\n---\n1\n';
+    if (/select id from warehouse/.test(sql)) return 'id\n---\n2\n';
+    if (/select warehouse_id, quantity/.test(sql)) return 'warehouse_id | quantity\n---+---\n2 | 3\n';
     if (/select quantity/.test(sql)) return '3\n';
     return '';
   };
   setSpacetimeStock({ item: 'widget', warehouse: 'east', quantity: 3,
     spacetime: { buildContainer: { name: 'leased-build', id: 'leased-build-id' }, mod: 'shop',
       containerUri: 'http://host.docker.internal:3000' }, exec });
-  assert.equal(calls.length, 4);
-  for (const [command, args] of calls) {
+  assert.equal(calls.length, 8);
+  for (const [command, args] of calls.filter(([, args]) => args[0] !== 'inspect')) {
     assert.equal(command, 'docker');
     assert.deepEqual(args.slice(0, 8), ['exec', '--user', '10001:10001', '-e',
       'HOME=/home/developer', '-e', 'USER=developer', 'leased-build-id']);
@@ -145,9 +147,10 @@ test('a stock write that finds no table, column, or row is the application missi
   ]) assert.equal(describesMissingStockInterface(detail), false, detail);
 
   const exec = (_command: string, args: readonly string[]): string => {
+    if (args[0] === 'inspect') return 'leased-build-id';
     const sql = args.at(-1) ?? '';
-    if (/select id from item/.test(sql)) return '1\n';
-    if (/select id from warehouse/.test(sql)) return '2\n';
+    if (/select id from item/.test(sql)) return 'id\n---\n1\n';
+    if (/select id from warehouse/.test(sql)) return 'id\n---\n2\n';
     throw Object.assign(new Error('exit 1'), { status: 1,
       stderr: 'Error: `stock` does not have a field `quantity`\n' });
   };
@@ -160,7 +163,8 @@ test('a stock write that finds no table, column, or row is the application missi
   assert.throws(() => setSpacetimeStock({ item: 'widget', warehouse: 'east', quantity: 3,
     spacetime: { buildContainer: { name: 'leased-build', id: 'leased-build-id' }, mod: 'shop',
       containerUri: 'http://host.docker.internal:3000' },
-    exec: (_command, args) => /select id from item/.test(args.at(-1) ?? '') ? '1\n' : '' }),
+    exec: (_command, args) => args[0] === 'inspect' ? 'leased-build-id'
+      : /select id from item/.test(args.at(-1) ?? '') ? 'id\n---\n1\n' : 'id\n---\n' }),
   (error: unknown) => error instanceof Error && 'missingRow' in error && error.missingRow === 'warehouse');
 
   for (const [stderr, expectedInterface] of [
@@ -171,9 +175,35 @@ test('a stock write that finds no table, column, or row is the application missi
     assert.throws(() => setSpacetimeStock({ item: 'widget', warehouse: 'east', quantity: 3,
       spacetime: { buildContainer: { name: 'leased-build', id: 'leased-build-id' }, mod: 'shop',
         containerUri: 'http://host.docker.internal:3000' },
-      exec: () => { throw Object.assign(new Error('exit 1'), { stderr }); } }),
+      exec: (_command, args) => {
+        if (args[0] === 'inspect') return 'leased-build-id';
+        throw Object.assign(new Error('exit 1'), { stderr });
+      } }),
     (error: unknown) => error instanceof Error
       && ('stockInterface' in error && error.stockInterface === true) === expectedInterface);
+  }
+});
+
+test('Spacetime stock writes separate missing rows from failed writes and malformed evidence', () => {
+  for (const [rows, expectedInterface] of [
+    ['warehouse_id | quantity\n---+---\n', true],
+    ['invalid output', false],
+    ['warehouse_id | quantity\n---+---\n2 | 100\n', false],
+  ] as const) {
+    let writes = 0;
+    assert.throws(() => setSpacetimeStock({ item: 'widget', warehouse: 'east', quantity: 3,
+      spacetime: { buildContainer: { name: 'leased-build', id: 'leased-build-id' }, mod: 'shop',
+        containerUri: 'http://localhost:3000' }, exec: (_command, args) => {
+        const sql = args.at(-1) ?? '';
+        if (args[0] === 'inspect') return 'leased-build-id';
+        if (/select id from item/.test(sql)) return 'id\n---\n1\n';
+        if (/select id from warehouse/.test(sql)) return 'id\n---\n2\n';
+        if (/select warehouse_id, quantity/.test(sql)) return rows;
+        if (/^update stock/.test(sql)) { writes++; return ''; }
+        return 'quantity\n---\n100\n';
+      } }), error => error instanceof Error
+        && ('stockInterface' in error && error.stockInterface === true) === expectedInterface);
+    assert.equal(writes, rows.includes('2 | 100') ? 1 : 0);
   }
 });
 

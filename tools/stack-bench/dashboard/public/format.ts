@@ -41,7 +41,7 @@ export function num(value: number | null | undefined): string {
 // One value: the count and the total it is out of.
 export function ratio(used: number | null | undefined, budget: number | null | undefined): string {
   if (used == null) return DASH;
-  return budget == null ? String(used) : `${used}<i>/ ${budget}</i>`;
+  return budget == null ? String(used) : `${used} / ${budget}`;
 }
 
 export function money(value: number | null | undefined): string {
@@ -49,10 +49,11 @@ export function money(value: number | null | undefined): string {
   return `$${value.toFixed(2)}`;
 }
 
-export function spend(value: CostEvidence, pending = false, liveSpend?: number): string {
+export function spend(value: CostEvidence & { knownCostUsd?: number }, pending = false, liveSpend?: number): string {
   return (liveSpend !== undefined
     ? `<span title="Live estimate from reported response usage; final receipts replace this value">~${money(liveSpend)}</span>`
-    : value.status === 'unknown' ? 'Unknown'
+    : value.status === 'unknown' ? value.knownCostUsd
+      ? `<span title="Recorded spend; final accounting is incomplete">${money(value.knownCostUsd)} recorded</span>` : 'Unknown'
     : `${value.status === 'upper-bound' ? '≤' : ''}${money(value.costUsd)}`)
     + (pending ? ' <span class="spend-pending dot a" role="img" aria-label="Cost still updating" title="Cost still updating"></span>' : '');
 }
@@ -106,6 +107,13 @@ export function modelLabel(model?: string): string {
   return ({ 'claude-fable-5-1': 'Fable 5.1', 'claude-opus-5': 'Opus 5', 'gpt-5.6-sol': 'Sol', 'gpt-6-astra': 'Astra' } as Record<string, string>)[model ?? ''] ?? model ?? '';
 }
 
-export function runLabel(attempt: Pick<SheetAttempt, "repetition" | "model" | "effort">): string {
-  return `${modelLabel(attempt.model)}${attempt.effort ? ` (${attempt.effort})` : ''} · Rep ${attempt.repetition}`;
+export function completionLabel(attempt: Pick<SheetAttempt, 'status' | 'excluded' | 'completion'>): string {
+  if (attempt.excluded && attempt.status !== 'running' && attempt.status !== 'pending') {
+    return attempt.status === 'completed' ? 'Excluded' : 'Incomplete';
+  }
+  return attempt.completion ? ratio(attempt.completion.passed, attempt.completion.selected) : DASH;
+}
+
+export function runLabel(attempt: Pick<SheetAttempt, "repetition" | "model" | "effort">, showRepetition = true): string {
+  return `${modelLabel(attempt.model)}${attempt.effort ? ` (${attempt.effort})` : ''}${showRepetition ? ` · Rep ${attempt.repetition}` : ''}`;
 }

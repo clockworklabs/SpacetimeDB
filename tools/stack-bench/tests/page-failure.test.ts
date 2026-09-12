@@ -51,7 +51,9 @@ test('alternative controls are not reported as nested controls', () => {
   for (const operation of ['or', 'and']) {
     const message = `locator.waitFor: Timeout waiting for locator('[data-role="signup-username"]').${operation}(locator('[data-role="signup-toggle"]'))`;
     const failure = pageFailure(message);
-    assert.doesNotMatch(failure.message, /inside|signup-toggle|signup-username/);
+    assert.doesNotMatch(failure.message, /inside/);
+    if (operation === 'or') assert.match(failure.message, /signup-username, signup-toggle/);
+    else assert.doesNotMatch(failure.message, /signup-toggle|signup-username/);
     const finding = findingOf(message);
     assert.equal(finding.kind, 'page-timeout');
     if (finding.kind === 'page-timeout') assert.equal(finding.fields.scope, undefined);

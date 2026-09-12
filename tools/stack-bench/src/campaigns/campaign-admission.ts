@@ -570,6 +570,7 @@ export async function runCampaignAdmission(plan: CompiledCampaignPlan, directory
   const scoped: CompiledCampaignPlan = attempt ? { ...plan,
     stacks: plan.stacks.filter(stack => stack.id === attempt.stack),
     agents: plan.agents.filter(agent => agent.adapter === attempt.agentAdapter && agent.model === attempt.model
+      && agent.effort === attempt.effort
       && agent.providerRoute === attempt.providerRoute && agent.maxOutputTokens === attempt.maxOutputTokens),
     attempts: [attempt], conditions: [attempt.condition], summary: { ...plan.summary, parallelism: 1 } } : plan;
   const resourceFree = campaignUsesNoExternalResources(scoped);

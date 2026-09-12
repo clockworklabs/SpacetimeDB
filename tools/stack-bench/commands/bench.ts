@@ -359,7 +359,7 @@ export function synchronizeProgressionSummary(run: Pick<BenchmarkRunRecord, 'val
   }
 }
 
-function mergeFeatureLevelRecord(previous: RunLevelRecord | null,
+export function mergeFeatureLevelRecord(previous: RunLevelRecord | null,
   current: RunLevelRecord): RunLevelRecord {
   if (!previous) return current;
   const buildSessions: RunSessionRecord[] = [
@@ -367,7 +367,9 @@ function mergeFeatureLevelRecord(previous: RunLevelRecord | null,
     ...(current.buildSessions ?? []),
   ];
   const repairSessions = [...(previous.repairSessions ?? []), ...(current.repairSessions ?? [])];
-  const sessionTotals = summarizeSessions([...buildSessions, ...repairSessions]);
+  const sessionTotals = summarizeSessions([...buildSessions,
+    ...(current.resumeSession ?? previous.resumeSession ? [current.resumeSession ?? previous.resumeSession!] : []),
+    ...repairSessions]);
   const repairs = (previous.repairs ?? 0) + (current.repairs ?? 0);
   const repair = current.repair ? {
     ...current.repair,
@@ -901,7 +903,32 @@ export function inspectGradeSource(directory: string,
     runSha256: sha256(readFileSync(runPath)), aliases };
 }
 
+export function pendingRunSnapshot(run: BenchmarkRunRecord, pending: RunLevelRecord | null,
+  costComplete: boolean): BenchmarkRunRecord {
+  const snapshot = { ...run, levels: [...run.levels] };
+  if (pending) {
+    const index = snapshot.levels.findIndex(level => level.level === pending.level);
+    const record = mergeFeatureLevelRecord(index < 0 ? null : snapshot.levels[index]!, pending);
+    if (index < 0) snapshot.levels.push(record);
+    else snapshot.levels[index] = record;
+    if (!['harness_failure', 'provider_failure'].includes(run.outcome?.kind ?? '')) snapshot.outcome = { kind: 'ungraded', phase: 'interrupted-level',
+      reason: 'level has not completed', appFailures: [], inconclusive: [], harnessFailures: [] };
+  }
+  finalizeRunTotals(snapshot, Date.parse(run.startedAt), { costComplete });
+  return snapshot;
+}
+
 async function main() {
+  let pendingLevel: RunLevelRecord | null = null;
+  let sessionInFlight = false;
+  let runCostComplete = true;
+  const persistRun = (path: string, value: unknown) => {
+    if (pendingLevel || sessionInFlight) {
+      return writeRunJson(path, pendingRunSnapshot(value as BenchmarkRunRecord,
+        pendingLevel, runCostComplete && !sessionInFlight));
+    }
+    return writeRunJson(path, value);
+  };
   const args: BenchArgs = {
     ...parseBenchArguments(process.argv),
     recipeTasks: new Map(),
@@ -1350,7 +1377,7 @@ async function main() {
     if (activeRun) {
       activeRun.backendLease = evidence;
       activeRun.outcome ??= aggregateRunOutcome(activeRun.levels);
-      writeRunJson(join(outputDir, ARTIFACT_FILE.run), activeRun);
+      persistRun(join(outputDir, ARTIFACT_FILE.run), activeRun);
     }
     tornDown = released;
     if (released && !retainBackend && !finalLease.campaignDelegation) {
@@ -1546,12 +1573,12 @@ async function main() {
       retainPriorContracts: args.retainPriorContracts ?? true,
       resumeFrom: args.progressionResumeFrom ?? null,
       getRunArtifact: () => {
-        writeRunJson(join(outputDir, ARTIFACT_FILE.run), run);
+        persistRun(join(outputDir, ARTIFACT_FILE.run), run);
         return readArtifact(join(outputDir, ARTIFACT_FILE.run));
       },
       onState: status => {
         run.progressionStatus = status;
-        writeRunJson(join(outputDir, ARTIFACT_FILE.run), run);
+        persistRun(join(outputDir, ARTIFACT_FILE.run), run);
       },
     }) : null;
   const progressionStart = progressionExecution?.initialize() ?? null;
@@ -1576,7 +1603,7 @@ async function main() {
       priorTotals: prior.payload.totals ?? null,
     };
     run.progressionStatus = progressionStart.status;
-    writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
+    persistRun(join(args.out, ARTIFACT_FILE.run), run);
   }
 
   const bindProgressionAction = (level: number): ProgressionRecipeAction | null => {
@@ -1606,6 +1633,7 @@ async function main() {
   };
 
   const appendLevelRecord = (record: RunLevelRecord): void => {
+    pendingLevel = null;
     if (args.dependencyPolicy?.definition.workSelection !== 'feature') {
       run.levels.push(record);
       return;
@@ -1615,14 +1643,34 @@ async function main() {
     else run.levels[index] = mergeFeatureLevelRecord(run.levels[index] ?? null, record);
   };
 
-  let runCostComplete = true;
-
   const runAgentForLevel = async (mode: AgentMode, level: number,
     onFailure?: () => Promise<void>): Promise<ValidatedAgentResult> => {
     try {
       clearPrivateGradingEvidence(appDir);
+      pendingLevel ??= { level, graded: false, score: null, max: null, selection: null,
+        outcome: { kind: 'ungraded' }, buildSessions: [], repairSessions: [] };
+      sessionInFlight = true;
+      persistRun(join(outputDir, ARTIFACT_FILE.run), run);
       const result = await runAgent(args, agentAdapter, mode, level, appDir);
+      sessionInFlight = false;
+      const paid = runSessionRecord(result);
+      if (mode === 'fix') {
+        pendingLevel.repairSessions!.push(paid);
+        pendingLevel.repairCostUsd = addCostUsd(pendingLevel.repairCostUsd, paid.costUsd);
+        pendingLevel.repairs = (pendingLevel.repairs ?? 0) + 1;
+      } else if (mode === 'resume') {
+        pendingLevel.resumeSession = paid;
+        pendingLevel.resumeCostUsd = paid.costUsd;
+      } else {
+        pendingLevel.buildSessions!.push(paid);
+        pendingLevel.buildCostUsd = addCostUsd(pendingLevel.buildCostUsd, paid.costUsd);
+      }
+      pendingLevel.costUsd = addCostUsd(pendingLevel.buildCostUsd, pendingLevel.resumeCostUsd,
+        pendingLevel.repairCostUsd);
+      pendingLevel.sessionTotals = summarizeSessions([...pendingLevel.buildSessions!,
+        ...(pendingLevel.resumeSession ? [pendingLevel.resumeSession] : []), ...pendingLevel.repairSessions!]);
       if (result.costComplete !== true) runCostComplete = false;
+      persistRun(join(outputDir, ARTIFACT_FILE.run), run);
       return result;
     } catch (error) {
       await onFailure?.();
@@ -1639,7 +1687,7 @@ async function main() {
       }
       finalizeRunTotals(run, started, { costComplete: false });
       run.completedAt = new Date().toISOString();
-      writeRunJson(join(outputDir, ARTIFACT_FILE.run), run);
+      persistRun(join(outputDir, ARTIFACT_FILE.run), run);
       throw error;
     }
   };
@@ -1683,7 +1731,7 @@ async function main() {
       for (const evidence of audit.evidence) console.log(`     ${evidence}`);
       console.log('     The audit did not establish a usable result.');
     }
-    try { writeRunJson(join(outputDir, ARTIFACT_FILE.run), run); } catch { /* best effort */ }
+    try { persistRun(join(outputDir, ARTIFACT_FILE.run), run); } catch { /* best effort */ }
     try { archiveTranscripts(appDir, artifactLabel); } catch { /* best effort */ }
     teardown();
     process.exit(4);
@@ -1698,10 +1746,10 @@ async function main() {
       const context = readDepthPauseContext();
       if (!context || context.depth !== pauseDepth) throw new Error('planned depth pause has no controller authority');
       finalizeRunTotals(run, started, { costComplete: runCostComplete });
-      writeRunJson(join(outputDir, ARTIFACT_FILE.run), run);
+      persistRun(join(outputDir, ARTIFACT_FILE.run), run);
       run.pausedDurationMs = await waitAtDepthBoundary(outputDir, appDir, context);
       finalizeRunTotals(run, started, { costComplete: runCostComplete });
-      writeRunJson(join(outputDir, ARTIFACT_FILE.run), run);
+      persistRun(join(outputDir, ARTIFACT_FILE.run), run);
     }
     // A previous checkpoint cannot cover a newer session or partial grade.
     clearTimeContinuationBoundary(outputDir);
@@ -1797,7 +1845,7 @@ async function main() {
         run.validation.ladder.completedLevels.push(level);
       }
       run.progressionStatus = progressionExecution!.status();
-      writeRunJson(join(outputDir, ARTIFACT_FILE.run), run);
+      persistRun(join(outputDir, ARTIFACT_FILE.run), run);
       if (state.phase === 'terminal') break;
       if (state.attempts.at(-1)?.outcome === 'inconclusive') {
         run.validation.ladder.stoppedAfterLevel = level;
@@ -1875,10 +1923,10 @@ async function main() {
       if (!passed) {
         run.validation.ladder.stoppedAfterLevel = level > 1 ? level - 1 : null;
         run.validation.ladder.blockedLevels = args.levelList.filter(candidate => candidate >= level);
-        writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
+        persistRun(join(args.out, ARTIFACT_FILE.run), run);
         break;
       }
-      writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
+      persistRun(join(args.out, ARTIFACT_FILE.run), run);
       if (!next || next.type === 'terminal' || next.level === undefined || next.level <= level) {
         throw new Error(`extension did not advance after depth ${level}`);
       }
@@ -1947,7 +1995,7 @@ async function main() {
           costUsd: 0, durationSec: Math.round((Date.now() - t0) / 1000) });
         run.validation.ladder.stoppedAfterLevel = level;
         run.validation.ladder.blockedLevels = args.levelList.filter(candidate => candidate >= level);
-        writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
+        persistRun(join(args.out, ARTIFACT_FILE.run), run);
         break;
       }
     }
@@ -2055,7 +2103,7 @@ async function main() {
           initialChecks: priorCheckpoint?.checks } : {}),
         workNodeIds: object(prompt) && Array.isArray(prompt.nodeIds)
           ? prompt.nodeIds.filter((id): id is string => typeof id === 'string') : [] });
-      writeRunJson(join(outputDir, ARTIFACT_FILE.run), run);
+      persistRun(join(outputDir, ARTIFACT_FILE.run), run);
     };
     const restoreAcceptedRepair = async (sourcePath: string, gradingPath: string,
       completedRepair = true): Promise<boolean> => {
@@ -2131,7 +2179,7 @@ async function main() {
           costUsd: 0, durationSec: Math.round((Date.now() - t0) / 1000) });
         run.validation.ladder.stoppedAfterLevel = level;
         run.validation.ladder.blockedLevels = args.levelList.filter(candidate => candidate >= level);
-        writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
+        persistRun(join(args.out, ARTIFACT_FILE.run), run);
         break;
       }
     }
@@ -2954,8 +3002,8 @@ async function main() {
     }
     if (progressionState) synchronizeProgressionSummary(run, progressionState);
     finalizeRunTotals(run, started, { costComplete: runCostComplete });
-    run.outcome = aggregateRunOutcome(run.levels);
-    writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
+    run.outcome = aggregateRunOutcome(run.levels, progressionExecution?.state?.terminalOutcome);
+    persistRun(join(args.out, ARTIFACT_FILE.run), run);
     if (progressionState && runCostComplete) {
       commitTimeContinuationBoundary(outputDir, progressionState, level);
     }
@@ -2965,14 +3013,14 @@ async function main() {
       if (progressionState.phase === 'terminal') {
         if (blockedLevels.length) run.validation.ladder.stoppedAfterLevel = level;
         run.validation.ladder.blockedLevels = blockedLevels;
-        writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
+        persistRun(join(args.out, ARTIFACT_FILE.run), run);
         break;
       }
       if (progressionState.level <= level) {
         if (progressionState.attempts.at(-1)?.outcome === 'inconclusive') {
           run.validation.ladder.stoppedAfterLevel = level;
           run.validation.ladder.blockedLevels = [level, ...blockedLevels];
-          writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
+          persistRun(join(args.out, ARTIFACT_FILE.run), run);
           break;
         }
         if (featureActionSequence !== null && progressionState.level === level) {
@@ -2986,7 +3034,7 @@ async function main() {
     if (blockedLevels.length && !ladderMayAdvance(finalBundleOutcome)) {
       run.validation.ladder.stoppedAfterLevel = level;
       run.validation.ladder.blockedLevels = blockedLevels;
-      writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
+      persistRun(join(args.out, ARTIFACT_FILE.run), run);
       console.log(`  ladder paused after L${level}: L${level} must pass before `
         + `${blockedLevels.map(candidate => `L${candidate}`).join(', ')} can start`);
       console.log('  inspect the failures, then explicitly grant more repairs or correct the benchmark');
@@ -2996,7 +3044,7 @@ async function main() {
 
   if (args.mutations) {
     console.log(`\n================ ${args.backend} mutation control ================`);
-    const pristineOutcome = aggregateRunOutcome(run.levels);
+    const pristineOutcome = aggregateRunOutcome(run.levels, progressionExecution?.state?.terminalOutcome);
     if (args.referenceMutationOnly || mutationControlEligible(pristineOutcome)) {
       args.parentAttemptId = runId;
       const baselineBundle = pristineMutationBaselinePath(args);
@@ -3010,7 +3058,7 @@ async function main() {
         outcome: { kind: pristineOutcome.kind, phase: 'mutation-control-prerequisite',
           reason: `pristine outcome is ${pristineOutcome.kind}` } };
     }
-    writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
+    persistRun(join(args.out, ARTIFACT_FILE.run), run);
   }
 
   // Record a final transcript audit in addition to the per-session hard gates.
@@ -3046,7 +3094,7 @@ async function main() {
   run.outcome = finalAuditFailure ?? (args.referenceMutationOnly && run.mutationControl?.ok
     ? { kind: 'passed', phase: 'mutation-control', reason: null,
       appFailures: [], inconclusive: [], harnessFailures: [] }
-    : aggregateRunOutcome(run.levels));
+    : aggregateRunOutcome(run.levels, progressionExecution?.state?.terminalOutcome));
   if (args.mutations && !run.mutationControl?.ok && !run.mutationControl?.skipped) {
     run.outcome = { kind: run.mutationControl?.outcome?.kind === 'incomplete'
       ? 'incomplete' : 'harness_failure', phase: 'mutation-control',
@@ -3077,7 +3125,7 @@ async function main() {
     continuation.cumulativeDurationAfterSec = continuation.cumulativeDurationBeforeSec + totals.durationSec;
   }
   run.completedAt = new Date().toISOString();
-  writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
+  persistRun(join(args.out, ARTIFACT_FILE.run), run);
 
   console.log(`\n================ ${args.backend} summary ================`);
   for (const l of run.levels) {

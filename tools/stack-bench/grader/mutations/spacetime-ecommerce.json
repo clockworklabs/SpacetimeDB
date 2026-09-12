@@ -1,10 +1,25 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "473a019e68b1d4f63955017a616d0d39a1fb6d1c902656e6468a25e94d7edaa5",
+  "fixtureSha256": "030692cebc5807dadb8dd0047cc72b50cbf9cb813325a6f3ca365292c95685ab",
   "backend": "spacetime",
   "track": "ecommerce",
   "note": "Mutation definitions for the SpacetimeDB ecommerce reference.",
   "mutations": [
+    {
+      "id": "staff-admin-access-survives-role-removal",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
+      "targets": [
+        "ecommerce.spec.access-control.staff-role-revocation.621d"
+      ],
+      "desc": "Keep administrator access after changing the assigned role back to staff.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "ctx.db.account.id.update({ ...target, isAdmin: role === 'admin' });",
+          "replace": "ctx.db.account.id.update({ ...target, isAdmin: target.isAdmin || role === 'admin' });"
+        }
+      ]
+    },
     {
       "id": "shipping-counts-sale-twice",
       "scenario": "tracks/ecommerce/scenarios/progression-shipping-accounting.json",
@@ -175,7 +190,7 @@
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "  bumpPurchaseCount(ctx, itemId, 1);",
+          "find": "  bumpPurchaseCount(ctx, itemId, quantity);",
           "replace": "  // mutant: buy-now never advances the ranking count"
         }
       ]
@@ -210,7 +225,7 @@
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "  const allocations = decrementStockTracked(ctx, itemId, 1);",
+          "find": "  const allocations = decrementStockTracked(ctx, itemId, quantity);",
           "replace": "  const allocations: Array<{ warehouseId: bigint; quantity: number }> = [];"
         }
       ]
@@ -225,7 +240,7 @@
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "  const allocations = decrementStockTracked(ctx, itemId, 1);",
+          "find": "  const allocations = decrementStockTracked(ctx, itemId, quantity);",
           "replace": "  const allocations: Array<{ warehouseId: bigint; quantity: number }> = [];"
         }
       ]
@@ -240,8 +255,8 @@
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "    total: it.price,\n    status: 'pending',",
-          "replace": "    total: it.price + 1,\n    status: 'pending',"
+          "find": "    total: Math.round(price * 100) * quantity / 100,\n    status: 'pending',",
+          "replace": "    total: Math.round(price * 100) * quantity / 100 + 1,\n    status: 'pending',"
         }
       ]
     },
@@ -405,8 +420,8 @@
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "    accountId: acc.id,\n    createdAt: ctx.timestamp,\n    total: it.price,",
-          "replace": "    accountId: (ctx.db.account.username.find('admin') ?? acc).id,\n    createdAt: ctx.timestamp,\n    total: it.price,"
+          "find": "    accountId,\n    createdAt: ctx.timestamp,\n    total: Math.round(price * 100) * quantity / 100,",
+          "replace": "    accountId: ctx.db.account.username.find('admin')!.id,\n    createdAt: ctx.timestamp,\n    total: Math.round(price * 100) * quantity / 100,"
         }
       ]
     },
@@ -435,7 +450,7 @@
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "    total: it.price,\n    status: 'pending',",
+          "find": "    total: Math.round(price * 100) * quantity / 100,\n    status: 'pending',",
           "replace": "    total: 1,\n    status: 'pending',"
         }
       ]
@@ -499,8 +514,8 @@
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "        total += li.unitPrice * li.quantity;",
-          "replace": "        total += li.unitPrice * li.quantity * 2;"
+          "find": "      total += o.total - o.refundedTotal;",
+          "replace": "      total += (o.total - o.refundedTotal) * 2;"
         }
       ]
     },
@@ -514,7 +529,7 @@
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "  const allocations = decrementStockTracked(ctx, itemId, 1);",
+          "find": "  const allocations = decrementStockTracked(ctx, itemId, quantity);",
           "replace": "  const allocations: Array<{ warehouseId: bigint; quantity: number }> = [];"
         }
       ]
@@ -577,7 +592,7 @@
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "  const allocations = decrementStockTracked(ctx, itemId, 1);",
+          "find": "  const allocations = decrementStockTracked(ctx, itemId, quantity);",
           "replace": "  const allocations: Array<{ warehouseId: bigint; quantity: number }> = [];"
         }
       ]
@@ -755,8 +770,8 @@
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "      if (!isOrderCounted(o)) continue;\n      for (const li of ctx.db.orderItem.orderId.filter(o.id)) {",
-          "replace": "      // mutant: cancelled orders remain in revenue\n      for (const li of ctx.db.orderItem.orderId.filter(o.id)) {"
+          "find": "      if (!isOrderCounted(o)) continue;\n      total += o.total - o.refundedTotal;",
+          "replace": "      total += o.total - o.refundedTotal;"
         }
       ]
     },
@@ -770,8 +785,8 @@
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "      if (!isOrderCounted(o)) continue;\n      for (const li of ctx.db.orderItem.orderId.filter(o.id)) {",
-          "replace": "      // mutant: cancelled orders remain in revenue\n      for (const li of ctx.db.orderItem.orderId.filter(o.id)) {"
+          "find": "      if (!isOrderCounted(o)) continue;\n      total += o.total - o.refundedTotal;",
+          "replace": "      total += o.total - o.refundedTotal;"
         }
       ]
     },
@@ -1140,8 +1155,8 @@
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "restoreStock(ctx, row.itemId, row.warehouseId, row.quantity);\n    ctx.db.reservation.id.update({ ...row, expired: true });",
-          "replace": "restoreStock(ctx, row.itemId, row.warehouseId, row.quantity * 2);\n    ctx.db.reservation.id.update({ ...row, expired: true });"
+          "find": "restoreStock(ctx, row.stockItemId || row.itemId, row.warehouseId, row.quantity);\n    ctx.db.reservation.id.update({ ...row, expired: true });",
+          "replace": "restoreStock(ctx, row.stockItemId || row.itemId, row.warehouseId, row.quantity * 2);\n    ctx.db.reservation.id.update({ ...row, expired: true });"
         }
       ]
     },
@@ -1155,7 +1170,7 @@
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "const allocations = held.map(row => ({ warehouseId: row.warehouseId, quantity: row.quantity }));\n    const orderItemRow",
+          "find": "const allocations = held.map(row => ({ warehouseId: row.warehouseId, quantity: row.quantity, stockItemId: row.stockItemId }));\n    const orderItemRow",
           "replace": "const allocations = decrementStockTracked(ctx, p.itemId, p.quantity);\n    const orderItemRow"
         }
       ]
@@ -1793,8 +1808,8 @@
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "    if (quantity < 1) throw new SenderError('Quantity must be at least 1.');\n    const existing = findCartLine(ctx, acc.id, itemId);\n    if (!existing) throw new SenderError('That item is not in your cart.');\n    replaceReservation(ctx, acc.id, itemId, quantity);\n    ctx.db.cartItem.id.update({ ...existing, quantity });",
-          "replace": "    const existing = findCartLine(ctx, acc.id, itemId);\n    if (!existing) throw new SenderError('That item is not in your cart.');\n    if (quantity < 1) {\n      ctx.db.cartItem.id.delete(existing.id);\n      return;\n    }\n    replaceReservation(ctx, acc.id, itemId, quantity);\n    ctx.db.cartItem.id.update({ ...existing, quantity });"
+          "find": "    if (quantity < 1) throw new SenderError('Quantity must be at least 1.');\n    const existing = findCartLine(ctx, acc.id, itemId);\n    if (!existing) throw new SenderError('That item is not in your cart.');\n    if (existing.bundlePrice > 0) throw new SenderError('Remove and re-add a whole bundle.');\n    replaceReservation(ctx, acc.id, itemId, quantity);\n    ctx.db.cartItem.id.update({ ...existing, quantity });",
+          "replace": "    const existing = findCartLine(ctx, acc.id, itemId);\n    if (!existing) throw new SenderError('That item is not in your cart.');\n    if (quantity < 1) {\n      ctx.db.cartItem.id.delete(existing.id);\n      return;\n    }\n    if (existing.bundlePrice > 0) throw new SenderError('Remove and re-add a whole bundle.');\n    replaceReservation(ctx, acc.id, itemId, quantity);\n    ctx.db.cartItem.id.update({ ...existing, quantity });"
         }
       ]
     },
@@ -2176,6 +2191,345 @@
         {
           "find": "    if (available < quantity) {\n      throw new SenderError(`Not enough stock in source warehouse: only ${available} available.`);\n    }",
           "replace": "    // mutant: the source warehouse holding is not checked"
+        }
+      ]
+    },
+    {
+      "id": "credit-checkout-ignores-wallet",
+      "desc": "A credit checkout pays entirely externally despite available credit.",
+      "scenario": "tracks/ecommerce/scenarios/progression-store-credit.json",
+      "targets": [
+        "ecommerce.feature.store-credit.store-credit-750.750a"
+      ],
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  const creditMinor = useCredit ? Math.min(wallet?.amountMinor ?? 0,totalMinor) : 0;",
+          "replace": "  const creditMinor = 0;"
+        }
+      ]
+    },
+    {
+      "id": "credit-grant-replay-increments-balance",
+      "desc": "Replaying a grant applies its credit to the wallet again.",
+      "scenario": "tracks/ecommerce/scenarios/progression-store-credit.json",
+      "targets": [
+        "ecommerce.spec.store-credit.production-752.752a"
+      ],
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "      if (existing.amountMinor !== amountMinor) throw new SenderError('Reference identifies another grant.');\n      return;",
+          "replace": "      if (existing.amountMinor !== amountMinor) throw new SenderError('Reference identifies another grant.');\n      const wallet = ctx.db.creditWallet.accountId.find(accountId)!;\n      ctx.db.creditWallet.accountId.update({ ...wallet, amountMinor: wallet.amountMinor + amountMinor });\n      return;"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-grant-credit",
+      "desc": "Customer authentication is accepted without staff authorization.",
+      "scenario": "tracks/ecommerce/scenarios/progression-store-credit.json",
+      "targets": [
+        "ecommerce.spec.store-credit.production-753.753a"
+      ],
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  (ctx, { accountId, amountMinor, reference }) => {\n    requireStaffOrAdmin(ctx);",
+          "replace": "  (ctx, { accountId, amountMinor, reference }) => {\n    requireAccount(ctx);"
+        }
+      ]
+    },
+    {
+      "id": "split-refund-does-not-restore-credit",
+      "desc": "The refund is recorded but its original wallet credit is not restored.",
+      "scenario": "tracks/ecommerce/scenarios/progression-split-tender-refunds.json",
+      "targets": [
+        "ecommerce.feature.split-tender-refunds.split-tender-refunds-751.751a"
+      ],
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    refundOrderCredit(ctx, order, order.total);",
+          "replace": "    // mutant: omit wallet restoration"
+        }
+      ]
+    },
+    {
+      "id": "split-refund-duplicates-credit",
+      "desc": "A refund credits the wallet twice while recording one refund.",
+      "scenario": "tracks/ecommerce/scenarios/progression-split-tender-refunds.json",
+      "targets": [
+        "ecommerce.spec.split-tender-refunds.production-756.756a"
+      ],
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "amountMinor: wallet.amountMinor + delta",
+          "replace": "amountMinor: wallet.amountMinor + delta * 2"
+        }
+      ]
+    },
+    {
+      "id": "subscription-skips-due-purchase",
+      "desc": "Due deliveries are recorded as skipped although stock is available.",
+      "scenario": "tracks/ecommerce/scenarios/progression-subscriptions.json",
+      "targets": [
+        "ecommerce.feature.subscriptions.subscriptions-760.760a"
+      ],
+      "file": "backend/spacetimedb/src/subscriptions.ts",
+      "edits": [
+        {
+          "find": "      const orderId = purchase(row.accountId, row.itemId, row.quantity, row.price);",
+          "replace": "      const orderId: bigint | null = null;"
+        }
+      ]
+    },
+    {
+      "id": "subscription-allows-foreign-cancellation",
+      "desc": "A customer can cancel another customer subscription.",
+      "scenario": "tracks/ecommerce/scenarios/progression-subscriptions.json",
+      "targets": [
+        "ecommerce.spec.subscriptions.production-762.762a"
+      ],
+      "file": "backend/spacetimedb/src/subscriptions.ts",
+      "edits": [
+        {
+          "find": "  if (!row || row.accountId !== accountId) throw new SenderError('Subscription access denied.');",
+          "replace": "  if (!row) throw new SenderError('Subscription access denied.');"
+        }
+      ]
+    },
+    {
+      "id": "subscription-pause-is-not-recorded",
+      "desc": "Pause acknowledges the request but the subscription remains active.",
+      "scenario": "tracks/ecommerce/scenarios/progression-subscriptions.json",
+      "targets": [
+        "ecommerce.spec.subscriptions.production-763.763a"
+      ],
+      "file": "backend/spacetimedb/src/subscriptions.ts",
+      "edits": [
+        {
+          "find": "    ctx.db.purchaseSubscription.id.update({ ...row, status: 'paused', pausedMicros: now });",
+          "replace": "    ctx.db.purchaseSubscription.id.update({ ...row, status: 'active', pausedMicros: now });"
+        }
+      ]
+    },
+    {
+      "id": "credit-checkout-retains-purchased-cart",
+      "scenario": "tracks/ecommerce/scenarios/progression-store-credit.json",
+      "targets": [
+        "ecommerce.spec.store-credit.production-754.754a"
+      ],
+      "desc": "The purchased cart remains available instead of being consumed by checkout.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  for (const line of lines) ctx.db.cartItem.id.delete(line.id);",
+          "replace": "  // mutant: checked-out lines remain in the cart"
+        }
+      ]
+    },
+    {
+      "id": "reconnection-erases-stored-credit",
+      "desc": "A new connection erases stored wallet credit; the fresh view after restart must catch the data loss.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "scenario": "tracks/ecommerce/scenarios/progression-store-credit.json",
+      "targets": [
+        "ecommerce.spec.store-credit.production-755.755a"
+      ],
+      "edits": [
+        {
+          "find": "export const onConnect = spacetimedb.clientConnected((_ctx) => {});",
+          "replace": "export const onConnect = spacetimedb.clientConnected(ctx => { for (const row of ctx.db.creditWallet.iter()) ctx.db.creditWallet.accountId.update({ ...row, amountMinor: 0 }); });"
+        }
+      ]
+    },
+    {
+      "id": "reconnection-cancels-pending-subscriptions",
+      "desc": "A new connection cancels pending subscriptions; restarting and reconnecting must preserve this work.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "scenario": "tracks/ecommerce/scenarios/progression-subscriptions.json",
+      "targets": [
+        "ecommerce.spec.subscriptions.production-761.761a"
+      ],
+      "edits": [
+        {
+          "find": "export const onConnect = spacetimedb.clientConnected((_ctx) => {});",
+          "replace": "export const onConnect = spacetimedb.clientConnected(ctx => { for (const row of ctx.db.purchaseSubscription.iter()) if (row.status === 'active') ctx.db.purchaseSubscription.id.update({ ...row, status: 'cancelled' }); });"
+        }
+      ]
+    },
+    {
+      "id": "bundle-definition-loses-component-quantity",
+      "scenario": "tracks/ecommerce/scenarios/progression-product-bundles.json",
+      "targets": [
+        "ecommerce.feature.product-bundles.product-bundles.740a"
+      ],
+      "desc": "definition loses component quantity",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "return { ...component, itemId: String(product.id) };",
+          "replace": "return { ...component, quantity: 1, itemId: String(product.id) };"
+        }
+      ]
+    },
+    {
+      "id": "bundle-catalog-write-allows-customers",
+      "scenario": "tracks/ecommerce/scenarios/progression-product-bundles.json",
+      "targets": [
+        "ecommerce.spec.bundle-integrity.bundle-743.743a"
+      ],
+      "desc": "catalog write allows customers",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "const actor = requireStaffOrAdmin(ctx);\n    if (!actor.isAdmin && ctx.db.staffRole.accountId.find(actor.id)?.role !== 'catalog') {",
+          "replace": "const actor = requireAccount(ctx);\n    if (false) {"
+        }
+      ]
+    },
+    {
+      "id": "bundle-checkout-price-not-snapshot",
+      "scenario": "tracks/ecommerce/scenarios/progression-bundle-checkout.json",
+      "targets": [
+        "ecommerce.feature.bundle-checkout.bundle-checkout.741a"
+      ],
+      "desc": "checkout price not snapshot",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "bundlePrice: product.price, bundleComponentsJson: definition.componentsJson",
+          "replace": "bundlePrice: product.price + 1, bundleComponentsJson: definition.componentsJson"
+        }
+      ]
+    },
+    {
+      "id": "bundle-return-loses-original-components",
+      "scenario": "tracks/ecommerce/scenarios/progression-bundle-returns.json",
+      "targets": [
+        "ecommerce.feature.bundle-returns.bundle-returns.742a"
+      ],
+      "desc": "return loses original components",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "for (const line of bundles) {\n    restoreOrderItemStock(ctx, line);",
+          "replace": "for (const line of bundles) {\n    // mutant: original stock is not restored"
+        }
+      ]
+    },
+    {
+      "id": "bundle-return-replay-restocks-again",
+      "scenario": "tracks/ecommerce/scenarios/progression-bundle-returns.json",
+      "targets": [
+        "ecommerce.spec.bundle-integrity.bundle-742.742b"
+      ],
+      "desc": "return replay restocks again",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": ".filter(row => row.isBundle && !row.returned);",
+          "replace": ".filter(row => row.isBundle);"
+        }
+      ]
+    },
+    {
+      "id": "bundle-return-crosses-account-boundary",
+      "scenario": "tracks/ecommerce/scenarios/progression-bundle-returns.json",
+      "targets": [
+        "ecommerce.spec.bundle-integrity.bundle-748.748a"
+      ],
+      "desc": "return crosses account boundary",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "if (!order || order.accountId !== account.id || !['shipped', 'delivered'].includes(order.status))",
+          "replace": "if (!order || !['shipped', 'delivered'].includes(order.status))"
+        }
+      ]
+    },
+    {
+      "id": "bundle-components-can-overdraw",
+      "scenario": "tracks/ecommerce/scenarios/progression-bundle-checkout.json",
+      "targets": [
+        "ecommerce.spec.bundle-integrity.bundle-744.744a",
+        "ecommerce.spec.bundle-integrity.bundle-745.745a"
+      ],
+      "desc": "components can overdraw",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "if (!allocations) throw new SenderError('Not enough stock to reserve.');",
+          "replace": "if (!allocations) { if (bundleId) return; throw new SenderError('Not enough stock to reserve.'); }"
+        }
+      ]
+    },
+    {
+      "id": "bundle-checkout-reuses-reservation",
+      "scenario": "tracks/ecommerce/scenarios/progression-bundle-checkout.json",
+      "targets": [
+        "ecommerce.spec.bundle-integrity.bundle-747.747a"
+      ],
+      "desc": "checkout reuses reservation",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "for (const row of held) ctx.db.reservation.id.delete(row.id);\n    processReorderRules(ctx, p.itemId);",
+          "replace": "// mutant: reservations survive checkout\n    processReorderRules(ctx, p.itemId);"
+        },
+        {
+          "find": "for (const line of lines) ctx.db.cartItem.id.delete(line.id);",
+          "replace": "// mutant: cart survives checkout"
+        }
+      ]
+    },
+    {
+      "id": "bundle-expiry-does-not-release-components",
+      "scenario": "tracks/ecommerce/scenarios/progression-bundle-checkout.json",
+      "targets": [
+        "ecommerce.spec.bundle-integrity.bundle-746.746a"
+      ],
+      "desc": "Expired bundle reservations retain their component stock after restart.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "if (row.expired || row.expiresMicros > now) continue;\n    restoreStock(ctx, row.stockItemId || row.itemId, row.warehouseId, row.quantity);",
+          "replace": "if (row.expired || row.expiresMicros > now) continue;\n    if (!row.stockItemId) restoreStock(ctx, row.itemId, row.warehouseId, row.quantity);"
+        }
+      ]
+    },
+    {
+      "id": "return-after-support-refund-is-blocked",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-return-interaction.json",
+      "targets": [
+        "ecommerce.spec.split-tender-refunds.return-refund-interaction.757a"
+      ],
+      "desc": "Reject a valid physical return after a financial refund.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    if (target.returned) throw new SenderError('Item already returned.');",
+          "replace": "    if (target.returned || order.refundedTotal > 0) throw new SenderError('Item already returned.');"
+        }
+      ]
+    },
+    {
+      "id": "support-refund-after-return-pays-twice",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-return-interaction.json",
+      "targets": [
+        "ecommerce.spec.split-tender-refunds.return-refund-interaction.757b"
+      ],
+      "desc": "Pay the full order again after the physical return already refunded it.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    const amount = order.total - order.refundedTotal;",
+          "replace": "    const amount = order.total;"
+        },
+        {
+          "find": "refundedTotal: order.total, status: order.status",
+          "replace": "refundedTotal: order.refundedTotal + amount, status: order.status"
         }
       ]
     }

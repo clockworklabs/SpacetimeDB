@@ -1,13 +1,16 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { ProgressionPanel } from "./ProgressionPanel";
+import { BundlePanel } from "./BundlePanel";
+import { CreditPanel } from "./CreditPanel";
+import { SubscriptionPanel } from "./SubscriptionPanel";
 
 type Item = { id: number; name: string; price: number; stock: number; purchaseCount: number; category: string; variants?: string[] };
 type Account = { id: number; username: string; isAdmin: boolean; isStaff: boolean } | null;
-type CartLine = { itemId: number; name: string; price: number; quantity: number; lineTotal: number; expired?: boolean; reservationSeconds?: number };
+type CartLine = { isBundle?: boolean; itemId: number; name: string; price: number; quantity: number; lineTotal: number; expired?: boolean; reservationSeconds?: number };
 type CartState = { items: CartLine[]; total: number; expiredAt?: string | null };
-type OrderLine = { orderItemId: number; itemId: number; name: string; quantity: number; price: number; returned: boolean };
-type Order = { id: number; createdAt: string; total: number; status: "pending" | "shipped" | "delivered" | "cancelled"; discount?: number; paymentStatus?: string; paymentAmount?: number; refundTotal?: number; items: OrderLine[] };
+type OrderLine = { isBundle?: boolean; orderItemId: number; itemId: number; name: string; quantity: number; price: number; returned: boolean };
+type Order = { creditMinor?: number; externalMinor?: number; id: number; createdAt: string; total: number; status: "pending" | "shipped" | "delivered" | "cancelled"; discount?: number; paymentStatus?: string; paymentAmount?: number; refundTotal?: number; items: OrderLine[] };
 type Review = { id: number; accountId: number; username: string; rating: number; comment: string; createdAt: string };
 type AdminItem = { id: number; name: string; price: number; stock: number; category: string };
 type AdminLocation = { itemId: number; itemName: string; warehouseId: number; warehouseName: string; quantity: number };
@@ -301,7 +304,7 @@ export default function App() {
 
   async function requestStockAlert(itemId: number) {
     try { await api(`/api/items/${itemId}/stock-alert`, { method: "POST" }); }
-    catch (err: any) { pushToast("order-error", err.message); }
+    catch (err: any) { pushToast("order-error", err.message); throw err; }
   }
 
   async function addToCart(itemId: number) {
@@ -424,6 +427,7 @@ export default function App() {
       setQueue(state);
     } catch (err: any) {
       pushToast("order-error", err.message);
+      throw err;
     }
   }
 
@@ -441,6 +445,9 @@ export default function App() {
 
   return (
     <div className="app">
+      <CreditPanel signedIn={Boolean(account)} staff={Boolean(account?.isAdmin || account?.isStaff)} />
+      <BundlePanel signedIn={Boolean(account)} canManage={Boolean(account?.isAdmin)} onAdded={async () => { if (account) setCart(await api("/api/cart")); }} />
+      <SubscriptionPanel key={account?.id ?? 'guest'} signedIn={Boolean(account)} />
       <ToastArea toasts={toasts} />
       <Header
         account={account}
@@ -797,9 +804,16 @@ function ItemCard(props: {
   onOpen: () => void;
   onBuy: () => void;
   onAddToCart: () => void;
-  onStockAlert: () => void;
+  onStockAlert: () => Promise<void>;
 }) {
   const { item, account, onOpen, onBuy, onAddToCart, onStockAlert } = props;
+  const [submitState, setSubmitState] = useState('idle');
+  const requestAlert = async (event: React.MouseEvent) => {
+    event.stopPropagation();
+    setSubmitState('pending');
+    try { await onStockAlert(); setSubmitState('succeeded'); }
+    catch { setSubmitState('failed'); }
+  };
   const outOfStock = item.stock <= 0;
   const canBuy = !!account && !account.isAdmin && !account.isStaff;
 
@@ -807,6 +821,7 @@ function ItemCard(props: {
     <div
       className={`item-card${outOfStock ? " out-of-stock-card" : ""}`}
       data-role="item-card"
+      data-submit-state={submitState}
       data-buy-input={JSON.stringify({ itemId: item.id })}
       onClick={onOpen}
     >
@@ -835,7 +850,7 @@ function ItemCard(props: {
           <button className="btn btn-ghost btn-sm" data-role="add-to-cart" disabled={outOfStock} onClick={onAddToCart}>
             Add to cart
           </button>
-          {outOfStock && <button className="btn btn-ghost btn-sm" data-role="stock-alert" onClick={onStockAlert}>Notify me</button>}
+          {outOfStock && <button className="btn btn-ghost btn-sm" data-role="stock-alert" disabled={submitState === 'pending'} onClick={requestAlert}>Notify me</button>}
         </div>
       )}
     </div>
@@ -864,7 +879,7 @@ function ItemDetailPanel(props: {
     <div className="item-detail" data-role="item-detail">
       <div className="panel-header">
         <h3>{item.name}</h3>
-        <button className="close-btn" onClick={onClose} aria-label="Close">
+        <button className="close-btn" onClick={onClose} aria-label="Close" data-role="overlay-close">
           ×
         </button>
       </div>
@@ -949,7 +964,7 @@ function CartPanel(props: {
     <div className="panel" data-role="cart-panel">
       <div className="panel-header">
         <h3>Your cart</h3>
-        <button className="close-btn" onClick={onClose} aria-label="Close">
+        <button className="close-btn" onClick={onClose} aria-label="Close" data-role="overlay-close">
           ×
         </button>
       </div>
@@ -992,7 +1007,7 @@ function CartPanel(props: {
                     +
                   </button>
                 </div>
-                <button className="btn btn-ghost btn-sm" data-role="cart-remove" onClick={() => onRemove(line.itemId)}>
+                <button className="btn btn-ghost btn-sm" data-role={line.isBundle ? "bundle-remove" : "cart-remove"} onClick={() => onRemove(line.itemId)}>
                   Remove
                 </button>
               </div>
@@ -1014,6 +1029,7 @@ function CartPanel(props: {
         <div className="cart-total" data-role="cart-total">
           Total: {money(cart.total)}
         </div>
+        <button data-role="credit-checkout" onClick={() => api("/api/checkout/credit", { method: "POST" }).catch(error => setPromotionError(String(error)))}>Pay with credit</button>
         <button className="btn" data-role="checkout-submit" disabled={cart.items.length === 0} onClick={onCheckout}>
           Checkout
         </button>
@@ -1033,7 +1049,7 @@ function OrdersPanel(props: {
     <div className="panel" data-role="order-list">
       <div className="panel-header">
         <h3>Order history</h3>
-        <button className="close-btn" onClick={onClose} aria-label="Close">
+        <button className="close-btn" onClick={onClose} aria-label="Close" data-role="overlay-close">
           ×
         </button>
       </div>
@@ -1044,11 +1060,11 @@ function OrdersPanel(props: {
           {orders.map((o) => (
             <div className="order-item" data-role="order-item" data-entity-id={String(o.id)}
               data-ship-input={JSON.stringify({ orderId: o.id })}
-              data-cancel-input={JSON.stringify({ orderId: o.id })} key={o.id}>
+              data-cancel-input={JSON.stringify({ orderId: o.id })} data-bundle-return-input={JSON.stringify({ orderId: o.id })} key={o.id}>
               <div className="order-item-top">
                 <span className="muted">{new Date(o.createdAt).toLocaleString()}</span>
                 <span className={`order-status order-status-${o.status}`} data-role="order-status">
-                  {o.status}
+                  {o.items.length > 0 && o.items.every(line => line.returned) ? "returned" : o.status}
                 </span>
               </div>
               <div className="order-lines">
@@ -1058,7 +1074,7 @@ function OrdersPanel(props: {
                       {l.name} × {l.quantity}
                       {l.returned ? " (returned)" : ""}
                     </span>
-                    {(o.status === "shipped" || o.status === "delivered") && !l.returned && (
+                    {(o.status === "shipped" || o.status === "delivered") && !l.returned && !l.isBundle && (
                       <button
                         className="btn btn-ghost btn-sm"
                         data-role="return-item"
@@ -1070,13 +1086,18 @@ function OrdersPanel(props: {
                   </div>
                 ))}
               </div>
+              {["shipped", "delivered"].includes(o.status) && o.items.some(line => line.isBundle && !line.returned) && <button data-role="return-bundle" onClick={() => api(`/api/bundle-orders/${o.id}/return`, { method: "POST" }).catch(error => window.alert(String(error)))}>Return bundle</button>}
+              {o.items.some(line => line.isBundle) && <span data-role="bundle-refund-amount">{money(o.refundTotal ?? 0)}</span>}
               <div data-role="payment-record">
                 <span data-role="payment-status">{o.paymentStatus}</span>
+                <span data-role="payment-credit-amount">{Number(o.creditMinor ?? 0) / 100}</span>
+                <span data-role="payment-external-amount">{o.total - Number(o.creditMinor ?? 0) / 100}</span>
                 <span data-role="payment-amount">{money(o.paymentAmount ?? o.total)}</span>
                 <span data-role="order-discount">{money(o.discount ?? 0)}</span>
                 <span data-role="order-refund-total">{money(o.refundTotal ?? 0)}</span>
                 {(o.refundTotal ?? 0) > 0 && <span data-role="refund-entry">
                   {o.items.map((item) => item.name).join(", ")} refund {money(o.refundTotal ?? 0)}
+                  <span data-role="refund-credit-amount">{Math.round(Number(o.creditMinor ?? 0) * Number(o.refundTotal ?? 0) / o.total) / 100}</span><span data-role="refund-external-amount">{Number(o.refundTotal ?? 0) - Math.round(Number(o.creditMinor ?? 0) * Number(o.refundTotal ?? 0) / o.total) / 100}</span>
                 </span>}
               </div>
               <div className="order-item-top">
@@ -1116,7 +1137,7 @@ function AdminPanel(props: {
       <div className="panel wide" data-role="admin-panel">
         <div className="panel-header">
           <h3>Admin</h3>
-          <button className="close-btn" onClick={onClose} aria-label="Close">
+          <button className="close-btn" onClick={onClose} aria-label="Close" data-role="overlay-close">
             ×
           </button>
         </div>
@@ -1145,7 +1166,7 @@ function AdminPanel(props: {
     <div className="panel wide" data-role="admin-panel">
       <div className="panel-header">
         <h3>Admin</h3>
-        <button className="close-btn" onClick={onClose} aria-label="Close">
+        <button className="close-btn" onClick={onClose} aria-label="Close" data-role="overlay-close">
           ×
         </button>
       </div>
@@ -1356,13 +1377,19 @@ function AdminPanel(props: {
 }
 
 function FulfilmentPanel(props: { queue: QueueState; onClose: () => void;
-  onShip: (orderId: number) => void; children?: ReactNode }) {
+  onShip: (orderId: number) => Promise<void>; children?: ReactNode }) {
   const { queue, onClose, onShip, children } = props;
+  const [submitState, setSubmitState] = useState('idle');
+  const ship = async (orderId: number) => {
+    setSubmitState('pending');
+    try { await onShip(orderId); setSubmitState('succeeded'); }
+    catch { setSubmitState('failed'); }
+  };
   return (
-    <div className="panel wide" data-role="fulfilment-panel" id="staff-area">
+    <div className="panel wide" data-role="fulfilment-panel" id="staff-area" data-submit-state={submitState}>
       <div className="panel-header">
         <h3>Fulfilment queue</h3>
-        <button className="close-btn" onClick={onClose} aria-label="Close">
+        <button className="close-btn" onClick={onClose} aria-label="Close" data-role="overlay-close">
           ×
         </button>
       </div>
@@ -1389,7 +1416,7 @@ function FulfilmentPanel(props: { queue: QueueState; onClose: () => void;
                   </div>
                 ))}
               </div>
-              <button className="btn btn-sm" data-role="ship-submit" onClick={() => onShip(o.id)}>
+              <button className="btn btn-sm" data-role="ship-submit" disabled={submitState === 'pending'} onClick={() => ship(o.id)}>
                 Mark shipped
               </button>
             </div>

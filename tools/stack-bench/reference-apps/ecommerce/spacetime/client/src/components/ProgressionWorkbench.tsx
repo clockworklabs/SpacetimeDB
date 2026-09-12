@@ -152,7 +152,7 @@ export default function ProgressionWorkbench(props: Props) {
             status: ticket.status,
           };
           return (
-            <article className="feature-row" data-role="support-ticket" data-entity-id={key} key={key}>
+            <article className="feature-row" data-role="support-ticket" data-entity-id={key} data-refund-input={actionInput} key={key}>
               <strong>{ticket.subject}</strong>
               <span>{ticket.reference}</span>
               <span data-role="support-status">{ticket.status}</span>

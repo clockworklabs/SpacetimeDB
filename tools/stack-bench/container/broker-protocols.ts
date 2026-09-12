@@ -118,6 +118,7 @@ interface BrokerProtocol {
   billable(path: string): boolean;
   headers(request: IncomingMessage): OutgoingHttpHeaders;
   parseRequest(body: Buffer, path: string): JsonRecord;
+  inputTokenAdjustment?(payload: JsonRecord): number;
   outputLimit(payload: JsonRecord): number;
   responseUsage(body: Buffer, encoding?: string | string[]): JsonRecord | null;
 }
@@ -178,8 +179,25 @@ function responsesUsage(body: Buffer, encoding?: string | string[], config?: Bro
 function hasUnpricedInput(value: unknown): boolean {
   if (Array.isArray(value)) return value.some(hasUnpricedInput);
   if (!isRecord(value)) return false;
-  if (['input_image', 'input_file', 'item_reference'].includes(String(value.type))) return true;
+  if (['input_file', 'item_reference'].includes(String(value.type))) return true;
   return Object.values(value).some(hasUnpricedInput);
+}
+
+// Only inline images have bounded input here. Provider receipts price actual tokens.
+export function imageTokenAdjustment(value: unknown, model: string): number {
+  if (Array.isArray(value)) return value.reduce((sum, item) => sum + imageTokenAdjustment(item, model), 0);
+  if (!isRecord(value)) return 0;
+  if (value.type === 'input_image') {
+    if (!['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.4', 'gpt-5.4-2026-03-05'].includes(model)
+      || typeof value.image_url !== 'string'
+      || !/^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/.test(value.image_url)
+      || value.file_id !== undefined) fail('image input requires inline data and a verified token bound');
+    // OpenAI vision: 30,000 patches maximum x 1.2 tokens, plus rounding.
+    // https://developers.openai.com/api/docs/guides/images-vision
+    // Replace base64 text bytes rather than charging for both representations.
+    return 36_001 - Buffer.byteLength(value.image_url, 'utf8');
+  }
+  return Object.values(value).reduce<number>((sum, item) => sum + imageTokenAdjustment(item, model), 0);
 }
 
 export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
@@ -202,7 +220,8 @@ export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
   if (account && !config.accountId) fail('OpenAI account identity is required');
   // Account Responses does not promise max_output_tokens. Use a documented model
   // bound, never assume an unknown model shares it. API requests enforce the cap.
-  const accountOutputLimits: Record<string, number> = { 'gpt-5.3-codex': 128_000, 'gpt-5.4': 128_000, 'gpt-5.4-2026-03-05': 128_000 };
+  const accountOutputLimits: Record<string, number> = { 'gpt-5.3-codex': 128_000, 'gpt-5.4': 128_000, 'gpt-5.4-2026-03-05': 128_000,
+    'gpt-5.6-sol': 128_000, 'gpt-6-astra': 128_000 };
   const outputLimit = account
     ? Object.hasOwn(accountOutputLimits, config.model) ? accountOutputLimits[config.model] : undefined
     : config.maxOutputTokens;
@@ -225,6 +244,7 @@ export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
     parseRequest: body => {
       const payload = JSON.parse(body.toString('utf8'));
       if (!isRecord(payload) || payload.model !== config.model) fail('request model does not match');
+      imageTokenAdjustment(payload.input, config.model);
       // Token-only receipts cannot price hosted tools or hidden server-side input.
       if (payload.prompt || payload.previous_response_id || payload.conversation || hasUnpricedInput(payload.input)
         || payload.image_config !== undefined || payload.audio !== undefined
@@ -258,6 +278,7 @@ export function brokerProtocol(config: BrokerConfig): BrokerProtocol {
       }
       return payload;
     },
+    inputTokenAdjustment: payload => imageTokenAdjustment(payload.input, config.model),
     outputLimit: payload => account ? outputLimit : payload.max_output_tokens as number,
     responseUsage: (body, encoding) => responsesUsage(body, encoding, config),
   };

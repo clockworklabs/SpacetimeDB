@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { formatMoney } from '../types';
 
 export interface CartLine {
+  isBundle: boolean;
   itemId: bigint;
   name: string;
   price: number;
@@ -15,6 +16,7 @@ interface CartPanelProps {
   onChangeQuantity: (itemId: bigint, quantity: number) => Promise<void>;
   onRemove: (itemId: bigint) => Promise<void>;
   onCheckout: () => Promise<void>;
+  onCreditCheckout: () => Promise<void>;
   reservations: readonly { itemId: bigint; expiresMicros: bigint; expired: boolean }[];
   onApplyPromotion: (code: string) => Promise<void> | void;
 }
@@ -25,6 +27,7 @@ export default function CartPanel({
   onChangeQuantity,
   onRemove,
   onCheckout,
+  onCreditCheckout,
   reservations,
   onApplyPromotion,
 }: CartPanelProps) {
@@ -74,7 +77,7 @@ export default function CartPanel({
       >
         <div className="panel-header">
           <h2>Your cart</h2>
-          <button type="button" className="close-btn" aria-label="Close" onClick={onClose}>
+          <button type="button" className="close-btn" aria-label="Close" data-role="overlay-close" onClick={onClose}>
             ×
           </button>
         </div>
@@ -109,7 +112,7 @@ export default function CartPanel({
               <button
                 type="button"
                 className="btn btn-danger btn-sm"
-                data-role="cart-remove"
+                data-role={line.isBundle ? "bundle-remove" : "cart-remove"}
                 onClick={() => onRemove(line.itemId)}
               >
                 Remove
@@ -142,6 +145,7 @@ export default function CartPanel({
             <span>Total</span>
             <span data-role="cart-total">{formatMoney(total)}</span>
           </div>
+          <button data-role="credit-checkout" onClick={() => onCreditCheckout().catch(error => setError(String(error)))}>Pay with credit</button>
           <button
             type="button"
             className="btn btn-primary"

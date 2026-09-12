@@ -84,7 +84,7 @@ export function postgresConnectionUrl({ dbPort, database, hostUrl }:
 
 export function mongoDbConnectionUrl({ dbPort, database, hostUrl }:
   { dbPort: number; database: string; hostUrl: HostUrl }): string {
-  return hostUrl(`mongodb://localhost:${dbPort}/${database}`);
+  return hostUrl(`mongodb://localhost:${dbPort}/${database}?replicaSet=rs0&directConnection=true`);
 }
 
 export function noConnectionUrl(): null {

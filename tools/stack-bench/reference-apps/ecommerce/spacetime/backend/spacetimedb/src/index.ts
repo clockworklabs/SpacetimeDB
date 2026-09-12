@@ -47,6 +47,7 @@ import {
   isTicketCreator,
   planStockAllocation,
 } from './progression-policy';
+import { createSubscription, changeSubscription, processSubscriptions } from './subscriptions';
 
 export { default } from './schema';
 
@@ -149,16 +150,16 @@ function restoreStock(ctx: Ctx, itemId: bigint, warehouseId: bigint, quantity: n
 function recordOrderItemStock(
   ctx: Ctx,
   orderItemId: bigint,
-  allocations: Array<{ warehouseId: bigint; quantity: number }>
+  allocations: Array<{ warehouseId: bigint; quantity: number; stockItemId?: bigint }>
 ) {
   for (const a of allocations) {
-    ctx.db.orderItemStock.insert({ id: 0n, orderItemId, warehouseId: a.warehouseId, quantity: a.quantity });
+    ctx.db.orderItemStock.insert({ id: 0n, orderItemId, warehouseId: a.warehouseId, quantity: a.quantity, stockItemId: a.stockItemId ?? 0n });
   }
 }
 
 function restoreOrderItemStock(ctx: Ctx, orderItem: { id: bigint; itemId: bigint }) {
   for (const alloc of ctx.db.orderItemStock.orderItemId.filter(orderItem.id)) {
-    restoreStock(ctx, orderItem.itemId, alloc.warehouseId, alloc.quantity);
+    restoreStock(ctx, alloc.stockItemId || orderItem.itemId, alloc.warehouseId, alloc.quantity);
   }
 }
 
@@ -199,7 +200,7 @@ function findReservations(ctx: Ctx, accountId: bigint, itemId: bigint) {
   return [...ctx.db.reservation.byAccountItem.filter([accountId, itemId])];
 }
 
-function reserveUnits(ctx: Ctx, accountId: bigint, itemId: bigint, quantity: number) {
+function reserveUnits(ctx: Ctx, accountId: bigint, itemId: bigint, quantity: number, bundleId?: bigint) {
   const rows = [...ctx.db.stock.by_item_warehouse.filter(itemId)];
   const allocations = planStockAllocation(
     rows.map(row => ({ warehouseId: row.warehouse_id, quantity: row.quantity })),
@@ -216,7 +217,8 @@ function reserveUnits(ctx: Ctx, accountId: bigint, itemId: bigint, quantity: num
     ctx.db.reservation.insert({
       id: 0n,
       accountId,
-      itemId,
+      itemId: bundleId ?? itemId,
+      stockItemId: bundleId ? itemId : 0n,
       warehouseId: row.warehouse_id,
       quantity: allocation.quantity,
       expiresMicros,
@@ -226,18 +228,19 @@ function reserveUnits(ctx: Ctx, accountId: bigint, itemId: bigint, quantity: num
 }
 
 function releaseReservation(ctx: Ctx, row: {
+  stockItemId?: bigint;
   id: bigint;
   itemId: bigint;
   warehouseId: bigint;
   quantity: number;
 }) {
-  restoreStock(ctx, row.itemId, row.warehouseId, row.quantity);
+  restoreStock(ctx, row.stockItemId || row.itemId, row.warehouseId, row.quantity);
   ctx.db.reservation.id.delete(row.id);
 }
 
 function replaceReservation(ctx: Ctx, accountId: bigint, itemId: bigint, quantity: number) {
   for (const row of findReservations(ctx, accountId, itemId)) {
-    if (!row.expired) restoreStock(ctx, row.itemId, row.warehouseId, row.quantity);
+    if (!row.expired) restoreStock(ctx, row.stockItemId || row.itemId, row.warehouseId, row.quantity);
     ctx.db.reservation.id.delete(row.id);
   }
   reserveUnits(ctx, accountId, itemId, quantity);
@@ -289,7 +292,7 @@ function processMaintenance(ctx: Ctx) {
   const now = nowMicros(ctx);
   for (const row of [...ctx.db.reservation.iter()]) {
     if (row.expired || row.expiresMicros > now) continue;
-    restoreStock(ctx, row.itemId, row.warehouseId, row.quantity);
+    restoreStock(ctx, row.stockItemId || row.itemId, row.warehouseId, row.quantity);
     ctx.db.reservation.id.update({ ...row, expired: true });
   }
   for (const expiry of [...ctx.db.cartExpiry.iter()]) {
@@ -300,6 +303,7 @@ function processMaintenance(ctx: Ctx) {
         accountId: expiry.accountId,
         itemId: line.itemId,
         quantity: line.quantity,
+        bundlePrice: line.bundlePrice, bundleComponentsJson: line.bundleComponentsJson,
       });
       for (const held of findReservations(ctx, expiry.accountId, line.itemId)) {
         if (!held.expired) releaseReservation(ctx, held);
@@ -505,6 +509,7 @@ export const currentUser = spacetimedb.view(
 );
 
 const CartLineView = t.object('CartLineView', {
+  bundlePrice: t.f64(),
   itemId: t.u64(),
   quantity: t.u32(),
 });
@@ -515,15 +520,17 @@ export const myCart = spacetimedb.view(
   (ctx) => {
     const accountId = getAccountId(ctx);
     if (accountId === null) return [];
-    const out: Array<{ itemId: bigint; quantity: number }> = [];
+    const out: Array<{ itemId: bigint; quantity: number; bundlePrice: number }> = [];
     for (const row of ctx.db.cartItem.byAccountItem.filter(accountId)) {
-      out.push({ itemId: row.itemId, quantity: row.quantity });
+      out.push({ itemId: row.itemId, quantity: row.quantity, bundlePrice: row.bundlePrice });
     }
     return out;
   }
 );
 
 const MyOrderView = t.object('MyOrderView', {
+  creditMinor: t.f64(),
+  externalMinor: t.f64(),
   orderId: t.u64(),
   createdAt: t.timestamp(),
   total: t.f64(),
@@ -547,11 +554,14 @@ export const myOrders = spacetimedb.view(
       status: o.status,
       discount: o.discount,
       refundedTotal: o.refundedTotal,
+      creditMinor: o.creditMinor,
+      externalMinor: o.externalMinor,
     }));
   }
 );
 
 const MyOrderItemView = t.object('MyOrderItemView', {
+  isBundle: t.bool(),
   orderId: t.u64(),
   itemId: t.u64(),
   itemName: t.string(),
@@ -573,6 +583,7 @@ export const myOrderItems = spacetimedb.view(
       quantity: number;
       unitPrice: number;
       returned: boolean;
+      isBundle: boolean;
     }> = [];
     for (const o of ctx.db.customerOrder.accountId.filter(accountId)) {
       for (const li of ctx.db.orderItem.orderId.filter(o.id)) {
@@ -580,6 +591,7 @@ export const myOrderItems = spacetimedb.view(
           orderId: o.id,
           itemId: li.itemId,
           itemName: li.itemName,
+          isBundle: li.isBundle,
           quantity: li.quantity,
           unitPrice: li.unitPrice,
           returned: li.returned,
@@ -603,10 +615,7 @@ export const adminRevenue = spacetimedb.view(
     let total = 0;
     for (const o of ctx.db.customerOrder.iter()) {
       if (!isOrderCounted(o)) continue;
-      for (const li of ctx.db.orderItem.orderId.filter(o.id)) {
-        if (li.returned) continue;
-        total += li.unitPrice * li.quantity;
-      }
+      total += o.total - o.refundedTotal;
     }
     return { total };
   }
@@ -752,37 +761,47 @@ export const recommended = spacetimedb.view(
 
 // --- cart & purchasing ---
 
-export const buyNow = spacetimedb.reducer({ itemId: t.u64() }, (ctx, { itemId }) => {
-  const acc = requireAccount(ctx);
+function createPaidOrder(ctx: Ctx, accountId: bigint, itemId: bigint, quantity: number, price: number): bigint | null {
   const it = ctx.db.item.id.find(itemId);
   if (!it) throw new SenderError('Item not found.');
-  if (totalStock(ctx, itemId) <= 0) throw new SenderError('This item is out of stock.');
+  if (totalStock(ctx, itemId) < quantity) return null;
 
-  const allocations = decrementStockTracked(ctx, itemId, 1);
+  const allocations = decrementStockTracked(ctx, itemId, quantity);
 
   const order = ctx.db.customerOrder.insert({
     id: 0n,
-    accountId: acc.id,
+    accountId,
     createdAt: ctx.timestamp,
-    total: it.price,
+    total: Math.round(price * 100) * quantity / 100,
     status: 'pending',
     discount: 0,
     promotionId: undefined,
     refundedTotal: 0,
+    creditMinor: 0,
+    externalMinor: Math.round(price * 100) * quantity,
   });
   const orderItemRow = ctx.db.orderItem.insert({
     id: 0n,
     orderId: order.id,
     itemId: it.id,
     itemName: it.name,
-    quantity: 1,
-    unitPrice: it.price,
+    quantity,
+    unitPrice: price,
     returned: false,
+    isBundle: false,
   });
   recordOrderItemStock(ctx, orderItemRow.id, allocations);
-  bumpPurchaseCount(ctx, itemId, 1);
+  bumpPurchaseCount(ctx, itemId, quantity);
   ctx.db.paymentRecord.insert({ id: 0n, orderId: order.id, amount: order.total, status: 'paid' });
   processReorderRules(ctx, itemId);
+  return order.id;
+}
+
+export const buyNow = spacetimedb.reducer({ itemId: t.u64() }, (ctx, { itemId }) => {
+  const acc = requireAccount(ctx);
+  const item = ctx.db.item.id.find(itemId);
+  if (!item) throw new SenderError('Item not found.');
+  if (createPaidOrder(ctx, acc.id, itemId, 1, item.price) === null) throw new SenderError('This item is out of stock.');
 });
 
 export const addToCart = spacetimedb.reducer({ itemId: t.u64() }, (ctx, { itemId }) => {
@@ -796,7 +815,7 @@ export const addToCart = spacetimedb.reducer({ itemId: t.u64() }, (ctx, { itemId
     ctx.db.cartItem.id.update({ ...existing, quantity: existing.quantity + 1 });
   } else {
     reserveUnits(ctx, acc.id, itemId, 1);
-    ctx.db.cartItem.insert({ id: 0n, accountId: acc.id, itemId, quantity: 1 });
+    ctx.db.cartItem.insert({ id: 0n, accountId: acc.id, itemId, quantity: 1, bundlePrice: 0, bundleComponentsJson: '' });
   }
   touchCart(ctx, acc.id);
 });
@@ -808,6 +827,7 @@ export const updateCartQuantity = spacetimedb.reducer(
     if (quantity < 1) throw new SenderError('Quantity must be at least 1.');
     const existing = findCartLine(ctx, acc.id, itemId);
     if (!existing) throw new SenderError('That item is not in your cart.');
+    if (existing.bundlePrice > 0) throw new SenderError('Remove and re-add a whole bundle.');
     replaceReservation(ctx, acc.id, itemId, quantity);
     ctx.db.cartItem.id.update({ ...existing, quantity });
     touchCart(ctx, acc.id);
@@ -827,29 +847,33 @@ export const removeFromCart = spacetimedb.reducer({ itemId: t.u64() }, (ctx, { i
   }
 });
 
-export const checkout = spacetimedb.reducer((ctx) => {
+function checkoutCart(ctx: Ctx, useCredit = false) {
   const acc = requireAccount(ctx);
   const lines = [...ctx.db.cartItem.byAccountItem.filter(acc.id)];
   if (lines.length === 0) throw new SenderError('Your cart is empty.');
 
   let total = 0;
-  const priced: Array<{ itemId: bigint; name: string; quantity: number; price: number }> = [];
+  const priced: Array<{ itemId: bigint; name: string; quantity: number; price: number; isBundle: boolean }> = [];
   for (const line of lines) {
     const it = ctx.db.item.id.find(line.itemId);
     if (!it) throw new SenderError('An item in your cart no longer exists.');
     const held = findReservations(ctx, acc.id, line.itemId);
     if (held.length === 0 || held.some(row => row.expired) ||
-      held.reduce((sum, row) => sum + row.quantity, 0) !== line.quantity) {
+      (line.bundlePrice === 0 && held.reduce((sum, row) => sum + row.quantity, 0) !== line.quantity)) {
       throw new SenderError(`The reservation for ${it.name} has expired.`);
     }
-    priced.push({ itemId: it.id, name: it.name, quantity: line.quantity, price: it.price });
-    total += it.price * line.quantity;
+    priced.push({ itemId: it.id, name: it.name, quantity: line.quantity, price: line.bundlePrice || it.price, isBundle: line.bundlePrice > 0 });
+    total += (line.bundlePrice || it.price) * line.quantity;
   }
 
   const applied = ctx.db.cartPromotion.accountId.find(acc.id);
   const promo = applied ? ctx.db.promotion.id.find(applied.promotionId) : null;
   const discount = promo ? total * (promo.discountPercent / 100) : 0;
 
+  const totalMinor = Math.round((total-discount)*100);
+  if (!Number.isSafeInteger(totalMinor) || totalMinor < 0) throw new SenderError('Invalid payment total.');
+  const wallet = ctx.db.creditWallet.accountId.find(acc.id);
+  const creditMinor = useCredit ? Math.min(wallet?.amountMinor ?? 0,totalMinor) : 0;
   const order = ctx.db.customerOrder.insert({
     id: 0n,
     accountId: acc.id,
@@ -859,12 +883,18 @@ export const checkout = spacetimedb.reducer((ctx) => {
     discount,
     promotionId: promo?.id,
     refundedTotal: 0,
+    creditMinor,
+    externalMinor: totalMinor-creditMinor,
   });
 
+  if (creditMinor && wallet) {
+    ctx.db.creditWallet.accountId.update({ ...wallet, amountMinor: wallet.amountMinor-creditMinor });
+    ctx.db.creditEntry.insert({ id: 0n,accountId: acc.id,reference: 'order:'+order.id,amountMinor: -creditMinor });
+  }
   for (const p of priced) {
     const held = findReservations(ctx, acc.id, p.itemId);
     if (held.length === 0) throw new SenderError('Reservation not found.');
-    const allocations = held.map(row => ({ warehouseId: row.warehouseId, quantity: row.quantity }));
+    const allocations = held.map(row => ({ warehouseId: row.warehouseId, quantity: row.quantity, stockItemId: row.stockItemId }));
     const orderItemRow = ctx.db.orderItem.insert({
       id: 0n,
       orderId: order.id,
@@ -873,6 +903,7 @@ export const checkout = spacetimedb.reducer((ctx) => {
       quantity: p.quantity,
       unitPrice: p.price,
       returned: false,
+      isBundle: p.isBundle,
     });
     recordOrderItemStock(ctx, orderItemRow.id, allocations);
     bumpPurchaseCount(ctx, p.itemId, p.quantity);
@@ -888,6 +919,115 @@ export const checkout = spacetimedb.reducer((ctx) => {
     ctx.db.promotion.id.update({ ...promo, redemptions: promo.redemptions + 1 });
     ctx.db.cartPromotion.accountId.delete(acc.id);
   }
+}
+
+export const checkout = spacetimedb.reducer(ctx => checkoutCart(ctx));
+export const checkoutCredit = spacetimedb.reducer(ctx => checkoutCart(ctx, true));
+
+export const grantCredit = spacetimedb.reducer(
+  { accountId: t.u64(), amountMinor: t.f64(), reference: t.string() },
+  (ctx, { accountId, amountMinor, reference }) => {
+    requireStaffOrAdmin(ctx);
+    if (!ctx.db.account.id.find(accountId) || !Number.isSafeInteger(amountMinor) || amountMinor < 1 || !reference.trim()) throw new SenderError('Invalid credit grant.');
+    const existing = [...ctx.db.creditEntry.byAccountReference.filter([accountId, reference])][0];
+    if (existing) {
+      if (existing.amountMinor !== amountMinor) throw new SenderError('Reference identifies another grant.');
+      return;
+    }
+    const wallet = ctx.db.creditWallet.accountId.find(accountId);
+    const balance = (wallet?.amountMinor ?? 0) + amountMinor;
+    if (!Number.isSafeInteger(balance)) throw new SenderError('Invalid balance.');
+    if (wallet) ctx.db.creditWallet.accountId.update({ ...wallet, amountMinor: balance });
+    else ctx.db.creditWallet.insert({ accountId, amountMinor: balance });
+    ctx.db.creditEntry.insert({ id: 0n, accountId, reference, amountMinor });
+  }
+);
+
+export const myCredit = spacetimedb.view({ name: 'my_credit', public: true },
+  t.array(t.object('CreditBalanceRow', { accountId: t.u64(), amountMinor: t.f64() })), ctx => {
+    const accountId = getAccountId(ctx);
+    return accountId === null ? [] : [{ accountId, amountMinor: ctx.db.creditWallet.accountId.find(accountId)?.amountMinor ?? 0 }];
+  });
+
+export const myCreditEntries = spacetimedb.view({ name: 'my_credit_entries', public: true },
+  t.array(t.object('MyCreditEntry', { id: t.u64(), reference: t.string(), amountMinor: t.f64() })), ctx => {
+    const accountId = getAccountId(ctx);
+    return accountId === null ? [] : [...ctx.db.creditEntry.byAccountReference.filter(accountId)].map(row => ({ id: row.id, reference: row.reference, amountMinor: row.amountMinor }));
+  });
+
+export const creditCustomers = spacetimedb.view({ name: 'credit_customers', public: true },
+  t.array(t.object('CreditCustomer', { accountId: t.u64(), name: t.string() })), ctx => {
+    const accountId = getAccountId(ctx);
+    const account = accountId === null ? null : ctx.db.account.id.find(accountId);
+    return account?.isAdmin || account?.isStaff ? [...ctx.db.account.iter()].filter(row => !row.isAdmin && !row.isStaff).map(row => ({ accountId: row.id, name: row.username })) : [];
+  });
+
+export const saveBundle = spacetimedb.reducer(
+  { name: t.string(), price: t.f64(), componentsJson: t.string() },
+  (ctx, { name, price, componentsJson }) => {
+    const actor = requireStaffOrAdmin(ctx);
+    if (!actor.isAdmin && ctx.db.staffRole.accountId.find(actor.id)?.role !== 'catalog') {
+      throw new SenderError('Catalog role required.');
+    }
+    let components: Array<{ item: string; quantity: number }>;
+    try { components = JSON.parse(componentsJson); } catch { throw new SenderError('Invalid components.'); }
+    if (!name.trim() || !Number.isFinite(price) || price <= 0 || !Array.isArray(components) || !components.length
+      || components.some(value => !value || typeof value.item !== 'string' || !Number.isSafeInteger(value.quantity) || value.quantity < 1)
+      || new Set(components.map(value => value.item)).size !== components.length) throw new SenderError('Invalid bundle.');
+    const resolved = components.map(component => {
+      const product = [...ctx.db.item.iter()].find(row => row.name === component.item);
+      if (!product || ctx.db.bundleDefinition.itemId.find(product.id)) throw new SenderError('Unknown product.');
+      return { ...component, itemId: String(product.id) };
+    });
+    let product = [...ctx.db.item.iter()].find(row => row.name === name.trim());
+    if (product && !ctx.db.bundleDefinition.itemId.find(product.id)) throw new SenderError('A product already uses this name.');
+    if (product) ctx.db.item.id.update({ ...product, price });
+    else {
+      product = ctx.db.item.insert({ id: 0n, name: name.trim(), price });
+      ctx.db.itemStats.insert({ itemId: product.id, purchaseCount: 0 });
+    }
+    const row = { itemId: product.id, componentsJson: JSON.stringify(resolved) };
+    if (ctx.db.bundleDefinition.itemId.find(product.id)) ctx.db.bundleDefinition.itemId.update(row);
+    else ctx.db.bundleDefinition.insert(row);
+  }
+);
+
+export const addBundleToCart = spacetimedb.reducer({ bundleId: t.u64() }, (ctx, { bundleId }) => {
+  const account = requireAccount(ctx);
+  const definition = ctx.db.bundleDefinition.itemId.find(bundleId);
+  const product = ctx.db.item.id.find(bundleId);
+  if (!definition || !product) throw new SenderError('Bundle not found.');
+  const existing = findCartLine(ctx, account.id, bundleId);
+  const held = findReservations(ctx, account.id, bundleId);
+  if (existing && held.some(row => !row.expired && row.expiresMicros > nowMicros(ctx))) throw new SenderError('Bundle already in cart.');
+  for (const row of held) {
+    if (!row.expired) releaseReservation(ctx, row);
+    else ctx.db.reservation.id.delete(row.id);
+  }
+  if (existing) ctx.db.cartItem.id.delete(existing.id);
+  const components: Array<{ itemId: string; quantity: number }> = JSON.parse(definition.componentsJson);
+  for (const component of components) reserveUnits(ctx, account.id, BigInt(component.itemId), component.quantity, bundleId);
+  ctx.db.cartItem.insert({ id: 0n, accountId: account.id, itemId: bundleId, quantity: 1, bundlePrice: product.price, bundleComponentsJson: definition.componentsJson });
+  touchCart(ctx, account.id);
+});
+
+export const returnBundle = spacetimedb.reducer({ orderId: t.u64() }, (ctx, { orderId }) => {
+  const account = requireAccount(ctx);
+  const order = ctx.db.customerOrder.id.find(orderId);
+  if (!order || order.accountId !== account.id || !['shipped', 'delivered'].includes(order.status)) throw new SenderError('No returnable bundle on this account.');
+  const bundles = [...ctx.db.orderItem.orderId.filter(orderId)].filter(row => row.isBundle && !row.returned);
+  if ((order.creditMinor || order.discount) && [...ctx.db.orderItem.orderId.filter(orderId)].some(line => !line.isBundle)) throw new SenderError('Use a full support refund for mixed-item discounted or credit orders.');
+  if (!bundles.length) throw new SenderError('Bundle already returned.');
+  let refund = 0;
+  for (const line of bundles) {
+    restoreOrderItemStock(ctx, line);
+    ctx.db.orderItem.id.update({ ...line, returned: true });
+    refund += line.unitPrice * line.quantity;
+    decrementPurchaseCount(ctx, line.itemId, line.quantity);
+  }
+  const refundedTotal = Math.min(order.total, order.discount ? order.total : order.refundedTotal + refund);
+  refundOrderCredit(ctx, order, refundedTotal);
+  ctx.db.customerOrder.id.update({ ...order, refundedTotal });
 });
 
 // --- reviews ---
@@ -1035,6 +1175,7 @@ export const cancelOrder = spacetimedb.reducer({ orderId: t.u64() }, (ctx, { ord
     decrementPurchaseCount(ctx, li.itemId, li.quantity);
     processReorderRules(ctx, li.itemId);
   }
+  if (order.creditMinor) refundOrderCredit(ctx, order, order.total);
   ctx.db.customerOrder.id.update({ ...order, status: 'cancelled' });
 });
 
@@ -1042,7 +1183,7 @@ export const returnOrderItem = spacetimedb.reducer(
   { orderId: t.u64(), itemId: t.u64() },
   (ctx, { orderId, itemId }) => {
     const order = requireOrderOwner(ctx, orderId);
-    if (order.status !== 'shipped') throw new SenderError('Order has not shipped yet.');
+    if (!['shipped', 'delivered'].includes(order.status)) throw new SenderError('Order has not shipped yet.');
 
     let target = null;
     for (const li of ctx.db.orderItem.orderId.filter(order.id)) {
@@ -1057,6 +1198,13 @@ export const returnOrderItem = spacetimedb.reducer(
     restoreOrderItemStock(ctx, target);
     decrementPurchaseCount(ctx, target.itemId, target.quantity);
     ctx.db.orderItem.id.update({ ...target, returned: true });
+    const gross = [...ctx.db.orderItem.orderId.filter(order.id)].reduce((sum, line) => sum + line.unitPrice * line.quantity, 0);
+    const amount = Math.min(order.total - order.refundedTotal,
+      Math.round(target.unitPrice * target.quantity * order.total / gross * 100) / 100);
+    const refundedTotal = order.refundedTotal + amount;
+    refundOrderCredit(ctx, order, refundedTotal);
+    ctx.db.customerOrder.id.update({ ...order, refundedTotal });
+    if (amount > 0) ctx.db.paymentRecord.insert({ id: 0n, orderId: order.id, amount: -amount, status: 'refunded' });
     processReorderRules(ctx, target.itemId);
   }
 );
@@ -1068,6 +1216,7 @@ export const processMaintenanceTick = spacetimedb.reducer(
   { tick: maintenanceTick.rowType },
   (ctx) => {
     processMaintenance(ctx);
+    processSubscriptions(ctx, (accountId, itemId, quantity, price) => createPaidOrder(ctx, accountId, itemId, quantity, price));
     ctx.db.maintenanceTick.insert({
       id: 0n,
       scheduledAt: ScheduleAt.time(nowMicros(ctx) + SECOND),
@@ -1092,7 +1241,9 @@ export const assignStaffRole = spacetimedb.reducer(
     const actor = requireAdmin(ctx);
     const target = ctx.db.account.id.find(accountId);
     if (!target || (!target.isStaff && !target.isAdmin)) throw new SenderError('Staff account not found.');
-    const row = { accountId, role: role.trim() };
+    if (!['staff', 'inventory', 'admin'].includes(role)) throw new SenderError('Invalid staff role.');
+    ctx.db.account.id.update({ ...target, isAdmin: role === 'admin' });
+    const row = { accountId, role };
     const existing = ctx.db.staffRole.accountId.find(accountId);
     if (existing) ctx.db.staffRole.accountId.update(row);
     else ctx.db.staffRole.insert(row);
@@ -1190,6 +1341,19 @@ export const linkSupportOrder = spacetimedb.reducer(
   }
 );
 
+function refundOrderCredit(ctx: Ctx, order: { id: bigint; accountId: bigint; total: number; creditMinor: number }, refundedTotal: number) {
+  const amountMinor = Math.min(order.creditMinor, Math.round(order.creditMinor * refundedTotal / order.total));
+  const reference = 'refund:' + order.id;
+  const entry = [...ctx.db.creditEntry.byAccountReference.filter([order.accountId, reference])][0];
+  const delta = amountMinor - (entry?.amountMinor ?? 0);
+  if (delta <= 0) return;
+  const wallet = ctx.db.creditWallet.accountId.find(order.accountId);
+  if (!wallet) throw new SenderError('Credit account missing.');
+  ctx.db.creditWallet.accountId.update({ ...wallet, amountMinor: wallet.amountMinor + delta });
+  if (entry) ctx.db.creditEntry.id.update({ ...entry, amountMinor });
+  else ctx.db.creditEntry.insert({ id: 0n, accountId: order.accountId, reference, amountMinor });
+}
+
 export const supportRefund = spacetimedb.reducer(
   { ticketId: t.u64() },
   (ctx, { ticketId }) => {
@@ -1198,10 +1362,12 @@ export const supportRefund = spacetimedb.reducer(
     if (!ticket || ticket.orderId === undefined) throw new SenderError('The case has no linked order.');
     const order = ctx.db.customerOrder.id.find(ticket.orderId);
     if (!order) throw new SenderError('Order not found.');
-    if (order.refundedTotal > 0) throw new SenderError('The order was already refunded.');
-    ctx.db.customerOrder.id.update({ ...order, refundedTotal: order.total, status: 'refunded' });
-    ctx.db.supportTicket.id.update({ ...ticket, refundTotal: order.total, status: 'refunded' });
-    ctx.db.paymentRecord.insert({ id: 0n, orderId: order.id, amount: -order.total, status: 'refunded' });
+    if (order.status === 'cancelled' || ticket.refundTotal > 0) throw new SenderError('The order was already refunded.');
+    const amount = order.total - order.refundedTotal;
+    refundOrderCredit(ctx, order, order.total);
+    ctx.db.customerOrder.id.update({ ...order, refundedTotal: order.total, status: order.status === 'pending' ? 'refunded' : order.status });
+    ctx.db.supportTicket.id.update({ ...ticket, refundTotal: amount, status: 'resolved' });
+    if (amount > 0) ctx.db.paymentRecord.insert({ id: 0n, orderId: order.id, amount: -amount, status: 'refunded' });
   }
 );
 
@@ -1288,9 +1454,17 @@ export const cancelScheduledRestock = spacetimedb.reducer({ restockId: t.u64() }
 export const restoreExpiredCart = spacetimedb.reducer((ctx) => {
   const acc = requireAccount(ctx);
   for (const row of [...ctx.db.expiredCartItem.accountId.filter(acc.id)]) {
-    if (totalStock(ctx, row.itemId) < row.quantity) continue;
-    reserveUnits(ctx, acc.id, row.itemId, row.quantity);
-    ctx.db.cartItem.insert({ id: 0n, accountId: acc.id, itemId: row.itemId, quantity: row.quantity });
+    if (findCartLine(ctx,acc.id,row.itemId)) continue;
+    if (row.bundleComponentsJson) {
+      const components: Array<{itemId:string;quantity:number}> = JSON.parse(row.bundleComponentsJson);
+      if (components.some(component=>totalStock(ctx,BigInt(component.itemId))<component.quantity)) continue;
+      for(const component of components) reserveUnits(ctx,acc.id,BigInt(component.itemId),component.quantity,row.itemId);
+    } else {
+      if (totalStock(ctx,row.itemId)<row.quantity) continue;
+      reserveUnits(ctx,acc.id,row.itemId,row.quantity);
+    }
+    ctx.db.cartItem.insert({id:0n,accountId:acc.id,itemId:row.itemId,quantity:row.quantity,
+      bundlePrice:row.bundlePrice,bundleComponentsJson:row.bundleComponentsJson});
     ctx.db.expiredCartItem.id.delete(row.id);
   }
   touchCart(ctx, acc.id);
@@ -1312,6 +1486,33 @@ export const dismissRecommendation = spacetimedb.reducer({ itemId: t.u64() }, (c
 });
 
 // --- progression views ---
+
+export const subscribeItem = spacetimedb.reducer(
+  { item: t.string(), quantity: t.u32(), intervalSeconds: t.u32(), deliveries: t.u32() },
+  (ctx, input) => createSubscription(ctx, requireAccount(ctx).id, input),
+);
+export const pauseSubscription = spacetimedb.reducer({ subscriptionId: t.u64() },
+  (ctx, { subscriptionId }) => changeSubscription(ctx, requireAccount(ctx).id, subscriptionId, 'pause'));
+export const resumeSubscription = spacetimedb.reducer({ subscriptionId: t.u64() },
+  (ctx, { subscriptionId }) => changeSubscription(ctx, requireAccount(ctx).id, subscriptionId, 'resume'));
+export const cancelSubscription = spacetimedb.reducer({ subscriptionId: t.u64() },
+  (ctx, { subscriptionId }) => changeSubscription(ctx, requireAccount(ctx).id, subscriptionId, 'cancel'));
+
+export const mySubscriptions = spacetimedb.view({ name: 'my_subscriptions', public: true },
+  t.array(t.object('SubscriptionView', {
+    id: t.u64(), item: t.string(), status: t.string(), total: t.f64(), deliveries: t.array(t.string()),
+  })), ctx => {
+    const accountId = getAccountId(ctx);
+    if (accountId === null) return [];
+    return [...ctx.db.purchaseSubscription.accountId.filter(accountId)].map(row => {
+      const slots = [...ctx.db.subscriptionDelivery.subscriptionId.filter(row.id)].sort((a, b) => a.slot - b.slot);
+      const orderIds = new Set(slots.map(slot => slot.orderId).filter(id => id !== undefined));
+      const total = [...ctx.db.paymentRecord.iter()].filter(payment => orderIds.has(payment.orderId) && payment.status === 'paid')
+        .reduce((sum, payment) => sum + payment.amount, 0);
+      return { id: row.id, item: ctx.db.item.id.find(row.itemId)?.name ?? '', status: row.status,
+        total, deliveries: slots.map(slot => slot.status) };
+    });
+  });
 
 const ProfileView = t.object('ProfileView', {
   accountId: t.u64(),

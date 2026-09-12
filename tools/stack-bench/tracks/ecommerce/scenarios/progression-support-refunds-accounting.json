@@ -10,6 +10,7 @@
       "actors": ["owner", "staff"],
       "setup": [
         { "do": "signUp", "actor": "owner", "name": "refund-accounting-owner" },
+        { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Mouse" } },
         { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" } },
         { "do": "click", "actor": "owner", "testid": "orders-toggle", "unlessVisible": "order-item" },
         { "do": "recordNumber", "actor": "owner", "testid": "order-total", "in": { "testid": "order-item", "contains": "Keyboard" }, "as": "paid-total" },
@@ -20,13 +21,14 @@
         { "do": "click", "actor": "owner", "testid": "support-order-option", "contains": "Keyboard", "in": { "testid": "support-ticket", "contains": "Accounting refund case" } },
         { "do": "click", "actor": "owner", "testid": "support-link-order", "in": { "testid": "support-ticket", "contains": "Accounting refund case" } },
         { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
-        { "do": "click", "actor": "staff", "testid": "staff-link" }
+        {"do":"click","actor":"staff","testid":"staff-link","unlessVisible":"support-assignee"},
+        {"do":"click","actor":"staff","testid":"support-queue-link","unlessVisible":"support-assignee","ifAvailable":true}
       ],
       "criteria": [
         {
           "id": "615b",
           "category": "production",
-          "desc": "the refund equals the paid total and cannot be applied twice",
+          "desc": "the refund equals the paid total, cannot be applied twice, and leaves another order unrefunded",
           "points": 1,
           "statedBy": "The recorded refund equals the amount paid and is applied only once.",
           "steps": [
@@ -43,7 +45,9 @@
             { "do": "expectNumber", "actor": "owner-fresh", "testid": "support-refund-total", "in": { "testid": "support-ticket", "contains": "Accounting refund case" }, "relativeTo": "paid-total", "plus": 0, "within": 10000 },
             { "do": "click", "actor": "owner-fresh", "testid": "orders-toggle", "unlessVisible": "order-item" },
             { "do": "expectNumber", "actor": "owner-fresh", "testid": "order-refund-total", "in": { "testid": "order-item", "contains": "Keyboard" }, "relativeTo": "paid-total", "plus": 0, "within": 10000 },
-            { "do": "expectElementCount", "actor": "owner-fresh", "testid": "refund-entry", "contains": "Keyboard", "equals": 1, "within": 10000 }
+            { "do": "expectElementCount", "actor": "owner-fresh", "testid": "refund-entry", "contains": "Keyboard", "equals": 1, "within": 10000 },
+            { "do": "expectNumber", "actor": "owner-fresh", "testid": "order-refund-total", "in": { "testid": "order-item", "contains": "Mouse" }, "equals": 0, "within": 10000 },
+            { "do": "expectElementCount", "actor": "owner-fresh", "testid": "refund-entry", "contains": "Mouse", "equals": 0, "within": 10000 }
           ]
         }
       ]

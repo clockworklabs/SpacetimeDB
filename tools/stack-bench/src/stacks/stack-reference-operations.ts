@@ -164,7 +164,7 @@ export function deployMongoDbReference(input: HostedReferenceDeployment): Promis
   return deployHostedReference(input, {
     databaseUrl: ({ ports, lease, buildNetworkMode }) => lease.resources.network
       ? attemptDatabaseUrl({ backend: 'mongodb', database: lease.resources.database, ownershipToken: lease.ownershipToken ?? '' })
-      : `mongodb://${dockerHostServiceAddress(buildNetworkMode)}:${ports.dbPort}/${lease.resources.database}`,
+      : `mongodb://${dockerHostServiceAddress(buildNetworkMode)}:${ports.dbPort}/${lease.resources.database}?replicaSet=rs0&directConnection=true`,
     extraEnv: { JWT_SECRET: 'stack-bench-reference-only-secret-2026' },
     prepare: (_database, helpers) => resetMongoDb({ lease: input.lease,
       exec: (command, args, options) => helpers.runSync('resetting MongoDB reference database', command, args, { ...options }) }),

@@ -24,6 +24,43 @@ Authorization and replay checks pass only when the requested call ran and
 produced verifiable evidence. Visible UI behavior cannot replace missing server
 evidence.
 
+## Fault probes
+
+The current campaign checks do not yet include controlled checkout write rejection
+or forced scheduled-worker overlap. The rules below govern adding those probes;
+they are not a claim of current coverage.
+
+The purchasing and cart contracts do not fix order storage or ID generation.
+An ID-collision probe verified on one saved app therefore cannot be applied to
+all generated apps. Do not require sequential IDs just to make that probe work.
+A general write-rejection probe needs an external fault method that supports the
+app's actual storage, with proof that the intended write was rejected.
+
+A database stall tests recovery from a stall. It does not by itself prove a late
+write failed or that two workers selected the same job. Keep those claims distinct.
+
+Scored fault probes leave the generated source and dependencies unchanged. Inject
+faults through the isolated runtime or database, then check persisted application
+state. Record the fault target, activation, release, and observed result. A setup
+timeout or an unobserved fault is not an application failure or a pass.
+
+Use instrumented copies only as grader controls, with their changes recorded.
+Before promoting a probe, require normal-operation success, a known defect caught
+at the intended check, a correct implementation passing under the same fault,
+and successful recovery after release. An unsupported stack is not a passing
+control; do not include the probe in a shared comparison until each stack has a
+verified method for testing the same behavior.
+
+A duplicate-checkout test does not establish rollback after a failed order write.
+A restart test does not establish safety when scheduled workers overlap. Keep
+those cases separate in check definitions and reported coverage.
+
+Confirm the delay on at least one worker. Do not require a second worker to reach
+the same write: correct job claiming can prevent it. Verify the final effect after
+release, and check that a later poll does not repeat it.
+
+## Failure reports
+
 An action never fails with a sentence. It fails with a finding from the closed
 catalog in `src/actions/action-findings.ts`: a kind and its fields, where a
 field is a contract control name, an action id, an actor label, a number, a

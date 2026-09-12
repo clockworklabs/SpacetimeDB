@@ -115,6 +115,9 @@ export function setSpacetimeStock({ item, warehouse, quantity, spacetime,
   if (!container) {
     throw new Error('SpacetimeDB build container is unavailable for direct SQL');
   }
+  // Distinguish an absent application row from an unsuccessful harness write.
+  // Reuse the strict reader so malformed CLI output is never treated as absence.
+  getSpacetimeStock({ item, warehouse, spacetime, exec });
   const query = (sql: string): string => exec('docker', [...agentExec(), container.id,
     ...codingContainerAgentCommand(CODING_CONTAINER_SPACETIME_CLI,
       ['sql', spacetime.mod, '-s', spacetime.containerUri, sql])],

@@ -3,7 +3,7 @@
 
 import type { CampaignProgression, CampaignSheet, ProgressionStep, SheetAttempt, SheetStack }
   from '../../dashboard-views.js';
-import { DASH, duration, executionClock, esc, metricLabel, spend, num, pct, phrase, ratio, stackLabel, statusWord } from '../format.js';
+import { DASH, completionLabel, modelLabel, duration, executionClock, esc, metricLabel, spend, num, pct, phrase, ratio, stackLabel, statusWord } from '../format.js';
 import { progressChart } from '../progress-chart.js';
 import { graph } from '../graph.js';
 
@@ -194,6 +194,8 @@ function board({ sheet, progression, view, step }: CampaignPageInput,
 export function campaignPage(input: CampaignPageInput): string {
   const sheet = input.sheet;
   const stacks = sheet.stacks;
+  const showRepairs = stacks.some(stack => stack.attempts.some(attempt =>
+    attempt.repairs.budget > 0 || attempt.repairs.used > 0));
   const cell = (render: (stack: SheetStack) => string): string =>
     stacks.map(stack => `<td>${render(stack)}</td>`).join('');
   const help: Record<string, string> = {
@@ -229,7 +231,7 @@ export function campaignPage(input: CampaignPageInput): string {
     + row('Completion', stack => `<div class="big">${pct(stack.completionRate === null ? null : 100 * stack.completionRate)}</div>`)
     + row('Cost per valid run', stack => value(stack.costPerValidRun === null ? (stack.n ? 'Unknown' : 'Awaiting valid runs') : `$${stack.costPerValidRun.toFixed(2)}`))
     + row('Weighted score', stack => value(pct(stack.score)))
-    + row('Before repairs', stack => value(pct(stack.unaided)))
+    + (showRepairs ? row('Before repairs', stack => value(pct(stack.unaided))) : '')
     + row('Regressions', stack => value(num(stack.regressions)))
     + row('Time', stack => value(duration(stack.timeSec)))
     + repetitions
@@ -237,13 +239,15 @@ export function campaignPage(input: CampaignPageInput): string {
     + '</tbody></table></div>'
     + (sheet.mode === 'dependency' ? progressChart(sheet, input.progression, input.chart, input.view, input.hiddenChartRuns, input.unit) : '')
     + '<h3>Runs</h3>'
-    + '<div class="tablewrap"><div class="wrap"><table class="runs attempt-list"><thead><tr><th>Run</th><th>Completion</th><th>Spend</th><th>Repairs</th><th>Elapsed</th><th>Status</th></tr></thead><tbody>'
+    + `<div class="tablewrap"><div class="wrap"><table class="runs attempt-list"><thead><tr><th>Run</th><th>Model</th><th>Completion</th><th>Spend</th>${showRepairs ? '<th>Repairs</th>' : ''}<th>Elapsed</th><th>Status</th></tr></thead><tbody>`
     + stacks.flatMap(stack => stack.attempts.map(attempt => {
       const href = `/c/${encodeURIComponent(sheet.key)}/a/${encodeURIComponent(attempt.id)}`;
-      return `<tr data-chart-series="${esc(attempt.id)}"><td><a href="${href}" title="${esc(attempt.variant)}">${esc(stackLabel(stack.stack))} · Rep ${attempt.repetition}</a></td>`
-        + `<td>${attempt.completion ? ratio(attempt.completion.passed, attempt.completion.selected) : DASH}</td>`
+      const effort = attempt.effort ? ` (${attempt.effort})` : '';
+      return `<tr data-chart-series="${esc(attempt.id)}"><td><a class="run-name" href="${href}">${esc(stackLabel(stack.stack))} ${attempt.repetition}</a></td>`
+        + `<td title="${esc(attempt.model ?? attempt.variant)}">${esc(modelLabel(attempt.model))}<span class="run-effort">${esc(effort)}</span></td>`
+        + `<td>${completionLabel(attempt)}</td>`
         + `<td title="Live estimates use reported response usage; final receipts replace estimates.">${spend(attempt.spend, attempt.spendPending, attempt.liveSpend)}</td>`
-        + `<td>${ratio(attempt.repairs.used, attempt.repairs.budget)}</td>`
+        + (showRepairs ? `<td>${ratio(attempt.repairs.used, attempt.repairs.budget)}</td>` : '')
         + `<td>${attempt.status === 'running' || attempt.executionCompletedAt ? executionClock(attempt.executionStartedAt, attempt.executionCompletedAt) : DASH}</td>`
         + `<td class="run-status">${attempt.excluded
           ? `<details><summary>Excluded · show reason</summary><p>${esc(attempt.excluded)}</p></details>`

@@ -1,7 +1,15 @@
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createBackendLease, publicBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
+import { retainedRunCost } from '../src/evidence/retained-run-cost.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { durableCostLedger, runCostEvidence } from '../src/evidence/cost-proof.js';
+import { recordedExecutionSpend } from '../src/campaigns/campaign-inspection.js';
+import { executionSpend } from '../src/campaigns/campaign-report.js';
+import { spend } from '../dashboard/public/format.js';
 import type { CostRun } from '../src/evidence/cost-proof.js';
 
 const receipt = (costUsd: number) => ({ invocation: 1, receipt: {
@@ -95,4 +103,49 @@ test('resumed execution spend excludes inherited costs and retains current bound
   assert.deepEqual(runCostEvidence(resumed, 'execution'), { status: 'upper-bound', costUsd: 3 });
   delete (resumed.totals as Partial<typeof resumed.totals>).currentExecutionCostUsd;
   assert.deepEqual(runCostEvidence(resumed, 'execution'), { status: 'unknown', costUsd: null });
+});
+
+
+test('interrupted totals cannot hide a later checkpoint or claim complete spend', () => {
+  const run: CostRun = { totals: { costUsd: 2, costComplete: true },
+    levels: [{ level: 2, buildSessions: [{ costUsd: 2, costComplete: true, costReceipts: [receipt(2)] }] }],
+    checkpoints: [{ executionCost: { status: 'exact', costUsd: 12 } }] };
+  const cost = runCostEvidence(run, 'execution');
+  assert.equal(cost.status, 'unknown');
+  const recorded = recordedExecutionSpend(run);
+  assert.deepEqual(recorded, { status: 'exact', costUsd: 12 });
+  const total = executionSpend([{ cost, recorded }]);
+  assert.equal(total.status, 'unknown');
+  assert.equal(total.knownCostUsd, 12);
+  assert.match(spend(total), /\$12.00 recorded/);
+  run.checkpoints = [];
+  run.progressionStatus = { phase: 'active' };
+  assert.equal(runCostEvidence(run).status, 'unknown');
+});
+
+
+test('retained broker accounting is bound to the run lease and keeps interrupted requests incomplete', () => {
+  const root = mkdtempSync(join(tmpdir(), 'retained-cost-'));
+  const lease = createBackendLease({ runId: 'retained', backend: 'spacetime', track: 'ecommerce',
+    runIndex: 0, module: 'app', serverUri: 'http://127.0.0.1:3000', dataDir: join(root, 'data') });
+  const directory = join(root, lease.runId);
+  mkdirSync(join(directory, 'stack-bench-credential-broker-one'), { recursive: true });
+  writeBackendLease(join(directory, 'backend-lease.json'), lease);
+  const ledger = { schemaVersion: 4, model: 'claude-sonnet-5', maxBudgetUsd: 50,
+    acceptedRequests: 2, billableRequests: 2, completedBillableRequests: 2,
+    estimatedBillableRequests: 0, estimatedByReason: { 'no-usage': 0, 'response-aborted': 0, 'upstream-error': 0 },
+    spentUsd: 12, reservedUsd: 0, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 },
+    complete: true, updatedAt: new Date().toISOString() };
+  const file = join(directory, 'stack-bench-credential-broker-one', 'spend-ledger.json');
+  const run = { id: lease.runId, backend: 'spacetime', model: ledger.model, backendLease: publicBackendLease(lease), levels: [] };
+  try {
+    writeFileSync(file, JSON.stringify(ledger));
+    assert.deepEqual(retainedRunCost(run, root)?.cost, { status: 'exact', costUsd: 12 });
+    writeFileSync(file, JSON.stringify({ ...ledger, complete: false, reservedUsd: 3, completedBillableRequests: 1 }));
+    const partial = retainedRunCost(run, root);
+    assert.equal(partial?.cost.status, 'unknown');
+    assert.equal(partial?.recorded.costUsd, 12);
+    assert.equal(retainedRunCost({ ...run, id: '../retained' }, root), null);
+    assert.equal(retainedRunCost({ ...run, backendLease: { ownership: { markerSha256: 'wrong' } } }, root), null);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

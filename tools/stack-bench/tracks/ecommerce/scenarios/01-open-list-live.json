@@ -37,6 +37,7 @@
         },
         {"do": "openItem", "actor": "reviewer", "item": "Keyboard"},
         { "do": "expect", "actor": "reviewer", "testid": "item-detail", "within": 10000 },
+        {"do":"click","actor":"reviewer","testid":"review-toggle","unlessVisible":"review-rating","ifAvailable":true},
         { "do": "fill", "actor": "reviewer", "testid": "review-rating", "text": "5" }
       ],
       "criteria": [
@@ -48,6 +49,7 @@
           "steps": [
             {"do": "openItem", "actor": "reader", "item": "Keyboard"},
             { "do": "expect", "actor": "reader", "testid": "item-detail", "within": 10000 },
+            {"do":"click","actor":"reviewer","testid":"review-toggle","unlessVisible":"review-rating","ifAvailable":true},
             { "do": "fill", "actor": "reviewer", "testid": "review-input", "text": "live-review-kbd" },
             { "do": "click", "actor": "reviewer", "testid": "review-submit" },
             {

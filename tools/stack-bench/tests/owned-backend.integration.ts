@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 // Explicit, model-free gate. Uses installed immutable images and briefly attaches
 // the trusted cache to each owned bridge. It does not reset or stop the cache.
-test('owned backend activation, native authentication, smoke, restart, and exact cleanup', {
+for (const backend of ['postgres', 'mongodb', 'spacetime']) test(`owned ${backend} activation, native authentication, smoke, restart, and exact cleanup`, {
   skip: process.env.STACK_BENCH_OWNED_BACKEND_TEST !== '1', timeout: 240_000,
 }, () => {
   const image = process.env.STACK_BENCH_NETWORK_CONTROLLER_IMAGE;
@@ -41,7 +41,7 @@ test('owned backend activation, native authentication, smoke, restart, and exact
       import { requireLeasedDatabase } from './dist/src/stacks/backend-reset-guard.js';
       import { attemptDocker, requireAttemptNetwork } from './dist/src/runtime/docker-network.js';
       import { runContainerSmoke } from './dist/src/runtime/container-smoke.js';
-      for (const backend of ['postgres','mongodb','spacetime']) {
+      for (const backend of [${JSON.stringify(backend)}]) {
         const directory = ${JSON.stringify(state)} + '/' + backend;
         mkdirSync(directory, {recursive:true});
         const path = directory + '/lease.json';
@@ -65,6 +65,24 @@ test('owned backend activation, native authentication, smoke, restart, and exact
             const applicationShell=['exec',id,'mongosh','--quiet','--username','appuser','--password',secret.password,
               '--authenticationDatabase','owned_probe','owned_probe','--eval'];
             attemptDocker([...applicationShell,'db.proof.insertOne({id:1}); if(db.proof.countDocuments()!==1) quit(1)']);
+            attemptDocker([...applicationShell,
+              'if(db.hello().setName!=="rs0" || !db.hello().isWritablePrimary) throw new Error("not a primary replica-set member"); '
+              +'const session=db.getMongo().startSession(); const tx=session.getDatabase("owned_probe"); '
+              +'session.startTransaction(); tx.proof.insertOne({id:10}); session.commitTransaction(); '
+              +'session.startTransaction(); tx.proof.insertOne({id:11}); session.abortTransaction(); session.endSession(); '
+              +'if(!db.proof.findOne({id:10}) || db.proof.findOne({id:11})) throw new Error("transaction commit or rollback failed");']);
+            attemptDocker(['exec','--user','mongodb',id,'mongod','--shutdown','--dbpath','/data/db']);
+            attemptDocker(['exec','-d','--user','mongodb',id,'sh','-c','exec mongod --bind_ip 127.0.0.1 --replSet rs0 --keyFile /data/configdb/stack-bench-keyfile > /tmp/stack-bench-mongodb-restart.log 2>&1']);
+            let restarted=false;
+            for(let retry=0;retry<60;retry++) {
+              try {
+                attemptDocker([...applicationShell,'if(!db.hello().isWritablePrimary) quit(1); if(!db.proof.findOne({id:10})) throw new Error("committed data lost after restart");']);
+                restarted=true;
+                break;
+              } catch { await new Promise(resolve=>setTimeout(resolve,500)); }
+            }
+            if(!restarted) console.error(attemptDocker(['exec',id,'tail','-n','20','/tmp/stack-bench-mongodb-restart.log']));
+            assert.equal(restarted,true,'MongoDB did not recover committed data as primary after restart');
             resetMongoDb({lease:requireLeasedDatabase(active)});
             attemptDocker([...applicationShell,
               'if(db.proof.countDocuments()!==0) throw new Error("reset left application data"); '
@@ -108,8 +126,8 @@ test('owned backend activation, native authentication, smoke, restart, and exact
       }
       `]);
     const output = docker(['start', '--attach', controller]);
-    assert.match(output, /mongodb: trusted reset preserved application CRUD and denied dropDatabase/);
-    assert.match(output, /spacetime: native backend, isolated smoke, process restart passed/);
+    if (backend === 'mongodb') assert.match(output, /mongodb: trusted reset preserved application CRUD and denied dropDatabase/);
+    if (backend === 'spacetime') assert.match(output, /spacetime: native backend, isolated smoke, process restart passed/);
     console.log(output);
   } finally {
     if (controller) docker(['rm', '-f', '--volumes', controller]);

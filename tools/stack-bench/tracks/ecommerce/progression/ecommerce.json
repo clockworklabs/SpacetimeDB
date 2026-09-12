@@ -483,6 +483,7 @@
       "gradingGroups": [
         "ecommerce.progression.staff-roles#assignment",
         "ecommerce.spec.access-control#staff-role-boundary",
+        "ecommerce.spec.access-control#staff-role-revocation",
         "ecommerce.spec.state-durability#staff-role-reload"
       ],
       "dependencies": [
@@ -899,6 +900,144 @@
         {
           "id": "order-support",
           "reason": "The refund resolves an order-linked case."
+        }
+      ]
+    },
+    {
+      "id": "product-bundles",
+      "title": "Catalog bundles",
+      "questline": "catalog-discovery",
+      "featureRefs": [
+        "ecommerce.feature.product-bundles"
+      ],
+      "gradingGroups": [
+        "ecommerce.feature.product-bundles#product-bundles",
+        "ecommerce.spec.bundle-integrity#bundle-743"
+      ],
+      "dependencies": [
+        {
+          "id": "catalog-management",
+          "reason": "Uses catalog management."
+        }
+      ]
+    },
+    {
+      "id": "bundle-checkout",
+      "title": "Bundle checkout",
+      "questline": "shopping-checkout",
+      "featureRefs": [
+        "ecommerce.feature.bundle-checkout"
+      ],
+      "gradingGroups": [
+        "ecommerce.feature.bundle-checkout#bundle-checkout",
+        "ecommerce.spec.bundle-integrity#bundle-744",
+        "ecommerce.spec.bundle-integrity#bundle-745",
+        "ecommerce.spec.bundle-integrity#bundle-746",
+        "ecommerce.spec.bundle-integrity#bundle-747"
+      ],
+      "dependencies": [
+        {
+          "id": "product-bundles",
+          "reason": "Uses catalog bundles."
+        },
+        {
+          "id": "reservations",
+          "reason": "Uses reservations."
+        }
+      ]
+    },
+    {
+      "id": "bundle-returns",
+      "title": "Bundle returns",
+      "questline": "orders-fulfillment",
+      "featureRefs": [
+        "ecommerce.feature.bundle-returns"
+      ],
+      "gradingGroups": [
+        "ecommerce.feature.bundle-returns#bundle-returns",
+        "ecommerce.spec.bundle-integrity#bundle-742",
+        "ecommerce.spec.bundle-integrity#bundle-748"
+      ],
+      "dependencies": [
+        {
+          "id": "bundle-checkout",
+          "reason": "Uses bundle checkout."
+        },
+        {
+          "id": "order-returns",
+          "reason": "Uses returns."
+        }
+      ]
+    },
+    {
+      "id": "store-credit",
+      "title": "Store credit",
+      "questline": "business-operations",
+      "featureRefs": [
+        "ecommerce.feature.store-credit"
+      ],
+      "gradingGroups": [
+        "ecommerce.feature.store-credit#feature-750",
+        "ecommerce.spec.store-credit#production-752",
+        "ecommerce.spec.store-credit#production-753",
+        "ecommerce.spec.store-credit#production-754",
+        "ecommerce.spec.store-credit#production-755"
+      ],
+      "dependencies": [
+        {
+          "id": "payment-records",
+          "reason": "Uses payment records."
+        },
+        {
+          "id": "staff-roles",
+          "reason": "Uses staff roles."
+        }
+      ]
+    },
+    {
+      "id": "split-tender-refunds",
+      "title": "Split-tender refunds",
+      "questline": "customer-support",
+      "featureRefs": [
+        "ecommerce.feature.split-tender-refunds"
+      ],
+      "gradingGroups": [
+        "ecommerce.feature.split-tender-refunds#feature-751",
+        "ecommerce.spec.split-tender-refunds#production-756",
+        "ecommerce.spec.split-tender-refunds#return-refund-interaction"
+      ],
+      "dependencies": [
+        {
+          "id": "store-credit",
+          "reason": "Uses store credit."
+        },
+        {
+          "id": "support-refunds",
+          "reason": "Uses support refunds."
+        },
+        {
+          "id": "order-returns",
+          "reason": "Checks that returns and refunds share one financial total while stock is restored once."
+        }
+      ]
+    },
+    {
+      "id": "subscriptions",
+      "title": "Scheduled purchases",
+      "questline": "orders-fulfillment",
+      "featureRefs": [
+        "ecommerce.feature.subscriptions"
+      ],
+      "gradingGroups": [
+        "ecommerce.feature.subscriptions#feature-760",
+        "ecommerce.spec.subscriptions#production-761",
+        "ecommerce.spec.subscriptions#production-762",
+        "ecommerce.spec.subscriptions#production-763"
+      ],
+      "dependencies": [
+        {
+          "id": "payment-records",
+          "reason": "Uses payment records."
         }
       ]
     }

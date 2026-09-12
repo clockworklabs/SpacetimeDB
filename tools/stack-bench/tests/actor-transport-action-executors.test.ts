@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { executeAction } from '../src/actions/action-contract.js';
 import {
@@ -133,6 +134,40 @@ test('a parameterless action needs no DOM input; parameterized actions still do'
   assert.equal((await run({ ...input, namedAction: { ...input.namedAction, args: [1] } }, provided)).status,
     'harness_failure');
   assert.equal(calls, 1);
+});
+
+test('shipping accounting waits for the staff response before reading accounting', async () => {
+  const scenario = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+    'tracks/ecommerce/scenarios/progression-shipping-accounting.json'), 'utf8'));
+  const steps = scenario.features[0].criteria[0].steps as UnknownRecord[];
+  const index = steps.findIndex(step => step.do === 'callAction' && step.action === 'ship');
+  assert(index >= 0);
+  let release!: () => void;
+  const response = new Promise<void>(resolve => { release = resolve; });
+  let submitted!: () => void;
+  const started = new Promise<void>(resolve => { submitted = resolve; });
+  const staff = { name: 'staff', writes: [{ headers: { authorization: 'Bearer staff' } }] };
+  const customer = { name: 'customer', loc: () => ({ waitFor: async () => {},
+    getAttribute: async () => JSON.stringify({ orderId: '42' }) }) };
+  const provided = services(new Map<string, unknown>([['staff', staff], ['customer', customer]]), {
+    fetchImpl: async (url, options) => {
+      assert.equal(url, 'http://app.test/api/fulfilment/ship');
+      assert.equal(options.headers?.authorization, 'Bearer staff');
+      assert.deepEqual(JSON.parse(String(options.body)), { orderId: '42' });
+      submitted();
+      await response;
+      return namedResponse(200, true);
+    },
+  });
+  let finished = false;
+  const pending = run(steps[index]!, provided).then(result => { finished = true; return result; });
+  await started;
+  assert.equal(finished, false, 'the action cannot finish while its response is pending');
+  release();
+  assert.equal((await pending).status, 'passed');
+  assert.equal(steps[index + 1]!.do, 'expectActionOutcome');
+  assert.equal((await run(steps[index + 1]!, provided)).status, 'passed');
+  assert.equal(steps[index + 2]!.do, 'reload');
 });
 
 test('one named server action maps DOM input symmetrically and verifies its outcome', async () => {
@@ -713,6 +748,8 @@ test('an idempotent replay permits success or deliberate validation refusal, nev
     const checked = await run({ do: 'expectReplayCompleted', actor: 'staff' }, provided);
     assert.equal(checked.status,
       [200, 204, 400, 409, 422, 530].includes(status) ? 'passed' : 'failed', String(status));
+    assert.equal((await run({ do: 'expectReplayCompleted', actor: 'staff', requireAccepted: true }, provided)).status,
+      actor.replay.accepted ? 'passed' : 'failed');
     if (actor.replay.accepted) {
       assert.equal((await run({ do: 'expectReplayRejected', actor: 'staff' }, provided)).status,
         'failed', 'idempotency acceptance must not weaken authorization checks');
@@ -1047,5 +1084,82 @@ test('named calls override one declared parameter from another actor without cha
       assert.equal((await run(input, provided)).status, 'failed');
       assert.equal(requests.length, 1, 'invalid override must not send a request');
     }
+  }
+});
+
+
+test('staff-role replay changes the role without changing the HTTP route or the reducer target', async () => {
+  const scenario = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+    'tracks/ecommerce/scenarios/progression-staff-roles.json'), 'utf8'));
+  const steps = scenario.features[0].criteria.find((c: { id: string }) => c.id === '621b').steps;
+  const replay = steps.find((step: { do: string }) => step.do === 'replayAs');
+  for (const backend of ['postgres', 'mongodb', 'spacetime']) {
+    const requests: CapturedRequest[] = [];
+    const source = { name: 'replayAdmin', received: [],
+      writes: backend === 'spacetime' ? [] : [{
+        url: 'http://app.test/api/staff/42/role', method: 'PUT',
+        headers: { authorization: 'Bearer admin-token' }, body: { role: 'staff' },
+      }],
+      loc: () => ({ waitFor: async () => undefined, getAttribute: async () => '42' }),
+    };
+    const staff = { name: 'staff', received: [], writes: [{
+      url: 'http://app.test/api/me', method: 'GET',
+      headers: { authorization: 'Bearer staff-token' }, body: null,
+    }], page: { request: { fetch: async (url: string, options: UnknownRecord) => {
+      requests.push({ url, options });
+      return { status: () => 403, ok: () => false };
+    } } } };
+    const provided = services(new Map<string, unknown>([['staff', staff], ['replayAdmin', source]]), {
+      backend, spacetime: { uri: 'http://app.test', mod: 'shop' },
+      fetchImpl: async (url, options) => {
+        requests.push({ url, options: options as unknown as UnknownRecord });
+        return namedResponse(530, false);
+      },
+    });
+    assert.equal((await run({ ...replay, settleMs: 0 }, provided)).status, 'passed');
+    assert.equal(requests.length, 1);
+    if (backend === 'spacetime') {
+      assert.equal(requests[0]!.options.body, '[42,"inventory"]');
+    } else {
+      assert.equal(requests[0]!.url, 'http://app.test/api/staff/42/role');
+      assert.equal(requests[0]!.options.data, '{"role":"inventory"}');
+    }
+    assert.equal((await run({ do: 'expectReplayRejected', actor: 'staff' }, provided)).status, 'passed');
+  }
+  const rejected = steps.findIndex((step: { do: string }) => step.do === 'expectReplayRejected');
+  const after = steps.slice(rejected + 1);
+  assert.equal(after[0].do, 'reload');
+  assert.equal(after.at(-1).value, 'staff', 'a denied response must leave the persisted role unchanged');
+  assert.equal(after.at(-1).in.testid, 'staff-role-account-staff');
+});
+
+
+test('role revocation uses declared transitions despite earlier captured role writes', async () => {
+  const scenario = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+    'tracks/ecommerce/scenarios/progression-staff-roles.json'), 'utf8'));
+  const steps = scenario.features[0].criteria.find((c: { id: string }) => c.id === '621d').steps;
+  const calls = steps.filter((step: { do: string }) => step.do === 'replayAs');
+  for (const backend of ['postgres', 'mongodb', 'spacetime']) {
+    const requests: CapturedRequest[] = [];
+    const actor = (name: string) => ({ name, received: [], writes: [{
+      url: 'http://app.test/api/staff/42/role', method: 'PUT',
+      headers: { authorization: `Bearer ${name}-token` }, body: { role: 'staff' },
+    }], loc: () => ({ waitFor: async () => undefined, getAttribute: async () => '42' }) });
+    const provided = services(new Map<string, unknown>([
+      ['roleAdmin', actor('roleAdmin')], ['promotedStaff', actor('promotedStaff')],
+    ]), { backend, spacetime: { uri: 'http://app.test', mod: 'shop' },
+      fetchImpl: async (url, options) => {
+        requests.push({ url, options: options as unknown as UnknownRecord });
+        return namedResponse(200, true);
+      },
+    });
+    for (const step of calls) assert.equal((await run(step, provided)).status, 'passed');
+    assert.equal(requests.length, calls.length);
+    assert.deepEqual(requests.map(request => {
+      const body = JSON.parse(String(request.options.body));
+      return backend === 'spacetime' ? body[1] : body.role;
+    }), ['admin', 'admin', 'staff', 'admin']);
+    assert.deepEqual(requests.map(request => record(request.options.headers).authorization
+      ?? record(request.options.headers).Authorization), calls.map((step: { actor: string }) => `Bearer ${step.actor}-token`));
   }
 });

@@ -218,13 +218,16 @@ export function classifyBundle(bundle: OutcomeBundle | null | undefined): Classi
   return { kind, phase: 'grading', reason: null, appFailures, inconclusive, harnessFailures };
 }
 
-export function aggregateRunOutcome(levels: readonly LevelResult[]): AggregateOutcome {
+export function aggregateRunOutcome(levels: readonly LevelResult[],
+  terminalOutcome?: { kind?: string } | null): AggregateOutcome {
   const priority: readonly RunOutcomeKind[] = ['harness_failure', 'provider_failure', 'ungraded',
     'incomplete', 'inconclusive', 'app_failure', 'passed'];
   const kinds = levels.map(level => level.outcome?.kind ?? 'ungraded');
-  const kind = priority.find(candidate => kinds.includes(candidate)) ?? 'ungraded';
+  const recorded = priority.find(candidate => kinds.includes(candidate)) ?? 'ungraded';
+  const kind = recorded === 'passed' && (terminalOutcome?.kind === 'partial' || terminalOutcome?.kind === 'failed')
+    ? 'app_failure' : recorded;
   const selected = levels.find(level => (level.outcome?.kind ?? 'ungraded') === kind)?.outcome
-    ?? { kind };
+    ?? { kind, reason: 'selected dependency graph did not fully pass' };
   return {
     ...selected,
     kind,

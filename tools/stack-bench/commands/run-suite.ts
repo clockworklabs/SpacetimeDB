@@ -14,7 +14,7 @@ import { chromium } from 'playwright';
 import { attemptBrowserLaunchOptions } from '../container/browser-pipe.js';
 import type { BrowserServer } from 'playwright';
 import { dbName, loadTrack, suitesFor, DEFAULT_TRACK } from '../src/composition/tracks.js';
-import { controlBackendRuntime, parseRuntimeControlSpec }
+import { controlAppServer, parseRuntimeControlSpec }
   from '../src/runtime/backend-control.js';
 import type { RuntimeControlSpec } from '../src/runtime/backend-control.js';
 import { ARTIFACT_FILE, readArtifactPayload, recipeArtifactIdentities, writeArtifact }
@@ -429,8 +429,13 @@ export async function waitForApplicationProbe(url: string, {
 }
 
 // Confirm the app uses the database leased to this run.
-export function checkDatabaseProvenance(args: Pick<RunArguments, 'app' | 'backend'>): DatabaseProvenance {
+export function checkDatabaseProvenance(args: Pick<RunArguments, 'app' | 'backend' | 'databaseLease'>): DatabaseProvenance {
   const adapter = STACK_ADAPTER_REGISTRY.get(args.backend);
+  // Source text cannot prove which database the running app uses. Leased runs
+  // prove it with an application write, including container-local endpoints.
+  if (args.databaseLease && 'proveUse' in adapter.database) {
+    return { ok: true, reason: 'leased database requires runtime marker verification' };
+  }
   const expected = adapter.ports.allocations().db;
   if (!expected) return { ok: true, reason: 'no external database for this backend' };
   // Neutral guidance does not prescribe project layout. Search the app for the
@@ -903,10 +908,16 @@ async function main() {
     if (!args.reset) return true;
     const requiresReseed = STACK_ADAPTER_REGISTRY.get(args.backend).reset.requiresReseed;
     const restartSpec = args.restartSpec;
+    if (track.reseedOnReset && requiresReseed && !restartSpec) {
+      lastResetFailure = `track ${args.track} requires --restart-spec to initialize the app after reset`;
+      lastResetOutcome = { kind: 'harness_failure', phase: 'application-reset-control' };
+      return false;
+    }
     if (track.reseedOnReset && restartSpec && requiresReseed) {
       process.stdout.write('  stop application ... ');
       try {
-        await measure('stop', () => controlBackendRuntime(restartSpec, 'stop'));
+        await measure('stop', () => controlAppServer(restartSpec, 'stop'));
+        applicationLeftStopped = true;
         console.log('ok');
       } catch (error) {
         const failure: Failure = error instanceof Error ? error : new Error(String(error));
@@ -942,7 +953,7 @@ async function main() {
       try {
         // Do not give a background server an inherited pipe that keeps the
         // synchronous restart command open.
-        await measure('start', () => controlBackendRuntime(restartSpec, 'start'));
+        await measure('start', () => controlAppServer(restartSpec, 'start'));
         applicationLeftStopped = false;
       } catch (err) {
         const failure: Failure = err instanceof Error ? err : new Error(String(err));
@@ -978,7 +989,7 @@ async function main() {
 
   const prov = checkDatabaseProvenance(args);
   bundle.provenance = prov;
-  console.log(`  database    ... ${prov.ok ? 'benchmark-owned' : `WRONG DATABASE — ${prov.reason}`}`);
+  console.log(`  database    ... ${prov.ok ? prov.reason : `WRONG DATABASE — ${prov.reason}`}`);
   if (!prov.ok) {
     bundle.error = `app is not using the benchmark database: ${prov.reason}`;
     bundle.outcome = { kind: 'app_failure', phase: 'database-provenance', reason: bundle.error,
@@ -1033,6 +1044,9 @@ async function main() {
         reason: 'runtime marker proof requires database reset to isolate its write' };
     }
 
+    if (!proofError && !actionFailure && supportsRuntimeProof && args.databaseLease && !runtime.verified) {
+      proofError = new Error(`leased database identity was not verified: ${runtime.reason}`);
+    }
     if (proofError) {
       bundle.outcome = databaseProvenanceFailure(proofError);
       bundle.error = bundle.outcome.reason;

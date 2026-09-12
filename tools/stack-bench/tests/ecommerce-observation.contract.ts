@@ -155,7 +155,7 @@ test('later-depth checks retain their own effects and independent controls', () 
   assert.equal(steps[0]!.contains, 'Coffee Grinder');
   assert.equal(steps[0]!.equals, 1);
   assert.equal(steps[1]!.testid, 'in-stock-filter');
-  assert(steps.some(step => step.contains === 'Coffee Grinder' && step.absent === true));
+  assert(steps.some(step => step.contains === 'Coffee Grinder' && step.do === 'waitUntilAbsent'));
   const boundary = read('progression-order-support-boundary.json').features[0]!.criteria[0]!.steps;
   const attack = boundary.find(step => step.do === 'callAction' && step.actor === 'other')!;
   assert.deepEqual((attack.input as { overrides: unknown }).overrides, {
@@ -191,4 +191,30 @@ test('countdown displays decrease from observed baselines without setup-time ass
     assert.equal(bound.comparison, 'atMost');
     assert.equal(bound.within, 10000);
   }
+});
+
+
+test('role revocation proves authorization before testing the same session after removal', () => {
+  const steps = read('progression-staff-roles.json').features[0]!.criteria.find(c => c.id === '621d')!.steps;
+  const login = steps.findIndex(s => s.do === 'signIn' && s.actor === 'promotedStaff');
+  assert(login >= 0);
+  assert.equal(steps.filter(s => s.do === 'signIn' && s.actor === 'promotedStaff').length, 1);
+  assert(!steps.slice(login + 1).some(s => s.actor === 'promotedStaff'
+    && ['signIn', 'ensureSignedIn', 'reload', 'freshClient', 'closeClient'].includes(s.do)));
+  const calls = steps.filter(s => s.do === 'replayAs');
+  assert.deepEqual(calls.map(s => [s.actor, Array.isArray(s.namedAction?.args) ? s.namedAction.args[1] : undefined]), [
+    ['roleAdmin', 'admin'], ['promotedStaff', 'admin'],
+    ['roleAdmin', 'staff'], ['promotedStaff', 'admin'],
+  ]);
+  const positive = steps.findIndex(s => s.do === 'expectReplayCompleted' && s.actor === 'promotedStaff');
+  for (const call of calls.filter(s => s.actor === 'promotedStaff')) {
+    assert.equal((call.namedTarget as { testid: string }).testid, 'staff-role-account-staff');
+  }
+  const negative = steps.findIndex(s => s.do === 'expectReplayRejected' && s.actor === 'promotedStaff');
+  assert(positive > login && negative > positive);
+  assert.equal(steps[positive]!.requireAccepted, true);
+  assert(steps.slice(positive, negative).some(s => s.do === 'expect' && s.value === 'staff'));
+  assert.equal(steps[negative + 1]!.do, 'reload');
+  assert.equal(steps.at(-1)!.value, 'staff');
+  assert.equal(steps.at(-1)!.actor, 'roleAdmin');
 });

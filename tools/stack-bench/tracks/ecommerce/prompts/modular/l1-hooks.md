@@ -28,8 +28,8 @@ transport.
 | `signup-username` | sign-up username input |
 | `signup-password` | sign-up password input |
 | `signup-submit` | sign-up submit control |
-| `signin-toggle` | control that reveals sign-in |
-| `signup-toggle` | control that reveals sign-up when the sign-up inputs are not shown |
+| `signin-toggle` | available on the signed-out page to reveal sign-in; omit when sign-in inputs are already visible |
+| `signup-toggle` | reveals sign-up; available on the signed-out page or after opening `signin-toggle`; omit when sign-up inputs are already visible |
 | `signin-username` | sign-in username input |
 | `signin-password` | sign-in password input |
 | `signin-submit` | sign-in submit control |
@@ -68,6 +68,7 @@ transport.
 | Element ID | Observable element |
 |---|---|
 | `review-rating` | rating input or select with values one through five |
+| `review-toggle` | opens the review form on item details for eligible customers; omit when already shown |
 | `review-input` | review comment input |
 | `review-submit` | review submit control |
 | `review-average` | numeric average rating |

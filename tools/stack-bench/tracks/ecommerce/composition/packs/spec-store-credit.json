@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.spec.store-credit",
+  "moduleType": "specification",
+  "title": "Store credit integrity",
+  "description": "Bounded production checks for store credit.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser",
+    "database-observation",
+    "direct-server-call",
+    "backend-lifecycle"
+  ],
+  "evidence": [
+    "browser-observation",
+    "fresh-client-observation",
+    "database-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 300000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.spec.store-credit.store-credit",
+        "path": "prompts/modular/later-specifications.md",
+        "order": 6503,
+        "from": "## Store credit",
+        "until": "## Split-tender refunds",
+        "modes": [
+          "fresh",
+          "upgrade"
+        ],
+        "requiresFeatures": [
+          "ecommerce.feature.store-credit"
+        ]
+      }
+    ],
+    "contracts": []
+  },
+  "checks": [
+    {
+      "id": "production-752",
+      "source": "scenarios/progression-store-credit.json",
+      "feature": 752,
+      "criteria": [
+        "752a"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.feature.store-credit"
+      ]
+    },
+    {
+      "id": "production-753",
+      "source": "scenarios/progression-store-credit.json",
+      "feature": 753,
+      "criteria": [
+        "753a"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.feature.store-credit"
+      ]
+    },
+    {
+      "id": "production-754",
+      "source": "scenarios/progression-store-credit.json",
+      "feature": 754,
+      "criteria": [
+        "754a"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.feature.store-credit"
+      ]
+    },
+    {
+      "id": "production-755",
+      "source": "scenarios/progression-store-credit.json",
+      "feature": 755,
+      "criteria": [
+        "755a"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.feature.store-credit"
+      ]
+    }
+  ]
+}

@@ -193,7 +193,8 @@ async function click({ input, capabilities, signal }:
     BrowserArguments<CommonInput & { settleMs?: number; ifAvailable?: boolean; unlessVisible?: string }>) {
   const actor = actorFor(capabilities, input.actor);
   const browser = interaction(capabilities);
-  if (input.unlessVisible) {
+  const destinationVisible = async (): Promise<boolean> => {
+    if (!input.unlessVisible) return false;
     const sentinel = actor.loc(input.unlessVisible);
     if (await sentinel.isVisible()) {
       // A translated closed drawer is "visible" to Playwright. Scroll normal
@@ -206,13 +207,24 @@ async function click({ input, capabilities, signal }:
         });
         observer.observe(element);
       }));
-      if (inViewport) return { clicked: false, testid: input.testid, visible: input.unlessVisible };
+      return inViewport;
     }
+    return false;
+  };
+  if (await destinationVisible()) {
+    return { clicked: false, testid: input.testid, visible: input.unlessVisible };
   }
   const scope = inputScope(browser, input.in);
   const target = actor.loc(input.testid, { contains: browser.expand(input.contains), scope });
-  if (input.ifAvailable && (!await target.isVisible() || await target.isDisabled())) {
-    return { clicked: false, testid: input.testid };
+  if (input.ifAvailable) {
+    const deadline = Date.now() + (input.within ?? browser.defaultWithin);
+    while (!await target.isVisible() || await target.isDisabled()) {
+      if (await destinationVisible()) {
+        return { clicked: false, testid: input.testid, visible: input.unlessVisible };
+      }
+      if (Date.now() >= deadline) return { clicked: false, testid: input.testid };
+      await browser.sleep(Math.min(100, deadline - Date.now()), signal);
+    }
   }
   await target.click({ timeout: input.within ?? browser.defaultWithin });
   if (input.settleMs) await browser.sleep(input.settleMs, signal);
@@ -320,7 +332,10 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
   if (input.absent) {
     const deadline = Date.now() + within;
     while (Date.now() <= deadline) {
-      if (await loc.isVisible()) fail('control-present', { control: input.testid });
+      if (await loc.isVisible()) fail('control-present', { control: input.testid,
+        ...(contains ? { matchingText: findingText(contains) } : {}),
+        ...(scope?.testid ? { scope: scope.testid } : {}),
+        ...(scope?.contains ? { scopeText: findingText(String(scope.contains)) } : {}) });
       await browser.sleep(250, signal);
     }
     return { absent: true };
@@ -334,7 +349,7 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
   if (!visible) fail('control-missing', { control: input.testid,
       ...(scope ? { scope: scope.testid } : {}),
       ...(contains ? { matchingText: findingText(contains) } : {}),
-      ...(scope?.contains ? { scopeText: findingText(scope.contains) } : {}),
+      ...(scope?.contains ? { scopeText: findingText(String(scope.contains)) } : {}),
       ...(contains || scope?.contains ? { filtered: true } : {}) });
 
   if (input.count !== undefined) {
@@ -346,7 +361,8 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
         : actor.page.locator(browser.testId(input.testid)));
     const count = visible ? await all.filter({ visible: true }).count() : 0;
     if (input.count !== undefined && count !== input.count) {
-      fail('count-mismatch', { control: input.testid, expected: input.count, observed: count });
+      fail('count-mismatch', { control: input.testid, expected: input.count, observed: count,
+        ...(contains ? { matchingText: findingText(contains) } : {}) });
     }
   }
   if (!visible) return { visible: false };
@@ -395,7 +411,10 @@ async function waitUntilAbsent({ input, capabilities }: BrowserArguments<CommonI
       if (harnessBrowserFailure(error)) throw error;
       return false;
     });
-  if (!hidden) fail('control-present', { control: input.testid });
+  if (!hidden) fail('control-present', { control: input.testid,
+    ...(contains ? { matchingText: findingText(contains) } : {}),
+    ...(scope?.testid ? { scope: scope.testid } : {}),
+    ...(scope?.contains ? { scopeText: findingText(String(scope.contains)) } : {}) });
   return { absent: true };
 }
 
@@ -564,7 +583,7 @@ async function expectNumber({ input, capabilities, signal }:
     fail('control-missing', { control: input.testid,
       ...(scope ? { scope: scope.testid } : {}),
       ...(contains ? { matchingText: findingText(contains) } : {}),
-      ...(scope?.contains ? { scopeText: findingText(scope.contains) } : {}),
+      ...(scope?.contains ? { scopeText: findingText(String(scope.contains)) } : {}),
       ...(contains || scope?.contains ? { filtered: true } : {}) });
   });
 
@@ -586,7 +605,7 @@ async function expectNumber({ input, capabilities, signal }:
   }
   fail('number-mismatch', { control: input.testid, observed: last, expected,
     ...(scope?.contains && !/password|secret|token/i.test(scope.testid)
-      ? { scopeText: findingText(scope.contains) } : {}) });
+      ? { scopeText: findingText(String(scope.contains)) } : {}) });
 }
 
 async function expectOrderMatches({ input, capabilities }:
@@ -701,14 +720,15 @@ function isExpectedBrowserFailure(error: unknown): boolean {
 export function pageFailure(message: string, scope?: string): ActionApplicationFailure {
   // Alternative/intersection locators do not establish a parent-child scope.
   const controls = [...new Set([...message.matchAll(/data-(?:testid|role)="([a-zA-Z0-9_-]+)"/g)]
-    .map(match => match[1]))];
+    .map(match => match[1]!))];
   const combined = /\.(?:or|and)\(/.test(message);
   const control = combined ? undefined : controls.at(-1);
   scope ??= !combined && controls.length > 1 ? controls.at(-2) : undefined;
   const named = { ...(control ? { control } : {}), ...(scope ? { scope } : {}) };
   const value = /Page crashed/i.test(message) ? finding('page-crashed', { detail: message })
     : /intercepts pointer events/i.test(message) ? finding('control-blocked', { ...named, detail: message })
-    : /timeout/i.test(message) ? finding('page-timeout', { ...named, detail: message })
+    : /timeout/i.test(message) ? finding('page-timeout', { ...named,
+      ...(/\.or\(/.test(message) && controls.length ? { alternatives: controls } : {}), detail: message })
     : finding('page-error', { ...named, detail: message });
   return new ActionApplicationFailure(renderFinding(value), { finding: value });
 }

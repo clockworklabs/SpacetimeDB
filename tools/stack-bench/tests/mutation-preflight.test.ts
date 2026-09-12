@@ -29,10 +29,11 @@ test('mutation reset stops hosted apps before clearing data and fails closed', a
     else process.env.STACK_BENCH_LEASE_TOKEN = priorToken;
     rmSync(root, { recursive: true, force: true });
   });
-  for (const backend of ['postgres', 'mongodb'] as const) {
+  for (const backend of ['postgres', 'mongodb', 'spacetime'] as const) {
     const lease = createBackendLease({ runId: 'mutation-reset', backend,
       track: 'ecommerce', runIndex: 0, database: 'mutation_reset',
-      container: { name: 'database', id: 'a'.repeat(64) } });
+      container: { name: 'database', id: 'a'.repeat(64) },
+      serverUri: 'http://127.0.0.1:3211', module: 'mutation_reset', dataDir: root });
     lease.state = 'active';
     writeBackendLease(path, lease);
     process.env.STACK_BENCH_LEASE = path;
@@ -40,27 +41,24 @@ test('mutation reset stops hosted apps before clearing data and fails closed', a
     const calls: string[] = [];
     let failure: string | null = null;
     const adapter = STACK_ADAPTER_REGISTRY.get(backend);
-    const lifecycle = adapter.lifecycle as typeof adapter.lifecycle & {
-      control: NonNullable<typeof adapter.lifecycle.control> };
-    assert.equal(typeof lifecycle.control, 'function');
-    t.mock.method(lifecycle, 'control', async ({ mode }: { mode: string }) => {
-      calls.push(mode);
+    const control: NonNullable<Parameters<typeof resetMutationDatabase>[2]> = async (_spec, mode) => {
+      calls.push(mode!);
       if (failure === mode) throw new Error(`${mode} failed`);
-    });
+    };
     t.mock.method(adapter.reset, 'run', () => {
       calls.push('reset');
       if (failure === 'reset') throw new Error('reset failed');
     });
     const args = { backend, app: root, track: 'ecommerce', reseedOnReset: true,
       restartSpec: { backend, app: root, port: 3000, probe: '/' } };
-    await resetMutationDatabase(args, null);
+    await resetMutationDatabase(args, null, control);
     assert.deepEqual(calls.splice(0), ['stop', 'reset', 'start']);
     for (const phase of ['stop', 'reset']) {
       failure = phase;
-      await assert.rejects(resetMutationDatabase(args, null), new RegExp(`${phase} failed`));
+      await assert.rejects(resetMutationDatabase(args, null, control), new RegExp(`${phase} failed`));
       assert.deepEqual(calls.splice(0), phase === 'stop' ? ['stop'] : ['stop', 'reset']);
     }
-    await assert.rejects(resetMutationDatabase({ ...args, restartSpec: undefined }, null),
+    await assert.rejects(resetMutationDatabase({ ...args, restartSpec: undefined }, null, control),
       /requires a lease-authenticated --restart-spec/);
     assert.deepEqual(calls, [], 'missing control must not clear the database');
   }

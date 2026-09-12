@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { formatMoney } from '../types';
 
 export interface OrderItemView {
+  isBundle?: boolean;
   itemId: bigint;
   name: string;
   quantity: number;
@@ -15,6 +16,8 @@ export interface OrderView {
   status: string;
   discount: number;
   refundedTotal: number;
+  creditMinor: number;
+  externalMinor: number;
   payments: { amount: number; status: string }[];
   items: OrderItemView[];
 }
@@ -22,11 +25,12 @@ export interface OrderView {
 interface OrdersPanelProps {
   orders: OrderView[];
   onClose: () => void;
+  onReturnBundle: (orderId: bigint) => Promise<void>;
   onCancel: (orderId: bigint) => Promise<void>;
   onReturn: (orderId: bigint, itemId: bigint) => Promise<void>;
 }
 
-export default function OrdersPanel({ orders, onClose, onCancel, onReturn }: OrdersPanelProps) {
+export default function OrdersPanel({ orders, onClose, onCancel, onReturn, onReturnBundle }: OrdersPanelProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const handleCancel = async (orderId: bigint) => {
@@ -60,7 +64,7 @@ export default function OrdersPanel({ orders, onClose, onCancel, onReturn }: Ord
       >
         <div className="panel-header">
           <h2>Order history</h2>
-          <button type="button" className="close-btn" aria-label="Close" onClick={onClose}>
+          <button type="button" className="close-btn" aria-label="Close" data-role="overlay-close" onClick={onClose}>
             ×
           </button>
         </div>
@@ -71,6 +75,7 @@ export default function OrdersPanel({ orders, onClose, onCancel, onReturn }: Ord
               className="order-item"
               data-role="order-item"
               data-entity-id={String(order.orderId)}
+              data-bundle-return-input={JSON.stringify({ orderId: String(order.orderId) })}
               data-ship-input={JSON.stringify({ orderId: Number(order.orderId) })}
               data-cancel-input={JSON.stringify({ orderId: Number(order.orderId) })}
               key={String(order.orderId)}
@@ -79,7 +84,7 @@ export default function OrdersPanel({ orders, onClose, onCancel, onReturn }: Ord
               <div className="order-item-meta">{order.createdAt.toLocaleString()}</div>
               <div className="order-item-row">
                 <span className="order-status" data-role="order-status">
-                  {order.status}
+                  {order.items.length > 0 && order.items.every(line => line.returned) ? "returned" : order.status}
                 </span>
                 <span className="order-total" data-role="order-total">
                   {formatMoney(order.total)}
@@ -87,9 +92,13 @@ export default function OrdersPanel({ orders, onClose, onCancel, onReturn }: Ord
               </div>
               {order.discount > 0 && <div data-role="order-discount">Discount: {formatMoney(order.discount)}</div>}
               {order.refundedTotal > 0 && <div data-role="order-refund-total">Refund: {formatMoney(order.refundedTotal)}</div>}
+              <span data-role="payment-credit-amount">{order.creditMinor / 100}</span>
+              <span data-role="payment-external-amount">{order.total - order.creditMinor / 100}</span>
               {order.payments.map((payment, index) => payment.status === 'refunded' ? (
                 <div data-role="refund-entry" key={`refund-${index}`}>
                   {order.items.map(item => item.name).join(', ')}
+                  <span data-role="refund-credit-amount">{Math.round(order.creditMinor * -payment.amount / order.total) / 100}</span>
+                  <span data-role="refund-external-amount">{-payment.amount - Math.round(order.creditMinor * -payment.amount / order.total) / 100}</span>
                   <span data-role="payment-amount">{formatMoney(payment.amount)}</span>
                   <span data-role="payment-status">{payment.status}</span>
                 </div>
@@ -100,6 +109,8 @@ export default function OrdersPanel({ orders, onClose, onCancel, onReturn }: Ord
                   <span data-role="payment-status">{payment.status}</span>
                 </div>
               ))}
+              {order.items.some(line => line.isBundle) && <span data-role="bundle-refund-amount">{formatMoney(order.refundedTotal)}</span>}
+              {["shipped", "delivered"].includes(order.status) && order.items.some(line => line.isBundle && !line.returned) && <button data-role="return-bundle" onClick={() => onReturnBundle(order.orderId).catch(error => setErrors(previous => ({ ...previous, [String(order.orderId)]: String(error) })))}>Return bundle</button>}
               <div className="order-item-lines">
                 {order.items.map((item) => (
                   <div className="order-item-line" key={String(item.itemId)}>
@@ -107,7 +118,7 @@ export default function OrdersPanel({ orders, onClose, onCancel, onReturn }: Ord
                       {item.name} × {item.quantity}
                       {item.returned && <span className="badge badge-muted" style={{ marginLeft: 6 }}>Returned</span>}
                     </span>
-                    {order.status === 'shipped' && !item.returned && (
+                    {order.status === 'shipped' && !item.returned && !item.isBundle && (
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"

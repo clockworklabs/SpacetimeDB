@@ -606,6 +606,7 @@ export async function executeCampaign(campaignFile: string, directory: string,
           if (!pending) break;
           const credentials = resolveExecutionCredentials(pending.plan.agentAdapter, pending.plan.id,
             executionCredentials ?? {}, executionEnv);
+          if (pending.plan.effort) credentials.env.STACK_BENCH_EFFORT = pending.plan.effort;
           const previousAssignment = pending.executions.at(-1)?.credentialAssignment;
           if (pending.executions.length && canonicalDefinitionJson(previousAssignment ?? null)
             !== canonicalDefinitionJson(credentials.assignment)) {

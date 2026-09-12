@@ -17,7 +17,8 @@
         { "do": "click", "actor": "owner", "testid": "support-submit" },
         { "do": "expect", "actor": "owner", "testid": "support-reference", "nonEmpty": true },
         { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
-        { "do": "click", "actor": "staff", "testid": "staff-link" }
+        {"do":"click","actor":"staff","testid":"staff-link","unlessVisible":"support-assignee"},
+        {"do":"click","actor":"staff","testid":"support-queue-link","unlessVisible":"support-assignee","ifAvailable":true}
       ],
       "criteria": [
         {
@@ -40,7 +41,8 @@
             { "do": "click", "actor": "owner", "testid": "support-reply-submit", "in": { "testid": "support-ticket", "contains": "Shared managed case" } },
             { "do": "reload", "actor": "staff", "settleMs": 2000 },
             { "do": "ensureSignedIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true, "readyTestid": "current-user" },
-            { "do": "click", "actor": "staff", "testid": "staff-link" },
+            {"do":"click","actor":"staff","testid":"staff-link","unlessVisible":"support-assignee"},
+            {"do":"click","actor":"staff","testid":"support-queue-link","unlessVisible":"support-assignee","ifAvailable":true},
             { "do": "expect", "actor": "staff", "testid": "support-reply-item", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "contains": "Thank you." }
           ]
         },

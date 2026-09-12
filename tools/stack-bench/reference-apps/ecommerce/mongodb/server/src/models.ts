@@ -17,11 +17,12 @@ const idTransform = {
 
 const ItemSchema = new Schema(
   {
-    name: { type: String, required: true },
+    name: { type: String, required: true, unique: true },
     price: { type: Number, required: true },
     description: { type: String, default: "" },
     category: { type: String, default: "Uncategorized" },
     variants: { type: [String], default: [] },
+    bundleComponents: { type: [{ itemId: Schema.Types.ObjectId, name: String, quantity: Number }], default: [] },
   },
   { collection: "item", toJSON: idTransform, toObject: idTransform }
 );
@@ -52,6 +53,7 @@ const UserSchema = new Schema(
     isAdmin: { type: Boolean, default: false },
     isStaff: { type: Boolean, default: false },
     roles: { type: [String], default: [] },
+    creditMinor: { type: Number, default: 0 },
   },
   { timestamps: true, toJSON: idTransform, toObject: idTransform }
 );
@@ -62,6 +64,9 @@ const CartLineSchema = new Schema(
     quantity: { type: Number, required: true, min: 1 },
     reservationExpiresAt: { type: Date, default: null },
     reservedWarehouseIds: { type: [Schema.Types.ObjectId], default: [] },
+    bundlePrice: { type: Number, default: null },
+    bundleComponentsJson: { type: String, default: "" },
+    componentAllocations: { type: [{ itemId: Schema.Types.ObjectId, warehouseId: Schema.Types.ObjectId, quantity: Number }], default: [] },
   },
   { _id: false }
 );
@@ -93,6 +98,8 @@ const OrderLineSchema = new Schema(
     quantity: { type: Number, required: true },
     allocations: { type: [AllocationSchema], default: [] },
     returned: { type: Boolean, default: false },
+    isBundle: { type: Boolean, default: false },
+    componentAllocations: { type: [{ itemId: Schema.Types.ObjectId, warehouseId: Schema.Types.ObjectId, quantity: Number }], default: [] },
   },
   { _id: false }
 );
@@ -105,6 +112,8 @@ const OrderSchema = new Schema(
     status: { type: String, enum: ["pending", "shipped", "delivered", "cancelled", "refunded"], default: "pending" },
     discount: { type: Number, default: 0 },
     refundTotal: { type: Number, default: 0 },
+    creditMinor: { type: Number, default: 0 },
+    externalMinor: { type: Number, default: 0 },
   },
   { timestamps: true, toJSON: idTransform, toObject: idTransform }
 );

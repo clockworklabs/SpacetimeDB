@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
@@ -10,6 +10,7 @@ import { createBackendLease, writeBackendLease } from '../src/runtime/backend-le
 import { controlAppServer } from '../src/runtime/backend-control.js';
 import { restoreRepairSource } from '../src/runtime/source-materialization.js';
 import { snapshotAppSource } from '../src/runtime/source-snapshot.js';
+import { resetMutationDatabase } from '../grader/mutation-test.js';
 
 const docker = (args: string[]): string => execFileSync('docker', args,
   { encoding: 'utf8', stdio: 'pipe', timeout: 120_000, windowsHide: true }).trim();
@@ -43,13 +44,13 @@ test('rejected schema repair restores accepted source and a fresh spacetime dev 
   const moduleSource = (type: string, value: string): string =>
     `import { schema, table, t } from 'spacetimedb/server';\n`
     + `const db = schema({ proof: table({ public: true }, { value: t.${type}() }) });\n`
-    + `export default db; export const init = db.init(ctx => { ctx.db.proof.insert({ value: ${value} }); });\n`;
+    + `export default db; export const seed = db.reducer(ctx => { if (ctx.db.proof.count() === 0n) ctx.db.proof.insert({ value: ${value} }); });\n`;
   writeFileSync(source, moduleSource('string', "'accepted'"));
   writeFileSync(join(app, 'server.cjs'), `require('http').createServer((q,s)=>s.end('ready')).listen(${port},'0.0.0.0');`);
   writeFileSync(join(app, 'start.sh'), `#!/bin/bash\nset -eu\n`
     + `exec /deps/spacetimedb-cli dev repair-proof --no-config --project-path /app --module-path /app/spacetimedb `
     + `--module-bindings-path client/src/module_bindings --client-lang typescript -s http://127.0.0.1:3299 -y `
-    + `--run 'node /app/server.cjs'\n`);
+    + `--run '/deps/spacetimedb-cli call repair-proof seed -s http://127.0.0.1:3299 -y && node /app/server.cjs'\n`);
   let id: string | undefined;
   const previous = { path: process.env.STACK_BENCH_LEASE, token: process.env.STACK_BENCH_LEASE_TOKEN };
   try {
@@ -85,7 +86,12 @@ test('rejected schema repair restores accepted source and a fresh spacetime dev 
     const query = (): string => cli('sql', 'repair-proof', '-s', 'http://127.0.0.1:3299', 'select * from proof');
     await controlAppServer(spec, 'start');
     assert.match(query(), /accepted/);
+    await resetMutationDatabase({ backend: 'spacetime', app, track: 'chat',
+      reseedOnReset: true, restartSpec: spec }, null);
+    assert.match(query(), /accepted/, 'isolated reset must run startup seeding outside init');
     await controlAppServer(spec, 'stop');
+    chmodSync(source, 0o660);
+    chmodSync(join(app, 'spacetimedb', 'package.json'), 0o660);
     snapshotAppSource(app, accepted);
     writeFileSync(source, moduleSource('u32', '7'));
     publish('--delete-data');

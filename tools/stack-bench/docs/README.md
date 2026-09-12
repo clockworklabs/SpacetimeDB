@@ -25,6 +25,7 @@ Use the root [README](../README.md) for the product summary.
 
 - [Authoring](authoring.md): add features, checks, prompts, and rules through their existing owners
 - [Grading coverage](grading-coverage.md): current qualification gaps and check justifications
+- [L4–L6 preparation](l4-l6-readiness.md): later-depth probe gaps and proposed production workloads
 - [Research roadmap](research-roadmap.md): staged data collection, parallel runs,
   comparison methods, and the research evidence pack
 - [Ecommerce composition](../tracks/ecommerce/composition/README.md): packs,

@@ -271,6 +271,10 @@ async function main(): Promise<void> {
   }
   const buildNetworkMode = typeof identity.networkMode === 'string' ? identity.networkMode : undefined;
   phase(`prepared build container ${identity.containerName}`);
+  for (const command of codingContainerWorkspaceHandoffCommands(process.getgid?.() ?? 0)) {
+    runSync('preparing reference workspace permissions', 'docker', ['exec', containerName, ...command],
+      { encoding: 'utf8', stdio: 'pipe' });
+  }
   if (!('reference' in adapter)) throw new Error(`${adapter.id} has no reference deployment`);
   const helpers = { dbName, loadTrack, moduleName, runSync, docker, startDetached,
     waitFor, containerLogs, phase };

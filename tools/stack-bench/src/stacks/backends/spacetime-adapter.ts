@@ -47,7 +47,7 @@ export const spacetimeAdapter = defineStackAdapter('spacetime', {
   },
 }, {
   lease: stackLeaseOperations('spacetime'),
-  reset: { run: resetSpacetime, requiresReseed: false },
+  reset: { run: resetSpacetime, requiresReseed: true },
   databaseWrite: { setStock: setSpacetimeStock },
   databaseRead: { getStock: getSpacetimeStock },
   database: { prepare: prepareSpacetimeDatabase, proveUse: proveSpacetimeUse },

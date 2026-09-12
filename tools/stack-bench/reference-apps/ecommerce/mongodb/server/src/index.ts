@@ -12,6 +12,9 @@ import { Item, Warehouse, Stock, User, Cart, Order, Review } from "./models.js";
 import { Dismissal, Payment, Promotion } from "./progression-models.js";
 import { installProgressionRoutes } from "./progression.js";
 import { releaseStock, reserveStock } from "./stock-reservations.js";
+import { installBundleRoutes, releaseBundle } from "./bundles.js";
+import { installSubscriptionRoutes, processSubscriptions } from "./subscriptions.js";
+import { checkoutAtomic, refundCredit, registerCredit } from "./credit.js";
 
 const PORT = Number(process.env.PORT) || 6401;
 const DATABASE_URL = process.env.DATABASE_URL || "mongodb://localhost:6537/stackbench_ecom_run0";
@@ -147,9 +150,7 @@ async function getPurchaseCounts(): Promise<Map<string, number>> {
 async function getRevenue(): Promise<number> {
   const rows = await Order.aggregate([
     { $match: { status: { $ne: "cancelled" } } },
-    { $unwind: "$items" },
-    { $match: { "items.returned": { $ne: true } } },
-    { $group: { _id: null, total: { $sum: { $multiply: ["$items.price", "$items.quantity"] } } } },
+    { $group: { _id: null, total: { $sum: { $subtract: ["$total", { $ifNull: ["$refundTotal", 0] }] } } } },
   ]);
   return rows[0]?.total || 0;
 }
@@ -318,7 +319,8 @@ async function getCartLive(userId: string) {
     return {
       itemId,
       name: item?.name || "Unknown item",
-      price: item?.price || 0,
+      price: line.bundlePrice ?? item?.price ?? 0,
+      isBundle: line.bundlePrice !== null,
       stock: stockMap.get(itemId) || 0,
       quantity: line.quantity,
       reservationSeconds: line.reservationExpiresAt
@@ -430,6 +432,9 @@ setInterval(() => {
   broadcastAdmin().catch((err) => console.error("broadcastAdmin poll failed", err));
   broadcastFulfilment().catch((err) => console.error("broadcastFulfilment poll failed", err));
   broadcastRecommendedForAll().catch((err) => console.error("broadcastRecommended poll failed", err));
+  processSubscriptions(async userId => {
+    await Promise.all([broadcastOrders(userId), broadcastItems(), broadcastAdmin(), broadcastFulfilment()]);
+  }).catch(err => console.error("subscription timer failed", err));
 }, 1500);
 
 // ---------------------------------------------------------------------------
@@ -651,6 +656,7 @@ app.patch("/api/cart/:itemId", requireAuth, async (req, res) => {
   const cart = await Cart.findOne({ userId });
   const line = cart?.items.find((l) => l.itemId.toString() === itemId);
   if (!cart || !line) return res.status(404).json({ error: "Item is not in your cart" });
+  if (line.bundlePrice !== null) return res.status(400).json({ error: "Remove and re-add a whole bundle" });
   const held = [...(line.reservedWarehouseIds || [])] as Types.ObjectId[];
   const needed = Math.max(0, qty - held.length);
   const added = needed ? await reserveStock(line.itemId as Types.ObjectId, needed) : [];
@@ -676,15 +682,18 @@ app.patch("/api/cart/:itemId", requireAuth, async (req, res) => {
 app.delete("/api/cart/:itemId", requireAuth, async (req, res) => {
   const { itemId } = req.params;
   const userId = (req as any).user._id.toString();
-  const cart = await Cart.findOne({ userId });
+  await mongoose.connection.transaction(async session => {
+  const cart = await Cart.findOne({ userId }).session(session);
   if (cart) {
     const removed = cart.items.find((line) => line.itemId.toString() === itemId);
     cart.items = cart.items.filter((l) => l.itemId.toString() !== itemId) as any;
     cart.inactiveExpiresAt = new Date(Date.now() + 300_000);
-    await cart.save();
+    await cart.save({session});
+    if (removed?.componentAllocations.length) await releaseBundle(removed.componentAllocations as any, session);
     if (removed) await releaseStock(removed.itemId as Types.ObjectId,
-      [...(removed.reservedWarehouseIds || [])] as Types.ObjectId[]);
+      [...(removed.reservedWarehouseIds || [])] as Types.ObjectId[], session);
   }
+  });
   await Promise.all([broadcastCart(userId), broadcastRecommendedForUser(userId)]);
   res.json(await getCartLive(userId));
 });
@@ -695,92 +704,11 @@ app.delete("/api/cart/:itemId", requireAuth, async (req, res) => {
 
 app.post("/api/checkout", requireAuth, async (req, res) => {
   const userId = (req as any).user._id.toString();
-
-  // Atomically claim the cart's current contents so a concurrent double-click
-  // can't both see a full cart and both produce an order.
-  const claimedCart = await Cart.findOneAndUpdate({ userId },
-    { $set: { items: [], promotionCode: "", discount: 0 } });
-  const allLines = claimedCart?.items || [];
-  const originalLines = allLines.filter(line => !line.reservationExpiresAt
-    || line.reservationExpiresAt.getTime() > Date.now());
-  const expiredLines = allLines.filter(line => line.reservationExpiresAt
-    && line.reservationExpiresAt.getTime() <= Date.now());
-  if (originalLines.length === 0) {
-    await Cart.updateOne({ userId }, { $set: { items: expiredLines } });
-    return res.status(400).json({ error: allLines.length ? "Your reservation expired" : "Your cart is empty" });
-  }
-
-  const items = await Item.find({ _id: { $in: originalLines.map((l) => l.itemId) } });
-  const itemMap = new Map(items.map((i) => [i._id.toString(), i]));
-
-  let failure: string | null = null;
-  const orderLines: Array<{
-    itemId: Types.ObjectId;
-    name: string;
-    price: number;
-    quantity: number;
-    allocations: Array<{ warehouseId: Types.ObjectId; quantity: number }>;
-  }> = [];
-
-  for (const line of originalLines) {
-    const item = itemMap.get(line.itemId.toString());
-    if (!item) {
-      failure = "An item in your cart no longer exists";
-      break;
-    }
-    const warehouseIds = [...(line.reservedWarehouseIds || [])] as Types.ObjectId[];
-    if (warehouseIds.length < line.quantity) {
-      failure = `The reservation for ${item.name} expired`;
-      break;
-    }
-    const allocationCounts = new Map<string, { warehouseId: Types.ObjectId; quantity: number }>();
-    for (const wId of warehouseIds) {
-      const key = wId.toString();
-      const existing = allocationCounts.get(key);
-      if (existing) existing.quantity += 1;
-      else allocationCounts.set(key, { warehouseId: wId, quantity: 1 });
-    }
-    orderLines.push({
-      itemId: item._id,
-      name: item.name,
-      price: item.price,
-      quantity: line.quantity,
-      allocations: Array.from(allocationCounts.values()),
-    });
-  }
-
-  if (failure) {
-    await Cart.updateOne({ userId }, { $set: { items: allLines } });
-    return res.status(400).json({ error: failure });
-  }
-
-  const subtotal = orderLines.reduce((s, l) => s + l.price * l.quantity, 0);
-  const discount = Math.round(subtotal * Number(claimedCart?.discount || 0)) / 100;
-  const total = Math.max(0, subtotal - discount);
-  if (claimedCart?.promotionCode) {
-    const now = new Date();
-    const promotion = await Promotion.findOneAndUpdate({ code: claimedCart.promotionCode,
-      start: { $lte: now }, end: { $gte: now }, $expr: { $lt: ["$redemptions", "$limit"] } },
-    { $inc: { redemptions: 1, revenue: total } });
-    if (!promotion) {
-      await Cart.updateOne({ userId }, { $set: { items: allLines,
-        promotionCode: claimedCart.promotionCode, discount: claimedCart.discount } });
-      return res.status(400).json({ error: "Promotion is expired or unavailable" });
-    }
-  }
-  const order = await Order.create({ userId, items: orderLines, total, discount });
-  await Payment.create({ orderId: order._id, userId, amount: total, status: "paid" });
-  if (expiredLines.length) await Cart.updateOne({ userId }, { $set: { items: expiredLines } });
-
-  await Promise.all([
-    broadcastItems(),
-    broadcastAdmin(),
-    broadcastCart(userId),
-    broadcastFulfilment(),
-    broadcastOrders(userId),
-    broadcastRecommendedForUser(userId),
-  ]);
-  res.json({ order: order.toJSON() });
+  try {
+    const order = await checkoutAtomic(userId);
+    await Promise.all([broadcastItems(), broadcastAdmin(), broadcastCart(userId), broadcastFulfilment(), broadcastOrders(userId), broadcastRecommendedForUser(userId)]);
+    res.json({ order });
+  } catch (error) { res.status(409).json({ error: String(error) }); }
 });
 
 // ---------------------------------------------------------------------------
@@ -791,29 +719,25 @@ app.get("/api/orders", requireAuth, async (req, res) => {
   res.json({ orders: await ordersForUser((req as any).user._id) });
 });
 
-// Gives every unit an order line reserved back to the exact warehouse it was
-// taken from, so a cancel/return never creates or destroys stock — it only
-// ever undoes the specific allocations recorded at purchase time.
-async function restoreAllocations(allocations: Array<{ warehouseId: any; quantity: number }>, itemId: any) {
-  for (const alloc of allocations) {
-    await Stock.updateOne({ item_id: itemId, warehouse_id: alloc.warehouseId }, { $inc: { quantity: alloc.quantity } });
-  }
-}
-
 app.post("/api/orders/:id/cancel", requireAuth, async (req, res) => {
   const user = (req as any).user;
   const orderId = objectId(req.params.id);
-  const order = orderId ? await Order.findOne({ _id: orderId, userId: user._id }) : null;
-  if (!order) return res.status(404).json({ error: "Order not found" });
-  if (order.status !== "pending") {
-    return res.status(400).json({ error: "Order has already shipped and cannot be cancelled" });
-  }
-
-  for (const line of order.items) {
-    await restoreAllocations(line.allocations as any, line.itemId);
-  }
-  order.status = "cancelled";
-  await order.save();
+  let order;
+  try {
+    order = await mongoose.connection.transaction(async session => {
+      const value = orderId ? await Order.findOne({ _id: orderId, userId: user._id }).session(session) : null;
+      if (!value || value.status !== "pending") throw new Error("Order cannot be cancelled");
+      for (const line of value.items) {
+        await releaseBundle(line.componentAllocations as any, session);
+        for (const allocation of line.allocations) await Stock.updateOne(
+          {item_id:line.itemId,warehouse_id:allocation.warehouseId}, {$inc:{quantity:allocation.quantity}}, {session});
+      }
+      await refundCredit(value, session);
+      value.status = "cancelled";
+      await value.save({session});
+      return value;
+    });
+  } catch (error) { return res.status(400).json({error:String(error)}); }
 
   const userId = user._id.toString();
   await Promise.all([
@@ -829,18 +753,24 @@ app.post("/api/orders/:id/cancel", requireAuth, async (req, res) => {
 app.post("/api/orders/:id/items/:itemId/return", requireAuth, async (req, res) => {
   const user = (req as any).user;
   const orderId = objectId(req.params.id);
-  const order = orderId ? await Order.findOne({ _id: orderId, userId: user._id }) : null;
-  if (!order) return res.status(404).json({ error: "Order not found" });
-  if (order.status !== "shipped") {
-    return res.status(400).json({ error: "Only items from a shipped order can be returned" });
-  }
-  const line = order.items.find((l) => l.itemId.toString() === req.params.itemId);
-  if (!line) return res.status(404).json({ error: "Item not found in this order" });
-  if (line.returned) return res.status(400).json({ error: "Item has already been returned" });
-
-  await restoreAllocations(line.allocations as any, line.itemId);
-  line.returned = true;
-  await order.save();
+  let order;
+  try {
+    order = await mongoose.connection.transaction(async session => {
+      const value = orderId ? await Order.findOne({ _id: orderId, userId: user._id }).session(session) : null;
+      if (!value || !['shipped', 'delivered'].includes(value.status)) throw new Error('No shipped order found');
+      const line = value.items.find(l => l.itemId.toString() === req.params.itemId && !l.isBundle);
+      if (!line || line.returned) throw new Error('No returnable item found');
+      for (const allocation of line.allocations) await Stock.updateOne(
+        { item_id: line.itemId, warehouse_id: allocation.warehouseId }, { $inc: { quantity: allocation.quantity } }, { session });
+      line.returned = true;
+      const gross = value.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+      const amount = Math.min(value.total - value.refundTotal, Math.round(line.price * line.quantity * value.total / gross * 100) / 100);
+      value.refundTotal += amount;
+      await refundCredit(value, session, value.refundTotal);
+      await value.save({ session });
+      return value;
+    });
+  } catch (error) { return res.status(409).json({ error: String(error) }); }
 
   const userId = user._id.toString();
   await Promise.all([
@@ -1001,7 +931,14 @@ app.get("/api/recommended", async (req, res) => {
 // Error handling
 // ---------------------------------------------------------------------------
 
+registerCredit(app, requireAuth, requireStaff, async userId => {
+  await Promise.all([broadcastItems(),broadcastAdmin(),broadcastCart(userId),broadcastOrders(userId),broadcastFulfilment()]);
+});
+installBundleRoutes(app, requireAuth, async (userId) => {
+  await Promise.all([broadcastItems(), broadcastAdmin(), broadcastCart(userId), broadcastOrders(userId), broadcastFulfilment()]);
+});
 installProgressionRoutes(app, io, { jwtSecret: JWT_SECRET, ordersForUser });
+installSubscriptionRoutes(app, requireAuth);
 
 const clientDist = join(fileURLToPath(new URL(".", import.meta.url)), "../../client/dist");
 app.use(express.static(clientDist));

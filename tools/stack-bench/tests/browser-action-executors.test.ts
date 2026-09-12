@@ -64,7 +64,8 @@ test('UI failures retain bounded observations but exclude passwords and unproven
   for (const sensitive of [false, true]) {
     const result = await run({ do: 'expectNumber', actor: 'a', testid: 'stock', equals: 99, within: 1,
       in: { testid: sensitive ? 'secret' : 'item-card', contains: 'Bluetooth Speaker' } },
-    services({ loc: () => ({ waitFor: async () => {}, evaluate: async () => 'DIV',
+    services({ page: { locator: () => ({ filter: () => ({ count: async () => 1 }) }) },
+      loc: () => ({ waitFor: async () => {}, evaluate: async () => 'DIV',
       innerText: async () => '100' }) }));
     assert.equal(result.finding?.kind, 'number-mismatch');
     if (sensitive) assert.doesNotMatch(result.summary ?? '', /Bluetooth Speaker/);
@@ -97,6 +98,7 @@ test('UI failures retain bounded observations but exclude passwords and unproven
     if (!present) assert.match(result.summary ?? '', /required choice "Weekly"/);
   }
 });
+
 
 test('timing executes through the contract and still rejects an unknown actor', async () => {
   const slept: number[] = [];
@@ -132,7 +134,7 @@ test('optional clicks operate enabled controls and skip unavailable controls', a
     let clicks = 0;
     const provided = services({ loc: () => ({ isVisible: async () => visible,
       isDisabled: async () => !enabled, click: async () => { clicks += 1; } }) });
-    const result = await run({ do: 'click', actor: 'a', testid: 'buy-now', ifAvailable: true }, provided);
+    const result = await run({ do: 'click', actor: 'a', testid: 'buy-now', ifAvailable: true, within: 1 }, provided);
     assert.equal(result.status, 'passed');
     assert.equal(clicks, visible && enabled ? 1 : 0);
   }
@@ -489,4 +491,31 @@ test('relative number bounds use recorded values and report the resolved bound',
   assert.doesNotMatch(JSON.stringify(failed), /"equals":71/);
   const missing = await run({ ...step, relativeTo: 'missing', comparison: 'atMost' }, provided);
   assert.equal(missing.status, 'inconclusive');
+});
+
+
+test('optional navigation waits for delayed controls or inline content', async () => {
+  for (const inline of [false, true]) {
+    let ready = false;
+    let clicks = 0;
+    const provided = services({ loc: (id: string) => ({
+      isVisible: async () => ready && (inline ? id === 'low-stock-item' : id === 'low-stock-link'),
+      isDisabled: async () => false,
+      scrollIntoViewIfNeeded: async () => {}, evaluate: async () => true,
+      click: async () => { clicks += 1; },
+    }) }, { browser: { sleep: async () => { ready = true; } } });
+    const result = await run({ do: 'click', actor: 'a', testid: 'low-stock-link',
+      ifAvailable: true, unlessVisible: 'low-stock-item', within: 1000 }, provided);
+    assert.equal(result.status, 'passed', result.summary ?? undefined);
+    assert.equal(clicks, inline ? 0 : 1);
+  }
+});
+
+test('failed disappearance identifies the matched entry and scope', async () => {
+  const provided = services({ loc: () => ({ waitFor: async () => { throw new Error('Timeout'); } }) });
+  const result = await run({ do: 'waitUntilAbsent', actor: 'a', testid: 'item-card',
+    contains: 'Coffee Grinder', in: { testid: 'search-results' }, within: 1 }, provided);
+  assert.equal(result.status, 'failed');
+  assert.match(result.summary!, /Coffee Grinder/);
+  assert.match(result.summary!, /search-results/);
 });

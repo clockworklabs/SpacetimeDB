@@ -73,6 +73,8 @@ test('controller image starts the compiled entry point', () => {
   assert.match(dockerfile,
     /ENTRYPOINT \["node", "\/opt\/stack-bench\/dist\/appliance\/controller\.js"\]/);
   assert.doesNotMatch(dockerfile, /ENTRYPOINT .*controller\.ts/);
+  assert.match(dockerfile, /ENV SPACETIME_BIN=\/opt\/stack-bench-embedded-deps\/spacetimedb-cli/);
+  assert.match(dockerfile, /STDB_PACKAGE=\/opt\/stack-bench-embedded-deps\/bindings-typescript/);
 });
 
 test('controller selects exactly one explicit agent credential mode', () => {

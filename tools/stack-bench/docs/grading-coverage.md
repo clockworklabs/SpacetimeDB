@@ -2,11 +2,29 @@
 
 ## Review failed checks
 
-The shipping-result check allows 2.5 seconds after submission, then verifies fresh staff and
-customer views. It does not require the submitting page to update. This fixed buffer is not
-a transport-completion receipt; writes exceeding it can still be interrupted by navigation. The
+The shipping-result check waits for the declared submission state to report success, then
+verifies fresh staff and customer views. The state stays on the fulfilment panel when the
+shipped row disappears. It does not require the queue or customer view to update live. The
 separate live fulfilment check covers new orders appearing in an open queue. It does not
 establish live removal after shipping or live customer-status updates.
+
+The separate shipping-accounting check uses the existing named shipping action with
+staff credentials and the customer's declared order identifier. It waits for an accepted
+server response before fresh order, stock, and revenue observations. This avoids a fixed
+submission buffer in that production check; it does not test the shipping button. The
+UI shipping check above still owns that interaction. Both changed scenarios are draft
+pending matching live control evidence. The UI submission marker is app-reported evidence;
+the fresh business observations still establish that shipping actually took effect.
+
+Support refund accounting now checks a second, unrefunded order after replay and fresh
+login. This detects refunds applied beyond the selected order. The changed check is draft
+until matching live reference and defect evidence exists.
+
+Return/refund checks at L6 exercise both operation orders. The product rule separates
+stock receipt from money: accept the physical return once, restore stock once, and refund
+only the amount still owed. Cumulative refunds cannot exceed the amount paid. The checks
+read each warehouse, the refund total, and revenue. They remain draft pending matching live
+controls. The new rule and checks do not apply retroactively to saved results.
 
 The low-stock live check keeps its observer on the open list while a separate signed-in
 administrator restocks. It does not assume that entering the admin area resets its subtab.
@@ -131,8 +149,11 @@ The notification destination marker identifies the opened view, including while 
 Its aria-busy attribute is false only after the signed-in account's list loads successfully,
 including an empty result. Loading or failed reads cannot earn empty-list credit. Entering
 notifications must preserve an already-open destination; ordinary toggles may close it.
-The initial alert request gets a 2.5-second submission buffer. Like shipping, this does not
-prove transport completion; a slower subscription save can still race the first restock.
+The initial alert request must report successful submission on its item card before the
+first restock. Rejected or unconfirmed submission stops setup instead of becoming a missing
+delivery failure. This replaces the fixed 2.5-second buffer. The marker is app-reported;
+it does not independently prove a saved subscription. The later delivery check still verifies
+the business effect.
 
 The duplicate-alert check samples a fresh client's loaded list after a ten-second wait following
 the second restock. It checks one persisted alert at that observation point. It is not continuous
@@ -140,8 +161,10 @@ observation and does not exclude duplicates created later. The fresh client avoi
 an unchanged list in the initiating browser. A read that itself triggers overdue work can still
 pass; this does not establish autonomous notification execution. Negative controls and live
 reference evidence must match the changed scenario, interface, and reference identities.
-The destination/readiness marker is a new interface requirement. Preserve old runs under their
-original definition; do not count its absence in a saved application as an agent failure.
+The destination/readiness and submission-state markers are new interface requirements.
+Preserve old runs under their original definition; do not count missing markers in a saved
+application as agent failures. Changed marker scenarios remain draft until live references
+and relevant defect controls match the new definition.
 
 ## Qualification and source coverage
 
@@ -284,3 +307,22 @@ budgets are planning ceilings; changed restart/observation allowances need fresh
 Matching live references and defect controls are still required before a verified comparison.
 Chat has additional qualification blockers recorded in [its level notes](../tracks/chat/LEVELS.md).
 Passing source checks or an exploratory paid cohort does not remove these limits.
+
+
+### Staff-role authorization follow-up
+
+Criterion 621b now requests a different role in both HTTP replay and reducer replay,
+then reloads the administrator view to verify that a rejected request changed no role.
+PostgreSQL and MongoDB have a denied-after-write defect control. SpacetimeDB reducer
+rejection rolls back the transaction; its existing unauthorized-acceptance control
+remains applicable. These changed checks have no matching live qualification evidence
+and remain draft.
+
+Criterion 621d now checks administrator-role removal using the same signed-in staff
+session before and after removal. The product policy grants administrator access to
+`admin`, and staff access without administrator access to `staff` and `inventory`.
+Reference role assignment updates the existing persisted administrator flag. The
+probe proves a successful role change while authorized, then verifies denial and
+unchanged stored role after administrator access is removed. Each stack has a
+control that retains administrator access after removal. Matching live qualification
+is pending; this check does not establish subscription revocation or token logout.

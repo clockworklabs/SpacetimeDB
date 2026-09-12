@@ -9,6 +9,112 @@ import { stableElementSelector } from '../src/actions/element-selector.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
+test('reference order panel stays above a wrapped header and blocks the underlying page', async () => {
+  const css = readFileSync(join(STACK_BENCH_ROOT,
+    'reference-apps/ecommerce/spacetime/client/src/index.css'), 'utf8');
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+    await page.setContent(`<style>${css}</style>
+      <header class="header" style="height:180px"><button id="underlying">Catalog</button></header>
+      <div class="backdrop"></div><section class="panel"><div class="panel-header">
+      <button id="close" onclick="document.body.dataset.closed='yes'">Close</button></div></section>`);
+    assert.equal(await page.locator('#underlying').evaluate(element => {
+      const rect = element.getBoundingClientRect();
+      return document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.className;
+    }), 'backdrop');
+    await assert.rejects(page.locator('#underlying').click({ timeout: 200 }), /Timeout/);
+    await page.locator('#close').click({ timeout: 1000 });
+    assert.equal(await page.getAttribute('body', 'data-closed'), 'yes');
+  } finally { await browser.close(); }
+});
+
+test('declared subview openers accept inline content and tabs without accepting broken views', async () => {
+  const read = (name: string) => compileScenarioDefinition(JSON.parse(readFileSync(
+    join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios', name), 'utf8')));
+  const support = read('progression-support-triage.json').features[0]!;
+  const reviews = read('01-review-visibility.json').features[0]!;
+  const sales = read('02-operational-category-totals.json').features[0]!;
+  const cases = [
+    { opener: 'support-queue-link', target: 'support-assignee',
+      step: support.setup.find(step => step.testid === 'support-queue-link')! },
+    { opener: 'review-toggle', target: 'review-rating',
+      step: reviews.criteria[0]!.steps.find(step => step.testid === 'review-toggle')! },
+    { opener: 'sales-link', target: 'category-row',
+      step: sales.criteria[0]!.steps.find(step => step.testid === 'sales-link')! },
+  ];
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    page.setDefaultTimeout(150);
+    const actor = { page, loc: (id: string) => page.locator(stableElementSelector(id)).filter({ visible: true }).first() };
+    const service = { defaultWithin: 150, expand: (value: string) => value,
+      testId: stableElementSelector, sleep: (ms: number) => new Promise(resolve => setTimeout(resolve, ms)) };
+    const capabilities = { actors: { get: () => actor }, 'browser-interaction': service, 'browser-observation': service };
+    for (const item of cases) {
+      assert(item.step, `missing navigation step for ${item.opener}`);
+      for (const layout of ['inline', 'tab', 'broken'] as const) {
+        await page.setContent(`${item.opener === 'support-queue-link' ? '<span data-role="support-ticket">Personal ticket</span>' : ''}<button id="${item.opener}" onclick="document.body.dataset.clicked='yes';
+          ${layout === 'broken' ? '' : "document.querySelector('#panel').hidden = !document.querySelector('#panel').hidden"}">Open</button>
+          <section id="panel" ${layout === 'inline' ? '' : 'hidden'}><span data-role="${item.target}">Expected content</span></section>`);
+        const check = { do: 'expect', actor: item.step.actor, testid: item.target, contains: 'Expected content', within: 100 };
+        if (layout === 'tab') assert.equal((await executeAction(ACTION_REGISTRY, 'expect', check, { capabilities })).status,
+          'failed', 'the old direct-access assumption fails for a valid closed tab');
+        const opened = await executeAction(ACTION_REGISTRY, 'click', item.step, { capabilities });
+        assert.equal(opened.status, 'passed', opened.summary ?? undefined);
+        const result = await executeAction(ACTION_REGISTRY, 'expect', check, { capabilities });
+        assert.equal(result.status, layout === 'broken' ? 'failed' : 'passed', `${item.opener}: ${layout}`);
+        assert.equal(await page.getAttribute('body', 'data-clicked'), layout === 'inline' ? null : 'yes');
+      }
+    }
+    // The live totals observer must stay on the same view after the purchase.
+    const live = sales.criteria.find(criterion => criterion.id === '5b')!.steps;
+    const purchase = live.findIndex(step => step.testid === 'buy-now');
+    assert(purchase > 0);
+    assert(!live.slice(purchase + 1).some(step => step.do === 'click' || step.do === 'reload'));
+  } finally { await browser.close(); }
+});
+
+test('promotions follow the staff path and delivery setup returns from persistent settings', async () => {
+  const read = (name: string) => compileScenarioDefinition(JSON.parse(readFileSync(
+    join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios', name), 'utf8'))).features[0]!;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    page.setDefaultTimeout(150);
+    const actor = { page, loc: (id: string) => page.locator(stableElementSelector(id)).filter({ visible: true }).first() };
+    const service = { defaultWithin: 150, expand: (value: string) => value,
+      testId: stableElementSelector, sleep: (ms: number) => new Promise(resolve => setTimeout(resolve, ms)) };
+    const capabilities = { actors: { get: () => actor }, 'browser-interaction': service };
+    for (const file of ['progression-promotion-checkout.json', 'progression-promotion-reporting.json']) {
+      await page.setContent(`<button id="staff-link" onclick="document.querySelector('#staff').hidden=false">Staff</button>
+        <section id="staff" hidden><button id="promotions-link" onclick="document.querySelector('#promotion-code').hidden=false">Promotions</button>
+        <input id="promotion-code" hidden></section>`);
+      const steps = read(file).setup.slice(1, 4);
+      assert.deepEqual(steps.map(step => step.testid), ['staff-link', 'promotions-link', 'promotion-code']);
+      const old = await executeAction(ACTION_REGISTRY, 'click', { do: 'click', actor: 'staff', testid: 'promotions-link' }, { capabilities });
+      assert.equal(old.status, 'failed');
+      for (const step of steps) assert.equal((await executeAction(ACTION_REGISTRY, step.do, step, { capabilities })).status, 'passed');
+      assert.notEqual(await page.locator('#promotion-code').inputValue(), '');
+    }
+    const delivery = read('progression-delivery-notifications.json').setup;
+    const saved = delivery.findIndex(step => step.testid === 'notification-save');
+    assert.deepEqual(delivery.slice(saved + 1, saved + 3).map(step => step.testid), ['overlay-close', 'catalog-link']);
+    for (const overlay of [false, true]) {
+      await page.setContent(`<button id="catalog-link" onclick="document.querySelector('#catalog').hidden=false;document.querySelector('#settings').hidden=true">Catalog</button>
+        <section id="catalog" hidden><button id="buy-now" onclick="document.body.dataset.bought='yes'">Buy</button></section>
+        <section id="settings" ${overlay ? 'style="position:fixed;inset:0;background:white"' : ''}>
+        ${overlay ? '<button id="overlay-close" onclick="document.querySelector(\'#settings\').hidden=true">Close</button>' : ''}</section>`);
+      const buy = { do: 'click', actor: 'owner', testid: 'buy-now' };
+      assert.equal((await executeAction(ACTION_REGISTRY, 'click', buy, { capabilities })).status, 'failed');
+      for (const step of delivery.slice(saved + 1, saved + 3))
+        assert.equal((await executeAction(ACTION_REGISTRY, 'click', step, { capabilities })).status, 'passed');
+      assert.equal((await executeAction(ACTION_REGISTRY, 'click', buy, { capabilities })).status, 'passed');
+      assert.equal(await page.getAttribute('body', 'data-bought'), 'yes');
+    }
+  } finally { await browser.close(); }
+});
+
 test('conditional navigation opens translated drawers but preserves below-fold inline content', async () => {
   const browser = await chromium.launch({ headless: true });
   try {
@@ -178,11 +284,12 @@ test('role refusal checks permit inventory accounts without fulfilment navigatio
   } finally { await browser.close(); }
 });
 
-test('signup uses the visible form or the declared signup-toggle, never the sign-in toggle', async () => {
+test('signup reaches direct and shared-dialog forms but rejects missing hooks and failed signup', async () => {
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage();
-    for (const revealed of [false, true]) {
+    for (const layout of ['inline', 'direct', 'shared-dialog', 'missing-hook', 'rejected']) {
+      const revealed = layout !== 'inline';
       await page.setContent(`
         <form id="signup" ${revealed ? 'hidden' : ''}>
           <input id="signup-username"><input id="signup-password">
@@ -192,7 +299,7 @@ test('signup uses the visible form or the declared signup-toggle, never the sign
           <input id="signin-username"><input id="signin-password">
           <button id="signin-submit">Sign in</button>
         </form>
-        ${revealed ? '<button id="signup-toggle">Create account</button>' : ''}
+        ${revealed ? `<button id="${layout === 'missing-hook' ? 'signup-trigger' : 'signup-toggle'}" ${layout === 'shared-dialog' ? 'hidden' : ''}>Create account</button>` : ''}
         <button id="signin-toggle">Sign in</button>
         <strong id="current-user" hidden></strong>
         <script>
@@ -200,11 +307,13 @@ test('signup uses the visible form or the declared signup-toggle, never the sign
           document.querySelector('#signin-toggle').onclick = () => {
             window.signInClicks++;
             document.querySelector('#signin').hidden = false;
+            if ('${layout}' === 'shared-dialog') document.querySelector('#signup-toggle').hidden = false;
           };
           var reveal = document.querySelector('#signup-toggle');
           if (reveal) reveal.onclick = () => { document.querySelector('#signup').hidden = false; };
           document.querySelector('#signup').onsubmit = event => {
             event.preventDefault();
+            if ('${layout}' === 'rejected') return;
             const current = document.querySelector('#current-user');
             current.textContent = document.querySelector('#signup-username').value;
             current.hidden = false;
@@ -215,14 +324,19 @@ test('signup uses the visible form or the declared signup-toggle, never the sign
         { do: 'signUp', actor: 'shopper', name: 'Alice' }, {
           capabilities: {
             actors: { get: () => actor },
-            'browser-interaction': { defaultWithin: 1000, scopedUser: (name: string) => `${name}-scope`,
+            'browser-interaction': { defaultWithin: 300, scopedUser: (name: string) => `${name}-scope`,
               testId: (id: string) => `#${id}` },
           },
         });
+      if (layout === 'missing-hook' || layout === 'rejected') {
+        assert.equal(result.status, 'failed', layout);
+        assert.equal(await page.locator('#current-user').isVisible(), false);
+        continue;
+      }
       assert.equal(result.status, 'passed', result.summary ?? JSON.stringify(result));
       assert.equal(await page.locator('#current-user').innerText(), 'Alice-scope');
       assert.equal(await page.locator('#signup-password').inputValue(), 'pw-Alice-scope');
-      assert.equal(await page.evaluate(() => Reflect.get(window, 'signInClicks')), 0);
+      assert.equal(await page.evaluate(() => Reflect.get(window, 'signInClicks')), layout === 'shared-dialog' ? 1 : 0);
     }
   } finally { await browser.close(); }
 });
@@ -264,6 +378,43 @@ test('signin opens a hidden form before the toggle in DOM order and accepts an a
       assert.equal(await page.locator('#current-user').innerText(), 'Alice-scope');
       assert.equal(await page.locator('#signin-password').inputValue(), 'pw-Alice-scope');
       assert.equal(await page.evaluate(() => Reflect.get(window, 'signInClicks')), hidden ? 1 : 0);
+    }
+  } finally { await browser.close(); }
+});
+
+
+test('delayed filters and optional navigation use update deadlines without hiding broken behavior', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    const actor = { page, loc: (id: string, options: { contains?: string; scope?: { testid: string; contains?: string } } = {}) => {
+      let root = options.scope ? page.locator(stableElementSelector(options.scope.testid)) : page.locator('body');
+      if (options.scope?.contains) root = root.filter({ hasText: options.scope.contains });
+      let locator = root.locator(stableElementSelector(id));
+      if (options.contains) locator = locator.filter({ hasText: options.contains });
+      return locator.first();
+    } };
+    const service = { defaultWithin: 1000, expand: (value: string) => value,
+      testId: stableElementSelector, sleep: (ms: number) => new Promise(resolve => setTimeout(resolve, ms)) };
+    const capabilities = { actors: { get: () => actor }, 'browser-interaction': service, 'browser-observation': service };
+    for (const broken of [false, true]) {
+      await page.setContent('<div data-role="search-results"><div data-role="item-card">Coffee Grinder</div></div>');
+      if (!broken) await page.evaluate(() => { setTimeout(() => document.querySelector('[data-role="item-card"]')!.remove(), 150); });
+      const result = await executeAction(ACTION_REGISTRY, 'waitUntilAbsent', { do: 'waitUntilAbsent', actor: 'visitor',
+        testid: 'item-card', contains: 'Coffee Grinder', in: { testid: 'search-results' }, within: 1000 }, { capabilities });
+      assert.equal(result.status, broken ? 'failed' : 'passed', result.summary ?? undefined);
+      if (broken) assert.match(result.summary!, /Coffee Grinder/);
+    }
+    for (const inline of [false, true]) {
+      await page.setContent(`<button data-role="low-stock-link" style="display:none" onclick="document.body.dataset.clicked='yes'">Stock</button>`);
+      await page.evaluate(inline => { setTimeout(() => {
+        if (inline) document.body.insertAdjacentHTML('beforeend', '<div data-role="low-stock-item">Air Purifier</div>');
+        else (document.querySelector('button') as HTMLElement).style.display = 'block';
+      }, 150); }, inline);
+      const result = await executeAction(ACTION_REGISTRY, 'click', { do: 'click', actor: 'admin', testid: 'low-stock-link',
+        ifAvailable: true, unlessVisible: 'low-stock-item', within: 1000 }, { capabilities });
+      assert.equal(result.status, 'passed', result.summary ?? undefined);
+      assert.equal(await page.getAttribute('body', 'data-clicked'), inline ? null : 'yes');
     }
   } finally { await browser.close(); }
 });

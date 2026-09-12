@@ -223,7 +223,8 @@ export function parseReferenceQualificationArgs(argv: readonly string[]):
   }
   if (!listTracks().includes(args.track)) throw new Error(`--track is unknown: ${args.track}`);
   const track = loadTrack(args.track);
-  if (!isDeclaredLevel(track, args.level)) {
+  if (!isDeclaredLevel(track, args.level)
+      && !(args.recipe && resolveRecipeRelease(track, args.level, args.recipe))) {
     throw new Error(`--level must be declared for ${args.track}`);
   }
   if (!Number.isInteger(args.repetitions) || args.repetitions < 1) {

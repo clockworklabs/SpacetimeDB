@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { spend } from '../../dashboard/public/format.js';
+import { completionLabel, spend } from '../../dashboard/public/format.js';
 import type { CampaignProgression, CampaignSheet, SheetAttempt } from '../../dashboard/dashboard-views.js';
 import { campaignPage, replayTimeline, selectedProgression } from '../../dashboard/public/views/campaign.js';
 import { attemptPage } from '../../dashboard/public/views/attempt.js';
@@ -13,6 +13,15 @@ test('report links appear only for files present in the campaign', () => {
   assert.match(topbar({ ...input, reportFiles }), />report</);
   assert.doesNotMatch(topbar({ ...input, reportFiles }), />export manifest</);
   assert.match(topbar({ ...input, reportFiles: [...reportFiles, 'report/export-manifest.json'] }), />export manifest</);
+});
+
+test('invalid completion is not displayed as a low application score', () => {
+  const attempt = { status: 'invalid', excluded: 'unmeasured checks',
+    completion: { passed: 9, selected: 109, failed: 0, blocked: 0, unmeasured: 100, rate: 9 / 109 } };
+  assert.equal(completionLabel(attempt), 'Incomplete');
+  assert.equal(completionLabel({ ...attempt, status: 'running' }), '9 / 109');
+  assert.equal(completionLabel({ ...attempt, status: 'completed' }), 'Excluded');
+  assert.equal(completionLabel({ ...attempt, status: 'completed', excluded: null }), '9 / 109');
 });
 
 // Distinct aggregate and selected values catch accidental cross-repetition labels.
@@ -42,8 +51,8 @@ test('campaign separates aggregate scores from selected evidence and explains pe
   const selected = page.slice(page.indexOf('<h3>Runs</h3>'));
   assert.match(page, /82%/);
   assert.match(selected, /20%/);
-  assert.match(selected, /2<i>\/ 10<\/i>/);
-  assert.doesNotMatch(selected, /82%|9<i>\/ 10|Questline average/);
+  assert.match(selected, /2 \/ 10/);
+  assert.doesNotMatch(selected, /82%|9 \/ 10|Questline average/);
   assert.match(page, /Valid runs/);
   const metricsTable = page.split('<table class="sheet">')[1]!.split('</table>')[0]!;
   for (const label of ['Cost per valid run', 'Weighted score', 'Before repairs', 'Regressions', 'Time', 'Valid runs', 'Excluded', 'Total spend']) {
@@ -64,6 +73,12 @@ test('campaign separates aggregate scores from selected evidence and explains pe
   assert.match(page, /popovertarget="help-completion"/);
   assert.match(page, /id="help-completion" popover role="tooltip"/);
   assert.doesNotMatch(page, /<details class="metric-help"/);
+  const noRepairSheet = { ...sheet, repetitions: 1, stacks: sheet.stacks.map(stack => ({
+    ...stack, attempts: [{ ...attempt, model: 'gpt-6-astra', effort: 'medium', repairs: { used: 0, budget: 0 } }],
+  })) };
+  const noRepairPage = campaignPage({ sheet: noRepairSheet, progression: null, view: 'grid', step: 0 });
+  assert.doesNotMatch(noRepairPage, /<th>Repairs<|Before repairs|<small>Rep 1/);
+  assert.match(noRepairPage, /Astra<span class="run-effort"> \(medium\)<\/span>/);
   for (const tab of ['checks', 'screenshots', 'files', 'log'] as const) {
     const detail = attemptPage({ sheet, attemptId: attempt.id, tab, checks: null, evidence: null, log: '' });
     assert.doesNotMatch(detail, /Unaided/);
@@ -85,7 +100,7 @@ test('campaign separates aggregate scores from selected evidence and explains pe
       category: 'production', outcome: 'pass', regressed: false, history: ['pass'] }] } });
   assert.match(categorized, /<th>Category<\/th>/);
   assert.match(categorized, /<td>Production<\/td>/);
-  assert.match(categorized, /1<i>\/ 2<\/i>/);
+  assert.match(categorized, /1 \/ 2/);
   delete attempt.checkCategories;
   const grantInput = { sheet, attemptId: attempt.id, tab: 'checks' as const,
     checks: null, evidence: null, log: '', canControl: true };
@@ -152,7 +167,7 @@ test('campaign separates aggregate scores from selected evidence and explains pe
     const html = campaignPage({ sheet, progression, view, step: 99 });
     assert.doesNotMatch(html, /class="d f"|99%|>77</);
     assert.equal((html.match(/class="d p"/g) ?? []).length, 5);
-    if (view === 'replay') assert.match(html, /5<i>\/ 5<\/i>/);
+    if (view === 'replay') assert.match(html, /5 \/ 5/);
   }
 
 });

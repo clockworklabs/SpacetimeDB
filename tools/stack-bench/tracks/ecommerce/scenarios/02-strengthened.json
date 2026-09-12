@@ -22,13 +22,17 @@
           "statedBy": "a transfer moves stock, it does not create or destroy it",
           "steps": [
             { "do": "recordNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "as": "transfer-item-before" },
+            {"do":"expect","actor":"admin","testid":"admin-warehouse-item","contains":"East","count":1},
             { "do": "recordNumber", "actor": "admin", "testid": "warehouse-total", "in": { "testid": "admin-warehouse-item", "contains": "East" }, "as": "transfer-east-before" },
+            {"do":"expect","actor":"admin","testid":"admin-warehouse-item","contains":"West","count":1},
             { "do": "recordNumber", "actor": "admin", "testid": "warehouse-total", "in": { "testid": "admin-warehouse-item", "contains": "West" }, "as": "transfer-west-before" },
             { "do": "fill", "actor": "admin", "testid": "transfer-from", "text": "East", "in": { "testid": "admin-item-row", "contains": "Headphones" } },
             { "do": "fill", "actor": "admin", "testid": "transfer-to", "text": "West", "in": { "testid": "admin-item-row", "contains": "Headphones" } },
             { "do": "fill", "actor": "admin", "testid": "transfer-qty", "text": "10", "in": { "testid": "admin-item-row", "contains": "Headphones" } },
             { "do": "click", "actor": "admin", "testid": "transfer-submit", "in": { "testid": "admin-item-row", "contains": "Headphones" } },
+            {"do":"expect","actor":"admin","testid":"admin-warehouse-item","contains":"East","count":1},
             { "do": "expectNumber", "actor": "admin", "testid": "warehouse-total", "in": { "testid": "admin-warehouse-item", "contains": "East" }, "relativeTo": "transfer-east-before", "plus": -10, "within": 10000 },
+            {"do":"expect","actor":"admin","testid":"admin-warehouse-item","contains":"West","count":1},
             { "do": "expectNumber", "actor": "admin", "testid": "warehouse-total", "in": { "testid": "admin-warehouse-item", "contains": "West" }, "relativeTo": "transfer-west-before", "plus": 10, "within": 10000 },
             { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "relativeTo": "transfer-item-before", "plus": 0, "within": 10000 }
           ]
@@ -172,7 +176,9 @@
             {"do":"reload","actor":"customer","settleMs":2000},
             {"do":"ensureSignedIn","actor":"customer","name":"not-operator","readyTestid":"current-user"},
             {"do":"recordNumber","actor":"customer","testid":"item-stock","in":{"testid":"item-card","contains":"Headphones"},"as":"unauthorized-item-before"},
+            {"do":"expect","actor":"admin","testid":"admin-warehouse-item","contains":"East","count":1},
             {"do":"recordNumber","actor":"admin","testid":"warehouse-total","in":{"testid":"admin-warehouse-item","contains":"East"},"as":"unauthorized-east-before"},
+            {"do":"expect","actor":"admin","testid":"admin-warehouse-item","contains":"West","count":1},
             {"do":"recordNumber","actor":"admin","testid":"warehouse-total","in":{"testid":"admin-warehouse-item","contains":"West"},"as":"unauthorized-west-before"},
             {"do":"fill","actor":"admin","testid":"transfer-from","text":"East","in":{"testid":"admin-item-row","contains":"Headphones"}},
             {"do":"fill","actor":"admin","testid":"transfer-to","text":"West","in":{"testid":"admin-item-row","contains":"Headphones"}},
@@ -183,7 +189,9 @@
             {"do":"click","actor":"admin","testid":"admin-link","ifAvailable":true},
             {"do":"reload","actor":"customer","settleMs":2000},
             {"do":"ensureSignedIn","actor":"customer","name":"not-operator","readyTestid":"current-user"},
+            {"do":"expect","actor":"admin","testid":"admin-warehouse-item","contains":"East","count":1},
             {"do":"expectNumber","actor":"admin","testid":"warehouse-total","in":{"testid":"admin-warehouse-item","contains":"East"},"relativeTo":"unauthorized-east-before","plus":0},
+            {"do":"expect","actor":"admin","testid":"admin-warehouse-item","contains":"West","count":1},
             {"do":"expectNumber","actor":"admin","testid":"warehouse-total","in":{"testid":"admin-warehouse-item","contains":"West"},"relativeTo":"unauthorized-west-before","plus":0},
             {"do":"expectNumber","actor":"customer","testid":"item-stock","in":{"testid":"item-card","contains":"Headphones"},"relativeTo":"unauthorized-item-before","plus":0}
           ]
@@ -232,13 +240,17 @@
           "statedBy": "a transfer moves stock, it does not create or destroy it",
           "steps": [
             { "do": "recordNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Espresso Machine" }, "as": "conservation-item-before" },
+            {"do":"expect","actor":"admin","testid":"admin-warehouse-item","contains":"East","count":1},
             { "do": "recordNumber", "actor": "admin", "testid": "warehouse-total", "in": { "testid": "admin-warehouse-item", "contains": "East" }, "as": "conservation-east-before" },
+            {"do":"expect","actor":"admin","testid":"admin-warehouse-item","contains":"West","count":1},
             { "do": "recordNumber", "actor": "admin", "testid": "warehouse-total", "in": { "testid": "admin-warehouse-item", "contains": "West" }, "as": "conservation-west-before" },
             { "do": "fill", "actor": "admin", "testid": "transfer-from", "text": "East", "in": { "testid": "admin-item-row", "contains": "Espresso Machine" } },
             { "do": "fill", "actor": "admin", "testid": "transfer-to", "text": "West", "in": { "testid": "admin-item-row", "contains": "Espresso Machine" } },
             { "do": "fill", "actor": "admin", "testid": "transfer-qty", "text": "17", "in": { "testid": "admin-item-row", "contains": "Espresso Machine" } },
             { "do": "click", "actor": "admin", "testid": "transfer-submit", "in": { "testid": "admin-item-row", "contains": "Espresso Machine" } },
+            {"do":"expect","actor":"admin","testid":"admin-warehouse-item","contains":"East","count":1},
             { "do": "expectNumber", "actor": "admin", "testid": "warehouse-total", "in": { "testid": "admin-warehouse-item", "contains": "East" }, "relativeTo": "conservation-east-before", "plus": -17, "within": 10000 },
+            {"do":"expect","actor":"admin","testid":"admin-warehouse-item","contains":"West","count":1},
             { "do": "expectNumber", "actor": "admin", "testid": "warehouse-total", "in": { "testid": "admin-warehouse-item", "contains": "West" }, "relativeTo": "conservation-west-before", "plus": 17, "within": 10000 },
             { "do": "expectNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Espresso Machine" }, "relativeTo": "conservation-item-before", "plus": 0, "within": 10000 }
           ]

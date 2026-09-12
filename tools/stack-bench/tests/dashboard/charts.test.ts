@@ -61,7 +61,7 @@ import { progressChart } from '../../dashboard/public/progress-chart.js';
 import type { CampaignSheet, CampaignProgression } from '../../dashboard/dashboard-views.js';
 
 test('time chart uses measured elapsed time, preserves regressions, and labels excluded runs', () => {
-  const sheet = { key: 'test', stacks: [{ stack: 'postgres', attempts: [{ id: 'a', repetition: 1,
+  const sheet = { key: 'test', repetitions: 3, stacks: [{ stack: 'postgres', attempts: [{ id: 'a', repetition: 1,
     executionStartedAt: '2026-09-08T00:00:00Z', excluded: 'Provider failure' }] }] } as CampaignSheet;
   const progression = { stacks: [{ stack: 'postgres', attemptId: 'a', steps: [
     { completedAt: null, completion: 1 },
@@ -83,7 +83,7 @@ test('time chart uses measured elapsed time, preserves regressions, and labels e
 
 
 test('cost chart uses cumulative checkpoint costs, labels bounds, and omits unknowns', () => {
-  const sheet = { key: 'test', stacks: [{ stack: 'postgres', attempts: [{ id: 'a', repetition: 1,
+  const sheet = { key: 'test', repetitions: 3, stacks: [{ stack: 'postgres', attempts: [{ id: 'a', repetition: 1,
     executionStartedAt: '2026-09-08T00:00:00Z', excluded: null }] }] } as CampaignSheet;
   const progression = { key: 'test', depths: [], questlines: [], nodes: [],
     stacks: [{ stack: 'postgres', attemptId: 'a', updatedAt: '', steps: [], costs: [
@@ -101,7 +101,7 @@ test('cost chart uses cumulative checkpoint costs, labels bounds, and omits unkn
 });
 
 test('chart filters individual runs without changing the scale or hiding pending controls', () => {
-  const sheet = { key: 'test', stacks: [{ stack: 'custom-stack', attempts: [1, 2, 3].map(repetition => ({
+  const sheet = { key: 'test', repetitions: 3, stacks: [{ stack: 'custom-stack', attempts: [1, 2, 3].map(repetition => ({
     id: `run-${repetition}`, repetition, executionStartedAt: '2026-09-08T00:00:00Z', excluded: null,
   })) }] } as CampaignSheet;
   const progression = { stacks: [1, 2].map(repetition => ({ stack: 'custom-stack', attemptId: `run-${repetition}`,
@@ -112,14 +112,14 @@ test('chart filters individual runs without changing the scale or hiding pending
   assert.match(html, /class="progress-series" data-chart-series="run-1"/);
   assert.doesNotMatch(html, /class="progress-series" data-chart-series="run-2"|stroke-dasharray| style=/);
   assert.match(html, /M48 190 L498 150/); // Retains the two-minute extent of the hidden run.
-  assert.match(html, /Rep 3 · Pending/);
+  assert.match(html, /Rep 3<\/button>/);
   const empty = progressChart(sheet, progression, 'completion', 'grid', new Set(['run-1', 'run-2', 'run-3']), 'checks');
   assert.match(empty, /Select a run/);
   assert.match(empty, /data-chart-run="run-1"/); // Controls remain available to restore runs.
 });
 
 test('distribution shows completed run percentages across providers and preserves filters', () => {
-  const sheet = { stacks: ['spacetime', 'mongodb', 'postgres'].map(stack => ({ stack,
+  const sheet = { repetitions: 3, stacks: ['spacetime', 'mongodb', 'postgres'].map(stack => ({ stack,
     attempts: [1, 2].map(repetition => ({ id: `${stack}-${repetition}`, repetition,
       status: repetition === 1 ? 'completed' : 'running', completion: { rate: 0.75 } })) })) } as CampaignSheet;
   const html = progressChart(sheet, null, 'distribution', 'graph', new Set(['mongodb-1']), 'checks');
@@ -127,13 +127,13 @@ test('distribution shows completed run percentages across providers and preserve
   assert.match(html, /class="progress-series" data-chart-series="spacetime-1"[^>]*tabindex="0"/);
   assert.match(html, /class="distribution-run-label"[^>]*>[^<]*Rep 1<\/text>/);
   assert.equal((html.match(/>75%<\/text><\/g>/g) ?? []).length, 2);
-  assert.match(html, /Rep 2 .* Pending/);
+  assert.match(html, /Rep 2<\/button>/);
   assert.match(html, /questlines=graph&amp;chart=distribution/);
   assert.doesNotMatch(html, /NaN|Infinity|Elapsed run time/);
 });
 
 test('completion units use distinct saved metrics in both chart views', () => {
-  const sheet = { stacks: [{ stack: 'spacetime', attempts: [{ id: 'a', repetition: 1,
+  const sheet = { repetitions: 3, stacks: [{ stack: 'spacetime', attempts: [{ id: 'a', repetition: 1,
     status: 'completed', executionStartedAt: '2026-09-08T00:00:00Z',
     completion: { rate: 0.75 }, featureCompletion: { rate: 0.5 } }] }] } as CampaignSheet;
   const progression = { stacks: [{ stack: 'spacetime', attemptId: 'a', steps: [
@@ -154,7 +154,7 @@ test('completion units use distinct saved metrics in both chart views', () => {
   for (const metric of ['completion', 'distribution'] as const) {
     const html = progressChart(sheet, progression, metric, 'grid', new Set(), 'features');
     assert.doesNotMatch(html, /progress-series|>75%<\/text><\/g>/);
-    assert.match(html, /Pending/);
+    assert.match(html, /data-chart-run="a"/);
   }
   const cost = progressChart(sheet, progression, 'cost');
   const units = cost.split('<nav aria-label="Completion unit">')[1]!.split('</nav>')[0]!;
@@ -163,4 +163,24 @@ test('completion units use distinct saved metrics in both chart views', () => {
   assert.match(units, />Checks</);
   assert.doesNotMatch(units, /href=/);
   assert.match(cost, /chart=completion&amp;unit=features/);
+});
+
+
+test('cost chart includes excluded receipts and uses model effort labels', () => {
+  const sheet = { key: 'test', repetitions: 3, stacks: [{ stack: 'postgres', attempts: [{
+    id: 'failed', repetition: 1, model: 'gpt-6-astra', effort: 'medium',
+    status: 'invalid', excluded: 'Request failure',
+    executionStartedAt: '2026-09-11T00:00:00Z',
+    executionCompletedAt: '2026-09-11T00:02:00Z',
+    spend: { status: 'exact', costUsd: 3.25 },
+  }] }] } as CampaignSheet;
+  const html = progressChart(sheet, null, 'cost');
+  assert.match(html, /Astra.*medium.*Rep 1/);
+  assert.match(html, /\$3.25/);
+  assert.match(html, /data-chart-series="failed"/);
+  assert.doesNotMatch(html, /Awaiting first timed cost receipt/);
+  sheet.repetitions = 1;
+  const compact = progressChart(sheet, null, 'cost').match(/<button[^>]*data-chart-run="failed"[^>]*>(.*?)<\/button>/)![1]!;
+  assert.match(compact, /Astra \(medium\) · \$3.25/);
+  assert.doesNotMatch(compact, /Rep 1|Pending|Excluded/);
 });

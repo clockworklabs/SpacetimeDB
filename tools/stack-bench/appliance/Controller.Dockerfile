@@ -112,5 +112,9 @@ RUN node dist/container/binary-provenance.js verify \
       --manifest /opt/stack-bench/dependency-manifest.json \
     && rm -rf results .spacetime-data .loop-test
 
+# Direct launches use the image's pinned dependencies; Compose can override them.
+ENV SPACETIME_BIN=/opt/stack-bench-embedded-deps/spacetimedb-cli \
+    STDB_PACKAGE=/opt/stack-bench-embedded-deps/bindings-typescript
+
 ENTRYPOINT ["node", "/opt/stack-bench/dist/appliance/controller.js"]
 CMD ["--help"]

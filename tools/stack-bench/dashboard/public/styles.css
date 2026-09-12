@@ -263,11 +263,14 @@ table.plans td.name { color: var(--n1); font-weight: 600; min-width: 240px; max-
 .explore summary { cursor: pointer; color: var(--n3); font-size: 12px; padding: 6px 0; }
 .explore nav { position: absolute; right: 0; z-index: 2; padding: 10px; border: 1px solid var(--shade1); border-radius: 4px; background: var(--shade5); }
 table.attempt-list { table-layout: fixed; min-width: 960px; }
-table.attempt-list th:first-child { width: 24%; }
-table.attempt-list th:nth-child(2) { width: 12%; }
+table.attempt-list th:first-child { width: 16%; }
+table.attempt-list th:nth-child(2) { width: 18%; }
 table.attempt-list th:nth-child(3), table.attempt-list th:nth-child(4) { width: 10%; }
-table.attempt-list th:nth-child(5) { width: 14%; }
+table.attempt-list th:nth-last-child(2) { width: 10%; }
 table.attempt-list td { white-space: normal; overflow-wrap: anywhere; }
+table.attempt-list .run-name { display: block; padding-block: 8px; color: var(--n1); text-decoration: none; }
+table.attempt-list .run-effort { font-weight: 400; color: var(--n4); }
+table.attempt-list .run-name:hover { text-decoration: underline; }
 table.attempt-list .run-status { padding-block: 10px; }
 .run-status summary { cursor: pointer; color: var(--yellow); }
 .loading { display: flex; align-items: center; gap: 12px; min-height: 96px; color: var(--n2); font-size: 14px; }

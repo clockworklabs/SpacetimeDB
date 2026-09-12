@@ -182,6 +182,7 @@
           "ms": 800
         },
         {"do": "openItem", "actor": "reviewer", "item": "Keyboard", "settleMs": 1200},
+        {"do":"click","actor":"reviewer","testid":"review-toggle","unlessVisible":"review-rating","ifAvailable":true},
         {
           "do": "fill",
           "actor": "reviewer",
@@ -203,6 +204,7 @@
                   {"do": "openItem", "actor": "reader", "item": "Keyboard"}
                 ],
                 [
+                  {"do":"click","actor":"reviewer","testid":"review-toggle","unlessVisible":"review-rating","ifAvailable":true},
                   {
                     "do": "fill",
                     "actor": "reviewer",

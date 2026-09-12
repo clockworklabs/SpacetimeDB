@@ -169,7 +169,7 @@ test('dependency completion does not hide a whole-app failure', () => {
   ], { kind: 'passed' }), 'passed');
   assert.equal(expectedDependencyRunOutcomeKind([
     { outcome: { kind: 'passed' } },
-  ], { kind: 'partial' }), null);
+  ], { kind: 'partial' }), 'app_failure');
 });
 
 test('attempt argv is derived completely from the compiled campaign plan', () => {

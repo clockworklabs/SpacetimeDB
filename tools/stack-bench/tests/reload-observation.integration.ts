@@ -9,6 +9,21 @@ import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { executeAction } from '../src/actions/action-contract.js';
 import { stableElementSelector } from '../src/actions/element-selector.js';
 
+test('ensureSignedIn waits for account restoration after reload', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent('<script>setTimeout(()=>{document.body.innerHTML="<span id=current-user>alice</span>"},150)</script>');
+    const capability = { defaultWithin: 2000, testId: stableElementSelector,
+      scopedUser: (name: string) => name, sleep: async () => {} };
+    const result = await executeAction(ACTION_REGISTRY, 'ensureSignedIn',
+      { do: 'ensureSignedIn', actor: 'a', name: 'alice' },
+      { capabilities: { actors: { get: () => ({ page, name: 'a' }) },
+        'browser-interaction': capability } });
+    assert.equal(result.status, 'passed', result.summary ?? undefined);
+  } finally { await browser.close(); }
+});
+
 test('reservation restart readback rejects returned stock with a lost cart entry', async () => {
   const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/03-deferred-durability.json');
   const feature = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source })
@@ -139,41 +154,63 @@ test('restock reload observations work on persistent pages and reopened panels w
   } finally { await browser.close(); }
 });
 
-test('shipping permits delayed writes without an open-page update', async () => {
-  const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/02-fulfilment-ship.json');
-  const steps = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source })
-    .features[0]!.criteria[0]!.steps;
-  const submit = steps.findIndex(step => step.testid === 'ship-submit');
-  const reload = steps.findIndex((step, index) => index > submit && step.do === 'reload');
+test('submission evidence waits for delayed saves and blocks rejected or unconfirmed saves', async () => {
   const browser = await chromium.launch({ headless: true });
   try {
-    const page = await browser.newPage();
-    let finished = false;
-    await page.route('http://shipping.test/**', async route => {
-      if (route.request().url().endsWith('/ship')) {
-        await new Promise(resolve => setTimeout(resolve, 150));
-        finished = true;
-        await route.fulfill({ body: '{}' });
-      } else {
-        await route.fulfill({ contentType: 'text/html', body:
-          finished ? '<p>Shipped</p>' : '<div id="queue-item">Keyboard<button id="ship-submit" onclick="fetch(\'/ship\', {method:\'POST\'})">Ship</button></div>' });
-      }
-    });
-    await page.goto('http://shipping.test/');
-    const actor = { page, loc: (id: string) => page.locator(stableElementSelector(id)) };
-    const capability = { defaultWithin: 1000, expand: (value: string) => value,
-      testId: stableElementSelector, sleep: async (ms: number) => { await new Promise(resolve => setTimeout(resolve, ms)); } };
-    for (const step of steps.slice(submit, reload)) {
-      const result = await executeAction(ACTION_REGISTRY, step.do, step, { capabilities: {
-        actors: { get: () => actor }, 'browser-interaction': capability,
-        'browser-observation': capability,
-      } });
-      assert.equal(result.status, 'passed', result.summary ?? undefined);
+    for (const kind of ['shipping', 'stock-alert'] as const) for (const mode of ['delayed', 'rejected', 'unconfirmed'] as const) {
+      const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios',
+        kind === 'shipping' ? '02-fulfilment-ship.json' : 'progression-stock-alert-delivery.json');
+      const feature = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source }).features[0]!;
+      const steps = kind === 'shipping' ? feature.criteria[0]!.steps : feature.setup;
+      const submit = steps.findIndex(step => step.do === 'click' && step.testid === (kind === 'shipping' ? 'ship-submit' : 'stock-alert'));
+      const control = kind === 'shipping' ? 'fulfilment-panel' : 'item-card';
+      const label = kind === 'shipping' ? 'Keyboard' : 'Air Purifier';
+      const page = await browser.newPage();
+      let finished = false;
+      try {
+        await page.route('http://submission.test/**', async route => {
+          if (route.request().method() === 'POST') {
+            if (mode === 'delayed') await new Promise(resolve => setTimeout(resolve, 3000));
+            finished = true;
+            await route.fulfill({ status: mode === 'rejected' ? 403 : 200, body: '{}' });
+          } else {
+            await route.fulfill({ contentType: 'text/html', body: `
+              <section id="${control}" data-submit-state="idle">${label}
+                <div id="queue-item">${label}<button id="${steps[submit]!.testid}">Submit</button></div>
+              </section>
+              <script>
+                document.querySelector('button').onclick = async () => {
+                  const panel = document.querySelector('section');
+                  panel.dataset.submitState = 'pending';
+                  const response = await fetch('/submit', {method:'POST'});
+                  if (${JSON.stringify(mode)} !== 'unconfirmed') panel.dataset.submitState = response.ok ? 'succeeded' : 'failed';
+                  if (response.ok) document.querySelector('button').remove();
+                };
+              </script>` });
+          }
+        });
+        await page.goto('http://submission.test/');
+        // A previous successful submission must not satisfy this new request.
+        await page.locator('section').evaluate(element => { element.dataset.submitState = 'succeeded'; });
+        const actor = { page, loc: (id: string) => page.locator(stableElementSelector(id)) };
+        const capability = { defaultWithin: 1000, expand: (value: string) => value,
+          testId: stableElementSelector, sleep: async (ms: number) => { await new Promise(resolve => setTimeout(resolve, ms)); } };
+        const capabilities = { actors: { get: () => actor }, 'browser-interaction': capability,
+          'browser-observation': capability };
+        assert.equal((await executeAction(ACTION_REGISTRY, 'click', steps[submit]!, { capabilities })).status, 'passed');
+        assert.equal(steps[submit]!.settleMs, undefined, 'no fixed write buffer');
+        const observation = { ...steps[submit + 1]!, within: mode === 'delayed' ? 5000 : 300 };
+        assert.equal(observation.do, 'expect');
+        assert.equal(steps[submit + 1]!.attribute, 'data-submit-state');
+        const result = await executeAction(ACTION_REGISTRY, 'expect', observation, { capabilities });
+        assert.equal(result.status, mode === 'delayed' ? 'passed' : 'failed', result.summary ?? undefined);
+        assert(finished);
+        if (mode === 'delayed') {
+          assert.equal(await page.locator('button').count(), 0, 'receipt persists after button removal');
+          await page.reload();
+        }
+      } finally { await page.close(); }
     }
-    assert(finished, 'the delayed submit must complete before the scenario reaches reload');
-    assert.equal(await page.locator('#queue-item').count(), 1, 'the submitting page need not update');
-    await page.reload();
-    assert.equal(await page.locator('#queue-item').count(), 0, 'fresh read sees the completed write');
   } finally { await browser.close(); }
 });
 

@@ -5,12 +5,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { gradeWithRetry, auditFailureSummary, gradeArgv, parseAgentProcessResult }
+import { pendingRunSnapshot, gradeWithRetry, auditFailureSummary, gradeArgv, parseAgentProcessResult }
   from '../commands/bench.js';
 import { finalizeRunTotals }
   from '../src/evidence/benchmark-run.js';
 import { formatLevelSummary } from '../src/evidence/evidence-presentation.js';
-import type { RunTotalsInput } from '../src/evidence/benchmark-run.js';
+import type { BenchmarkRunRecord, RunLevelRecord, RunSessionRecord, RunTotalsInput } from '../src/evidence/benchmark-run.js';
 import { parseBenchArguments } from '../commands/bench-arguments.js';
 import { pristineMutationBaselinePath } from '../src/evidence/mutation-control.js';
 import { clearPrivateGradingEvidence, levelGradeIsUsable, repairEvidenceDecision,
@@ -655,4 +655,25 @@ test('level summary names early stopping without claiming budget exhaustion', ()
     repair: { status: 'incomplete', stopReason: 'repeated-findings', used: 2, limit: 5 } });
   assert(summary.includes('stopped: repeated findings'));
   assert(!summary.includes('budget exhausted'));
+});
+
+
+test('pending paid sessions survive a stop without changing accepted level ownership', () => {
+  const paid = (costUsd: number) => ({ costUsd, costComplete: true, costReceipts: [], sessionId: null, durationMs: 0, usage: null, providerThrottle: null, resources: null, tokens: null, outputTokens: null, turns: null, promptBytes: null, thinking: null, transcript: null, provenance: null, providerMetadata: null }) as RunSessionRecord;
+  const baseline = { level: 2, graded: true, score: 70, max: 70, selection: null,
+    outcome: { kind: 'passed' }, buildCostUsd: 2, buildSessions: [paid(2)] } as RunLevelRecord;
+  const run = { id: 'pending', startedAt: new Date().toISOString(), levels: [baseline] } as BenchmarkRunRecord;
+  const pending = { level: 3, graded: false, score: null, max: null, selection: null,
+    outcome: { kind: 'ungraded' }, buildCostUsd: 3, buildSessions: [paid(3)],
+    repairCostUsd: 5, repairSessions: [paid(5)], repairs: 1 } as RunLevelRecord;
+  const snapshot = pendingRunSnapshot(run, pending, false);
+  assert.equal(snapshot.totals!.costUsd, 10);
+  assert.equal(snapshot.totals!.costComplete, false);
+  assert.equal(snapshot.levels[1]!.repairSessions![0]!.costUsd, 5);
+  assert.equal(run.levels.length, 1);
+  assert.equal(run.totals, undefined);
+  const sameDepth = pendingRunSnapshot(run, { ...pending, level: 2 }, true);
+  assert.equal(sameDepth.levels.length, 1);
+  assert.equal(sameDepth.levels[0]!.buildSessions!.length, 2);
+  assert.equal(sameDepth.totals!.costUsd, 10);
 });

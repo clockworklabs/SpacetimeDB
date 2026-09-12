@@ -24,6 +24,8 @@ export interface CostLevel {
 }
 
 export interface CostRun {
+  checkpoints?: Array<{ executionCost: CostEvidence }>;
+  progressionStatus?: { phase?: string };
   id?: string | null;
   levels?: CostLevel[];
   pricing?: unknown;
@@ -84,6 +86,12 @@ export function runCostEvidence(input: unknown, scope: 'run' | 'execution' = 'ru
   try {
     if (!input || typeof input !== 'object') return { status: 'unknown', costUsd: null };
     const ledger = durableCostLedger(input as CostRun, scope);
+    const run = input as CostRun;
+    const latest = run.checkpoints?.at(-1)?.executionCost;
+    const executionTotal = run.progressionResume ? run.totals?.currentExecutionCostUsd : run.totals?.costUsd;
+    if (run.progressionStatus?.phase === 'active'
+      || (latest?.status === 'exact' && typeof executionTotal === 'number'
+        && latest.costUsd > executionTotal + 0.0001)) return { status: 'unknown', costUsd: null };
     if (!ledger.complete) return { status: 'unknown', costUsd: null };
     return { status: ledger.exact ? 'exact' : 'upper-bound', costUsd: ledger.reportedCostUsd };
   } catch {

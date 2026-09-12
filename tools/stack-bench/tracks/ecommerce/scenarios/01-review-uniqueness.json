@@ -17,6 +17,7 @@
         { "do": "click", "actor": "author", "testid": "overlay-close", "ifAvailable": true },
         { "do": "click", "actor": "author", "testid": "catalog-link", "ifAvailable": true },
         { "do": "openItem", "actor": "author", "item": "Air Purifier" },
+        {"do":"click","actor":"author","testid":"review-toggle","unlessVisible":"review-rating","ifAvailable":true},
         { "do": "fill", "actor": "author", "testid": "review-rating", "text": "4" },
         { "do": "fill", "actor": "author", "testid": "review-input", "text": "quiet and effective" },
         { "do": "click", "actor": "author", "testid": "review-submit" },

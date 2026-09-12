@@ -213,6 +213,11 @@ test('refund accounting proves one persisted effect after a same-staff replay', 
   }
   assert(observations.some(step => step.do === 'expectElementCount'
     && step.testid === 'refund-entry' && step.equals === 1));
+  assert(observations.some(step => step.do === 'expectNumber'
+    && step.testid === 'order-refund-total' && step.equals === 0
+    && step.in?.contains === 'Mouse'));
+  assert(observations.some(step => step.do === 'expectElementCount'
+    && step.testid === 'refund-entry' && step.contains === 'Mouse' && step.equals === 0));
   const access = selectedCriteria(refund).find(criterion => criterion.id === '615c');
   assert(access?.steps.some(step => step.do === 'expectActionOutcome'
     && step.outcome === 'refused'));

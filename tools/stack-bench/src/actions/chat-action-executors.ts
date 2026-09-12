@@ -45,11 +45,16 @@ async function signUp({ input, capabilities, signal }: ChatArguments<AccountInpu
   const password = input.password ?? `pw-${user}`;
   const username = actor.page.locator(browser.testId('signup-username')).first();
   if (!(await username.isVisible())) {
-    // The account contract names the control that reveals sign-up when its
-    // inputs are not shown. Nothing is guessed from button text.
     const toggle = actor.loc('signup-toggle');
-    await username.or(toggle).filter({ visible: true }).first()
+    const signInToggle = actor.loc('signin-toggle');
+    // A shared authentication dialog may expose signup only after it opens.
+    await username.or(toggle).or(signInToggle).filter({ visible: true }).first()
       .waitFor({ state: 'visible', timeout: browser.defaultWithin });
+    if (!(await username.isVisible()) && !(await toggle.isVisible())) {
+      await signInToggle.click({ timeout: browser.defaultWithin });
+      await username.or(toggle).filter({ visible: true }).first()
+        .waitFor({ state: 'visible', timeout: browser.defaultWithin });
+    }
     if (!(await username.isVisible())) {
       await toggle.click({ timeout: browser.defaultWithin });
       await username.waitFor({ state: 'visible', timeout: browser.defaultWithin });
@@ -149,6 +154,11 @@ async function ensureSignedIn({ input, capabilities, signal }: ChatArguments<Acc
   const browser = browserFor(capabilities);
   const user = input.exact ? input.name : browser.scopedUser(input.name);
   const currentUser = actor.page.locator(browser.testId('current-user')).first();
+  if (!(await currentUser.isVisible())) {
+    await currentUser.or(actor.page.locator(browser.testId('signin-username')))
+      .or(actor.page.locator(browser.testId('signin-toggle'))).filter({ visible: true }).first()
+      .waitFor({ state: 'visible', timeout: browser.defaultWithin });
+  }
   if (await currentUser.isVisible()) {
     const signedInAs = await currentUser.innerText();
     if (!signedInAs.includes(user)) {

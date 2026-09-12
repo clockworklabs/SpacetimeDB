@@ -2,6 +2,10 @@
 
 Use `stock-alert` inside an unavailable `item-card` to request an alert. Use
 `notifications-toggle` to open notifications and `notification-item` for each alert.
+On that `item-card`, expose `data-submit-state` for the latest stock-alert request:
+`idle` initially, `pending` immediately when submitted, `succeeded` only after the server
+confirms success, or `failed` after rejection or transport failure. Keep the terminal state
+if the request button disappears. A new submission must replace the old state.
 Use `notifications-panel` for the opened notification view, including while its contents
 load. Set its `aria-busy` attribute to `false` only when the signed-in account's contents
 have loaded successfully, including an empty list; keep it `true` while loading or after

@@ -44,3 +44,7 @@ collections during upgrades or repairs.
 | Client dev server | `<VITE_PORT>` |
 
 Use this exact `DATABASE_URL`. Do not point at another MongoDB instance.
+Read `DATABASE_URL` from the process environment at startup. It can change between
+launches; do not embed it in source or override it with a saved value.
+
+The supplied database is a single-node replica set.

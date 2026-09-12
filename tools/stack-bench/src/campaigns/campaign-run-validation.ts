@@ -190,8 +190,8 @@ export function expectedDependencyRunOutcomeKind(
   const expected = aggregateRunOutcome(levels.map((level, index) => ({
     level: level.level ?? index + 1,
     ...(typeof level.outcome?.kind === 'string' ? { outcome: { kind: level.outcome.kind } } : {}),
-  }))).kind;
-  if (terminalOutcome?.kind !== 'passed' && expected === 'passed') return null;
+  })), terminalOutcome).kind;
+  if (!terminalOutcome && expected === 'passed') return null;
   return expected;
 }
 

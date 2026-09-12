@@ -3,13 +3,19 @@
 Use these exact `id` attributes on the corresponding visible controls. They do not prescribe UI
 structure, data modeling, libraries, or implementation strategy.
 
+From the signed-out page, show the sign-up inputs, `signup-toggle`, or
+`signin-toggle`. If sign-up is inside the sign-in dialog, opening `signin-toggle`
+must reveal the sign-up inputs or `signup-toggle`. That control must reveal the
+sign-up form. No other navigation is required to reach it.
+Show the sign-in inputs or `signin-toggle` on the signed-out page.
+
 | Element ID | Observable element |
 |---|---|
 | `signup-username` | sign-up username input |
 | `signup-password` | sign-up password input |
 | `signup-submit` | sign-up submit control |
 | `signin-toggle` | control that reveals sign-in |
-| `signup-toggle` | control that reveals sign-up when the sign-up inputs are not shown; omit it when a signed-out visitor already sees them |
+| `signup-toggle` | reveals sign-up; available on the signed-out page or after opening `signin-toggle`; omit when sign-up inputs are already visible |
 | `signin-username` | sign-in username input |
 | `signin-password` | sign-in password input |
 | `signin-submit` | sign-in submit control |

@@ -12,6 +12,7 @@ import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { gzipSync } from 'node:zlib';
 
+import { brokerProtocol, imageTokenAdjustment } from '../container/broker-protocols.js';
 import { createCredentialBroker } from '../container/credential-broker.js';
 import { readCredentialBrokerLedger, reconcileCredentialBrokerReceipt, writeCredentialBrokerLedger }
   from '../container/credential-broker-accounting.js';
@@ -951,6 +952,11 @@ test('credential broker forces termination and records typed shutdown errors', a
 
 
 test('OpenAI broker isolates credentials, bounds requests and reconciles cached usage without CLI dollars', async () => {
+  for (const model of ['gpt-5.6-sol', 'gpt-6-astra']) {
+    assert.doesNotThrow(() => createCredentialBroker({ provider: 'openai', mode: 'subscription-token',
+      accountId: 'account', model, maxOutputTokens: 4096,
+      credential: 'provider-secret-value-1234567890', sessionToken: 'session-token-value-1234567890' }));
+  }
   assert.throws(() => createCredentialBroker({ provider: 'openai', mode: 'subscription-token',
     accountId: 'account', model: 'constructor', maxOutputTokens: 4096,
     credential: 'provider-secret-value-1234567890', sessionToken: 'session-token-value-1234567890' }),
@@ -1097,4 +1103,24 @@ test('OpenRouter broker freezes routing and records reported cost, not reservati
         upstreamBody: JSON.stringify({ ...response, ...changed }) });
     }
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+
+test('OpenAI inline screenshots retain input and reserve bounded vision tokens', () => {
+  const image = { type: 'input_image', image_url: 'data:image/png;base64,aGVsbG8=', detail: 'original' };
+  for (const model of ['gpt-6-astra', 'gpt-5.6-sol']) {
+    const protocol = brokerProtocol({ provider: 'openai', mode: 'subscription-token',
+      model, accountId: 'test' } as BrokerConfig);
+    const input = [{ type: 'custom_tool_call_output', output: [image] }];
+    const request = protocol.parseRequest(Buffer.from(JSON.stringify({ model, input })), '/v1/responses');
+    assert.deepEqual(request.input, input);
+    assert.equal(protocol.inputTokenAdjustment!(request), 36_001 - image.image_url.length);
+    assert.equal(imageTokenAdjustment([image, image], model), 2 * (36_001 - image.image_url.length));
+    const large = { ...image, image_url: 'data:image/png;base64,' + 'A'.repeat(1_000_000) };
+    const body = JSON.stringify({ model, input: [large] });
+    assert.ok(Buffer.byteLength(body) + imageTokenAdjustment([large], model) < 37_000,
+      'a large screenshot must not reserve its base64 bytes as text tokens');
+    assert.throws(() => protocol.parseRequest(Buffer.from(JSON.stringify({ model,
+      input: [{ ...image, image_url: 'https://example.com/image.png' }] })), '/v1/responses'), /inline data/);
+  }
 });

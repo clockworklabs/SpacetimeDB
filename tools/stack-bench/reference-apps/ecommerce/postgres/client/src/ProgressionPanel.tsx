@@ -1,3 +1,4 @@
+import { request } from "./request";
 import { useEffect, useState } from "react";
 
 type Account = { id: number; username: string; isAdmin: boolean; isStaff: boolean } | null;
@@ -8,17 +9,6 @@ type Order = {
 };
 type ProgressionState = any;
 
-async function request(path: string, method = "GET", body?: unknown) {
-  const response = await fetch(path, {
-    method,
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(result.error || "request failed");
-  return result;
-}
 
 export function ProgressionPanel({
   account, items, orders, state, notificationsReady, reload,
@@ -106,7 +96,7 @@ export function ProgressionPanel({
           const update = (field: keyof typeof draft, value: string) =>
             setTriage((current) => ({ ...current,
               [entry.id]: { ...draft, [field]: value } }));
-          return <div data-role="support-ticket" data-entity-id={entry.id} key={entry.id}>
+          return <div data-role="support-ticket" data-entity-id={entry.id} data-refund-input={JSON.stringify({caseId: entry.id})} key={entry.id}>
           <strong data-role="support-reference">{entry.reference}</strong>
           <span>{entry.subject}</span>
           <span data-role="support-status">{entry.status}</span>

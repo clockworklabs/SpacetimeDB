@@ -71,6 +71,7 @@ export interface CampaignAgentSelection {
   adapter: string;
   adapterVersion: string;
   model: string;
+  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   providerRoute?: string;
   maxOutputTokens?: number;
 }
@@ -239,6 +240,7 @@ export interface CampaignAttemptPlan extends UnknownRecord {
   id: string;
   stack: string;
   model: string;
+  effort?: CampaignAgentSelection['effort'];
   providerRoute?: string;
   maxOutputTokens?: number;
   guidance: string;
@@ -354,7 +356,7 @@ const MODULAR_SELECTION_FIELDS = new Set(['levels']);
 const MODULAR_LEVEL_FIELDS = new Set(['level', 'recipe', 'features', 'checks']);
 const PROGRESSION_LEVEL_FIELDS = new Set(['level', 'recipe']);
 const STACK_FIELDS = new Set(['id', 'adapterVersion', 'repetitions']);
-const AGENT_FIELDS = new Set(['adapter', 'adapterVersion', 'model', 'providerRoute', 'maxOutputTokens']);
+const AGENT_FIELDS = new Set(['adapter', 'adapterVersion', 'model', 'effort', 'providerRoute', 'maxOutputTokens']);
 const ORDERING_FIELDS = new Set(['method', 'seed']);
 const BUDGET_FIELDS = new Set(['attemptTimeoutMinutes', 'maxCostUsdPerAttempt']);
 const ATTEMPT_POLICY_FIELDS = new Set(['retries', 'retryOn', 'excludeFromAnalysis']);
@@ -549,6 +551,9 @@ export function validateCampaignDefinition(input: unknown,
     identifier(agent.adapter, `${at}.adapter`);
     version(agent.adapterVersion, `${at}.adapterVersion`);
     string(agent.model, `${at}.model`);
+    if (agent.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(String(agent.effort))) {
+      fail(`${at}.effort`, 'must be low, medium, high, xhigh, or max');
+    }
     const provider = AGENT_ADAPTER_REGISTRY.get(agent.adapter as string).provider;
     validateProviderRoute(provider, agent.providerRoute);
     validateProviderOutputLimit(provider, agent.maxOutputTokens);
@@ -787,6 +792,7 @@ function expandAttempts(definition: CampaignDefinition, requestedLevels: number[
     (condition, conditionIndex) => stacks.map(stack => ({
       agent, agentIndex, condition, conditionIndex, stack,
       key: canonicalDefinitionJson({ agent: { adapter: agent.adapter, model: agent.model,
+        ...(agent.effort ? { effort: agent.effort } : {}),
         ...(agent.providerRoute ? { providerRoute: agent.providerRoute } : {}),
         ...(agent.maxOutputTokens ? { maxOutputTokens: agent.maxOutputTokens } : {}) },
         condition: condition.contentSha256, stack: stack.id }),
@@ -803,6 +809,7 @@ function expandAttempts(definition: CampaignDefinition, requestedLevels: number[
     stack: stack.id,
     agentAdapter: agent.adapter,
     model: agent.model,
+    ...(agent.effort ? { effort: agent.effort } : {}),
     ...(agent.providerRoute ? { providerRoute: agent.providerRoute } : {}),
     ...(agent.maxOutputTokens ? { maxOutputTokens: agent.maxOutputTokens } : {}),
     pricing: { unit: definition.pricing.unit,

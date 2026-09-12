@@ -149,6 +149,15 @@ export function captureHostedDiagnostics({ lease, output, exec = execFileSync }:
   return { captured: true, path: output };
 }
 
+export function handoffHostedWorkspace(lease: HostedApplicationControlInput['lease'],
+  exec: TextCommandExecutor = execFileSync): void {
+  const container = inspectBuildContainer(lease, exec);
+  for (const command of codingContainerWorkspaceHandoffCommands(process.getgid?.() ?? 0)) {
+    exec('docker', ['exec', container.id, ...command],
+      { encoding: 'utf8', stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
+  }
+}
+
 export async function controlHostedAppServer({ adapterId: stack, lease, app, port, probe, mode,
   environment = {}, signal, handoffWorkspace = false,
   exec = execFileSync }: HostedApplicationControlInput): Promise<void> {
@@ -178,10 +187,7 @@ export async function controlHostedAppServer({ adapterId: stack, lease, app, por
       30_000, `${stack} application to stop`, abort);
   }
   if (handoffWorkspace) {
-    for (const command of codingContainerWorkspaceHandoffCommands(process.getgid?.() ?? 0)) {
-      exec('docker', ['exec', container.id, ...command],
-        { encoding: 'utf8', stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
-    }
+    handoffHostedWorkspace(lease, exec);
   }
   if (mode === 'stop') return;
   if (typeof app !== 'string') throw new Error('application control requires an app directory');
@@ -307,7 +313,13 @@ export function activateAttemptBackend({ leasePath, lease, ports }: {
   current = installAttemptFirewall(leasePath, readBackendLease(leasePath, { token: lease.ownershipToken }));
   if (lease.backend === 'spacetime') startAttemptSpacetime(current);
   else {
-    const launch = lease.backend === 'postgres' ? ['postgres'] : ['mongod', '--bind_ip', '127.0.0.1'];
+    if (lease.backend === 'mongodb') {
+      attemptDocker(['exec', container.id, 'sh', '-c',
+        'umask 077; head -c 48 /dev/urandom | base64 > /data/configdb/stack-bench-keyfile; '
+          + 'chown mongodb:mongodb /data/configdb/stack-bench-keyfile; chmod 400 /data/configdb/stack-bench-keyfile']);
+    }
+    const launch = lease.backend === 'postgres' ? ['postgres']
+      : ['mongod', '--bind_ip', '127.0.0.1', '--replSet', 'rs0', '--keyFile', '/data/configdb/stack-bench-keyfile'];
     attemptDocker(['exec', '-d', container.id, 'sh', '-c', 'exec "$@" > /tmp/stack-bench-backend.log 2>&1',
       'sh', '/usr/local/bin/docker-entrypoint.sh', ...launch]);
   }
@@ -317,7 +329,11 @@ export function activateAttemptBackend({ leasePath, lease, ports }: {
       if (lease.backend === 'postgres') attemptDocker(['exec', container.id, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres']);
       else if (lease.backend === 'mongodb') attemptDocker(['exec', container.id, 'mongosh', '--quiet',
         '--username', 'admin', '--password', credentials.adminPassword, '--authenticationDatabase', 'admin',
-        '--eval', 'if (!db.adminCommand({ping:1}).ok) quit(1)']);
+        '--eval', 'try { rs.status(); } catch (error) { '
+          + 'if (error.code !== 94) throw error; '
+          + 'const result = rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]}); '
+          + 'if (!result.ok) throw new Error("Replica set initialization failed"); } '
+          + 'if (!db.hello().isWritablePrimary) quit(1)']);
       else attemptDocker(['exec', container.id, 'node', '-e',
         `fetch('http://127.0.0.1:${stdbPort}/v1/ping').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))`]);
       break;

@@ -435,7 +435,7 @@ test('dashboard overview defers historical evidence validation until the sheet i
   const sheet = campaignSheet(resultsRoot, key);
   const excluded = sheet.stacks.flatMap(stack => stack.attempts)
     .map(attempt => attempt.excluded);
-  assert.ok(excluded.includes('result could not be read'));
+  assert.ok(excluded.some(reason => reason?.startsWith('Result validation failed:')));
 });
 
 test('dashboard keeps the recorded invalidation reason when the result is unreadable', () => {
@@ -1173,14 +1173,14 @@ test('cost and completion keep unknown spend and the full selected scope visible
   const stack = sheet.stacks[0]!;
   const attempt = stack.attempts[0]!;
   attempt.status = 'running';
-  attempt.variant = '<script>bad()</script>';
+  attempt.model = '<script>bad()</script>';
   attempt.completion = { selected: 107, passed: 1, failed: 0, blocked: 0,
     unmeasured: 106, rate: 1 / 107 };
   stack.completionRate = 1 / 107;
   attempt.spend = stack.spend = { status: 'upper-bound', costUsd: 5 };
   const campaign = campaignPage({ sheet, progression: null, view: 'grid', step: 0 });
   assert.match(campaign, /≤\$5\.00/);
-  assert.match(campaign, /1<i>\/ 107<\/i>/);
+  assert.match(campaign, /1 \/ 107/);
   assert.match(campaign, /&lt;script&gt;bad\(\)&lt;\/script&gt;/);
   const live = campaignsPage({ campaigns: [], sheets: [sheet], filter: 'all' });
   assert.match(live, /1%/);
@@ -1198,7 +1198,7 @@ test('cost and completion keep unknown spend and the full selected scope visible
   const detail = attemptPage(input);
   assert.doesNotMatch(detail, /Completion uses|no accepted outcome|Provisional results|Grade history/);
   assert.match(detail, /Feature dependencies/);
-  assert.match(detail, /1<i>\/ 107<\/i>/);
+  assert.match(detail, /1 \/ 107/);
   assert.equal(attempt.completion.unmeasured, 106);
   attempt.completion = null;
   assert.doesNotMatch(attemptPage(input), /count without an accepted outcome/);

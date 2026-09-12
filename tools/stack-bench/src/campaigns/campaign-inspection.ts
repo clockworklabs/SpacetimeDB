@@ -20,6 +20,7 @@ import { validateCampaignRun } from './campaign-run-validation.js';
 import { runCostEvidence, sessionCostEvidence, type CostEvidence, type CostRun } from '../evidence/cost-proof.js';
 import type { RunSessionRecord } from '../evidence/benchmark-run.js';
 import type { CheckCompletion } from '../evidence/check-completion.js';
+import { retainedRunCost } from '../evidence/retained-run-cost.js';
 
 interface Score {
   score: number;
@@ -413,12 +414,15 @@ export function recordedExecutionSpend(run: CostRun & {
 }): CostEvidence {
   try {
     const checkpoint = run.checkpoints?.at(-1);
-    if (checkpoint) return costEvidenceSchema.parse(checkpoint.executionCost);
     const inherited = new Set(run.progressionResume?.inheritedLevels ?? []);
     const sessions = (run.levels ?? []).filter(level => !inherited.has(level.level))
       .flatMap(level => [...(level.buildSessions ?? []), ...(level.repairSessions ?? []),
         ...(level.resumeSession ? [level.resumeSession] : [])]);
-    return sessions.length ? sessionCostEvidence(sessions) : { status: 'unknown', costUsd: null };
+    const recorded = sessions.length ? sessionCostEvidence(sessions) : { status: 'unknown' as const, costUsd: null };
+    if (!checkpoint) return recorded;
+    const measured = costEvidenceSchema.parse(checkpoint.executionCost);
+    return recorded.status === 'exact' && measured.status === 'exact' && recorded.costUsd >= measured.costUsd
+      ? recorded : measured;
   } catch { return { status: 'unknown', costUsd: null }; }
 }
 
@@ -443,9 +447,12 @@ export function inspectCampaignAttempt(plan: CompiledCampaignPlan, attempt: Camp
         || canonicalDefinitionJson(run.pricing) !== canonicalDefinitionJson(attempt.plan.pricing)) {
         throw new Error('cost evidence belongs to another variant');
       }
-      return { cost: runCostEvidence(run, 'execution'),
-        recorded: attempt.status === 'running' && item.id === execution?.id
-          ? recordedExecutionSpend(run) : null };
+      const recorded = recordedExecutionSpend(run);
+      const retained = item.status !== 'running' && item.status !== 'pending'
+        ? retainedRunCost(run) : null;
+      if (retained) return retained;
+      return { cost: attempt.status === 'running' && item.id === execution?.id
+        ? recorded : runCostEvidence(run, 'execution'), recorded };
     } catch { return { cost: { status: 'unknown' as const, costUsd: null } }; }
   });
   const dependency = dependencyProgress(plan, attempt.plan, executionDirectory);
@@ -455,7 +462,7 @@ export function inspectCampaignAttempt(plan: CompiledCampaignPlan, attempt: Camp
     comparisonKey: campaignComparisonKey(attempt.plan),
     variantLabel: `${attempt.plan.model} / ${attempt.plan.guidance} / ${attempt.plan.condition.id}`,
     cost: costs.at(-1)?.cost ?? { status: 'unknown' as const, costUsd: null },
-    spend: executionSpend(costs.map(item => ({ cost: item.recorded ?? item.cost }))),
+    spend: executionSpend(costs),
     completion: dependency?.score?.completion ?? result?.completion ?? null,
     stack: attempt.plan.stack,
     model: attempt.plan.model,

@@ -1,0 +1,145 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 6,
+  "name": "Bundle returns",
+  "features": [
+    {
+      "id": 742,
+      "name": "Historical bundle return",
+      "actors": [
+        "admin",
+        "buyer",
+        "staff"
+      ],
+      "setup": [
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"bundles-link","unlessVisible":"bundle-name-input"},
+        {"do":"signUp","actor":"buyer","name":"Historical bundle"},
+        {"do":"signIn","actor":"staff","name":"staff","password":"stackbench-staff-2026","exact":true},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":6,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"dbSetStock","item":"Desk Lamp","warehouse":"East","quantity":4,"settleMs":0},
+        {"do":"dbSetStock","item":"Desk Lamp","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"fill","actor":"admin","testid":"bundle-name-input","text":"Historical bundle"},
+        {"do":"fill","actor":"admin","testid":"bundle-price-input","text":"75.00"},
+        {"do":"fill","actor":"admin","testid":"bundle-components-input","text":"[{\"item\":\"Keyboard\",\"quantity\":2},{\"item\":\"Desk Lamp\",\"quantity\":1}]"},
+        {"do":"click","actor":"admin","testid":"bundle-save"},
+        {"do":"expect","actor":"admin","testid":"bundle-card","within":10000,"contains":"Historical bundle"},
+        {"do":"click","actor":"buyer","testid":"bundles-link","unlessVisible":"bundle-card"},
+        {"do":"click","actor":"buyer","testid":"bundle-add-to-cart","in":{"testid":"bundle-card","contains":"Historical bundle"}},
+        {"do":"click","actor":"buyer","testid":"cart-toggle"},
+        {"do":"click","actor":"buyer","testid":"checkout-submit"},
+        {"do":"click","actor":"buyer","testid":"orders-toggle"},
+        {"do":"expect","actor":"buyer","testid":"order-item","within":10000,"contains":"Historical bundle","count":1},
+        {"do":"expectNumber","actor":"buyer","testid":"payment-amount","equals":75,"within":10000,"in":{"testid":"order-item","contains":"Historical bundle"}},
+        {"do":"dbExpectStock","item":"Keyboard","warehouse":"East","equals":4},
+        {"do":"dbExpectStock","item":"Desk Lamp","warehouse":"East","equals":3},
+        {"do":"click","actor":"staff","testid":"staff-link"},
+        {"do":"expect","actor":"staff","testid":"queue-item","within":10000,"contains":"Historical bundle"},
+        {"do":"click","actor":"staff","testid":"ship-submit","in":{"testid":"queue-item","contains":"Historical bundle"}},
+        {"do":"expect","actor":"buyer","testid":"order-status","within":10000,"in":{"testid":"order-item","contains":"Historical bundle"},"value":"shipped","ignoreCase":true}
+      ],
+      "criteria": [
+        {
+          "id": "742a",
+          "category": "feature",
+          "desc": "returning a shipped bundle refunds the paid price and restores original components after its definition changes",
+          "points": 2,
+          "steps": [
+            {"do":"fill","actor":"admin","testid":"bundle-name-input","text":"Historical bundle"},
+            {"do":"fill","actor":"admin","testid":"bundle-price-input","text":"9.00"},
+            {"do":"fill","actor":"admin","testid":"bundle-components-input","text":"[{\"item\":\"Keyboard\",\"quantity\":1},{\"item\":\"Desk Lamp\",\"quantity\":3}]"},
+            {"do":"click","actor":"admin","testid":"bundle-save"},
+            {"do":"expect","actor":"admin","testid":"bundle-card","within":10000,"contains":"Historical bundle"},
+            {"do":"click","actor":"buyer","testid":"return-bundle","in":{"testid":"order-item","contains":"Historical bundle"}},
+            {"do":"expect","actor":"buyer","testid":"order-status","within":10000,"in":{"testid":"order-item","contains":"Historical bundle"},"value":"returned","ignoreCase":true},
+            {"do":"expectNumber","actor":"buyer","testid":"bundle-refund-amount","equals":75,"within":10000,"in":{"testid":"order-item","contains":"Historical bundle"}},
+            {"do":"dbExpectStock","item":"Keyboard","warehouse":"East","equals":6},
+            {"do":"dbExpectStock","item":"Desk Lamp","warehouse":"East","equals":4},
+            {"do":"dbExpectStock","item":"Keyboard","warehouse":"West","equals":0},
+            {"do":"dbExpectStock","item":"Desk Lamp","warehouse":"West","equals":0}
+          ]
+        },
+        {
+          "id": "742b",
+          "category": "production",
+          "desc": "replaying a completed bundle return after restart does not refund or restock it twice",
+          "points": 3,
+          "steps": [
+            {"do":"restartBackend","settleMs":1500},
+            {"do":"reload","actor":"buyer","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"buyer","name":"Historical bundle","readyTestid":"current-user"},
+            {"do":"click","actor":"buyer","testid":"orders-toggle"},
+            {"do":"callAction","actor":"buyer","action":"returnBundle","namedAction":{"id":"returnBundle","path":"/api/bundle-orders/:orderId/return","reducer":"return_bundle","args":[0],"params":[{"name":"orderId","in":"path","placeholder":":orderId","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Historical bundle","attribute":"data-bundle-return-input"},"settleMs":1000},
+            {"do":"reload","actor":"buyer","settleMs":1000},
+            {"do":"click","actor":"buyer","testid":"orders-toggle"},
+            {"do":"expectNumber","actor":"buyer","testid":"bundle-refund-amount","equals":75,"within":10000,"in":{"testid":"order-item","contains":"Historical bundle"}},
+            {"do":"dbExpectStock","item":"Keyboard","warehouse":"East","equals":6},
+            {"do":"dbExpectStock","item":"Desk Lamp","warehouse":"East","equals":4}
+          ]
+        }
+      ]
+    },
+    {
+      "id": 748,
+      "name": "Bundle return ownership",
+      "actors": [
+        "admin",
+        "buyer",
+        "staff",
+        "other"
+      ],
+      "setup": [
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"bundles-link","unlessVisible":"bundle-name-input"},
+        {"do":"signUp","actor":"buyer","name":"Private bundle"},
+        {"do":"signIn","actor":"staff","name":"staff","password":"stackbench-staff-2026","exact":true},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":6,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"dbSetStock","item":"Desk Lamp","warehouse":"East","quantity":4,"settleMs":0},
+        {"do":"dbSetStock","item":"Desk Lamp","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"fill","actor":"admin","testid":"bundle-name-input","text":"Private bundle"},
+        {"do":"fill","actor":"admin","testid":"bundle-price-input","text":"75.00"},
+        {"do":"fill","actor":"admin","testid":"bundle-components-input","text":"[{\"item\":\"Keyboard\",\"quantity\":2},{\"item\":\"Desk Lamp\",\"quantity\":1}]"},
+        {"do":"click","actor":"admin","testid":"bundle-save"},
+        {"do":"expect","actor":"admin","testid":"bundle-card","within":10000,"contains":"Private bundle"},
+        {"do":"click","actor":"buyer","testid":"bundles-link","unlessVisible":"bundle-card"},
+        {"do":"click","actor":"buyer","testid":"bundle-add-to-cart","in":{"testid":"bundle-card","contains":"Private bundle"}},
+        {"do":"click","actor":"buyer","testid":"cart-toggle"},
+        {"do":"click","actor":"buyer","testid":"checkout-submit"},
+        {"do":"click","actor":"buyer","testid":"orders-toggle"},
+        {"do":"expect","actor":"buyer","testid":"order-item","within":10000,"contains":"Private bundle","count":1},
+        {"do":"expectNumber","actor":"buyer","testid":"payment-amount","equals":75,"within":10000,"in":{"testid":"order-item","contains":"Private bundle"}},
+        {"do":"dbExpectStock","item":"Keyboard","warehouse":"East","equals":4},
+        {"do":"dbExpectStock","item":"Desk Lamp","warehouse":"East","equals":3},
+        {"do":"click","actor":"staff","testid":"staff-link"},
+        {"do":"expect","actor":"staff","testid":"queue-item","within":10000,"contains":"Private bundle"},
+        {"do":"click","actor":"staff","testid":"ship-submit","in":{"testid":"queue-item","contains":"Private bundle"}},
+        {"do":"expect","actor":"buyer","testid":"order-status","within":10000,"in":{"testid":"order-item","contains":"Private bundle"},"value":"shipped","ignoreCase":true},
+        {"do":"signUp","actor":"other","name":"bundle-other"}
+      ],
+      "criteria": [
+        {
+          "id": "748a",
+          "category": "production",
+          "desc": "another customer cannot return a paid bundle by submitting its order ID",
+          "points": 3,
+          "steps": [
+            {"do":"callAction","actor":"other","from":"buyer","action":"returnBundle","namedAction":{"id":"returnBundle","path":"/api/bundle-orders/:orderId/return","reducer":"return_bundle","args":[0],"params":[{"name":"orderId","in":"path","placeholder":":orderId","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Private bundle","attribute":"data-bundle-return-input"},"settleMs":1000},
+            {"do":"expectActionOutcome","actor":"other","outcome":"application-refused"},
+            {"do":"reload","actor":"buyer","settleMs":1000},
+            {"do":"click","actor":"buyer","testid":"orders-toggle"},
+            {"do":"expect","actor":"buyer","testid":"order-status","within":10000,"in":{"testid":"order-item","contains":"Private bundle"},"value":"shipped","ignoreCase":true},
+            {"do":"dbExpectStock","item":"Keyboard","warehouse":"East","equals":4},
+            {"do":"dbExpectStock","item":"Desk Lamp","warehouse":"East","equals":3},
+            {"do":"click","actor":"buyer","testid":"return-bundle","in":{"testid":"order-item","contains":"Private bundle"}},
+            {"do":"expectNumber","actor":"buyer","testid":"bundle-refund-amount","equals":75,"within":10000,"in":{"testid":"order-item","contains":"Private bundle"}},
+            {"do":"dbExpectStock","item":"Keyboard","warehouse":"East","equals":6},
+            {"do":"dbExpectStock","item":"Desk Lamp","warehouse":"East","equals":4}
+          ]
+        }
+      ]
+    }
+  ]
+}

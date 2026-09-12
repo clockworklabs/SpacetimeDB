@@ -6,6 +6,7 @@ import test from 'node:test';
 
 import { addCostUsd, finalizeRunTotals } from '../src/evidence/benchmark-run.js';
 import { checkDatabaseProvenance } from '../commands/run-suite.js';
+import type { BackendLease } from '../src/runtime/backend-lease.js';
 import { AGENT_PROCESS_TIMEOUT_MS, CODING_SESSION_TIMEOUT_MS }
   from '../src/agents/coding-session-timeouts.js';
 import { summarizeSessions } from '../src/evidence/session-metrics.js';
@@ -29,6 +30,13 @@ test('database provenance accepts the leased environment and rejects an unrelate
     writeFileSync(join(server, 'db.ts'),
       'export const connectionString = "postgresql://user:pass@localhost:5433/wrong?note=:6532/";\n');
     assert.equal(checkDatabaseProvenance({ app: root, backend: 'postgres' }).ok, false);
+    // Source syntax and host-port allocations cannot establish runtime identity.
+    for (const backend of ['postgres', 'mongodb']) {
+      assert.deepEqual(checkDatabaseProvenance({ app: root, backend,
+        databaseLease: {} as BackendLease }), {
+        ok: true, reason: 'leased database requires runtime marker verification',
+      });
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

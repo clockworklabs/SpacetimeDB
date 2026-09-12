@@ -79,11 +79,13 @@ test('support privacy confirms persisted owner writes without requiring live ref
     { do: 'ensureSignedIn', actor: 'staff', name: 'staff', password: 'stackbench-staff-2026',
       exact: true, readyTestid: 'current-user' });
   assert.deepEqual(tail[3],
-    { do: 'click', actor: 'staff', testid: 'staff-link', ifAvailable: true });
+    { do: 'click', actor: 'staff', testid: 'staff-link', ifAvailable: true, unlessVisible: 'support-assignee' });
   assert.deepEqual(tail[4],
+    { do: 'click', actor: 'staff', testid: 'support-queue-link', ifAvailable: true, unlessVisible: 'support-assignee' });
+  assert.deepEqual(tail[5],
     { do: 'expect', actor: 'staff', testid: 'support-ticket', contains: 'Private managed case {user:casemarker}' });
-  assert.equal(tail[5]!.do, 'expectElementCount');
-  assert.equal(tail[5]!.equals, 1, 'an unauthorized replay must not add a second reply');
+  assert.equal(tail[6]!.do, 'expectElementCount');
+  assert.equal(tail[6]!.equals, 1, 'an unauthorized replay must not add a second reply');
   const live = scenario('progression-managed-support-shared.json').features[0]!.criteria
     .find(criterion => criterion.id === '613a')!;
   assert.equal(live.steps.some(step => step.do === 'reload'), false);
@@ -97,7 +99,7 @@ test('low-stock observations follow the optional in-area link the contract allow
     const area = feature.setup.findIndex(step => step.do === 'click' && step.testid === 'admin-link');
     assert(area >= 0, `${name}: the admin area is opened in setup`);
     assert.deepEqual(feature.setup[area + 1],
-      { do: 'click', actor: 'admin', testid: 'low-stock-link', ifAvailable: true });
+      { do: 'click', actor: 'admin', testid: 'low-stock-link', ifAvailable: true, unlessVisible: 'low-stock-item', within: 10000 });
   }
 });
 
@@ -141,11 +143,46 @@ test('the direct conservation race is observed on fresh pages', () => {
       `${actor}'s fresh page is not interleaved with the other actor`);
   }
   assert(race.steps.some(step => step.do === 'dbExpectStock' && step.warehouse === 'East'
-    && step.atLeast === 74 && step.atMost === 75));
+    && step.atLeast === 34 && step.atMost === 35));
   assert(race.steps.some(step => step.do === 'dbExpectStock' && step.warehouse === 'West'
-    && step.atLeast === 124 && step.atMost === 125));
-  assert(race.steps.some(step => step.do === 'dbExpectStock' && step.equals === 199));
+    && step.atLeast === 64 && step.atMost === 65));
+  assert(race.steps.some(step => step.do === 'dbExpectStock'
+    && step.relativeTo === 'direct-race-stock-before' && step.plus === -1));
   assert(race.steps.some(step => step.do === 'expect' && step.testid === 'order-item' && step.count === 1));
+});
+
+test('transfer race preserves app-owned stock aggregates and uses one database baseline', () => {
+  const feature = scenario('02-server-actions.json').features.find(feature => feature.id === 202)!;
+  const steps = [...feature.setup, ...feature.criteria[0]!.steps];
+  assert(!steps.some(step => step.do === 'dbSetStock'), 'fixture SQL must not bypass aggregate maintenance');
+  assert(!steps.some(step => step.do === 'recordNumber'), 'UI state must not determine the stock oracle');
+  const baseline = steps.findIndex(step => step.do === 'dbRecordStock');
+  const race = steps.findIndex(step => step.do === 'race');
+  assert(baseline >= 0 && baseline < race);
+  const observations = steps.slice(race + 1).filter(step =>
+    step.do === 'expectNumber' || (step.do === 'dbExpectStock' && !step.warehouse));
+  assert.equal(observations.length, 3);
+  // Both legal purchase locations and both serial execution orders conserve 99.
+  for (const purchaseWarehouse of ['East', 'West']) {
+    for (const order of [['transfer', 'buy'], ['buy', 'transfer']]) {
+      const stock = { East: 60, West: 40 };
+      let materializedTotal = 100;
+      for (const action of order) {
+        if (action === 'transfer') { stock.East -= 25; stock.West += 25; }
+        else if (purchaseWarehouse === 'East') stock.East--; else stock.West--;
+        materializedTotal = stock.East + stock.West;
+      }
+      for (const step of observations) {
+        assert.equal(step.relativeTo, steps[baseline]!.as);
+        assert.equal(materializedTotal, 100 + Number(step.plus));
+        assert.notEqual(materializedTotal + 1, 100 + Number(step.plus), 'a lost sale must fail');
+      }
+      for (const step of steps.slice(race + 1).filter(step => step.do === 'dbExpectStock' && step.warehouse)) {
+        const value = stock[step.warehouse as keyof typeof stock];
+        assert(value >= Number(step.atLeast) && value <= Number(step.atMost));
+      }
+    }
+  }
 });
 
 test('L2 direct authorization refusals follow accepted routes and fresh observations', () => {

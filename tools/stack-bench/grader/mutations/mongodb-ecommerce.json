@@ -1,10 +1,25 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "e67945c46f0d3b0f1e20d3e9bc401fe9e96c79dbbebdd837a92603e76a12964f",
+  "fixtureSha256": "cd0e28ac762cb8d09dfc5fa3adcf3a6743020a7a90028930b82422e7d0396f66",
   "backend": "mongodb",
   "track": "ecommerce",
   "note": "Mutation definitions for the MongoDB ecommerce reference.",
   "mutations": [
+    {
+      "id": "staff-admin-access-survives-role-removal",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
+      "targets": [
+        "ecommerce.spec.access-control.staff-role-revocation.621d"
+      ],
+      "desc": "Keep administrator access after changing the assigned role back to staff.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "    target.isAdmin = role === \"admin\";",
+          "replace": "    target.isAdmin = target.isAdmin || role === \"admin\";"
+        }
+      ]
+    },
     {
       "id": "shipping-counts-sale-twice",
       "scenario": "tracks/ecommerce/scenarios/progression-shipping-accounting.json",
@@ -339,7 +354,7 @@
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "    { $group: { _id: null, total: { $sum: { $multiply: [\"$items.price\", \"$items.quantity\"] } } } },",
+          "find": "    { $group: { _id: null, total: { $sum: { $subtract: [\"$total\", { $ifNull: [\"$refundTotal\", 0] }] } } } },",
           "replace": "    { $group: { _id: null, total: { $sum: 0 } } },"
         }
       ]
@@ -460,8 +475,8 @@
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "  for (const line of order.items) {\n    await restoreAllocations(line.allocations as any, line.itemId);\n  }\n  order.status = \"cancelled\";",
-          "replace": "  for (const line of order.items) {\n    void line; // mutant: cancellation does not restore its reserved stock\n  }\n  order.status = \"cancelled\";"
+          "find": "          {item_id:line.itemId,warehouse_id:allocation.warehouseId}, {$inc:{quantity:allocation.quantity}}, {session});",
+          "replace": "          {item_id:line.itemId,warehouse_id:allocation.warehouseId}, {$inc:{quantity:0}}, {session});"
         }
       ]
     },
@@ -476,8 +491,8 @@
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "  for (const line of order.items) {\n    await restoreAllocations(line.allocations as any, line.itemId);\n  }\n  order.status = \"cancelled\";",
-          "replace": "  for (const line of order.items) {\n    void line; // mutant: cancellation does not restore its reserved stock\n  }\n  order.status = \"cancelled\";"
+          "find": "          {item_id:line.itemId,warehouse_id:allocation.warehouseId}, {$inc:{quantity:allocation.quantity}}, {session});",
+          "replace": "          {item_id:line.itemId,warehouse_id:allocation.warehouseId}, {$inc:{quantity:0}}, {session});"
         }
       ]
     },
@@ -491,8 +506,8 @@
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "  order.status = \"cancelled\";\n  await order.save();",
-          "replace": "  order.status = \"pending\";\n  await order.save();"
+          "find": "      value.status = \"cancelled\";\n      await value.save({session});",
+          "replace": "      value.status = \"pending\";\n      await value.save({session});"
         }
       ]
     },
@@ -566,8 +581,8 @@
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "app.post(\"/api/orders/:id/cancel\", requireAuth, async (req, res) => {\n  const user = (req as any).user;\n  const orderId = objectId(req.params.id);\n  const order = orderId ? await Order.findOne({ _id: orderId, userId: user._id }) : null;",
-          "replace": "app.post(\"/api/orders/:id/cancel\", requireAuth, async (req, res) => {\n  const user = (req as any).user;\n  const orderId = objectId(req.params.id);\n  const order = orderId ? await Order.findOne({ _id: orderId }) : null;"
+          "find": "      const value = orderId ? await Order.findOne({ _id: orderId, userId: user._id }).session(session) : null;\n      if (!value || value.status !== \"pending\") throw new Error(\"Order cannot be cancelled\");",
+          "replace": "      const value = orderId ? await Order.findOne({ _id: orderId }).session(session) : null;\n      if (!value || value.status !== \"pending\") throw new Error(\"Order cannot be cancelled\");"
         }
       ]
     },
@@ -783,11 +798,11 @@
         "ecommerce.feature.cart-checkout.cart.4d"
       ],
       "desc": "Checkout creates an order without emptying the cart.",
-      "file": "server/src/index.ts",
+      "file": "server/src/credit.ts",
       "edits": [
         {
-          "find": "{ $set: { items: [], promotionCode: \"\", discount: 0 } });",
-          "replace": "{ $set: { promotionCode: \"\", discount: 0 } });"
+          "find": "    cart.items = cart.items.filter(line => line.reservationExpiresAt && line.reservationExpiresAt <= now) as any;",
+          "replace": "    // mutant: purchased cart lines remain"
         }
       ]
     },
@@ -990,11 +1005,11 @@
         "ecommerce.l3.deferred-integrity.stock-conservation.314a"
       ],
       "desc": "Checkout decrements stock after the reservation already did.",
-      "file": "server/src/index.ts",
+      "file": "server/src/credit.ts",
       "edits": [
         {
-          "find": "  const order = await Order.create({ userId, items: orderLines, total, discount });",
-          "replace": "  await Stock.updateOne({ item_id: orderLines[0].itemId }, { $inc: { quantity: -1 } });\n  const order = await Order.create({ userId, items: orderLines, total, discount });"
+          "find": "    const [order] = await Order.create([{ userId, items: lines, total: totalMinor / 100, discount,",
+          "replace": "    await mongoose.connection.collection('stocks').updateOne({ item_id: lines[0].itemId }, { $inc: { quantity: -1 } }, { session });\n    const [order] = await Order.create([{ userId, items: lines, total: totalMinor / 100, discount,"
         }
       ]
     },
@@ -1035,11 +1050,11 @@
         "ecommerce.l3.reservations.reservations.306a"
       ],
       "desc": "Reservation checkout leaves the claimed cart lines in place.",
-      "file": "server/src/index.ts",
+      "file": "server/src/credit.ts",
       "edits": [
         {
-          "find": "{ $set: { items: [], promotionCode: \"\", discount: 0 } });",
-          "replace": "{ $set: { promotionCode: \"\", discount: 0 } });"
+          "find": "    cart.items = cart.items.filter(line => line.reservationExpiresAt && line.reservationExpiresAt <= now) as any;",
+          "replace": "    // mutant: purchased cart lines remain"
         }
       ]
     },
@@ -1186,11 +1201,11 @@
         "ecommerce.progression.payment-records.payment-records.623a"
       ],
       "desc": "Checkout records a payment above the charged total.",
-      "file": "server/src/index.ts",
+      "file": "server/src/credit.ts",
       "edits": [
         {
-          "find": "  await Payment.create({ orderId: order._id, userId, amount: total, status: \"paid\" });",
-          "replace": "  await Payment.create({ orderId: order._id, userId, amount: total + 1, status: \"paid\" });"
+          "find": "    await Payment.create([{ userId, orderId: order!._id, amount: totalMinor / 100, status: 'paid' }], { session });",
+          "replace": "    await Payment.create([{ userId, orderId: order!._id, amount: totalMinor / 100 + 1, status: 'paid' }], { session });"
         }
       ]
     },
@@ -1449,6 +1464,25 @@
       ]
     },
     {
+      "id": "staff-role-write-precedes-denial",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
+      "targets": [
+        "ecommerce.spec.access-control.staff-role-boundary.621b"
+      ],
+      "desc": "Save an unauthorized role change before returning a forbidden response.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "app.put(\"/api/staff/:id/role\", auth, admin, async (req: Request, res) => {",
+          "replace": "app.put(\"/api/staff/:id/role\", auth, staff, async (req: Request, res) => {"
+        },
+        {
+          "find": "    await recordActivity(req.progressionUser, \"updated roles\", target.username);",
+          "replace": "    if (!req.progressionUser.isAdmin) { res.status(403).json({ error: \"Admin access required\" }); return; }\n    await recordActivity(req.progressionUser, \"updated roles\", target.username);"
+        }
+      ]
+    },
+    {
       "id": "staff-can-assign-roles",
       "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
       "targets": [
@@ -1642,11 +1676,11 @@
         "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
       ],
       "desc": "Concurrent checkout reads the cart without atomically claiming it.",
-      "file": "server/src/index.ts",
+      "file": "server/src/credit.ts",
       "edits": [
         {
-          "find": "const claimedCart = await Cart.findOneAndUpdate({ userId },\n    { $set: { items: [], promotionCode: \"\", discount: 0 } });",
-          "replace": "const claimedCart = await Cart.findOne({ userId });"
+          "find": "  return mongoose.connection.transaction(async session => {\n    const cart = await Cart.findOne({ userId }).session(session);",
+          "replace": "  const snapshot = await Cart.findOne({ userId });\n  if (snapshot) snapshot.set(\"__v\", undefined);\n  await new Promise(resolve => setTimeout(resolve, 500));\n  return mongoose.connection.transaction(async session => {\n    const cart = snapshot ? Cart.hydrate(snapshot.toObject()) : null;"
         }
       ]
     },
@@ -1677,8 +1711,8 @@
       "file": "server/src/stock-reservations.ts",
       "edits": [
         {
-          "find": "    const stock = await model.findOneAndUpdate(\n      { item_id: itemId, quantity: { $gte: 1 } },\n      { $inc: { quantity: -1 } },\n      { sort: { quantity: -1 } },\n    );\n    if (!stock) {\n      await releaseWithModel(model, itemId, warehouseIds);\n      return null;\n    }\n",
-          "replace": "    const stock = await model.findOneAndUpdate(\n      { item_id: itemId, quantity: { $gte: 1 } },\n      { $inc: { quantity: 0 } },\n      { sort: { quantity: -1 } },\n    );\n    if (!stock) {\n      await releaseWithModel(model, itemId, warehouseIds);\n      return null;\n    }\n    // Mutant: widen the unlocked read/write window without changing serial behavior.\n    await new Promise(resolve => setTimeout(resolve, 500));\n    await model.updateOne({ item_id: itemId, warehouse_id: stock.warehouse_id },\n      { $set: { quantity: stock.quantity - 1 } });\n"
+          "find": "    const stock = await model.findOneAndUpdate(\n      { item_id: itemId, quantity: { $gte: 1 } },\n      { $inc: { quantity: -1 } },\n      { sort: { quantity: -1 }, ...(session ? { session } : {}) },\n    );\n    if (!stock) {\n      await releaseWithModel(model, itemId, warehouseIds, session);\n      return null;\n    }\n",
+          "replace": "    const stock = await model.findOneAndUpdate(\n      { item_id: itemId, quantity: { $gte: 1 } },\n      { $inc: { quantity: 0 } },\n      { sort: { quantity: -1 }, ...(session ? { session } : {}) },\n    );\n    if (!stock) {\n      await releaseWithModel(model, itemId, warehouseIds, session);\n      return null;\n    }\n    // Mutant: widen the unlocked read/write window without changing serial behavior.\n    await new Promise(resolve => setTimeout(resolve, 500));\n    await model.updateOne({ item_id: itemId, warehouse_id: stock.warehouse_id },\n      { $set: { quantity: stock.quantity - 1 } });\n"
         }
       ]
     },
@@ -2052,6 +2086,337 @@
         {
           "find": "  await Stock.findOneAndUpdate(\n    { item_id: itemId, warehouse_id: toWarehouseId },\n    { $inc: { quantity: qty } },\n    { upsert: true }\n  );",
           "replace": "  await Stock.findOneAndUpdate(\n    { item_id: itemId, warehouse_id: toWarehouseId },\n    { $inc: { quantity: 0 } },\n    { upsert: true }\n  );"
+        }
+      ]
+    },
+    {
+      "id": "credit-checkout-ignores-wallet",
+      "desc": "A credit checkout pays entirely externally despite available credit.",
+      "scenario": "tracks/ecommerce/scenarios/progression-store-credit.json",
+      "targets": [
+        "ecommerce.feature.store-credit.store-credit-750.750a"
+      ],
+      "file": "server/src/credit.ts",
+      "edits": [
+        {
+          "find": "    const creditMinor = useCredit ? Math.min(user.creditMinor, totalMinor) : 0;",
+          "replace": "    const creditMinor = 0;"
+        }
+      ]
+    },
+    {
+      "id": "credit-grant-replay-increments-balance",
+      "desc": "Replaying a grant applies its credit to the wallet again.",
+      "scenario": "tracks/ecommerce/scenarios/progression-store-credit.json",
+      "targets": [
+        "ecommerce.spec.store-credit.production-752.752a"
+      ],
+      "file": "server/src/credit.ts",
+      "edits": [
+        {
+          "find": "          if (existing.amountMinor !== amountMinor) throw new Error('Reference already identifies another grant');\n          return;",
+          "replace": "          if (existing.amountMinor !== amountMinor) throw new Error('Reference already identifies another grant');\n          await User.updateOne({ _id: accountId }, { $inc: { creditMinor: amountMinor } }, { session });\n          return;"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-grant-credit",
+      "desc": "Customer authentication is accepted without staff authorization.",
+      "scenario": "tracks/ecommerce/scenarios/progression-store-credit.json",
+      "targets": [
+        "ecommerce.spec.store-credit.production-753.753a"
+      ],
+      "file": "server/src/credit.ts",
+      "edits": [
+        {
+          "find": "  app.post('/api/staff/credit', auth, staff, async (req, res) => {",
+          "replace": "  app.post('/api/staff/credit', auth, async (req, res) => {"
+        }
+      ]
+    },
+    {
+      "id": "credit-checkout-retains-purchased-cart",
+      "desc": "A second checkout can reuse the purchased cart and create another order.",
+      "scenario": "tracks/ecommerce/scenarios/progression-store-credit.json",
+      "targets": [
+        "ecommerce.spec.store-credit.production-754.754a"
+      ],
+      "file": "server/src/credit.ts",
+      "edits": [
+        {
+          "find": "    cart.items = cart.items.filter(line => line.reservationExpiresAt && line.reservationExpiresAt <= now) as any;",
+          "replace": "    // mutant: purchased cart lines remain"
+        }
+      ]
+    },
+    {
+      "id": "split-refund-does-not-restore-credit",
+      "desc": "The refund is recorded but its original wallet credit is not restored.",
+      "scenario": "tracks/ecommerce/scenarios/progression-split-tender-refunds.json",
+      "targets": [
+        "ecommerce.feature.split-tender-refunds.split-tender-refunds-751.751a"
+      ],
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "        await refundCredit(order, session);",
+          "replace": "        // mutant: omit wallet restoration"
+        }
+      ]
+    },
+    {
+      "id": "split-refund-duplicates-credit",
+      "desc": "A refund credits the wallet twice while recording one refund.",
+      "scenario": "tracks/ecommerce/scenarios/progression-split-tender-refunds.json",
+      "targets": [
+        "ecommerce.spec.split-tender-refunds.production-756.756a"
+      ],
+      "file": "server/src/credit.ts",
+      "edits": [
+        {
+          "find": "{ $inc: { creditMinor: delta } }, { session });",
+          "replace": "{ $inc: { creditMinor: delta * 2 } }, { session });"
+        }
+      ]
+    },
+    {
+      "id": "subscription-skips-due-purchase",
+      "desc": "Due deliveries are recorded as skipped although stock is available.",
+      "scenario": "tracks/ecommerce/scenarios/progression-subscriptions.json",
+      "targets": [
+        "ecommerce.feature.subscriptions.subscriptions-760.760a"
+      ],
+      "file": "server/src/subscriptions.ts",
+      "edits": [
+        {
+          "find": "      const allocation = await reserveStock(row.itemId, row.quantity, session);",
+          "replace": "      const allocation = row.quantity < 0 ? await reserveStock(row.itemId, row.quantity, session) : null;"
+        }
+      ]
+    },
+    {
+      "id": "subscription-allows-foreign-cancellation",
+      "desc": "A customer can cancel another customer subscription.",
+      "scenario": "tracks/ecommerce/scenarios/progression-subscriptions.json",
+      "targets": [
+        "ecommerce.spec.subscriptions.production-762.762a"
+      ],
+      "file": "server/src/subscriptions.ts",
+      "edits": [
+        {
+          "find": "          if (!row || String(row.userId) !== String((req as any).user._id)) return false;",
+          "replace": "          if (!row) return false;"
+        }
+      ]
+    },
+    {
+      "id": "subscription-pause-is-not-recorded",
+      "desc": "Pause acknowledges the request but the subscription remains active.",
+      "scenario": "tracks/ecommerce/scenarios/progression-subscriptions.json",
+      "targets": [
+        "ecommerce.spec.subscriptions.production-763.763a"
+      ],
+      "file": "server/src/subscriptions.ts",
+      "edits": [
+        {
+          "find": "            row.status = 'paused'; row.pausedAt = new Date();",
+          "replace": "            row.status = 'active'; row.pausedAt = new Date();"
+        }
+      ]
+    },
+    {
+      "id": "credit-balance-is-cleared-at-startup",
+      "desc": "Restart clears an issued wallet balance while leaving accounts present.",
+      "file": "server/src/index.ts",
+      "scenario": "tracks/ecommerce/scenarios/progression-store-credit.json",
+      "targets": [
+        "ecommerce.spec.store-credit.production-755.755a"
+      ],
+      "edits": [
+        {
+          "find": "  await seed();",
+          "replace": "  await seed();\n  await User.updateMany({}, { $set: { creditMinor: 0 } });"
+        }
+      ]
+    },
+    {
+      "id": "pending-subscriptions-are-cleared-at-startup",
+      "desc": "Restart erases pending subscription work while preserving ordinary timer execution.",
+      "file": "server/src/index.ts",
+      "scenario": "tracks/ecommerce/scenarios/progression-subscriptions.json",
+      "targets": [
+        "ecommerce.spec.subscriptions.production-761.761a"
+      ],
+      "edits": [
+        {
+          "find": "  await seed();",
+          "replace": "  await seed();\n  await mongoose.connection.collection(\"purchasesubscriptions\").deleteMany({ status: \"active\" });"
+        }
+      ]
+    },
+    {
+      "id": "bundle-definition-loses-component-quantity",
+      "scenario": "tracks/ecommerce/scenarios/progression-product-bundles.json",
+      "targets": [
+        "ecommerce.feature.product-bundles.product-bundles.740a"
+      ],
+      "desc": "definition loses component quantity",
+      "file": "server/src/bundles.ts",
+      "edits": [
+        {
+          "find": "quantity: component.quantity });",
+          "replace": "quantity: 1 });"
+        }
+      ]
+    },
+    {
+      "id": "bundle-catalog-write-allows-customers",
+      "scenario": "tracks/ecommerce/scenarios/progression-product-bundles.json",
+      "targets": [
+        "ecommerce.spec.bundle-integrity.bundle-743.743a"
+      ],
+      "desc": "catalog write allows customers",
+      "file": "server/src/bundles.ts",
+      "edits": [
+        {
+          "find": "if (!actor.isAdmin && !actor.roles?.includes('catalog'))",
+          "replace": "if (false)"
+        }
+      ]
+    },
+    {
+      "id": "bundle-checkout-price-not-snapshot",
+      "scenario": "tracks/ecommerce/scenarios/progression-bundle-checkout.json",
+      "targets": [
+        "ecommerce.feature.bundle-checkout.bundle-checkout.741a"
+      ],
+      "desc": "checkout price not snapshot",
+      "file": "server/src/bundles.ts",
+      "edits": [
+        {
+          "find": "bundlePrice: bundle.price,",
+          "replace": "bundlePrice: bundle.price + 1,"
+        }
+      ]
+    },
+    {
+      "id": "bundle-expiry-does-not-release-components",
+      "scenario": "tracks/ecommerce/scenarios/progression-bundle-checkout.json",
+      "targets": [
+        "ecommerce.spec.bundle-integrity.bundle-746.746a"
+      ],
+      "desc": "expiry does not release components",
+      "file": "server/src/bundles.ts",
+      "edits": [
+        {
+          "find": "await releaseBundle(line.componentAllocations as Allocation[], session);\n      line.componentAllocations = [] as any;",
+          "replace": "line.componentAllocations = [] as any; // mutant: component holds leak"
+        }
+      ]
+    },
+    {
+      "id": "bundle-return-loses-original-components",
+      "scenario": "tracks/ecommerce/scenarios/progression-bundle-returns.json",
+      "targets": [
+        "ecommerce.feature.bundle-returns.bundle-returns.742a"
+      ],
+      "desc": "return loses original components",
+      "file": "server/src/bundles.ts",
+      "edits": [
+        {
+          "find": "for (const line of bundles) { await releaseBundle(line.componentAllocations as Allocation[], session); line.returned = true; }",
+          "replace": "for (const line of bundles) { line.returned = true; }"
+        }
+      ]
+    },
+    {
+      "id": "bundle-return-replay-restocks-again",
+      "scenario": "tracks/ecommerce/scenarios/progression-bundle-returns.json",
+      "targets": [
+        "ecommerce.spec.bundle-integrity.bundle-742.742b"
+      ],
+      "desc": "return replay restocks again",
+      "file": "server/src/bundles.ts",
+      "edits": [
+        {
+          "find": "line.isBundle && !line.returned",
+          "replace": "line.isBundle"
+        }
+      ]
+    },
+    {
+      "id": "bundle-return-crosses-account-boundary",
+      "scenario": "tracks/ecommerce/scenarios/progression-bundle-returns.json",
+      "targets": [
+        "ecommerce.spec.bundle-integrity.bundle-748.748a"
+      ],
+      "desc": "return crosses account boundary",
+      "file": "server/src/bundles.ts",
+      "edits": [
+        {
+          "find": "{ _id: req.params.orderId, userId, status: { $in: ['shipped', 'delivered'] } }",
+          "replace": "{ _id: req.params.orderId, status: { $in: ['shipped', 'delivered'] } }"
+        }
+      ]
+    },
+    {
+      "id": "bundle-components-can-overdraw",
+      "scenario": "tracks/ecommerce/scenarios/progression-bundle-checkout.json",
+      "targets": [
+        "ecommerce.spec.bundle-integrity.bundle-744.744a",
+        "ecommerce.spec.bundle-integrity.bundle-745.745a"
+      ],
+      "desc": "components can overdraw",
+      "file": "server/src/stock-reservations.ts",
+      "edits": [
+        {
+          "find": "{ item_id: itemId, quantity: { $gte: 1 } }",
+          "replace": "{ item_id: itemId }"
+        }
+      ]
+    },
+    {
+      "id": "bundle-checkout-reuses-reservation",
+      "scenario": "tracks/ecommerce/scenarios/progression-bundle-checkout.json",
+      "targets": [
+        "ecommerce.spec.bundle-integrity.bundle-747.747a"
+      ],
+      "desc": "checkout reuses reservation",
+      "file": "server/src/credit.ts",
+      "edits": [
+        {
+          "find": "cart.items = cart.items.filter(line => line.reservationExpiresAt && line.reservationExpiresAt <= now) as any;",
+          "replace": "// mutant: active cart survives checkout"
+        }
+      ]
+    },
+    {
+      "id": "return-after-support-refund-is-blocked",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-return-interaction.json",
+      "targets": [
+        "ecommerce.spec.split-tender-refunds.return-refund-interaction.757a"
+      ],
+      "desc": "Reject a valid physical return after a financial refund.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "      if (!line || line.returned) throw new Error('No returnable item found');",
+          "replace": "      if (!line || line.returned || value.refundTotal > 0) throw new Error('No returnable item found');"
+        }
+      ]
+    },
+    {
+      "id": "support-refund-after-return-pays-twice",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-return-interaction.json",
+      "targets": [
+        "ecommerce.spec.split-tender-refunds.return-refund-interaction.757b"
+      ],
+      "desc": "Pay the full order again after a physical return.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "        order.refundTotal = order.total;",
+          "replace": "        order.refundTotal += order.total;"
         }
       ]
     }

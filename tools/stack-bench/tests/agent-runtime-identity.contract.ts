@@ -67,7 +67,7 @@ test('the materialized agent runtime uses neutral application identities', () =>
   assert.equal(visibleRuntime.postgres.DATABASE_URL,
     'postgresql://appuser:local-app-password@host.docker.internal:6532/app_ecom_run4');
   assert.equal(visibleRuntime.mongodb.DATABASE_URL,
-    'mongodb://host.docker.internal:6537/app_ecom_run4');
+    'mongodb://host.docker.internal:6537/app_ecom_run4?replicaSet=rs0&directConnection=true');
   assert.equal(visibleRuntime.module, 'app-ecom-run4');
 });
 
@@ -94,6 +94,8 @@ test('source PostgreSQL defaults and private attempt URLs keep neutral applicati
   }
   assert.equal(postgres.port, '5432');
   assert.equal(mongo.port, '27017');
+  assert.equal(mongo.searchParams.get('replicaSet'), 'rs0');
+  assert.equal(mongo.searchParams.get('directConnection'), 'true');
   assert.notEqual(identity.password, attemptDatabaseIdentity('b'.repeat(32)).password);
   assert.notEqual(identity.password, identity.adminPassword);
   assert.doesNotMatch(JSON.stringify(expected), FORBIDDEN_IDENTITY);

@@ -7,7 +7,9 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
     const rate = unit === 'features' ? attempt.featureCompletion?.rate : attempt.completion?.rate;
     return attempt.status === 'completed' && rate != null && Number.isFinite(rate)
       ? [{ stack: stack.stack, attempt, points: [{ elapsed: 0, value: rate * 100, upper: false }] }] : [];
-  })) : (progression?.stacks ?? []).flatMap(track => {
+  })) : sheet.stacks.flatMap(stack => stack.attempts.map(attempt =>
+    progression?.stacks.find(track => track.attemptId === attempt.id)
+      ?? { stack: stack.stack, attemptId: attempt.id, steps: [], costs: [], liveCosts: undefined })).flatMap(track => {
     const attempt = sheet.stacks.find(stack => stack.stack === track.stack)?.attempts
       .find(candidate => candidate.id === track.attemptId);
     const start = Date.parse(attempt?.executionStartedAt ?? '');
@@ -24,6 +26,16 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
         && Number.isFinite(step.value) && step.value >= 0
         ? [{ elapsed, value: step.value, upper: step.upper }] : [];
     }).sort((a, b) => a.elapsed - b.elapsed);
+    if (metric === 'cost' && attempt.spend) {
+      const total = attempt.liveSpend ?? attempt.spend.costUsd;
+      const end = Date.parse(attempt.executionCompletedAt ?? attempt.activityUpdatedAt ?? attempt.logUpdatedAt ?? '');
+      const elapsed = (end - start) / 1000;
+      if (total != null && Number.isFinite(total) && Number.isFinite(elapsed) && elapsed >= 0) {
+        // The sheet owns the total; histories can arrive in a different refresh.
+        while (observations.length && observations.at(-1)!.elapsed >= elapsed) observations.pop();
+        observations.push({ elapsed, value: total, upper: attempt.liveSpend === undefined && attempt.spend.status === 'upper-bound' });
+      }
+    }
     const points = [{ elapsed: 0, value: 0, upper: false }, ...observations];
     return observations.length ? [{ stack: track.stack, attempt, points }] : [];
   });
@@ -64,8 +76,10 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
       + `<button type="button" class="chart-stack-toggle" data-chart-stack="${esc(stack.stack)}" aria-pressed="${shown === 0 ? 'false' : shown === stack.attempts.length ? 'true' : 'mixed'}" title="Show or hide all ${esc(stackLabel(stack.stack))} runs"><svg class="chart-swatch" width="16" height="12" aria-hidden="true"><path d="M0 6 H16" stroke="${color(stack.stack)}" stroke-width="3"/></svg>${esc(stackLabel(stack.stack))}</button>`
       + '<div class="chart-runs">' + stack.attempts.map(attempt => {
         const point = tracks.find(track => track.attempt.id === attempt.id)?.points.at(-1);
-        const label = `Rep ${attempt.repetition} · ${point ? (metric === 'cost' && attempt.liveSpend !== undefined ? '~' : '') + valueLabel(point.value, point.upper, 0) : 'Pending'}${attempt.excluded ? ' · Excluded' : ''}`;
-        return `<button type="button" class="chart-run-toggle" data-chart-run="${esc(attempt.id)}" data-chart-series="${esc(attempt.id)}" aria-pressed="${!hidden.has(attempt.id)}" aria-label="${esc(stackLabel(stack.stack))} · ${esc(label)}" title="Show or hide ${esc(stackLabel(stack.stack))} repetition ${attempt.repetition}"><svg width="12" height="12" fill="${color(stack.stack)}" aria-hidden="true">${marker(attempt.repetition, 6, 6)}</svg>${esc(label)}</button>`;
+        const label = runLabel(attempt, sheet.repetitions > 1)
+          + (point ? ` · ${metric === 'cost' && attempt.liveSpend !== undefined ? '~' : ''}${valueLabel(point.value, point.upper, 0)}` : '');
+        const status = attempt.excluded ? ' · Excluded' : '';
+        return `<button type="button" class="chart-run-toggle" data-chart-run="${esc(attempt.id)}" data-chart-series="${esc(attempt.id)}" aria-pressed="${!hidden.has(attempt.id)}" aria-label="${esc(stackLabel(stack.stack))} · ${esc(label + status)}" title="Show or hide ${esc(stackLabel(stack.stack))} ${esc(runLabel(attempt) + status)}"><svg width="12" height="12" fill="${color(stack.stack)}" aria-hidden="true">${marker(attempt.repetition, 6, 6)}</svg>${esc(label)}</button>`;
       }).join('') + '</div></div>';
   }).join('') + '</div>';
   const visible = tracks.filter(track => !hidden.has(track.attempt.id));
@@ -110,7 +124,7 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
     let path = '';
     const marks = points.map((point, index) => {
       path += index ? ` L${x(point.elapsed)} ${y(point.value)}` : `M${x(point.elapsed)} ${y(point.value)}`;
-      return marker(attempt.repetition, x(point.elapsed), y(point.value), `<title>${esc(stackLabel(stack))} · Rep ${attempt.repetition}: ${valueLabel(point.value, point.upper)} at ${esc(duration(point.elapsed))}${index === 0 ? (metric === 'cost' ? ' · Run start; no recorded cost' : ' · Run start; no checks graded') : ''}${attempt.excluded ? ' · Excluded' : ''}</title>`);
+      return marker(attempt.repetition, x(point.elapsed), y(point.value), `<title>${esc(stackLabel(stack))} · ${esc(runLabel(attempt))}: ${valueLabel(point.value, point.upper)} at ${esc(duration(point.elapsed))}${index === 0 ? (metric === 'cost' ? ' · Run start; no recorded cost' : ' · Run start; no checks graded') : ''}${attempt.excluded ? ' · Excluded' : ''}</title>`);
     }).join('');
     return `<g class="progress-series" data-chart-series="${esc(attempt.id)}" fill="${color(stack)}"><path class="progress-line" d="${path}" fill="none" stroke="${color(stack)}" stroke-width="2"/>${marks}</g>`;
   }).join('');

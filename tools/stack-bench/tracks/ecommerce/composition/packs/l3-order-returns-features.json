@@ -12,10 +12,13 @@
   ],
   "conflictsWith": [],
   "capabilities": [
-    "browser"
+    "browser",
+    "database-observation"
   ],
   "evidence": [
-    "browser-observation"
+    "browser-observation",
+    "database-observation",
+    "fresh-client-observation"
   ],
   "budget": {
     "status": "bounded",

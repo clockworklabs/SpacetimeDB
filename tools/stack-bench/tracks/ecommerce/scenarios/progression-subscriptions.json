@@ -1,0 +1,211 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 5,
+  "name": "Scheduled purchases",
+  "features": [
+    {
+      "id": 760,
+      "name": "A subscription creates exactly its requested deliveries and payments",
+      "actors": [
+        "owner",
+        "other"
+      ],
+      "setup": [
+        {"do":"signUp","actor":"owner","name":"subscription-760"},
+        {"do":"dbSetStock","item":"Desk Lamp","warehouse":"East","quantity":10,"settleMs":0},
+        {"do":"dbSetStock","item":"Desk Lamp","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"click","actor":"owner","testid":"subscriptions-link","unlessVisible":"subscriptions-panel"},
+        {"do":"expect","actor":"owner","testid":"subscriptions-panel","attribute":"aria-busy","value":"false","within":10000},
+        {"do":"fill","actor":"owner","testid":"subscription-item-input","text":"Desk Lamp"},
+        {"do":"fill","actor":"owner","testid":"subscription-quantity-input","text":"1"},
+        {"do":"fill","actor":"owner","testid":"subscription-interval-input","text":"30"},
+        {"do":"fill","actor":"owner","testid":"subscription-deliveries-input","text":"2"},
+        {"do":"click","actor":"owner","testid":"subscription-create"},
+        {"do":"expect","actor":"owner","testid":"subscription-status","in":{"testid":"subscription-row","contains":"Desk Lamp"},"value":"active","within":10000}
+      ],
+      "criteria": [
+        {
+          "id": "760a",
+          "category": "feature",
+          "desc": "A subscription creates exactly its requested deliveries and payments",
+          "points": 2,
+          "steps": [
+            {"do":"freshClient","actor":"owner"},
+            {"do":"signIn","actor":"owner-fresh","name":"subscription-760"},
+            {"do":"click","actor":"owner-fresh","testid":"subscriptions-link","unlessVisible":"subscriptions-panel"},
+            {"do":"expect","actor":"owner-fresh","testid":"subscriptions-panel","attribute":"aria-busy","value":"false","within":10000},
+            {"do":"expect","actor":"owner-fresh","testid":"subscription-status","in":{"testid":"subscription-row","contains":"Desk Lamp"},"value":"complete","within":90000},
+            {"do":"expectElementCount","actor":"owner-fresh","testid":"subscription-delivery","in":{"testid":"subscription-row","contains":"Desk Lamp"},"equals":2},
+            {"do":"expectSequence","actor":"owner-fresh","testid":"subscription-delivery-status","in":{"testid":"subscription-row","contains":"Desk Lamp"},"equals":["paid","paid"]},
+            {"do":"expectNumber","actor":"owner-fresh","testid":"subscription-total","in":{"testid":"subscription-row","contains":"Desk Lamp"},"equals":84},
+            {"do":"dbExpectStock","item":"Desk Lamp","equals":8},
+            {"do":"click","actor":"owner-fresh","testid":"orders-toggle"},
+            {"do":"expectElementCount","actor":"owner-fresh","testid":"order-item","contains":"Desk Lamp","equals":2,"within":10000},
+            {"do":"expectElementCount","actor":"owner-fresh","testid":"payment-record","equals":2}
+          ]
+        }
+      ]
+    },
+    {
+      "id": 761,
+      "name": "A pending subscription continues after backend restart without duplicate deliveries",
+      "actors": [
+        "owner",
+        "other"
+      ],
+      "setup": [
+        {"do":"signUp","actor":"owner","name":"subscription-761"},
+        {"do":"dbSetStock","item":"Desk Lamp","warehouse":"East","quantity":10,"settleMs":0},
+        {"do":"dbSetStock","item":"Desk Lamp","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"click","actor":"owner","testid":"subscriptions-link","unlessVisible":"subscriptions-panel"},
+        {"do":"expect","actor":"owner","testid":"subscriptions-panel","attribute":"aria-busy","value":"false","within":10000},
+        {"do":"fill","actor":"owner","testid":"subscription-item-input","text":"Desk Lamp"},
+        {"do":"fill","actor":"owner","testid":"subscription-quantity-input","text":"1"},
+        {"do":"fill","actor":"owner","testid":"subscription-interval-input","text":"30"},
+        {"do":"fill","actor":"owner","testid":"subscription-deliveries-input","text":"2"},
+        {"do":"click","actor":"owner","testid":"subscription-create"},
+        {"do":"expect","actor":"owner","testid":"subscription-status","in":{"testid":"subscription-row","contains":"Desk Lamp"},"value":"active","within":10000}
+      ],
+      "criteria": [
+        {
+          "id": "761a",
+          "category": "production",
+          "desc": "A pending subscription continues after backend restart without duplicate deliveries",
+          "points": 2,
+          "steps": [
+            {"do":"restartBackend","settleMs":1000},
+            {"do":"freshClient","actor":"owner"},
+            {"do":"signIn","actor":"owner-fresh","name":"subscription-761"},
+            {"do":"click","actor":"owner-fresh","testid":"subscriptions-link","unlessVisible":"subscriptions-panel"},
+            {"do":"expect","actor":"owner-fresh","testid":"subscriptions-panel","attribute":"aria-busy","value":"false","within":10000},
+            {"do":"expect","actor":"owner-fresh","testid":"subscription-status","in":{"testid":"subscription-row","contains":"Desk Lamp"},"value":"complete","within":90000},
+            {"do":"expectElementCount","actor":"owner-fresh","testid":"subscription-delivery","in":{"testid":"subscription-row","contains":"Desk Lamp"},"equals":2},
+            {"do":"expectSequence","actor":"owner-fresh","testid":"subscription-delivery-status","in":{"testid":"subscription-row","contains":"Desk Lamp"},"equals":["paid","paid"]},
+            {"do":"expectNumber","actor":"owner-fresh","testid":"subscription-total","in":{"testid":"subscription-row","contains":"Desk Lamp"},"equals":84},
+            {"do":"dbExpectStock","item":"Desk Lamp","equals":8},
+            {"do":"click","actor":"owner-fresh","testid":"orders-toggle"},
+            {"do":"expectElementCount","actor":"owner-fresh","testid":"order-item","contains":"Desk Lamp","equals":2,"within":10000},
+            {"do":"expectElementCount","actor":"owner-fresh","testid":"payment-record","equals":2},
+            {"do":"restartBackend","settleMs":1000},
+            {"do":"freshClient","actor":"owner"},
+            {"do":"signIn","actor":"owner-fresh","name":"subscription-761"},
+            {"do":"click","actor":"owner-fresh","testid":"subscriptions-link","unlessVisible":"subscriptions-panel"},
+            {"do":"expect","actor":"owner-fresh","testid":"subscriptions-panel","attribute":"aria-busy","value":"false","within":10000},
+            {"do":"expect","actor":"owner-fresh","testid":"subscription-status","in":{"testid":"subscription-row","contains":"Desk Lamp"},"value":"complete","within":90000},
+            {"do":"expectElementCount","actor":"owner-fresh","testid":"subscription-delivery","in":{"testid":"subscription-row","contains":"Desk Lamp"},"equals":2},
+            {"do":"expectSequence","actor":"owner-fresh","testid":"subscription-delivery-status","in":{"testid":"subscription-row","contains":"Desk Lamp"},"equals":["paid","paid"]},
+            {"do":"expectNumber","actor":"owner-fresh","testid":"subscription-total","in":{"testid":"subscription-row","contains":"Desk Lamp"},"equals":84},
+            {"do":"dbExpectStock","item":"Desk Lamp","equals":8},
+            {"do":"click","actor":"owner-fresh","testid":"orders-toggle"},
+            {"do":"expectElementCount","actor":"owner-fresh","testid":"order-item","contains":"Desk Lamp","equals":2,"within":10000},
+            {"do":"expectElementCount","actor":"owner-fresh","testid":"payment-record","equals":2}
+          ]
+        }
+      ]
+    },
+    {
+      "id": 762,
+      "name": "Another customer cannot cancel an active subscription",
+      "actors": [
+        "owner",
+        "other"
+      ],
+      "setup": [
+        {"do":"signUp","actor":"other","name":"subscription-other-762"},
+        {"do":"signUp","actor":"owner","name":"subscription-762"},
+        {"do":"dbSetStock","item":"Desk Lamp","warehouse":"East","quantity":10,"settleMs":0},
+        {"do":"dbSetStock","item":"Desk Lamp","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"click","actor":"owner","testid":"subscriptions-link","unlessVisible":"subscriptions-panel"},
+        {"do":"expect","actor":"owner","testid":"subscriptions-panel","attribute":"aria-busy","value":"false","within":10000},
+        {"do":"fill","actor":"owner","testid":"subscription-item-input","text":"Desk Lamp"},
+        {"do":"fill","actor":"owner","testid":"subscription-quantity-input","text":"1"},
+        {"do":"fill","actor":"owner","testid":"subscription-interval-input","text":"30"},
+        {"do":"fill","actor":"owner","testid":"subscription-deliveries-input","text":"2"},
+        {"do":"click","actor":"owner","testid":"subscription-create"},
+        {"do":"expect","actor":"owner","testid":"subscription-status","in":{"testid":"subscription-row","contains":"Desk Lamp"},"value":"active","within":10000}
+      ],
+      "criteria": [
+        {
+          "id": "762a",
+          "category": "production",
+          "desc": "Another customer cannot cancel an active subscription",
+          "points": 2,
+          "steps": [
+            {"do":"callAction","actor":"other","from":"owner","action":"cancelSubscription","namedAction":{"id":"cancelSubscription","path":"/api/subscriptions/{subscriptionId}/cancel","method":"POST","reducer":"cancel_subscription","args":[0],"params":[{"name":"subscriptionId","in":"path","placeholder":"{subscriptionId}","wireType":"u64"}]},"input":{"testid":"subscription-cancel","attribute":"data-action-input"},"settleMs":0},
+            {"do":"expectActionOutcome","actor":"other","outcome":"refused"},
+            {"do":"expect","actor":"owner","testid":"subscription-status","in":{"testid":"subscription-row","contains":"Desk Lamp"},"value":"active","within":10000},
+            {"do":"click","actor":"owner","testid":"subscription-cancel","in":{"testid":"subscription-row","contains":"Desk Lamp"}},
+            {"do":"freshClient","actor":"owner"},
+            {"do":"signIn","actor":"owner-fresh","name":"subscription-762"},
+            {"do":"click","actor":"owner-fresh","testid":"subscriptions-link","unlessVisible":"subscriptions-panel"},
+            {"do":"expect","actor":"owner-fresh","testid":"subscriptions-panel","attribute":"aria-busy","value":"false","within":10000},
+            {"do":"expect","actor":"owner-fresh","testid":"subscription-status","in":{"testid":"subscription-row","contains":"Desk Lamp"},"value":"cancelled","within":10000},
+            {"do":"recordNumber","actor":"owner-fresh","testid":"subscription-delivery","in":{"testid":"subscription-row","contains":"Desk Lamp"},"count":true,"as":"deliveries-at-cancel"},
+            {"do":"dbRecordStock","item":"Desk Lamp","as":"stock-at-cancel"},
+            {"do":"wait","actor":"owner-fresh","ms":65000},
+            {"do":"expectElementCount","actor":"owner-fresh","testid":"subscription-delivery","in":{"testid":"subscription-row","contains":"Desk Lamp"},"relativeTo":"deliveries-at-cancel","plus":0},
+            {"do":"dbExpectStock","item":"Desk Lamp","relativeTo":"stock-at-cancel","plus":0}
+          ]
+        }
+      ]
+    },
+    {
+      "id": 763,
+      "name": "Pause survives a restart and resume completes the remaining deliveries",
+      "actors": [
+        "owner",
+        "other"
+      ],
+      "setup": [
+        {"do":"signUp","actor":"owner","name":"subscription-763"},
+        {"do":"dbSetStock","item":"Desk Lamp","warehouse":"East","quantity":10,"settleMs":0},
+        {"do":"dbSetStock","item":"Desk Lamp","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"click","actor":"owner","testid":"subscriptions-link","unlessVisible":"subscriptions-panel"},
+        {"do":"expect","actor":"owner","testid":"subscriptions-panel","attribute":"aria-busy","value":"false","within":10000},
+        {"do":"fill","actor":"owner","testid":"subscription-item-input","text":"Desk Lamp"},
+        {"do":"fill","actor":"owner","testid":"subscription-quantity-input","text":"1"},
+        {"do":"fill","actor":"owner","testid":"subscription-interval-input","text":"30"},
+        {"do":"fill","actor":"owner","testid":"subscription-deliveries-input","text":"2"},
+        {"do":"click","actor":"owner","testid":"subscription-create"},
+        {"do":"expect","actor":"owner","testid":"subscription-status","in":{"testid":"subscription-row","contains":"Desk Lamp"},"value":"active","within":10000}
+      ],
+      "criteria": [
+        {
+          "id": "763a",
+          "category": "production",
+          "desc": "Pause survives a restart and resume completes the remaining deliveries",
+          "points": 2,
+          "steps": [
+            {"do":"click","actor":"owner","testid":"subscription-pause","in":{"testid":"subscription-row","contains":"Desk Lamp"}},
+            {"do":"expect","actor":"owner","testid":"subscription-status","in":{"testid":"subscription-row","contains":"Desk Lamp"},"value":"paused","within":10000},
+            {"do":"restartBackend","settleMs":1000},
+            {"do":"freshClient","actor":"owner"},
+            {"do":"signIn","actor":"owner-fresh","name":"subscription-763"},
+            {"do":"click","actor":"owner-fresh","testid":"subscriptions-link","unlessVisible":"subscriptions-panel"},
+            {"do":"expect","actor":"owner-fresh","testid":"subscriptions-panel","attribute":"aria-busy","value":"false","within":10000},
+            {"do":"expect","actor":"owner-fresh","testid":"subscription-status","in":{"testid":"subscription-row","contains":"Desk Lamp"},"value":"paused","within":10000},
+            {"do":"recordNumber","actor":"owner-fresh","testid":"subscription-delivery","in":{"testid":"subscription-row","contains":"Desk Lamp"},"count":true,"as":"deliveries-at-pause"},
+            {"do":"dbRecordStock","item":"Desk Lamp","as":"stock-at-pause"},
+            {"do":"wait","actor":"owner-fresh","ms":35000},
+            {"do":"expectElementCount","actor":"owner-fresh","testid":"subscription-delivery","in":{"testid":"subscription-row","contains":"Desk Lamp"},"relativeTo":"deliveries-at-pause","plus":0},
+            {"do":"dbExpectStock","item":"Desk Lamp","relativeTo":"stock-at-pause","plus":0},
+            {"do":"click","actor":"owner-fresh","testid":"subscription-resume","in":{"testid":"subscription-row","contains":"Desk Lamp"}},
+            {"do":"freshClient","actor":"owner"},
+            {"do":"signIn","actor":"owner-fresh","name":"subscription-763"},
+            {"do":"click","actor":"owner-fresh","testid":"subscriptions-link","unlessVisible":"subscriptions-panel"},
+            {"do":"expect","actor":"owner-fresh","testid":"subscriptions-panel","attribute":"aria-busy","value":"false","within":10000},
+            {"do":"expect","actor":"owner-fresh","testid":"subscription-status","in":{"testid":"subscription-row","contains":"Desk Lamp"},"value":"complete","within":90000},
+            {"do":"expectElementCount","actor":"owner-fresh","testid":"subscription-delivery","in":{"testid":"subscription-row","contains":"Desk Lamp"},"equals":2},
+            {"do":"expectSequence","actor":"owner-fresh","testid":"subscription-delivery-status","in":{"testid":"subscription-row","contains":"Desk Lamp"},"equals":["paid","paid"]},
+            {"do":"expectNumber","actor":"owner-fresh","testid":"subscription-total","in":{"testid":"subscription-row","contains":"Desk Lamp"},"equals":84},
+            {"do":"dbExpectStock","item":"Desk Lamp","equals":8},
+            {"do":"click","actor":"owner-fresh","testid":"orders-toggle"},
+            {"do":"expectElementCount","actor":"owner-fresh","testid":"order-item","contains":"Desk Lamp","equals":2,"within":10000},
+            {"do":"expectElementCount","actor":"owner-fresh","testid":"payment-record","equals":2}
+          ]
+        }
+      ]
+    }
+  ]
+}

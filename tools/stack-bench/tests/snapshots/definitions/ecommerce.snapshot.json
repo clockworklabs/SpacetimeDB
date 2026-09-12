@@ -3208,13 +3208,14 @@
                   },
                   {
                     "actor": "customer",
-                    "contains": "hipped",
                     "do": "expect",
+                    "ignoreCase": true,
                     "in": {
                       "contains": "Desk Lamp",
                       "testid": "order-item"
                     },
                     "testid": "order-status",
+                    "value": "shipped",
                     "within": 10000
                   }
                 ]
@@ -3315,12 +3316,13 @@
                   {
                     "actor": "customer",
                     "do": "expect",
+                    "ignoreCase": true,
                     "in": {
                       "contains": "Webcam",
                       "testid": "order-item"
                     },
-                    "notContains": "hipped",
-                    "testid": "order-status"
+                    "testid": "order-status",
+                    "value": "pending"
                   }
                 ]
               }
@@ -3738,13 +3740,14 @@
                   },
                   {
                     "actor": "customer",
-                    "contains": "ancel",
                     "do": "expect",
+                    "ignoreCase": true,
                     "in": {
                       "contains": "Coffee Grinder",
                       "testid": "order-item"
                     },
                     "testid": "order-status",
+                    "value": "cancelled",
                     "within": 8000
                   }
                 ]
@@ -4350,7 +4353,9 @@
                 "actor": "admin",
                 "do": "click",
                 "ifAvailable": true,
-                "testid": "low-stock-link"
+                "testid": "low-stock-link",
+                "unlessVisible": "low-stock-item",
+                "within": 10000
               }
             ]
           }
@@ -4543,7 +4548,8 @@
                   {
                     "actor": "customer",
                     "do": "click",
-                    "testid": "orders-toggle"
+                    "testid": "orders-toggle",
+                    "unlessVisible": "order-item"
                   },
                   {
                     "absent": true,
@@ -4554,12 +4560,13 @@
                   {
                     "actor": "customer",
                     "do": "expect",
+                    "ignoreCase": true,
                     "in": {
                       "contains": "Laptop Stand",
                       "testid": "order-item"
                     },
-                    "notContains": "hipped",
-                    "testid": "order-status"
+                    "testid": "order-status",
+                    "value": "pending"
                   }
                 ]
               }
@@ -4709,7 +4716,8 @@
                   {
                     "actor": "customer",
                     "do": "click",
-                    "testid": "orders-toggle"
+                    "testid": "orders-toggle",
+                    "unlessVisible": "order-item"
                   },
                   {
                     "actor": "customer",
@@ -4922,7 +4930,8 @@
                   {
                     "actor": "customer",
                     "do": "click",
-                    "testid": "orders-toggle"
+                    "testid": "orders-toggle",
+                    "unlessVisible": "order-item"
                   },
                   {
                     "actor": "customer",
@@ -4991,7 +5000,8 @@
                   {
                     "actor": "customer",
                     "do": "click",
-                    "testid": "orders-toggle"
+                    "testid": "orders-toggle",
+                    "unlessVisible": "order-item"
                   },
                   {
                     "actor": "customer",

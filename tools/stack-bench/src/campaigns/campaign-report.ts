@@ -1,3 +1,4 @@
+import { retainedRunCost } from '../evidence/retained-run-cost.js';
 import { randomUUID } from 'node:crypto';
 import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync,
   renameSync, rmSync, writeFileSync } from 'node:fs';
@@ -494,6 +495,7 @@ export function campaignCohortKey(attempt: CampaignAttemptPlan): string {
 /** The condition includes the declared guidance for every stack, including its skills. */
 export function campaignComparisonKey(attempt: CampaignAttemptPlan): string {
   return canonicalDefinitionJson({ agentAdapter: attempt.agentAdapter,
+    ...(attempt.effort ? { effort: attempt.effort } : {}),
     model: attempt.model, ...(attempt.providerRoute ? { providerRoute: attempt.providerRoute } : {}),
     ...(attempt.maxOutputTokens ? { maxOutputTokens: attempt.maxOutputTokens } : {}),
     condition: attempt.condition?.contentSha256, mode: attempt.mode,
@@ -562,11 +564,11 @@ CampaignReportCondition[] {
   }).sort((left, right) => left.key.localeCompare(right.key));
 }
 
-export function executionSpend(executions: Array<{ cost: CostEvidence }>): CampaignSpend {
+export function executionSpend(executions: Array<{ cost: CostEvidence; recorded?: CostEvidence; knownCostUsd?: number }>): CampaignSpend {
   const unknownExecutions = executions.filter(execution => execution.cost.status === 'unknown').length;
   const boundedExecutions = executions.filter(execution => execution.cost.status === 'upper-bound').length;
   const knownCostUsd = Number(executions.reduce((total, execution) =>
-    total + (execution.cost.costUsd ?? 0), 0).toFixed(6));
+    total + (execution.cost.costUsd ?? execution.knownCostUsd ?? execution.recorded?.costUsd ?? 0), 0).toFixed(6));
   return { ...sumCostEvidence(executions.map(execution => execution.cost)), knownCostUsd,
     unknownExecutions, boundedExecutions };
 }
@@ -861,6 +863,7 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
         && run.progressionStatus.phase !== 'terminal') || (run.outcome?.inconclusive?.length ?? 0) > 0);
       const classified = execution.status === 'completed' && incompleteMeasurement
         ? classifyCampaignExecution({ exitCode: execution.exitCode, run }) : execution;
+      const retainedCost = run && execution.status !== 'running' ? retainedRunCost(run) : null;
       return {
         id: execution.id, ordinal: execution.ordinal, status: classified.status,
         outcome: classified.outcome, reason: classified.reason, exitCode: execution.exitCode,
@@ -869,7 +872,8 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
         startedAt: execution.startedAt, completedAt: execution.completedAt,
         admissionId: execution.admissionId,
         admissionEvidence: `admissions/${execution.admissionId}.json`,
-        cost: runCostEvidence(run, 'execution'),
+        cost: retainedCost?.cost ?? runCostEvidence(run, 'execution'),
+        recorded: retainedCost?.recorded,
         usage: executionUsage(run),
         providerContinuation: ['running', 'pending'].includes(execution.status)
           ? null : assessStoppedProviderContinuation(run),

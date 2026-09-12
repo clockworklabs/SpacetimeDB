@@ -189,7 +189,7 @@ export function createCredentialBroker(configInput: unknown, {
       }
       const billable = protocol.billable(path) && config.maxBudgetUsd != null;
       const costCeiling = billable
-        ? reserveUsd(requestCostCeiling(received, protocol.outputLimit(payload),
+        ? reserveUsd(requestCostCeiling(received + (protocol.inputTokenAdjustment?.(payload) ?? 0), protocol.outputLimit(payload),
           config.pricingRates as PricingRates)) : 0;
       const budget = config.maxBudgetUsd;
       if (billable && budget !== null && budget !== undefined

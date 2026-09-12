@@ -4,6 +4,7 @@ import { leaseFromEnv } from '../runtime/backend-lease.js';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.js';
 import { requireLeasedDatabase, requireLeasedSpacetime } from './backend-reset-guard.js';
 import type { TextCommandExecutor } from '../runtime/command-executor.js';
+import { handoffHostedWorkspace } from './hosted-lifecycle.js';
 
 export const GENERATED_APP_LAYOUT_EXIT_CODE = 10;
 
@@ -29,6 +30,11 @@ export function resetBackend({ backend, app, exec }: BackendResetRequest): unkno
 // Candidate rollback must remove schema changes too. Ordinary probe resets
 // retain the PostgreSQL schema; durability probes do not call either reset.
 export function resetRepairBackend(input: BackendResetRequest): unknown {
+  if (input.backend === 'spacetime') {
+    const { lease } = leaseFromEnv(process.env, { backend: input.backend, active: true });
+    // Publish runs as the agent before the normal app-start handoff.
+    handoffHostedWorkspace(lease, input.exec);
+  }
   if (input.backend !== 'postgres') return resetBackend(input);
   const { lease } = leaseFromEnv(process.env, { backend: input.backend, active: true });
   const database = requireLeasedDatabase(lease);

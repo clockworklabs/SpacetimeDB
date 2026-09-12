@@ -55,6 +55,8 @@ export const session = table(
   }
 );
 
+export const bundleDefinition = table({ name: 'bundle_definition', public: true }, { itemId: t.u64().primaryKey(), componentsJson: t.string() });
+
 export const cartItem = table(
   {
     name: 'cart_item',
@@ -67,6 +69,8 @@ export const cartItem = table(
     accountId: t.u64(),
     itemId: t.u64(),
     quantity: t.u32(),
+    bundlePrice: t.f64().default(0),
+    bundleComponentsJson: t.string().default(''),
   }
 );
 
@@ -84,6 +88,8 @@ export const customerOrder = table(
     discount: t.f64().default(0),
     promotionId: t.option(t.u64()),
     refundedTotal: t.f64().default(0),
+    creditMinor: t.f64().default(0),
+    externalMinor: t.f64().default(0),
   }
 );
 
@@ -100,6 +106,7 @@ export const orderItem = table(
     quantity: t.u32(),
     unitPrice: t.f64(),
     returned: t.bool().default(false),
+    isBundle: t.bool().default(false),
   }
 );
 
@@ -111,6 +118,7 @@ export const orderItemStock = table(
   {
     id: t.u64().primaryKey().autoInc(),
     orderItemId: t.u64(),
+    stockItemId: t.u64().default(0n),
     warehouseId: t.u64(),
     quantity: t.u32(),
   }
@@ -299,6 +307,7 @@ export const reservation = table(
     quantity: t.u32(),
     expiresMicros: t.i64(),
     expired: t.bool(),
+    stockItemId: t.u64().default(0n),
   }
 );
 
@@ -309,6 +318,8 @@ export const expiredCartItem = table(
     accountId: t.u64(),
     itemId: t.u64(),
     quantity: t.u32(),
+    bundlePrice: t.f64().default(0),
+    bundleComponentsJson: t.string().default(''),
   }
 );
 
@@ -375,6 +386,17 @@ export const recommendationDismissal = table(
   }
 );
 
+export const purchaseSubscription = table({ name: 'purchase_subscription' }, {
+  id: t.u64().primaryKey().autoInc(), accountId: t.u64().index('btree'), itemId: t.u64(),
+  quantity: t.u32(), price: t.f64(), intervalSeconds: t.u32(), slots: t.u32(), processed: t.u32(),
+  dueMicros: t.i64(), pausedMicros: t.option(t.i64()), status: t.string(),
+});
+
+export const subscriptionDelivery = table({ name: 'subscription_delivery' }, {
+  id: t.u64().primaryKey().autoInc(), subscriptionId: t.u64().index('btree'), slot: t.u32(),
+  status: t.string(), orderId: t.option(t.u64()),
+});
+
 export const maintenanceTick = table(
   { name: 'maintenance_tick' },
   {
@@ -383,8 +405,16 @@ export const maintenanceTick = table(
   }
 );
 
+export const creditWallet = table({ name: 'credit_wallet' }, { accountId: t.u64().primaryKey(), amountMinor: t.f64() });
+export const creditEntry = table({ name: 'credit_entry', indexes: [{ accessor: 'byAccountReference', algorithm: 'btree', columns: ['accountId','reference'] }] }, {
+  id: t.u64().primaryKey().autoInc(), accountId: t.u64(), reference: t.string(), amountMinor: t.f64(),
+});
+
 const spacetimedb = schema({
+  creditWallet,
+  creditEntry,
   item,
+  bundleDefinition,
   warehouse,
   stock,
   account,
@@ -418,6 +448,8 @@ const spacetimedb = schema({
   reorderRule,
   recommendationDismissal,
   maintenanceTick,
+  purchaseSubscription,
+  subscriptionDelivery,
 });
 
 export default spacetimedb;

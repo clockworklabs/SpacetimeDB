@@ -2,7 +2,7 @@
 // The build container must not expose Stack Bench source or grading material.
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { chmodSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { parseArgs } from 'node:util';
 import { leaseFromEnv, updateBackendLease } from '../src/runtime/backend-lease.js';
@@ -475,6 +475,22 @@ if (homeProbe.status !== 0) {
   console.error(`run-build.js: agent home is not writable in ${containerName}`);
   console.error(homeProbe.stderr || homeProbe.stdout || homeProbe.error?.message || '');
   process.exit(2);
+}
+
+// Docker bind sources must be the same filesystem the controller audits.
+if (projects) {
+  const probe = `.mount-probe-${randomBytes(12).toString('hex')}`;
+  const expected = randomBytes(24).toString('hex');
+  const path = resolve(projects, probe);
+  writeFileSync(path, expected, { mode: 0o644 });
+  try {
+    const result = spawnSync('docker', ['exec', '--user', `${AGENT_UID}:${AGENT_GID}`,
+      containerName, 'cat', `${containerTranscripts}/${probe}`],
+      { encoding: 'utf8', env: dockerEnv, timeout: DOCKER_PROBE_TIMEOUT_MS });
+    if (result.status !== 0 || result.stdout !== expected) {
+      throw new Error('Transcript mount is not shared with the controller. Use the shared controller HOME before starting a session.');
+    }
+  } finally { unlinkSync(path); }
 }
 
 if (prepareOnly) {

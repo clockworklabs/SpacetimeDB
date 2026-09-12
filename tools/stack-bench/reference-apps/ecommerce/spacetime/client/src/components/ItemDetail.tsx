@@ -50,7 +50,7 @@ export default function ItemDetail({
     >
       <div className="panel-header">
         <h2>{item.name}</h2>
-        <button type="button" className="close-btn" aria-label="Close" onClick={onClose}>
+        <button type="button" className="close-btn" aria-label="Close" data-role="overlay-close" onClick={onClose}>
           ×
         </button>
       </div>

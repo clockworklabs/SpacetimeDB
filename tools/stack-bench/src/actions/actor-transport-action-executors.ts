@@ -416,12 +416,16 @@ async function replayAs({ input, capabilities, signal }: ReplayArguments) {
 
 // This checks delivery only. The scenario must separately prove a single effect
 // from fresh application state; authorization replays use expectReplayRejected.
-async function expectReplayCompleted({ input, capabilities }: TransportArguments<ActorInput>) {
+async function expectReplayCompleted({ input, capabilities }: TransportArguments<ActorInput & { requireAccepted?: boolean }>) {
   const actor = actorFor(capabilities, input.actor);
   const replay = actor.replay;
   if (!replay) inconclusive('assertion-without-action', { action: 'replayAs' });
   if (replay.inconclusive) {
     inconclusive('replay-unavailable', { actor: actor.name, detail: replay.reason ?? '' });
+  }
+  if (input.requireAccepted && !replay.accepted) {
+    fail('call-error', { action: replay.namedAction ?? 'replay', actor: actor.name,
+      status: replay.status ?? null, required: 'accepted', operation: null });
   }
   if (!replay.accepted && ![400, 409, 422].includes(replay.status ?? 0)
     && replay.applicationRejected !== true) {

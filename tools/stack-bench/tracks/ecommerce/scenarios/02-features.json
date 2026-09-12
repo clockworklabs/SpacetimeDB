@@ -919,7 +919,9 @@
           "do": "click",
           "actor": "admin",
           "testid": "low-stock-link",
-          "ifAvailable": true
+          "ifAvailable": true,
+          "unlessVisible": "low-stock-item",
+          "within": 10000
         }
       ],
       "criteria": [
@@ -994,6 +996,7 @@
           "desc": "a purchase moves that category's units and revenue, live",
           "points": 3,
           "steps": [
+            {"do":"click","actor":"admin","testid":"sales-link","unlessVisible":"category-row","ifAvailable":true},
             {
               "do": "recordNumber",
               "actor": "admin",

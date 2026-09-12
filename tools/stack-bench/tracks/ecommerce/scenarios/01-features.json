@@ -290,6 +290,7 @@
           "steps": [
             { "do": "fill", "actor": "author", "testid": "search-input", "text": "Induction Cooktop", "enter": true, "settleMs": 1500 },
             { "do": "openItem", "actor": "author", "item": "Induction Cooktop" },
+            {"do":"click","actor":"author","testid":"review-toggle","unlessVisible":"review-rating","ifAvailable":true},
             { "do": "fill", "actor": "author", "testid": "review-rating", "text": "4" },
             { "do": "fill", "actor": "author", "testid": "review-input", "text": "solid mold" },
             { "do": "click", "actor": "author", "testid": "review-submit" },
@@ -304,6 +305,7 @@
           "desc": "one review per customer per item — a second does not add a duplicate",
           "points": 1,
           "steps": [
+            {"do":"click","actor":"author","testid":"review-toggle","unlessVisible":"review-rating","ifAvailable":true},
             { "do": "fill", "actor": "author", "testid": "review-rating", "text": "2" },
             { "do": "fill", "actor": "author", "testid": "review-input", "text": "changed my mind" },
             { "do": "click", "actor": "author", "testid": "review-submit" },
@@ -319,6 +321,7 @@
           "steps": [
             { "do": "fill", "actor": "other", "testid": "search-input", "text": "Induction Cooktop", "enter": true, "settleMs": 1500 },
             { "do": "openItem", "actor": "other", "item": "Induction Cooktop" },
+            {"do":"click","actor":"other","testid":"review-toggle","unlessVisible":"review-rating","ifAvailable":true},
             { "do": "fill", "actor": "other", "testid": "review-rating", "text": "4" },
             { "do": "fill", "actor": "other", "testid": "review-input", "text": "does the job" },
             { "do": "click", "actor": "other", "testid": "review-submit" },
