@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 3,
+  "name": "Scheduled restocks",
+  "note": "This check owns a separate scenario so pending work from another check cannot affect it.",
+  "features": [
+    {
+      "id": 302,
+      "name": "A restock is pending before it is due",
+      "actors": ["admin"],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "click", "actor": "admin", "testid": "admin-link" },
+        { "do": "click", "actor": "admin", "testid": "restocks-link", "ifAvailable": true }
+      ],
+      "criteria": [
+        {
+          "id": "302a",
+          "category": "feature",
+          "desc": "a scheduled restock is pending and its remaining time decreases",
+          "points": 2,
+          "statedBy": "A pending restock shows its remaining time.",
+          "steps": [
+            { "do": "fill", "actor": "admin", "testid": "schedule-restock-item", "text": "Webcam" },
+            { "do": "fill", "actor": "admin", "testid": "schedule-restock-warehouse", "text": "East" },
+            { "do": "fill", "actor": "admin", "testid": "schedule-restock-qty", "text": "7" },
+            { "do": "fill", "actor": "admin", "testid": "schedule-restock-delay", "text": "90" },
+            { "do": "click", "actor": "admin", "testid": "schedule-restock-submit" },
+            { "do": "expect", "actor": "admin", "testid": "pending-restock-item", "count": 1, "within": 10000 },
+            { "do": "expectNumber", "actor": "admin", "testid": "pending-restock-remaining", "in": { "testid": "pending-restock-item" }, "atLeast": 1, "atMost": 90 },
+            { "do": "recordNumber", "actor": "admin", "testid": "pending-restock-remaining", "in": { "testid": "pending-restock-item" }, "as": "initial-countdown" },
+            { "do": "wait", "actor": "admin", "ms": 1000 },
+            { "do": "expectNumber", "actor": "admin", "testid": "pending-restock-remaining", "in": { "testid": "pending-restock-item" }, "relativeTo": "initial-countdown", "plus": -1, "comparison": "atMost", "within": 10000 },
+            { "do": "click", "actor": "admin", "testid": "pending-restock-cancel", "in": { "testid": "pending-restock-item" } }
+          ]
+        }
+      ]
+    }
+  ]
+}

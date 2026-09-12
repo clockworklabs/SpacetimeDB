@@ -1,0 +1,28 @@
+name: stack-bench-demo
+
+services:
+  build-image:
+    image: stack-bench-build:local
+    platform: linux/amd64
+    build:
+      context: ../../..
+      dockerfile: tools/stack-bench/container/Dockerfile
+    entrypoint: ["/bin/true"]
+  demo:
+    image: stack-bench-controller:local
+    platform: linux/amd64
+    build:
+      context: ../../..
+      dockerfile: tools/stack-bench/appliance/Controller.Dockerfile
+    depends_on:
+      build-image:
+        condition: service_completed_successfully
+    init: true
+    command: ["demo"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - state:/state
+
+volumes:
+  state:
+    name: stack-bench-state

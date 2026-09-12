@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 2,
+  "name": "Ecommerce L2 fulfilment access",
+  "note": "This scenario owns only the visible fulfilment access boundary.",
+  "features": [
+    {
+      "id": 1,
+      "name": "Fulfilment area access",
+      "actors": ["customer", "staff", "admin"],
+      "setup": [
+        { "do": "signUp", "actor": "customer", "name": "fq-customer" },
+        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true }
+      ],
+      "criteria": [
+        {
+          "id": "1d",
+          "category": "production",
+          "desc": "staff and administrators can open fulfilment while customers cannot",
+          "points": 1,
+          "statedBy": "Customers cannot open the fulfilment area",
+          "steps": [
+            { "do": "click", "actor": "staff", "testid": "staff-link" },
+            { "do": "expect", "actor": "staff", "testid": "fulfilment-panel" },
+            { "do": "click", "actor": "admin", "testid": "staff-link" },
+            { "do": "expect", "actor": "admin", "testid": "fulfilment-panel" },
+            { "do": "click", "actor": "customer", "testid": "staff-link", "ifAvailable": true, "settleMs": 1500 },
+            { "do": "expect", "actor": "customer", "testid": "fulfilment-panel", "absent": true }
+          ]
+        }
+      ]
+    }
+  ]
+}

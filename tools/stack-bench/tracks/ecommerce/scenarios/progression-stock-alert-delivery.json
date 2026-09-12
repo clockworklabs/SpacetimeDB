@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 5,
+  "name": "Stock alert delivery",
+  "features": [
+    {
+      "id": 631,
+      "name": "Stock alert delivery",
+      "actors": ["subscriber", "admin"],
+      "setup": [
+        {"do":"signUp","actor":"subscriber","name":"stock-subscriber"},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"dbSetStock","item":"Air Purifier","warehouse":"East","quantity":0,"settleMs":1000},
+        {"do":"dbSetStock","item":"Air Purifier","warehouse":"West","quantity":0,"settleMs":1000},
+        {"do":"reload","actor":"subscriber","settleMs":1000},
+        {"do":"ensureSignedIn","actor":"subscriber","name":"stock-subscriber","readyTestid":"current-user"},
+        {"do":"click","actor":"subscriber","testid":"stock-alert","in":{"testid":"item-card","contains":"Air Purifier"}},
+        {"do":"expect","actor":"subscriber","testid":"item-card","contains":"Air Purifier","attribute":"data-submit-state","value":"succeeded","within":10000}
+      ],
+      "criteria": [
+        {
+          "id": "631c",
+          "category": "feature",
+          "desc": "restored stock sends the requested alert",
+          "points": 1,
+          "statedBy": "Show an alert when stock returns.",
+          "steps": [
+            {"do":"freshClient","actor":"subscriber"},
+            {"do":"signIn","actor":"subscriber-fresh","name":"stock-subscriber"},
+            {"do":"click","actor":"subscriber-fresh","testid":"notifications-toggle","unlessVisible":"notifications-panel"},
+            {"do":"expect","actor":"subscriber-fresh","testid":"notifications-panel","attribute":"aria-busy","value":"false","within":10000},
+            {"do":"expectElementCount","actor":"subscriber-fresh","testid":"stock-alert-delivery","contains":"Air Purifier","equals":0},
+            {"do":"click","actor":"admin","testid":"admin-link"},
+            {"do":"callAction","actor":"admin","action":"restock","namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Air Purifier","attribute":"data-restock-input"},"settleMs":0},
+            {"do":"expectActionOutcome","actor":"admin","outcome":"accepted"},
+            {"do":"wait","actor":"admin","ms":10000},
+            {"do":"freshClient","actor":"subscriber"},
+            {"do":"signIn","actor":"subscriber-fresh","name":"stock-subscriber"},
+            {"do":"click","actor":"subscriber-fresh","testid":"notifications-toggle","unlessVisible":"notifications-panel"},
+            {"do":"expect","actor":"subscriber-fresh","testid":"notifications-panel","attribute":"aria-busy","value":"false","within":10000},
+            {"do":"expect","actor":"subscriber-fresh","testid":"stock-alert-delivery","contains":"Air Purifier","within":10000}
+          ]
+        }
+      ]
+    }
+  ]
+}

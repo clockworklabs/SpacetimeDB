@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 2,
+  "name": "Ecommerce L2 direct server checks",
+  "note": "Draft: revised observations require matching reference and defect-control qualification.",
+  "features": [
+    {
+      "id": 201,
+      "name": "Shipping requires an operator",
+      "actors": [
+        "customer",
+        "staff"
+      ],
+      "setup": [
+        {"do":"signIn","actor":"staff","name":"staff","password":"stackbench-staff-2026","exact":true},
+        {"do":"signUp","actor":"customer","name":"direct-notstaff"},
+        {"do":"click","actor":"customer","testid":"buy-now","in":{"testid":"item-card","contains":"Laptop Stand"},"settleMs":2000},
+        {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+        {"do":"click","actor":"customer","testid":"orders-toggle", "unlessVisible": "order-item" }
+      ],
+      "criteria": [
+        {
+          "id": "201c",
+          "category": "production",
+          "desc": "the server refuses a customer's direct attempt to ship their own pending order",
+          "points": 2,
+          "statedBy": "Staff mark an order shipped",
+          "steps": [
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
+            {"do":"click","actor":"customer","testid":"catalog-link","ifAvailable":true,"within":1000},
+            {"do":"click","actor":"customer","testid":"buy-now","in":{"testid":"item-card","contains":"Coffee Grinder"},"settleMs":2000},
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {"do":"click","actor":"customer","testid":"orders-toggle", "unlessVisible": "order-item" },
+            {"do":"expect","actor":"customer","testid":"order-item","contains":"Coffee Grinder","count":1,"within":10000},
+            {"do":"callAction","actor":"staff","action":"ship","namedAction":{"id":"ship","path":"/api/fulfilment/ship","reducer":"ship_order","args":[0],"params":[{"name":"orderId","in":"body","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Coffee Grinder","attribute":"data-ship-input"},"settleMs":2000,"from":"customer"},
+            {"do":"expectActionOutcome","actor":"staff","outcome":"accepted"},
+            {"do":"reload","actor":"customer","settleMs":2000},
+            {"do":"ensureSignedIn","actor":"customer","name":"direct-notstaff","readyTestid":"current-user"},
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {"do":"click","actor":"customer","testid":"orders-toggle", "unlessVisible": "order-item" },
+            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Coffee Grinder"},"value":"shipped", "ignoreCase": true,"within":10000},
+            {"do":"callAction","actor":"customer","action":"ship","namedAction":{"id":"ship","path":"/api/fulfilment/ship","reducer":"ship_order","args":[0],"params":[{"name":"orderId","in":"body","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Laptop Stand","attribute":"data-ship-input"},"settleMs":2000},
+            {"do":"expectActionOutcome","actor":"customer","outcome":"refused","routeProvenBy":"staff"},
+            {"do":"reload","actor":"customer","settleMs":2000},
+            {"do":"ensureSignedIn","actor":"customer","name":"direct-notstaff","readyTestid":"current-user"},
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {"do":"click","actor":"customer","testid":"orders-toggle", "unlessVisible": "order-item" },
+            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Laptop Stand"},"value":"pending", "ignoreCase": true}
+          ]
+        }
+      ]
+    },
+    {
+      "id": 202,
+      "name": "Stock is conserved while operations overlap",
+      "actors": ["admin", "customer"],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "signUp", "actor": "customer", "name": "direct-conserve" },
+        { "do": "click", "actor": "admin", "testid": "admin-link" }
+      ],
+      "criteria": [
+        {
+          "id": "202d",
+          "category": "production",
+          "desc": "a direct transfer racing a direct purchase leaves the exact starting total minus the sold unit",
+          "points": 2,
+          "statedBy": "a transfer moves stock, it does not create or destroy it",
+          "steps": [
+            {"do":"dbExpectStock","item":"Headphones","warehouse":"East","equals":60},
+            {"do":"dbExpectStock","item":"Headphones","warehouse":"West","equals":40},
+            {"do":"dbRecordStock","item":"Headphones","as":"direct-race-stock-before"},
+            {"do":"reload","actor":"admin","settleMs":2000},
+            {"do":"ensureSignedIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true,"readyTestid":"current-user"},
+            {"do":"click","actor":"admin","testid":"admin-link","ifAvailable":true,"within":1000},
+            {"do":"reload","actor":"customer","settleMs":2000},
+            {"do":"ensureSignedIn","actor":"customer","name":"direct-conserve","readyTestid":"current-user"},
+            {"do":"fill","actor":"admin","testid":"transfer-from","text":"East","in":{"testid":"admin-item-row","contains":"Headphones"}},
+            {"do":"fill","actor":"admin","testid":"transfer-to","text":"West","in":{"testid":"admin-item-row","contains":"Headphones"}},
+            {"do":"fill","actor":"admin","testid":"transfer-qty","text":"25","in":{"testid":"admin-item-row","contains":"Headphones"}},
+            {"do":"race","settleMs":5000,"branches":[[{"do":"callAction","actor":"admin","action":"transfer","namedAction":{"id":"transfer","path":"/api/admin/transfer","reducer":"admin_transfer_stock","args":[0,0,0,25],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"fromWarehouseId","in":"body","wireType":"u64"},{"name":"toWarehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-item-row","contains":"Headphones","attribute":"data-transfer-input"}}],[{"do":"callAction","actor":"customer","action":"buy","namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Headphones","attribute":"data-buy-input"}}]]},
+            {"do":"expectActionOutcome","actor":"admin","outcome":"accepted"},
+            {"do":"expectActionOutcome","actor":"customer","outcome":"accepted"},
+            {"do":"reload","actor":"admin","settleMs":2000},
+            {"do":"ensureSignedIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true,"readyTestid":"current-user"},
+            {"do":"click","actor":"admin","testid":"admin-link","ifAvailable":true,"within":1000},
+            {"do":"expectNumber","actor":"admin","testid":"admin-stock","in":{"testid":"admin-item-row","contains":"Headphones"},"relativeTo":"direct-race-stock-before","plus":-1,"within":12000},
+            {"do":"reload","actor":"customer","settleMs":2000},
+            {"do":"ensureSignedIn","actor":"customer","name":"direct-conserve","readyTestid":"current-user"},
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
+            {"do":"click","actor":"customer","testid":"catalog-link","ifAvailable":true,"within":1000},
+            {"do":"expectNumber","actor":"customer","testid":"item-stock","in":{"testid":"item-card","contains":"Headphones"},"relativeTo":"direct-race-stock-before","plus":-1,"within":12000},
+            {"do":"dbExpectStock","item":"Headphones","warehouse":"East","atLeast":34,"atMost":35},
+            {"do":"dbExpectStock","item":"Headphones","warehouse":"West","atLeast":64,"atMost":65},
+            {"do":"dbExpectStock","item":"Headphones","relativeTo":"direct-race-stock-before","plus":-1},
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {"do":"click","actor":"customer","testid":"orders-toggle", "unlessVisible": "order-item" },
+            {"do":"expect","actor":"customer","testid":"order-item","contains":"Headphones","count":1,"within":10000}
+          ]
+        }
+      ]
+    },
+    {
+      "id": 204,
+      "name": "An order belongs to the person who placed it",
+      "actors": ["owner", "other"],
+      "setup": [
+        { "do": "signUp", "actor": "owner", "name": "direct-owner" },
+        { "do": "signUp", "actor": "other", "name": "direct-other" },
+        { "do": "callAction", "actor": "owner", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Desk Lamp", "attribute": "data-buy-input" } },
+
+        { "do": "expectActionOutcome", "actor": "owner", "outcome": "accepted" },
+        { "do": "callAction", "actor": "owner", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Keyboard", "attribute": "data-buy-input" } },
+
+        { "do": "expectActionOutcome", "actor": "owner", "outcome": "accepted" },
+        {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+        { "do": "click", "actor": "owner", "testid": "orders-toggle", "unlessVisible": "order-item" }
+      ],
+      "criteria": [
+        {
+          "id": "204a",
+          "category": "production",
+          "desc": "the server refuses one customer trying to cancel another customer's still-pending order",
+          "points": 2,
+          "statedBy": "A customer can cancel an order that has not shipped",
+          "steps": [
+            {"do":"callAction","actor":"owner","action":"cancel","namedAction":{"id":"cancel","path":"/api/orders/:id/cancel","reducer":"cancel_order","args":[0],"params":[{"name":"orderId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Desk Lamp","attribute":"data-cancel-input"},"settleMs":2000},
+            {"do":"expectActionOutcome","actor":"owner","outcome":"accepted"},
+            {"do":"callAction","actor":"other","from":"owner","action":"cancel","namedAction":{"id":"cancel","path":"/api/orders/:id/cancel","reducer":"cancel_order","args":[0],"params":[{"name":"orderId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Keyboard","attribute":"data-cancel-input"},"settleMs":2000},
+            {"do":"expectActionOutcome","actor":"other","outcome":"refused","routeProvenBy":"owner"},
+            {"do":"reload","actor":"owner","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"owner","name":"direct-owner","readyTestid":"current-user"},
+            {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"within":1000},
+            {"do":"click","actor":"owner","testid":"orders-toggle","unlessVisible":"order-item"},
+            {"do":"expect","actor":"owner","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"pending","ignoreCase":true}
+          ]
+        }
+      ]
+    }
+  ]
+}

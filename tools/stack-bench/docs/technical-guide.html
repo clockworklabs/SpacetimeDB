@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stack Bench — technical guide</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #050807;
+      --panel: #0a1210;
+      --line: #213630;
+      --text: #eef5f2;
+      --muted: #9aada6;
+      --green: #42f59b;
+      --cyan: #67d4ff;
+      --mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 var(--sans); }
+    a { color: var(--cyan); text-underline-offset: 3px; }
+    a:hover { color: var(--green); }
+    :focus-visible { outline: 2px solid var(--green); outline-offset: 4px; }
+    .shell { width: min(1120px, calc(100% - 48px)); margin: 0 auto; }
+    header { padding: 48px 0 32px; }
+    .eyebrow { margin: 0 0 12px; color: var(--green); font: 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+    h1 { margin: 0 0 16px; font-size: clamp(34px, 5vw, 52px); line-height: 1.12; letter-spacing: -.035em; }
+    .lede { max-width: 760px; color: var(--muted); font-size: 18px; }
+    nav { position: sticky; top: 0; z-index: 1; border-block: 1px solid var(--line); background: var(--bg); }
+    nav .shell { display: flex; gap: 24px; overflow-x: auto; padding-block: 14px; scrollbar-width: thin; }
+    nav a { color: var(--muted); white-space: nowrap; text-decoration: none; font-size: 13px; }
+    main { padding: 40px 0 48px; }
+    section { margin-bottom: 48px; scroll-margin-top: 76px; }
+    section + section { padding-top: 32px; border-top: 1px solid var(--line); }
+    h2 { margin: 0 0 12px; font-size: 27px; line-height: 1.25; letter-spacing: -.02em; }
+    h3 { margin: 0 0 8px; font-size: 17px; }
+    p { margin: 0 0 16px; max-width: 84ch; }
+    .intro, .card p, .card li { color: var(--muted); }
+    .grid { display: grid; gap: 16px; margin: 20px 0; }
+    .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .card { min-width: 0; padding: 20px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+    .card > :last-child { margin-bottom: 0; }
+    ul, ol { margin: 8px 0 16px; padding-left: 22px; }
+    li { margin-block: 6px; }
+    .flow { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; padding: 0; margin: 24px 0; list-style: none; counter-reset: phase; }
+    .flow li { margin: 0; padding: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+    .flow li::before { counter-increment: phase; content: counter(phase); display: block; margin-bottom: 10px; color: var(--green); font: 12px var(--mono); }
+    .flow b { display: block; margin-bottom: 5px; font-size: 15px; }
+    .flow span { color: var(--muted); font-size: 13px; }
+    .note { padding-left: 16px; border-left: 2px solid var(--green); color: var(--muted); }
+    .note strong { color: var(--text); }
+    .table-scroll { overflow-x: auto; margin: 20px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; vertical-align: top; padding: 12px; border-bottom: 1px solid var(--line); }
+    th { color: var(--text); font-weight: 600; background: var(--panel); }
+    td { color: var(--muted); }
+    td:first-child { color: var(--text); }
+    code { font: .88em var(--mono); overflow-wrap: anywhere; }
+    details { margin: 20px 0; border: 1px solid var(--line); border-radius: 8px; }
+    summary { padding: 14px 16px; cursor: pointer; color: var(--cyan); }
+    details > div { padding: 0 16px 16px; }
+    .source-map { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .source-map ul { list-style: none; padding: 0; margin: 0; }
+    .source-map li { margin: 0 0 14px; }
+    .source-map span { display: block; color: var(--muted); font-size: 14px; }
+    footer { padding: 24px 0 36px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+    @media (max-width: 850px) {
+      .flow { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .three { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 620px) {
+      .shell { width: calc(100% - 32px); }
+      header { padding-top: 32px; }
+      .two, .source-map { grid-template-columns: 1fr; }
+      .flow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .table-scroll table { min-width: 520px; }
+      .card { padding: 16px; }
+      h2 { font-size: 24px; }
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  </style>
+</head>
+<body>
+  <header class="shell">
+    <p class="eyebrow">Stack Bench / Technical guide</p>
+    <h1>From product request to measured result</h1>
+    <p class="lede">How Stack Bench compares coding agents across technology stacks, controls the experiment, and retains the evidence behind each result.</p>
+    <a href="README.md">Documentation index</a>
+  </header>
+  <nav aria-label="Document sections">
+    <div class="shell">
+      <a href="#overview">Run path</a>
+      <a href="#definitions">Experiment</a>
+      <a href="#agent">Agent inputs</a>
+      <a href="#dependency">Progression</a>
+      <a href="#runtime">Execution</a>
+      <a href="#evidence">Results</a>
+      <a href="#qualification">Qualification</a>
+      <a href="#map">Source map</a>
+    </div>
+  </nav>
+  <main class="shell">
+    <section id="overview">
+      <h2>One run path across stacks</h2>
+      <p class="intro">Each attempt builds the same selected product work on one stack. The controller uses shared campaign, grading, and repair logic. Stack adapters supply the database and runtime operations.</p>
+      <ol class="flow" aria-label="Run data flow">
+        <li><b>Define</b><span>Select work, guidance, checks, model, and budgets.</span></li>
+        <li><b>Compile</b><span>Freeze the work matrix and its input identities.</span></li>
+        <li><b>Preflight</b><span>Check the runner and activate isolated resources.</span></li>
+        <li><b>Build</b><span>Give the agent the current product request.</span></li>
+        <li><b>Grade / repair</b><span>Measure behavior and apply the chosen repair policy.</span></li>
+        <li><b>Record</b><span>Keep source, outcomes, cost, time, and cleanup evidence.</span></li>
+      </ol>
+      <p>Application failures, provider failures, and harness failures remain separate. The report reads saved evidence; it does not infer success from an agent's final message.</p>
+    </section>
+
+    <section id="definitions">
+      <h2>What the experiment fixes</h2>
+      <div class="grid three">
+        <article class="card"><h3>Product and checks</h3><p>The track defines the product. Feature packs supply requested work and required interfaces. Specification packs supply expected production behavior. A recipe selects the modules and checks.</p></article>
+        <article class="card"><h3>Delivered guidance</h3><p>A condition selects stack material, SDK skills, disclosed specifications, and repair feedback. These are recorded inputs to the comparison.</p></article>
+        <article class="card"><h3>Execution policy</h3><p>The campaign fixes models, stacks, repetitions, parallelism, time and cost limits, repair budgets, images, and pricing. Compilation binds their identities.</p></article>
+      </div>
+      <p>Compare compatible stack–agent–condition groups. SpacetimeDB's TypeScript server, client, and CLI skills are intentional parts of its delivered package. This measures the complete package used by the agent, not the database in isolation.</p>
+      <p><a href="research-roadmap.md">Research method and comparison rules</a> · <a href="../tracks/ecommerce/composition/README.md">Definition ownership</a></p>
+    </section>
+
+    <section id="agent">
+      <h2>What the coding agent receives</h2>
+      <div class="grid two">
+        <article class="card"><h3>The product request</h3><ul><li>The brief and current feature work.</li><li>The original catalog names and relationships.</li><li>Required application controls or action interfaces.</li><li>Selected stack access details, SDK references, and skills.</li></ul><p>Later requests retain disclosed contracts and catalog facts without resetting live application data.</p></article>
+        <article class="card"><h3>A repair request</h3><p>When enabled, feedback gives the affected behavior, expected result, and observed failure. It can report a failed production expectation even when the initial request did not state it.</p><p>Feedback does not prescribe an implementation. Grader source, test scripts, scores, and comparison results stay with the controller.</p></article>
+      </div>
+      <p><strong>No repairs</strong> measures behavior before failure feedback. <strong>With repairs</strong> measures completion and cost after that feedback. A later depth's first build can inherit earlier repairs, so it is not a fresh no-repair sample.</p>
+      <p>Claude Code, Codex, and OpenRouter use registered adapters and shared execution controls. Adapter registration alone is not live model qualification.</p>
+      <p><a href="prompting.md">Prompt and repair policy</a> · <a href="prompt-boundary-audit.md">Disclosure review</a> · <a href="../appliance/README.md#openai-credentials">Provider credentials</a></p>
+    </section>
+
+    <section id="dependency">
+      <h2>How work advances</h2>
+      <p>Sequential mode completes each selected level before the next. Dependency mode opens a feature when its required parents pass. A blocked branch does not prevent unrelated branches from advancing. Earlier work is checked again for regressions.</p>
+      <div class="grid two">
+        <article class="card"><h3>Work selection</h3><ul><li><code>feature</code>: one ready feature.</li><li><code>progressive</code>: all currently ready features.</li><li><code>all-at-once</code>: the full selected graph.</li></ul><p>The graph owns prerequisites. Work selection does not change the scored target.</p></article>
+        <article class="card"><h3>Repair selection</h3><p>Repair one failed feature or a batch of current failures. Limits can apply to the attempt, feature, or depth. When combined, the tightest remaining limit applies.</p><p>The unchanged-failure limit is separate. The initial failure counts as one observation; pure regrading does not spend a repair.</p></article>
+      </div>
+      <ol><li>Save the source checkpoint and grade the selected work.</li><li>If repairable failures and budget remain, send the allowed failure report.</li><li>Grade the changed source and check prior behavior for regressions.</li><li>Accept the candidate under the mode's rules, or restore accepted source. Keep the rejected candidate as evidence.</li></ol>
+      <p>A dependency gate determines whether child work can open. Full feature completion is stricter: all its selected checks, including production guarantees, must pass.</p>
+      <p><a href="dependency-graph.html">Explore the dependency graph</a> · <a href="../README.md#run-modes">Run and repair options</a></p>
+    </section>
+
+    <section id="runtime">
+      <h2>How execution stays separate</h2>
+      <div class="grid three">
+        <article class="card"><h3>Attempt isolation</h3><p>Each attempt owns its containers, database, ports, workspace, and resource lease. Coding agents do not receive the grader, result store, provider secret files, or Docker socket.</p></article>
+        <article class="card"><h3>Job dispatch</h3><p>A job runs one campaign on one host. Local workers claim queued jobs. Campaign parallelism controls attempts; worker concurrency controls campaigns. Resource leases are allocated on dispatch.</p></article>
+        <article class="card"><h3>Credential selection</h3><p>Named profiles select credentials per attempt or adapter. The trusted broker holds the secret and records usage. Selection is explicit; the system does not rotate accounts automatically.</p></article>
+      </div>
+      <p>There is no manually sized runner-slot pool. Host resources and provider limits still constrain execution. The local worker does not provide a distributed attempt scheduler or account-wide quota service.</p>
+      <details><summary>Optional SpacetimeDB development workflow</summary><div><p><code>neutral-dev</code> supplies guidance for the agent to run <code>spacetime dev</code>. <code>neutral-managed-dev</code> supplies the <code>/deps/spacetime-dev start|status|stop</code> helper. The agent creates project configuration and starts the watcher. Both keep the TypeScript server, client, and CLI skills.</p><p>These are different recorded guidance treatments. Neither changes grading or repair policy.</p></div></details>
+      <h3 style="margin-top:24px">Pause, stop, and continuation</h3>
+      <div class="table-scroll" role="region" aria-label="Continuation methods" tabindex="0"><table>
+        <thead><tr><th scope="col">Method</th><th scope="col">What it preserves</th><th scope="col">Boundary</th></tr></thead>
+        <tbody><tr><td>Planned depth pause</td><td>The live app, database, execution, and cumulative budgets.</td><td>Declare the full target and pause depth before launch. Keep the controller running. Database timers still advance.</td></tr>
+        <tr><td>Stop and reconcile</td><td>Saved evidence and private cleanup authority.</td><td>Interrupts work. It does not restore the lost agent session or database runtime.</td></tr>
+        <tr><td>Source-seeded extension</td><td>Verified source and parent lineage.</td><td>A separate campaign with fresh runtime and budgets. Earlier work is regraded. Include parent cost when reporting the full path.</td></tr></tbody>
+      </table></div>
+      <p>A planned pause excludes its verified hold time from the working allowance. It does not establish equivalence to uninterrupted execution. A controller shutdown cannot be recovered as the same live pause.</p>
+      <p><a href="execution-jobs.md">Workers and jobs</a> · <a href="credential-profiles.md">Credential profiles</a> · <a href="../README.md#pause-before-a-later-depth">Depth pause commands</a> · <a href="../appliance/RECOVERY.md">Cleanup and recovery</a></p>
+    </section>
+
+    <section id="evidence">
+      <h2>How to read a result</h2>
+      <p class="intro">Each selected check records an outcome and its supporting observations. Only conclusive application failures can enter a repair report.</p>
+      <div class="table-scroll" role="region" aria-label="Check outcomes" tabindex="0"><table>
+        <thead><tr><th scope="col">Outcome</th><th scope="col">Meaning</th><th scope="col">Treatment</th></tr></thead>
+        <tbody><tr><td>Passed</td><td>The measured assertion was met.</td><td>Earns its selected points and completion credit.</td></tr>
+        <tr><td>Failed</td><td>The application did not meet the assertion.</td><td>No credit; eligible for feedback under the repair policy.</td></tr>
+        <tr><td>Inconclusive</td><td>The evidence cannot establish pass or fail.</td><td>No credit or application blame; retain the reason.</td></tr>
+        <tr><td>Harness failure</td><td>The test system could not perform a valid measurement.</td><td>No credit or application repair request; diagnose the harness.</td></tr></tbody>
+      </table></div>
+      <div class="grid three">
+        <article class="card"><h3>Check completion</h3><p>Accepted passed checks divided by all selected positive-point checks.</p></article>
+        <article class="card"><h3>Feature completion</h3><p>Fully passed dependency nodes divided by all selected nodes.</p></article>
+        <article class="card"><h3>Weighted score</h3><p>Accepted passed points divided by all selected points.</p></article>
+      </div>
+      <p>Blocked and unmeasured work stays in the denominator. Feature, production, and interface categories describe checks; they are separate from the Features/Checks counting unit.</p>
+      <p>Cost includes build and repair work. Keep exact, upper-bound, and unknown receipts distinct. Subscription usage uses frozen API-equivalent rates, not a subscription invoice. Report wall time, planned pause time, and execution duration separately.</p>
+      <p>The dashboard switches between completion, cost, and distribution, with stack and repetition toggles. Features are selected by default. Lines connect saved observations, not continuous measurements. Open an attempt for checks, source, screenshots, logs, and the agent transcript.</p>
+      <details><summary>Evidence retained with the run</summary><div><ul><li><code>plan.json</code>: the compiled experiment and input identities.</li><li><code>state.json</code>: attempt scheduling and execution history.</li><li><code>run.json</code>: build, grade, repair, cost, and outcome records.</li><li><code>progression-state.json</code>: feature state and event history.</li><li>Grade artifacts: actions, expected and observed values, and media.</li><li><code>recovery.json</code>: cleanup outcome and retained resource evidence.</li></ul><p>Keep the complete campaign archive. The public research export is a smaller package and can omit source, transcripts, and media.</p></div></details>
+      <p><a href="../dashboard/README.md">Dashboard guide</a> · <a href="check-categories.md">Categories and counting units</a> · <a href="research-roadmap.md#measures-and-analysis">Analysis and reporting</a></p>
+    </section>
+
+    <section id="qualification">
+      <h2>What makes a comparison defensible</h2>
+      <p>The selected checks need matching live evidence. A successful build, a static mutation inventory, or an older report does not qualify a changed definition.</p>
+      <div class="grid three">
+        <article class="card"><h3>Correct reference</h3><p>The known-good application must pass the selected scope on each stack. Use the calibration's repetition count. Extra repeats can check stability.</p></article>
+        <article class="card"><h3>Known defects</h3><p>Each mutation must change observable behavior and fail its declared assertions. Setup errors and unrelated failures do not count as a clean catch.</p></article>
+        <article class="card"><h3>Empty application</h3><p>An empty app must fail the selected scored checks conclusively. Zero points caused by a broken harness are not a valid control.</p></article>
+      </div>
+      <p class="note"><strong>Scope of the claim.</strong> These are finite behavioral tests. Runtime restart does not establish power-loss or database crash recovery. A bounded contention burst does not establish sustained capacity. Review the exact probe and delivered request before attributing a result to an unrequested production guarantee.</p>
+      <p>Qualification is determined by the frozen definition and matching artifacts, not a status table in this guide. Pending qualification permits provisional runs but blocks verified comparison claims. Report exclusions and missing measurements separately.</p>
+      <p><a href="../reference-apps/README.md#live-qualification">Qualification commands</a> · <a href="grading-coverage.md">Probe coverage and limits</a> · <a href="research-roadmap.md">Research protocol</a> · <a href="../appliance/RELEASE.md">Release verification</a></p>
+    </section>
+
+    <section id="map">
+      <h2>Where to make a change</h2>
+      <p class="intro">Use the existing owner for each concern. The source is TypeScript; builds emit ESM JavaScript into <code>dist/</code>.</p>
+      <div class="source-map">
+        <ul><li><a href="../src/campaigns/"><code>src/campaigns/</code></a><span>Plan compilation, scheduling, jobs, budgets, and reporting.</span></li><li><a href="../src/progression/"><code>src/progression/</code></a><span>Feature dependencies, work selection, repair state, and event history.</span></li><li><a href="../src/composition/"><code>src/composition/</code></a><span>Pack and recipe compilation, prompt composition, and bound identities.</span></li><li><a href="../tracks/"><code>tracks/</code></a><span>Product work, interfaces, scenarios, and feature graphs.</span></li></ul>
+        <ul><li><a href="../src/agents/"><code>src/agents/</code></a> / <a href="../container/"><code>container/</code></a><span>Coding adapters, provider protocols, brokers, and transcripts.</span></li><li><a href="../src/stacks/"><code>src/stacks/</code></a> / <a href="../src/runtime/"><code>src/runtime/</code></a><span>Stack operations, isolation, source checkpoints, and owned cleanup.</span></li><li><a href="../grader/"><code>grader/</code></a> / <a href="../src/evidence/"><code>src/evidence/</code></a><span>Executable checks, mutation controls, evidence validation, and provenance.</span></li><li><a href="../commands/"><code>commands/</code></a> / <a href="../dashboard/"><code>dashboard/</code></a><span>CLI and browser interfaces to the shared engine.</span></li></ul>
+      </div>
+      <p>Start with a focused test for the changed boundary. Run live Docker or qualification checks when that boundary needs them; do not repeat unchanged evidence for reassurance.</p>
+      <p><a href="development.md">Development and test commands</a> · <a href="authoring.md">Add or change a feature and its checks</a> · <a href="system-design.md">Ownership and system design</a></p>
+    </section>
+  </main>
+  <footer><div class="shell">Use the <a href="../appliance/README.md">appliance guide</a> to run Stack Bench, or return to the <a href="README.md">documentation index</a>.</div></footer>
+</body>
+</html>

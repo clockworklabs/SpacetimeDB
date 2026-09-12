@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Purchase requires an account",
+  "note": "Draft: setup attribution requires matching reference and mutation qualification. Refusal checks first prove the same valid route and input with an authorized actor. A failed positive control leaves authorization unmeasured; a malformed endpoint cannot earn credit by returning an error.",
+  "features": [
+    {
+      "id": 101,
+      "name": "Purchase requires an account",
+      "actors": [
+        "buyer",
+        "guest"
+      ],
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "buyer",
+          "name": "kim"
+        },
+        {
+          "do": "dbRecordStock",
+          "item": "Bluetooth Speaker",
+          "as": "speaker-before-control"
+        },
+        {
+          "do": "callAction",
+          "actor": "buyer",
+          "action": "buy",
+          "namedAction": {
+            "id": "buy",
+            "path": "/api/items/:id/buy",
+            "reducer": "buy_now",
+            "args": [
+              0
+            ],
+            "params": [
+              {
+                "name": "itemId",
+                "in": "path",
+                "placeholder": ":id",
+                "wireType": "u64"
+              }
+            ]
+          },
+          "input": {
+            "testid": "item-card",
+            "contains": "Bluetooth Speaker",
+            "attribute": "data-buy-input"
+          },
+          "settleMs": 2000
+        },
+        {
+          "do": "expectActionOutcome",
+          "actor": "buyer",
+          "outcome": "accepted"
+        },
+        {
+          "do": "dbExpectStock",
+          "item": "Bluetooth Speaker",
+          "relativeTo": "speaker-before-control",
+          "plus": -1
+        }
+      ],
+      "criteria": [
+        {
+          "id": "101a",
+          "category": "production",
+          "desc": "a valid direct purchase works for the buyer but is refused without a session",
+          "points": 2,
+          "steps": [
+            {
+              "do": "callAction",
+              "actor": "guest",
+              "from": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker",
+                "attribute": "data-buy-input"
+              },
+              "authentication": "none",
+              "settleMs": 2000
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "guest",
+              "outcome": "refused",
+              "routeProvenBy": "buyer"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "speaker-before-control",
+              "plus": -1
+            }
+          ],
+          "statedBy": "the server refuses a purchase without an authenticated customer"
+        }
+      ]
+    }
+  ]
+}

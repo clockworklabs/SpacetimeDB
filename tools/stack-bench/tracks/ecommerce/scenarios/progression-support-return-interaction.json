@@ -1,0 +1,792 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 6,
+  "name": "Return and support refund accounting",
+  "features": [
+    {
+      "id": 757,
+      "name": "Return and support refund accounting",
+      "actors": [
+        "owner",
+        "staff",
+        "admin"
+      ],
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "return-refund-owner"
+        },
+        {
+          "do": "signIn",
+          "actor": "staff",
+          "name": "staff",
+          "password": "stackbench-staff-2026",
+          "exact": true
+        },
+        {
+          "do": "signIn",
+          "actor": "admin",
+          "name": "admin",
+          "password": "stackbench-admin-2026",
+          "exact": true
+        },
+        {
+          "do": "click",
+          "actor": "staff",
+          "testid": "staff-link",
+          "unlessVisible": "support-assignee"
+        },
+        {
+          "do": "click",
+          "actor": "staff",
+          "testid": "support-queue-link",
+          "unlessVisible": "support-assignee",
+          "ifAvailable": true
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "admin-link"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "757a",
+          "category": "production",
+          "desc": "a support refund followed by physical return restores each warehouse once and refunds only the price paid",
+          "points": 2,
+          "steps": [
+            {
+              "do": "reload",
+              "actor": "owner",
+              "settleMs": 0
+            },
+            {
+              "do": "ensureSignedIn",
+              "actor": "owner",
+              "name": "return-refund-owner",
+              "readyTestid": "current-user",
+              "settleMs": 0
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "catalog-link",
+              "ifAvailable": true
+            },
+            {
+              "do": "dbRecordStock",
+              "item": "Keyboard",
+              "as": "757atotal"
+            },
+            {
+              "do": "dbRecordStock",
+              "item": "Keyboard",
+              "warehouse": "East",
+              "as": "757aEast"
+            },
+            {
+              "do": "dbRecordStock",
+              "item": "Keyboard",
+              "warehouse": "West",
+              "as": "757aWest"
+            },
+            {
+              "do": "recordNumber",
+              "actor": "admin",
+              "testid": "admin-revenue",
+              "as": "757arevenue"
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Keyboard"
+              }
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "overlay-close",
+              "ifAvailable": true,
+              "unlessVisible": "order-item",
+              "within": 1000
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "orders-toggle",
+              "unlessVisible": "order-item"
+            },
+            {
+              "do": "expect",
+              "actor": "owner",
+              "testid": "order-status",
+              "within": 10000,
+              "in": {
+                "testid": "order-item",
+                "contains": "Keyboard"
+              },
+              "value": "pending",
+              "ignoreCase": true
+            },
+            {
+              "do": "recordNumber",
+              "actor": "owner",
+              "testid": "order-total",
+              "in": {
+                "testid": "order-item",
+                "contains": "Keyboard"
+              },
+              "as": "757apaid"
+            },
+            {
+              "do": "callAction",
+              "actor": "staff",
+              "action": "ship",
+              "namedAction": {
+                "id": "ship",
+                "path": "/api/fulfilment/ship",
+                "reducer": "ship_order",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "orderId",
+                    "in": "body",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "order-item",
+                "contains": "Keyboard",
+                "attribute": "data-ship-input"
+              },
+              "from": "owner",
+              "settleMs": 0
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "staff",
+              "outcome": "accepted"
+            },
+            {
+              "do": "expect",
+              "actor": "owner",
+              "testid": "order-status",
+              "within": 10000,
+              "in": {
+                "testid": "order-item",
+                "contains": "Keyboard"
+              },
+              "value": "shipped",
+              "ignoreCase": true
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Keyboard",
+              "relativeTo": "757atotal",
+              "plus": -1
+            },
+            {
+              "do": "reload",
+              "actor": "owner",
+              "settleMs": 0
+            },
+            {
+              "do": "ensureSignedIn",
+              "actor": "owner",
+              "name": "return-refund-owner",
+              "readyTestid": "current-user",
+              "settleMs": 0
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "support-link"
+            },
+            {
+              "do": "fill",
+              "actor": "owner",
+              "testid": "support-subject",
+              "text": "Return refund 757a"
+            },
+            {
+              "do": "fill",
+              "actor": "owner",
+              "testid": "support-message",
+              "text": "Please refund this order."
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "support-submit"
+            },
+            {
+              "do": "expect",
+              "actor": "owner",
+              "testid": "support-ticket",
+              "within": 10000,
+              "contains": "Return refund 757a"
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "support-order-option",
+              "contains": "Keyboard",
+              "in": {
+                "testid": "support-ticket",
+                "contains": "Return refund 757a"
+              }
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "support-link-order",
+              "in": {
+                "testid": "support-ticket",
+                "contains": "Return refund 757a"
+              }
+            },
+            {
+              "do": "expect",
+              "actor": "owner",
+              "testid": "support-order",
+              "within": 10000,
+              "in": {
+                "testid": "support-ticket",
+                "contains": "Return refund 757a"
+              }
+            },
+            {
+              "do": "callAction",
+              "actor": "staff",
+              "action": "supportRefund",
+              "namedAction": {
+                "id": "supportRefund",
+                "path": "/api/support/cases/{caseId}/refund",
+                "method": "POST",
+                "reducer": "support_refund",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "caseId",
+                    "in": "path",
+                    "placeholder": "{caseId}",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "support-ticket",
+                "contains": "Return refund 757a",
+                "attribute": "data-refund-input"
+              },
+              "from": "owner",
+              "settleMs": 0
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "staff",
+              "outcome": "accepted"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Keyboard",
+              "relativeTo": "757atotal",
+              "plus": -1
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "overlay-close",
+              "ifAvailable": true,
+              "unlessVisible": "order-item",
+              "within": 1000
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "orders-toggle",
+              "unlessVisible": "order-item"
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "return-item",
+              "in": {
+                "testid": "order-item",
+                "contains": "Keyboard"
+              }
+            },
+            {
+              "do": "expect",
+              "actor": "owner",
+              "testid": "order-item",
+              "within": 10000,
+              "contains": "Keyboard",
+              "ignoreCase": true,
+              "containsText": "returned"
+            },
+            {
+              "do": "freshClient",
+              "actor": "owner"
+            },
+            {
+              "do": "signIn",
+              "actor": "owner-fresh",
+              "name": "return-refund-owner"
+            },
+            {
+              "do": "click",
+              "actor": "owner-fresh",
+              "testid": "overlay-close",
+              "ifAvailable": true,
+              "unlessVisible": "order-item",
+              "within": 1000
+            },
+            {
+              "do": "click",
+              "actor": "owner-fresh",
+              "testid": "orders-toggle"
+            },
+            {
+              "do": "expect",
+              "actor": "owner-fresh",
+              "testid": "order-item",
+              "within": 10000,
+              "contains": "Keyboard",
+              "ignoreCase": true,
+              "containsText": "returned"
+            },
+            {
+              "do": "expectNumber",
+              "actor": "owner-fresh",
+              "testid": "order-refund-total",
+              "in": {
+                "testid": "order-item",
+                "contains": "Keyboard"
+              },
+              "within": 10000,
+              "relativeTo": "757apaid",
+              "plus": 0
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Keyboard",
+              "warehouse": "East",
+              "relativeTo": "757aEast",
+              "plus": 0
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Keyboard",
+              "warehouse": "West",
+              "relativeTo": "757aWest",
+              "plus": 0
+            },
+            {
+              "do": "reload",
+              "actor": "admin",
+              "settleMs": 0
+            },
+            {
+              "do": "ensureSignedIn",
+              "actor": "admin",
+              "name": "admin",
+              "password": "stackbench-admin-2026",
+              "exact": true,
+              "readyTestid": "current-user"
+            },
+            {
+              "do": "click",
+              "actor": "admin",
+              "testid": "admin-link",
+              "unlessVisible": "admin-revenue"
+            },
+            {
+              "do": "expectNumber",
+              "actor": "admin",
+              "testid": "admin-revenue",
+              "relativeTo": "757arevenue",
+              "plus": 0,
+              "within": 10000
+            }
+          ]
+        },
+        {
+          "id": "757b",
+          "category": "production",
+          "desc": "a physical return followed by support refund restores each warehouse once and refunds only the price paid",
+          "points": 2,
+          "steps": [
+            {
+              "do": "reload",
+              "actor": "owner",
+              "settleMs": 0
+            },
+            {
+              "do": "ensureSignedIn",
+              "actor": "owner",
+              "name": "return-refund-owner",
+              "readyTestid": "current-user",
+              "settleMs": 0
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "catalog-link",
+              "ifAvailable": true
+            },
+            {
+              "do": "dbRecordStock",
+              "item": "Desk Lamp",
+              "as": "757btotal"
+            },
+            {
+              "do": "dbRecordStock",
+              "item": "Desk Lamp",
+              "warehouse": "East",
+              "as": "757bEast"
+            },
+            {
+              "do": "dbRecordStock",
+              "item": "Desk Lamp",
+              "warehouse": "West",
+              "as": "757bWest"
+            },
+            {
+              "do": "recordNumber",
+              "actor": "admin",
+              "testid": "admin-revenue",
+              "as": "757brevenue"
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Desk Lamp"
+              }
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "overlay-close",
+              "ifAvailable": true,
+              "unlessVisible": "order-item",
+              "within": 1000
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "orders-toggle",
+              "unlessVisible": "order-item"
+            },
+            {
+              "do": "expect",
+              "actor": "owner",
+              "testid": "order-status",
+              "within": 10000,
+              "in": {
+                "testid": "order-item",
+                "contains": "Desk Lamp"
+              },
+              "value": "pending",
+              "ignoreCase": true
+            },
+            {
+              "do": "recordNumber",
+              "actor": "owner",
+              "testid": "order-total",
+              "in": {
+                "testid": "order-item",
+                "contains": "Desk Lamp"
+              },
+              "as": "757bpaid"
+            },
+            {
+              "do": "callAction",
+              "actor": "staff",
+              "action": "ship",
+              "namedAction": {
+                "id": "ship",
+                "path": "/api/fulfilment/ship",
+                "reducer": "ship_order",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "orderId",
+                    "in": "body",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "order-item",
+                "contains": "Desk Lamp",
+                "attribute": "data-ship-input"
+              },
+              "from": "owner",
+              "settleMs": 0
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "staff",
+              "outcome": "accepted"
+            },
+            {
+              "do": "expect",
+              "actor": "owner",
+              "testid": "order-status",
+              "within": 10000,
+              "in": {
+                "testid": "order-item",
+                "contains": "Desk Lamp"
+              },
+              "value": "shipped",
+              "ignoreCase": true
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Desk Lamp",
+              "relativeTo": "757btotal",
+              "plus": -1
+            },
+            {
+              "do": "reload",
+              "actor": "owner",
+              "settleMs": 0
+            },
+            {
+              "do": "ensureSignedIn",
+              "actor": "owner",
+              "name": "return-refund-owner",
+              "readyTestid": "current-user",
+              "settleMs": 0
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "support-link"
+            },
+            {
+              "do": "fill",
+              "actor": "owner",
+              "testid": "support-subject",
+              "text": "Return refund 757b"
+            },
+            {
+              "do": "fill",
+              "actor": "owner",
+              "testid": "support-message",
+              "text": "Please refund this order."
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "support-submit"
+            },
+            {
+              "do": "expect",
+              "actor": "owner",
+              "testid": "support-ticket",
+              "within": 10000,
+              "contains": "Return refund 757b"
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "support-order-option",
+              "contains": "Desk Lamp",
+              "in": {
+                "testid": "support-ticket",
+                "contains": "Return refund 757b"
+              }
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "support-link-order",
+              "in": {
+                "testid": "support-ticket",
+                "contains": "Return refund 757b"
+              }
+            },
+            {
+              "do": "expect",
+              "actor": "owner",
+              "testid": "support-order",
+              "within": 10000,
+              "in": {
+                "testid": "support-ticket",
+                "contains": "Return refund 757b"
+              }
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "overlay-close",
+              "ifAvailable": true,
+              "unlessVisible": "order-item",
+              "within": 1000
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "orders-toggle",
+              "unlessVisible": "order-item"
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "return-item",
+              "in": {
+                "testid": "order-item",
+                "contains": "Desk Lamp"
+              }
+            },
+            {
+              "do": "expect",
+              "actor": "owner",
+              "testid": "order-item",
+              "within": 10000,
+              "contains": "Desk Lamp",
+              "ignoreCase": true,
+              "containsText": "returned"
+            },
+            {
+              "do": "callAction",
+              "actor": "staff",
+              "action": "supportRefund",
+              "namedAction": {
+                "id": "supportRefund",
+                "path": "/api/support/cases/{caseId}/refund",
+                "method": "POST",
+                "reducer": "support_refund",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "caseId",
+                    "in": "path",
+                    "placeholder": "{caseId}",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "support-ticket",
+                "contains": "Return refund 757b",
+                "attribute": "data-refund-input"
+              },
+              "from": "owner",
+              "settleMs": 0
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "staff",
+              "outcome": "accepted"
+            },
+            {
+              "do": "freshClient",
+              "actor": "owner"
+            },
+            {
+              "do": "signIn",
+              "actor": "owner-fresh",
+              "name": "return-refund-owner"
+            },
+            {
+              "do": "click",
+              "actor": "owner-fresh",
+              "testid": "overlay-close",
+              "ifAvailable": true,
+              "unlessVisible": "order-item",
+              "within": 1000
+            },
+            {
+              "do": "click",
+              "actor": "owner-fresh",
+              "testid": "orders-toggle"
+            },
+            {
+              "do": "expect",
+              "actor": "owner-fresh",
+              "testid": "order-item",
+              "within": 10000,
+              "contains": "Desk Lamp",
+              "ignoreCase": true,
+              "containsText": "returned"
+            },
+            {
+              "do": "expectNumber",
+              "actor": "owner-fresh",
+              "testid": "order-refund-total",
+              "in": {
+                "testid": "order-item",
+                "contains": "Desk Lamp"
+              },
+              "within": 10000,
+              "relativeTo": "757bpaid",
+              "plus": 0
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Desk Lamp",
+              "warehouse": "East",
+              "relativeTo": "757bEast",
+              "plus": 0
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Desk Lamp",
+              "warehouse": "West",
+              "relativeTo": "757bWest",
+              "plus": 0
+            },
+            {
+              "do": "reload",
+              "actor": "admin",
+              "settleMs": 0
+            },
+            {
+              "do": "ensureSignedIn",
+              "actor": "admin",
+              "name": "admin",
+              "password": "stackbench-admin-2026",
+              "exact": true,
+              "readyTestid": "current-user"
+            },
+            {
+              "do": "click",
+              "actor": "admin",
+              "testid": "admin-link",
+              "unlessVisible": "admin-revenue"
+            },
+            {
+              "do": "expectNumber",
+              "actor": "admin",
+              "testid": "admin-revenue",
+              "relativeTo": "757brevenue",
+              "plus": 0,
+              "within": 10000
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

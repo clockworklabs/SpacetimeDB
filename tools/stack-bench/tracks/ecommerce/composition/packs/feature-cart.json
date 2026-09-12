@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.feature.cart",
+  "stableId": "ecommerce.feature.cart-checkout",
+  "title": "Cart",
+  "moduleType": "feature",
+  "description": "A signed-in customer cart.",
+  "requiresPacks": [
+    "ecommerce.feature.accounts",
+    "ecommerce.feature.catalog-items"
+  ],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser"
+  ],
+  "evidence": [
+    "browser-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 42000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.feature.cart.requirement",
+        "path": "prompts/modular/cart.md",
+        "order": 400,
+        "modes": [
+          "fresh",
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.feature.cart.hooks",
+        "path": "contracts/cart.md",
+        "order": 2300,
+        "modes": [
+          "fresh",
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "cart",
+      "stableId": "cart",
+      "source": "scenarios/progression-cart-checkout.json",
+      "feature": 4,
+      "criteria": [
+        "4a"
+      ],
+      "role": "feature"
+    }
+  ]
+}

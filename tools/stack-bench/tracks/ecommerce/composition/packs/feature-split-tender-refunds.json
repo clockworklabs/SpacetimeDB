@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.feature.split-tender-refunds",
+  "moduleType": "feature",
+  "title": "Split-tender refunds",
+  "description": "Split-tender refunds",
+  "requiresPacks": [
+    "ecommerce.feature.store-credit",
+    "ecommerce.progression.support-refunds",
+    "ecommerce.l3.order-returns-features"
+  ],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser",
+    "database-observation",
+    "direct-server-call"
+  ],
+  "evidence": [
+    "browser-observation",
+    "database-observation",
+    "fresh-client-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 120000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.feature.split-tender-refunds",
+        "path": "prompts/modular/split-tender-refunds.md",
+        "order": 6100,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.feature.split-tender-refunds.interface",
+        "path": "contracts/split-tender-refunds.md",
+        "order": 6900,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "feature-751",
+      "stableId": "split-tender-refunds-751",
+      "source": "scenarios/progression-split-tender-refunds.json",
+      "feature": 751,
+      "criteria": [
+        "751a"
+      ],
+      "role": "feature",
+      "requiresFeatures": [
+        "ecommerce.feature.split-tender-refunds",
+        "ecommerce.feature.store-credit",
+        "ecommerce.progression.support-refunds"
+      ]
+    },
+    {
+      "id": "return-refund-interaction",
+      "source": "scenarios/progression-support-return-interaction.json",
+      "feature": 757,
+      "criteria": [
+        "757a",
+        "757b"
+      ],
+      "role": "feature",
+      "requiresFeatures": [
+        "ecommerce.l3.order-returns-features",
+        "ecommerce.progression.support-refunds",
+        "ecommerce.progression.fulfilment-queue"
+      ],
+      "stableId": "return-refund-interaction"
+    }
+  ]
+}

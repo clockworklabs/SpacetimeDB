@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 3,
+  "name": "Pending order return boundary",
+  "features": [
+    {
+      "id": 331,
+      "name": "Pending order return boundary",
+      "actors": [
+        "customer"
+      ],
+      "setup": [
+        {"do":"signUp","actor":"customer","name":"return-boundary"},
+        {"do":"callAction","actor":"customer","action":"buy","namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Desk Lamp","attribute":"data-buy-input"}},
+        {"do":"expectActionOutcome","actor":"customer","outcome":"accepted"},
+        {"do":"reload","actor":"customer","settleMs":1000},
+        {"do":"ensureSignedIn","actor":"customer","name":"return-boundary","readyTestid":"current-user"},
+        {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
+        {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
+        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Desk Lamp"},"value":"pending","ignoreCase":true}
+      ],
+      "criteria": [
+        {
+          "id": "3e",
+          "category": "interface",
+          "desc": "a pending order does not offer a return button",
+          "points": 1,
+          "statedBy": "An item from a pending order cannot be returned.",
+          "steps": [
+            {"do":"expect","actor":"customer","testid":"return-item","in":{"testid":"order-item","contains":"Desk Lamp"},"absent":true}
+          ]
+        }
+      ]
+    },
+    {
+      "id": 332,
+      "name": "Pending return server boundary",
+      "actors": [
+        "customer",
+        "staff",
+        "admin"
+      ],
+      "setup": [
+        {"do":"signUp","actor":"customer","name":"return-boundary"},
+        {"do":"callAction","actor":"customer","action":"buy","namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Desk Lamp","attribute":"data-buy-input"}},
+        {"do":"expectActionOutcome","actor":"customer","outcome":"accepted"},
+        {"do":"reload","actor":"customer","settleMs":1000},
+        {"do":"ensureSignedIn","actor":"customer","name":"return-boundary","readyTestid":"current-user"},
+        {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
+        {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
+        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Desk Lamp"},"value":"pending","ignoreCase":true},
+        {"do":"signIn","actor":"staff","name":"staff","password":"stackbench-staff-2026","exact":true},
+        {"do":"reload","actor":"customer","settleMs":1000},
+        {"do":"ensureSignedIn","actor":"customer","name":"return-boundary","readyTestid":"current-user"},
+        {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
+        {"do":"click","actor":"customer","testid":"catalog-link","unlessVisible":"item-card"},
+        {"do":"callAction","actor":"customer","action":"buy","namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"}},
+        {"do":"expectActionOutcome","actor":"customer","outcome":"accepted"},
+        {"do":"reload","actor":"customer","settleMs":1000},
+        {"do":"ensureSignedIn","actor":"customer","name":"return-boundary","readyTestid":"current-user"},
+        {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
+        {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
+        {"do":"callAction","actor":"staff","from":"customer","action":"ship","namedAction":{"id":"ship","path":"/api/fulfilment/ship","reducer":"ship_order","args":[0],"params":[{"name":"orderId","in":"body","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Keyboard","attribute":"data-ship-input"}},
+        {"do":"expectActionOutcome","actor":"staff","outcome":"accepted"},
+        {"do":"reload","actor":"customer","settleMs":1000},
+        {"do":"ensureSignedIn","actor":"customer","name":"return-boundary","readyTestid":"current-user"},
+        {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
+        {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
+        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"shipped","ignoreCase":true},
+        {"do":"callAction","actor":"customer","action":"returnItem","namedAction":{"id":"returnItem","path":"/api/orders/{orderId}/items/{itemId}/return","method":"POST","reducer":"return_order_item","args":[0,0],"params":[{"name":"orderId","in":"path","placeholder":"{orderId}","wireType":"u64"},{"name":"itemId","in":"path","placeholder":"{itemId}","wireType":"u64"}]},"input":{"testid":"order-line","contains":"Keyboard","attribute":"data-return-input"}},
+        {"do":"expectActionOutcome","actor":"customer","outcome":"accepted"},
+        {"do":"reload","actor":"customer","settleMs":1000},
+        {"do":"ensureSignedIn","actor":"customer","name":"return-boundary","readyTestid":"current-user"},
+        {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
+        {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
+        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"returned","ignoreCase":true},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"recordNumber","actor":"admin","testid":"admin-revenue","as":"pending-revenue"},
+        {"do":"dbRecordStock","item":"Desk Lamp","warehouse":"East","as":"pending-East"},
+        {"do":"dbRecordStock","item":"Desk Lamp","warehouse":"West","as":"pending-West"},
+        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Desk Lamp"},"value":"pending","ignoreCase":true}
+      ],
+      "criteria": [
+        {
+          "id": "3f",
+          "category": "production",
+          "desc": "the server refuses a pending return without changing stock or revenue",
+          "points": 2,
+          "statedBy": "Only shipped items can be returned.",
+          "steps": [
+            {"do":"callAction","actor":"customer","action":"returnItem","namedAction":{"id":"returnItem","path":"/api/orders/{orderId}/items/{itemId}/return","method":"POST","reducer":"return_order_item","args":[0,0],"params":[{"name":"orderId","in":"path","placeholder":"{orderId}","wireType":"u64"},{"name":"itemId","in":"path","placeholder":"{itemId}","wireType":"u64"}]},"input":{"testid":"order-line","contains":"Desk Lamp","attribute":"data-return-input"}},
+            {"do":"expectActionOutcome","actor":"customer","outcome":"validation-refused"},
+            {"do":"reload","actor":"customer","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"customer","name":"return-boundary","readyTestid":"current-user"},
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
+            {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
+            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Desk Lamp"},"value":"pending","ignoreCase":true},
+            {"do":"dbExpectStock","item":"Desk Lamp","warehouse":"East","relativeTo":"pending-East","plus":0},
+            {"do":"dbExpectStock","item":"Desk Lamp","warehouse":"West","relativeTo":"pending-West","plus":0},
+            {"do":"reload","actor":"admin","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"admin","name":"admin","readyTestid":"current-user","password":"stackbench-admin-2026","exact":true},
+            {"do":"click","actor":"admin","testid":"overlay-close","ifAvailable":true,"within":1000},
+            {"do":"click","actor":"admin","testid":"admin-link","unlessVisible":"admin-revenue"},
+            {"do":"expectNumber","actor":"admin","testid":"admin-revenue","relativeTo":"pending-revenue","plus":0}
+          ]
+        }
+      ]
+    }
+  ],
+  "note": "Draft: revised observations require matching reference and defect-control qualification."
+}

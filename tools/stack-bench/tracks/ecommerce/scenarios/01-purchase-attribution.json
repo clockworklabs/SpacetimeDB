@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Purchases are attributed to whoever made them",
+  "note": "Refusal checks first prove the same valid route and input with an authorized actor. A missing or malformed endpoint therefore cannot earn authorization credit merely by returning an error.",
+  "features": [
+    {
+      "id": 102,
+      "name": "Purchases are attributed to whoever made them",
+      "actors": ["victim","attacker"],
+      "setup": [{"do":"signUp","actor":"victim","name":"lee"},{"do":"signUp","actor":"attacker","name":"mel"},
+        {"do":"click","actor":"victim","testid":"buy-now","in":{"testid":"item-card","contains":"Coffee Grinder"}}],
+      "criteria": [
+        {
+          "id": "102a",
+          "category": "production",
+          "desc": "a direct purchase is attributed to the authenticated caller, not another account",
+          "points": 2,
+          "steps": [
+            {
+              "do": "callAction",
+              "actor": "attacker",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [0],
+                "params": [{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]
+              },
+              "input": {"testid":"item-card","contains":"Desk Lamp","attribute":"data-buy-input"},
+              "settleMs": 2000
+            },
+            {"do":"expectActionOutcome","actor":"attacker","outcome":"accepted"},
+            {"do":"click","actor":"victim","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {"do":"click","actor":"victim","testid":"orders-toggle", "unlessVisible": "order-item" },
+            {"do":"expect","actor":"victim","testid":"order-item","contains":"Coffee Grinder","count":1},
+            {"do":"expect","actor":"victim","testid":"order-item","contains":"Desk Lamp","absent":true},
+            {"do":"click","actor":"attacker","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {"do":"click","actor":"attacker","testid":"orders-toggle", "unlessVisible": "order-item" },
+            {"do":"expect","actor":"attacker","testid":"order-item","contains":"Desk Lamp","count":1}
+          ],
+          "statedBy": "the authenticated caller, not a client-supplied identity, owns the order"
+        }
+      ]
+    }
+  ]
+}

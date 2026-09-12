@@ -1,0 +1,322 @@
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync }
+  from 'node:fs';
+import { dirname, join, relative, resolve, sep } from 'node:path';
+
+import { canonicalDefinitionJson } from '../composition/definition-plan.js';
+import { ARTIFACT_FILE } from '../evidence/artifacts.js';
+import { compileProgressionInput, dependencyRuntimeDefinition }
+  from '../progression/progression-definition.js';
+import type { CompiledDependencyPolicyDefinition, CompiledProgressionDefinition,
+  ProgressionInput } from '../progression/progression-definition.js';
+import { grantProgressionState, readProgressionState }
+  from '../progression/progression-state.js';
+import type { ProgressionOwner } from '../progression/progression-state.js';
+import { acquireCampaignLock, releaseCampaignLock } from './campaign-lock.js';
+import { campaignProgressionOwner } from './campaign-compiler.js';
+import { inspectCampaign } from './campaign-runner.js';
+import { scheduleDependencyContinuation, writeCampaignState }
+  from './campaign-scheduler.js';
+
+export interface CampaignDependencyRepairGrant {
+  attemptId: string;
+  grantId: string;
+  level: number;
+  nodeIds: string[];
+  repairs: number;
+}
+
+export interface GrantWorkspace {
+  directory: string;
+  relativePath: string;
+  created: boolean;
+}
+
+interface GrantContinuation extends Omit<CampaignDependencyRepairGrant, 'attemptId'> {
+  stateSha256: string;
+  resumeFrom: string;
+  scheduledAt?: string;
+}
+
+interface GrantAttemptPlan {
+  id: string;
+  stack: string;
+  agentAdapter: string;
+  model: string;
+  condition: { contentSha256: string };
+  mode?: { id?: string };
+}
+
+interface GrantExecution {
+  output: string;
+  status: string;
+  continuation?: GrantContinuation;
+}
+
+interface GrantCampaignSnapshot {
+  plan: {
+    id: string;
+    version: string;
+    contentSha256: string;
+    definition: { mode?: { id?: string }; track: string };
+    featureCatalog: ProgressionInput<CompiledProgressionDefinition> | null;
+    dependencyPolicy: ProgressionInput<CompiledDependencyPolicyDefinition> | null;
+  };
+  state: {
+    status: string;
+    attempts: Array<{
+      plan: GrantAttemptPlan;
+      status: string;
+      executions: GrantExecution[];
+    }>;
+  };
+  paths: { state: string };
+}
+
+interface StoredProgressionState {
+  state: {
+    phase?: string;
+    grants: Array<Omit<CampaignDependencyRepairGrant, 'attemptId'>>;
+  };
+  stateSha256: string;
+}
+
+interface ProgressionContextOptions extends Record<string, unknown> {
+  owner: ProgressionOwner;
+}
+
+interface ProgressionGrantOptions extends ProgressionContextOptions {
+  grant: Omit<CampaignDependencyRepairGrant, 'attemptId'>;
+  expectedStateSha256: string;
+}
+
+interface ProgressionGrantResult {
+  stateSha256: string;
+}
+
+interface GrantOptions {
+  inspect?: (directory: string, options: { requireCurrentInputs: boolean }) =>
+    GrantCampaignSnapshot;
+  readState?: (path: string, options: ProgressionContextOptions) => StoredProgressionState;
+  grantState?: (path: string, options: ProgressionGrantOptions) => ProgressionGrantResult;
+  schedule?: (state: GrantCampaignSnapshot['state'], attemptId: string, continuation: GrantContinuation,
+    options: { now: string }) => unknown;
+  writeState?: (path: string, plan: unknown, state: unknown) => unknown;
+  acquire?: (directory: string, plan: { id: string; contentSha256: string }) => unknown;
+  release?: (lock: unknown) => unknown;
+  prepareWorkspace?: typeof prepareGrantWorkspace;
+  now?: string;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+function childPath(root: string, input: string, label: string): string {
+  const absoluteRoot = resolve(root);
+  const absolute = resolve(absoluteRoot, input);
+  const relation = relative(absoluteRoot, absolute);
+  if (!relation || relation === '..' || relation.startsWith(`..${sep}`)) {
+    throw new Error(`${label} is outside the campaign directory`);
+  }
+  return absolute;
+}
+
+const SAFE_ID = /^[a-z0-9][a-z0-9.-]*$/;
+const FEATURE_ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
+
+function rejectSymlinks(path: string, label: string): void {
+  const stat = lstatSync(path);
+  if (stat.isSymbolicLink()) throw new Error(`${label} cannot be a symbolic link`);
+  if (!stat.isDirectory()) return;
+  for (const entry of readdirSync(path, { withFileTypes: true })) {
+    const child = join(path, entry.name);
+    if (entry.isSymbolicLink()) throw new Error(`${label} contains a symbolic link`);
+    if (entry.isDirectory()) rejectSymlinks(child, label);
+  }
+}
+
+export function prepareGrantWorkspace(root: string, executionDirectory: string,
+  attemptId: string, grantId: string): GrantWorkspace {
+  if (!SAFE_ID.test(attemptId) || !SAFE_ID.test(grantId)) {
+    throw new Error('grant workspace requires safe attempt and grant ids');
+  }
+  const execution = lstatSync(executionDirectory);
+  if (execution.isSymbolicLink() || !execution.isDirectory()) {
+    throw new Error('completed campaign execution must be a real directory');
+  }
+  const relativePath = `continuations/${attemptId}/${grantId}`;
+  const target = childPath(root, relativePath, 'grant workspace');
+  if (existsSync(target)) {
+    rejectSymlinks(target, 'grant workspace');
+    return { directory: target, relativePath, created: false };
+  }
+  mkdirSync(dirname(target), { recursive: true });
+  const temporary = `${target}.tmp-${process.pid}-${Date.now()}`;
+  const required = new Set(['source', ARTIFACT_FILE.progressionState, ARTIFACT_FILE.run, 'progression']);
+  for (const name of required) {
+    const source = join(executionDirectory, name);
+    if (!existsSync(source)) throw new Error(`completed campaign execution has no ${name}`);
+    rejectSymlinks(source, `completed campaign execution ${name}`);
+  }
+  try {
+    cpSync(executionDirectory, temporary, { recursive: true, errorOnExist: true,
+      filter: source => {
+        const rel = relative(executionDirectory, source);
+        if (!rel) return true;
+        const [top] = rel.split(/[\\/]/);
+        return required.has(top!) && !/[\\/]media([\\/]|$)/.test(rel);
+      } });
+    renameSync(temporary, target);
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
+  rejectSymlinks(target, 'grant workspace');
+  return { directory: target, relativePath, created: true };
+}
+
+function request(input: unknown): CampaignDependencyRepairGrant {
+  const value = structuredClone(input);
+  if (!isRecord(value)) {
+    throw new Error('dependency repair grant must be an object');
+  }
+  const fields = new Set(['attemptId', 'grantId', 'level', 'nodeIds', 'repairs']);
+  for (const key of Object.keys(value)) {
+    if (!fields.has(key)) throw new Error(`dependency repair grant.${key} is unknown`);
+  }
+  for (const field of ['attemptId', 'grantId']) {
+    if (typeof value[field] !== 'string' || !SAFE_ID.test(value[field])) {
+      throw new Error(`dependency repair grant.${field} is required`);
+    }
+  }
+  if (typeof value.level !== 'number' || !Number.isSafeInteger(value.level) || value.level < 1) {
+    throw new Error('dependency repair grant.level must be a positive integer');
+  }
+  if (typeof value.repairs !== 'number' || !Number.isSafeInteger(value.repairs)
+    || value.repairs < 1) {
+    throw new Error('dependency repair grant.repairs must be a positive safe integer');
+  }
+  if (!Array.isArray(value.nodeIds) || value.nodeIds.length === 0
+    || value.nodeIds.some(nodeId => typeof nodeId !== 'string' || !FEATURE_ID.test(nodeId))) {
+    throw new Error('dependency repair grant.nodeIds must be a non-empty feature list');
+  }
+  const nodeIds = [...new Set(value.nodeIds as string[])].sort();
+  if (nodeIds.length !== (value.nodeIds as string[]).length) {
+    throw new Error('dependency repair grant.nodeIds cannot contain duplicates');
+  }
+  return { attemptId: value.attemptId as string, grantId: value.grantId as string,
+    level: value.level, nodeIds, repairs: value.repairs };
+}
+
+function sameGrant(left: unknown, right: unknown): boolean {
+  return canonicalDefinitionJson(left) === canonicalDefinitionJson(right);
+}
+
+export function grantCampaignDependencyRepairs(directory: string, input: unknown, {
+  inspect = inspectCampaign,
+  readState = (path: string, options: ProgressionContextOptions): StoredProgressionState =>
+    readProgressionState(path, options),
+  grantState = grantProgressionState,
+  schedule = scheduleDependencyContinuation,
+  writeState = writeCampaignState,
+  acquire = acquireCampaignLock,
+  release = releaseCampaignLock as (lock: unknown) => boolean,
+  prepareWorkspace = prepareGrantWorkspace,
+  now = new Date().toISOString(),
+}: GrantOptions = {}): {
+    attemptId: string;
+    execution: string;
+    grant: Omit<CampaignDependencyRepairGrant, 'attemptId'>;
+    grantWorkspace: string;
+    stateSha256: string;
+    scheduled: true;
+  } {
+  const root = resolve(directory);
+  const desired = request(input);
+  const initial = inspect(root, { requireCurrentInputs: false });
+  const lock = acquire(root, initial.plan);
+  try {
+    const campaign = inspect(root, { requireCurrentInputs: false });
+    if (campaign.plan.contentSha256 !== initial.plan.contentSha256) {
+      throw new Error('campaign plan changed before the dependency repair grant');
+    }
+    if (campaign.plan.definition.mode?.id !== 'dependency'
+      || !campaign.plan.featureCatalog || !campaign.plan.dependencyPolicy) {
+      throw new Error('repair grants require one stored dependency campaign');
+    }
+    const attempt = campaign.state.attempts.find(item => item.plan.id === desired.attemptId);
+    if (!attempt) throw new Error(`campaign attempt ${desired.attemptId} does not exist`);
+    const execution = attempt.executions.at(-1);
+    if (!execution) throw new Error(`campaign attempt ${desired.attemptId} has no execution`);
+    const marker = execution.continuation;
+    if (marker !== undefined) {
+      const markedGrant = { grantId: marker.grantId, level: marker.level,
+        nodeIds: marker.nodeIds, repairs: marker.repairs };
+      if (!sameGrant(markedGrant, {
+        grantId: desired.grantId, level: desired.level,
+        nodeIds: desired.nodeIds, repairs: desired.repairs,
+      })) throw new Error(`campaign attempt ${desired.attemptId} has a different continuation`);
+    } else if (campaign.state.status !== 'completed' || attempt.status !== 'completed'
+      || execution.status !== 'completed') {
+      throw new Error('repair grants require one unextended completed campaign attempt');
+    }
+
+    const executionDirectory = childPath(root, execution.output, 'campaign execution');
+    const workspace = marker === undefined
+      ? prepareWorkspace(root, executionDirectory, desired.attemptId, desired.grantId)
+      : {
+          directory: childPath(root, marker.resumeFrom, 'grant workspace'),
+          relativePath: marker.resumeFrom,
+          created: false,
+        };
+    const progression = compileProgressionInput(dependencyRuntimeDefinition(
+      campaign.plan.featureCatalog, campaign.plan.dependencyPolicy));
+    const owner = campaignProgressionOwner(campaign.plan, attempt.plan, { workspace: true });
+    const statePath = join(workspace.directory, ARTIFACT_FILE.progressionState);
+    const stored = readState(statePath, {
+      progression,
+      featureCatalogIdentity: campaign.plan.featureCatalog.identity,
+      dependencyPolicyIdentity: campaign.plan.dependencyPolicy.identity,
+      owner,
+      requireCurrentEngine: true,
+    });
+    const grant = { grantId: desired.grantId, level: desired.level,
+      nodeIds: desired.nodeIds, repairs: desired.repairs };
+    const priorGrant = stored.state.grants.find(item => item.grantId === desired.grantId);
+    if (marker !== undefined) {
+      if (!priorGrant || !sameGrant(priorGrant, grant)
+        || stored.stateSha256 !== marker.stateSha256) {
+        throw new Error('campaign continuation marker does not match progression state');
+      }
+      return { attemptId: desired.attemptId, execution: execution.output,
+        grant, grantWorkspace: workspace.relativePath,
+        stateSha256: marker.stateSha256, scheduled: true };
+    }
+    let granted;
+    if (stored.state.phase === 'terminal') {
+      if (priorGrant) throw new Error(`duplicate dependency repair grant ${desired.grantId}`);
+      granted = grantState(statePath, {
+        progression,
+        featureCatalogIdentity: campaign.plan.featureCatalog.identity,
+        dependencyPolicyIdentity: campaign.plan.dependencyPolicy.identity,
+        owner,
+        grant,
+        expectedStateSha256: stored.stateSha256,
+      });
+    } else {
+      if (!priorGrant || !sameGrant(priorGrant, grant)) {
+        throw new Error('active progression state does not match the requested continuation grant');
+      }
+      granted = stored;
+    }
+
+    const next = schedule(campaign.state, desired.attemptId, {
+      ...grant, stateSha256: granted.stateSha256,
+      resumeFrom: workspace.relativePath,
+    }, { now });
+    writeState(campaign.paths.state, campaign.plan, next);
+    return { attemptId: desired.attemptId, execution: execution.output,
+      grant, grantWorkspace: workspace.relativePath,
+      stateSha256: granted.stateSha256, scheduled: true };
+  } finally {
+    release(lock);
+  }
+}

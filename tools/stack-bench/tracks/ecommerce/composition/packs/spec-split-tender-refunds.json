@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.spec.split-tender-refunds",
+  "moduleType": "specification",
+  "title": "Split-tender refunds integrity",
+  "description": "Bounded production checks for split-tender refunds.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser",
+    "database-observation",
+    "direct-server-call",
+    "backend-lifecycle"
+  ],
+  "evidence": [
+    "browser-observation",
+    "fresh-client-observation",
+    "database-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 300000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.spec.split-tender-refunds.split-tender-refunds",
+        "path": "prompts/modular/later-specifications.md",
+        "order": 6504,
+        "from": "## Split-tender refunds",
+        "until": "## Scheduled purchases",
+        "modes": [
+          "fresh",
+          "upgrade"
+        ],
+        "requiresFeatures": [
+          "ecommerce.feature.split-tender-refunds"
+        ]
+      }
+    ],
+    "contracts": []
+  },
+  "checks": [
+    {
+      "id": "production-756",
+      "source": "scenarios/progression-split-tender-refunds.json",
+      "feature": 756,
+      "criteria": [
+        "756a"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.feature.split-tender-refunds",
+        "ecommerce.feature.store-credit",
+        "ecommerce.progression.support-refunds"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,305 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { extname, join } from 'node:path';
+import test from 'node:test';
+import ts from 'typescript';
+
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { loadTrack } from '../src/composition/tracks.js';
+import { requireRecipeRelease as resolveRecipeRelease } from '../src/composition/recipe-release.js';
+import { mutationFileEdits, mutationTargetKeys, readMutationManifest, releaseScenarioCheckKeys,
+  type LoadedMutationDefinition }
+  from '../src/evidence/mutation-analysis.js';
+import { compileFeatureCatalogInput,
+  compileProgressionDefinitionFile } from '../src/progression/progression-definition.js';
+import { resolveProgressionRecipeLevelSelection }
+  from '../src/progression/progression-recipe-selection.js';
+import { loadReferenceRegistry } from '../src/references/reference-fixtures.js';
+
+const ROOT = STACK_BENCH_ROOT;
+const TRACK = join(ROOT, 'tracks', 'ecommerce');
+const definition = compileProgressionDefinitionFile(
+  join(TRACK, 'progression', 'ecommerce.json'), { trackRoot: TRACK });
+const binding = resolveRecipeRelease(loadTrack('ecommerce'), 3,
+  'ecommerce.progression-catalog');
+const selection = resolveProgressionRecipeLevelSelection(binding,
+  compileFeatureCatalogInput(definition), 3, { cumulative: true });
+const fixtures = new Map(loadReferenceRegistry().fixtures
+  .filter(fixture => fixture.track === 'ecommerce')
+  .map(fixture => [fixture.backend, fixture]));
+
+test('restart probe proves ordinary scheduled execution before measuring restart survival', () => {
+  const scenario = JSON.parse(readFileSync(join(TRACK, 'scenarios', '03-deferred-durability.json'), 'utf8'));
+  const setup: Array<Record<string, unknown>> = scenario.features.find((feature: { id: number }) => feature.id === 311).setup;
+  const firstSubmit = setup.findIndex(step => step.do === 'click' && step.testid === 'schedule-restock-submit');
+  const ordinaryApplied = setup.findIndex(step => step.do === 'dbExpectStock' && step.relativeTo === 'ordinaryBefore');
+  const newBaseline = setup.findIndex(step => step.do === 'dbRecordStock' && step.as === 'before');
+  const secondSubmit = setup.findIndex((step, index) => index > firstSubmit && step.do === 'click' && step.testid === 'schedule-restock-submit');
+  const restart = setup.findIndex(step => step.do === 'restartBackend');
+  assert(firstSubmit >= 0 && ordinaryApplied > firstSubmit && newBaseline > ordinaryApplied
+    && secondSubmit > newBaseline && restart > secondSubmit);
+  assert.equal(setup[ordinaryApplied]!.plus, 5);
+  assert.deepEqual(setup.filter(step => step.testid === 'schedule-restock-delay').map(step => step.text), ['45', '45']);
+  assert(setup.slice(ordinaryApplied, newBaseline).some(step => step.testid === 'pending-restock-item'
+    && step.do === 'expect' && step.absent === true));
+});
+
+for (const backend of ['mongodb', 'postgres']) {
+  test(`${backend} restart-loss control preserves timers and removes only pending work at startup`, () => {
+    const mutation = mutationManifest(backend).mutations.find(candidate =>
+      candidate.targets?.includes('ecommerce.l3.deferred-durability.restart-survival.311a'));
+    assert(mutation);
+    const fixture = fixtures.get(backend)!;
+    assert(fixture.targetPath);
+    const file = 'server/src/index.ts';
+    let source = readFileSync(join(ROOT, fixture.targetPath, file), 'utf8');
+    for (const edit of mutationFileEdits(mutation)) {
+      assert.equal(edit.file, file, 'do not disable ordinary timer processing');
+      assert.equal(source.split(edit.find).length - 1, 1);
+      source = source.replace(edit.find, edit.replace);
+    }
+    assert.deepEqual(syntaxErrors(source, file), []);
+    const removal = backend === 'postgres'
+      ? 'DELETE FROM scheduled_restock WHERE cancelled = false AND applied = false'
+      : 'ScheduledRestock.deleteMany({ status: "pending" })';
+    assert(source.indexOf(removal) > source.indexOf('async function main()'));
+    assert(source.indexOf(removal) < source.indexOf('  await seed();', source.indexOf('async function main()')));
+    const timers = readFileSync(join(ROOT, fixture.targetPath, 'server/src/progression.ts'), 'utf8');
+    assert(timers.includes(backend === 'postgres'
+      ? 'SELECT * FROM scheduled_restock WHERE due_at <= now() AND cancelled = false AND applied = false FOR UPDATE'
+      : 'const due = await ScheduledRestock.find({ status: "pending", dueAt: { $lte: now } });'));
+  });
+}
+
+function mutationManifest(backend: string) {
+  const fixture = fixtures.get(backend);
+  assert(fixture, `missing ${backend} ecommerce reference`);
+  assert.equal(fixture.mutationManifests?.length, 1);
+  const manifestPath = fixture.mutationManifests?.[0];
+  assert(manifestPath);
+  return readMutationManifest(join(ROOT, manifestPath));
+}
+
+function syntaxErrors(source: string, file: string): string[] {
+  if (!['.ts', '.tsx'].includes(extname(file))) return [];
+  return (ts.transpileModule(source, {
+    compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext,
+      target: ts.ScriptTarget.ES2022 },
+    fileName: file,
+    reportDiagnostics: true,
+  }).diagnostics ?? []).filter(diagnostic => diagnostic.category === ts.DiagnosticCategory.Error)
+    .map(diagnostic => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'));
+}
+
+test('SpacetimeDB stale support control preserves initial and reloaded replies', () => {
+  const mutation = mutationManifest('spacetime').mutations.find(candidate =>
+    candidate.id === 'managed-support-live-replies-stay-at-initial-snapshot');
+  assert(mutation);
+  assert.deepEqual(mutation.targets, ['ecommerce.spec.live-state.managed-support.613a']);
+  const edits = mutationFileEdits(mutation);
+  assert.equal(edits.length, 1);
+  assert.equal(edits[0]!.file, 'client/src/App.tsx', 'reply persistence must remain intact');
+  const observe = new Function('useTable', 'useMemo', 'tables',
+    `${edits[0]!.replace}\nreturn supportReplyRows;`);
+  let previousReady: boolean | undefined;
+  let snapshot: unknown;
+  const memo = (read: () => unknown, [ready]: [boolean]) => {
+    if (previousReady !== ready) { snapshot = read(); previousReady = ready; }
+    return snapshot;
+  };
+  const render = (rows: string[], ready: boolean) => observe(() => [rows, ready], memo, {});
+  assert.deepEqual(render([], false), []);
+  const initial = ['saved reply'];
+  assert.deepEqual(render(initial, true), ['saved reply']);
+  initial.push('new live reply');
+  assert.deepEqual(render(initial, true), ['saved reply']);
+  assert.deepEqual(render(['saved reply', 'new live reply'], true), ['saved reply']);
+  previousReady = undefined; // A page reload creates a fresh hook state.
+  assert.deepEqual(render(['saved reply', 'new live reply'], true), ['saved reply', 'new live reply']);
+});
+
+test('SpacetimeDB guest purchase control reaches the reducer through the graded button', () => {
+  const mutation = mutationManifest('spacetime').mutations.find(candidate =>
+    candidate.id === 'signed-out-purchase-bypasses-account-check');
+  assert(mutation);
+  const edits = mutationFileEdits(mutation);
+  assert(edits.some(edit => edit.file === 'client/src/components/ItemCard.tsx'
+    && edit.find.includes('isSignedIn && (') && edit.replace.includes('true && (')));
+  assert(edits.some(edit => edit.file === 'backend/spacetimedb/src/index.ts'
+    && edit.find.includes('buyNow') && edit.replace.includes("getAccountId(ctx) === null")));
+});
+
+for (const backend of ['mongodb', 'postgres', 'spacetime']) {
+  test(`${backend} stock delivery control targets the independent delivery observation`, () => {
+    const mutation = mutationManifest(backend).mutations.find(candidate => candidate.id === 'stock-alert-delivery-is-suppressed');
+    assert(mutation?.scenario);
+    assert.deepEqual(mutation.targets, ['ecommerce.progression.stock-alerts.stock-alert-delivery.631c']);
+    assert.deepEqual(mutation.targets, releaseScenarioCheckKeys(binding.release, TRACK,
+      join(ROOT, mutation.scenario), mutation.targets));
+  });
+
+  test(`${backend} direct restock authorization mutation targets the staff refusal`, () => {
+    const ids: Record<string, string> = { mongodb: 'staff-can-use-direct-restock',
+      postgres: 'progression-staff-can-restock-directly', spacetime: 'direct-restock-does-not-require-an-admin' };
+    const mutation = mutationManifest(backend).mutations.find(candidate => candidate.id === ids[backend]);
+    assert(mutation?.scenario);
+    assert.deepEqual(mutation.targets, ['ecommerce.spec.access-control.warehouse-write-boundary.103b']);
+    assert.deepEqual(mutation.targets, releaseScenarioCheckKeys(binding.release, TRACK,
+      join(ROOT, mutation.scenario), mutation.targets));
+    const positive = mutationManifest(backend).mutations.find(candidate => candidate.id === 'authorized-restock-does-not-change-stock');
+    assert(positive?.scenario);
+    assert.deepEqual(positive.targets, ['ecommerce.feature.warehouse-admin.admin-write.103a']);
+    assert.deepEqual(positive.targets, releaseScenarioCheckKeys(binding.release, TRACK,
+      join(ROOT, positive.scenario), positive.targets));
+  });
+
+  test(`${backend} fulfilment access mutation targets its current recipe scenario`, () => {
+    for (const [id, recipe] of [
+      ['customer-sees-fulfilment-navigation', 'ecommerce.sequential-l2'],
+      ['progression-customer-sees-fulfilment-content', 'ecommerce.progression-catalog'],
+    ]) {
+      const mutation = mutationManifest(backend).mutations.find(candidate => candidate.id === id);
+      assert(mutation);
+      assert(mutation.scenario);
+      const recipeBinding = resolveRecipeRelease(loadTrack('ecommerce'), 2, recipe);
+      assert.deepEqual(mutation.targets, releaseScenarioCheckKeys(recipeBinding.release, TRACK,
+        join(ROOT, mutation.scenario), mutation.targets));
+    }
+  });
+
+  test(`${backend} progression mutations cover every selected L1-L3 check`, () => {
+    const manifest = mutationManifest(backend);
+    const selected = new Set(selection.grader.checkKeys);
+    const covered = new Set(manifest.mutations.flatMap(mutation => mutationTargetKeys(mutation)));
+    assert.deepEqual([...selected].filter(check => !covered.has(check)), []);
+  });
+
+  test(`${backend} declared progression mutations have exact anchors and valid syntax`, () => {
+    const fixture = fixtures.get(backend);
+    assert(fixture?.targetPath, `${backend} fixture must have a target path`);
+    const manifest = mutationManifest(backend);
+    for (const mutation of manifest.mutations) {
+      const editsByFile = new Map<string, ReturnType<typeof mutationFileEdits>>();
+      for (const edit of mutationFileEdits(mutation)) {
+        const edits = editsByFile.get(edit.file) ?? [];
+        edits.push(edit);
+        editsByFile.set(edit.file, edits);
+      }
+      for (const [file, edits] of editsByFile) {
+        let source: string = readFileSync(join(ROOT, fixture.targetPath, ...file.split('/')), 'utf8');
+        for (const edit of edits) {
+          assert.equal(source.split(edit.find).length - 1, 1,
+            `${mutation.id} anchor must match once in ${file}`);
+          source = source.replace(edit.find, edit.replace);
+        }
+        assert.deepEqual(syntaxErrors(source, file), [],
+          `${mutation.id} must remain syntactically valid`);
+      }
+    }
+  });
+}
+
+test('SpacetimeDB reservation and catalog mutants declare their observed targets', () => {
+  const fixture = fixtures.get('spacetime');
+  assert(fixture, 'missing spacetime progression fixture');
+  assert(fixture.targetPath, 'the spacetime fixture must have a target path');
+  const manifest = readMutationManifest(join(ROOT, 'grader', 'mutations',
+    'spacetime-ecommerce.json'));
+  const mutations = new Map(manifest.mutations.map(mutation => [mutation.id, mutation]));
+
+  const renewal = mutations.get('renewed-reservation-expires-too-soon');
+  assert(renewal, 'the reservation renewal mutation must exist');
+  assert.deepEqual(renewal.targets, ['ecommerce.l3.reservations.reservations.308a']);
+  const renewalEdit = mutationFileEdits(renewal)[0];
+  assert(renewalEdit, 'the reservation renewal mutation must have an edit');
+  const renewalPath = join(ROOT, fixture.targetPath, ...renewalEdit.file.split('/'));
+  const renewalSource = readFileSync(renewalPath, 'utf8');
+  assert.equal(renewalSource.split(renewalEdit.find).length - 1, 1);
+  const renewed = renewalSource.replace(renewalEdit.find, renewalEdit.replace);
+  assert.notEqual(renewed, renewalSource);
+  assert.match(renewed, /const expiresMicros = nowMicros\(ctx\) \+ 90n \* SECOND/,
+    'initial reservations must keep their 90-second window');
+  assert.match(renewed, /for \(const renewed of findReservations/,
+    'only the replacement path should shorten the renewed reservation');
+  assert.deepEqual(syntaxErrors(renewed, renewalEdit.file), []);
+
+  const catalog = mutations.get('catalog-product-is-not-published');
+  assert(catalog, 'the catalog mutation must exist');
+  assert.deepEqual(catalog.targets,
+    ['ecommerce.progression.catalog-management.catalog-management.622a',
+      'ecommerce.progression.catalog-management.catalog-management.622b']);
+  const catalogEdit = mutationFileEdits(catalog)[0];
+  assert(catalogEdit, 'the catalog mutation must have an edit');
+  const catalogPath = join(ROOT, fixture.targetPath, ...catalogEdit.file.split('/'));
+  const catalogSource = readFileSync(catalogPath, 'utf8');
+  assert.equal(catalogSource.split(catalogEdit.find).length - 1, 1);
+  const unpublished = catalogSource.replace(catalogEdit.find, catalogEdit.replace);
+  assert.notEqual(unpublished, catalogSource);
+  assert.match(unpublished, /variants\.map\(variant =>/,
+    'variant data is unchanged, but its check cannot locate the product without its name');
+  assert.deepEqual(syntaxErrors(unpublished, catalogEdit.file), []);
+});
+
+test('catalog targets include product lookup coupling and checkout targets stay separate', () => {
+  const catalogCases = [
+    { backend: 'mongodb', nameId: 'catalog-product-name-is-not-published',
+      variantsId: 'catalog-variants-are-discarded' },
+    { backend: 'postgres', nameId: 'progression-catalog-product-name-is-not-published',
+      variantsId: 'progression-catalog-variants-are-discarded' },
+  ];
+  for (const item of catalogCases) {
+    const fixture = fixtures.get(item.backend);
+    assert(fixture, `missing ${item.backend} ecommerce reference`);
+    assert(fixture.targetPath, `${item.backend} fixture must have a target path`);
+    const manifest = mutationManifest(item.backend);
+    const mutations = new Map(manifest.mutations.map(mutation => [mutation.id, mutation]));
+    const name = mutations.get(item.nameId);
+    const variants = mutations.get(item.variantsId);
+    assert(name, `missing ${item.nameId}`);
+    assert(variants, `missing ${item.variantsId}`);
+    assert.deepEqual(name.targets,
+      ['ecommerce.progression.catalog-management.catalog-management.622a',
+        'ecommerce.progression.catalog-management.catalog-management.622b']);
+    assert.deepEqual(variants.targets,
+      ['ecommerce.progression.catalog-management.catalog-management.622b']);
+
+    for (const mutation of [name, variants]) {
+      const edit = mutationFileEdits(mutation)[0];
+      assert(edit, `${mutation.id} must have an edit`);
+      const file = join(ROOT, fixture.targetPath, ...edit.file.split('/'));
+      const source = readFileSync(file, 'utf8');
+      assert.equal(source.split(edit.find).length - 1, 1,
+        `${mutation.id} anchor must match once`);
+      assert.deepEqual(syntaxErrors(source.replace(edit.find, edit.replace), edit.file), []);
+    }
+    const nameEdit = mutationFileEdits(name)[0];
+    const variantEdit = mutationFileEdits(variants)[0];
+    assert(nameEdit, `${name.id} must have an edit`);
+    assert(variantEdit, `${variants.id} must have an edit`);
+    assert.match(nameEdit.replace, /Travel Mug/);
+    assert.doesNotMatch(variantEdit.replace, /Unavailable product/);
+  }
+
+  const cartCases = [
+    { backend: 'postgres', incrementId: 'progression-concurrent-cart-line-does-not-increment',
+      checkoutId: 'progression-concurrent-checkout-leaves-cart-lines' },
+    { backend: 'spacetime', incrementId: 'existing-cart-line-does-not-increment',
+      checkoutId: 'checkout-does-not-empty-cart' },
+  ];
+  for (const item of cartCases) {
+    const manifest = mutationManifest(item.backend);
+    const mutations = new Map(manifest.mutations.map(mutation => [mutation.id, mutation]));
+    const increment = requiredMutation(mutations, item.incrementId);
+    const checkout = requiredMutation(mutations, item.checkoutId);
+    assert.deepEqual(increment.targets,
+      ['ecommerce.spec.concurrency-safety.duplicate-checkout.203a']);
+    assert.deepEqual(checkout.targets,
+      ['ecommerce.spec.concurrency-safety.duplicate-checkout.203b']);
+  }
+});
+
+function requiredMutation(mutations: Map<string, LoadedMutationDefinition>, id: string): LoadedMutationDefinition {
+  const mutation = mutations.get(id);
+  if (!mutation) throw new Error(`mutation ${id} is required`);
+  return mutation;
+}

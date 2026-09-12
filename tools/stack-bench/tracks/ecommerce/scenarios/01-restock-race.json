@@ -1,0 +1,497 @@
+{
+  "schemaVersion": 1,
+  "level": 1,
+  "track": "ecommerce",
+  "name": "Storefront and warehouse — restock during purchases",
+  "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
+  "note": "Draft: matching reference and mutation qualification is pending. Setup proves ordinary purchase and restock from stored state and fresh views. The race checks stored stock, fresh UI state and durable buyer orders. Concurrent dispatch does not prove overlapping server execution.",
+  "features": [
+    {
+      "id": 202,
+      "name": "A restock during a rush is not lost",
+      "actors": [
+        "admin",
+        "a",
+        "b",
+        "c"
+      ],
+      "setup": [
+        {
+          "do": "signIn",
+          "actor": "admin",
+          "name": "admin",
+          "password": "stackbench-admin-2026",
+          "exact": true
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "admin-link"
+        },
+        {
+          "do": "signUp",
+          "actor": "a",
+          "name": "r1"
+        },
+        {
+          "do": "signUp",
+          "actor": "b",
+          "name": "r2"
+        },
+        {
+          "do": "signUp",
+          "actor": "c",
+          "name": "r3"
+        },
+        {
+          "do": "dbRecordStock",
+          "item": "Bluetooth Speaker",
+          "as": "stored-before-serial-purchase"
+        },
+        {
+          "do": "click",
+          "actor": "a",
+          "testid": "buy-now",
+          "in": {
+            "testid": "item-card",
+            "contains": "Bluetooth Speaker"
+          }
+        },
+        {
+          "do": "click",
+          "actor": "a",
+          "testid": "overlay-close",
+          "ifAvailable": true,
+          "unlessVisible": "order-item",
+          "within": 1000
+        },
+        {
+          "do": "click",
+          "actor": "a",
+          "testid": "orders-toggle",
+          "unlessVisible": "order-item"
+        },
+        {
+          "do": "expect",
+          "actor": "a",
+          "testid": "order-item",
+          "contains": "Bluetooth Speaker",
+          "count": 1,
+          "within": 10000
+        },
+        {
+          "do": "dbExpectStock",
+          "item": "Bluetooth Speaker",
+          "relativeTo": "stored-before-serial-purchase",
+          "plus": -1
+        },
+        {
+          "do": "reload",
+          "actor": "a",
+          "settleMs": 1000
+        },
+        {
+          "do": "ensureSignedIn",
+          "actor": "a",
+          "name": "r1",
+          "readyTestid": "current-user"
+        },
+        {
+          "do": "reload",
+          "actor": "admin",
+          "settleMs": 1000
+        },
+        {
+          "do": "ensureSignedIn",
+          "actor": "admin",
+          "name": "admin",
+          "password": "stackbench-admin-2026",
+          "exact": true,
+          "readyTestid": "current-user"
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "admin-link"
+        },
+        {
+          "do": "expectNumber",
+          "actor": "admin",
+          "testid": "admin-stock",
+          "in": {
+            "testid": "admin-item-row",
+            "contains": "Bluetooth Speaker"
+          },
+          "relativeTo": "stored-before-serial-purchase",
+          "plus": -1,
+          "within": 10000
+        },
+        {
+          "do": "dbRecordStock",
+          "item": "Bluetooth Speaker",
+          "as": "stored-before-control"
+        },
+        {
+          "do": "recordNumber",
+          "actor": "admin",
+          "testid": "admin-location-qty",
+          "in": {
+            "testid": "admin-location-row",
+            "contains": "Bluetooth Speaker"
+          },
+          "as": "warehouse-before"
+        },
+        {
+          "do": "recordNumber",
+          "actor": "a",
+          "testid": "item-stock",
+          "in": {
+            "testid": "item-card",
+            "contains": "Bluetooth Speaker"
+          },
+          "as": "storefront-before"
+        },
+        {
+          "do": "fill",
+          "actor": "admin",
+          "testid": "restock-input",
+          "in": {
+            "testid": "admin-location-row",
+            "contains": "Bluetooth Speaker"
+          },
+          "text": "5"
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "restock-submit",
+          "in": {
+            "testid": "admin-location-row",
+            "contains": "Bluetooth Speaker"
+          }
+        },
+        {
+          "do": "dbExpectStock",
+          "item": "Bluetooth Speaker",
+          "relativeTo": "stored-before-control",
+          "plus": 5,
+          "within": 8000
+        },
+        {
+          "do": "reload",
+          "actor": "admin",
+          "settleMs": 1000
+        },
+        {
+          "do": "ensureSignedIn",
+          "actor": "admin",
+          "name": "admin",
+          "password": "stackbench-admin-2026",
+          "exact": true,
+          "readyTestid": "current-user"
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "admin-link"
+        },
+        {
+          "do": "expectNumber",
+          "actor": "admin",
+          "testid": "admin-location-qty",
+          "in": {
+            "testid": "admin-location-row",
+            "contains": "Bluetooth Speaker"
+          },
+          "relativeTo": "warehouse-before",
+          "plus": 5,
+          "within": 8000
+        },
+        {
+          "do": "reload",
+          "actor": "a",
+          "settleMs": 1000
+        },
+        {
+          "do": "expectNumber",
+          "actor": "a",
+          "testid": "item-stock",
+          "in": {
+            "testid": "item-card",
+            "contains": "Bluetooth Speaker"
+          },
+          "relativeTo": "storefront-before",
+          "plus": 5,
+          "within": 8000
+        },
+        {
+          "do": "dbExpectStock",
+          "item": "Bluetooth Speaker",
+          "relativeTo": "stored-before-control",
+          "plus": 5
+        }
+      ],
+      "criteria": [
+        {
+          "id": "202-control",
+          "category": "feature",
+          "points": 0,
+          "withheld": "The ordinary restock is a setup prerequisite retained when only the race is selected. This zero-point control verifies that setup; it does not add product credit.",
+          "desc": "an uncontended restock of five is stored by the server and shows on the storefront",
+          "steps": [
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "stored-before-control",
+              "plus": 5
+            },
+            {
+              "do": "expectNumber",
+              "actor": "a",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker"
+              },
+              "relativeTo": "storefront-before",
+              "plus": 5,
+              "within": 8000
+            }
+          ]
+        },
+        {
+          "id": "202a",
+          "category": "production",
+          "points": 1,
+          "desc": "three purchases and a restock of five during the rush leave stock at start + 2",
+          "steps": [
+            {
+              "do": "dbRecordStock",
+              "item": "Bluetooth Speaker",
+              "as": "stored-before-rush"
+            },
+            {
+              "do": "fill",
+              "actor": "admin",
+              "testid": "restock-input",
+              "in": {
+                "testid": "admin-location-row",
+                "contains": "Bluetooth Speaker"
+              },
+              "text": "5"
+            },
+            {
+              "do": "recordNumber",
+              "actor": "a",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker"
+              },
+              "as": "rush-before"
+            },
+            {
+              "do": "race",
+              "branches": [
+                [
+                  {
+                    "do": "clickConcurrently",
+                    "actors": [
+                      "a",
+                      "b",
+                      "c"
+                    ],
+                    "testid": "buy-now",
+                    "in": {
+                      "testid": "item-card",
+                      "contains": "Bluetooth Speaker"
+                    },
+                    "settleMs": 500
+                  }
+                ],
+                [
+                  {
+                    "do": "click",
+                    "actor": "admin",
+                    "testid": "restock-submit",
+                    "in": {
+                      "testid": "admin-location-row",
+                      "contains": "Bluetooth Speaker"
+                    }
+                  }
+                ]
+              ],
+              "settleMs": 6000
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "stored-before-rush",
+              "plus": 2
+            },
+            {
+              "do": "reload",
+              "actor": "a",
+              "settleMs": 1000
+            },
+            {
+              "do": "expectNumber",
+              "actor": "a",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker"
+              },
+              "relativeTo": "rush-before",
+              "plus": 2,
+              "within": 10000
+            },
+            {
+              "do": "ensureSignedIn",
+              "actor": "a",
+              "name": "r1",
+              "readyTestid": "current-user"
+            },
+            {
+              "do": "click",
+              "actor": "a",
+              "testid": "overlay-close",
+              "ifAvailable": true,
+              "unlessVisible": "order-item",
+              "within": 1000
+            },
+            {
+              "do": "click",
+              "actor": "a",
+              "testid": "orders-toggle",
+              "unlessVisible": "order-item"
+            },
+            {
+              "do": "expect",
+              "actor": "a",
+              "testid": "order-item",
+              "contains": "Bluetooth Speaker",
+              "count": 2,
+              "within": 10000
+            },
+            {
+              "do": "reload",
+              "actor": "b",
+              "settleMs": 1000
+            },
+            {
+              "do": "ensureSignedIn",
+              "actor": "b",
+              "name": "r2",
+              "readyTestid": "current-user"
+            },
+            {
+              "do": "click",
+              "actor": "b",
+              "testid": "overlay-close",
+              "ifAvailable": true,
+              "unlessVisible": "order-item",
+              "within": 1000
+            },
+            {
+              "do": "click",
+              "actor": "b",
+              "testid": "orders-toggle",
+              "unlessVisible": "order-item"
+            },
+            {
+              "do": "expect",
+              "actor": "b",
+              "testid": "order-item",
+              "contains": "Bluetooth Speaker",
+              "count": 1,
+              "within": 10000
+            },
+            {
+              "do": "reload",
+              "actor": "c",
+              "settleMs": 1000
+            },
+            {
+              "do": "ensureSignedIn",
+              "actor": "c",
+              "name": "r3",
+              "readyTestid": "current-user"
+            },
+            {
+              "do": "click",
+              "actor": "c",
+              "testid": "overlay-close",
+              "ifAvailable": true,
+              "unlessVisible": "order-item",
+              "within": 1000
+            },
+            {
+              "do": "click",
+              "actor": "c",
+              "testid": "orders-toggle",
+              "unlessVisible": "order-item"
+            },
+            {
+              "do": "expect",
+              "actor": "c",
+              "testid": "order-item",
+              "contains": "Bluetooth Speaker",
+              "count": 1,
+              "within": 10000
+            },
+            {
+              "do": "reload",
+              "actor": "admin",
+              "settleMs": 1000
+            },
+            {
+              "do": "ensureSignedIn",
+              "actor": "admin",
+              "name": "admin",
+              "password": "stackbench-admin-2026",
+              "exact": true,
+              "readyTestid": "current-user"
+            },
+            {
+              "do": "click",
+              "actor": "admin",
+              "testid": "admin-link",
+              "ifAvailable": true
+            },
+            {
+              "do": "expectNumber",
+              "actor": "admin",
+              "testid": "admin-stock",
+              "in": {
+                "testid": "admin-item-row",
+                "contains": "Bluetooth Speaker"
+              },
+              "relativeTo": "stored-before-rush",
+              "plus": 2,
+              "within": 10000
+            },
+            {
+              "do": "reload",
+              "actor": "a",
+              "settleMs": 1000
+            },
+            {
+              "do": "expectNumber",
+              "actor": "a",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker"
+              },
+              "relativeTo": "stored-before-rush",
+              "plus": 2,
+              "within": 10000
+            }
+          ],
+          "statedBy": "a restock in one warehouse raises the storefront number live"
+        }
+      ]
+    }
+  ]
+}

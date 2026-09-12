@@ -1,0 +1,7 @@
+{
+  "name": "stack-bench-ecommerce-postgres-reference",
+  "private": true,
+  "scripts": {
+    "start": "npm --prefix server run start"
+  }
+}

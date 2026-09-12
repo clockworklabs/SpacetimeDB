@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 2,
+  "kind": "calibration-manifest",
+  "id": "ecommerce.l6-return-refund-calibration",
+  "title": "Ecommerce L6 return and refund controls",
+  "track": "ecommerce",
+  "recipe": {
+    "path": "../recipes/progression-catalog.json",
+    "id": "ecommerce.progression-catalog",
+    "meaningSha256": "3aa0e19c2410b9adc1adea9419eacd133ae1964f9a23d8c243804bcf9c365b02",
+    "executionSha256": "66ed1bf5dda6b4a69733a2ddd2a8b2ff38a06ff9f3774a3d134cbd6c14181c5c",
+    "contentSha256": "0efbd201321b3c7d35662e474614ec8e3670aeca37e618879ed0cf7f0d86e4c1"
+  },
+  "fixture": {
+    "id": "ecommerce.operations",
+    "sourceSha256": "d06444b72dc94fe1ef5e08867d875e1f3bbaa5cd82c35a3558f399c1fcb5ceae"
+  },
+  "references": {
+    "registryPath": "reference-apps/registry.json",
+    "entries": [
+      {
+        "backend": "mongodb",
+        "id": "ecommerce-reference-mongodb",
+        "sourceSha256": "fbc5f5ad093caff7d613243fa965be41329001d07bcb58a5996760331d7c6cf8"
+      },
+      {
+        "backend": "postgres",
+        "id": "ecommerce-reference-postgres",
+        "sourceSha256": "cc51305269492eea469235748826f282dc86e0777b82f1e668eba523fcd2c335"
+      },
+      {
+        "backend": "spacetime",
+        "id": "ecommerce-reference-spacetime",
+        "sourceSha256": "5254fc834c288c4b20205afe47004f00d7945efd5e902dda82250e55382b8cb9"
+      }
+    ]
+  },
+  "mutations": [
+    {
+      "backend": "mongodb",
+      "path": "grader/mutations/mongodb-ecommerce.json",
+      "sha256": "d79059742a0b5e778812ed27c47b76999345d8522b6cfd0ef3f20384629bb258",
+      "referenceId": "ecommerce-reference-mongodb"
+    },
+    {
+      "backend": "postgres",
+      "path": "grader/mutations/postgres-ecommerce.json",
+      "sha256": "8b3f635ad88ef23dcf84d15add5988815f5adcf88f2a77bbe3855c16807585f4",
+      "referenceId": "ecommerce-reference-postgres"
+    },
+    {
+      "backend": "spacetime",
+      "path": "grader/mutations/spacetime-ecommerce.json",
+      "sha256": "c1026358a1c0251d3c0f5606e2bae48698048e3b659a7437bd5edf56352f141c",
+      "referenceId": "ecommerce-reference-spacetime"
+    }
+  ],
+  "nullControl": {
+    "pointBearing": "must-fail-conclusively",
+    "zeroPoint": "typed-policy",
+    "repetitions": 1
+  },
+  "controls": [],
+  "qualification": {
+    "exactCombinationRequired": true,
+    "referenceRepetitions": 1,
+    "mutationRepetitions": 1,
+    "checks": [
+      "ecommerce.returns-pricing.cancellation-and-return.3f",
+      "ecommerce.spec.state-durability.recommendation-feedback-restart.504c",
+      "ecommerce.feature.split-tender-refunds.return-refund-interaction.757a",
+      "ecommerce.feature.split-tender-refunds.return-refund-interaction.757b"
+    ],
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64"
+    },
+    "stacks": [
+      "mongodb",
+      "postgres",
+      "spacetime"
+    ],
+    "evidence": []
+  },
+  "equivalenceDecisions": [],
+  "selection": {
+    "path": "composition/dependency.json",
+    "sha256": "e73002df8a7a42e612f2bd1ee5de1f9db2d6c13cb9c819e405a5f2512eca3048",
+    "alias": "L6",
+    "coveredAliases": [
+      "L6"
+    ]
+  }
+}

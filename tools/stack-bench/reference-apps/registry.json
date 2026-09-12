@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 5,
+  "fixtures": [
+    {
+      "id": "ecommerce-reference-mongodb",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "level": 6,
+      "actionLevels": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "recipes": [
+        "ecommerce.sequential-l1",
+        "ecommerce.sequential-l2",
+        "ecommerce.sequential-l3",
+        "ecommerce.progression-catalog"
+      ],
+      "targetPath": "reference-apps/ecommerce/mongodb",
+      "origin": {
+        "kind": "authored",
+        "note": "Cumulative MongoDB reference shared by the registered ecommerce recipes."
+      },
+      "imported": {
+        "path": "reference-apps/ecommerce/mongodb",
+        "sourceSha256": "fbc5f5ad093caff7d613243fa965be41329001d07bcb58a5996760331d7c6cf8"
+      },
+      "mutationManifests": [
+        "grader/mutations/mongodb-ecommerce.json"
+      ]
+    },
+    {
+      "id": "ecommerce-reference-postgres",
+      "backend": "postgres",
+      "track": "ecommerce",
+      "level": 6,
+      "actionLevels": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "recipes": [
+        "ecommerce.sequential-l1",
+        "ecommerce.sequential-l2",
+        "ecommerce.sequential-l3",
+        "ecommerce.progression-catalog"
+      ],
+      "targetPath": "reference-apps/ecommerce/postgres",
+      "origin": {
+        "kind": "authored",
+        "note": "Cumulative PostgreSQL reference shared by the registered ecommerce recipes."
+      },
+      "imported": {
+        "path": "reference-apps/ecommerce/postgres",
+        "sourceSha256": "cc51305269492eea469235748826f282dc86e0777b82f1e668eba523fcd2c335"
+      },
+      "mutationManifests": [
+        "grader/mutations/postgres-ecommerce.json"
+      ]
+    },
+    {
+      "id": "ecommerce-reference-spacetime",
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 6,
+      "actionLevels": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "recipes": [
+        "ecommerce.sequential-l1",
+        "ecommerce.sequential-l2",
+        "ecommerce.sequential-l3",
+        "ecommerce.progression-catalog"
+      ],
+      "targetPath": "reference-apps/ecommerce/spacetime",
+      "origin": {
+        "kind": "authored",
+        "note": "Cumulative SpacetimeDB reference shared by the registered ecommerce recipes."
+      },
+      "imported": {
+        "path": "reference-apps/ecommerce/spacetime",
+        "sourceSha256": "5254fc834c288c4b20205afe47004f00d7945efd5e902dda82250e55382b8cb9"
+      },
+      "mutationManifests": [
+        "grader/mutations/spacetime-ecommerce.json"
+      ]
+    }
+  ]
+}

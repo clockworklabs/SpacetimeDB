@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.l2.inventory-dashboard",
+  "stableId": "ecommerce.inventory-operations",
+  "moduleType": "feature",
+  "title": "Inventory dashboard",
+  "description": "A low-stock dashboard.",
+  "requiresPacks": [
+    "ecommerce.feature.warehouse-admin"
+  ],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser"
+  ],
+  "evidence": [
+    "browser-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 86000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.l2.inventory-dashboard",
+        "path": "prompts/modular/inventory-dashboard.md",
+        "order": 50,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.l2.inventory-dashboard-hooks",
+        "path": "contracts/inventory-dashboard.md",
+        "order": 2050,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "low-stock",
+      "stableId": "operational-views",
+      "source": "scenarios/02-low-stock.json",
+      "feature": 5,
+      "criteria": [
+        "5e"
+      ],
+      "role": "feature"
+    }
+  ]
+}
