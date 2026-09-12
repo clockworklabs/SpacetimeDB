@@ -533,6 +533,22 @@ test('navigation retries a replaced destination without repeating clicks or hidi
   }
 });
 
+test('destination observation timeout does not fail optional navigation or hide a required click', async () => {
+  for (const optional of [false, true]) {
+    let clicks = 0;
+    const provided = services({ loc: (id: string) => ({
+      isVisible: async () => id === 'order-item',
+      isDisabled: async () => false,
+      scrollIntoViewIfNeeded: async () => { throw Object.assign(new Error('scroll timed out'), { name: 'TimeoutError' }); },
+      click: async () => { clicks += 1; throw Object.assign(new Error('required control missing'), { name: 'TimeoutError' }); },
+    }) });
+    const result = await run({ do: 'click', actor: 'a', testid: 'orders-toggle',
+      unlessVisible: 'order-item', ifAvailable: optional, within: 10 }, provided);
+    assert.equal(result.status, optional ? 'passed' : 'failed');
+    assert.equal(clicks, optional ? 0 : 1);
+  }
+});
+
 test('failed disappearance identifies the matched entry and scope', async () => {
   const provided = services({ loc: () => ({ waitFor: async () => { throw new Error('Timeout'); } }) });
   const result = await run({ do: 'waitUntilAbsent', actor: 'a', testid: 'item-card',

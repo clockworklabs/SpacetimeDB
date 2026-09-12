@@ -195,7 +195,7 @@ async function click({ input, capabilities, signal }:
   const browser = interaction(capabilities);
   const deadline = Date.now() + (input.within ?? browser.defaultWithin);
   const destinationVisible = async (): Promise<boolean> => {
-    if (!input.unlessVisible) return false;
+    if (!input.unlessVisible || Date.now() >= deadline) return false;
     while (true) {
       try {
         const sentinel = actor.loc(input.unlessVisible);
@@ -211,6 +211,8 @@ async function click({ input, capabilities, signal }:
           observer.observe(element);
         }));
       } catch (error) {
+        // The destination is only a reason to skip navigation, not an assertion.
+        if (!signal.aborted && errorField(error, 'name') === 'TimeoutError') return false;
         // A render can replace the destination between visibility and scrolling.
         // Retry that read only; never repeat the navigation click.
         if (!/Element is not attached to the DOM/i.test(String(error))
