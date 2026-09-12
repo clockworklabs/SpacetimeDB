@@ -325,7 +325,7 @@ impl InstanceEnv {
     /// End a console timer by logging the span at INFO level.
     pub(crate) fn console_timer_end(&self, span: &TimingSpan, function: Option<&str>) {
         let elapsed = span.start.elapsed();
-        let message = format!("Timing span {:?}: {:?}", &span.name, elapsed);
+        let message = format!("Timing span {:?}: {:?}", span.name, elapsed);
 
         self.console_log_simple_message(LogLevel::Info, function, &message);
     }

@@ -143,7 +143,7 @@ debug = true
 version = "2.10.1"
 edition = "2024"
 # update rust-toolchain.toml too!
-rust-version = "1.93.0"
+rust-version = "1.98.1"
 
 [workspace.dependencies]
 spacetimedb = { path = "crates/bindings", version = "=2.10.1" }

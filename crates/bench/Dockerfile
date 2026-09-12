@@ -2,8 +2,8 @@
 # Set up to run from linux / WSL (running from a windows file system will be extremely slow).
 # See the README for commands to run.
 
-# sync with: ../../rust-toolchain.toml
-FROM rust:1.93.0
+# !rust-toolchain-sync
+FROM rust:1.98.1
 
 RUN apt-get update && \
     apt-get install -y valgrind bash && \
