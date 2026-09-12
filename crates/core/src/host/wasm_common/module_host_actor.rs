@@ -703,6 +703,9 @@ impl InstanceCommon {
         environment: std::collections::BTreeMap<String, String>,
         inst: &mut I,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        if program.hash == old_module_info.module_hash {
+            return self.update_environment(environment, inst);
+        }
         let replica_ctx = inst.replica_ctx().clone();
         let system_logger = replica_ctx.logger.system_logger();
         let stdb = &replica_ctx.relational_db();
@@ -814,6 +817,58 @@ impl InstanceCommon {
                 Ok(res)
             }
         }
+    }
+
+    /// Apply an environment publication using the installed module instance. No
+    /// initialization, migration, program replacement, or scheduler restart occurs.
+    fn update_environment<I: WasmInstance>(
+        &mut self,
+        environment: std::collections::BTreeMap<String, String>,
+        inst: &mut I,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        let replica_ctx = inst.replica_ctx().clone();
+        let db = replica_ctx.relational_db();
+        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        let (tx, _) = db.with_auto_rollback(tx, |tx| -> anyhow::Result<()> {
+            use spacetimedb_datastore::system_tables::{read_hash_from_col, StModuleFields, ST_MODULE_ID};
+            let row = tx
+                .iter(ST_MODULE_ID)?
+                .next()
+                .context("database program is not initialized")?;
+            anyhow::ensure!(
+                read_hash_from_col(row, StModuleFields::ProgramHash)? == self.info.module_hash,
+                "database program changed before publication"
+            );
+            crate::db::environment::replace(db, tx, self.info.module_def.environment(), &environment)?;
+            Ok(())
+        })?;
+        let (out, _, trapped) = self.evaluate_subscribed_views(tx, inst)?;
+        if trapped || out.outcome != ViewOutcome::Success {
+            let (_, metrics, reducer) = db.rollback_mut_tx(out.tx);
+            db.report_mut_tx_metrics(reducer, metrics, None);
+            return Ok(UpdateDatabaseResult::ErrorExecutingMigration(anyhow::anyhow!(
+                "view evaluation failed during environment publication"
+            )));
+        }
+        let event = ModuleEvent {
+            timestamp: Timestamp::now(),
+            caller_identity: self.info.owner_identity,
+            caller_connection_id: None,
+            function_call: ModuleFunctionCall::update(),
+            status: EventStatus::Committed(DatabaseUpdate::default()),
+            reducer_return_value: None,
+            execution_budget_used: out.execution_budget_used,
+            host_execution_duration: out.total_duration,
+            request_id: None,
+            timer: None,
+        };
+        let durable_offset = db.durable_tx_offset();
+        let CommitAndBroadcastEventSuccess { tx_offset, .. } =
+            commit_and_broadcast_event(&self.info.subscriptions, None, event, out.tx);
+        Ok(UpdateDatabaseResult::UpdatePerformed {
+            tx_offset,
+            durable_offset,
+        })
     }
 
     /// Re-evaluates all materialized view instances tracked in view lifecycle state.

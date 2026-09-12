@@ -26,7 +26,7 @@ async fn read(env: &StandaloneEnv, database: u64, key: &str) -> anyhow::Result<A
 
 #[tokio::test]
 #[ignore = "requires an explicitly configured local environment-test Wasm artifact"]
-async fn real_module_reopen_and_no_artifact_reset_preserve_complete_environment_semantics() -> anyhow::Result<()> {
+async fn real_module_reopen_and_environment_only_publication_preserve_values() -> anyhow::Result<()> {
     let module_path = std::path::PathBuf::from(
         std::env::var_os("SPACETIMEDB_ENV_STANDALONE_TEST_MODULE")
             .context("SPACETIMEDB_ENV_STANDALONE_TEST_MODULE must name the owned local fixture")?,
@@ -66,6 +66,9 @@ async fn real_module_reopen_and_no_artifact_reset_preserve_complete_environment_
             database_identity: Identity::ZERO,
             program_bytes: bytes.clone(),
             environment,
+            environment_remove: Vec::new(),
+            environment_replace: false,
+            expected_module_version: None,
             num_replicas: None,
             host_type: HostType::Wasm,
             parent: None,
@@ -79,8 +82,10 @@ async fn real_module_reopen_and_no_artifact_reset_preserve_complete_environment_
         let database = env.control_db.get_database_by_identity(&Identity::ZERO)?.unwrap();
         let replica = env.control_db.get_leader_replica_by_database(database.id).unwrap();
         log::info!("ENV standalone fixture: rejected publication preserves live host");
+        let mut invalid = spec(Values::new());
+        invalid.environment_replace = true;
         let rejected = env
-            .publish_database(&Identity::ZERO, spec(Values::new()), MigrationPolicy::Compatible)
+            .publish_database(&Identity::ZERO, invalid, MigrationPolicy::Compatible)
             .await;
         assert!(
             rejected.as_ref().is_err()
@@ -94,6 +99,40 @@ async fn real_module_reopen_and_no_artifact_reset_preserve_complete_environment_
             read(&env, database.id, "REQUIRED").await?,
             AlgebraicValue::from(Some("initial-required".to_owned()))
         );
+        // An omitted input preserves required values. Environment-only requests
+        // also retain the module instance and cannot invoke init again.
+        assert!(env
+            .publish_database(&Identity::ZERO, spec(Values::new()), MigrationPolicy::Compatible)
+            .await?
+            .unwrap()
+            .was_successful());
+        let previous_module = env.leader(database.id).await?.module().await?;
+        let version = previous_module.info.module_hash;
+        let mut env_only = spec(Values::from([("FUTURE".into(), "undeclared".into())]));
+        env_only.program_bytes = Default::default();
+        env_only.expected_module_version = Some(version);
+        assert!(env
+            .publish_database(&Identity::ZERO, env_only, MigrationPolicy::Compatible)
+            .await?
+            .unwrap()
+            .was_successful());
+        let current = env.leader(database.id).await?.module().await?;
+        assert!(Arc::ptr_eq(&previous_module.info, &current.info));
+        let stored = current
+            .relational_db()
+            .with_read_only(spacetimedb_datastore::execution_context::Workload::Internal, |tx| {
+                spacetimedb::db::environment::snapshot(tx)
+            })?;
+        assert_eq!(stored["FUTURE"], "undeclared");
+        assert_eq!(stored["REQUIRED"], "initial-required");
+        assert!(read(&env, database.id, "FUTURE").await.is_err());
+        let mut stale = spec(Values::from([("REQUIRED".into(), "wrong".into())]));
+        stale.program_bytes = Default::default();
+        stale.expected_module_version = Some(spacetimedb_lib::Hash::from_hex("00".repeat(32))?);
+        assert!(env
+            .publish_database(&Identity::ZERO, stale, MigrationPolicy::Compatible)
+            .await
+            .is_err());
         log::info!("ENV standalone fixture: same-program update");
         let mut updated = initial.clone();
         updated.insert("REQUIRED".into(), "republished".into());
@@ -130,6 +169,8 @@ async fn real_module_reopen_and_no_artifact_reset_preserve_complete_environment_
                 DatabaseResetDef {
                     database_identity: Identity::ZERO,
                     program_bytes: None,
+                    environment_remove: Default::default(),
+                    environment_replace: false,
                     environment: Values::new(),
                     num_replicas: None,
                     host_type: None,
@@ -156,6 +197,8 @@ async fn real_module_reopen_and_no_artifact_reset_preserve_complete_environment_
             DatabaseResetDef {
                 database_identity: Identity::ZERO,
                 program_bytes: None,
+                environment_remove: Default::default(),
+                environment_replace: false,
                 environment: reset,
                 num_replicas: None,
                 host_type: None,

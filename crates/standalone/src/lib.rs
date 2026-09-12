@@ -432,12 +432,23 @@ impl StandaloneEnv {
     ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
         let existing_db = self.control_db.get_database_by_identity(&spec.database_identity)?;
 
+        let update = spacetimedb_lib::environment::EnvironmentUpdate {
+            values: spec.environment,
+            remove: spec.environment_remove,
+            replace: spec.environment_replace,
+        };
+        update.validate()?;
         // standalone does not support replication.
         let num_replicas = 1;
 
         match existing_db {
             // The database does not already exist, so we'll create it.
             None => {
+                anyhow::ensure!(
+                    !spec.program_bytes.is_empty() && spec.expected_module_version.is_none(),
+                    "initial publication requires a module and cannot require an existing version"
+                );
+                let environment = update.resulting_values(&Default::default())?;
                 let program = Program::from_bytes(spec.host_type.into(), &spec.program_bytes[..]);
 
                 let database = Database {
@@ -454,7 +465,7 @@ impl StandaloneEnv {
                 // Instantiate a temporary database in order to check that the module is valid.
                 // This will e.g. typecheck RLS filters.
                 self.host_controller
-                    .check_module_validity_with_environment(database.clone(), program, spec.environment.clone())
+                    .check_module_validity_with_environment(database.clone(), program, environment.clone())
                     .await?;
 
                 let program_hash = self.program_store.put(&spec.program_bytes).await?;
@@ -463,7 +474,7 @@ impl StandaloneEnv {
 
                 let (database, replica) =
                     self.control_db
-                        .install_database_with_environment(database, None, spec.environment, &[])?;
+                        .install_database_with_environment(database, None, environment, &[])?;
                 // The leader nomination and input are durable already. If this
                 // waiter is cancelled, ordinary lookup resumes the same input.
                 self.on_insert_replica(&replica).await?;
@@ -483,12 +494,13 @@ impl StandaloneEnv {
 
                 let leader = self.leader_with_publication_lock_held(database_id).await?;
                 let update_result = leader
-                    .update_with_environment(
+                    .update_with_environment_options(
                         database,
                         spec.host_type,
                         spec.program_bytes.to_vec().into(),
                         policy,
-                        spec.environment,
+                        update,
+                        spec.expected_module_version,
                     )
                     .await?;
                 if update_result.was_successful() {
@@ -569,6 +581,12 @@ impl StandaloneEnv {
             previous.owner_identity == *caller_identity,
             "database ownership changed before reset"
         );
+        let environment = spacetimedb_lib::environment::EnvironmentUpdate {
+            values: spec.environment,
+            remove: spec.environment_remove,
+            replace: spec.environment_replace,
+        }
+        .resulting_values(&Default::default())?;
         let mut database = previous.clone();
         let program = match spec.program_bytes {
             Some(bytes) => {
@@ -592,7 +610,7 @@ impl StandaloneEnv {
         database.host_type = HostType::from(program.kind);
         database.initial_program = program.hash;
         self.host_controller
-            .check_module_validity_with_environment(database.clone(), program.clone(), spec.environment.clone())
+            .check_module_validity_with_environment(database.clone(), program.clone(), environment.clone())
             .await?;
         let stored = self.program_store.put(&program.bytes).await?;
         anyhow::ensure!(stored == program.hash, "stored reset program changed");
@@ -605,7 +623,7 @@ impl StandaloneEnv {
         let (_, replica) = self.control_db.install_database_with_environment(
             database,
             Some(&previous),
-            spec.environment,
+            environment,
             &previous_replicas,
         )?;
         self.on_insert_replica(&replica).await?;

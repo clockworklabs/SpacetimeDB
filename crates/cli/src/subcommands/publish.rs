@@ -107,6 +107,9 @@ pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, an
         .exclude("yes")
         .exclude("no_config")
         .exclude("env")
+        .exclude("env_only")
+        .exclude("unset_env")
+        .exclude("replace_env")
         .build(command)
         .map_err(Into::into)
 }
@@ -324,26 +327,92 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
                 .help("Use NativeAOT-LLVM compilation for C# modules (experimental; supported on Windows, and on Linux with .NET 10)")
         )
         .arg(common_args::dotnet_version())
+        .arg(
+            Arg::new("env_only")
+                .long("env-only")
+                .action(SetTrue)
+                .conflicts_with_all(["wasm_file", "js_file", "module_path", "build_options", "parent", "organization", "num_replicas", "clear-database"])
+                .help("Update environment values without building or uploading a module."),
+        )
+        .arg(
+            Arg::new("unset_env")
+                .long("unset-env")
+                .value_name("KEY")
+                .action(ArgAction::Append)
+                .conflicts_with("replace_env")
+                .help("Delete an environment value. Repeat for multiple keys."),
+        )
+        .arg(
+            Arg::new("replace_env")
+                .long("replace-env")
+                .action(SetTrue)
+                .help("Replace all environment values, deleting every unspecified key."),
+        )
         .after_help("Run `spacetime help publish` for more detailed information.")
-        .after_long_help("Every publish replaces the complete declared environment. Put an env map in spacetime.json; declared shell variables override config values (including empty strings). The CLI displays supplied keys and sources, never values. Optional values omitted from every input are removed. --env selects config file layers. Run `spacetime help publish` for more detailed information.")
+        .after_long_help("Publishing preserves unspecified environment values. Put an env map in spacetime.json; explicit undeclared keys are allowed, and declared shell variables override config values (including empty strings). The CLI displays supplied keys and sources, never values. --env-only updates an existing database without a module. --unset-env explicitly deletes a value; required values cannot be removed. --replace-env replaces all stored values with the supplied set, including deleting unspecified undeclared keys, and cannot be combined with --unset-env. The host validates the resulting environment atomically. --env selects config file layers.")
+}
+
+#[derive(Default)]
+struct EnvironmentOptions {
+    only: bool,
+    remove: Vec<String>,
+    replace: bool,
+}
+
+impl EnvironmentOptions {
+    fn from_args(args: &ArgMatches) -> anyhow::Result<Self> {
+        let options = Self {
+            only: args.get_flag("env_only"),
+            remove: args
+                .get_many::<String>("unset_env")
+                .map(|keys| keys.cloned().collect())
+                .unwrap_or_default(),
+            replace: args.get_flag("replace_env"),
+        };
+        ensure!(
+            options.remove.len() <= spacetimedb_lib::environment::MAX_ENV_VARS,
+            "Too many environment removals"
+        );
+        for key in &options.remove {
+            spacetimedb_lib::environment::validate_key(key)?;
+        }
+        Ok(options)
+    }
+
+    fn validate_values(&self, values: &std::collections::BTreeMap<String, String>) -> anyhow::Result<()> {
+        ensure!(
+            !self.replace || self.remove.is_empty(),
+            "--replace-env cannot be combined with --unset-env"
+        );
+        for key in &self.remove {
+            ensure!(
+                !values.contains_key(key),
+                "Environment key {key:?} is both supplied and removed"
+            );
+        }
+        Ok(())
+    }
 }
 
 fn publication_body(
     module: &spacetimedb_schema::def::ModuleDef,
     bytes: Vec<u8>,
     environment: std::collections::BTreeMap<String, String>,
+    options: &EnvironmentOptions,
 ) -> anyhow::Result<(&'static str, Vec<u8>)> {
-    if module.environment_declared() {
+    options.validate_values(&environment)?;
+    if module.environment_declared() || !environment.is_empty() || !options.remove.is_empty() || options.replace {
         let body = spacetimedb_client_api_messages::publish::PublishRequest {
-            module: bytes,
+            module: Some(bytes),
             environment,
+            environment_remove: options.remove.clone(),
+            environment_replace: options.replace,
+            expected_module_version: None,
         }
         .encode()?;
         Ok((spacetimedb_client_api_messages::publish::CONTENT_TYPE, body))
     } else {
-        anyhow::ensure!(environment.is_empty(), "Module does not declare environment keys");
-        // Preserve older servers for ordinary modules. Explicit empty ENV
-        // declarations still use the envelope, expressing replacement intent.
+        // Preserve older servers for ordinary modules without environment changes.
         Ok(("application/octet-stream", bytes))
     }
 }
@@ -462,6 +531,7 @@ pub async fn exec_with_options(
         .copied()
         .unwrap_or(ClearMode::Never);
     let yes = yes_flags_from_args(args);
+    let environment_options = EnvironmentOptions::from_args(args)?;
     let config_dir = loaded_config_ref.map(|lc| lc.config_dir.as_path());
 
     execute_publish_configs(
@@ -471,6 +541,7 @@ pub async fn exec_with_options(
         config_dir,
         clear_database,
         yes,
+        &environment_options,
     )
     .await
 }
@@ -491,7 +562,16 @@ pub async fn exec_from_entry(
 
     let yes = if force { YesFlags::all() } else { YesFlags::default() };
 
-    execute_publish_configs(&mut config, vec![command_config], true, config_dir, clear_database, yes).await
+    execute_publish_configs(
+        &mut config,
+        vec![command_config],
+        true,
+        config_dir,
+        clear_database,
+        yes,
+        &EnvironmentOptions::default(),
+    )
+    .await
 }
 
 async fn execute_publish_configs<'a>(
@@ -501,6 +581,7 @@ async fn execute_publish_configs<'a>(
     config_dir: Option<&std::path::Path>,
     clear_database: ClearMode,
     yes: YesFlags,
+    environment_options: &EnvironmentOptions,
 ) -> Result<(), anyhow::Error> {
     // Execute publish for each config
     for command_config in publish_configs {
@@ -510,6 +591,20 @@ async fn execute_publish_configs<'a>(
         let name_or_identity_opt = command_config.get_one::<String>("database")?;
         let name_or_identity = name_or_identity_opt.as_deref();
         let anon_identity = command_config.get_one::<bool>("anon_identity")?.unwrap_or(false);
+        if environment_options.only {
+            ensure!(clear_database == ClearMode::Never, "--env-only cannot reset a database");
+            environment::publish_only(
+                config,
+                server,
+                name_or_identity.context("--env-only requires an existing database name or identity")?,
+                anon_identity,
+                yes,
+                command_config.get_config_value("env"),
+                environment_options,
+            )
+            .await?;
+            continue;
+        }
         let wasm_file = command_config.get_one::<PathBuf>("wasm_file")?;
         let js_file = command_config.get_one::<PathBuf>("js_file")?;
         let resolved_module_path = command_config.get_resolved_path("module_path", config_dir)?;
@@ -670,7 +765,8 @@ async fn execute_publish_configs<'a>(
         // Set the host type.
         builder = builder.query(&[("host_type", host_type)]);
 
-        let (content_type, payload) = publication_body(&module_schema, program_bytes, environment.values)?;
+        let (content_type, payload) =
+            publication_body(&module_schema, program_bytes, environment.values, environment_options)?;
         let res = builder
             .header(reqwest::header::CONTENT_TYPE, content_type)
             .body(payload)
