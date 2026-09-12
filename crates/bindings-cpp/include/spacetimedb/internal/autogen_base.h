@@ -37,7 +37,7 @@ public:
         return std::get<Index>(data_);
     }
 
-    // Get variant by index (mutable)  
+    // Get variant by index (mutable)
     template<size_t Index>
     auto& get() {
         return std::get<Index>(data_);
@@ -90,8 +90,12 @@ public:
         using Base::set; \
         using Base::is; \
         using Base::visit; \
-        using Base::operator==; \
-        using Base::operator!=; \
+        bool operator==(const TypeName& other) const noexcept { \
+            return static_cast<const Base&>(*this) == static_cast<const Base&>(other); \
+        } \
+        bool operator!=(const TypeName& other) const noexcept { \
+            return !(*this == other); \
+        } \
         \
         void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const { \
             /* Write tag (variant index) */ \
