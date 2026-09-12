@@ -1,4 +1,5 @@
 import { actionImplementation } from './action-contract.js';
+import { harnessBrowserFailure } from '../evidence/harness-errors.js';
 import {
   actorFor,
   browserFor,
@@ -72,23 +73,44 @@ async function signUp({ input, capabilities, signal }: ChatArguments<AccountInpu
   return { user, signedUp: true };
 }
 
-async function signIn({ input, capabilities, signal }: ChatArguments<AccountInput>) {
+async function signIn({ input, capabilities, signal }: ChatArguments<AccountInput>, acceptRestoredSession = false) {
   const actor = actorFor(capabilities, input.actor);
   const browser = browserFor(capabilities);
   const user = input.exact ? input.name : browser.scopedUser(input.name);
   const password = input.password ?? `pw-${user}`;
+  const currentUser = actor.page.locator(browser.testId('current-user')).first();
+  const restoredSession = async () => {
+    if (!acceptRestoredSession || !(await currentUser.isVisible())) return false;
+    if (!(await currentUser.innerText()).includes(user)) {
+      throw new Error(`${actor.name} is already signed in as a different account`);
+    }
+    return true;
+  };
+  if (await restoredSession()) return { user, signedIn: false };
   const username = actor.page.locator(browser.testId('signin-username')).first();
   const toggle = actor.loc('signin-toggle');
-  if (!(await username.isVisible())) {
-    await username.or(toggle).filter({ visible: true }).first().waitFor({ state: 'visible', timeout: browser.defaultWithin });
+  try {
+    const entry = username.or(toggle);
+    await (acceptRestoredSession ? entry.or(currentUser) : entry)
+      .filter({ visible: true }).first().waitFor({ state: 'visible', timeout: browser.defaultWithin });
+    if (await restoredSession()) return { user, signedIn: false };
     if (!(await username.isVisible())) {
       await toggle.click({ timeout: browser.defaultWithin });
-      await username.waitFor({ state: 'visible', timeout: browser.defaultWithin });
+      await (acceptRestoredSession ? username.or(currentUser).filter({ visible: true }).first() : username)
+        .waitFor({ state: 'visible', timeout: browser.defaultWithin });
+      if (await restoredSession()) return { user, signedIn: false };
     }
+    await username.fill(user);
+    await actor.page.locator(browser.testId('signin-password')).first().fill(password);
+    await actor.page.locator(browser.testId('signin-submit')).first().click();
+  } catch (error) {
+    // Restoration can remove the form between the readiness check and an interaction.
+    if (!signal?.aborted && error instanceof Error && error.name === 'TimeoutError'
+      && !('classification' in error) && !harnessBrowserFailure(error) && await restoredSession()) {
+      return { user, signedIn: false };
+    }
+    throw error;
   }
-  await username.fill(user);
-  await actor.page.locator(browser.testId('signin-password')).first().fill(password);
-  await actor.page.locator(browser.testId('signin-submit')).first().click();
   if (input.expectFailure) {
     await browser.sleep(input.settleMs ?? 2000, signal);
     return { user, expectedFailure: true };
@@ -152,25 +174,12 @@ async function sendMany({ input, capabilities, signal }: ChatArguments<ManyMessa
 async function ensureSignedIn({ input, capabilities, signal }: ChatArguments<AccountInput>) {
   const actor = actorFor(capabilities, input.actor);
   const browser = browserFor(capabilities);
-  const user = input.exact ? input.name : browser.scopedUser(input.name);
-  const currentUser = actor.page.locator(browser.testId('current-user')).first();
-  if (!(await currentUser.isVisible())) {
-    await currentUser.or(actor.page.locator(browser.testId('signin-username')))
-      .or(actor.page.locator(browser.testId('signin-toggle'))).filter({ visible: true }).first()
-      .waitFor({ state: 'visible', timeout: browser.defaultWithin });
-  }
-  if (await currentUser.isVisible()) {
-    const signedInAs = await currentUser.innerText();
-    if (!signedInAs.includes(user)) {
-      throw new Error(`${actor.name} is already signed in as a different account`);
-    }
-    return { restored: false, user };
-  }
-  await signIn({ input, capabilities, signal });
+  const result = await signIn({ input, capabilities, signal }, true);
+  if (!result.signedIn) return { restored: false, user: result.user };
   await actor.page.locator(browser.testId(input.readyTestid ?? 'room-list')).first()
     .waitFor({ state: 'attached', timeout: browser.defaultWithin });
   await browser.sleep(input.settleMs ?? 1500, signal);
-  return { restored: true, user };
+  return { restored: true, user: result.user };
 }
 
 export const CHAT_ACTION_IMPLEMENTATIONS = Object.freeze({

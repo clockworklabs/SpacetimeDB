@@ -18,9 +18,32 @@ test('ensureSignedIn waits for account restoration after reload', async () => {
       scopedUser: (name: string) => name, sleep: async () => {} };
     const result = await executeAction(ACTION_REGISTRY, 'ensureSignedIn',
       { do: 'ensureSignedIn', actor: 'a', name: 'alice' },
-      { capabilities: { actors: { get: () => ({ page, name: 'a' }) },
+      { capabilities: { actors: { get: () => ({ page, name: 'a',
+        loc: (id: string) => page.locator(stableElementSelector(id)).first() }) },
         'browser-interaction': capability } });
     assert.equal(result.status, 'passed', result.summary ?? undefined);
+    for (const restoredUser of ['alice', 'someone-else']) {
+      await page.setContent(`<button id="signin-toggle" onclick="this.remove();
+        setTimeout(() => { document.body.innerHTML = '<span id=current-user>${restoredUser}</span>'; }, 50)">Sign in</button>`);
+      const restored = await executeAction(ACTION_REGISTRY, 'ensureSignedIn',
+        { do: 'ensureSignedIn', actor: 'a', name: 'alice' },
+        { capabilities: { actors: { get: () => ({ page, name: 'a',
+          loc: (id: string) => page.locator(stableElementSelector(id)).first() }) },
+        'browser-interaction': capability } });
+      assert.equal(restored.status, restoredUser === 'alice' ? 'passed' : 'harness_failure', restored.summary ?? undefined);
+      if (restoredUser !== 'alice') assert.match(restored.summary ?? '', /different account/);
+    }
+    await page.setContent(`<span id="current-user">alice</span>
+      <form onsubmit="event.preventDefault(); this.dataset.password = document.querySelector('#signin-password').value">
+        <input id="signin-username"><input id="signin-password"><button id="signin-submit">Sign in</button>
+      </form>`);
+    const explicit = await executeAction(ACTION_REGISTRY, 'signIn',
+      { do: 'signIn', actor: 'a', name: 'alice', password: 'wrong-password', expectFailure: true },
+      { capabilities: { actors: { get: () => ({ page, name: 'a',
+        loc: (id: string) => page.locator(stableElementSelector(id)).first() }) },
+      'browser-interaction': capability } });
+    assert.equal(explicit.status, 'passed', explicit.summary ?? undefined);
+    assert.equal(await page.locator('form').getAttribute('data-password'), 'wrong-password');
   } finally { await browser.close(); }
 });
 
