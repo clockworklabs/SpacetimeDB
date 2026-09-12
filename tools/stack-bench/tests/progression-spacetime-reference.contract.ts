@@ -85,6 +85,12 @@ const backendMarkers: Record<string, string> = {
   'delivery-notifications': 'export const myNotifications',
   'recommendation-feedback': 'export const dismissRecommendation',
   'support-refunds': 'export const supportRefund',
+  'product-bundles': 'export const saveBundle',
+  'bundle-checkout': 'export const addBundleToCart',
+  'bundle-returns': 'export const returnBundle',
+  'store-credit': 'export const grantCredit',
+  'split-tender-refunds': 'export const checkoutCredit',
+  subscriptions: 'export const subscribeItem',
 };
 
 const namedReducerCalls = [

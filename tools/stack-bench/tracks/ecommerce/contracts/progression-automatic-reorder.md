@@ -7,6 +7,9 @@ Use these application interface names:
 - `reorder-submit` saves the rule.
 - `reorder-rule-item` identifies each saved rule, sets `data-entity-id` to the rule's item
   identifier, and contains its item name, threshold, quantity, and current state.
+  Set `data-threshold` and `data-quantity` to their integer values. Set
+  `data-action-input` on `reorder-submit` to JSON with `itemId`, `threshold`, and `quantity`
+  for the current form values.
 
 Saving a rule is the named `saveReorderRule` application action.
 

@@ -43,7 +43,7 @@ test('support order choices expose separate button actions', () => {
 test('scheduled restocks expose the identifier used by access-control replay', () => {
   const client = read('client', 'src', 'ProgressionPanel.tsx');
   assert.match(client,
-    /data-role="pending-restock-item" data-entity-id=\{String\(item\.id\)\}/);
+    /data-role="pending-restock-item"[^>]*data-entity-id=\{String\(item\.id\)\}/);
 });
 
 test('HTTP reference actions use the declared promotion, role, and reply interfaces', () => {

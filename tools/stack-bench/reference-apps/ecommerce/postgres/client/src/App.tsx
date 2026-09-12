@@ -409,9 +409,8 @@ export default function App() {
 
   async function returnItem(orderId: number, orderItemId: number) {
     try {
-      await api(`/api/orders/${orderId}/return`, {
+      await api(`/api/orders/${orderId}/items/${orderItemId}/return`, {
         method: "POST",
-        body: JSON.stringify({ orderItemId }),
       });
     } catch (err: any) {
       pushToast("order-error", err.message);
@@ -1069,7 +1068,7 @@ function OrdersPanel(props: {
               </div>
               <div className="order-lines">
                 {o.items.map((l) => (
-                  <div className="order-line" key={l.orderItemId}>
+                  <div className="order-line" data-role="order-line" data-return-input={JSON.stringify({ orderId: o.id, itemId: l.orderItemId })} key={l.orderItemId}>
                     <span>
                       {l.name} × {l.quantity}
                       {l.returned ? " (returned)" : ""}

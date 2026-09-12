@@ -691,12 +691,12 @@ app.post(
 );
 
 app.post(
-  "/api/orders/:id/return",
+  "/api/orders/:id/items/:itemId/return",
   requireAuth,
   asyncHandler(async (req, res) => {
     const orderId = Number(req.params.id);
     const accountId = req.account!.id;
-    const { orderItemId } = req.body ?? {};
+    const orderItemId = Number(req.params.itemId);
     if (!Number.isInteger(orderItemId)) {
       res.status(400).json({ error: "invalid item" });
       return;

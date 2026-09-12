@@ -3,7 +3,7 @@
   "track": "ecommerce",
   "level": 3,
   "name": "Deferred-work durability",
-  "note": "Draft: changed scheduled-restock observation needs matching qualification. Each check restarts the backend with work pending. Scheduled restock proves ordinary execution first and observes stored stock independently of live UI updates.",
+  "note": "Draft: revised observations require matching reference and defect-control qualification.",
   "features": [
     {
       "id": 311,
@@ -61,13 +61,16 @@
       "name": "A reservation survives restart",
       "actors": ["customer", "watcher"],
       "setup": [
-        { "do": "signUp", "actor": "customer", "name": "durable-reservation" },
-        { "do": "recordNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Desk Lamp" }, "as": "before" },
-        { "do": "click", "actor": "customer", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
-        { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Desk Lamp" }, "relativeTo": "before", "plus": -1, "within": 10000 },
-        { "do": "wait", "actor": "customer", "ms": 30000 },
-        { "do": "restartBackend", "settleMs": 15000 },
-        { "do": "reload", "actor": "watcher", "settleMs": 3000 }
+        {"do":"signUp","actor":"customer","name":"durable-reservation"},
+        {"do":"recordNumber","actor":"watcher","testid":"item-stock","in":{"testid":"item-card","contains":"Desk Lamp"},"as":"before"},
+        {"do":"recordTime","as":"pending-314"},
+        {"do":"click","actor":"customer","testid":"add-to-cart","in":{"testid":"item-card","contains":"Desk Lamp"}},
+        {"do":"reload","actor":"watcher","settleMs":1000},
+        {"do":"expectNumber","actor":"watcher","testid":"item-stock","in":{"testid":"item-card","contains":"Desk Lamp"},"relativeTo":"before","plus":-1,"within":10000},
+        {"do":"recordTime","as":"pending-314-accepted"},
+        {"do":"wait","actor":"customer","ms":30000},
+        {"do":"restartBackend","settleMs":15000},
+        {"do":"reload","actor":"watcher","settleMs":3000}
       ],
       "criteria": [
         {
@@ -77,12 +80,18 @@
           "points": 4,
           "statedBy": "Pending reservations survive a backend restart.",
           "steps": [
-            { "do": "reload", "actor": "watcher", "settleMs": 2000 },
-            { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Desk Lamp" }, "relativeTo": "before", "plus": 0, "within": 85000 },
-            { "do": "reload", "actor": "customer", "settleMs": 1000 },
-            { "do": "ensureSignedIn", "actor": "customer", "name": "durable-reservation", "readyTestid": "current-user" },
-            { "do": "click", "actor": "customer", "testid": "cart-toggle", "unlessVisible": "cart-item" },
-            { "do": "expect", "actor": "customer", "testid": "cart-item-expired", "in": { "testid": "cart-item", "contains": "Desk Lamp" }, "within": 10000 }
+            {"do":"expectElapsed","since":"pending-314","atMost":70000},
+            {"do":"reload","actor":"watcher","settleMs":1000},
+            {"do":"expectElapsed","since":"pending-314","atMost":70000},
+            {"do":"expectNumber","actor":"watcher","testid":"item-stock","in":{"testid":"item-card","contains":"Desk Lamp"},"relativeTo":"before","plus":-1,"within":1000},
+            {"do":"expectElapsed","since":"pending-314","atMost":70000},
+            {"do":"wait","actor":"customer","ms":110000,"since":"pending-314-accepted"},
+            {"do":"reload","actor":"watcher","settleMs":2000},
+            {"do":"expectNumber","actor":"watcher","testid":"item-stock","in":{"testid":"item-card","contains":"Desk Lamp"},"relativeTo":"before","plus":0,"within":10000},
+            {"do":"reload","actor":"customer","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"customer","name":"durable-reservation","readyTestid":"current-user"},
+            {"do":"click","actor":"customer","testid":"cart-toggle","unlessVisible":"cart-item"},
+            {"do":"expect","actor":"customer","testid":"cart-item-expired","in":{"testid":"cart-item","contains":"Desk Lamp"},"within":10000}
           ]
         }
       ]
@@ -92,21 +101,28 @@
       "name": "An order transition survives restart",
       "actors": ["customer", "staff"],
       "setup": [
-        { "do": "signUp", "actor": "customer", "name": "durable-delivery" },
-        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
-        { "do": "click", "actor": "staff", "testid": "staff-link" },
-        { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" } },
-        { "do": "expect", "actor": "staff", "testid": "queue-item", "contains": "Keyboard", "within": 10000 },
-        { "do": "click", "actor": "staff", "testid": "ship-submit", "in": { "testid": "queue-item", "contains": "Keyboard" } },
+        {"do":"signUp","actor":"customer","name":"durable-delivery"},
+        {"do":"signIn","actor":"staff","name":"staff","password":"stackbench-staff-2026","exact":true},
+        {"do":"click","actor":"staff","testid":"staff-link"},
+        {"do":"click","actor":"customer","testid":"buy-now","in":{"testid":"item-card","contains":"Keyboard"}},
+        {"do":"reload","actor":"staff","settleMs":1000},
+        {"do":"ensureSignedIn","actor":"staff","name":"staff","readyTestid":"current-user","password":"stackbench-staff-2026","exact":true},
+        {"do":"click","actor":"staff","testid":"overlay-close","ifAvailable":true,"within":1000},
+        {"do":"click","actor":"staff","testid":"staff-link","unlessVisible":"queue-item"},
+        {"do":"expect","actor":"staff","testid":"queue-item","contains":"Keyboard","within":10000},
+        {"do":"click","actor":"staff","testid":"ship-submit","in":{"testid":"queue-item","contains":"Keyboard"}},
+        {"do":"reload","actor":"customer","settleMs":1000},
+        {"do":"ensureSignedIn","actor":"customer","name":"durable-delivery","readyTestid":"current-user"},
+        {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
+        {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
+        {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"shipped","ignoreCase":true,"within":10000},
+        {"do":"recordTime","as":"delivery-start-accepted"},
+        {"do":"wait","actor":"customer","ms":20000},
+        {"do":"restartBackend","settleMs":15000},
+        {"do":"reload","actor":"customer","settleMs":3000},
+        {"do":"ensureSignedIn","actor":"customer","name":"durable-delivery","readyTestid":"current-user"},
         {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
-        { "do": "click", "actor": "customer", "testid": "orders-toggle" },
-        { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "value": "shipped", "ignoreCase": true, "within": 10000 },
-        { "do": "wait", "actor": "customer", "ms": 20000 },
-        { "do": "restartBackend", "settleMs": 15000 },
-        { "do": "reload", "actor": "customer", "settleMs": 3000 },
-        { "do": "ensureSignedIn", "actor": "customer", "name": "durable-delivery", "readyTestid": "current-user" },
-        {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
-        { "do": "click", "actor": "customer", "testid": "orders-toggle" }
+        {"do":"click","actor":"customer","testid":"orders-toggle"}
       ],
       "criteria": [
         {
@@ -116,7 +132,12 @@
           "points": 4,
           "statedBy": "Pending order delivery survives a backend restart.",
           "steps": [
-            { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "value": "delivered", "ignoreCase": true, "within": 65000 }
+            {"do":"wait","actor":"customer","ms":75000,"since":"delivery-start-accepted"},
+            {"do":"reload","actor":"customer","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"customer","name":"durable-delivery","readyTestid":"current-user"},
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
+            {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
+            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"delivered","ignoreCase":true,"within":10000}
           ]
         }
       ]
@@ -126,28 +147,41 @@
       "name": "Cart expiration survives restart",
       "actors": ["customer", "watcher"],
       "setup": [
-        { "do": "signUp", "actor": "customer", "name": "durable-cart" },
-        { "do": "recordNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" }, "as": "before" },
-        { "do": "click", "actor": "customer", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" } },
-        { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" }, "relativeTo": "before", "plus": -1, "within": 10000 },
-        { "do": "wait", "actor": "customer", "ms": 120000 },
-        { "do": "restartBackend", "settleMs": 15000 },
-        { "do": "reload", "actor": "watcher", "settleMs": 3000 }
+        {"do":"signUp","actor":"customer","name":"durable-cart"},
+        {"do":"recordNumber","actor":"watcher","testid":"item-stock","in":{"testid":"item-card","contains":"Bluetooth Speaker"},"as":"before"},
+        {"do":"recordTime","as":"pending-316"},
+        {"do":"click","actor":"customer","testid":"add-to-cart","in":{"testid":"item-card","contains":"Bluetooth Speaker"}},
+        {"do":"reload","actor":"watcher","settleMs":1000},
+        {"do":"expectNumber","actor":"watcher","testid":"item-stock","in":{"testid":"item-card","contains":"Bluetooth Speaker"},"relativeTo":"before","plus":-1,"within":10000},
+        {"do":"recordTime","as":"pending-316-accepted"},
+        {"do":"wait","actor":"customer","ms":120000},
+        {"do":"restartBackend","settleMs":15000},
+        {"do":"reload","actor":"watcher","settleMs":3000}
       ],
       "criteria": [
         {
           "id": "316a",
           "category": "production",
-          "desc": "a cart inactive before restart still expires at five minutes",
+          "desc": "a cart survives restart and expires near its original five-minute deadline",
           "points": 4,
           "statedBy": "Pending cart expiration survives a backend restart.",
           "steps": [
-            { "do": "reload", "actor": "customer", "settleMs": 3000 },
-            { "do": "ensureSignedIn", "actor": "customer", "name": "durable-cart", "readyTestid": "current-user" },
-            { "do": "click", "actor": "customer", "testid": "cart-toggle" },
-            { "do": "expectNumber", "actor": "customer", "testid": "cart-count", "equals": 0, "within": 220000 },
-            { "do": "expect", "actor": "customer", "testid": "cart-expired-notice", "within": 10000 },
-            { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" }, "relativeTo": "before", "plus": 0, "within": 10000 }
+            {"do":"expectElapsed","since":"pending-316","atMost":250000},
+            {"do":"reload","actor":"customer","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"customer","name":"durable-cart","readyTestid":"current-user"},
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
+            {"do":"click","actor":"customer","testid":"cart-toggle","unlessVisible":"cart-item"},
+            {"do":"expectElapsed","since":"pending-316","atMost":250000},
+            {"do":"expectNumber","actor":"customer","testid":"cart-count","equals":1,"within":1000},
+            {"do":"expectElapsed","since":"pending-316","atMost":250000},
+            {"do":"wait","actor":"customer","ms":310000,"since":"pending-316-accepted"},
+            {"do":"reload","actor":"customer","settleMs":3000},
+            {"do":"ensureSignedIn","actor":"customer","name":"durable-cart","readyTestid":"current-user"},
+            {"do":"click","actor":"customer","testid":"cart-toggle"},
+            {"do":"expectNumber","actor":"customer","testid":"cart-count","equals":0,"within":10000},
+            {"do":"expect","actor":"customer","testid":"cart-expired-notice","within":10000},
+            {"do":"reload","actor":"watcher","settleMs":1000},
+            {"do":"expectNumber","actor":"watcher","testid":"item-stock","in":{"testid":"item-card","contains":"Bluetooth Speaker"},"relativeTo":"before","plus":0,"within":10000}
           ]
         }
       ]

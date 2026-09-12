@@ -3,7 +3,7 @@
   "track": "ecommerce",
   "level": 2,
   "name": "Ecommerce L2 direct server checks",
-  "note": "Draft: repaired probe behavior needs matching qualification evidence. Cross-stack direct actions prove server authorization and exact conservation without relying on whether a client renders a button.",
+  "note": "Draft: revised observations require matching reference and defect-control qualification.",
   "features": [
     {
       "id": 201,
@@ -27,8 +27,8 @@
           "points": 2,
           "statedBy": "Staff mark an order shipped",
           "steps": [
-            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true},
-            {"do":"click","actor":"customer","testid":"catalog-link","ifAvailable":true},
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
+            {"do":"click","actor":"customer","testid":"catalog-link","ifAvailable":true,"within":1000},
             {"do":"click","actor":"customer","testid":"buy-now","in":{"testid":"item-card","contains":"Coffee Grinder"},"settleMs":2000},
             {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {"do":"click","actor":"customer","testid":"orders-toggle", "unlessVisible": "order-item" },
@@ -73,7 +73,7 @@
             {"do":"dbRecordStock","item":"Headphones","as":"direct-race-stock-before"},
             {"do":"reload","actor":"admin","settleMs":2000},
             {"do":"ensureSignedIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true,"readyTestid":"current-user"},
-            {"do":"click","actor":"admin","testid":"admin-link","ifAvailable":true},
+            {"do":"click","actor":"admin","testid":"admin-link","ifAvailable":true,"within":1000},
             {"do":"reload","actor":"customer","settleMs":2000},
             {"do":"ensureSignedIn","actor":"customer","name":"direct-conserve","readyTestid":"current-user"},
             {"do":"fill","actor":"admin","testid":"transfer-from","text":"East","in":{"testid":"admin-item-row","contains":"Headphones"}},
@@ -84,12 +84,12 @@
             {"do":"expectActionOutcome","actor":"customer","outcome":"accepted"},
             {"do":"reload","actor":"admin","settleMs":2000},
             {"do":"ensureSignedIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true,"readyTestid":"current-user"},
-            {"do":"click","actor":"admin","testid":"admin-link","ifAvailable":true},
+            {"do":"click","actor":"admin","testid":"admin-link","ifAvailable":true,"within":1000},
             {"do":"expectNumber","actor":"admin","testid":"admin-stock","in":{"testid":"admin-item-row","contains":"Headphones"},"relativeTo":"direct-race-stock-before","plus":-1,"within":12000},
             {"do":"reload","actor":"customer","settleMs":2000},
             {"do":"ensureSignedIn","actor":"customer","name":"direct-conserve","readyTestid":"current-user"},
-            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true},
-            {"do":"click","actor":"customer","testid":"catalog-link","ifAvailable":true},
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
+            {"do":"click","actor":"customer","testid":"catalog-link","ifAvailable":true,"within":1000},
             {"do":"expectNumber","actor":"customer","testid":"item-stock","in":{"testid":"item-card","contains":"Headphones"},"relativeTo":"direct-race-stock-before","plus":-1,"within":12000},
             {"do":"dbExpectStock","item":"Headphones","warehouse":"East","atLeast":34,"atMost":35},
             {"do":"dbExpectStock","item":"Headphones","warehouse":"West","atLeast":64,"atMost":65},
@@ -125,27 +125,15 @@
           "points": 2,
           "statedBy": "A customer can cancel an order that has not shipped",
           "steps": [
-            {
-              "do": "callAction", "actor": "owner", "action": "cancel",
-              "namedAction": {
-                "id": "cancel", "path": "/api/orders/:id/cancel", "reducer": "cancel_order", "args": [0],
-                "params": [{ "name": "orderId", "in": "path", "placeholder": ":id", "wireType": "u64" }]
-              },
-              "input": { "testid": "order-item", "contains": "Desk Lamp", "attribute": "data-cancel-input" },
-              "settleMs": 2000
-            },
-            { "do": "expectActionOutcome", "actor": "owner", "outcome": "accepted" },
-            {
-              "do": "callAction", "actor": "other", "from": "owner", "action": "cancel",
-              "namedAction": {
-                "id": "cancel", "path": "/api/orders/:id/cancel", "reducer": "cancel_order", "args": [0],
-                "params": [{ "name": "orderId", "in": "path", "placeholder": ":id", "wireType": "u64" }]
-              },
-              "input": { "testid": "order-item", "contains": "Keyboard", "attribute": "data-cancel-input" },
-              "settleMs": 2000
-            },
-            { "do": "expectActionOutcome", "actor": "other", "outcome": "refused", "routeProvenBy": "owner" },
-            { "do": "expect", "actor": "owner", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "value": "pending", "ignoreCase": true }
+            {"do":"callAction","actor":"owner","action":"cancel","namedAction":{"id":"cancel","path":"/api/orders/:id/cancel","reducer":"cancel_order","args":[0],"params":[{"name":"orderId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Desk Lamp","attribute":"data-cancel-input"},"settleMs":2000},
+            {"do":"expectActionOutcome","actor":"owner","outcome":"accepted"},
+            {"do":"callAction","actor":"other","from":"owner","action":"cancel","namedAction":{"id":"cancel","path":"/api/orders/:id/cancel","reducer":"cancel_order","args":[0],"params":[{"name":"orderId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Keyboard","attribute":"data-cancel-input"},"settleMs":2000},
+            {"do":"expectActionOutcome","actor":"other","outcome":"refused","routeProvenBy":"owner"},
+            {"do":"reload","actor":"owner","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"owner","name":"direct-owner","readyTestid":"current-user"},
+            {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"within":1000},
+            {"do":"click","actor":"owner","testid":"orders-toggle","unlessVisible":"order-item"},
+            {"do":"expect","actor":"owner","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"pending","ignoreCase":true}
           ]
         }
       ]

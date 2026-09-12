@@ -146,20 +146,24 @@ test('progression reference audit replays every action and separates catalog cov
   const report = audit(root, input);
 
   assert.equal(report.ok, false);
-  assert.deepEqual(report.actions.map(action => [action.level, action.checks]),
-    [[1, 9], [2, 49], [3, 107], [4, 141], [5, 154], [6, 156]]);
+  assert.deepEqual(report.actions.map(action => action.level), [1, 2, 3, 4, 5, 6]);
+  for (let i = 1; i < report.actions.length; i++) {
+    assert(report.actions[i]!.checks > report.actions[i - 1]!.checks);
+  }
+  const graphChecks = featureCatalog.definition.nodes.flatMap(node => node.gradingChecks);
   assert.deepEqual(report.graphOwned, {
-    nodes: 43, checks: 156, points: 292,
-    coveredNodes: 43, coveredChecks: 156,
+    nodes: featureCatalog.definition.nodes.length, checks: graphChecks.length,
+    points: graphChecks.reduce((sum, check) => sum + check.points, 0),
+    coveredNodes: featureCatalog.definition.nodes.length, coveredChecks: graphChecks.length,
     missingNodes: [], missingChecks: [], complete: true,
   });
   assert.equal(report.finalCatalogAudit.required, true);
   assert.equal(report.finalCatalogAudit.status, 'not-run');
-  assert.equal(report.finalCatalogAudit.checks, 158);
-  assert.equal(report.finalCatalogAudit.points, 292);
-  assert.equal(report.finalCatalogAudit.zeroPointChecks, 2);
-  assert.equal(report.finalCatalogAudit.checkKeys.length, 158);
-  assert.equal(report.finalCatalogAudit.additionalChecks.length, 2);
+  assert.equal(report.finalCatalogAudit.checks, release.checkCatalog.length);
+  assert.equal(report.finalCatalogAudit.points, release.checkCatalog.reduce((sum, check) => sum + check.points, 0));
+  assert.equal(report.finalCatalogAudit.zeroPointChecks, release.checkCatalog.filter(check => check.points === 0).length);
+  assert.equal(report.finalCatalogAudit.checkKeys.length, release.checkCatalog.length);
+  assert.equal(report.finalCatalogAudit.additionalChecks.length, release.checkCatalog.length - graphChecks.length);
 });
 
 test('progression reference audit rejects a changed saved grade bundle', t => {
@@ -193,6 +197,6 @@ test('progression reference audit reports incomplete graph coverage without hidi
   assert.equal(report.graphOwned.coveredNodes, 4);
   assert.equal(report.graphOwned.coveredChecks, 9);
   assert.equal(report.graphOwned.complete, false);
-  assert.equal(report.finalCatalogAudit.checks, 158);
+  assert.equal(report.finalCatalogAudit.checks, release.checkCatalog.length);
   assert.equal(report.finalCatalogAudit.status, 'not-run');
 });

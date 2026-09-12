@@ -23,7 +23,7 @@ export type FindingKind = keyof FindingFields;
 export type InconclusiveFindingKind =
   | 'assertion-without-action' | 'unknown-action' | 'action-without-parameters'
   | 'no-session' | 'unresolved-action' | 'replay-unavailable'
-  | 'forgery-unverifiable' | 'not-observed' | 'transport-incomplete' | 'nothing-contended'
+  | 'forgery-unverifiable' | 'not-observed' | 'transport-incomplete' | 'nothing-contended' | 'observation-window-missed'
   | 'no-backend-control' | 'control-refused' | 'database-write-failed'
   | 'stock-read-unavailable'
   | 'unsupported-backend' | 'app-directory-unknown' | 'invalid-input';
@@ -131,6 +131,7 @@ export const INCONCLUSIVE_FINDINGS: Renderers<InconclusiveFindingFields> = {
   'not-observed': f => `the expected data could not be observed reaching ${f.actor}`,
   'transport-incomplete': () => 'transport evidence is incomplete; absence cannot be established',
   'nothing-contended': () => 'the requests never contended',
+  'observation-window-missed': () => 'the timing observation window was missed',
   'no-backend-control': f => `no control over ${target(f.target)} was supplied`,
   'control-refused': f => `control over ${target(f.target)} was refused on this host`,
   'database-write-failed': () => 'the direct database write did not complete',
@@ -244,6 +245,7 @@ export const findingSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('not-observed'), fields: actorSchema }),
   z.strictObject({ kind: z.literal('transport-incomplete'), fields: z.strictObject({}) }),
   z.strictObject({ kind: z.literal('nothing-contended'), fields: detailSchema }),
+  z.strictObject({ kind: z.literal('observation-window-missed'), fields: detailSchema }),
   z.strictObject({ kind: z.literal('no-backend-control'), fields: z.strictObject({ target: targetSchema }) }),
   z.strictObject({ kind: z.literal('control-refused'), fields: z.strictObject({ target: targetSchema }) }),
   z.strictObject({ kind: z.literal('database-write-failed'), fields: detailSchema }),

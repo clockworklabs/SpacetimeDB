@@ -410,7 +410,8 @@
       ],
       "gradingGroups": [
         "ecommerce.l3.order-returns-features#return-complete",
-        "ecommerce.l3.order-returns-features#return-before-shipping"
+        "ecommerce.l3.order-returns-features#return-before-shipping",
+        "ecommerce.l3.order-returns-features#return-server-boundary"
       ],
       "dependencies": [
         {
@@ -806,7 +807,8 @@
       ],
       "gradingGroups": [
         "ecommerce.progression.automatic-reorder#threshold",
-        "ecommerce.progression.automatic-reorder#access"
+        "ecommerce.progression.automatic-reorder#access",
+        "ecommerce.progression.automatic-reorder#no-duplicate"
       ],
       "dependencies": [
         {

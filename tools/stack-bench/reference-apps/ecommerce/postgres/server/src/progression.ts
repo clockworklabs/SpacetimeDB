@@ -286,7 +286,7 @@ export async function buildProgressionState(account: ProgressionAccount | null) 
       time: row.created_at,
     })),
     reorders: reorders.rows.map((row) => ({
-      id: row.id, item: row.item_name, threshold: row.threshold,
+      id: row.id, itemId: row.item_id, item: row.item_name, threshold: row.threshold,
       quantity: row.quantity, pending: row.pending,
     })),
     expiredCarts: expired.rows.map((row) => ({ id: row.id, items: row.items, expiredAt: row.expired_at })),
@@ -777,7 +777,7 @@ export async function processProgressionTimers() {
       const warehouse = await client.query(`SELECT id FROM warehouse ORDER BY id LIMIT 1`);
       await client.query(
         `INSERT INTO scheduled_restock (item_id, warehouse_id, quantity, due_at, automatic, created_by)
-         VALUES ($1, $2, $3, now() + interval '90 seconds', true, $4)`,
+         VALUES ($1, $2, $3, now() + interval '60 seconds', true, $4)`,
         [rule.item_id, warehouse.rows[0].id, rule.quantity, rule.created_by]);
     }
 

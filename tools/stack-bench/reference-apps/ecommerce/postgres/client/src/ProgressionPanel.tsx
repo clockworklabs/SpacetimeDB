@@ -29,7 +29,7 @@ export function ProgressionPanel({
   const [triage, setTriage] = useState<Record<number, {
     assignee: string; priority: string; status: string;
   }>>({});
-  const [reorders, setReorders] = useState<Record<number, { threshold: string; quantity: string }>>({});
+  const [reorder, setReorder] = useState({ item: "", threshold: "", quantity: "" });
   const [preferences, setPreferences] = useState({ order: false, stock: false });
 
   useEffect(() => {
@@ -196,7 +196,7 @@ export function ProgressionPanel({
             delaySeconds: Number(restock.delaySeconds),
           })} onClick={() => run(() =>
             request("/api/admin/scheduled-restocks", "POST", { ...restock, quantity: Number(restock.quantity), delaySeconds: Number(restock.delaySeconds) }))}>Schedule</button>
-          {(state?.pendingRestocks ?? []).map((item: any) => <div data-role="pending-restock-item" data-entity-id={String(item.id)} key={item.id}>
+          {(state?.pendingRestocks ?? []).map((item: any) => <div data-role="pending-restock-item" data-quantity={item.quantity} data-entity-id={String(item.id)} key={item.id}>
             <span>{item.item}</span>
             <span data-role="pending-restock-remaining">{Math.max(0, Math.ceil((new Date(item.dueAt).valueOf() - Date.now()) / 1000))}</span>
             <button data-role="pending-restock-cancel" onClick={() => run(() => request(`/api/admin/scheduled-restocks/${item.id}`, "DELETE"))}>Cancel</button>
@@ -240,15 +240,11 @@ export function ProgressionPanel({
         </article>
         <article className="progression-card">
           <h3>Automatic reorder</h3>
-          {items.map((item) => <div key={item.id}>
-            <span data-role="reorder-item">{item.name}</span>
-            <input data-role="reorder-threshold" value={reorders[item.id]?.threshold ?? ""} onChange={(e) => setReorders({ ...reorders, [item.id]: { threshold: e.target.value, quantity: reorders[item.id]?.quantity ?? "" } })} />
-            <input data-role="reorder-quantity" value={reorders[item.id]?.quantity ?? ""} onChange={(e) => setReorders({ ...reorders, [item.id]: { threshold: reorders[item.id]?.threshold ?? "", quantity: e.target.value } })} />
-            <button data-role="reorder-submit" onClick={() => run(() => request(`/api/reorders/${item.id}`, "PUT", {
-              threshold: Number(reorders[item.id]?.threshold), quantity: Number(reorders[item.id]?.quantity),
-            }))}>Save</button>
-          </div>)}
-          {(state?.reorders ?? []).map((item: any) => <div data-role="reorder-rule-item" key={item.id}>{item.item}: {item.threshold}/{item.quantity}</div>)}
+          <input data-role="reorder-item" value={reorder.item} onChange={e => setReorder({ ...reorder, item: e.target.value })} />
+          <input data-role="reorder-threshold" value={reorder.threshold} onChange={e => setReorder({ ...reorder, threshold: e.target.value })} />
+          <input data-role="reorder-quantity" value={reorder.quantity} onChange={e => setReorder({ ...reorder, quantity: e.target.value })} />
+          <button data-role="reorder-submit" data-action-input={JSON.stringify({ itemId: items.find(item => item.name === reorder.item)?.id, threshold: Number(reorder.threshold), quantity: Number(reorder.quantity) })} onClick={() => run(() => request(`/api/reorders/${items.find(item => item.name === reorder.item)?.id}`, "PUT", { threshold: Number(reorder.threshold), quantity: Number(reorder.quantity) }))}>Save</button>
+          {(state?.reorders ?? []).map((item: any) => <div data-role="reorder-rule-item" data-entity-id={String(item.itemId)} data-threshold={item.threshold} data-quantity={item.quantity} key={item.id}>{item.item}: {item.threshold}/{item.quantity}</div>)}
         </article>
         <article className="progression-card">
           <h3>Completed orders</h3>

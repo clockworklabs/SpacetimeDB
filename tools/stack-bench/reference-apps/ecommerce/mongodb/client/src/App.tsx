@@ -755,7 +755,7 @@ export default function App() {
                   <span>{new Date(order.createdAt).toLocaleString()}</span>
                   <span data-role="order-status">{order.items.length > 0 && order.items.every(line => line.returned) ? "returned" : order.status}</span>
                 </div>
-                <div>{order.items.map((l) => `${l.name} ×${l.quantity}${l.returned ? " (returned)" : ""}`).join(", ")}</div>
+                <div>{order.items.map(l => <span data-role="order-line" data-return-input={JSON.stringify({ orderId: order.id, itemId: l.itemId })} key={l.itemId}>{l.name} ×{l.quantity}{l.returned ? " (returned)" : ""} </span>)}</div>
                 <div className="order-total" data-role="order-total">
                   ${order.total.toFixed(2)}
                 </div>

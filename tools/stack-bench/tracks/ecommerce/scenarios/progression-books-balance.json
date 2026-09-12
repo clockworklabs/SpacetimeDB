@@ -3,6 +3,7 @@
   "track": "ecommerce",
   "level": 1,
   "name": "Progression books balance",
+  "note": "Draft: revised observations require matching reference and defect-control qualification.",
   "features": [
     {
       "id": 107,
@@ -29,7 +30,11 @@
           "points": 1,
           "statedBy": "total revenue equals the sum of order totals",
           "steps": [
-            { "do": "expectNumber", "actor": "admin", "testid": "admin-revenue", "relativeTo": "revenue-before", "plus": 58, "within": 10000 }
+            {"do":"reload","actor":"admin","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"admin","name":"admin","readyTestid":"current-user","password":"stackbench-admin-2026","exact":true},
+            {"do":"click","actor":"admin","testid":"overlay-close","ifAvailable":true,"within":1000},
+            {"do":"click","actor":"admin","testid":"admin-link","unlessVisible":"admin-revenue"},
+            {"do":"expectNumber","actor":"admin","testid":"admin-revenue","relativeTo":"revenue-before","plus":58,"within":10000}
           ]
         },
         {

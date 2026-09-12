@@ -360,8 +360,8 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
   adminRouter.post("/scheduled-restocks", auth, staff, scheduleRestock);
   adminRouter.delete("/scheduled-restocks/:id", auth, staff, cancelScheduledRestock);
 
-  router.post("/reorder-rules", auth, staff, async (req: Request, res) => {
-    const itemId = objectId(req.body?.itemId);
+  app.put("/api/reorders/:itemId", auth, staff, async (req: Request, res) => {
+    const itemId = objectId(req.params.itemId);
     const item = itemId ? await Item.findById(itemId) : null;
     const threshold = number(req.body?.threshold);
     const quantity = number(req.body?.quantity);

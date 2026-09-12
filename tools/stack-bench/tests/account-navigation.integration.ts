@@ -11,6 +11,46 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { gradeFeature } from '../grader/grade.js';
 import type { Browser } from 'playwright';
 
+test('fresh ownership reads catch a server mutation hidden by the old page', async () => {
+  const definition = compileScenarioDefinition(JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+    'tracks/ecommerce/scenarios/02-server-actions.json'), 'utf8')));
+  const steps = definition.features.find(feature => feature.id === 204)!.criteria[0]!.steps;
+  const readSteps = steps.slice(steps.findLastIndex(step => step.do === 'reload'));
+  assert.equal(readSteps[0]?.do, 'reload');
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    let serverStatus = 'pending';
+    await page.route('http://ownership.test/**', route => route.fulfill({ contentType: 'text/html', body:
+      `<span id="current-user">direct-owner</span><button id="orders-toggle">Orders</button>
+       <div id="order-item">Keyboard <span id="order-status">${serverStatus}</span></div>` }));
+    const actor = { page, loc: (id: string, options?: { contains?: string; scope?: { testid: string; contains?: string } }) => {
+      const scope = options?.scope;
+      let locator = scope ? page.locator(stableElementSelector(scope.testid))
+        .filter({ hasText: scope.contains }).locator(stableElementSelector(id)) : page.locator(stableElementSelector(id));
+      if (options?.contains) locator = locator.filter({ hasText: options.contains });
+      return locator.first();
+    } };
+    const service = { defaultWithin: 100, scopedUser: (name: string) => name,
+      expand: (text: string) => text, testId: stableElementSelector, sleep: async () => {} };
+    const capabilities = { actors: { get: () => actor }, 'browser-interaction': service, 'browser-observation': service };
+    for (const mutated of [false, true]) {
+      serverStatus = 'pending'; await page.goto('http://ownership.test');
+      if (mutated) serverStatus = 'cancelled';
+      assert.equal(await page.locator('#order-status').innerText(), 'pending');
+      const outcomes = [];
+      for (const step of readSteps) {
+        const input = step.do === 'reload' ? { ...step, settleMs: 0 }
+          : step.do === 'ensureSignedIn' ? step : { ...step, within: 100 };
+        outcomes.push(await executeAction(ACTION_REGISTRY, step.do, input, { capabilities }));
+      }
+      assert(outcomes.slice(0, -1).every(result => result.status === 'passed'),
+        JSON.stringify(outcomes.map(result => [result.action.id, result.status, result.summary])));
+      assert.equal(outcomes.at(-1)!.status, mutated ? 'failed' : 'passed');
+    }
+  } finally { await browser.close(); }
+});
+
 test('the real grader distinguishes an app prerequisite failure from its unexecuted assertion', async () => {
   const browser = await chromium.launch({headless:true});
   try {

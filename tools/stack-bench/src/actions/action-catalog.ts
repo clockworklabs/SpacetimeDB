@@ -46,6 +46,8 @@ const ACTION_CATEGORY = {
   pressKey: 'browser-interaction',
   race: 'concurrency',
   recordNumber: 'browser-observation',
+  recordTime: 'timing',
+  expectElapsed: 'timing',
   reload: 'browser-interaction',
   replayAs: 'transport',
   replayConcurrently: 'concurrency',
@@ -94,6 +96,9 @@ const CATEGORY_POLICY = {
 
 const ACTION_CAPABILITY_OVERRIDES: Partial<Record<ActionId, readonly string[]>> = {
   dbRecordStock: ['database-read', 'browser-observation'],
+  recordTime: ['browser-observation'],
+  expectElapsed: ['browser-observation'],
+  wait: ['actors', 'clock', 'browser-observation'],
   dbExpectStock: ['database-read', 'browser-observation', 'clock'],
   callAction: ['actors', 'named-actions', 'transport-observation'],
   callConcurrently: ['actors', 'named-actions'],

@@ -56,7 +56,7 @@ test('the extracted executor registry is exact and every migrated action has bou
   for (const id of Object.keys(BROWSER_ACTION_IMPLEMENTATIONS)) {
     const plugin = ACTION_REGISTRY.get(id);
     assert(plugin.timeoutMs > 0, id);
-    assert(plugin.capabilities.includes('actors'), id);
+    assert(plugin.capabilities.includes('actors') || plugin.capabilities.includes('browser-observation'), id);
   }
 });
 

@@ -113,7 +113,7 @@ export default function OrdersPanel({ orders, onClose, onCancel, onReturn, onRet
               {["shipped", "delivered"].includes(order.status) && order.items.some(line => line.isBundle && !line.returned) && <button data-role="return-bundle" onClick={() => onReturnBundle(order.orderId).catch(error => setErrors(previous => ({ ...previous, [String(order.orderId)]: String(error) })))}>Return bundle</button>}
               <div className="order-item-lines">
                 {order.items.map((item) => (
-                  <div className="order-item-line" key={String(item.itemId)}>
+                  <div className="order-item-line" data-role="order-line" data-return-input={JSON.stringify({ orderId: String(order.orderId), itemId: String(item.itemId) })} key={String(item.itemId)}>
                     <span>
                       {item.name} × {item.quantity}
                       {item.returned && <span className="badge badge-muted" style={{ marginLeft: 6 }}>Returned</span>}

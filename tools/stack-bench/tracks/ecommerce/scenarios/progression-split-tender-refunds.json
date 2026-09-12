@@ -3,6 +3,7 @@
   "track": "ecommerce",
   "level": 6,
   "name": "Refund allocation",
+  "note": "Draft: revised observations require matching reference and defect-control qualification.",
   "features": [
     {
       "id": 751,
@@ -22,6 +23,10 @@
         {"do":"fill","actor":"staff","testid":"credit-reference-input","text":"credit-751"},
         {"do":"callAction","actor":"staff","from":"staff","action":"grantCredit","namedAction":{"id":"grantCredit","path":"/api/staff/credit","method":"POST","reducer":"grant_credit","args":[0,1000,""],"params":[{"name":"accountId","in":"body","wireType":"u64"},{"name":"amountMinor","in":"body"},{"name":"reference","in":"body"}]},"input":{"testid":"credit-grant","attribute":"data-action-input","overrides":{"accountId":{"actor":"owner","testid":"credit-panel","attribute":"data-account-id"}}},"settleMs":0},
         {"do":"expectActionOutcome","actor":"staff","outcome":"accepted"},
+        {"do":"reload","actor":"owner","settleMs":1000},
+        {"do":"ensureSignedIn","actor":"owner","name":"credit-owner-751","readyTestid":"current-user"},
+        {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"within":1000},
+        {"do":"click","actor":"owner","testid":"credit-link","unlessVisible":"credit-balance"},
         {"do":"expectNumber","actor":"owner","testid":"credit-balance","equals":10,"within":10000},
         {"do":"click","actor":"owner","testid":"catalog-link"},
         {"do":"click","actor":"owner","testid":"add-to-cart","in":{"testid":"item-card","contains":"Desk Lamp"}},
@@ -39,7 +44,7 @@
         {"do":"click","actor":"owner","testid":"support-order-option","contains":"Desk Lamp","in":{"testid":"support-ticket","contains":"Split refund 751"}},
         {"do":"click","actor":"owner","testid":"support-link-order","in":{"testid":"support-ticket","contains":"Split refund 751"}},
         {"do":"click","actor":"staff","testid":"staff-link","unlessVisible":"support-assignee"},
-        {"do":"click","actor":"staff","testid":"support-queue-link","unlessVisible":"support-assignee","ifAvailable":true}
+        {"do":"click","actor":"staff","testid":"support-queue-link","unlessVisible":"support-assignee","ifAvailable":true,"within":1000}
       ],
       "criteria": [
         {
@@ -83,6 +88,10 @@
         {"do":"fill","actor":"staff","testid":"credit-reference-input","text":"credit-756"},
         {"do":"callAction","actor":"staff","from":"staff","action":"grantCredit","namedAction":{"id":"grantCredit","path":"/api/staff/credit","method":"POST","reducer":"grant_credit","args":[0,1000,""],"params":[{"name":"accountId","in":"body","wireType":"u64"},{"name":"amountMinor","in":"body"},{"name":"reference","in":"body"}]},"input":{"testid":"credit-grant","attribute":"data-action-input","overrides":{"accountId":{"actor":"owner","testid":"credit-panel","attribute":"data-account-id"}}},"settleMs":0},
         {"do":"expectActionOutcome","actor":"staff","outcome":"accepted"},
+        {"do":"reload","actor":"owner","settleMs":1000},
+        {"do":"ensureSignedIn","actor":"owner","name":"credit-owner-756","readyTestid":"current-user"},
+        {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"within":1000},
+        {"do":"click","actor":"owner","testid":"credit-link","unlessVisible":"credit-balance"},
         {"do":"expectNumber","actor":"owner","testid":"credit-balance","equals":10,"within":10000},
         {"do":"click","actor":"owner","testid":"catalog-link"},
         {"do":"click","actor":"owner","testid":"add-to-cart","in":{"testid":"item-card","contains":"Desk Lamp"}},
@@ -100,7 +109,7 @@
         {"do":"click","actor":"owner","testid":"support-order-option","contains":"Desk Lamp","in":{"testid":"support-ticket","contains":"Split refund 756"}},
         {"do":"click","actor":"owner","testid":"support-link-order","in":{"testid":"support-ticket","contains":"Split refund 756"}},
         {"do":"click","actor":"staff","testid":"staff-link","unlessVisible":"support-assignee"},
-        {"do":"click","actor":"staff","testid":"support-queue-link","unlessVisible":"support-assignee","ifAvailable":true},
+        {"do":"click","actor":"staff","testid":"support-queue-link","unlessVisible":"support-assignee","ifAvailable":true,"within":1000},
         {"do":"signIn","actor":"staff2","name":"staff","password":"stackbench-staff-2026","exact":true}
       ],
       "criteria": [

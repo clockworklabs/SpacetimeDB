@@ -51,7 +51,11 @@
       "criteria": [
         "501a"
       ],
-      "role": "feature"
+      "role": "feature",
+      "requiresFeatures": [
+        "ecommerce.feature.purchasing",
+        "ecommerce.progression.fulfilment-queue"
+      ]
     },
     {
       "id": "privacy",
@@ -61,7 +65,11 @@
       "criteria": [
         "501b"
       ],
-      "role": "feature"
+      "role": "feature",
+      "requiresFeatures": [
+        "ecommerce.feature.purchasing",
+        "ecommerce.progression.fulfilment-queue"
+      ]
     }
   ]
 }

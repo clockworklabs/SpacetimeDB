@@ -3,6 +3,7 @@
   "track": "ecommerce",
   "level": 5,
   "name": "Store credit",
+  "note": "Draft: revised observations require matching reference and defect-control qualification.",
   "features": [
     {
       "id": 750,
@@ -23,6 +24,10 @@
         {"do":"fill","actor":"staff","testid":"credit-reference-input","text":"credit-750"},
         {"do":"callAction","actor":"staff","from":"staff","action":"grantCredit","namedAction":{"id":"grantCredit","path":"/api/staff/credit","method":"POST","reducer":"grant_credit","args":[0,1000,""],"params":[{"name":"accountId","in":"body","wireType":"u64"},{"name":"amountMinor","in":"body"},{"name":"reference","in":"body"}]},"input":{"testid":"credit-grant","attribute":"data-action-input","overrides":{"accountId":{"actor":"owner","testid":"credit-panel","attribute":"data-account-id"}}},"settleMs":0},
         {"do":"expectActionOutcome","actor":"staff","outcome":"accepted"},
+        {"do":"reload","actor":"owner","settleMs":1000},
+        {"do":"ensureSignedIn","actor":"owner","name":"credit-owner-750","readyTestid":"current-user"},
+        {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"within":1000},
+        {"do":"click","actor":"owner","testid":"credit-link","unlessVisible":"credit-balance"},
         {"do":"expectNumber","actor":"owner","testid":"credit-balance","equals":10,"within":10000},
         {"do":"click","actor":"owner","testid":"catalog-link"},
         {"do":"click","actor":"owner","testid":"add-to-cart","in":{"testid":"item-card","contains":"Desk Lamp"}},
@@ -71,6 +76,10 @@
         {"do":"fill","actor":"staff","testid":"credit-reference-input","text":"credit-752"},
         {"do":"callAction","actor":"staff","from":"staff","action":"grantCredit","namedAction":{"id":"grantCredit","path":"/api/staff/credit","method":"POST","reducer":"grant_credit","args":[0,1000,""],"params":[{"name":"accountId","in":"body","wireType":"u64"},{"name":"amountMinor","in":"body"},{"name":"reference","in":"body"}]},"input":{"testid":"credit-grant","attribute":"data-action-input","overrides":{"accountId":{"actor":"owner","testid":"credit-panel","attribute":"data-account-id"}}},"settleMs":0},
         {"do":"expectActionOutcome","actor":"staff","outcome":"accepted"},
+        {"do":"reload","actor":"owner","settleMs":1000},
+        {"do":"ensureSignedIn","actor":"owner","name":"credit-owner-752","readyTestid":"current-user"},
+        {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"within":1000},
+        {"do":"click","actor":"owner","testid":"credit-link","unlessVisible":"credit-balance"},
         {"do":"expectNumber","actor":"owner","testid":"credit-balance","equals":10,"within":10000}
       ],
       "criteria": [
@@ -110,6 +119,10 @@
         {"do":"fill","actor":"staff","testid":"credit-reference-input","text":"credit-753"},
         {"do":"callAction","actor":"staff","from":"staff","action":"grantCredit","namedAction":{"id":"grantCredit","path":"/api/staff/credit","method":"POST","reducer":"grant_credit","args":[0,1000,""],"params":[{"name":"accountId","in":"body","wireType":"u64"},{"name":"amountMinor","in":"body"},{"name":"reference","in":"body"}]},"input":{"testid":"credit-grant","attribute":"data-action-input","overrides":{"accountId":{"actor":"owner","testid":"credit-panel","attribute":"data-account-id"}}},"settleMs":0},
         {"do":"expectActionOutcome","actor":"staff","outcome":"accepted"},
+        {"do":"reload","actor":"owner","settleMs":1000},
+        {"do":"ensureSignedIn","actor":"owner","name":"credit-owner-753","readyTestid":"current-user"},
+        {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"within":1000},
+        {"do":"click","actor":"owner","testid":"credit-link","unlessVisible":"credit-balance"},
         {"do":"expectNumber","actor":"owner","testid":"credit-balance","equals":10,"within":10000}
       ],
       "criteria": [
@@ -150,6 +163,10 @@
         {"do":"fill","actor":"staff","testid":"credit-reference-input","text":"credit-754"},
         {"do":"callAction","actor":"staff","from":"staff","action":"grantCredit","namedAction":{"id":"grantCredit","path":"/api/staff/credit","method":"POST","reducer":"grant_credit","args":[0,1000,""],"params":[{"name":"accountId","in":"body","wireType":"u64"},{"name":"amountMinor","in":"body"},{"name":"reference","in":"body"}]},"input":{"testid":"credit-grant","attribute":"data-action-input","overrides":{"accountId":{"actor":"owner","testid":"credit-panel","attribute":"data-account-id"}}},"settleMs":0},
         {"do":"expectActionOutcome","actor":"staff","outcome":"accepted"},
+        {"do":"reload","actor":"owner","settleMs":1000},
+        {"do":"ensureSignedIn","actor":"owner","name":"credit-owner-754","readyTestid":"current-user"},
+        {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"within":1000},
+        {"do":"click","actor":"owner","testid":"credit-link","unlessVisible":"credit-balance"},
         {"do":"expectNumber","actor":"owner","testid":"credit-balance","equals":10,"within":10000},
         {"do":"click","actor":"owner","testid":"catalog-link"},
         {"do":"click","actor":"owner","testid":"add-to-cart","in":{"testid":"item-card","contains":"Desk Lamp"}},
@@ -200,6 +217,10 @@
         {"do":"fill","actor":"staff","testid":"credit-reference-input","text":"credit-755"},
         {"do":"callAction","actor":"staff","from":"staff","action":"grantCredit","namedAction":{"id":"grantCredit","path":"/api/staff/credit","method":"POST","reducer":"grant_credit","args":[0,1000,""],"params":[{"name":"accountId","in":"body","wireType":"u64"},{"name":"amountMinor","in":"body"},{"name":"reference","in":"body"}]},"input":{"testid":"credit-grant","attribute":"data-action-input","overrides":{"accountId":{"actor":"owner","testid":"credit-panel","attribute":"data-account-id"}}},"settleMs":0},
         {"do":"expectActionOutcome","actor":"staff","outcome":"accepted"},
+        {"do":"reload","actor":"owner","settleMs":1000},
+        {"do":"ensureSignedIn","actor":"owner","name":"credit-owner-755","readyTestid":"current-user"},
+        {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"within":1000},
+        {"do":"click","actor":"owner","testid":"credit-link","unlessVisible":"credit-balance"},
         {"do":"expectNumber","actor":"owner","testid":"credit-balance","equals":10,"within":10000}
       ],
       "criteria": [

@@ -63,6 +63,7 @@ const SAMPLES: { [K in FindingKind]: Finding } = {
   'message-delivered': finding('message-delivered', { actor: 'other' }),
   'stock-interface-missing': finding('stock-interface-missing', { detail: DETAIL }),
   'assertion-without-action': finding('assertion-without-action', { action: 'replayAs' }),
+  'observation-window-missed': finding('observation-window-missed', { detail: DETAIL }),
   'unknown-action': finding('unknown-action', { action: 'refund' }),
   'action-without-parameters': finding('action-without-parameters', { action: 'refund' }),
   'no-session': finding('no-session', { actor: 'buyer', action: 'buy' }),

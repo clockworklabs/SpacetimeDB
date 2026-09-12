@@ -6,7 +6,8 @@ it, expose `restocks-link` there to reach them. Use `schedule-restock-item`, `sc
 Set its `data-action-input` to a JSON object with exactly `item`, `warehouse`, `quantity`, and
 `delaySeconds`. `item` and `warehouse` are their names as strings; `quantity` and
 `delaySeconds` are JSON integers. Use `pending-restock-item` for each pending row and set its
-`data-entity-id` to the restock's server identifier, written as a decimal number. Use
+`data-entity-id` to the restock's server identifier, written as a decimal number.
+Each row contains the item name and sets `data-quantity` to its integer quantity. Use
 `pending-restock-remaining` for its remaining seconds, `pending-restock-cancel` to cancel it,
 and `stock-ledger-entry` for a completed stock movement.
 

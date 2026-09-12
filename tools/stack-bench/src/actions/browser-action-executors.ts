@@ -320,10 +320,31 @@ async function typeInto({ input, capabilities }:
 }
 
 async function wait({ input, capabilities, signal }:
-    BrowserArguments<{ actor: string; ms: number }>) {
+    BrowserArguments<{ actor: string; ms: number; since?: string }>) {
   actorFor(capabilities, input.actor);
-  await capabilities.clock.sleep(input.ms, signal);
-  return { waitedMs: input.ms };
+  const elapsed = input.since === undefined ? 0 : elapsedSince(capabilities, input.since);
+  const waitedMs = Math.max(0, input.ms - elapsed);
+  await capabilities.clock.sleep(waitedMs, signal);
+  return { waitedMs };
+}
+
+function elapsedSince(capabilities: BrowserArguments<unknown>['capabilities'], since: string): number {
+  const start = observation(capabilities).recorded.get(since);
+  if (start === undefined) inconclusive('assertion-without-action', { action: 'recordTime' });
+  return performance.now() - start;
+}
+
+async function recordTime({ input, capabilities }: BrowserArguments<{ as: string }>) {
+  observation(capabilities).recorded.set(input.as, performance.now());
+  return { recorded: input.as };
+}
+
+async function expectElapsed({ input, capabilities }: BrowserArguments<{ since: string; atMost: number }>) {
+  const elapsedMs = elapsedSince(capabilities, input.since);
+  if (elapsedMs > input.atMost) inconclusive('observation-window-missed', {
+    detail: `Observation began ${Math.round(elapsedMs)}ms after its timing origin; limit ${input.atMost}ms`,
+  });
+  return { elapsedMs, atMost: input.atMost };
 }
 
 async function expect({ input, capabilities, signal }: BrowserArguments<ExpectInput>) {
@@ -786,5 +807,7 @@ export const BROWSER_ACTION_IMPLEMENTATIONS = Object.freeze({
   reload: contractBrowserAction(reload),
   typeInto: contractBrowserAction(typeInto),
   wait: contractBrowserAction(wait),
+  recordTime: contractBrowserAction(recordTime),
+  expectElapsed: contractBrowserAction(expectElapsed),
   waitUntilAbsent: contractBrowserAction(waitUntilAbsent),
 });

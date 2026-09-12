@@ -22,7 +22,7 @@
   ],
   "budget": {
     "status": "bounded",
-    "maxRuntimeMs": 60000
+    "maxRuntimeMs": 120000
   },
   "task": {
     "requirements": [
@@ -55,7 +55,11 @@
       "criteria": [
         "3c"
       ],
-      "role": "feature"
+      "role": "feature",
+      "requiresFeatures": [
+        "ecommerce.feature.purchasing",
+        "ecommerce.progression.fulfilment-queue"
+      ]
     },
     {
       "id": "return-before-shipping",
@@ -65,7 +69,25 @@
       "criteria": [
         "3e"
       ],
-      "role": "feature"
+      "role": "feature",
+      "requiresFeatures": [
+        "ecommerce.feature.purchasing",
+        "ecommerce.progression.fulfilment-queue"
+      ]
+    },
+    {
+      "id": "return-server-boundary",
+      "stableId": "cancellation-and-return",
+      "source": "scenarios/progression-order-return-boundary.json",
+      "feature": 332,
+      "criteria": [
+        "3f"
+      ],
+      "role": "feature",
+      "requiresFeatures": [
+        "ecommerce.feature.purchasing",
+        "ecommerce.progression.fulfilment-queue"
+      ]
     }
   ]
 }

@@ -4,7 +4,7 @@
   "track": "ecommerce",
   "name": "Storefront and warehouse — last-unit accounting",
   "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
-  "note": "This focused suite keeps the stock, order-count, and revenue consequences of one purchase race together. The revenue baseline is recorded before the race, so prior benchmark activity cannot change the expected result.",
+  "note": "Draft: revised observations require matching reference and defect-control qualification.",
   "features": [
     {
       "id": 201,
@@ -102,14 +102,11 @@
           "desc": "revenue increases by exactly three sales, not six",
           "points": 1,
           "steps": [
-            {
-              "do": "expectNumber",
-              "actor": "admin",
-              "testid": "admin-revenue",
-              "relativeTo": "revenue-before-last-unit",
-              "plus": 567,
-              "within": 10000
-            }
+            {"do":"reload","actor":"admin","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"admin","name":"admin","readyTestid":"current-user","password":"stackbench-admin-2026","exact":true},
+            {"do":"click","actor":"admin","testid":"overlay-close","ifAvailable":true,"within":1000},
+            {"do":"click","actor":"admin","testid":"admin-link","unlessVisible":"admin-revenue"},
+            {"do":"expectNumber","actor":"admin","testid":"admin-revenue","relativeTo":"revenue-before-last-unit","plus":567,"within":10000}
           ],
           "statedBy": "stock must never leave a warehouse without a corresponding order"
         }

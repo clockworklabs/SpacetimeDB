@@ -72,7 +72,7 @@ export default function ProgressionWorkbench(props: Props) {
   const [catalog, setCatalog] = useState({ name: '', category: '', price: '', variants: '' });
   const [promotion, setPromotion] = useState({ code: '', discount: '', start: '', end: '', limit: '' });
   const [restock, setRestock] = useState({ item: '', warehouse: '', quantity: '', delay: '' });
-  const [reorder, setReorder] = useState({ item: '', warehouse: '', threshold: '', quantity: '' });
+  const [reorder, setReorder] = useState({ item: '', threshold: '', quantity: '' });
   const [orderEnabled, setOrderEnabled] = useState(preferences?.orderEnabled ?? false);
   const [stockEnabled, setStockEnabled] = useState(preferences?.stockEnabled ?? false);
   const [, setClock] = useState(0);
@@ -266,7 +266,7 @@ export default function ProgressionWorkbench(props: Props) {
           <button className="btn btn-primary btn-sm" data-role="schedule-restock-submit"
             data-action-input={JSON.stringify({ item: restock.item, warehouse: restock.warehouse, quantity: Number(restock.quantity), delaySeconds: Number(restock.delay) })}
             onClick={() => reducers?.scheduleRestock({ item: restock.item, warehouse: restock.warehouse, quantity: Number(restock.quantity), delaySeconds: Number(restock.delay) })}>Schedule</button>
-          {restocks.filter(row => row.status === 'pending').map(row => <div data-role="pending-restock-item" data-entity-id={String(row.id)} key={String(row.id)}>{itemName(row.itemId)} <span data-role="pending-restock-remaining">{Math.max(0, Number((row.dueMicros - BigInt(Date.now()) * 1000n) / 1_000_000n))}</span><button data-role="pending-restock-cancel" onClick={() => reducers?.cancelScheduledRestock({ restockId: row.id })}>Cancel</button></div>)}
+          {restocks.filter(row => row.status === 'pending').map(row => <div data-role="pending-restock-item" data-quantity={row.quantity} data-entity-id={String(row.id)} key={String(row.id)}>{itemName(row.itemId)} <span data-role="pending-restock-remaining">{Math.max(0, Number((row.dueMicros - BigInt(Date.now()) * 1000n) / 1_000_000n))}</span><button data-role="pending-restock-cancel" onClick={() => reducers?.cancelScheduledRestock({ restockId: row.id })}>Cancel</button></div>)}
           {stockLedger.map((row, index) => <div data-role="stock-ledger-entry" key={index}>{itemName(row.itemId)} +{row.quantity}</div>)}
         </section>
       )}
@@ -277,10 +277,10 @@ export default function ProgressionWorkbench(props: Props) {
           <input data-role="reorder-item" value={reorder.item} onChange={e => setReorder({ ...reorder, item: value(e) })} placeholder="Item" />
           <input data-role="reorder-threshold" value={reorder.threshold} onChange={e => setReorder({ ...reorder, threshold: value(e) })} placeholder="Threshold" />
           <input data-role="reorder-quantity" value={reorder.quantity} onChange={e => setReorder({ ...reorder, quantity: value(e) })} placeholder="Quantity" />
-          <button className="btn btn-primary btn-sm" data-role="reorder-submit" onClick={() => reducers?.saveReorderRule({ itemId: items.find(row => row.name === reorder.item)?.id ?? 0n, warehouseId: warehouses.find(row => row.name === reorder.warehouse)?.id ?? warehouses[0]?.id ?? 0n, threshold: Number(reorder.threshold), quantity: Number(reorder.quantity) })}>Save rule</button>
+          <button className="btn btn-primary btn-sm" data-role="reorder-submit" data-action-input={JSON.stringify({ itemId: String(items.find(row => row.name === reorder.item)?.id ?? 0n), threshold: Number(reorder.threshold), quantity: Number(reorder.quantity) })} onClick={() => reducers?.saveReorderRule({ itemId: items.find(row => row.name === reorder.item)?.id ?? 0n, threshold: Number(reorder.threshold), quantity: Number(reorder.quantity) })}>Save rule</button>
           {reorderRules.map(row => {
             const pending = restocks.some(restock => restock.reorderRuleId === row.id && restock.status === 'pending');
-            return <div data-role="reorder-rule-item" key={String(row.id)}>{itemName(row.itemId)} at {row.threshold}: {row.quantity} ({pending ? 'pending' : 'ready'})</div>;
+            return <div data-role="reorder-rule-item" data-entity-id={String(row.itemId)} data-threshold={row.threshold} data-quantity={row.quantity} key={String(row.id)}>{itemName(row.itemId)} at {row.threshold}: {row.quantity} ({pending ? 'pending' : 'ready'})</div>;
           })}
         </section>
       )}

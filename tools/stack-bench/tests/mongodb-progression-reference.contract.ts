@@ -52,7 +52,10 @@ test('the MongoDB progression reference exposes every graph testing hook', () =>
     .join('\n');
   const missing = [...testIds].filter(id => id === 'staff-role-account-staff'
     ? !clientSource.includes('id={`staff-role-account-${encodeURIComponent(entry.username)}`}')
-    : !clientSource.includes(id)).sort();
+    : /^subscription-(pause|resume|cancel)$/.test(id)
+      ? !(clientSource.includes('data-role={`subscription-${action}`}')
+        && clientSource.includes("['pause', 'resume', 'cancel']"))
+      : !clientSource.includes(id)).sort();
   assert.deepEqual(missing, []);
 });
 

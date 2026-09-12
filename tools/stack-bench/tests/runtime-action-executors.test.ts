@@ -105,6 +105,50 @@ test('stock observations compare authoritative quantities and cannot use a missi
   assert.equal((await run({ do: 'dbExpectStock', item: 'Keyboard', equals: 18 }, disabled)).status, 'inconclusive');
 });
 
+test('timed observations use the original origin and a missed window is unmeasured', async () => {
+  const recorded = new Map<string, number>();
+  const waits: number[] = [];
+  const capabilities = {
+    actors: { get: () => ({}) },
+    'browser-observation': { recorded },
+    clock: { sleep: async (ms: number) => { waits.push(ms); } },
+  };
+  assert.equal((await run({ do: 'expectElapsed', since: 'start', atMost: 1000 }, capabilities)).status, 'inconclusive');
+  assert.equal((await run({ do: 'recordTime', as: 'start' }, capabilities)).status, 'passed');
+  assert.equal((await run({ do: 'expectElapsed', since: 'start', atMost: 1000 }, capabilities)).status, 'passed');
+  recorded.set('start', performance.now() - 2000);
+  const missed = await run({ do: 'expectElapsed', since: 'start', atMost: 1000 }, capabilities);
+  assert.equal(missed.status, 'inconclusive');
+  assert.match(missed.summary ?? '', /timing observation window/);
+  assert.equal((await run({ do: 'wait', actor: 'a', ms: 5000, since: 'start' }, capabilities)).status, 'passed');
+  assert(waits[0] !== undefined && waits[0] > 2000 && waits[0] <= 3000);
+  assert.equal((await run({ do: 'wait', actor: 'a', ms: 1000, since: 'start' }, capabilities)).status, 'passed');
+  assert.equal(waits[1], 0);
+});
+
+test('transfer conservation rejects moving the wrong product despite correct warehouse totals', async () => {
+  const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/02-strengthened.json');
+  const criterion = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source })
+    .features.find(feature => feature.id === 202)!.criteria[0];
+  assert(criterion);
+  for (const wrongProduct of [false, true]) {
+    const quantities = new Map([['East', 50], ['West', 50]]);
+    const capabilities = { clock: { sleep }, 'browser-observation': { recorded: new Map<string, number>() },
+      'database-read': { getStock: async (input: { item: string; warehouse: string }) => ({
+        item: input.item, quantity: quantities.get(input.warehouse),
+      }) } };
+    for (const step of criterion.steps.filter(step => step.do === 'dbRecordStock')) {
+      assert.equal((await run(step, capabilities)).status, 'passed');
+    }
+    if (!wrongProduct) { quantities.set('East', 33); quantities.set('West', 67); }
+    const checks: readonly UnknownRecord[] = criterion.steps.filter(step => step.do === 'dbExpectStock');
+    assert.equal(checks.length, 2);
+    for (const step of checks) {
+      assert.equal((await run({ ...step, within: 1 }, capabilities)).status, wrongProduct ? 'failed' : 'passed');
+    }
+  }
+});
+
 test('bounded stock reads observe deferred writes and reject missing, repeated, or inaccessible writes', async () => {
   for (const [values, status] of [[[100, 105], 'passed'], [[100], 'failed'], [[110], 'failed']] as const) {
     let reads = 0;

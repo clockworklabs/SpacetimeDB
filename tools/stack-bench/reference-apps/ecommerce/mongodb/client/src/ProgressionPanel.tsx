@@ -298,7 +298,7 @@ function StaffTools({ user, state, items, orders, act, onRefreshItems }: any) {
           itemId: findItem(restock.item)?.id, warehouseId: state.warehouses?.find((entry: any) => entry.name === restock.warehouse)?.id,
           quantity: Number(restock.quantity), delaySeconds: Number(restock.delaySeconds),
         }) })}>Schedule</button>
-      {(state.scheduledRestocks || []).map((entry: any) => <div data-role="pending-restock-item" data-entity-id={entry.id} key={entry.id}>
+      {(state.scheduledRestocks || []).map((entry: any) => <div data-role="pending-restock-item" data-quantity={entry.quantity} data-entity-id={entry.id} key={entry.id}>
         {nameFor(items, entry.itemId)} <span data-role="pending-restock-remaining">{Math.max(0, Math.ceil((new Date(entry.dueAt).getTime() - Date.now()) / 1000))}</span>
         <button data-role="pending-restock-cancel" onClick={() => act(`/api/admin/scheduled-restocks/${entry.id}`, { method: "DELETE" })}>Cancel</button>
       </div>)}
@@ -309,10 +309,10 @@ function StaffTools({ user, state, items, orders, act, onRefreshItems }: any) {
       <input data-role="reorder-item" value={reorder.item} onChange={event => setReorder(value => ({ ...value, item: event.target.value }))} />
       <input data-role="reorder-threshold" value={reorder.threshold} onChange={event => setReorder(value => ({ ...value, threshold: event.target.value }))} />
       <input data-role="reorder-quantity" value={reorder.quantity} onChange={event => setReorder(value => ({ ...value, quantity: event.target.value }))} />
-      <button data-role="reorder-submit" onClick={() => act("/api/progression/reorder-rules", { method: "POST", body: JSON.stringify({
+      <button data-role="reorder-submit" data-action-input={JSON.stringify({ itemId: findItem(reorder.item)?.id, threshold: Number(reorder.threshold), quantity: Number(reorder.quantity) })} onClick={() => act(`/api/reorders/${findItem(reorder.item)?.id}`, { method: "PUT", body: JSON.stringify({
         itemId: findItem(reorder.item)?.id, threshold: Number(reorder.threshold), quantity: Number(reorder.quantity),
       }) })}>Save rule</button>
-      {(state.reorderRules || []).map((entry: any) => <div data-role="reorder-rule-item" key={entry.id}>{nameFor(items, entry.itemId)} {entry.threshold} / {entry.quantity}</div>)}
+      {(state.reorderRules || []).map((entry: any) => <div data-role="reorder-rule-item" data-entity-id={String(entry.itemId)} data-threshold={entry.threshold} data-quantity={entry.quantity} key={entry.id}>{nameFor(items, entry.itemId)} {entry.threshold} / {entry.quantity}</div>)}
     </div>}
 
     {section === "activity" && <div className="progression-card">

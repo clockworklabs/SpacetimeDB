@@ -227,7 +227,9 @@ export const ACTION_DEFINITIONS = Object.freeze({
   startAppServer: fields({}, settle),
   stopAppServer: fields({}, settle),
   typeInto: fields({ ...actor, text: string }),
-  wait: fields({ ...actor, ms: nonNegativeNumber }),
+  recordTime: fields({ as: nonEmptyString }),
+  expectElapsed: fields({ since: nonEmptyString, atMost: positiveNumber }),
+  wait: fields({ ...actor, ms: nonNegativeNumber }, { since: nonEmptyString }),
   waitUntilAbsent: fields({ ...actor, testid: nonEmptyString },
     { contains: string, ...locator, ...within }),
 } satisfies Record<string, ActionDefinition>);

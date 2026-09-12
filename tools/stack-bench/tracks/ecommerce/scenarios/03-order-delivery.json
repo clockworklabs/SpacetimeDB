@@ -3,7 +3,7 @@
   "track": "ecommerce",
   "level": 3,
   "name": "Order delivery",
-  "note": "L2 shipping remains immediate. L3 adds automatic delivery after shipping.",
+  "note": "Draft: revised observations require matching reference and defect-control qualification.",
   "features": [
     {
       "id": 303,
@@ -48,12 +48,16 @@
       "criteria": [{
         "id": "305a",
         "category": "production",
-        "desc": "a cancelled order does not advance later",
+        "desc": "a cancelled order remains cancelled after the delivery interval",
         "points": 2,
         "statedBy": "A cancelled order never advances.",
         "steps": [
-          { "do": "wait", "actor": "customer", "ms": 70000 },
-          { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "value": "cancelled", "ignoreCase": true }
+          {"do":"wait","actor":"customer","ms":70000},
+          {"do":"reload","actor":"customer","settleMs":1000},
+          {"do":"ensureSignedIn","actor":"customer","name":"delivery-cancel","readyTestid":"current-user"},
+          {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"within":1000},
+          {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
+          {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"cancelled","ignoreCase":true}
         ]
       }]
     }

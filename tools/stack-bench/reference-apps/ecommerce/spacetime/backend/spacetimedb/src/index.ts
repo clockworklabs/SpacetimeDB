@@ -280,7 +280,7 @@ function processReorderRules(ctx: Ctx, itemId: bigint) {
         itemId,
         warehouseId: rule.warehouseId,
         quantity: rule.quantity,
-        dueMicros: nowMicros(ctx) + 10n * SECOND,
+        dueMicros: nowMicros(ctx) + 60n * SECOND,
         status: 'pending',
         reorderRuleId: rule.id,
       });
@@ -1471,11 +1471,14 @@ export const restoreExpiredCart = spacetimedb.reducer((ctx) => {
 });
 
 export const saveReorderRule = spacetimedb.reducer(
-  { itemId: t.u64(), warehouseId: t.u64(), threshold: t.u32(), quantity: t.u32() },
+  { itemId: t.u64(), threshold: t.u32(), quantity: t.u32() },
   (ctx, input) => {
     requireStaffOrAdmin(ctx);
-    ctx.db.reorderRule.insert({ id: 0n, ...input });
-    processReorderRules(ctx, input.itemId);
+    const warehouse = [...ctx.db.warehouse.iter()].find(row => row.name === 'East');
+    if (!warehouse || !ctx.db.item.id.find(input.itemId) || input.quantity < 1) throw new SenderError('Invalid reorder rule');
+    const existing = [...ctx.db.reorderRule.iter()].find(row => row.itemId === input.itemId);
+    if (existing) ctx.db.reorderRule.id.update({ ...existing, ...input });
+    else ctx.db.reorderRule.insert({ id: 0n, warehouseId: warehouse.id, ...input });
   }
 );
 
