@@ -3,6 +3,7 @@ import { containerReachableSpacetimeUri } from '../runtime/spacetime-target.js';
 import { referenceInstallSteps } from '../references/reference-install.js';
 import { POSTGRES_APPLICATION_IDENTITY, attemptDatabaseUrl } from './hosted-database-identity.js';
 import { resetMongoDb } from './backends/mongodb-operations.js';
+import { resetPostgres } from './backends/postgres-operations.js';
 import type { LeasedDatabase } from './backend-reset-guard.js';
 import { CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_SPACETIME_CLI }
   from '../runtime/coding-container-policy.js';
@@ -99,12 +100,10 @@ function validateHostedDatabase({ args, lease, track, helpers }:
 }
 
 async function deployHostedReference(input: HostedReferenceDeployment, { databaseUrl, extraEnv = {},
-  prepare, pushSchema }: {
+  prepare }: {
   databaseUrl: (target: Pick<HostedReferenceDeployment, 'ports' | 'lease' | 'buildNetworkMode'>) => string;
   extraEnv?: Record<string, string>;
   prepare: (database: HostedDatabase, helpers: HostedReferenceHelpers) => void;
-  pushSchema?: (stage: { container: string; metadata: HostedReferenceMetadata;
-    applicationEnv: Record<string, string>; helpers: HostedReferenceHelpers }) => void;
 }): Promise<void> {
   const { args, metadata, lease, track, container, ports, buildNetworkMode, helpers } = input;
   helpers.phase('preparing database');
@@ -120,7 +119,6 @@ async function deployHostedReference(input: HostedReferenceDeployment, { databas
     helpers.docker(container, `${CODING_CONTAINER_APP_ROOT}/${directory}`,
       'npm', ['ci', '--no-audit', '--no-fund']);
   }
-  if (pushSchema) pushSchema({ container, metadata, applicationEnv, helpers });
   helpers.phase('building reference client');
   helpers.docker(container, `${CODING_CONTAINER_APP_ROOT}/${metadata.client.directory}`,
     'npm', ['run', 'build']);
@@ -141,22 +139,8 @@ export function deployPostgresReference(input: HostedReferenceDeployment): Promi
     databaseUrl: ({ ports, lease, buildNetworkMode }) => lease.resources.network
       ? attemptDatabaseUrl({ backend: 'postgres', database: lease.resources.database, ownershipToken: lease.ownershipToken ?? '' })
       : `postgresql://${user}:${password}@${dockerHostServiceAddress(buildNetworkMode)}:${ports.dbPort}/${lease.resources.database}`,
-    prepare: ({ expected, containerId }, helpers) => {
-      try {
-        helpers.runSync('creating PostgreSQL reference database', 'docker',
-          ['exec', containerId, 'psql', '-U', user, '-d', 'postgres',
-            '-c', `CREATE DATABASE ${expected} OWNER ${user};`], { stdio: 'pipe' });
-      } catch { /* an existing run-index database is expected */ }
-      helpers.runSync('resetting PostgreSQL reference schema', 'docker',
-        ['exec', containerId, 'psql', '-U', user, '-d', expected,
-          '-c', `DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO ${user};`],
-        { stdio: 'pipe' });
-    },
-    pushSchema: ({ container, metadata, applicationEnv, helpers }) => {
-      helpers.phase('pushing PostgreSQL schema');
-      helpers.docker(container, `${CODING_CONTAINER_APP_ROOT}/${metadata.server.directory}`,
-        './node_modules/.bin/drizzle-kit', ['push', '--force'], applicationEnv);
-    },
+    prepare: (_database, helpers) => resetPostgres({ lease: input.lease,
+      exec: (command, args, options) => helpers.runSync('resetting PostgreSQL reference database', command, args, { ...options }) }),
   });
 }
 

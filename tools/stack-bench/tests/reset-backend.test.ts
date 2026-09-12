@@ -44,10 +44,10 @@ test('repair rollback removes PostgreSQL schema changes only in the authenticate
       commands.push([...args]);
       return args[0] === 'inspect' ? lease.resources.container!.id : '';
     } });
-    const wipe = commands.find(args => args.some(value => value.includes('DROP SCHEMA')));
+    const wipe = commands.find(args => args.includes('dropdb'));
     assert(wipe);
-    assert.equal(wipe[wipe.indexOf('-d') + 1], lease.resources.database);
-    assert.match(wipe.at(-1)!, /CREATE SCHEMA public/);
+    assert.equal(wipe.at(-1), lease.resources.database);
+    assert(commands.some(args => args.includes('createdb') && args.at(-1) === lease.resources.database));
     assert.throws(() => resetRepairBackend({ backend: 'postgres', app: root,
       exec: (_file, args) => { assert.equal(args[0], 'inspect'); return 'foreign'; } }),
     /changed after lease creation/);
@@ -117,31 +117,26 @@ test('the reset entrypoint reports a generated layout separately from a harness 
   }
 });
 
-test('PostgreSQL per-check reset clears rows without removing the app schema', () => {
-  const lease = {
-    resources: {
-      database: 'app_ecom_run0',
-      container: { name: 'postgres-service', id: 'a'.repeat(64) },
-    },
-  };
+test('PostgreSQL reset replaces the leased database with controller authority', () => {
+  const lease = { resources: { database: 'app_ecom_run0',
+    container: { name: 'postgres-service', id: 'a'.repeat(64) },
+    network: { name: 'owned', id: 'b'.repeat(64), namespaceContainerId: 'c'.repeat(64),
+      hostAddresses: [], services: [], firewallSha256: null, firewallInstalledAt: null } } };
   const calls: CommandCall[] = [];
   const exec = (command: string, args: readonly string[], options: TextCommandOptions): string => {
     calls.push({ command, args, options });
-    if (args[0] === 'inspect') return `${lease.resources.container.id}\n`;
-    return '';
+    return args[0] === 'inspect' ? lease.resources.container.id : '';
   };
-
   resetPostgres({ lease, exec });
-  const reset = calls.find(call => call.args.includes('psql'));
-  assert(reset);
-  const sql = reset.args[reset.args.indexOf('-c') + 1];
-  assert(sql);
-  assert.match(sql, /FROM pg_tables WHERE schemaname = 'public'/);
-  assert.match(sql, /TRUNCATE TABLE/);
-  assert.match(sql, /RESTART IDENTITY CASCADE/);
-  assert.doesNotMatch(sql, /DROP SCHEMA/);
-  assert.equal(reset.args[reset.args.indexOf('-v') + 1], 'ON_ERROR_STOP=1');
-  assert.equal(reset.args[reset.args.indexOf('-d') + 1], lease.resources.database);
+  assert.deepEqual(calls.slice(1).map(call => call.args), [
+    ['exec', lease.resources.container.id, 'dropdb', '-U', 'postgres', '--if-exists', '--force', '--', 'app_ecom_run0'],
+    ['exec', lease.resources.container.id, 'createdb', '-U', 'postgres', '--owner', 'appuser', '--template', 'template0', '--', 'app_ecom_run0'],
+  ]);
+  assert.throws(() => resetPostgres({ lease, exec: () => 'foreign' }), /changed after lease creation/);
+  for (const database of ['postgres', 'template0', 'template1']) {
+    assert.throws(() => resetPostgres({ lease: { resources: { ...lease.resources, database } },
+      exec: () => { throw new Error('must not execute'); } }), /maintenance database/);
+  }
 });
 
 test('PostgreSQL runtime provenance finds an application marker in the exact leased database', () => {

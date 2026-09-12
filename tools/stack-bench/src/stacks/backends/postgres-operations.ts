@@ -94,16 +94,20 @@ HAVING count(*) > 0;`;
 
 export function resetPostgres({ lease, exec = execFileSync }:
   { lease: LeasedDatabase; exec?: TextCommandExecutor }): string {
+  const database = lease.resources.database;
+  if (!database || ['postgres', 'template0', 'template1'].includes(database)) {
+    throw new Error('refusing to reset a PostgreSQL maintenance database');
+  }
   const containerId = assertLeasedContainer(lease.resources.container, exec, RESET_TIMEOUT_MS, 'reset');
-  exec('docker', ['exec', containerId, 'psql', '-U', POSTGRES_USER,
-    '-d', lease.resources.database, '-v', 'ON_ERROR_STOP=1', '-c',
-    "DO $block$ DECLARE tables text; BEGIN "
-      + "SELECT string_agg(format('%I.%I', schemaname, tablename), ', ') INTO tables "
-      + "FROM pg_tables WHERE schemaname = 'public'; "
-      + "IF tables IS NOT NULL THEN EXECUTE 'TRUNCATE TABLE ' || tables "
-      + "|| ' RESTART IDENTITY CASCADE'; END IF; END $block$;"],
+  // Owned backends give the application no CREATEDB privilege. Reset with the
+  // controller's local administrator, preserving the application role/password.
+  const admin = lease.resources.network ? 'postgres' : POSTGRES_USER;
+  exec('docker', ['exec', containerId, 'dropdb', '-U', admin, '--if-exists', '--force', '--', database],
   { encoding: 'utf8', stdio: 'pipe', timeout: RESET_TIMEOUT_MS });
-  return `reset postgres database ${lease.resources.database}`;
+  exec('docker', ['exec', containerId, 'createdb', '-U', admin,
+    '--owner', POSTGRES_USER, '--template', 'template0', '--', database],
+  { encoding: 'utf8', stdio: 'pipe', timeout: RESET_TIMEOUT_MS });
+  return `reset postgres database ${database}`;
 }
 
 export function provePostgresUse({ lease, marker, exec = execFileSync }:
@@ -165,6 +169,15 @@ export function preparePostgresDatabase({ lease, name, expectedName, wipe,
   if (name !== expectedName) {
     throw new Error(`backend lease database ${name} does not match harness target ${expectedName}`);
   }
+  if (name !== lease.resources.database) throw new Error('database target does not match its lease');
+  if (wipe) {
+    try {
+      resetPostgres({ lease, exec });
+    } catch (error) {
+      throw new Error(`could not wipe ${name}: ${streams(error, 'message').split('\n')[0]}`, { cause: error });
+    }
+    return name;
+  }
   const container = assertLeasedContainer(lease.resources.container, exec, RESET_TIMEOUT_MS,
     'database mutation');
   try {
@@ -176,18 +189,6 @@ export function preparePostgresDatabase({ lease, name, expectedName, wipe,
       '-d', 'postgres', '-tAc', `SELECT 1 FROM pg_database WHERE datname = '${name}';`],
     { encoding: 'utf8', stdio: 'pipe', timeout: RESET_TIMEOUT_MS }).trim();
     if (exists !== '1') throw error;
-  }
-  if (wipe) {
-    try {
-      exec('docker', ['exec', container, 'psql', '-U', POSTGRES_USER, '-d', name,
-        '-c', 'DROP SCHEMA public CASCADE; CREATE SCHEMA public; '
-            + `GRANT ALL ON SCHEMA public TO ${POSTGRES_USER};`],
-      { encoding: 'utf8', stdio: 'pipe', timeout: RESET_TIMEOUT_MS });
-      console.error(`  wiped ${name} (schema dropped) — a build starts on an empty database`);
-    } catch (error) {
-      throw new Error(`could not wipe ${name}: ${streams(error, 'message').split('\n')[0]}`,
-      { cause: error });
-    }
   }
   return name;
 }

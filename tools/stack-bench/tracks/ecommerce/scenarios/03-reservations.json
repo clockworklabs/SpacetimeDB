@@ -66,6 +66,7 @@
         "steps": [
           { "do": "click", "actor": "shopper", "testid": "checkout-submit" },
           { "do": "expectNumber", "actor": "shopper", "testid": "cart-count", "equals": 0, "within": 10000 },
+          {"do":"click","actor":"shopper","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           { "do": "click", "actor": "shopper", "testid": "orders-toggle" },
           { "do": "expect", "actor": "shopper", "testid": "order-item", "contains": "Keyboard", "count": 1 }
         ]

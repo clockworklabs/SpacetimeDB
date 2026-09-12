@@ -26,6 +26,7 @@
             },
             {"do":"click","actor":"two","testid":"buy-now","in":{"testid":"item-card","contains":"Desk Lamp"}},
             {"do":"wait","actor":"two","ms":2000},
+            {"do":"click","actor":"two","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {"do":"click","actor":"two","testid":"orders-toggle", "unlessVisible": "order-item" },
             {"do":"expect","actor":"two","testid":"order-item","contains":"Desk Lamp","count":1},
             {"do":"expect","actor":"two","testid":"order-item","contains":"Coffee Grinder","absent":true}

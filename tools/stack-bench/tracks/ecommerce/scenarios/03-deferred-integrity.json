@@ -53,6 +53,7 @@
         { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
         { "do": "expect", "actor": "staff", "testid": "queue-item", "contains": "Desk Lamp", "within": 10000 },
         { "do": "click", "actor": "staff", "testid": "ship-submit", "in": { "testid": "queue-item", "contains": "Desk Lamp" } },
+        {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
         { "do": "click", "actor": "customer", "testid": "orders-toggle" },
         { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "value": "shipped", "ignoreCase": true, "within": 10000 },
         { "do": "wait", "actor": "customer", "ms": 70000 },
@@ -127,6 +128,7 @@
             { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "relativeTo": "before", "plus": -1, "within": 10000 },
             { "do": "reload", "actor": "customer", "settleMs": 1000 },
             { "do": "ensureSignedIn", "actor": "customer", "name": "conserve-checkout", "readyTestid": "current-user" },
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "customer", "testid": "orders-toggle" },
             { "do": "expectElementCount", "actor": "customer", "testid": "order-item", "contains": "Headphones", "equals": 1, "within": 10000 }
           ]

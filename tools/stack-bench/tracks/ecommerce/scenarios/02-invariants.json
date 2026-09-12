@@ -198,6 +198,7 @@
               "actor": "customer",
               "ms": 2500
             },
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {
               "do": "click",
               "actor": "customer",
@@ -366,6 +367,7 @@
               "relativeTo": "cooktop-before",
               "plus": -1
             },
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {
               "do": "click",
               "actor": "customer",
@@ -580,6 +582,7 @@
               "plus": 42,
               "within": 10000
             },
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {
               "do": "click",
               "actor": "customer",
@@ -622,6 +625,7 @@
             {"do":"click","actor":"customer","testid":"buy-now","in":{"testid":"item-card","contains":"Bluetooth Speaker"}},
             {"do":"wait","actor":"customer","ms":2500},
             {"do":"expectNumber","actor":"admin","testid":"admin-revenue","relativeTo":"history-revenue-before-sale","plus":79.5,"within":10000},
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {"do":"click","actor":"customer","testid":"orders-toggle", "unlessVisible": "order-item" },
             {"do":"expect","actor":"customer","testid":"order-item","contains":"Bluetooth Speaker","count":1,"within":10000},
             {"do":"recordNumber","actor":"admin","testid":"admin-revenue","as":"rev-after-sale"},
@@ -678,6 +682,7 @@
               "actor": "one",
               "ms": 2500
             },
+            {"do":"click","actor":"one","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {
               "do": "click",
               "actor": "one",
@@ -708,6 +713,7 @@
               "do": "expectReplayRejected",
               "actor": "two"
             },
+            {"do":"click","actor":"two","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {
               "do": "click",
               "actor": "two",

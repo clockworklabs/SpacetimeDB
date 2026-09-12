@@ -31,6 +31,7 @@
             { "do": "expectNumber", "actor": "visitor", "testid": "item-price", "in": { "testid": "item-card", "contains": "Air Purifier" }, "equals": 1, "within": 10000 },
             { "do": "reload", "actor": "customer", "settleMs": 2000 },
             { "do": "ensureSignedIn", "actor": "customer", "name": "history-persisted", "readyTestid": "current-user" },
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "customer", "testid": "orders-toggle" },
             { "do": "expectNumber", "actor": "customer", "testid": "order-total", "in": { "testid": "order-item", "contains": "Air Purifier" }, "relativeTo": "air-purifier-paid", "plus": 0 }
           ]

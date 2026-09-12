@@ -1,5 +1,8 @@
 # Customer profile application interface
 
+Use `catalog-link` to return to the catalog. If a profile overlay blocks navigation,
+expose `overlay-close` to dismiss it. Saving may leave the profile open.
+
 Make `profile-link` available from the catalog while signed in, without first opening another
 area. Use it to open the profile. Use `profile-name` and `profile-address` for the editable
 values. Use `profile-save` to save them. Use `profile-address-summary` to display

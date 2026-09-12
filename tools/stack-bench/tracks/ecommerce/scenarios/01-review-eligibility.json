@@ -24,6 +24,7 @@
             { "do": "callAction", "actor": "owner", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Air Purifier", "attribute": "data-buy-input" } },
 
             { "do": "expectActionOutcome", "actor": "owner", "outcome": "accepted" },
+            {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "owner", "testid": "orders-toggle", "unlessVisible": "order-item" },
             { "do": "expect", "actor": "owner", "testid": "order-item", "contains": "Air Purifier" },
             { "do": "click", "actor": "owner", "testid": "overlay-close", "ifAvailable": true },

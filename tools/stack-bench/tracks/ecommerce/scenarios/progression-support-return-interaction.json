@@ -97,6 +97,7 @@
                 "contains": "Keyboard"
               }
             },
+            {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {
               "do": "click",
               "actor": "owner",
@@ -285,6 +286,7 @@
               "relativeTo": "757atotal",
               "plus": -1
             },
+            {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {
               "do": "click",
               "actor": "owner",
@@ -321,6 +323,7 @@
               "actor": "owner-fresh",
               "name": "return-refund-owner"
             },
+            {"do":"click","actor":"owner-fresh","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {
               "do": "click",
               "actor": "owner-fresh",
@@ -449,6 +452,7 @@
                 "contains": "Desk Lamp"
               }
             },
+            {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {
               "do": "click",
               "actor": "owner",
@@ -597,6 +601,7 @@
                 "contains": "Return refund 757b"
               }
             },
+            {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {
               "do": "click",
               "actor": "owner",
@@ -667,6 +672,7 @@
               "actor": "owner-fresh",
               "name": "return-refund-owner"
             },
+            {"do":"click","actor":"owner-fresh","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {
               "do": "click",
               "actor": "owner-fresh",

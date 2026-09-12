@@ -41,6 +41,7 @@
             { "do": "expectActionOutcome", "actor": "buyer", "outcome": "accepted" },
             { "do": "freshClient", "actor": "buyer" },
             { "do": "signIn", "actor": "buyer-fresh", "name": "oli" },
+            {"do":"click","actor":"buyer-fresh","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {"do":"click","actor":"buyer-fresh","testid":"orders-toggle", "unlessVisible": "order-item" },
             {"do":"expect","actor":"buyer-fresh","testid":"order-item","count":2},
             {"do":"expect","actor":"buyer-fresh","testid":"order-item","contains":"Espresso Machine","count":1},

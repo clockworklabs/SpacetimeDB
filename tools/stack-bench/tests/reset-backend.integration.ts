@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import test from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
+import { DATABASE_IMAGES } from '../src/stacks/database-containers.js';
 
 import type { TextCommandOptions } from '../src/runtime/command-executor.js';
 import { proveMongoDbUse } from '../src/stacks/backends/mongodb-operations.js';
@@ -43,35 +45,44 @@ test('runtime database provenance works against the Docker services', () => {
   }
 });
 
-test('PostgreSQL reset preserves schema and does not touch another lease database', () => {
-  const suffix = `${process.pid}_${Date.now()}`;
-  const target = `application_reset_${suffix}`;
-  const neighbor = `application_neighbor_${suffix}`;
-  const container = 'stack-bench-postgres';
-  const database = (name: string, sql: string): string =>
-    docker(['exec', container, 'psql', '-U', POSTGRES_USER,
-      '-d', name, '-v', 'ON_ERROR_STOP=1', '-tAc', sql]);
+test('PostgreSQL reset removes migrated structures and preserves neighboring databases', { timeout: 60_000 }, async () => {
+  const container = 'stack-bench-reset-regression-' + process.pid;
+  const id = docker(['run', '--pull=never', '--rm', '-d', '--name', container,
+    '--network', 'none', '--memory', '384m', '-e', 'POSTGRES_HOST_AUTH_METHOD=trust', DATABASE_IMAGES.postgres]).trim();
+  const database = (name: string, sql: string, user = 'postgres'): string =>
+    docker(['exec', '-i', id, 'psql', '-U', user, '-d', name, '-v', 'ON_ERROR_STOP=1', '-At'], { input: sql }).trim();
   try {
-    const id = docker(['inspect', '--format', '{{.Id}}', container]).trim();
-    for (const name of [target, neighbor]) {
-      docker(['exec', container, 'psql', '-U', POSTGRES_USER, '-d', 'postgres',
-        '-v', 'ON_ERROR_STOP=1', '-c', `CREATE DATABASE ${name} OWNER ${POSTGRES_USER};`]);
-      database(name, 'CREATE TABLE item (id bigserial PRIMARY KEY, name text NOT NULL); '
-        + "INSERT INTO item(name) VALUES ('kept schema');");
+    for (let attempt = 0; ; attempt++) {
+      try { database('postgres', 'SELECT 1'); break; }
+      catch (error) { if (attempt >= 60) throw error; await delay(250); }
     }
-    resetPostgres({ lease: { resources: { database: target,
-      container: { name: container, id } } } });
-    assert.equal(database(target,
-      "SELECT to_regclass('public.item') IS NOT NULL, count(*) FROM item;").trim(), 't|0');
-    database(target, "INSERT INTO item(name) VALUES ('reseeded');");
-    assert.equal(database(target, "SELECT id FROM item WHERE name = 'reseeded';").trim(), '1');
-    assert.equal(database(neighbor, 'SELECT count(*) FROM item;').trim(), '1');
-  } finally {
-    for (const name of [target, neighbor]) {
-      try {
-        docker(['exec', container, 'psql', '-U', POSTGRES_USER, '-d', 'postgres',
-          '-v', 'ON_ERROR_STOP=1', '-c', `DROP DATABASE IF EXISTS ${name} WITH (FORCE);`]);
-      } catch { /* preserve the test failure */ }
-    }
-  }
+    database('postgres', 'CREATE USER appuser; CREATE DATABASE reset_target OWNER appuser; CREATE DATABASE neighbor;');
+    database('neighbor', 'CREATE TABLE evidence(value integer); INSERT INTO evidence VALUES(42);');
+    const lease = { resources: { database: 'reset_target', container: { name: container, id },
+      network: { name: 'owned', id, namespaceContainerId: id, hostAddresses: [], services: [],
+        firewallSha256: null, firewallInstalledAt: null } } };
+    const initialize = () => database('reset_target', `
+CREATE TABLE warehouses(name text PRIMARY KEY);
+CREATE TABLE stock(warehouse text REFERENCES warehouses, quantity integer);
+CREATE TABLE migrations(name text PRIMARY KEY);
+INSERT INTO warehouses VALUES('East'); INSERT INTO stock VALUES('East', 7);
+INSERT INTO migrations VALUES('initial');
+CREATE TABLE warehouse(id text PRIMARY KEY);
+INSERT INTO warehouse SELECT name FROM warehouses;
+ALTER TABLE stock ADD COLUMN warehouse_id text REFERENCES warehouse;
+CREATE FUNCTION sync_stock() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.warehouse_id=NEW.warehouse; RETURN NEW; END $$;
+CREATE TRIGGER sync_stock BEFORE INSERT ON stock FOR EACH ROW EXECUTE FUNCTION sync_stock();
+CREATE SCHEMA migration_meta; CREATE TABLE migration_meta.version(n integer); INSERT INTO migration_meta.version VALUES(2);
+`, 'appuser');
+    initialize();
+    // The former reset erased the history but left the later trigger active.
+    database('reset_target', 'TRUNCATE migrations, stock, warehouse, warehouses CASCADE;');
+    assert.throws(() => database('reset_target', "INSERT INTO warehouses VALUES('East'); INSERT INTO stock(warehouse,quantity) VALUES('East',7);"), /foreign key/);
+    resetPostgres({ lease });
+    assert.equal(database('reset_target', "SELECT to_regclass('public.stock') IS NULL AND to_regnamespace('migration_meta') IS NULL;"), 't');
+    initialize();
+    assert.equal(database('reset_target', 'SELECT quantity FROM stock;'), '7');
+    assert.equal(database('neighbor', 'SELECT value FROM evidence;'), '42');
+    assert.equal(database('postgres', "SELECT rolcreatedb OR rolsuper FROM pg_roles WHERE rolname='appuser';"), 'f');
+  } finally { docker(['rm', '-f', id]); }
 });

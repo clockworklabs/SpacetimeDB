@@ -43,7 +43,7 @@
     },
     {
       "id": "postgres",
-      "adapterVersion": "1.5.0"
+      "adapterVersion": "1.6.0"
     },
     {
       "id": "mongodb",

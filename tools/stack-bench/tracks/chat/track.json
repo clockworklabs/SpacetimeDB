@@ -6,6 +6,7 @@
   "plannedThrough": 5,
   "portOffset": 0,
   "restartProbe": "/api/rooms",
+  "reseedOnReset": true,
   "suites": {
     "1": [
       {

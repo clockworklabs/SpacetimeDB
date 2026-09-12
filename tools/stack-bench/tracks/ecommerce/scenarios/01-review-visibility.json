@@ -12,6 +12,7 @@
       "setup": [
         { "do": "signUp", "actor": "author", "name": "hal" },
         { "do": "click", "actor": "author", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Induction Cooktop" } },
+        {"do":"click","actor":"author","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
         { "do": "click", "actor": "author", "testid": "orders-toggle", "unlessVisible": "order-item" },
         { "do": "expect", "actor": "author", "testid": "order-item", "contains": "Induction Cooktop", "within": 10000 },
         { "do": "click", "actor": "author", "testid": "overlay-close", "ifAvailable": true },

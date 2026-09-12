@@ -24,10 +24,12 @@
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-1},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"purchase-1-1-a","readyTestid":"current-user"},
+          {"do":"click","actor":"a","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"a","testid":"orders-toggle"},
           {"do":"expect","actor":"a","testid":"order-item","contains":"Keyboard","count":1,"within":10000},
           {"do":"reload","actor":"b","settleMs":1000},
           {"do":"ensureSignedIn","actor":"b","name":"purchase-1-1-b","readyTestid":"current-user"},
+          {"do":"click","actor":"b","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"b","testid":"orders-toggle"},
           {"do":"expect","actor":"b","testid":"order-item","contains":"Keyboard","absent":true,"within":10000}
         ]
@@ -52,10 +54,12 @@
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-1},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"purchase-1-2-a","readyTestid":"current-user"},
+          {"do":"click","actor":"a","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"a","testid":"orders-toggle"},
           {"do":"expect","actor":"a","testid":"order-item","contains":"Keyboard","count":1,"within":10000},
           {"do":"reload","actor":"b","settleMs":1000},
           {"do":"ensureSignedIn","actor":"b","name":"purchase-1-2-b","readyTestid":"current-user"},
+          {"do":"click","actor":"b","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"b","testid":"orders-toggle"},
           {"do":"expect","actor":"b","testid":"order-item","contains":"Keyboard","absent":true,"within":10000}
         ]
@@ -80,10 +84,12 @@
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-1},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"purchase-1-3-a","readyTestid":"current-user"},
+          {"do":"click","actor":"a","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"a","testid":"orders-toggle"},
           {"do":"expect","actor":"a","testid":"order-item","contains":"Keyboard","count":1,"within":10000},
           {"do":"reload","actor":"b","settleMs":1000},
           {"do":"ensureSignedIn","actor":"b","name":"purchase-1-3-b","readyTestid":"current-user"},
+          {"do":"click","actor":"b","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"b","testid":"orders-toggle"},
           {"do":"expect","actor":"b","testid":"order-item","contains":"Keyboard","absent":true,"within":10000}
         ]
@@ -108,10 +114,12 @@
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-4},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"purchase-4-1-a","readyTestid":"current-user"},
+          {"do":"click","actor":"a","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"a","testid":"orders-toggle"},
           {"do":"expect","actor":"a","testid":"order-item","contains":"Keyboard","count":2,"within":10000},
           {"do":"reload","actor":"b","settleMs":1000},
           {"do":"ensureSignedIn","actor":"b","name":"purchase-4-1-b","readyTestid":"current-user"},
+          {"do":"click","actor":"b","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"b","testid":"orders-toggle"},
           {"do":"expect","actor":"b","testid":"order-item","contains":"Keyboard","count":2,"within":10000}
         ]
@@ -136,10 +144,12 @@
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-4},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"purchase-4-2-a","readyTestid":"current-user"},
+          {"do":"click","actor":"a","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"a","testid":"orders-toggle"},
           {"do":"expect","actor":"a","testid":"order-item","contains":"Keyboard","count":2,"within":10000},
           {"do":"reload","actor":"b","settleMs":1000},
           {"do":"ensureSignedIn","actor":"b","name":"purchase-4-2-b","readyTestid":"current-user"},
+          {"do":"click","actor":"b","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"b","testid":"orders-toggle"},
           {"do":"expect","actor":"b","testid":"order-item","contains":"Keyboard","count":2,"within":10000}
         ]
@@ -164,10 +174,12 @@
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-4},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"purchase-4-3-a","readyTestid":"current-user"},
+          {"do":"click","actor":"a","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"a","testid":"orders-toggle"},
           {"do":"expect","actor":"a","testid":"order-item","contains":"Keyboard","count":2,"within":10000},
           {"do":"reload","actor":"b","settleMs":1000},
           {"do":"ensureSignedIn","actor":"b","name":"purchase-4-3-b","readyTestid":"current-user"},
+          {"do":"click","actor":"b","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"b","testid":"orders-toggle"},
           {"do":"expect","actor":"b","testid":"order-item","contains":"Keyboard","count":2,"within":10000}
         ]
@@ -192,10 +204,12 @@
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-16},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"purchase-16-1-a","readyTestid":"current-user"},
+          {"do":"click","actor":"a","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"a","testid":"orders-toggle"},
           {"do":"expect","actor":"a","testid":"order-item","contains":"Keyboard","count":8,"within":10000},
           {"do":"reload","actor":"b","settleMs":1000},
           {"do":"ensureSignedIn","actor":"b","name":"purchase-16-1-b","readyTestid":"current-user"},
+          {"do":"click","actor":"b","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"b","testid":"orders-toggle"},
           {"do":"expect","actor":"b","testid":"order-item","contains":"Keyboard","count":8,"within":10000}
         ]
@@ -220,10 +234,12 @@
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-16},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"purchase-16-2-a","readyTestid":"current-user"},
+          {"do":"click","actor":"a","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"a","testid":"orders-toggle"},
           {"do":"expect","actor":"a","testid":"order-item","contains":"Keyboard","count":8,"within":10000},
           {"do":"reload","actor":"b","settleMs":1000},
           {"do":"ensureSignedIn","actor":"b","name":"purchase-16-2-b","readyTestid":"current-user"},
+          {"do":"click","actor":"b","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"b","testid":"orders-toggle"},
           {"do":"expect","actor":"b","testid":"order-item","contains":"Keyboard","count":8,"within":10000}
         ]
@@ -248,10 +264,12 @@
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-16},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"purchase-16-3-a","readyTestid":"current-user"},
+          {"do":"click","actor":"a","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"a","testid":"orders-toggle"},
           {"do":"expect","actor":"a","testid":"order-item","contains":"Keyboard","count":8,"within":10000},
           {"do":"reload","actor":"b","settleMs":1000},
           {"do":"ensureSignedIn","actor":"b","name":"purchase-16-3-b","readyTestid":"current-user"},
+          {"do":"click","actor":"b","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"b","testid":"orders-toggle"},
           {"do":"expect","actor":"b","testid":"order-item","contains":"Keyboard","count":8,"within":10000}
         ]
@@ -276,10 +294,12 @@
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-64},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"purchase-64-1-a","readyTestid":"current-user"},
+          {"do":"click","actor":"a","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"a","testid":"orders-toggle"},
           {"do":"expect","actor":"a","testid":"order-item","contains":"Keyboard","count":32,"within":10000},
           {"do":"reload","actor":"b","settleMs":1000},
           {"do":"ensureSignedIn","actor":"b","name":"purchase-64-1-b","readyTestid":"current-user"},
+          {"do":"click","actor":"b","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"b","testid":"orders-toggle"},
           {"do":"expect","actor":"b","testid":"order-item","contains":"Keyboard","count":32,"within":10000}
         ]
@@ -304,10 +324,12 @@
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-64},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"purchase-64-2-a","readyTestid":"current-user"},
+          {"do":"click","actor":"a","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"a","testid":"orders-toggle"},
           {"do":"expect","actor":"a","testid":"order-item","contains":"Keyboard","count":32,"within":10000},
           {"do":"reload","actor":"b","settleMs":1000},
           {"do":"ensureSignedIn","actor":"b","name":"purchase-64-2-b","readyTestid":"current-user"},
+          {"do":"click","actor":"b","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"b","testid":"orders-toggle"},
           {"do":"expect","actor":"b","testid":"order-item","contains":"Keyboard","count":32,"within":10000}
         ]
@@ -332,10 +354,12 @@
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-64},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"purchase-64-3-a","readyTestid":"current-user"},
+          {"do":"click","actor":"a","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"a","testid":"orders-toggle"},
           {"do":"expect","actor":"a","testid":"order-item","contains":"Keyboard","count":32,"within":10000},
           {"do":"reload","actor":"b","settleMs":1000},
           {"do":"ensureSignedIn","actor":"b","name":"purchase-64-3-b","readyTestid":"current-user"},
+          {"do":"click","actor":"b","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
           {"do":"click","actor":"b","testid":"orders-toggle"},
           {"do":"expect","actor":"b","testid":"order-item","contains":"Keyboard","count":32,"within":10000}
         ]

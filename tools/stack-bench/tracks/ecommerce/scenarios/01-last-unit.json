@@ -72,11 +72,17 @@
           "desc": "exactly three of the six customers have an order, and no customer has more than one order",
           "points": 1,
           "steps": [
+            {"do":"click","actor":"a","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "a", "testid": "orders-toggle", "unlessVisible": "order-item" },
+            {"do":"click","actor":"b","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "b", "testid": "orders-toggle", "unlessVisible": "order-item" },
+            {"do":"click","actor":"c","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "c", "testid": "orders-toggle", "unlessVisible": "order-item" },
+            {"do":"click","actor":"d","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "d", "testid": "orders-toggle", "unlessVisible": "order-item" },
+            {"do":"click","actor":"e","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "e", "testid": "orders-toggle", "unlessVisible": "order-item" },
+            {"do":"click","actor":"f","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "f", "testid": "orders-toggle", "unlessVisible": "order-item" },
             {
               "do": "expectActorsWith",

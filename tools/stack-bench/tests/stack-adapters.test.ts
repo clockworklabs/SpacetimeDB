@@ -30,7 +30,7 @@ const FULL_GRADING_CAPABILITIES = [
 
 test('built-in adapters preserve the port grid and lease identity', () => {
   assert.deepEqual(STACK_ADAPTER_REGISTRY.ids, ['mongodb', 'postgres', 'spacetime', 'stub']);
-  assert.equal(stackAdapterVersion('postgres'), '1.5.0');
+  assert.equal(stackAdapterVersion('postgres'), '1.6.0');
   assert.equal(STACK_ADAPTER_REGISTRY.get('mongodb').version, '1.5.0');
   assert.equal(STACK_ADAPTER_REGISTRY.get('spacetime').version, '1.4.0');
   assert.equal(STACK_ADAPTER_REGISTRY.get('stub').version, '1.1.0');

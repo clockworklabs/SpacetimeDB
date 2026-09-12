@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "prestart": "drizzle-kit push --force",
     "start": "tsx src/index.ts",
     "build": "tsc --noEmit"
   },

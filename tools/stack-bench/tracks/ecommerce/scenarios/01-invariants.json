@@ -48,6 +48,7 @@
             { "do": "wait", "actor": "attacker", "ms": 1500 },
             { "do": "forgeWrite", "actor": "attacker", "fromActor": "victim", "settleMs": 2500 },
             { "do": "expectForgeryRejected", "actor": "attacker" },
+            {"do":"click","actor":"victim","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "victim", "testid": "orders-toggle" },
             { "do": "expect", "actor": "victim", "testid": "order-item", "contains": "Desk Lamp", "absent": true }
           ],
@@ -100,6 +101,7 @@
             { "do": "wait", "actor": "buyer", "ms": 1500 },
             { "do": "replayAs", "actor": "buyer", "from": "buyer", "match": "buy", "swap": { "find": "449", "with": "1" }, "settleMs": 2500 },
             { "do": "expectReplayRejected", "actor": "buyer" },
+            {"do":"click","actor":"buyer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "buyer", "testid": "orders-toggle" },
             { "do": "expectNumber", "actor": "buyer", "testid": "order-total", "in": { "testid": "order-item", "contains": "Espresso Machine" }, "atLeast": 449 }
           ],
@@ -126,6 +128,7 @@
             { "do": "expect", "actor": "shopper", "testid": "current-user", "contains": "pat" },
             { "do": "click", "actor": "shopper", "testid": "cart-toggle" },
             { "do": "expect", "actor": "shopper", "testid": "cart-item", "contains": "Keyboard" },
+            {"do":"click","actor":"shopper","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "shopper", "testid": "orders-toggle" },
             { "do": "expect", "actor": "shopper", "testid": "order-item", "contains": "Headphones" }
           ],
@@ -162,6 +165,7 @@
           "steps": [
             { "do": "click", "actor": "one", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Coffee Grinder" } },
             { "do": "wait", "actor": "one", "ms": 2000 },
+            {"do":"click","actor":"two","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "two", "testid": "orders-toggle" },
             { "do": "expect", "actor": "two", "testid": "order-item", "contains": "Coffee Grinder", "absent": true }
           ],

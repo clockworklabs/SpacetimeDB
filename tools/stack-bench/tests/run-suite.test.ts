@@ -507,8 +507,8 @@ test('L2 grading rechecks the exact selected L1 score without adding it to L2 po
     assert(scope);
     assert(scope.regressionChecks);
     assert(scope.evaluationSha256);
-    assert.equal(scope.scoredPoints, 59);
-    assert.equal(scope.regressionPoints, 58);
+    assert.equal(scope.scoredPoints, current.selection.scoredPoints);
+    assert.equal(scope.regressionPoints, prior.selection.scoredPoints);
     assert.equal(scope.regressionChecks.length, prior.selection.scoredChecks.length);
     assert.equal(scope.checks.length,
       current.selection.scoredChecks.length + prior.selection.scoredChecks.length);

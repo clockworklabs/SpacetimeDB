@@ -22,7 +22,7 @@
   },
   "stacks": [
     { "id": "mongodb", "adapterVersion": "1.5.0" },
-    { "id": "postgres", "adapterVersion": "1.5.0" },
+    { "id": "postgres", "adapterVersion": "1.6.0" },
     { "id": "spacetime", "adapterVersion": "1.4.0" }
   ],
   "agents": [

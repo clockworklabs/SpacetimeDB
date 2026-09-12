@@ -48,6 +48,7 @@
             { "do": "fill", "actor": "activeBuyer", "testid": "cart-promotion", "text": "LIVE10" },
             { "do": "click", "actor": "activeBuyer", "testid": "apply-promotion" },
             { "do": "click", "actor": "activeBuyer", "testid": "checkout-submit" },
+            {"do":"click","actor":"activeBuyer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "activeBuyer", "testid": "orders-toggle" },
             { "do": "expectNumber", "actor": "activeBuyer", "testid": "order-discount", "in": { "testid": "order-item", "contains": "Keyboard" }, "equals": 8.9 }
           ]

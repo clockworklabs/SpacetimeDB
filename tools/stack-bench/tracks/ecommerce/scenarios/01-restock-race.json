@@ -57,6 +57,7 @@
             "contains": "Bluetooth Speaker"
           }
         },
+        {"do":"click","actor":"a","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
         {
           "do": "click",
           "actor": "a",
@@ -301,6 +302,7 @@
               "name": "r1",
               "readyTestid": "current-user"
             },
+            {"do":"click","actor":"a","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {
               "do": "click",
               "actor": "a",
@@ -326,6 +328,7 @@
               "name": "r2",
               "readyTestid": "current-user"
             },
+            {"do":"click","actor":"b","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {
               "do": "click",
               "actor": "b",
@@ -351,6 +354,7 @@
               "name": "r3",
               "readyTestid": "current-user"
             },
+            {"do":"click","actor":"c","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {
               "do": "click",
               "actor": "c",

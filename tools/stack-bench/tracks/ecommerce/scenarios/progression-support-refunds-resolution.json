@@ -31,6 +31,7 @@
           "steps": [
             { "do": "click", "actor": "staff", "testid": "support-refund", "in": { "testid": "support-ticket", "contains": "Resolution refund case" } },
             { "do": "expect", "actor": "owner", "testid": "support-status", "in": { "testid": "support-ticket", "contains": "Resolution refund case" }, "contains": "resolved", "within": 10000 },
+            {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "owner", "testid": "orders-toggle" },
             { "do": "expect", "actor": "owner", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "contains": "refunded", "within": 10000 }
           ]

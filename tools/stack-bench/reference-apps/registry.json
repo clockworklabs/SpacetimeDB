@@ -59,7 +59,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/postgres",
-        "sourceSha256": "77187c7eef144a61cfd4d5f44efa172d8310f4db3254588677db213bf8fa246a"
+        "sourceSha256": "06f8da853700927d9fff3c177b0ce9a7452b56ab3ef5a8b975c67aafaa718b5d"
       },
       "mutationManifests": [
         "grader/mutations/postgres-ecommerce.json"

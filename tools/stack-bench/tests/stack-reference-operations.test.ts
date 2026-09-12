@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 import { deployMongoDbReference, deployPostgresReference, deploySpacetimeReference }
   from '../src/stacks/stack-reference-operations.js';
@@ -8,16 +11,19 @@ import type { HostedReferenceHelpers, SpacetimeReferenceHelpers }
 import { loadTrack } from '../src/composition/tracks.js';
 import { attemptDatabaseIdentity } from '../src/stacks/hosted-database-identity.js';
 
-test('PostgreSQL reference deployment uses its locked schema tool', async () => {
+test('PostgreSQL reference starts its schema through the normal startup path', async () => {
   const dockerCalls: Array<Parameters<HostedReferenceHelpers['docker']>> = [];
+  const starts: Array<Parameters<HostedReferenceHelpers['startDetached']>> = [];
+  const commands: Array<readonly string[]> = [];
   const helpers: HostedReferenceHelpers = {
     dbName() { return 'app_ecom_run0'; },
-    runSync(label: string) {
-      return label === 'inspecting leased database container' ? 'container-id\n' : '';
+    runSync(_label, _command, args) {
+      commands.push(args);
+      return args[0] === 'inspect' ? 'container-id\n' : '';
     },
     docker(...args) { dockerCalls.push(args); },
     phase() {},
-    startDetached() {},
+    startDetached(...args) { starts.push(args); },
     async waitFor() {},
     containerLogs() { return ''; },
   };
@@ -31,16 +37,17 @@ test('PostgreSQL reference deployment uses its locked schema tool', async () => 
     ports: { dbPort: 6532, vite: 6573 }, buildNetworkMode: 'host', helpers,
   });
 
-  assert.equal(dockerCalls.length, 2);
-  const dockerCall = dockerCalls.find(call => call[2] === './node_modules/.bin/drizzle-kit');
-  assert(dockerCall);
-  assert.deepEqual(dockerCall.slice(0, 4), [
-    'build-0', '/app/server', './node_modules/.bin/drizzle-kit', ['push', '--force'],
+  assert(commands.some(args => args.includes('dropdb') && args.at(-1) === 'app_ecom_run0'));
+  assert(commands.some(args => args.includes('createdb') && args.at(-1) === 'app_ecom_run0'));
+  assert.deepEqual(dockerCalls.map(call => call.slice(0, 4)), [
+    ['build-0', '/app/client', 'npm', ['run', 'build']],
   ]);
-  assert.match(dockerCall[4]?.DATABASE_URL ?? '', /app_ecom_run0/);
-  assert.deepEqual(dockerCalls[1]?.slice(0, 4), [
-    'build-0', '/app/client', 'npm', ['run', 'build'],
-  ]);
+  assert.equal(starts[0]?.[4]?.script, 'start');
+  const serverPackage = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+    'reference-apps/ecommerce/postgres/server/package.json'), 'utf8'));
+  assert.equal(serverPackage.scripts.prestart, 'drizzle-kit push --force');
+  assert(serverPackage.devDependencies['drizzle-kit']);
+
 });
 
 test('hosted reference credentials stay in process environment', async () => {

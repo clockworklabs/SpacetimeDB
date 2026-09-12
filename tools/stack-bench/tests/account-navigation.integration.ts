@@ -382,6 +382,60 @@ test('purchase attribution requires a working private history, not a blank view'
   } finally { await browser.close(); }
 });
 
+test('purchase history handles confirmation dialogs without hiding missing orders', async t => {
+  const root = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios');
+  const load = (file: string) => compileScenarioDefinition(JSON.parse(readFileSync(join(root, file), 'utf8')));
+  // Every order-history entry point uses the same disclosed close control.
+  const visit = (value: unknown): void => {
+    if (!value || typeof value !== 'object') return;
+    if (Array.isArray(value)) {
+      for (let i = 0; i < value.length; i++) {
+        const step: { do?: string; testid?: string; actor?: string } | null = value[i];
+        if (step?.do === 'click' && step.testid === 'orders-toggle') {
+          assert.equal(value[i - 1]?.testid, 'overlay-close');
+          assert.equal(value[i - 1]?.actor, step.actor);
+        }
+        visit(step);
+      }
+    } else for (const child of Object.values(value)) visit(child);
+  };
+  for (const file of readdirSync(root).filter(file => file.endsWith('.json'))) visit(load(file));
+  const browser = await chromium.launch({ headless: true });
+  t.after(() => browser.close());
+  const page = await browser.newPage();
+  for (const file of ['progression-purchasing.json', '01-purchase-attribution.json']) {
+    const feature = load(file).features[0]!;
+    const actorName = file.startsWith('progression') ? 'buyer' : 'victim';
+    const steps = feature.criteria[0]!.steps.filter(step => step.actor === actorName && step.testid !== 'buy-now');
+    for (const layout of ['inline', 'history-dialog', 'confirmation'] as const) for (const missing of [false, true]) {
+      await page.setContent(`<button id="orders-toggle" onclick="document.querySelector('#orders').hidden=false; ${layout === 'history-dialog' ? "document.querySelector('#history').showModal()" : ''}">Orders</button>
+        ${layout === 'history-dialog' ? '<dialog id="history"><button data-role="overlay-close" onclick="document.querySelector(\'#history\').close()">Close</button>' : ''}
+        <section id="orders" ${layout === 'inline' ? '' : 'hidden'}>${missing ? '' : '<div data-role="order-item">Coffee Grinder<span data-role="order-total">64</span></div>'}</section>
+        ${layout === 'history-dialog' ? '</dialog>' : ''}
+        <dialog id="confirmation">Order confirmed<button data-role="overlay-close" onclick="document.querySelector('#confirmation').close()">Close</button></dialog>`);
+      if (layout === 'confirmation') {
+        await page.locator('#confirmation').evaluate(element => (element as HTMLDialogElement).showModal());
+        await assert.rejects(page.locator('#orders-toggle').click({ timeout: 100 }), /Timeout/);
+      }
+      const actor = { page, loc: (id: string, options?: { contains?: string; scope?: { testid: string; contains?: string } }) => {
+        const scope = options?.scope ? page.locator(stableElementSelector(options.scope.testid)).filter({ hasText: options.scope.contains }) : page;
+        return scope.locator(stableElementSelector(id)).filter({ hasText: options?.contains, visible: true }).first();
+      } };
+      const service = { defaultWithin: 150, expand: (value: string) => value, testId: stableElementSelector,
+        sleep: (ms: number) => new Promise(resolve => setTimeout(resolve, Math.min(ms, 20))) };
+      const results = [];
+      for (const step of steps) {
+        const result = await executeAction(ACTION_REGISTRY, step.do, { ...step, within: 150 }, {
+          capabilities: { actors: { get: () => actor }, 'browser-interaction': service, 'browser-observation': service },
+        });
+        results.push(result);
+        if (result.status !== 'passed') break;
+      }
+      assert.equal(results.at(-1)!.status, missing ? 'failed' : 'passed', `${file}/${layout}/${missing}: ${results.at(-1)!.summary}`);
+    }
+  }
+});
+
 test('role assignment targets the account ID despite role text in every dropdown', async () => {
   const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/progression-staff-roles.json');
   const feature = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source }).features[0]!;

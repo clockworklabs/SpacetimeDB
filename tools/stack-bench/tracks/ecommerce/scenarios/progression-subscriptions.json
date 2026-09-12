@@ -40,6 +40,7 @@
             {"do":"expectSequence","actor":"owner-fresh","testid":"subscription-delivery-status","in":{"testid":"subscription-row","contains":"Desk Lamp"},"equals":["paid","paid"]},
             {"do":"expectNumber","actor":"owner-fresh","testid":"subscription-total","in":{"testid":"subscription-row","contains":"Desk Lamp"},"equals":84},
             {"do":"dbExpectStock","item":"Desk Lamp","equals":8},
+            {"do":"click","actor":"owner-fresh","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {"do":"click","actor":"owner-fresh","testid":"orders-toggle"},
             {"do":"expectElementCount","actor":"owner-fresh","testid":"order-item","contains":"Desk Lamp","equals":2,"within":10000},
             {"do":"expectElementCount","actor":"owner-fresh","testid":"payment-record","equals":2}
@@ -84,6 +85,7 @@
             {"do":"expectSequence","actor":"owner-fresh","testid":"subscription-delivery-status","in":{"testid":"subscription-row","contains":"Desk Lamp"},"equals":["paid","paid"]},
             {"do":"expectNumber","actor":"owner-fresh","testid":"subscription-total","in":{"testid":"subscription-row","contains":"Desk Lamp"},"equals":84},
             {"do":"dbExpectStock","item":"Desk Lamp","equals":8},
+            {"do":"click","actor":"owner-fresh","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {"do":"click","actor":"owner-fresh","testid":"orders-toggle"},
             {"do":"expectElementCount","actor":"owner-fresh","testid":"order-item","contains":"Desk Lamp","equals":2,"within":10000},
             {"do":"expectElementCount","actor":"owner-fresh","testid":"payment-record","equals":2},
@@ -97,6 +99,7 @@
             {"do":"expectSequence","actor":"owner-fresh","testid":"subscription-delivery-status","in":{"testid":"subscription-row","contains":"Desk Lamp"},"equals":["paid","paid"]},
             {"do":"expectNumber","actor":"owner-fresh","testid":"subscription-total","in":{"testid":"subscription-row","contains":"Desk Lamp"},"equals":84},
             {"do":"dbExpectStock","item":"Desk Lamp","equals":8},
+            {"do":"click","actor":"owner-fresh","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {"do":"click","actor":"owner-fresh","testid":"orders-toggle"},
             {"do":"expectElementCount","actor":"owner-fresh","testid":"order-item","contains":"Desk Lamp","equals":2,"within":10000},
             {"do":"expectElementCount","actor":"owner-fresh","testid":"payment-record","equals":2}
@@ -200,6 +203,7 @@
             {"do":"expectSequence","actor":"owner-fresh","testid":"subscription-delivery-status","in":{"testid":"subscription-row","contains":"Desk Lamp"},"equals":["paid","paid"]},
             {"do":"expectNumber","actor":"owner-fresh","testid":"subscription-total","in":{"testid":"subscription-row","contains":"Desk Lamp"},"equals":84},
             {"do":"dbExpectStock","item":"Desk Lamp","equals":8},
+            {"do":"click","actor":"owner-fresh","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {"do":"click","actor":"owner-fresh","testid":"orders-toggle"},
             {"do":"expectElementCount","actor":"owner-fresh","testid":"order-item","contains":"Desk Lamp","equals":2,"within":10000},
             {"do":"expectElementCount","actor":"owner-fresh","testid":"payment-record","equals":2}

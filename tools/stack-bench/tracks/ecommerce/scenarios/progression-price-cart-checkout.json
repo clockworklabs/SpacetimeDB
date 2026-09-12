@@ -32,6 +32,7 @@
             { "do": "expectActionOutcome", "actor": "customer", "outcome": "accepted" },
             { "do": "freshClient", "actor": "customer" },
             { "do": "signIn", "actor": "customer-fresh", "name": "price-cart" },
+            {"do":"click","actor":"customer-fresh","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "customer-fresh", "testid": "orders-toggle" },
             { "do": "expect", "actor": "customer-fresh", "testid": "order-item", "contains": "Desk Lamp", "count": 1 },
             { "do": "expectNumber", "actor": "customer-fresh", "testid": "order-total", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "equals": 52 }

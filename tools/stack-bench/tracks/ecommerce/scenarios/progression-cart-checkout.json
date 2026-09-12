@@ -50,6 +50,7 @@
             { "do": "click", "actor": "checkout", "testid": "overlay-close", "ifAvailable": true },
             { "do": "click", "actor": "checkout", "testid": "catalog-link", "ifAvailable": true },
             { "do": "expectNumber", "actor": "checkout", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Desk Lamp" }, "equals": 99 },
+            {"do":"click","actor":"checkout","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "checkout", "testid": "orders-toggle", "unlessVisible": "order-item" },
             { "do": "expect", "actor": "checkout", "testid": "order-item", "contains": "Desk Lamp", "count": 1 }
           ]

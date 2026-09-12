@@ -12,6 +12,7 @@
         { "do": "signUp", "actor": "owner", "name": "refund-accounting-owner" },
         { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Mouse" } },
         { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" } },
+        {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
         { "do": "click", "actor": "owner", "testid": "orders-toggle", "unlessVisible": "order-item" },
         { "do": "recordNumber", "actor": "owner", "testid": "order-total", "in": { "testid": "order-item", "contains": "Keyboard" }, "as": "paid-total" },
         { "do": "click", "actor": "owner", "testid": "support-link" },
@@ -34,6 +35,7 @@
           "steps": [
             { "do": "click", "actor": "staff", "testid": "support-refund", "in": { "testid": "support-ticket", "contains": "Accounting refund case" } },
             { "do": "expectNumber", "actor": "owner", "testid": "support-refund-total", "in": { "testid": "support-ticket", "contains": "Accounting refund case" }, "relativeTo": "paid-total", "plus": 0, "within": 10000 },
+            {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "owner", "testid": "orders-toggle", "unlessVisible": "order-item" },
             { "do": "expectNumber", "actor": "owner", "testid": "order-refund-total", "in": { "testid": "order-item", "contains": "Keyboard" }, "relativeTo": "paid-total", "plus": 0, "within": 10000 },
             { "do": "expectElementCount", "actor": "owner", "testid": "refund-entry", "contains": "Keyboard", "equals": 1, "within": 10000 },
@@ -43,6 +45,7 @@
             { "do": "signIn", "actor": "owner-fresh", "name": "refund-accounting-owner" },
             { "do": "click", "actor": "owner-fresh", "testid": "support-link" },
             { "do": "expectNumber", "actor": "owner-fresh", "testid": "support-refund-total", "in": { "testid": "support-ticket", "contains": "Accounting refund case" }, "relativeTo": "paid-total", "plus": 0, "within": 10000 },
+            {"do":"click","actor":"owner-fresh","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "owner-fresh", "testid": "orders-toggle", "unlessVisible": "order-item" },
             { "do": "expectNumber", "actor": "owner-fresh", "testid": "order-refund-total", "in": { "testid": "order-item", "contains": "Keyboard" }, "relativeTo": "paid-total", "plus": 0, "within": 10000 },
             { "do": "expectElementCount", "actor": "owner-fresh", "testid": "refund-entry", "contains": "Keyboard", "equals": 1, "within": 10000 },

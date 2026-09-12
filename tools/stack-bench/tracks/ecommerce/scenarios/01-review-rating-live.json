@@ -15,6 +15,7 @@
         { "do": "callAction", "actor": "author", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Gaming Mouse", "attribute": "data-buy-input" } },
 
         { "do": "expectActionOutcome", "actor": "author", "outcome": "accepted" },
+        {"do":"click","actor":"author","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
         { "do": "click", "actor": "author", "testid": "orders-toggle", "unlessVisible": "order-item" },
         { "do": "expect", "actor": "author", "testid": "order-item", "contains": "Gaming Mouse", "within": 10000 },
         { "do": "click", "actor": "author", "testid": "overlay-close", "ifAvailable": true },
@@ -28,6 +29,7 @@
         { "do": "callAction", "actor": "other", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Gaming Mouse", "attribute": "data-buy-input" } },
 
         { "do": "expectActionOutcome", "actor": "other", "outcome": "accepted" },
+        {"do":"click","actor":"other","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
         { "do": "click", "actor": "other", "testid": "orders-toggle", "unlessVisible": "order-item" },
         { "do": "expect", "actor": "other", "testid": "order-item", "contains": "Gaming Mouse", "within": 10000 },
         { "do": "click", "actor": "other", "testid": "overlay-close", "ifAvailable": true },

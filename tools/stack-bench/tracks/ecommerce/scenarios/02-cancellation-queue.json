@@ -54,6 +54,7 @@
               "contains": "Coffee Grinder",
               "within": 10000
             },
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {
               "do": "click",
               "actor": "customer",

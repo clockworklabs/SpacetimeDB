@@ -162,6 +162,7 @@
           "points": 1,
           "steps": [
             { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Espresso Machine" } },
+            {"do":"click","actor":"buyer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "buyer", "testid": "orders-toggle" },
             { "do": "expect", "actor": "buyer", "testid": "order-item", "contains": "Espresso Machine" },
             { "do": "expectNumber", "actor": "buyer", "testid": "order-total", "in": { "testid": "order-item", "contains": "Espresso Machine" }, "atLeast": 449 },
@@ -263,6 +264,7 @@
             { "do": "pressKey", "actor": "tab1", "key": "Escape", "settleMs": 800 },
             { "do": "fill", "actor": "tab1", "testid": "search-input", "text": "", "enter": true, "settleMs": 1200 },
             { "do": "expectNumber", "actor": "tab1", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "equals": 98 },
+            {"do":"click","actor":"tab1","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "tab1", "testid": "orders-toggle" },
             { "do": "expect", "actor": "tab1", "testid": "order-item", "contains": "Headphones" }
           ],

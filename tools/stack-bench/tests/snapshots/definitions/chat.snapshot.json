@@ -50,6 +50,7 @@
   "manifest": {
     "plannedThrough": 5,
     "portOffset": 0,
+    "reseedOnReset": true,
     "restartProbe": "/api/rooms",
     "schemaVersion": 1,
     "slug": "",

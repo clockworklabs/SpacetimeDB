@@ -44,6 +44,7 @@
             { "do": "wait", "actor": "filler", "ms": 2000 },
             { "do": "callConcurrently", "actors": ["tab1", "tab2"], "action": "checkout", "settleMs": 5000 },
             { "do": "expectCallOutcomes" },
+            {"do":"click","actor":"filler","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "filler", "testid": "orders-toggle", "unlessVisible": "order-item" },
             { "do": "expect", "actor": "filler", "testid": "order-item", "contains": "Keyboard", "count": 1 },
             { "do": "reload", "actor": "filler", "settleMs": 2000 },

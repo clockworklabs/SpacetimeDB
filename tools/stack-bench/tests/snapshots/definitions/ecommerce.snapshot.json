@@ -745,6 +745,14 @@
                   {
                     "actor": "filler",
                     "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "unlessVisible": "order-item",
+                    "within": 1000
+                  },
+                  {
+                    "actor": "filler",
+                    "do": "click",
                     "testid": "orders-toggle"
                   },
                   {
@@ -1190,6 +1198,14 @@
                   {
                     "actor": "buyer",
                     "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "unlessVisible": "order-item",
+                    "within": 1000
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "click",
                     "testid": "orders-toggle"
                   },
                   {
@@ -1601,6 +1617,14 @@
                   {
                     "actor": "tab1",
                     "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "unlessVisible": "order-item",
+                    "within": 1000
+                  },
+                  {
+                    "actor": "tab1",
+                    "do": "click",
                     "testid": "orders-toggle"
                   },
                   {
@@ -1650,6 +1674,13 @@
                   },
                   {
                     "actor": "author",
+                    "do": "click",
+                    "ifAvailable": true,
+                    "testid": "review-toggle",
+                    "unlessVisible": "review-rating"
+                  },
+                  {
+                    "actor": "author",
                     "do": "fill",
                     "testid": "review-rating",
                     "text": "4"
@@ -1691,6 +1722,13 @@
                 "points": 1,
                 "statedBy": "one review per customer per item",
                 "steps": [
+                  {
+                    "actor": "author",
+                    "do": "click",
+                    "ifAvailable": true,
+                    "testid": "review-toggle",
+                    "unlessVisible": "review-rating"
+                  },
                   {
                     "actor": "author",
                     "do": "fill",
@@ -1740,6 +1778,13 @@
                     "actor": "other",
                     "do": "openItem",
                     "item": "Induction Cooktop"
+                  },
+                  {
+                    "actor": "other",
+                    "do": "click",
+                    "ifAvailable": true,
+                    "testid": "review-toggle",
+                    "unlessVisible": "review-rating"
                   },
                   {
                     "actor": "other",
@@ -2120,6 +2165,14 @@
                   {
                     "actor": "victim",
                     "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "unlessVisible": "order-item",
+                    "within": 1000
+                  },
+                  {
+                    "actor": "victim",
+                    "do": "click",
                     "testid": "orders-toggle"
                   },
                   {
@@ -2289,6 +2342,14 @@
                   {
                     "actor": "buyer",
                     "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "unlessVisible": "order-item",
+                    "within": 1000
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "click",
                     "testid": "orders-toggle"
                   },
                   {
@@ -2364,6 +2425,14 @@
                     "contains": "Keyboard",
                     "do": "expect",
                     "testid": "cart-item"
+                  },
+                  {
+                    "actor": "shopper",
+                    "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "unlessVisible": "order-item",
+                    "within": 1000
                   },
                   {
                     "actor": "shopper",
@@ -2451,6 +2520,14 @@
                     "actor": "one",
                     "do": "wait",
                     "ms": 2000
+                  },
+                  {
+                    "actor": "two",
+                    "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "unlessVisible": "order-item",
+                    "within": 1000
                   },
                   {
                     "actor": "two",
@@ -2638,6 +2715,13 @@
                   },
                   {
                     "actor": "stranger",
+                    "do": "click",
+                    "ifAvailable": true,
+                    "testid": "review-toggle",
+                    "unlessVisible": "review-rating"
+                  },
+                  {
+                    "actor": "stranger",
                     "do": "fill",
                     "testid": "review-rating",
                     "text": "5"
@@ -2700,6 +2784,13 @@
                     "actor": "owner",
                     "do": "openItem",
                     "item": "Webcam"
+                  },
+                  {
+                    "actor": "owner",
+                    "do": "click",
+                    "ifAvailable": true,
+                    "testid": "review-toggle",
+                    "unlessVisible": "review-rating"
                   },
                   {
                     "actor": "owner",
@@ -3025,6 +3116,13 @@
                       [
                         {
                           "actor": "reviewer",
+                          "do": "click",
+                          "ifAvailable": true,
+                          "testid": "review-toggle",
+                          "unlessVisible": "review-rating"
+                        },
+                        {
+                          "actor": "reviewer",
                           "do": "fill",
                           "testid": "review-input",
                           "text": "race-review-kbd"
@@ -3082,6 +3180,13 @@
                 "do": "openItem",
                 "item": "Keyboard",
                 "settleMs": 1200
+              },
+              {
+                "actor": "reviewer",
+                "do": "click",
+                "ifAvailable": true,
+                "testid": "review-toggle",
+                "unlessVisible": "review-rating"
               },
               {
                 "actor": "reviewer",
@@ -3204,6 +3309,14 @@
                   {
                     "actor": "customer",
                     "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "unlessVisible": "order-item",
+                    "within": 1000
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
                     "testid": "orders-toggle"
                   },
                   {
@@ -3278,6 +3391,14 @@
                     "actor": "customer",
                     "do": "wait",
                     "ms": 2500
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "unlessVisible": "order-item",
+                    "within": 1000
                   },
                   {
                     "actor": "customer",
@@ -3640,6 +3761,14 @@
                   {
                     "actor": "customer",
                     "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "unlessVisible": "order-item",
+                    "within": 1000
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
                     "testid": "orders-toggle"
                   },
                   {
@@ -3735,6 +3864,14 @@
                   {
                     "actor": "customer",
                     "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "unlessVisible": "order-item",
+                    "within": 1000
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
                     "settleMs": 1200,
                     "testid": "orders-toggle"
                   },
@@ -3809,6 +3946,14 @@
                     "actor": "staff",
                     "do": "wait",
                     "ms": 2500
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "unlessVisible": "order-item",
+                    "within": 1000
                   },
                   {
                     "actor": "customer",
@@ -3952,6 +4097,14 @@
                   {
                     "actor": "customer",
                     "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "unlessVisible": "order-item",
+                    "within": 1000
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
                     "testid": "orders-toggle"
                   },
                   {
@@ -4062,6 +4215,14 @@
                     "actor": "customer",
                     "do": "click",
                     "testid": "checkout-submit"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "unlessVisible": "order-item",
+                    "within": 1000
                   },
                   {
                     "actor": "customer",
@@ -4183,6 +4344,13 @@
                 "points": 3,
                 "statedBy": "for each\ncategory, how many units have been sold and the revenue they earned, live",
                 "steps": [
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "ifAvailable": true,
+                    "testid": "sales-link",
+                    "unlessVisible": "category-row"
+                  },
                   {
                     "actor": "admin",
                     "as": "audio-units",
@@ -4548,6 +4716,14 @@
                   {
                     "actor": "customer",
                     "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "unlessVisible": "order-item",
+                    "within": 1000
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
                     "testid": "orders-toggle",
                     "unlessVisible": "order-item"
                   },
@@ -4712,6 +4888,14 @@
                     "plus": -1,
                     "relativeTo": "cooktop-before",
                     "testid": "item-stock"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "unlessVisible": "order-item",
+                    "within": 1000
                   },
                   {
                     "actor": "customer",
@@ -4930,6 +5114,14 @@
                   {
                     "actor": "customer",
                     "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "unlessVisible": "order-item",
+                    "within": 1000
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
                     "testid": "orders-toggle",
                     "unlessVisible": "order-item"
                   },
@@ -4996,6 +5188,14 @@
                     "relativeTo": "history-revenue-before-sale",
                     "testid": "admin-revenue",
                     "within": 10000
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "unlessVisible": "order-item",
+                    "within": 1000
                   },
                   {
                     "actor": "customer",
@@ -5133,6 +5333,14 @@
                   {
                     "actor": "one",
                     "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "unlessVisible": "order-item",
+                    "within": 1000
+                  },
+                  {
+                    "actor": "one",
+                    "do": "click",
                     "testid": "orders-toggle"
                   },
                   {
@@ -5159,6 +5367,14 @@
                   {
                     "actor": "two",
                     "do": "expectReplayRejected"
+                  },
+                  {
+                    "actor": "two",
+                    "do": "click",
+                    "ifAvailable": true,
+                    "testid": "overlay-close",
+                    "unlessVisible": "order-item",
+                    "within": 1000
                   },
                   {
                     "actor": "two",

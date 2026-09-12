@@ -24,6 +24,7 @@
           "steps": [
             { "do": "callAction", "actor": "customer", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Keyboard", "attribute": "data-buy-input" } },
             { "do": "expectActionOutcome", "actor": "customer", "outcome": "accepted" },
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "customer", "testid": "orders-toggle", "unlessVisible": "order-item" },
             { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "value": "pending", "ignoreCase": true, "within": 10000 },
             { "do": "reload", "actor": "staff", "settleMs": 2000 },
@@ -38,6 +39,7 @@
             { "do": "expect", "actor": "staff", "testid": "queue-item", "contains": "Keyboard", "absent": true, "within": 10000 },
             { "do": "reload", "actor": "customer", "settleMs": 2000 },
             { "do": "ensureSignedIn", "actor": "customer", "name": "fq-ship", "readyTestid": "current-user" },
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "customer", "testid": "orders-toggle", "unlessVisible": "order-item" },
             { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "value": "shipped", "ignoreCase": true, "within": 10000 }
           ]

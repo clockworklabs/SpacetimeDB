@@ -136,6 +136,7 @@
         { "do": "expectCallOutcomes" },
         { "do": "freshClient", "actor": "owner" },
         { "do": "signIn", "actor": "owner-fresh", "name": "payment-record" },
+        {"do":"click","actor":"owner-fresh","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
         { "do": "click", "actor": "owner-fresh", "testid": "orders-toggle" },
         { "do": "expectElementCount", "actor": "owner-fresh", "testid": "order-item", "contains": "Desk Lamp", "equals": 1, "within": 10000 }
       ],

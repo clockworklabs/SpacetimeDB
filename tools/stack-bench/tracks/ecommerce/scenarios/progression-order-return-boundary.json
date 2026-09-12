@@ -20,6 +20,7 @@
           "statedBy": "An item from a pending order cannot be returned.",
           "steps": [
             { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
+            {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "customer", "testid": "orders-toggle", "settleMs": 1500 },
             { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "value": "pending", "ignoreCase": true, "within": 10000 },
             { "do": "expect", "actor": "customer", "testid": "return-item", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "absent": true }

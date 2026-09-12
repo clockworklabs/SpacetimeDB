@@ -49,7 +49,7 @@ test('a failed PostgreSQL create is accepted only when the exact database exists
       if (args.includes('-tAc')) return '';
       return '';
     };
-    assert.throws(() => ensureDatabase('postgres', 0, null, track, true, { exec, lease }),
+    assert.throws(() => ensureDatabase('postgres', 0, null, track, false, { exec, lease }),
       error => error === createError);
     assert.equal(calls.every(call => call.options.timeout === 120_000), true);
   });
@@ -61,7 +61,7 @@ test('a PostgreSQL wipe failure aborts a supposedly clean build', () => {
       const container = lease.resources.container;
       assert(container);
       if (args[0] === 'inspect') return `${container.id}\n`;
-      if (args.some(arg => String(arg).includes('DROP SCHEMA'))) throw new Error('wipe failed');
+      if (args.includes('dropdb')) throw new Error('wipe failed');
       return '';
     };
     assert.throws(() => ensureDatabase('postgres', 0, null, track, true, { exec, lease }),
