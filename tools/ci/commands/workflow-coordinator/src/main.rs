@@ -205,6 +205,7 @@ struct PullRequest {
     number: u64,
     state: String,
     head: PullRequestRef,
+    body: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -336,7 +337,10 @@ fn related_private_pr(public_pr_number: Option<u64>) -> Result<Option<PullReques
     let mut pulls = Vec::new();
     for number in numbers {
         let pull = pull_request(PRIVATE_REPO, number)?;
-        if pull.state == "open" && pull.head.repo.as_ref().map(|repo| repo.full_name.as_str()) == Some(PRIVATE_REPO) {
+        if pull.state == "open"
+            && pull.head.repo.as_ref().map(|repo| repo.full_name.as_str()) == Some(PRIVATE_REPO)
+            && mentions_public_pr(pull.body.as_deref(), public_pr_number)
+        {
             pulls.push(pull);
         }
     }
@@ -344,6 +348,23 @@ fn related_private_pr(public_pr_number: Option<u64>) -> Result<Option<PullReques
         bail!("found multiple open linked private PRs");
     }
     Ok(pulls.pop())
+}
+
+fn mentions_public_pr(body: Option<&str>, public_pr_number: u64) -> bool {
+    let Some(body) = body else {
+        return false;
+    };
+    let body = body.to_ascii_lowercase();
+    let public_repo_name = PUBLIC_REPO.rsplit_once('/').map_or(PUBLIC_REPO, |(_, repo)| repo);
+    [
+        format!("{PUBLIC_REPO}#{public_pr_number}"),
+        format!("{public_repo_name}#{public_pr_number}"),
+        format!("github.com/{PUBLIC_REPO}/pull/{public_pr_number}"),
+        format!("github.com/{PUBLIC_REPO}/issues/{public_pr_number}"),
+    ]
+    .into_iter()
+    .map(|reference| reference.to_ascii_lowercase())
+    .any(|reference| body.contains(&reference))
 }
 
 fn resolve_private_source(public_pr_number: Option<u64>) -> Result<PrivateSource> {
@@ -578,6 +599,7 @@ mod tests {
                     full_name: PRIVATE_REPO.to_owned(),
                 }),
             },
+            body: Some(format!("{PUBLIC_REPO}#123")),
         }
     }
 
@@ -661,5 +683,25 @@ mod tests {
                 "return_run_details": true,
             })
         );
+    }
+
+    #[test]
+    fn public_pr_mentions_include_github_reference_formats() {
+        for body in [
+            format!("Depends on {PUBLIC_REPO}#123"),
+            "Depends on SpacetimeDB#123".to_owned(),
+            format!("Depends on https://github.com/{PUBLIC_REPO}/pull/123"),
+            format!("Depends on https://github.com/{PUBLIC_REPO}/issues/123"),
+            format!("Depends on https://www.github.com/{PUBLIC_REPO}/pull/123"),
+        ] {
+            assert!(mentions_public_pr(Some(&body), 123), "{body}");
+        }
+    }
+
+    #[test]
+    fn public_pr_mentions_reject_missing_or_wrong_repo_mentions() {
+        for body in [None, Some(""), Some("clockworklabs/SpacetimeDBPrivate#123")] {
+            assert!(!mentions_public_pr(body, 123), "{body:?}");
+        }
     }
 }
