@@ -41,6 +41,11 @@ and repair costs, and stops the attempt as a harness failure.
 Between isolated ecommerce scenarios, every stack runs its normal application
 startup after the database reset. This includes SpacetimeDB apps that perform
 initialization outside module `init`. The harness does not guess migration names.
+The shared agent request states that startup must initialize the supplied data and
+accounts in an empty database, including after upgrades and repairs. Startup must
+preserve current quantities, prices, and user data when a database already exists.
+Earlier runs without this requirement need an audit if initialization failures
+affected their scores; the updated request does not validate those scores retroactively.
 
 New dependency plans retain previously disclosed interface contracts in upgrade
 prompts by default. Set `mode.retainPriorContracts` to `false` to opt out.

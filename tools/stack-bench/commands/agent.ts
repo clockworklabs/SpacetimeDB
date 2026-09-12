@@ -611,6 +611,9 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
       + 'outside its process.',
     'The environment can run /app/start.sh again with APP_WARM_START=1. '
       + 'When dependencies are current, reuse them instead of installing them again.',
+    'Startup must work with an empty database by creating the supplied starting data and accounts. '
+      + 'On an existing database, preserve current quantities, prices, and user data. '
+      + 'This applies after upgrades and repairs too.',
     '',
     'Chromium is installed at /usr/bin/chromium (CHROME_BIN). '
       + 'Use that executable with --no-sandbox in this isolated container; no browser download is needed. '

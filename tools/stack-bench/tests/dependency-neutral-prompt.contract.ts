@@ -203,6 +203,11 @@ test('neutral dependency prompts include only selected product and stack contrac
     for (const stack of STACKS) {
       const prompt = renderPrompt({ level, stack, task: selected.agent.request, guidance });
       const repair = renderPrompt({ level, stack, task: selected.agent.request, guidance, repair: true });
+      for (const request of [prompt, repair]) {
+        assert.match(request, /Startup must work with an empty database by creating the supplied starting data and accounts/);
+        assert.match(request, /On an existing database, preserve current quantities, prices, and user data/);
+        assert.match(request, /This applies after upgrades and repairs too/);
+      }
       if (level === 2) {
         assert.match(prompt, /Use `profile-address-summary` to display\s+the saved address in the profile view/);
         assert.doesNotMatch(prompt, /in the same session or a new one/);
@@ -282,6 +287,7 @@ test('direct neutral guidance uses the current stack access documents', () => {
     assert.match(prompt, /Create `\/app\/start\.sh`/);
     assert.match(prompt, /clean\s+source checkout.*install\s+dependencies.*build.*start/s);
     assert.match(prompt, /APP_WARM_START=1.*reuse them instead of installing them again/s);
+    assert.match(prompt, /Startup must work with an empty database by creating the supplied starting data and accounts/);
     assert.match(prompt, /script must not change source files/);
     assert.doesNotMatch(prompt, /package cache/i);
     assert.doesNotMatch(prompt, /npm `start` script|either `\/app\/start\.sh`/);
