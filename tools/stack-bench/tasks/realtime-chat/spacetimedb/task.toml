@@ -1,0 +1,48 @@
+schema_version = "1.2"
+artifacts = []
+
+[task]
+name = "clockwork/realtime-chat-spacetimedb"
+description = "Build a minimal real-time chat backend on SpacetimeDB; graded behaviorally through the SpacetimeDB TypeScript SDK."
+keywords = ["realtime", "chat", "spacetimedb", "cross-backend", "stack-bench"]
+[[task.authors]]
+name = "Clockwork Labs"
+email = ""
+
+[metadata]
+# stack-bench-specific: which backend this task variant exercises. The same
+# behavioral grader runs for every backend; only this value + the environment differ.
+backend = "spacetimedb"
+# Grouping dimensions read by `harbor stats breakdown` (tags/category/difficulty).
+# The backend is the comparison axis, so it goes in tags.
+tags = ["spacetimedb"]
+category = "realtime-chat"
+
+[verifier]
+timeout_sec = 600.0
+# SHARED mode (the default when no [verifier.environment] is set): the verifier
+# runs INSIDE the agent's container, so it reaches the running app on localhost.
+# Do NOT add a [verifier.environment] — that forces SEPARATE mode, an isolated
+# compose project with no network path to the app.
+
+[agent]
+timeout_sec = 1800.0
+
+[environment]
+build_timeout_sec = 1800.0
+os = "linux"
+cpus = 2
+memory_mb = 4096
+storage_mb = 12288
+gpus = 0
+allow_internet = true
+
+# Wait for the in-container SpacetimeDB instance (started by the Dockerfile
+# entrypoint) to accept connections before the agent runs. The server returns
+# HTTP 404 on `/`, so a plain (non -f) curl that just confirms the port answers.
+[environment.healthcheck]
+command = "curl -s -o /dev/null http://127.0.0.1:3000"
+interval_sec = 3.0
+timeout_sec = 10.0
+start_period_sec = 5.0
+retries = 30

@@ -1,0 +1,13 @@
+{
+  "name": "stack-bench-verifier-teamchat-convex",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Convex team-chat verifier: runs the shared behavioral scenario via the Convex client SDK.",
+  "dependencies": {
+    "convex": "^1.17.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0"
+  }
+}

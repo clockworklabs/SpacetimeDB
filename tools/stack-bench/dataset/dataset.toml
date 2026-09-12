@@ -1,0 +1,21 @@
+# Dataset manifest for clockwork/stack-bench
+# Add tasks using: harbor add <org>/<name>
+# Publish using: harbor publish
+
+[dataset]
+name = "clockwork/stack-bench"
+description = "stack-bench: build a minimal real-time chat backend; rank backends (SpacetimeDB vs Convex vs …) by how well an AI agent builds on each."
+keywords = []
+[[dataset.authors]]
+name = "Clockwork Labs"
+email = "tyler@clockworklabs.io"
+
+
+[[tasks]]
+name = "clockwork/realtime-chat-spacetimedb"
+digest = "sha256:fc9d05f03fb61414635133bbcd4c9fd4c0591853390f636d1775aa17a7c50a29"
+
+[[tasks]]
+name = "clockwork/realtime-chat-convex"
+digest = "sha256:531c8d6d4b147ef78f0295c3eda4ea4c8d20539823f0ba9a97744f675c71c5f8"
+

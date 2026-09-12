@@ -1,0 +1,52 @@
+#!/bin/sh
+# Backend lifecycle control for the in-container SpacetimeDB instance.
+# Used by the Dockerfile ENTRYPOINT at boot and by the verifier's durability
+# phase (RESTART_CMD="/opt/stack-bench/backendctl restart"). Start and
+# restart-after-kill go through the same code path so they behave identically.
+set -eu
+
+DATA_DIR=/var/lib/stdb
+LISTEN=0.0.0.0:3000
+LOG=/var/log/spacetime.log
+
+start() {
+  nohup spacetime start --data-dir "$DATA_DIR" --listen-addr "$LISTEN" --non-interactive >>"$LOG" 2>&1 &
+}
+
+stop() {
+  # `spacetime start` execs the standalone server; kill both spellings.
+  pkill -f spacetimedb-standalone 2>/dev/null || true
+  pkill -f "spacetime start" 2>/dev/null || true
+  # Wait for the port to actually close.
+  i=0
+  while curl -s -o /dev/null --max-time 1 http://127.0.0.1:3000 2>/dev/null; do
+    i=$((i + 1))
+    [ "$i" -ge 30 ] && { echo "backendctl: server did not stop" >&2; exit 1; }
+    sleep 0.5
+  done
+}
+
+wait_ready() {
+  i=0
+  # The server answers HTTP (404 on /) once ready; plain curl just checks the port.
+  until curl -s -o /dev/null --max-time 2 http://127.0.0.1:3000 2>/dev/null; do
+    i=$((i + 1))
+    [ "$i" -ge 60 ] && { echo "backendctl: server did not become ready" >&2; exit 1; }
+    sleep 1
+  done
+}
+
+case "${1:-}" in
+  start) start ;;
+  stop) stop ;;
+  wait-ready) wait_ready ;;
+  restart)
+    stop
+    start
+    wait_ready
+    ;;
+  *)
+    echo "usage: backendctl {start|stop|restart|wait-ready}" >&2
+    exit 2
+    ;;
+esac

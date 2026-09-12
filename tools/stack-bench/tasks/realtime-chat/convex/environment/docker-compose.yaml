@@ -1,0 +1,21 @@
+# Overlaid onto Harbor's base compose. Adds a self-hosted Convex backend service
+# alongside Harbor's `main` (agent) service. Both share the compose network, so
+# `main` (where the agent works and the SHARED-mode verifier runs) reaches the
+# backend at http://convex-backend:3210.
+services:
+  convex-backend:
+    image: ghcr.io/get-convex/convex-backend:latest
+    environment:
+      # Fixed name+secret → deterministic admin key (see solution/solve.sh), so the
+      # benchmark is hermetic and reproducible.
+      - INSTANCE_NAME=convex-stack-bench
+      - INSTANCE_SECRET=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      # Advertise the in-network origin so client WS URLs resolve to the service name.
+      - CONVEX_CLOUD_ORIGIN=http://convex-backend:3210
+      - CONVEX_SITE_ORIGIN=http://convex-backend:3211
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3210/version"]
+      interval: 5s
+      timeout: 5s
+      start_period: 5s
+      retries: 20
