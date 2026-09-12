@@ -106,7 +106,8 @@ const root = el('g'); map.append(root);
 let layers = null, districts = {}, risers = [], anim = [], pulses = [], doors = [];
 
 const SLATE = '#1c2f3a', BLUE = '#1d8fc2', GREEN = '#2fbf74', WHITE = '#c9ced8', RED = '#d84545', DARK = '#1a2027', INK = '#0f181e';
-const TOKEN = { request: '#5fd0ff', probe: '#4cf490', finding: '#fbdc8e', evidence: '#b6c0cf', seal: '#4cf490', token: '#fbdc8e', blocked: '#ff4c4c', scenario: '#b6c0cf', outcome: '#4cf490', defect: '#ff4c4c', verdict: '#4cf490', hash: '#b6c0cf', artifact: '#b6c0cf', signature: '#4cf490' };
+const TOKEN = { request: '#5fd0ff', probe: '#4cf490', finding: '#fbdc8e', evidence: '#b6c0cf', seal: '#4cf490', token: '#fbdc8e', blocked: '#ff4c4c', scenario: '#b6c0cf', outcome: '#4cf490', defect: '#ff4c4c', verdict: '#4cf490', hash: '#b6c0cf', artifact: '#b6c0cf', signature: '#4cf490',
+  pack: '#b6c0cf', guidance: '#b6c0cf', material: '#b6c0cf', plan: '#5fd0ff', score: '#c9ced8', receipt: '#fbdc8e', excluded: '#6f7987', job: '#5fd0ff', claim: '#4cf490', lease: '#fbdc8e' };
 
 const tag = (node, d) => { node.classList.add('dim'); (districts[d] ??= []).push(node); return node; };
 
@@ -249,6 +250,7 @@ const STACKS = ['SpacetimeDB', 'PostgreSQL', 'MongoDB'];
   const cells = [0, 1, 2].map(i => ({ x: 8 + i * 6, y: 8 }));
   const units = [
     { kind: 'tower', x: 2.2, y: 9.2, h: 2.4, color: BLUE, district: 'plan' },
+    { kind: 'tower', x: 1.8, y: 16.2, w: 1.4, d: 1.4, h: 1.6, color: SLATE, district: 'ops' }, { kind: 'tower', x: 3.8, y: 16.2, w: 1.4, d: 1.4, h: 1.6, color: SLATE, district: 'ops' },
     ...cells.flatMap((c, i) => [
       { x: c.x + .6, y: c.y + .5, color: BLUE, district: 'cell' + i },
       { x: c.x + 2.8, y: c.y + .5, color: SLATE, district: 'cell' + i },
@@ -265,12 +267,13 @@ const STACKS = ['SpacetimeDB', 'PostgreSQL', 'MongoDB'];
   scenes.run = {
     id: 'run', name: 'the run', plate: [30, 20],
     slabs: [
-      { id: 'plan', x: 1, y: 8, w: 4, d: 4, label: 'campaign plan', labelAt: [1, 12, 'end', -12, 4] },
+      { id: 'plan', x: 1, y: 8, w: 4, d: 4, label: 'campaign plan', labelAt: [1, 12, 'end', -12, 4], detail: 'plan' },
+      { id: 'ops', x: 1, y: 15, w: 5, d: 4, label: 'operations', labelAt: [1, 19, 'end', -12, 4], detail: 'ops' },
       ...cells.map((c, i) => ({ id: 'cell' + i, x: c.x, y: c.y, w: 5, d: 4, label: STACKS[i], detail: 'cell' })),
       { id: 'grader', x: 12, y: 1, w: 6, d: 4, label: 'grader', labelAt: [12, 5, 'end', -12, 4], detail: 'grader' },
       { id: 'qual', x: 20, y: 1, w: 8, d: 4, label: 'proving ground', labelAt: [28, 1, 'start', 12, 4], detail: 'qual' },
       { id: 'vault', x: 24, y: 8, w: 4, d: 4, label: 'evidence', labelAt: [28, 8, 'start', 12, 4], detail: 'evidence' },
-      { id: 'score', x: 25, y: 15, w: 5, d: 4, label: 'result', labelAt: [30, 15, 'start', 12, 4] },
+      { id: 'score', x: 25, y: 15, w: 5, d: 4, label: 'result', labelAt: [30, 15, 'start', 12, 4], detail: 'result' },
     ],
     units,
     labels: [
@@ -288,6 +291,7 @@ const STACKS = ['SpacetimeDB', 'PostgreSQL', 'MongoDB'];
       ...cells.map((c, i) => ({ district: 'vault', pts: [[c.x + 4.6, 12.4], [c.x + 4.6, 13.6], [26, 13.6], [26, 12.4]], token: 'evidence', speed: .22, offset: i * .3 })),
       { district: 'score', pts: [[26, 12.4], [26, 15.4]], token: 'evidence', speed: .35 },
       { district: 'qual', pts: [[20, 3], [18.4, 3]], token: 'seal', speed: .5 },
+      { district: 'ops', pts: [[3.5, 14.8], [3.5, 12.6]], token: 'job', speed: .4 },
     ],
     extra({ iso, label, el, layers }) {
       for (const u of units.filter(u => u.ua)) {
@@ -483,6 +487,159 @@ scenes.evidence = {
     { k: 'the audit', h: 'The transcript is read for what the agent read.', p: 'An attempt whose agent opened grading material is contaminated. It is excluded from comparison data, and its evidence is kept, because the audit itself has to be reproducible.', focus: ['audit', 'audittags', 'package'], view: [0, 7, 20, 13, 2.5] },
     { k: 'what counts', h: 'Only compatible, validated attempts are compared.', p: 'Harness failures, provider failures, and contaminated attempts are excluded and kept. Passed and failed are the application\'s own outcomes. The two bins are never mixed.', focus: ['bins', 'bintags', 'audit'], view: [12, 7, 30, 13, 2.5, .06] },
     { k: 'release', h: 'A release is qualified, or it is a candidate.', p: 'A candidate has exact image digests, checksummed files, and digest-bound SBOMs. A qualified release adds a public key and a detached signature. Provisional data can come from a branch build; publishable data cannot.', focus: ['release', 'reltags'], view: [16, 1, 30, 7, 2.5, .06] },
+  ],
+};
+
+/* ---- the plan: definitions to a frozen plan ---- */
+scenes.plan = {
+  id: 'plan', name: 'the plan', parent: 'run', plate: [28, 16],
+  slabs: [
+    { id: 'tracks', x: 1, y: 2, w: 8, d: 5, label: 'tracks', labelAt: [1, 7, 'end', -12, 4] },
+    { id: 'conditions', x: 11, y: 2, w: 6, d: 5, label: 'conditions', labelAt: [17, 2, 'start', 12, 4] },
+    { id: 'backends', x: 19, y: 2, w: 8, d: 5, label: 'stack material', labelAt: [27, 2, 'start', 12, 4] },
+    { id: 'compiler', x: 11, y: 9, w: 6, d: 5, label: 'compiler', labelAt: [17, 14, 'middle', 0, 18] },
+    { id: 'planslab', x: 19, y: 9, w: 8, d: 5, label: 'the frozen plan', labelAt: [27, 14, 'middle', 0, 18] },
+  ],
+  units: [
+    { kind: 'rack', x: 1.6, y: 2.8, w: 2.2, d: 3.2, h: 1.4, color: SLATE, district: 'tracks' },
+    { kind: 'rack', x: 4.2, y: 2.8, w: 2.2, d: 3.2, h: 1.4, color: SLATE, district: 'tracks' },
+    { kind: 'ledger', x: 6.9, y: 2.9, w: 1.5, d: 1.5, h: 1.2, n: 3, color: SLATE, district: 'tracks' },
+    { kind: 'drum', x: 7.7, y: 5.6, r: .55, h: .7, color: SLATE, district: 'tracks' },
+    { x: 12, y: 3, color: SLATE, district: 'conditions' }, { x: 14.6, y: 3.2, w: 1.2, d: 1.2, h: 1, color: SLATE, district: 'conditions' },
+    ...[0, 1, 2].map(i => ({ x: 19.8 + i * 2.4, y: 3, w: 1.4, d: 1.4, h: 1.2, color: SLATE, district: 'backends' })),
+    { kind: 'tower', x: 12.8, y: 10.2, w: 2, d: 2, h: 2.2, color: BLUE, district: 'compiler' },
+    { kind: 'ledger', x: 20.4, y: 10.2, w: 2.4, d: 2.4, h: 1.8, n: 3, color: WHITE, top: 1.1, side: .85, back: .62, district: 'planslab' },
+    { x: 24.6, y: 10.8, w: 1, d: 1, h: .8, color: GREEN, district: 'planslab' },
+  ],
+  labels: [
+    [2.7, 6.2, Z, 'feature packs', 'lab', 'tracktags', 'middle', 0, 14], [5.3, 6.2, Z, 'specification packs', 'lab', 'tracktags', 'middle', 0, 14],
+    [7.65, 2.9, ZS + 1.5, 'recipes', 'lab', 'tracktags', 'middle', 0, -4], [8.4, 5.6, ZS + .9, 'fixture', 'lab', 'tracktags', 'start', 6, 0],
+    [5.3, 6.2, Z, 'requested · expected · observed', 'lab', 'disctags', 'middle', 0, 30],
+    [12.8, 4.6, Z, 'guidance profiles', 'lab', 'condtags', 'middle', 0, 14], [15.2, 4.6, Z, 'repair policy', 'lab', 'condtags', 'middle', 0, 14],
+    ...STACKS.map((s, i) => [20.5 + i * 2.4, 4.4, Z, s, 'lab', 'backtags', 'middle', 0, 14]),
+    [13.8, 13, Z, 'every check × every stack', 'lab', 'comptags', 'middle', 0, 20], [13.8, 13, Z, 'refuses what a stack cannot measure', 'lab', 'comptags', 'middle', 0, 36],
+    [21.6, 12.8, Z, 'plan.json', 'lab', 'plantags', 'middle', 0, 16], [21.6, 12.8, Z, 'contentSha256 · frozen', 'lab', 'plantags', 'middle', 0, 32],
+    [25.1, 10.8, ZS + 1.1, 'frozen', 'lab', 'plantags', 'middle', 0, -6],
+  ],
+  lanes: [
+    { district: 'tracks', pts: [[8.5, 7.2], [8.5, 8.4], [13.5, 8.4], [13.5, 9]], token: 'pack', speed: .28, n: 2, pulse: 'compiler' },
+    { district: 'conditions', pts: [[14, 7.2], [14, 9]], token: 'guidance', speed: .45, pulse: 'compiler' },
+    { district: 'backends', pts: [[23, 7.2], [23, 8.4], [15, 8.4], [15, 9]], token: 'material', speed: .3, pulse: 'compiler' },
+    { district: 'compiler', pts: [[17, 10], [19, 10]], token: 'plan', speed: .5, pulse: 'planslab' },
+  ],
+  chapters: [
+    { k: 'the plan', h: 'A test is assembled from versioned parts, then frozen.', p: 'Product work, production expectations, starting data, guidance, and stack material are files with hashes. The compiler binds them into one plan that nothing downstream can rewrite.', focus: null, view: null },
+    { k: 'tracks', h: 'Product work and checks live in packs.', p: 'A feature pack is product work with its checks. A specification pack is a production expectation: reload, reconnect, a race, an authorization boundary. A recipe selects packs and a fixture, the fixed starting data.', focus: ['tracks', 'tracktags'], view: [0, 1, 12, 8, 2.5] },
+    { k: 'disclosure', h: 'Asking and measuring are separate choices.', p: 'Every specification gets one treatment. Requested is in the request and scored. Expected is not in the request but scored, and repairable after a failure. Observed is measured once and never scores. Same behaviour, different disclosure, so conditions compare.', focus: ['tracks', 'tracktags', 'disctags'], view: [0, 1, 12, 8, 2.5] },
+    { k: 'conditions and material', h: 'The agent gets a stack package, not a level playing field.', p: 'A guidance profile decides how much stack advice travels with the request: neutral, neutral with a dev workflow, prescribed. The stack material is the connection details and SDK reference the agent receives. The experiment compares delivered packages.', focus: ['conditions', 'condtags', 'backends', 'backtags'], view: [10, 1, 28, 8, 2.5, .06] },
+    { k: 'compiler', h: 'Every selected check is resolved against every selected stack.', p: 'The compiler refuses a campaign that a stack could not measure. It binds four identities: meaning, execution, content, and the exact source bytes. Human versions are labels; hashes are the identity.', focus: ['compiler', 'comptags'], view: [8, 6, 20, 15, 3] },
+    { k: 'frozen', h: 'One plan fixes everything a run is allowed to be.', p: 'Product, model, stacks, checks, points, budgets, repetitions, and parallelism. A draft can run only model-free. A frozen plan is what a paid job submits, and no command rebuilds it from flags.', focus: ['planslab', 'plantags', 'compiler'], view: [10, 8, 28, 15, 3, .06] },
+  ],
+};
+
+/* ---- the result: reading a score ---- */
+(() => {
+  const SC = [[.76, .90], [.58, .76], [.62, .82]];
+  const units = [
+    { x: 1.8, y: 3, color: GREEN, district: 'checks' }, { x: 4.2, y: 3.2, w: 1.2, d: 1.2, h: 1, color: RED, district: 'checks' },
+    { x: 6.2, y: 3.2, w: 1.2, d: 1.2, h: 1, color: '#6f7987', district: 'checks' }, { x: 7.9, y: 3.4, w: .9, d: .9, h: .7, color: DARK, district: 'checks' },
+    { kind: 'ledger', x: 20, y: 3, w: 2, d: 2, h: 1.5, n: 3, color: SLATE, district: 'cost' }, { x: 24, y: 3.2, w: 1.4, d: 1.4, h: 1, color: SLATE, district: 'cost' },
+    { x: 2, y: 10.4, w: 6, d: 2.2, h: .5, color: DARK, district: 'excluded' },
+    { x: 12, y: 10.4, w: 4, d: 2.2, h: .5, color: WHITE, top: 1.1, side: .85, back: .62, district: 'compare' },
+    { x: 20.5, y: 10.6, w: 1.4, d: 1.4, h: .9, color: '#6f7987', district: 'seal' }, { x: 23.6, y: 10.2, w: 1.6, d: 1.6, h: 1.4, color: GREEN, district: 'seal' },
+  ];
+  SC.forEach(([ua, re], i) => units.push({ x: 12 + i * 1.8, y: 3.4, w: .8, d: .8, h: 3 * re, color: WHITE, top: 1.1, side: .85, back: .62, district: 'score', ua, re }));
+  scenes.result = {
+    id: 'result', name: 'the result', parent: 'run', plate: [28, 16],
+    slabs: [
+      { id: 'checks', x: 1, y: 2, w: 8, d: 5, label: 'checks', labelAt: [1, 7, 'end', -12, 4] },
+      { id: 'score', x: 11, y: 2, w: 6, d: 5, label: 'score', labelAt: [17, 2, 'start', 12, 4] },
+      { id: 'cost', x: 19, y: 2, w: 8, d: 5, label: 'cost and time', labelAt: [27, 2, 'start', 12, 4] },
+      { id: 'excluded', x: 1, y: 9, w: 8, d: 5, label: 'excluded', labelAt: [1, 14, 'end', -12, 4] },
+      { id: 'compare', x: 11, y: 9, w: 6, d: 5, label: 'comparison', labelAt: [17, 14, 'middle', 0, 18] },
+      { id: 'seal', x: 19, y: 9, w: 8, d: 5, label: 'publishable', labelAt: [27, 14, 'middle', 0, 18] },
+    ],
+    units,
+    labels: [
+      [3.4, 7, Z, 'passed · earns its points', 'lab', 'checktags', 'end', -6, 4], [5.6, 7, Z, 'failed · zero', 'lab', 'checktags', 'end', -6, 4],
+      [7.6, 7, Z, 'inconclusive · zero', 'lab', 'checktags', 'end', -6, 4], [9.2, 7, Z, 'harness · unmeasured', 'lab', 'checktags', 'end', -6, 4],
+      ...STACKS.map((s, i) => [12.4 + i * 1.8, 4.2, Z, s.slice(0, 3), 'lab', 'scoretags', 'middle', 0, 14]),
+      [14, 7, Z, 'line = unaided · top = repaired', 'lab', 'scoretags', 'middle', 0, 30],
+      [21, 5, Z, 'receipts · one per session', 'lab', 'costtags', 'middle', 0, 14], [24.7, 4.6, Z, 'duration', 'lab', 'costtags', 'middle', 0, 14],
+      [5, 13.2, Z, 'harness failure · provider failure · contaminated', 'lab', 'extags', 'middle', 0, 20], [5, 13.2, Z, 'kept as evidence · never compared', 'lab', 'extags', 'middle', 0, 36],
+      [14, 13.2, Z, 'compatible · validated · same scope', 'lab', 'comptags', 'middle', 0, 20], [14, 13.2, Z, 'medians over repetitions', 'lab', 'comptags', 'middle', 0, 36],
+      [21.2, 12, Z, 'provisional', 'lab', 'sealtags', 'middle', 0, 14], [24.4, 11.8, Z, 'qualified', 'lab', 'sealtags', 'middle', 0, 14],
+    ],
+    lanes: [
+      { district: 'checks', pts: [[9, 4.5], [11, 4.5]], token: 'outcome', speed: .5, n: 2, pulse: 'score' },
+      { district: 'excluded', pts: [[3, 7.2], [3, 9]], token: 'excluded', speed: .4 },
+      { district: 'score', pts: [[14, 7.2], [14, 9]], token: 'score', speed: .4, pulse: 'compare' },
+      { district: 'cost', pts: [[23, 7.2], [23, 8.4], [15.5, 8.4], [15.5, 9]], token: 'receipt', speed: .3, pulse: 'compare' },
+      { district: 'seal', pts: [[19, 11.5], [17, 11.5]], token: 'seal', speed: .5, pulse: 'compare' },
+    ],
+    extra({ iso, label, el }) {
+      for (const u of units.filter(u => u.ua)) {
+        const c = u.node; const zr = ZS + 3 * u.ua; const [a1, a2, a3] = [iso(c.x, c.y + .8, zr), iso(c.x + .8, c.y + .8, zr), iso(c.x + .8, c.y, zr)];
+        c.g.append(el('path', { fill: 'none', stroke: '#0b1114', 'stroke-width': 2, d: `M${a1[0]} ${a1[1]} L${a2[0]} ${a2[1]} L${a3[0]} ${a3[1]}` }));
+        label(c.x + .4, c.y + .4, ZS + 3 * u.re + .5, Math.round(u.re * 100) + '%', 'num', 'scoretags', 'middle', 0, 0);
+      }
+    },
+    chapters: [
+      { k: 'the result', h: 'A score is a count of proven behaviours, with its cost beside it.', p: 'Checks become outcomes. Passed outcomes become points. Receipts become cost. Only compatible attempts are compared, and only a qualified grader makes the comparison publishable.', focus: null, view: null },
+      { k: 'checks', h: 'Only a pass earns points. Nothing else moves the denominator.', p: 'Failed and inconclusive add zero. A harness failure is unmeasured, never a zero against the app. Blocked checks behind a failed prerequisite get no credit and no blame.', focus: ['checks', 'checktags'], view: [0, 1, 12, 8, 2.5] },
+      { k: 'score', h: 'The line is unaided. The top is repaired.', p: 'The line is what the stack scored before any repair. The top is where bounded repairs took it. Sequential campaigns count points over a maximum; dependency campaigns average questlines, with unique checks reported beside.', focus: ['score', 'scoretags'], view: [8, 1, 20, 8, 3.5] },
+      { k: 'cost and time', h: 'Every dollar has a receipt.', p: 'The broker records each session\'s usage and reconciles it at the plan\'s pinned rates. Duration is measured working time; a planned pause is recorded but not charged against the clock.', focus: ['cost', 'costtags', 'compare'], view: [16, 1, 28, 15, 2.5, .06] },
+      { k: 'excluded', h: 'What cannot be compared is kept, not hidden.', p: 'Harness failures, provider failures, and contaminated attempts leave the comparison and stay in the package. Medians over repetitions; fewer than three is a reading, not a result.', focus: ['excluded', 'extags', 'compare', 'comptags'], view: [0, 8, 18, 15, 2.5] },
+      { k: 'publishable', h: 'Provisional until the grader\'s own proof matches.', p: 'A score stays provisional until the recipe, fixture, defects, and image it ran under have a qualified calibration. Then the seal lands and the number can leave the building.', focus: ['seal', 'sealtags', 'compare'], view: [10, 8, 28, 15, 2.5, .06] },
+    ],
+  };
+})();
+
+/* ---- operations: how it runs at scale ---- */
+scenes.ops = {
+  id: 'ops', name: 'operations', parent: 'run', plate: [30, 16],
+  slabs: [
+    { id: 'jobs', x: 1, y: 2, w: 6, d: 5, label: 'jobs', labelAt: [1, 7, 'end', -12, 4] },
+    { id: 'creds', x: 9, y: 2, w: 5, d: 5, label: 'credentials', labelAt: [14, 2, 'start', 12, 4] },
+    { id: 'workers', x: 16, y: 2, w: 13, d: 5, label: 'workers', labelAt: [29, 2, 'start', 12, 4] },
+    { id: 'admission', x: 1, y: 9, w: 8, d: 5, label: 'admission', labelAt: [1, 14, 'end', -12, 4] },
+    { id: 'leases', x: 11, y: 9, w: 8, d: 5, label: 'leases and locks', labelAt: [19, 14, 'middle', 0, 18] },
+    { id: 'recovery', x: 21, y: 9, w: 8, d: 5, label: 'recovery', labelAt: [29, 14, 'middle', 0, 18] },
+  ],
+  units: [
+    { kind: 'rack', x: 1.8, y: 2.8, w: 4, d: 3.2, h: 1.4, color: SLATE, district: 'jobs' },
+    { kind: 'ledger', x: 9.8, y: 2.9, w: 1.6, d: 1.6, h: 1.2, n: 3, color: SLATE, district: 'creds' }, { x: 12.8, y: 3, w: .9, d: .9, h: .7, color: RED, district: 'creds' },
+    ...[0, 1, 2].map(i => ({ kind: 'tower', x: 17 + i * 4, y: 2.9, w: 1.8, d: 1.8, h: 2, color: SLATE, district: 'workers' })),
+    { x: 1.8, y: 10.2, w: 1.4, d: 1.4, h: 1, color: SLATE, district: 'admission' }, { x: 4, y: 10.2, w: 1.4, d: 1.4, h: 1, color: GREEN, district: 'admission' },
+    { kind: 'ledger', x: 6.4, y: 10.6, w: 1.2, d: 1.2, h: 1, n: 2, color: SLATE, district: 'admission' },
+    { kind: 'ledger', x: 11.8, y: 10.2, w: 2, d: 2, h: 1.5, n: 3, color: SLATE, district: 'leases' },
+    ...[0, 1, 2].map(i => ({ x: 14.8 + i * 1.3, y: 10.8, w: .8, d: .8, h: .6, color: SLATE, district: 'leases' })),
+    { kind: 'tower', x: 21.8, y: 10.2, w: 1.6, d: 1.6, h: 1.8, color: GREEN, district: 'recovery' },
+    { x: 24.8, y: 10.6, w: 1.2, d: 1.2, h: .8, color: DARK, district: 'recovery' }, { x: 26.8, y: 10.2, w: 1.2, d: 1.2, h: 1, color: '#6f7987', district: 'recovery' },
+  ],
+  labels: [
+    [3.8, 6.6, Z, 'queue · one campaign per job', 'lab', 'jobtags', 'middle', 0, 20],
+    [10.6, 4.5, Z, 'named profiles', 'lab', 'credtags', 'middle', 0, 14], [13.25, 3.9, Z, 'secret files', 'lab', 'credtags', 'middle', 0, 14],
+    ...['worker-east', 'worker-west', 'local'].map((n, i) => [17.9 + i * 4, 4.7, Z, n, 'lab', 'workertags', 'middle', 0, 14]),
+    [2.5, 11.6, Z, 'probes', 'lab', 'admtags', 'middle', 0, 14], [4.7, 11.6, Z, 'smoke', 'lab', 'admtags', 'middle', 0, 14], [7, 11.8, Z, 'admission record', 'lab', 'admtags', 'middle', 0, 14],
+    [12.8, 12.2, Z, 'private lease', 'lab', 'leasetags', 'middle', 0, 14], [16.1, 11.6, Z, 'ports · containers · volumes', 'lab', 'leasetags', 'middle', 0, 14],
+    [22.6, 11.8, Z, 'reconcile', 'lab', 'rectags', 'middle', 0, 14], [25.4, 11.8, Z, 'quarantined', 'lab', 'rectags', 'middle', 0, 14], [27.4, 11.4, Z, 'depth pause', 'lab', 'rectags', 'middle', 0, 14],
+  ],
+  lanes: [
+    { district: 'jobs', pts: [[7, 5.5], [9, 5.5]], token: 'job', speed: .5, pulse: 'creds' },
+    { district: 'creds', pts: [[14, 5.5], [16, 5.5]], token: 'job', speed: .5, pulse: 'workers' },
+    { district: 'workers', pts: [[19, 7.2], [19, 8.4], [4.5, 8.4], [4.5, 9]], token: 'claim', speed: .25, pulse: 'admission' },
+    { district: 'admission', pts: [[9, 11.5], [11, 11.5]], token: 'lease', speed: .5, pulse: 'leases' },
+    { district: 'leases', pts: [[19, 11.5], [21, 11.5]], token: 'lease', speed: .5, pulse: 'recovery' },
+  ],
+  chapters: [
+    { k: 'operations', h: 'A campaign is a test. A job says where it runs and with whose credentials.', p: 'Jobs queue, workers claim them, admission proves the host can run the plan, leases record exactly what was created, and recovery releases only what a lease owns.', focus: null, view: null },
+    { k: 'jobs', h: 'Submitting a job snapshots the plan and spends nothing.', p: 'A submission names a frozen plan, credential profiles, and optionally a host. The same key and request return the same job; a reused key with different inputs fails. No model call happens at submission.', focus: ['jobs', 'jobtags', 'creds'], view: [0, 1, 18, 8, 2.5] },
+    { k: 'credentials', h: 'Jobs carry references. Secrets stay in worker storage.', p: 'Named profiles map to provider, mode, and a protected secret file on the worker. Selection is explicit: attempt, then adapter, then default. Credentials are pinned at admission, and an unexpected change fails before another provider call.', focus: ['creds', 'credtags', 'workers'], view: [8, 1, 30, 8, 2.5, .06] },
+    { k: 'workers', h: 'One job runs one whole campaign on one host.', p: 'A worker claims queued jobs with a concurrency limit. The campaign\'s own parallelism is preserved inside it. Capacity policy decides whether a job waits or fails; requested parallelism never changes.', focus: ['workers', 'workertags', 'jobs'], view: [0, 1, 32, 8, 2.5, .04] },
+    { k: 'admission', h: 'Nothing paid starts until the host proves it can run the plan.', p: 'Probes check credentials, images, ports, capacity, and stack access. Every attempt then runs a model-free smoke after its lease is live. The admission record is the receipt that policy allowed the campaign to start.', focus: ['admission', 'admtags'], view: [0, 8, 14, 15, 2.5] },
+    { k: 'leases and locks', h: 'Every resource is claimed before it is created and named before it starts.', p: 'A private lease records creation authority before Docker create and exact IDs before start. Capacity and ports are claimed under a file lock across controller processes. Cleanup releases only locks whose owner record still matches.', focus: ['leases', 'leasetags', 'admission'], view: [0, 8, 20, 15, 2.5] },
+    { k: 'recovery', h: 'Stack Bench never guesses that something is safe to delete.', p: 'Reconcile checks private child authority before it releases anything. Cleanup ends clean, retained, or quarantined, and says which. A planned depth pause keeps live processes; a lost controller is an interruption, not a resume.', focus: ['recovery', 'rectags', 'leases'], view: [10, 8, 30, 15, 2.5, .06] },
   ],
 };
 
