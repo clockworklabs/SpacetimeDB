@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { durableCostLedger, runCostEvidence } from '../src/evidence/cost-proof.js';
-import { recordedExecutionSpend } from '../src/campaigns/campaign-inspection.js';
+import { recordedExecutionSpend } from '../src/evidence/run-checkpoints.js';
 import { executionSpend } from '../src/campaigns/campaign-report.js';
 import { spend } from '../dashboard/public/format.js';
 import type { CostRun } from '../src/evidence/cost-proof.js';

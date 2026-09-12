@@ -12,12 +12,12 @@ import { compileProgressionInput, dependencyRuntimeDefinition }
 import type { DependencyEvent, DependencyState } from '../progression/dependency-mode.js';
 import { campaignCohortKey, campaignComparisonKey, executionSpend } from './campaign-report.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
-import { costEvidenceSchema, type RunCheckpoint } from '../evidence/run-checkpoints.js';
+import { recordedExecutionSpend, type RunCheckpoint } from '../evidence/run-checkpoints.js';
 import { campaignGradingQualification, campaignProgressionOwner } from './campaign-compiler.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
 import type { DependencyPromptSelection } from '../progression/dependency-mode.js';
 import { validateCampaignRun } from './campaign-run-validation.js';
-import { runCostEvidence, sessionCostEvidence, type CostEvidence, type CostRun } from '../evidence/cost-proof.js';
+import { runCostEvidence, sessionCostEvidence, type CostEvidence } from '../evidence/cost-proof.js';
 import type { RunSessionRecord } from '../evidence/benchmark-run.js';
 import type { CheckCompletion } from '../evidence/check-completion.js';
 import { retainedRunCost } from '../evidence/retained-run-cost.js';
@@ -406,24 +406,6 @@ export function dependencyProgress(plan: CompiledCampaignPlan, attempt: Campaign
       work: { current: [], working: [], passed: [], failed: [], blocked: [], waiting: [] },
       nodes: [] };
   }
-}
-
-/** Display-only checkpoint or recorded sessions. This is not a final execution cost. */
-export function recordedExecutionSpend(run: CostRun & {
-  checkpoints?: Array<Pick<RunCheckpoint, 'executionCost'>>;
-}): CostEvidence {
-  try {
-    const checkpoint = run.checkpoints?.at(-1);
-    const inherited = new Set(run.progressionResume?.inheritedLevels ?? []);
-    const sessions = (run.levels ?? []).filter(level => !inherited.has(level.level))
-      .flatMap(level => [...(level.buildSessions ?? []), ...(level.repairSessions ?? []),
-        ...(level.resumeSession ? [level.resumeSession] : [])]);
-    const recorded = sessions.length ? sessionCostEvidence(sessions) : { status: 'unknown' as const, costUsd: null };
-    if (!checkpoint) return recorded;
-    const measured = costEvidenceSchema.parse(checkpoint.executionCost);
-    return recorded.status === 'exact' && measured.status === 'exact' && recorded.costUsd >= measured.costUsd
-      ? recorded : measured;
-  } catch { return { status: 'unknown', costUsd: null }; }
 }
 
 export function inspectCampaignAttempt(plan: CompiledCampaignPlan, attempt: CampaignAttemptState,

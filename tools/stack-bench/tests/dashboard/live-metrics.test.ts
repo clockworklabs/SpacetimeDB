@@ -3,7 +3,7 @@ import test from 'node:test';
 import { parseRunProgress } from '../../dashboard/dashboard-model.js';
 import { elapsed, executionClock } from '../../dashboard/public/format.js';
 import { compareCampaign, outputSilentMinutes, type MetricAttempt } from '../../dashboard/public/metrics.js';
-import { recordedExecutionSpend } from '../../src/campaigns/campaign-inspection.js';
+import { recordedExecutionSpend } from '../../src/evidence/run-checkpoints.js';
 import { runCostEvidence } from '../../src/evidence/cost-proof.js';
 
 test('live spend validates recorded sessions without treating them as final execution cost', () => {

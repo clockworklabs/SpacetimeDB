@@ -21,7 +21,7 @@ import { classifyCampaignExecution } from './campaign-scheduler.js';
 import type { RunOutcome } from '../evidence/outcomes.js';
 import { runCostEvidence, sessionCostEvidence, sumCostEvidence } from '../evidence/cost-proof.js';
 import type { CostEvidence } from '../evidence/cost-proof.js';
-import { checkpointSchema, completionSchema, costEvidenceSchema, completionCurve } from '../evidence/run-checkpoints.js';
+import { checkpointSchema, completionSchema, costEvidenceSchema, completionCurve, recordedExecutionSpend } from '../evidence/run-checkpoints.js';
 import type { CompletionCurve } from '../evidence/run-checkpoints.js';
 import { checkCompletion } from '../evidence/check-completion.js';
 import type { CheckCompletion, CheckStatus } from '../evidence/check-completion.js';
@@ -875,7 +875,7 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
         admissionId: execution.admissionId,
         admissionEvidence: `admissions/${execution.admissionId}.json`,
         cost: retainedCost?.cost ?? runCostEvidence(run, 'execution'),
-        ...(retainedCost ? { recorded: retainedCost.recorded } : {}),
+        ...(run ? { recorded: retainedCost?.recorded ?? recordedExecutionSpend(run) } : {}),
         usage: executionUsage(run),
         providerContinuation: ['running', 'pending'].includes(execution.status)
           ? null : assessStoppedProviderContinuation(run),

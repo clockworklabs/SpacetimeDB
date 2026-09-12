@@ -386,7 +386,9 @@ test('completed process with inconclusive dependency grading has no final comple
   assert.equal(attempt.metrics, null);
   assert.equal(attempt.completion.passed, 7);
   assert.equal(attempt.completion.unmeasured, 98);
-  assert.equal(attempt.spend.costUsd, 5.059995);
+  assert.equal(attempt.spend.status, 'unknown');
+  assert.equal(attempt.spend.costUsd, null);
+  assert.equal(attempt.spend.knownCostUsd, 5.059995);
   const cohort = report.conditions.find(item => item.stack === attempt.stack)!;
   assert.equal(cohort.metrics.checkCompletionRate?.n, 0);
   assert.equal(cohort.metrics.checkCompletionRate?.center, null);

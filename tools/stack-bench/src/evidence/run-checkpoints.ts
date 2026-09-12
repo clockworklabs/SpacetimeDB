@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { GradeBundlePayload } from './benchmark-run.js';
 import { criterionEvidence, evidenceDisposition } from './check-evidence.js';
 import { checkCompletion, type CheckCompletion, type CheckStatus } from './check-completion.js';
-import { sessionCostEvidence, sumCostEvidence, type CostEvidence, type CostLevel, type CostSession } from './cost-proof.js';
+import { sessionCostEvidence, sumCostEvidence, type CostEvidence, type CostLevel, type CostRun, type CostSession } from './cost-proof.js';
 
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
 export const costEvidenceSchema = z.discriminatedUnion('status', [
@@ -27,6 +27,24 @@ export const checkpointSchema = z.strictObject({
   checks: z.array(z.strictObject({ id: z.string().min(1), status: z.enum(['passed', 'failed', 'blocked', 'unmeasured']) })),
 });
 export type RunCheckpoint = z.infer<typeof checkpointSchema>;
+
+/** Display-only checkpoint or recorded sessions. This is not a final execution cost. */
+export function recordedExecutionSpend(input: unknown): CostEvidence {
+  try {
+    if (!input || typeof input !== 'object') return { status: 'unknown', costUsd: null };
+    const run = input as CostRun;
+    const checkpoint = run.checkpoints?.at(-1);
+    const inherited = new Set(run.progressionResume?.inheritedLevels ?? []);
+    const sessions = (run.levels ?? []).filter(level => !inherited.has(level.level))
+      .flatMap(level => [...(level.buildSessions ?? []), ...(level.repairSessions ?? []),
+        ...(level.resumeSession ? [level.resumeSession] : [])]);
+    const recorded = sessions.length ? sessionCostEvidence(sessions) : { status: 'unknown' as const, costUsd: null };
+    if (!checkpoint) return recorded;
+    const measured = costEvidenceSchema.parse(checkpoint.executionCost);
+    return recorded.status === 'exact' && measured.status === 'exact' && recorded.costUsd >= measured.costUsd
+      ? recorded : measured;
+  } catch { return { status: 'unknown', costUsd: null }; }
+}
 
 export interface CheckpointRun {
   checkpoints?: RunCheckpoint[];

@@ -39,7 +39,9 @@ the edited definitions or replace historical scores. No paid run is part of this
 - Comparison metrics use eligible attempts. Operational progress and incurred spend
   remain visible. Live cost updates use the existing cache without full-state polling.
 - Campaign reports omit absent receipt fields instead of serializing `undefined`.
-  Retained receipt values are validated before report aggregation.
+  Retained receipt values are validated before report aggregation. Reports and the
+  dashboard share one recorded-spend calculation. An incomplete execution keeps its
+  known subtotal while its final total remains unknown.
 
 ## Historical use
 
@@ -81,3 +83,13 @@ they must not earn a privacy pass. Later-depth reference fixes need live qualifi
 The new SpacetimeDB dismissal-loss control proves reconnect coverage, not backend
 restart loss alone. Final-cent refund settlement has direct arithmetic coverage on
 all three reference implementations; full reference app builds remain a separate check.
+
+## Implementation validation
+
+The combined build passed. The isolated dashboard suite passed all 67 checks.
+The initial Linux unit and contract gate had 1,230 passes and 33 failures. Targeted
+corrections resolved 32 failures; the remaining cost-report assertion was corrected
+with the shared recorded-spend calculation. The final report, cost, checkpoint,
+live-metric, and module-layout group passed all 50 checks. The full gate was not
+repeated after those focused corrections. No paid campaign or live qualification
+was launched for this implementation.
