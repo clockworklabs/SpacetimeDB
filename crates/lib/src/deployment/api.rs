@@ -28,9 +28,13 @@ pub struct PublishRequest {
     /// Original uploaded OCI index or executable manifest. Required for Set.
     /// Keep uses the prior retained executable manifest; Remove has no image.
     pub image_source: Option<ArtifactReference>,
-    /// Complete private values. Omission means an empty replacement, never Keep.
+    /// Private overrides. Omission preserves stored values.
     #[serde(default, deserialize_with = "request_decode::deserialize_environment")]
     pub environment: BTreeMap<String, String>,
+    #[serde(default)]
+    pub environment_remove: Vec<String>,
+    #[serde(default)]
+    pub environment_replace: bool,
 }
 
 impl std::fmt::Debug for PublishRequest {

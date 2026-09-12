@@ -530,7 +530,7 @@ impl JsMainInstance {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
-        environment: std::collections::BTreeMap<String, String>,
+        environment: spacetimedb_lib::environment::EnvironmentUpdate,
         deployment: Option<crate::db::deployment::DeploymentCommit>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         self.request(UpdateDatabaseRequest {
@@ -689,7 +689,7 @@ js_main_request! {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
-        environment: std::collections::BTreeMap<String, String>,
+        environment: spacetimedb_lib::environment::EnvironmentUpdate,
         deployment: Option<crate::db::deployment::DeploymentCommit>,
     } => "update_database", anyhow::Result<UpdateDatabaseResult>, UpdateDatabase
 }
@@ -914,7 +914,7 @@ enum JsMainWorkerRequest {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
-        environment: std::collections::BTreeMap<String, String>,
+        environment: spacetimedb_lib::environment::EnvironmentUpdate,
         deployment: Option<crate::db::deployment::DeploymentCommit>,
     },
     /// See [`JsMainInstance::call_reducer`].

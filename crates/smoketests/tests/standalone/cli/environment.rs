@@ -150,6 +150,19 @@ impl EnvironmentFixture {
         self.command(&args, shell)
     }
 
+    fn publish_environment(&self, shell: &[(&str, &str)], extra: &[&str]) -> Output {
+        let mut args = vec![
+            "publish",
+            &self.database,
+            "--env-only",
+            "--server",
+            &self.test.server_url,
+            "--yes",
+        ];
+        args.extend_from_slice(extra);
+        self.command(&args, shell)
+    }
+
     fn published(&self, shell: &[(&str, &str)], extra: &[&str]) -> String {
         let before = fs::read(&self.wasm).unwrap();
         let output = self.publish(shell, extra);
@@ -366,11 +379,11 @@ fn cli_environment_replacement_rejection_and_read_only_commands() {
     f.config(Some(
         json!({"SMOKE_REQUIRED":"initial-sentinel","SMOKE_MODE":"ready","SMOKE_OPTIONAL":"remove-me"}),
     ));
-    f.published(&[], &[]);
+    f.published(&[], &["--replace-env"]);
     f.config(Some(
         json!({"SMOKE_REQUIRED":"replacement-sentinel","SMOKE_MODE":"other"}),
     ));
-    f.published(&[], &[]);
+    f.published(&[], &["--replace-env"]);
     f.typed("replacement-sentinel", "other", [None; 4]);
     assert_eq!(f.list(), ["SMOKE_MODE", "SMOKE_REQUIRED"]);
     assert!(!f
@@ -391,11 +404,10 @@ fn cli_environment_replacement_rejection_and_read_only_commands() {
     for input in [
         json!({"SMOKE_MODE":"ready"}),
         json!({"SMOKE_REQUIRED":"rejected-sentinel","SMOKE_MODE":"invalid-sentinel"}),
-        json!({"SMOKE_REQUIRED":"rejected-sentinel","SMOKE_MODE":"ready","UNKNOWN":"unknown-sentinel"}),
         json!({"SMOKE_REQUIRED":"rejected-sentinel","SMOKE_MODE":"ready","SMOKE_OPTIONAL":{}}),
     ] {
         f.config(Some(input));
-        let output = f.publish(&[], &[]);
+        let output = f.publish(&[], &["--replace-env"]);
         assert!(!output.status.success());
         for value in ["rejected-sentinel", "invalid-sentinel", "unknown-sentinel"] {
             assert!(!String::from_utf8_lossy(&output.stdout).contains(value));
@@ -455,4 +467,105 @@ fn cli_environment_initial_rejection_clear_and_omitted_payload() {
     f.wasm = modules::precompiled_module("noop");
     f.published(&[("SMOKE_REQUIRED", "must-not-be-ambient")], &["--delete-data"]);
     assert!(f.list().is_empty());
+}
+
+#[test]
+fn cli_environment_preservation_and_environment_only_updates() {
+    let f = EnvironmentFixture::new();
+    f.config(Some(
+        json!({"SMOKE_REQUIRED":"persisted-required", "SMOKE_MODE":"ready", "SMOKE_OPTIONAL":"keep-optional"}),
+    ));
+    f.published(&[], &[]);
+    let client = reqwest::blocking::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(20))
+        .build()
+        .unwrap();
+    let url = format!("{}/v1/database/{}", f.test.server_url, f.database);
+    let denied = client.get(format!("{url}/environment")).send().unwrap();
+    assert!(matches!(denied.status().as_u16(), 401 | 403));
+    // This config and token were created by the fixture's isolated local login.
+    let config: toml::Value = toml::from_str(&fs::read_to_string(&f.test.config_path).unwrap()).unwrap();
+    let token = config["spacetimedb_token"].as_str().unwrap();
+    let metadata = client
+        .get(format!("{url}/environment"))
+        .bearer_auth(token)
+        .send()
+        .unwrap();
+    assert!(metadata.status().is_success());
+    assert_eq!(metadata.headers()["cache-control"], "no-store");
+    let metadata = metadata.text().unwrap();
+    assert!(!metadata.contains("persisted-required") && !metadata.contains("keep-optional"));
+    let metadata: Value = serde_json::from_str(&metadata).unwrap();
+    assert!(metadata["stored_keys"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("SMOKE_REQUIRED")));
+    for (body, status) in [
+        (
+            json!({"environment":{"SMOKE_REQUIRED":"stale-replacement"},"expected_module_version":"00".repeat(32)}),
+            409,
+        ),
+        (json!({"environment":{"SMOKE_REQUIRED":"missing-version"}}), 400),
+        (json!({"module":""}), 400),
+    ] {
+        let response = client
+            .put(&url)
+            .bearer_auth(token)
+            .header("Content-Type", "application/vnd.spacetimedb.publish+json")
+            .body(body.to_string())
+            .send()
+            .unwrap();
+        assert_eq!(response.status().as_u16(), status);
+    }
+    f.config(Some(json!({"FUTURE_KEY":"stored-future"})));
+    f.published(&[("FUTURE_KEY", "must-not-import-undeclared")], &[]);
+    assert_eq!(f.get("FUTURE_KEY"), "stored-future\n");
+    f.typed("persisted-required", "ready", [Some("keep-optional"), None, None, None]);
+
+    // No local bundle or valid module source is available for env-only publishing.
+    fs::remove_file(&f.wasm).unwrap();
+    f.config(Some(json!({"SMOKE_MODE":"other", "UNDECLARED":"new-value"})));
+    let output = f.publish_environment(&[], &["--unset-env", "SMOKE_OPTIONAL"]);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    f.typed("persisted-required", "other", [None; 4]);
+    assert_eq!(f.get("UNDECLARED"), "new-value\n");
+    assert_eq!(f.get("FUTURE_KEY"), "stored-future\n");
+    let initial = f.sql("SELECT required, mode FROM initial_environment");
+    assert!(initial.status.success());
+    let initial = String::from_utf8(initial.stdout).unwrap();
+    assert!(initial.contains("persisted-required") && initial.contains("ready"));
+    assert!(!initial.contains("other"), "env-only reran init");
+
+    f.config(None);
+    for flags in [vec!["--unset-env", "SMOKE_REQUIRED"], vec!["--replace-env"]] {
+        assert!(!f.publish_environment(&[], &flags).status.success());
+        f.typed("persisted-required", "other", [None; 4]);
+        assert_eq!(f.get("UNDECLARED"), "new-value\n");
+    }
+    f.config(Some(json!({"SMOKE_REQUIRED":"replace-required", "SMOKE_MODE":"ready"})));
+    assert!(f.publish_environment(&[], &["--replace-env"]).status.success());
+    assert_eq!(f.list(), ["SMOKE_MODE", "SMOKE_REQUIRED"]);
+    f.typed("replace-required", "ready", [None; 4]);
+}
+
+#[test]
+fn cli_environment_preloaded_values_are_checked_when_declared() {
+    let mut f = EnvironmentFixture::new();
+    let declared_module = f.wasm.clone();
+    f.wasm = modules::precompiled_module("noop");
+    f.config(Some(
+        json!({"SMOKE_REQUIRED":"preloaded", "SMOKE_MODE":"not-an-allowed-mode"}),
+    ));
+    f.published(&[], &[]);
+    f.config(None);
+    f.wasm = declared_module;
+    assert!(!f.publish(&[], &[]).status.success());
+    assert_eq!(f.get("SMOKE_MODE"), "not-an-allowed-mode\n");
+    f.config(Some(json!({"SMOKE_MODE":"ready"})));
+    assert!(f.publish_environment(&[], &[]).status.success());
+    f.config(None);
+    f.published(&[], &[]);
+    f.typed("preloaded", "ready", [None; 4]);
 }

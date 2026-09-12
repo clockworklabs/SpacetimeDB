@@ -96,7 +96,7 @@ Create and update a SpacetimeDB database
 
 **Usage:** `spacetime publish [OPTIONS] [name|identity]`
 
-Every publish replaces the complete declared environment. Put an env map in spacetime.json; declared shell variables override config values (including empty strings). The CLI displays supplied keys and sources, never values. Optional values omitted from every input are removed. --env selects config file layers. Run `spacetime help publish` for more detailed information.
+Publishing preserves unspecified environment values. Put an env map in spacetime.json; explicit undeclared keys are allowed, and declared shell variables override config values (including empty strings). The CLI displays supplied keys and sources, never values. --env-only updates an existing database without a module. --unset-env explicitly deletes a value; required values cannot be removed. --replace-env replaces all stored values with the supplied set, including deleting unspecified undeclared keys, and cannot be combined with --unset-env. The host validates the resulting environment atomically. --env selects config file layers.
 
 ###### **Arguments:**
 
@@ -146,8 +146,11 @@ Every publish replaces the complete declared environment. Put an env map in spac
 
 * `--no-config` — Ignore spacetime.json configuration
 * `--env <ENV>` — Environment name for config file layering (e.g., dev, staging)
-* `--native-aot` — Use NativeAOT-LLVM compilation for C# modules (experimental, Windows only)
+* `--native-aot` — Use NativeAOT-LLVM compilation for C# modules (experimental; supported on Windows, and on Linux with .NET 10)
 * `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.
+* `--env-only` — Update environment values without building or uploading a module.
+* `--unset-env <KEY>` — Delete an environment value. Repeat for multiple keys.
+* `--replace-env` — Replace all environment values, deleting every unspecified key.
 * `--managed` — Use managed deployment publication, including for a module-only database
 * `--container-platform <CONTAINER_PLATFORM>` — Required platform when publishing a container declaration
 
@@ -565,7 +568,7 @@ Initializes a new spacetime project.
 * `-t`, `--template <TEMPLATE>` — Template ID or GitHub repository (owner/repo or URL)
 * `--local` — Use local deployment instead of Maincloud
 * `--non-interactive` — Run in non-interactive mode
-* `--native-aot` — Configure C# project for NativeAOT-LLVM compilation (experimental, Windows only)
+* `--native-aot` — Configure C# project for NativeAOT-LLVM compilation (experimental; supported on Windows, and on Linux with .NET 10)
 * `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Defaults to 10 except on macOS or when only .NET 8 is installed.
 
 
@@ -1042,4 +1045,3 @@ Run `spacetime version --help` to see all options.
     This document was generated automatically by
     <a href="https://crates.io/crates/clap-markdown"><code>clap-markdown</code></a>.
 </i></small>
-

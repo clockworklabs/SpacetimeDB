@@ -66,6 +66,7 @@ mod tests {
 
 /// Host-validated string constraints. Values remain strings in every module SDK.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, crate::SpacetimeType)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[sats(crate = crate)]
 pub enum EnvironmentConstraint {
     AnyString,
@@ -75,6 +76,7 @@ pub enum EnvironmentConstraint {
 
 /// Declaration metadata, never an environment value supplied during publishing.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, crate::SpacetimeType)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[sats(crate = crate)]
 pub struct EnvironmentDeclaration {
     pub name: String,
@@ -92,6 +94,8 @@ pub struct EnvironmentSchema {
 pub enum EnvironmentSchemaErrorKind {
     InvalidName,
     TooManyDeclarations,
+    TooManyValues,
+    ConflictingUpdate,
     DuplicateDeclaration,
     EmptyUnion,
     TooManyUnionEntries,
@@ -118,6 +122,8 @@ impl std::fmt::Display for EnvironmentSchemaError {
         f.write_str(match self.kind {
             EnvironmentSchemaErrorKind::InvalidName => "invalid name",
             EnvironmentSchemaErrorKind::TooManyDeclarations => "too many declarations",
+            EnvironmentSchemaErrorKind::TooManyValues => "too many stored values",
+            EnvironmentSchemaErrorKind::ConflictingUpdate => "conflicting environment update operations",
             EnvironmentSchemaErrorKind::DuplicateDeclaration => "duplicate declaration",
             EnvironmentSchemaErrorKind::EmptyUnion => "string union must not be empty",
             EnvironmentSchemaErrorKind::TooManyUnionEntries => "string union has too many entries",
@@ -222,12 +228,28 @@ impl EnvironmentSchema {
         self.declarations.is_empty()
     }
 
-    /// Validate a complete publish input. Existing stored values are not inputs.
+    /// Validate the complete resulting store, including required declarations.
     pub fn validate_values(
         &self,
         values: &std::collections::BTreeMap<String, String>,
     ) -> Result<(), EnvironmentSchemaError> {
+        self.validate_supplied_values(values)?;
+        self.validate_required(values)
+    }
+
+    /// Validate supplied values without requiring every required key in this input.
+    /// Undeclared values are stored strings but are not readable by module code.
+    pub fn validate_supplied_values(
+        &self,
+        values: &std::collections::BTreeMap<String, String>,
+    ) -> Result<(), EnvironmentSchemaError> {
         use EnvironmentSchemaErrorKind as Kind;
+        if values.len() > MAX_ENV_VARS {
+            return Err(EnvironmentSchemaError {
+                key: None,
+                kind: Kind::TooManyValues,
+            });
+        }
         for (name, value) in values {
             validate_key(name).map_err(|_| EnvironmentSchemaError {
                 key: None,
@@ -237,8 +259,8 @@ impl EnvironmentSchema {
                 key: Some(name.clone()),
                 kind,
             };
-            let declaration = self.get(name).ok_or_else(|| error(Kind::Undeclared))?;
             validate_value(value).map_err(|_| error(Kind::ValueTooLarge))?;
+            let Some(declaration) = self.get(name) else { continue };
             let matches = match &declaration.constraint {
                 EnvironmentConstraint::AnyString => true,
                 EnvironmentConstraint::Literal(expected) => value == expected,
@@ -248,15 +270,93 @@ impl EnvironmentSchema {
                 return Err(error(Kind::ConstraintMismatch));
             }
         }
+        Ok(())
+    }
+
+    fn validate_required(
+        &self,
+        values: &std::collections::BTreeMap<String, String>,
+    ) -> Result<(), EnvironmentSchemaError> {
         for declaration in self.declarations() {
             if !declaration.optional && !values.contains_key(&declaration.name) {
                 return Err(EnvironmentSchemaError {
                     key: Some(declaration.name.clone()),
-                    kind: Kind::MissingRequired,
+                    kind: EnvironmentSchemaErrorKind::MissingRequired,
                 });
             }
         }
         Ok(())
+    }
+}
+
+/// An environment mutation. Deliberately does not implement Debug because values are secrets.
+#[derive(Clone, Default)]
+pub struct EnvironmentUpdate {
+    pub values: std::collections::BTreeMap<String, String>,
+    pub remove: Vec<String>,
+    pub replace: bool,
+}
+
+impl From<std::collections::BTreeMap<String, String>> for EnvironmentUpdate {
+    fn from(values: std::collections::BTreeMap<String, String>) -> Self {
+        Self {
+            values,
+            ..Self::default()
+        }
+    }
+}
+
+impl EnvironmentUpdate {
+    /// Validate operations before any mutation. Diagnostics never include values.
+    pub fn validate(&self) -> Result<(), EnvironmentSchemaError> {
+        use EnvironmentSchemaErrorKind as Kind;
+        EnvironmentSchema::default().validate_supplied_values(&self.values)?;
+        if self.remove.len() > MAX_ENV_VARS {
+            return Err(EnvironmentSchemaError {
+                key: None,
+                kind: Kind::TooManyValues,
+            });
+        }
+        if self.replace && !self.remove.is_empty() {
+            return Err(EnvironmentSchemaError {
+                key: None,
+                kind: Kind::ConflictingUpdate,
+            });
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for key in &self.remove {
+            validate_key(key).map_err(|_| EnvironmentSchemaError {
+                key: None,
+                kind: Kind::InvalidName,
+            })?;
+            if self.values.contains_key(key) || !seen.insert(key) {
+                return Err(EnvironmentSchemaError {
+                    key: Some(key.clone()),
+                    kind: Kind::ConflictingUpdate,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Resolve the new store without mutating the old store. Schema validation follows
+    /// against the deployed schema or the schema from the proposed new module.
+    pub fn resulting_values(
+        &self,
+        previous: &std::collections::BTreeMap<String, String>,
+    ) -> Result<std::collections::BTreeMap<String, String>, EnvironmentSchemaError> {
+        self.validate()?;
+        let mut values = if self.replace {
+            Default::default()
+        } else {
+            previous.clone()
+        };
+        for key in &self.remove {
+            values.remove(key);
+        }
+        values.extend(self.values.clone());
+        EnvironmentSchema::default().validate_supplied_values(&values)?;
+        Ok(values)
     }
 }
 
@@ -301,8 +401,88 @@ mod schema_tests {
         );
         values.insert("UNDECLARED".into(), "secret-marker".into());
         let error = schema.validate_values(&values).unwrap_err();
-        assert_eq!(error.kind, EnvironmentSchemaErrorKind::Undeclared);
+        assert_eq!(error.kind, EnvironmentSchemaErrorKind::MissingRequired);
         assert!(!format!("{error:?}: {error}").contains("secret-marker"));
+    }
+
+    #[test]
+    fn publishing_preserves_values_and_validates_the_resulting_declared_subset() {
+        let old = BTreeMap::from([("REQUIRED".into(), "ready".into()), ("UNUSED".into(), "secret".into())]);
+        let schema = EnvironmentSchema::new(vec![declaration(
+            "REQUIRED",
+            EnvironmentConstraint::Literal("ready".into()),
+            false,
+        )])
+        .unwrap();
+        let unchanged = EnvironmentUpdate::default().resulting_values(&old).unwrap();
+        assert_eq!(unchanged, old);
+        schema.validate_values(&unchanged).unwrap();
+        let removed = EnvironmentUpdate {
+            remove: vec!["REQUIRED".into()],
+            ..Default::default()
+        }
+        .resulting_values(&old)
+        .unwrap();
+        assert_eq!(
+            schema.validate_values(&removed).unwrap_err().kind,
+            EnvironmentSchemaErrorKind::MissingRequired
+        );
+        let replace = EnvironmentUpdate {
+            replace: true,
+            values: BTreeMap::from([("REQUIRED".into(), "ready".into())]),
+            ..Default::default()
+        }
+        .resulting_values(&old)
+        .unwrap();
+        schema.validate_values(&replace).unwrap();
+        assert!(!replace.contains_key("UNUSED"));
+        let newly_declared = EnvironmentSchema::new(vec![declaration(
+            "UNUSED",
+            EnvironmentConstraint::Literal("other".into()),
+            false,
+        )])
+        .unwrap();
+        assert_eq!(
+            newly_declared.validate_values(&old).unwrap_err().kind,
+            EnvironmentSchemaErrorKind::ConstraintMismatch
+        );
+        let corrected = EnvironmentUpdate::from(BTreeMap::from([("UNUSED".into(), "other".into())]))
+            .resulting_values(&old)
+            .unwrap();
+        newly_declared.validate_values(&corrected).unwrap();
+        assert_eq!(old["UNUSED"], "secret");
+    }
+
+    #[test]
+    fn mutation_conflicts_and_resulting_store_limit_are_rejected() {
+        let stored = (0..MAX_ENV_VARS).map(|i| (format!("KEY{i}"), String::new())).collect();
+        assert_eq!(
+            EnvironmentUpdate::from(BTreeMap::from([("EXTRA".into(), String::new())]))
+                .resulting_values(&stored)
+                .unwrap_err()
+                .kind,
+            EnvironmentSchemaErrorKind::TooManyValues
+        );
+        for update in [
+            EnvironmentUpdate {
+                replace: true,
+                remove: vec!["KEY".into()],
+                ..Default::default()
+            },
+            EnvironmentUpdate {
+                values: BTreeMap::from([("KEY".into(), "secret-marker".into())]),
+                remove: vec!["KEY".into()],
+                ..Default::default()
+            },
+            EnvironmentUpdate {
+                remove: vec!["KEY".into(), "KEY".into()],
+                ..Default::default()
+            },
+        ] {
+            let error = update.validate().unwrap_err();
+            assert_eq!(error.kind, EnvironmentSchemaErrorKind::ConflictingUpdate);
+            assert!(!error.to_string().contains("secret-marker"));
+        }
     }
 
     #[test]
@@ -349,13 +529,9 @@ mod schema_tests {
             );
         }
         assert!(EnvironmentSchema::default().validate_values(&BTreeMap::new()).is_ok());
-        assert_eq!(
-            EnvironmentSchema::default()
-                .validate_values(&BTreeMap::from([("A".into(), "".into())]))
-                .unwrap_err()
-                .kind,
-            EnvironmentSchemaErrorKind::Undeclared
-        );
+        EnvironmentSchema::default()
+            .validate_values(&BTreeMap::from([("A".into(), "".into())]))
+            .unwrap();
     }
 
     #[test]

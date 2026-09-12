@@ -186,7 +186,7 @@ fn exercise_fixture(name: &str) {
             }
         }
         if name == "environment-test" {
-            // Required values cannot be inherited from the previous publish,
+            // Explicit complete replacement cannot inherit required values,
             // and an invalid literal cannot replace the previous configuration.
             for invalid in [
                 Values::new(),

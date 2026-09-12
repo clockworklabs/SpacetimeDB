@@ -16,6 +16,8 @@ pub const MAX_PUBLISH_REQUEST_BYTES: usize = {
         .checked_add(8)
         .expect("environment JSON framing");
     metadata
+        .checked_add(MAX_ENV_VARS * (MAX_ENV_KEY_BYTES + 3))
+        .expect("environment removal keys")
         .checked_add(MAX_ENV_VARS.checked_mul(entry).expect("environment JSON bound"))
         .expect("publication JSON sections")
         .checked_add(4096)
@@ -44,13 +46,13 @@ impl PublishRequest {
     /// at publication admission, not inferred from environment key selection.
     pub fn validate_structure(&self) -> Result<(), PublishRequestError> {
         self.manifest.encode().map_err(|_| PublishRequestError)?;
-        if self.environment.len() > MAX_ENV_VARS {
-            return Err(PublishRequestError);
+        crate::environment::EnvironmentUpdate {
+            values: self.environment.clone(),
+            remove: self.environment_remove.clone(),
+            replace: self.environment_replace,
         }
-        for (key, value) in &self.environment {
-            validate_key(key).map_err(|_| PublishRequestError)?;
-            validate_value(value).map_err(|_| PublishRequestError)?;
-        }
+        .validate()
+        .map_err(|_| PublishRequestError)?;
         Ok(())
     }
 }

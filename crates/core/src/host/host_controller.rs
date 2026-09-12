@@ -116,6 +116,10 @@ where
 
 pub type ProgramStorage = Arc<dyn ExternalStorage>;
 
+#[derive(Debug, thiserror::Error)]
+#[error("database program changed before publication; reload environment metadata and retry")]
+pub struct EnvironmentVersionConflict;
+
 /// Private complete configuration for a not-yet-initialized database generation.
 /// Implementations must verify the exact persisted database identity, program and
 /// bootstrap generation. This source is never consulted during ordinary reopen.
@@ -624,7 +628,7 @@ impl HostController {
         .await
     }
 
-    /// Publish the complete environment with the module. No deployment action
+    /// Merge supplied environment values with the module. No deployment action
     /// is implied by this entry point.
     #[tracing::instrument(level = "trace", skip_all, err)]
     #[allow(clippy::too_many_arguments)]
@@ -673,7 +677,7 @@ impl HostController {
         .await
     }
 
-    /// Publish the complete environment and authorized deployment in the same
+    /// Merge supplied environment values and authorized deployment in the same
     /// module migration transaction, retaining ownership through activation.
     #[tracing::instrument(level = "trace", skip_all, err)]
     #[allow(clippy::too_many_arguments)]
@@ -687,6 +691,61 @@ impl HostController {
         environment: std::collections::BTreeMap<String, String>,
         deployment: Option<DeploymentCommit>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.update_module_host_with_environment_options_and_deployment(
+            database,
+            host_type,
+            replica_id,
+            program_bytes,
+            policy,
+            environment.into(),
+            None,
+            deployment,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_module_host_with_environment_options(
+        &self,
+        database: Database,
+        host_type: HostType,
+        replica_id: u64,
+        program_bytes: Box<[u8]>,
+        policy: MigrationPolicy,
+        environment: spacetimedb_lib::environment::EnvironmentUpdate,
+        expected_module_version: Option<Hash>,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.update_module_host_with_environment_options_and_deployment(
+            database,
+            host_type,
+            replica_id,
+            program_bytes,
+            policy,
+            environment,
+            expected_module_version,
+            None,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_module_host_with_environment_options_and_deployment(
+        &self,
+        database: Database,
+        host_type: HostType,
+        replica_id: u64,
+        program_bytes: Box<[u8]>,
+        policy: MigrationPolicy,
+        environment: spacetimedb_lib::environment::EnvironmentUpdate,
+        expected_module_version: Option<Hash>,
+        deployment: Option<DeploymentCommit>,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        environment.validate()?;
+        let environment_only = program_bytes.is_empty();
+        anyhow::ensure!(
+            !environment_only || expected_module_version.is_some(),
+            "environment-only publication requires expected_module_version"
+        );
         let program = Program::from_bytes(host_type.into(), program_bytes);
         trace!(
             "update module host {}/{}: genesis={} update-to={}",
@@ -732,18 +791,40 @@ impl HostController {
             };
             let mut database_committed = false;
             let registration = guard.registration();
-            let update_result = std::panic::AssertUnwindSafe(host.update_module(
-                this.runtimes.clone(),
-                program,
-                policy,
-                environment,
-                deployment,
-                this.energy_monitor.clone(),
-                this.unregister_fn(registration.clone(), database_identity),
-                registration,
-                this.db_cores.take(),
-                &mut database_committed,
-            ))
+            let update_result = std::panic::AssertUnwindSafe(async {
+                let module = host.module.borrow().clone();
+                if expected_module_version.is_some_and(|expected| expected != module.info.module_hash) {
+                    return Err(EnvironmentVersionConflict.into());
+                }
+                if environment_only || program.hash == module.info.module_hash {
+                    let program = module
+                        .relational_db()
+                        .program()?
+                        .context("database is not initialized")?;
+                    return module
+                        .update_database_with_environment_options_and_deployment(
+                            program,
+                            module.info.clone(),
+                            policy,
+                            environment,
+                            deployment,
+                        )
+                        .await;
+                }
+                host.update_module(
+                    this.runtimes.clone(),
+                    program,
+                    policy,
+                    environment,
+                    deployment,
+                    this.energy_monitor.clone(),
+                    this.unregister_fn(registration.clone(), database_identity),
+                    registration,
+                    this.db_cores.take(),
+                    &mut database_committed,
+                )
+                .await
+            })
             .catch_unwind()
             .await;
             let update_result = match update_result {
@@ -859,6 +940,26 @@ impl HostController {
             .as_ref()
             .map(|Host { module, .. }| module.borrow().clone())
             .ok_or(NoSuchModule)
+    }
+
+    /// Run a publication operation while retaining the controller write lock.
+    /// Cancellation of the caller cannot release the lock before the operation finishes.
+    pub async fn with_publication_lock<T, F, Fut>(&self, replica_id: u64, operation: F) -> anyhow::Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(ModuleHost) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = anyhow::Result<T>> + Send + 'static,
+    {
+        let guard = self
+            .acquire_write_lock(replica_id)
+            .await
+            .map_err(|_| anyhow::anyhow!("unable to lock database for publication"))?;
+        let module = guard.as_ref().ok_or(NoSuchModule)?.module.borrow().clone();
+        tokio::spawn(async move {
+            let _guard = guard;
+            operation(module).await
+        })
+        .await?
     }
 
     /// Subscribe to updates of the [`ModuleHost`] identified by `replica_id`,
@@ -1167,15 +1268,15 @@ fn repair_stale_view_backing_tables_on_launch(launched: &LaunchedModule) -> anyh
 /// return an error.
 ///
 /// Admission, including unchanged programs and idempotent deployment retries,
-/// is serialized inside the migration transaction. Every accepted publication
-/// carries a complete replacement environment, even for unchanged programs.
+/// is serialized inside the migration transaction. Environment mutations resolve
+/// against the current stored values only after admission succeeds.
 async fn update_module(
     db: &RelationalDB,
     module: &ModuleHost,
     program: Program,
     old_module_info: Arc<ModuleInfo>,
     policy: MigrationPolicy,
-    environment: std::collections::BTreeMap<String, String>,
+    environment: spacetimedb_lib::environment::EnvironmentUpdate,
     deployment: Option<DeploymentCommit>,
 ) -> anyhow::Result<UpdateDatabaseResult> {
     let addr = db.database_identity();
@@ -1184,7 +1285,7 @@ async fn update_module(
         Some(stored) => {
             info!("publishing `{}` from {} to {}", addr, stored, program.hash);
             module
-                .update_database_with_environment_and_deployment(
+                .update_database_with_environment_options_and_deployment(
                     program,
                     old_module_info,
                     policy,
@@ -1558,7 +1659,7 @@ impl Host {
         runtimes: Arc<HostRuntimes>,
         program: Program,
         policy: MigrationPolicy,
-        environment: std::collections::BTreeMap<String, String>,
+        environment: spacetimedb_lib::environment::EnvironmentUpdate,
         deployment: Option<DeploymentCommit>,
         energy_monitor: Arc<dyn EnergyMonitor>,
         on_panic: impl Fn() + Send + Sync + 'static,
@@ -1865,6 +1966,9 @@ where
     V8HeapMetrics::remove_all_metric_label_values_for_database(db);
 
     let _ = WORKER_METRICS.v8_request_queue_length.remove_label_values(db);
+    let _ = WORKER_METRICS
+        .scheduler_active_scheduled_functions
+        .remove_label_values(db);
     let _ = DB_METRICS.http_response_size_bytes.remove_label_values(db);
 }
 

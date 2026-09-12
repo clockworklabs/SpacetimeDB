@@ -9,6 +9,10 @@ use std::collections::BTreeMap;
 pub struct PublishBody {
     pub program_bytes: Option<Bytes>,
     pub environment: BTreeMap<String, String>,
+    pub environment_remove: Vec<String>,
+    pub environment_replace: bool,
+    pub expected_module_version: Option<spacetimedb_lib::Hash>,
+    pub environment_only: bool,
 }
 
 async fn bounded_body(request: Request, limit: usize) -> Result<Bytes, Response> {
@@ -47,15 +51,31 @@ impl<S: Send + Sync> FromRequest<S> for PublishBody {
         if envelope {
             let request = PublishRequest::decode(&bytes)
                 .map_err(|_| (StatusCode::BAD_REQUEST, "invalid publish request body").into_response())?;
+            if request.module.as_ref().is_some_and(|module| module.is_empty()) {
+                return Err((StatusCode::BAD_REQUEST, "module artifact must not be empty").into_response());
+            }
+            let environment_only = request.module.is_none();
             Ok(Self {
-                program_bytes: (!request.module.is_empty()).then_some(request.module.into()),
+                program_bytes: request.module.map(Into::into),
                 environment: request.environment,
+                environment_remove: request.environment_remove,
+                environment_replace: request.environment_replace,
+                expected_module_version: request
+                    .expected_module_version
+                    .map(spacetimedb_lib::Hash::from_hex)
+                    .transpose()
+                    .map_err(|_| (StatusCode::BAD_REQUEST, "invalid expected module version").into_response())?,
+                environment_only,
             })
         } else {
-            // An absent reset body retains the program, but never retains env values.
+            // An empty legacy reset body retains the program; reset clears all data.
             Ok(Self {
                 program_bytes: (!bytes.is_empty()).then_some(bytes),
                 environment: BTreeMap::new(),
+                environment_remove: Vec::new(),
+                environment_replace: false,
+                expected_module_version: None,
+                environment_only: false,
             })
         }
     }
@@ -90,8 +110,9 @@ mod tests {
         assert!(empty.program_bytes.is_none());
         assert!(empty.environment.is_empty());
         let input = PublishRequest {
-            module: vec![1, 2, 3],
+            module: Some(vec![1, 2, 3]),
             environment: BTreeMap::from([("TOKEN".into(), "雪\0".into())]),
+            ..Default::default()
         };
         let request = Request::builder()
             .header(header::CONTENT_TYPE, CONTENT_TYPE)
@@ -99,10 +120,11 @@ mod tests {
             .unwrap();
         let extracted = PublishBody::from_request(request, &()).await.unwrap();
         assert_eq!(extracted.environment, input.environment);
-        assert_eq!(extracted.program_bytes.unwrap(), input.module);
+        assert_eq!(extracted.program_bytes.unwrap(), input.module.unwrap());
         let reset = PublishRequest {
-            module: vec![],
+            module: None,
             environment: input.environment,
+            ..Default::default()
         };
         let request = Request::builder()
             .header(header::CONTENT_TYPE, CONTENT_TYPE)
@@ -111,6 +133,26 @@ mod tests {
         let extracted = PublishBody::from_request(request, &()).await.unwrap();
         assert!(extracted.program_bytes.is_none());
         assert_eq!(extracted.environment, reset.environment);
+    }
+
+    #[tokio::test]
+    async fn empty_artifact_is_rejected_but_omission_is_environment_only() {
+        for (body, accepted) in [(r#"{"module":""}"#, false), (r#"{}"#, true)] {
+            let request = Request::builder()
+                .header(header::CONTENT_TYPE, CONTENT_TYPE)
+                .body(Body::from(body))
+                .unwrap();
+            match PublishBody::from_request(request, &()).await {
+                Ok(body) => {
+                    assert!(accepted);
+                    assert!(body.environment_only);
+                }
+                Err(error) => {
+                    assert!(!accepted);
+                    assert_eq!(error.status(), StatusCode::BAD_REQUEST);
+                }
+            }
+        }
     }
 
     #[tokio::test]

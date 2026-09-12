@@ -42,6 +42,8 @@ pub enum EnvironmentSnapshotError {
     NotCaptured,
     #[error("required container environment keys are missing: {0:?}")]
     MissingKeys(Vec<String>),
+    #[error("container environment key is not declared: {0:?}")]
+    UndeclaredKey(String),
     #[error("container environment does not satisfy startup limits")]
     InvalidEnvironment,
     #[error("container environment snapshot capacity exhausted")]
@@ -210,15 +212,45 @@ fn lookup(
         return Err(EnvironmentSnapshotError::ScopeConflict);
     }
     if !valid_uuid(record.receipt.capture_receipt)
-        || !record
+        || record
+            .selected_values
+            .windows(2)
+            .any(|entries| entries[0].key >= entries[1].key)
+        || record
             .selected_values
             .iter()
-            .map(|entry| &entry.key)
-            .eq(scope.env_keys.iter())
+            .any(|entry| scope.env_keys.binary_search(&entry.key).is_err())
     {
         return Err(EnvironmentSnapshotError::CorruptMetadata);
     }
     Ok(Some(record))
+}
+
+/// Check the final store before committing a container publication. Only keys
+/// explicitly selected by the container are process environment inputs.
+pub(crate) fn validate_publication_values(
+    spec: &ContainerSpec,
+    schema: &spacetimedb_lib::environment::EnvironmentSchema,
+    stored: &BTreeMap<String, String>,
+) -> Result<(), EnvironmentSnapshotError> {
+    let mut selected = BTreeMap::new();
+    let mut missing = Vec::new();
+    for key in &spec.env_keys {
+        let declaration = schema
+            .get(key)
+            .ok_or_else(|| EnvironmentSnapshotError::UndeclaredKey(key.clone()))?;
+        match stored.get(key) {
+            Some(value) => {
+                selected.insert(key.clone(), value.clone());
+            }
+            None if !declaration.optional => missing.push(key.clone()),
+            None => {}
+        }
+    }
+    if !missing.is_empty() {
+        return Err(EnvironmentSnapshotError::MissingKeys(missing));
+    }
+    validate_values(spec, &selected)
 }
 
 fn validate_values(spec: &ContainerSpec, values: &BTreeMap<String, String>) -> Result<(), EnvironmentSnapshotError> {
@@ -263,17 +295,13 @@ pub fn capture(
         return Err(EnvironmentSnapshotError::Capacity);
     }
     let mut values = BTreeMap::new();
-    let mut missing = Vec::new();
+    // Publication admission validates selected declarations and required values.
+    // The exact committed publication above fences this snapshot; absent optional
+    // values are omitted rather than becoming an empty process environment value.
     for key in &scope.env_keys {
-        match environment::get(tx, key).map_err(|_| EnvironmentSnapshotError::Storage)? {
-            Some(value) => {
-                values.insert(key.clone(), value);
-            }
-            None => missing.push(key.clone()),
+        if let Some(value) = environment::get(tx, key).map_err(|_| EnvironmentSnapshotError::Storage)? {
+            values.insert(key.clone(), value);
         }
-    }
-    if !missing.is_empty() {
-        return Err(EnvironmentSnapshotError::MissingKeys(missing));
     }
     validate_values(&spec, &values)?;
     let receipt = EnvironmentSnapshotReceipt {

@@ -32,6 +32,8 @@ fn request() -> PublishRequest {
         creation: None,
         image_source: None,
         environment: BTreeMap::new(),
+        environment_remove: Vec::new(),
+        environment_replace: false,
     }
 }
 
@@ -163,4 +165,36 @@ fn optional_publication_uuid_is_a_string_or_null_and_not_an_integer() {
     let mut value = value;
     value["manifest"]["manifest"]["envelope"]["expected_last_operation"] = 17.into();
     assert!(PublishRequest::decode(&serde_json::to_vec(&value).unwrap()).is_err());
+}
+
+#[test]
+fn environment_mutation_intent_roundtrips_and_conflicts_are_rejected() {
+    let mut input = request();
+    input.environment.insert("UNDECLARED".into(), "secret-marker".into());
+    input.environment_remove = vec!["OPTIONAL".into()];
+    let encoded = serde_json::to_vec(&input).unwrap();
+    let decoded = PublishRequest::decode(&encoded).unwrap();
+    assert_eq!(decoded, input);
+    input.environment_replace = true;
+    assert!(input.validate_structure().is_err());
+    input.environment_replace = false;
+    input.environment_remove = vec!["UNDECLARED".into()];
+    assert!(input.validate_structure().is_err());
+    input.environment_remove = vec!["OPTIONAL".into(), "OPTIONAL".into()];
+    assert!(input.validate_structure().is_err());
+}
+
+#[test]
+fn managed_hash_json_uses_little_endian_integer_encoding() {
+    let hash = crate::Hash::from_byte_array(std::array::from_fn(|index| index as u8));
+    assert_eq!(
+        hash.to_string(),
+        "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    );
+    assert_eq!(
+        serde_json::to_string(&hash).unwrap(),
+        "\"0x1f1e1d1c1b1a191817161514131211100f0e0d0c0b0a09080706050403020100\""
+    );
+    let one = crate::Hash::from_u256(1u64.into());
+    assert_eq!(serde_json::to_string(&one).unwrap(), "\"0x1\"");
 }

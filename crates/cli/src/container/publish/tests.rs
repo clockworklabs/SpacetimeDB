@@ -138,6 +138,8 @@ impl Fixture {
         let module_artifact = empty_module_artifact();
         let request = PublishRequest {
             environment: Default::default(),
+            environment_remove: Vec::new(),
+            environment_replace: false,
             manifest: PreparedDeploymentManifest::V1(PreparedDeploymentManifestV1 {
                 deployment: envelope.resolve(None, &Default::default()).unwrap(),
                 envelope,

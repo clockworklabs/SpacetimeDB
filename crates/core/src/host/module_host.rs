@@ -741,6 +741,16 @@ fn init_database_inner(
                     .with_context(|| format!("failed to create row-level security for table `{table_id}`: `{sql}`",))?;
             }
 
+            if let Some(spec) = deployment
+                .as_ref()
+                .and_then(|request| request.deployment.current().container.as_ref())
+            {
+                crate::db::container_environment::validate_publication_values(
+                    spec,
+                    module_def.environment(),
+                    &environment,
+                )?;
+            }
             crate::db::environment::replace(stdb, tx, module_def.environment(), &environment)?;
             stdb.set_initialized(tx, program)?;
 
@@ -3504,6 +3514,24 @@ impl ModuleHost {
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
         environment: std::collections::BTreeMap<String, String>,
+        deployment: Option<DeploymentCommit>,
+    ) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        self.update_database_with_environment_options_and_deployment(
+            program,
+            old_module_info,
+            policy,
+            environment.into(),
+            deployment,
+        )
+        .await
+    }
+
+    pub async fn update_database_with_environment_options_and_deployment(
+        &self,
+        program: Program,
+        old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
+        environment: spacetimedb_lib::environment::EnvironmentUpdate,
         deployment: Option<DeploymentCommit>,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
         call_instance!(

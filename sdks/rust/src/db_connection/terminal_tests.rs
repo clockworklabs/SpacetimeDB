@@ -1,7 +1,7 @@
 use super::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-#[path = "../../tests/connect_disconnect_client/src/module_bindings/mod.rs"]
+#[path = "../../tests/procedure-client/src/module_bindings/mod.rs"]
 pub(super) mod bindings;
 use bindings::RemoteModule;
 
@@ -13,7 +13,7 @@ impl InModule for Args {
 }
 impl From<Args> for bindings::Reducer {
     fn from(_: Args) -> Self {
-        Self::IdentityConnected
+        Self::ScheduleProc
     }
 }
 
@@ -177,7 +177,7 @@ fn retained_table_and_subscription_handles_cannot_retain_callbacks_after_termina
     let disconnects = Arc::new(AtomicUsize::new(0));
     let drops = Arc::new(AtomicUsize::new(0));
     let (context, _incoming) = fixture(&runtime, disconnects);
-    let table = context.get_table::<bindings::Connected>("connected");
+    let table = context.get_table::<bindings::MyTable>("my_table");
     let capture = DropProbe {
         context: context.clone(),
         drops: drops.clone(),
@@ -191,7 +191,7 @@ fn retained_table_and_subscription_handles_cannot_retain_callbacks_after_termina
     };
     let registered = crate::subscription::SubscriptionBuilder::<RemoteModule>::new(&context)
         .on_applied(move |_| drop(capture))
-        .subscribe("SELECT * FROM connected");
+        .subscribe("SELECT * FROM my_table");
     context.frame_tick().unwrap();
     let capture = DropProbe {
         context: context.clone(),
@@ -199,7 +199,7 @@ fn retained_table_and_subscription_handles_cannot_retain_callbacks_after_termina
     };
     let queued = crate::subscription::SubscriptionBuilder::<RemoteModule>::new(&context)
         .on_applied(move |_| drop(capture))
-        .subscribe("SELECT * FROM connected");
+        .subscribe("SELECT * FROM my_table");
     context.end_connection(None);
     assert_eq!(drops.load(Ordering::SeqCst), 3);
     assert!(crate::spacetime_module::SubscriptionHandle::is_ended(&registered));
@@ -217,7 +217,7 @@ fn retained_table_and_subscription_handles_cannot_retain_callbacks_after_termina
     };
     let subscription = crate::subscription::SubscriptionBuilder::<RemoteModule>::new(&context)
         .on_applied(move |_| drop(capture))
-        .subscribe("SELECT * FROM connected");
+        .subscribe("SELECT * FROM my_table");
     assert_eq!(drops.load(Ordering::SeqCst), 5);
     assert!(crate::spacetime_module::SubscriptionHandle::is_ended(&subscription));
     assert_eq!(table.iter().count(), 0);
@@ -236,7 +236,7 @@ fn cancelling_before_initial_message_releases_registered_subscription_without_ca
     };
     let subscription = crate::subscription::SubscriptionBuilder::<RemoteModule>::new(&context)
         .on_applied(move |_| drop(capture))
-        .subscribe("SELECT * FROM connected");
+        .subscribe("SELECT * FROM my_table");
     context.frame_tick().unwrap();
     context.disconnect().unwrap();
     context.frame_tick().unwrap();

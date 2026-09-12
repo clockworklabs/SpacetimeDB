@@ -312,23 +312,39 @@ fn container_environment_full_scope_conflicts_and_missing_ready_record_fail_clos
 }
 
 #[test]
-fn container_environment_missing_empty_invalid_and_capacity_are_atomic_and_redacted() {
+fn container_environment_optional_unset_is_omitted_and_capture_retry_stays_immutable() {
     let db = TestDB::in_memory().unwrap();
     let scope = setup(&db, vec!["A".into(), "B".into()]);
     db.with_auto_commit(Workload::ForTests, |tx| -> anyhow::Result<_> {
-        environment::replace(
-            &db,
-            tx,
-            &environment_schema(&scope.env_keys),
-            &BTreeMap::from([("A".into(), "before".into())]),
-        )?;
+        let values = spacetimedb_lib::environment::EnvironmentUpdate {
+            remove: vec!["B".into()],
+            ..Default::default()
+        }
+        .resulting_values(&environment::snapshot(tx)?)?;
+        let spec = admitted_spec(&db, tx, &scope)?;
+        validate_publication_values(&spec, &environment_schema(&scope.env_keys), &values)?;
+        environment::replace(&db, tx, &environment_schema(&scope.env_keys), &values)?;
         Ok(())
     })
     .unwrap();
+    let receipt = tx(&db, |tx| capture(&db, tx, &scope)).unwrap();
+    let values = db
+        .with_read_only(Workload::ForTests, |state| read(&db, state, &receipt))
+        .unwrap();
+    assert_eq!(values.selected_values, BTreeMap::from([("A".into(), "before".into())]));
+    assert_eq!(tx(&db, |tx| capture(&db, tx, &scope)).unwrap(), receipt);
     assert_eq!(
-        tx(&db, |tx| capture(&db, tx, &scope)),
-        Err(EnvironmentSnapshotError::MissingKeys(vec!["B".into()]))
+        db.with_read_only(Workload::ForTests, |state| read(&db, state, &receipt))
+            .unwrap()
+            .selected_values,
+        values.selected_values
     );
+}
+
+#[test]
+fn container_environment_empty_invalid_and_capacity_are_atomic_and_redacted() {
+    let db = TestDB::in_memory().unwrap();
+    let scope = setup(&db, vec!["A".into(), "B".into()]);
     db.with_auto_commit(Workload::ForTests, |tx| -> anyhow::Result<_> {
         environment::replace(
             &db,
@@ -576,4 +592,23 @@ fn snapshots_bind_committed_operation_and_ignore_newer_aborted_attempt_epoch() {
             .selected_values["A"],
         "new-secret"
     );
+}
+
+#[test]
+fn publication_checks_only_declared_selected_values_in_the_final_store() {
+    let db = TestDB::in_memory().unwrap();
+    let scope = setup(&db, vec!["A".into()]);
+    db.with_read_only(Workload::ForTests, |tx| {
+        let spec = admitted_spec(&db, tx, &scope).unwrap();
+        let schema = environment_schema(&scope.env_keys);
+        let mut values = BTreeMap::from([("A".into(), "ready".into()), ("UNSELECTED".into(), "nul\0allowed-in-store".into())]);
+        validate_publication_values(&spec, &schema, &values).unwrap();
+        assert!(matches!(validate_publication_values(&spec, &EnvironmentSchema::default(), &values), Err(EnvironmentSnapshotError::UndeclaredKey(key)) if key == "A"));
+        values.insert("A".into(), "invalid\0selected".into());
+        assert!(matches!(validate_publication_values(&spec, &schema, &values), Err(EnvironmentSnapshotError::InvalidEnvironment)));
+        values.remove("A");
+        validate_publication_values(&spec, &schema, &values).unwrap();
+        let required = EnvironmentSchema::new(vec![EnvironmentDeclaration { name: "A".into(), constraint: EnvironmentConstraint::AnyString, optional: false }]).unwrap();
+        assert!(matches!(validate_publication_values(&spec, &required, &values), Err(EnvironmentSnapshotError::MissingKeys(keys)) if keys == ["A"]));
+    });
 }

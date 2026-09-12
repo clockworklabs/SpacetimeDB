@@ -4,7 +4,7 @@ use super::super::{
 };
 use super::*;
 use crate::{credentials::container_tests as fixture, DbContext, Table};
-use bindings::{identity_connected, ConnectedTableAccess};
+use bindings::{schedule_proc, MyTableTableAccess};
 use futures::{SinkExt, StreamExt};
 use spacetimedb_client_api_messages::websocket::{
     common::{BsatnRowList, RowSizeHint},
@@ -130,7 +130,13 @@ async fn peer_with_close(
                     match bsatn::from_slice::<ws::ClientMessage>(&bytes).unwrap() {
                         ws::ClientMessage::Subscribe(subscribe) => {
                             current.subscriptions += 1;
-                            let row = bsatn::to_vec(&bindings::Connected { identity: sender }).unwrap();
+                            let row = bsatn::to_vec(&bindings::MyTable {
+                                field: bindings::ReturnStruct {
+                                    a: generation as u32,
+                                    b: "fixture".into(),
+                                },
+                            })
+                            .unwrap();
                             send(
                                 &mut socket,
                                 ws::ServerMessage::SubscribeApplied(ws::SubscribeApplied {
@@ -138,7 +144,7 @@ async fn peer_with_close(
                                     query_set_id: subscribe.query_set_id,
                                     rows: ws::QueryRows {
                                         tables: vec![ws::SingleTableRows {
-                                            table: "connected".into(),
+                                            table: "my_table".into(),
                                             rows: BsatnRowList::new(
                                                 RowSizeHint::RowOffsets(vec![0].into()),
                                                 row.into(),
@@ -247,13 +253,13 @@ async fn renewal_rebuilds_subscriptions_and_cache_without_replaying_calls() {
         builder.on_connect(move |conn, _, _| {
             // The first generation will receive a row before rotation. The
             // second must still start with an empty, newly allocated cache.
-            assert_eq!(conn.db.connected().count(), 0);
+            assert_eq!(conn.db.my_table().count(), 0);
             conn.subscription_builder()
                 .on_applied(move |ctx| {
-                    assert_eq!(ctx.db.connected().count(), 1);
+                    assert_eq!(ctx.db.my_table().count(), 1);
                     ready.send(info.generation).unwrap();
                 })
-                .subscribe("SELECT * FROM connected");
+                .subscribe("SELECT * FROM my_table");
             if info.generation == 1 {
                 struct Probe(Arc<AtomicUsize>);
                 impl Drop for Probe {
@@ -263,7 +269,7 @@ async fn renewal_rebuilds_subscriptions_and_cache_without_replaying_calls() {
                 }
                 let probe = Probe(captures);
                 conn.reducers
-                    .identity_connected_then(move |_, _| {
+                    .schedule_proc_then(move |_, _| {
                         let _ = &probe;
                         panic!("unconfirmed reducer outcome must remain unknown");
                     })

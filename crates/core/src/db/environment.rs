@@ -140,7 +140,7 @@ mod tests {
                 BTreeMap::new(),
                 BTreeMap::from([
                     ("REQUIRED".into(), "new".into()),
-                    ("UNKNOWN".into(), "secret-marker".into()),
+                    ("INVALID-NAME".into(), "secret-marker".into()),
                 ]),
                 BTreeMap::from([("REQUIRED".into(), "x".repeat(8193))]),
             ] {

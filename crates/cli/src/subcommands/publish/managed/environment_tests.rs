@@ -19,7 +19,7 @@ fn declared_module() -> deployment::system_empty::GeneratedModule {
 }
 
 #[tokio::test]
-async fn keep_resolves_program_bound_declarations_and_retains_complete_input() {
+async fn environment_only_keeps_components_and_retains_exact_mutation_intent() {
     let fixture = Fixture::new().await;
     let temporary = crate::container::publish::tests::temporary_directory();
     let module = declared_module();
@@ -45,7 +45,9 @@ async fn keep_resolves_program_bound_declarations_and_retains_complete_input() {
     ));
     let command = super::super::cli();
     let schema = super::super::build_publish_schema(&command).unwrap();
-    let args = command.try_get_matches_from(["publish", "--remove-container"]).unwrap();
+    let args = command
+        .try_get_matches_from(["publish", "--env-only", "--unset-env", "UNUSED"])
+        .unwrap();
     let target = CommandConfig::new(
         &schema,
         HashMap::from([("env".into(), json!({KEY:"first-secret"}))]),
@@ -81,6 +83,12 @@ async fn keep_resolves_program_bound_declarations_and_retains_complete_input() {
         request.manifest.current().envelope.module_action,
         ModuleAction::Keep
     ));
+    assert!(matches!(
+        request.manifest.current().envelope.container_action,
+        ContainerAction::Keep
+    ));
+    assert_eq!(request.environment_remove, ["UNUSED"]);
+    assert!(!request.environment_replace);
     assert!(journal.record.uploads.is_empty());
     assert!(!std::fs::read_to_string(journal.directory().join("publication.json"))
         .unwrap()
@@ -103,16 +111,16 @@ async fn keep_resolves_program_bound_declarations_and_retains_complete_input() {
 }
 
 #[tokio::test]
-async fn precompiled_exact_bytes_validate_required_invalid_unknown_and_explicit_values_before_mutation() {
+async fn precompiled_inputs_validate_supplied_constraints_without_requiring_complete_values() {
     let fixture = Fixture::new().await;
     let temporary = crate::container::publish::tests::temporary_directory();
     let module = declared_module();
     let wasm = temporary.path().join("exact.wasm");
     std::fs::write(&wasm, &module.bytes).unwrap();
     for (n, values, valid) in [
-        (0, json!({}), false),
+        (0, json!({}), true),
         (1, json!({KEY:"secret-invalid-value"}), false),
-        (2, json!({KEY:"first-secret", "UNKNOWN":"secret-unknown-value"}), false),
+        (2, json!({KEY:"first-secret", "UNKNOWN":"secret-unknown-value"}), true),
         (3, json!({KEY:"first-secret"}), true),
     ] {
         let command = super::super::cli();
@@ -141,7 +149,9 @@ async fn precompiled_exact_bytes_validate_required_invalid_unknown_and_explicit_
                 std::fs::read(journal.directory().join("module.blob")).unwrap(),
                 module.bytes.as_ref()
             );
-            assert_eq!(journal.record.request().unwrap().environment[KEY], "first-secret");
+            if n != 0 {
+                assert_eq!(journal.record.request().unwrap().environment[KEY], "first-secret");
+            }
         } else {
             let error = format!("{:#}", result.err().unwrap());
             assert!(!error.contains("secret-invalid-value") && !error.contains("secret-unknown-value"));

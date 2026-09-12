@@ -348,7 +348,17 @@ async fn prepare_request(
     cancel: CancellationToken,
 ) -> Result<Journal> {
     let args = target.matches();
-    let image = if let Some(declaration) = target.container() {
+    let environment_options = super::EnvironmentOptions::from_args(args)?;
+    let environment_only = environment_options.only;
+    ensure!(
+        !environment_only || prior.is_some(),
+        "--env-only requires an existing database"
+    );
+    ensure!(
+        !environment_only || (!args.get_flag("remove_module") && !args.get_flag("remove_container")),
+        "--env-only cannot remove a module or container"
+    );
+    let image = if let Some(declaration) = target.container().filter(|_| !environment_only) {
         let (os, architecture) = args
             .get_one::<String>("container_platform")
             .context("publishing a container requires --container-platform linux/amd64 or linux/arm64")?
@@ -372,14 +382,16 @@ async fn prepare_request(
     } else {
         None
     };
-    let has_module = ["module_path", "wasm_file", "js_file"]
-        .iter()
-        .any(|key| target.is_from_cli(key) || target.get_config_value(key).is_some());
+    let has_module = !environment_only
+        && ["module_path", "wasm_file", "js_file"]
+            .iter()
+            .any(|key| target.is_from_cli(key) || target.get_config_value(key).is_some());
     ensure!(
         !(has_module && args.get_flag("remove_module")),
         "module configuration and --remove-module cannot both select this target"
     );
-    let module = if !args.get_flag("remove_module")
+    let module = if !environment_only
+        && !args.get_flag("remove_module")
         && (has_module || (target.container().is_none() && !args.get_flag("remove_container")))
     {
         Some(load_module(target, config_dir).await?)
@@ -388,6 +400,7 @@ async fn prepare_request(
     };
     let declared_environment = target
         .container()
+        .filter(|_| !environment_only)
         .map(|config| config.environment_schema())
         .transpose()?
         .flatten();
@@ -453,7 +466,7 @@ async fn prepare_request(
     } else {
         bail!("publication has no selected module artifact")
     };
-    // Resolve a complete replacement without consulting the stored values.
+    // Resolve supplied overrides without downloading stored secret values.
     // For Keep, authenticated schema metadata is tied to the observed program;
     // a changed committed operation is rejected by the later pair CAS.
     let schema = if let Some((kind, bytes)) = &module {
@@ -464,6 +477,7 @@ async fn prepare_request(
             .await?
     };
     let environment = environment::resolve(&schema, target.get_config_value("env"), |key| std::env::var_os(key))?;
+    environment_options.validate_values(&environment.values)?;
     print!("{}", environment.display());
     let migration_policy = if let Some(prior) = prior {
         if let Some((kind, bytes)) = &module {
@@ -505,6 +519,8 @@ async fn prepare_request(
     };
     let request = PublishRequest {
         environment: environment.values,
+        environment_remove: environment_options.remove,
+        environment_replace: environment_options.replace,
         manifest: PreparedDeploymentManifest::V1(PreparedDeploymentManifestV1 {
             envelope,
             deployment,

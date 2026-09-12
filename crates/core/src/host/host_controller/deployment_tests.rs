@@ -238,8 +238,10 @@ impl InitialEnvironmentSource for DeclaredInitialEnvironment {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn declared_builtin_publishes_complete_environment_atomically_and_reopens() {
-    use spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration, EnvironmentSchema};
+async fn declared_builtin_merges_environment_atomically_and_reopens() {
+    use spacetimedb_lib::environment::{
+        EnvironmentConstraint, EnvironmentDeclaration, EnvironmentSchema, EnvironmentUpdate,
+    };
     use std::collections::BTreeMap;
 
     let schema = EnvironmentSchema::new(vec![
@@ -328,7 +330,7 @@ async fn declared_builtin_publishes_complete_environment_atomically_and_reopens(
         let module = launched.module;
         assert_eq!(module.info.module_def.environment(), &schema);
         assert!(module.info.module_def.tables().next().is_none());
-        let assert_state = |module: &ModuleHost, expected: &BTreeMap<String, String>, receipts| {
+        let assert_state = |module: &ModuleHost, expected: &BTreeMap<String, String>, receipts, epoch| {
             assert!(empty_module::matches_program(
                 &descriptor,
                 &module.relational_db().program().unwrap().unwrap()
@@ -337,15 +339,16 @@ async fn declared_builtin_publishes_complete_environment_atomically_and_reopens(
                 assert_eq!(db::environment::snapshot(tx).unwrap(), *expected);
                 assert_eq!(current_deployment(tx).unwrap().unwrap().0, revision);
                 let cursor = db::deployment::current_publication(tx).unwrap().unwrap();
-                assert_eq!(cursor.publication_epoch, receipts);
+                assert_eq!(cursor.publication_epoch, epoch);
                 assert_eq!(tx.table_row_count(ST_DEPLOYMENT_OPERATION_ID), Some(receipts));
             });
         };
-        assert_state(&module, &initial_values, 1);
+        assert_state(&module, &initial_values, 1, 1);
         let replacement = BTreeMap::from([
             ("REQUIRED".into(), "replaced".into()),
-            ("MODE".into(), "paused".into()),
+            ("MODE".into(), "ready".into()),
             ("FIXED".into(), "constant".into()),
+            ("UNDECLARED".into(), "stored".into()),
         ]);
         let publish_request = |sequence, previous_operation| {
             let mut publication = request(&program, sequence, true);
@@ -356,6 +359,7 @@ async fn declared_builtin_publishes_complete_environment_atomically_and_reopens(
         };
         let publication = publish_request(2, initial.operation_id);
         let accepted_operation = publication.operation_id;
+        let accepted_publication = publication.clone();
         module
             .relational_db()
             .with_auto_commit(Workload::Internal, |tx| {
@@ -363,13 +367,21 @@ async fn declared_builtin_publishes_complete_environment_atomically_and_reopens(
             })
             .unwrap();
         let updated = controller
-            .update_module_host_with_environment_and_deployment(
+            .update_module_host_with_environment_options_and_deployment(
                 database.clone(),
                 HostType::Wasm,
                 database.id,
                 program.bytes.clone(),
                 MigrationPolicy::Compatible,
-                replacement.clone(),
+                EnvironmentUpdate {
+                    values: BTreeMap::from([
+                        ("REQUIRED".into(), "replaced".into()),
+                        ("UNDECLARED".into(), "stored".into()),
+                    ]),
+                    remove: vec!["OPTIONAL".into()],
+                    replace: false,
+                },
+                None,
                 Some(publication),
             )
             .await
@@ -384,7 +396,7 @@ async fn declared_builtin_publishes_complete_environment_atomically_and_reopens(
         let offset = tx_offset.await.unwrap();
         durable_offset.unwrap().wait_for(offset).await.unwrap();
         let module = controller.get_module_host(database.id).await.unwrap();
-        assert_state(&module, &replacement, 2);
+        assert_state(&module, &replacement, 2, 2);
 
         // The same normalized deployment revision does not authorize replacing
         // ENV prepared against the earlier committed operation.
@@ -407,13 +419,18 @@ async fn declared_builtin_publishes_complete_environment_atomically_and_reopens(
             )
             .await
             .is_err());
-        assert_state(&controller.get_module_host(database.id).await.unwrap(), &replacement, 2);
+        assert_state(
+            &controller.get_module_host(database.id).await.unwrap(),
+            &replacement,
+            2,
+            2,
+        );
 
         let mut invalid_sets = Vec::new();
         let mut invalid = replacement.clone();
         invalid.remove("REQUIRED");
         invalid_sets.push(invalid);
-        for (key, value) in [("MODE", "unknown"), ("FIXED", "changed"), ("UNDECLARED", "denied")] {
+        for (key, value) in [("MODE", "unknown"), ("FIXED", "changed"), ("INVALID-NAME", "denied")] {
             let mut invalid = replacement.clone();
             invalid.insert(key.into(), value.into());
             invalid_sets.push(invalid);
@@ -427,19 +444,24 @@ async fn declared_builtin_publishes_complete_environment_atomically_and_reopens(
                 })
                 .unwrap();
             assert!(controller
-                .update_module_host_with_environment_and_deployment(
+                .update_module_host_with_environment_options_and_deployment(
                     database.clone(),
                     HostType::Wasm,
                     database.id,
                     program.bytes.clone(),
                     MigrationPolicy::Compatible,
-                    invalid,
+                    EnvironmentUpdate {
+                        values: invalid,
+                        replace: true,
+                        ..Default::default()
+                    },
+                    None,
                     Some(publication),
                 )
                 .await
                 .is_err());
             let current = controller.get_module_host(database.id).await.unwrap();
-            assert_state(&current, &replacement, 2);
+            assert_state(&current, &replacement, 2, 2);
         }
         // The exact builtin bytes remain part of admission even though a valid
         // Wasm custom section would leave the extracted declarations unchanged.
@@ -464,14 +486,64 @@ async fn declared_builtin_publishes_complete_environment_atomically_and_reopens(
             )
             .await
             .is_err());
-        assert_state(&controller.get_module_host(database.id).await.unwrap(), &replacement, 2);
+        assert_state(
+            &controller.get_module_host(database.id).await.unwrap(),
+            &replacement,
+            2,
+            2,
+        );
+        let next = publish_request(9, accepted_operation);
+        module
+            .relational_db()
+            .with_auto_commit(Workload::Internal, |tx| {
+                install_publication_fence(tx, next.publication_epoch, next.operation_id)
+            })
+            .unwrap();
+        let later = controller
+            .update_module_host_with_environment_options_and_deployment(
+                database.clone(),
+                HostType::Wasm,
+                database.id,
+                program.bytes.clone(),
+                MigrationPolicy::Compatible,
+                EnvironmentUpdate::from(BTreeMap::from([("UNDECLARED".into(), "later".into())])),
+                None,
+                Some(next),
+            )
+            .await
+            .unwrap();
+        assert!(later.was_successful());
+        let mut replacement = replacement;
+        replacement.insert("UNDECLARED".into(), "later".into());
+        // Old exact retries must return the original receipt without reapplying
+        // old values over a newer committed environment.
+        let retry = controller
+            .update_module_host_with_environment_options_and_deployment(
+                database.clone(),
+                HostType::Wasm,
+                database.id,
+                program.bytes.clone(),
+                MigrationPolicy::Compatible,
+                EnvironmentUpdate::from(BTreeMap::from([("UNDECLARED".into(), "stored".into())])),
+                None,
+                Some(accepted_publication),
+            )
+            .await
+            .unwrap();
+        assert!(matches!(retry, UpdateDatabaseResult::DeploymentAlreadyCommitted { .. }));
+        assert_state(
+            &controller.get_module_host(database.id).await.unwrap(),
+            &replacement,
+            3,
+            9,
+        );
         drop(module);
         controller.exit_module_host_and_join(database.id).await.unwrap();
         let reopened = controller
             .get_or_launch_module_host(database.clone(), database.id)
             .await
             .unwrap();
-        assert_state(&reopened, &replacement, 2);
+        assert_state(&reopened, &replacement, 3, 9);
         assert_eq!(storage.initial_lookups.load(Ordering::SeqCst), 1);
         assert_eq!(environment.loads.load(Ordering::SeqCst), 1);
     })

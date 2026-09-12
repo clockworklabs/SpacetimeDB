@@ -216,6 +216,39 @@ impl Host {
             .await
     }
 
+    pub async fn with_publication_lock<T, F, Fut>(&self, operation: F) -> anyhow::Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(ModuleHost) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = anyhow::Result<T>> + Send + 'static,
+    {
+        self.host_controller
+            .with_publication_lock(self.replica_id, operation)
+            .await
+    }
+
+    pub async fn update_with_environment_options(
+        &self,
+        database: Database,
+        host_type: HostType,
+        program_bytes: Box<[u8]>,
+        policy: MigrationPolicy,
+        environment: spacetimedb_lib::environment::EnvironmentUpdate,
+        expected_module_version: Option<spacetimedb_lib::Hash>,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.host_controller
+            .update_module_host_with_environment_options(
+                database,
+                host_type,
+                self.replica_id,
+                program_bytes,
+                policy,
+                environment,
+                expected_module_version,
+            )
+            .await
+    }
+
     pub async fn update_with_environment(
         &self,
         database: Database,
@@ -236,8 +269,31 @@ impl Host {
             .await
     }
 
-    /// Commit the complete environment and admitted deployment in one host transaction.
+    /// Apply environment mutations and the admitted deployment in one host transaction.
     #[allow(clippy::too_many_arguments)]
+    pub async fn update_with_environment_options_and_deployment(
+        &self,
+        database: Database,
+        host_type: HostType,
+        program_bytes: Box<[u8]>,
+        policy: MigrationPolicy,
+        environment: spacetimedb_lib::environment::EnvironmentUpdate,
+        deployment: spacetimedb::db::deployment::DeploymentCommit,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.host_controller
+            .update_module_host_with_environment_options_and_deployment(
+                database,
+                host_type,
+                self.replica_id,
+                program_bytes,
+                policy,
+                environment,
+                None,
+                Some(deployment),
+            )
+            .await
+    }
+
     pub async fn update_with_environment_and_deployment(
         &self,
         database: Database,
@@ -290,8 +346,11 @@ pub struct DatabaseDef {
     pub database_identity: Identity,
     /// The compiled program of the database module.
     pub program_bytes: Bytes,
-    /// Complete publish input, never persisted in the public Database record.
+    /// Supplied overrides, never persisted in the public Database record.
     pub environment: std::collections::BTreeMap<String, String>,
+    pub environment_remove: Vec<String>,
+    pub environment_replace: bool,
+    pub expected_module_version: Option<spacetimedb_lib::Hash>,
     /// The desired number of replicas the database shall have.
     ///
     /// If `None`, the edition default is used.
@@ -310,6 +369,8 @@ pub struct DatabaseResetDef {
     pub database_identity: Identity,
     pub program_bytes: Option<Bytes>,
     pub environment: std::collections::BTreeMap<String, String>,
+    pub environment_remove: Vec<String>,
+    pub environment_replace: bool,
     pub num_replicas: Option<NonZeroU8>,
     pub host_type: Option<HostType>,
 }
