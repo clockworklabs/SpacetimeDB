@@ -19,13 +19,8 @@
           "name": "kim"
         },
         {
-          "do": "recordNumber",
-          "actor": "buyer",
-          "testid": "item-stock",
-          "in": {
-            "testid": "item-card",
-            "contains": "Bluetooth Speaker"
-          },
+          "do": "dbRecordStock",
+          "item": "Bluetooth Speaker",
           "as": "speaker-before-control"
         },
         {
@@ -61,13 +56,8 @@
           "outcome": "accepted"
         },
         {
-          "do": "expectNumber",
-          "actor": "buyer",
-          "testid": "item-stock",
-          "in": {
-            "testid": "item-card",
-            "contains": "Bluetooth Speaker"
-          },
+          "do": "dbExpectStock",
+          "item": "Bluetooth Speaker",
           "relativeTo": "speaker-before-control",
           "plus": -1
         }
@@ -115,13 +105,8 @@
               "routeProvenBy": "buyer"
             },
             {
-              "do": "expectNumber",
-              "actor": "buyer",
-              "testid": "item-stock",
-              "in": {
-                "testid": "item-card",
-                "contains": "Bluetooth Speaker"
-              },
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
               "relativeTo": "speaker-before-control",
               "plus": -1
             }

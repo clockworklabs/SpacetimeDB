@@ -8,6 +8,8 @@ From the signed-out page, show the sign-up inputs, `signup-toggle`, or
 must reveal the sign-up inputs or `signup-toggle`. That control must reveal the
 sign-up form. No other navigation is required to reach it.
 Show the sign-in inputs or `signin-toggle` on the signed-out page.
+While signed in, show `signout` directly or reveal it by clicking `current-user`.
+No other navigation is required to reach sign-out.
 
 | Element ID | Observable element |
 |---|---|

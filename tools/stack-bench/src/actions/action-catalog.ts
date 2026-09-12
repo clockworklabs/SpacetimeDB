@@ -94,7 +94,7 @@ const CATEGORY_POLICY = {
 
 const ACTION_CAPABILITY_OVERRIDES: Partial<Record<ActionId, readonly string[]>> = {
   dbRecordStock: ['database-read', 'browser-observation'],
-  dbExpectStock: ['database-read', 'browser-observation'],
+  dbExpectStock: ['database-read', 'browser-observation', 'clock'],
   callAction: ['actors', 'named-actions', 'transport-observation'],
   callConcurrently: ['actors', 'named-actions'],
   expectCallOutcomes: ['actors', 'named-actions'],

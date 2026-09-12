@@ -4,7 +4,7 @@
   "track": "ecommerce",
   "name": "Storefront and warehouse — restock during purchases",
   "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
-  "note": "Draft: matching reference and mutation qualification is pending. An ordinary purchase and restock are setup prerequisites. The race checks stored total stock, each buyer order, and UI agreement. Concurrent client dispatch does not prove overlapping server execution.",
+  "note": "Draft: matching reference and mutation qualification is pending. Setup proves ordinary purchase and restock from stored state and fresh views. The race checks stored stock, fresh UI state and durable buyer orders. Concurrent dispatch does not prove overlapping server execution.",
   "features": [
     {
       "id": 202,
@@ -57,7 +57,14 @@
             "contains": "Bluetooth Speaker"
           }
         },
-        {"do":"click","actor":"a","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+        {
+          "do": "click",
+          "actor": "a",
+          "testid": "overlay-close",
+          "ifAvailable": true,
+          "unlessVisible": "order-item",
+          "within": 1000
+        },
         {
           "do": "click",
           "actor": "a",
@@ -88,6 +95,24 @@
           "actor": "a",
           "name": "r1",
           "readyTestid": "current-user"
+        },
+        {
+          "do": "reload",
+          "actor": "admin",
+          "settleMs": 1000
+        },
+        {
+          "do": "ensureSignedIn",
+          "actor": "admin",
+          "name": "admin",
+          "password": "stackbench-admin-2026",
+          "exact": true,
+          "readyTestid": "current-user"
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "admin-link"
         },
         {
           "do": "expectNumber",
@@ -146,9 +171,29 @@
           }
         },
         {
-          "do": "wait",
+          "do": "dbExpectStock",
+          "item": "Bluetooth Speaker",
+          "relativeTo": "stored-before-control",
+          "plus": 5,
+          "within": 8000
+        },
+        {
+          "do": "reload",
           "actor": "admin",
-          "ms": 4000
+          "settleMs": 1000
+        },
+        {
+          "do": "ensureSignedIn",
+          "actor": "admin",
+          "name": "admin",
+          "password": "stackbench-admin-2026",
+          "exact": true,
+          "readyTestid": "current-user"
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "admin-link"
         },
         {
           "do": "expectNumber",
@@ -161,6 +206,11 @@
           "relativeTo": "warehouse-before",
           "plus": 5,
           "within": 8000
+        },
+        {
+          "do": "reload",
+          "actor": "a",
+          "settleMs": 1000
         },
         {
           "do": "expectNumber",
@@ -280,6 +330,11 @@
               "plus": 2
             },
             {
+              "do": "reload",
+              "actor": "a",
+              "settleMs": 1000
+            },
+            {
               "do": "expectNumber",
               "actor": "a",
               "testid": "item-stock",
@@ -292,17 +347,19 @@
               "within": 10000
             },
             {
-              "do": "reload",
-              "actor": "a",
-              "settleMs": 1000
-            },
-            {
               "do": "ensureSignedIn",
               "actor": "a",
               "name": "r1",
               "readyTestid": "current-user"
             },
-            {"do":"click","actor":"a","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {
+              "do": "click",
+              "actor": "a",
+              "testid": "overlay-close",
+              "ifAvailable": true,
+              "unlessVisible": "order-item",
+              "within": 1000
+            },
             {
               "do": "click",
               "actor": "a",
@@ -328,7 +385,14 @@
               "name": "r2",
               "readyTestid": "current-user"
             },
-            {"do":"click","actor":"b","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {
+              "do": "click",
+              "actor": "b",
+              "testid": "overlay-close",
+              "ifAvailable": true,
+              "unlessVisible": "order-item",
+              "within": 1000
+            },
             {
               "do": "click",
               "actor": "b",
@@ -354,7 +418,14 @@
               "name": "r3",
               "readyTestid": "current-user"
             },
-            {"do":"click","actor":"c","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {
+              "do": "click",
+              "actor": "c",
+              "testid": "overlay-close",
+              "ifAvailable": true,
+              "unlessVisible": "order-item",
+              "within": 1000
+            },
             {
               "do": "click",
               "actor": "c",

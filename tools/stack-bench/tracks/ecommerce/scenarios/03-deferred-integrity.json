@@ -3,7 +3,7 @@
   "track": "ecommerce",
   "level": 3,
   "name": "Deferred-work integrity",
-  "note": "Each check owns all state used by its exact-once or stock assertion.",
+  "note": "Draft: restock assertions now read stored stock and require matching qualification. Timing and restart steps are unchanged.",
   "features": [
     {
       "id": 311,
@@ -13,14 +13,14 @@
         { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
         { "do": "click", "actor": "admin", "testid": "admin-link" },
         { "do": "click", "actor": "admin", "testid": "restocks-link", "ifAvailable": true },
-        { "do": "recordNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "as": "before" },
+        { "do": "dbRecordStock", "item": "Air Purifier", "as": "before" },
         { "do": "fill", "actor": "admin", "testid": "schedule-restock-item", "text": "Air Purifier" },
         { "do": "fill", "actor": "admin", "testid": "schedule-restock-warehouse", "text": "East" },
         { "do": "fill", "actor": "admin", "testid": "schedule-restock-qty", "text": "5" },
         { "do": "fill", "actor": "admin", "testid": "schedule-restock-delay", "text": "20" },
         { "do": "click", "actor": "admin", "testid": "schedule-restock-submit" },
         { "do": "expect", "actor": "admin", "testid": "pending-restock-item", "count": 1, "within": 10000 },
-        { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "relativeTo": "before", "plus": 0 },
+        { "do": "dbExpectStock", "item": "Air Purifier", "relativeTo": "before", "plus": 0 },
         { "do": "restartBackend", "settleMs": 15000 },
         { "do": "reload", "actor": "watcher", "settleMs": 3000 }
       ],
@@ -33,11 +33,11 @@
           "statedBy": "Restarting the backend cannot apply a restock more than once.",
           "steps": [
             { "do": "reload", "actor": "watcher", "settleMs": 2000 },
-            { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "relativeTo": "before", "plus": 5, "within": 45000 },
+            { "do": "dbExpectStock", "item": "Air Purifier", "relativeTo": "before", "plus": 5, "within": 45000 },
             { "do": "restartBackend", "settleMs": 15000 },
             { "do": "reload", "actor": "watcher", "settleMs": 3000 },
             { "do": "wait", "actor": "watcher", "ms": 15000 },
-            { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "relativeTo": "before", "plus": 5 }
+            { "do": "dbExpectStock", "item": "Air Purifier", "relativeTo": "before", "plus": 5 }
           ]
         }
       ]

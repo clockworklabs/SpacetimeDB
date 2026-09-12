@@ -8,6 +8,79 @@ import { executeAction } from '../src/actions/action-contract.js';
 import { stableElementSelector } from '../src/actions/element-selector.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { gradeFeature } from '../grader/grade.js';
+import type { Browser } from 'playwright';
+
+test('the real grader distinguishes an app prerequisite failure from its unexecuted assertion', async () => {
+  const browser = await chromium.launch({headless:true});
+  try {
+    const routedBrowser = {newContext: async () => {
+      const context = await browser.newContext();
+      await context.route('http://prerequisite.test/**', route => route.fulfill({contentType:'text/html',
+        body:'<span id="stock">100</span><span id="target">works</span>'}));
+      return context;
+    }} as unknown as Browser;
+    for (const quantity of [100,99]) {
+      const scenario = compileScenarioDefinition({schemaVersion:1,track:'ecommerce',level:1,name:'prerequisite',
+        features:[{id:1,name:'probe',actors:['buyer'],setup:[{do:'expectNumber',actor:'buyer',testid:'stock',equals:quantity,within:200}],
+          criteria:[{id:'target',desc:'target works',points:1,steps:[{do:'expect',actor:'buyer',testid:'target',contains:'works'}]}]}]});
+      const result = await gradeFeature(routedBrowser,scenario.features[0]!,{
+        url:'http://prerequisite.test',level:1,headed:false,selectedCheckKeys:[],nullControl:false,
+      },{runId:'prerequisite',roomName:name=>name,url:'http://prerequisite.test',actions:[],spacetime:null,nullControl:false});
+      assert.equal(result.setupEvidence.status, quantity===100?'passed':'failed', result.setupEvidence.summary ?? 'setup');
+      assert.equal(result.criteria[0]!.evidence.status, quantity===100?'passed':'blocked');
+      assert.equal(result.score,quantity===100?1:0);
+      if(quantity===99)assert.deepEqual(result.criteria[0]!.evidence.actions,[]);
+    }
+  } finally {await browser.close();}
+});
+
+test('signout supports a direct button and account dialog but rejects missing or broken behavior', async () => {
+  const feature = compileScenarioDefinition(JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+    'tracks/ecommerce/scenarios/01-account-signout.json'), 'utf8'))).features[0]!;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    for (const layout of ['direct', 'account-dialog', 'missing', 'broken', 'wrong-account']) {
+      await page.setContent(`
+        <button id="current-user" onclick="document.querySelector('dialog').showModal()">ann</button>
+        ${layout === 'direct' ? '<button id="signout">Sign out</button>' : ''}
+        <dialog>${layout !== 'direct' && layout !== 'missing' ? '<button id="signout">Sign out</button>' : ''}</dialog>
+        <form hidden><input id="signin-username"><input id="signin-password"><button id="signin-submit">Sign in</button></form>
+        <script>(() => {
+          const out = document.querySelector('#signout');
+          if (out) out.onclick = () => {
+            if ('${layout}' === 'broken') return;
+            document.querySelector('dialog').close();
+            document.querySelector('#current-user').hidden = true;
+            out.hidden = true; document.querySelector('form').hidden = false;
+          };
+          document.querySelector('form').onsubmit = e => {
+            e.preventDefault();
+            const current = document.querySelector('#current-user');
+            current.textContent = '${layout}' === 'wrong-account' ? 'someone-else' : document.querySelector('#signin-username').value;
+            current.hidden = false;
+          };
+        })();</script>`);
+      const actor = {page, loc: (id: string, options: {contains?: string} = {}) => {
+        const loc = page.locator(stableElementSelector(id));
+        return (options.contains ? loc.filter({hasText:options.contains}) : loc).first();
+      }};
+      const service = {defaultWithin: 200, scopedUser: (name: string) => name, expand: (text: string) => text,
+        testId: stableElementSelector, sleep: (ms: number) => new Promise(resolve => setTimeout(resolve, Math.min(ms, 10)))};
+      let status = 'passed';
+      for (const step of feature.criteria[0]!.steps) {
+        const result = await executeAction(ACTION_REGISTRY, step.do,
+          {...step, ...(step.testid ? {within:200} : {})}, {
+            capabilities: {actors:{get:()=>actor}, 'browser-interaction':service, 'browser-observation':service},
+          });
+        status = result.status;
+        if (status !== 'passed') break;
+      }
+      assert.equal(status, ['direct','account-dialog'].includes(layout) ? 'passed' : 'failed', layout);
+    }
+  } finally { await browser.close(); }
+});
 
 test('saved views work after confirmation or closing and still reject missing content', async () => {
   const cases = [

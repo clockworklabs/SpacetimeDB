@@ -66,8 +66,8 @@ function nodePoints(state: ScoringState, nodeId: string): PointTotals {
     total + (!blocked && checks[check.id] === 'pass' ? check.points : 0), 0);
   const failedPoints = node.gradingChecks.reduce((total, check) =>
     total + (!blocked && checks[check.id] === 'fail' ? check.points : 0), 0);
-  const blockedPoints = blocked
-    ? node.gradingChecks.reduce((total, check) => total + check.points, 0) : 0;
+  const blockedPoints = node.gradingChecks.reduce((total, check) =>
+    total + (blocked || checks[check.id] === 'blocked' ? check.points : 0), 0);
   const gradedPoints = passedPoints + failedPoints;
   const availablePoints = node.gradingChecks.reduce((total, check) => total + check.points, 0);
   return { passedPoints, failedPoints, gradedPoints, blockedPoints,
@@ -105,7 +105,7 @@ export interface DependencyCompletionBreakdown {
 function dependencyOutcomes(state: ScoringState): Map<string, CheckStatus> {
   return new Map<string, CheckStatus>(state.definition.nodes.flatMap(node => {
     const current = dependencyNodeState(state, node.id);
-    return node.gradingChecks.map(check => [check.id, current.status === 'blocked' ? 'blocked'
+    return node.gradingChecks.map(check => [check.id, current.status === 'blocked' || current.checks[check.id] === 'blocked' ? 'blocked'
       : current.checks[check.id] === 'pass' ? 'passed'
       : current.checks[check.id] === 'fail' ? 'failed' : 'unmeasured'] as const);
   }));

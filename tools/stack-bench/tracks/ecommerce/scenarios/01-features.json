@@ -51,6 +51,7 @@
           "desc": "signing out and back in returns the same account",
           "points": 1,
           "steps": [
+            { "do": "click", "actor": "shopper", "testid": "current-user", "unlessVisible": "signout" },
             { "do": "click", "actor": "shopper", "testid": "signout" },
             { "do": "expect", "actor": "shopper", "testid": "signup-username", "within": 6000 },
             { "do": "signIn", "actor": "shopper", "name": "ann" },

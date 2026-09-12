@@ -1,4 +1,4 @@
-import { validateCheckEvidence } from '../evidence/check-evidence.js';
+import { validateCheckEvidence, evidenceIsMeasured } from '../evidence/check-evidence.js';
 import type { CheckEvidence } from '../evidence/check-evidence.js';
 import { validateArtifact } from '../evidence/artifacts.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
@@ -73,7 +73,7 @@ interface GradeConversionOptions {
 
 interface ProgressionCheckResult {
   id: string;
-  outcome: 'pass' | 'fail' | 'not-run';
+  outcome: 'pass' | 'fail' | 'blocked' | 'not-run';
 }
 
 interface ProgressionNodeResult {
@@ -363,7 +363,7 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
     return found;
   };
   const nonMeasured = expectedIds.map(id => checkEvidence(id))
-    .filter(evidence => !['passed', 'failed'].includes(evidence.status));
+    .filter(evidence => !evidenceIsMeasured(evidence));
   if (nonMeasured.length > 0) {
     const harness = nonMeasured.some(evidence => evidence.status === 'harness_failure');
     return inconclusive(attemptId, run.id, sourceSha256, selectionSha256, evidence,
@@ -396,6 +396,7 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
     checks: expected.filter(check => check.nodeId === nodeId).map(check => ({
       id: check.id,
       outcome: checkEvidence(check.id).status === 'passed' ? 'pass'
+        : checkEvidence(check.id).status === 'blocked' ? 'blocked'
         : checkEvidence(check.id).status === 'failed' ? 'fail' : 'not-run',
     })),
   })) };

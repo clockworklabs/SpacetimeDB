@@ -75,8 +75,9 @@ export function checkpointChecks(selected: Array<{ id: string; points: number }>
   for (const suite of Object.values(bundle.suites ?? {})) {
     for (const feature of suite.features ?? []) for (const check of feature.criteria ?? []) {
       if (!check.stableKey || !measured.has(check.stableKey)) continue;
-      const disposition = evidenceDisposition(criterionEvidence(check));
-      outcomes.set(check.stableKey, disposition.passed ? 'passed'
+      const evidence = criterionEvidence(check);
+      const disposition = evidenceDisposition(evidence);
+      outcomes.set(check.stableKey, evidence.status === 'blocked' ? 'blocked' : disposition.passed ? 'passed'
         : disposition.outcomeKind === 'app_failure' ? 'failed' : 'unmeasured');
     }
   }

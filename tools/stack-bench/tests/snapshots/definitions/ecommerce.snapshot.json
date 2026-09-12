@@ -900,6 +900,12 @@
                   {
                     "actor": "shopper",
                     "do": "click",
+                    "testid": "current-user",
+                    "unlessVisible": "signout"
+                  },
+                  {
+                    "actor": "shopper",
+                    "do": "click",
                     "testid": "signout"
                   },
                   {

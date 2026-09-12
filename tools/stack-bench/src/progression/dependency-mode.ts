@@ -46,7 +46,8 @@ const getNodeState = dependencyNodeState;
 const HASH = /^[a-f0-9]{64}$/;
 const NODE_STATUSES = new Set(['locked', 'active', 'working', 'passed', 'failed', 'blocked'] as const);
 const TERMINAL_OUTCOMES = new Set(['passed', 'partial', 'failed'] as const);
-type CheckOutcome = 'pass' | 'fail' | 'not-run';
+type CheckOutcome = 'pass' | 'fail' | 'blocked' | 'not-run';
+const failedCheck = (outcome: unknown): boolean => outcome === 'fail' || outcome === 'blocked';
 // A check that has not been measured yet stays null; an application abort
 // leaves non-current checks at their prior value.
 type StoredCheckOutcome = Exclude<CheckOutcome, 'not-run'> | null;
@@ -241,12 +242,12 @@ function allChecksPass(state: DependencyState, node: CompiledProgressionNode): b
 }
 
 function hasFailedCheck(state: DependencyState, node: CompiledProgressionNode): boolean {
-  return Object.values(getNodeState(state, node.id).checks).includes('fail');
+  return Object.values(getNodeState(state, node.id).checks).some(failedCheck);
 }
 
 function hasFailedFeatureCheck(state: DependencyState, node: CompiledProgressionNode): boolean {
   return node.gradingChecks.some(check => check.role === 'feature'
-    && getNodeState(state, node.id).checks[check.id] === 'fail');
+    && failedCheck(getNodeState(state, node.id).checks[check.id]));
 }
 
 function isUsable(status: ProgressionNodeState['status']): boolean {
@@ -350,7 +351,7 @@ function hasConclusiveAttempt(state: DependencyState): boolean {
 function selectedPromptNodeIds(state: DependencyState): string[] {
   const nodeIds = currentPromptNodeIds(state);
   const failed = nodeIds.filter(nodeId =>
-    Object.values(getNodeState(state, nodeId).checks).includes('fail'));
+    Object.values(getNodeState(state, nodeId).checks).some(failedCheck));
   if (failed.length > 0 && hasConclusiveAttempt(state)) {
     return state.definition.repair.selection === 'batch' ? failed : [failed[0]!];
   }
@@ -418,7 +419,7 @@ function guaranteeRequirementsPass(state: DependencyState,
     const outcomes = actual.get(ownerId);
     const featureOutcomes = owner.gradingChecks.filter(item => item.role === 'feature')
       .map(item => outcomes?.get(item.id));
-    if (featureOutcomes.includes('fail')) return false;
+    if (featureOutcomes.some(failedCheck)) return false;
     if (featureOutcomes.every(outcome => outcome === 'pass')) return true;
     return isUsable(getNodeState(state, ownerId).status);
   });
@@ -655,7 +656,7 @@ function assertState(input: unknown,
     if (actualChecks.length !== expectedChecks.size
       || actualChecks.some(checkId => !expectedChecks.has(checkId))
       || actualChecks.some(checkId =>
-        ![null, 'pass', 'fail'].includes(nodeState.checks[checkId] ?? null))) {
+        ![null, 'pass', 'fail', 'blocked'].includes(nodeState.checks[checkId] ?? null))) {
       throw new Error(`invalid dependency mode check state for node ${node.id}`);
     }
   }
@@ -739,8 +740,8 @@ function validateConclusiveResult(state: DependencyState,
         throw new Error(`result includes unselected check ${check.id} for ${nodeResult.id}`);
       }
       if (checks.has(check.id)) throw new Error(`result repeats check ${check.id}`);
-      if (!['pass', 'fail', 'not-run'].includes(check.outcome)) {
-        throw new Error(`result check ${check.id} outcome must be pass, fail, or not-run`);
+      if (!['pass', 'fail', 'blocked', 'not-run'].includes(check.outcome)) {
+        throw new Error(`result check ${check.id} outcome must be pass, fail, blocked, or not-run`);
       }
       checks.set(check.id, check.outcome);
     }
@@ -767,8 +768,8 @@ function failureFingerprint(state: DependencyState, nodeIds: string[]): string {
   const failedChecks = nodeIds.map(nodeId => ({
     nodeId,
     checks: Object.entries(getNodeState(state, nodeId).checks)
-      .filter(([, outcome]) => outcome === 'fail')
-      .map(([checkId]) => checkId)
+      .filter(([, outcome]) => failedCheck(outcome))
+      .map(([checkId, outcome]) => outcome === 'blocked' ? `${checkId}:blocked` : checkId)
       .sort(),
   })).filter(node => node.checks.length > 0);
   return createHash('sha256').update(JSON.stringify(failedChecks)).digest('hex');
@@ -922,7 +923,7 @@ function applyDependencyResult(inputState: DependencyState, inputResult: Depende
     const outcomes = actual.get(nodeId);
     if (!outcomes) throw new Error(`result is missing node ${nodeId}`);
     const nodeState = getNodeState(state, nodeId);
-    const hasFailedCheck = [...outcomes.values()].includes('fail');
+    const hasFailedCheck = [...outcomes.values()].some(failedCheck);
     if (!hasFailedCheck || !['active', 'working', 'passed'].includes(nodeState.status)) continue;
     failedPromptNodeIds.add(nodeId);
   }
@@ -1093,7 +1094,7 @@ export function nextDependencyAction(inputState: ProgressionState): ProgressionA
   const prompt = selectedPromptWork(state);
   const grading = selectedGradingWork(state);
   const repairing = prompt.nodeIds.some(nodeId =>
-    Object.values(getNodeState(state, nodeId).checks).includes('fail'));
+    Object.values(getNodeState(state, nodeId).checks).some(failedCheck));
   const featureIds = prompt.nodeIds;
   const actionLevel = repairing || state.definition.workSelection === 'all-at-once' ? state.level
     : Math.max(...featureIds.map(nodeId => getDefinitionNode(state.definition, nodeId).level));

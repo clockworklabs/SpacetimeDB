@@ -80,6 +80,7 @@ test('stock observations compare authoritative quantities and cannot use a missi
   const recorded = new Map<string, number>();
   let quantity = 20;
   const capabilities = {
+    clock: { sleep },
     'browser-observation': { recorded },
     'database-read': { getStock: async () => ({ backend: 'postgres', item: 'Keyboard', quantity }) },
   };
@@ -104,13 +105,31 @@ test('stock observations compare authoritative quantities and cannot use a missi
   assert.equal((await run({ do: 'dbExpectStock', item: 'Keyboard', equals: 18 }, disabled)).status, 'inconclusive');
 });
 
+test('bounded stock reads observe deferred writes and reject missing, repeated, or inaccessible writes', async () => {
+  for (const [values, status] of [[[100, 105], 'passed'], [[100], 'failed'], [[110], 'failed']] as const) {
+    let reads = 0;
+    const result = await run({ do: 'dbExpectStock', item: 'Keyboard', equals: 105, within: 20 }, {
+      'browser-observation': { recorded: new Map() },
+      'database-read': { getStock: async () => ({ quantity: values[Math.min(reads++, values.length - 1)] }) },
+      clock: { sleep: (ms: number) => new Promise(resolve => setTimeout(resolve, ms)) },
+    });
+    assert.equal(result.status, status);
+  }
+  const result = await run({ do: 'dbExpectStock', item: 'Keyboard', equals: 105, within: 20 }, {
+    'browser-observation': { recorded: new Map() },
+    'database-read': { getStock: async () => { throw new Error('database unavailable'); } },
+    clock: { sleep },
+  });
+  assert.equal(result.status, 'harness_failure');
+});
+
 test('cancellation probes reject a refund to the wrong warehouse even when total stock is restored', async () => {
   const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/02-self-contained.json');
   const feature = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source })
     .features.find(feature => feature.id === 202)!;
   for (const criterion of feature.criteria) {
     const stock = new Map([['East', 50], ['West', 50]]);
-    const capabilities = { 'browser-observation': { recorded: new Map<string, number>() },
+    const capabilities = { clock: { sleep }, 'browser-observation': { recorded: new Map<string, number>() },
       'database-read': { getStock: async (input: { item: string; warehouse?: string }) => ({
         backend: 'postgres', item: input.item,
         quantity: input.warehouse ? stock.get(input.warehouse)! : [...stock.values()].reduce((a, b) => a + b, 0),

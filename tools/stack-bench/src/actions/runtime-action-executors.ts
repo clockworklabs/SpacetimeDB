@@ -154,6 +154,7 @@ interface SetStockInput {
 }
 
 interface ReadStockInput {
+  readonly within?: number;
   readonly item: string;
   readonly warehouse?: string;
   readonly as?: string;
@@ -170,7 +171,7 @@ async function dbRecordStock({ input, capabilities }: ActionArguments<ReadStockI
   return { ...value, key: input.as };
 }
 
-async function dbExpectStock({ input, capabilities }: ActionArguments<ReadStockInput>) {
+async function dbExpectStock({ input, capabilities, signal }: ActionArguments<ReadStockInput>) {
   const base = input.relativeTo === undefined ? undefined
     : capabilities['browser-observation'].recorded.get(input.relativeTo);
   if (input.relativeTo !== undefined && base === undefined) {
@@ -183,7 +184,12 @@ async function dbExpectStock({ input, capabilities }: ActionArguments<ReadStockI
   if (!Object.keys(expected).length || Object.values(expected).some(value => !Number.isSafeInteger(value))) {
     throw new Error('expected stock is not an exact integer');
   }
-  const value = await capabilities['database-read'].getStock(input);
+  const deadline = Date.now() + (input.within ?? 0);
+  let value = await capabilities['database-read'].getStock(input);
+  while (!numberMatches(value.quantity, expected) && Date.now() < deadline) {
+    await capabilities.clock.sleep(Math.min(250, deadline - Date.now()), signal);
+    value = await capabilities['database-read'].getStock(input);
+  }
   if (!numberMatches(value.quantity, expected)) fail('number-mismatch', {
     control: `stored stock for ${input.item}${input.warehouse ? ` in ${input.warehouse}` : ''}`,
     observed: value.quantity, expected,

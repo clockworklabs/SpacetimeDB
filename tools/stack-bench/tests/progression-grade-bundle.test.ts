@@ -140,6 +140,17 @@ test('grade bundle conversion rejects incomplete, duplicate, or changed grading 
     action(), conversion), /totals do not match/);
 });
 
+test('a measured app prerequisite failure remains blocked through grade conversion', () => {
+  const input = bundle();
+  input.suites.application.features[0]!.criteria[1]!.evidence = createCheckEvidence({
+    status: 'blocked', phase: 'setup', code: 'application_failure',
+    summary: 'Blocked by a failed prerequisite: stock did not change', startedAtMs: 1, completedAtMs: 2,
+  });
+  const result = gradeBundleToProgressionResult(artifact(input), action(), conversion);
+  assert.equal(result.outcome, 'conclusive');
+  if (result.outcome === 'conclusive') assert.equal(result.nodes[1]!.checks[0]!.outcome, 'blocked');
+});
+
 test('grade bundle conversion binds the artifact owner, source, stack, recipe, and nodes', () => {
   const stale = artifact();
   stale.attempt.parentId = 'different-run';

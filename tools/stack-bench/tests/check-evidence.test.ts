@@ -38,6 +38,15 @@ test('check evidence validates typed status', () => {
   assert.equal(evidenceIsMeasured(value), false);
 });
 
+test('blocked records the failed prerequisite without claiming the target assertion ran', () => {
+  const value = evidence({ status: 'blocked', phase: 'setup' });
+  assert.equal(evidenceIsMeasured(value), true, 'the app prerequisite failure is attributable');
+  assert.equal(evidenceIsRepairable(value), true);
+  assert.equal(evidencePassed(value), false);
+  assert.equal(evidenceDisposition(value).label, 'BLOCKED');
+  assert.throws(() => evidence({ status: 'blocked', phase: 'assertion' }), /setup failure/);
+});
+
 test('criterion verdict ignores wording when typed evidence exists', () => {
   const criterion = {
     id: 'works',
@@ -70,6 +79,7 @@ test('one immutable status table owns verdict, outcome and repair semantics', ()
     }])), {
     passed: { label: 'PASS', outcomeKind: 'passed', passed: true, measured: true, repairable: false },
     failed: { label: 'FAIL', outcomeKind: 'app_failure', passed: false, measured: true, repairable: true },
+    blocked: { label: 'BLOCKED', outcomeKind: 'app_failure', passed: false, measured: true, repairable: true },
     inconclusive: { label: 'INCONCLUSIVE', outcomeKind: 'inconclusive', passed: false,
       measured: false, repairable: false },
     harness_failure: { label: 'HARNESS FAILURE', outcomeKind: 'harness_failure', passed: false,

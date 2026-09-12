@@ -8,6 +8,7 @@ export const CHECK_EVIDENCE_SCHEMA_VERSION = 2;
 export const CHECK_EVIDENCE_STATUSES = Object.freeze([
   'passed',
   'failed',
+  'blocked',
   'inconclusive',
   'harness_failure',
 ] as const);
@@ -94,6 +95,12 @@ export const CHECK_EVIDENCE_DISPOSITIONS = Object.freeze({
   }),
   failed: Object.freeze({
     status: 'failed', label: 'FAIL', outcomeKind: 'app_failure', passed: false,
+    measured: true, applicationFailure: true, repairable: true,
+  }),
+  // The app's prerequisite failure is measured and repairable. The target
+  // assertion was not reached; it receives no credit and is reported separately.
+  blocked: Object.freeze({
+    status: 'blocked', label: 'BLOCKED', outcomeKind: 'app_failure', passed: false,
     measured: true, applicationFailure: true, repairable: true,
   }),
   inconclusive: Object.freeze({
@@ -203,6 +210,9 @@ export function validateCheckEvidence(
     throw new Error(formatZodError(parsed.error, at));
   }
   const evidence = parsed.data;
+  if (evidence.status === 'blocked' && evidence.phase !== 'setup') {
+    throw new Error(`${at}: blocked checks must identify a setup failure`);
+  }
   structured(evidence.observation, `${at}.observation`);
   structured(evidence.expected, `${at}.expected`);
   validateTiming(evidence.timing, `${at}.timing`);

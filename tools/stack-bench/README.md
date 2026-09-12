@@ -19,6 +19,14 @@ behavior, supports optional bounded repairs, and keeps the evidence behind every
 Only compatible attempts with validated evidence become comparison data. Provider failures,
 harness failures, and incomplete measurements remain separate.
 
+If an app prerequisite fails, the dependent checks are reported as **blocked**.
+They receive no credit, but this is not evidence that their target assertions failed.
+The prerequisite observation remains available for repair. Harness and provider
+failures remain unmeasured and cannot become app failures. The purchase-session,
+restock-race, and scheduled-restock probes use stored state or fresh reads for setup;
+separate live-update checks keep their live observers. These revised probes remain
+draft until matching reference and defect-control qualification is complete.
+
 ## Run modes
 
 - **Sequential:** complete each selected level before starting the next. Earlier

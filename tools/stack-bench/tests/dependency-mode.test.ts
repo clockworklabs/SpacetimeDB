@@ -13,7 +13,7 @@ import type { CheckCategory } from '../src/composition/definition-compiler.js';
 import type { ProgressionState } from '../src/progression/progression-state.js';
 import type { RepairPlanInput } from '../src/progression/repair-plan.js';
 
-type Outcome = 'pass' | 'fail' | 'not-run';
+type Outcome = 'pass' | 'fail' | 'blocked' | 'not-run';
 type Outcomes = Record<string, Outcome | Record<string, Outcome>>;
 
 interface FixtureNode {
@@ -134,6 +134,22 @@ function guaranteeFixture(): FixtureDefinition {
   });
   return definition;
 }
+
+test('blocked prerequisites retain zero credit, repair eligibility and separate completion counts', () => {
+  let state = progressionEngine.initialize(fixture());
+  state = progressionEngine.recordResult(state, grade(state, 'blocked-setup', {
+    accounts: 'blocked', catalog: 'pass',
+  }));
+  const score = progressionEngine.score(state) as DependencyScore;
+  assert.equal(score.completion.failed, 0);
+  assert(score.completion.blocked >= 2);
+  assert.equal(score.nodes.find(n => n.id === 'accounts')!.blockedPoints, 3);
+  assert.equal(action(state).type, 'repair');
+  state = progressionEngine.recordResult(state, repairedGrade(state, 'fixed-setup', {
+    accounts: 'pass', catalog: 'pass',
+  }));
+  assert.equal((progressionEngine.score(state) as DependencyScore).nodes.find(n => n.id === 'accounts')!.passedPoints, 3);
+});
 
 test('a deferred guarantee runs and remains repairable without blocking descendants', () => {
   let state = progressionEngine.initialize(guaranteeFixture());

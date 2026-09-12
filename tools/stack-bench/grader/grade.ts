@@ -771,9 +771,10 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
       const points = criterion.points ?? 1;
       const evidence = buildCheckEvidence({ ctx, phase: 'setup', startedAtMs: initializationStartedAtMs,
         failure: error, summary: `browser setup failed: ${reason}`, actions: [] });
+      if (evidence.status === 'failed') evidence.status = 'blocked';
       result.criteria.push({ id: criterion.id, desc: criterion.desc, points, evidence,
         ...authored(criterion) });
-      result.inconclusive = [...(result.inconclusive ?? []),
+      if (!evidenceIsMeasured(evidence)) result.inconclusive = [...(result.inconclusive ?? []),
         { id: criterion.id, points, status: evidence.status, code: evidence.code,
           phase: evidence.phase, summary: evidence.summary }];
     }
@@ -813,11 +814,12 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
     result.setupEvidence = buildCheckEvidence({ ctx, phase: 'setup', startedAtMs: setupStartedAtMs,
       failure: err, summary: why, attachments: screenshots });
     for (const c of feature.criteria) {
-      const base = why ? `setup failed: ${why}` : 'setup failed';
+      const base = why ? `Blocked by a failed prerequisite: ${why}` : 'Blocked by a failed prerequisite';
       const points = c.points ?? 1;
       const evidence = buildCheckEvidence({ ctx, phase: 'setup', startedAtMs: setupStartedAtMs,
         failure: err, summary: base, actions: [], sensitivity: result.setupEvidence.sensitivity,
         attachments: [{ kind: 'check-evidence', ref: 'feature.setupEvidence' }, ...screenshots] });
+      if (evidence.status === 'failed') evidence.status = 'blocked';
       const recorded = { id: c.id, desc: c.desc, points, evidence, ...authored(c) };
       result.criteria.push(recorded);
       if (!evidenceIsMeasured(evidence)) {

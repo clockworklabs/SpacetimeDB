@@ -9,7 +9,7 @@
   "requiresPacks": [],
   "conflictsWith": [],
   "capabilities": ["browser", "backend-lifecycle"],
-  "evidence": ["browser-observation"],
+  "evidence": ["browser-observation", "database-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 720000 },
   "task": {
     "requirements": [

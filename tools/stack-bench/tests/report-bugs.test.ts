@@ -21,7 +21,7 @@ test('repair reports can read an isolated grading directory', () => {
   assert.equal(args.out, join('/app', 'BUG_REPORT.md'));
 });
 
-type EvidenceStatus = 'passed' | 'failed' | 'inconclusive' | 'harness_failure';
+type EvidenceStatus = 'passed' | 'failed' | 'blocked' | 'inconclusive' | 'harness_failure';
 
 interface WriteGradeOptions {
   grading?: string;
@@ -279,7 +279,7 @@ test('setup feedback reports the failed control without claiming the later guara
     const evidence = createCheckEvidence({ status: 'failed', code: 'application_failure',
       phase: 'setup', startedAtMs: 1, completedAtMs: 2,
       finding: finding('control-missing', { control: 'item-stock', filtered: false }) });
-    writeGrade(root, 'failed', 'setup failed', { evidence,
+    writeGrade(root, 'blocked', 'setup failed', { evidence: { ...evidence, status: 'blocked' }, setupEvidence: evidence,
       statedBy: 'the server refuses an unauthenticated purchase' });
     const reported = spawnSync(process.execPath, [CLI, '--app', root], { encoding: 'utf8' });
     assert.equal(reported.status, 0, reported.stderr);

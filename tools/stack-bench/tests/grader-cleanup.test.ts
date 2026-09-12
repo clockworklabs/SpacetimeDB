@@ -80,7 +80,7 @@ test('navigation timeouts are inconclusive; connection refusal and crashes keep 
     }, { runId: 'navigation-test', roomName: name => name, url: 'http://app',
       actions: [], spacetime: null, nullControl: false });
     assert.equal(result.setupEvidence.status, expected);
-    assert.equal(result.criteria[0]!.evidence.status, expected);
+    assert.equal(result.criteria[0]!.evidence.status, expected === 'failed' ? 'blocked' : expected);
     assert.equal(result.criteria[0]!.evidence.phase, 'setup');
     assert.deepEqual(result.criteria[0]!.evidence.actions, []);
     assert.equal(closed, true);

@@ -158,6 +158,9 @@ export async function walk({ page, args, byStage, blocked, checkHook, results, u
   // Stage: admin — a separate account with its own area. Signing out and back
   // in as the seeded admin is the only way to reach it.
   if (ok && hasStage('admin', 'operations', 'fulfilment')) {
+    if (!await page.locator(tid('signout')).first().isVisible()) {
+      await click(page.locator(tid('current-user')).first(), 'open account menu');
+    }
     await click(page.locator(tid('signout')).first(), 'sign out');
     await page.waitForTimeout(1000);
     const toggle = page.locator(tid('signin-toggle')).first();

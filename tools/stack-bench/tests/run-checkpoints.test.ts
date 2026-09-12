@@ -4,6 +4,16 @@ import { createCheckEvidence } from '../src/evidence/check-evidence.js';
 import { checkpointChecks, checkpointSessions, completionCurve, recordRunCheckpoint } from '../src/evidence/run-checkpoints.js';
 import type { CheckpointRun } from '../src/evidence/run-checkpoints.js';
 
+test('checkpoint counts preserve blocked prerequisites without changing the denominator', () => {
+  const checks = checkpointChecks([{id:'target',points:4}], [], {
+    selection:{reportedChecks:['target']}, suites:{app:{features:[{criteria:[{
+      stableKey:'target', evidence:createCheckEvidence({status:'blocked',phase:'setup',
+        code:'application_failure',startedAtMs:1,completedAtMs:2}),
+    }]}]}},
+  });
+  assert.deepEqual(checks,[{id:'target',status:'blocked'}]);
+});
+
 const selected = [{ stableKey: 'feature.a', points: 9 }, { stableKey: 'feature.b', points: 1 },
   { stableKey: 'control', points: 0 }];
 const run = (): CheckpointRun => ({ condition: { requested: { levels: [{ selection: { scoredChecks: selected } }] } } });

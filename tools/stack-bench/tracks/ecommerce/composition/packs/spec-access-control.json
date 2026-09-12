@@ -14,7 +14,8 @@
   ],
   "evidence": [
     "browser-observation",
-    "server-response"
+    "server-response",
+    "database-observation"
   ],
   "budget": {
     "status": "bounded",
