@@ -21,7 +21,7 @@
   "checks": [
     { "id": "operator-transfer-authorization", "stableId": "operator-authorization", "source": "scenarios/02-strengthened.json", "feature": 201, "criteria": ["201a"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.inventory-operations-features"] },
     { "id": "operator-price-authorization", "stableId": "operator-authorization", "source": "scenarios/02-strengthened.json", "feature": 201, "criteria": ["201b"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.returns-pricing-features"] },
-    { "id": "operator-authorization-direct", "stableId": "operator-authorization", "source": "scenarios/02-server-actions.json", "feature": 201, "criteria": ["201c"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.operations-access-features"] },
-    { "id": "order-owner-direct", "stableId": "order-owner", "source": "scenarios/02-server-actions.json", "feature": 204, "criteria": ["204a"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.operations-access-features"] }
+    { "id": "operator-authorization-direct", "stableId": "operator-authorization", "source": "scenarios/02-server-actions.json", "feature": 201, "criteria": ["201c"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.operations-access-features", "ecommerce.feature.purchasing"] },
+    { "id": "order-owner-direct", "stableId": "order-owner", "source": "scenarios/02-server-actions.json", "feature": 204, "criteria": ["204a"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.operations-access-features", "ecommerce.feature.purchasing"] }
   ]
 }

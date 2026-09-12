@@ -64,7 +64,8 @@
       "criteria": [
         "1c"
       ],
-      "role": "feature"
+      "role": "feature",
+      "requiresFeatures": ["ecommerce.feature.purchasing"]
     }
   ]
 }

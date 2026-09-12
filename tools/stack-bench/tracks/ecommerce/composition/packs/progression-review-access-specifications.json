@@ -31,7 +31,7 @@
       "criteria": ["618a"],
       "role": "guarantee",
       "observations": ["requested", "unmentioned"],
-      "requiresFeatures": ["ecommerce.feature.reviews"]
+      "requiresFeatures": ["ecommerce.feature.reviews", "ecommerce.feature.purchasing"]
     }
   ]
 }
