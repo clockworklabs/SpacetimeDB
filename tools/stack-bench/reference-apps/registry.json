@@ -27,7 +27,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/mongodb",
-        "sourceSha256": "9dd093bb5e533e3f02c79326acdec1da1151c14dda55ffc9816c87e37504af93"
+        "sourceSha256": "fbc5f5ad093caff7d613243fa965be41329001d07bcb58a5996760331d7c6cf8"
       },
       "mutationManifests": [
         "grader/mutations/mongodb-ecommerce.json"
@@ -59,7 +59,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/postgres",
-        "sourceSha256": "787d5573f6e807db6068feba4314075f98de571f5337834f6132c7928ce2d8ca"
+        "sourceSha256": "cc51305269492eea469235748826f282dc86e0777b82f1e668eba523fcd2c335"
       },
       "mutationManifests": [
         "grader/mutations/postgres-ecommerce.json"
@@ -91,7 +91,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/spacetime",
-        "sourceSha256": "77b93a0422ca3a85105290ee5fa0cdd99993209bf3d99d8330f97eac4628d183"
+        "sourceSha256": "5254fc834c288c4b20205afe47004f00d7945efd5e902dda82250e55382b8cb9"
       },
       "mutationManifests": [
         "grader/mutations/spacetime-ecommerce.json"

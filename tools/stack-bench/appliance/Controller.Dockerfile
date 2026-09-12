@@ -12,7 +12,9 @@ WORKDIR /workspace
 RUN --mount=type=bind,target=/checkout \
     git -c safe.directory=/checkout -C /checkout archive HEAD | tar -x -C /workspace
 WORKDIR /workspace/tools/stack-bench
-RUN npm ci --ignore-scripts --no-audit --no-fund && npm run build
+RUN npm ci --ignore-scripts --no-audit --no-fund && npm run build \
+    && node dist/src/references/reference-fixtures.js \
+    && node dist/commands/check-calibration.js
 # Normalize checkout text as Git does on Windows; explicit .gitattributes still apply.
 RUN --mount=type=bind,target=/checkout \
     GIT_OPTIONAL_LOCKS=0 GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/checkout \
