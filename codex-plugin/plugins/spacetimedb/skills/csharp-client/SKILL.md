@@ -27,6 +27,7 @@ var conn = DbConnection.Builder()
     .WithUri("http://localhost:3000")
     .WithDatabaseName("my-database")
     .WithToken(savedToken)
+    .WithCompression(Compression.Brotli) // optional; this is the default
     .OnConnect((conn, identity, token) =>
     {
         Console.WriteLine($"Connected as: {identity}");
@@ -44,6 +45,8 @@ var conn = DbConnection.Builder()
     })
     .Build();
 ```
+
+Compression options are `Compression.Brotli`, `Compression.Gzip`, and `Compression.None`. The SDK uses Brotli when `WithCompression` is omitted.
 
 ## Event Loop (Critical)
 

@@ -106,6 +106,7 @@ Construct a `DbConnection` by calling `DbConnection.Builder()`, chaining configu
 | [WithUri method](#method-withuri)                       | Set the URI of the SpacetimeDB instance hosting the remote database.                 |
 | [WithDatabaseName method](#method-withdatabasename)     | Set the name or identity of the remote database.                                     |
 | [WithConfirmedReads method](#method-withconfirmedreads) | Enable or disable confirmed reads.                                                   |
+| [WithCompression method](#method-withcompression)       | Set the compression method for WebSocket messages.                                   |
 | [OnConnect callback](#callback-onconnect)               | Register a callback to run when the connection is successfully established.          |
 | [OnConnectError callback](#callback-onconnecterror)     | Register a callback to run if the connection is rejected or the host is unreachable. |
 | [OnDisconnect callback](#callback-ondisconnect)         | Register a callback to run when the connection ends.                                 |
@@ -148,6 +149,19 @@ Configure the connection to request confirmed reads.
 When enabled, the server will send query results only after they are confirmed to be durable, i.e. persisted to disk on one or more replicas depending on the replication settings of the database. When set to `false`, the server will send results as soon as transactions are committed in memory.
 
 If this method is not called, the server chooses the default.
+
+#### Method `WithCompression`
+
+```csharp
+class DbConnectionBuilder
+{
+    public DbConnectionBuilder<DbConnection> WithCompression(Compression compression);
+}
+```
+
+Configure compression for WebSocket messages. Available options are `Compression.Brotli`, `Compression.Gzip`, and `Compression.None`.
+
+If this method is not called, the SDK uses `Compression.Brotli`. Use `Compression.None` only when you need to debug raw message sizes or avoid compression overhead for very small local test payloads.
 
 #### Callback `OnConnect`
 
