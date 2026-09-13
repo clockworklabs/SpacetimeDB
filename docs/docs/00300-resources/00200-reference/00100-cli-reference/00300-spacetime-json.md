@@ -7,7 +7,7 @@ slug: /cli-reference/spacetime-json
 
 The `spacetime.json` file defines project-level configuration for the SpacetimeDB CLI. It eliminates repetitive CLI flags and enables multi-target workflows such as publishing multiple databases or generating bindings for multiple languages from a single project.
 
-Commands that read `spacetime.json` include [`spacetime publish`](/cli-reference#spacetime-publish), [`spacetime generate`](/cli-reference#spacetime-generate), and [`spacetime dev`](/cli-reference#spacetime-dev).
+Commands that read `spacetime.json` include [`spacetime publish`](/cli-reference#spacetime-publish), [`spacetime generate`](/cli-reference#spacetime-generate), and [`spacetime dev`](/cli-reference#spacetime-dev). Commands that operate on an already-published database, such as [`spacetime call`](/cli-reference#spacetime-call), [`spacetime sql`](/cli-reference#spacetime-sql), and [`spacetime logs`](/cli-reference#spacetime-logs), can resolve their database and server from matching config targets. Commands that operate on a server rather than a named config database, such as [`spacetime list`](/cli-reference#spacetime-list), [`spacetime rename`](/cli-reference#spacetime-rename), and [`spacetime mcp`](/cli-reference#spacetime-mcp), can also use the configured server when the config has a single unambiguous server.
 
 ## Config structure
 
@@ -236,7 +236,7 @@ These produce an error if the selected database has multiple generate entries:
 
 ## `--no-config`
 
-The `--no-config` flag causes the CLI to ignore `spacetime.json` entirely, behaving as if no config file exists. This is useful for one-off operations or scripting.
+The `--no-config` flag causes the CLI to ignore `spacetime.json` entirely, behaving as if no config file exists. This is useful for one-off operations, scripting, or commands such as `spacetime list` when you want the default server instead of the server configured for the current project.
 
 ```bash
 spacetime publish my-db --module-path ./module --no-config
