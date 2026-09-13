@@ -324,14 +324,14 @@ enum Error {
     #[error("error sending subscription queries")]
     Subscribe {
         #[source]
-        source: WsError,
+        source: Box<WsError>,
     },
     #[error("protocol error: {details}")]
     Protocol { details: &'static str },
     #[error("websocket error: {source}")]
     Websocket {
         #[source]
-        source: WsError,
+        source: Box<WsError>,
     },
     #[error("encountered failed transaction: {reason}")]
     TransactionFailure { reason: Box<str> },
@@ -384,12 +384,7 @@ impl UpdateCounter {
 
 impl Error {
     fn is_server_closed_connection(&self) -> bool {
-        matches!(
-            self,
-            Self::Websocket {
-                source: WsError::ConnectionClosed
-            }
-        )
+        matches!(self, Self::Websocket { source } if matches!(source.as_ref(), WsError::ConnectionClosed))
     }
 }
 
@@ -403,7 +398,7 @@ fn connection_closed_error(num: Option<u32>, num_received: u32) -> Error {
         None => {
             eprintln!("disconnected by server");
             Error::Websocket {
-                source: WsError::ConnectionClosed,
+                source: Box::new(WsError::ConnectionClosed),
             }
         }
     }
@@ -421,7 +416,9 @@ where
         },
     )))
     .unwrap();
-    ws.send(msg.into()).await.map_err(|source| Error::Subscribe { source })
+    ws.send(msg.into())
+        .await
+        .map_err(|source| Error::Subscribe { source: source.into() })
 }
 
 /// Send a v3 BSATN subscribe message.
@@ -437,7 +434,7 @@ where
     let msg = bsatn::to_vec(&msg).map_err(|source| Error::BsatnEncode { source })?;
     ws.send(WsMessage::Binary(msg.into()))
         .await
-        .map_err(|source| Error::Subscribe { source })
+        .map_err(|source| Error::Subscribe { source: source.into() })
 }
 
 /// Parse a v1 text websocket message as JSON.
@@ -457,7 +454,11 @@ where
 {
     const RECV_TX_UPDATE: &str = "protocol error: received transaction update before initial subscription update";
 
-    while let Some(msg) = ws.try_next().await.map_err(|source| Error::Websocket { source })? {
+    while let Some(msg) = ws
+        .try_next()
+        .await
+        .map_err(|source| Error::Websocket { source: source.into() })?
+    {
         let Some(msg) = parse_msg_json(&msg) else { continue };
         match msg {
             ws_v1::ServerMessage::InitialSubscription(sub) => {
@@ -542,7 +543,11 @@ where
         if num.is_some_and(|n| num_received.get() >= n) {
             return Ok(());
         }
-        let Some(msg) = ws.try_next().await.map_err(|source| Error::Websocket { source })? else {
+        let Some(msg) = ws
+            .try_next()
+            .await
+            .map_err(|source| Error::Websocket { source: source.into() })?
+        else {
             return Err(connection_closed_error(num, num_received.get()));
         };
 
@@ -627,7 +632,11 @@ where
             return Ok(Some(msg));
         }
 
-        let Some(msg) = ws.try_next().await.map_err(|source| Error::Websocket { source })? else {
+        let Some(msg) = ws
+            .try_next()
+            .await
+            .map_err(|source| Error::Websocket { source: source.into() })?
+        else {
             return Ok(None);
         };
         let WsMessage::Binary(msg) = msg else { continue };

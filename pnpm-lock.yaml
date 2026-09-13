@@ -62,6 +62,9 @@ importers:
 
   crates/bindings-typescript:
     dependencies:
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       base64-js:
         specifier: ^1.5.1
         version: 1.5.1
@@ -98,6 +101,9 @@ importers:
       vue:
         specifier: ^3.3.0
         version: 3.5.26(typescript@5.9.3)
+      ws:
+        specifier: ^8.18.3
+        version: 8.18.3
     devDependencies:
       '@angular/compiler':
         specifier: ^21.2.12

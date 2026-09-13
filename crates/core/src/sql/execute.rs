@@ -1,3 +1,4 @@
+use crate::auth::invocation::{check_hosted_admission, SqlCallAuth};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -10,7 +11,7 @@ use crate::host::module_host::{
     WasmInstance,
 };
 use crate::host::{ArgsTuple, ModuleHost};
-use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
+use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::subscription::tx::DeltaTx;
 use anyhow::anyhow;
@@ -18,6 +19,7 @@ use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_engine::relational_db::RelationalDB;
 use spacetimedb_expr::statement::Statement;
+#[cfg(test)]
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Timestamp;
@@ -52,11 +54,15 @@ pub struct SqlResult {
 pub async fn run(
     db: Arc<RelationalDB>,
     sql_text: String,
-    auth: AuthCtx,
+    auth: impl Into<SqlCallAuth>,
     subs: Option<ModuleSubscriptions>,
     module: Option<ModuleHost>,
     head: &mut Vec<(RawIdentifier, AlgebraicType)>,
 ) -> Result<SqlResult, DBError> {
+    let auth = auth.into();
+    if auth.hosted.is_some() && module.is_none() {
+        return Err(anyhow!("hosted SQL requires a module with hosted authentication capability").into());
+    }
     match module {
         Some(module) => module.call_sql(db, sql_text, auth, subs, head).await,
         None => run_inner::<crate::host::wasmtime::WasmtimeInstance>(None, db, sql_text, auth, subs, head).map(|x| x.0),
@@ -70,7 +76,7 @@ pub(crate) fn run_with_instance<I: WasmInstance>(
     instance: &mut RefInstance<I>,
     db: Arc<RelationalDB>,
     sql_text: String,
-    auth: AuthCtx,
+    auth: SqlCallAuth,
     subs: Option<ModuleSubscriptions>,
     head: &mut Vec<(RawIdentifier, AlgebraicType)>,
 ) -> Result<(SqlResult, bool), DBError> {
@@ -81,13 +87,14 @@ fn run_inner<I: WasmInstance>(
     instance: Option<&mut RefInstance<I>>,
     db: Arc<RelationalDB>,
     sql_text: String,
-    auth: AuthCtx,
+    auth: SqlCallAuth,
     subs: Option<ModuleSubscriptions>,
     head: &mut Vec<(RawIdentifier, AlgebraicType)>,
 ) -> Result<(SqlResult, bool), DBError> {
     // We parse the sql statement in a mutable transaction.
     // If it turns out to be a query, we downgrade the tx.
     let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
+        check_hosted_admission(tx, &db, auth.hosted.as_deref())?;
         let stmt = compile_sql_stmt(&sql_text, &SchemaViewer::new(tx, &auth), &auth)?;
         // Check mutation authority while the automatic rollback guard owns
         // the transaction, including rejected administrative statements.
@@ -104,6 +111,13 @@ fn run_inner<I: WasmInstance>(
                 "Database environment variables can only be changed by publishing"
             ));
         }
+        if let Statement::DML(dml) = &stmt
+            && spacetimedb_datastore::system_tables::is_host_managed_deployment_table(dml.table_id())
+        {
+            return Err(anyhow!(
+                "Deployment and container authorization metadata may only be changed by the host"
+            ));
+        }
         Ok(stmt)
     })?;
 
@@ -117,7 +131,7 @@ fn run_inner<I: WasmInstance>(
                 None => (tx, false),
             };
 
-            let (tx_data, tx_metrics_mut, tx) = db.commit_tx_downgrade(tx, Workload::Sql);
+            let (tx_data, tx_metrics_mut, tx) = db.commit_tx_downgrade(tx, Workload::Sql)?;
 
             let (tx_offset_send, tx_offset) = oneshot::channel();
             // Release the tx on drop, so that we record metrics
@@ -222,7 +236,10 @@ fn run_inner<I: WasmInstance>(
                 request_id: None,
                 timer: None,
             };
-            let res = commit_and_broadcast_event(&subs.unwrap(), None, event, tx);
+            let res = subs
+                .unwrap()
+                .commit_and_broadcast_event(None, event, tx)?
+                .map_err(|_| anyhow!("SQL transaction write conflict"))?;
             Ok((
                 SqlResult {
                     tx_offset: res.tx_offset,
@@ -454,6 +471,25 @@ pub(crate) mod tests {
         let result = run_for_testing(&db, "SELECT * FROM inventory")?;
 
         assert_eq!(result, input.data, "Inventory");
+        Ok(())
+    }
+
+    #[test]
+    fn owner_sql_cannot_rewrite_container_authority_or_deployment() -> ResultTest<()> {
+        let db = TestDB::in_memory()?;
+        for table in [
+            "st_deployment",
+            "st_publish_fence",
+            "st_deployment_operation",
+            "st_container_fence",
+            "st_connection_auth",
+        ] {
+            // This uses the owner test context. Permission to mutate application
+            // tables does not grant permission to replace host operational state.
+            let error = run_for_testing(&db, &format!("DELETE FROM {table}")).unwrap_err();
+            assert!(error.to_string().contains("may only be changed by the host"), "{error}");
+            assert!(run_for_testing(&db, &format!("SELECT * FROM {table}"))?.is_empty());
+        }
         Ok(())
     }
 

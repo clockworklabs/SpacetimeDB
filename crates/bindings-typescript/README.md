@@ -255,3 +255,147 @@ by the host in a submodule fail at runtime; ordinary helpers retain their caller
 scope. Values are private, durable database configuration for secrets and other settings.
 Database owners and authorized collaborators can read them; module code can expose
 them through its own outputs.
+
+### Node.js Authorization transport
+
+Node.js clients can send a token directly in the WebSocket `Authorization`
+header by selecting the explicit Node transport. Install its optional peer:
+
+```sh
+npm install ws
+```
+
+```ts
+import { openNodeWebSocket } from 'spacetimedb/sdk/node';
+import { DbConnection } from './module_bindings';
+
+function connect(
+  serverUri: string,
+  databaseIdentity: string,
+  freshToken: string
+) {
+  return DbConnection.builder()
+    .withUri(serverUri)
+    .withDatabaseName(databaseIdentity)
+    .withToken(freshToken)
+    .withWSFn(openNodeWebSocket)
+    .onConnect(connection => {
+      connection.subscriptionBuilder().subscribe('SELECT * FROM jobs');
+    })
+    .build();
+}
+```
+
+Use a trusted `wss://` server in deployed clients. This transport sends the
+provided token only in the upgrade request header, preserves the SDK connection
+ID and subscription options, and refuses redirects. It does not exchange the
+token through the generic identity endpoint or place credentials in the URL.
+The ordinary browser transport is unchanged.
+
+This factory transports caller-supplied credentials; it does not discover or
+renew container credentials. Obtain a fresh target-specific credential for each
+new connection and recreate subscriptions when reconnecting. Unconfirmed
+reducer and procedure calls may already have committed and must not be
+replayed automatically. Do not log or persist credentials.
+
+`connection.disconnect()` initiates closure. If retaining the adapter from a
+custom `withWSFn` wrapper, `await adapter.shutdown()` waits for actual transport
+closure. A stalled upgrade or a peer that ignores the close handshake is
+terminated after five seconds.
+
+### Credentials inside a container
+
+The Node entry point also reads the platform's discovery variables and obtains
+short-lived credentials from the local broker:
+
+```ts
+import { Container, openNodeWebSocket } from 'spacetimedb/sdk/node';
+import { DbConnection } from './module_bindings';
+
+const container = Container.fromEnvironment();
+const credential = await container.tokenFor();
+const connection = DbConnection.builder()
+  .withUri(container.serverUri)
+  .withDatabaseName(credential.target.toHexString())
+  .withToken(credential.value)
+  .withWSFn(openNodeWebSocket)
+  .onConnect(connection => {
+    connection.subscriptionBuilder().subscribe('SELECT * FROM jobs');
+  })
+  .build();
+```
+
+`tokenFor()` targets the container's own database. Pass another database's
+`Identity` to request a credential for it, then connect to that database's trusted
+server. The broker determines whether access is allowed. For an HTTP request,
+send `credential.value` in the `Authorization: Bearer ...` header.
+
+`Container.fromEnvironment()` reads only `SPACETIMEDB_DATABASE_IDENTITY`,
+`SPACETIMEDB_SERVER_URI`, and `SPACETIMEDB_CREDENTIAL_BROKER`. Missing or invalid
+values fail explicitly. `new Container({ databaseIdentity, serverUri,
+credentialBroker })` accepts explicit discovery configuration. The local broker
+uses an absolute Unix socket or numeric loopback HTTP address; requests neither
+follow redirects nor use saved credentials or proxy settings.
+
+Each request opens a fresh connection and completes within five seconds, with
+an optional `AbortSignal` as the second argument to `tokenFor`. Tokens last at
+most 30 seconds. `expiresAt` and `remainingLifetimeMs` expose their remaining
+validity; logging or serializing the token object redacts its value. Rebuild the
+database connection with a fresh token and restore subscriptions on expiry or
+disconnection. This helper does not manage connection renewal or replay calls.
+
+### Managed container connections in Node.js
+
+`ContainerSession` owns credential renewal and successive connections. Pass the
+unmodified generated `DbConnection` class so it can create a fresh builder,
+cache, and subscriptions for every generation:
+
+```ts
+import { Container, ContainerSession } from 'spacetimedb/sdk/node';
+import { DbConnection } from './module_bindings';
+
+const session = new ContainerSession(DbConnection, {
+  container: Container.fromEnvironment(),
+  onConnect(connection, { generation }) {
+    connection.subscriptionBuilder().subscribe('SELECT * FROM jobs');
+    console.log('Connected generation', generation);
+  },
+});
+const pause = new AbortController();
+process.once('SIGTERM', () => pause.abort());
+try {
+  await session.run(pause.signal);
+} finally {
+  await session.shutdown();
+}
+```
+
+The owner pins the database Identity and server before requesting credentials.
+Optional `target: Identity` and `serverUri` select another database and its
+trusted server. It verifies the connecting sender against the container's
+Identity before calling `onConnect`. Setup and event callbacks must be
+synchronous. Application asynchronous work must have its own cancellation and
+error handling.
+
+Renewal requests a fresh token before expiry. Both the returned expiry and its
+monotonic lifetime must extend materially before the owner rotates connections;
+the same lease expiry does not cause repeated rotations. A rejected credential
+is terminal. Transient broker failures retry while the current credential
+remains valid, and expiry seals the old generation even if a refresh stalls.
+The old WebSocket is closed and joined before a new one is opened. This causes a
+brief interruption and requires restoring subscriptions in every `onConnect`.
+
+Aborting `run(signal)` immediately seals that generation, then joins its broker
+request and WebSocket before resolving. Calling `run` again resumes with fresh
+credentials. `shutdown()` is permanent and also awaits cleanup. Concurrent
+`run` calls are rejected. Keep and await the owner; discarding its promise does
+not cancel it.
+
+No reducer or procedure is replayed. A pending call receives
+`ContainerSessionCallError`: `outcome: 'not_sent'` means it was never handed to
+the transport, while `outcome: 'unknown'` means no confirmed result was received
+after handoff. A confirmed result wins a later shutdown. Generation
+`disconnected` events also identify the interruption and warn about unconfirmed
+calls. Retained old connections reject new calls as `not_sent`, reject new
+subscriptions, and release their callbacks. Their cache is an old snapshot;
+the next generation starts with a separate empty cache.

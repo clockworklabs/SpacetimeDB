@@ -1,7 +1,10 @@
 use super::instrumentation::CallTimes;
 use super::*;
+use crate::auth::hosted_tokens::VerifiedHostedAuth;
+use crate::auth::invocation::check_hosted_admission;
 use crate::client::ClientActorId;
 use crate::database_logger;
+use crate::db::deployment::{self, CommitAdmission, DeploymentCommit};
 use crate::db::sql::ast::SchemaViewer;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
 use crate::error::DBError;
@@ -357,7 +360,7 @@ pub enum InitializationError {
     #[error(transparent)]
     Validation(#[from] ValidationError),
     #[error(transparent)]
-    ModuleValidation(#[from] spacetimedb_schema::error::ValidationErrors),
+    ModuleValidation(#[from] Box<spacetimedb_schema::error::ValidationErrors>),
     #[error("setup function returned an error: {0}")]
     Setup(Box<str>),
     #[error("wasm trap while calling {func:?}")]
@@ -499,10 +502,17 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
-        environment: std::collections::BTreeMap<String, String>,
+        environment: spacetimedb_lib::environment::EnvironmentUpdate,
+        deployment: Option<DeploymentCommit>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
-        self.common
-            .update_database(program, old_module_info, policy, environment, &mut self.instance)
+        self.common.update_database(
+            program,
+            old_module_info,
+            policy,
+            environment,
+            deployment,
+            &mut self.instance,
+        )
     }
 
     pub fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult {
@@ -560,11 +570,21 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         &mut self,
         program: Program,
         environment: std::collections::BTreeMap<String, String>,
+        deployment: Option<DeploymentCommit>,
     ) -> anyhow::Result<InitDatabaseResult> {
-        let module_def = &self.common.info.clone().module_def;
+        let info = self.common.info.clone();
+        let module_def = &info.module_def;
         let replica_ctx = &self.instance.replica_ctx().clone();
         let call_reducer = |tx, params| self.call_reducer_with_tx_offset(tx, params);
-        let (res, trapped) = init_database(replica_ctx, module_def, program, environment, call_reducer);
+        let (res, trapped) = init_database(
+            replica_ctx,
+            module_def,
+            info.module_hash,
+            program,
+            environment,
+            deployment,
+            call_reducer,
+        );
         self.trapped = trapped;
         res
     }
@@ -700,16 +720,69 @@ impl InstanceCommon {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
-        environment: std::collections::BTreeMap<String, String>,
+        environment: spacetimedb_lib::environment::EnvironmentUpdate,
+        deployment: Option<DeploymentCommit>,
         inst: &mut I,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
-        if program.hash == old_module_info.module_hash {
-            return self.update_environment(environment, inst);
-        }
         let replica_ctx = inst.replica_ctx().clone();
         let system_logger = replica_ctx.logger.system_logger();
         let stdb = &replica_ctx.relational_db();
 
+        let timestamp = Timestamp::now();
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        let (tx, admission) = stdb.with_auto_rollback(tx, |tx| -> anyhow::Result<_> {
+            ensure!(
+                self.info.module_hash == program.hash,
+                "program does not match the instantiated module"
+            );
+            let admission = if let Some(request) = &deployment {
+                deployment::validate_deployment_program(request, &program, &self.info.module_def)?;
+                deployment::check_deployment_commit(tx, request, timestamp, &Default::default())?
+            } else {
+                deployment::require_unmanaged_publication(tx)?;
+                CommitAdmission::Ready
+            };
+            if matches!(admission, CommitAdmission::AlreadyCommitted(_)) {
+                return Ok(admission);
+            }
+            deployment::validate_active_hosted_grants(tx, &self.info.module_def)?;
+            use spacetimedb_datastore::system_tables::{read_hash_from_col, StModuleFields, ST_MODULE_ID};
+            let row = tx.iter(ST_MODULE_ID)?.next().context("database is not initialized")?;
+            let stored_hash = read_hash_from_col(row, StModuleFields::ProgramHash)?;
+            ensure!(
+                stored_hash == old_module_info.module_hash,
+                "module changed before publication admission"
+            );
+            Ok(admission)
+        })?;
+        if let CommitAdmission::AlreadyCommitted(result) = admission {
+            let (offset, metrics, reducer) = stdb.rollback_mut_tx(tx);
+            stdb.report_mut_tx_metrics(reducer, metrics, None);
+            let (sender, tx_offset) = tokio::sync::oneshot::channel();
+            let _ = sender.send(offset);
+            return Ok(UpdateDatabaseResult::DeploymentAlreadyCommitted {
+                result,
+                tx_offset,
+                durable_offset: stdb.durable_tx_offset(),
+            });
+        }
+        let (tx, environment) = stdb.with_auto_rollback(tx, |tx| -> anyhow::Result<_> {
+            let values = environment.resulting_values(&crate::db::environment::snapshot(tx)?)?;
+            if let Some(spec) = deployment
+                .as_ref()
+                .and_then(|request| request.deployment.current().container.as_ref())
+            {
+                crate::db::container_environment::validate_publication_values(
+                    spec,
+                    self.info.module_def.environment(),
+                    &values,
+                )?;
+            }
+            Ok(values)
+        })?;
+        if program.hash == old_module_info.module_hash {
+            return self.update_environment(tx, environment, deployment, timestamp, inst);
+        }
         let plan: MigratePlan = match policy.try_migrate(
             self.info.database_identity,
             old_module_info.module_hash,
@@ -719,30 +792,23 @@ impl InstanceCommon {
         ) {
             Ok(plan) => plan,
             Err(e) => {
+                let (_, metrics, reducer) = stdb.rollback_mut_tx(tx);
+                stdb.report_mut_tx_metrics(reducer, metrics, None);
                 return match e {
                     MigrationPolicyError::AutoMigrateFailure(e) => Ok(UpdateDatabaseResult::AutoMigrateError(e.into())),
                     _ => Ok(UpdateDatabaseResult::ErrorExecutingMigration(e.into())),
-                }
+                };
             }
         };
 
         let program_hash = program.hash;
         let host_type = HostType::from(program.kind);
-        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
         let (mut tx, _) = stdb.with_auto_rollback(tx, |tx| -> anyhow::Result<()> {
-            use spacetimedb_datastore::system_tables::{StModuleFields, ST_MODULE_ID};
-            let row = tx
-                .iter(ST_MODULE_ID)?
-                .next()
-                .context("database program is not initialized")?;
-            let current_hash =
-                spacetimedb_datastore::system_tables::read_hash_from_col(row, StModuleFields::ProgramHash)?;
-            anyhow::ensure!(
-                current_hash == old_module_info.module_hash,
-                "database program changed before publication"
-            );
             crate::db::environment::replace(stdb, tx, self.info.module_def.environment(), &environment)?;
             stdb.update_program(tx, program)?;
+            if let Some(request) = &deployment {
+                deployment::record_deployment_commit(tx, request, timestamp, &Default::default())?;
+            }
             Ok(())
         })?;
         system_logger.info(&format!("Updated program to {program_hash}"));
@@ -823,12 +889,14 @@ impl InstanceCommon {
     /// initialization, migration, program replacement, or scheduler restart occurs.
     fn update_environment<I: WasmInstance>(
         &mut self,
+        tx: MutTxId,
         environment: std::collections::BTreeMap<String, String>,
+        deployment: Option<DeploymentCommit>,
+        timestamp: Timestamp,
         inst: &mut I,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = inst.replica_ctx().clone();
         let db = replica_ctx.relational_db();
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
         let (tx, _) = db.with_auto_rollback(tx, |tx| -> anyhow::Result<()> {
             use spacetimedb_datastore::system_tables::{read_hash_from_col, StModuleFields, ST_MODULE_ID};
             let row = tx
@@ -840,6 +908,9 @@ impl InstanceCommon {
                 "database program changed before publication"
             );
             crate::db::environment::replace(db, tx, self.info.module_def.environment(), &environment)?;
+            if let Some(request) = &deployment {
+                deployment::record_deployment_commit(tx, request, timestamp, &Default::default())?;
+            }
             Ok(())
         })?;
         let (out, _, trapped) = self.evaluate_subscribed_views(tx, inst)?;
@@ -877,7 +948,9 @@ impl InstanceCommon {
         tx: MutTxId,
         inst: &mut I,
     ) -> Result<(ViewCallResult, u32, bool), anyhow::Error> {
-        let view_calls = collect_subscribed_view_calls(&tx, &self.info.module_def, self.info.owner_identity)?;
+        let (tx, view_calls) = inst.replica_ctx().relational_db().with_auto_rollback(tx, |tx| {
+            collect_subscribed_view_calls(tx, &self.info.module_def, self.info.owner_identity)
+        })?;
         Ok(self.execute_view_calls(tx, view_calls, inst))
     }
 
@@ -894,9 +967,26 @@ impl InstanceCommon {
         let CallProcedureParams {
             timestamp,
             caller_identity,
+            hosted_auth,
             timer,
             ..
         } = params;
+
+        let admission = inst
+            .replica_ctx()
+            .relational_db()
+            .with_read_only(Workload::Internal, |tx| {
+                check_hosted_admission(tx, inst.replica_ctx().relational_db(), hosted_auth.as_deref())
+            });
+        if let Err(err) = admission {
+            return (
+                CallProcedureReturn {
+                    result: Err(ProcedureCallError::InternalError(err.to_string())),
+                    tx_offset: None,
+                },
+                false,
+            );
+        }
 
         // TODO(observability): Add tracing spans, energy, metrics?
         // These will require further thinking once we implement procedure suspend/resume,
@@ -1064,6 +1154,7 @@ impl InstanceCommon {
             caller_identity,
             caller_connection_id,
             call_auth_flags,
+            hosted_auth,
             client,
             request_id,
             reducer_id,
@@ -1088,12 +1179,44 @@ impl InstanceCommon {
             caller_identity: &caller_identity,
             caller_connection_id: &caller_connection_id,
             call_auth_flags,
+            hosted_auth,
             timestamp,
             args: &args,
         };
 
         let workload = Workload::Reducer(ReducerContext::from(op.clone()));
         let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable, workload));
+        if let Err(err) = check_hosted_admission(&tx, stdb, op.hosted_auth.as_deref()) {
+            let event = ModuleEvent {
+                timestamp,
+                caller_identity,
+                caller_connection_id: caller_connection_id_opt,
+                function_call: ModuleFunctionCall {
+                    reducer: Some(reducer_name.clone()),
+                    reducer_id,
+                    args,
+                },
+                status: EventStatus::FailedInternal(err.to_string()),
+                reducer_return_value: None,
+                execution_budget_used: FunctionBudget::ZERO,
+                host_execution_duration: Default::default(),
+                request_id,
+                timer,
+            };
+            let CommitAndBroadcastEventSuccess { event, tx_offset, .. } =
+                commit_and_broadcast_event(&info.subscriptions, client, event, tx);
+            return (
+                ReducerCallResultWithTxOffset {
+                    result: ReducerCallResult {
+                        outcome: ReducerOutcome::from(&event.status),
+                        execution_budget_used: FunctionBudget::ZERO,
+                        execution_duration: Default::default(),
+                    },
+                    tx_offset,
+                },
+                false,
+            );
+        }
         let mut tx_slot = inst.tx_slot();
 
         let vm_metrics = self.vm_metrics.get_for_reducer_id(reducer_id);
@@ -1956,6 +2079,9 @@ pub trait InstanceOp {
     fn call_auth_flags(&self) -> u32 {
         0
     }
+    fn hosted_auth(&self) -> Option<&VerifiedHostedAuth> {
+        None
+    }
 }
 
 /// Describes a view call in a cheaply shareable way.
@@ -2017,12 +2143,19 @@ pub struct ReducerOp<'a> {
     pub caller_identity: &'a Identity,
     pub caller_connection_id: &'a ConnectionId,
     pub call_auth_flags: u32,
+    pub hosted_auth: Option<std::sync::Arc<VerifiedHostedAuth>>,
     pub timestamp: Timestamp,
     /// The arguments passed to the reducer.
     pub args: &'a ArgsTuple,
 }
 
 impl InstanceOp for ReducerOp<'_> {
+    fn call_auth_flags(&self) -> u32 {
+        self.call_auth_flags
+    }
+    fn hosted_auth(&self) -> Option<&VerifiedHostedAuth> {
+        self.hosted_auth.as_deref()
+    }
     fn name(&self) -> &NamespacedIdentifier {
         self.name.as_namespaced()
     }
@@ -2031,9 +2164,6 @@ impl InstanceOp for ReducerOp<'_> {
     }
     fn call_type(&self) -> FuncCallType {
         FuncCallType::Reducer
-    }
-    fn call_auth_flags(&self) -> u32 {
-        self.call_auth_flags
     }
 }
 
@@ -2045,6 +2175,7 @@ impl From<ReducerOp<'_>> for execution_context::ReducerContext {
             caller_identity,
             caller_connection_id,
             call_auth_flags: _,
+            hosted_auth: _,
             timestamp,
             args,
         }: ReducerOp<'_>,
@@ -2067,6 +2198,7 @@ pub struct ProcedureOp {
     pub caller_identity: Identity,
     pub caller_connection_id: ConnectionId,
     pub call_auth_flags: u32,
+    pub hosted_auth: Option<std::sync::Arc<VerifiedHostedAuth>>,
     pub timestamp: Timestamp,
     pub arg_bytes: Bytes,
 }
@@ -2084,6 +2216,7 @@ impl ProcedureOp {
                 caller_identity: params.caller_identity,
                 caller_connection_id: params.caller_connection_id,
                 call_auth_flags: params.call_auth_flags,
+                hosted_auth: params.hosted_auth.clone(),
                 timestamp: params.timestamp,
                 arg_bytes: params.args.get_bsatn().clone(),
             },
@@ -2094,6 +2227,12 @@ impl ProcedureOp {
 }
 
 impl InstanceOp for ProcedureOp {
+    fn call_auth_flags(&self) -> u32 {
+        self.call_auth_flags
+    }
+    fn hosted_auth(&self) -> Option<&VerifiedHostedAuth> {
+        self.hosted_auth.as_deref()
+    }
     fn name(&self) -> &NamespacedIdentifier {
         &self.name
     }
@@ -2102,9 +2241,6 @@ impl InstanceOp for ProcedureOp {
     }
     fn call_type(&self) -> FuncCallType {
         FuncCallType::Procedure
-    }
-    fn call_auth_flags(&self) -> u32 {
-        self.call_auth_flags
     }
 }
 

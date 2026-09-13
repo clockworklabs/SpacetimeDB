@@ -232,6 +232,20 @@ jobs:
           mkdir -p "${openssl_cache_dir}"
           cp -R "${openssl_installs[0]}/." "${openssl_cache_dir}/"
 
+      - name: Test Windows container exec
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/ci/windows-exec-tests.ps1
+
+      - name: Upload Windows container exec test results
+        if: always() && runner.os == 'Windows' && env.WINDOWS_EXEC_RESULTS != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-container-exec-results
+          path: ${{ env.WINDOWS_EXEC_RESULTS }}
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Package build artifacts
         shell: bash
         run: |

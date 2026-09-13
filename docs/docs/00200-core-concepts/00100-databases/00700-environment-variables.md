@@ -299,3 +299,5 @@ Private tables can store dynamically editable secrets, but changing a table to p
 :::
 
 Both approaches are supported. Environment declarations additionally guarantee that required values are validated and available before `init` or migration runs. Private-table values follow the table's ordinary update and migration behavior. They do not receive environment schema validation or environment publish semantics.
+
+Managed container publications preserve unspecified environment values too. Their private local `submission.json` retains the exact supplied overrides, removals and replacement flag. Keep the publication directory out of source control. `--resume-publication` replays that intent unchanged, without rereading project files or shell variables. For managed databases, `--env-only` uses the publication coordinator while retaining the module and container configuration. Container processes receive immutable startup snapshots of their explicitly selected `env_keys`; stored undeclared keys are not automatically exposed to a process.

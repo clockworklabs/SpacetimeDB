@@ -1,0 +1,791 @@
+use super::*;
+use crate::db::relational_db::tests_utils::{begin_mut_tx, TestDB};
+use spacetimedb_datastore::execution_context::Workload;
+use spacetimedb_datastore::system_tables::{
+    StEnvRow, ST_CLIENT_ID, ST_CONNECTION_AUTH_ID, ST_CONNECTION_CREDENTIALS_ID, ST_ENV_ID,
+};
+use spacetimedb_durability::Durability;
+use spacetimedb_lib::deployment::{
+    DeploymentSpecV1, ModuleComponent, UserModule, UserModuleKind, PUBLISH_RETRY_WINDOW_MS,
+};
+
+fn request(sequence: u64, previous: Option<&PublishResult>) -> DeploymentCommit {
+    DeploymentCommit {
+        operation_id: Uuid::from_u128(0x01991ec4000070008000000000000000 | u128::from(sequence)),
+        publication_epoch: sequence,
+        publisher: Identity::from_u256(55u64.into()),
+        expected_revision: previous.map(|result| result.revision),
+        expected_last_operation: previous.map(|result| result.operation_id),
+        prepared_manifest_hash: hash_bytes(sequence.to_le_bytes()),
+        deployment: DeploymentSpec::V1(DeploymentSpecV1 {
+            module: ModuleComponent::User(UserModule {
+                kind: UserModuleKind::Wasm,
+                program_hash: hash_bytes(sequence.to_le_bytes()),
+            }),
+            container: None,
+        }),
+    }
+}
+
+fn now() -> Timestamp {
+    Timestamp::from_micros_since_unix_epoch(((request(1, None).operation_id.as_u128() >> 80) as i64) * 1000)
+}
+
+fn transact<T>(
+    db: &RelationalDB,
+    f: impl FnOnce(&mut MutTx) -> Result<T, DeploymentError>,
+) -> Result<T, DeploymentError> {
+    db.with_auto_commit(Workload::ForTests, f)
+}
+
+#[test]
+fn deployment_retry_returns_original_result_after_later_publish_without_mutation() {
+    let db = TestDB::in_memory().unwrap();
+    let first = request(1, None);
+    let limits = ContainerSpecLimits::default();
+    let accepted = transact(&db, |tx| {
+        install_publication_fence(tx, first.publication_epoch, first.operation_id)?;
+        record_deployment_commit(tx, &first, now(), &limits)
+    })
+    .unwrap();
+    let second = request(2, Some(&accepted));
+    let later = transact(&db, |tx| {
+        install_publication_fence(tx, second.publication_epoch, second.operation_id)?;
+        record_deployment_commit(tx, &second, now(), &limits)
+    })
+    .unwrap();
+    transact(&db, |tx| {
+        assert!(matches!(check_deployment_commit(tx, &first, now(), &limits)?, CommitAdmission::AlreadyCommitted(ref r) if r == &accepted));
+        assert_eq!(record_deployment_commit(tx, &first, now(), &limits)?, accepted);
+        assert_eq!(current_deployment(tx)?.unwrap().0, later.revision);
+        assert_eq!(tx.table_row_count(ST_DEPLOYMENT_OPERATION_ID), Some(2));
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn deployment_fence_and_revision_conflicts_fail_before_module_execution() {
+    let db = TestDB::in_memory().unwrap();
+    let first = request(1, None);
+    let mut second = request(2, None);
+    second.expected_revision = Some(hash_bytes(b"not current"));
+    second.expected_last_operation = Some(first.operation_id);
+    let limits = ContainerSpecLimits::default();
+    transact(&db, |tx| {
+        install_publication_fence(tx, second.publication_epoch, second.operation_id)
+    })
+    .unwrap();
+    transact(&db, |tx| {
+        assert!(matches!(
+            check_deployment_commit(tx, &first, now(), &limits),
+            Err(DeploymentError::PublicationFenced)
+        ));
+        assert!(matches!(
+            check_deployment_commit(tx, &second, now(), &limits),
+            Err(DeploymentError::RevisionConflict)
+        ));
+        assert!(matches!(
+            install_publication_fence(tx, first.publication_epoch, first.operation_id),
+            Err(DeploymentError::PublicationFenced)
+        ));
+        second.expected_revision = None;
+        second.expected_last_operation = None;
+        assert!(matches!(
+            check_deployment_commit(tx, &second, now(), &limits)?,
+            CommitAdmission::Ready
+        ));
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn deployment_and_module_effects_roll_back_together() {
+    let db = TestDB::in_memory().unwrap();
+    let request = request(1, None);
+    let limits = ContainerSpecLimits::default();
+    transact(&db, |tx| {
+        install_publication_fence(tx, request.publication_epoch, request.operation_id)
+    })
+    .unwrap();
+    let failed: Result<(), DeploymentError> = transact(&db, |tx| {
+        assert!(matches!(
+            check_deployment_commit(tx, &request, now(), &limits)?,
+            CommitAdmission::Ready
+        ));
+        // A second persistent table stands in for migration effects in the same
+        // transaction. Integration must additionally execute Wasm/JS migrations.
+        tx.insert_via_serialize_bsatn(
+            ST_ENV_ID,
+            &StEnvRow {
+                key: "MIGRATED".into(),
+                value: "yes".into(),
+            },
+        )?;
+        record_deployment_commit(tx, &request, now(), &limits)?;
+        Err(DeploymentError::Database(DBError::Other(anyhow::anyhow!(
+            "injected failure before commit"
+        ))))
+    });
+    assert!(failed.is_err());
+    transact(&db, |tx| {
+        assert!(current_deployment(tx)?.is_none());
+        assert_eq!(tx.table_row_count(ST_ENV_ID), Some(0));
+        assert_eq!(tx.table_row_count(ST_DEPLOYMENT_OPERATION_ID), Some(0));
+        assert!(matches!(
+            check_deployment_commit(tx, &request, now(), &limits)?,
+            CommitAdmission::Ready
+        ));
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn publication_abort_closes_delayed_commits_and_cannot_reopen_its_epoch() {
+    let db = TestDB::in_memory().unwrap();
+    let first = request(1, None);
+    let limits = ContainerSpecLimits::default();
+    transact(&db, |tx| {
+        install_publication_fence(tx, first.publication_epoch, first.operation_id)
+    })
+    .unwrap();
+    let aborted = AbortResult::Aborted {
+        previous_revision: None,
+    };
+    assert_eq!(
+        transact(&db, |tx| abort_deployment_commit(tx, &first)).unwrap(),
+        aborted
+    );
+    transact(&db, |tx| {
+        assert_eq!(abort_deployment_commit(tx, &first)?, aborted);
+        assert!(matches!(
+            record_deployment_commit(tx, &first, now(), &limits),
+            Err(DeploymentError::PublicationFenced)
+        ));
+        assert!(matches!(
+            install_publication_fence(tx, first.publication_epoch, first.operation_id),
+            Err(DeploymentError::PublicationFenced)
+        ));
+        assert!(matches!(
+            install_publication_fence(tx, first.publication_epoch + 1, Uuid::NIL),
+            Err(DeploymentError::PublicationFenced)
+        ));
+        assert!(current_deployment(tx)?.is_none());
+        let second = request(2, None);
+        install_publication_fence(tx, second.publication_epoch, second.operation_id)?;
+        let result = record_deployment_commit(tx, &second, now(), &limits)?;
+        assert!(matches!(
+            abort_deployment_commit(tx, &first),
+            Err(DeploymentError::PublicationFenced)
+        ));
+        assert_eq!(current_deployment(tx)?.unwrap().0, result.revision);
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn publication_commit_winning_abort_race_is_never_reported_as_aborted() {
+    let db = TestDB::in_memory().unwrap();
+    let first = request(1, None);
+    let limits = ContainerSpecLimits::default();
+    let committed = transact(&db, |tx| {
+        install_publication_fence(tx, first.publication_epoch, first.operation_id)?;
+        record_deployment_commit(tx, &first, now(), &limits)
+    })
+    .unwrap();
+    let second = request(2, Some(&committed));
+    transact(&db, |tx| {
+        assert_eq!(
+            abort_deployment_commit(tx, &first)?,
+            AbortResult::AlreadyCommitted(committed.clone())
+        );
+        install_publication_fence(tx, second.publication_epoch, second.operation_id)?;
+        record_deployment_commit(tx, &second, now(), &limits)?;
+        assert_eq!(
+            abort_deployment_commit(tx, &first)?,
+            AbortResult::AlreadyCommitted(committed)
+        );
+        assert!(matches!(
+            check_deployment_commit(tx, &second, now(), &limits)?,
+            CommitAdmission::AlreadyCommitted(_)
+        ));
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn publication_abort_rollback_does_not_report_a_closed_fence() {
+    let db = TestDB::in_memory().unwrap();
+    let request = request(1, None);
+    let limits = ContainerSpecLimits::default();
+    transact(&db, |tx| {
+        install_publication_fence(tx, request.publication_epoch, request.operation_id)
+    })
+    .unwrap();
+    let failed: Result<(), DeploymentError> = transact(&db, |tx| {
+        abort_deployment_commit(tx, &request)?;
+        Err(DeploymentError::CorruptMetadata)
+    });
+    assert!(failed.is_err());
+    transact(&db, |tx| {
+        assert!(matches!(
+            check_deployment_commit(tx, &request, now(), &limits)?,
+            CommitAdmission::Ready
+        ));
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn recovery_of_expired_publication_preserves_commits_and_closes_uncommitted_epochs() {
+    let db = TestDB::in_memory().unwrap();
+    let first = request(1, None);
+    let limits = ContainerSpecLimits::default();
+    let committed = transact(&db, |tx| {
+        install_publication_fence(tx, first.publication_epoch, first.operation_id)?;
+        record_deployment_commit(tx, &first, now(), &limits)
+    })
+    .unwrap();
+    let expired = Timestamp::from_micros_since_unix_epoch(
+        now().to_micros_since_unix_epoch() + (PUBLISH_RETRY_WINDOW_MS * 1000) as i64,
+    );
+    let second = request(2, Some(&committed));
+    transact(&db, |tx| {
+        assert!(matches!(
+            check_deployment_commit(tx, &first, expired, &limits),
+            Err(DeploymentError::Validation(DeploymentValidationError::ExpiredOperation))
+        ));
+        assert_eq!(committed_deployment_operation(tx, &first)?, Some(committed.clone()));
+        assert_eq!(current_publication(tx)?, Some(committed.clone()));
+        assert_eq!(
+            abort_deployment_commit(tx, &first)?,
+            AbortResult::AlreadyCommitted(committed.clone())
+        );
+        let mut wrong_publisher = first.clone();
+        wrong_publisher.publisher = Identity::ZERO;
+        assert!(matches!(
+            committed_deployment_operation(tx, &wrong_publisher),
+            Err(DeploymentError::OperationConflict)
+        ));
+        install_publication_fence(tx, second.publication_epoch, second.operation_id)?;
+        assert!(matches!(
+            check_deployment_commit(tx, &second, expired, &limits),
+            Err(DeploymentError::Validation(DeploymentValidationError::ExpiredOperation))
+        ));
+        assert_eq!(
+            abort_deployment_commit(tx, &second)?,
+            AbortResult::Aborted {
+                previous_revision: Some(committed.revision)
+            }
+        );
+        // Clock rollback cannot make a delayed old commit admissible again.
+        assert!(matches!(
+            check_deployment_commit(tx, &second, now(), &limits),
+            Err(DeploymentError::PublicationFenced)
+        ));
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn publication_abort_and_commit_receipts_survive_commitlog_replay() {
+    let db = TestDB::durable_without_snapshot_repo().unwrap();
+    let first = request(1, None);
+    let limits = ContainerSpecLimits::default();
+    transact(&db, |tx| {
+        install_publication_fence(tx, first.publication_epoch, first.operation_id)?;
+        abort_deployment_commit(tx, &first)
+    })
+    .unwrap();
+    let db = db.reopen().unwrap();
+    let second = request(2, None);
+    let committed = transact(&db, |tx| {
+        assert_eq!(
+            abort_deployment_commit(tx, &first)?,
+            AbortResult::Aborted {
+                previous_revision: None
+            }
+        );
+        assert!(matches!(
+            record_deployment_commit(tx, &first, now(), &limits),
+            Err(DeploymentError::PublicationFenced)
+        ));
+        assert!(matches!(
+            install_publication_fence(tx, first.publication_epoch, first.operation_id),
+            Err(DeploymentError::PublicationFenced)
+        ));
+        install_publication_fence(tx, second.publication_epoch, second.operation_id)?;
+        record_deployment_commit(tx, &second, now(), &limits)
+    })
+    .unwrap();
+    let db = db.reopen().unwrap();
+    db.with_read_only(Workload::ForTests, |tx| {
+        assert_eq!(
+            committed_deployment_operation(tx, &second).unwrap(),
+            Some(committed.clone())
+        );
+        assert_eq!(current_deployment(tx).unwrap().unwrap().0, committed.revision);
+    });
+    assert_eq!(
+        transact(&db, |tx| abort_deployment_commit(tx, &second)).unwrap(),
+        AbortResult::AlreadyCommitted(committed)
+    );
+}
+
+#[test]
+fn publication_recovery_does_not_reapply_tightened_resource_admission() {
+    use spacetimedb_lib::container::{
+        ContainerMode, ContainerResources, ContainerSpec, ImagePlatform, OciDigest, RestartPolicy,
+    };
+    let db = TestDB::in_memory().unwrap();
+    let mut first = request(1, None);
+    let DeploymentSpec::V1(spec) = &mut first.deployment;
+    spec.container = Some(ContainerSpec {
+        image_manifest: OciDigest::sha256([7; 32]),
+        image_platform: ImagePlatform {
+            os: "linux".into(),
+            architecture: "arm64".into(),
+        },
+        argv: vec!["/app/server".into()],
+        user: "1000:1000".into(),
+        working_directory: "/app".into(),
+        mode: ContainerMode::Service,
+        restart: RestartPolicy::OnFailure,
+        env_keys: vec![],
+        resources: ContainerResources {
+            cpu_millicores: 1000,
+            memory_bytes: 64 * 1024 * 1024,
+            scratch_bytes: 64 * 1024 * 1024,
+            pids_max: 64,
+        },
+        ports: vec![],
+        mounts: vec![],
+        stop_grace_ms: 10_000,
+    });
+    let original_limits = ContainerSpecLimits::default();
+    let committed = transact(&db, |tx| {
+        install_publication_fence(tx, first.publication_epoch, first.operation_id)?;
+        record_deployment_commit(tx, &first, now(), &original_limits)
+    })
+    .unwrap();
+    let mut tightened = original_limits;
+    tightened.resources.cpu_millicores = 500;
+    let mut second = request(2, Some(&committed));
+    second.deployment = first.deployment.clone();
+    transact(&db, |tx| {
+        assert!(first.deployment.clone().normalize(&tightened).is_err());
+        assert!(matches!(check_deployment_commit(tx, &first, now(), &tightened)?, CommitAdmission::AlreadyCommitted(ref result) if result == &committed));
+        assert_eq!(committed_deployment_operation(tx, &first)?, Some(committed.clone()));
+        assert_eq!(abort_deployment_commit(tx, &first)?, AbortResult::AlreadyCommitted(committed.clone()));
+        install_publication_fence(tx, second.publication_epoch, second.operation_id)?;
+        assert!(check_deployment_commit(tx, &second, now(), &tightened).is_err());
+        assert_eq!(abort_deployment_commit(tx, &second)?, AbortResult::Aborted { previous_revision: Some(committed.revision) });
+        assert!(deployment_publication_aborted(tx, &second)?);
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn deployment_operation_cannot_be_reused_by_another_publisher_or_changed_request() {
+    let db = TestDB::in_memory().unwrap();
+    let original = request(1, None);
+    let limits = ContainerSpecLimits::default();
+    transact(&db, |tx| {
+        install_publication_fence(tx, original.publication_epoch, original.operation_id)?;
+        record_deployment_commit(tx, &original, now(), &limits)
+    })
+    .unwrap();
+    transact(&db, |tx| {
+        let mut changed = original.clone();
+        changed.publisher = Identity::from_u256(99u64.into());
+        assert!(matches!(
+            check_deployment_commit(tx, &changed, now(), &limits),
+            Err(DeploymentError::OperationConflict)
+        ));
+        changed = original.clone();
+        changed.deployment = DeploymentSpec::V1(DeploymentSpecV1 {
+            module: ModuleComponent::SystemEmpty(spacetimedb_lib::deployment::system_empty::empty().descriptor),
+            container: None,
+        });
+        assert!(matches!(
+            check_deployment_commit(tx, &changed, now(), &limits),
+            Err(DeploymentError::OperationConflict)
+        ));
+        // A retained row does not extend the advertised retry window.
+        let expired = Timestamp::from_micros_since_unix_epoch(
+            now().to_micros_since_unix_epoch() + (PUBLISH_RETRY_WINDOW_MS as i64) * 1000,
+        );
+        assert!(matches!(
+            check_deployment_commit(tx, &original, expired, &limits),
+            Err(DeploymentError::Validation(DeploymentValidationError::ExpiredOperation))
+        ));
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn container_fence_revokes_copied_credentials_and_does_not_reopen_at_same_generation() {
+    let db = TestDB::in_memory().unwrap();
+    let source = Identity::from_u256(777u64.into());
+    let first = StContainerFenceRow {
+        source_identity: source.into(),
+        generation: 1,
+        target_grant_revision: 3,
+        target_set_hash: hash_bytes(b"targets1"),
+        allowed: true,
+    };
+    transact(&db, |tx| {
+        assert!(matches!(
+            check_container_fence(tx, source, 1, 3),
+            Err(DeploymentError::ContainerFenced)
+        ));
+        install_container_fence(&db, tx, &first)?;
+        install_container_fence(&db, tx, &first)?;
+        check_container_fence(tx, source, 1, 3)?;
+        assert!(matches!(
+            check_container_fence(tx, source, 1, 4),
+            Err(DeploymentError::ContainerFenced)
+        ));
+        Ok(())
+    })
+    .unwrap();
+    let revoked = StContainerFenceRow {
+        generation: 2,
+        target_grant_revision: 4,
+        target_set_hash: hash_bytes(b"targets2"),
+        allowed: false,
+        ..first.clone()
+    };
+    transact(&db, |tx| {
+        install_container_fence(&db, tx, &revoked)?;
+        assert!(matches!(
+            check_container_fence(tx, source, 1, 3),
+            Err(DeploymentError::ContainerFenced)
+        ));
+        assert!(matches!(
+            check_container_fence(tx, source, 2, 4),
+            Err(DeploymentError::ContainerFenced)
+        ));
+        let reopen = StContainerFenceRow {
+            allowed: true,
+            ..revoked.clone()
+        };
+        assert!(matches!(
+            install_container_fence(&db, tx, &reopen),
+            Err(DeploymentError::FenceConflict)
+        ));
+        assert!(matches!(
+            install_container_fence(&db, tx, &first),
+            Err(DeploymentError::FenceConflict)
+        ));
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn captured_connection_authority_survives_replay_without_inferring_sender_authority() {
+    let db = TestDB::durable().unwrap();
+    let self_sender = db.database_identity();
+    let foreign_sender = Identity::ONE;
+    let self_connection = ConnectionId::from_u128(41);
+    let foreign_connection = ConnectionId::from_u128(42);
+    let ordinary_connection = ConnectionId::from_u128(43);
+    transact(&db, |tx| {
+        for (connection, sender, flags) in [
+            (self_connection, self_sender, 1),
+            (foreign_connection, foreign_sender, 0),
+        ] {
+            tx.insert_st_client(
+                sender,
+                connection,
+                r#"{"iss":"platform","sub":"previously-admitted","exp":1}"#,
+            )?;
+            record_connection_auth(tx, connection, sender, flags)?;
+        }
+        tx.insert_st_client(self_sender, ordinary_connection, "ordinary JWT")?;
+        Ok(())
+    })
+    .unwrap();
+    // TestDB::reopen expects zero connected clients. Reopen the same committed
+    // log explicitly to exercise crash recovery with outstanding connections.
+    let (db, durability, runtime, directory) = db.into_parts();
+    let runtime = runtime.unwrap();
+    let directory = directory.unwrap();
+    let durability = durability.unwrap();
+    runtime.block_on(db.shutdown());
+    drop(db);
+    runtime.block_on(durability.close());
+    drop(durability);
+    let _runtime_guard = runtime.enter();
+    let (db, durability) = TestDB::open_existing_durable(
+        &directory,
+        runtime.handle().clone(),
+        0,
+        TestDB::DATABASE_IDENTITY,
+        TestDB::OWNER,
+        true,
+    )
+    .unwrap();
+    transact(&db, |tx| {
+        assert_eq!(connection_auth_flags(tx, self_connection, self_sender)?, 1);
+        assert_eq!(connection_auth_flags(tx, foreign_connection, foreign_sender)?, 0);
+        // Equal sender/database identities do not invent internal authority.
+        assert_eq!(connection_auth_flags(tx, ordinary_connection, self_sender)?, 0);
+        assert_eq!(tx.table_row_count(ST_CONNECTION_AUTH_ID), Some(2));
+        assert!(matches!(
+            connection_auth_flags(tx, self_connection, foreign_sender),
+            Err(DeploymentError::CorruptMetadata)
+        ));
+        Ok(())
+    })
+    .unwrap();
+    db.clear_all_clients().unwrap();
+    transact(&db, |tx| {
+        for table in [ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_AUTH_ID] {
+            assert_eq!(tx.table_row_count(table), Some(0));
+        }
+        Ok(())
+    })
+    .unwrap();
+    runtime.block_on(db.shutdown());
+    drop(db);
+    runtime.block_on(durability.close());
+}
+
+#[test]
+fn connection_auth_and_client_rows_share_connect_and_cleanup_transactions() {
+    let db = TestDB::in_memory().unwrap();
+    let sender = db.database_identity();
+    let connection = ConnectionId::from_u128(77);
+    let rejected: Result<(), DeploymentError> = transact(&db, |tx| {
+        tx.insert_st_client(sender, connection, "JWT")?;
+        record_connection_auth(tx, connection, sender, 1)?;
+        Err(DeploymentError::CorruptMetadata)
+    });
+    assert!(rejected.is_err());
+    transact(&db, |tx| {
+        assert!(tx.st_client_row(sender, connection).is_none());
+        assert_eq!(connection_auth_flags(tx, connection, sender)?, 0);
+        tx.insert_st_client(sender, connection, "JWT")?;
+        record_connection_auth(tx, connection, sender, 1)?;
+        Ok(())
+    })
+    .unwrap();
+    // A failed callback transaction cannot partially delete its captured auth.
+    let failed_callback: Result<(), DeploymentError> = transact(&db, |tx| {
+        tx.delete_st_client(sender, connection, db.database_identity())?;
+        Err(DeploymentError::CorruptMetadata)
+    });
+    assert!(failed_callback.is_err());
+    transact(&db, |tx| {
+        assert!(tx.st_client_row(sender, connection).is_some());
+        assert_eq!(connection_auth_flags(tx, connection, sender)?, 1);
+        // Both successful callbacks and fallback cleanup use this deletion path.
+        tx.delete_st_client(sender, connection, db.database_identity())?;
+        Ok(())
+    })
+    .unwrap();
+    transact(&db, |tx| {
+        for table in [ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_AUTH_ID] {
+            assert_eq!(tx.table_row_count(table), Some(0));
+        }
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn container_fence_installation_serializes_with_admitted_transactions() {
+    let db = TestDB::in_memory().unwrap();
+    let source = Identity::from_u256(778u64.into());
+    let first = StContainerFenceRow {
+        source_identity: source.into(),
+        generation: 1,
+        target_grant_revision: 0,
+        target_set_hash: hash_bytes(b"self"),
+        allowed: true,
+    };
+    transact(&db, |tx| install_container_fence(&db, tx, &first)).unwrap();
+    let admitted = begin_mut_tx(&db);
+    check_container_fence(&admitted, source, 1, 0).unwrap();
+    // A fence cannot commit midway through an already admitted transaction.
+    assert!(db
+        .try_begin_mut_tx(
+            spacetimedb_datastore::traits::IsolationLevel::Serializable,
+            Workload::ForTests
+        )
+        .is_none());
+    let _ = db.rollback_mut_tx(admitted);
+    transact(&db, |tx| {
+        install_container_fence(&db, tx, &StContainerFenceRow { generation: 2, ..first })
+    })
+    .unwrap();
+    transact(&db, |tx| {
+        assert!(matches!(
+            check_container_fence(tx, source, 1, 0),
+            Err(DeploymentError::ContainerFenced)
+        ));
+        check_container_fence(tx, source, 2, 0)
+    })
+    .unwrap();
+}
+
+#[test]
+fn same_revision_environment_publications_compare_the_last_committed_operation() {
+    use crate::db::environment;
+    use spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration, EnvironmentSchema};
+    use std::collections::BTreeMap;
+    use std::sync::{Arc, Barrier};
+
+    let db = TestDB::in_memory().unwrap();
+    let limits = ContainerSpecLimits::default();
+    let first = request(1, None);
+    let schema = EnvironmentSchema::new(vec![EnvironmentDeclaration {
+        name: "TOKEN".into(),
+        constraint: EnvironmentConstraint::AnyString,
+        optional: false,
+    }])
+    .unwrap();
+    let accepted = transact(&db, |tx| {
+        install_publication_fence(tx, first.publication_epoch, first.operation_id)?;
+        environment::replace(&db, tx, &schema, &BTreeMap::from([("TOKEN".into(), "initial".into())]))
+            .map_err(|error| DeploymentError::Database(DBError::Other(error.into())))?;
+        record_deployment_commit(tx, &first, now(), &limits)
+    })
+    .unwrap();
+    let mut second = request(2, Some(&accepted));
+    second.deployment = first.deployment.clone();
+    let mut third = request(3, Some(&accepted));
+    third.deployment = first.deployment.clone();
+    let barrier = Arc::new(Barrier::new(3));
+    let writers: Vec<_> = [(second.clone(), "second"), (third.clone(), "third")]
+        .into_iter()
+        .map(|(request, value)| {
+            let db = db.db.clone();
+            let barrier = barrier.clone();
+            let schema = schema.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                transact(&db, |tx| {
+                    install_publication_fence(tx, request.publication_epoch, request.operation_id)?;
+                    check_deployment_commit(tx, &request, now(), &Default::default())?;
+                    environment::replace(&db, tx, &schema, &BTreeMap::from([("TOKEN".into(), value.into())]))
+                        .map_err(|error| DeploymentError::Database(DBError::Other(error.into())))?;
+                    record_deployment_commit(tx, &request, now(), &Default::default())
+                })
+            })
+        })
+        .collect();
+    barrier.wait();
+    // Join both physical writers before asserting, including when one failed.
+    let outcomes: Vec<_> = writers.into_iter().map(|writer| writer.join()).collect();
+    let outcomes: Vec<_> = outcomes.into_iter().map(Result::unwrap).collect();
+    assert_eq!(outcomes.iter().filter(|result| result.is_ok()).count(), 1);
+    let winner = outcomes.into_iter().find_map(Result::ok).unwrap();
+    assert_eq!(winner.revision, accepted.revision);
+    assert_ne!(winner.operation_id, accepted.operation_id);
+    transact(&db, |tx| {
+        assert_eq!(current_publication(tx)?, Some(winner.clone()));
+        let expected = if winner.operation_id == second.operation_id {
+            "second"
+        } else {
+            "third"
+        };
+        assert_eq!(
+            environment::snapshot(tx).map_err(|error| DeploymentError::Database(DBError::Other(error.into())))?
+                ["TOKEN"],
+            expected
+        );
+        assert_eq!(tx.table_row_count(ST_DEPLOYMENT_OPERATION_ID), Some(2));
+        // A later attempt has the current revision but an obsolete operation.
+        let mut stale = request(4, Some(&accepted));
+        stale.deployment = first.deployment.clone();
+        install_publication_fence(tx, stale.publication_epoch, stale.operation_id)?;
+        assert!(matches!(
+            check_deployment_commit(tx, &stale, now(), &limits),
+            Err(DeploymentError::RevisionConflict)
+        ));
+        assert!(matches!(
+            abort_deployment_commit(tx, &stale),
+            Err(DeploymentError::RevisionConflict)
+        ));
+        // The exact current pair can close this attempt; the old pair cannot
+        // interpret its closed marker as proof that its precondition survived.
+        let mut current = stale.clone();
+        current.expected_last_operation = Some(winner.operation_id);
+        abort_deployment_commit(tx, &current)?;
+        assert!(deployment_publication_aborted(tx, &current)?);
+        assert!(matches!(
+            deployment_publication_aborted(tx, &stale),
+            Err(DeploymentError::RevisionConflict)
+        ));
+        assert_eq!(current_publication(tx)?, Some(winner));
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn retained_receipt_binds_prior_operation_epoch_and_current_metadata() {
+    let db = TestDB::in_memory().unwrap();
+    let first = request(1, None);
+    let accepted = transact(&db, |tx| {
+        install_publication_fence(tx, first.publication_epoch, first.operation_id)?;
+        record_deployment_commit(tx, &first, now(), &Default::default())
+    })
+    .unwrap();
+    transact(&db, |tx| {
+        let mut changed = first.clone();
+        changed.expected_last_operation = Some(request(9, None).operation_id);
+        assert!(matches!(
+            committed_deployment_operation(tx, &changed),
+            Err(DeploymentError::OperationConflict)
+        ));
+        changed = first.clone();
+        changed.publication_epoch += 1;
+        assert!(matches!(
+            committed_deployment_operation(tx, &changed),
+            Err(DeploymentError::OperationConflict)
+        ));
+        assert_eq!(current_publication(tx)?, Some(accepted.clone()));
+        Ok(())
+    })
+    .unwrap();
+    // A corrupted result epoch must fail even when its request hash still
+    // matches. Do not derive a replacement epoch from the publication fence.
+    transact(&db, |tx| {
+        let row = tx.iter(ST_DEPLOYMENT_OPERATION_ID)?.next().unwrap();
+        let mut row = StDeploymentOperationRow::try_from(row)?;
+        let CommitReceipt::V1(mut receipt) = bsatn::from_slice(&row.commit_result).unwrap();
+        receipt.result.publication_epoch = 0;
+        row.commit_result = bsatn::to_vec(&CommitReceipt::V1(receipt)).unwrap().into();
+        tx.clear_table(ST_DEPLOYMENT_OPERATION_ID)?;
+        tx.insert_via_serialize_bsatn(ST_DEPLOYMENT_OPERATION_ID, &row)?;
+        assert!(matches!(current_publication(tx), Err(DeploymentError::CorruptMetadata)));
+        assert!(matches!(
+            committed_deployment_operation(tx, &first),
+            Err(DeploymentError::CorruptMetadata)
+        ));
+        tx.clear_table(ST_DEPLOYMENT_OPERATION_ID)?;
+        assert!(matches!(current_publication(tx), Err(DeploymentError::CorruptMetadata)));
+        let next = request(2, Some(&accepted));
+        install_publication_fence(tx, next.publication_epoch, next.operation_id)?;
+        assert!(matches!(
+            check_deployment_commit(tx, &next, now(), &Default::default()),
+            Err(DeploymentError::CorruptMetadata)
+        ));
+        assert!(matches!(
+            abort_deployment_commit(tx, &next),
+            Err(DeploymentError::CorruptMetadata)
+        ));
+        Ok(())
+    })
+    .unwrap();
+}

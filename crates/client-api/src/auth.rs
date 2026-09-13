@@ -88,6 +88,7 @@ pub struct SpacetimeAuth {
     pub claims: SpacetimeIdentityClaims,
     /// The JWT payload as a json string (after base64 decoding).
     pub jwt_payload: Box<str>,
+    pub hosted: Option<spacetimedb::auth::hosted_tokens::VerifiedHostedAuth>,
 }
 
 impl SpacetimeAuth {
@@ -100,6 +101,7 @@ impl SpacetimeAuth {
             creds,
             claims,
             jwt_payload: payload,
+            hosted: None,
         })
     }
 }
@@ -109,6 +111,7 @@ impl From<SpacetimeAuth> for ConnectionAuthCtx {
         ConnectionAuthCtx {
             claims: auth.claims,
             jwt_payload: auth.jwt_payload.clone(),
+            hosted: auth.hosted,
         }
     }
 }
@@ -214,6 +217,9 @@ impl SpacetimeAuth {
         signer: &impl TokenSigner,
         expiry: Duration,
     ) -> Result<(SpacetimeIdentityClaims, String), JwtError> {
+        if self.hosted.is_some() {
+            return Err(JwtErrorKind::InvalidToken.into());
+        }
         TokenClaims::from(self.clone()).encode_and_sign_with_expiry(signer, Some(expiry))
     }
 }
@@ -402,12 +408,46 @@ pub struct SpacetimeAuthHeader {
 }
 
 #[async_trait::async_trait]
-impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for SpacetimeAuthHeader {
+impl<S: NodeDelegate + ControlStateDelegate + Send + Sync> axum::extract::FromRequestParts<S> for SpacetimeAuthHeader {
     type Rejection = AuthorizationRejection;
     async fn from_request_parts(parts: &mut request::Parts, state: &S) -> Result<Self, Self::Rejection> {
         let Some(creds) = SpacetimeCreds::from_request_parts(parts)? else {
             return Ok(Self { auth: None });
         };
+
+        if spacetimedb::auth::hosted_tokens::has_reserved_hosted_token_kind(&creds.token)
+            .map_err(|error| AuthorizationRejection::Custom(TokenValidationError::Other(error)))?
+        {
+            // Use Axum's matched route parameters, never a client header or a
+            // hand-parsed URL suffix. Tokens are ineligible for root publishing,
+            // identity allocation, and generic token exchange routes.
+            #[derive(Deserialize)]
+            struct HostedTargetPath {
+                name_or_identity: crate::util::NameOrIdentity,
+            }
+            let axum::extract::Path(params) = axum::extract::Path::<HostedTargetPath>::from_request_parts(parts, state)
+                .await
+                .map_err(|_| AuthorizationRejection::Required)?;
+            let target = params
+                .name_or_identity
+                .resolve(state)
+                .await
+                .map_err(|_| AuthorizationRejection::Required)?;
+            let verified = state
+                .authenticate_hosted_token(&creds.token, target)
+                .await
+                .map_err(|error| AuthorizationRejection::Custom(TokenValidationError::Other(error)))?;
+            let connection = verified
+                .into_connection_auth()
+                .map_err(|error| AuthorizationRejection::Custom(TokenValidationError::Other(error)))?;
+            let auth = SpacetimeAuth {
+                creds,
+                claims: connection.claims,
+                jwt_payload: connection.jwt_payload,
+                hosted: connection.hosted,
+            };
+            return Ok(Self { auth: Some(auth) });
+        }
 
         let claims = validate_token(state, &creds.token)
             .await
@@ -420,6 +460,7 @@ impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for Space
             creds,
             claims,
             jwt_payload: payload.into(),
+            hosted: None,
         };
         Ok(Self { auth: Some(auth) })
     }
@@ -478,7 +519,9 @@ impl SpacetimeAuthHeader {
 pub struct SpacetimeAuthRequired(pub SpacetimeAuth);
 
 #[async_trait::async_trait]
-impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for SpacetimeAuthRequired {
+impl<S: NodeDelegate + ControlStateDelegate + Send + Sync> axum::extract::FromRequestParts<S>
+    for SpacetimeAuthRequired
+{
     type Rejection = AuthorizationRejection;
     async fn from_request_parts(parts: &mut request::Parts, state: &S) -> Result<Self, Self::Rejection> {
         let auth = SpacetimeAuthHeader::from_request_parts(parts, state).await?;
