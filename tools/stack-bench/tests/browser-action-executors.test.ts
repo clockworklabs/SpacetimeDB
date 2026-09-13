@@ -549,6 +549,57 @@ test('unreadable destinations never trigger a blind toggle click', async () => {
   }
 });
 
+test('covered navigation accepts a destination that finishes loading without another click', async () => {
+  const { chromium } = await import('playwright');
+  const browser = await chromium.launch({ headless: true });
+  try {
+    for (const mode of ['delayed', 'absent', 'button']) {
+      const page = await browser.newPage();
+      try {
+        await page.setContent(`<button id="sales-link" onclick="this.dataset.clicks=Number(this.dataset.clicks||0)+1">Sales</button>
+          <dialog id="modal">Loading</dialog><script>
+          ${mode === 'button' ? '' : 'modal.showModal();'}
+          ${mode === 'delayed' ? "setTimeout(()=>modal.innerHTML='<div id=category-row>Audio</div>',150);" : ''}
+          </script>`);
+        const result = await run({ do: 'click', actor: 'a', testid: 'sales-link',
+          unlessVisible: 'category-row', ifAvailable: true, within: 600 },
+        services({ loc: (id: string) => page.locator(`#${id}`) }, {
+          browser: { sleep: async (ms: number) => new Promise(resolve => setTimeout(resolve, ms)) },
+        }));
+        assert.equal(result.status, mode === 'absent' ? 'failed' : 'passed', result.summary ?? undefined);
+        assert.equal(await page.locator('#sales-link').getAttribute('data-clicks'), mode === 'button' ? '1' : null);
+        if (mode === 'absent') assert.equal(result.finding?.kind, 'control-blocked');
+      } finally { await page.close(); }
+    }
+  } finally { await browser.close(); }
+});
+
+test('covered navigation preserves cancellation and browser failures', async () => {
+  for (const cancelled of [false, true]) {
+    const controller = new AbortController();
+    let reads = 0;
+    let clicks = 0;
+    const provided = services({ loc: () => ({
+      isVisible: async () => { reads += 1; return reads > 1; },
+      isDisabled: async () => false,
+      evaluate: async () => true,
+      click: async () => {
+        clicks += 1;
+        if (cancelled) controller.abort('cancelled by test');
+        throw Object.assign(new Error(cancelled ? 'intercepts pointer events' : 'browser disconnected'),
+          { name: cancelled ? 'TimeoutError' : 'Error' });
+      },
+    }) });
+    const result = await executeAction(ACTION_REGISTRY, 'click', {
+      do: 'click', actor: 'a', testid: 'sales-link', unlessVisible: 'category-row', within: 100,
+    }, { capabilities: provided.capabilities, signal: controller.signal });
+    assert.equal(result.status, cancelled ? 'inconclusive' : 'harness_failure');
+    if (cancelled) assert.equal(result.code, 'cancelled');
+    assert.equal(reads, 1);
+    assert.equal(clicks, 1);
+  }
+});
+
 test('reload timeouts fail the app while proven browser crashes stay harness failures', async () => {
   for (const [message, expected] of [
     ['page.reload: Timeout 20000ms exceeded', 'failed'],

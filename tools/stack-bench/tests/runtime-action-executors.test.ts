@@ -18,7 +18,6 @@ import { compileScenarioDefinition } from '../src/composition/definition-compile
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 type UnknownRecord = Record<string, unknown>;
-type Event = string | readonly [string, boolean, number];
 
 interface ServiceOverrides {
   readonly applicationLifecycle?: unknown;
@@ -575,14 +574,16 @@ test('offline lifecycle fails closed when browser network state does not change'
 });
 
 test('client lifecycle delegates through the narrow browser capability', async () => {
-  const events: Event[] = [];
+  const events: unknown[] = [];
   const actor = { page: { close: async () => events.push('close') } };
   const capabilities = services(new Map([['a', actor]]), { browser: {
     clients: {
       open: async (value: unknown, settleMs: number) => {
         events.push(['open', value === actor, settleMs]);
       },
-      fresh: async () => { events.push('fresh'); return 'a-fresh'; },
+      fresh: async (_actor: unknown, _name: string, preserveStorage: boolean) => {
+        events.push(['fresh', preserveStorage]); return 'a-fresh';
+      },
     },
     sleep,
   } });
@@ -590,7 +591,8 @@ test('client lifecycle delegates through the narrow browser capability', async (
   assert.equal((await run({ do: 'openClient', actor: 'a', settleMs: 9 }, capabilities)).status, 'passed');
   const fresh = await run({ do: 'freshClient', actor: 'a' }, capabilities);
   assert.equal(fresh.status, 'passed');
-  assert.deepEqual(events, ['close', ['open', true, 9], 'fresh']);
+  assert.equal((await run({ do: 'freshClient', actor: 'a', preserveStorage: true }, capabilities)).status, 'passed');
+  assert.deepEqual(events, ['close', ['open', true, 9], ['fresh', false], ['fresh', true]]);
   assert.deepEqual(fresh.observation, { actor: 'a-fresh' });
 });
 

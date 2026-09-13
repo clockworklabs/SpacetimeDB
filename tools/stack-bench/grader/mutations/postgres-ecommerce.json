@@ -2474,6 +2474,21 @@
           "replace": "      await client.query(`UPDATE orders SET refund_total = refund_total + total, status = CASE"
         }
       ]
+    },
+    {
+      "id": "progression-support-history-anonymous-leak",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-history.json",
+      "targets": [
+        "ecommerce.spec.access-control.support-history-logout.612d"
+      ],
+      "desc": "Return private support subjects to signed-out visitors while preserving authenticated ownership filtering.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "  if (!account) return [];\n  const where = account.isAdmin || account.isStaff ? \"TRUE\" : \"sc.account_id = $1\";\n  const values = account.isAdmin || account.isStaff ? [] : [account.id];",
+          "replace": "  const where = !account || account.isAdmin || account.isStaff ? \"TRUE\" : \"sc.account_id = $1\";\n  const values = !account || account.isAdmin || account.isStaff ? [] : [account.id];"
+        }
+      ]
     }
   ]
 }

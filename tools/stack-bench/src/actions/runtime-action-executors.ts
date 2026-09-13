@@ -74,7 +74,7 @@ interface LifecycleConcurrencyCapabilities {
   readonly 'backend-lifecycle': LifecycleCapability;
   readonly 'browser-interaction': {
     readonly clients: {
-      fresh(actor: Actor, actorName: string): Promise<string>;
+      fresh(actor: Actor, actorName: string, preserveStorage: boolean): Promise<string>;
       open(actor: Actor, settleMs: number, signal: AbortSignal): Promise<void>;
     };
     sleep: Sleep;
@@ -416,9 +416,9 @@ async function openClient({ input, capabilities, signal }: ActionArguments<Actor
   return { opened: true };
 }
 
-async function freshClient({ input, capabilities }: ActionArguments<ActorInput>) {
+async function freshClient({ input, capabilities }: ActionArguments<ActorInput & { preserveStorage?: boolean }>) {
   const actor = actorFor(capabilities, input.actor);
-  const name = await capabilities['browser-interaction'].clients.fresh(actor, input.actor);
+  const name = await capabilities['browser-interaction'].clients.fresh(actor, input.actor, input.preserveStorage ?? false);
   return { actor: name };
 }
 

@@ -200,7 +200,7 @@ export const ACTION_DEFINITIONS = Object.freeze({
     { enter: boolean, ...locator, ...settle, ...within }),
   forgeWrite: fields({ ...actor, fromActor: nonEmptyString, settleMs: nonNegativeNumber },
     { field: value => oneOf(value, ['room', 'identity']), text: string, value: scalar }),
-  freshClient: fields(actor),
+  freshClient: fields(actor, { preserveStorage: boolean }),
   openClient: fields(actor, settle),
   openItem: fields({ ...actor, item: nonEmptyString },
     { unlessVisible: nonEmptyString, ...within, ...settle }),

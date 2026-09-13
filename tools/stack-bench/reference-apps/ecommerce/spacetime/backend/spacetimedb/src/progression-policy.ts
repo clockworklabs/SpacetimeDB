@@ -26,8 +26,8 @@ export function planStockAllocation(
   return allocations;
 }
 
-export function isTicketCreator(senderIdentity: string, creatorIdentity: string): boolean {
-  return senderIdentity === creatorIdentity;
+export function isGuestTicketCreator(senderIdentity: string, creatorIdentity: string, accountId: bigint | undefined): boolean {
+  return accountId === undefined && senderIdentity === creatorIdentity;
 }
 
 export function hasPendingRestockForRule(

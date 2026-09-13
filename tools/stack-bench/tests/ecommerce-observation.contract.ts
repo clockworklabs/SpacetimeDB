@@ -79,6 +79,24 @@ test('overdraw failure cannot change the next transfer or authorization probe st
     'scenarios/02-transfer-overdraw.json');
 });
 
+test('support logout checks fresh traffic with post-logout storage and a usable public page', () => {
+  const steps = read('progression-support-history.json').features[0]!.criteria.find(c => c.id === '612d')!.steps;
+  const received = steps.findIndex(s => s.do === 'expectReceived');
+  const logout = steps.findIndex(s => s.testid === 'signout');
+  const confirmed = steps.findIndex(s => s.do === 'waitUntilAbsent' && s.testid === 'current-user');
+  const fresh = steps.findIndex(s => s.do === 'freshClient');
+  const ready = steps.findIndex(s => s.actor === 'owner-fresh' && s.testid === 'support-email');
+  const negative = steps.findIndex(s => s.do === 'expectNotReceived');
+  assert(received >= 0 && logout > received && confirmed > logout && fresh > confirmed);
+  assert.equal(steps[fresh]!.preserveStorage, true);
+  assert(ready > fresh && negative > ready);
+  assert.equal(steps[negative]!.contains, steps[received]!.contains);
+  assert.equal(steps[negative]!.actor, 'owner-fresh');
+  const graph = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, 'tracks/ecommerce/progression/ecommerce.json'), 'utf8'));
+  assert(graph.nodes.find((node: { id: string }) => node.id === 'support-history').gradingGroups
+    .includes('ecommerce.spec.access-control#support-history-logout'));
+});
+
 test('support privacy creates its own persisted ticket after the durability probe', () => {
   const history = read('progression-support-history.json').features[0]!;
   const privacy = history.criteria.find(check => check.id === '612b')!.steps;

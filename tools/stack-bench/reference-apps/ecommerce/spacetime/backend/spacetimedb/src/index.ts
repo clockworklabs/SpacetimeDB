@@ -44,7 +44,7 @@ import spacetimedb, {
 } from './schema';
 import {
   hasPendingRestockForRule,
-  isTicketCreator,
+  isGuestTicketCreator,
   planStockAllocation,
 } from './progression-policy';
 import { createSubscription, changeSubscription, processSubscriptions } from './subscriptions';
@@ -1636,7 +1636,7 @@ export const visibleSupportTickets = spacetimedb.view(
     const actor = accountId === null ? null : ctx.db.account.id.find(accountId);
     const sender = ctx.sender.toHexString();
     return [...ctx.db.supportTicket.iter()]
-      .filter(row => isTicketCreator(sender, row.creatorIdentity.toHexString()) ||
+      .filter(row => isGuestTicketCreator(sender, row.creatorIdentity.toHexString(), row.accountId) ||
         !!actor && (actor.isAdmin || actor.isStaff || row.accountId === accountId))
       .map(row => ({
         id: row.id,

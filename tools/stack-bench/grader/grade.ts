@@ -4,7 +4,8 @@
 //
 import { chromium } from 'playwright';
 import { attemptBrowserLaunchOptions } from '../container/browser-pipe.js';
-import type { Browser, BrowserContext, Page } from 'playwright';
+import type { Browser, BrowserContext, Page, Request } from 'playwright';
+import { sanitiseConsoleError } from '../src/evidence/diagnostic-sanitizer.js';
 import { randomUUID } from 'node:crypto';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
@@ -443,10 +444,12 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
         await fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
         await abortableSleep(settleMs, signal);
       },
-      async fresh(actor: Actor, sourceName: string) {
+      async fresh(actor: Actor, sourceName: string, preserveStorage: boolean) {
         const browser = actor.page.context().browser();
         if (!browser) throw new Error('actor browser is unavailable');
-        const context = await browser.newContext();
+        const context = await browser.newContext(preserveStorage
+          ? { storageState: await actor.context.storageState({ indexedDB: true }) }
+          : undefined);
         const name = `${sourceName}-fresh`;
         // Own cleanup before page creation or navigation can fail.
         const entry: ActorContextEntry = { context, name, page: null };
@@ -456,7 +459,30 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
         fresh.setDefaultTimeout(defaultWithin);
         const observer = new Actor(`${actor.name}-fresh`, fresh, context);
         await observer.ready;
-        await fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        // storageState omits sessionStorage. Seed the first document only;
+        // later reloads must retain the application's own storage changes.
+        const session = preserveStorage ? await context.newCDPSession(fresh) : null;
+        let seed: string | undefined;
+        try {
+          if (session) {
+            await session.send('Page.enable');
+            const state = await actor.page.evaluate(() => ({
+              origin: location.origin, entries: Object.entries(sessionStorage),
+            }));
+            const script = await session.send('Page.addScriptToEvaluateOnNewDocument', {
+              source: `if (window === window.top && location.origin === ${JSON.stringify(state.origin)}) {
+                for (const [key, value] of ${JSON.stringify(state.entries)}) sessionStorage.setItem(key, value);
+              }`,
+            });
+            seed = script.identifier;
+          }
+          await fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        } finally {
+          if (session) {
+            try { if (seed) await session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: seed }); }
+            finally { await session.detach(); }
+          }
+        }
         observer.annotate = actor.annotate;
         actors.set(name, observer);
         return name;
@@ -748,17 +774,42 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
       await actor.ready;
       actor.annotate = Boolean(args.media);
       actors.set(name, actor);
+      const pending = new Map<Request, string>();
+      const requested = (request: Request) => {
+        if (pending.size >= 20) return;
+        try {
+          const url = new URL(request.url());
+          const origin = ['http:', 'https:'].includes(url.protocol) ? url.origin : url.protocol;
+          pending.set(request, `${request.resourceType()} ${origin.slice(0, 200)}`);
+        } catch { /* malformed URLs provide no safe origin */ }
+      };
+      const completed = (request: Request) => { pending.delete(request); };
+      page.on('request', requested);
+      page.on('requestfinished', completed);
+      page.on('requestfailed', completed);
       try {
         await page.goto(args.url!, { waitUntil: 'domcontentloaded', timeout: 20000 });
       } catch (cause) {
+        for (const resource of pending.values()) {
+          result.consoleErrors.push(`[${name}] Navigation pending resource (up to 20): ${resource}`);
+        }
         if (harnessBrowserFailure(cause)) throw cause;
         throw new ActionApplicationFailure('application did not load during browser setup', {
           observation: errorMessage(cause), expected: 'a reachable application page',
         });
+      } finally {
+        page.off('request', requested);
+        page.off('requestfinished', completed);
+        page.off('requestfailed', completed);
       }
     }
   } catch (error) {
     const classified = classifyCheckFailure(error);
+    for (const actor of actors.values()) {
+      for (const message of actor.consoleErrors) {
+        result.consoleErrors.push(`[${actor.name}] ${sanitiseConsoleError(message)}`);
+      }
+    }
     const reason = keepReason((classified.summary ?? '').trim());
     result.setupEvidence = buildCheckEvidence({ ctx, phase: 'setup', startedAtMs: initializationStartedAtMs,
       failure: error, summary: reason });

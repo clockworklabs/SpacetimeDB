@@ -6,7 +6,7 @@ import test from 'node:test';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import {
   hasPendingRestockForRule,
-  isTicketCreator,
+  isGuestTicketCreator,
   planStockAllocation,
 } from '../reference-apps/ecommerce/spacetime/backend/spacetimedb/src/progression-policy.js';
 
@@ -26,16 +26,19 @@ test('cart reservations can span warehouses without over-allocating stock', () =
   assert.equal(planStockAllocation([{ warehouseId: 1n, quantity: 2 }], 3), null);
 });
 
-test('support ticket visibility follows the submitting SpacetimeDB identity', () => {
-  assert.equal(isTicketCreator('visitor-a', 'visitor-a'), true);
-  assert.equal(isTicketCreator('visitor-b', 'visitor-a'), false);
+test('creator identity grants access only to guest support tickets', () => {
+  assert.equal(isGuestTicketCreator('visitor-a', 'visitor-a', undefined), true);
+  assert.equal(isGuestTicketCreator('visitor-b', 'visitor-a', undefined), false);
+  assert.equal(isGuestTicketCreator('visitor-a', 'visitor-a', 7n), false,
+    'the same identity must not bypass account authorization after logout');
 
   const schema = read(join(appRoot, 'backend', 'spacetimedb', 'src', 'schema.ts'));
   const backend = read(join(appRoot, 'backend', 'spacetimedb', 'src', 'index.ts'));
   const client = read(join(appRoot, 'client', 'src', 'components', 'ProgressionWorkbench.tsx'));
   assert.match(schema, /creatorIdentity:\s*t\.identity\(\)/);
   assert.match(backend, /creatorIdentity:\s*ctx\.sender/);
-  assert.match(backend, /isTicketCreator\(sender, row\.creatorIdentity\.toHexString\(\)\)/);
+  assert.match(backend, /isGuestTicketCreator\(sender, row\.creatorIdentity\.toHexString\(\), row\.accountId\)/);
+  assert.match(backend, /!!actor && \(actor\.isAdmin \|\| actor\.isStaff \|\| row\.accountId === accountId\)/);
   assert.match(client, /supportTickets[\s\S]+?\.reference \?\? ''/);
   assert.doesNotMatch(client, /Ticket submitted:/);
 });

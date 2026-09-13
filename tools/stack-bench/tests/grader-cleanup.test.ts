@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { EventEmitter } from 'node:events';
 import type { Browser } from 'playwright';
 import { errors } from 'playwright';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
@@ -72,8 +73,22 @@ test('navigation timeouts and connection refusal fail setup; proven browser cras
     const context = { newPage: async () => page,
       newCDPSession: async () => ({ on() {}, async send() {} }),
       close: async () => { closed = true; } };
-    const page = { on() {}, setDefaultTimeout() {}, context: () => context,
-      goto: async () => { throw error; }, video: () => null };
+    const page = Object.assign(new EventEmitter(), { setDefaultTimeout() {}, context: () => context,
+      goto: async () => {
+        page.emit('console', { type: () => 'error', text: () => 'password=private-secret failed' });
+        const finished = { method: () => 'GET', resourceType: () => 'document',
+          url: () => 'https://finished.example/private?token=private-secret' };
+        page.emit('request', finished);
+        page.emit('requestfinished', finished);
+        const failed = { ...finished, url: () => 'https://failed.example/private' };
+        page.emit('request', failed);
+        page.emit('requestfailed', failed);
+        for (let i = 0; i < 25; i++) page.emit('request', {
+          method: () => 'GET', resourceType: () => 'stylesheet',
+          url: () => `https://user:private-secret@fonts.example/private-${i}?token=private-secret#private`,
+        });
+        throw error;
+      }, video: () => null });
     const browser = { newContext: async () => context } as unknown as Browser;
     const result = await gradeFeature(browser, scenario.features[0]!, {
       url: 'http://app', level: 1, headed: false, selectedCheckKeys: [], nullControl: false,
@@ -84,6 +99,13 @@ test('navigation timeouts and connection refusal fail setup; proven browser cras
     assert.equal(result.criteria[0]!.evidence.phase, 'setup');
     assert.deepEqual(result.criteria[0]!.evidence.actions, []);
     assert.equal(closed, true);
+    assert.equal(result.consoleErrors.filter(line => line.includes('Navigation pending resource')).length, 20);
+    assert.match(result.consoleErrors.join('\n'), /stylesheet https:\/\/fonts.example/);
+    assert.match(result.consoleErrors.join('\n'), /redacted credential/);
+    assert.doesNotMatch(result.consoleErrors.join('\n'), /private-secret|private-|finished.example|failed.example/);
+    assert.equal(page.listenerCount('requestfinished'), 0);
+    assert.equal(page.listenerCount('requestfailed'), 0);
+    assert.equal(page.listenerCount('request'), 1); // Only the existing write recorder remains.
   }
 });
 

@@ -196,7 +196,7 @@ async function click({ input, capabilities, signal }:
   const browser = interaction(capabilities);
   const deadline = Date.now() + (input.within ?? browser.defaultWithin);
   const destinationVisible = async (): Promise<boolean> => {
-    if (!input.unlessVisible || Date.now() >= deadline) return false;
+    if (!input.unlessVisible) return false;
     while (true) {
       try {
         const sentinel = actor.loc(input.unlessVisible);
@@ -236,7 +236,19 @@ async function click({ input, capabilities, signal }:
       await browser.sleep(Math.min(100, deadline - Date.now()), signal);
     }
   }
-  await target.click({ timeout: input.within ?? browser.defaultWithin });
+  try {
+    await target.click({ timeout: input.within ?? browser.defaultWithin });
+  } catch (error) {
+    // An already-open view can finish loading while its covered navigation
+    // control waits for actionability. Observe that destination; do not click again.
+    if (input.unlessVisible && !signal.aborted && errorField(error, 'name') === 'TimeoutError'
+      && /intercepts pointer events/i.test(String(error))
+      && await Promise.race([destinationVisible(), browser.sleep(250, signal).then(() => false)])
+      && !signal.aborted) {
+      return { clicked: false, testid: input.testid, visible: input.unlessVisible };
+    }
+    throw error;
+  }
   if (input.settleMs) await browser.sleep(input.settleMs, signal);
   return { clicked: input.testid };
 }

@@ -3,6 +3,7 @@
   "track": "ecommerce",
   "level": 2,
   "name": "Customer support history",
+  "note": "Draft: the logout boundary requires matching reference and defect-control qualification.",
   "features": [
     {
       "id": 612,
@@ -73,6 +74,39 @@
             { "do": "click", "actor": "other", "testid": "support-link" },
             { "do": "expect", "actor": "other", "testid": "support-ticket", "contains": "Private ticket {user:privateticketmarker}", "absent": true },
             { "do": "expectNotReceived", "actor": "other", "contains": "Private ticket {user:privateticketmarker}" }
+          ]
+        },
+        {
+          "id": "612d",
+          "category": "production",
+          "desc": "after logout the same browser storage no longer grants access to private support history",
+          "points": 2,
+          "statedBy": "Signed-out visitors cannot access private support tickets.",
+          "steps": [
+            {"do":"reload","actor":"owner","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"owner","name":"support-owner","readyTestid":"current-user"},
+            {"do":"click","actor":"owner","testid":"support-link"},
+            {"do":"fill","actor":"owner","testid":"support-email","text":"owner@example.com"},
+            {"do":"fill","actor":"owner","testid":"support-subject","text":"Logout ticket {user:logoutticketmarker}"},
+            {"do":"fill","actor":"owner","testid":"support-message","text":"Private account issue."},
+            {"do":"click","actor":"owner","testid":"support-submit"},
+            {"do":"expect","actor":"owner","testid":"support-reference","nonEmpty":true},
+            {"do":"reload","actor":"owner","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"owner","name":"support-owner","readyTestid":"current-user"},
+            {"do":"click","actor":"owner","testid":"support-link","unlessVisible":"support-ticket"},
+            {"do":"expect","actor":"owner","testid":"support-ticket","contains":"Logout ticket {user:logoutticketmarker}"},
+            {"do":"expectReceived","actor":"owner","contains":"Logout ticket {user:logoutticketmarker}","within":10000},
+            {"do":"reload","actor":"owner","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"owner","name":"support-owner","readyTestid":"current-user"},
+            {"do":"click","actor":"owner","testid":"current-user","unlessVisible":"signout"},
+            {"do":"click","actor":"owner","testid":"signout"},
+            {"do":"waitUntilAbsent","actor":"owner","testid":"current-user","within":6000},
+            {"do":"freshClient","actor":"owner","preserveStorage":true},
+            {"do":"expect","actor":"owner-fresh","testid":"current-user","absent":true},
+            {"do":"click","actor":"owner-fresh","testid":"support-link"},
+            {"do":"expect","actor":"owner-fresh","testid":"support-email"},
+            {"do":"expect","actor":"owner-fresh","testid":"support-ticket","contains":"Logout ticket {user:logoutticketmarker}","absent":true},
+            {"do":"expectNotReceived","actor":"owner-fresh","contains":"Logout ticket {user:logoutticketmarker}"}
           ]
         }
       ]

@@ -2456,6 +2456,21 @@
           "replace": "        order.refundTotal += order.total;"
         }
       ]
+    },
+    {
+      "id": "support-history-leaks-to-signed-out-visitors",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-history.json",
+      "targets": [
+        "ecommerce.spec.access-control.support-history-logout.612d"
+      ],
+      "desc": "Disclose support tickets to signed-out visitors while leaving signed-in ownership filtering unchanged.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "const ticketFilter = isStaff ? {} : user ? { userId: user._id } : { _id: null };",
+          "replace": "const ticketFilter = isStaff ? {} : user ? { userId: user._id } : {};"
+        }
+      ]
     }
   ]
 }

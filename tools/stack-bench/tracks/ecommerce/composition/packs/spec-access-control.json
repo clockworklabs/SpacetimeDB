@@ -417,6 +417,22 @@
       ]
     },
     {
+      "id": "support-history-logout",
+      "source": "scenarios/progression-support-history.json",
+      "feature": 612,
+      "criteria": [
+        "612d"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.progression.support-history"
+      ]
+    },
+    {
       "id": "managed-support-privacy",
       "source": "scenarios/progression-managed-support-privacy.json",
       "feature": 613,
