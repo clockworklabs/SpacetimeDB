@@ -88,23 +88,7 @@ fn run_inner<I: WasmInstance>(
     // We parse the sql statement in a mutable transaction.
     // If it turns out to be a query, we downgrade the tx.
     let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
-        let stmt = compile_sql_stmt(&sql_text, &SchemaViewer::new(tx, &auth), &auth)?;
-        // Check mutation authority while the automatic rollback guard owns
-        // the transaction, including rejected administrative statements.
-        if matches!(&stmt, Statement::DML(_)) && !auth.has_write_access() {
-            return Err(anyhow!(
-                "Caller {} is not authorized to run SQL mutations",
-                auth.caller()
-            ));
-        }
-        if let Statement::DML(dml) = &stmt
-            && dml.table_id() == spacetimedb_datastore::system_tables::ST_ENV_ID
-        {
-            return Err(anyhow!(
-                "Database environment variables can only be changed by publishing"
-            ));
-        }
-        Ok(stmt)
+        compile_sql_stmt(&sql_text, &SchemaViewer::new(tx, &auth), &auth)
     })?;
 
     let mut metrics = ExecutionMetrics::default();
@@ -158,9 +142,20 @@ fn run_inner<I: WasmInstance>(
             ))
         }
         Statement::DML(stmt) => {
-            let (mut tx, _) = db.with_auto_rollback(tx, |tx| -> anyhow::Result<()> {
-                execute_dml_stmt(&auth, stmt, tx, &mut metrics)?;
-                Ok(())
+            let (mut tx, _) = db.with_auto_rollback(tx, |tx| {
+                // Check mutation authority inside the rollback wrapper, before execution.
+                if !auth.has_write_access() {
+                    return Err(anyhow!(
+                        "Caller {} is not authorized to run SQL DML statements",
+                        auth.caller()
+                    ));
+                }
+                if stmt.table_id() == spacetimedb_datastore::system_tables::ST_ENV_ID {
+                    return Err(anyhow!(
+                        "Database environment variables can only be changed by publishing"
+                    ));
+                }
+                execute_dml_stmt(&auth, stmt, tx, &mut metrics)
             })?;
 
             // Update transaction metrics
