@@ -88,8 +88,7 @@ public sealed class EnvironmentGenerator : IIncrementalGenerator
                 .FirstOrDefault(a =>
                     a.AttributeClass?.ToDisplayString() == "SpacetimeDB.EnvValuesAttribute"
                 );
-            var constraint =
-                "new global::SpacetimeDB.Internal.EnvVarType.String(default)";
+            var constraint = "new global::SpacetimeDB.Internal.EnvVarType.String(default)";
             if (attr is not null)
             {
                 var values = attr.ConstructorArguments.FirstOrDefault();
