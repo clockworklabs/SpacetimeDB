@@ -142,14 +142,13 @@ fn run_inner<I: WasmInstance>(
             ))
         }
         Statement::DML(stmt) => {
+            // An extra layer of auth is required for DML
+            if !auth.has_write_access() {
+                return Err(anyhow!("Caller {} is not authorized to run SQL DML statements", auth.caller()).into());
+            }
+
+            // Evaluate the mutation
             let (mut tx, _) = db.with_auto_rollback(tx, |tx| {
-                // Check mutation authority inside the rollback wrapper, before execution.
-                if !auth.has_write_access() {
-                    return Err(anyhow!(
-                        "Caller {} is not authorized to run SQL DML statements",
-                        auth.caller()
-                    ));
-                }
                 if stmt.table_id() == spacetimedb_datastore::system_tables::ST_ENV_ID {
                     return Err(anyhow!(
                         "Database environment variables can only be changed by publishing"
