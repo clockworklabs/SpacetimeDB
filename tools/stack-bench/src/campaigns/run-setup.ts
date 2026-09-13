@@ -159,7 +159,7 @@ export function prepareRun(results: string, input: unknown, env: NodeJS.ProcessE
     attempts: plan.attempts.length, parallelism: plan.summary.parallelism,
     maxCostUsd: request.maxCostUsd * plan.attempts.length,
     qualification: campaignGradingQualification(plan).status, authentication,
-    runtime: plan.definition.runtime, pricing: plan.definition.pricing };
+    mode: plan.definition.mode, runtime: plan.definition.runtime, pricing: plan.definition.pricing };
 }
 export type RunSetupReview = ReturnType<typeof prepareRun>;
 

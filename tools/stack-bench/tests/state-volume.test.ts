@@ -69,6 +69,11 @@ test('setup installs an image-bound paid demo and preserves an existing plan', (
       assert.equal(preset.repair.budget.total, 0);
       assert.equal(preset.conditions.length, 4);
       if (id === 'ecommerce-single-build') assert.equal(preset.mode.workSelection, 'all-at-once');
+      if (id === 'ecommerce-progressive') {
+        assert.deepEqual(preset.mode, { id: 'dependency', workSelection: 'progressive',
+          retainPriorContracts: true, unchangedFailureLimit: 7 });
+        assert.deepEqual(preset.budgets, { attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 50 });
+      }
     }
     initialize(`sha256:${'c'.repeat(64)}`);
     assert.equal(readFileSync(path, 'utf8'), bytes, 'setup must not rebind an existing plan');

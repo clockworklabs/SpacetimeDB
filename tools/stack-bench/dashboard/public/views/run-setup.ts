@@ -8,18 +8,21 @@ const guidanceLabel = (id: string) => ({ neutral: 'Standard skills',
   'neutral-dev-no-sdk': 'Dev workflow without SDK skills' } as Record<string, string>)[id] ?? id;
 
 export function initialRun(catalog: RunSetupCatalog, id?: string): RunSetupRequest | null {
-  const w = catalog.workloads.find(w => w.id === id) ?? catalog.workloads[0];
+  const w = catalog.workloads.find(w => w.id === id)
+    ?? catalog.workloads.find(w => w.mode === 'dependency' && w.workSelection === 'progressive')
+    ?? catalog.workloads[0];
   if (!w) return null;
   return { key: runName(w.track, new Date()) + '-' + crypto.randomUUID().slice(0, 8),
     workload: w.id, workloadSha256: w.sha256, level: Math.max(...w.levels), stacks: [...w.stacks],
     agents: [{ index: 0, effort: w.agents[0]!.effort ?? 'medium' }],
-    conditions: [(w.conditions.find(c => c.guidance === 'neutral') ?? w.conditions[0])!.id], ...w.defaults,
+    conditions: [(w.conditions.find(c => c.guidance === 'neutral-dev')
+      ?? w.conditions.find(c => c.guidance === 'neutral') ?? w.conditions[0])!.id], ...w.defaults,
     maxCostUsd: w.defaults.maxCostUsd ?? 0, credentials: {} };
 }
 
 export function selectGuidance(conditions: RunSetupCatalog['workloads'][number]['conditions'], sdk: string, dev: string): string[] {
-  return conditions.filter(c => (sdk === 'both' || c.sdkSkills === (sdk === 'on'))
-    && (dev === 'both' || c.devWorkflow === (dev === 'on'))).map(c => c.id);
+  return conditions.filter(c => c.sdkSkills === (sdk === 'on')
+    && c.devWorkflow === (dev === 'on')).map(c => c.id);
 }
 
 export function readRunForm(form: HTMLFormElement, catalog: RunSetupCatalog): RunSetupRequest {
@@ -49,18 +52,22 @@ export function runSetupPage(catalog: RunSetupCatalog | null, request: RunSetupR
   if (!request || !catalog.workloads.length) return head + '<p>No runnable workloads are configured. Run appliance setup to install the workload presets.</p>'
     + catalog.errors.map(error => `<p class="err">${esc(error)}</p>`).join('') + '</div>';
   const w = catalog.workloads.find(w => w.id === request.workload)!;
+  const delivery = w.mode === 'dependency'
+    ? ({ progressive: 'Progressive dependency graph', feature: 'One ready feature at a time',
+      'all-at-once': 'Full graph in one build' }[w.workSelection as string] ?? w.workSelection)
+    : 'Sequential levels';
   const splitGuidance = w.conditions.length === 4
     && new Set(w.conditions.map(c => `${c.sdkSkills}:${c.devWorkflow}`)).size === 4;
   const guidanceChoice = (key: 'sdkSkills' | 'devWorkflow', label: string) => {
-    const values = new Set(w.conditions.filter(c => request.conditions.includes(c.id)).map(c => c[key]));
-    const value = values.size > 1 ? 'both' : values.has(true) ? 'on' : 'off';
-    return field(label, `<select name="${key}">${[['on', 'On'], ['off', 'Off'], ['both', 'Both (compare)']]
+    const value = w.conditions.find(c => request.conditions.includes(c.id))?.[key] ? 'on' : 'off';
+    return field(label, `<select name="${key}">${[['on', 'On'], ['off', 'Off']]
       .map(([id, text]) => option(id!, text!, id === value)).join('')}</select>`);
   };
   const model = (index: number) => w.agents[index]!;
   if (review) {
     const rows = [
       ['Workload', `${w.title} · L${request.level}`],
+      ['Work delivery', delivery],
       ['Stacks', request.stacks.map(stackLabel).join(', ')],
       ['Models', request.agents.map(a => `${modelLabel(model(a.index).model)} (${a.effort})`).join(', ')],
       ['Guidance', request.conditions.map(id => guidanceLabel(w.conditions.find(c => c.id === id)!.guidance)).join(', ')],
@@ -85,6 +92,7 @@ export function runSetupPage(catalog: RunSetupCatalog | null, request: RunSetupR
     + '<div class="setup-fields">'
     + field('Workload', `<select name="workload">${catalog.workloads.map(a => option(a.id, a.title, a.id === w.id)).join('')}</select>`)
     + field('Target', `<select name="level">${w.levels.map(n => option(n, `L${n}`, n === request.level)).join('')}</select>`)
+    + `<p>${esc(String(delivery))}</p>`
     + '</div><fieldset><legend>Stacks</legend><div class="setup-choices">'
     + w.stacks.map(id => `<label><input type="checkbox" name="stack" value="${esc(id)}"${request.stacks.includes(id) ? ' checked' : ''}>${esc(stackLabel(id))}</label>`).join('')
     + '</div></fieldset><fieldset><legend>Models and reasoning</legend>'

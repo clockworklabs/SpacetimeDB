@@ -57,6 +57,7 @@ export function prepareStateVolume(env: NodeJS.ProcessEnv = process.env, run: Do
       + 'if(id==="ecommerce-single-build")d.mode.workSelection="all-at-once";'
       + 'd.runtime.controllerImage=process.argv[2];d.runtime.buildImage=process.argv[3];'
       + 'd.budgets=paid.budgets;d.repair.budget={total:0};d.parallelism=d.stacks.length;'
+      + 'if(id==="ecommerce-progressive"){d.budgets={attemptTimeoutMinutes:240,maxCostUsdPerAttempt:50};d.mode.retainPriorContracts=true;d.mode.unchangedFailureLimit=7;}'
       + 'd.conditions=["neutral","neutral-no-sdk","neutral-dev","neutral-dev-no-sdk"].map(g=>({...d.conditions[0],id:g,guidanceProfile:g}));'
       + 'fs.writeFileSync(target,JSON.stringify(d,null,2)+"\\n",{flag:"wx",mode:0o600});}',
     root, controller, build]);
@@ -64,6 +65,7 @@ export function prepareStateVolume(env: NodeJS.ProcessEnv = process.env, run: Do
     `STACK_BENCH_STATE_ROOT=${root}`,
     `STACK_BENCH_CONTROLLER_IMAGE=${controller}`,
     `STACK_BENCH_BUILD_IMAGE=${build}`,
+    'STACK_BENCH_RUNNER_CAPACITY=dynamic',
     'STACK_BENCH_AGENT_AUTH=subscription-token',
     `STACK_BENCH_CLAUDE_OAUTH_TOKEN_FILE=${root}/secrets/claude_subscription_token`,
     `STACK_BENCH_ANTHROPIC_API_KEY_FILE=${root}/secrets/anthropic_api_key`,

@@ -4,7 +4,9 @@ import { closeSync, existsSync, fsyncSync, linkSync, openSync, readFileSync,
   rmSync, writeFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { cpus, loadavg } from 'node:os';
 import { processIdentity } from './platform.js';
+import { ATTEMPT_CONTAINER_LIMIT_TOTALS } from '../composition/product-config.js';
 import type { BackendLease, BackendResourceLock } from './backend-lease.js';
 
 export interface ResourceLockTransaction {
@@ -12,12 +14,37 @@ export interface ResourceLockTransaction {
   root: string;
   lease: BackendLease;
   keys: string[];
-  capacity?: number;
+  capacity?: number | null;
 }
 
 const hash = (value: string): string => createHash('sha256').update(value).digest('hex');
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
+
+function addSlot(slots: Set<string>, key: unknown, owner: unknown): void {
+  const slot = typeof key === 'string' ? /^slot:([^:]+):[^:]+:run(\d+)$/.exec(key) : null;
+  if (slot) slots.add(`${owner}:${slot[1]}:${slot[2]}`);
+}
+
+export function hostResourceWaitReason(total: number, available: number, cpuCount: number, load: number,
+  startingAttempts = 1): string | null {
+  if (![total, available, cpuCount, load].every(Number.isFinite)
+    || total <= 0 || available < 0 || available > total || cpuCount <= 0 || load < 0
+    || !Number.isSafeInteger(startingAttempts) || startingAttempts < 1) {
+    throw new Error('cannot read valid host resource pressure');
+  }
+  const required = Math.max(2 * 1024 ** 3, total * 0.1)
+    + startingAttempts * ATTEMPT_CONTAINER_LIMIT_TOTALS.memoryBytes;
+  if (available < required) return `host capacity unavailable: ${(available / 1024 ** 3).toFixed(1)} GiB available; ${(required / 1024 ** 3).toFixed(1)} GiB required before another attempt`;
+  if (load >= cpuCount) return `host capacity unavailable: CPU load ${load.toFixed(1)} on ${cpuCount} CPUs`;
+  return null;
+}
+
+function readHostResourceWaitReason(startingAttempts: number): string | null {
+  const mem = readFileSync('/proc/meminfo', 'utf8');
+  return hostResourceWaitReason(Number(mem.match(/^MemTotal:\s+(\d+)/m)?.[1]) * 1024,
+    Number(mem.match(/^MemAvailable:\s+(\d+)/m)?.[1]) * 1024, cpus().length, loadavg()[0]!, startingAttempts);
+}
 
 export function resourceLockDescriptors(root: string, keys: string[]): BackendResourceLock[] {
   return [...new Set(keys)].sort().map(key => {
@@ -34,26 +61,24 @@ function syncDirectory(root: string): void {
 
 // This function has no locking of its own. Production callers must use flock.
 // Keeping the transaction separate lets source tests exercise records on Windows.
-export function resourceLockTransaction(input: ResourceLockTransaction): BackendResourceLock[] {
+export function resourceLockTransaction(input: ResourceLockTransaction,
+  readPressure: (startingAttempts: number) => string | null = readHostResourceWaitReason,
+  now = Date.now()): BackendResourceLock[] {
   const { operation, root, lease, keys } = input;
   const locks = resourceLockDescriptors(root, keys);
   const owned = (record: Record<string, unknown>): boolean => record.runId === lease.runId
     && record.ownerPid === lease.ownerPid
     && record.ownershipMarkerSha256 === hash(lease.ownershipToken);
-  if (operation === 'acquire' && input.capacity !== undefined) {
+  if (operation === 'acquire' && input.capacity != null) {
     if (!Number.isSafeInteger(input.capacity) || input.capacity < 0) throw new Error('invalid runner capacity');
     const slots = new Set<string>();
-    const add = (key: unknown, owner: unknown): void => {
-      const slot = typeof key === 'string' ? /^slot:([^:]+):[^:]+:run(\d+)$/.exec(key) : null;
-      if (slot) slots.add(`${owner}:${slot[1]}:${slot[2]}`);
-    };
     for (const name of readdirSync(root).filter(name => name.endsWith('.lock.json'))) {
       const record: unknown = JSON.parse(readFileSync(resolve(root, name), 'utf8'));
       if (!object(record) || typeof record.key !== 'string'
         || typeof record.ownershipMarkerSha256 !== 'string') throw new Error('unreadable host resource claim');
-      add(record.key, record.ownershipMarkerSha256);
+      addSlot(slots, record.key, record.ownershipMarkerSha256);
     }
-    for (const key of keys) add(key, hash(lease.ownershipToken));
+    for (const key of keys) addSlot(slots, key, hash(lease.ownershipToken));
     if (slots.size > input.capacity) throw new Error(`host capacity unavailable: ${slots.size} reservations exceed capacity ${input.capacity}`);
   }
   const existing = locks.map(lock => {
@@ -88,13 +113,29 @@ export function resourceLockTransaction(input: ResourceLockTransaction): Backend
     throw new Error(`resource ${lock.key} remains leased by ${record.runId}; run authenticated recovery before reuse`);
   }
   const acquired: BackendResourceLock[] = [];
+  if (operation === 'acquire' && input.capacity === null
+    && locks.some((lock, index) => lock.key.startsWith('slot:') && !existing[index])) {
+    const starting = new Set<string>();
+    // ponytail: reserve the full attempt envelope for the first minute of each launch.
+    // After that use measured pressure; phase reservations are needed for guarantees against later spikes.
+    for (const name of readdirSync(root).filter(name => name.endsWith('.lock.json'))) {
+      const record: unknown = JSON.parse(readFileSync(resolve(root, name), 'utf8'));
+      if (!object(record) || typeof record.key !== 'string'
+        || typeof record.ownershipMarkerSha256 !== 'string' || typeof record.acquiredAt !== 'string'
+        || !Number.isFinite(Date.parse(record.acquiredAt))) throw new Error('unreadable host resource claim');
+      if (now - Date.parse(record.acquiredAt) < 60_000) addSlot(starting, record.key, record.ownershipMarkerSha256);
+    }
+    for (const key of keys) addSlot(starting, key, hash(lease.ownershipToken));
+    const reason = readPressure(starting.size);
+    if (reason) throw new Error(reason);
+  }
   try {
     for (const [index, lock] of locks.entries()) {
       const record = existing[index];
       if (operation === 'release' || (operation === 'release-intent' && record && owned(record))) {
         rmSync(lock.path, { force: true });
       } else if (operation === 'acquire' && !record) {
-        const acquiredAt = new Date().toISOString();
+        const acquiredAt = new Date(now).toISOString();
         const temporary = `${lock.path}.${randomUUID()}.tmp`;
         const fd = openSync(temporary, 'wx', 0o600);
         try {

@@ -277,7 +277,7 @@ async function reserveRunIndices(plan: CompiledCampaignPlan, directory: string, 
   const track = loadTrack(plan.definition.track);
   const scope = resourceLockScope(env);
   const capacity = runnerCapacity(env);
-  if (requestedParallelism > capacity) {
+  if (capacity !== null && requestedParallelism > capacity) {
     throw new Error(`requested parallelism ${requestedParallelism} exceeds Docker host capacity ${capacity}; choose a smaller campaign or configure STACK_BENCH_RUNNER_CAPACITY from measured resources`);
   }
   const path = contained(directory, join('.private', `${id}.reservation.json`), 'campaign reservation');

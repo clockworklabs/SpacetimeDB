@@ -29,22 +29,27 @@ test('setup reviews exact dimensions, rejects changes, and dispatches one durabl
     { id: 'neutral-dev', guidance: 'neutral-dev', sdkSkills: true, devWorkflow: true },
   ];
   const initial = initialRun(choices)!;
-  assert.deepEqual(initial.conditions, ['neutral']);
+  assert.deepEqual(initial.conditions, ['neutral-dev']);
+  const single = { ...choices.workloads[0]!, id: 'single-build', workSelection: 'all-at-once' as const };
+  const reordered = { ...choices, workloads: [single, ...choices.workloads] };
+  assert.equal(initialRun(reordered)!.workload, choices.workloads[0]!.id);
+  assert.equal(initialRun(reordered, single.id)!.workload, single.id);
   const page = runSetupPage(choices, initial, null, '', true);
   assert.match(page, /name="sdkSkills"/);
   assert.match(page, /name="devWorkflow"/);
+  assert.doesNotMatch(page, /Both \(compare\)/);
+  assert.match(page, /Progressive dependency graph/);
+  assert.match(runSetupPage(reordered, initialRun(reordered, single.id), null, '', true), /Full graph in one build/);
   const conditions = choices.workloads[0]!.conditions;
   for (const c of conditions) assert.deepEqual(selectGuidance(conditions, c.sdkSkills ? 'on' : 'off',
     c.devWorkflow ? 'on' : 'off'), [c.id]);
-  assert.equal(selectGuidance(conditions, 'both', 'off').length, 2);
-  assert.equal(selectGuidance(conditions, 'on', 'both').length, 2);
-  assert.equal(selectGuidance(conditions, 'both', 'both').length, 4);
   const request = { ...initialRun(catalog)!, key: 'setup-smoke', level: 1,
     repetitions: 2, parallelism: 6, maxCostUsd: 12, repairs: 0, pauseAfterDepth: null };
   const review = prepareRun(root, request, {});
   assert.equal(review.attempts, 6);
   assert.equal(review.parallelism, 6);
   assert.equal(review.maxCostUsd, 72);
+  assert.equal(review.mode.workSelection, 'progressive');
   assert.equal(prepareRun(root, request, {}).reviewId, review.reviewId);
   assert.equal(existsSync(join(root, 'jobs')), false);
   assert.throws(() => prepareRun(root, { ...request, stacks: [...request.stacks, request.stacks[0]] }, {}), /duplicates/);
@@ -58,6 +63,7 @@ test('setup reviews exact dimensions, rejects changes, and dispatches one durabl
   writeFileSync(presetPath, source);
   assert.throws(() => prepareRun(root, request, { STACK_BENCH_CONTROLLER_IMAGE: 'different' }), /runtime/);
   assert.match(runSetupPage(catalog, request, review, '', true), /6 attempts/);
+  assert.match(runSetupPage(catalog, request, review, '', true), /Work delivery.*Progressive dependency graph/);
   assert.match(runSetupPage(catalog, request, null, '', true), /name="parallelism"/);
 
   const launches: LaunchInput[] = [];

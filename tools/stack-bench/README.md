@@ -72,9 +72,26 @@ The `neutral`, `neutral-dev`, and `neutral-managed-dev` profiles retain the sele
 TypeScript server, TypeScript client, and CLI skills. Dev guidance adds a workflow; it does not replace the SDK
 references or start a watcher by itself.
 
-New run separates **SDK skills** and **Dev workflow**. Each can be on, off,
-or both for comparison. `neutral-no-sdk` omits both. These choices change
+New run separates **SDK skills** and **Dev workflow**. Each can be on or off.
+Start a separate run to compare guidance choices. `neutral-no-sdk` omits both. These choices change
 SpacetimeDB guidance only; they do not start a watcher or change grading.
+
+New run defaults to progressive dependency work with SDK skills and dev workflow
+on, when available. The progressive preset allows 240 minutes and a $50 normalized
+cost cap per attempt. Repetitions, concurrency, and limits remain editable.
+Single-build work requires selecting that workload. Review shows work delivery
+separately from concurrency. When repeating a study, compare the saved campaign's
+mode, guidance, model, repair policy, and budgets before launch; do not infer them
+from “L3” or “3×3.”
+
+Appliance setup selects `STACK_BENCH_RUNNER_CAPACITY=dynamic`. Admission checks
+current host memory and CPU load instead of a fixed slot count. New claims reserve
+startup headroom for one minute so concurrent launches cannot reuse the same free
+memory estimate. Campaigns queue
+and retry when resources are busy. Campaign concurrency remains explicit. Port,
+database, and workspace ownership locks and per-container limits still apply.
+The pressure check is an admission snapshot, not a reservation against future spikes.
+Numeric host quotas remain available for operators who need them.
 
 For a skill ablation, `neutral-dev-no-sdk` keeps the same backend document and
 dev workflow but omits the TypeScript server, client, and CLI reference skills.

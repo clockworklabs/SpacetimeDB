@@ -9,7 +9,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { validateStackLeaseResources } from '../stacks/stack-lease-capabilities.js';
 import { resourceLockDescriptors } from './resource-lock-worker.js';
 import type { ResourceLockTransaction } from './resource-lock-worker.js';
-import { ATTEMPT_CONTAINER_LIMIT_TOTALS, RESTRICTED_PORTS } from '../composition/product-config.js';
+import { RESTRICTED_PORTS } from '../composition/product-config.js';
 
 export const LEASE_VERSION = 1;
 const LEASE_STATES = new Set<string>(['created', 'starting', 'active', 'restarting',
@@ -487,7 +487,7 @@ function lockedResources(input: ResourceLockTransaction): BackendResourceLock[] 
   for (const key of input.keys) requireString(key, 'lock key');
   if (!input.keys.length) return [];
   if (input.operation === 'acquire' && input.keys.some(key => key.startsWith('slot:'))) {
-    input.capacity ??= runnerCapacity();
+    if (input.capacity === undefined) input.capacity = runnerCapacity();
   }
   if (process.platform !== 'linux') {
     fail('resource-backed execution requires the Linux Docker appliance (flock)');
@@ -515,7 +515,7 @@ export function acquireResourceLock(input: {
 }
 
 export function acquireResourceLocks(input: {
-  root: string; keys: string[]; lease: BackendLease; capacity?: number;
+  root: string; keys: string[]; lease: BackendLease; capacity?: number | null;
 }): BackendResourceLock[] {
   if (!Array.isArray(input.keys) || input.keys.length === 0) {
     fail('resource lock keys must be a non-empty array');
@@ -525,7 +525,7 @@ export function acquireResourceLocks(input: {
 
 /** Persist intended keys and private identity before any claim can survive a crash. */
 export function claimBackendResources(path: string, lease: BackendLease, input: {
-  root: string; keys: string[]; capacity?: number;
+  root: string; keys: string[]; capacity?: number | null;
 }): BackendLease {
   if (!input.keys.length) {
     writeBackendLease(path, lease);
@@ -541,29 +541,14 @@ export function claimBackendResources(path: string, lease: BackendLease, input: 
   return lease;
 }
 
-/** Conservative planning capacity; an operator can choose a measured host budget. */
-export function runnerCapacity(env: NodeJS.ProcessEnv = process.env,
-  info?: { NCPU: number; MemTotal: number }): number {
+/** Dynamic admission uses measured host pressure; numeric overrides are optional quotas. */
+export function runnerCapacity(env: NodeJS.ProcessEnv = process.env): number | null {
   const override = env.STACK_BENCH_RUNNER_CAPACITY;
-  if (override !== undefined && override !== '') {
-    if (!/^[1-9]\d*$/.test(override) || !Number.isSafeInteger(Number(override))) {
-      throw new Error('STACK_BENCH_RUNNER_CAPACITY must be a positive safe integer');
-    }
-    return Number(override);
+  if (!override || override === 'dynamic') return null;
+  if (!/^[1-9]\d*$/.test(override) || !Number.isSafeInteger(Number(override))) {
+    throw new Error('STACK_BENCH_RUNNER_CAPACITY must be dynamic or a positive safe integer');
   }
-  if (!info) {
-    const result = spawnSync('docker', ['info', '--format', '{{json .}}'],
-      { env, encoding: 'utf8', timeout: 30_000 });
-    if (result.error || result.status !== 0) throw new Error('cannot read Docker host capacity', { cause: result.error });
-    info = JSON.parse(result.stdout) as { NCPU: number; MemTotal: number };
-  }
-  if (!Number.isFinite(info.NCPU) || !Number.isFinite(info.MemTotal)
-    || info.NCPU <= 0 || info.MemTotal <= 0) throw new Error('invalid Docker host capacity');
-  // Reserve at least one CPU and 2 GiB, or 10%, for Docker and shared services.
-  return Math.max(0, Math.min(
-    Math.floor((info.NCPU - Math.max(1, info.NCPU * 0.1)) / ATTEMPT_CONTAINER_LIMIT_TOTALS.cpuCount),
-    Math.floor((info.MemTotal - Math.max(2 * 1024 ** 3, info.MemTotal * 0.1))
-      / ATTEMPT_CONTAINER_LIMIT_TOTALS.memoryBytes)));
+  return Number(override);
 }
 
 export function verifyResourceLocks(lease: BackendLease): void {

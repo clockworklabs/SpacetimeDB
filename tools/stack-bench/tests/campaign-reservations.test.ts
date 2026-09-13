@@ -119,7 +119,7 @@ test('dynamic admission skips live legacy capacity and port reservations without
         serverUri: stack.id === 'spacetime' ? `http://127.0.0.1:${3210 + index}` : null,
         ports: portsFor(track, stack.id, index) })),
     ]).flat();
-    claimBackendResources(join(root, 'legacy.json'), legacy, { root: locks, keys });
+    claimBackendResources(join(root, 'legacy.json'), legacy, { root: locks, keys, capacity: 64 });
     const before = legacy.resources.locks.map(lock => readFileSync(lock.path, 'utf8'));
     const admitted = await runCampaignAdmission(plan, root, {
       env: { STACK_BENCH_RUNNER_CAPACITY: '64', STACK_BENCH_RESOURCE_LOCK_DIR: locks }, probePort: () => ({ free: true }),

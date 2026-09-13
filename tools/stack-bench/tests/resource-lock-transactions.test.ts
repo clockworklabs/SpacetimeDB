@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { createBackendLease, publicBackendLease, runnerCapacity } from '../src/runtime/backend-lease.js';
-import { resourceLockDescriptors, resourceLockTransaction } from '../src/runtime/resource-lock-worker.js';
+import { hostResourceWaitReason, resourceLockDescriptors, resourceLockTransaction } from '../src/runtime/resource-lock-worker.js';
 
 test('host admission counts a campaign reservation once per index across backends', () => {
   const root = mkdtempSync(join(tmpdir(), 'host-capacity-'));
@@ -19,9 +19,44 @@ test('host admission counts a campaign reservation once per index across backend
     assert.equal(readdirSync(root).length, 3, 'no partial claim when host capacity is exhausted');
     resourceLockTransaction({ root, lease: first, keys, operation: 'release' });
     resourceLockTransaction({ root, lease: next, keys: ['slot:loop:postgres:run1'], operation: 'acquire', capacity: 1 });
-    assert.equal(runnerCapacity({}, { NCPU: 16, MemTotal: 64 * 1024 ** 3 }), 3);
+    assert.equal(runnerCapacity({}), null);
     assert.equal(runnerCapacity({ STACK_BENCH_RUNNER_CAPACITY: '9' }), 9);
+    assert.equal(runnerCapacity({ STACK_BENCH_RUNNER_CAPACITY: 'dynamic' }), null);
     assert.throws(() => runnerCapacity({ STACK_BENCH_RUNNER_CAPACITY: '0' }), /positive safe integer/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('dynamic admission uses host pressure and retains exclusive resource ownership without a count quota', () => {
+  const root = mkdtempSync(join(tmpdir(), 'host-unlimited-'));
+  try {
+    const capacity = runnerCapacity({ STACK_BENCH_RUNNER_CAPACITY: 'dynamic' });
+    assert.equal(hostResourceWaitReason(46 * 1024 ** 3, 29 * 1024 ** 3, 32, 7), null);
+    assert.match(hostResourceWaitReason(46 * 1024 ** 3, 3 * 1024 ** 3, 32, 7)!, /GiB available/);
+    assert.match(hostResourceWaitReason(46 * 1024 ** 3, 29 * 1024 ** 3, 32, 33)!, /CPU load/);
+    assert.match(hostResourceWaitReason(46 * 1024 ** 3, 29 * 1024 ** 3, 32, 7, 4)!, /GiB required/);
+    assert.throws(() => hostResourceWaitReason(NaN, 0, 32, 0), /valid host resource/);
+    const start = Date.now();
+    for (let index = 0; index < 12; index += 1) {
+      const lease = createBackendLease({ runId: `run-${index}`, backend: 'stub', track: 'loop', runIndex: index });
+      resourceLockTransaction({ root, lease, capacity, operation: 'acquire',
+        keys: [`slot:loop:stub:run${index}`, `port:${5000 + index}`] }, count => {
+          assert.equal(count, 1, 'old live claims do not impose a fixed count limit');
+          return null;
+        }, start + index * 60_001);
+    }
+    const extra = createBackendLease({ runId: 'extra', backend: 'stub', track: 'loop', runIndex: 12 });
+    assert.throws(() => resourceLockTransaction({ root, lease: extra, capacity,
+      operation: 'acquire', keys: ['port:5000'] }), /already leased/);
+    assert.equal(readdirSync(root).length, 24);
+    const request = { root, lease: extra, capacity, operation: 'acquire' as const,
+      keys: ['slot:loop:stub:run12', 'port:5012'] };
+    assert.throws(() => resourceLockTransaction(request, () => 'host capacity unavailable: memory pressure'),
+      /memory pressure/);
+    assert.equal(readdirSync(root).length, 24, 'pressure cannot leave partial claims');
+    resourceLockTransaction(request, count => { assert.equal(count, 2); return null; }, start + 11 * 60_001);
+    resourceLockTransaction(request, () => { throw new Error('existing claim must not reacquire capacity'); });
+    resourceLockTransaction({ ...request, operation: 'release' }, () => { throw new Error('cleanup must stay available'); });
+    assert.equal(readdirSync(root).length, 24);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
