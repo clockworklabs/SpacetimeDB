@@ -66,7 +66,7 @@ pub(crate) fn expand(args: TokenStream, mut item: ItemStruct) -> syn::Result<Tok
                 quote!(::spacetimedb::spacetimedb_lib::environment::EnvironmentConstraint::Literal(#value.into()))
             }
             Some(values) => quote!(
-                ::spacetimedb::spacetimedb_lib::environment::EnvironmentConstraint::OneOf(
+                ::spacetimedb::spacetimedb_lib::environment::EnvironmentConstraint::Union(
                     ::std::vec![#(#values.into()),*]
                 )
             ),

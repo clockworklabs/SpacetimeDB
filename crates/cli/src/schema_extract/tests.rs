@@ -57,7 +57,7 @@ fn schema() -> EnvironmentSchema {
         },
         Declaration {
             name: "B".into(),
-            constraint: Constraint::OneOf(vec!["true".into(), "false".into()]),
+            constraint: Constraint::Union(vec!["true".into(), "false".into()]),
             optional: false,
         },
         Declaration {

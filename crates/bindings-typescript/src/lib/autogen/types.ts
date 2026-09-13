@@ -406,7 +406,7 @@ export const EnvironmentConstraint = __t.enum('EnvironmentConstraint', {
   get Literal() {
     return __t.string();
   },
-  get OneOf() {
+  get Union() {
     return __t.array(__t.string());
   },
 });

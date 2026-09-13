@@ -27,12 +27,12 @@ describe('declared database environment', () => {
       { name: 'FOOBAR', constraint: { tag: 'AnyString' }, optional: false },
       {
         name: 'ENABLE_EMAIL',
-        constraint: { tag: 'OneOf', value: ['true', 'false'] },
+        constraint: { tag: 'Union', value: ['true', 'false'] },
         optional: false,
       },
       {
         name: 'LOG_LEVEL',
-        constraint: { tag: 'OneOf', value: ['debug', 'info', 'error'] },
+        constraint: { tag: 'Union', value: ['debug', 'info', 'error'] },
         optional: true,
       },
       {

@@ -64,14 +64,19 @@ mod tests {
     }
 }
 
-/// Host-validated string constraints. Values remain strings in every module SDK.
+/// Host-validated constraints on environment values, which are stored as strings.
+// TODO: Consider representing these constraints with a subset of SATS if
+// AlgebraicType gains StringLiteral(String) and Union(Vec<AlgebraicType>).
+// For example, Union([StringLiteral("development"), StringLiteral("production")])
+// would accept either string directly, without the runtime tag used by SATS Sum.
+// Here, Union(Vec<String>) stores the allowed literal values directly.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, crate::SpacetimeType)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[sats(crate = crate)]
 pub enum EnvironmentConstraint {
     AnyString,
     Literal(String),
-    OneOf(Vec<String>),
+    Union(Vec<String>),
 }
 
 /// Declaration metadata, never an environment value supplied during publishing.
@@ -166,7 +171,7 @@ impl EnvironmentSchema {
             let literals = match &declaration.constraint {
                 EnvironmentConstraint::AnyString => &[][..],
                 EnvironmentConstraint::Literal(value) => std::slice::from_ref(value),
-                EnvironmentConstraint::OneOf(values) => {
+                EnvironmentConstraint::Union(values) => {
                     if values.is_empty() {
                         return Err(error(Kind::EmptyUnion));
                     }
@@ -191,7 +196,7 @@ impl EnvironmentSchema {
         Self::validate_metadata(&declarations)?;
         let mut schema = Self::default();
         for mut declaration in declarations {
-            if let EnvironmentConstraint::OneOf(values) = &mut declaration.constraint {
+            if let EnvironmentConstraint::Union(values) = &mut declaration.constraint {
                 values.sort_unstable();
                 values.dedup();
             }
@@ -264,7 +269,7 @@ impl EnvironmentSchema {
             let matches = match &declaration.constraint {
                 EnvironmentConstraint::AnyString => true,
                 EnvironmentConstraint::Literal(expected) => value == expected,
-                EnvironmentConstraint::OneOf(allowed) => allowed.binary_search(value).is_ok(),
+                EnvironmentConstraint::Union(allowed) => allowed.binary_search(value).is_ok(),
             };
             if !matches {
                 return Err(error(Kind::ConstraintMismatch));
@@ -379,7 +384,7 @@ mod schema_tests {
             declaration("REQUIRED", EnvironmentConstraint::AnyString, false),
             declaration(
                 "MODE",
-                EnvironmentConstraint::OneOf(vec!["false".into(), "true".into(), "false".into()]),
+                EnvironmentConstraint::Union(vec!["false".into(), "true".into(), "false".into()]),
                 false,
             ),
             declaration("OPTIONAL", EnvironmentConstraint::Literal("".into()), true),
@@ -512,7 +517,7 @@ mod schema_tests {
             ),
             (
                 "A",
-                EnvironmentConstraint::OneOf(vec![]),
+                EnvironmentConstraint::Union(vec![]),
                 EnvironmentSchemaErrorKind::EmptyUnion,
             ),
             (
@@ -543,14 +548,14 @@ mod schema_tests {
         assert!(!format!("{error:?}: {error}").contains("private-marker"));
         let error = EnvironmentSchema::new(vec![declaration(
             "A",
-            EnvironmentConstraint::OneOf(vec!["".into(); MAX_ENV_UNION_ENTRIES + 1]),
+            EnvironmentConstraint::Union(vec!["".into(); MAX_ENV_UNION_ENTRIES + 1]),
             true,
         )])
         .unwrap_err();
         assert_eq!(error.kind, EnvironmentSchemaErrorKind::TooManyUnionEntries);
         let error = EnvironmentSchema::new(vec![declaration(
             "A",
-            EnvironmentConstraint::OneOf(vec!["x".repeat(MAX_ENV_VALUE_BYTES); MAX_ENV_UNION_ENTRIES]),
+            EnvironmentConstraint::Union(vec!["x".repeat(MAX_ENV_VALUE_BYTES); MAX_ENV_UNION_ENTRIES]),
             true,
         )])
         .unwrap_err();

@@ -71,7 +71,7 @@ pub(crate) fn derive(item: DeriveInput) -> syn::Result<TokenStream> {
     let constraint = match values.as_slice() {
         [value] => quote!(::spacetimedb::spacetimedb_lib::environment::EnvironmentConstraint::Literal(#value.into())),
         values => quote!(
-            ::spacetimedb::spacetimedb_lib::environment::EnvironmentConstraint::OneOf(::std::vec![#(#values.into()),*])
+            ::spacetimedb::spacetimedb_lib::environment::EnvironmentConstraint::Union(::std::vec![#(#values.into()),*])
         ),
     };
     let ident = &item.ident;

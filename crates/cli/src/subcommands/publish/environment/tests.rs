@@ -11,7 +11,7 @@ fn schema() -> EnvironmentSchema {
         },
         Declaration {
             name: "B".into(),
-            constraint: Constraint::OneOf(vec!["true".into(), "false".into()]),
+            constraint: Constraint::Union(vec!["true".into(), "false".into()]),
             optional: false,
         },
         Declaration {
@@ -172,7 +172,7 @@ async fn actual_precompiled_declarations_are_inspected_without_server_or_values(
     assert!(!schema.get("REQUIRED").unwrap().optional);
     assert_eq!(
         schema.get("MODE").unwrap().constraint,
-        Constraint::OneOf(vec!["other".into(), "ready".into()])
+        Constraint::Union(vec!["other".into(), "ready".into()])
     );
     let config = serde_json::json!({"REQUIRED":"generated-local-inspection-sentinel","MODE":"ready"});
     let resolved = resolve(schema, Some(&config), |_| None).unwrap();

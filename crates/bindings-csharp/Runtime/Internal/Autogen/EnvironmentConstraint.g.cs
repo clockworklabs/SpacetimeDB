@@ -11,6 +11,6 @@ namespace SpacetimeDB.Internal
     public partial record EnvironmentConstraint : SpacetimeDB.TaggedEnum<(
         SpacetimeDB.Unit AnyString,
         string Literal,
-        System.Collections.Generic.List<string> OneOf
+        System.Collections.Generic.List<string> Union
     )>;
 }

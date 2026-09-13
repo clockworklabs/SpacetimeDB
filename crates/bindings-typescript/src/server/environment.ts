@@ -84,7 +84,7 @@ export function environmentDeclarations(
       constraint =
         values.length === 1
           ? { tag: 'Literal', value: values[0]! }
-          : { tag: 'OneOf', value: values };
+          : { tag: 'Union', value: values };
     }
     return { name, constraint, optional };
   });

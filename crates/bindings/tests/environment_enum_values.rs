@@ -29,7 +29,7 @@ fn typed_mappings_match_exact_schema_strings_and_optional_absence() {
     ];
     assert_eq!(
         Mode::constraint(),
-        EnvironmentConstraint::OneOf(cases.iter().map(|(s, _)| s.to_string()).collect())
+        EnvironmentConstraint::Union(cases.iter().map(|(s, _)| s.to_string()).collect())
     );
     assert_eq!(Option::<Mode>::constraint(), Mode::constraint());
     let schema = EnvironmentSchema::new(vec![EnvironmentDeclaration {

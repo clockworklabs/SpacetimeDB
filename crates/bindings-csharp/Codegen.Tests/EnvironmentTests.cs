@@ -36,7 +36,7 @@ public static class EnvironmentTests
             public abstract record EnvironmentConstraint {
                 public sealed record AnyString(System.ValueTuple Value) : EnvironmentConstraint;
                 public sealed record Literal(string Value) : EnvironmentConstraint;
-                public sealed record OneOf(System.Collections.Generic.List<string> Value) : EnvironmentConstraint;
+                public sealed record Union(System.Collections.Generic.List<string> Value) : EnvironmentConstraint;
             }
             public sealed record EnvironmentDeclaration(string Name, EnvironmentConstraint Constraint, bool Optional);
             public static class Module {
@@ -90,7 +90,7 @@ public static class EnvironmentTests
                     var declarations = SpacetimeDB.Internal.Module.Declarations;
                     if (declarations.Count != 5 || declarations[0].Optional || !declarations[1].Optional ||
                         declarations[0].Constraint is not SpacetimeDB.Internal.EnvironmentConstraint.AnyString ||
-                        declarations[2].Constraint is not SpacetimeDB.Internal.EnvironmentConstraint.OneOf { Value.Count: 2 } ||
+                        declarations[2].Constraint is not SpacetimeDB.Internal.EnvironmentConstraint.Union { Value.Count: 2 } ||
                         declarations[3].Constraint is not SpacetimeDB.Internal.EnvironmentConstraint.Literal { Value: "reserved" })
                         throw new System.Exception("bad metadata");
                 }
