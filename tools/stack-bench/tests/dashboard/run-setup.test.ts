@@ -21,6 +21,13 @@ test('setup reviews exact dimensions, rejects changes, and dispatches one durabl
   const source = readFileSync(join(root, 'plans', 'ecommerce-progression-reference.json'), 'utf8');
   writeFileSync(presetPath, source);
   const catalog = runSetupCatalog(root, {});
+  const choices = structuredClone(catalog);
+  choices.workloads[0]!.conditions = [
+    { id: 'neutral-dev-no-sdk', guidance: 'neutral-dev-no-sdk' }, { id: 'neutral', guidance: 'neutral' },
+  ];
+  const initial = initialRun(choices)!;
+  assert.deepEqual(initial.conditions, ['neutral']);
+  assert.match(runSetupPage(choices, initial, null, '', true), /Dev workflow without SDK skills/);
   const request = { ...initialRun(catalog)!, key: 'setup-smoke', level: 1,
     repetitions: 2, parallelism: 6, maxCostUsd: 12, repairs: 0, pauseAfterDepth: null };
   const review = prepareRun(root, request, {});

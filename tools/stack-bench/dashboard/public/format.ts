@@ -104,7 +104,7 @@ export function shape(mode: string, levels: readonly number[], repetitions: numb
 }
 
 export function modelLabel(model?: string): string {
-  return ({ 'claude-fable-5-1': 'Fable 5.1', 'claude-opus-5': 'Opus 5', 'gpt-5.6-sol': 'Sol', 'gpt-6-astra': 'Astra' } as Record<string, string>)[model ?? ''] ?? model ?? '';
+  return ({ 'claude-sonnet-5': 'Sonnet 5', 'claude-fable-5-1': 'Fable 5.1', 'claude-opus-5': 'Opus 5', 'gpt-5.6-sol': 'Sol', 'gpt-6-astra': 'Astra' } as Record<string, string>)[model ?? ''] ?? model ?? '';
 }
 
 export function completionLabel(attempt: Pick<SheetAttempt, 'status' | 'excluded' | 'completion'>): string {

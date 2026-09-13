@@ -2,13 +2,17 @@ import type { RunSetupCatalog, RunSetupRequest, RunSetupReview } from '../../../
 import { esc, money, modelLabel, stackLabel } from '../format.js';
 import { runName } from './plans.js';
 
+const guidanceLabel = (id: string) => ({ neutral: 'Standard skills',
+  'neutral-dev': 'Standard skills + dev workflow',
+  'neutral-dev-no-sdk': 'Dev workflow without SDK skills' } as Record<string, string>)[id] ?? id;
+
 export function initialRun(catalog: RunSetupCatalog, id?: string): RunSetupRequest | null {
   const w = catalog.workloads.find(w => w.id === id) ?? catalog.workloads[0];
   if (!w) return null;
   return { key: runName(w.track, new Date()) + '-' + crypto.randomUUID().slice(0, 8),
     workload: w.id, workloadSha256: w.sha256, level: Math.max(...w.levels), stacks: [...w.stacks],
     agents: [{ index: 0, effort: w.agents[0]!.effort ?? 'medium' }],
-    conditions: [w.conditions[0]!.id], ...w.defaults,
+    conditions: [(w.conditions.find(c => c.guidance === 'neutral') ?? w.conditions[0])!.id], ...w.defaults,
     maxCostUsd: w.defaults.maxCostUsd ?? 0, credentials: {} };
 }
 
@@ -44,7 +48,7 @@ export function runSetupPage(catalog: RunSetupCatalog | null, request: RunSetupR
       ['Workload', `${w.title} · L${request.level}`],
       ['Stacks', request.stacks.map(stackLabel).join(', ')],
       ['Models', request.agents.map(a => `${modelLabel(model(a.index).model)} (${a.effort})`).join(', ')],
-      ['Guidance', request.conditions.map(id => w.conditions.find(c => c.id === id)!.guidance).join(', ')],
+      ['Guidance', request.conditions.map(id => guidanceLabel(w.conditions.find(c => c.id === id)!.guidance)).join(', ')],
       ['Runs', `${review.attempts} attempts · ${request.repetitions} per combination · ${review.parallelism} concurrent`],
       ['Repairs', `${request.repairs} per attempt`],
       ['Limits', `${request.timeoutMinutes} minutes and ${money(request.maxCostUsd)} per attempt`],
@@ -72,7 +76,7 @@ export function runSetupPage(catalog: RunSetupCatalog | null, request: RunSetupR
     + w.agents.map((agent, index) => `<div class="setup-model"><label><input type="checkbox" name="agent" value="${index}"${request.agents.some(a => a.index === index) ? ' checked' : ''}>${esc(modelLabel(agent.model))}</label>`
       + `<select name="effort-${index}" aria-label="Reasoning for ${esc(agent.model)}">${['low', 'medium', 'high', 'xhigh', 'max'].map(e => option(e, e, e === (request.agents.find(a => a.index === index)?.effort ?? agent.effort ?? 'medium'))).join('')}</select></div>`).join('')
     + '</fieldset><fieldset><legend>Guidance</legend><div class="setup-choices">'
-    + w.conditions.map(c => `<label><input type="checkbox" name="condition" value="${esc(c.id)}"${request.conditions.includes(c.id) ? ' checked' : ''}>${esc(c.guidance)}</label>`).join('')
+    + w.conditions.map(c => `<label><input type="checkbox" name="condition" value="${esc(c.id)}"${request.conditions.includes(c.id) ? ' checked' : ''}>${esc(guidanceLabel(c.guidance))}</label>`).join('')
     + '</div></fieldset><div class="setup-fields">'
     + field('Repetitions per combination', integer('repetitions', request.repetitions))
     + field('Concurrent attempts', integer('parallelism', request.parallelism))
