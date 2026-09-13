@@ -78,3 +78,34 @@ test('setup reviews exact dimensions, rejects changes, and dispatches one durabl
   assert.equal((await send('/api/runs', acceptedReview)).status, 202);
   assert.equal(launches.length, 1, 'cancelled work must not restart');
 });
+
+test('automatic accounts are explicit in the review and ambiguous accounts require selection', t => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-accounts-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writePlanFixtures(join(root, 'plans'));
+  mkdirSync(join(root, 'run-presets'));
+  const preset = JSON.parse(readFileSync(join(root, 'plans', 'ecommerce-progression-reference.json'), 'utf8'));
+  preset.agents = [{ adapter: 'codex', adapterVersion: '1.0.0', model: 'gpt-6-astra', effort: 'medium' },
+    { adapter: 'claude-code', adapterVersion: '1.17.2', model: 'claude-sonnet-5', effort: 'medium' }];
+  for (const a of preset.agents) preset.pricing.models[a.model] = preset.pricing.models['reference-fixture'];
+  writeFileSync(join(root, 'run-presets', 'accounts.json'), JSON.stringify(preset));
+  const secretFile = join(root, 'synthetic-secret');
+  writeFileSync(secretFile, 'SYNTHETIC_ONLY');
+  const profiles = { openai: { provider: 'openai', mode: 'api-key', version: '1', secretFile },
+    claude: { provider: 'anthropic', mode: 'api-key', version: '1', secretFile } };
+  const registry = join(root, 'profiles.json');
+  writeFileSync(registry, JSON.stringify(profiles));
+  const env = { STACK_BENCH_CREDENTIAL_PROFILES_FILE: registry };
+  const catalog = runSetupCatalog(root, env);
+  const request = { ...initialRun(catalog)!, level: 1, maxCostUsd: 12,
+    agents: catalog.workloads[0]!.agents.map((_, index) => ({ index, effort: 'medium' as const })) };
+  const review = prepareRun(root, request, env);
+  assert.deepEqual(review.request.credentials.adapters, { 'claude-code': 'claude', codex: 'openai' });
+  assert.equal(prepareRun(root, review.request, env).reviewId, review.reviewId);
+  assert.deepEqual(request.credentials, {});
+  assert.doesNotMatch(JSON.stringify(review), /SYNTHETIC_ONLY/);
+  writeFileSync(registry, JSON.stringify({ ...profiles, other: profiles.openai }));
+  assert.throws(() => prepareRun(root, request, env), /Choose an account for codex/);
+  assert.equal(prepareRun(root, review.request, env).reviewId, review.reviewId);
+  assert.equal(existsSync(join(root, 'jobs')), false);
+});

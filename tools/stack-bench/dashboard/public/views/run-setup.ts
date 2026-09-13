@@ -87,7 +87,7 @@ export function runSetupPage(catalog: RunSetupCatalog | null, request: RunSetupR
       + (w.workSelection === 'progressive' ? w.levels.filter(n => n < request.level).map(n => option(n, `After L${n}`, request.pauseAfterDepth === n)).join('') : '') + '</select>')
     + '</div><details><summary>Run name and accounts</summary><div class="setup-fields">'
     + field('Run name', `<input name="key" value="${esc(request.key)}" pattern="[a-z0-9][a-z0-9.-]{2,119}" required>`)
-    + [...new Set(w.agents.map(a => a.adapter))].map(adapter => field(esc(adapter), `<select name="credential-${esc(adapter)}">${option('', 'Appliance default', !request.credentials.adapters?.[adapter])}`
+    + [...new Set(w.agents.map(a => a.adapter))].map(adapter => field(esc(adapter), `<select name="credential-${esc(adapter)}">${option('', 'Automatic', !request.credentials.adapters?.[adapter])}`
       + catalog.profiles.filter(p => p.provider === w.agents.find(a => a.adapter === adapter)?.provider).map(p => option(p.id, `${p.id} (${p.mode})`, p.id === request.credentials.adapters?.[adapter])).join('') + '</select>')).join('')
     + '</div></details><div class="setup-actions">'
     + field('Operator secret', '<input name="secret" type="password" required autocomplete="off">')

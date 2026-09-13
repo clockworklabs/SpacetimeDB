@@ -131,6 +131,15 @@ export function prepareRun(results: string, input: unknown, env: NodeJS.ProcessE
   writeOnce(planFile, d);
   const plan = compileCampaignFile(planFile);
   // Resolve profile metadata now, before a job can spend money. Secrets stay server-side.
+  const profiles = listCredentialProfiles(env);
+  for (const { adapter } of plan.agents) {
+    if (request.credentials.default || request.credentials.adapters?.[adapter]) continue;
+    const matches = profiles.filter(p => p.provider === AGENT_ADAPTER_REGISTRY.get(adapter).provider);
+    if (matches.length > 1) throw new Error(`Choose an account for ${adapter} under Run name and accounts.`);
+    if (matches.length === 1) {
+      (request.credentials.adapters ??= {})[adapter] = matches[0]!.id;
+    }
+  }
   validateExecutionCredentialTargets(request.credentials, plan.agents.map(a => a.adapter), []);
   const authentication = plan.agents.map(agent => {
     const resolved = resolveExecutionCredentials(agent.adapter, '', request.credentials, env);
