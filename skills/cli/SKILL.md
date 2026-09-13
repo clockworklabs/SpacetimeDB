@@ -153,6 +153,7 @@ spacetime logout
 | `--yes` | `-y` | Non-interactive mode (skip confirmations) |
 | `--anonymous` | | Use anonymous identity |
 | `--module-path` | `-p` | Path to module project |
+| `--no-config` | | Ignore `spacetime.json` project configuration |
 
 ## Troubleshooting
 
