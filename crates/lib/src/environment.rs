@@ -197,6 +197,9 @@ impl EnvironmentSchema {
         let mut schema = Self::default();
         for mut declaration in declarations {
             if let EnvironmentConstraint::Union(values) = &mut declaration.constraint {
+                // Literal alternatives form a set, not positional enum variants.
+                // Sorting makes declaration order irrelevant and enables binary_search.
+                // Equal strings are indistinguishable and deduplicated, so stability is unnecessary.
                 values.sort_unstable();
                 values.dedup();
             }
