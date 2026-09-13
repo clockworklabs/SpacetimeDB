@@ -7,7 +7,7 @@ import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 import { prepareRun, runSetupCatalog, submitPreparedRun } from '../../src/campaigns/run-setup.js';
 import { createDashboardServer, type LaunchInput } from '../../dashboard/dashboard-server.js';
-import { initialRun, runSetupPage } from '../../dashboard/public/views/run-setup.js';
+import { initialRun, runSetupPage, selectGuidance } from '../../dashboard/public/views/run-setup.js';
 import { writePlanFixtures } from '../fixtures/dashboard-fixture.js';
 
 // One invariant: only the exact reviewed configuration can dispatch, and retries
@@ -23,11 +23,22 @@ test('setup reviews exact dimensions, rejects changes, and dispatches one durabl
   const catalog = runSetupCatalog(root, {});
   const choices = structuredClone(catalog);
   choices.workloads[0]!.conditions = [
-    { id: 'neutral-dev-no-sdk', guidance: 'neutral-dev-no-sdk' }, { id: 'neutral', guidance: 'neutral' },
+    { id: 'neutral-dev-no-sdk', guidance: 'neutral-dev-no-sdk', sdkSkills: false, devWorkflow: true },
+    { id: 'neutral', guidance: 'neutral', sdkSkills: true, devWorkflow: false },
+    { id: 'neutral-no-sdk', guidance: 'neutral-no-sdk', sdkSkills: false, devWorkflow: false },
+    { id: 'neutral-dev', guidance: 'neutral-dev', sdkSkills: true, devWorkflow: true },
   ];
   const initial = initialRun(choices)!;
   assert.deepEqual(initial.conditions, ['neutral']);
-  assert.match(runSetupPage(choices, initial, null, '', true), /Dev workflow without SDK skills/);
+  const page = runSetupPage(choices, initial, null, '', true);
+  assert.match(page, /name="sdkSkills"/);
+  assert.match(page, /name="devWorkflow"/);
+  const conditions = choices.workloads[0]!.conditions;
+  for (const c of conditions) assert.deepEqual(selectGuidance(conditions, c.sdkSkills ? 'on' : 'off',
+    c.devWorkflow ? 'on' : 'off'), [c.id]);
+  assert.equal(selectGuidance(conditions, 'both', 'off').length, 2);
+  assert.equal(selectGuidance(conditions, 'on', 'both').length, 2);
+  assert.equal(selectGuidance(conditions, 'both', 'both').length, 4);
   const request = { ...initialRun(catalog)!, key: 'setup-smoke', level: 1,
     repetitions: 2, parallelism: 6, maxCostUsd: 12, repairs: 0, pauseAfterDepth: null };
   const review = prepareRun(root, request, {});

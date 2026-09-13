@@ -30,27 +30,33 @@ const UNSTATED_QUALITY_LANGUAGE = [
 type Stack = typeof STACKS[number];
 type Level = 1 | 2 | 3 | 4 | 5 | 6;
 
-test('dev SDK ablation removes only the three reference skills', () => {
-  const standard = resolveGuidanceProfile('neutral-dev', STACKS);
-  const ablation = resolveGuidanceProfile('neutral-dev-no-sdk', STACKS);
-  for (const key of ['mode', 'material', 'documents', 'credentialAliases'] as const)
-    assert.deepEqual(ablation[key], standard[key]);
-  assert.deepEqual(standard.skills.spacetime!.ids,
-    ['typescript-server', 'typescript-client', 'cli', 'spacetime-dev']);
-  assert.deepEqual(ablation.skills.spacetime!.ids, ['spacetime-dev']);
-  for (const stack of ['mongodb', 'postgres']) assert.deepEqual(ablation.skills[stack], standard.skills[stack]);
+test('SDK skills and dev guidance vary independently without changing product requests', () => {
+  const profiles = ['neutral', 'neutral-no-sdk', 'neutral-dev', 'neutral-dev-no-sdk']
+    .map(id => resolveGuidanceProfile(id, STACKS));
+  const standard = profiles[0]!;
+  for (const profile of profiles) {
+    for (const key of ['mode', 'material', 'documents', 'credentialAliases'] as const)
+      assert.deepEqual(profile[key], standard[key]);
+    for (const stack of ['mongodb', 'postgres']) assert.deepEqual(profile.skills[stack], standard.skills[stack]);
+  }
+  assert.deepEqual(profiles.map(p => p.skills.spacetime!.ids), [
+    ['typescript-server', 'typescript-client', 'cli'], [],
+    ['typescript-server', 'typescript-client', 'cli', 'spacetime-dev'], ['spacetime-dev'],
+  ]);
   const track = loadTrack('ecommerce');
   const catalog = resolveFeatureCatalog('progression/ecommerce.json', track);
-  for (const level of [1, 2, 3] as const) {
+  for (const level of [1, 2, 3, 4, 5, 6] as const) {
     const binding = resolveRecipeRelease(track, level, 'ecommerce.progression-catalog');
     const task = resolveProgressionRecipeLevelSelection(binding, catalog, level, { cumulative: true }).agent.request;
-    const prompts = [standard, ablation].map(guidance => {
-      const skills = readAgentSkillDocuments(resolve(STACK_BENCH_ROOT, '..', '..'), guidance.skills.spacetime!.ids);
-      const prompt = renderPrompt({ level, stack: 'spacetime', task, guidance });
-      assert(prompt.includes(skills));
-      return prompt.replace(skills, '<skill material>');
-    });
-    assert.equal(prompts[0], prompts[1], `L${level} differs outside the supplied skills`);
+    for (const stack of STACKS) {
+      const prompts = profiles.map(guidance => {
+        const skills = readAgentSkillDocuments(resolve(STACK_BENCH_ROOT, '..', '..'), guidance.skills[stack]!.ids);
+        const prompt = renderPrompt({ level, stack, task, guidance });
+        assert(prompt.includes(skills));
+        return skills ? prompt.replace('\n\n## Selected API reference\n\n' + skills, '') : prompt;
+      });
+      for (const prompt of prompts) assert.equal(prompt, prompts[0], `${stack} L${level} differs outside the supplied skills`);
+    }
   }
 });
 

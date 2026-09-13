@@ -3,6 +3,7 @@ import { esc, money, modelLabel, stackLabel } from '../format.js';
 import { runName } from './plans.js';
 
 const guidanceLabel = (id: string) => ({ neutral: 'Standard skills',
+  'neutral-no-sdk': 'No SDK skills or dev workflow',
   'neutral-dev': 'Standard skills + dev workflow',
   'neutral-dev-no-sdk': 'Dev workflow without SDK skills' } as Record<string, string>)[id] ?? id;
 
@@ -16,13 +17,19 @@ export function initialRun(catalog: RunSetupCatalog, id?: string): RunSetupReque
     maxCostUsd: w.defaults.maxCostUsd ?? 0, credentials: {} };
 }
 
-export function readRunForm(form: HTMLFormElement): RunSetupRequest {
+export function selectGuidance(conditions: RunSetupCatalog['workloads'][number]['conditions'], sdk: string, dev: string): string[] {
+  return conditions.filter(c => (sdk === 'both' || c.sdkSkills === (sdk === 'on'))
+    && (dev === 'both' || c.devWorkflow === (dev === 'on'))).map(c => c.id);
+}
+
+export function readRunForm(form: HTMLFormElement, catalog: RunSetupCatalog): RunSetupRequest {
   const data = new FormData(form);
   return { key: String(data.get('key')), workload: String(data.get('workload')), workloadSha256: String(data.get('workloadSha256')),
     level: Number(data.get('level')), stacks: data.getAll('stack').map(String),
     agents: data.getAll('agent').map(index => ({ index: Number(index),
       effort: String(data.get(`effort-${index}`)) as RunSetupRequest['agents'][number]['effort'] })),
-    conditions: data.getAll('condition').map(String), repetitions: Number(data.get('repetitions')),
+    conditions: data.has('sdkSkills') ? selectGuidance(catalog.workloads.find(w => w.id === data.get('workload'))!.conditions,
+      String(data.get('sdkSkills')), String(data.get('devWorkflow'))) : data.getAll('condition').map(String), repetitions: Number(data.get('repetitions')),
     parallelism: Number(data.get('parallelism')), repairs: Number(data.get('repairs')),
     timeoutMinutes: Number(data.get('timeoutMinutes')), maxCostUsd: Number(data.get('maxCostUsd')),
     pauseAfterDepth: data.get('pauseAfterDepth') ? Number(data.get('pauseAfterDepth')) : null,
@@ -42,6 +49,14 @@ export function runSetupPage(catalog: RunSetupCatalog | null, request: RunSetupR
   if (!request || !catalog.workloads.length) return head + '<p>No runnable workloads are configured. Run appliance setup to install the workload presets.</p>'
     + catalog.errors.map(error => `<p class="err">${esc(error)}</p>`).join('') + '</div>';
   const w = catalog.workloads.find(w => w.id === request.workload)!;
+  const splitGuidance = w.conditions.length === 4
+    && new Set(w.conditions.map(c => `${c.sdkSkills}:${c.devWorkflow}`)).size === 4;
+  const guidanceChoice = (key: 'sdkSkills' | 'devWorkflow', label: string) => {
+    const values = new Set(w.conditions.filter(c => request.conditions.includes(c.id)).map(c => c[key]));
+    const value = values.size > 1 ? 'both' : values.has(true) ? 'on' : 'off';
+    return field(label, `<select name="${key}">${[['on', 'On'], ['off', 'Off'], ['both', 'Both (compare)']]
+      .map(([id, text]) => option(id!, text!, id === value)).join('')}</select>`);
+  };
   const model = (index: number) => w.agents[index]!;
   if (review) {
     const rows = [
@@ -75,8 +90,9 @@ export function runSetupPage(catalog: RunSetupCatalog | null, request: RunSetupR
     + '</div></fieldset><fieldset><legend>Models and reasoning</legend>'
     + w.agents.map((agent, index) => `<div class="setup-model"><label><input type="checkbox" name="agent" value="${index}"${request.agents.some(a => a.index === index) ? ' checked' : ''}>${esc(modelLabel(agent.model))}</label>`
       + `<select name="effort-${index}" aria-label="Reasoning for ${esc(agent.model)}">${['low', 'medium', 'high', 'xhigh', 'max'].map(e => option(e, e, e === (request.agents.find(a => a.index === index)?.effort ?? agent.effort ?? 'medium'))).join('')}</select></div>`).join('')
-    + '</fieldset><fieldset><legend>Guidance</legend><div class="setup-choices">'
-    + w.conditions.map(c => `<label><input type="checkbox" name="condition" value="${esc(c.id)}"${request.conditions.includes(c.id) ? ' checked' : ''}>${esc(guidanceLabel(c.guidance))}</label>`).join('')
+    + '</fieldset><fieldset><legend>SpacetimeDB guidance</legend>'
+    + (splitGuidance ? '<div class="setup-fields">' + guidanceChoice('sdkSkills', 'SDK skills')
+      + guidanceChoice('devWorkflow', 'Dev workflow') : '<div class="setup-choices">' + w.conditions.map(c => `<label><input type="checkbox" name="condition" value="${esc(c.id)}"${request.conditions.includes(c.id) ? ' checked' : ''}>${esc(guidanceLabel(c.guidance))}</label>`).join(''))
     + '</div></fieldset><div class="setup-fields">'
     + field('Repetitions per combination', integer('repetitions', request.repetitions))
     + field('Concurrent attempts', integer('parallelism', request.parallelism))

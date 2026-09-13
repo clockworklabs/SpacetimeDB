@@ -72,6 +72,10 @@ The `neutral`, `neutral-dev`, and `neutral-managed-dev` profiles retain the sele
 TypeScript server, TypeScript client, and CLI skills. Dev guidance adds a workflow; it does not replace the SDK
 references or start a watcher by itself.
 
+New run separates **SDK skills** and **Dev workflow**. Each can be on, off,
+or both for comparison. `neutral-no-sdk` omits both. These choices change
+SpacetimeDB guidance only; they do not start a watcher or change grading.
+
 For a skill ablation, `neutral-dev-no-sdk` keeps the same backend document and
 dev workflow but omits the TypeScript server, client, and CLI reference skills.
 Label this condition separately from standard guidance in comparisons.

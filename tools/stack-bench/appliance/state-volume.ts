@@ -57,7 +57,7 @@ export function prepareStateVolume(env: NodeJS.ProcessEnv = process.env, run: Do
       + 'if(id==="ecommerce-single-build")d.mode.workSelection="all-at-once";'
       + 'd.runtime.controllerImage=process.argv[2];d.runtime.buildImage=process.argv[3];'
       + 'd.budgets=paid.budgets;d.repair.budget={total:0};d.parallelism=d.stacks.length;'
-      + 'd.conditions=["neutral","neutral-dev","neutral-dev-no-sdk"].map(g=>({...d.conditions[0],id:g,guidanceProfile:g}));'
+      + 'd.conditions=["neutral","neutral-no-sdk","neutral-dev","neutral-dev-no-sdk"].map(g=>({...d.conditions[0],id:g,guidanceProfile:g}));'
       + 'fs.writeFileSync(target,JSON.stringify(d,null,2)+"\\n",{flag:"wx",mode:0o600});}',
     root, controller, build]);
   return [

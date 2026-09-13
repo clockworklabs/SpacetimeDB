@@ -1749,7 +1749,7 @@
       "edits": [
         {
           "find": "!!actor && (actor.isAdmin || actor.isStaff || row.accountId === accountId))",
-          "replace": "!!actor && (actor.isAdmin || actor.isStaff))"
+          "replace": "!!actor && (actor.isAdmin || actor.isStaff || row.creatorIdentity.toHexString() === sender))"
         }
       ]
     },
@@ -1757,9 +1757,10 @@
       "id": "support-history-leaks-across-customers",
       "scenario": "tracks/ecommerce/scenarios/progression-support-history.json",
       "targets": [
-        "ecommerce.spec.access-control.support-history-privacy.612b"
+        "ecommerce.spec.access-control.support-history-privacy.612b",
+        "ecommerce.spec.access-control.support-history-logout.612d"
       ],
-      "desc": "The support history view returns tickets owned by other customers.",
+      "desc": "Return all support tickets, exposing them to other customers and signed-out visitors.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
@@ -1992,9 +1993,10 @@
       "targets": [
         "ecommerce.progression.support-history.support-history.612c",
         "ecommerce.spec.state-durability.support-history-reload.612a",
-        "ecommerce.spec.access-control.support-history-privacy.612b"
+        "ecommerce.spec.access-control.support-history-privacy.612b",
+        "ecommerce.spec.access-control.support-history-logout.612d"
       ],
-      "desc": "Hide submitted support ticket rows while leaving the submission reference available. History, reload, and privacy each require the owner to see the ticket. Hiding every row breaks those positive observations; it does not create a privacy leak or remove stored data.",
+      "desc": "Hide submitted support ticket rows while leaving the submission reference available. History, reload, privacy, and logout require the owner to see the ticket first. This breaks those positive observations; it does not create a privacy leak or remove stored data.",
       "file": "client/src/components/ProgressionWorkbench.tsx",
       "edits": [
         {

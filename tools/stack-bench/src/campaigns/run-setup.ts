@@ -11,6 +11,7 @@ import { submitExecutionJob } from './execution-jobs.js';
 import { executionCredentialsSchema, listCredentialProfiles, resolveExecutionCredentials, validateExecutionCredentialTargets } from '../agents/credential-profiles.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { sha256 } from '../evidence/provenance.js';
+import { resolveGuidanceProfile } from './condition-compiler.js';
 
 const name = z.string().regex(/^[a-z0-9][a-z0-9.-]{2,119}$/);
 const requestSchema = z.strictObject({
@@ -60,7 +61,12 @@ export function runSetupCatalog(results: string, env: NodeJS.ProcessEnv = proces
     id: d.id, sha256: sha256(canonicalDefinitionJson(d)), title: d.title, track: d.track, mode: d.mode.id,
     workSelection: d.mode.workSelection, levels: d.levels,
     stacks: d.stacks.map(stack => stack.id), agents: d.agents.map(a => ({ ...a, provider: AGENT_ADAPTER_REGISTRY.get(a.adapter).provider })),
-    conditions: d.conditions.map(condition => ({ id: condition.id, guidance: condition.guidanceProfile })),
+    conditions: d.conditions.map(condition => {
+      const skills = resolveGuidanceProfile(condition.guidanceProfile, d.stacks.map(s => s.id)).skills.spacetime?.ids ?? [];
+      return { id: condition.id, guidance: condition.guidanceProfile,
+        sdkSkills: skills.some(id => ['typescript-server', 'typescript-client', 'cli'].includes(id)),
+        devWorkflow: skills.some(id => ['spacetime-dev', 'spacetime-managed-dev'].includes(id)) };
+    }),
     defaults: { repetitions: d.repetitions, parallelism: d.parallelism,
       repairs: d.repair.budget.total ?? 0, timeoutMinutes: d.budgets.attemptTimeoutMinutes,
       maxCostUsd: d.budgets.maxCostUsdPerAttempt, pauseAfterDepth: d.mode.pauseAfterDepth ?? null },

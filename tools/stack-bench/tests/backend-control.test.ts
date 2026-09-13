@@ -275,7 +275,7 @@ test('SpacetimeDB application start uses the root contract independently of its 
     return '';
   };
   try {
-    await assert.rejects(controlHostedAppServer({
+    for (let restart = 0; restart < 2; restart++) await assert.rejects(controlHostedAppServer({
       adapterId: 'spacetime',
       lease: { resources: { buildContainer: { name: 'leased-build', id, owned: true } } },
       app: root,
@@ -288,11 +288,15 @@ test('SpacetimeDB application start uses the root contract independently of its 
     }), error => error instanceof Error
       && error.message.includes('set: Illegal option -o pipefail')
       && 'code' in error && error.code === 'generated_app_not_restartable');
+    const logs = calls.filter(args => args[0] === 'exec' && args.includes('-d'))
+      .map(args => args.at(-1)!.match(/restart-spacetime-65534-[a-f0-9-]+\.log/)?.[0]);
+    assert.equal(logs.length, 2);
+    assert.equal(new Set(logs).size, 2, 'restarts must not overwrite earlier process logs');
     const launch = calls.find(args => args[0] === 'exec' && args.includes('-d'));
     assert(calls.some(args => args.slice(0, 3).join(' ') === `exec ${id} chown`));
     assert(launch);
     assert.match(launch.at(-1) ?? '', /\/bin\/bash \.\/start\.sh/);
-    assert.match(launch.at(-1) ?? '', /restart-spacetime-65534\.log/);
+    assert.match(launch.at(-1) ?? '', /restart-spacetime-65534-[a-f0-9-]+\.log/);
     assert.match(launch.at(-1) ?? '', /\/usr\/bin\/setsid/);
     assert.match(launch.at(-1) ?? '', /restart-spacetime-65534\.pid/);
     assert.match(launch.at(-1) ?? '', /\/proc\/\$\$\/stat/);

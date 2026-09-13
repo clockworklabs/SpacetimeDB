@@ -1922,9 +1922,10 @@
       "targets": [
         "ecommerce.progression.support-history.support-history.612c",
         "ecommerce.spec.state-durability.support-history-reload.612a",
-        "ecommerce.spec.access-control.support-history-privacy.612b"
+        "ecommerce.spec.access-control.support-history-privacy.612b",
+        "ecommerce.spec.access-control.support-history-logout.612d"
       ],
-      "desc": "Hide submitted support ticket rows while leaving the submission reference available. Hidden owner rows also fail the visibility controls in 612a and 612b; this is a display defect, not independent evidence of lost storage or leaked data.",
+      "desc": "Hide submitted support ticket rows while leaving the submission reference available. History, reload, privacy, and logout require the owner to see the ticket first. This breaks those positive observations; it does not create a privacy leak or remove stored data.",
       "file": "client/src/ProgressionPanel.tsx",
       "edits": [
         {

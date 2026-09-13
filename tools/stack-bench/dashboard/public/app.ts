@@ -555,7 +555,7 @@ async function post(form: HTMLFormElement): Promise<void> {
   const data = new FormData(form);
   const action = form.dataset.run;
   if (action === 'setup-review' || action === 'setup-start') {
-    if (action === 'setup-review') state.setupRequest = readRunForm(form);
+    if (action === 'setup-review') state.setupRequest = readRunForm(form, state.setup!);
     const secret = String(data.get('secret') ?? '');
     state.form = { ...state.form, secret, error: '' };
     submitting = true; render();
@@ -637,7 +637,7 @@ document.addEventListener('submit', event => {
 document.addEventListener('input', event => {
   const field = event.target as HTMLInputElement;
   if (field.form?.dataset.run === 'setup-review' && field.name !== 'secret') {
-    state.setupRequest = field.name === 'workload' ? initialRun(state.setup!, field.value) : readRunForm(field.form);
+    state.setupRequest = field.name === 'workload' ? initialRun(state.setup!, field.value) : readRunForm(field.form, state.setup!);
     if (field.name === 'workload' || field.name === 'level') render();
     return;
   }

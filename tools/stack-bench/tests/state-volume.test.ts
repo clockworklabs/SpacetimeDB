@@ -67,7 +67,7 @@ test('setup installs an image-bound paid demo and preserves an existing plan', (
       assert.equal(preset.runtime.buildImage, build);
       assert.equal(preset.agents[0].adapter, 'claude-code');
       assert.equal(preset.repair.budget.total, 0);
-      assert.equal(preset.conditions.length, 3);
+      assert.equal(preset.conditions.length, 4);
       if (id === 'ecommerce-single-build') assert.equal(preset.mode.workSelection, 'all-at-once');
     }
     initialize(`sha256:${'c'.repeat(64)}`);

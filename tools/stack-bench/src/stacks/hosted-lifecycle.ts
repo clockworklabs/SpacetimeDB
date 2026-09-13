@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -202,7 +203,7 @@ export async function controlHostedAppServer({ adapterId: stack, lease, app, por
     }
     return ['-e', `${key}=${value}`];
   });
-  const log = `${CONTROL_DIR}/restart-${stack}-${Number(port)}.log`;
+  const log = `${CONTROL_DIR}/restart-${stack}-${Number(port)}-${randomUUID()}.log`;
   exec('docker', ['exec', '-d', '-w', launch.directory === '.' ? CODING_CONTAINER_APP_ROOT
     : `${CODING_CONTAINER_APP_ROOT}/${launch.directory}`,
     '-e', `HOME=${CODING_CONTAINER_AGENT.home}`, '-e', `USER=${CODING_CONTAINER_AGENT.name}`,
