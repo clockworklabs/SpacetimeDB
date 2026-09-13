@@ -146,16 +146,12 @@ fn run_inner<I: WasmInstance>(
             if !auth.has_write_access() {
                 return Err(anyhow!("Caller {} is not authorized to run SQL DML statements", auth.caller()).into());
             }
+            if stmt.table_id() == spacetimedb_datastore::system_tables::ST_ENV_ID {
+                return Err(anyhow!("Database environment variables can only be changed by publishing").into());
+            }
 
             // Evaluate the mutation
-            let (mut tx, _) = db.with_auto_rollback(tx, |tx| {
-                if stmt.table_id() == spacetimedb_datastore::system_tables::ST_ENV_ID {
-                    return Err(anyhow!(
-                        "Database environment variables can only be changed by publishing"
-                    ));
-                }
-                execute_dml_stmt(&auth, stmt, tx, &mut metrics)
-            })?;
+            let (mut tx, _) = db.with_auto_rollback(tx, |tx| execute_dml_stmt(&auth, stmt, tx, &mut metrics))?;
 
             // Update transaction metrics
             tx.metrics.merge(metrics);
