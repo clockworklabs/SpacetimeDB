@@ -207,15 +207,10 @@ impl Host {
             .await
     }
 
-    pub async fn with_publication_lock<T, F, Fut>(&self, operation: F) -> anyhow::Result<T>
-    where
-        T: Send + 'static,
-        F: FnOnce(ModuleHost) -> Fut + Send + 'static,
-        Fut: std::future::Future<Output = anyhow::Result<T>> + Send + 'static,
-    {
-        self.host_controller
-            .with_publication_lock(self.replica_id, operation)
-            .await
+    pub async fn environment_metadata(
+        &self,
+    ) -> anyhow::Result<spacetimedb_client_api_messages::publish::EnvironmentMetadata> {
+        self.host_controller.environment_metadata(self.replica_id).await
     }
 
     pub async fn update_with_environment_options(

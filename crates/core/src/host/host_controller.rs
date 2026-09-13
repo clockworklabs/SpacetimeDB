@@ -847,24 +847,24 @@ impl HostController {
             .ok_or(NoSuchModule)
     }
 
-    /// Run a publication operation while retaining the controller write lock.
-    /// Cancellation of the caller cannot release the lock before the operation finishes.
-    pub async fn with_publication_lock<T, F, Fut>(&self, replica_id: u64, operation: F) -> anyhow::Result<T>
-    where
-        T: Send + 'static,
-        F: FnOnce(ModuleHost) -> Fut + Send + 'static,
-        Fut: std::future::Future<Output = anyhow::Result<T>> + Send + 'static,
-    {
+    /// Read environment metadata while preventing module replacement or shutdown.
+    pub async fn environment_metadata(
+        &self,
+        replica_id: u64,
+    ) -> anyhow::Result<spacetimedb_client_api_messages::publish::EnvironmentMetadata> {
         let guard = self
-            .acquire_write_lock(replica_id)
+            .acquire_read_lock(replica_id)
             .await
-            .map_err(|_| anyhow::anyhow!("unable to lock database for publication"))?;
+            .map_err(|_| anyhow::anyhow!("unable to lock database for environment metadata"))?;
         let module = guard.as_ref().ok_or(NoSuchModule)?.module.borrow().clone();
-        tokio::spawn(async move {
-            let _guard = guard;
-            operation(module).await
+        let stored_keys = module.relational_db().with_read_only(Workload::Internal, |tx| {
+            crate::db::environment::snapshot(tx).map(|values| values.into_keys().collect())
+        })?;
+        Ok(spacetimedb_client_api_messages::publish::EnvironmentMetadata {
+            module_version: module.info.module_hash.to_string(),
+            declarations: module.info.module_def.environment().declarations().cloned().collect(),
+            stored_keys,
         })
-        .await?
     }
 
     /// Subscribe to updates of the [`ModuleHost`] identified by `replica_id`,

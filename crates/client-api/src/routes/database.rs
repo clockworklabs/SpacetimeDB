@@ -638,21 +638,7 @@ where
     ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
         .await?;
     let leader = find_database_leader(&ctx, &database).await?;
-    let metadata = leader
-        .with_publication_lock(|module| async move {
-            let stored_keys = module
-                .relational_db()
-                .with_read_only(spacetimedb_datastore::execution_context::Workload::Internal, |tx| {
-                    spacetimedb::db::environment::snapshot(tx).map(|values| values.into_keys().collect())
-                })?;
-            Ok(spacetimedb_client_api_messages::publish::EnvironmentMetadata {
-                module_version: module.info.module_hash.to_string(),
-                declarations: module.info.module_def.environment().declarations().cloned().collect(),
-                stored_keys,
-            })
-        })
-        .await
-        .map_err(log_and_500)?;
+    let metadata = leader.environment_metadata().await.map_err(log_and_500)?;
     Ok(([(http::header::CACHE_CONTROL, "no-store")], axum::Json(metadata)))
 }
 
