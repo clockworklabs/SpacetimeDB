@@ -47,8 +47,11 @@ body { margin: 0; background: var(--shade8); color: var(--n3); font: 14px/1.5 va
 .card .k, .card h1, .card p { opacity: 0; transform: translateY(8px); transition: opacity .5s ease, transform .5s ease; }
 .card.on .k, .card.on h1, .card.on p { opacity: 1; transform: none; }
 .card.on h1 { transition-delay: .06s; } .card.on p { transition-delay: .14s; }
-.hint { position: fixed; left: 40px; bottom: 48px; z-index: 5; color: var(--n4); font: 500 11.7px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; opacity: 0; transition: opacity .5s; }
-.hint.on { opacity: 1; }
+.hint { position: fixed; left: 40px; bottom: 48px; z-index: 5; display: flex; align-items: center; gap: 10px; padding: 0; border: 0; background: none; color: var(--n3); font: 500 11.7px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; cursor: pointer; opacity: 0; pointer-events: none; transition: opacity .5s, color .2s; }
+.hint.on { opacity: 1; pointer-events: auto; }
+.hint:hover { color: var(--n1); }
+.hint b { font: 600 16px/1 var(--sans); letter-spacing: 0; }
+.hint span { color: var(--n5); }
 .ctl { position: fixed; right: 40px; bottom: 48px; z-index: 5; display: flex; align-items: center; gap: 14px; }
 .ctl button { width: 34px; height: 34px; border-radius: 4px; border: 1px solid var(--shade1); background: rgba(11,17,20,.7); color: var(--n1); font: 13px/1 var(--mono); cursor: pointer; }
 .ctl button:hover { border-color: var(--n3); }
@@ -81,7 +84,7 @@ svg .door.hot polygon { filter: url(#lift); }
 </header>
 <div class="scene"><svg id="map" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Isometric map of Stack Bench"></svg></div>
 <div class="card" id="card"><div class="k"></div><h1></h1><p></p></div>
-<div class="hint" id="hint"></div>
+<button class="hint" id="hint" type="button"><b>‹</b>Return<span>Esc</span></button>
 <div class="ctl"><div class="dots" id="dots"></div><button id="play" type="button" aria-label="Pause">❚❚</button></div>
 
 <script>
@@ -214,7 +217,7 @@ function enter(id, ch = 0) {
   setTimeout(() => { scene = next; build(scene); sceneT0 = performance.now(); view.cur = [0, 0, 1600, 900]; dots.replaceChildren(); scene.chapters.forEach((c, i) => { const d = document.createElement('i'); d.addEventListener('click', () => go(i)); dots.append(d); });
     crumbs.replaceChildren(); const trail = []; let s = scene; while (s) { trail.unshift(s); s = s.parent ? scenes[s.parent] : null; }
     trail.forEach((s, i) => { if (i) crumbs.append(Object.assign(document.createElement('span'), { textContent: '›' })); const a = document.createElement(i === trail.length - 1 ? 'b' : 'a'); a.textContent = s.name; if (i < trail.length - 1) a.addEventListener('click', () => enter(s.id)); crumbs.append(a); });
-    hint.textContent = scene.slabs.some(s => s.detail) ? 'click a district to open it' : scene.units.some(u => u.detail) ? 'click a block to open it' : 'esc returns'; hint.classList.add('on');
+    hint.classList.toggle('on', Boolean(scene.parent));
     map.classList.remove('out'); go(ch, true); }, 360);
 }
 function go(i, jump = false) {
@@ -231,6 +234,7 @@ function go(i, jump = false) {
   scene.onChapter?.(chapter);
   history.replaceState(null, '', `#${scene.id}/${chapter}`);
 }
+hint.addEventListener('click', () => { if (scene.parent) enter(scene.parent); });
 playBtn.addEventListener('click', () => { playing = !playing; playBtn.textContent = playing ? '❚❚' : '▶'; playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play'); since = performance.now(); });
 document.addEventListener('keydown', e => { if (e.key === 'ArrowRight') go(chapter + 1); if (e.key === 'ArrowLeft') go(chapter - 1); if (e.key === ' ') { e.preventDefault(); playBtn.click(); } if (e.key === 'Escape' && scene.parent) enter(scene.parent); });
 window.addEventListener('hashchange', () => { const [id, n] = location.hash.slice(1).split('/'); if (scenes[id] && (id !== scene.id)) enter(id, Number(n) || 0); else if (Number.isInteger(Number(n)) && Number(n) !== chapter) go(Number(n)); });
