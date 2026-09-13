@@ -64,7 +64,7 @@ fn short_help_is_concise_and_long_help_explains_environment_modes() {
         "Publishing preserves unspecified environment values",
         "including empty strings",
         "--replace-env replaces all stored values",
-        "--env selects config file layers",
+        "--env selects which config file to use",
     ] {
         assert!(long.contains(text), "missing long-help guidance: {text}");
     }
