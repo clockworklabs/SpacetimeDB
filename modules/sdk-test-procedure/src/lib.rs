@@ -46,7 +46,7 @@ fn read_my_schema(ctx: &mut ProcedureContext, server_url: String) -> String {
     let server_url = server_url.trim_end_matches('/');
     match ctx
         .http
-        .get(format!("{server_url}/v1/database/{module_identity}/schema?version=9"))
+        .get(format!("{server_url}/v1/database/{module_identity}/schema?version=10"))
     {
         Ok(result) => result.into_body().into_string_lossy(),
         Err(e) => panic!("{e}"),

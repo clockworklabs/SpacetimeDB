@@ -2007,6 +2007,7 @@ where
         // Start the timer.
         // We'd like this tightly around `call`.
         env.start_funcall(op.name().clone(), op.timestamp(), op.call_type());
+        env.instance_env.set_call_auth_flags(op.call_auth_flags());
 
         // Wrap the call in `TryCatch`.
         //
@@ -2132,6 +2133,7 @@ mod test {
                     name: &ReducerName::for_test("foobar"),
                     caller_identity: &Identity::ONE,
                     caller_connection_id: &ConnectionId::ZERO,
+                    call_auth_flags: 0,
                     timestamp: Timestamp::from_micros_since_unix_epoch(24),
                     args: &ArgsTuple::nullary(),
                 };

@@ -3304,7 +3304,7 @@ static class ModuleRegistration
             new(
                 SourceName: nameof(TestDuplicateReducerKind1),
                 Params: [],
-                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                Visibility: SpacetimeDB.Internal.FunctionVisibility.Internal,
                 OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
                 ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
             );
@@ -3325,7 +3325,7 @@ static class ModuleRegistration
             new(
                 SourceName: nameof(TestDuplicateReducerKind2),
                 Params: [],
-                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                Visibility: SpacetimeDB.Internal.FunctionVisibility.Internal,
                 OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
                 ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
             );

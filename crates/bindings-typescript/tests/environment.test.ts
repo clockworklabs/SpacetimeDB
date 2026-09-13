@@ -43,9 +43,14 @@ describe('declared database environment', () => {
       { name: 'get', constraint: { tag: 'AnyString' }, optional: true },
     ]);
     const defined = schema({}, { env: declarations });
-    const section = defined
-      .buildRawModuleDefV10({})
-      .sections.find(section => section.tag === 'Environment');
+    const moduleDef = defined.buildRawModuleDefV10({});
+    expect(moduleDef.sections).toContainEqual({
+      tag: 'Capabilities',
+      value: ['hosted_auth_v1'],
+    });
+    const section = moduleDef.sections.find(
+      section => section.tag === 'Environment'
+    );
     expect(section).toEqual({
       tag: 'Environment',
       value: environmentDeclarations(declarations),

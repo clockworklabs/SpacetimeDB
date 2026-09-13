@@ -1,4 +1,5 @@
 use crate::reducer::{assert_only_lifetime_generics, extract_typed_args, generate_explicit_names_impl};
+use crate::reducer::{parse_visibility, DeclaredVisibility};
 use crate::sym;
 use crate::util::{check_duplicate, ident_to_litstr, match_meta};
 use proc_macro2::TokenStream;
@@ -10,12 +11,16 @@ use syn::{ItemFn, LitStr};
 pub(crate) struct ProcedureArgs {
     /// For consistency with reducers: allow specifying a different export name than the Rust function name.
     name: Option<LitStr>,
+    visibility: Option<DeclaredVisibility>,
 }
 
 impl ProcedureArgs {
     pub(crate) fn parse(input: TokenStream) -> syn::Result<Self> {
         let mut args = Self::default();
         syn::meta::parser(|meta| {
+            if parse_visibility(&meta, &mut args.visibility)? {
+                return Ok(());
+            }
             match_meta!(match meta {
                 sym::name => {
                     check_duplicate(&args.name, &meta)?;
@@ -29,10 +34,11 @@ impl ProcedureArgs {
     }
 }
 
-pub(crate) fn procedure_impl(_args: ProcedureArgs, original_function: &ItemFn) -> syn::Result<TokenStream> {
+pub(crate) fn procedure_impl(args: ProcedureArgs, original_function: &ItemFn) -> syn::Result<TokenStream> {
     let func_name = &original_function.sig.ident;
     let vis = &original_function.vis;
-    let explicit_name = _args.name.as_ref();
+    let explicit_name = args.name.as_ref();
+    let visibility = args.visibility.map(DeclaredVisibility::tokens).into_iter();
 
     let procedure_name = ident_to_litstr(func_name);
 
@@ -117,6 +123,7 @@ pub(crate) fn procedure_impl(_args: ProcedureArgs, original_function: &ItemFn) -
 
             /// The name of this function
             const NAME: &'static str = #procedure_name;
+            #(const DECLARED_VISIBILITY: Option<spacetimedb::rt::FunctionVisibility> = Some(#visibility);)*
 
             /// The parameter names of this function
             const ARG_NAMES: &'static [Option<&'static str>] = &[#(#opt_arg_names),*];
@@ -132,4 +139,30 @@ pub(crate) fn procedure_impl(_args: ProcedureArgs, original_function: &ItemFn) -
 
         #generate_explicit_names
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn procedure_visibility_rejects_duplicates_and_emits_selection() {
+        assert!(ProcedureArgs::parse(quote!(private, public)).is_err());
+        assert!(ProcedureArgs::parse(quote!(internal, internal)).is_err());
+        let function: ItemFn = syn::parse_quote!(
+            fn example(ctx: &mut ProcedureContext) -> u64 {
+                0
+            }
+        );
+        for (input, expected) in [
+            (quote!(internal), "Internal"),
+            (quote!(private), "Private"),
+            (quote!(public), "ClientCallable"),
+        ] {
+            let tokens = procedure_impl(ProcedureArgs::parse(input).unwrap(), &function)
+                .unwrap()
+                .to_string();
+            assert!(tokens.contains("DECLARED_VISIBILITY"));
+            assert!(tokens.contains(&format!("FunctionVisibility :: {expected}")));
+        }
+    }
 }

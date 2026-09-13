@@ -11,7 +11,18 @@ endif()
 add_executable(bindings_cpp_unit_tests
     main.cpp
     http_unit_tests.cpp
-    environment_unit_tests.cpp
+    hosted_auth_unit_tests.cpp
+    function_visibility_unit_tests.cpp
+)
+
+# Exercise the real module builder without the standalone WASI shims, which
+# replace the Node test runner's standard I/O and process lifecycle functions.
+target_sources(bindings_cpp_unit_tests PRIVATE
+    ../../src/internal/Module.cpp
+    ../../src/internal/AlgebraicType.cpp
+    ../../src/internal/v9_builder.cpp
+    ../../src/internal/v10_builder.cpp
+    ../../src/internal/module_type_registration.cpp
 )
 
 target_include_directories(bindings_cpp_unit_tests PRIVATE
