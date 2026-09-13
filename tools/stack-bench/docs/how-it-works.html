@@ -51,7 +51,6 @@ body { margin: 0; background: var(--shade8); color: var(--n3); font: 14px/1.5 va
 .hint.on { opacity: 1; pointer-events: auto; }
 .hint:hover { color: var(--n1); }
 .hint b { font: 600 16px/1 var(--sans); letter-spacing: 0; }
-.hint span { color: var(--n5); }
 .ctl { position: fixed; right: 40px; bottom: 48px; z-index: 5; display: flex; align-items: center; gap: 14px; }
 .ctl button { width: 34px; height: 34px; border-radius: 4px; border: 1px solid var(--shade1); background: rgba(11,17,20,.7); color: var(--n1); font: 13px/1 var(--mono); cursor: pointer; }
 .ctl button:hover { border-color: var(--n3); }
@@ -68,7 +67,8 @@ svg .num { font: 600 15px var(--sans); fill: var(--n1); }
 svg .grid { stroke: #142129; stroke-width: 1; }
 svg .lane { fill: none; stroke: #172a33; stroke-width: 10; stroke-linejoin: round; stroke-linecap: round; }
 svg .lane.on { stroke: #1e3844; }
-svg .wire { fill: none; stroke: #35586a; stroke-width: 1.6; stroke-linecap: round; }
+svg .wire { fill: none; stroke: #3f6a7e; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+svg .hi { fill: var(--n3); }
 svg .chip rect { fill: #0b1114; stroke-width: 1; }
 svg .chip text { font: 500 9px var(--mono); letter-spacing: .1em; text-transform: uppercase; fill: var(--n1); }
 svg .dim { transition: opacity .6s ease; }
@@ -84,7 +84,7 @@ svg .door.hot polygon { filter: url(#lift); }
 </header>
 <div class="scene"><svg id="map" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Isometric map of Stack Bench"></svg></div>
 <div class="card" id="card"><div class="k"></div><h1></h1><p></p></div>
-<button class="hint" id="hint" type="button"><b>‹</b>Return<span>Esc</span></button>
+<button class="hint" id="hint" type="button"><b>‹</b>Return</button>
 <div class="ctl"><div class="dots" id="dots"></div><button id="play" type="button" aria-label="Pause">❚❚</button></div>
 
 <script>
@@ -153,10 +153,10 @@ function label(x, y, z, txt, cls, district, anchor = 'start', dx = 0, dy = 0) {
 function lane(points, district, z, wire = false) {
   const pts = points.map(([x, y]) => iso(x, y, z)); const p = el('path', { d: 'M' + pts.map(q => q.map(v => v.toFixed(1)).join(' ')).join(' L'), class: wire ? 'wire' : 'lane' }); layers[wire ? 'wires' : 'lanes'].append(tag(p, district)); return p;
 }
-function token(path, { kind, speed = .3, offset = 0, district, r = 3.5, onEnd = null }) {
+function token(path, { kind, speed = .3, offset = 0, district, r = 3.5, onEnd = null, plain = false }) {
   const color = TOKEN[kind]; const g = el('g', { class: 'chip' }); const dot = el('circle', { r, fill: color, class: 'pk', filter: 'url(#glow)' });
   const w = kind.length * 6.2 + 14; const rect = el('rect', { x: 8, y: -8, width: w, height: 16, rx: 3, stroke: color }); const txt = el('text', { x: 8 + w / 2, y: 3.5, 'text-anchor': 'middle' }, kind);
-  const chip = el('g', { opacity: 0 }); chip.append(rect, txt); g.append(dot, chip); layers.packets.append(tag(g, district));
+  const chip = el('g', { opacity: 0 }); if (!plain) chip.append(rect, txt); g.append(dot, chip); layers.packets.append(tag(g, district));
   const len = path.getTotalLength(), dur = Math.max(2, len / (40 + speed * 60)); let prev = 0;
   return { chip, district, tick(t) { const u = ((t / dur + offset) % 1 + 1) % 1; if (u < prev && onEnd) onEnd(); prev = u; const q = path.getPointAtLength(u * len); g.setAttribute('transform', `translate(${q.x.toFixed(1)} ${q.y.toFixed(1)})`); } };
 }
@@ -189,7 +189,7 @@ function build(scene) {
   scene.extra?.({ iso, label, el, layers, ZS });
   for (const l of scene.lanes) {
     const p = lane(l.pts, l.district, l.wire ? ZS + .02 : Z + .02, l.wire); const n = l.token ? l.n ?? 1 : 0;
-    for (let i = 0; i < n; i++) anim.push(token(p, { kind: l.token, speed: l.speed ?? .3, offset: (l.offset ?? 0) + i / n, district: l.district, onEnd: l.pulse ? () => { const target = scene.slabs.find(s => s.id === l.pulse); if (target) pulse(target.node); } : null }));
+    for (let i = 0; i < n; i++) anim.push(token(p, { kind: l.token, speed: l.speed ?? .3, offset: (l.offset ?? 0) + i / n, district: l.district, plain: l.plain, r: l.plain ? 2.6 : 3.5, onEnd: l.pulse ? () => { const target = scene.slabs.find(s => s.id === l.pulse); if (target) pulse(target.node); } : null }));
   }
   [...layers.blocks.children].sort((a, b) => Number(a.dataset.depth) - Number(b.dataset.depth)).forEach(n => layers.blocks.append(n));
 }
@@ -245,7 +245,7 @@ function frame(now) {
   const rise = STILL ? 1 : Math.min(1, t / 1.6);
   risers.forEach((b, i) => { const u = Math.max(0, Math.min(1, rise * 1.3 - (i / risers.length) * .3)); b.shape(Math.max(.01, b.h * easeIO(u))); });
   if (!STILL) anim.forEach(a => a.tick(t));
-  pulses = pulses.filter(p => now - p.t0 < 700); for (const p of pulses) { const k = 1 - (now - p.t0) / 700; p.node.faces[2].setAttribute('stroke', `rgba(76,244,144,${(k * .9).toFixed(2)})`); p.node.faces[2].setAttribute('stroke-width', (1 + 2 * k).toFixed(1)); if (k < .02) { p.node.faces[2].setAttribute('stroke', 'rgba(0,0,0,.3)'); p.node.faces[2].setAttribute('stroke-width', '.6'); } }
+  pulses = pulses.filter(p => now - p.t0 < 700); for (const p of pulses) { const k = 1 - (now - p.t0) / 700; p.node.faces[2].setAttribute('stroke', `rgba(76,244,144,${(k * .5).toFixed(2)})`); p.node.faces[2].setAttribute('stroke-width', (1 + 1.2 * k).toFixed(1)); if (k < .02) { p.node.faces[2].setAttribute('stroke', 'rgba(0,0,0,.3)'); p.node.faces[2].setAttribute('stroke-width', '.6'); } }
   const vu = Math.min(1, (now - view.t0) / 1400); const e = easeIO(vu);
   let cur = view.from.map((v, i) => v + (view.to[i] - v) * e);
   if (!scene.chapters[chapter].view && !STILL) { const dx = Math.sin(t * .25) * 10, dy = Math.cos(t * .2) * 6; cur = [cur[0] + dx, cur[1] + dy, cur[2], cur[3]]; }
@@ -664,30 +664,41 @@ const TRACK = {"questlines":[{"id":"identity-profiles","title":"Identity and pro
   const qTitle = Object.fromEntries(TRACK.questlines.map(q => [q.id, q.title.toLowerCase()]));
   const ROWS = [['identity-profiles', 'catalog-discovery', 'staff-access', 'inventory', 'shopping-checkout', 'orders-fulfillment'], ['reviews', 'recommendations', 'notifications', 'business-operations', 'promotions', 'customer-support']];
   const ALLQ = ROWS.flat(), tagsOf = ids => ids.map(id => `n:${id}tags`);
-  const pos = {}, slabs = [], units = [], labels = [], lanes = [];
-  ROWS.forEach((row, r) => row.forEach((q, i) => {
-    const members = nodes.filter(n => n.q === q), x = 1 + i * 5.5, y = r ? 17.6 : 1, d = members.length * 1.5 + 1;
-    slabs.push({ id: q, x, y, w: 4, d, label: qTitle[q], labelAt: [x + 2, y + d, 'middle', 0, 18] });
+  const pos = {}, col = {}, row = {}, slabs = [], units = [], labels = [], lanes = [];
+  const GY = 16.6, colX = i => 1 + i * 5.5;
+  ROWS.forEach((r_, r) => r_.forEach((q, i) => {
+    const members = nodes.filter(n => n.q === q), x = colX(i), y = r ? 17.6 : 1, d = members.length * 1.5 + 2.6;
+    slabs.push({ id: q, x, y, w: 4, d, label: qTitle[q], labelAt: [x + 2, y + d - .8, 'middle', 0, 4] });
     members.forEach((n, j) => {
-      const bx = x + .7, by = y + .6 + j * 1.5; pos[n.id] = [bx + .6, by + .6];
+      const bx = x + .7, by = y + .6 + j * 1.5; pos[n.id] = [bx + .6, by + .6]; col[n.id] = i; row[n.id] = r;
       units.push({ id: n.id, x: bx, y: by, w: 1.2, d: 1.2, h: .9, color: SLATE, district: q, detail: `feature:${n.id}` });
-      labels.push([bx + 1.2, by, ZS + .45, n.title, 'lab', `n:${n.id}tags`, 'start', 8, 4]);
+      labels.push([bx + 1.2, by, ZS, n.title, 'lab hi', `n:${n.id}tags`, 'start', 8, 8]);
     });
   }));
-  for (const n of nodes) for (const dep of n.deps) lanes.push({ district: n.q, pts: [pos[dep], pos[n.id]], wire: true });
+  const route = (a, b) => {
+    const s = pos[a], t = pos[b], cs = col[a], ct = col[b], right = ct >= cs;
+    const g1 = colX(cs) + (right ? 4.75 : -.75), g2 = ct === cs ? g1 : colX(ct) + (right ? -.75 : 4.75);
+    return row[a] === row[b] ? [s, [g1, s[1]], [g1, t[1]], t] : [s, [g1, s[1]], [g1, GY], [g2, GY], [g2, t[1]], t];
+  };
+  const wires = (district, edges, token = 'unlock') => edges.forEach(([a, b]) => lanes.push({ district, pts: route(a, b), wire: true, token, plain: true, speed: .6 }));
   const dependents = id => nodes.filter(n => n.deps.includes(id)).map(n => n.id);
   const below = id => { const out = new Set(); const walk = k => dependents(k).forEach(c => { if (!out.has(c)) { out.add(c); walk(c); } }); walk(id); return [...out]; };
   const roots = nodes.filter(n => !n.deps.length).map(n => n.id), hub = dependents('warehouse-admin'), struck = below('purchasing');
   const shop = nodes.filter(n => n.q === 'shopping-checkout').map(n => n.id), shopSlab = slabs.find(s => s.id === 'shopping-checkout');
-  const paint = (ids, color) => Object.fromEntries(ids.map(id => [id, color])), FULL = [0, 0, 34, 31, 1, -.06, 1.15];
+  wires('w:rootstags', nodes.flatMap(n => n.deps.filter(d => roots.includes(d)).map(d => [d, n.id])));
+  wires('w:shoptags', nodes.filter(n => shop.includes(n.id)).flatMap(n => n.deps.map(d => [d, n.id])));
+  wires('w:hubtags', hub.map(id => ['warehouse-admin', id]));
+  const blocked = new Set(['purchasing', ...struck]);
+  wires('w:striketags', nodes.filter(n => blocked.has(n.id)).flatMap(n => n.deps.filter(d => blocked.has(d)).map(d => [d, n.id])), 'blocked');
+  const paint = (ids, color) => Object.fromEntries(ids.map(id => [id, color])), FULL = [0, 0, 34, 32, 1, -.06, 1.15];
   scenes.track = {
-    id: 'track', name: 'the ecommerce track', parent: 'plan', plate: [34, 31], slabs, units, labels, lanes,
+    id: 'track', name: 'the ecommerce track', parent: 'plan', plate: [34, 32], slabs, units, labels, lanes,
     chapters: [
-      { k: 'the ecommerce track', h: `${nodes.length} features. Each one unlocks after the ones it needs.`, p: `${TRACK.questlines.length} questlines make one product. A feature is graded only when every feature it depends on has passed, so the agent builds in an order the product allows.`, focus: null, view: FULL },
-      { k: 'roots', h: `${roots.length} features need nothing.`, p: `${roots.map(id => byId[id].title).join(', ')} are the roots. Everything else is behind at least one of them.`, focus: [...ALLQ, ...tagsOf(roots)], view: FULL, paint: paint(roots, BLUE) },
-      { k: 'a questline', h: 'Cart, then checkout, then reservations.', p: 'Shopping and checkout is six features. Cart needs an account and a catalog. Checkout needs the cart. Reservations need checkout and warehouse stock, which lives in another questline.', focus: ['shopping-checkout', 'inventory', ...tagsOf(shop)], view: [shopSlab.x - 1, shopSlab.y - 1, shopSlab.x + 9, shopSlab.y + shopSlab.d + 1, 2, .1] },
-      { k: 'the hub', h: `One feature unblocks ${hub.length}.`, p: `Warehouse admin sits under ${hub.map(id => byId[id].title.toLowerCase()).join(', ')}. Building it early pays across the map.`, focus: [...ALLQ, ...tagsOf(['warehouse-admin', ...hub])], view: FULL, paint: { 'warehouse-admin': GREEN, ...paint(hub, WHITE) } },
-      { k: 'a strike', h: 'A failed feature blocks everything behind it.', p: `When purchasing fails its checks, ${struck.length} features are never attempted. They earn no points and no blame. Strike policy decides whether the agent gets another try at purchasing first.`, focus: [...ALLQ, ...tagsOf(['purchasing'])], view: FULL, paint: { purchasing: RED, ...paint(struck, INK) } },
+      { k: 'the ecommerce track', h: `${nodes.length} features in ${TRACK.questlines.length} questlines make one product.`, p: 'A questline is one thread of the product, from its first feature to its last. A feature is graded only when every feature it depends on has passed, so the agent builds in an order the product allows.', focus: null, view: FULL },
+      { k: 'roots', h: `${roots.length} features need nothing. Everything starts there.`, p: `${roots.map(id => byId[id].title).join(', ')} unlock the first wave of work. Every other feature waits behind at least one of them.`, focus: [...ALLQ, ...tagsOf(roots), 'w:rootstags'], view: FULL, paint: paint(roots, BLUE) },
+      { k: 'a questline', h: 'Cart, then checkout, then reservations.', p: 'Shopping and checkout is six features. Cart needs an account and a catalog. Checkout needs the cart. Reservations need checkout and warehouse stock, which lives in another questline.', focus: ['shopping-checkout', 'inventory', ...tagsOf(shop), 'w:shoptags'], view: [shopSlab.x - 9, 0, shopSlab.x + 9, shopSlab.y + shopSlab.d + 1, 2, .14] },
+      { k: 'the hub', h: `One feature unblocks ${hub.length}.`, p: `Warehouse admin sits under ${hub.map(id => byId[id].title.toLowerCase()).join(', ')}. Building it early pays across the map.`, focus: [...ALLQ, ...tagsOf(['warehouse-admin', ...hub]), 'w:hubtags'], view: FULL, paint: { 'warehouse-admin': GREEN, ...paint(hub, WHITE) } },
+      { k: 'a strike', h: 'A failed feature blocks everything behind it.', p: `When purchasing fails its checks, ${struck.length} features are never attempted. They earn no points and no blame. Strike policy decides whether the agent gets another try at purchasing first.`, focus: [...ALLQ, ...tagsOf(['purchasing']), 'w:striketags'], view: FULL, paint: { purchasing: RED, ...paint(struck, INK) } },
       { k: 'the score', h: `The score is the average of ${TRACK.questlines.length} questlines.`, p: 'Each questline is the share of its features passed. The average is the number; the count of unique checks passed is reported beside it, so a long questline cannot outvote a short one.', focus: null, view: FULL },
     ],
   };
@@ -711,10 +722,10 @@ const TRACK = {"questlines":[{"id":"identity-profiles","title":"Identity and pro
       { id: 'steps', x: 1, y: stepsY, w: stepsW, d: actorsD, label: 'one check, step by step', labelAt: [1, stepsY, 'middle', 0, -10] },
     ];
     const units = [], labels = [], lanes = [];
-    n.deps.forEach((id, j) => { units.push({ id: `dep:${id}`, x: 1.7, y: 2.6 + j * 1.5, w: 1.2, d: 1.2, h: .9, color: SLATE, district: 'deps', detail: `feature:${id}` }); labels.push([2.9, 2.6 + j * 1.5, ZS + .45, byId[id].title, 'lab', 'depstags', 'start', 8, 4]); });
+    n.deps.forEach((id, j) => { units.push({ id: `dep:${id}`, x: 1.7, y: 2.6 + j * 1.5, w: 1.2, d: 1.2, h: .9, color: SLATE, district: 'deps', detail: `feature:${id}` }); labels.push([2.9, 2.6 + j * 1.5, ZS, byId[id].title, 'lab', 'depstags', 'start', 8, 8]); });
     packs.forEach((p, i) => { const x = 6.8 + i * 2.6; units.push({ kind: 'ledger', x, y: 2.7, w: 1.6, d: 1.6, h: 1.2, n: 2, color: p.type === 'feature' ? WHITE : SLATE, top: p.type === 'feature' ? 1.1 : 1.3, side: p.type === 'feature' ? .85 : 1, back: p.type === 'feature' ? .62 : .66, district: 'pack' }); labels.push([x + .8, 4.3, Z, p.title.toLowerCase(), 'lab', 'packtags', 'middle', 0, 14]); });
     caps.forEach((c, i) => { const x = 7.2 + i * 2.6; units.push({ x, y: 7.8, w: .8, d: .8, h: .5, color: c === 'browser' ? BLUE : SLATE, district: 'pack' }); labels.push([x + .4, 9.1, Z, c.replace(/-/g, ' '), 'lab', 'captags', 'middle', 0, 14]); });
-    n.checks.forEach((c, j) => { const pts = c.criteria.reduce((t, cr) => t + cr.points, 0); units.push({ id: `check:${c.id}`, x: checksX + .7, y: 2.6 + j * 1.5, w: 1.2, d: 1.2, h: .9, color: c.role === 'feature' ? GREEN : WHITE, top: c.role === 'feature' ? 1.3 : 1.1, side: c.role === 'feature' ? 1 : .85, back: c.role === 'feature' ? .66 : .62, district: 'checks' }); labels.push([checksX + 1.9, 2.6 + j * 1.5, ZS + .45, `${c.id} · ${pts} pt`, 'lab', 'checktags', 'start', 8, 4]); });
+    n.checks.forEach((c, j) => { const pts = c.criteria.reduce((t, cr) => t + cr.points, 0); units.push({ id: `check:${c.id}`, x: checksX + .7, y: 2.6 + j * 1.5, w: 1.2, d: 1.2, h: .9, color: c.role === 'feature' ? GREEN : WHITE, top: c.role === 'feature' ? 1.3 : 1.1, side: c.role === 'feature' ? 1 : .85, back: c.role === 'feature' ? .66 : .62, district: 'checks' }); labels.push([checksX + 1.9, 2.6 + j * 1.5, ZS, `${c.id} · ${pts} pt`, 'lab', 'checktags', 'start', 8, 8]); });
     pick.cr.actors.forEach((a, k) => { units.push({ kind: 'drum', x: 2, y: stepsY + 1.6 + k * 1.6, r: .4, h: .45, color: BLUE, district: 'steps' }); labels.push([1.6, stepsY + 1.6 + k * 1.6, ZS + .5, a, 'lab', 'steptags', 'end', -8, 4]); });
     shown.forEach((s, i) => { const x = 4 + i * 3; units.push({ x, y: stepsY + 1.3, w: .9, d: .9, h: .6, color: STEP(s.do), district: 'steps' }); labels.push([x + .45, stepsY + 2.2, Z, s.do, 'lab', 'steptags', 'middle', 0, 14]); if (s.t) labels.push([x + .45, stepsY + 2.2, Z, s.t, 'lab', 'steptags', 'middle', 0, 32]); });
     if (more) labels.push([4 + shown.length * 3 + .45, stepsY + 2.2, Z, `+ ${more} more`, 'lab', 'steptags', 'middle', 0, 14]);
