@@ -8,16 +8,20 @@ import { settledLocatorCount } from '../evidence/browser-evidence.js';
 import { harnessBrowserFailure } from '../evidence/harness-errors.js';
 
 
+interface ScrollTarget {
+  readonly tagName: string;
+  readonly options?: ArrayLike<{ value: string; label: string }>;
+  scrollIntoView(options: { block: 'nearest'; inline: 'nearest'; behavior: 'instant' }): void;
+  readonly ownerDocument: { readonly defaultView: { readonly IntersectionObserver: new (
+    callback: (entries: Array<{ isIntersecting: boolean; intersectionRatio: number }>) => void,
+  ) => { observe(element: unknown): void; disconnect(): void } } };
+}
+
 interface Locator {
   click(options?: unknown): Promise<void>;
   count(): Promise<number>;
-  evaluate<Result>(callback: (element: { readonly tagName: string;
-    scrollIntoView(options: { block: 'nearest'; inline: 'nearest'; behavior: 'instant' }): void;
-    readonly options?: ArrayLike<{ value: string; label: string }>;
-    readonly ownerDocument: { readonly defaultView: { readonly IntersectionObserver: new (
-      callback: (entries: Array<{ isIntersecting: boolean; intersectionRatio: number }>) => void,
-    ) => { observe(element: unknown): void; disconnect(): void } } };
-  }) => Result): Promise<Result>;
+  evaluate<Result>(callback: (element: ScrollTarget) => Result): Promise<Result>;
+  evaluateAll<Result>(callback: (elements: ScrollTarget[]) => Result): Promise<Result>;
   fill(value: string): Promise<void>;
   filter(options: unknown): Locator;
   first(): Locator;
@@ -203,14 +207,19 @@ async function click({ input, capabilities, signal }:
         if (!await sentinel.isVisible()) return false;
         // Native scrolling does not wait for animation stability. A translated
         // closed drawer remains offscreen; ordinary inline content becomes visible.
-        return await sentinel.evaluate(element => new Promise<boolean>(resolve => {
-          element.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
-          const observer = new element.ownerDocument.defaultView.IntersectionObserver(entries => {
-            observer.disconnect();
-            resolve(entries.some(entry => entry.isIntersecting && entry.intersectionRatio > 0));
+        return await sentinel.evaluateAll(elements => {
+          // Resolve once. A destination removed by navigation is absent, not a timeout.
+          const element = elements[0];
+          if (!element) return false;
+          return new Promise<boolean>(resolve => {
+            element.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+            const observer = new element.ownerDocument.defaultView.IntersectionObserver(entries => {
+              observer.disconnect();
+              resolve(entries.some(entry => entry.isIntersecting && entry.intersectionRatio > 0));
+            });
+            observer.observe(element);
           });
-          observer.observe(element);
-        }));
+        });
       } catch (error) {
         // An unreadable destination does not establish whether a toggle is open.
         // Preserve that failure instead of clicking blindly and changing app state.

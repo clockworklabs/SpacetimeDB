@@ -3,7 +3,7 @@
   "track": "ecommerce",
   "level": 2,
   "name": "Staff roles",
-  "note": "Draft: revised role-revocation control requires matching pristine and defect qualification before verified comparisons.",
+  "note": "Draft: updated observations require matching reference and defect-control qualification.",
   "features": [
     {
       "id": 621,
@@ -52,6 +52,7 @@
           "points": 2,
           "statedBy": "A staff member cannot assign or change roles.",
           "steps": [
+            { "do": "reload", "actor": "replayAdmin", "settleMs": 0 },
             { "do": "signIn", "actor": "replayAdmin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
             { "do": "expect", "actor": "replayAdmin", "testid": "admin-link", "within": 6000 },
             { "do": "click", "actor": "replayAdmin", "testid": "admin-link", "unlessVisible": "staff-role-account-staff" },
@@ -61,6 +62,7 @@
             { "do": "ensureSignedIn", "actor": "replayAdmin", "name": "admin", "password": "stackbench-admin-2026", "exact": true, "readyTestid": "current-user" },
             { "do": "click", "actor": "replayAdmin", "testid": "admin-link", "unlessVisible": "staff-role-account-staff", "ifAvailable": true },
             { "do": "expect", "actor": "replayAdmin", "testid": "staff-role-select", "in": { "testid": "staff-role-account-staff" }, "value": "staff", "within": 10000 },
+            { "do": "reload", "actor": "staff", "settleMs": 0 },
             { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
             { "do": "click", "actor": "staff", "testid": "staff-link", "ifAvailable": true },
             { "do": "expect", "actor": "staff", "testid": "staff-role-save", "absent": true },
@@ -79,6 +81,7 @@
           "points": 2,
           "statedBy": "Only the admin role grants administrator access.",
           "steps": [
+            { "do": "reload", "actor": "roleAdmin", "settleMs": 0 },
             {"do": "signIn", "actor": "roleAdmin", "name": "admin", "password": "stackbench-admin-2026", "exact": true},
             {"do": "click", "actor": "roleAdmin", "testid": "admin-link", "unlessVisible": "staff-role-account-staff"},
             {"do": "replayAs", "actor": "roleAdmin", "from": "roleAdmin", "match": "__role-revocation-named-action__", "namedAction": {"id": "assignStaffRole", "path": "/api/staff/:id/role", "method": "PUT", "reducer": "assign_staff_role", "args": [0, "admin"], "params": [{"name": "accountId", "in": "path", "placeholder": ":id", "wireType": "u64"}, {"name": "role", "in": "body"}]}, "namedTarget": {"testid": "staff-role-account-staff", "attribute": "data-account-id", "valueType": "string"}, "settleMs": 0},
@@ -87,6 +90,7 @@
             {"do": "ensureSignedIn", "actor": "roleAdmin", "name": "admin", "password": "stackbench-admin-2026", "exact": true, "readyTestid": "current-user"},
             {"do": "click", "actor": "roleAdmin", "testid": "admin-link", "unlessVisible": "staff-role-account-staff", "ifAvailable": true},
             {"do": "expect", "actor": "roleAdmin", "testid": "staff-role-select", "in": {"testid": "staff-role-account-staff"}, "value": "admin", "within": 10000},
+            { "do": "reload", "actor": "promotedStaff", "settleMs": 0 },
             {"do": "signIn", "actor": "promotedStaff", "name": "staff", "password": "stackbench-staff-2026", "exact": true},
             {"do": "replayAs", "actor": "promotedStaff", "from": "roleAdmin", "match": "__role-revocation-named-action__", "namedAction": {"id": "assignStaffRole", "path": "/api/staff/:id/role", "method": "PUT", "reducer": "assign_staff_role", "args": [0, "admin"], "params": [{"name": "accountId", "in": "path", "placeholder": ":id", "wireType": "u64"}, {"name": "role", "in": "body"}]}, "namedTarget": {"testid": "staff-role-account-staff", "attribute": "data-account-id", "valueType": "string"}, "settleMs": 0},
             {"do": "expectReplayCompleted", "actor": "promotedStaff", "requireAccepted": true},

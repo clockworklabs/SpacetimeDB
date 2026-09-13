@@ -73,13 +73,14 @@ test('each last-unit score retains the shared purchase race when selected alone'
     const [feature] = selected.features;
     assert(feature, 'the selected scenario must have a feature');
     assert.deepEqual(feature.criteria.map(criterion => criterion.id), [criterionId]);
-    const races = feature.setup.filter(step => step.do === 'clickConcurrently');
+    const races = feature.setup.filter(step => step.do === 'callConcurrently');
     assert.equal(races.length, 1);
     const [race] = races;
     assert(race, 'the selected scenario must have a race');
     assert.deepEqual(race.actors, ['a', 'b', 'c', 'd', 'e', 'f']);
-    assert.equal(race.testid, 'buy-now');
-    assert.equal(recordValue(race.in, 'race locator').contains, 'Air Purifier');
+    assert.equal(race.action, 'buy');
+    assert(feature.setup.some(step => step.do === 'expectCallOutcomes'));
+    assert.equal(recordValue(race.input, 'race input').contains, 'Air Purifier');
     const selectedCriterion = feature.criteria.find(criterion => criterion.id === criterionId);
     assert(selectedCriterion, 'the selected feature must retain its criterion');
     assert.equal(selectedCriterion.steps.some(step => step.do === 'clickConcurrently'

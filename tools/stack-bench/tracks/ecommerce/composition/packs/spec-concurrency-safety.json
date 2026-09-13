@@ -9,7 +9,8 @@
   "conflictsWith": [],
   "capabilities": [
     "browser",
-    "concurrent-actors"
+    "concurrent-actors",
+    "direct-server-call"
   ],
   "evidence": [
     "concurrent-outcome",

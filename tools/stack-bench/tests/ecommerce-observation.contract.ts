@@ -23,7 +23,8 @@ test('selected privacy checks prove a working positive path without sibling crit
   assert(!roles.slice(0, roles.findIndex(s => s.do === 'fill' && s.text === 'staff'))
     .some(s => s.do === 'expect' && s.testid === 'staff-role-select' && s.value === 'inventory'),
   'the role boundary check must establish its own role without requiring the prior inventory assignment');
-  const reload = roles.findIndex(s => s.do === 'reload');
+  const save = roles.findIndex(s => s.testid === 'staff-role-save');
+  const reload = roles.findIndex((s, index) => index > save && s.do === 'reload');
   const saved = roles.findIndex(s => s.do === 'expect' && s.testid === 'staff-role-select' && s.value === 'staff');
   assert(reload > roles.findIndex(s => s.testid === 'staff-role-save'));
   assert(saved > reload && saved < roles.findIndex(s => s.do === 'replayAs'));
@@ -238,4 +239,18 @@ test('role revocation proves authorization before testing the same session after
   assert.equal(steps[negative + 1]!.do, 'reload');
   assert.equal(steps.at(-1)!.value, 'staff');
   assert.equal(steps.at(-1)!.actor, 'roleAdmin');
+});
+
+test('privacy and role actors reconnect after a preceding backend restart', () => {
+  for (const file of ['progression-customer-profile.json', 'progression-staff-roles.json', 'progression-support-history.json']) {
+    const feature = read(file).features[0]!;
+    const disconnected = new Set<string>();
+    for (const step of [...feature.setup, ...feature.criteria.flatMap(check => check.steps)]) {
+      if (step.do === 'restartBackend') for (const actor of feature.actors ?? []) disconnected.add(actor);
+      if (step.do === 'reload' && typeof step.actor === 'string') disconnected.delete(step.actor);
+      if (['signUp', 'signIn', 'ensureSignedIn', 'expectNotReceived'].includes(step.do)) {
+        assert(!disconnected.has(String(step.actor)), file + ': ' + step.do + ' used a disconnected actor ' + step.actor);
+      }
+    }
+  }
 });

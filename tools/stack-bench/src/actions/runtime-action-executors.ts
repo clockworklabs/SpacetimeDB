@@ -322,8 +322,10 @@ async function clickConcurrently(
   }
   const outcomes = await Promise.all(resolved.map(({ target, locator }) =>
     locator.click({ timeout: input.within ?? concurrency.defaultWithin, force: true, noWaitAfter: true })
-      .then(() => null, error =>
-        `${target.actor}: ${String(errorShape(error).message ?? error).split('\n')[0]}`)));
+      .then(() => null, error => {
+        if (harnessBrowserFailure(error)) throw error;
+        return `${target.actor}: ${String(errorShape(error).message ?? error).split('\n')[0]}`;
+      })));
   const failed = outcomes.filter(Boolean);
   if (failed.length) {
     fail('clicks-failed', { control: input.testid, failed: failed.length, total: targets.length,

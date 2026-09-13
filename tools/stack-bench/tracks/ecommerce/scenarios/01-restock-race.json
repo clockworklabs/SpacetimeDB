@@ -4,7 +4,7 @@
   "track": "ecommerce",
   "name": "Storefront and warehouse — restock during purchases",
   "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
-  "note": "Draft: matching reference and mutation qualification is pending. Setup proves ordinary purchase and restock from stored state and fresh views. The race checks stored stock, fresh UI state and durable buyer orders. Concurrent dispatch does not prove overlapping server execution.",
+  "note": "Draft: updated observations require matching reference and defect-control qualification.",
   "features": [
     {
       "id": 202,
@@ -142,6 +142,11 @@
           "as": "warehouse-before"
         },
         {
+          "do": "click",
+          "actor": "a",
+          "testid": "catalog-link"
+        },
+        {
           "do": "recordNumber",
           "actor": "a",
           "testid": "item-stock",
@@ -211,6 +216,11 @@
           "do": "reload",
           "actor": "a",
           "settleMs": 1000
+        },
+        {
+          "do": "click",
+          "actor": "a",
+          "testid": "catalog-link"
         },
         {
           "do": "expectNumber",
@@ -333,6 +343,11 @@
               "do": "reload",
               "actor": "a",
               "settleMs": 1000
+            },
+            {
+              "do": "click",
+              "actor": "a",
+              "testid": "catalog-link"
             },
             {
               "do": "expectNumber",
@@ -475,6 +490,11 @@
               "do": "reload",
               "actor": "a",
               "settleMs": 1000
+            },
+            {
+              "do": "click",
+              "actor": "a",
+              "testid": "catalog-link"
             },
             {
               "do": "expectNumber",

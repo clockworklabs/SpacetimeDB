@@ -596,12 +596,17 @@ test('client lifecycle delegates through the narrow browser capability', async (
   assert.deepEqual(fresh.observation, { actor: 'a-fresh' });
 });
 
-test('a crashed page during a concurrency barrier remains a harness failure', async () => {
-  const actor = { loc: () => ({ waitFor: async () => {
-    throw new Error('locator.waitFor: Target page, context or browser has been closed');
-  } }) };
-  const result = await run({ do: 'clickConcurrently', actors: ['a', 'b'],
-    testid: 'buy', settleMs: 0 }, services(new Map([['a', actor], ['b', actor]])));
-  assert.equal(result.status, 'harness_failure');
-  assert.equal(result.code, 'unclassified_exception');
+test('a crashed page during a concurrency barrier or click remains a harness failure', async () => {
+  for (const phase of ['barrier', 'click']) {
+    const closed = () => { throw new Error('Target page, context or browser has been closed'); };
+    const actor = { loc: () => ({
+      waitFor: async () => { if (phase === 'barrier') closed(); },
+      isEnabled: async () => true,
+      click: async () => closed(),
+    }) };
+    const result = await run({ do: 'clickConcurrently', actors: ['a', 'b'],
+      testid: 'buy', settleMs: 0 }, services(new Map([['a', actor], ['b', actor]])));
+    assert.equal(result.status, 'harness_failure', phase);
+    assert.equal(result.code, 'unclassified_exception', phase);
+  }
 });

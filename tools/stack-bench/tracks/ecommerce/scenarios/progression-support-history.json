@@ -3,7 +3,7 @@
   "track": "ecommerce",
   "level": 2,
   "name": "Customer support history",
-  "note": "Draft: the logout boundary requires matching reference and defect-control qualification.",
+  "note": "Draft: updated observations require matching reference and defect-control qualification.",
   "features": [
     {
       "id": 612,
@@ -71,6 +71,8 @@
             { "do": "click", "actor": "owner", "testid": "support-link" },
             { "do": "expect", "actor": "owner", "testid": "support-ticket", "contains": "Private ticket {user:privateticketmarker}" },
             { "do": "expectReceived", "actor": "owner", "contains": "Private ticket {user:privateticketmarker}", "within": 10000 },
+            { "do": "reload", "actor": "other", "settleMs": 0 },
+            { "do": "ensureSignedIn", "actor": "other", "name": "support-other", "readyTestid": "current-user" },
             { "do": "click", "actor": "other", "testid": "support-link" },
             { "do": "expect", "actor": "other", "testid": "support-ticket", "contains": "Private ticket {user:privateticketmarker}", "absent": true },
             { "do": "expectNotReceived", "actor": "other", "contains": "Private ticket {user:privateticketmarker}" }

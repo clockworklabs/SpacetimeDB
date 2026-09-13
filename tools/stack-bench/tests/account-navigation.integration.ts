@@ -248,7 +248,7 @@ test('cart and recommendation probes leave blocking overlays before the next cat
         <section id="panel" hidden ${overlay ? 'style="position:fixed;inset:0;background:white"' : ''}>
           ${overlay ? '<button id="overlay-close" onclick="document.querySelector(\'#panel\').hidden=true">Close</button>' : ''}
           <span id="cart-total">10</span><div data-role="cart-item">${item.item}<span id="cart-quantity">0</span></div>
-        </section><span id="recommended-item" hidden>Headphones</span>
+        </section><div id="recommended-list"><span id="recommended-item" hidden>Headphones</span></div>
         <script>
           var count = 0;
           function add() {

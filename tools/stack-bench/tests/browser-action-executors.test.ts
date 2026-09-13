@@ -501,7 +501,7 @@ test('optional navigation waits for delayed controls or inline content', async (
     const provided = services({ loc: (id: string) => ({
       isVisible: async () => ready && (inline ? id === 'low-stock-item' : id === 'low-stock-link'),
       isDisabled: async () => false,
-      evaluate: async () => true,
+      evaluateAll: async () => true,
       click: async () => { clicks += 1; },
     }) }, { browser: { sleep: async () => { ready = true; } } });
     const result = await run({ do: 'click', actor: 'a', testid: 'low-stock-link',
@@ -517,7 +517,7 @@ test('navigation retries a replaced destination without repeating clicks or hidi
     let clicks = 0;
     const provided = services({ loc: () => ({
       isVisible: async () => true,
-      evaluate: async () => {
+      evaluateAll: async () => {
         reads += 1;
         if (failure === 'unrelated') throw new Error('browser disconnected');
         if (failure === 'always' || reads === 1) throw new Error('Element is not attached to the DOM');
@@ -539,7 +539,7 @@ test('unreadable destinations never trigger a blind toggle click', async () => {
     const provided = services({ loc: (id: string) => ({
       isVisible: async () => id === 'order-item',
       isDisabled: async () => false,
-      evaluate: async () => { throw Object.assign(new Error('observation timed out'), { name: 'TimeoutError' }); },
+      evaluateAll: async () => { throw Object.assign(new Error('observation timed out'), { name: 'TimeoutError' }); },
       click: async () => { clicks += 1; throw Object.assign(new Error('required control missing'), { name: 'TimeoutError' }); },
     }) });
     const result = await run({ do: 'click', actor: 'a', testid: 'orders-toggle',
@@ -582,7 +582,7 @@ test('covered navigation preserves cancellation and browser failures', async () 
     const provided = services({ loc: () => ({
       isVisible: async () => { reads += 1; return reads > 1; },
       isDisabled: async () => false,
-      evaluate: async () => true,
+      evaluateAll: async () => true,
       click: async () => {
         clicks += 1;
         if (cancelled) controller.abort('cancelled by test');
@@ -640,4 +640,31 @@ test('failed disappearance identifies the matched entry and scope', async () => 
   assert.equal(result.status, 'failed');
   assert.match(result.summary!, /Coffee Grinder/);
   assert.match(result.summary!, /search-results/);
+});
+
+// The catalog navigation can remove the old destination between these two reads.
+test('navigation clicks once when its old destination disappears during observation', async () => {
+  const { chromium } = await import('playwright');
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    page.setDefaultTimeout(150);
+    await page.setContent('<button id="profile-link" onclick="this.dataset.clicked=true">Profile</button><div id="profile-address-summary">Address</div>');
+    const result = await run({ do: 'click', actor: 'a', testid: 'profile-link',
+      unlessVisible: 'profile-address-summary', within: 150 }, services({ loc: (id: string) => {
+      const locator = page.locator('#' + id);
+      if (id !== 'profile-address-summary') return locator;
+      return new Proxy(locator, { get(target, key) {
+        if (key === 'isVisible') return async () => {
+          const visible = await target.isVisible();
+          await page.locator('#profile-address-summary').evaluate(element => element.remove());
+          return visible;
+        };
+        const value = Reflect.get(target, key);
+        return typeof value === 'function' ? value.bind(target) : value;
+      } });
+    } }));
+    assert.equal(result.status, 'passed', result.summary ?? undefined);
+    assert.equal(await page.locator('#profile-link').getAttribute('data-clicked'), 'true');
+  } finally { await browser.close(); }
 });

@@ -4,7 +4,7 @@
   "track": "ecommerce",
   "name": "Storefront and warehouse — last-unit accounting",
   "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
-  "note": "Draft: revised observations require matching reference and defect-control qualification.",
+  "note": "Draft: updated observations require matching reference and defect-control qualification.",
   "features": [
     {
       "id": 201,
@@ -34,12 +34,14 @@
         { "do": "signUp", "actor": "e", "name": "c5" },
         { "do": "signUp", "actor": "f", "name": "c6" },
         {
-          "do": "clickConcurrently",
-          "testid": "buy-now",
+          "do": "callConcurrently",
+          "action": "buy",
           "actors": ["a", "b", "c", "d", "e", "f"],
-          "in": { "testid": "item-card", "contains": "Air Purifier" },
+          "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] },
+          "input": { "testid": "item-card", "contains": "Air Purifier", "attribute": "data-buy-input" },
           "settleMs": 6000
-        }
+        },
+        { "do": "expectCallOutcomes" }
       ],
       "criteria": [
         {
