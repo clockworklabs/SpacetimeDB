@@ -15,6 +15,7 @@ use spacetimedb::host::{HostController, MigratePlanResult, ModuleHost, NoSuchMod
 use spacetimedb::identity::{AuthCtx, Identity};
 use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
 use spacetimedb::sql;
+use spacetimedb::error::DBError;
 use spacetimedb_client_api_messages::http::{SqlStmtResult, SqlStmtStats};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
 use spacetimedb_lib::{ProductTypeElement, ProductValue};
@@ -164,9 +165,39 @@ impl Host {
         )
         .await
         .map_err(|e| {
-            // TODO: Review log level after user SQL errors can be distinguished from internal database failures.
-            log::warn!("{e}");
-            (StatusCode::BAD_REQUEST, e.to_string())
+            // Classify errors coming from SQL execution. Client errors (syntax,
+            // planning, typing, authorization, etc.) are logged at `warn!`
+            // and surface as `400 Bad Request`. Internal failures (datastore,
+            // I/O, durability, snapshots, view internal errors, etc.) are
+            // logged at `error!` and return `500 Internal Server Error` with a
+            // generic message to avoid leaking internal details.
+            match &e {
+                DBError::SqlParser { .. }
+                | DBError::Plan { .. }
+                | DBError::TypeError(_)
+                | DBError::WithSql { .. }
+                | DBError::Subscription(_)
+                | DBError::Sequence2(_)
+                | DBError::Schema(_)
+                | DBError::ParseInt(_)
+                | DBError::DecodeHex(_)
+                | DBError::DecodeHexHash(_)
+                | DBError::ReadViaBsatnError(_)
+                | DBError::ModuleValidationErrors(_)
+                => {
+                    log::warn!("{e}");
+                    (StatusCode::BAD_REQUEST, e.to_string())
+                }
+
+                // View errors that are clearly internal should be treated as
+                // internal failures. Simpler view errors (missing view,
+                // args) are treated as client errors above via `Subscription`/
+                // other mappings; fall back to internal for safety.
+                _ => {
+                    log::error!("internal sql execution error: {e}");
+                    (StatusCode::INTERNAL_SERVER_ERROR, "internal server error".to_string())
+                }
+            }
         })?;
 
         let total_duration = sql_start.elapsed();

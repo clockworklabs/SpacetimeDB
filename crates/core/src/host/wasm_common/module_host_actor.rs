@@ -841,7 +841,7 @@ impl InstanceCommon {
                 //     return Err(ProcedureCallError::OutOfEnergy);
                 // } else
                 {
-                    Err(ProcedureCallError::InternalError(format!("{err}")))
+                    Err(ProcedureCallError::GuestPanic(format!("{err}")))
                 }
             }
             Ok(return_val) => {
