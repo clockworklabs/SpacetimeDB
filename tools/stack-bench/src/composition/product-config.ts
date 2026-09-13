@@ -20,8 +20,9 @@ export const BUILD_CONTAINER_RESOURCE_LIMITS = Object.freeze({
 export const SIDECAR_CONTAINER_RESOURCE_LIMITS = Object.freeze({ cpuCount: 1, memoryBytes: 1024 ** 3, pids: 256 });
 // Chromium shares these limits across actors and video encoders. Docker counts
 // threads as PIDs; the seven-actor purchase probe exceeds the database's 256 cap.
+// The staff-role reference probe hit the former 2 GiB cap and lost renderer processes.
 export const BROWSER_CONTAINER_RESOURCE_LIMITS = Object.freeze({ ...SIDECAR_CONTAINER_RESOURCE_LIMITS,
-  memoryBytes: 2 * 1024 ** 3, pids: 512 });
+  memoryBytes: 4 * 1024 ** 3, pids: 512 });
 export const BROKER_CONTAINER_RESOURCE_LIMITS = Object.freeze({ memoryBytes: 256 * 1024 ** 2, pids: 32 });
 
 // Planning totals for one worker. Broker CPU and shared services are not capped

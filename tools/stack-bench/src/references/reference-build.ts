@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs as parseNodeArgs } from 'node:util';
 import { ARTIFACT_FILE, writeRunJson } from '../evidence/artifacts.js';
 import type { BackendLease } from '../runtime/backend-lease.js';
-import { claimBackendResources, backendResourceLockKeys, createBackendLease,
+import { claimBackendResourcesWhenAvailable, backendResourceLockKeys, createBackendLease,
   publicBackendLease, readBackendLease, resourceLockScope } from '../runtime/backend-lease.js';
 import { releaseBackendLease } from '../runtime/backend-teardown.js';
 import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
@@ -130,7 +130,7 @@ function buildCommands(metadata: ReferenceMetadataForBuild, container: string,
     'npm', ['run', 'build'], commands);
 }
 
-function qualify(fixture: ReferenceFixture, imageIdentity: ImageIdentity): FixtureBuild {
+async function qualify(fixture: ReferenceFixture, imageIdentity: ImageIdentity): Promise<FixtureBuild> {
   const started = Date.now();
   const runtimeRoot = process.env.STACK_BENCH_RUNTIME_DIR;
   if (process.env.STACK_BENCH_APPLIANCE === '1' && !runtimeRoot) {
@@ -169,7 +169,7 @@ function qualify(fixture: ReferenceFixture, imageIdentity: ImageIdentity): Fixtu
     lease = createBackendLease({ runId: basename(work), backend: fixture.backend,
       track: fixture.track, runIndex: 0,
       ...preparedResources });
-    claimBackendResources(leasePath, lease, { ...resourceLockScope(),
+    await claimBackendResourcesWhenAvailable(leasePath, lease, { ...resourceLockScope(),
       keys: backendResourceLockKeys(lease, ports, lockKeys) });
     adapter.lifecycle.activate({ leasePath, leaseToken: lease.ownershipToken, lease,
       ports,
@@ -251,7 +251,7 @@ async function main(): Promise<void> {
     isolation: 'docker', image: imageIdentity, fixtures: [] };
   for (const fixture of fixtures) {
     console.log(`building ${fixture.id} in ${imageIdentity.id}`);
-    artifact.fixtures.push(qualify(fixture, imageIdentity));
+    artifact.fixtures.push(await qualify(fixture, imageIdentity));
   }
   artifact.completedAt = new Date().toISOString();
   artifact.ok = artifact.fixtures.every(fixture => fixture.ok);

@@ -3,7 +3,8 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { createBackendLease, publicBackendLease, runnerCapacity } from '../src/runtime/backend-lease.js';
+import { createBackendLease, publicBackendLease, runnerCapacity, claimBackendResources,
+  claimBackendResourcesWhenAvailable, releaseResourceLocks } from '../src/runtime/backend-lease.js';
 import { hostResourceWaitReason, resourceLockDescriptors, resourceLockTransaction } from '../src/runtime/resource-lock-worker.js';
 
 test('host admission counts a campaign reservation once per index across backends', () => {
@@ -135,4 +136,26 @@ test('public lease evidence does not disclose private campaign delegation', () =
   const lease = createBackendLease({ runId: 'child', backend: 'stub', track: 'loop', runIndex: 0 });
   lease.campaignDelegation = { path: '/private/delegation.json', token: 'private-child-token' };
   assert.equal('campaignDelegation' in publicBackendLease(lease), false);
+});
+
+test('standalone admission waits for capacity but rejects ownership conflicts', { skip: process.platform !== 'linux' }, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'standalone-capacity-'));
+  const first = createBackendLease({ runId: 'first', backend: 'stub', track: 'loop', runIndex: 0 });
+  const next = createBackendLease({ runId: 'next', backend: 'stub', track: 'loop', runIndex: 1 });
+  const firstPath = join(root, 'first.json'), nextPath = join(root, 'next.json');
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    claimBackendResources(firstPath, first, { root, keys: ['slot:loop:postgres:run0', 'port:5999'], capacity: 1 });
+    await assert.rejects(claimBackendResourcesWhenAvailable(nextPath, next,
+      { root, keys: ['port:5999'], capacity: 2 }), /already leased/);
+    timer = setTimeout(() => releaseResourceLocks(first), 25);
+    await claimBackendResourcesWhenAvailable(nextPath, next,
+      { root, keys: ['slot:loop:postgres:run1'], capacity: 1 });
+    assert.deepEqual(next.resources.locks.map(lock => lock.key), ['slot:loop:postgres:run1']);
+  } finally {
+    clearTimeout(timer);
+    releaseResourceLocks(first);
+    releaseResourceLocks(next);
+    rmSync(root, { recursive: true, force: true });
+  }
 });

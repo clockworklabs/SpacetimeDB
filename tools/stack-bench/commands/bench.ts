@@ -21,7 +21,7 @@ import { aggregateRunOutcome, classifyBundle, ladderMayAdvance, ladderMayContinu
 import { summarizeSessions } from '../src/evidence/session-metrics.js';
 import { hashDirectory, sha256 } from '../src/evidence/provenance.js';
 import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
-  claimBackendResources, backendResourceLockKeys, resourceLockScope, loopbackHttpUri } from '../src/runtime/backend-lease.js';
+  claimBackendResourcesWhenAvailable, backendResourceLockKeys, resourceLockScope, loopbackHttpUri } from '../src/runtime/backend-lease.js';
 import { borrowCampaignReservation }
   from '../src/campaigns/campaign-admission.js';
 import { captureApplicationDiagnostics } from '../src/runtime/backend-control.js';
@@ -1284,7 +1284,7 @@ async function main() {
         throw new Error('campaign worker requires private resource delegation');
       }
     } else {
-      claimBackendResources(leasePath, initialLease, { ...lockScope, keys: lockKeys });
+      await claimBackendResourcesWhenAvailable(leasePath, initialLease, { ...lockScope, keys: lockKeys });
     }
     const supervisorState = process.env.STACK_BENCH_SUPERVISOR_STATE
       ?? (process.env.STACK_BENCH_SUPERVISOR_DIR

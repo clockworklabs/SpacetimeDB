@@ -87,7 +87,7 @@ from “L3” or “3×3.”
 Appliance setup selects `STACK_BENCH_RUNNER_CAPACITY=dynamic`. Admission checks
 current host memory and CPU load instead of a fixed slot count. New claims reserve
 startup headroom for one minute so concurrent launches cannot reuse the same free
-memory estimate. Campaigns queue
+memory estimate. Campaigns and standalone qualification queue
 and retry when resources are busy. Campaign concurrency remains explicit. Port,
 database, and workspace ownership locks and per-container limits still apply.
 The pressure check is an admission snapshot, not a reservation against future spikes.

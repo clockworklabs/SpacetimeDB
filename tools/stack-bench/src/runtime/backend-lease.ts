@@ -2,6 +2,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { isIPv4 } from 'node:net';
+import { setTimeout as delay } from 'node:timers/promises';
 import { chmodSync, closeSync, existsSync, fsyncSync, openSync, readFileSync, writeFileSync, renameSync,
   linkSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -539,6 +540,22 @@ export function claimBackendResources(path: string, lease: BackendLease, input: 
   delete lease.resources.lockIntent;
   writeBackendLease(path, lease);
   return lease;
+}
+
+/** Standalone runs wait before startup; their supervising process owns cancellation. */
+export async function claimBackendResourcesWhenAvailable(path: string, lease: BackendLease,
+  input: Parameters<typeof claimBackendResources>[2]): Promise<BackendLease> {
+  let reported = false;
+  while (true) {
+    try { return claimBackendResources(path, lease, input); }
+    catch (error) {
+      // Only capacity is transient. Ownership conflicts and corrupt evidence must stop.
+      if (!(error instanceof Error) || !error.message.includes('host capacity unavailable:')) throw error;
+      if (!reported) console.error(`Waiting for host resources: ${error.message}`);
+      reported = true;
+      await delay(1000);
+    }
+  }
 }
 
 /** Dynamic admission uses measured host pressure; numeric overrides are optional quotas. */
