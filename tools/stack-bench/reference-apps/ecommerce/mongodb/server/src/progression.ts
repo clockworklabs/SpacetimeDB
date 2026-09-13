@@ -97,19 +97,9 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
     return null;
   }
 
-  async function ensurePayments(userId: Types.ObjectId) {
-    const orders = await Order.find({ userId, status: { $nin: ["cancelled"] } });
-    for (const order of orders) {
-      await Payment.updateOne({ orderId: order._id }, {
-        $setOnInsert: { orderId: order._id, userId, amount: order.total, status: "paid" },
-      }, { upsert: true });
-    }
-  }
-
   router.get("/state", optionalAuth, async (req: Request, res) => {
     const user = req.progressionUser;
     const isStaff = Boolean(user?.isStaff || user?.isAdmin);
-    if (user) await ensurePayments(user._id);
     const ticketFilter = isStaff ? {} : user ? { userId: user._id } : { _id: null };
     const orderIds = user ? (await Order.find({ userId: user._id }).select("_id")).map(order => order._id) : [];
     const [profile, tickets, promotions, preference, notifications, scheduledRestocks,
