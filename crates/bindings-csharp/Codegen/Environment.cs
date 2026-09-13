@@ -89,7 +89,7 @@ public sealed class EnvironmentGenerator : IIncrementalGenerator
                     a.AttributeClass?.ToDisplayString() == "SpacetimeDB.EnvValuesAttribute"
                 );
             var constraint =
-                "new global::SpacetimeDB.Internal.EnvironmentConstraint.AnyString(default)";
+                "new global::SpacetimeDB.Internal.EnvVarType.String(default)";
             if (attr is not null)
             {
                 var values = attr.ConstructorArguments.FirstOrDefault();
@@ -116,8 +116,8 @@ public sealed class EnvironmentGenerator : IIncrementalGenerator
                 }
                 constraint =
                     strings.Length == 1
-                        ? $"new global::SpacetimeDB.Internal.EnvironmentConstraint.Literal({Literal(strings[0])})"
-                        : $"new global::SpacetimeDB.Internal.EnvironmentConstraint.Union(new global::System.Collections.Generic.List<string> {{ {string.Join(", ", strings.Select(Literal))} }})";
+                        ? $"new global::SpacetimeDB.Internal.EnvVarType.StringLiteral({Literal(strings[0])})"
+                        : $"new global::SpacetimeDB.Internal.EnvVarType.Union(new global::System.Collections.Generic.List<string> {{ {string.Join(", ", strings.Select(Literal))} }})";
             }
             registrations.Add(
                 $"global::SpacetimeDB.Internal.Module.RegisterEnvironment(new({Literal(name)}, {constraint}, {(optional ? "true" : "false")}));"

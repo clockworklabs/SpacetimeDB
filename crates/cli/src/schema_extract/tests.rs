@@ -1,7 +1,5 @@
 use super::*;
-use spacetimedb_lib::environment::{
-    EnvironmentConstraint as Constraint, EnvironmentDeclaration as Declaration, EnvironmentSchema,
-};
+use spacetimedb_lib::environment::{EnvVarType, EnvironmentDeclaration as Declaration, EnvironmentSchema};
 
 #[tokio::test]
 async fn inspector_environment_excludes_secrets_and_preserves_windows_dll_search() {
@@ -52,22 +50,22 @@ fn schema() -> EnvironmentSchema {
     EnvironmentSchema::new(vec![
         Declaration {
             name: "A".into(),
-            constraint: Constraint::AnyString,
+            ty: EnvVarType::String,
             optional: false,
         },
         Declaration {
             name: "B".into(),
-            constraint: Constraint::Union(vec!["true".into(), "false".into()]),
+            ty: EnvVarType::Union(vec!["true".into(), "false".into()]),
             optional: false,
         },
         Declaration {
             name: "C".into(),
-            constraint: Constraint::AnyString,
+            ty: EnvVarType::String,
             optional: false,
         },
         Declaration {
             name: "OPTIONAL".into(),
-            constraint: Constraint::AnyString,
+            ty: EnvVarType::String,
             optional: true,
         },
     ])

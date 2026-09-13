@@ -63,13 +63,11 @@ pub(crate) fn expand(args: TokenStream, mut item: ItemStruct) -> syn::Result<Tok
         let constraint = match values.as_deref() {
             None => quote!(<#ty as ::spacetimedb::rt::EnvironmentValue>::constraint()),
             Some([value]) => {
-                quote!(::spacetimedb::spacetimedb_lib::environment::EnvironmentConstraint::Literal(#value.into()))
+                quote!(::spacetimedb::spacetimedb_lib::environment::EnvVarType::StringLiteral(#value.into()))
             }
-            Some(values) => quote!(
-                ::spacetimedb::spacetimedb_lib::environment::EnvironmentConstraint::Union(
-                    ::std::vec![#(#values.into()),*]
-                )
-            ),
+            Some(values) => quote!(::spacetimedb::spacetimedb_lib::environment::EnvVarType::Union(
+                ::std::vec![#(#values.into()),*]
+            )),
         };
         let constraint = if values.is_some() {
             quote!(<#ty as ::spacetimedb::rt::StringEnvironmentValue>::with_constraint(#constraint))
@@ -79,7 +77,7 @@ pub(crate) fn expand(args: TokenStream, mut item: ItemStruct) -> syn::Result<Tok
         declarations.push(
             quote!(::spacetimedb::spacetimedb_lib::environment::EnvironmentDeclaration {
                 name: #name.into(),
-                constraint: #constraint,
+                ty: #constraint,
                 optional: <#ty as ::spacetimedb::rt::EnvironmentValue>::OPTIONAL,
             }),
         );

@@ -399,25 +399,25 @@ export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
 });
 export type RawModuleDefV10Section = __Infer<typeof RawModuleDefV10Section>;
 
-export const EnvironmentConstraint = __t.enum('EnvironmentConstraint', {
-  get AnyString() {
+export const EnvVarType = __t.enum('EnvVarType', {
+  get String() {
     return __t.unit();
   },
-  get Literal() {
+  get StringLiteral() {
     return __t.string();
   },
   get Union() {
     return __t.array(__t.string());
   },
 });
-export type EnvironmentConstraint = __Infer<typeof EnvironmentConstraint>;
+export type EnvVarType = __Infer<typeof EnvVarType>;
 
 export const EnvironmentDeclaration = __t.object('EnvironmentDeclaration', {
   get name() {
     return __t.string();
   },
-  get constraint() {
-    return EnvironmentConstraint;
+  get ty() {
+    return EnvVarType;
   },
   get optional() {
     return __t.bool();

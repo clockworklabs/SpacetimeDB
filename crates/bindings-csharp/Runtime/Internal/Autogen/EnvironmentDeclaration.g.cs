@@ -15,26 +15,26 @@ namespace SpacetimeDB.Internal
     {
         [DataMember(Name = "name")]
         public string Name;
-        [DataMember(Name = "constraint")]
-        public EnvironmentConstraint Constraint;
+        [DataMember(Name = "ty")]
+        public EnvVarType Ty;
         [DataMember(Name = "optional")]
         public bool Optional;
 
         public EnvironmentDeclaration(
             string Name,
-            EnvironmentConstraint Constraint,
+            EnvVarType Ty,
             bool Optional
         )
         {
             this.Name = Name;
-            this.Constraint = Constraint;
+            this.Ty = Ty;
             this.Optional = Optional;
         }
 
         public EnvironmentDeclaration()
         {
             this.Name = "";
-            this.Constraint = null!;
+            this.Ty = null!;
         }
     }
 }

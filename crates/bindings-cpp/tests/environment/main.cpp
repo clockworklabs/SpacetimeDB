@@ -44,11 +44,11 @@ int main() {
     assert(env.NUL_LITERAL() == std::string("a\0b", 3));
     const auto& entries = Internal::environment_declarations();
     assert(entries.size() == 7);
-    assert(entries[0].name == "FOOBAR" && entries[0].constraint.get_tag() == 0 && !entries[0].optional);
-    assert(entries[1].constraint.get_tag() == 2 && entries[1].constraint.get<2>() == std::vector<std::string>({"true", "false"}));
+    assert(entries[0].name == "FOOBAR" && entries[0].ty.get_tag() == 0 && !entries[0].optional);
+    assert(entries[1].ty.get_tag() == 2 && entries[1].ty.get<2>() == std::vector<std::string>({"true", "false"}));
     assert(entries[2].optional);
-    assert(entries[3].constraint.get_tag() == 1 && entries[3].constraint.get<1>() == "production");
-    assert(entries[6].constraint.get<1>() == std::string("a\0b", 3));
+    assert(entries[3].ty.get_tag() == 1 && entries[3].ty.get<1>() == "production");
+    assert(entries[6].ty.get<1>() == std::string("a\0b", 3));
     Internal::RawModuleDefV10Section section;
     section.set<15>(entries);
     assert(section.get_tag() == 15);

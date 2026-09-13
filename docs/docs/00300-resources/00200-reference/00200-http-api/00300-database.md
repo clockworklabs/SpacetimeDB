@@ -118,7 +118,7 @@ A missing required value returns HTTP 400 with `Content-Type: application/json` 
 
 Optional fields `environment_remove` (an array of keys) and `environment_replace` (a boolean, default `false`) request explicit deletion or complete replacement. A key cannot be both supplied and removed. Replacement uses only the supplied map, deleting every unspecified declared and undeclared key, and rejects any nonempty removal list. Invalid updates leave the database unchanged.
 
-To update an existing database without a module, omit `module` and provide `expected_module_version` from `GET /v1/database/{name_or_identity}/environment`. That authorized endpoint returns `module_version`, `declarations`, and `stored_keys`, without secret values. Each declaration contains `name`, `optional`, and `constraint`: `"AnyString"`, `{"Literal":"value"}`, or `{"Union":["a","b"]}`. Metadata comes from one database version. For example:
+To update an existing database without a module, omit `module` and provide `expected_module_version` from `GET /v1/database/{name_or_identity}/environment`. That authorized endpoint returns `module_version`, `declarations`, and `stored_keys`, without secret values. Each declaration contains `name`, `optional`, and `ty`: `"String"`, `{"StringLiteral":"value"}`, or `{"Union":["a","b"]}`. Metadata comes from one database version. For example:
 
 ```json
 {

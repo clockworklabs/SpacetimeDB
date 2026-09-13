@@ -2,7 +2,7 @@ import { env_get } from 'spacetime:sys@2.2';
 import type { Environment, EnvironmentSchema } from '../lib/environment';
 import type {
   EnvironmentDeclaration,
-  EnvironmentConstraint,
+  EnvVarType,
   AlgebraicType,
 } from '../lib/autogen/types';
 import { OptionBuilder, StringBuilder } from '../lib/type_builders';
@@ -50,9 +50,9 @@ export function environmentDeclarations(
     }
     const optional = definition instanceof OptionBuilder;
     const inner = optional ? definition.value : definition;
-    let constraint: EnvironmentConstraint;
+    let ty: EnvVarType;
     if (inner instanceof StringBuilder) {
-      constraint = { tag: 'AnyString' };
+      ty = { tag: 'String' };
     } else {
       const type: AlgebraicType = inner?.algebraicType;
       if (type?.tag !== 'Sum' || !('variants' in inner)) {
@@ -81,11 +81,11 @@ export function environmentDeclarations(
         throw new TypeError(
           `Environment '${name}' needs a nonempty literal union`
         );
-      constraint =
+      ty =
         values.length === 1
-          ? { tag: 'Literal', value: values[0]! }
+          ? { tag: 'StringLiteral', value: values[0]! }
           : { tag: 'Union', value: values };
     }
-    return { name, constraint, optional };
+    return { name, ty, optional };
   });
 }

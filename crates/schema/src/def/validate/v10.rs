@@ -2823,13 +2823,13 @@ mod tests {
 #[cfg(test)]
 mod environment_tests {
     use super::*;
-    use spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration};
+    use spacetimedb_lib::environment::{EnvVarType, EnvironmentDeclaration};
 
     fn declared(name: &str) -> RawModuleDefV10 {
         RawModuleDefV10 {
             sections: vec![RawModuleDefV10Section::Environment(vec![EnvironmentDeclaration {
                 name: name.into(),
-                constraint: EnvironmentConstraint::AnyString,
+                ty: EnvVarType::String,
                 optional: true,
             }])],
         }

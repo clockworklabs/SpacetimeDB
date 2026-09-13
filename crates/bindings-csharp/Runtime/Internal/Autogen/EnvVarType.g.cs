@@ -8,9 +8,9 @@ using System;
 namespace SpacetimeDB.Internal
 {
     [SpacetimeDB.Type]
-    public partial record EnvironmentConstraint : SpacetimeDB.TaggedEnum<(
-        SpacetimeDB.Unit AnyString,
-        string Literal,
+    public partial record EnvVarType : SpacetimeDB.TaggedEnum<(
+        SpacetimeDB.Unit String,
+        string StringLiteral,
         System.Collections.Generic.List<string> Union
     )>;
 }

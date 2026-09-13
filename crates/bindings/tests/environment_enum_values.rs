@@ -1,5 +1,5 @@
 use spacetimedb::rt::EnvironmentValue as _;
-use spacetimedb::spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration, EnvironmentSchema};
+use spacetimedb::spacetimedb_lib::environment::{EnvVarType, EnvironmentDeclaration, EnvironmentSchema};
 use std::collections::BTreeMap;
 
 #[derive(Debug, PartialEq, Eq, spacetimedb::SpacetimeType, spacetimedb::EnvironmentValue)]
@@ -29,12 +29,12 @@ fn typed_mappings_match_exact_schema_strings_and_optional_absence() {
     ];
     assert_eq!(
         Mode::constraint(),
-        EnvironmentConstraint::Union(cases.iter().map(|(s, _)| s.to_string()).collect())
+        EnvVarType::Union(cases.iter().map(|(s, _)| s.to_string()).collect())
     );
     assert_eq!(Option::<Mode>::constraint(), Mode::constraint());
     let schema = EnvironmentSchema::new(vec![EnvironmentDeclaration {
         name: "MODE".into(),
-        constraint: Mode::constraint(),
+        ty: Mode::constraint(),
         optional: false,
     }])
     .unwrap();
@@ -49,7 +49,7 @@ fn typed_mappings_match_exact_schema_strings_and_optional_absence() {
         );
     }
     assert_eq!(Option::<Mode>::from_environment(None, "MODE"), None);
-    assert_eq!(Literal::constraint(), EnvironmentConstraint::Literal("only".into()));
+    assert_eq!(Literal::constraint(), EnvVarType::StringLiteral("only".into()));
     assert_eq!(Literal::from_environment(Some("only".into()), "VALUE"), Literal::Only);
     for rejected in ["InProgress", "ready", "in progress ", "private-unmapped-value"] {
         assert!(schema

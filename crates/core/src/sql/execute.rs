@@ -258,7 +258,7 @@ pub(crate) mod tests {
 
     #[test]
     fn environment_sql_is_read_only_including_for_owner() {
-        use spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration, EnvironmentSchema};
+        use spacetimedb_lib::environment::{EnvVarType, EnvironmentDeclaration, EnvironmentSchema};
         use spacetimedb_lib::identity::SqlPermission;
         use std::collections::BTreeMap;
         let db = TestDB::in_memory().unwrap();
@@ -272,7 +272,7 @@ pub(crate) mod tests {
         let value = "secret-marker";
         let schema = EnvironmentSchema::new(vec![EnvironmentDeclaration {
             name: "TOKEN".into(),
-            constraint: EnvironmentConstraint::AnyString,
+            ty: EnvVarType::String,
             optional: false,
         }])
         .unwrap();
