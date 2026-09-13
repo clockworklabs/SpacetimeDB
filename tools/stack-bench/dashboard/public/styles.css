@@ -101,14 +101,10 @@ table.runs th.when, table.runs td.when { color: var(--n4); font: 12px var(--mono
 table.runs thead th.stack { text-align: right; }
 table.runs thead th.when { color: var(--n4); font: 600 12px/1.4 var(--sans); }
 
-/* plans and the run form */
+/* saved plans and shared controls */
 table.plans th.stack, table.plans td.stack { width: auto; }
 table.plans td.name { color: var(--n1); font-weight: 600; min-width: 240px; max-width: 360px; white-space: normal; padding-block: 10px; overflow-wrap: anywhere; }
-.runform { display: flex; align-items: end; gap: 14px; flex-wrap: wrap; padding: 14px 16px; margin-bottom: 18px; border: 1px solid var(--shade4); border-radius: 4px; background: var(--shade6); }
-.runform > label { display: grid; gap: 6px; min-width: 0; }
-.runform select, .runform input, .secret input, .transcript-controls select, .transcript-controls button { height: 30px; padding: 0 10px; border: 1px solid var(--shade1); border-radius: 4px; background: var(--shade7); color: var(--n1); font: 13px var(--mono); }
-.runform select { min-width: 300px; }
-.runform input[name=output] { min-width: 330px; }
+.secret input, .transcript-controls select, .transcript-controls button { height: 30px; padding: 0 10px; border: 1px solid var(--shade1); border-radius: 4px; background: var(--shade7); color: var(--n1); font: 13px var(--mono); }
 .secret { display: flex; align-items: center; gap: 8px; }
 .secret input { width: 168px; }
 .err { color: var(--red); font: 12.5px var(--sans); align-self: center; }
@@ -240,8 +236,6 @@ table.plans td.name { color: var(--n1); font-weight: 600; min-width: 240px; max-
   .page { padding: 18px 16px 32px; }
   .lane { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
   .lane-identity, .lane .phase { grid-column: 1 / -1; }
-  .runform > label { width: 100%; }
-  .runform select, .runform input[name=output] { min-width: 0; width: 100%; }
   .figs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .title h2 { font-size: 22px; }
   .tabs { flex-wrap: wrap; }
@@ -335,3 +329,6 @@ main[aria-busy="true"]:not(:has(.loading))::before { content: ''; position: fixe
 .chip[aria-disabled="true"] { opacity: .4; pointer-events: none; }
 
 .attempt-list tr.is-highlighted td, .chart-run-toggle.is-highlighted { background: var(--shade1); }
+
+/* Run setup uses native controls and one review step. */
+.setup{max-width:900px}.setup-form{display:grid;gap:24px}.setup-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.setup label{display:flex;gap:8px}.setup-fields>label,.setup-actions>label{flex-direction:column}.setup label>span,.setup legend{color:var(--muted,#9eabb9);font-size:13px}.setup input:not([type=checkbox]),.setup select{min-width:0;background:#101c22;color:inherit;border:1px solid #29404b;border-radius:4px;padding:10px;font:inherit}.setup fieldset{border:1px solid #24383f;border-radius:5px;padding:16px}.setup-choices{display:flex;flex-wrap:wrap;gap:20px}.setup-model{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:7px 0}.setup-model select{width:130px}.setup-actions{display:flex;align-items:end;justify-content:flex-end;gap:12px}.setup details>div{margin-top:16px}.setup-review{display:grid;grid-template-columns:160px 1fr;gap:14px}.setup-review dt{color:#9eabb9}.setup-review dd{margin:0}.setup .warning{border-left:3px solid #eabc65;padding:12px;background:#211e15}.setup pre{overflow:auto;max-height:260px}.setup .summary-note{margin:20px 0}@media(max-width:600px){.setup-fields{grid-template-columns:1fr}.setup-actions{align-items:stretch;flex-direction:column}.setup-review{grid-template-columns:1fr;gap:6px}.setup-review dd{margin-bottom:12px}}

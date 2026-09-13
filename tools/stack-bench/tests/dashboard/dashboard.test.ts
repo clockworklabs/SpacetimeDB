@@ -38,7 +38,7 @@ import { attemptPage } from '../../dashboard/public/views/attempt.js';
 import { campaignPage } from '../../dashboard/public/views/campaign.js';
 import { graph } from '../../dashboard/public/graph.js';
 import { campaignsPage } from '../../dashboard/public/views/campaigns.js';
-import { afterRun, plansPage, runName, topbar } from '../../dashboard/public/views/plans.js';
+import { plansPage, topbar } from '../../dashboard/public/views/plans.js';
 
 import { DEPENDENCY_CAMPAIGN, EXAMPLE_CAMPAIGN,
   dependencyProgressionEvidence, writeCampaign, writeDependencyResults, writeFixtureResults,
@@ -591,14 +591,14 @@ test('dashboard serves real state and protects campaign launch with a separate o
   });
   assert.equal(reboundStatus, 421);
 
-  const rejected = await fetch(`${origin}/api/campaigns`, { method: 'POST',
+  const rejected = await fetch(`${origin}/api/runs`, { method: 'POST',
     headers: { origin, 'content-type': 'application/json',
       'x-stack-bench-token': 'test-session-token' },
     body: JSON.stringify({ planId: frozenPlan.id, outputName: 'meeting-run-1' }) });
   assert.equal(rejected.status, 403);
   assert.equal(launches.length, 0);
 
-  const wrongOperator = await fetch(`${origin}/api/campaigns`, { method: 'POST',
+  const wrongOperator = await fetch(`${origin}/api/runs`, { method: 'POST',
     headers: { origin, 'content-type': 'application/json',
       'x-stack-bench-token': 'test-session-token',
       'x-stack-bench-control-secret': 'wrong-control-secret-value-1234567890' },
@@ -606,89 +606,22 @@ test('dashboard serves real state and protects campaign launch with a separate o
   assert.equal(wrongOperator.status, 403);
   assert.equal(launches.length, 0);
 
-  const accepted = await fetch(`${origin}/api/campaigns`, { method: 'POST',
-    headers: { origin, 'content-type': 'application/json',
-      'x-stack-bench-token': 'test-session-token',
-      'x-stack-bench-control-secret': 'test-control-secret-value-1234567890' },
-    body: JSON.stringify({ planId: frozenPlan.id, outputName: 'meeting-run-1' }) });
-  assert.equal(accepted.status, 202);
-  assert.equal(launches.length, 1);
-  const firstLaunch = launches[0];
-  const firstEvent = feed.list()[0];
-  assert.ok(firstLaunch && firstEvent);
-  assert.equal(firstLaunch.plan.id, frozenPlan.id);
-  assert.equal(firstLaunch.command, 'run');
-  assert.equal(firstLaunch.output, join(root, 'campaigns', 'meeting-run-1'));
-  assert.equal(firstEvent.status, 'running');
-  assert.equal(firstEvent.pid, 1234);
-  assert.equal(firstEvent.campaignSha256, frozenPlan.sha256);
-  const duplicateStart = await fetch(`${origin}/api/campaigns`, { method: 'POST',
-    headers: { origin, 'content-type': 'application/json',
-      'x-stack-bench-token': 'test-session-token',
-      'x-stack-bench-control-secret': 'test-control-secret-value-1234567890' },
-    body: JSON.stringify({ planId: frozenPlan.id, outputName: 'meeting-run-1' }) });
-  assert.equal(duplicateStart.status, 409);
-  assert.equal(launches.length, 1);
-
   const resumed = await fetch(`${origin}/api/campaigns/prepared-run/resume`, { method: 'POST',
     headers: { origin, 'content-type': 'application/json',
       'x-stack-bench-token': 'test-session-token',
       'x-stack-bench-control-secret': 'test-control-secret-value-1234567890' }, body: '{}' });
   assert.equal(resumed.status, 202);
-  assert.equal(launches.length, 2);
-  assert.equal(launches[1]?.output, campaignDirectory);
-  assert.equal(launches[1]?.command, 'resume');
+  assert.equal(launches.length, 1);
+  assert.equal(launches[0]?.output, campaignDirectory);
+  assert.equal(launches[0]?.command, 'resume');
   assert.equal(((await resumed.json()) as { type?: string }).type, 'campaign.resume');
   const duplicate = await fetch(`${origin}/api/campaigns/prepared-run/resume`, { method: 'POST',
     headers: { origin, 'content-type': 'application/json',
       'x-stack-bench-token': 'test-session-token',
       'x-stack-bench-control-secret': 'test-control-secret-value-1234567890' }, body: '{}' });
   assert.equal(duplicate.status, 409);
-  assert.equal(launches.length, 2);
+  assert.equal(launches.length, 1);
 });
-
-test('the run form sends the plan, the run name and the operator secret the route requires',
-  async t => {
-    const root = mkdtempSync(join(tmpdir(), 'stack-bench-run-form-'));
-    const plansRoot = join(root, 'plans');
-    writePlanFixtures(plansRoot);
-    const launches: LaunchInput[] = [];
-    const feed = { append() {}, list() { return []; } };
-    const { server } = createDashboardServer({ resultsRoot: root, plansRoot, allowLaunch: true,
-      token: 'form-token', controlSecret: 'form-control-secret-value-1234567890', feed,
-      plans: () => discoverPlans(plansRoot),
-      launch(input) {
-        launches.push(input);
-        return Object.assign(new EventEmitter(), { pid: 77 });
-      } });
-    const origin = await listenOrigin(server);
-    t.after(() => { server.close(); rmSync(root, { recursive: true, force: true }); });
-    const plan = discoverPlans(plansRoot).find(item => item.state === 'frozen');
-    assert.ok(plan);
-    // The form's own prefill, held to the name the route accepts.
-    const outputName = runName(plan.id, new Date('2026-09-02T15:04:00'));
-    assert.match(outputName, /^[a-z0-9][a-z0-9.-]{2,119}$/);
-    const send = (secret: string): Promise<Response> => fetch(`${origin}/api/campaigns`,
-      { method: 'POST',
-        headers: { origin, 'content-type': 'application/json', 'x-stack-bench-token': 'form-token',
-          'x-stack-bench-control-secret': secret },
-        body: JSON.stringify({ planId: plan.id, outputName }) });
-
-    const refused = await send('wrong-control-secret-value-1234567890');
-    assert.equal(refused.status, 403);
-    assert.equal(launches.length, 0);
-    const typed = { planId: plan.id, outputName, secret: 'typed-secret', error: '' };
-    const refusedError = ((await refused.json()) as { error: string }).error;
-    assert.deepEqual(afterRun(typed, refused.status, refusedError),
-      { planId: plan.id, outputName, secret: '', error: 'The run request is not authorized.' });
-    assert.equal(afterRun(typed, 409, 'That run output already exists.').secret, 'typed-secret');
-
-    const accepted = await send('form-control-secret-value-1234567890');
-    assert.equal(accepted.status, 202);
-    assert.equal(launches.length, 1);
-    assert.equal(launches[0]?.plan.id, plan.id);
-    assert.equal(launches[0]?.output, join(root, 'campaigns', outputName));
-  });
 
 test('host development mode is read-only even with a valid browser request', async t => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-readonly-'));
@@ -698,7 +631,7 @@ test('host development mode is read-only even with a valid browser request', asy
     allowLaunch: false, token: 'readonly-token', feed, plans: () => [] });
   const origin = await listenOrigin(server);
   t.after(() => { server.close(); rmSync(root, { recursive: true, force: true }); });
-  const response = await fetch(`${origin}/api/campaigns`, { method: 'POST',
+  const response = await fetch(`${origin}/api/runs`, { method: 'POST',
     headers: { origin, 'content-type': 'application/json', 'x-stack-bench-token': 'readonly-token' },
     body: JSON.stringify({ planId: 'anything', outputName: 'meeting-run-2' }) });
   assert.equal(response.status, 503);
@@ -1298,9 +1231,6 @@ test('the client renders controls, evidence links, and every supported page', ()
     path: 'grading/failure-media/example.png', name: 'Example failure', kind: 'visual',
     contentType: 'image/png', size: 8 });
   const plans = discoverPlans(join(resultsRoot, 'plans'));
-  const runForm = { planId: plans.find(plan => plan.state === 'frozen')?.id ?? '',
-    outputName: 'ecommerce-20260902-1504', secret: '',
-    error: 'That run output already exists.' };
   const pages: Array<[string, string]> = [
     ['campaigns', campaignsPage({ campaigns: overview, sheets: [dependency], filter: 'all' })],
     ['campaigns filtered',
@@ -1310,8 +1240,7 @@ test('the client renders controls, evidence links, and every supported page', ()
     ['campaign grid', campaignPage({ sheet: dependency, progression, view: 'grid', step: 0 })],
     ['campaign graph', campaignPage({ sheet: dependency, progression, view: 'graph', step: 0 })],
     ['campaign replay', campaignPage({ sheet: dependency, progression, view: 'replay', step: 3 })],
-    ['plans', plansPage({ plans, canStart: false, form: runForm })],
-    ['plans form', plansPage({ plans, canStart: true, form: runForm })],
+    ['plans', plansPage({ plans })],
     ['topbar plans', topbar({ page: 'plans', key: '', canStart: true, resumable: false, error: '' })],
     ['topbar resume', topbar({ page: 'campaign', key: 'progression-run', canStart: true,
       resumable: true, error: 'Only an interrupted campaign that is ready can resume.' })],
@@ -1333,13 +1262,9 @@ test('the client renders controls, evidence links, and every supported page', ()
   const screenshots = pages.find(([name]) => name === 'attempt screenshots')?.[1] ?? '';
   assert.match(screenshots, /<button type="button" data-shot="[^"]+"/);
   assert.match(screenshots, /<dialog class="lightbox">/);
-  // Read-only host mode has the table and no form; only a frozen plan is offered.
-  const readOnly = plansPage({ plans, canStart: false, form: runForm });
-  const startable = plansPage({ plans, canStart: true, form: runForm });
+  // Saved plans have no launch form; new runs use the setup page.
+  const readOnly = plansPage({ plans });
   assert.equal(/<form/.test(readOnly), false);
-  assert.deepEqual([...startable.matchAll(/<option value="([^"]*)"/g)].map(match => match[1]),
-    plans.filter(plan => plan.state === 'frozen').map(plan => plan.id));
-  assert.match(startable, /name="secret" type="password"/);
   // An unreadable plan is a row whose state is invalid and whose error is a hover.
   const invalid = /<span class="state \w+" title="([^"]+)">invalid</.exec(readOnly);
   assert.ok(invalid?.[1] && invalid[1] !== 'invalid');

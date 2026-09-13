@@ -1,5 +1,8 @@
 /// <reference lib="dom" />
 /// <reference lib="dom.iterable" />
+import type { readExecutionJob } from '../../src/campaigns/execution-jobs.js';
+import type { RunSetupCatalog, RunSetupRequest, RunSetupReview } from '../../src/campaigns/run-setup.js';
+import { initialRun, readRunForm, runSetupPage } from './views/run-setup.js';
 import type { TranscriptPage } from '../dashboard-transcript.js';
 
 
@@ -14,7 +17,7 @@ import type { readCampaignTimeBudget } from '../../src/campaigns/campaign-time-g
 import { type QuestlineView, campaignPage, replayTimeline, selectedProgression } from './views/campaign.js';
 import { type AttemptTab, attemptPage } from './views/attempt.js';
 import { type CampaignFilter, campaignsPage } from './views/campaigns.js';
-import { type Page, type RunForm, afterRun, plansPage, runName, topbar }
+import { type Page, type RunForm, afterRun, plansPage, topbar }
   from './views/plans.js';
 import { duration, elapsed, esc } from './format.js';
 
@@ -27,6 +30,7 @@ interface Route {
   key: string;
   attempt: string;
   plans: boolean;
+  newRun: boolean;
   filter: CampaignFilter;
   view: QuestlineView;
   chart: 'completion' | 'cost' | 'distribution';
@@ -40,10 +44,14 @@ const state = {
   plans: [] as DashboardPlan[],
   overviewLoaded: false,
   plansLoaded: false,
+  pendingJobs: new Map<string, { pendingJob: ReturnType<typeof readExecutionJob>; dispatchError: string | null }>(),
+  setup: null as RunSetupCatalog | null,
+  setupRequest: null as RunSetupRequest | null,
+  setupReview: null as RunSetupReview | null,
   canStart: false,
   csrfToken: '',
   readError: '',
-  form: { planId: '', outputName: '', secret: '', error: '' } as RunForm,
+  form: { secret: '', error: '' } as RunForm,
   sheets: new Map<string, CampaignSheet>(),
   progression: new Map<string, CampaignProgression | null>(),
   hiddenChartRuns: new Map<string, Set<string>>(),
@@ -76,7 +84,8 @@ function route(): Route {
   return {
     key: parts[0] === 'c' ? parts[1] ?? '' : '',
     attempt: parts[2] === 'a' ? parts[3] ?? '' : '',
-    plans: parts[0] === 'plans',
+    plans: parts[0] === 'plans' || parts[0] === 'new',
+    newRun: parts[0] === 'new',
     filter: pick(FILTERS, 'filter', 'all'),
     view: pick(VIEWS, 'questlines', 'grid'),
     chart: pick(['completion', 'cost', 'distribution'] as const, 'chart', 'completion'),
@@ -137,8 +146,17 @@ function chrome(current: Route): string {
 
 function page(current: Route): string {
   const sheet = state.sheets.get(current.key) ?? null;
+  const pending = state.pendingJobs.get(current.key);
+  if (pending) return `<div class="page"><h2>${esc(pending.pendingJob.job.key)}</h2><p>${esc(pending.pendingJob.status)}</p>`
+    + `<p>${esc(pending.dispatchError ?? pending.pendingJob.error ?? pending.pendingJob.capacityWait?.reason ?? 'Waiting for the campaign to start. This page updates automatically.')}</p>`
+    + (state.canStart && ['queued', 'running'].includes(pending.pendingJob.status)
+      ? '<form data-run="job-cancel"><input type="password" name="secret" placeholder="Operator secret" aria-label="Operator secret" required><button class="btn" type="submit">Cancel run</button></form>' : '')
+    + (state.canStart && pending.pendingJob.status === 'queued' && pending.dispatchError
+      ? '<form data-run="job-start"><input type="password" name="secret" placeholder="Operator secret" aria-label="Operator secret" required><button class="btn" type="submit">Retry worker</button></form>' : '')
+    + (state.form.error ? `<p class="err">${esc(state.form.error)}</p>` : '') + '</div>';
+  if (current.newRun) return runSetupPage(state.setup, state.setupRequest, state.setupReview, state.form.error, state.canStart);
   if (current.plans) {
-    return plansPage({ plans: state.plans, canStart: state.canStart, form: state.form,
+    return plansPage({ plans: state.plans,
       loading: loading && !state.plansLoaded });
   }
   if (!current.key) {
@@ -199,8 +217,11 @@ function patch(current: Element, next: Element): void {
       child.replaceWith(other);
       return;
     }
+    // Moving option nodes can change a native select's value during reconciliation.
+    const selected = other instanceof HTMLSelectElement ? other.value : null;
     sync(child, other);
     patch(child, other);
+    if (child instanceof HTMLSelectElement && selected !== null) child.value = selected;
   });
 }
 
@@ -238,14 +259,18 @@ function render(): void {
       field.value = state.timeGrantMinutes;
       updateTimeTotal(field);
     }
-    if (field.name !== 'secret' && field.name !== 'output') continue;
-    const value = field.name === 'secret' ? state.form.secret : state.form.outputName;
+    if (field.name !== 'secret') continue;
+    const value = state.form.secret;
     if (field.value !== value) field.value = value;
   }
   for (const form of document.querySelectorAll<HTMLFormElement>('form[data-run]')) {
     form.setAttribute('aria-busy', String(submitting));
+    if (submitting && form.dataset.run?.startsWith('setup-')) {
+      const submit = form.querySelector('button[type=submit]');
+      if (submit) submit.textContent = form.dataset.run === 'setup-review' ? 'Preparing review…' : 'Starting…';
+    }
     for (const button of form.querySelectorAll<HTMLButtonElement>('button[type=submit]')) {
-      button.disabled = submitting || (form.dataset.run === 'grant-time'
+      button.disabled = submitting || (!state.canStart && form.dataset.run?.startsWith('setup-')) || (form.dataset.run === 'grant-time'
         && (state.timeBudgets.get(current.attempt)?.grants.some(grant => grant.disposition === 'pending') ?? false));
     }
   }
@@ -328,7 +353,12 @@ async function loadData(version: number, changedKeys: Set<string> | null, refres
     else if (current.attempt && current.tab === 'log') await readLog(current);
     return;
   }
-  const plansRequest = current.plans ? read<DashboardPlan[]>('/api/plans').then(plans => {
+  const setupRequest = current.newRun && !state.setupRequest ? read<RunSetupCatalog>('/api/run-setup').then(catalog => {
+    if (catalog && version === loadVersion) {
+      state.setup = catalog; state.setupRequest ??= initialRun(catalog); state.plansLoaded = true; render();
+    }
+  }) : null;
+  const plansRequest = current.plans && !current.newRun ? read<DashboardPlan[]>('/api/plans').then(plans => {
     if (plans && version === loadVersion) {
       state.plans = plans;
       state.plansLoaded = true;
@@ -344,12 +374,8 @@ async function loadData(version: number, changedKeys: Set<string> | null, refres
     render();
   }
   if (current.plans) {
-    await plansRequest;
+    await Promise.all([plansRequest, setupRequest]);
     if (version !== loadVersion) return;
-    const first = state.plans.find(plan => plan.state === 'frozen');
-    if (first && !state.form.planId) {
-      state.form = { ...state.form, planId: first.id, outputName: runName(first.id, new Date()) };
-    }
     render();
     return;
   }
@@ -364,8 +390,11 @@ async function loadData(version: number, changedKeys: Set<string> | null, refres
     }));
     return;
   }
-  const sheet = await read<CampaignSheet>(`/api/campaigns/${encodeURIComponent(current.key)}`);
+  const result = await read<CampaignSheet | { pendingJob: ReturnType<typeof readExecutionJob>; dispatchError: string | null }>(`/api/campaigns/${encodeURIComponent(current.key)}`);
   if (version !== loadVersion) return;
+  if (result && 'pendingJob' in result) { state.pendingJobs.set(current.key, result); render(); return; }
+  state.pendingJobs.delete(current.key);
+  const sheet = result;
   if (sheet) state.sheets.set(current.key, sheet);
   render();
   if (sheet?.mode === 'dependency') {
@@ -525,9 +554,36 @@ async function post(form: HTMLFormElement): Promise<void> {
   const current = route();
   const data = new FormData(form);
   const action = form.dataset.run;
+  if (action === 'setup-review' || action === 'setup-start') {
+    if (action === 'setup-review') state.setupRequest = readRunForm(form);
+    const secret = String(data.get('secret') ?? '');
+    state.form = { ...state.form, secret, error: '' };
+    submitting = true; render();
+    try {
+      const response = await fetch(action === 'setup-review' ? '/api/runs/prepare' : '/api/runs', {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-stack-bench-token': state.csrfToken,
+          'x-stack-bench-control-secret': secret },
+        body: JSON.stringify(action === 'setup-review' ? state.setupRequest
+          : { request: state.setupReview!.request, reviewId: state.setupReview!.reviewId }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        state.form = afterRun(state.form, response.status, result.error ?? `Request failed (${response.status})`);
+        return;
+      }
+      if (action === 'setup-review') state.setupReview = result as RunSetupReview;
+      else {
+        state.form.secret = ''; state.setupReview = null; state.setupRequest = null;
+        go(`/c/${encodeURIComponent(result.campaignKey)}`);
+      }
+    } catch { state.form.error = 'Could not confirm the request. Retry with the same setup; it cannot create a second job.'; }
+    finally { submitting = false; render(); }
+    return;
+  }
+
   const resumeWithTime = action === 'grant-time' && form.dataset.resume === 'true';
-  const existing = action === 'resume' || action === 'stop' || action === 'grant-time';
-  const output = existing ? current.key : String(data.get('output') ?? '');
+  const existing = action === 'job-start' || action === 'job-cancel' || action === 'resume' || action === 'stop' || action === 'grant-time';
+  if (!existing) return;
   // Retain the ID after an uncertain response, so retry cannot add time twice.
   if (action === 'grant-time' && !state.timeGrantIds.has(current.attempt)) {
     state.timeGrantIds.set(current.attempt, crypto.randomUUID());
@@ -537,14 +593,13 @@ async function post(form: HTMLFormElement): Promise<void> {
   render();
   let timeAccepted = false;
   try {
-    let response = await fetch(action === 'grant-time' ? attemptUrl(current, 'time') : existing
-      ? `/api/campaigns/${encodeURIComponent(current.key)}/${action}` : '/api/campaigns', {
+    let response = await fetch(action === 'job-start' ? `/api/jobs/${current.key.slice(4)}/start` : action === 'job-cancel' ? `/api/jobs/${current.key.slice(4)}/cancel` : action === 'grant-time' ? attemptUrl(current, 'time') : `/api/campaigns/${encodeURIComponent(current.key)}/${action}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-stack-bench-token': state.csrfToken,
         'x-stack-bench-control-secret': String(data.get('secret') ?? '') },
       body: JSON.stringify(action === 'grant-time' ? { grantId, minutes: Number(data.get('minutes')) }
         : action === 'stop' ? { owner: data.get('owner') }
-        : existing ? {} : { planId: String(data.get('plan') ?? ''), outputName: output }),
+        : {}),
     });
     if (response.ok && resumeWithTime) {
       timeAccepted = true;
@@ -555,8 +610,7 @@ async function post(form: HTMLFormElement): Promise<void> {
     }
     if (response.ok) {
       state.form = { ...state.form, secret: '', error: '' };
-      if (existing) return void load();
-      return go(`/c/${encodeURIComponent(output)}`);
+      return void load();
     }
     const failure = await response.json().catch(() => ({})) as { error?: string };
     state.form = afterRun(state.form, response.status,
@@ -579,20 +633,21 @@ document.addEventListener('submit', event => {
   void post(form);
 });
 
-// The form's fields are the state; picking a plan renames the output with it.
+// Keep typed settings across background refreshes.
 document.addEventListener('input', event => {
   const field = event.target as HTMLInputElement;
+  if (field.form?.dataset.run === 'setup-review' && field.name !== 'secret') {
+    state.setupRequest = field.name === 'workload' ? initialRun(state.setup!, field.value) : readRunForm(field.form);
+    if (field.name === 'workload' || field.name === 'level') render();
+    return;
+  }
+
   if (field.name === 'minutes') {
     state.timeGrantMinutes = field.value;
     updateTimeTotal(field);
   }
   if (field.name === 'secret') state.form = { ...state.form, secret: field.value };
-  else if (field.name === 'output') state.form = { ...state.form, outputName: field.value };
-  else if (field.name === 'plan') {
-    state.form = { ...state.form, planId: field.value,
-      outputName: runName(field.value, new Date()) };
-    render();
-  }
+
 });
 
 document.addEventListener('keydown', event => {
@@ -692,4 +747,10 @@ document.addEventListener('click', event => {
     const pane = document.querySelector<HTMLElement>('.transcript');
     if (pane && target.hasAttribute('data-transcript-latest')) pane.scrollTop = pane.scrollHeight;
   });
+});
+
+document.addEventListener('click', event => {
+  if (event.target instanceof Element && event.target.closest('[data-setup-edit]')) {
+    state.setupReview = null; state.form.error = ''; render();
+  }
 });

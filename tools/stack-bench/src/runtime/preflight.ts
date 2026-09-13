@@ -194,7 +194,7 @@ function checkResult(
     ...(evidence ? { evidence } : {}) };
 }
 
-function credentialReady(
+export function credentialReady(
   adapter: AgentAdapter,
   env: NodeJS.ProcessEnv,
   home: string,

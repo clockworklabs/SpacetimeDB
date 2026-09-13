@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { prepareRun, runSetupCatalog, submitPreparedRun } from '../src/campaigns/run-setup.js';
 
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { appendFileSync, closeSync, createReadStream, existsSync, mkdirSync, openSync, readFileSync, statSync } from 'node:fs';
@@ -19,7 +20,7 @@ import { watchCampaigns } from './dashboard-events.js';
 import type { CampaignChange, CampaignWatcher } from './dashboard-events.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { stackBenchResultsRoot } from '../src/runtime/operational-paths.js';
-import { controllerRuntimeCommand } from '../appliance/controller.js';
+import { controllerRuntimeCommand, controllerChildEnvironment } from '../appliance/controller.js';
 import { requestCampaignCancellation } from '../src/campaigns/campaign-lock.js';
 import { readCampaignTimeBudget, requestCampaignTimeGrant } from '../src/campaigns/campaign-time-grant.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
@@ -29,7 +30,7 @@ import { submitExecutionJob, listExecutionJobs, readExecutionJob, cancelExecutio
 const DASHBOARD_ROOT = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_ROOT = join(DASHBOARD_ROOT, 'public');
 const SAFE_NAME = /^[a-z0-9][a-z0-9.-]{2,119}$/;
-const SPA_PATH = /^\/(?:plans|c\/[^/]+(?:\/a\/[^/]+)?)$/;
+const SPA_PATH = /^\/(?:new|plans|c\/[^/]+(?:\/a\/[^/]+)?)$/;
 const HEARTBEAT_MS = 25_000;
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
 const STATIC = new Map<string, readonly [file: string, contentType: string]>([
@@ -46,6 +47,7 @@ const STATIC = new Map<string, readonly [file: string, contentType: string]>([
   ['/views/campaign.js', ['views/campaign.js', 'text/javascript; charset=utf-8']],
   ['/views/campaigns.js', ['views/campaigns.js', 'text/javascript; charset=utf-8']],
   ['/views/plans.js', ['views/plans.js', 'text/javascript; charset=utf-8']],
+  ['/views/run-setup.js', ['views/run-setup.js', 'text/javascript; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
   ['/spacetimedb-mark.svg', ['spacetimedb-mark.svg', 'image/svg+xml']],
   // The brand faces are served from here rather than a CDN: the dashboard's own
@@ -93,7 +95,8 @@ export interface LaunchChild {
 }
 
 export interface LaunchInput {
-  command: 'run' | 'resume';
+  command: 'resume' | 'work';
+  jobId?: string;
   plan: DashboardPlan & { path: string };
   output: string;
   operationId: string;
@@ -221,9 +224,11 @@ function createOperationFeed(resultsRoot: string): OperationFeed {
   };
 }
 
-function launchCampaign({ command, plan, output, operationId, resultsRoot, feed,
+function launchCampaign({ command, jobId, plan, output, operationId, resultsRoot, feed,
   env = process.env }: LaunchInput): LaunchChild {
-  const runtime = controllerRuntimeCommand(['campaign', command, plan.path, '--out', output], env);
+  const runtime = controllerRuntimeCommand(command === 'work'
+    ? ['job', 'work', jobId!, '--results', resultsRoot, '--host', env.STACK_BENCH_HOST_ID ?? 'local']
+    : ['campaign', command, plan.path, '--out', output], env);
   feed.append({ id: operationId, updatedAt: new Date().toISOString(),
     containerName: runtime.containerName, ownershipLabel: runtime.ownershipLabel });
   const operationsRoot = join(resolve(resultsRoot), 'dashboard', 'operations');
@@ -259,6 +264,32 @@ export function createDashboardServer(options: DashboardServerOptions) {
   const launch = options.launch ?? launchCampaign;
   const plans = options.plans ?? (() => discoverPlans(plansRoot));
   const launchReservations = new Set<string>();
+  const dispatchJob = (job: ReturnType<typeof submitExecutionJob>) => {
+    const status = readExecutionJob(resultsRoot, job.id);
+    const key = `job-${job.id}`;
+    if (status.status === 'queued' && !launchReservations.has(key)) {
+      launchReservations.add(key);
+      const now = new Date().toISOString();
+      const operation = { schemaVersion: 1, id: randomUUID(), type: 'campaign.run', status: 'running',
+        createdAt: now, updatedAt: now, actor: 'local-operator', campaignId: job.key,
+        campaignSha256: job.planSha256, outputName: key };
+      feed.append(operation);
+      try {
+        const child = launch({ command: 'work', jobId: job.id,
+          plan: { id: job.key, title: job.key, state: 'frozen', file: 'plan.json',
+            path: join(resultsRoot, 'jobs', job.id, 'plan.json') },
+          output: status.campaignDirectory, operationId: operation.id, resultsRoot, feed });
+        child.once('error', () => launchReservations.delete(key));
+        child.once('exit', () => launchReservations.delete(key));
+        feed.append({ ...operation, pid: child.pid ?? null });
+      } catch (error) {
+        launchReservations.delete(key);
+        feed.append({ ...operation, status: 'failed', error: errorMessage(error) });
+        throw new Error(`Job ${job.id} is saved but dispatch failed. Retry Start with the same setup. ${errorMessage(error)}`);
+      }
+    }
+    return { ...readExecutionJob(resultsRoot, job.id), campaignKey: key };
+  };
   const campaignsRoot = join(resultsRoot, 'campaigns');
   const listeners = new Set<ServerResponse>();
   let watcher: CampaignWatcher | null = null;
@@ -294,6 +325,26 @@ export function createDashboardServer(options: DashboardServerOptions) {
         createReadStream(path).pipe(response);
         return;
       }
+      if (request.method === 'GET' && url.pathname === '/api/run-setup') {
+        return json(response, 200, runSetupCatalog(resultsRoot));
+      }
+      if (request.method === 'POST' && ['/api/runs/prepare', '/api/runs'].includes(url.pathname)) {
+        if (!allowLaunch) return json(response, 503, { error: 'Run controls require the appliance.' });
+        if (!controlAuthorized(request, request.headers.host, token, controlSecret)) {
+          return json(response, 403, { error: 'The run request is not authorized.' });
+        }
+        if (!String(request.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
+          return json(response, 415, { error: 'Run requests must use JSON.' });
+        }
+        try {
+          const input = await body(request);
+          if (url.pathname.endsWith('/prepare')) return json(response, 200, prepareRun(resultsRoot, input, options.launch ? process.env : controllerChildEnvironment(process.env)));
+          // Validate dispatch configuration before publishing a job for workers.
+          if (!options.launch) controllerRuntimeCommand(['job', 'work'], process.env);
+          const job = submitPreparedRun(resultsRoot, input, options.launch ? process.env : controllerChildEnvironment(process.env));
+          return json(response, 202, dispatchJob(job));
+        } catch (error) { return json(response, 400, { error: errorMessage(error) }); }
+      }
       if (request.method === 'GET' && url.pathname === '/api/health') {
         return json(response, 200, { ok: true, mode: allowLaunch ? 'controller' : 'read-only' });
       }
@@ -304,7 +355,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
       if (request.method === 'GET' && url.pathname === '/api/plans') {
         return json(response, 200, plans());
       }
-      const jobRoute = url.pathname.match(/^\/api\/jobs(?:\/([a-f0-9]{64})(\/cancel)?)?$/);
+      const jobRoute = url.pathname.match(/^\/api\/jobs(?:\/([a-f0-9]{64})(?:\/(cancel|start))?)?$/);
       if (jobRoute) {
         const id = jobRoute[1], cancel = jobRoute[2] !== undefined;
         if (request.method === 'GET' && !cancel) {
@@ -326,6 +377,10 @@ export function createDashboardServer(options: DashboardServerOptions) {
           }
           if (id) {
             if (!existsSync(join(resultsRoot, 'jobs', id, 'job.json'))) return json(response, 404, { error: 'Job not found.' });
+            if (jobRoute[2] === 'start') {
+              if (!options.launch) controllerRuntimeCommand(['job', 'work'], process.env);
+              return json(response, 202, dispatchJob(readExecutionJob(resultsRoot, id).job));
+            }
             cancelExecutionJob(resultsRoot, id);
             return json(response, 202, readExecutionJob(resultsRoot, id));
           }
@@ -483,6 +538,13 @@ export function createDashboardServer(options: DashboardServerOptions) {
         if (!SAFE_NAME.test(key)) {
           return json(response, 400, { error: 'The campaign name is invalid.' });
         }
+        if (!rest && /^job-[a-f0-9]{64}$/.test(key)
+          && !existsSync(join(campaignsRoot, key, 'state.json'))
+          && existsSync(join(resultsRoot, 'jobs', key.slice(4), 'job.json'))) {
+          const pendingJob = readExecutionJob(resultsRoot, key.slice(4));
+          const operation = feed.list().find(op => op.outputName === key);
+          return json(response, 200, { pendingJob, dispatchError: operation?.status === 'failed' ? operation.error ?? 'Worker exited before campaign startup.' : null });
+        }
         if (!existsSync(contained(campaignsRoot, key, 'campaign'))) {
           return json(response, 404, { error: 'Not found' });
         }
@@ -534,56 +596,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
           return json(response, 422, { error: `Cannot read campaign evidence: ${errorMessage(error)}` });
         }
         return json(response, 404, { error: 'Not found' });
-      }
-      if (request.method === 'POST' && url.pathname === '/api/campaigns') {
-        if (!allowLaunch) return json(response, 503, { error: 'Run controls are available inside the Stack Bench appliance.' });
-        if (!controlAuthorized(request, request.headers.host, token, controlSecret)) {
-          return json(response, 403, { error: 'The run request is not authorized.' });
-        }
-        if (!String(request.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
-          return json(response, 415, { error: 'Run requests must use JSON.' });
-        }
-        const input = await body(request);
-        const runRequest = input !== null && typeof input === 'object'
-          ? input as { planId?: unknown; outputName?: unknown } : {};
-        if (typeof runRequest.planId !== 'string' || typeof runRequest.outputName !== 'string'
-          || !SAFE_NAME.test(runRequest.outputName)) {
-          return json(response, 400, { error: 'Choose a test plan and a simple run name.' });
-        }
-        const plan = plans().find(item => item.id === runRequest.planId);
-        if (!plan || plan.state !== 'frozen') {
-          return json(response, 400, { error: 'The selected test plan is not ready to run.' });
-        }
-        const path = join(plansRoot, plan.file);
-        const output = join(resultsRoot, 'campaigns', runRequest.outputName);
-        if (existsSync(output)) return json(response, 409, { error: 'That run output already exists.' });
-        const reservation = `output:${runRequest.outputName}`;
-        if (launchReservations.has(reservation)) {
-          return json(response, 409, { error: 'That run output already has an active controller.' });
-        }
-        launchReservations.add(reservation);
-        const now = new Date().toISOString();
-        const operation = { schemaVersion: 1, id: randomUUID(), type: 'campaign.run', status: 'running',
-          createdAt: now, updatedAt: now, actor: 'local-operator', campaignId: plan.id,
-          campaignSha256: plan.sha256, outputName: runRequest.outputName };
-        feed.append(operation);
-        try {
-          const child = launch({ command: 'run', plan: { ...plan, path }, output, operationId: operation.id,
-            resultsRoot, feed, env: process.env });
-          if (typeof child?.once === 'function') {
-            child.once('error', () => launchReservations.delete(reservation));
-            child.once('exit', () => launchReservations.delete(reservation));
-          } else {
-            launchReservations.delete(reservation);
-          }
-          feed.append({ ...operation, pid: child?.pid ?? null });
-        } catch (error) {
-          launchReservations.delete(reservation);
-          feed.append({ schemaVersion: 1, id: operation.id, status: 'failed',
-            updatedAt: new Date().toISOString(), error: errorMessage(error) });
-          throw error;
-        }
-        return json(response, 202, operation);
       }
       return json(response, 404, { error: 'Not found' });
     } catch (error) {

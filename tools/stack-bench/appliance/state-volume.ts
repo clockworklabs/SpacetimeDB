@@ -36,7 +36,7 @@ export function prepareStateVolume(env: NodeJS.ProcessEnv = process.env, run: Do
     `type=volume,source=${STATE_VOLUME},target=${root}`, '--entrypoint', 'node', controller, '-e',
     'const fs=require("node:fs"),p=require("node:path"),crypto=require("node:crypto");'
       + 'const root=process.argv[1];'
-      + 'for(const name of ["work","results/plans","secrets","controller-home"])'
+      + 'for(const name of ["work","results/plans","results/run-presets","secrets","controller-home"])'
       + 'fs.mkdirSync(p.join(root,name),{recursive:true,mode:0o700});'
       + 'const secret=p.join(root,"secrets/dashboard_control_secret");'
       + 'if(!fs.existsSync(secret))fs.writeFileSync(secret,crypto.randomBytes(32).toString("hex")+"\\n",{flag:"wx",mode:0o600});'
@@ -46,7 +46,19 @@ export function prepareStateVolume(env: NodeJS.ProcessEnv = process.env, run: Do
       + 'const demo=p.join(root,"results/plans/paid-l1.json");if(!fs.existsSync(demo)){'
       + 'const plan=JSON.parse(fs.readFileSync("/opt/stack-bench/appliance/campaign.paid-l1.json","utf8"));'
       + 'plan.runtime.controllerImage=process.argv[2];plan.runtime.buildImage=process.argv[3];plan.state="frozen";'
-      + 'fs.writeFileSync(demo,JSON.stringify(plan,null,2)+"\\n",{flag:"wx",mode:0o600});}',
+      + 'fs.writeFileSync(demo,JSON.stringify(plan,null,2)+"\\n",{flag:"wx",mode:0o600});}'
+      + 'const paid=JSON.parse(fs.readFileSync("/opt/stack-bench/appliance/campaign.paid-l1-l3.json","utf8"));'
+      + 'for(const [source,id,title] of [["campaign.paid-l1-l3.json","ecommerce-sequential","Ecommerce — sequential levels"],'
+      + '["campaign.ecommerce-progression-reference.json","ecommerce-progressive","Ecommerce — progressive features"],'
+      + '["campaign.ecommerce-progression-reference.json","ecommerce-single-build","Ecommerce — single build"]]){'
+      + 'const target=p.join(root,"results/run-presets",id+".json");if(fs.existsSync(target))continue;'
+      + 'const d=JSON.parse(fs.readFileSync(p.join("/opt/stack-bench/appliance",source),"utf8"));'
+      + 'd.id=id;d.title=title;d.state="frozen";d.agents=paid.agents;d.pricing=paid.pricing;'
+      + 'if(id==="ecommerce-single-build")d.mode.workSelection="all-at-once";'
+      + 'd.runtime.controllerImage=process.argv[2];d.runtime.buildImage=process.argv[3];'
+      + 'd.budgets=paid.budgets;d.repair.budget={total:0};d.parallelism=d.stacks.length;'
+      + 'd.conditions=["neutral","neutral-dev","neutral-dev-no-sdk"].map(g=>({...d.conditions[0],id:g,guidanceProfile:g}));'
+      + 'fs.writeFileSync(target,JSON.stringify(d,null,2)+"\\n",{flag:"wx",mode:0o600});}',
     root, controller, build]);
   return [
     `STACK_BENCH_STATE_ROOT=${root}`,

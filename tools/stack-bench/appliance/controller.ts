@@ -37,7 +37,7 @@ const COMMANDS_REQUIRING_AGENT_AUTH = new Set(['preflight', 'run']);
 
 export function controllerCommandRequiresAgentAuth(command: string | undefined,
   args: string[] = []): boolean {
-  if (command === 'job' && ['work', 'worker'].includes(args[0] ?? '')) return true;
+  if (command === 'job' && ['prepare', 'start', 'work', 'worker'].includes(args[0] ?? '')) return true;
   if (command === 'run' && args.some(value => value === '--grade-from' || value.startsWith('--grade-from='))) {
     return !parseBenchArguments([process.execPath, 'bench', ...args]).gradeFrom;
   }
@@ -153,6 +153,9 @@ function help(): void {
     + 'commands at the durable plans/ and campaigns/ directories.\n'
     + '\n'
     + 'Run a campaign\n'
+    + '  job options                    list workload and agent choices\n'
+    + '  job prepare <json|->           review selections without running models\n'
+    + '  job start <review-json|-> --host <host>  start a reviewed run\n'
     + '  job submit <json|->             submit an idempotent execution job\n'
     + '  job work <id> --host <host>      claim and execute one submitted job\n'
     + '  job worker --host <host> --concurrency <jobs>  dispatch queued jobs automatically\n'
@@ -216,7 +219,7 @@ async function main(argv: string[]): Promise<void> {
   const runtime = ['preflight', 'run', 'qualify-reference', 'qualify-null', 'recover', 'recover-lease']
     .includes(command ?? '') || (command === 'campaign'
       && ['run', 'trial', 'resume', 'extend', 'reconcile'].includes(argv[3] ?? ''))
-      || (command === 'job' && ['work', 'worker'].includes(argv[3] ?? ''));
+      || (command === 'job' && ['start', 'work', 'worker'].includes(argv[3] ?? ''));
   if (runtime) env = controllerRuntimeEnvironment(env);
   const child = spawn(resolved.executable, resolved.args, { stdio: 'inherit', env });
   const stopForwardingSignals = forwardControllerSignals(child);

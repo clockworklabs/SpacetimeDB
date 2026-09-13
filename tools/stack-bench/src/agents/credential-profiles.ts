@@ -30,6 +30,14 @@ const authenticationVariables = {
   openrouter: ['OPENROUTER_API_KEY'],
 } as const;
 
+/** Public selection metadata. Never return credential paths or values to a client. */
+export function listCredentialProfiles(env: NodeJS.ProcessEnv = process.env): CredentialAssignment[] {
+  const path = env[PROFILE_FILE];
+  if (!path) return [];
+  const values = z.record(label, profileSchema).parse(JSON.parse(readFileSync(path, 'utf8')));
+  return Object.entries(values).map(([id, { version, provider, mode }]) => ({ id, version, provider, mode }));
+}
+
 function readProfile(id: string, env: NodeJS.ProcessEnv) {
   const path = env[PROFILE_FILE];
   if (!path || !isAbsolute(path)) throw new Error(`${PROFILE_FILE} must be an absolute path for named credentials`);

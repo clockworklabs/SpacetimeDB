@@ -6,6 +6,7 @@ import { parseArgs } from 'node:util';
 import { cancelExecutionJob, listExecutionJobs, readExecutionJob,
   submitExecutionJob, workExecutionJob } from '../src/campaigns/execution-jobs.js';
 import { runExecutionWorker } from '../src/campaigns/execution-worker.js';
+import { prepareRun, runSetupCatalog, submitPreparedRun } from '../src/campaigns/run-setup.js';
 
 export async function jobCommand(argv: string[], env: NodeJS.ProcessEnv = process.env) {
   const { values, positionals } = parseArgs({ args: argv, allowPositionals: true, options: {
@@ -16,6 +17,16 @@ export async function jobCommand(argv: string[], env: NodeJS.ProcessEnv = proces
   if (argv[0] !== command) throw new Error('put the job command before its options');
   if (positionals.length > 2) throw new Error('unexpected job arguments');
   const results = resolve(values.results ?? env.STACK_BENCH_RESULTS_DIR ?? 'results');
+  if (command === 'options' && !argument) return runSetupCatalog(results, env);
+  if (command === 'prepare' && argument) return prepareRun(results,
+    JSON.parse(readFileSync(argument === '-' ? 0 : argument, 'utf8')), env);
+  if (command === 'start' && argument) {
+    const host = values.host ?? env.STACK_BENCH_HOST_ID;
+    if (!host) throw new Error('job start requires --host or STACK_BENCH_HOST_ID');
+    const job = submitPreparedRun(results, JSON.parse(readFileSync(argument === '-' ? 0 : argument, 'utf8')), env);
+    console.log(JSON.stringify({ jobId: job.id, campaignKey: `job-${job.id}` }));
+    return jobCommand(['work', job.id, '--results', results, '--host', host], env);
+  }
   if (command === 'submit' && argument) return submitExecutionJob(results,
     JSON.parse(readFileSync(argument === '-' ? 0 : argument, 'utf8')));
   if (command === 'status' && argument) return readExecutionJob(results, argument);
@@ -40,7 +51,7 @@ export async function jobCommand(argv: string[], env: NodeJS.ProcessEnv = proces
     }
     finally { process.off('SIGTERM', stop); process.off('SIGINT', stop); }
   }
-  throw new Error('use job submit <json|->, list, status <id>, cancel <id>, work <id> --host <host>, or worker --host <host> --concurrency <jobs>');
+  throw new Error('use job options, prepare <json|->, start <review-json|-> --host <host>, submit <json|->, list, status <id>, cancel <id>, work <id> --host <host>, or worker --host <host> --concurrency <jobs>');
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {

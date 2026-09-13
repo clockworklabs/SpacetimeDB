@@ -25,8 +25,9 @@ dashboard does not have a separate execution engine.
   repair sessions, including tool calls. It follows live work at the newest
   page and pauses updates while you read earlier messages. The log tab shows
   controller output separately.
-- Plans (`/plans`) — the frozen campaign plans found under the plans directory,
-  and the form that starts one.
+- New run (`/new`) — select workload, level, stacks, models, guidance, repetitions,
+  repairs, and limits. Review the attempt count and cost cap, then start.
+- Saved plans (`/plans`) — inspect the exact configuration behind each run.
 
 ## Modes
 
@@ -69,9 +70,10 @@ docker compose --env-file operator.env \
 Starting, resuming, or stopping a run needs the separate dashboard control secret, typed
 into the form. The server reads the expected value from the file configured by
 `STACK_BENCH_DASHBOARD_CONTROL_SECRET_FILE` and no dashboard API returns it. A
-wrong secret is answered with 403 and nothing is started. Starting a campaign
-invokes the same `campaign run` command used by the CLI, so the CLI can inspect
-or resume the result normally and CLI-started campaigns appear here.
+wrong secret is answered with 403 and nothing is started. Starting a run submits
+an idempotent execution job and starts its worker in an
+owned controller. Retrying Start with the same reviewed settings returns the same
+job. A queued job has a status page before its campaign artifacts exist.
 
 The campaign page lists every attempt with its variant and repetition. Check
 completion uses all selected checks, including checks not reached. Feature
@@ -146,3 +148,34 @@ operations in `<results>/dashboard/operations.jsonl` and retains their output
 under `<results>/dashboard/operations`. Live transcript reads inspect the exact
 owned coding container; saved transcripts use the attempt's transcript files.
 It does not edit grades or source.
+
+## Workload setup and AI access
+
+Appliance setup installs workload presets under `results/run-presets/`. Each preset
+uses the existing campaign manifest format. It supplies the supported levels,
+stacks, priced models, guidance conditions, and pinned runtime. Operators can add
+approved models and conditions there. Setup does not replace existing presets;
+update their runtime pins when deploying a new release. Invalid presets report their
+errors. Model prices are recorded values; the dashboard does not guess prices.
+
+Both interfaces use `src/campaigns/run-setup.ts` and the existing execution jobs:
+
+```sh
+node dist/commands/job-cli.js options --results /path/to/results
+node dist/commands/job-cli.js prepare selections.json --results /path/to/results > review.json
+node dist/commands/job-cli.js start review.json --results /path/to/results --host local
+```
+
+`options` returns each workload's choices and defaults. `prepare` takes `key`,
+`workload`, `workloadSha256` (from options), `level`, `stacks`, `agents` (`index` and `effort`), `conditions`,
+`repetitions`, `parallelism`, `repairs`, `timeoutMinutes`, `maxCostUsd`,
+`pauseAfterDepth` (null for none), and `credentials` (empty for appliance defaults).
+The response records the review identity, immutable plan, cost cap, account mode,
+and grading qualification. `start` accepts that response. Any change requires a
+new review. It starts the same worker as the dashboard and returns the job ID before
+waiting for completion. No model or reasoning level is substituted.
+
+HTTP clients use `GET /api/run-setup`, `POST /api/runs/prepare`, and `POST /api/runs`.
+Writes require the same origin, browser token, and operator secret as other controls.
+Named credential profiles expose only their labels, provider, version, and account
+mode. Secret paths and values remain on the server.

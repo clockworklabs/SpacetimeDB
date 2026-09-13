@@ -1,6 +1,4 @@
-// Plans, and the chrome that carries the run controls: one table of test
-// plans, the form that starts a run, and the topbar whose Start a run and
-// Resume exist only where the server accepts them. Only a frozen plan runs.
+// Saved plan summaries and shared navigation. New runs use the setup page.
 
 import type { DashboardPlan } from '../../dashboard-model.js';
 import { DASH, duration, esc, money, num } from '../format.js';
@@ -8,15 +6,9 @@ import { DASH, duration, esc, money, num } from '../format.js';
 export type Page = 'campaigns' | 'plans' | 'campaign';
 
 export interface RunForm {
-  planId: string;
-  outputName: string;
   secret: string;
   error: string;
 }
-
-// The server's SAFE_NAME, spelled once here so the field cannot hold a name the
-// route will reject.
-export const RUN_NAME = '[a-z0-9][a-z0-9.-]{2,119}';
 
 const HEADS: Array<[string, string]> = [['Plan', 'name'], ['Mode', 'shape'], ['Shape', 'shape'],
   ['Stacks', 'stack'], ['Attempts', 'stack'], ['Parallel', 'stack'], ['Repairs', 'stack'],
@@ -61,8 +53,8 @@ export function topbar({ page, key, canStart, resumable, controllerOwner, error,
   return '<div class="topbar"><a class="brand" href="/">'
     + '<img src="/spacetimedb-mark.svg" alt="" width="26" height="24"><b>STACK BENCH</b></a>'
     + `<nav class="nav">${nav(page !== 'plans', 'Campaigns', '/')}`
-    + `${nav(page === 'plans', 'Plans', '/plans')}</nav><div class="tools">${stop}${resume}${files}`
-    + `${canStart && page !== 'plans' ? '<a class="btn primary" href="/plans">Start a run</a>' : ''}`
+    + `${nav(page === 'plans', 'New run', '/new')}</nav><div class="tools">${stop}${resume}${files}`
+    + `${canStart && page !== 'plans' ? '<a class="btn primary" href="/new">Start a run</a>' : ''}`
     + '</div></div>';
 }
 
@@ -95,30 +87,11 @@ function planRow(plan: DashboardPlan): string {
     + `title="${esc(plan.error ?? plan.state)}">${esc(plan.state)}</span></td></tr>`;
 }
 
-function runForm(plans: readonly DashboardPlan[], form: RunForm): string {
-  const frozen = plans.filter(plan => plan.state === 'frozen');
-  if (!frozen.length) return '<p class="summary-note">No frozen plans are available to start. Add a frozen campaign plan to the appliance plans directory.</p>';
-  const options = [...new Set(frozen.map(plan => plan.mode ?? 'sequential'))]
-    .map(mode => `<optgroup label="${esc(mode)}">${frozen
-      .filter(plan => (plan.mode ?? 'sequential') === mode)
-      .map(plan => `<option value="${esc(plan.id)}"${plan.id === form.planId ? ' selected' : ''}>`
-        + `${esc(plan.title)}</option>`).join('')}</optgroup>`).join('');
-  const field = (label: string, control: string): string =>
-    `<label><span class="label">${label}</span>${control}</label>`;
-  return '<form class="runform" data-run="start">'
-    + field('Plan', `<select name="plan" required>${options}</select>`)
-    + field('Run name', `<input name="output" required pattern="${RUN_NAME}">`)
-    + field('Operator secret', '<input name="secret" type="password" required>')
-    + '<button class="btn primary" type="submit">Start a run</button>'
-    + (form.error ? `<div class="err" role="alert">${esc(form.error)}</div>` : '') + '</form>';
-}
-
-export function plansPage({ plans, canStart, form, loading = false }: {
-  plans: readonly DashboardPlan[]; canStart: boolean; form: RunForm; loading?: boolean;
+export function plansPage({ plans, loading = false }: {
+  plans: readonly DashboardPlan[]; loading?: boolean;
 }): string {
-  return `<div class="page"><div class="title"><h2>Run plans</h2></div>`
-    + '<p class="summary-note">Review the plan and its limits before starting. Cost limits use the plan’s recorded pricing, not a live invoice.</p>'
-    + `${canStart && !loading ? runForm(plans, form) : ''}`
+  return `<div class="page"><div class="title"><h2>Saved plans</h2></div>`
+    + '<p class="summary-note">Plans record the exact configuration behind a run. Use New run to select its settings.</p>'
     + '<div class="tablewrap"><div class="wrap"><table class="runs plans"><thead><tr>'
     + HEADS.map(([label, kind]) => `<th class="${kind}">${label}</th>`).join('')
     + `</tr></thead><tbody>${loading

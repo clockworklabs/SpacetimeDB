@@ -61,6 +61,15 @@ test('setup installs an image-bound paid demo and preserves an existing plan', (
     const compiled = compileCampaignFile(path);
     assert.equal(compiled.state, 'frozen');
     assert.deepEqual(compiled.definition.runtime, plan.runtime);
+    for (const id of ['ecommerce-sequential', 'ecommerce-progressive', 'ecommerce-single-build']) {
+      const preset = JSON.parse(readFileSync(join(root, 'results/run-presets', `${id}.json`), 'utf8'));
+      assert.equal(preset.runtime.controllerImage, controller);
+      assert.equal(preset.runtime.buildImage, build);
+      assert.equal(preset.agents[0].adapter, 'claude-code');
+      assert.equal(preset.repair.budget.total, 0);
+      assert.equal(preset.conditions.length, 3);
+      if (id === 'ecommerce-single-build') assert.equal(preset.mode.workSelection, 'all-at-once');
+    }
     initialize(`sha256:${'c'.repeat(64)}`);
     assert.equal(readFileSync(path, 'utf8'), bytes, 'setup must not rebind an existing plan');
   } finally { rmSync(root, { recursive: true, force: true }); }
