@@ -152,11 +152,13 @@ export function ProgressionPanel({
 
       {account && !staff && <article className="progression-card" data-role="recommendations">
         <h3>Recommendations</h3>
+        <div data-role="recommended-list">
         {(state?.recommendations ?? []).map((item: any) => <div data-role="recommended-item" key={item.id}>
           <span data-role="recommendation-rank">{item.rank}</span> {item.name}
           <button data-role="dismiss-recommendation" onClick={() => run(() =>
             request(`/api/recommendations/${item.id}/dismiss`, "POST"))}>Dismiss</button>
         </div>)}
+        </div>
       </article>}
 
       {account && <article className="progression-card">

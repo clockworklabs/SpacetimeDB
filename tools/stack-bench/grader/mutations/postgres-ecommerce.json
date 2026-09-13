@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "cc51305269492eea469235748826f282dc86e0777b82f1e668eba523fcd2c335",
+  "fixtureSha256": "1b79fd66532d22c8b9cd67a9bc2daacc53775e503039368b1df3032ab87b2a78",
   "backend": "postgres",
   "track": "ecommerce",
   "note": "Mutation definitions for the PostgreSQL ecommerce reference.",
