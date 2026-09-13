@@ -365,7 +365,12 @@ async function loadData(version: number, changedKeys: Set<string> | null, refres
       render();
     }
   }) : null;
-  if ((!current.key && !current.plans && refreshOverview) || !state.csrfToken) {
+  if (!state.csrfToken && (current.key || current.plans)) {
+    const session = await read<{ canStart: boolean; csrfToken: string }>('/api/session');
+    if (version !== loadVersion) return;
+    if (session) Object.assign(state, session);
+  }
+  if (!current.key && !current.plans && (refreshOverview || !state.csrfToken)) {
     const overview = await read<{ campaigns: OverviewEntry[]; canStart: boolean;
       csrfToken: string; }>('/api/overview');
     if (version !== loadVersion) return;

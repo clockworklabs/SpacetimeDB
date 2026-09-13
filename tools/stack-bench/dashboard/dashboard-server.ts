@@ -352,6 +352,9 @@ export function createDashboardServer(options: DashboardServerOptions) {
         return json(response, 200, { campaigns: overviewSummary(campaignsRoot),
           canStart: allowLaunch, csrfToken: token });
       }
+      if (request.method === 'GET' && url.pathname === '/api/session') {
+        return json(response, 200, { canStart: allowLaunch, csrfToken: token });
+      }
       if (request.method === 'GET' && url.pathname === '/api/plans') {
         return json(response, 200, plans());
       }

@@ -571,6 +571,9 @@ test('dashboard serves real state and protects campaign launch with a separate o
   assert.equal(brand.status, 200);
   assert.equal(brand.headers.get('content-type'), 'image/svg+xml');
   assert.match(await brand.text(), /viewBox="0 0 35 32"/);
+  const sessionResponse = await fetch(`${origin}/api/session`);
+  assert.equal(sessionResponse.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await sessionResponse.json(), { canStart: true, csrfToken: 'test-session-token' });
   const overview = await (await fetch(`${origin}/api/overview`)).json() as {
     canStart: boolean;
     csrfToken: string;
