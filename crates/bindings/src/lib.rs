@@ -919,10 +919,81 @@ pub use spacetimedb_bindings_macro::view;
 pub struct QueryBuilder {}
 pub use query_builder::{Query, RawQuery};
 
+/// Declare the complete publish-time environment schema and generate named accessors.
+///
+/// Fields may be `String`, enums deriving [`EnvironmentValue`], or `Option` of
+/// either, including type aliases. Values are supplied on every publish, never
+/// in metadata. The macro generates an `EnvAccess` extension trait for a struct
+/// named `Env`; import that trait if the declaration lives in another module.
+/// The name `get` is reserved for generic checked access.
+///
+/// ```no_run
+/// #[derive(spacetimedb::EnvironmentValue)]
+/// pub enum LogLevel {
+///     #[env(value = "debug")]
+///     Debug,
+///     #[env(value = "info")]
+///     Info,
+/// }
+/// #[spacetimedb::env]
+/// pub struct Env {
+///     pub API_KEY: String,
+///     pub LOG_LEVEL: Option<LogLevel>,
+/// }
+/// fn read(ctx: &spacetimedb::ReducerContext) {
+///     let _: String = ctx.env.API_KEY();
+///     let _: Option<LogLevel> = ctx.env.LOG_LEVEL();
+/// }
+/// ```
+///
+/// Existing `#[env(values("a", "b"))]` field constraints remain supported for
+/// `String` and `Option<String>`; enum constraints come from their variants.
+#[doc(inline)]
+pub use spacetimedb_bindings_macro::env;
+
+/// Derive a typed environment value from an enum with unit variants.
+///
+/// Each variant accepts its exact Rust name by default. Use
+/// `#[env(value = "in progress")]` to map a variant to an arbitrary string,
+/// including spaces, capitalization, Unicode or the empty string. Mappings must
+/// be distinct, with 1 to 256 variants and at most 8192 UTF-8 bytes per string.
+/// Generic enums and variants with payloads are not supported.
+///
+/// The schema contains only allowed strings. A named environment accessor returns
+/// this enum, or `Option<Enum>` for an optional field; generic `env.get` still
+/// returns `Option<String>`. Missing required values and unmapped strings panic
+/// with the key name only. Other derives and the enum's ordinary serialization
+/// are unaffected.
+#[doc(inline)]
+pub use spacetimedb_bindings_macro::EnvironmentValue;
+
+/// Read-only access to this database's environment store.
+///
+/// Reads use the current transaction. In a procedure outside a transaction,
+/// each read uses a short snapshot; use `with_tx` to read related keys together.
+/// Values are stored in plaintext and may be read by database collaborators.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Environment {
+    _private: (),
+}
+
+impl Environment {
+    /// Return `None` for an absent declared optional key and `Some("")` for a present empty value.
+    /// Keys must be POSIX environment names of at most 256 bytes.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the key is undeclared, invalid, or inaccessible in the current host call.
+    pub fn get(&self, key: &str) -> Option<String> {
+        rt::env_get(key)
+    }
+}
+
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
 /// The other is [`ViewContext`].
 /// Use this type if the view does not depend on the caller's identity.
 pub struct AnonymousViewContext {
+    pub env: Environment,
     pub db: LocalReadOnly,
     pub from: QueryBuilder,
 }
@@ -930,6 +1001,7 @@ pub struct AnonymousViewContext {
 impl Default for AnonymousViewContext {
     fn default() -> Self {
         Self {
+            env: Environment::default(),
             db: LocalReadOnly {},
             from: QueryBuilder {},
         }
@@ -939,6 +1011,7 @@ impl Default for AnonymousViewContext {
 /// The other is [`AnonymousViewContext`].
 /// Use this type if the view depends on the caller's identity.
 pub struct ViewContext {
+    pub env: Environment,
     sender: Identity,
     pub db: LocalReadOnly,
     pub from: QueryBuilder,
@@ -948,6 +1021,7 @@ impl ViewContext {
     pub fn new(sender: Identity) -> Self {
         Self {
             sender,
+            env: Environment::default(),
             db: LocalReadOnly {},
             from: QueryBuilder {},
         }
@@ -978,6 +1052,8 @@ impl ViewContext {
 /// Implements the `DbContext` trait for accessing views into a database.
 #[non_exhaustive]
 pub struct ReducerContext {
+    /// Read-only access to the database environment in this transaction.
+    pub env: Environment,
     /// The `Identity` of the client that invoked the reducer.
     sender: Identity,
 
@@ -1042,6 +1118,7 @@ impl ReducerContext {
     #[doc(hidden)]
     pub fn __dummy() -> Self {
         Self {
+            env: Environment::default(),
             db: Local {},
             sender: Identity::__dummy(),
             timestamp: Timestamp::UNIX_EPOCH,
@@ -1057,6 +1134,7 @@ impl ReducerContext {
     #[doc(hidden)]
     fn new(db: Local, sender: Identity, connection_id: Option<ConnectionId>, timestamp: Timestamp) -> Self {
         Self {
+            env: Environment::default(),
             db,
             sender,
             timestamp,
@@ -1254,6 +1332,8 @@ fn with_tx<T>(body: impl Fn(&TxContext) -> T, identity: Identity, connection_id:
 /// and exposes methods for running transactions and performing side-effecting operations.
 #[non_exhaustive]
 pub struct ProcedureContext {
+    /// Read-only access to the database environment.
+    pub env: Environment,
     /// The `Identity` of the client that invoked the procedure.
     sender: Identity,
 
@@ -1285,6 +1365,7 @@ impl ProcedureContext {
             sender,
             timestamp,
             connection_id,
+            env: Environment::default(),
             http: http::HttpClient {},
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),

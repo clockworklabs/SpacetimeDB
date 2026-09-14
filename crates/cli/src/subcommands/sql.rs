@@ -287,7 +287,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 }
 
 /// Generates a [`tabled::Table`] from a schema and rows, using the style of a psql table.
-fn build_table<E>(
+pub(super) fn build_table<E>(
     client: PsqlClient,
     schema: &ProductType,
     rows: impl Iterator<Item = Result<ProductValue, E>>,
