@@ -1,5 +1,15 @@
 import assert from 'node:assert/strict';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
+import { runAgent } from '../commands/bench.js';
+import { parseBenchArguments } from '../commands/bench-arguments.js';
+import { killTree } from '../src/runtime/platform.js';
+import { runBounded } from '../src/runtime/bounded-process.js';
+import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.js';
+import { requireRecipeRelease } from '../src/composition/recipe-release.js';
+import { loadTrack } from '../src/composition/tracks.js';
 
 import { AGENT_ADAPTER_SCHEMA_VERSION, agentRecipeIdentity, agentRequestArgv,
   createAgentAdapterRegistry, defineAgentAdapter }
@@ -91,6 +101,110 @@ test('requests are normalized and unsupported modes fail before launch', () => {
   const reference = AGENT_ADAPTER_REGISTRY.get('reference-fixture');
   assert.doesNotThrow(() => agentRequestArgv(reference, { ...request, mode: 'upgrade' }));
   assert.doesNotThrow(() => agentRequestArgv(reference, { ...request, mode: 'fix' }));
+});
+
+test('adapter identity binds grading credentials as well as the executable', () => {
+  const adapter = AGENT_ADAPTER_REGISTRY.get('deterministic');
+  assert.notEqual(agentAdapterIdentity(adapter).sha256,
+    agentAdapterIdentity({ ...adapter, gradesWithFixtureCredentials: true }).sha256);
+});
+
+test('a supervisor-owned deadline still requires and obeys cancellation', async () => {
+  await assert.rejects(runBounded(process.execPath,[],{ timeoutMs:null,stdio:'ignore' }),/owner abort signal/);
+  const owner = new AbortController();
+  const timer = setTimeout(() => owner.abort(),100);
+  try {
+    const result = await runBounded(process.execPath,['-e','setInterval(()=>{},1000)'], {
+      timeoutMs:null,signal:owner.signal,stdio:'ignore',
+    });
+    assert.equal(result.cancelled,true);
+    assert.equal(result.timedOut,false);
+    assert.equal(result.ok,false);
+  } finally { clearTimeout(timer); }
+});
+
+test('an external entry point receives exact visible tasks and shares one remaining budget across modes', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-external agent-'));
+  try {
+    const entrypoint = join(root, 'agent.mjs');
+    const received = join(root, 'received.jsonl');
+    writeFileSync(entrypoint, `import {appendFileSync} from 'node:fs';
+const argv=process.argv.slice(2), args={};
+for(let i=0;i<argv.length;i+=2) args[argv[i].slice(2)]=argv[i+1];
+appendFileSync(${JSON.stringify(received)},JSON.stringify(args)+'\\n');
+console.log(JSON.stringify({appDir:args.app,mode:args.mode,level:Number(args.level),
+backend:args.backend,track:args.track,model:args.model,ok:true,sessionId:'external-'+args.mode,
+setup:{session:'model-free conformance'},costUsd:0.25,tokens:0,outputTokens:0,
+turns:1,promptBytes:0,durationMs:1,usage:{input:0,output:0,cacheWrite:0,cacheRead:0}}));
+`);
+    const adapter = defineAgentAdapter({ ...AGENT_ADAPTER_REGISTRY.get('deterministic'),
+      id: 'external-test', entrypoint });
+    const binding = requireRecipeRelease(loadTrack('ecommerce'), 1);
+    const selected = createBoundRecipeTaskRequest(binding);
+    const visible = createAgentVisibleTaskRequest(binding, selected);
+    const args = { ...parseBenchArguments(['node','bench','--backend','postgres','--track','ecommerce',
+      '--agent-adapter','deterministic']), model:'external model', maxBudgetUsd:1, spentBudgetUsd:0,
+      skills:[], guidanceDocument:{ text:'Line one\n"Quoted" input' },
+      recipeTasks:new Map([[1,{ ...selected, agentRequest:visible }]]), recipeBindings:new Map() };
+    for (const mode of ['build','upgrade','resume','fix'] as const) {
+      const result = await runAgent(args, adapter, mode, 1, root);
+      assert.equal(result.ok,true);
+      assert.equal(result.sessionId,`external-${mode}`);
+    }
+    assert.equal(args.spentBudgetUsd,1);
+    await assert.rejects(runAgent(args,adapter,'fix',1,root),/exhausted/);
+    await assert.rejects(runAgent({ ...args,spentBudgetUsd:0 },
+      { ...adapter,costLimit:'unsupported' },'build',1,root),/cannot enforce/);
+    const deliveries = readFileSync(received,'utf8').trim().split('\n').map(line => JSON.parse(line));
+    assert.equal(deliveries.length,4,'budget checks must fail before starting another process');
+    for (const delivery of deliveries) {
+      assert.equal(delivery.app,root);
+      assert.equal(delivery.model,'external model');
+      assert.equal(delivery.provider,undefined);
+      assert.deepEqual(JSON.parse(delivery['recipe-task-json']),visible);
+      assert.deepEqual(JSON.parse(delivery['skills-json']),[]);
+      assert.deepEqual(JSON.parse(delivery['guidance-document-json']),args.guidanceDocument);
+    }
+  } finally { rmSync(root,{ recursive:true,force:true }); }
+});
+
+for (const exitsEarly of [false, true]) test(`standalone adapter deadline stops ${exitsEarly ? 'an orphaned child' : 'an unresponsive agent and its child'}`, {
+  skip: exitsEarly && process.platform !== 'linux' ? 'Linux process-group cleanup' : false,
+}, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-adapter-deadline-'));
+  const entrypoint = join(root, 'agent.mjs');
+  const marker = join(root, 'pids.json');
+  writeFileSync(entrypoint, `import {spawn} from 'node:child_process';
+import {writeFileSync} from 'node:fs';
+process.on('SIGTERM',()=>{});
+const child=spawn(process.execPath,['-e',"process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"],{stdio:'inherit',detached:${!exitsEarly}});
+writeFileSync(${JSON.stringify(marker)},JSON.stringify([process.pid,child.pid]));
+${exitsEarly ? 'process.exit(0);' : 'setInterval(()=>{},1000);'}
+`);
+  const adapter = defineAgentAdapter({ ...AGENT_ADAPTER_REGISTRY.get('deterministic'),
+    id: 'external-test', entrypoint, deadlineMs: 2000 });
+  const args = { ...parseBenchArguments(['node','bench','--backend','stub','--agent-adapter','deterministic']),
+    model: 'external-test', recipeTasks: new Map(), recipeBindings: new Map() };
+  let watchdogUsed = false;
+  const watchdog = setTimeout(() => {
+    watchdogUsed = true;
+    if (existsSync(marker)) for (const pid of JSON.parse(readFileSync(marker,'utf8'))) killTree(pid);
+  }, 10000);
+  try {
+    await assert.rejects(runAgent(args, adapter, 'build', 1, root), /agent deadline exceeded/);
+    assert.equal(watchdogUsed, false, 'the adapter deadline must stop the complete process tree');
+    const pids = JSON.parse(readFileSync(marker,'utf8')) as number[];
+    for (const pid of pids) {
+      // Linux can retain a killed child as a zombie until its parent is reaped.
+      if (process.platform === 'linux' && existsSync(`/proc/${pid}/stat`)
+        && /\) Z /.test(readFileSync(`/proc/${pid}/stat`,'utf8'))) continue;
+      assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
+    }
+  } finally {
+    clearTimeout(watchdog);
+    if (existsSync(marker)) for (const pid of JSON.parse(readFileSync(marker,'utf8'))) killTree(pid);
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('a campaign-bound task supplies the exact recipe when no explicit recipe exists', () => {

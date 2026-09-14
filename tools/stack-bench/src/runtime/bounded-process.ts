@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { closeSync, constants, mkdirSync, openSync, rmSync, writeSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
-import { killTree } from './platform.js';
+import { killDetachedTree } from './platform.js';
 
 export interface CapturedProcessLog {
   path: string;
@@ -30,7 +30,8 @@ export interface RunBoundedOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   stdio?: 'inherit' | 'ignore';
-  timeoutMs: number;
+  /** Null delegates the deadline to an owner that must supply an abort signal. */
+  timeoutMs: number | null;
   /** Shared claim time, so launcher setup consumes the same allowance as the child. */
   startedAt?: number;
   /** Owner may increase the total allowance. Called before each deadline check. */
@@ -62,14 +63,14 @@ function openCapture(path: string): CaptureState {
 
 export function runBounded(command: string, argv: readonly string[],
   { cwd = process.cwd(), env = process.env, stdio = 'inherit', timeoutMs,
-    terminate = killTree, logs = null, signal = null, gracefulCancellationMs = 0,
+    terminate = killDetachedTree, logs = null, signal = null, gracefulCancellationMs = 0,
     refreshTimeoutMs, pauseInterval, startedAt = Date.now() }:
     RunBoundedOptions & {
       terminate?: (pid: number) => void; gracefulCancellationMs?: number;
     }): Promise<BoundedProcessResult> {
   return new Promise(resolveRun => {
-    if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
-      throw new Error('runBounded timeoutMs must be a positive safe integer');
+    if (timeoutMs === null ? !signal : !Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
+      throw new Error('runBounded timeoutMs must be a positive safe integer, or null with an owner abort signal');
     }
     if (!Number.isSafeInteger(startedAt) || startedAt > Date.now()) {
       throw new Error('runBounded startedAt must be a past timestamp');
@@ -103,7 +104,7 @@ export function runBounded(command: string, argv: readonly string[],
     }
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn(command, argv, { cwd, env,
+      child = spawn(command, argv, { cwd, env, detached: true,
         stdio: streams ? ['inherit', 'pipe', 'pipe'] : stdio });
     } catch (error) {
       if (streams) for (const stream of Object.values(streams)) {
@@ -136,7 +137,7 @@ export function runBounded(command: string, argv: readonly string[],
           state.retainedBytes += retained.length;
         }
         state.tail = `${state.tail}${data.toString('utf8')}`.slice(-2000);
-        destination.write(data);
+        if (stdio === 'inherit') destination.write(data);
       } catch (error) {
         captureError = error instanceof Error ? error : new Error(String(error));
         stop();
@@ -158,12 +159,13 @@ export function runBounded(command: string, argv: readonly string[],
       if (signal.aborted) cancel();
       else signal.addEventListener('abort', cancel, { once: true });
     }
-    let deadline = startedAt + timeoutMs;
+    let deadline = timeoutMs === null ? Infinity : startedAt + timeoutMs;
     let pausedMs = 0;
     let pauseStart: number | null = null;
     let pauseEnd: number | null = null;
-    let timer: NodeJS.Timeout;
+    let timer: NodeJS.Timeout | null = null;
     const refresh = (closing = false): void => {
+      if (timeoutMs === null) return;
       try {
         const pause = pauseInterval?.();
         if (pause) {
@@ -205,7 +207,7 @@ export function runBounded(command: string, argv: readonly string[],
       timedOut = true;
       stop();
     };
-    timer = setTimeout(expire, Math.max(0, Math.min(deadline - Date.now(), 2_147_483_647)));
+    if (timeoutMs !== null) timer = setTimeout(expire, Math.max(0, Math.min(deadline - Date.now(), 2_147_483_647)));
     // Monotonic timers can pause during host sleep. Enforce the wall deadline on resume too.
     const wallTimer = setInterval(() => {
       refresh();
@@ -216,10 +218,11 @@ export function runBounded(command: string, argv: readonly string[],
     child.once('close', (code, childSignal) => {
       refresh(true);
       if (Date.now() >= deadline) timedOut = true;
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
       clearInterval(wallTimer);
       if (forceTimer) clearTimeout(forceTimer);
       signal?.removeEventListener('abort', cancel);
+      if (child.pid) killDetachedTree(child.pid);
       const captured = streams ? Object.fromEntries(Object.entries(streams).map(([name, state]) => {
         closeSync(state.fd);
         return [name, { path: state.path, sha256: state.hash.digest('hex'), bytes: state.bytes,

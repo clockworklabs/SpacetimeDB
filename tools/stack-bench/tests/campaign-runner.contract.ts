@@ -893,7 +893,8 @@ test('model-free campaign execution checkpoints an authorized retry and every co
     assert.equal(state.summary.completed, 9);
     assert.equal(state.summary.executions, 10);
     assert.deepEqual(state.attempts[0]!.executions.map(item => item.status), ['invalid', 'completed']);
-    assert.equal(calls.every(call => call.options.timeoutMs > 0 && call.options.timeoutMs <= 240 * 60_000), true);
+    assert.equal(calls.every(call => call.options.timeoutMs !== null
+      && call.options.timeoutMs > 0 && call.options.timeoutMs <= 240 * 60_000), true);
     const processArtifact = readArtifact(join(root,
       state.attempts[0]!.executions[0]!.output, 'process.json'),
       { expectedKind: 'campaign_process' });
@@ -915,6 +916,7 @@ test('campaign cancellation stops new claims and reaches the active process tree
         assert.equal(options.signal?.aborted, false);
         const attemptId = argv[argv.indexOf('--campaign-attempt-id') + 1]!;
         const request = { attemptId, grantId: 'live-extra', minutes: 60 };
+        assert(options.timeoutMs !== null, 'campaign supervisor requires a finite deadline');
         assert.equal(requestCampaignTimeGrant(root, request).disposition, 'pending');
         assert.equal(options.refreshTimeoutMs!(options.timeoutMs, true), options.timeoutMs + 60 * 60_000);
         assert.equal(readCampaignTimeBudget(root, attemptId).extensionCount, 1,

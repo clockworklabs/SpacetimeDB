@@ -137,6 +137,37 @@ its exact order count, and stored stock must decrease by the request count.
 This diagnoses lost updates under bursts. It does not replace the separate
 scarce-stock overselling check or measure sustainable throughput.
 
+## Agent adapter contract
+
+Register an agent in `src/agents/agent-adapters.ts`. The existing registry accepts
+a Node entry point; a new provider does not need another runner or result format.
+Use `AgentRequest` from `src/agents/agent-adapter-contract.ts` and
+`ValidatedAgentResult` from `src/agents/agent-result-contract.ts` as the protocol.
+The runner sends arguments without a shell. The final non-empty stdout
+line must contain one result JSON object. Earlier lines can contain logs.
+
+The request carries the selected model, mode, app directory, visible task and
+guidance. Preserve them exactly. Do not expose grading definitions to the agent.
+Declare the modes, credentials, network destinations and cost limits the adapter
+actually supports. Registering an entry point requires rebuilding the release;
+there is no runtime plugin loader. Adapter identities bind its entry-point bytes
+and declared settings, including grading credentials. The release binds the
+remaining source files.
+
+The runner validates results and deducts reported cost from the attempt's shared
+budget. Unsupported cost limits fail before launch. A paid adapter must also use
+the existing appliance, credential and cost-receipt controls; declaring a native
+cost limit is not proof that an external scaffold enforces it. A standalone agent
+has a deadline. An authenticated campaign delegates that deadline to its
+supervisor so time grants remain effective. Cancellation stops the owned process
+tree and group. Captured output is limited to 64 MiB per stream; exceeding that
+limit rejects the result.
+
+`tests/agent-adapters.test.ts` sends a compiled visible task to an independent,
+model-free entry point in all four modes. It checks exact delivery, shared budget
+accounting and process cleanup. These tests qualify the protocol boundary, not a
+new provider's billing integration or a complete install-to-run walkthrough.
+
 ## Generated files
 
 Run `npm run graph` to rebuild `docs/dependency-graph.html` from the versioned

@@ -148,8 +148,11 @@ export function killTree(pid: string | number | null | undefined): void {
 export function killDetachedTree(pid: string | number | null | undefined): void {
   if (!pid || String(pid) === '0' || Number(pid) === process.pid) return;
   if (isWindows) { killTree(pid); return; }
+  // Descendants can start their own process groups. Kill them before the parent
+  // exits; the original group also catches children already reparented to init.
+  killTree(pid);
   try { process.kill(-Number(pid), 'SIGKILL'); }
-  catch { killTree(pid); }
+  catch { /* group already exited */ }
 }
 
 /** Block for `ms` without a child process — `timeout` needs a console on Windows. */

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 import { campaignProviderContinuationContext } from '../src/campaigns/campaign-provider-continuation.js';
-import { execFile, execFileSync } from 'node:child_process';
-import type { ChildProcess, ExecFileSyncOptionsWithStringEncoding } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync, cpSync, rmSync, readdirSync, realpathSync, lstatSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import type { ExecFileSyncOptionsWithStringEncoding } from 'node:child_process';
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, existsSync, copyFileSync, cpSync, rmSync, readdirSync, realpathSync, lstatSync } from 'node:fs';
 import { join, dirname, resolve, relative, sep, isAbsolute } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
@@ -12,7 +12,7 @@ import { loadTrack, resultsName, portsFor, workDirFor,
 import { parseBenchArguments } from './bench-arguments.js';
 import type { BenchArguments } from './bench-arguments.js';
 import { packageRegistry, packageRegistryEnvironment } from '../src/runtime/package-registry.js';
-import { killTree } from '../src/runtime/platform.js';
+import { runBounded } from '../src/runtime/bounded-process.js';
 import { formatRepairProgress } from '../src/evidence/scoring.js';
 import { ARTIFACT_FILE, emptyArtifactIdentities, readArtifact, readArtifactPayload,
   writeArtifact, writeRunJson, currentEngineIdentity } from '../src/evidence/artifacts.js';
@@ -538,7 +538,7 @@ const sh = (cmd: string, args: readonly string[],
     encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: COMMAND_TIMEOUT_MS, ...opts,
   });
 
-let activeAgentChild: ChildProcess | null = null;
+let activeAgentCancellation: AbortController | null = null;
 // Set once a run owns resources. The top-level rejection handler invokes this
 // directly; relying only on process 'exit' made cleanup best-effort precisely
 // when an awaited build rejected unexpectedly.
@@ -564,7 +564,7 @@ export function parseAgentProcessResult(stdout: string, stderr: string, processE
   return result;
 }
 
-function runAgent(
+export async function runAgent(
   args: BenchArgs,
   adapter: AgentAdapter,
   mode: AgentMode,
@@ -602,26 +602,31 @@ function runAgent(
     if (!credentialName) throw new Error(`agent adapter ${adapter.id} does not accept an API key`);
     env[credentialName] = args.apiKey;
   }
-  return new Promise((resolveRun, rejectRun) => {
-    const child = execFile('node', argv, {
-      encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
-      // The authenticated campaign supervisor owns the full wait deadline and time grants.
-      timeout: campaignProviderContinuationContext(env) ? 0 : adapter.deadlineMs,
-      env,
-    },
-      (error, stdout, stderr) => {
-        if (activeAgentChild === child) activeAgentChild = null;
-        try {
-          const result = parseAgentProcessResult(stdout, stderr, error, request);
-          args.spentBudgetUsd = addCostUsd(args.spentBudgetUsd, result.costUsd);
-          resolveRun(result);
-        }
-        catch (parseError) {
-          rejectRun(parseError);
-        }
-      });
-    activeAgentChild = child;
-  });
+  const supervised = campaignProviderContinuationContext(env) !== null;
+  const capture = mkdtempSync(join(dirname(appDir), '.agent-output-'));
+  const cancellation = new AbortController();
+  activeAgentCancellation = cancellation;
+  try {
+    const processResult = await runBounded(process.execPath, argv, {
+      env, stdio: 'ignore', timeoutMs: supervised ? null : adapter.deadlineMs,
+      signal: cancellation.signal,
+      logs: { stdout: join(capture, 'stdout'), stderr: join(capture, 'stderr'), maxBytes: 64 * 1024 * 1024 },
+    });
+    const processError = processResult.error ?? (processResult.timedOut
+      ? new Error(`agent deadline exceeded after ${adapter.deadlineMs} ms`)
+      : processResult.cancelled ? new Error('agent process cancelled')
+        : !processResult.ok ? new Error(`agent exited ${processResult.code ?? processResult.signal}`) : null);
+    if (Object.values(processResult.logs ?? {}).some(log => log.truncated)) {
+      throw new Error('agent output exceeded the 64 MiB capture limit');
+    }
+    const result = parseAgentProcessResult(readFileSync(join(capture, 'stdout'), 'utf8'),
+      readFileSync(join(capture, 'stderr'), 'utf8'), processError, request);
+    args.spentBudgetUsd = addCostUsd(args.spentBudgetUsd, result.costUsd);
+    return result;
+  } finally {
+    if (activeAgentCancellation === cancellation) activeAgentCancellation = null;
+    rmSync(capture, { recursive: true, force: true });
+  }
 }
 
 interface GradeCheck {
@@ -1356,10 +1361,8 @@ async function main() {
   const teardown = ({ reason = null, retainBackend = args.retainBackend }:
     { reason?: string | null; retainBackend?: boolean } = {}) => {
     if (tornDown) return;
-    if (activeAgentChild?.pid) {
-      killTree(activeAgentChild.pid);
-      activeAgentChild = null;
-    }
+    activeAgentCancellation?.abort();
+    activeAgentCancellation = null;
     // Preserve restart failures before removing the only filesystem that holds
     // their stderr. A 500 after restart is otherwise impossible to distinguish
     // from an application defect, a dead dependency, or host pressure.

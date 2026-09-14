@@ -103,7 +103,8 @@ export function agentAdapterIdentity(value: AgentAdapter): AgentAdapterIdentity 
         outboundDestinations: value.outboundDestinations,
         requiredExecutables: value.requiredExecutables,
         credentialStatusCommand: value.credentialStatusCommand,
-        usesStackSkills: value.usesStackSkills })}\0`),
+        usesStackSkills: value.usesStackSkills,
+        gradesWithFixtureCredentials: value.gradesWithFixtureCredentials })}\0`),
       readFileSync(value.entrypoint),
     ])),
   };
