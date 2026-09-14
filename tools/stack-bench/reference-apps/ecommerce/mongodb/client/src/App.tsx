@@ -516,9 +516,11 @@ export default function App() {
     const q = searchQuery.trim().toLowerCase();
     const min = minimumPrice === "" ? -Infinity : Number(minimumPrice);
     const max = maximumPrice === "" ? Infinity : Number(maximumPrice);
+    const filtering = Boolean(q || categoryFilter || minimumPrice || maximumPrice || inStockOnly);
     return items.filter((it) => (!q || it.name.toLowerCase().includes(q))
       && (!categoryFilter || it.category === categoryFilter)
-      && it.price >= min && it.price <= max && (!inStockOnly || it.stock > 0));
+      && it.price >= min && it.price <= max && (!inStockOnly || it.stock > 0))
+      .sort((a, b) => (filtering ? 0 : b.purchaseCount - a.purchaseCount) || a.name.localeCompare(b.name));
   }, [items, searchQuery, categoryFilter, minimumPrice, maximumPrice, inStockOnly]);
   const searchResults = filteredItems.slice(searchPage * CATALOG_PAGE_SIZE,
     searchPage * CATALOG_PAGE_SIZE + CATALOG_PAGE_SIZE);

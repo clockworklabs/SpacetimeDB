@@ -222,12 +222,13 @@ export default function App() {
 
   const visibleItems = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const filtering = Boolean(q || categoryFilter || minimumPrice || maximumPrice || inStockOnly);
     return items.filter((item) => (!q || item.name.toLowerCase().includes(q))
       && (!categoryFilter || item.category === categoryFilter)
       && (!minimumPrice || item.price >= Number(minimumPrice))
       && (!maximumPrice || item.price <= Number(maximumPrice))
       && (!inStockOnly || item.stock > 0))
-      .sort((a, b) => b.purchaseCount - a.purchaseCount || a.name.localeCompare(b.name))
+      .sort((a, b) => (filtering ? 0 : b.purchaseCount - a.purchaseCount) || a.name.localeCompare(b.name))
       .slice(searchPage * CATALOG_PAGE_SIZE,
         searchPage * CATALOG_PAGE_SIZE + CATALOG_PAGE_SIZE);
   }, [items, search, categoryFilter, minimumPrice, maximumPrice, inStockOnly, searchPage]);

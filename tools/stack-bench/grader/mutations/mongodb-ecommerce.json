@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "dfbc9560f0fc2800bf2021f690c7363dcfc95101559a37baa74bcdabcc5bd484",
+  "fixtureSha256": "5871985671a9aba778c29954b7b5eb04e45030332e1c809767594bf8ac6c6b11",
   "backend": "mongodb",
   "track": "ecommerce",
   "note": "Mutation definitions for the MongoDB ecommerce reference.",
@@ -1300,6 +1300,21 @@
         {
           "find": "&& (!categoryFilter || it.category === categoryFilter)",
           "replace": "&& (!categoryFilter || true)"
+        }
+      ]
+    },
+    {
+      "id": "active-search-uses-purchase-ranking",
+      "scenario": "tracks/ecommerce/scenarios/progression-search-ordering.json",
+      "targets": [
+        "ecommerce.spec.search-ordering.search-ordering.402b"
+      ],
+      "desc": "Keep purchase ranking when search text or filters are active.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "const filtering = Boolean(q || categoryFilter || minimumPrice || maximumPrice || inStockOnly);",
+          "replace": "const filtering = false;"
         }
       ]
     },

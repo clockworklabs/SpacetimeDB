@@ -1432,6 +1432,21 @@
       ]
     },
     {
+      "id": "active-search-uses-purchase-ranking",
+      "scenario": "tracks/ecommerce/scenarios/progression-search-ordering.json",
+      "targets": [
+        "ecommerce.spec.search-ordering.search-ordering.402b"
+      ],
+      "desc": "Keep purchase ranking when search text or filters are active.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "const catalogItems = showingSearch ? filteredSearchResults : rankedItems;",
+          "replace": "const catalogItems = rankedItems;"
+        }
+      ]
+    },
+    {
       "id": "faceted-search-next-page-does-not-advance",
       "scenario": "tracks/ecommerce/scenarios/progression-faceted-pagination.json",
       "targets": [

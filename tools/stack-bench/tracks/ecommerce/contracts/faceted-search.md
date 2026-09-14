@@ -13,3 +13,7 @@
 
 If a `filter-apply` control exists, activating it applies the filters; otherwise results update
 as each filter changes.
+
+Search text or any active filter selects alphabetical ordering. With neither, use
+purchase ranking and break ties by item name. Clearing all search text and filters
+restores purchase ranking. Both modes can use the same rendered list.

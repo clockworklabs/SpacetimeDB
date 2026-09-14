@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "1b79fd66532d22c8b9cd67a9bc2daacc53775e503039368b1df3032ab87b2a78",
+  "fixtureSha256": "7904f54ad14206c2bd823e8bc0df555623bddabc40dc93313b6fb547396378c5",
   "backend": "postgres",
   "track": "ecommerce",
   "note": "Mutation definitions for the PostgreSQL ecommerce reference.",
@@ -1240,6 +1240,21 @@
         {
           "find": "    return items.filter((item) => (!q || item.name.toLowerCase().includes(q))\n      && (!categoryFilter || item.category === categoryFilter)",
           "replace": "    return items.filter((item) => (!q || item.name.toLowerCase().includes(q))\n      && (!categoryFilter || true)"
+        }
+      ]
+    },
+    {
+      "id": "active-search-uses-purchase-ranking",
+      "scenario": "tracks/ecommerce/scenarios/progression-search-ordering.json",
+      "targets": [
+        "ecommerce.spec.search-ordering.search-ordering.402b"
+      ],
+      "desc": "Keep purchase ranking when search text or filters are active.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "const filtering = Boolean(q || categoryFilter || minimumPrice || maximumPrice || inStockOnly);",
+          "replace": "const filtering = false;"
         }
       ]
     },

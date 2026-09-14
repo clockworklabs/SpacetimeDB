@@ -624,7 +624,8 @@
       ],
       "gradingGroups": [
         "ecommerce.progression.faceted-search#filters",
-        "ecommerce.progression.faceted-search#pagination"
+        "ecommerce.progression.faceted-search#pagination",
+        "ecommerce.spec.search-ordering#after-purchase"
       ],
       "dependencies": [
         {

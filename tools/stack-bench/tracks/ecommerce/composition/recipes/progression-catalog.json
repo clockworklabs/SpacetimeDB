@@ -534,6 +534,13 @@
       "includeRoles": [
         "guarantee"
       ]
+    },
+    {
+      "path": "../packs/spec-search-ordering.json",
+      "id": "ecommerce.spec.search-ordering",
+      "includeRoles": [
+        "guarantee"
+      ]
     }
   ],
   "execution": "all-selected-sources",

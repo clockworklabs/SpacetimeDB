@@ -27,6 +27,19 @@ const packs = new Map<string, CompiledPackDefinition>(readdirSync(packRoot)
 const definition = compileProgressionDefinitionFile(
   join(trackRoot, 'progression', 'ecommerce.json'), { trackRoot });
 
+test('search ordering after purchases does not make purchasing a pagination prerequisite', () => {
+  const node = definition.nodes.find(node => node.id === 'faceted-search')!;
+  assert.deepEqual(node.dependencies, ['catalog-discovery']);
+  const interaction = node.gradingChecks.find(check => check.id.endsWith('.402b'))!;
+  assert.equal(interaction.role, 'guarantee');
+  assert.deepEqual(interaction.requiresFeatures, [
+    'ecommerce.feature.purchasing', 'ecommerce.progression.faceted-search',
+  ]);
+  const pagination = node.gradingChecks.find(check => check.id.endsWith('.402a'))!;
+  assert.equal(pagination.role, 'feature');
+  assert.deepEqual(pagination.requiresFeatures ?? [], []);
+});
+
 test('shipping accounting is an unprompted production check owned only by fulfilment', () => {
   const pack = packs.get('ecommerce.progression.inventory-conservation-specifications')!;
   const check = pack.checks.find(check => check.id === 'shipping-accounting')!;
