@@ -5,7 +5,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::{io, marker::PhantomData, rc::Rc, sync::Arc};
 
-use spacetimedb_runtime_io::{AlignedBytes, Cancelled, ErrorWith, SpacetimeIO, Statx};
+use spacetimedb_runtime_io::{AlignedBytes, ErrorWith, SpacetimeIO, Statx};
 use static_assertions::assert_not_impl_any;
 use tokio::runtime;
 
@@ -31,19 +31,19 @@ assert_not_impl_any!(TokioIO: Send);
 pub struct Completion<T>(tokio::task::JoinHandle<T>);
 
 impl<T> Future for Completion<T> {
-    type Output = Result<T, Cancelled>;
+    type Output = T;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
         match Pin::new(&mut this.0).poll(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(result) => match result {
-                Ok(output) => Poll::Ready(Ok(output)),
+                Ok(output) => Poll::Ready(output),
                 Err(error) => {
                     if error.is_panic() {
                         panic::resume_unwind(error.into_panic())
                     } else if error.is_cancelled() {
-                        Poll::Ready(Err(Cancelled))
+                        panic!("completion cancelled unexpectedly")
                     } else {
                         unreachable!("unexpected I/O task error")
                     }
