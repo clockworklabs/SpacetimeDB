@@ -251,6 +251,12 @@ export default authSchema;
 </TabItem>
 </Tabs>
 
+## Environment variables
+
+Only the root module can declare a nonempty [environment](./00700-environment-variables.md). Including a submodule with environment declarations causes publication to fail. A module with such declarations can still be published independently as a root module.
+
+Submodules have no separate environment-variable namespace, and their host-dispatched entry points cannot read the root module's environment. Root module code can pass configuration values to helpers explicitly. Ordinary helper calls retain the calling entry point's access, including calls to helpers defined in submodules.
+
 ## Client Subscriptions
 
 Client subscriptions use the same namespace structure as server-side access. Submodule tables and views are queried as `<namespace>.<name>`.

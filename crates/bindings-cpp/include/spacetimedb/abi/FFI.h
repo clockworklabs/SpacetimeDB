@@ -73,6 +73,7 @@ using ::identity;
 
 // ===== JWT =====
 using ::get_jwt;
+using ::env_get;
 
 // ===== Procedure Transactions =====
 using ::procedure_start_mut_tx;
