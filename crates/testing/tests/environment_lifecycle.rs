@@ -99,18 +99,30 @@ fn real_module_reopen_and_environment_only_publication_preserve_values() -> anyh
                 .await
                 .unwrap();
             log::info!("ENV standalone fixture: rejected publication preserves live host");
-            let mut invalid = spec(Values::new());
-            invalid.environment_replace = true;
-            let rejected = env
-                .as_ref()
-                .unwrap()
-                .publish_database(&Identity::ZERO, invalid, MigrationPolicy::Compatible)
-                .await;
-            assert!(rejected.is_err(), "missing required values must reject publication");
-            assert_eq!(
-                read(env.as_ref().unwrap(), database.id, "REQUIRED").await?,
-                AlgebraicValue::from(Some("initial-required".to_owned()))
-            );
+            for changed_program in [false, true] {
+                let mut invalid = spec(Values::new());
+                invalid.environment_replace = true;
+                if changed_program {
+                    // An empty custom section changes the Wasm hash without changing
+                    // its declarations, exercising rejection of a candidate module.
+                    let mut bytes = invalid.program_bytes.to_vec();
+                    bytes.extend_from_slice(&[0, 1, 0]);
+                    invalid.program_bytes = bytes.into();
+                }
+                let rejected = tokio::time::timeout(
+                    std::time::Duration::from_secs(30),
+                    env.as_ref()
+                        .unwrap()
+                        .publish_database(&Identity::ZERO, invalid, MigrationPolicy::Compatible),
+                )
+                .await
+                .expect("rejected publication must not hang");
+                assert!(rejected.is_err(), "missing required values must reject publication");
+                assert_eq!(
+                    read(env.as_ref().unwrap(), database.id, "REQUIRED").await?,
+                    AlgebraicValue::from(Some("initial-required".to_owned()))
+                );
+            }
             // An omitted input preserves required values. Environment-only requests
             // also retain the module instance and cannot invoke init again.
             assert!(matches!(

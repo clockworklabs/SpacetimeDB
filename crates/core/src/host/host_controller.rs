@@ -1537,7 +1537,7 @@ impl Host {
         // Get the old module info to diff against when building a migration plan.
         let old_module_info = self.module.borrow().info.clone();
 
-        let update_result = match update_module(
+        let update_result = update_module(
             replica_ctx.relational_db(),
             &module,
             program,
@@ -1545,17 +1545,7 @@ impl Host {
             policy,
             environment,
         )
-        .await
-        {
-            Ok(result) => result,
-            Err(error) => {
-                // This candidate was never installed or scheduled. Close its
-                // receiver first so cleanup cannot wait on an unstarted actor.
-                drop(scheduler_starter);
-                module.exit().await;
-                return Err(error);
-            }
-        };
+        .await?;
 
         // Only replace the module + scheduler if the update succeeded.
         // Otherwise, we want the database to continue running with the old state.
@@ -1592,10 +1582,7 @@ impl Host {
                 let old_module = old_watcher.borrow().clone();
                 old_module.exit().await;
             }
-            _ => {
-                drop(scheduler_starter);
-                module.exit().await;
-            }
+            _ => {}
         }
 
         Ok(update_result)
