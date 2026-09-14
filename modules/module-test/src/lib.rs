@@ -10,6 +10,8 @@ use spacetimedb::{
 };
 use spacetimedb::{log, ProcedureContext};
 
+pub mod environment;
+
 pub type TestAlias = TestA;
 
 // ─────────────────────────────────────────────────────────────────────────────

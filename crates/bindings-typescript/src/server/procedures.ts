@@ -1,3 +1,4 @@
+import { environment, type EnvironmentFor } from './environment';
 import {
   AlgebraicType,
   ProductType,
@@ -109,6 +110,7 @@ export type ProcedureAliasViews<SchemaDef extends UntypedSchemaDef> =
     : {};
 
 export interface ProcedureCtx<S extends UntypedSchemaDef> {
+  readonly env: EnvironmentFor<S>;
   readonly sender: Identity;
   readonly databaseIdentity: Identity;
   /** @deprecated Use `databaseIdentity` instead. */
@@ -233,6 +235,7 @@ export const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   #http: HttpClient;
   #sleep: (duration: TimeDuration) => void;
   #childSeedRandom: Random | undefined;
+  readonly env = environment as EnvironmentFor<S>;
   #dispatches: SubmoduleDispatchInfo[];
   #parentPrefix: string;
   #asViews: object | undefined;
