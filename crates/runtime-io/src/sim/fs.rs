@@ -50,7 +50,10 @@ struct PageMap {
 impl PageMap {
     /// Reset the volatile to the durable state.
     fn power_loss(&mut self) {
-        self.volatile = self.durable.clone();
+        self.volatile.clear();
+        for (idx, page) in &self.durable {
+            self.volatile.insert(*idx, Arc::clone(page));
+        }
     }
 
     /// Move the page at `index` from the volatile to the durable state.
