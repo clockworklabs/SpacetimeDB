@@ -32,10 +32,14 @@ public static class GeneratorSnapshotTests
         public CSharpParseOptions ParseOptions { get; } =
             (CSharpParseOptions)sampleCompilation.SyntaxTrees.First().Options;
 
-        public static async Task<Fixture> Compile(string name)
+        public static async Task<Fixture> Compile(string name, string? targetFramework = null)
         {
             var projectDir = Path.Combine(GetProjectDir(), "fixtures", name);
-            using var workspace = MSBuildWorkspace.Create();
+            using var workspace = MSBuildWorkspace.Create(
+                targetFramework is null
+                    ? []
+                    : new Dictionary<string, string> { ["TargetFramework"] = targetFramework }
+            );
             var sampleProject = await workspace.OpenProjectAsync($"{projectDir}/{name}.csproj");
             var compilation = await sampleProject.GetCompilationAsync();
             return new(projectDir, (CSharpCompilation)compilation!);
@@ -173,7 +177,7 @@ public static class GeneratorSnapshotTests
     static void AssertRuntimeDoesNotDefineLocal(Compilation compilation)
     {
         var runtimeAssembly = compilation
-            .References.Select(r => compilation.GetAssemblyOrModuleSymbol(r))
+            .References.Select(compilation.GetAssemblyOrModuleSymbol)
             .OfType<IAssemblySymbol>()
             .FirstOrDefault(a => a.Name == "SpacetimeDB.Runtime");
 
@@ -204,6 +208,31 @@ public static class GeneratorSnapshotTests
             .Diagnostics.Where(diag => diag.Severity != DiagnosticSeverity.Hidden);
 
         Assert.DoesNotContain(diagnostics, d => d.Id == "CS0436");
+    }
+
+    [Fact]
+    // Make sure our existing C# module examples still compile when targeting .NET 8 (namespaces will only be supported on .NET 10)
+    public static async Task NamespaceProofPreservesNet8RootExamples()
+    {
+        foreach (var name in new[] { "server", "explicitnames" })
+        {
+            var fixture = await Fixture.Compile(name, "net8.0");
+            var compilation = fixture.SampleCompilation;
+            foreach (
+                var generator in new IIncrementalGenerator[]
+                {
+                    new SpacetimeDB.Codegen.Type(),
+                    new SpacetimeDB.Codegen.Module(),
+                }
+            )
+            {
+                compilation = compilation.AddSyntaxTrees(
+                    fixture.RunGeneratorAndGetResult(generator).GeneratedTrees
+                );
+            }
+            Assert.Empty(GetCompilationErrors(compilation));
+            AssertRuntimeDoesNotDefineLocal(compilation);
+        }
     }
 
     [Fact]
