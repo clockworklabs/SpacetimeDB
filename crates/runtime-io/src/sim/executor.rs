@@ -60,63 +60,55 @@ pub struct ReadSector {
 }
 
 #[derive(Debug)]
-pub enum Cqe<T> {
+pub struct Cqe<T> {
+    inner: CqeInner,
+    user_data: Option<T>,
+}
+impl<T> Cqe<T> {
+    pub fn user_data(&self) -> &Option<T> {
+        &self.user_data
+    }
+
+    pub(crate) fn complete(self, completion: &mut CompletionHandle) -> Option<Waker> {
+        self.inner.complete(completion)
+    }
+}
+
+#[derive(Debug)]
+pub enum CqeInner {
     Write {
         result: Result<usize, Error>,
         buf: ErasedBox,
-        user_data: Option<T>,
     },
     Read {
         result: Result<usize, Error>,
         buf: ErasedBox,
-        user_data: Option<T>,
     },
     Open {
         result: Result<fs::File, Error>,
-        user_data: Option<T>,
     },
     Create {
         result: Result<fs::File, Error>,
-        user_data: Option<T>,
     },
     Stat {
         result: Result<Statx, Error>,
-        user_data: Option<T>,
     },
     Fallocate {
         result: Result<(), Error>,
-        user_data: Option<T>,
     },
     Fsync {
         result: Result<(), Error>,
-        user_data: Option<T>,
     },
     Fdatasync {
         result: Result<(), Error>,
-        user_data: Option<T>,
     },
     Noop {
         result: Result<(), Error>,
-        user_data: Option<T>,
     },
 }
 
-impl<T> Cqe<T> {
-    pub fn user_data(&self) -> &Option<T> {
-        match self {
-            Self::Write { user_data, .. }
-            | Self::Read { user_data, .. }
-            | Self::Open { user_data, .. }
-            | Self::Create { user_data, .. }
-            | Self::Stat { user_data, .. }
-            | Self::Fallocate { user_data, .. }
-            | Self::Fsync { user_data, .. }
-            | Self::Fdatasync { user_data, .. }
-            | Self::Noop { user_data, .. } => user_data,
-        }
-    }
-
-    pub(crate) fn complete(self, completion: &mut CompletionHandle) -> Option<Waker> {
+impl CqeInner {
+    fn complete(self, completion: &mut CompletionHandle) -> Option<Waker> {
         match self {
             Self::Write { result, buf, .. } => {
                 let result = match result {
@@ -164,7 +156,8 @@ pub struct Blocked<T> {
 }
 
 pub struct InFlight<T> {
-    pub inner: InFlightInner,
+    pub sqe: SqeInner,
+    pub pending: Pending,
     pub blocked: VecDeque<Blocked<T>>,
     pub user_data: Option<T>,
 }
@@ -224,16 +217,10 @@ impl<T: ResultAcc> Results<T> {
     }
 }
 
-pub enum InFlightInner {
-    Write { sqe: sqe::Write, results: Results<usize> },
-    Read { sqe: sqe::Read, results: Results<usize> },
-    Open { sqe: sqe::Open },
-    Create { sqe: sqe::Create },
-    Stat { sqe: sqe::Stat },
-    Fallocate { sqe: sqe::Fallocate },
-    Fsync { sqe: sqe::Fsync, results: Results<()> },
-    Fdatasync { sqe: sqe::Fdatasync, results: Results<()> },
-    Noop,
+pub enum Pending {
+    OneOff,
+    ReadWrite { results: Results<usize> },
+    Sync { results: Results<()> },
 }
 
 struct Executing {
@@ -529,7 +516,7 @@ impl<UserData> Executor<UserData> {
     fn schedule(&mut self) -> bool {
         let mut progress = false;
 
-        while let Some(sqe) = self.submissions.pop_front() {
+        while let Some(mut sqe) = self.submissions.pop_front() {
             // If the sqe is linked, pop the whole chain.
             // Links of sqes not submitted in the same batch are ignored.
             let mut successors = VecDeque::new();
@@ -548,9 +535,10 @@ impl<UserData> Executor<UserData> {
                 }
             }
             let slot = self.in_flight.vacant_entry();
-            let in_flight = sqe.inner.schedule(SqeId(slot.key()), &mut self.executing);
+            let pending = sqe.inner.schedule(SqeId(slot.key()), &mut self.executing);
             slot.insert(InFlight {
-                inner: in_flight,
+                sqe: sqe.inner,
+                pending,
                 blocked: successors,
                 user_data: sqe.user_data,
             });
@@ -620,11 +608,8 @@ impl<UserData> Executor<UserData> {
     fn execute_write_sector(&mut self, sqe: SqeId, eff: EitherOrBoth<WriteSector, Error>) {
         let is_complete = {
             let InFlight {
-                inner:
-                    InFlightInner::Write {
-                        sqe: sqe::Write { fd, buf, .. },
-                        results,
-                    },
+                sqe: SqeInner::Write { fd, buf, .. },
+                pending: Pending::ReadWrite { results },
                 ..
             } = self.in_flight.get_mut(sqe.key()).expect("invalid sqe id")
             else {
@@ -646,11 +631,8 @@ impl<UserData> Executor<UserData> {
 
         if is_complete {
             let InFlight {
-                inner:
-                    InFlightInner::Write {
-                        sqe: sqe::Write { buf, .. },
-                        results,
-                    },
+                sqe: SqeInner::Write { buf, .. },
+                pending: Pending::ReadWrite { results },
                 blocked,
                 user_data,
             } = self.in_flight.remove(sqe.key())
@@ -659,7 +641,10 @@ impl<UserData> Executor<UserData> {
             };
             let result = results.into_result();
             let is_success = result.is_ok();
-            self.complete(Cqe::Write { result, buf, user_data });
+            self.complete(Cqe {
+                inner: CqeInner::Write { result, buf },
+                user_data,
+            });
             self.schedule_linked(sqe, is_success, blocked);
         }
     }
@@ -667,11 +652,8 @@ impl<UserData> Executor<UserData> {
     fn execute_read_sector(&mut self, sqe: SqeId, eff: EitherOrBoth<ReadSector, Error>) {
         let is_complete = {
             let InFlight {
-                inner:
-                    InFlightInner::Read {
-                        sqe: sqe::Read { fd, buf, .. },
-                        results,
-                    },
+                sqe: SqeInner::Read { fd, buf, .. },
+                pending: Pending::ReadWrite { results },
                 ..
             } = self.in_flight.get_mut(sqe.key()).expect("invalid sqe id")
             else {
@@ -693,11 +675,8 @@ impl<UserData> Executor<UserData> {
 
         if is_complete {
             let InFlight {
-                inner:
-                    InFlightInner::Read {
-                        sqe: sqe::Read { buf, .. },
-                        results,
-                    },
+                sqe: SqeInner::Read { buf, .. },
+                pending: Pending::ReadWrite { results },
                 blocked,
                 user_data,
             } = self.in_flight.remove(sqe.key())
@@ -706,16 +685,18 @@ impl<UserData> Executor<UserData> {
             };
             let result = results.into_result();
             let is_success = result.is_ok();
-            self.complete(Cqe::Read { result, buf, user_data });
+            self.complete(Cqe {
+                inner: CqeInner::Read { result, buf },
+                user_data,
+            });
             self.schedule_linked(sqe, is_success, blocked);
         }
     }
 
     fn execute_open(&mut self, sqe: SqeId, eff: EitherOrBoth<(), Error>) {
         let InFlight {
-            inner: InFlightInner::Open {
-                sqe: sqe::Open { path },
-            },
+            sqe: SqeInner::Open { path },
+            pending: Pending::OneOff,
             blocked,
             user_data,
         } = self.in_flight.remove(sqe.key())
@@ -728,15 +709,17 @@ impl<UserData> Executor<UserData> {
         );
 
         let is_success = result.is_ok();
-        self.complete(Cqe::Open { result, user_data });
+        self.complete(Cqe {
+            inner: CqeInner::Open { result },
+            user_data,
+        });
         self.schedule_linked(sqe, is_success, blocked);
     }
 
     fn execute_create(&mut self, sqe: SqeId, eff: EitherOrBoth<(), Error>) {
         let InFlight {
-            inner: InFlightInner::Create {
-                sqe: sqe::Create { path },
-            },
+            sqe: SqeInner::Create { path },
+            pending: Pending::OneOff,
             blocked,
             user_data,
         } = self.in_flight.remove(sqe.key())
@@ -751,13 +734,17 @@ impl<UserData> Executor<UserData> {
         };
         let result = eff.traverse(run, Err);
         let is_success = result.is_ok();
-        self.complete(Cqe::Create { result, user_data });
+        self.complete(Cqe {
+            inner: CqeInner::Create { result },
+            user_data,
+        });
         self.schedule_linked(sqe, is_success, blocked);
     }
 
     fn execute_stat(&mut self, sqe: SqeId, eff: EitherOrBoth<(), Error>) {
         let InFlight {
-            inner: InFlightInner::Stat { sqe: sqe::Stat { fd } },
+            sqe: SqeInner::Stat { fd },
+            pending: Pending::OneOff,
             blocked,
             user_data,
         } = self.in_flight.remove(sqe.key())
@@ -766,15 +753,17 @@ impl<UserData> Executor<UserData> {
         };
         let result = eff.traverse(|()| Ok(Statx { size: fd.len() }), Err);
         let is_success = result.is_ok();
-        self.complete(Cqe::Stat { result, user_data });
+        self.complete(Cqe {
+            inner: CqeInner::Stat { result },
+            user_data,
+        });
         self.schedule_linked(sqe, is_success, blocked);
     }
 
     fn execute_fallocate(&mut self, sqe: SqeId, eff: EitherOrBoth<(), Error>) {
         let InFlight {
-            inner: InFlightInner::Fallocate {
-                sqe: sqe::Fallocate { fd, total_len },
-            },
+            sqe: SqeInner::Fallocate { fd, total_len },
+            pending: Pending::OneOff,
             blocked,
             user_data,
         } = self.in_flight.remove(sqe.key())
@@ -783,18 +772,18 @@ impl<UserData> Executor<UserData> {
         };
         let result = eff.traverse(|()| fd.set_len(total_len).map_err(Into::into), Err);
         let is_success = result.is_ok();
-        self.complete(Cqe::Fallocate { result, user_data });
+        self.complete(Cqe {
+            inner: CqeInner::Fallocate { result },
+            user_data,
+        });
         self.schedule_linked(sqe, is_success, blocked);
     }
 
     fn execute_fsync(&mut self, sqe: SqeId, eff: EitherOrBoth<FsyncEffect, Error>) {
         let is_complete = {
             let InFlight {
-                inner:
-                    InFlightInner::Fsync {
-                        sqe: sqe::Fsync { fd },
-                        results,
-                    },
+                sqe: SqeInner::Fsync { fd },
+                pending: Pending::Sync { results },
                 ..
             } = self.in_flight.get_mut(sqe.key()).expect("invalid sqe id")
             else {
@@ -813,16 +802,20 @@ impl<UserData> Executor<UserData> {
 
         if is_complete {
             let InFlight {
-                inner: InFlightInner::Fsync { results, .. },
+                pending: Pending::Sync { results },
                 blocked,
                 user_data,
+                ..
             } = self.in_flight.remove(sqe.key())
             else {
                 unreachable!("invalid sqe: expected fsync")
             };
             let result = results.into_result();
             let is_success = result.is_ok();
-            self.complete(Cqe::Fsync { result, user_data });
+            self.complete(Cqe {
+                inner: CqeInner::Fsync { result },
+                user_data,
+            });
             self.schedule_linked(sqe, is_success, blocked);
         }
     }
@@ -830,11 +823,8 @@ impl<UserData> Executor<UserData> {
     fn execute_fdatasync(&mut self, sqe: SqeId, eff: EitherOrBoth<Datasync, Error>) {
         let is_complete = {
             let InFlight {
-                inner:
-                    InFlightInner::Fdatasync {
-                        sqe: sqe::Fdatasync { fd },
-                        results,
-                    },
+                sqe: SqeInner::Fdatasync { fd },
+                pending: Pending::Sync { results },
                 ..
             } = self.in_flight.get_mut(sqe.key()).expect("invalid sqe id")
             else {
@@ -853,23 +843,28 @@ impl<UserData> Executor<UserData> {
 
         if is_complete {
             let InFlight {
-                inner: InFlightInner::Fdatasync { results, .. },
+                pending: Pending::Sync { results },
                 blocked,
                 user_data,
+                ..
             } = self.in_flight.remove(sqe.key())
             else {
                 unreachable!("invalid sqe: expected fdatasync")
             };
             let result = results.into_result();
             let is_success = result.is_ok();
-            self.complete(Cqe::Fdatasync { result, user_data });
+            self.complete(Cqe {
+                inner: CqeInner::Fdatasync { result },
+                user_data,
+            });
             self.schedule_linked(sqe, is_success, blocked);
         }
     }
 
     fn execute_noop(&mut self, sqe: SqeId, eff: EitherOrBoth<(), Error>) {
         let InFlight {
-            inner: InFlightInner::Noop,
+            sqe: SqeInner::Noop,
+            pending: Pending::OneOff,
             blocked,
             user_data,
         } = self.in_flight.remove(sqe.key())
@@ -878,14 +873,17 @@ impl<UserData> Executor<UserData> {
         };
         let result = eff.traverse(Ok, Err);
         let is_success = result.is_ok();
-        self.complete(Cqe::Noop { result, user_data });
+        self.complete(Cqe {
+            inner: CqeInner::Noop { result },
+            user_data,
+        });
         self.schedule_linked(sqe, is_success, blocked);
     }
 
     fn schedule_linked(&mut self, sqe: SqeId, prev_succeeded: bool, mut blocked: VecDeque<Blocked<UserData>>) {
         if let Some(Blocked {
             link,
-            sqe: next,
+            sqe: mut next,
             user_data,
         }) = blocked.pop_front()
         {
@@ -902,10 +900,11 @@ impl<UserData> Executor<UserData> {
                     }
                 }
                 (LinkKind::Soft, true) | (LinkKind::Hard, _) => {
-                    let inner = next.schedule(sqe, &mut self.executing);
+                    let pending = next.schedule(sqe, &mut self.executing);
                     let slot = self.in_flight.get_mut(sqe.key()).expect("invalid sqe id");
                     *slot = InFlight {
-                        inner,
+                        sqe: next,
+                        pending,
                         blocked,
                         user_data,
                     };

@@ -2,7 +2,7 @@ use alloc::{boxed::Box, collections::vec_deque::VecDeque};
 
 use crate::{
     sim::{
-        executor::{Cqe, Executing, FsyncEffect, InFlightInner, Operation, ReadSector, Results, WriteSector},
+        executor::{Cqe, CqeInner, Executing, FsyncEffect, Operation, Pending, ReadSector, Results, WriteSector},
         fs::{self, Datasync},
         Error,
     },
@@ -58,41 +58,41 @@ impl<T> Sqe<T> {
     }
 
     pub fn write(fd: fs::File, buf: ErasedBox, offset: u64) -> Self {
-        Write { fd, buf, offset }.into()
+        SqeInner::Write { fd, buf, offset }.into()
     }
 
     pub fn read(fd: fs::File, buf: ErasedBox, offset: u64) -> Self {
-        Read { fd, buf, offset }.into()
+        SqeInner::Read { fd, buf, offset }.into()
     }
 
     pub fn open(path: impl AsRef<str>) -> Self {
-        Open {
+        SqeInner::Open {
             path: path.as_ref().into(),
         }
         .into()
     }
 
     pub fn create(path: impl AsRef<str>) -> Self {
-        Create {
+        SqeInner::Create {
             path: path.as_ref().into(),
         }
         .into()
     }
 
     pub fn stat(fd: fs::File) -> Self {
-        Stat { fd }.into()
+        SqeInner::Stat { fd }.into()
     }
 
     pub fn fallocate(fd: fs::File, len: u64) -> Self {
-        Fallocate { fd, total_len: len }.into()
+        SqeInner::Fallocate { fd, total_len: len }.into()
     }
 
     pub fn fsync(fd: fs::File) -> Self {
-        Fsync { fd }.into()
+        SqeInner::Fsync { fd }.into()
     }
 
     pub fn fdatasync(fd: fs::File) -> Self {
-        Fdatasync { fd }.into()
+        SqeInner::Fdatasync { fd }.into()
     }
 
     #[allow(unused)]
@@ -103,7 +103,7 @@ impl<T> Sqe<T> {
     /// Extract the [ErasedBox] buffer if the [Sqe] carries one.
     pub(crate) fn into_buf(self) -> Option<ErasedBox> {
         match self.inner {
-            SqeInner::Write(Write { buf, .. }) | SqeInner::Read(Read { buf, .. }) => Some(buf),
+            SqeInner::Write { buf, .. } | SqeInner::Read { buf, .. } => Some(buf),
             SqeInner::Open { .. }
             | SqeInner::Create { .. }
             | SqeInner::Stat { .. }
@@ -126,65 +126,82 @@ impl<T, U: Into<SqeInner>> From<U> for Sqe<T> {
 }
 
 pub enum SqeInner {
-    Write(Write),
-    Read(Read),
-    Open(Open),
-    Create(Create),
-    Stat(Stat),
-    Fallocate(Fallocate),
-    Fsync(Fsync),
-    Fdatasync(Fdatasync),
+    Write { fd: fs::File, buf: ErasedBox, offset: u64 },
+    Read { fd: fs::File, buf: ErasedBox, offset: u64 },
+    Open { path: Box<str> },
+    Create { path: Box<str> },
+    Stat { fd: fs::File },
+    Fallocate { fd: fs::File, total_len: u64 },
+    Fsync { fd: fs::File },
+    Fdatasync { fd: fs::File },
     Noop,
 }
 
 impl SqeInner {
     pub(super) fn cancel<T>(self, user_data: Option<T>) -> Cqe<T> {
         match self {
-            SqeInner::Write(Write { buf, .. }) => Cqe::Write {
-                result: Err(Error::Cancelled),
-                buf,
+            SqeInner::Write { buf, .. } => Cqe {
+                inner: CqeInner::Write {
+                    result: Err(Error::Cancelled),
+                    buf,
+                },
                 user_data,
             },
-            SqeInner::Read(Read { buf, .. }) => Cqe::Read {
-                result: Err(Error::Cancelled),
-                buf,
+            SqeInner::Read { buf, .. } => Cqe {
+                inner: CqeInner::Read {
+                    result: Err(Error::Cancelled),
+                    buf,
+                },
                 user_data,
             },
-            SqeInner::Open(..) => Cqe::Open {
-                result: Err(Error::Cancelled),
+            SqeInner::Open { .. } => Cqe {
+                inner: CqeInner::Open {
+                    result: Err(Error::Cancelled),
+                },
                 user_data,
             },
-            SqeInner::Create(..) => Cqe::Create {
-                result: Err(Error::Cancelled),
+            SqeInner::Create { .. } => Cqe {
+                inner: CqeInner::Create {
+                    result: Err(Error::Cancelled),
+                },
                 user_data,
             },
-            SqeInner::Stat(..) => Cqe::Stat {
-                result: Err(Error::Cancelled),
+            SqeInner::Stat { .. } => Cqe {
+                inner: CqeInner::Stat {
+                    result: Err(Error::Cancelled),
+                },
                 user_data,
             },
-            SqeInner::Fallocate(..) => Cqe::Fallocate {
-                result: Err(Error::Cancelled),
+            SqeInner::Fallocate { .. } => Cqe {
+                inner: CqeInner::Fallocate {
+                    result: Err(Error::Cancelled),
+                },
                 user_data,
             },
-            SqeInner::Fsync(..) => Cqe::Fsync {
-                result: Err(Error::Cancelled),
+            SqeInner::Fsync { .. } => Cqe {
+                inner: CqeInner::Fsync {
+                    result: Err(Error::Cancelled),
+                },
                 user_data,
             },
-            SqeInner::Fdatasync(..) => Cqe::Fdatasync {
-                result: Err(Error::Cancelled),
+            SqeInner::Fdatasync { .. } => Cqe {
+                inner: CqeInner::Fdatasync {
+                    result: Err(Error::Cancelled),
+                },
                 user_data,
             },
-            SqeInner::Noop => Cqe::Noop {
-                result: Err(Error::Cancelled),
+            SqeInner::Noop => Cqe {
+                inner: CqeInner::Noop {
+                    result: Err(Error::Cancelled),
+                },
                 user_data,
             },
         }
     }
 
-    pub(super) fn schedule(self, sqe_id: SqeId, executing: &mut VecDeque<Executing>) -> InFlightInner {
+    pub(super) fn schedule(&mut self, sqe_id: SqeId, executing: &mut VecDeque<Executing>) -> Pending {
         match self {
-            SqeInner::Write(mut sqe) => {
-                let Write { buf, offset, .. } = &mut sqe;
+            SqeInner::Write { buf, offset, .. } => {
                 let buf_len = buf.as_bytes().len();
                 let first_sector = (*offset / SECTOR_SIZE as u64) as usize;
                 let page_count = buf_len / SECTOR_SIZE;
@@ -196,13 +213,11 @@ impl SqeInner {
                         buf_offset: page * SECTOR_SIZE,
                     }),
                 }));
-                InFlightInner::Write {
-                    sqe,
+                Pending::ReadWrite {
                     results: Results::new(page_count),
                 }
             }
-            SqeInner::Read(mut sqe) => {
-                let Read { buf, offset, .. } = &mut sqe;
+            SqeInner::Read { buf, offset, .. } => {
                 let buf_len = buf.as_bytes().len();
                 let first_sector = (*offset / SECTOR_SIZE as u64) as usize;
                 let page_count = buf_len / SECTOR_SIZE;
@@ -214,42 +229,39 @@ impl SqeInner {
                         buf_offset: page * SECTOR_SIZE,
                     }),
                 }));
-                InFlightInner::Read {
-                    sqe,
+                Pending::ReadWrite {
                     results: Results::new(page_count),
                 }
             }
-            SqeInner::Open(sqe) => {
+            SqeInner::Open { .. } => {
                 executing.push_back(Executing {
                     sqe: sqe_id,
                     inner: Operation::Open,
                 });
-                InFlightInner::Open { sqe }
+                Pending::OneOff
             }
-            SqeInner::Create(sqe) => {
+            SqeInner::Create { .. } => {
                 executing.push_back(Executing {
                     sqe: sqe_id,
                     inner: Operation::Create,
                 });
-                InFlightInner::Create { sqe }
+                Pending::OneOff
             }
-            SqeInner::Stat(sqe) => {
+            SqeInner::Stat { .. } => {
                 executing.push_back(Executing {
                     sqe: sqe_id,
                     inner: Operation::Stat,
                 });
-                InFlightInner::Stat { sqe }
+                Pending::OneOff
             }
-            SqeInner::Fallocate(sqe) => {
+            SqeInner::Fallocate { .. } => {
                 executing.push_back(Executing {
                     sqe: sqe_id,
                     inner: Operation::Fallocate,
                 });
-                InFlightInner::Fallocate { sqe }
+                Pending::OneOff
             }
-            SqeInner::Fsync(sqe) => {
-                let Fsync { fd } = &sqe;
-
+            SqeInner::Fsync { fd } => {
                 let sector_count = fd.len() / SECTOR_SIZE as u64;
                 executing.extend(
                     (0..sector_count)
@@ -266,14 +278,11 @@ impl SqeInner {
                             },
                         }]),
                 );
-                InFlightInner::Fsync {
-                    sqe,
+                Pending::Sync {
                     results: Results::new(1 + sector_count as usize),
                 }
             }
-            SqeInner::Fdatasync(sqe) => {
-                let Fdatasync { fd } = &sqe;
-
+            SqeInner::Fdatasync { fd } => {
                 let sector_count = fd.len() / SECTOR_SIZE as u64;
                 executing.extend(
                     (0..sector_count)
@@ -290,8 +299,7 @@ impl SqeInner {
                             },
                         }]),
                 );
-                InFlightInner::Fdatasync {
-                    sqe,
+                Pending::Sync {
                     results: Results::new(1 + sector_count as usize),
                 }
             }
@@ -300,93 +308,8 @@ impl SqeInner {
                     sqe: sqe_id,
                     inner: Operation::Noop,
                 });
-                InFlightInner::Noop
+                Pending::OneOff
             }
         }
     }
-}
-
-impl From<Write> for SqeInner {
-    fn from(inner: Write) -> Self {
-        Self::Write(inner)
-    }
-}
-
-impl From<Read> for SqeInner {
-    fn from(inner: Read) -> Self {
-        Self::Read(inner)
-    }
-}
-
-impl From<Open> for SqeInner {
-    fn from(inner: Open) -> Self {
-        Self::Open(inner)
-    }
-}
-
-impl From<Create> for SqeInner {
-    fn from(inner: Create) -> Self {
-        Self::Create(inner)
-    }
-}
-
-impl From<Stat> for SqeInner {
-    fn from(inner: Stat) -> Self {
-        Self::Stat(inner)
-    }
-}
-
-impl From<Fallocate> for SqeInner {
-    fn from(inner: Fallocate) -> Self {
-        Self::Fallocate(inner)
-    }
-}
-
-impl From<Fsync> for SqeInner {
-    fn from(inner: Fsync) -> Self {
-        Self::Fsync(inner)
-    }
-}
-
-impl From<Fdatasync> for SqeInner {
-    fn from(inner: Fdatasync) -> Self {
-        Self::Fdatasync(inner)
-    }
-}
-
-pub struct Write {
-    pub fd: fs::File,
-    pub buf: ErasedBox,
-    pub offset: u64,
-}
-
-pub struct Read {
-    pub fd: fs::File,
-    pub offset: u64,
-    pub buf: ErasedBox,
-}
-
-pub struct Open {
-    pub path: Box<str>,
-}
-
-pub struct Create {
-    pub path: Box<str>,
-}
-
-pub struct Stat {
-    pub fd: fs::File,
-}
-
-pub struct Fallocate {
-    pub fd: fs::File,
-    pub total_len: u64,
-}
-
-pub struct Fsync {
-    pub fd: fs::File,
-}
-
-pub struct Fdatasync {
-    pub fd: fs::File,
 }
