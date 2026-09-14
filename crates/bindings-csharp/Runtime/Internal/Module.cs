@@ -49,7 +49,13 @@ public static class Module
         Random,
         Timestamp,
         IReducerContext
-    >? newReducerContext = null;
+    >? newReducerContext =
+#if NET10_0_OR_GREATER
+        (identity, connectionId, random, time) =>
+            new SpacetimeDB.ReducerContext(identity, connectionId, random, time);
+#else
+        null;
+#endif
     private static Func<Identity, IViewContext>? newViewContext = null;
     private static Func<IAnonymousViewContext>? newAnonymousViewContext = null;
     private static Func<Random, Timestamp, SpacetimeDB.HandlerContextBase>? newHandlerContext =

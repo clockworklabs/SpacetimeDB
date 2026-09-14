@@ -2407,12 +2407,23 @@ public class Module : IIncrementalGenerator
             .Combine(columnDefaultValues)
             .Select((tuple, ct) => FlattenModuleOutputInputs(tuple));
 
+        var extensionNamespace = context.CompilationProvider.Select(
+            (compilation, _) =>
+                "SpacetimeDB.Generated.Assembly_"
+                + string.Concat(
+                    compilation.Assembly.Identity.ToString()
+                        .Select(c => ((int)c).ToString("X4"))
+                )
+        );
+
         // Register the generated source code with the compilation context as part of module publishing
         // Once the compilation is complete, the generated code will be used to create tables and reducers in the database
         context.RegisterSourceOutput(
-            moduleOutputInputs,
-            (context, inputs) =>
+            moduleOutputInputs.Combine(extensionNamespace),
+            (context, input) =>
             {
+                var (inputs, extensionNamespaceName) = input;
+
                 var (
                     tableAccessors,
                     settings,
@@ -2543,6 +2554,9 @@ public class Module : IIncrementalGenerator
                     #pragma warning disable CS0436
                     #pragma warning disable STDB_UNSTABLE
 
+                    #if NET10_0_OR_GREATER
+                    global using {{extensionNamespaceName}};
+                    #endif
                     using System.Diagnostics.CodeAnalysis;
                     using System.Runtime.CompilerServices;
                     using System.Runtime.InteropServices;
@@ -2556,6 +2570,8 @@ public class Module : IIncrementalGenerator
                                 $"public static readonly global::SpacetimeDB.Handler {EscapeIdentifier(r.Name)} = new(nameof({r.FullName}));"
                             ))}}
                         }
+
+                        #if !NET10_0_OR_GREATER
                         public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext {
                             public readonly Identity Sender;
                             public readonly ConnectionId? ConnectionId;
@@ -2626,7 +2642,8 @@ public class Module : IIncrementalGenerator
                                 return Uuid.FromCounterV7(ref CounterUuid, Timestamp, bytes);
                             }
                         }
-                        
+                        #endif
+
                         public sealed partial class ProcedureContext : global::SpacetimeDB.ProcedureContextBase {
                             private readonly Local _db = new();
 
@@ -2747,9 +2764,11 @@ public class Module : IIncrementalGenerator
                             public new Local Db => (Local)base.Db;
                         }
 
+                        #if !NET10_0_OR_GREATER
                         public sealed class Local : global::SpacetimeDB.LocalBase {
                             {{string.Join("\n", tableAccessors.Select(v => v.Getter))}}
                         }
+                        #endif
                         
                         public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.IViewContext 
                         {
@@ -2773,6 +2792,16 @@ public class Module : IIncrementalGenerator
                         }
                     }
                     
+                    #if NET10_0_OR_GREATER
+                    namespace {{extensionNamespaceName}} {
+                        public static class LocalTableExtensions {
+                            extension(global::SpacetimeDB.Local db) {
+                                {{string.Join("\n", tableAccessors.Select(v => v.Getter))}}
+                            }
+                        }
+                    }
+                    #endif
+
                     namespace SpacetimeDB.Internal.TableHandles {
                         {{string.Join("\n", tableAccessors.Select(v => v.TableAccessor))}}
                     }
@@ -2827,7 +2856,9 @@ public class Module : IIncrementalGenerator
                         [DynamicDependency(DynamicallyAccessedMemberTypes.PublicMethods, typeof(ModuleRegistration))]
                     #endif
                         public static void Main() {
+                          #if !NET10_0_OR_GREATER
                           SpacetimeDB.Internal.Module.SetReducerContextConstructor((identity, connectionId, random, time) => new SpacetimeDB.ReducerContext(identity, connectionId, random, time));
+                          #endif
                           SpacetimeDB.Internal.Module.SetViewContextConstructor(identity => new SpacetimeDB.ViewContext(identity, new SpacetimeDB.Internal.LocalReadOnly()));
                           SpacetimeDB.Internal.Module.SetAnonymousViewContextConstructor(() => new SpacetimeDB.AnonymousViewContext(new SpacetimeDB.Internal.LocalReadOnly()));
                           SpacetimeDB.Internal.Module.SetProcedureContextConstructor((identity, connectionId, random, time) => new SpacetimeDB.ProcedureContext(identity, connectionId, random, time));{{preRegistrations}}

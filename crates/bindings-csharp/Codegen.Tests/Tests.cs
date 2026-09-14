@@ -20,6 +20,12 @@ using Microsoft.CodeAnalysis.Text;
 /// </summary>
 public static class GeneratorSnapshotTests
 {
+#if NET10_0_OR_GREATER
+    private const string ModuleTargetFramework = "net10.0";
+#else
+    private const string ModuleTargetFramework = "net8.0";
+#endif
+
     // Note that we can't use assembly path here because it will be put in some deep nested folder.
     // Instead, to get the test project directory, we can use the `CallerFilePath` attribute which will magically give us path to the current file.
     static string GetProjectDir([CallerFilePath] string path = "") => Path.GetDirectoryName(path)!;
@@ -34,19 +40,24 @@ public static class GeneratorSnapshotTests
 
         public static async Task<Fixture> Compile(string name, string? targetFramework = null)
         {
+            targetFramework ??= name == "client" ? "netstandard2.1" : ModuleTargetFramework;
             var projectDir = Path.Combine(GetProjectDir(), "fixtures", name);
             using var workspace = MSBuildWorkspace.Create(
-                targetFramework is null
-                    ? []
-                    : new Dictionary<string, string> { ["TargetFramework"] = targetFramework }
+                new Dictionary<string, string> { ["TargetFramework"] = targetFramework }
             );
             var sampleProject = await workspace.OpenProjectAsync($"{projectDir}/{name}.csproj");
             var compilation = await sampleProject.GetCompilationAsync();
             return new(projectDir, (CSharpCompilation)compilation!);
         }
 
-        public Task Verify(string fileName, object target) =>
-            Verifier.Verify(target).UseDirectory($"{projectDir}/snapshots").UseFileName(fileName);
+        public Task Verify(string fileName, object target)
+        {
+            if (fileName == nameof(Module) && ModuleTargetFramework == "net10.0")
+            {
+                fileName += ".net10";
+            }
+            return Verifier.Verify(target).UseDirectory($"{projectDir}/snapshots").UseFileName(fileName);
+        }
 
         private static CSharpGeneratorDriver CreateDriver(
             IIncrementalGenerator generator,
@@ -170,7 +181,7 @@ public static class GeneratorSnapshotTests
         Assert.Equal(Accessibility.Public, bound!.DeclaredAccessibility);
     }
 
-    static void AssertRuntimeDoesNotDefineLocal(Compilation compilation)
+    static void AssertContextOwnership(Compilation compilation)
     {
         var runtimeAssembly = compilation
             .References.Select(compilation.GetAssemblyOrModuleSymbol)
@@ -179,14 +190,39 @@ public static class GeneratorSnapshotTests
 
         Assert.NotNull(runtimeAssembly);
 
+        // Use the fixture's target, not the test host: the .NET 10 suite also compiles .NET 8 examples.
+        var sharedContexts = ((CSharpParseOptions)compilation.SyntaxTrees.First().Options)
+            .PreprocessorSymbolNames.Contains("NET10_0_OR_GREATER");
+        foreach (var name in new[] { "SpacetimeDB.Local", "SpacetimeDB.ReducerContext" })
+        {
+            var runtimeType = runtimeAssembly!.GetTypeByMetadataName(name);
+            var generatedType = compilation.Assembly.GetTypeByMetadataName(name);
+            if (sharedContexts)
+            {
+                Assert.NotNull(runtimeType);
+                Assert.Equal(Accessibility.Public, runtimeType!.DeclaredAccessibility);
+                Assert.Null(generatedType);
+            }
+            else
+            {
+                Assert.Null(runtimeType);
+                Assert.NotNull(generatedType);
+            }
+            Assert.True(
+                SymbolEqualityComparer.Default.Equals(
+                    sharedContexts ? runtimeType : generatedType,
+                    compilation.GetTypeByMetadataName(name)
+                ),
+                $"{name} must resolve to its owning assembly without ambiguity."
+            );
+        }
+
         // These types are generated per-module by SpacetimeDB.Codegen.Module.
         // If Runtime defines any of them too, user projects can hit CS0436 warnings.
         var codegenOwnedTypes = new[]
         {
-            "SpacetimeDB.Local",
             "SpacetimeDB.ProcedureContext",
             "SpacetimeDB.ProcedureTxContext",
-            "SpacetimeDB.ReducerContext",
             "SpacetimeDB.ViewContext",
             "SpacetimeDB.AnonymousViewContext",
         };
@@ -194,6 +230,7 @@ public static class GeneratorSnapshotTests
         foreach (var name in codegenOwnedTypes)
         {
             Assert.Null(runtimeAssembly!.GetTypeByMetadataName(name));
+            Assert.NotNull(compilation.Assembly.GetTypeByMetadataName(name));
         }
     }
 
@@ -227,7 +264,7 @@ public static class GeneratorSnapshotTests
                 );
             }
             Assert.Empty(GetCompilationErrors(compilation));
-            AssertRuntimeDoesNotDefineLocal(compilation);
+            AssertContextOwnership(compilation);
         }
     }
 
@@ -256,7 +293,7 @@ public static class GeneratorSnapshotTests
         Assert.Empty(GetCompilationErrors(compilationAfterGen));
 
         AssertPublicBoundIsAvailableInRuntime(compilationAfterGen);
-        AssertRuntimeDoesNotDefineLocal(compilationAfterGen);
+        AssertContextOwnership(compilationAfterGen);
         AssertGeneratedCodeDoesNotUseInternalBound(compilationAfterGen);
 
         // Regression guard for user-reported warning spam:
@@ -281,7 +318,7 @@ public static class GeneratorSnapshotTests
         Assert.Empty(GetCompilationErrors(compilationAfterGen));
 
         AssertPublicBoundIsAvailableInRuntime(compilationAfterGen);
-        AssertRuntimeDoesNotDefineLocal(compilationAfterGen);
+        AssertContextOwnership(compilationAfterGen);
         AssertGeneratedCodeDoesNotUseInternalBound(compilationAfterGen);
     }
 
@@ -392,7 +429,7 @@ public static class GeneratorSnapshotTests
         await fixture.Verify("ExtraCompilationErrors", GetCompilationErrors(compilationAfterGen));
 
         AssertPublicBoundIsAvailableInRuntime(compilationAfterGen);
-        AssertRuntimeDoesNotDefineLocal(compilationAfterGen);
+        AssertContextOwnership(compilationAfterGen);
         AssertGeneratedCodeDoesNotUseInternalBound(compilationAfterGen);
     }
 
