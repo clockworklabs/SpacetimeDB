@@ -341,18 +341,19 @@ impl ControlDb {
         let scan_key: &[u8] = b"";
         for result in tree.range(scan_key..) {
             let (_key, value) = result?;
-            let database = self.decode_database(&value)?;
+            let database = compat::Database::from_slice(&value)?.into();
             databases.push(database);
         }
         Ok(databases)
     }
 
     pub fn get_database_by_id(&self, id: u64) -> Result<Option<Database>> {
-        self.db
-            .open_tree("database")?
-            .get(id.to_be_bytes())?
-            .map(|bytes| self.decode_database(&bytes))
-            .transpose()
+        for database in self.get_databases()? {
+            if database.id == id {
+                return Ok(Some(database));
+            }
+        }
+        Ok(None)
     }
 
     pub fn get_database_by_identity(&self, identity: &Identity) -> Result<Option<Database>> {
@@ -360,7 +361,7 @@ impl ControlDb {
         let key = identity.to_be_byte_array();
         let value = tree.get(&key[..])?;
         if let Some(value) = value {
-            let database = self.decode_database(&value)?;
+            let database = compat::Database::from_slice(&value[..])?.into();
             return Ok(Some(database));
         }
         Ok(None)

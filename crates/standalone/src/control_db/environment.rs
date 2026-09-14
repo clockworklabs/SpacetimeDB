@@ -54,8 +54,7 @@ impl Bootstrap {
 }
 
 impl ControlDb {
-    pub(super) fn decode_database(&self, bytes: &[u8]) -> Result<Database> {
-        let mut database: Database = compat::Database::from_slice(bytes)?.into();
+    pub(crate) fn with_bootstrap_generation(&self, mut database: Database) -> Result<Database> {
         if let Some(bytes) = self.db.open_tree(METADATA_TREE)?.get(database.id.to_be_bytes())? {
             database.bootstrap_generation = Bootstrap::decode(&bytes, &database)?.generation;
         }
@@ -63,12 +62,13 @@ impl ControlDb {
     }
 
     /// Recheck the exact persisted generation and program before releasing any values.
-    pub(crate) fn initial_environment(&self, database: &Database) -> Result<BTreeMap<String, String>> {
+    pub(crate) fn initial_environment(&self, database: &Database, replica_id: u64) -> Result<BTreeMap<String, String>> {
         let databases = self.db.open_tree("database_by_identity")?;
         let metadata = self.db.open_tree(METADATA_TREE)?;
         let values = self.db.open_tree(VALUES_TREE)?;
-        let result: TransactionResult<Option<sled::IVec>, Error> =
-            (&databases, &metadata, &values).transaction(|(databases, metadata, values)| {
+        let replicas = self.db.open_tree("replica")?;
+        let result: TransactionResult<Option<sled::IVec>, Error> = (&databases, &metadata, &values, &replicas)
+            .transaction(|(databases, metadata, values, replicas)| {
                 let persisted = databases
                     .get(database.database_identity.to_be_byte_array())?
                     .ok_or_else(|| {
@@ -85,6 +85,16 @@ impl ControlDb {
                 }
                 match metadata.get(database.id.to_be_bytes())? {
                     Some(bytes) => {
+                        // A reset can replace the selected replica before launch.
+                        // Check its nomination in the same snapshot as the generation and values.
+                        let replica = replicas
+                            .get(replica_id.to_be_bytes())?
+                            .ok_or_else(|| ConflictableTransactionError::Abort(invalid()))?;
+                        let replica: Replica =
+                            bsatn::from_slice(&replica).map_err(|_| ConflictableTransactionError::Abort(invalid()))?;
+                        if replica.database_id != database.id {
+                            return transaction::abort(invalid());
+                        }
                         let binding =
                             Bootstrap::decode(&bytes, &stored).map_err(ConflictableTransactionError::Abort)?;
                         if binding.generation != database.bootstrap_generation {
@@ -246,12 +256,15 @@ fn transaction_error(error: TransactionError<Error>) -> Error {
 
 #[async_trait::async_trait]
 impl spacetimedb::host::InitialEnvironmentSource for ControlDb {
-    async fn load(&self, database: &Database) -> anyhow::Result<BTreeMap<String, String>> {
+    async fn load(&self, database: &Database, replica_id: u64) -> anyhow::Result<BTreeMap<String, String>> {
         let source = self.clone();
         let database = database.clone();
-        spacetimedb::util::asyncify(move || source.initial_environment(&database))
-            .await
-            .map_err(Into::into)
+        spacetimedb::util::asyncify(move || {
+            let database = source.with_bootstrap_generation(database)?;
+            source.initial_environment(&database, replica_id)
+        })
+        .await
+        .map_err(Into::into)
     }
 }
 
@@ -284,9 +297,12 @@ mod tests {
             )?
         };
         let control = ControlDb::at(temp.path())?;
-        let loaded = control.get_database_by_id(original.id)?.unwrap();
+        let loaded = control.with_bootstrap_generation(control.get_database_by_id(original.id)?.unwrap())?;
         assert_eq!(loaded.bootstrap_generation, 1);
-        assert_eq!(control.initial_environment(&loaded)?["VALUE"], "first");
+        assert_eq!(
+            control.initial_environment(&loaded, original_replica.id)?["VALUE"],
+            "first"
+        );
         assert_eq!(
             control.get_leader_replica_by_database(loaded.id).unwrap().id,
             original_replica.id
@@ -295,11 +311,13 @@ mod tests {
             loaded.clone(),
             Some(&loaded),
             BTreeMap::new(),
-            &[original_replica],
+            std::slice::from_ref(&original_replica),
         )?;
         assert_eq!(replaced.bootstrap_generation, 2);
-        assert!(control.initial_environment(&original).is_err());
-        assert!(control.initial_environment(&replaced)?.is_empty());
+        assert!(control.initial_environment(&original, original_replica.id).is_err());
+        assert!(control.initial_environment(&replaced, new_replica.id)?.is_empty());
+        // A lookup can select the old replica, then read the new generation after reset.
+        assert!(control.initial_environment(&replaced, original_replica.id).is_err());
         assert_eq!(control.get_replicas_by_database(loaded.id)?.len(), 1);
         assert_eq!(
             control.get_leader_replica_by_database(loaded.id).unwrap().id,
@@ -308,9 +326,34 @@ mod tests {
         assert!(control
             .install_database_with_environment(loaded.clone(), Some(&loaded), BTreeMap::new(), &[])
             .is_err());
-        assert_eq!(control.get_database_by_id(loaded.id)?.unwrap().bootstrap_generation, 2);
+        assert_eq!(
+            control
+                .with_bootstrap_generation(control.get_database_by_id(loaded.id)?.unwrap())?
+                .bootstrap_generation,
+            2
+        );
         control.delete_database(loaded.id)?;
-        assert!(control.initial_environment(&replaced).is_err());
+        assert!(control.initial_environment(&replaced, new_replica.id).is_err());
+        assert!(control.db.open_tree(VALUES_TREE)?.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn corrupt_bootstrap_does_not_prevent_listing_or_deletion() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let control = ControlDb::at(temp.path())?;
+        let (database, replica) = control.install_database_with_environment(database(), None, BTreeMap::new(), &[])?;
+        control
+            .db
+            .open_tree(METADATA_TREE)?
+            .insert(database.id.to_be_bytes(), b"corrupt")?;
+        assert!(control.get_database_by_id(database.id)?.is_some());
+        assert!(control.get_database_by_identity(&database.database_identity)?.is_some());
+        assert_eq!(control.get_databases()?.len(), 1);
+        assert!(control.initial_environment(&database, replica.id).is_err());
+        control.delete_database(database.id)?;
+        assert!(control.get_databases()?.is_empty());
+        assert!(control.db.open_tree(METADATA_TREE)?.is_empty());
         assert!(control.db.open_tree(VALUES_TREE)?.is_empty());
         Ok(())
     }
@@ -321,11 +364,11 @@ mod tests {
         let control = ControlDb::at(temp.path())?;
         let id = control.insert_database(database())?;
         let legacy = control.get_database_by_id(id)?.unwrap();
-        assert!(control.initial_environment(&legacy)?.is_empty());
-        let (new, _) =
+        assert!(control.initial_environment(&legacy, 0)?.is_empty());
+        let (new, replica) =
             control.install_database_with_environment(legacy.clone(), Some(&legacy), BTreeMap::new(), &[])?;
         control.db.open_tree(VALUES_TREE)?.remove(new.id.to_be_bytes())?;
-        assert!(control.initial_environment(&new).is_err());
+        assert!(control.initial_environment(&new, replica.id).is_err());
         Ok(())
     }
 }

@@ -98,10 +98,16 @@ pub struct EnvironmentVersionConflict;
 
 /// Private complete configuration for a not-yet-initialized database generation.
 /// Implementations must verify the exact persisted database identity, program and
-/// bootstrap generation. This source is never consulted during ordinary reopen.
+/// bootstrap generation. A source resolving the generation at load time must also
+/// check the replica nomination in that snapshot. This source is never consulted
+/// during ordinary reopen.
 #[async_trait]
 pub trait InitialEnvironmentSource: Send + Sync {
-    async fn load(&self, database: &Database) -> anyhow::Result<std::collections::BTreeMap<String, String>>;
+    async fn load(
+        &self,
+        database: &Database,
+        replica_id: u64,
+    ) -> anyhow::Result<std::collections::BTreeMap<String, String>>;
 }
 
 /// A launched module host plus any pending controldb program-bootstrap completion work.
@@ -584,49 +590,8 @@ impl HostController {
     /// If the host was running, and the update fails, the previous version of
     /// the host keeps running.
     #[tracing::instrument(level = "trace", skip_all, err)]
-    pub async fn update_module_host(
-        &self,
-        database: Database,
-        host_type: HostType,
-        replica_id: u64,
-        program_bytes: Box<[u8]>,
-        policy: MigrationPolicy,
-    ) -> anyhow::Result<UpdateDatabaseResult> {
-        self.update_module_host_with_environment(
-            database,
-            host_type,
-            replica_id,
-            program_bytes,
-            policy,
-            Default::default(),
-        )
-        .await
-    }
-
-    #[tracing::instrument(level = "trace", skip_all, err)]
-    pub async fn update_module_host_with_environment(
-        &self,
-        database: Database,
-        host_type: HostType,
-        replica_id: u64,
-        program_bytes: Box<[u8]>,
-        policy: MigrationPolicy,
-        environment: std::collections::BTreeMap<String, String>,
-    ) -> anyhow::Result<UpdateDatabaseResult> {
-        self.update_module_host_with_environment_options(
-            database,
-            host_type,
-            replica_id,
-            program_bytes,
-            policy,
-            environment.into(),
-            None,
-        )
-        .await
-    }
-
     #[allow(clippy::too_many_arguments)]
-    pub async fn update_module_host_with_environment_options(
+    pub async fn update_module_host(
         &self,
         database: Database,
         host_type: HostType,
@@ -698,6 +663,9 @@ impl HostController {
                     .with_read_only(Workload::Internal, |tx| crate::db::environment::snapshot(tx))?;
                 let environment = environment.resulting_values(&previous)?;
                 if environment_only || program.hash == module.info.module_hash {
+                    if environment == previous {
+                        return Ok(UpdateDatabaseResult::NoUpdateNeeded);
+                    }
                     let program = module
                         .relational_db()
                         .program()?
@@ -769,25 +737,6 @@ impl HostController {
     /// and deregister it from the controller.
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn exit_module_host(&self, replica_id: u64, timeout: Duration) -> Result<(), anyhow::Error> {
-        let start = Instant::now();
-        if tokio::time::timeout(timeout, self.exit_module_host_and_join(replica_id))
-            .await
-            .is_err()
-        {
-            warn!(
-                "replica={replica_id} shutdown timed out after {}s",
-                start.elapsed().as_secs_f32()
-            );
-        }
-        Ok(())
-    }
-
-    /// Wait for actual module and database closure, without treating an elapsed
-    /// request deadline as completion. The caller must retain this future and
-    /// exclude new launch admission until it returns, including if its own
-    /// request waiter is cancelled.
-    #[tracing::instrument(level = "trace", skip_all)]
-    pub async fn exit_module_host_and_join(&self, replica_id: u64) -> Result<(), anyhow::Error> {
         let Some(lock) = self.hosts.lock().remove(&replica_id) else {
             return Ok(());
         };
@@ -808,24 +757,35 @@ impl HostController {
         });
         defer!(warn_blocked.abort());
 
-        let mut guard = lock.write_owned().await;
-        let Some(host) = guard.take() else {
-            return Ok(());
-        };
-        let module = host.module.borrow().clone();
-        let info = module.info();
+        let shutdown = tokio::time::timeout(timeout, async {
+            let mut guard = lock.write_owned().await;
+            let Some(host) = guard.take() else {
+                return;
+            };
+            let module = host.module.borrow().clone();
+            let info = module.info();
 
-        let database_identity = info.database_identity;
-        let table_names = info.module_def.tables().map(|t| t.name.deref());
+            let database_identity = info.database_identity;
+            let table_names = info.module_def.tables().map(|t| t.name.deref());
 
-        // Ensure we clear the metrics even if the future is cancelled.
-        defer!(remove_database_gauges(&database_identity, table_names));
+            // Ensure we clear the metrics even if the future is cancelled.
+            defer!(remove_database_gauges(&database_identity, table_names));
 
-        info!("replica={replica_id} database={database_identity} exiting module");
-        module.exit().await;
-        info!("replica={replica_id} database={database_identity} exiting database");
-        module.relational_db().shutdown().await;
-        info!("replica={replica_id} database={database_identity} module host exited");
+            info!("replica={replica_id} database={database_identity} exiting module");
+            module.exit().await;
+            info!("replica={replica_id} database={database_identity} exiting database");
+            module.relational_db().shutdown().await;
+            info!("replica={replica_id} database={database_identity} module host exited");
+        })
+        .await;
+
+        if shutdown.is_err() {
+            warn!(
+                "replica={replica_id} shutdown timed out after {}s",
+                start.elapsed().as_secs_f32()
+            );
+        }
+
         Ok(())
     }
 
@@ -1329,7 +1289,7 @@ impl Host {
         let bootstrap_generation = database.bootstrap_generation;
         let initial_environment = if program_needs_init {
             match &host_controller.initial_environment_source {
-                Some(source) => source.load(&database).await?,
+                Some(source) => source.load(&database, replica_id).await?,
                 None => Default::default(),
             }
         } else {
@@ -1845,42 +1805,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[tokio::test]
-    async fn positive_close_stays_pending_past_a_waiter_deadline_until_host_ownership_is_released() {
-        use crate::db::persistence::LocalPersistenceProvider;
-        use spacetimedb_paths::FromPathUnchecked;
-        let temp = tempfile::tempdir().unwrap();
-        let directory = Arc::new(ServerDataDir::from_path_unchecked(temp.path().to_owned()));
-        let controller = HostController::new(
-            directory.clone(),
-            db::Config {
-                storage: db::Storage::Memory,
-                page_pool_max_size: None,
-            },
-            HostRuntimeConfig::new(WasmConfig::default(), V8Config::default(), ModuleHttpConfig::default()),
-            Arc::new(|_| std::future::ready(anyhow::Ok(None))),
-            Arc::new(NullEnergyMonitor),
-            Arc::new(()),
-            Arc::new(LocalPersistenceProvider::new(directory)),
-            JobCores::without_pinned_cores(),
-        );
-        let cell = Arc::new(AsyncRwLock::new(None));
-        controller.hosts.lock().insert(17, cell.clone());
-        let accepted_reader = cell.clone().read_owned().await;
-        let mut close = tokio::spawn(async move { controller.exit_module_host_and_join(17).await });
-        assert!(tokio::time::timeout(Duration::from_millis(30), &mut close)
-            .await
-            .is_err());
-        // A deadline on the observer did not complete or discard the owned close.
-        assert!(!close.is_finished());
-        drop(accepted_reader);
-        tokio::time::timeout(Duration::from_secs(5), close)
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
-    }
 
     fn reducer_call_result(outcome: ReducerOutcome) -> ReducerCallResult {
         ReducerCallResult {
