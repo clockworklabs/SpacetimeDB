@@ -4,6 +4,19 @@ Stack Bench compares how coding agents build the same application with different
 technology stacks. It runs each attempt in an isolated container, tests real
 behavior, supports optional bounded repairs, and keeps the evidence behind every result.
 
+## Verified study baseline
+
+Tag: **`stack-bench/astra-repairs-2026-09-14`** — commit `4e1ecc037`.
+This labels the frozen version used for the audited Astra-medium 3×3 repair study.
+Its L1–L3 qualification passed; all nine runs have complete final evidence under
+the 110-check definition. Use this baseline to identify that study's code.
+
+This is a historical study baseline, not a claim that the version has no bugs.
+It includes the documented sorting ambiguity and SpacetimeDB stage-summary error;
+the audit used accepted checkpoints and final grades to resolve the summary error.
+Newer grader changes on the current branch require their own qualification before
+they receive a new verified baseline tag. Keep this tag fixed.
+
 ## What it does
 
 1. Compiles a versioned campaign that fixes the product request, model, stacks,
