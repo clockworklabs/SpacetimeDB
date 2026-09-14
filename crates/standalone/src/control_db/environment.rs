@@ -13,8 +13,9 @@
 //!
 //! The host reads this input only before the database's first initialization.
 //! Reopening an initialized database uses its committed program and `st_env`,
-//! including later module updates. Reset replaces the bootstrap input, and
-//! database deletion removes it atomically with both indexes and the binding.
+//! including later module updates. The initial input is no longer needed once
+//! initialization is durable, but is currently retained until reset replaces it
+//! or database deletion removes it atomically with both indexes and the binding.
 use super::*;
 use spacetimedb_client_api_messages::publish::PublishRequest;
 use spacetimedb_lib::Hash;
@@ -158,10 +159,14 @@ impl ControlDb {
         }
     }
 
-    /// Install the desired initial database, its complete private input and a
-    /// durable leader nomination together. Cancellation before host launch can
-    /// therefore recover through the ordinary leader lookup.
-    pub(crate) fn install_database_with_environment(
+    /// Atomically write the database record, initial environment, and new replica.
+    /// Remove any supplied previous replica records in the same transaction.
+    ///
+    /// With `expected = None`, require that the database does not exist.
+    /// With `expected = Some(previous)`, require that it still matches `previous`.
+    ///
+    /// Does not start or stop replicas.
+    pub(crate) fn upsert_database_with_environment(
         &self,
         mut database: Database,
         expected: Option<&Database>,
@@ -327,7 +332,7 @@ mod tests {
         let temp = tempfile::tempdir()?;
         let (original, original_replica) = {
             let control = ControlDb::at(temp.path())?;
-            control.install_database_with_environment(
+            control.upsert_database_with_environment(
                 database(),
                 None,
                 BTreeMap::from([("VALUE".into(), "first".into())]),
@@ -345,7 +350,7 @@ mod tests {
             control.get_leader_replica_by_database(loaded.id).unwrap().id,
             original_replica.id
         );
-        let (replaced, new_replica) = control.install_database_with_environment(
+        let (replaced, new_replica) = control.upsert_database_with_environment(
             loaded.clone(),
             Some(&loaded),
             BTreeMap::new(),
@@ -362,7 +367,7 @@ mod tests {
             new_replica.id
         );
         assert!(control
-            .install_database_with_environment(loaded.clone(), Some(&loaded), BTreeMap::new(), &[])
+            .upsert_database_with_environment(loaded.clone(), Some(&loaded), BTreeMap::new(), &[])
             .is_err());
         assert_eq!(
             control
@@ -380,7 +385,7 @@ mod tests {
     fn corrupt_bootstrap_does_not_prevent_listing_or_deletion() -> anyhow::Result<()> {
         let temp = tempfile::tempdir()?;
         let control = ControlDb::at(temp.path())?;
-        let (database, replica) = control.install_database_with_environment(database(), None, BTreeMap::new(), &[])?;
+        let (database, replica) = control.upsert_database_with_environment(database(), None, BTreeMap::new(), &[])?;
         control
             .db
             .open_tree(METADATA_TREE)?
@@ -404,7 +409,7 @@ mod tests {
         let legacy = control.get_database_by_id(id)?.unwrap();
         assert!(control.initial_environment(&legacy, 0)?.is_empty());
         let (new, replica) =
-            control.install_database_with_environment(legacy.clone(), Some(&legacy), BTreeMap::new(), &[])?;
+            control.upsert_database_with_environment(legacy.clone(), Some(&legacy), BTreeMap::new(), &[])?;
         control.db.open_tree(VALUES_TREE)?.remove(new.id.to_be_bytes())?;
         assert!(control.initial_environment(&new, replica.id).is_err());
         Ok(())
@@ -429,7 +434,7 @@ mod tests {
                 let temp = tempfile::tempdir()?;
                 let (original, old_replica) = {
                     let control = ControlDb::at(temp.path())?;
-                    control.install_database_with_environment(database(), None, values, &[])?
+                    control.upsert_database_with_environment(database(), None, values, &[])?
                 };
                 let replacement_id = {
                     // Reopen using only the old format and old reset operations:
@@ -465,7 +470,7 @@ mod tests {
                 // A subsequent new-version reset must succeed and use only its
                 // freshly supplied values, even if the old reset never ran init.
                 let previous = control.get_replicas_by_database(loaded.id)?;
-                let (new, replica) = control.install_database_with_environment(
+                let (new, replica) = control.upsert_database_with_environment(
                     loaded.clone(),
                     Some(&loaded),
                     BTreeMap::from([("SECRET".into(), "fresh-value".into())]),
@@ -481,7 +486,7 @@ mod tests {
     fn active_bootstrap_still_rejects_a_program_mismatch() -> anyhow::Result<()> {
         let temp = tempfile::tempdir()?;
         let control = ControlDb::at(temp.path())?;
-        let (database, replica) = control.install_database_with_environment(database(), None, BTreeMap::new(), &[])?;
+        let (database, replica) = control.upsert_database_with_environment(database(), None, BTreeMap::new(), &[])?;
         let tree = control.db.open_tree(METADATA_TREE)?;
         let mut binding = Bootstrap::decode(&tree.get(database.id.to_be_bytes())?.unwrap(), &database)?;
         binding.program = spacetimedb_lib::hash_bytes(b"incorrect program");

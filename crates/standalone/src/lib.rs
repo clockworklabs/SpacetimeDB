@@ -322,7 +322,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
 
                 let (database, replica) =
                     self.control_db
-                        .install_database_with_environment(database, None, environment, &[])?;
+                        .upsert_database_with_environment(database, None, environment, &[])?;
                 // The leader nomination and input are durable already. If this
                 // waiter is cancelled, ordinary lookup resumes the same input.
                 self.on_insert_replica(&replica).await?;
@@ -486,7 +486,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         for replica in &previous_replicas {
             self.on_delete_replica(replica.id).await?;
         }
-        let (_, replica) = self.control_db.install_database_with_environment(
+        let (_, replica) = self.control_db.upsert_database_with_environment(
             database,
             Some(&previous),
             environment,
