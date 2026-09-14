@@ -1,4 +1,4 @@
-use spacetimedb_lib::sats::raw_identifier::RawIdentifier;
+use spacetimedb_lib::sats::raw_identifier::RawNamespacedIdentifier;
 use spacetimedb_lib::Identity;
 use sqlparser::ast::Ident;
 use std::fmt::{Display, Formatter};
@@ -186,13 +186,17 @@ pub enum Parameter {
 
 /// A SQL identifier or named reference.
 /// Currently case sensitive.
+///
+/// This holds a [`RawNamespacedIdentifier`] rather than a [`RawIdentifier`] because a
+/// name written in SQL may be namespace-qualified (e.g. `lib.library_table`), and such
+/// a name can never be validated into a single `Identifier`.
 #[derive(Debug, Clone)]
-pub struct SqlIdent(pub RawIdentifier);
+pub struct SqlIdent(pub RawNamespacedIdentifier);
 
 /// Case insensitivity should be implemented here if at all
 impl From<Ident> for SqlIdent {
     fn from(Ident { value, .. }: Ident) -> Self {
-        SqlIdent(RawIdentifier::new(value))
+        SqlIdent(RawNamespacedIdentifier::new(value))
     }
 }
 

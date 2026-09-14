@@ -236,6 +236,7 @@ impl async_cache::Fetcher<Arc<JwksValidator>> for KeyFetcher {
         // TODO: We should probably add debouncing to avoid spamming the logs.
         // Alternatively we could add a backoff before retrying.
         if let Err(e) = &key_or_error {
+            // TODO: Review log level after configured issuers can be distinguished from arbitrary token issuers.
             log::warn!("Error fetching public key for issuer {raw_issuer}: {e:?}");
         }
         let keys = key_or_error?;
@@ -286,6 +287,7 @@ impl TokenValidator for OidcTokenValidator {
         // TODO: We should probably add debouncing to avoid spamming the logs.
         // Alternatively we could add a backoff before retrying.
         if let Err(e) = &key_or_error {
+            // TODO: Review log level after configured issuers can be distinguished from arbitrary token issuers.
             log::warn!("Error fetching public key for issuer {raw_issuer}: {e:?}");
         }
         let keys = key_or_error?;
@@ -841,6 +843,47 @@ mod tests {
 
         run_oidc_test(OidcTokenValidator, &opts).await?;
         run_oidc_test(CachingOidcTokenValidator::get_default(), &opts).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_oidc_flow_with_mixed_type_custom_jwt_headers() -> anyhow::Result<()> {
+        let mut kp = JwtKeys::generate()?;
+        kp.kid = Some("key1".to_string());
+
+        let handle = OIDCServerHandle::start_new(keyset_to_json([kp.clone()])?).await?;
+        let issuer = handle.base_url;
+        let subject = "test_subject";
+        let orig_claims = IncomingClaims {
+            identity: None,
+            subject: subject.into(),
+            issuer: issuer.clone().into(),
+            audience: [].into(),
+            iat: std::time::SystemTime::now(),
+            exp: None,
+            extra: None,
+        };
+
+        let mut extras = jsonwebtoken::Extras::default();
+        extras.insert(
+            "oiat",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_secs(),
+        );
+        extras.insert("clerk_bool", true);
+        extras.insert("clerk_object", serde_json::json!({ "nested": "value" }));
+        let header = jsonwebtoken::Header {
+            kid: kp.kid.clone(),
+            extras,
+            ..jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256)
+        };
+        let token = jsonwebtoken::encode(&header, &orig_claims, &kp.private)?;
+
+        let validated_claims = OidcTokenValidator.validate_token(&token).await?;
+        assert_eq!(&*validated_claims.issuer, &*issuer);
+        assert_eq!(&*validated_claims.subject, subject);
+        assert_eq!(validated_claims.identity, Identity::from_claims(&issuer, subject));
         Ok(())
     }
 

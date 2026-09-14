@@ -47,7 +47,7 @@ impl<'opts> Cpp<'opts> {
     }
 
     fn is_recursive_mount_module_field(&self, type_name: &str, field_name: &str) -> bool {
-        type_name == "RawModuleMountV10" && field_name == "module"
+        type_name == "RawSubmoduleV10" && field_name == "module"
     }
 
     fn write_header_comment(&self, output: &mut String) {
@@ -180,7 +180,7 @@ impl<'opts> Cpp<'opts> {
         for (field_name, field_type) in &product.elements {
             write!(output, "    ").unwrap();
             if self.is_recursive_mount_module_field(type_name, field_name) {
-                // Temporary special-case to preserve the recursive RawModuleMountV10 ->
+                // Temporary special-case to preserve the recursive RawSubmoduleV10 ->
                 // RawModuleDefV10 shape while breaking the include cycle in generated C++.
                 write!(output, "std::shared_ptr<{}::RawModuleDefV10>", self.namespace).unwrap();
             } else {
@@ -213,7 +213,7 @@ impl<'opts> Cpp<'opts> {
         writeln!(output, "    }}").unwrap();
 
         // Generate equality method
-        if type_name == "RawModuleMountV10" {
+        if type_name == "RawSubmoduleV10" {
             // Pointer equality is sufficient for this internal autogen type. Mounts are not
             // emitted by the C++ module path yet; this exists to keep the schema shape aligned.
             writeln!(output, "    SPACETIMEDB_PRODUCT_TYPE_EQUALITY(namespace_, module)").unwrap();
@@ -522,7 +522,7 @@ impl Lang for Cpp<'_> {
         let name = type_def.accessor_name.name();
 
         // Special handling for AlgebraicType due to circular dependencies
-        if name.to_string() == "AlgebraicType" {
+        if name == "AlgebraicType" {
             return vec![OutputFile {
                 filename: format!("{name}.g.h"),
                 code: self.generate_algebraic_type_special(),
@@ -541,13 +541,13 @@ impl Lang for Cpp<'_> {
 
         let type_name = name.to_string();
         for dep in deps {
-            if dep != type_name && !(type_name == "RawModuleMountV10" && dep == "RawModuleDefV10") {
+            if dep != type_name && !(type_name == "RawSubmoduleV10" && dep == "RawModuleDefV10") {
                 writeln!(output, "#include \"{}.g.h\"", dep).unwrap();
             }
         }
 
         writeln!(output).unwrap();
-        if type_name == "RawModuleMountV10" {
+        if type_name == "RawSubmoduleV10" {
             writeln!(output, "namespace {} {{", self.namespace).unwrap();
             writeln!(output, "struct RawModuleDefV10;").unwrap();
             writeln!(output, "}} // namespace {}", self.namespace).unwrap();

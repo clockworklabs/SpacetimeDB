@@ -108,7 +108,7 @@ This is a form of [remote procedure call](https://en.wikipedia.org/wiki/Remote_p
 A reducer can be written in a TypeScript module like so:
 
 ```typescript
-export const set_player_name = spacetimedb.reducer({ id: t.u64(), name: t.string() }, (ctx, { id, name }) => {
+export const setPlayerName = spacetimedb.reducer({ id: t.u64(), name: t.string() }, (ctx, { id, name }) => {
    // ...
 });
 ```
@@ -322,7 +322,7 @@ and must manually open and commit a transaction in order to read from or modify 
 A procedure can be defined in a TypeScript module:
 
 ```typescript
-export const make_request = spacetimedb.procedure(t.string(), ctx => {
+export const makeRequest = spacetimedb.procedure(t.string(), ctx => {
    // ...
 })
 ```
@@ -345,9 +345,18 @@ ctx.procedures.makeRequest().then(
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-C# modules currently cannot define procedures. Support for defining procedures in C# modules will be released shortly.
+C# modules can define procedures:
 
-A C# [client](#client) can call a procedure defined by a Rust or TypeScript module:
+```csharp
+[SpacetimeDB.Procedure]
+public static string MakeRequest(ProcedureContext ctx)
+{
+    // ...
+    return "result";
+}
+```
+
+A C# [client](#client) can call a procedure defined by a module:
 
 ```csharp
 void Main()
@@ -384,7 +393,7 @@ Because procedures are unstable, Rust modules that define them must opt in to th
 
 ```toml
 [dependencies]
-spacetimedb = { version = "1.x", features = ["unstable"] }
+spacetimedb = { version = "2.*", features = ["unstable"] }
 ```
 
 Then, that module can define a procedure:
@@ -436,7 +445,7 @@ Use the other tabs (TypeScript/C#/Rust/Unreal C++/Blueprint) for client call exa
 </TabItem>
 <TabItem value="cpp-unreal" label="Unreal C++">
 
-An Unreal C++ [client](#client) can call a procedure defined by a Rust or TypeScript module:
+An Unreal C++ [client](#client) can call a procedure defined by a module:
 
 ```cpp
 {
@@ -468,7 +477,7 @@ void AGameManager::OnMakeRequestComplete(const FProcedureEventContext& Context, 
 </TabItem>
 <TabItem value="blueprint" label="Unreal Blueprint">
 
-An Unreal [client](#client) can call a procedure defined by a Rust or TypeScript module:
+An Unreal [client](#client) can call a procedure defined by a module:
 
 ![MakeRequest without callback](/images/unreal/intro/ue-blueprint-makerequest-nocallback.png)
 
@@ -493,7 +502,7 @@ Views must be declared as `public` and accept only a context parameter. They can
 A view can be written in a TypeScript module like so:
 
 ```typescript
-export const my_player = spacetimedb.view(
+export const myPlayer = spacetimedb.view(
   { name: 'my_player', public: true },
   t.option(players.rowType),
   (ctx) => {

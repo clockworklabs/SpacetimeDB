@@ -26,18 +26,11 @@ public static class GeneratorSnapshotTests
 
     record struct StepOutput(string Key, IncrementalStepRunReason Reason, object Value);
 
-    private class Fixture
+    private class Fixture(string projectDir, CSharpCompilation sampleCompilation)
     {
-        private readonly string projectDir;
-        public CSharpCompilation SampleCompilation { get; }
-        public CSharpParseOptions ParseOptions { get; }
-
-        public Fixture(string projectDir, CSharpCompilation sampleCompilation)
-        {
-            this.projectDir = projectDir;
-            SampleCompilation = sampleCompilation;
-            ParseOptions = (CSharpParseOptions)sampleCompilation.SyntaxTrees.First().Options;
-        }
+        public CSharpCompilation SampleCompilation { get; } = sampleCompilation;
+        public CSharpParseOptions ParseOptions { get; } =
+            (CSharpParseOptions)sampleCompilation.SyntaxTrees.First().Options;
 
         public static async Task<Fixture> Compile(string name)
         {

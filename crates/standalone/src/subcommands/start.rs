@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::{StandaloneEnv, StandaloneOptions};
 use anyhow::Context;
-use axum::extract::DefaultBodyLimit;
+use axum::extract::{DefaultBodyLimit, Extension};
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
 use spacetimedb::config::{parse_config, CertificateAuthority};
@@ -19,6 +19,7 @@ use spacetimedb::worker_metrics;
 use spacetimedb_client_api::routes::database::DatabaseRoutes;
 use spacetimedb_client_api::routes::router;
 use spacetimedb_client_api::routes::subscribe::WebSocketOptions;
+use spacetimedb_client_api::routes::TaskDumpRegistry;
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::{ConfigToml, ServerDataDir};
 use tokio::net::TcpListener;
@@ -188,6 +189,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
                 commitlog: config.commitlog,
             },
             websocket: config.websocket,
+            module_http: config.common.module_http,
             wasm: config.common.wasm,
             v8: config.common.v8,
         },
@@ -197,11 +199,8 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     )
     .await?;
     worker_metrics::spawn_jemalloc_stats(listen_addr.clone());
-    worker_metrics::spawn_tokio_stats(
-        listen_addr.clone(),
-        "main".to_string(),
-        tokio::runtime::Handle::current(),
-    );
+    let main_rt = tokio::runtime::Handle::current();
+    worker_metrics::spawn_tokio_stats(listen_addr.clone(), "main".to_string(), main_rt.clone());
     worker_metrics::spawn_page_pool_stats(listen_addr.clone(), ctx.page_pool().clone());
     worker_metrics::spawn_bsatn_rlb_pool_stats(listen_addr.clone(), ctx.bsatn_rlb_pool().clone());
     let mut db_routes = DatabaseRoutes::default();
@@ -209,7 +208,10 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     db_routes.db_put = db_routes.db_put.layer(DefaultBodyLimit::disable());
     db_routes.pre_publish = db_routes.pre_publish.layer(DefaultBodyLimit::disable());
     let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
-    let service = router(&ctx, db_routes, IdentityRoutes::default(), extra).with_state(ctx.clone());
+    let task_dumps = TaskDumpRegistry::new([("main", main_rt)]);
+    let service = router(&ctx, db_routes, IdentityRoutes::default(), extra)
+        .layer(Extension(task_dumps))
+        .with_state(ctx.clone());
 
     // Check if the requested port is available on both IPv4 and IPv6.
     // If not, offer to find an available port by incrementing (unless non-interactive).
@@ -281,7 +283,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
             }
         }
     } else {
-        log::warn!("PostgreSQL wire protocol server disabled");
+        log::info!("PostgreSQL wire protocol server disabled");
         axum::serve(tcp, service)
             .with_graceful_shutdown(async {
                 tokio::signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
@@ -520,6 +522,9 @@ mod tests {
                 "banana_shake=strawberry",
             ]
 
+            [module-http]
+            enabled = false
+
             [websocket]
             idle-timeout = "1min"
             close-handshake-timeout = "500ms"
@@ -552,6 +557,7 @@ mod tests {
         // so check `common` in a pedestrian way.
         assert_eq!(&config.common.logs.directives, &["banana_shake=strawberry"]);
         assert!(config.common.certificate_authority.is_none());
+        assert!(!config.common.module_http.enabled);
         assert_eq!(config.common.wasm.procedure_instance_pool_size.get(), 4);
         assert_eq!(config.common.v8.procedure_instance_pool_size.get(), 3);
         assert_eq!(config.common.v8.heap_policy.heap_check_request_interval, None);

@@ -16,7 +16,7 @@ use spacetimedb_lib::db::raw_def::v9::RawSql;
 use spacetimedb_lib::db::raw_def::{generate_cols_name, RawConstraintDefV8};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::product_value::InvalidFieldError;
-use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::raw_identifier::{RawIdentifier, RawNamespacedIdentifier};
 use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, WithTypespace};
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -25,7 +25,19 @@ use crate::def::{
     ColumnDef, ConstraintData, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup,
     RawModuleDefVersion, ScheduleDef, SequenceDef, TableDef, UniqueConstraintData, ViewColumnDef, ViewDef,
 };
-use crate::identifier::Identifier;
+use crate::identifier::{Identifier, NamespacePath, NamespacedIdentifier};
+
+/// The local part of a stored, possibly namespaced name.
+///
+/// Names in the database carry the namespace of the module that owns them, so recovering the
+/// local name means removing exactly that prefix. Splitting on the last `.` is wrong: a V9
+/// index, constraint or sequence name may itself contain dots (see the `wacky_names` test),
+/// in which case the final segment is not the local name and the comparison spuriously fails.
+fn strip_namespace<'a>(stored: &'a str, namespace: &NamespacePath) -> anyhow::Result<&'a str> {
+    namespace
+        .strip_from(stored)
+        .ok_or_else(|| anyhow::anyhow!("Name `{stored}` is not in the expected namespace `{namespace}`"))
+}
 
 /// Helper trait documenting allowing schema entities to be built from a validated `ModuleDef`.
 pub trait Schema: Sized {
@@ -136,7 +148,9 @@ pub struct TableSchema {
     /// The name of the table.
     pub table_name: TableName,
 
-    pub alias: Option<Identifier>,
+    /// The source-level (accessor) name of the table, for client codegen.
+    /// Namespaced for submodule tables, matching `table_name`.
+    pub alias: Option<NamespacedIdentifier>,
 
     /// Is this the backing table of a view?
     pub view_info: Option<ViewDefInfo>,
@@ -199,7 +213,7 @@ impl TableSchema {
         schedule: Option<ScheduleSchema>,
         primary_key: Option<ColId>,
         is_event: bool,
-        alias: Option<Identifier>,
+        alias: Option<NamespacedIdentifier>,
     ) -> Self {
         Self {
             row_type: columns_to_row_type(&columns),
@@ -233,7 +247,7 @@ impl TableSchema {
                 col_name: element
                     .name
                     .clone()
-                    .map(Identifier::new_assume_valid)
+                    .map(Identifier::new_unsafe_assume_valid)
                     .unwrap_or_else(|| Identifier::for_test(format!("col{col_pos}"))),
                 col_type: element.algebraic_type.clone(),
                 alias: None,
@@ -663,12 +677,16 @@ impl TableSchema {
     /// This method works around this problem by copying the column types from the module def into the table schema.
     /// It can be removed once v8 is removed, since v9 will reject modules with an inconsistency like this.
     pub fn janky_fix_column_defs(&mut self, module_def: &ModuleDef) {
-        let table_name = self.table_name.clone().into();
+        // `janky_fix_column_defs` only runs for v8 modules, which have no submodules,
+        // so the table is at the root.
+        let full_name: NamespacedIdentifier = self.table_name.clone().into();
+        let local_name = full_name.local_name().clone();
         for col in &mut self.columns {
-            let def: &ColumnDef = module_def.lookup((&table_name, &col.col_name)).unwrap();
+            let def: &ColumnDef = module_def.lookup((&local_name, &col.col_name)).unwrap();
             col.col_type = def.ty.clone();
         }
-        let table_def: &TableDef = module_def.expect_lookup(&table_name);
+        let root = NamespacePath::root();
+        let table_def: &TableDef = module_def.expect_lookup((&root, &local_name));
         self.row_type = module_def.typespace()[table_def.product_type_ref]
             .as_product()
             .unwrap()
@@ -826,7 +844,7 @@ impl TableSchema {
         columns.push(ColumnSchema {
             table_id: TableId::SENTINEL,
             col_pos: VIEW_ARG_HASH_COL,
-            col_name: Identifier::new_assume_valid("arg_hash".into()),
+            col_name: Identifier::new_unsafe_assume_valid("arg_hash".into()),
             col_type: AlgebraicType::U256,
             alias: None,
         });
@@ -854,7 +872,7 @@ impl TableSchema {
         let mut indexes = vec![IndexSchema {
             index_id: IndexId::SENTINEL,
             table_id: TableId::SENTINEL,
-            index_name: make_index_name(&arg_hash_cols),
+            index_name: make_index_name(&arg_hash_cols).into(),
             index_algorithm: IndexAlgorithm::BTree(arg_hash_cols.into()),
             alias: None,
         }];
@@ -869,7 +887,7 @@ impl TableSchema {
             constraints.push(ConstraintSchema {
                 table_id: TableId::SENTINEL,
                 constraint_id: ConstraintId::SENTINEL,
-                constraint_name: make_constraint_name(&cols),
+                constraint_name: make_constraint_name(&cols).into(),
                 data: ConstraintData::Unique(UniqueConstraintData {
                     columns: ColSet::from(cols.clone()),
                 }),
@@ -877,7 +895,7 @@ impl TableSchema {
             indexes.push(IndexSchema {
                 index_id: IndexId::SENTINEL,
                 table_id: TableId::SENTINEL,
-                index_name: make_index_name(&cols),
+                index_name: make_index_name(&cols).into(),
                 index_algorithm: IndexAlgorithm::BTree(cols.into()),
                 alias: None,
             });
@@ -907,7 +925,7 @@ impl TableSchema {
             None,
             None,
             false,
-            Some(accessor_name.clone()),
+            Some(accessor_name.clone().into()),
         )
     }
 }
@@ -978,12 +996,19 @@ impl Schema for TableSchema {
             schedule,
             *primary_key,
             *is_event,
-            Some(accessor_name.clone()),
+            Some(accessor_name.clone().into()),
         )
     }
 
     fn check_compatible(&self, module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
-        ensure_eq!(&self.table_name[..], &def.name[..], "Table name mismatch");
+        // Both root and submodule tables are stored under their canonical name, qualified by
+        // the namespace their module is mounted under. Check the whole thing, not just the
+        // last segment: a table in `lib` must not validate against a root def of the same name.
+        ensure_eq!(
+            strip_namespace(&self.table_name, &def.namespace)?,
+            &def.name[..],
+            "Table name mismatch"
+        );
         ensure_eq!(self.primary_key, def.primary_key, "Primary key mismatch");
         let def_table_access: StAccess = (def.table_access).into();
         ensure_eq!(self.table_access, def_table_access, "Table access mismatch");
@@ -999,19 +1024,22 @@ impl Schema for TableSchema {
         }
         ensure_eq!(self.columns.len(), def.columns.len(), "Column count mismatch");
 
+        // Index names in the DB are prefixed for submodule tables (e.g. "lib.library_table_id_idx_btree"),
+        // but `def.indexes` is keyed by the local name.
         for index in &self.indexes {
             let index_def = def
                 .indexes
-                .get(&index.index_name)
+                .get(strip_namespace(&index.index_name, &def.namespace)?)
                 .ok_or_else(|| anyhow::anyhow!("Index {} not found in definition", index.index_id.0))?;
             index.check_compatible(module_def, index_def)?;
         }
         ensure_eq!(self.indexes.len(), def.indexes.len(), "Index count mismatch");
 
+        // Like index names, constraint names are namespaced in the DB for submodule tables.
         for constraint in &self.constraints {
             let constraint_def = def
                 .constraints
-                .get(&constraint.constraint_name)
+                .get(strip_namespace(&constraint.constraint_name, &def.namespace)?)
                 .ok_or_else(|| anyhow::anyhow!("Constraint {} not found in definition", constraint.constraint_id.0))?;
             constraint.check_compatible(module_def, constraint_def)?;
         }
@@ -1021,10 +1049,11 @@ impl Schema for TableSchema {
             "Constraint count mismatch"
         );
 
+        // Like index names, sequence names are namespaced in the DB for submodule tables.
         for sequence in &self.sequences {
             let sequence_def = def
                 .sequences
-                .get(&sequence.sequence_name)
+                .get(strip_namespace(&sequence.sequence_name, &def.namespace)?)
                 .ok_or_else(|| anyhow::anyhow!("Sequence {} not found in definition", sequence.sequence_id.0))?;
             sequence.check_compatible(module_def, sequence_def)?;
         }
@@ -1220,9 +1249,9 @@ impl From<ColumnSchemaRef<'_>> for ProductTypeElement {
 pub struct SequenceSchema {
     /// The unique identifier for the sequence within a database.
     pub sequence_id: SequenceId,
-    /// The name of the sequence.
+    /// The name of the sequence. Namespaced for submodule tables.
     /// Deprecated. In the future, sequences will be identified by col_pos.
-    pub sequence_name: RawIdentifier,
+    pub sequence_name: RawNamespacedIdentifier,
     /// The ID of the table associated with the sequence.
     pub table_id: TableId,
     /// The position of the column associated with this sequence.
@@ -1270,7 +1299,7 @@ impl Schema for SequenceSchema {
 
         SequenceSchema {
             sequence_id: id,
-            sequence_name: def.name.clone(),
+            sequence_name: def.name.clone().into(),
             table_id: parent_id,
             col_pos: def.column,
             increment: def.increment,
@@ -1282,7 +1311,12 @@ impl Schema for SequenceSchema {
     }
 
     fn check_compatible(&self, _module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
-        ensure_eq!(&self.sequence_name[..], &def.name[..], "Sequence name mismatch");
+        // Sequence names are namespaced in the DB for submodule tables; def.name is local.
+        ensure_eq!(
+            strip_namespace(&self.sequence_name, &def.namespace)?,
+            &def.name[..],
+            "Sequence name mismatch"
+        );
         ensure_eq!(self.col_pos, def.column, "Sequence column mismatch");
         ensure_eq!(self.increment, def.increment, "Sequence increment mismatch");
         if let Some(start) = &def.start {
@@ -1311,7 +1345,10 @@ pub struct ScheduleSchema {
     pub schedule_name: Identifier,
 
     /// The name of the reducer or procedure to call.
-    pub function_name: Identifier,
+    ///
+    /// Namespaced for submodule tables (e.g. `"lib.library_scheduled_procedure"`),
+    /// since that is how the scheduler resolves it.
+    pub function_name: NamespacedIdentifier,
 
     /// The column containing the `ScheduleAt` enum.
     pub at_column: ColId,
@@ -1324,7 +1361,7 @@ impl ScheduleSchema {
             table_id: TableId::SENTINEL,
             schedule_id: ScheduleId::SENTINEL,
             schedule_name: Identifier::for_test(name.as_ref()),
-            function_name: Identifier::for_test(function.as_ref()),
+            function_name: Identifier::for_test(function.as_ref()).into(),
             at_column: at.into(),
         }
     }
@@ -1344,7 +1381,7 @@ impl Schema for ScheduleSchema {
             table_id: parent_id,
             schedule_id: id,
             schedule_name: def.name.clone(),
-            function_name: def.function_name.clone(),
+            function_name: def.function_name.clone().into(),
             at_column: def.at_column,
             // Ignore def.at_column and id_column. Those are recovered at runtime.
         }
@@ -1352,8 +1389,10 @@ impl Schema for ScheduleSchema {
 
     fn check_compatible(&self, _module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
         ensure_eq!(&self.schedule_name[..], &def.name[..], "Schedule name mismatch");
+        // For submodule tables the stored function name is namespaced
+        // (e.g. `"lib.library_scheduled_procedure"`) while `def.function_name` is local.
         ensure_eq!(
-            &self.function_name[..],
+            strip_namespace(&self.function_name, &def.namespace)?,
             &def.function_name[..],
             "Schedule function name mismatch"
         );
@@ -1369,10 +1408,10 @@ pub struct IndexSchema {
     /// The ID of the table associated with the index.
     pub table_id: TableId,
     /// The name of the index. This should not be assumed to follow any particular format.
-    /// Unique within the database.
-    pub index_name: RawIdentifier,
+    /// Unique within the database. Namespaced for submodule tables.
+    pub index_name: RawNamespacedIdentifier,
 
-    pub alias: Option<RawIdentifier>,
+    pub alias: Option<RawNamespacedIdentifier>,
     /// The data for the schema.
     pub index_algorithm: IndexAlgorithm,
 }
@@ -1395,7 +1434,7 @@ impl IndexSchema {
         Self {
             index_id: IndexId::SENTINEL,
             table_id: TableId::SENTINEL,
-            index_name: RawIdentifier::new(name.as_ref()),
+            index_name: RawNamespacedIdentifier::new(name.as_ref()),
             index_algorithm: algo.into(),
             alias: None,
         }
@@ -1414,14 +1453,19 @@ impl Schema for IndexSchema {
         IndexSchema {
             index_id: id,
             table_id: parent_id,
-            index_name: def.name.clone(),
+            index_name: def.name.clone().into(),
             index_algorithm,
-            alias: Some(def.source_name.clone()),
+            alias: Some(def.source_name.clone().into()),
         }
     }
 
     fn check_compatible(&self, _module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
-        ensure_eq!(&self.index_name[..], &def.name[..], "Index name mismatch");
+        // Index names are namespaced in the DB for submodule tables; def.name is local.
+        ensure_eq!(
+            strip_namespace(&self.index_name, &def.namespace)?,
+            &def.name[..],
+            "Index name mismatch"
+        );
         ensure_eq!(&self.index_algorithm, &def.algorithm, "Index algorithm mismatch");
         Ok(())
     }
@@ -1438,7 +1482,7 @@ pub struct ConstraintSchema {
     /// The unique ID of the constraint within the database.
     pub constraint_id: ConstraintId,
     /// The name of the constraint.
-    pub constraint_name: RawIdentifier,
+    pub constraint_name: RawNamespacedIdentifier,
     /// The data for the constraint.
     pub data: ConstraintData, // this reuses the type from Def, which is fine, neither of `schema` nor `def` are ABI modules.
 }
@@ -1460,7 +1504,7 @@ impl ConstraintSchema {
         Self {
             table_id: TableId::SENTINEL,
             constraint_id: ConstraintId::SENTINEL,
-            constraint_name: RawIdentifier::new(name.as_ref()),
+            constraint_name: RawNamespacedIdentifier::new(name.as_ref()),
             data: ConstraintData::Unique(UniqueConstraintData { columns: cols.into() }),
         }
     }
@@ -1476,7 +1520,7 @@ impl ConstraintSchema {
         if constraint.constraints.has_unique() {
             Some(ConstraintSchema {
                 constraint_id: ConstraintId::SENTINEL, // Set to 0 as it may be assigned later.
-                constraint_name: RawIdentifier::new(constraint.constraint_name.trim()),
+                constraint_name: RawNamespacedIdentifier::new(constraint.constraint_name.trim()),
                 table_id,
                 data: ConstraintData::Unique(UniqueConstraintData {
                     columns: constraint.columns.into(),
@@ -1498,14 +1542,19 @@ impl Schema for ConstraintSchema {
 
         ConstraintSchema {
             constraint_id: id,
-            constraint_name: def.name.clone(),
+            constraint_name: def.name.clone().into(),
             table_id: parent_id,
             data: def.data.clone(),
         }
     }
 
     fn check_compatible(&self, _module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
-        ensure_eq!(&self.constraint_name[..], &def.name[..], "Constraint name mismatch");
+        // Constraint names are namespaced in the DB for submodule tables; def.name is local.
+        ensure_eq!(
+            strip_namespace(&self.constraint_name, &def.namespace)?,
+            &def.name[..],
+            "Constraint name mismatch"
+        );
         ensure_eq!(&self.data, &def.data, "Constraint data mismatch");
         Ok(())
     }
@@ -1516,4 +1565,96 @@ impl Schema for ConstraintSchema {
 pub struct RowLevelSecuritySchema {
     pub table_id: TableId,
     pub sql: RawSql,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spacetimedb_lib::db::raw_def::v10::{RawModuleDefV10Builder, RawModuleDefV10Section, RawSubmoduleV10};
+    use spacetimedb_sats::AlgebraicType;
+
+    fn module_with_table() -> ModuleDef {
+        let mut builder = RawModuleDefV10Builder::new();
+        builder
+            .build_table_with_new_type("MyTable", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .finish();
+        builder
+            .finish()
+            .try_into()
+            .expect("should be a valid module definition")
+    }
+
+    /// The same table, mounted in a `lib` submodule.
+    fn module_with_submodule_table() -> ModuleDef {
+        let mut sub = RawModuleDefV10Builder::new();
+        sub.build_table_with_new_type("MyTable", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .finish();
+        let mut root = RawModuleDefV10Builder::new().finish();
+        root.sections
+            .push(RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "lib".to_string(),
+                module: sub.finish(),
+            }]));
+        root.try_into().expect("should be a valid module definition")
+    }
+
+    #[test]
+    fn check_compatible_table_name() {
+        let def = module_with_table();
+        let table_def = def.tables().next().expect("table should exist");
+        assert_eq!(&table_def.name[..], "my_table");
+        assert_eq!(&table_def.accessor_name[..], "MyTable");
+
+        let mut schema = TableSchema::from_module_def(&def, table_def, (), TableId::SENTINEL);
+        assert!(schema.check_compatible(&def, table_def).is_ok());
+
+        // A root table must match the def's canonical name exactly.
+        schema.table_name = TableName::for_test("MyTable");
+        assert!(schema.check_compatible(&def, table_def).is_err());
+        schema.table_name = TableName::for_test("other");
+        assert!(schema.check_compatible(&def, table_def).is_err());
+
+        // A namespaced name does not match a def mounted at the root.
+        schema.table_name = TableName::for_test("lib.my_table");
+        assert!(schema.check_compatible(&def, table_def).is_err());
+    }
+
+    /// A submodule table is stored under its namespace-qualified canonical name, and must be
+    /// checked against the namespace its def is actually mounted under.
+    #[test]
+    fn check_compatible_submodule_table_name() {
+        let def = module_with_submodule_table();
+        let (prefix, owning, table_def) = def
+            .all_tables_with_prefix()
+            .into_iter()
+            .next()
+            .expect("submodule table should exist");
+        assert_eq!(&table_def.name[..], "my_table");
+        assert_eq!(&table_def.accessor_name[..], "MyTable");
+
+        // `from_module_def` yields local names; the engine qualifies them when it creates the
+        // table (see `create_table_from_def_with_prefix`), so do the same here.
+        let mut schema = TableSchema::from_module_def(owning, table_def, (), TableId::SENTINEL);
+        schema.table_name = TableName::from(prefix.join(table_def.name.clone()));
+        for index in &mut schema.indexes {
+            index.index_name = prefix.join_raw(&index.index_name);
+        }
+        for constraint in &mut schema.constraints {
+            constraint.constraint_name = prefix.join_raw(&constraint.constraint_name);
+        }
+        for sequence in &mut schema.sequences {
+            sequence.sequence_name = prefix.join_raw(&sequence.sequence_name);
+        }
+        assert!(schema.check_compatible(owning, table_def).is_ok());
+
+        // The accessor name is an alias, never an identity.
+        schema.table_name = TableName::for_test("lib.MyTable");
+        assert!(schema.check_compatible(owning, table_def).is_err());
+        // Nor does the bare canonical name match a def mounted in `lib`.
+        schema.table_name = TableName::for_test("my_table");
+        assert!(schema.check_compatible(owning, table_def).is_err());
+        // Nor a different namespace.
+        schema.table_name = TableName::for_test("other.my_table");
+        assert!(schema.check_compatible(owning, table_def).is_err());
+    }
 }

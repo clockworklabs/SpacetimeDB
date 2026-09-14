@@ -25,11 +25,18 @@ import { Uuid } from '../lib/uuid';
 import { httpClient, type HttpClient } from './http_internal';
 import type { DbView } from './db_view';
 import { makeRandom, makeRandomFromSeed, type Random } from './rng';
-import { callUserFunction, ReducerCtxImpl } from './runtime';
+import {
+  assignTxAliasViews,
+  buildProcedureAliasCtxMap,
+  callUserFunction,
+  ReducerCtxImpl,
+  runWithTx,
+} from './runtime';
 import { hostBackend, type DatastoreBackend } from './backend';
 import {
   exportContext,
   registerExport,
+  type SubmoduleDispatchInfo,
   type ModuleExport,
   type SchemaInner,
 } from './schema';
@@ -94,6 +101,13 @@ export type ProcedureOptsWithOptionalName<
   Ret extends TypeBuilder<any, any> = TypeBuilder<any, any>,
 > = Omit<ProcedureOpts<Params, Ret>, 'name'> & { name?: string };
 
+export type ProcedureAliasViews<SchemaDef extends UntypedSchemaDef> =
+  SchemaDef extends {
+    namespaces: infer NS extends Record<string, UntypedSchemaDef>;
+  }
+    ? { readonly [K in keyof NS]: ProcedureCtx<NS[K]> }
+    : {};
+
 export interface ProcedureCtx<S extends UntypedSchemaDef> {
   readonly sender: Identity;
   readonly databaseIdentity: Identity;
@@ -103,6 +117,7 @@ export interface ProcedureCtx<S extends UntypedSchemaDef> {
   readonly connectionId: ConnectionId | null;
   readonly http: HttpClient;
   readonly random: Random;
+  readonly as: ProcedureAliasViews<S>;
   withTx<T>(body: (ctx: TransactionCtx<S>) => T): T;
   sleep(duration: TimeDuration): void;
   newUuidV4(): Uuid;
@@ -172,23 +187,32 @@ export type Procedures = Array<{
 }>;
 
 export function callProcedure(
-  moduleCtx: SchemaInner,
+  procedures: Procedures,
   id: number,
   sender: Identity,
   connectionId: ConnectionId | null,
   timestamp: Timestamp,
   argsBuf: Uint8Array,
-  dbView: () => DbView<any>
+  dbView: () => DbView<any>,
+  dispatches: SubmoduleDispatchInfo[] = [],
+  parentPrefix = ''
 ): Uint8Array {
   const { fn, deserializeArgs, serializeReturn, returnTypeBaseSize } =
-    moduleCtx.procedures[id];
+    procedures[id];
   const args = deserializeArgs(new BinaryReader(argsBuf));
 
   const ctx: ProcedureCtx<UntypedSchemaDef> = new ProcedureCtxImpl(
     sender,
     timestamp,
     connectionId,
-    dbView
+    dbView,
+    hostBackend,
+    httpClient,
+    undefined,
+    undefined,
+    undefined,
+    dispatches,
+    parentPrefix
   );
 
   const ret = callUserFunction(fn, ctx, args);
@@ -209,6 +233,9 @@ export const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   #http: HttpClient;
   #sleep: (duration: TimeDuration) => void;
   #childSeedRandom: Random | undefined;
+  #dispatches: SubmoduleDispatchInfo[];
+  #parentPrefix: string;
+  #asViews: object | undefined;
 
   constructor(
     readonly sender: Identity,
@@ -221,7 +248,9 @@ export const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
       throw new Error('procedure sleep is not available in this runtime');
     },
     random?: Random,
-    childSeedRandom?: Random
+    childSeedRandom?: Random,
+    dispatches: SubmoduleDispatchInfo[] = [],
+    parentPrefix = ''
   ) {
     this.#dbView = dbView;
     this.#backend = backend;
@@ -229,6 +258,8 @@ export const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
     this.#sleep = sleep;
     this.#random = random;
     this.#childSeedRandom = childSeedRandom;
+    this.#dispatches = dispatches;
+    this.#parentPrefix = parentPrefix;
   }
 
   get databaseIdentity() {
@@ -251,13 +282,21 @@ export const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
     this.#sleep(duration);
   }
 
+  get as() {
+    return (this.#asViews ??= buildProcedureAliasCtxMap(
+      this,
+      this.#dispatches,
+      this.#parentPrefix
+    )) as any;
+  }
+
   withTx<T>(body: (ctx: TransactionCtx<S>) => T): T {
     const txSeed = this.#childSeedRandom?.bigintInRange(0n, (1n << 64n) - 1n);
-    const run = () => {
-      const timestamp = new Timestamp(this.#backend.procedureStartMutTx());
-
-      try {
-        const ctx: ITransactionCtx<S> = new ReducerCtxImpl(
+    const dispatches = this.#dispatches;
+    const parentPrefix = this.#parentPrefix;
+    return runWithTx(
+      timestamp => {
+        const tx = new ReducerCtxImpl(
           this.sender,
           timestamp,
           this.connectionId,
@@ -265,29 +304,13 @@ export const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
           this.#backend,
           undefined,
           txSeed == null ? undefined : makeRandomFromSeed(txSeed)
-        ) as ITransactionCtx<S>;
-        return body(ctx);
-      } catch (e) {
-        this.#backend.procedureAbortMutTx();
-        throw e;
-      }
-    };
-
-    let res = run();
-    try {
-      this.#backend.procedureCommitMutTx();
-      return res;
-    } catch {
-      // ignore the commit error
-    }
-    console.warn('committing anonymous transaction failed');
-    res = run();
-    try {
-      this.#backend.procedureCommitMutTx();
-      return res;
-    } catch (e) {
-      throw new Error('transaction retry failed again', { cause: e });
-    }
+        );
+        assignTxAliasViews(tx, dispatches, parentPrefix);
+        return tx as unknown as TransactionCtx<S>;
+      },
+      body,
+      this.#backend
+    );
   }
 
   newUuidV4(): Uuid {

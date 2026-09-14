@@ -264,6 +264,50 @@ describe('DbConnection', () => {
     expect(client.isActive).toBe(false);
   });
 
+  test('routes websocket error after connect to onDisconnect as an Error', async () => {
+    const onDisconnectPromise = new Deferred<void>();
+    const wsAdapter = new WebsocketTestAdapter();
+    let connectErrorCalled = false;
+    let disconnectError: Error | undefined;
+
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.openWebSocket)
+      .onConnectError(() => {
+        connectErrorCalled = true;
+      })
+      .onDisconnect((_ctx, error) => {
+        disconnectError = error;
+        onDisconnectPromise.resolve();
+      })
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'a-token',
+        connectionId: ConnectionId.random(),
+      })
+    );
+
+    // Browser-style ErrorEvent shape: not an instanceof Error.
+    wsAdapter.error({
+      type: 'error',
+      message: 'mid-stream failure',
+    } as unknown as Error);
+
+    await onDisconnectPromise.promise;
+
+    expect(connectErrorCalled).toBe(false);
+    expect(wsAdapter.closed).toBe(true);
+    expect(client.isActive).toBe(false);
+    expect(disconnectError).toBeInstanceOf(Error);
+    expect(disconnectError!.message).toBe('mid-stream failure');
+  });
+
   test('call onConnect callback after getting an identity', async () => {
     const onConnectPromise = new Deferred<void>();
 
@@ -417,6 +461,38 @@ describe('DbConnection', () => {
 
     await onErrorPromise.promise;
     expect(wsAdapter.closed).toBeFalsy();
+  });
+
+  test('subscribe() accepts a query-builder callback and sends the built SQL', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.openWebSocket)
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'a-token',
+        connectionId: ConnectionId.random(),
+      })
+    );
+
+    client.subscriptionBuilder().subscribe(tables => tables.player.build());
+
+    await Promise.resolve();
+    const subscribeMessage = wsAdapter.outgoingMessages.find(
+      message => message.tag === 'Subscribe'
+    );
+    if (subscribeMessage?.tag !== 'Subscribe') {
+      throw new Error('No Subscribe message found in messageQueue.');
+    }
+    expect(subscribeMessage.value.queryStrings).toEqual([
+      'SELECT * FROM "player"',
+    ]);
   });
 
   test('fires row callbacks after reducer resolution in ReducerResult', async () => {

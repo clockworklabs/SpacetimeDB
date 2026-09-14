@@ -104,7 +104,7 @@ use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use spacetimedb_schema::def::ModuleDef;
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::identifier::NamespacedIdentifier;
 use spacetimedb_table::static_assert_size;
 use std::cell::Cell;
 use std::num::NonZeroUsize;
@@ -381,7 +381,7 @@ impl JsInstanceEnv {
     ///
     /// Returns the handle used by reducers to read from `args`
     /// as well as the handle used to write the error message, if any.
-    fn start_funcall(&mut self, name: Identifier, ts: Timestamp, func_type: FuncCallType) {
+    fn start_funcall(&mut self, name: NamespacedIdentifier, ts: Timestamp, func_type: FuncCallType) {
         self.instance_env.start_funcall(name, ts, func_type);
     }
 
@@ -405,13 +405,13 @@ impl JsInstanceEnv {
 
         let leftover_iters = self.iters.len();
         if leftover_iters > 0 {
-            log::warn!("force-clearing {leftover_iters} row iterator(s) left open by JS call `{func_name}`");
+            log::debug!("force-clearing {leftover_iters} row iterator(s) left open by JS call `{func_name}`");
             self.iters.clear();
         }
 
         let leftover_timing_spans = self.timing_spans.len();
         if leftover_timing_spans > 0 {
-            log::warn!("force-clearing {leftover_timing_spans} timing span(s) left open by JS call `{func_name}`");
+            log::debug!("force-clearing {leftover_timing_spans} timing span(s) left open by JS call `{func_name}`");
             self.timing_spans.clear();
         }
 
@@ -890,13 +890,13 @@ static_assert_size!(CallReducerParams, 192);
 
 fn send_worker_reply<T>(ctx: &str, reply_tx: JsReplyTx<T>, value: T) {
     if reply_tx.send(Ok(value)).is_err() {
-        log::error!("should have receiver for `{ctx}` response");
+        log::warn!("should have receiver for `{ctx}` response");
     }
 }
 
 fn send_worker_panic_reply<T>(ctx: &str, reply_tx: JsReplyTx<T>, panic: JsPanicPayload) {
     if reply_tx.send(Err(panic)).is_err() {
-        log::error!("should have receiver for `{ctx}` response");
+        log::warn!("should have receiver for `{ctx}` response");
     }
 }
 
@@ -950,7 +950,7 @@ fn handle_detached_worker_request(
             }
         }
         Err(_) => {
-            log::warn!("detached JS worker request `{ctx}` panicked");
+            log::error!("detached JS worker request `{ctx}` panicked");
             on_panic();
             WorkerRequestOutcome::Fatal
         }
@@ -1406,7 +1406,7 @@ fn handle_main_worker_request(
             handle_worker_request("call_reducer", reply_tx, || {
                 let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
                 let (res, trapped) = call_reducer(None, params);
-                (res, trapped)
+                (res.result, trapped)
             })
         }
         JsMainWorkerRequest::CallReducerDetached { params, on_panic } => {
@@ -1458,7 +1458,10 @@ fn handle_main_worker_request(
             caller_auth,
             caller_connection_id,
         } => handle_worker_request("call_identity_connected", reply_tx, || {
-            let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+            let call_reducer = |tx, params| {
+                let (res, trapped) = instance_common.call_reducer_with_tx(tx, params, inst);
+                (res.result, trapped)
+            };
             let mut trapped = false;
             let res = call_identity_connected(caller_auth, caller_connection_id, &info, call_reducer, &mut trapped);
             (res, trapped)
@@ -1468,7 +1471,10 @@ fn handle_main_worker_request(
             caller_identity,
             caller_connection_id,
         } => handle_worker_request("call_identity_disconnected", reply_tx, || {
-            let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+            let call_reducer = |tx, params| {
+                let (res, trapped) = instance_common.call_reducer_with_tx(tx, params, inst);
+                (res.result, trapped)
+            };
             let mut trapped = false;
             let res = ModuleHost::call_identity_disconnected_inner(
                 caller_identity,
@@ -1481,7 +1487,10 @@ fn handle_main_worker_request(
         }),
         JsMainWorkerRequest::DisconnectClient { reply_tx, client_id } => {
             handle_worker_request("disconnect_client", reply_tx, || {
-                let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+                let call_reducer = |tx, params| {
+                    let (res, trapped) = instance_common.call_reducer_with_tx(tx, params, inst);
+                    (res.result, trapped)
+                };
                 let mut trapped = false;
                 let res = ModuleHost::disconnect_client_inner(client_id, &info, call_reducer, &mut trapped);
                 (res, trapped)
@@ -1489,7 +1498,7 @@ fn handle_main_worker_request(
         }
         JsMainWorkerRequest::InitDatabase { reply_tx, program } => {
             handle_worker_request("init_database", reply_tx, || {
-                let call_reducer = |tx, params| instance_common.call_reducer_with_tx_offset(tx, params, inst);
+                let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
                 let (res, trapped): (Result<InitDatabaseResult, anyhow::Error>, bool) =
                     init_database(replica_ctx, &info.module_def, program, call_reducer);
                 (res, trapped)
@@ -1641,7 +1650,7 @@ where
                                 .send(Err(anyhow::anyhow!("JS worker panicked during startup")))
                                 .is_err()
                             {
-                                log::error!("startup result receiver disconnected");
+                                log::warn!("startup result receiver disconnected");
                             }
                         } else {
                             log::error!("JS worker panicked while recreating isolate");
@@ -1651,7 +1660,7 @@ where
                     Ok(Err(err)) => {
                         if let Some(result_tx) = startup_result_tx.take() {
                             if result_tx.send(Err(err)).is_err() {
-                                log::error!("startup result receiver disconnected");
+                                log::warn!("startup result receiver disconnected");
                             }
                         } else {
                             log::error!("failed to restart JS worker: {err:#}");
@@ -1664,7 +1673,7 @@ where
                         if let Some(result_tx) = startup_result_tx.take()
                             && result_tx.send(Ok(module_common.clone())).is_err()
                         {
-                            log::error!("startup result receiver disconnected");
+                            log::warn!("startup result receiver disconnected");
                             return;
                         }
 

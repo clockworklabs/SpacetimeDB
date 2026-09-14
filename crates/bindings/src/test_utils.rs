@@ -285,12 +285,18 @@ impl From<TestDatastoreError> for TestQueryError {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+type AfterTxCommitHook = Box<dyn FnMut(&TestContext) -> anyhow::Result<()>>;
+
+#[cfg(not(target_arch = "wasm32"))]
+type OnSleepHook = Box<dyn FnMut(&TestContext, crate::Timestamp) -> anyhow::Result<()>>;
+
 /// Hooks invoked at procedure transaction boundaries in native unit tests.
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Default)]
 pub struct ProcedureTestHooks {
-    after_tx_commit: Vec<Box<dyn FnMut(&TestContext) -> anyhow::Result<()>>>,
-    on_sleep: Vec<Box<dyn FnMut(&TestContext, crate::Timestamp) -> anyhow::Result<()>>>,
+    after_tx_commit: Vec<AfterTxCommitHook>,
+    on_sleep: Vec<OnSleepHook>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -582,7 +588,6 @@ static TABLE_NAMES: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
 /// ```rust
 /// use spacetimedb::test_utils::all_table_names;
 ///
-/// #[test]
 /// fn check_tables() {
 ///     let names = all_table_names();
 ///     assert!(names.contains(&"my_table"));

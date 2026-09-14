@@ -25,12 +25,6 @@
   <PropertyGroup>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591;CS1574</NoWarn>
-    <WarningsNotAsErrors>
-      $(WarningsNotAsErrors);
-      CA1822;CA2263;
-      IDE0005;IDE0028;IDE0039;IDE0057;IDE0065;IDE0078;IDE0090;
-      IDE0240;IDE0290;IDE0300;IDE0301;IDE0305;IDE0306;IDE1006
-    </WarningsNotAsErrors>
   </PropertyGroup>
 
   <ItemGroup>

@@ -24,9 +24,9 @@ Throw a `SenderError`:
 ```typescript
 import { SenderError } from 'spacetimedb/server';
 
-export const transfer_credits = spacetimedb.reducer(
-  { to_user: t.identity(), amount: t.u32() },
-  (ctx, { to_user, amount }) => {
+export const transferCredits = spacetimedb.reducer(
+  { toUser: t.identity(), amount: t.u32() },
+  (ctx, { toUser, amount }) => {
     const fromUser = ctx.db.users.identity.find(ctx.sender);
     if (!fromUser) {
       throw new SenderError('User not found');
@@ -41,9 +41,9 @@ export const transfer_credits = spacetimedb.reducer(
 );
 
 // Alternative: return error object
-export const transfer_credits = spacetimedb.reducer(
-  { to_user: t.u64(), amount: t.u32() },
-  (ctx, { to_user, amount }) => {
+export const transferCreditsResult = spacetimedb.reducer(
+  { toUser: t.u64(), amount: t.u32() },
+  (ctx, { toUser, amount }) => {
     // ...validation...
     if (error) {
       return { tag: 'err', value: 'Insufficient credits' };
@@ -146,7 +146,7 @@ Unexpected errors caused by bugs in module code. These should be fixed by the de
 Regular errors (not `SenderError`):
 
 ```typescript
-export const process_data = spacetimedb.reducer(
+export const processData = spacetimedb.reducer(
   { data: t.array(t.u8()) },
   (ctx, { data }) => {
     // Regular Error indicates a bug

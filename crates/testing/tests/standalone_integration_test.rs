@@ -6,6 +6,7 @@ use spacetimedb_testing::modules::{
 };
 use std::{
     future::Future,
+    process::Command,
     time::{Duration, Instant},
 };
 
@@ -40,6 +41,13 @@ async fn read_logs(module: &ModuleHandle) -> Vec<String> {
 
 // The tests MUST be run in sequence because they read the OS environment
 // and can cause a race when run in parallel.
+
+fn emcc_is_available() -> bool {
+    Command::new("emcc")
+        .arg("--version")
+        .status()
+        .is_ok_and(|status| status.success())
+}
 
 fn test_calling_a_reducer_in_module(module_name: &'static str) {
     init();
@@ -95,6 +103,10 @@ fn test_calling_a_reducer() {
 
 #[test]
 #[serial]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "NativeAOT-LLVM is only supported on Windows and Linux"
+)]
 fn test_calling_a_reducer_csharp() {
     test_calling_a_reducer_in_module("module-test-cs");
 }
@@ -108,6 +120,10 @@ fn test_calling_a_reducer_typescript() {
 #[test]
 #[serial]
 fn test_calling_a_reducer_cpp() {
+    if !emcc_is_available() {
+        eprintln!("Skipping C++ module test because `emcc` is not available in PATH");
+        return;
+    }
     test_calling_a_reducer_in_module("module-test-cpp");
 }
 
@@ -185,6 +201,10 @@ fn test_nonrepeating_scheduled_reducer() {
 
 #[test]
 #[serial]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "NativeAOT-LLVM is only supported on Windows and Linux"
+)]
 fn test_nonrepeating_scheduled_reducer_csharp() {
     test_nonrepeating_scheduled_reducer_in_module("module-test-cs");
 }
@@ -404,6 +424,10 @@ fn test_calling_bench_db_circles_rust() {
 
 #[test]
 #[serial]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "NativeAOT-LLVM is only supported on Windows and Linux"
+)]
 fn test_calling_bench_db_circles_csharp() {
     test_calling_bench_db_circles::<Csharp>();
 }
@@ -416,6 +440,10 @@ fn test_calling_bench_db_circles_typescript() {
 #[test]
 #[serial]
 fn test_calling_bench_db_circles_cpp() {
+    if !emcc_is_available() {
+        eprintln!("Skipping C++ module test because `emcc` is not available in PATH");
+        return;
+    }
     test_calling_bench_db_circles::<Cpp>();
 }
 
@@ -445,6 +473,10 @@ fn test_calling_bench_db_ia_loop_rust() {
 
 #[test]
 #[serial]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "NativeAOT-LLVM is only supported on Windows and Linux"
+)]
 fn test_calling_bench_db_ia_loop_csharp() {
     test_calling_bench_db_ia_loop::<Csharp>();
 }
@@ -457,5 +489,56 @@ fn test_calling_bench_db_ia_loop_typescript() {
 #[test]
 #[serial]
 fn test_calling_bench_db_ia_loop_cpp() {
+    if !emcc_is_available() {
+        eprintln!("Skipping C++ module test because `emcc` is not available in PATH");
+        return;
+    }
     test_calling_bench_db_ia_loop::<Cpp>();
+}
+
+fn test_submodule_in_module(module_name: &'static str) {
+    init();
+
+    CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |mut module| async move {
+            // ── 1. Cross-namespace reducer call ──────────────────────────────────
+            // `useSubmodule` is exported as camelCase; its wire name is the canonical
+            // snake_case form.
+            let json =
+                r#"{"CallReducer": {"reducer": "use_submodule", "args": "[\"hello_submodule\"]", "request_id": 0, "flags": 0}}"#
+                    .to_string();
+            module.send_reducer_and_recv_update(json, 0).await.unwrap();
+
+            let logs = read_logs(&module).await;
+            let relevant: Vec<_> = logs
+                .into_iter()
+                .filter(|l| !is_scheduled_test_log(l))
+                .collect();
+            assert_eq!(relevant, ["libInsert: hello_submodule"].map(String::from));
+
+            // ── 2. Cross-namespace procedure call ─────────────────────────────────
+            // useSubmoduleProcedure calls libCount in the lib submodule.
+            // We inserted one row above, so the count should be 1.
+            let return_val = module
+                .call_procedure_with_args("use_submodule_procedure", "[]")
+                .await
+                .expect("use_submodule_procedure should succeed");
+            assert_eq!(return_val, AlgebraicValue::U64(1), "libCount should return 1 after one insert");
+
+            // ── 3. Cross-namespace HTTP handler ───────────────────────────────────
+            // The root module's /lib-hello route delegates to lib_submodule's libHello handler.
+            let body = module
+                .call_http_route_get("/lib-hello")
+                .await
+                .expect("GET /lib-hello should succeed");
+            assert_eq!(body.as_ref(), b"Hello from lib submodule!");
+        },
+    );
+}
+
+#[test]
+#[serial]
+fn test_submodule_typescript() {
+    test_submodule_in_module("module-test-ts");
 }

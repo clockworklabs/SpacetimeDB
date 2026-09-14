@@ -28,6 +28,12 @@ metrics_group!(
         #[labels(db: Identity, kind: str)]
         pub replay_snapshot_num_objects_read: IntGaugeVec,
 
+        #[name = spacetime_replay_snapshot_num_absent_pages]
+        #[help = "Number of pages marked absent and skipped during snapshot replay"]
+        // Not labeled with `kind` as blobs and metadata will never have absent files.
+        #[labels(db: Identity)]
+        pub replay_snapshot_num_absent_pages: IntGaugeVec,
+
         #[name = spacetime_replay_snapshot_bytes_read_from_disk]
         #[help = "Number of snapshot bytes read from disk during replay"]
         #[labels(db: Identity, kind: str)]

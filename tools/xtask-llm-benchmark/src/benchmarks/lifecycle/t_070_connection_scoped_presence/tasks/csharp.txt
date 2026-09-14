@@ -1,0 +1,23 @@
+Write a SpacetimeDB backend module in C# that tracks presence separately for each connection.
+
+TABLE
+- PresenceSession (public, accessor PresenceSession)
+  - Fields:
+    - ConnectionId: ConnectionId (primary key)
+    - Identity: Identity (btree index)
+    - ConnectedAt: Timestamp
+
+LIFECYCLE HOOKS
+- ClientConnected
+  - Export with this exact method name
+  - Insert one row for the connected connection
+- ClientDisconnected
+  - Export with this exact method name
+  - Delete only the disconnected connection's row
+
+REDUCERS
+- ExercisePresence()
+  - Insert synthetic connection IDs 1 and 2 for the caller
+  - Use the 128-bit numeric values 1 and 2
+  - Remove connection ID 1
+  - Leave connection ID 2 intact

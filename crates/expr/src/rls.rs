@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_primitives::TableId;
-use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
 use spacetimedb_sql_parser::ast::BinOp;
 
 use crate::{
@@ -290,7 +290,7 @@ fn resolve_views_for_expr(
     /// this function handles the actual replacement of the view with its definition.
     fn expand_views(
         expr: RelExpr,
-        view_def_fragments: &[(TableId, RawIdentifier, Vec<RelExpr>)],
+        view_def_fragments: &[(TableId, RawNamespacedIdentifier, Vec<RelExpr>)],
         out: &mut Vec<RelExpr>,
     ) {
         match view_def_fragments {
@@ -337,19 +337,19 @@ fn resolve_views_for_expr(
 /// JOIN t AS t   ON t.id = v.id WHERE v.x = 0
 /// ```
 fn alpha_rename_fragments(
-    return_name: &RawIdentifier,
-    outer_alias: &RawIdentifier,
+    return_name: &RawNamespacedIdentifier,
+    outer_alias: &RawNamespacedIdentifier,
     inputs: Vec<RelExpr>,
     output: &mut Vec<RelExpr>,
     suffix: &mut usize,
 ) {
     for mut fragment in inputs {
         *suffix += 1;
-        alpha_rename(&mut fragment, &mut |name: &RawIdentifier| {
+        alpha_rename(&mut fragment, &mut |name: &RawNamespacedIdentifier| {
             if name == return_name {
                 return outer_alias.clone();
             }
-            RawIdentifier::new(name.to_string() + "_" + &suffix.to_string())
+            RawNamespacedIdentifier::new(name.to_string() + "_" + &suffix.to_string())
         });
         output.push(fragment);
     }
@@ -357,13 +357,13 @@ fn alpha_rename_fragments(
 
 /// When expanding a view, we must do an alpha conversion on the view definition.
 /// This involves renaming the table aliases before replacing the view reference.
-fn alpha_rename(expr: &mut RelExpr, f: &mut impl FnMut(&RawIdentifier) -> RawIdentifier) {
+fn alpha_rename(expr: &mut RelExpr, f: &mut impl FnMut(&RawNamespacedIdentifier) -> RawNamespacedIdentifier) {
     /// Helper for renaming a relvar
-    fn rename(relvar: &mut Relvar, f: &mut impl FnMut(&RawIdentifier) -> RawIdentifier) {
+    fn rename(relvar: &mut Relvar, f: &mut impl FnMut(&RawNamespacedIdentifier) -> RawNamespacedIdentifier) {
         relvar.alias = f(&relvar.alias);
     }
     /// Helper for renaming a field reference
-    fn rename_field(field: &mut FieldProject, f: &mut impl FnMut(&RawIdentifier) -> RawIdentifier) {
+    fn rename_field(field: &mut FieldProject, f: &mut impl FnMut(&RawNamespacedIdentifier) -> RawNamespacedIdentifier) {
         field.table = f(&field.table);
     }
     expr.visit_mut(&mut |expr| match expr {

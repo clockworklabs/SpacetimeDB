@@ -113,14 +113,7 @@ error[E0599]: no method named `iter` found for struct `test__ViewHandle` in the 
    = help: items from traits can only be used if the trait is implemented and in scope
    = note: the following traits define an item `iter`, perhaps you need to implement one of them:
            candidate #1: `bitflags::traits::Flags`
-           candidate #2: `icu_provider::baked::DataStore`
-           candidate #3: `petgraph::visit::traversal::Walker`
-           candidate #4: `spacetimedb::Table`
-           candidate #5: `spacetimedb_datastore::locking_tx_datastore::state_view::StateView`
-           candidate #6: `spacetimedb_table::table_index::index::Index`
-           candidate #7: `strum::IntoEnumIterator`
-           candidate #8: `strum::VariantIterator`
-           candidate #9: `toml_edit::table::TableLike`
+           candidate #2: `spacetimedb::Table`
 
 error[E0599]: no method named `insert` found for struct `test__ViewHandle` in the current scope
   --> tests/ui/views.rs:24:25
@@ -136,14 +129,8 @@ error[E0599]: no method named `insert` found for struct `test__ViewHandle` in th
            candidate #1: `bitflags::traits::Flags`
            candidate #2: `ppv_lite86::types::Vec2`
            candidate #3: `ppv_lite86::types::Vec4`
-           candidate #4: `serde_with::duplicate_key_impls::error_on_duplicate::PreventDuplicateInsertsMap`
-           candidate #5: `serde_with::duplicate_key_impls::error_on_duplicate::PreventDuplicateInsertsSet`
-           candidate #6: `serde_with::duplicate_key_impls::first_value_wins::DuplicateInsertsFirstWinsMap`
-           candidate #7: `similar::algorithms::DiffHook`
-           candidate #8: `spacetimedb::Table`
-           candidate #9: `spacetimedb_table::table_index::index::Index`
-           candidate #10: `toml_edit::table::TableLike`
-           candidate #11: `wasmtime_environ::compile::CacheStore`
+           candidate #4: `similar::algorithms::DiffHook`
+           candidate #5: `spacetimedb::Table`
 
 error[E0599]: no method named `try_insert` found for struct `test__ViewHandle` in the current scope
   --> tests/ui/views.rs:31:25
@@ -177,7 +164,6 @@ error[E0599]: no method named `delete` found for struct `test__ViewHandle` in th
    = note: the following traits define an item `delete`, perhaps you need to implement one of them:
            candidate #1: `similar::algorithms::DiffHook`
            candidate #2: `spacetimedb::Table`
-           candidate #3: `spacetimedb_table::table_index::index::Index`
 
 error[E0599]: no method named `delete` found for struct `UniqueColumnReadOnly<Tbl, ColType, Col>` in the current scope
   --> tests/ui/views.rs:45:30

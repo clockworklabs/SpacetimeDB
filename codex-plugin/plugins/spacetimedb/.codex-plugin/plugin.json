@@ -1,0 +1,54 @@
+{
+  "name": "spacetimedb",
+  "version": "0.1.0",
+  "description": "SpacetimeDB skills for Codex: the data model, the spacetime CLI, and server and client SDK guidance for Rust, C#, TypeScript, C++, Unity, and Unreal. Includes an MCP server that lists your databases, reads schemas, runs SQL, and calls reducers with your CLI login.",
+  "author": {
+    "name": "Clockwork Labs",
+    "url": "https://spacetimedb.com"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://spacetimedb.com",
+  "repository": "https://github.com/clockworklabs/SpacetimeDB",
+  "keywords": [
+    "spacetimedb",
+    "database",
+    "realtime",
+    "reducer",
+    "subscriptions",
+    "sql",
+    "wasm",
+    "multiplayer",
+    "rust",
+    "typescript",
+    "csharp",
+    "unity",
+    "unreal",
+    "mcp"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "SpacetimeDB",
+    "shortDescription": "Skills to build apps, tools to operate your databases",
+    "longDescription": "Packages SpacetimeDB's agent skills so Codex can build and operate SpacetimeDB apps: private-by-default tables, reducers as the write path, the spacetime CLI, and server and client SDK references for Rust, C#, TypeScript, C++, Unity, and Unreal. Includes an MCP server that serves your default host, so the agent can list your databases, read schemas, run SQL, and call reducers with your CLI identity.",
+    "developerName": "Clockwork Labs",
+    "category": "Developer Tools",
+    "capabilities": [
+      "List databases",
+      "Read schemas",
+      "Run SQL",
+      "Call reducers",
+      "Module development",
+      "CLI workflows"
+    ],
+    "websiteURL": "https://spacetimedb.com",
+    "defaultPrompt": [
+      "Set up a new SpacetimeDB module in Rust.",
+      "List my SpacetimeDB databases.",
+      "Show me the schema for my database."
+    ],
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/logo.png",
+    "brandColor": "#060606"
+  }
+}

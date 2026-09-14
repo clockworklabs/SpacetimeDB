@@ -12,6 +12,7 @@ pub mod lock;
 pub mod login;
 pub mod logout;
 pub mod logs;
+pub mod mcp;
 pub mod publish;
 pub mod repl;
 pub mod server;

@@ -1,4 +1,4 @@
-use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
+use super::scheduler::{get_schedule_from_row, scheduled_row_hash, ScheduleError, Scheduler};
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
@@ -7,7 +7,6 @@ use crate::host::wasm_common::TimingSpan;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
 use crate::subscription::module_subscription_manager::{from_tx_offset, TransactionOffset};
-use crate::util::prometheus_handle::IntGaugeExt;
 use chrono::{DateTime, Utc};
 use core::mem;
 use futures::TryFutureExt;
@@ -20,13 +19,14 @@ use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, IndexScanPointOrRange, MutTxId};
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::{http as st_http, ConnectionId, Identity, Timestamp};
+use spacetimedb_metrics::utils::IntGaugeExt;
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
     buffer::CountWriter,
     AlgebraicValue, ProductValue,
 };
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::identifier::NamespacedIdentifier;
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::RowRef;
 use std::fmt::Display;
@@ -48,7 +48,7 @@ pub struct InstanceEnv {
     /// The type of the last, including current, function to be executed by this environment.
     pub func_type: FuncCallType,
     /// The name of the last, including current, function to be executed by this environment.
-    pub func_name: Option<Identifier>,
+    pub func_name: Option<NamespacedIdentifier>,
     /// Are we in an anonymous tx context?
     in_anon_tx: bool,
     /// A procedure's last known transaction offset.
@@ -246,7 +246,7 @@ impl InstanceEnv {
     }
 
     /// Signal to this `InstanceEnv` that a function call is beginning.
-    pub fn start_funcall(&mut self, name: Identifier, ts: Timestamp, func_type: FuncCallType) {
+    pub fn start_funcall(&mut self, name: NamespacedIdentifier, ts: Timestamp, func_type: FuncCallType) {
         self.start_time = ts;
         self.start_instant = Instant::now();
         self.func_type = func_type;
@@ -418,6 +418,8 @@ impl InstanceEnv {
             // NOTE(centril): Should never happen,
             // as we successfully inserted and thus `ret` is verified against the table schema.
             .map_err(|e| NodesError::ScheduleError(ScheduleError::DecodingError(e)))?;
+        let row_hash =
+            scheduled_row_hash(&row_ref).map_err(|e| NodesError::ScheduleError(ScheduleError::DecodingError(e)))?;
         self.scheduler
             .schedule(
                 table_id,
@@ -426,6 +428,7 @@ impl InstanceEnv {
                 id_column,
                 at_column,
                 function_name,
+                row_hash,
                 self.start_time,
             )
             .map_err(NodesError::ScheduleError)?;
@@ -737,10 +740,9 @@ impl InstanceEnv {
             ));
         }
 
-        // TODO(procedure-tx): should we add a new workload, e.g., `AnonTx`?
         let tx = self
             .relational_db()
-            .begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+            .begin_mut_tx(IsolationLevel::Serializable, Workload::Procedure);
         self.tx.set_raw(tx);
         self.in_anon_tx = true;
 
@@ -857,6 +859,10 @@ impl InstanceEnv {
         request: st_http::Request,
         body: bytes::Bytes,
     ) -> Result<impl Future<Output = Result<(st_http::Response, bytes::Bytes), NodesError>> + use<>, NodesError> {
+        if !self.replica_ctx.module_http.enabled {
+            return Err(NodesError::HttpError(MODULE_HTTP_DISABLED_ERROR.to_string()));
+        }
+
         if self.in_tx() {
             // If we're holding a transaction open, refuse to perform this blocking operation.
             return Err(NodesError::WouldBlockTransaction(super::AbiCall::ProcedureHttpRequest));
@@ -917,7 +923,7 @@ impl InstanceEnv {
             .map_err(http_error)?;
 
         // If the user requested a timeout using our extension, slot it in to reqwest's timeout.
-        // Clamp to the range `0..HTTP_DEFAULT_TIMEOUT`.
+        // Clamp to the range `0..HTTP_MAX_TIMEOUT`.
         let timeout = timeout.unwrap_or(HTTP_DEFAULT_TIMEOUT).min(HTTP_MAX_TIMEOUT);
 
         // reqwest's timeout covers from the start of the request to the end of reading the body,
@@ -1020,6 +1026,7 @@ const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 /// 180 seconds accommodates long-running LLM and AI API calls,
 /// which routinely take 30-120 seconds for complex requests.
 const HTTP_MAX_TIMEOUT: Duration = Duration::from_secs(180);
+const MODULE_HTTP_DISABLED_ERROR: &str = "module outbound HTTP requests are disabled";
 const BLOCKED_HTTP_ADDRESS_ERROR: &str = "refusing to connect to private or special-purpose addresses";
 
 struct FilteredDnsResolver;
@@ -1351,6 +1358,7 @@ mod test {
         subscription::module_subscription_actor::ModuleSubscriptions,
     };
     use anyhow::{anyhow, Result};
+    use spacetimedb_datastore::execution_context::WorkloadType;
     use spacetimedb_lib::db::auth::StAccess;
     use spacetimedb_lib::{bsatn::to_vec, AlgebraicType, AlgebraicValue, Hash, Identity, ProductValue};
     use spacetimedb_primitives::{IndexId, TableId};
@@ -1363,7 +1371,10 @@ mod test {
 
     /// An `InstanceEnv` requires a `ReplicaContext`.
     /// For our purposes this is just a wrapper for `RelationalDB`.
-    fn replica_ctx(relational_db: Arc<RelationalDB>) -> Result<(ReplicaContext, tokio::runtime::Runtime)> {
+    fn replica_ctx(
+        relational_db: Arc<RelationalDB>,
+        module_http: crate::config::ModuleHttpConfig,
+    ) -> Result<(ReplicaContext, tokio::runtime::Runtime)> {
         let (subs, runtime) = ModuleSubscriptions::for_test_new_runtime(relational_db);
         let logger = {
             let _rt = runtime.enter();
@@ -1383,6 +1394,7 @@ mod test {
                 logger,
                 subscriptions: subs,
                 module_instance_memory_tracker: ModuleInstanceMemoryTracker::new(Identity::ZERO, Arc::new(())),
+                module_http,
             },
             runtime,
         ))
@@ -1391,8 +1403,43 @@ mod test {
     /// An `InstanceEnv` used for testing the database syscalls.
     fn instance_env(db: Arc<RelationalDB>) -> Result<(InstanceEnv, tokio::runtime::Runtime)> {
         let (scheduler, _) = Scheduler::open(db.clone());
-        let (replica_context, runtime) = replica_ctx(db)?;
+        let (replica_context, runtime) = replica_ctx(db, crate::config::ModuleHttpConfig::default())?;
         Ok((InstanceEnv::new(Arc::new(replica_context), scheduler), runtime))
+    }
+
+    #[test]
+    fn anonymous_procedure_transactions_are_labeled_as_procedure() -> Result<()> {
+        let db = relational_db()?;
+        let (mut env, _runtime) = instance_env(db)?;
+
+        env.start_mutable_tx()?;
+        let workload = env.get_tx()?.ctx.workload();
+        assert!(matches!(workload, WorkloadType::Procedure));
+        env.abort_mutable_tx()?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn module_http_config_disables_requests() -> Result<()> {
+        let db = relational_db()?;
+        let (scheduler, _) = Scheduler::open(db.clone());
+        let (replica_context, _runtime) = replica_ctx(db, crate::config::ModuleHttpConfig { enabled: false })?;
+        let mut env = InstanceEnv::new(Arc::new(replica_context), scheduler);
+        let request = st_http::Request {
+            method: st_http::Method::Get,
+            headers: std::iter::empty().collect(),
+            timeout: None,
+            uri: "https://example.com".to_owned(),
+            version: st_http::Version::Http11,
+        };
+
+        match env.http_request(request, bytes::Bytes::new()) {
+            Err(NodesError::HttpError(message)) => assert_eq!(message, MODULE_HTTP_DISABLED_ERROR),
+            _ => panic!("module HTTP request was not rejected by configuration"),
+        }
+
+        Ok(())
     }
 
     /// An in-memory `RelationalDB` for testing.

@@ -28,6 +28,7 @@ packages:
   - 'modules/sdk-test-ts'
   - 'modules/sdk-test-case-conversion-ts'
   - 'docs'
+  - 'codex-plugin/scripts'
 allowBuilds:
   '@parcel/watcher': false
   better-sqlite3: false

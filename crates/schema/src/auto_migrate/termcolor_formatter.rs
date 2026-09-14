@@ -7,12 +7,12 @@ use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use termcolor::{Buffer, Color, ColorChoice, ColorSpec, WriteColor};
 
 use crate::auto_migrate::formatter::ViewInfo;
-use crate::identifier::Identifier;
 
 use super::formatter::{
     AccessChangeInfo, Action, ColumnChange, ColumnChanges, ConstraintInfo, IndexInfo, MigrationFormatter, NewColumns,
     RlsInfo, ScheduleInfo, SequenceInfo, TableInfo,
 };
+use crate::identifier::NamespacedIdentifier;
 
 /// Color scheme for consistent formatting
 #[derive(Debug, Clone)]
@@ -231,7 +231,7 @@ impl MigrationFormatter for TermColorFormatter {
         self.write_line("")
     }
 
-    fn format_remove_table(&mut self, table_name: &Identifier) -> io::Result<()> {
+    fn format_remove_table(&mut self, table_name: &NamespacedIdentifier) -> io::Result<()> {
         self.write_action_prefix(&Action::Removed)?;
         self.buffer.write_all(b" table: ")?;
         self.write_colored(table_name, Some(self.colors.table_name), true)?;
@@ -327,7 +327,7 @@ impl MigrationFormatter for TermColorFormatter {
 
     fn format_change_primary_key(
         &mut self,
-        table_name: &str,
+        table_name: &NamespacedIdentifier,
         old_pk: Option<ColId>,
         new_pk: Option<ColId>,
     ) -> io::Result<()> {
@@ -417,6 +417,26 @@ impl MigrationFormatter for TermColorFormatter {
         Ok(())
     }
 
+    fn format_change_table_accessor_name(&mut self, table_name: &str) -> io::Result<()> {
+        self.write_action_prefix(&Action::Changed)?;
+        self.buffer.write_all(b" table accessor name for ")?;
+        self.write_colored(table_name, Some(self.colors.table_name), true)?;
+        self.buffer.write_all(b"\n")
+    }
+
+    fn format_change_column_accessor_name(
+        &mut self,
+        table_name: &NamespacedIdentifier,
+        col_name: &str,
+    ) -> io::Result<()> {
+        self.write_action_prefix(&Action::Changed)?;
+        self.buffer.write_all(b" column accessor name for ")?;
+        self.write_colored(table_name, Some(self.colors.table_name), true)?;
+        self.buffer.write_all(b".")?;
+        self.write_colored(col_name, Some(self.colors.column_type), true)?;
+        self.buffer.write_all(b"\n")
+    }
+
     fn format_disconnect_warning(&mut self) -> io::Result<()> {
         self.write_indent()?;
         self.write_with_background(
@@ -427,7 +447,7 @@ impl MigrationFormatter for TermColorFormatter {
         self.buffer.write_all(b"\n")
     }
 
-    fn format_event_table_reschema(&mut self, table_name: &Identifier) -> io::Result<()> {
+    fn format_event_table_reschema(&mut self, table_name: &NamespacedIdentifier) -> io::Result<()> {
         // TODO(format-event-table-reschema): I (pgoldman 2026-06-10) didn't have time to meaningfully format event table reschemas,
         // so for now we're just printing the table name.
 

@@ -1,9 +1,11 @@
 use crate::error::IdentifierError;
+use lean_string::LeanString;
 use spacetimedb_data_structures::map::{Equivalent, HashSet};
-use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::raw_identifier::{RawIdentifier, RawNamespacedIdentifier};
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st};
 use std::fmt::{self, Debug, Display};
 use std::ops::Deref;
+use std::sync::Arc;
 use unicode_ident::{is_xid_continue, is_xid_start};
 use unicode_normalization::UnicodeNormalization;
 
@@ -33,11 +35,56 @@ pub struct Identifier {
 
 impl_st!([] Identifier, ts => RawIdentifier::make_type(ts));
 impl_serialize!([] Identifier, (self, ser) => ser.serialize_str(&self.id));
-impl_deserialize!([] Identifier, de => RawIdentifier::deserialize(de).map(Self::new_assume_valid));
+impl_deserialize!([] Identifier, de => RawIdentifier::deserialize(de).map(Self::new_unsafe_assume_valid));
+
+/// Validates that `name` is a valid identifier string
+pub fn validate_identifier(name: &str) -> Result<(), IdentifierError> {
+    if name.is_empty() {
+        return Err(IdentifierError::Empty {});
+    }
+
+    // Convert to Unicode Normalization Form C (canonical decomposition followed by composition).
+    if name.nfc().zip(name.chars()).any(|(a, b)| a != b) {
+        return Err(IdentifierError::NotCanonicalized {
+            name: RawIdentifier::new(name),
+        });
+    }
+
+    let mut chars = name.chars();
+
+    let start = chars.next().ok_or(IdentifierError::Empty {})?;
+    if !is_xid_start(start) && start != '_' {
+        return Err(IdentifierError::InvalidStart {
+            name: RawIdentifier::new(name),
+            invalid_start: start,
+        });
+    }
+
+    for char_ in chars {
+        if !is_xid_continue(char_) {
+            return Err(IdentifierError::InvalidContinue {
+                name: RawIdentifier::new(name),
+                invalid_continue: char_,
+            });
+        }
+    }
+
+    if Identifier::is_reserved(name) {
+        return Err(IdentifierError::Reserved {
+            name: RawIdentifier::new(name),
+        });
+    }
+
+    Ok(())
+}
 
 impl Identifier {
-    /// Returns a new identifier without validating the input.
-    pub fn new_assume_valid(name: RawIdentifier) -> Self {
+    /// Returns a new identifier **without validating the input**.
+    ///
+    /// Prefer [`Identifier::new`]. This exists only for names that were already
+    /// validated on the way in and are being reconstructed from storage or from
+    /// the wire; using it anywhere else defeats the point of the type.
+    pub fn new_unsafe_assume_valid(name: RawIdentifier) -> Self {
         Self { id: name }
     }
 
@@ -46,38 +93,7 @@ impl Identifier {
     /// Currently, this rejects non-canonicalized identifiers.
     /// Eventually, it will be changed to canonicalize the input string.
     pub fn new(name: RawIdentifier) -> Result<Self, IdentifierError> {
-        if name.is_empty() {
-            return Err(IdentifierError::Empty {});
-        }
-
-        // Convert to Unicode Normalization Form C (canonical decomposition followed by composition).
-        if name.nfc().zip(name.chars()).any(|(a, b)| a != b) {
-            return Err(IdentifierError::NotCanonicalized { name });
-        }
-
-        let mut chars = name.chars();
-
-        let start = chars.next().ok_or(IdentifierError::Empty {})?;
-        if !is_xid_start(start) && start != '_' {
-            return Err(IdentifierError::InvalidStart {
-                name,
-                invalid_start: start,
-            });
-        }
-
-        for char_ in chars {
-            if !is_xid_continue(char_) {
-                return Err(IdentifierError::InvalidContinue {
-                    name,
-                    invalid_continue: char_,
-                });
-            }
-        }
-
-        if Identifier::is_reserved(&name) {
-            return Err(IdentifierError::Reserved { name });
-        }
-
+        validate_identifier(&name)?;
         Ok(Identifier { id: name })
     }
 
@@ -122,9 +138,254 @@ impl Equivalent<Identifier> for str {
     }
 }
 
+impl PartialEq<str> for Identifier {
+    fn eq(&self, other: &str) -> bool {
+        &self.id[..] == other
+    }
+}
+
 impl From<Identifier> for RawIdentifier {
     fn from(id: Identifier) -> Self {
         id.id
+    }
+}
+
+/// A non-empty, dot-separated sequence of validated [`Identifier`] segments.
+///
+/// Used for fully-qualified names of submodule items, e.g.:
+/// - `"lib.library_table"` (table name)
+/// - `"lib.library_table_id_idx_btree"` (index name)
+///
+/// Root-level items have a single segment (e.g., `"user"`).
+/// Constructed only from already-validated [`Identifier`]s.
+#[derive(Clone)]
+pub struct NamespacedIdentifier {
+    /// always non-empty.
+    segments: Arc<[Identifier]>,
+    /// Cached dot-joined rendering of `segments`.
+    joined: LeanString,
+}
+
+impl_st!([] NamespacedIdentifier, ts => RawNamespacedIdentifier::make_type(ts));
+impl_serialize!([] NamespacedIdentifier, (self, ser) => ser.serialize_str(&self.joined));
+// Stored names were validated when created; segments are trusted here,
+// mirroring `Identifier`'s own deserialization.
+impl_deserialize!([] NamespacedIdentifier, de =>
+    RawNamespacedIdentifier::deserialize(de).map(|raw| Self::new_unsafe_assume_valid(&raw)));
+
+impl NamespacedIdentifier {
+    /// Construct from validated segments. Panics if `segments` is empty.
+    pub fn from_segments(segments: Vec<Identifier>) -> Self {
+        assert!(
+            !segments.is_empty(),
+            "NamespacedIdentifier must have at least one segment"
+        );
+        let joined = segments.iter().map(|s| &**s).collect::<Vec<_>>().join(".");
+        Self {
+            segments: segments.into(),
+            joined: joined.into(),
+        }
+    }
+
+    /// Validates each dot-separated segment of `name` as an [`Identifier`].
+    pub fn new(name: &RawNamespacedIdentifier) -> Result<Self, IdentifierError> {
+        let segments = name
+            .segments()
+            .map(|segment| Identifier::new(RawIdentifier::new(segment)))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self::from_segments(segments))
+    }
+
+    /// Splits `name` on `.` **without validating** the resulting segments.
+    ///
+    /// Prefer [`NamespacedIdentifier::new`]. This is the multi-segment counterpart
+    /// of [`Identifier::new_unsafe_assume_valid`] and carries the same caveat: it is
+    /// only for names that were validated on the way in and are being reconstructed
+    /// from storage or from the wire.
+    pub fn new_unsafe_assume_valid(name: &RawNamespacedIdentifier) -> Self {
+        Self::from_segments(
+            name.segments()
+                .map(|segment| Identifier::new_unsafe_assume_valid(RawIdentifier::new(segment)))
+                .collect(),
+        )
+    }
+
+    pub fn segments(&self) -> &[Identifier] {
+        &self.segments
+    }
+
+    /// The final segment, i.e. the name with any namespace prefix stripped.
+    pub fn local_name(&self) -> &Identifier {
+        self.segments.last().expect("NamespacedIdentifier is never empty")
+    }
+
+    /// Whether this name carries a namespace prefix.
+    pub fn is_namespaced(&self) -> bool {
+        self.segments.len() > 1
+    }
+
+    /// This name as a single [`Identifier`], or `None` if it carries a namespace.
+    pub fn as_identifier(&self) -> Option<&Identifier> {
+        match &*self.segments {
+            [single] => Some(single),
+            _ => None,
+        }
+    }
+}
+
+impl From<Identifier> for NamespacedIdentifier {
+    fn from(id: Identifier) -> Self {
+        Self::from_segments(vec![id])
+    }
+}
+
+impl FromIterator<Identifier> for NamespacedIdentifier {
+    /// Panics if the iterator is empty.
+    fn from_iter<I: IntoIterator<Item = Identifier>>(iter: I) -> Self {
+        Self::from_segments(iter.into_iter().collect())
+    }
+}
+
+impl From<NamespacedIdentifier> for RawNamespacedIdentifier {
+    fn from(id: NamespacedIdentifier) -> Self {
+        RawNamespacedIdentifier::new(id.joined)
+    }
+}
+
+// Comparisons and hashing use the joined form. This is equivalent to comparing
+// segment-wise, since '.' orders below every character valid in an identifier.
+impl PartialEq for NamespacedIdentifier {
+    fn eq(&self, other: &Self) -> bool {
+        self.joined == other.joined
+    }
+}
+impl Eq for NamespacedIdentifier {}
+impl PartialOrd for NamespacedIdentifier {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for NamespacedIdentifier {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.joined.cmp(&other.joined)
+    }
+}
+impl std::hash::Hash for NamespacedIdentifier {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // Hash as `str` so `Equivalent<_> for str` map lookups keep working.
+        (*self.joined).hash(state)
+    }
+}
+
+impl std::fmt::Debug for NamespacedIdentifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", &*self.joined)
+    }
+}
+
+impl std::fmt::Display for NamespacedIdentifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.joined)
+    }
+}
+
+impl std::ops::Deref for NamespacedIdentifier {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.joined
+    }
+}
+
+impl AsRef<str> for NamespacedIdentifier {
+    fn as_ref(&self) -> &str {
+        &self.joined
+    }
+}
+
+/// A possibly-empty path of validated namespace [`Identifier`]s.
+///
+/// Displays as a dot-terminated prefix (`"lib."`, `"auth.baz."`, or `""` for the root),
+/// matching how namespaced names are built by prepending the prefix to a local name.
+#[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct NamespacePath(Vec<Identifier>);
+
+impl NamespacePath {
+    /// The root (empty) path.
+    pub fn root() -> Self {
+        Self(Vec::new())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn segments(&self) -> &[Identifier] {
+        &self.0
+    }
+
+    /// This path extended with the namespace `ns`.
+    pub fn child(&self, ns: Identifier) -> Self {
+        let mut segments = self.0.clone();
+        segments.push(ns);
+        Self(segments)
+    }
+
+    /// The full name of an item named `last` under this path.
+    pub fn join(&self, last: Identifier) -> NamespacedIdentifier {
+        let mut segments = self.0.clone();
+        segments.push(last);
+        NamespacedIdentifier::from_segments(segments)
+    }
+
+    /// `name`, prefixed with this namespace, preserving `name`'s own segments.
+    pub fn join_namespaced(&self, name: &NamespacedIdentifier) -> NamespacedIdentifier {
+        let mut segments = self.0.clone();
+        segments.extend(name.segments().iter().cloned());
+        NamespacedIdentifier::from_segments(segments)
+    }
+
+    /// `name`, prefixed with this namespace.
+    ///
+    /// Unlike [`NamespacePath::join`], this takes an already-raw name. Index,
+    /// constraint and sequence names are system-generated and stored raw, so they
+    /// have no validated `Identifier` to join onto.
+    pub fn join_raw(&self, name: &RawNamespacedIdentifier) -> RawNamespacedIdentifier {
+        if self.is_empty() {
+            return name.clone();
+        }
+        RawNamespacedIdentifier::new(format!("{self}{name}"))
+    }
+
+    /// `name` with this namespace's `"a.b."` prefix removed, or `None` if `name` does not
+    /// carry it.
+    ///
+    /// This is the inverse of [`NamespacePath::join`] and friends, and is the correct way
+    /// to recover a local name from a stored one. Splitting on the last `.` is *not*: a V9
+    /// index, constraint or sequence name may itself contain dots (see the `wacky_names`
+    /// test), so the final dot-separated segment is not necessarily the local name. Only
+    /// the prefix this path actually knows about is removed.
+    ///
+    /// Borrows rather than allocating, so it is cheap enough to call per sub-object.
+    pub fn strip_from<'a>(&self, name: &'a str) -> Option<&'a str> {
+        let mut rest = name;
+        for segment in &self.0 {
+            rest = rest.strip_prefix(&**segment)?.strip_prefix('.')?;
+        }
+        Some(rest)
+    }
+
+    /// The segments joined with `sep` (e.g. `"/"` for a directory path).
+    pub fn join_segments(&self, sep: &str) -> String {
+        self.0.iter().map(|s| &**s).collect::<Vec<_>>().join(sep)
+    }
+}
+
+impl std::fmt::Display for NamespacePath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for segment in &self.0 {
+            write!(f, "{segment}.")?;
+        }
+        Ok(())
     }
 }
 
@@ -135,6 +396,31 @@ mod tests {
 
     fn new(s: &str) -> Result<Identifier, IdentifierError> {
         Identifier::new(RawIdentifier::new(s))
+    }
+
+    #[test]
+    fn strip_from_removes_only_the_known_prefix() {
+        let root = NamespacePath::root();
+        let lib = root.child(Identifier::for_test("lib"));
+        let nested = lib.child(Identifier::for_test("auth"));
+
+        // The root strips nothing, so a name comes back whole -- dots and all.
+        assert_eq!(root.strip_from("my_table"), Some("my_table"));
+        assert_eq!(root.strip_from("wacky.index()"), Some("wacky.index()"));
+
+        assert_eq!(lib.strip_from("lib.my_table"), Some("my_table"));
+        assert_eq!(nested.strip_from("lib.auth.my_table"), Some("my_table"));
+
+        // Only the prefix this path knows about is removed: the remainder keeps its own
+        // dots, which is the whole point -- V9 sub-object names may contain them.
+        assert_eq!(lib.strip_from("lib.wacky.index()"), Some("wacky.index()"));
+
+        // A name outside this namespace is not in it.
+        assert_eq!(lib.strip_from("my_table"), None);
+        assert_eq!(lib.strip_from("other.my_table"), None);
+        assert_eq!(nested.strip_from("lib.my_table"), None);
+        // A partial segment match is not a prefix match.
+        assert_eq!(lib.strip_from("library.my_table"), None);
     }
 
     #[test]

@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use clap::{ArgMatches, Command};
 use http::StatusCode;
 use spacetimedb::client::ClientActorIndex;
-use spacetimedb::config::{CertificateAuthority, MetadataFile, V8Config, WasmConfig};
+use spacetimedb::config::{CertificateAuthority, MetadataFile, ModuleHttpConfig, V8Config, WasmConfig};
 use spacetimedb::db;
 use spacetimedb::db::persistence::{DurabilityConfig, LocalPersistenceProvider};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
@@ -44,6 +44,7 @@ pub struct StandaloneOptions {
     pub db_config: db::Config,
     pub durability: DurabilityConfig,
     pub websocket: WebSocketOptions,
+    pub module_http: ModuleHttpConfig,
     pub wasm: WasmConfig,
     pub v8: V8Config,
 }
@@ -83,7 +84,7 @@ impl StandaloneEnv {
         let host_controller = HostController::new(
             data_dir,
             config.db_config,
-            HostRuntimeConfig::new(config.wasm, config.v8),
+            HostRuntimeConfig::new(config.wasm, config.v8, config.module_http),
             program_store.clone(),
             energy_monitor,
             Arc::new(()),
@@ -674,6 +675,7 @@ mod tests {
             },
             durability: DurabilityConfig::default(),
             websocket: WebSocketOptions::default(),
+            module_http: ModuleHttpConfig::default(),
             wasm: WasmConfig::default(),
             v8: V8Config::default(),
         };

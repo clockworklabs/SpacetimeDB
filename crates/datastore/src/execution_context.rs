@@ -88,7 +88,7 @@ impl TryFrom<&txdata::Inputs> for ReducerContext {
         let timestamp = bsatn::from_reader(args)?;
 
         let name = RawIdentifier::new(&**inputs.reducer_name);
-        let name = ReducerName::new(Identifier::new_assume_valid(name));
+        let name = ReducerName::new(Identifier::new_unsafe_assume_valid(name));
 
         Ok(Self {
             name,
@@ -112,6 +112,7 @@ pub enum Workload {
     Subscribe,
     Unsubscribe,
     Update,
+    Procedure,
     Internal,
 }
 
@@ -139,6 +140,7 @@ impl Workload {
             Self::Subscribe => WorkloadType::Subscribe,
             Self::Unsubscribe => WorkloadType::Unsubscribe,
             Self::Update => WorkloadType::Update,
+            Self::Procedure => WorkloadType::Procedure,
             Self::Internal => WorkloadType::Internal,
         }
     }
@@ -182,6 +184,7 @@ impl ExecutionContext {
             Workload::Subscribe => Self::new(database, None, WorkloadType::Subscribe),
             Workload::Unsubscribe => Self::new(database, None, WorkloadType::Unsubscribe),
             Workload::Update => Self::new(database, None, WorkloadType::Update),
+            Workload::Procedure => Self::new(database, None, WorkloadType::Procedure),
         }
     }
 

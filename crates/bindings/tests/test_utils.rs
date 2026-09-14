@@ -242,7 +242,7 @@ fn with_reducer_tx_uses_test_clock_and_internal_auth() {
 
     test.with_reducer_tx::<_, ()>(TestAuth::internal(), |ctx| {
         assert_eq!(ctx.timestamp, timestamp);
-        assert_eq!(ctx.identity(), test.identity);
+        assert_eq!(ctx.database_identity(), test.identity);
         assert_eq!(ctx.sender(), test.identity);
         assert_eq!(ctx.connection_id(), None);
         assert!(ctx.sender_auth().is_internal());
@@ -262,7 +262,7 @@ fn with_reducer_tx_derives_sender_from_jwt_auth() {
         TestAuth::from_jwt_payload(payload, connection_id).expect("JWT payload should be valid for tests"),
         |ctx| {
             assert_eq!(ctx.sender(), expected_sender);
-            assert_eq!(ctx.identity(), test.identity);
+            assert_eq!(ctx.database_identity(), test.identity);
             assert_eq!(ctx.connection_id(), Some(connection_id));
             assert!(!ctx.sender_auth().is_internal());
             assert_eq!(ctx.sender_auth().jwt().unwrap().identity(), expected_sender);

@@ -98,6 +98,9 @@ pub enum RawModuleDefV10Section {
 
     /// Primary key metadata for views.
     ViewPrimaryKeys(Vec<RawViewPrimaryKeyDefV10>),
+
+    /// Submodules, keyed by the namespace they are registered under.
+    Submodules(Vec<RawSubmoduleV10>),
 }
 
 #[derive(Debug, Clone, SpacetimeType)]
@@ -122,6 +125,14 @@ pub struct RawHttpRouteDefV10 {
 pub enum MethodOrAny {
     Any,
     Method(crate::http::Method),
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawSubmoduleV10 {
+    pub namespace: String,
+    pub module: RawModuleDefV10,
 }
 
 #[derive(Debug, Clone, Copy, Default, SpacetimeType)]
@@ -558,6 +569,14 @@ pub struct RawViewPrimaryKeyDefV10 {
 }
 
 impl RawModuleDefV10 {
+    /// Get the submodules for this module definition.
+    pub fn submodules(&self) -> Option<&Vec<RawSubmoduleV10>> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::Submodules(submodules) => Some(submodules),
+            _ => None,
+        })
+    }
+
     /// Get the types section, if present.
     pub fn types(&self) -> Option<&Vec<RawTypeDefV10>> {
         self.sections.iter().find_map(|s| match s {

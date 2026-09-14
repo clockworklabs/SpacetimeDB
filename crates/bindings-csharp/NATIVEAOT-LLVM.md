@@ -123,6 +123,10 @@ spacetime publish --native-aot my-database-name
 
 Technically all of these options just set the `EXPERIMENTAL_WASM_AOT` environment variable, but they provide different user experiences. Using `--native-aot` during `init` will create a project with a `spacetime.json` configured like Option 3 so the new project is consistently published with NativeAOT-LLVM.
 
+### `dotnet build` with NativeAOT-LLVM
+
+To use NativeAOT-LLVM, the project expects the flag `EXPERIMENTAL_WASM_AOT` to be set. When calling `spacetime publish`, this is dealt with internally. To build your project manually calling `dotnet build`, if you want to use NativeAOT-LLVM, you need to set the flag manually: `dotnet build -f net8.0 -p:EXPERIMENTAL_WASM_AOT=1`. 
+
 ---
 
 ## Build Target: .NET 10.0+ NativeAOT-LLVM (Windows & Linux)
@@ -264,6 +268,33 @@ error : Could not find wasi-sdk. Either set $(WASI_SDK_PATH), or use workloads t
 spacetime init --lang csharp --dotnet-version 10 my-project
 ```
 
+### .NET 8 AOT fails with JsonSerializerContext
+
+**Error**: NativeAOT-LLVM fails with an unhelpful error such as:
+
+```
+EXEC : error : Object reference not set to an instance of an object.
+...
+```
+
+**Cause**: The .NET 8 NativeAOT-LLVM toolchain can fail when a module defines a `JsonSerializerContext` that uses `[JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]`. The latest .NET 8 NativeAOT-LLVM package is very old (October 2023) and contains a bug.
+
+**Solutions**:
+1. Prefer .NET 10 NativeAOT-LLVM:
+   ```
+   spacetime init --lang csharp --dotnet-version 10 my-project
+   ```
+2. If you must stay on .NET 8, use the default JIT build path instead of `--native-aot`.
+3. As a workaround, remove `PropertyNameCaseInsensitive = true` from `JsonSourceGenerationOptions` and pass case-insensitive options at the call site:
+   ```csharp
+   var result = JsonSerializer.Deserialize<T>(
+       json,
+       new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+   );
+   ```
+
+The workaround can compile and run, but it's not fail proof. In trimmed AOT builds you'll see a `IL2026` warning because this solution relies on reflection for code that may be getting trimmed. Treat it as a possible compatibility workaround rather than a guaranteed fix for every module.
+
 ### JIT builds fail: Missing wasi-experimental workload
 
 For **JIT builds only** (not NativeAOT), you need the `wasi-experimental` workload:
@@ -285,4 +316,3 @@ If you see "Code generation failed for method" errors:
 ### Duplicate PackageReference warning (NU1504)
 
 This warning is expected for .NET 8 AOT builds and is non-blocking.
-

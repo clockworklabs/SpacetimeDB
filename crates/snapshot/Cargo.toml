@@ -20,7 +20,6 @@ blake3.workspace = true
 bytes.workspace = true
 crossbeam-queue.workspace = true
 futures.workspace = true
-hex.workspace = true
 log.workspace = true
 scopeguard.workspace = true
 tempfile.workspace = true

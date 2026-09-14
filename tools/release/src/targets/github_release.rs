@@ -91,8 +91,10 @@ impl ReleaseTarget for GithubRelease {
     fn release(&self) -> Result<(), String> {
         let release = self.fetch_release()?;
         if !release.is_draft {
-            println!("GitHub release {} is already published: {}", self.version, release.url);
-            return Ok(());
+            return Err(format!(
+                "GitHub release {} is already published: {}",
+                self.version, release.url
+            ));
         }
 
         println!("Found draft GitHub release {}: {}", self.version, release.url);

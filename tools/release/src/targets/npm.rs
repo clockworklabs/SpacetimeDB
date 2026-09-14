@@ -59,7 +59,8 @@ impl NpmRelease {
         // on the main/master branch (we're in a detached HEAD state at this point).
         // ERR_PNPM_GIT_UNKNOWN_BRANCH The Git HEAD may not attached to any branch, but your "publish-branch" is set to "master|main".
         if self.dry_run {
-            cmd.args(["publish", "--dry-run", "--no-git-checks"]);
+            // --force is required to override the "package already exists" complaint
+            cmd.args(["publish", "--dry-run", "--force", "--no-git-checks"]);
         } else {
             cmd.args(["publish", "--no-git-checks"]);
         }

@@ -316,7 +316,7 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
             Arg::new("native_aot")
                 .long("native-aot")
                 .action(SetTrue)
-                .help("Use NativeAOT-LLVM compilation for C# modules (experimental, Windows only)")
+                .help("Use NativeAOT-LLVM compilation for C# modules (experimental; supported on Windows, and on Linux with .NET 10)")
         )
         .arg(common_args::dotnet_version())
         .after_help("Run `spacetime help publish` for more detailed information.")

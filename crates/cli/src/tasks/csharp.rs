@@ -5,6 +5,8 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::common_args::{nativeaot_unsupported_on_host, NATIVEAOT_UNSUPPORTED_MESSAGE};
+
 pub(crate) fn parse_major_version(version: &str) -> Option<u8> {
     version.split('.').next()?.parse::<u8>().ok()
 }
@@ -255,6 +257,12 @@ pub(crate) fn build_csharp(
         CsharpBuildPath::Net8Jit | CsharpBuildPath::Net8Aot => 8,
         CsharpBuildPath::Net10Aot => 10,
     };
+    if matches!(build_path, CsharpBuildPath::Net8Aot | CsharpBuildPath::Net10Aot)
+        && nativeaot_unsupported_on_host(std::env::consts::OS, Some(desired_sdk_major))
+    {
+        anyhow::bail!(NATIVEAOT_UNSUPPORTED_MESSAGE);
+    }
+
     let active_sdk_major = dotnet_version_str.as_deref().and_then(parse_major_version);
     if active_sdk_major != Some(desired_sdk_major) {
         let active = dotnet_version_str.as_deref().map(str::trim).unwrap_or("<unknown>");

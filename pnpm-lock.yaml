@@ -51,6 +51,15 @@ importers:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.12)(@types/node@22.18.0)(jiti@2.6.1)(jsdom@26.1.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2)
 
+  codex-plugin/scripts:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.18.0
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+
   crates/bindings-typescript:
     dependencies:
       base64-js:
@@ -70,7 +79,7 @@ importers:
         version: 7.0.1
       react:
         specifier: ^18.0.0 || ^19.0.0-0 || ^19.0.0
-        version: 18.3.1
+        version: 19.2.4
       safe-stable-stringify:
         specifier: ^2.5.0
         version: 2.5.0
@@ -104,7 +113,7 @@ importers:
         version: 11.2.0(size-limit@11.2.0)
       '@tanstack/react-query':
         specifier: ^5.90.19
-        version: 5.90.19(react@18.3.1)
+        version: 5.90.19(react@19.2.4)
       '@types/fast-text-encoding':
         specifier: ^1.0.3
         version: 1.0.3
@@ -144,6 +153,9 @@ importers:
       svelte:
         specifier: ^5.0.0
         version: 5.46.4
+      terser:
+        specifier: ^5.43.1
+        version: 5.43.1
       ts-node:
         specifier: ^10.9.2
         version: 10.9.2(@types/node@22.18.0)(typescript@5.9.3)
@@ -272,7 +284,7 @@ importers:
         version: 3.9.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@signalwire/docusaurus-plugin-llms-txt':
         specifier: ^1.2.2
-        version: 1.2.2(@docusaurus/core@3.9.2(@mdx-js/react@3.1.1(@types/react@18.3.23)(react@18.3.1))(debug@4.4.3)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3))
+        version: 1.2.2(@docusaurus/core@3.9.2(@mdx-js/react@3.1.1(@types/react@18.3.23)(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3))
       '@types/react':
         specifier: ^18.3.23
         version: 18.3.23
@@ -328,6 +340,10 @@ importers:
       spacetimedb:
         specifier: workspace:^
         version: link:../../crates/bindings-typescript
+    devDependencies:
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
 
   modules/sdk-test-procedure-ts:
     dependencies:
@@ -354,6 +370,10 @@ importers:
       spacetimedb:
         specifier: workspace:^
         version: link:../../crates/bindings-typescript
+    devDependencies:
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
 
   templates/angular-ts:
     dependencies:
@@ -429,7 +449,7 @@ importers:
     devDependencies:
       '@types/bun':
         specifier: latest
-        version: 1.3.14
+        version: 1.4.2
       bun:
         specifier: ^1.3.2
         version: 1.3.9
@@ -735,7 +755,7 @@ importers:
     dependencies:
       nuxt:
         specifier: ~3.16.0
-        version: 3.16.2(@parcel/watcher@2.5.6)(@types/node@24.3.0)(better-sqlite3@12.6.2)(cac@6.7.14)(db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0)))(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0))(encoding@0.1.13)(eslint@9.33.0(jiti@2.6.1))(ioredis@5.9.2)(magicast@0.3.5)(optionator@0.9.4)(rollup@4.56.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(typescript@5.6.3)(vite@7.3.2(@types/node@24.3.0)(jiti@2.6.1)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2))(vue-tsc@2.2.12(typescript@5.6.3))(yaml@2.8.2)
+        version: 3.16.2(@parcel/watcher@2.5.6)(@types/node@24.3.0)(better-sqlite3@12.6.2)(cac@6.7.14)(db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.2)(pg@8.18.0)(sql.js@1.14.0)))(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.2)(pg@8.18.0)(sql.js@1.14.0))(encoding@0.1.13)(eslint@9.33.0(jiti@2.6.1))(ioredis@5.9.2)(magicast@0.3.5)(optionator@0.9.4)(rollup@4.56.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(typescript@5.6.3)(vite@7.3.2(@types/node@24.3.0)(jiti@2.6.1)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2))(vue-tsc@2.2.12(typescript@5.6.3))(yaml@2.8.2)
       spacetimedb:
         specifier: workspace:*
         version: link:../../crates/bindings-typescript
@@ -6402,11 +6422,11 @@ packages:
   '@types/bonjour@3.5.13':
     resolution: {integrity: sha512-z9fJ5Im06zvUL548KvYNecEVlA7cVDkGUi6kZusb04mpyEFKCIZJvloCcmpmLaIahDpOQGHaHmG6imtPMmPXGQ==}
 
-  '@types/bun@1.3.14':
-    resolution: {integrity: sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw==}
-
   '@types/bun@1.3.9':
     resolution: {integrity: sha512-KQ571yULOdWJiMH+RIWIOZ7B2RXQGpL1YQrBtLIV3FqDcCu6FsbFUBwhdKUlCKUpS3PJDsHlJ1QKlpxoVR+xtw==}
+
+  '@types/bun@1.4.2':
+    resolution: {integrity: sha512-GimotNn7+ZV0uVArItBbriZsR1oNf0+WTzPkdcFrzShI7k2norL0uzEaJT8T33dWr7O/c9ZDuAFQrctKCi72oQ==}
 
   '@types/chai@5.2.2':
     resolution: {integrity: sha512-8kB30R7Hwqf40JPiKhVzodJs2Qc1ZJ5zuT3uzw5Hq/dhNCl3G3l83jfpdI1e20BP348+fV7VIL/+FxaXkqBmWg==}
@@ -7778,11 +7798,11 @@ packages:
   buffer@6.0.3:
     resolution: {integrity: sha512-FTiCpNxtwiZZHEZbcbTIcZjERVICn9yq/pDFkTl95/AxzD1naBctN7YO68riM/gLSDY7sdrMby8hofADYuuqOA==}
 
-  bun-types@1.3.14:
-    resolution: {integrity: sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ==}
-
   bun-types@1.3.9:
     resolution: {integrity: sha512-+UBWWOakIP4Tswh0Bt0QD0alpTY8cb5hvgiYeWCMet9YukHbzuruIEeXC2D7nMJPB12kbh8C7XJykSexEqGKJg==}
+
+  bun-types@1.4.2:
+    resolution: {integrity: sha512-bxV1FgK7yBIzjRe5zBozIM4Bem11ZJcCXSrjWRG3YWLt8yFDePu4cLjpebO8OvPeIE9trbyPF4fuj3Cia4Fj3w==}
 
   bun@1.3.9:
     resolution: {integrity: sha512-v5hkh1us7sMNjfimWE70flYbD5I1/qWQaqmJ45q2qk5H/7muQVa478LSVRSFyGTBUBog2LsPQnfIRdjyWJRY+A==}
@@ -9017,6 +9037,7 @@ packages:
   eslint@9.33.0:
     resolution: {integrity: sha512-TS9bTNIryDzStCpJN93aC5VRSW3uTx9sClUn4B87pwiCaJh220otoI0X8mJKr+VcPtniMdN8GKjlwgWGUv5ZKA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'
@@ -21129,7 +21150,7 @@ snapshots:
 
   '@sideway/pinpoint@2.0.0': {}
 
-  '@signalwire/docusaurus-plugin-llms-txt@1.2.2(@docusaurus/core@3.9.2(@mdx-js/react@3.1.1(@types/react@18.3.23)(react@18.3.1))(debug@4.4.3)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3))':
+  '@signalwire/docusaurus-plugin-llms-txt@1.2.2(@docusaurus/core@3.9.2(@mdx-js/react@3.1.1(@types/react@18.3.23)(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3))':
     dependencies:
       '@docusaurus/core': 3.9.2(@mdx-js/react@3.1.1(@types/react@18.3.23)(react@18.3.1))(debug@4.4.3)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
       fs-extra: 11.3.2
@@ -21399,11 +21420,6 @@ snapshots:
       '@tanstack/query-devtools': 5.92.0
       '@tanstack/react-query': 5.90.19(react@19.2.4)
       react: 19.2.4
-
-  '@tanstack/react-query@5.90.19(react@18.3.1)':
-    dependencies:
-      '@tanstack/query-core': 5.90.19
-      react: 18.3.1
 
   '@tanstack/react-query@5.90.19(react@19.2.4)':
     dependencies:
@@ -21732,13 +21748,13 @@ snapshots:
     dependencies:
       '@types/node': 22.18.0
 
-  '@types/bun@1.3.14':
-    dependencies:
-      bun-types: 1.3.14
-
   '@types/bun@1.3.9':
     dependencies:
       bun-types: 1.3.9
+
+  '@types/bun@1.4.2':
+    dependencies:
+      bun-types: 1.4.2
 
   '@types/chai@5.2.2':
     dependencies:
@@ -24051,11 +24067,11 @@ snapshots:
       base64-js: 1.5.1
       ieee754: 1.2.1
 
-  bun-types@1.3.14:
+  bun-types@1.3.9:
     dependencies:
       '@types/node': 22.18.0
 
-  bun-types@1.3.9:
+  bun-types@1.4.2:
     dependencies:
       '@types/node': 22.18.0
 
@@ -24802,10 +24818,10 @@ snapshots:
       whatwg-mimetype: 4.0.0
       whatwg-url: 14.2.0
 
-  db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0)):
+  db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.2)(pg@8.18.0)(sql.js@1.14.0)):
     optionalDependencies:
       better-sqlite3: 12.6.2
-      drizzle-orm: 0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0)
+      drizzle-orm: 0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.2)(pg@8.18.0)(sql.js@1.14.0)
 
   de-indent@1.0.2: {}
 
@@ -24980,18 +24996,6 @@ snapshots:
 
   dotenv@17.2.3: {}
 
-  drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0):
-    optionalDependencies:
-      '@opentelemetry/api': 1.9.0
-      '@types/better-sqlite3': 7.6.13
-      '@types/pg': 8.16.0
-      '@types/sql.js': 1.4.9
-      better-sqlite3: 12.6.2
-      bun-types: 1.3.14
-      pg: 8.18.0
-      sql.js: 1.14.0
-    optional: true
-
   drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.9)(pg@8.18.0)(sql.js@1.14.0):
     optionalDependencies:
       '@opentelemetry/api': 1.9.0
@@ -25002,6 +25006,18 @@ snapshots:
       bun-types: 1.3.9
       pg: 8.18.0
       sql.js: 1.14.0
+
+  drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.2)(pg@8.18.0)(sql.js@1.14.0):
+    optionalDependencies:
+      '@opentelemetry/api': 1.9.0
+      '@types/better-sqlite3': 7.6.13
+      '@types/pg': 8.16.0
+      '@types/sql.js': 1.4.9
+      better-sqlite3: 12.6.2
+      bun-types: 1.4.2
+      pg: 8.18.0
+      sql.js: 1.14.0
+    optional: true
 
   dunder-proto@1.0.1:
     dependencies:
@@ -28351,7 +28367,7 @@ snapshots:
 
   neo-async@2.6.2: {}
 
-  nitropack@2.13.1(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0))(encoding@0.1.13):
+  nitropack@2.13.1(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.2)(pg@8.18.0)(sql.js@1.14.0))(encoding@0.1.13):
     dependencies:
       '@cloudflare/kv-asset-handler': 0.4.2
       '@rollup/plugin-alias': 6.0.0(rollup@4.56.0)
@@ -28372,7 +28388,7 @@ snapshots:
       cookie-es: 2.0.0
       croner: 9.1.0
       crossws: 0.3.5
-      db0: 0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0))
+      db0: 0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.2)(pg@8.18.0)(sql.js@1.14.0))
       defu: 6.1.4
       destr: 2.0.5
       dot-prop: 10.1.0
@@ -28418,7 +28434,7 @@ snapshots:
       unenv: 2.0.0-rc.24
       unimport: 5.6.0
       unplugin-utils: 0.3.1
-      unstorage: 1.17.4(db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0)))(ioredis@5.9.2)
+      unstorage: 1.17.4(db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.2)(pg@8.18.0)(sql.js@1.14.0)))(ioredis@5.9.2)
       untyped: 2.0.0
       unwasm: 0.5.3
       youch: 4.1.0-beta.13
@@ -28624,7 +28640,7 @@ snapshots:
       schema-utils: 3.3.0
       webpack: 5.102.0
 
-  nuxt@3.16.2(@parcel/watcher@2.5.6)(@types/node@24.3.0)(better-sqlite3@12.6.2)(cac@6.7.14)(db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0)))(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0))(encoding@0.1.13)(eslint@9.33.0(jiti@2.6.1))(ioredis@5.9.2)(magicast@0.3.5)(optionator@0.9.4)(rollup@4.56.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(typescript@5.6.3)(vite@7.3.2(@types/node@24.3.0)(jiti@2.6.1)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2))(vue-tsc@2.2.12(typescript@5.6.3))(yaml@2.8.2):
+  nuxt@3.16.2(@parcel/watcher@2.5.6)(@types/node@24.3.0)(better-sqlite3@12.6.2)(cac@6.7.14)(db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.2)(pg@8.18.0)(sql.js@1.14.0)))(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.2)(pg@8.18.0)(sql.js@1.14.0))(encoding@0.1.13)(eslint@9.33.0(jiti@2.6.1))(ioredis@5.9.2)(magicast@0.3.5)(optionator@0.9.4)(rollup@4.56.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(typescript@5.6.3)(vite@7.3.2(@types/node@24.3.0)(jiti@2.6.1)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2))(vue-tsc@2.2.12(typescript@5.6.3))(yaml@2.8.2):
     dependencies:
       '@nuxt/cli': 3.33.1(@nuxt/schema@3.16.2)(cac@6.7.14)(magicast@0.3.5)
       '@nuxt/devalue': 2.0.2
@@ -28661,7 +28677,7 @@ snapshots:
       mlly: 1.8.0
       mocked-exports: 0.1.1
       nanotar: 0.2.1
-      nitropack: 2.13.1(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0))(encoding@0.1.13)
+      nitropack: 2.13.1(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.2)(pg@8.18.0)(sql.js@1.14.0))(encoding@0.1.13)
       nypm: 0.6.4
       ofetch: 1.5.1
       ohash: 2.0.11
@@ -28683,7 +28699,7 @@ snapshots:
       unimport: 4.2.0
       unplugin: 2.3.11
       unplugin-vue-router: 0.12.0(vue-router@4.6.4(vue@3.5.26(typescript@5.6.3)))(vue@3.5.26(typescript@5.6.3))
-      unstorage: 1.17.4(db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0)))(ioredis@5.9.2)
+      unstorage: 1.17.4(db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.2)(pg@8.18.0)(sql.js@1.14.0)))(ioredis@5.9.2)
       untyped: 2.0.0
       vue: 3.5.26(typescript@5.6.3)
       vue-bundle-renderer: 2.2.0
@@ -31968,7 +31984,7 @@ snapshots:
       picomatch: 4.0.3
       webpack-virtual-modules: 0.6.2
 
-  unstorage@1.17.4(db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0)))(ioredis@5.9.2):
+  unstorage@1.17.4(db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.2)(pg@8.18.0)(sql.js@1.14.0)))(ioredis@5.9.2):
     dependencies:
       anymatch: 3.1.3
       chokidar: 5.0.0
@@ -31979,7 +31995,7 @@ snapshots:
       ofetch: 1.5.1
       ufo: 1.6.3
     optionalDependencies:
-      db0: 0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0))
+      db0: 0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.2)(pg@8.18.0)(sql.js@1.14.0))
       ioredis: 5.9.2
 
   untun@0.1.3:

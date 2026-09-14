@@ -51,6 +51,7 @@ use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
+use spacetimedb_schema::identifier::NamespacePath;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{
     ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
@@ -469,6 +470,19 @@ impl RelationalDB {
         Ok(self.with_read_only(Workload::Internal, |tx| self.inner.program(tx))?)
     }
 
+    /// Obtain the module associated with this database and the transaction
+    /// offset visible to the read.
+    ///
+    /// Waiting for the returned offset to become durable proves that the
+    /// `st_module` row observed by this read is durable.
+    pub fn program_with_tx_offset(&self) -> Result<(Option<Program>, TxOffset), DBError> {
+        self.with_read_only(Workload::Internal, |tx| {
+            let program = self.inner.program(tx)?;
+            let tx_offset = tx.tx_offset().into_inner().saturating_sub(1);
+            Ok((program, tx_offset))
+        })
+    }
+
     /// Read the set of clients currently connected to the database.
     pub fn connected_clients(&self) -> Result<ConnectedClients, DBError> {
         self.with_read_only(Workload::Internal, |tx| {
@@ -519,6 +533,11 @@ impl RelationalDB {
                 .map_err(Box::new)?;
 
             let elapsed_time = start.elapsed();
+
+            ENGINE_METRICS
+                .replay_snapshot_num_absent_pages
+                .with_label_values(database_identity)
+                .set(u64_to_i64(snapshot.read_metrics.absent_pages));
 
             for (kind, metrics) in snapshot.read_metrics.iter() {
                 ENGINE_METRICS
@@ -930,12 +949,12 @@ impl RelationalDB {
         }
     }
 
-    /// Subscribe to a channel of snapshot offsets.
+    /// Subscribe to a channel of snapshot candidate offsets.
     ///
     /// If a `snapshot_repo` was provided when this database was opened, this method
     /// returns a `watch::Receiver` that updates with the latest [`TxOffset`] a snapshot
-    /// was taken at.
-    pub fn subscribe_to_snapshots(&self) -> Option<watch::Receiver<TxOffset>> {
+    /// was taken at, if one is known.
+    pub fn subscribe_to_snapshots(&self) -> Option<watch::Receiver<Option<TxOffset>>> {
         self.snapshot_worker.as_ref().map(|snap| snap.subscribe())
     }
 
@@ -1056,6 +1075,36 @@ impl RelationalDB {
         primary_key: Option<ColId>,
     ) -> Result<(), DBError> {
         Ok(self.inner.alter_table_primary_key_mut_tx(tx, name, primary_key)?)
+    }
+
+    pub(crate) fn alter_index_source_name(
+        &self,
+        tx: &mut MutTx,
+        index_id: IndexId,
+        source_name: spacetimedb_sats::raw_identifier::RawNamespacedIdentifier,
+    ) -> Result<(), DBError> {
+        Ok(self.inner.alter_index_source_name_mut_tx(tx, index_id, source_name)?)
+    }
+
+    pub(crate) fn alter_table_accessor_name(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        new_alias: spacetimedb_schema::identifier::NamespacedIdentifier,
+    ) -> Result<(), DBError> {
+        Ok(self.inner.alter_table_accessor_name_mut_tx(tx, table_id, new_alias)?)
+    }
+
+    pub(crate) fn alter_column_accessor_name(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        col_id: ColId,
+        new_alias: spacetimedb_schema::identifier::Identifier,
+    ) -> Result<(), DBError> {
+        Ok(self
+            .inner
+            .alter_column_accessor_name_mut_tx(tx, table_id, col_id, new_alias)?)
     }
 
     pub(crate) fn alter_table_row_type(
@@ -1227,6 +1276,16 @@ impl RelationalDB {
         view_def: &ViewDef,
     ) -> Result<(ViewId, TableId), DBError> {
         Ok(tx.create_view(module_def, view_def)?)
+    }
+
+    pub fn create_view_with_prefix(
+        &self,
+        tx: &mut MutTx,
+        owning_def: &ModuleDef,
+        view_def: &ViewDef,
+        name_prefix: &NamespacePath,
+    ) -> Result<(ViewId, TableId), DBError> {
+        Ok(tx.create_view_with_prefix(owning_def, view_def, name_prefix)?)
     }
 
     pub fn drop_view(&self, tx: &mut MutTx, view_id: ViewId) -> Result<(), DBError> {
@@ -1801,7 +1860,7 @@ pub async fn local_history(
 ///
 /// Suitable **only** for non-replicated databases.
 pub async fn snapshot_watching_commitlog_compressor(
-    mut snapshot_rx: watch::Receiver<u64>,
+    mut snapshot_rx: watch::Receiver<Option<u64>>,
     mut clog_tx: Option<spacetimedb_runtime::sync::mpsc::Sender<u64>>,
     mut snap_tx: Option<spacetimedb_runtime::sync::mpsc::Sender<u64>>,
     durability: LocalDurability,
@@ -1809,7 +1868,9 @@ pub async fn snapshot_watching_commitlog_compressor(
 ) {
     let mut prev_snapshot_offset = *snapshot_rx.borrow_and_update();
     while snapshot_rx.changed().await.is_ok() {
-        let snapshot_offset = *snapshot_rx.borrow_and_update();
+        let Some(snapshot_offset) = *snapshot_rx.borrow_and_update() else {
+            continue;
+        };
         let durability = durability.clone();
 
         if let Some(snap_tx) = &mut snap_tx
@@ -1818,10 +1879,14 @@ pub async fn snapshot_watching_commitlog_compressor(
             tracing::warn!("failed to send offset {snapshot_offset} after snapshot creation: {err}");
         }
 
+        let Some(prev) = prev_snapshot_offset.replace(snapshot_offset) else {
+            continue;
+        };
+
         let res: io::Result<_> = asyncify(&runtime, move || {
             let segment_offsets = durability.existing_segment_offsets()?;
             let start_idx = segment_offsets
-                .binary_search(&prev_snapshot_offset)
+                .binary_search(&prev)
                 // if the snapshot is in the middle of a segment, we want to round down.
                 // [0, 2].binary_search(1) will return Err(1), so we subtract 1.
                 .unwrap_or_else(|i| i.saturating_sub(1));
@@ -1846,8 +1911,6 @@ pub async fn snapshot_watching_commitlog_compressor(
                 continue;
             }
         };
-        prev_snapshot_offset = snapshot_offset;
-
         if let Some((clog_tx, last_compressed_segment)) = clog_tx.as_mut().zip(last_compressed_segment)
             && let Err(err) = clog_tx.try_send(last_compressed_segment)
         {

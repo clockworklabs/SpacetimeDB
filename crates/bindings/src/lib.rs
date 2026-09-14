@@ -1390,6 +1390,7 @@ impl ProcedureContext {
     }
 
     #[doc(hidden)]
+    #[allow(clippy::too_many_arguments)]
     #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
     pub fn __test(
         datastore: std::sync::Arc<spacetimedb_test_datastore::TestDatastore>,
@@ -1501,7 +1502,6 @@ impl ProcedureContext {
             let wake_time = test_context.clock.now().max(timestamp);
             test_context.clock.set(wake_time);
             self.timestamp = wake_time;
-            return;
         }
 
         #[cfg(target_arch = "wasm32")]

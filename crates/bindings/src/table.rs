@@ -731,12 +731,12 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
             .index_id(Col::INDEX_NAME)
             .expect("index_id_from_name() call failed");
         let point = IterBuf::serialize(col_val).unwrap();
-        let n_del = if Tbl::IS_EVENT {
-            self.backend.delete_by_index_scan_point_bsatn(index_id, &point)
-        } else {
-            self.backend.delete_by_index_scan_point_bsatn(index_id, &point)
-        }
-        .unwrap_or_else(|e| panic!("unique: unexpected error from datastore_delete_by_index_scan_point_bsatn: {e}"));
+        let n_del = self
+            .backend
+            .delete_by_index_scan_point_bsatn(index_id, &point)
+            .unwrap_or_else(|e| {
+                panic!("unique: unexpected error from datastore_delete_by_index_scan_point_bsatn: {e}")
+            });
 
         (n_del > 0, point)
     }
@@ -1933,17 +1933,17 @@ impl<T: DeserializeOwned> Iterator for TableIter<T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            // If we currently have some bytes in the buffer to still decode, do that.
-            if (&self.reader).remaining() > 0 {
-                let row = bsatn::from_reader(&mut &self.reader).expect("Failed to decode row!");
-                return Some(row);
-            }
+        // If we currently have some bytes in the buffer to still decode, do that.
+        if (&self.reader).remaining() > 0 {
+            let row = bsatn::from_reader(&mut &self.reader).expect("Failed to decode row!");
+            return Some(row);
+        }
 
-            // Don't fetch the next chunk if there is none.
-            match &mut self.inner {
-                #[cfg(target_arch = "wasm32")]
-                TableIterInner::Host(iter) => {
+        match &mut self.inner {
+            #[cfg(target_arch = "wasm32")]
+            TableIterInner::Host(iter) => loop {
+                // Don't fetch the next chunk if there is none.
+                {
                     if iter.is_exhausted() {
                         return None;
                     }
@@ -1953,13 +1953,18 @@ impl<T: DeserializeOwned> Iterator for TableIter<T> {
                     self.reader.pos.set(0);
                     iter.read(&mut self.reader.buf);
                 }
-                #[cfg(not(target_arch = "wasm32"))]
-                TableIterInner::Host => return None,
-                #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
-                TableIterInner::Test(iter) => {
-                    let row = iter.next()?;
-                    return Some(bsatn::from_slice(&row).expect("Failed to decode row!"));
+
+                if (&self.reader).remaining() > 0 {
+                    let row = bsatn::from_reader(&mut &self.reader).expect("Failed to decode row!");
+                    return Some(row);
                 }
+            },
+            #[cfg(not(target_arch = "wasm32"))]
+            TableIterInner::Host => None,
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            TableIterInner::Test(iter) => {
+                let row = iter.next()?;
+                Some(bsatn::from_slice(&row).expect("Failed to decode row!"))
             }
         }
     }

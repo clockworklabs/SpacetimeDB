@@ -33,7 +33,7 @@ const user = table(
 const spacetimedb = schema({ user });
 export default spacetimedb;
 
-export const create_user = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
+export const createUser = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
   ctx.db.user.insert({ id: 0n, name });
 });
 ```
@@ -131,7 +131,7 @@ Every reducer invocation has an associated caller identity.
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-import { schema, table, t, type Identity } from 'spacetimedb/server';
+import { schema, table, t } from 'spacetimedb/server';
 
 const player = table(
   { name: 'player', public: true },
@@ -145,7 +145,7 @@ const player = table(
 const spacetimedb = schema({ player });
 export default spacetimedb;
 
-export const update_score = spacetimedb.reducer({ newScore: t.u32() }, (ctx, { newScore }) => {
+export const updateScore = spacetimedb.reducer({ newScore: t.u32() }, (ctx, { newScore }) => {
   // Get the caller's identity
   const caller = ctx.sender;
   
@@ -257,7 +257,7 @@ SPACETIMEDB_REDUCER(update_score, ReducerContext ctx, uint32_t new_score) {
 The connection ID identifies the specific client connection that invoked the reducer. This is useful for tracking sessions or implementing per-connection state.
 
 :::note
-The connection ID may be `None`/`null`/`undefined` for reducers invoked by the system (such as scheduled reducers or lifecycle reducers) or when called via the CLI without specifying a connection.
+The connection ID is present only when the reducer invocation is associated with a client connection. Reducers invoked by `init`, scheduled reducers, and some CLI or internal calls may not have one. Client-connected and client-disconnected reducers receive the connection ID for the connection being opened or closed.
 :::
 
 ### Timestamp
@@ -325,7 +325,7 @@ Scheduled reducers and procedures are private by default in SpacetimeDB 2.x, so 
 import { schema, table, t } from 'spacetimedb/server';
 
 const scheduledTask = table(
-  { name: 'scheduled_task', scheduled: (): any => send_reminder },
+  { name: 'scheduled_task' },
   {
     taskId: t.u64().primaryKey().autoInc(),
     scheduledAt: t.scheduleAt(),
@@ -336,9 +336,13 @@ const scheduledTask = table(
 const spacetimedb = schema({ scheduledTask });
 export default spacetimedb;
 
-export const send_reminder = spacetimedb.reducer({ arg: scheduledTask.rowType }, (_ctx, { arg }) => {
-  console.log(`Reminder: ${arg.message}`);
-});
+export const sendReminder = spacetimedb.reducer(
+  { onSchedule: scheduledTask },
+  { arg: scheduledTask.rowType },
+  (_ctx, { arg }) => {
+    console.log(`Reminder: ${arg.message}`);
+  }
+);
 ```
 
 </TabItem>
@@ -349,20 +353,20 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Accessor = "ScheduledTask", Scheduled = nameof(SendReminder))]
+    [SpacetimeDB.Table(Accessor = "ScheduledTask", Scheduled = nameof(SendReminder), ScheduledAt = nameof(ScheduledAt))]
     public partial struct ScheduledTask
     {
         [SpacetimeDB.PrimaryKey]
         [SpacetimeDB.AutoInc]
-        public ulong taskId;
-        public ScheduleAt scheduledAt;
-        public string message;
+        public ulong TaskId;
+        public ScheduleAt ScheduledAt;
+        public string Message;
     }
 
     [SpacetimeDB.Reducer]
     public static void SendReminder(ReducerContext _ctx, ScheduledTask task)
     {
-        Log.Info($"Reminder: {task.message}");
+        Log.Info($"Reminder: {task.Message}");
     }
 }
 ```
@@ -426,7 +430,7 @@ SPACETIMEDB_REDUCER(send_reminder, ReducerContext _ctx, ScheduledTask task) {
 | `db`           | `DbView`                   | Access to the module's database tables          |
 | `sender`       | `Identity`                 | Identity of the caller                          |
 | `senderAuth`   | `AuthCtx`                  | Authorization context for the caller (includes JWT claims and internal call detection) |
-| `connectionId` | `ConnectionId \| undefined`| Connection ID of the caller, if available       |
+| `connectionId` | `ConnectionId \| null`     | Connection ID of the caller, if available       |
 | `timestamp`    | `Timestamp`                | Time when the reducer was invoked               |
 | `random`       | `Random`                   | Random number generator (deterministic, seeded by SpacetimeDB) |
 </TabItem>

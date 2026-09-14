@@ -1,6 +1,3 @@
-#[cfg(feature = "simulation")]
-extern crate alloc;
-
 use core::{
     fmt,
     future::Future,
@@ -11,7 +8,7 @@ use core::{
 };
 
 #[cfg(feature = "simulation")]
-pub mod sim;
+pub use spacetimedb_runtime_core::sim;
 #[cfg(feature = "simulation")]
 pub mod sim_std;
 

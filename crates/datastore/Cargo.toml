@@ -23,7 +23,6 @@ spacetimedb-execution = { workspace = true, optional = true }
 anyhow = { workspace = true, features = ["backtrace"] }
 bytes.workspace = true
 derive_more.workspace = true
-enum-as-inner.workspace = true
 enum-map.workspace = true
 itertools.workspace = true
 lazy_static.workspace = true
@@ -57,6 +56,7 @@ test = ["spacetimedb-commitlog/test", "spacetimedb-schema/test"]
 spacetimedb-lib = { path = "../lib", features = ["proptest"] }
 spacetimedb-sats = { path = "../sats", features = ["proptest"] }
 spacetimedb-commitlog = { path = "../commitlog", features = ["test"] }
+spacetimedb-schema = { workspace = true, features = ["test"] }
 
 # Also as dev-dependencies for use in _this_ crate's tests.
 proptest.workspace = true
