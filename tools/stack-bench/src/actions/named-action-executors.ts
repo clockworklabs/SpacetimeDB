@@ -259,9 +259,10 @@ async function callConcurrently({ input, capabilities, signal }: NamedArguments<
         body: request.body,
         signal: requestSignal,
       });
+      const text = await reply.text();
       response = { status: reply.status, ok: reply.ok,
         applicationRejected: (request.applicationRejectionStatuses ?? []).includes(reply.status),
-        text: reply.ok ? '' : (await reply.text()).slice(0, 120), transport: 'response' as const };
+        text: reply.ok ? '' : text.slice(0, 120), transport: 'response' as const };
     } catch {
       response = { status: 0, ok: false,
         text: signal.aborted ? 'request cancelled' : timeout.aborted ? 'request timed out' : 'request transport failed',

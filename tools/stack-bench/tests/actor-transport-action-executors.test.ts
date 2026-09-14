@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -957,6 +959,36 @@ test('unknown request outcomes take priority over error responses in either orde
     named.lastCalls.set({ action: 'checkout', fired: 2, ms: 1,
       outcomes: statuses.map(status => ({ name: 'a', status, ok: false, text: '' })) });
     assert.equal((await run({ do: 'expectCallOutcomes' }, provided)).status, 'inconclusive');
+  }
+});
+
+test('a committed operation with a truncated HTTP success body remains unknown', { timeout: 10000 }, async () => {
+  let committed = 0;
+  const server = createServer((_request, response) => {
+    committed++;
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    if (committed === 1) response.end('{"accepted":true}');
+    else response.write('{"accepted":'); // Commit occurred, but the reply never finishes.
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  try {
+    const address = server.address();
+    assert(address && typeof address !== 'string');
+    const actors = new Map(['a', 'b'].map(name => [name, { name,
+      writes: [{ headers: { authorization: `Bearer ${name}-session` } }] }]));
+    const provided = services(actors, { fetchImpl: (url, options) => fetch(
+      url.replace('http://app.test', `http://127.0.0.1:${address.port}`), options) });
+    const result = await run({ do: 'callConcurrently', actors: ['a', 'b'], action: 'checkout',
+      requestTimeoutMs: 1000, settleMs: 0 }, provided);
+    assert.equal(committed, 2);
+    assert.equal(record(result.observation).responses, 1);
+    assert.equal(record(result.observation).timeouts, 1);
+    assert.equal((await run({ do: 'expectCallOutcomes', accepted: 1 }, provided)).status, 'inconclusive');
+  } finally {
+    const closed = new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    server.closeAllConnections();
+    await closed;
   }
 });
 
