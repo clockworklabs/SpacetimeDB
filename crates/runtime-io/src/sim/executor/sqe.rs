@@ -65,18 +65,12 @@ impl<T> Sqe<T> {
         SqeInner::Read { fd, buf, offset }.into()
     }
 
-    pub fn open(path: impl AsRef<str>) -> Self {
-        SqeInner::Open {
-            path: path.as_ref().into(),
-        }
-        .into()
+    pub fn open(path: Box<str>) -> Self {
+        SqeInner::Open { path }.into()
     }
 
-    pub fn create(path: impl AsRef<str>) -> Self {
-        SqeInner::Create {
-            path: path.as_ref().into(),
-        }
-        .into()
+    pub fn create(path: Box<str>) -> Self {
+        SqeInner::Create { path }.into()
     }
 
     pub fn stat(fd: fs::File) -> Self {

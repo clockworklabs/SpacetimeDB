@@ -65,12 +65,12 @@ pub trait SpacetimeIO {
     type Completion<T>: Future<Output = T> + Unpin;
 
     /// Open the file at `path`.
-    fn open_file(&self, path: &str) -> Self::Completion<Result<Self::Fd, Self::Error>>;
+    fn open_file(&self, path: Box<str>) -> Self::Completion<Result<Self::Fd, Self::Error>>;
 
     /// Create the file at `path`.
     ///
     /// Returns an error if the file already exists.
-    fn create_file(&self, path: &str) -> Self::Completion<Result<Self::Fd, Self::Error>>;
+    fn create_file(&self, path: Box<str>) -> Self::Completion<Result<Self::Fd, Self::Error>>;
 
     /// Write `buf` to `fd` at `offset`.
     ///

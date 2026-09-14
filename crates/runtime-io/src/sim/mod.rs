@@ -3,7 +3,7 @@ use core::result::Result;
 
 use crate::{
     sim::completion::{CompletionState, PendingCompletions},
-    AlignedBytes, ErasedBox, ErrorWith, SpacetimeIO, Statx,
+    AlignedBytes, ErasedBox, ErrorWith, ReadWriteResult, SpacetimeIO, Statx,
 };
 
 mod completion;
@@ -123,9 +123,9 @@ impl SimulatorIO {
     fn submit_with<B: AlignedBytes + 'static>(
         &self,
         sqe: Sqe<usize>,
-        completion: impl FnOnce(Arc<SimulatorInner>, usize) -> Completion<Result<Box<B>, ErrorWith<Error, Box<B>>>>,
+        completion: impl FnOnce(Arc<SimulatorInner>, usize) -> Completion<ReadWriteResult<B, Error>>,
         completion_handle: impl FnOnce(CompletionState<Result<ErasedBox, ErrorWith<Error, ErasedBox>>>) -> CompletionHandle,
-    ) -> Completion<Result<Box<B>, ErrorWith<Error, Box<B>>>> {
+    ) -> Completion<ReadWriteResult<B, Error>> {
         let mut executor = self.inner.executor.lock();
         let mut pending = self.inner.pending.lock();
         let pending_entry = pending.vacant_entry();
@@ -168,11 +168,11 @@ impl SpacetimeIO for SimulatorIO {
     type Error = Error;
     type Completion<T> = Completion<T>;
 
-    fn open_file(&self, path: &str) -> Self::Completion<Result<Self::Fd, Self::Error>> {
+    fn open_file(&self, path: Box<str>) -> Self::Completion<Result<Self::Fd, Self::Error>> {
         self.submit(Sqe::open(path), Completion::open, CompletionHandle::Open)
     }
 
-    fn create_file(&self, path: &str) -> Self::Completion<Result<Self::Fd, Self::Error>> {
+    fn create_file(&self, path: Box<str>) -> Self::Completion<Result<Self::Fd, Self::Error>> {
         self.submit(Sqe::create(path), Completion::create, CompletionHandle::Create)
     }
 
@@ -266,7 +266,7 @@ mod tests {
     #[test]
     fn create_file() {
         let rt = Runtime::new();
-        rt.run(|io| io.create_file("/data/test")).unwrap();
+        rt.run(|io| io.create_file("/data/test".into())).unwrap();
     }
 
     #[derive(Debug)]
@@ -300,7 +300,7 @@ mod tests {
     fn write_read_roundtrip() {
         let rt = Runtime::new();
 
-        let fd = rt.run(|io| io.create_file("/data/test")).unwrap();
+        let fd = rt.run(|io| io.create_file("/data/test".into())).unwrap();
         let buf = Box::new(Buf([22; 2 * SECTOR_SIZE]));
         let mut buf = rt
             .run(|io| io.write_all_at(fd.clone(), buf, 0))
@@ -316,7 +316,7 @@ mod tests {
     fn write_read_at_offset() {
         let rt = Runtime::new();
 
-        let fd = rt.run(|io| io.create_file("/data/test")).unwrap();
+        let fd = rt.run(|io| io.create_file("/data/test".into())).unwrap();
         let buf: Box<Buf<SECTOR_SIZE>> = {
             let mut buf = Box::new(Buf([0; SECTOR_SIZE]));
             for i in 0usize..2 {
@@ -340,7 +340,7 @@ mod tests {
     fn preallocate() {
         let rt = Runtime::new();
 
-        let fd = rt.run(|io| io.create_file("/data/test")).unwrap();
+        let fd = rt.run(|io| io.create_file("/data/test".into())).unwrap();
         rt.run(|io| io.reserve(fd.clone(), 2 * SECTOR_SIZE as u64)).unwrap();
 
         // Check that reserved space reads as zeroes.
@@ -370,16 +370,19 @@ mod tests {
     fn open_succeeds_after_create() {
         let rt = Runtime::new();
 
-        matches!(rt.run(|io| io.open_file("/data/test")), Err(Error::FileNotFound { .. }));
-        rt.run(|io| io.create_file("/data/test")).unwrap();
-        assert!(rt.run(|io| io.open_file("/data/test")).is_ok());
+        matches!(
+            rt.run(|io| io.open_file("/data/test".into())),
+            Err(Error::FileNotFound { .. })
+        );
+        rt.run(|io| io.create_file("/data/test".into())).unwrap();
+        assert!(rt.run(|io| io.open_file("/data/test".into())).is_ok());
     }
 
     #[test]
     fn unsynced_data_is_lost_after_power_loss() {
         let rt = Runtime::new();
 
-        let fd = rt.run(|io| io.create_file("/data/test")).unwrap();
+        let fd = rt.run(|io| io.create_file("/data/test".into())).unwrap();
         let mut buf = rt
             .run(|io| io.write_all_at(fd.clone(), Box::new(Buf([1; SECTOR_SIZE])), 0))
             .map_err(ErrorWith::into_err)

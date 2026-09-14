@@ -69,8 +69,8 @@ impl SpacetimeIO for TokioIO {
     type Error = io::Error;
     type Completion<T> = Completion<T>;
 
-    fn open_file(&self, path: &str) -> Self::Completion<Result<Self::Fd, Self::Error>> {
-        let path = PathBuf::from(path);
+    fn open_file(&self, path: Box<str>) -> Self::Completion<Result<Self::Fd, Self::Error>> {
+        let path = PathBuf::from(&*path);
         self.rt
             .spawn_blocking(move || {
                 let mut open_options = std::fs::File::options();
@@ -80,8 +80,8 @@ impl SpacetimeIO for TokioIO {
             .into()
     }
 
-    fn create_file(&self, path: &str) -> Self::Completion<Result<Self::Fd, Self::Error>> {
-        let path = PathBuf::from(path);
+    fn create_file(&self, path: Box<str>) -> Self::Completion<Result<Self::Fd, Self::Error>> {
+        let path = PathBuf::from(&*path);
         self.rt
             .spawn_blocking(move || {
                 let mut open_options = std::fs::File::options();
@@ -108,13 +108,16 @@ impl SpacetimeIO for TokioIO {
     fn read_exact_at<B: AlignedBytes + Send + 'static>(
         &self,
         fd: Self::Fd,
-        mut buf: Box<B>,
+        buf: Box<B>,
         offset: u64,
     ) -> Self::Completion<Result<Box<B>, ErrorWith<Self::Error, Box<B>>>> {
         self.rt
-            .spawn_blocking(move || match platform::read_exact_at(&fd, buf.as_bytes_mut(), offset) {
-                Ok(()) => Ok(buf),
-                Err(error) => Err(ErrorWith { error, with: buf }),
+            .spawn_blocking(move || {
+                let mut buf = buf;
+                match platform::read_exact_at(&fd, buf.as_bytes_mut(), offset) {
+                    Ok(()) => Ok(buf),
+                    Err(error) => Err(ErrorWith { error, with: buf }),
+                }
             })
             .into()
     }
