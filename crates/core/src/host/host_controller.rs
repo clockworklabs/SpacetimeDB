@@ -98,9 +98,9 @@ pub struct EnvironmentVersionConflict;
 
 /// Private complete configuration for a not-yet-initialized database generation.
 /// Implementations must verify the exact persisted database identity, program and
-/// bootstrap generation. A source resolving the generation at load time must also
-/// check the replica nomination in that snapshot. This source is never consulted
-/// during ordinary reopen.
+/// initialization generation. A source resolving the generation at load time must
+/// also check the replica nomination in that snapshot. This source is never
+/// consulted during ordinary reopen.
 #[async_trait]
 pub trait InitialEnvironmentSource: Send + Sync {
     async fn load(
@@ -388,7 +388,7 @@ impl HostController {
         }
     }
 
-    /// Install the private bootstrap input source before this controller is shared.
+    /// Install the initial environment source before this controller is shared.
     pub fn with_initial_environment_source(mut self, source: Arc<dyn InitialEnvironmentSource>) -> Self {
         self.initial_environment_source = Some(source);
         self

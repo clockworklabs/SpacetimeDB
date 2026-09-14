@@ -452,7 +452,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             previous.owner_identity == *caller_identity,
             "database ownership changed before reset"
         );
-        let previous = self.control_db.with_bootstrap_generation(previous)?;
+        let previous = self.control_db.with_initialization_generation(previous)?;
         let environment = spacetimedb_lib::environment::EnvironmentUpdate {
             values: spec.environment,
             remove: spec.environment_remove,
@@ -467,7 +467,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             }
             None => {
                 // A reset without an artifact retains the currently committed
-                // module, not the original bootstrap program or its old values.
+                // module, not the initial program or its old environment values.
                 let module = self.leader(database.id).await?.module().await?;
                 module
                     .relational_db()

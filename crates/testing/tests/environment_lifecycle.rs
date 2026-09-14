@@ -212,7 +212,7 @@ fn real_module_reopen_and_environment_only_publication_preserve_values() -> anyh
                 AlgebraicValue::from(Some("republished".to_owned()))
             );
             // Init asserts initial-required. A successful reopen with republished proves
-            // that init was not run again and old bootstrap input was not restored.
+            // that init was not run again and the initial environment values were not restored.
             assert!(env
                 .as_ref()
                 .unwrap()
