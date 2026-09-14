@@ -54,6 +54,14 @@ interface RunSelection extends Omit<Partial<GradeBundleSelection>,
   regressionPoints?: number;
 }
 
+function validDependencyScore(level: RunLevel): boolean {
+  return safeInteger(level.score) && safeInteger(level.max)
+    && level.max >= 0 && level.score >= 0 && level.score <= level.max
+    && (level.max > 0 || (safeInteger(level.regression?.score)
+      && safeInteger(level.regression?.max) && level.regression.max > 0
+      && level.regression.score >= 0 && level.regression.score <= level.regression.max));
+}
+
 interface RunObservation extends UnknownRecord {
   selectedChecks?: unknown;
   selectionSha256?: unknown;
@@ -138,7 +146,7 @@ export interface BenchmarkRun extends Partial<Pick<BenchmarkRunRecord,
 interface GradeBundle extends UnknownRecord {
   source?: { sha256?: string };
   selection?: { sha256?: string };
-  totals?: { score?: number; max?: number };
+  totals?: { score?: number; max?: number; regression?: RunRegression | null };
 }
 
 interface ValidationCondition {
@@ -204,7 +212,7 @@ function validateDependencyRepairSummary(
 ): void {
   const at = `levels.L${level.level}.repair`;
   const repairAttempts = state.attempts.filter(attempt =>
-    attempt.repair?.depth === level.level);
+    attempt.level === level.level && attempt.repair);
   const repair = level.repair;
   mismatch(!repair, at);
   if (!repair) return;
@@ -255,6 +263,8 @@ function validatePackageEvidence(run: BenchmarkRun, resultDir: string | null,
     'packageEvidence.grading.selectionSha256');
   mismatch(grading.totals?.score !== finalGradedLevel.score
     || grading.totals?.max !== finalGradedLevel.max, 'packageEvidence.grading.score');
+  mismatch(canonicalDefinitionJson(grading.totals?.regression ?? null)
+    !== canonicalDefinitionJson(finalGradedLevel.regression ?? null), 'packageEvidence.grading.regression');
   const gradingOutcome = classifyBundle(grading as OutcomeBundle);
   mismatch(gradingOutcome.kind !== finalGradedLevel.outcome?.kind
     || canonicalDefinitionJson(gradingOutcome.appFailures)
@@ -300,8 +310,7 @@ function validateDependencyEvidence(plan: CampaignValidationPlan,
         item.level === level.level && item.selectionSha256 === level.selection?.sha256);
       mismatch(!matching, `levels.L${level.level}.progressionAttempt`);
       if (!matching) continue;
-      const validScore = safeInteger(level.score) && safeInteger(level.max)
-        && level.max > 0 && level.score >= 0 && level.score <= level.max;
+      const validScore = validDependencyScore(level);
       mismatch(matching.outcome === 'conclusive' && !validScore, `levels.L${level.level}.score`);
       mismatch(matching.outcome === 'inconclusive' && level.graded !== false,
         `levels.L${level.level}.graded`);
@@ -399,8 +408,8 @@ export function validateCampaignRun(plan: CampaignValidationPlan, attempt: Campa
     && !Array.isArray(run.progressionStatus) ? run.progressionStatus as UnknownRecord : null;
   const progressionLevel = dependencyMode && integer(progressionStatus?.level)
     ? progressionStatus.level : null;
-  const gradedLevels = (run.levels ?? []).filter(level => safeInteger(level.score)
-    && safeInteger(level.max) && level.max > 0);
+  const gradedLevels = (run.levels ?? []).filter(level => dependencyMode
+    ? validDependencyScore(level) : safeInteger(level.score) && safeInteger(level.max) && level.max > 0);
   const finalGradedLevel = progressionLevel === null
     ? gradedLevels.at(-1) ?? null
     : gradedLevels.find(level => level.level === progressionLevel) ?? null;

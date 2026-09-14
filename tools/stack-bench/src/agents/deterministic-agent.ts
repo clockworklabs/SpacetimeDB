@@ -5,6 +5,14 @@ import { join } from 'node:path';
 
 const passingApp = '<!doctype html><html><body><h1 id="app-title">Fixture Chat</h1></body></html>\n';
 const failingApp = '<!doctype html><html><body><h1>Fixture</h1></body></html>\n';
+// Two checks only: account creation and catalog values. Each upgrade breaks
+// them again so the CLI integration test must repair an earlier feature.
+const ecommerceApp = `<!doctype html><html><body>
+<input id="username" data-role="signup-username"><input data-role="signup-password" type="password">
+<button data-role="signup-submit" onclick="document.getElementById('user').textContent=document.getElementById('username').value">Sign up</button>
+<span id="user" data-role="current-user"></span>
+<div data-role="item-card">Air Purifier <span data-role="item-price">189</span><span data-role="item-stock">100</span></div>
+</body></html>\n`;
 
 const args: Record<string, string | undefined> = {};
 for (let i = 2; i < process.argv.length; i += 2) {
@@ -21,7 +29,8 @@ if (args.mode === 'resume' && args.model === 'deterministic-deferred') {
 const canFix = args.model !== 'deterministic-stall'
   && (args.model !== 'deterministic-deferred' || existsSync(resumed));
 mkdirSync(app, { recursive: true });
-writeFileSync(join(app, 'index.html'), args.mode === 'fix' && canFix ? passingApp : failingApp);
+writeFileSync(join(app, 'index.html'), args.mode === 'fix' && canFix
+  ? args.model === 'deterministic-ecommerce' ? ecommerceApp : passingApp : failingApp);
 
 console.log(JSON.stringify({
   appDir: app, mode: args.mode, level: Number(args.level ?? 1),

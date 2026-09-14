@@ -288,6 +288,8 @@ export function auditProgressionReferenceRun({ outputDir, progression, featureCa
     );
     const recordedGrade = {
       ...converted,
+      ...(savedResult.executionLevel === undefined
+        ? {} : { executionLevel: savedResult.executionLevel }),
       ...(savedResult.repairRegression === undefined
         ? {} : { repairRegression: savedResult.repairRegression }),
       ...(savedResult.completedRepair === undefined

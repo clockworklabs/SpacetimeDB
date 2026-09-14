@@ -86,6 +86,7 @@ interface ResultNode extends Record<string, unknown> {
 
 interface ResultBase extends Record<string, unknown> {
   attemptId: string;
+  executionLevel?: number;
   runId?: string;
   sourceSha256?: string;
   selectionSha256?: string;
@@ -156,7 +157,7 @@ interface DependencyRepairState {
     exhaustedAtLevel: number | null;
     exhaustionReason: string | null;
   }>;
-  attempts: Array<{ repair?: { depth: number; nodeIds: readonly string[] } | null }>;
+  attempts: Array<{ level: number; repair?: { depth: number; nodeIds: readonly string[] } | null }>;
 }
 
 // The node repair record a run keeps for one level. The run writer and the
@@ -165,7 +166,7 @@ interface DependencyRepairState {
 // earlier level's record disagree with what the validator recomputes.
 export function dependencyLevelRepairRecords(state: DependencyRepairState, level: number) {
   const repaired = state.attempts.flatMap(attempt =>
-    attempt.repair?.depth === level ? attempt.repair.nodeIds : []);
+    attempt.level === level ? attempt.repair?.nodeIds ?? [] : []);
   return dependencyRepairRecords(state, level, repaired);
 }
 
@@ -839,9 +840,14 @@ function applyDependencyResult(inputState: DependencyState, inputResult: Depende
   strictObject(result, 'result', new Set([
     'attemptId', 'runId', 'outcome', 'category', 'reason', 'nodes',
     'sourceSha256', 'selectionSha256', 'evidence', 'applicationFailure', 'repairRegression',
-    'completedRepair',
+    'completedRepair', 'executionLevel',
   ]));
   nonEmptyString(result.attemptId, 'result.attemptId');
+  const executionLevel = result.executionLevel ?? inputState.level;
+  if (!Number.isSafeInteger(executionLevel)
+    || !inputState.definition.nodes.some(node => node.level === executionLevel)) {
+    throw new Error('result.executionLevel must be a depth in the feature graph');
+  }
   if (result.sourceSha256 !== undefined && !HASH.test(result.sourceSha256)) {
     throw new Error('result.sourceSha256 must be a SHA-256 identity');
   }
@@ -902,7 +908,7 @@ function applyDependencyResult(inputState: DependencyState, inputResult: Depende
     if (result.nodes !== undefined || result.applicationFailure !== undefined) {
       throw new Error('inconclusive results cannot contain node grades or application failures');
     }
-    state.attempts.push({ attemptId: result.attemptId, level: state.level,
+    state.attempts.push({ attemptId: result.attemptId, level: executionLevel,
       outcome: result.outcome, category: result.category, reason: result.reason,
       ...(result.runId ? { runId: result.runId } : {}),
       ...(result.evidence ? { evidence: result.evidence } : {}),
@@ -947,7 +953,7 @@ function applyDependencyResult(inputState: DependencyState, inputResult: Depende
     if (!hasFailedCheck || !['active', 'working', 'passed'].includes(nodeState.status)) continue;
     failedPromptNodeIds.add(nodeId);
   }
-  state.attempts.push({ attemptId: result.attemptId, level: state.level, outcome: result.outcome,
+  state.attempts.push({ attemptId: result.attemptId, level: executionLevel, outcome: result.outcome,
     ...(result.runId ? { runId: result.runId } : {}),
     ...(result.evidence ? { evidence: result.evidence } : {}),
     ...(result.sourceSha256 ? { sourceSha256: result.sourceSha256 } : {}),

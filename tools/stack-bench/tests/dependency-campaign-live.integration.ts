@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
+import { createServer } from 'node:http';
+import { promisify } from 'node:util';
 import test from 'node:test';
 
 import { generateCampaignReport } from '../src/campaigns/campaign-report.js';
+import { validateCampaignRun } from '../src/campaigns/campaign-run-validation.js';
 import { sha256 } from '../src/evidence/provenance.js';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import { campaignUsesNoExternalResources, runCampaignAdmission }
@@ -13,7 +16,7 @@ import { campaignUsesNoExternalResources, runCampaignAdmission }
 import { loadTrack } from '../src/composition/tracks.js';
 import { requireRecipeRelease as resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { readCampaignState } from '../src/campaigns/campaign-scheduler.js';
-import { readArtifact } from '../src/evidence/artifacts.js';
+import { artifactPayload, readArtifact } from '../src/evidence/artifacts.js';
 import type { BenchmarkRunRecord, GradeBundlePayload }
   from '../src/evidence/benchmark-run.js';
 import { validateProgressionCampaignLevelScope }
@@ -293,6 +296,77 @@ test('feature work runs same-depth features and writes one depth record', { time
   }
 });
 
+
+test('repairing an earlier feature keeps the current execution grade, checkpoint, and costs together', { timeout: 300_000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-cross-depth-repair-'));
+  const work = join(root, 'work');
+  // The stub deliberately has no application lifecycle. Serve its changing
+  // source here while the real CLI executes and grades both levels.
+  mkdirSync(work);
+  const server = createServer((_request, response) => {
+    const app = readdirSync(work)[0];
+    const index = app && join(work, app, 'app', 'index.html');
+    response.setHeader('Content-Type', 'text/html');
+    response.end(index && existsSync(index) ? readFileSync(index) : 'Not built');
+  });
+  await new Promise<void>((resolve, reject) => server.once('error', reject).listen(7300, resolve));
+  try {
+    const campaign = JSON.parse(readFileSync(CAMPAIGN, 'utf8'));
+    campaign.agents[0].model = 'deterministic-ecommerce';
+    campaign.pricing.models['deterministic-ecommerce'] = campaign.pricing.models['deterministic-stall'];
+    delete campaign.pricing.models['deterministic-stall'];
+    campaign.repair.budget = { total: 3, perFeature: 2 };
+    campaign.featureCatalog.nodes[1].dependencies = [{ id: 'accounts', reason: 'Catalog requires an account' }];
+    campaign.selection.levels.push({ level: 2, recipe: 'ecommerce.sequential-l2' });
+    const campaignPath = join(root, 'campaign.json');
+    const output = join(root, 'results');
+    writeFileSync(campaignPath, `${JSON.stringify(campaign, null, 2)}\n`);
+    const result = await promisify(execFile)(process.execPath, [CLI, 'trial', campaignPath, '--out', output], {
+      cwd: STACK_BENCH_ROOT, encoding: 'utf8', timeout: 240_000,
+      maxBuffer: 32 * 1024 * 1024,
+      env: { ...process.env, STACK_BENCH_WORK_DIR: work },
+    }).catch(error => { throw new Error(`${error.stdout?.slice(-7000) ?? ''}\n${error.stderr ?? error.message}`); });
+    const { plan, state } = readCampaignState(output);
+    const execution = state.attempts[0]?.executions[0];
+    assert(execution);
+    assert.equal(execution.status, 'completed', execution.reason ?? result.stdout);
+    const directory = join(output, execution.output);
+    const recordedRun = readArtifact<BenchmarkRunRecord>(join(directory, 'run.json'), { expectedKind: 'benchmark_run' });
+    const run = recordedRun.payload;
+    assert.deepEqual(run.levels.map(level => ({ level: level.level, score: level.score,
+      max: level.max, repairs: level.repairs, sessions: level.repairSessions?.length,
+      cost: level.repairCostUsd, outcome: level.outcome.kind })), [
+      { level: 1, score: 1, max: 1, repairs: 1, sessions: 1, cost: 0.05, outcome: 'passed' },
+      { level: 2, score: 0, max: 0, repairs: 1, sessions: 1, cost: 0.05, outcome: 'passed' },
+    ]);
+    assert.equal(run.levels[1]?.regression?.score, 2);
+    assert.equal(run.levels[1]?.regression?.max, 2);
+    const altered = structuredClone(recordedRun);
+    altered.payload.levels[1]!.regression = { score: 0, max: 0 };
+    assert.throws(() => validateCampaignRun(plan, plan.attempts[0]!, artifactPayload(altered),
+      { resultDir: directory }), /score|regression/);
+    assert.equal(run.outcome?.kind, 'passed');
+    assert.equal(run.totals?.costUsd, 1.1);
+    assert(existsSync(join(directory, 'level-l2-checkpoint.json')));
+    const saved = readArtifact<ProgressionStatePayload>(join(directory, 'progression-state.json'));
+    const progression = replayDependencyMode(dependencyRuntimeDefinition(plan.featureCatalog!, plan.dependencyPolicy!), saved.payload.events);
+    assert.equal(progression.attempts.at(-1)?.level, 2);
+    const repair = progression.attempts.findLast(attempt => attempt.repair);
+    assert.equal(repair?.level, 2);
+    assert.equal(repair?.repair?.depth, 1);
+    assert.deepEqual(repair?.repair?.nodeIds, ['accounts']);
+    const checkpoint = run.checkpoints?.at(-1);
+    assert.equal(checkpoint?.phase, 'final');
+    assert.equal(checkpoint?.completion.passed, 2);
+    assert.deepEqual(checkpoint?.checks.map(check => [check.id, check.status]).sort(), [
+      ['ecommerce.feature.accounts.accounts.1a', 'passed'],
+      ['ecommerce.feature.catalog.catalog-values.2a', 'passed'],
+    ]);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test('bench checkpoints retain actual grade bytes, full check scope, and unknown unreceipted cost', { timeout: 300_000 }, () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-checkpoint-live-'));

@@ -287,9 +287,9 @@ test('dependency repair accounting uses repairs, not grading observations', () =
         exhaustedAtLevel: null, exhaustionReason: null },
     },
     attempts: [
-      { repair: { depth: 1, nodeIds: ['accounts', 'recovery'] } },
-      { repair: { depth: 2, nodeIds: ['recovery'] } },
-      { repair: null },
+      { level: 1, repair: { depth: 1, nodeIds: ['accounts', 'recovery'] } },
+      { level: 2, repair: { depth: 2, nodeIds: ['recovery'] } },
+      { level: 2, repair: null },
     ],
   };
   assert.deepEqual(dependencyRepairRecords(state, 1, ['recovery']), [

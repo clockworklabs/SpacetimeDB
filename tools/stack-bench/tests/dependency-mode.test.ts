@@ -116,6 +116,32 @@ function repairedGrade(state: ProgressionState, attemptId: string,
   return { ...grade(state, attemptId, outcomes), completedRepair: true };
 }
 
+test('cross-depth repair records execution depth without changing the feature budget', () => {
+  let state = progressionEngine.initialize(fixture());
+  state = progressionEngine.recordResult(state, grade(state, 'l1', {}));
+  state = progressionEngine.recordResult(state, grade(state, 'l2', {}));
+  state = progressionEngine.recordResult(state, grade(state, 'l3', { ownership: 'fail' }));
+  assert.equal(action(state).level, 2);
+  const completed = progressionEngine.recordResult(state, {
+    ...repairedGrade(state, 'repair', {}), executionLevel: 3,
+  });
+  assert.equal(completed.attempts.at(-1)?.level, 3);
+  assert.equal(completed.attempts.at(-1)?.repair?.depth, 2);
+  assert.equal(completed.nodes.ownership?.repairs.used, 1);
+  assert.deepEqual(progressionEngine.replay(completed.definition, completed.events), completed);
+  const interrupted = progressionEngine.recordResult(state, {
+    attemptId: 'interrupted', executionLevel: 3, outcome: 'inconclusive',
+    category: 'harness_failure', reason: 'grading failed', completedRepair: true,
+  });
+  assert.equal(interrupted.attempts.at(-1)?.level, 3);
+  assert.equal(interrupted.attempts.at(-1)?.repair?.depth, 2);
+  assert.equal(interrupted.nodes.ownership?.repairs.used, 1);
+  assert.deepEqual(progressionEngine.replay(interrupted.definition, interrupted.events), interrupted);
+  assert.throws(() => progressionEngine.recordResult(state, {
+    ...repairedGrade(state, 'invalid', {}), executionLevel: 99,
+  }), /executionLevel/);
+});
+
 function guaranteeFixture(): FixtureDefinition {
   const definition = fixture();
   definition.workSelection = 'feature';

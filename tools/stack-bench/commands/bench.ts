@@ -343,7 +343,7 @@ export function synchronizeProgressionSummary(run: Pick<BenchmarkRunRecord, 'val
       }
     }
     if (level.repair) {
-      const used = state.attempts.filter(attempt => attempt.repair?.depth === level.level).length;
+      const used = state.attempts.filter(attempt => attempt.level === level.level && attempt.repair).length;
       level.repairs = used - (level.priorRepairs ?? 0);
       level.repair.used = used;
       level.repair.limit = Math.max(level.repair.limit, used);
@@ -1622,7 +1622,7 @@ async function main() {
 
   const bindProgressionAction = (level: number): ProgressionRecipeAction | null => {
     if (!progressionExecution) return null;
-    const selected = progressionExecution.bind();
+    const selected = progressionExecution.bind(level);
     if (!isProgressionWorkRecipeAction(selected)) return selected;
     if (!args.recipeTasks) throw new Error('recipe task map is unavailable');
     args.recipeTasks.set(level, {
@@ -1641,7 +1641,7 @@ async function main() {
     const last = progressionExecution?.state?.attempts.at(-1) ?? null;
     if (input.bundle && input.selected && isProgressionWorkRecipeAction(input.selected)
       && last?.outcome === 'conclusive') {
-      progressionBundles.set(input.selected.action.level, input.bundle as GradeBundlePayload);
+      progressionBundles.set(input.level, input.bundle as GradeBundlePayload);
     }
     return next;
   };
@@ -1694,7 +1694,7 @@ async function main() {
       run.validation.ladder.stoppedAfterLevel = run.levels.at(-1)?.level ?? null;
       run.validation.ladder.blockedLevels = args.levelList.filter(candidate => candidate >= level);
       if (progressionExecution) {
-        recordProgressionGrade({ selected: progressionExecution.bind(), bundle: null, level,
+        recordProgressionGrade({ selected: progressionExecution.bind(level), bundle: null, level,
           failure: progressionFailure(run.outcome) });
         run.progressionStatus = progressionExecution.status();
         synchronizeProgressionSummary(run, requireProgressionState(progressionExecution.state));
@@ -2584,6 +2584,8 @@ async function main() {
                 bundle);
               break;
             }
+            checkpointGrade('final', bundle!,
+              [...(build && !resumedRepair ? [runSessionRecord(build)] : []), ...repairSessions], true);
             recordRepairProgression();
             continue;
           }
@@ -2913,22 +2915,6 @@ async function main() {
     const latestProgressionAttempt = progressionState?.attempts.at(-1) ?? null;
     const featureDepthContinues = featureActionSequence !== null
       && progressionState?.phase === 'active' && progressionState.level === level;
-    if (progressionState && latestProgressionAttempt && latestProgressionAttempt.level !== level) {
-      const prior = run.levels.find(item => item.level === latestProgressionAttempt.level);
-      const latestBundle = progressionBundles.get(latestProgressionAttempt.level);
-      if (prior && latestBundle && latestProgressionAttempt.outcome === 'conclusive') {
-        const latestOutcome = classifyBundle(latestBundle);
-        const latestGraded = levelGradeIsUsable(latestOutcome, latestProgressionAttempt);
-        prior.graded = latestGraded;
-        prior.score = latestGraded ? latestBundle.totals?.score ?? null : null;
-        prior.max = latestGraded ? latestBundle.totals?.max ?? null : null;
-        prior.regression = latestBundle.totals?.regression ?? null;
-        prior.selection = latestBundle.selection ?? null;
-        prior.contractPass = latestBundle.totals?.contractPass ?? null;
-        prior.code = latestBundle.code ?? null;
-        prior.outcome = latestOutcome;
-      }
-    }
     if (continuing) {
       const continuation = requireContinuation(run);
       continuation.cumulativeRepairsAfter = continuation.cumulativeRepairsBefore + repairs;

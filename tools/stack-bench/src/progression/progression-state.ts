@@ -60,6 +60,7 @@ export interface ProgressionNodeState {
 
 export interface ProgressionAttempt {
   attemptId: string;
+  // The execution being graded. repair.depth identifies the feature budget.
   level: number;
   outcome: 'conclusive' | 'inconclusive';
   category?: string;

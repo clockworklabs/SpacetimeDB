@@ -108,7 +108,7 @@ export interface LiveProgressionExecution {
     stateSha256: string | null;
     priorRun: Artifact<BenchmarkRunPayload> | null;
   };
-  bind(): ProgressionRecipeAction;
+  bind(level?: number): ProgressionRecipeAction;
   record(options: RecordOptions): ProgressionAction | null;
   readonly state: ProgressionState | null;
   readonly resumed: boolean;
@@ -471,18 +471,18 @@ export function createLiveProgressionExecution(
       status: status(), stateSha256: resumedStateSha256,
       priorRun: priorRun === null ? null : structuredClone(priorRun) };
   };
-  const bind = (): ProgressionRecipeAction => {
+  const bind = (level = currentState().level): ProgressionRecipeAction => {
     const activeState = currentState();
-    const binding = recipeBindings.get(activeState.level);
+    const binding = recipeBindings.get(level);
     if (!binding) {
-      throw new Error(`dependency progression has no recipe binding for L${activeState.level}`);
+      throw new Error(`dependency progression has no recipe binding for L${level}`);
     }
     const prior = options.retainPriorContracts
       ? priorProgressionContractIds(activeState, recipeBindings, binding) : [];
     const selected = resolveProgressionRecipeAction(binding, activeState, prior);
     return selected;
   };
-  const record = ({ selected, bundle, failure = null, repairRegression = null,
+  const record = ({ selected, bundle, level, failure = null, repairRegression = null,
     completedRepair = false }:
   RecordOptions): ProgressionAction | null => {
     if (!selected || !('grader' in selected)) return null;
@@ -551,7 +551,7 @@ export function createLiveProgressionExecution(
     if (completedRepair && action.type === 'repair') {
       result = { ...result, completedRepair: true };
     }
-    state = progressionEngine.recordResult(activeState, result);
+    state = progressionEngine.recordResult(activeState, { ...result, executionLevel: level });
     persist({ captureSource: result.outcome === 'conclusive' });
     return progressionEngine.nextAction(currentState());
   };
