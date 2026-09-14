@@ -10,6 +10,7 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { executeAction } from '../src/actions/action-contract.js';
 import { createDatabaseReadCapability } from '../src/actions/runtime-action-executors.js';
+import { getSpacetimeCheckoutState } from '../src/stacks/backends/spacetime-operations.js';
 
 function states(): { before: CheckoutState; prepared: CheckoutState; after: CheckoutState } {
   const before: CheckoutState = { accountId: 'a', itemId: 'i', priceMinor: 1999, cart: [],
@@ -126,4 +127,27 @@ test('checkout actions retain a failed reconciliation and treat reader failures 
     assert.equal(result.status, failedRead ? 'inconclusive' : 'failed');
     if (!failedRead) assert(result.observation);
   }
+});
+
+test('SpacetimeDB checkout SQL retains private column casing and rejects incomplete tables', () => {
+  const columns = ['id', 'id,price', 'accountId,itemId,quantity', 'item_id,warehouse_id,quantity',
+    'accountId,itemId,warehouseId,quantity', 'id,accountId,total,status',
+    'id,orderId,itemId,quantity,unitPrice', 'id,orderId,amount,status', 'orderItemId,warehouseId,quantity'];
+  const rows = [[[1]], [[2,19.99]], [], [[2,3,10]], [], [], [], [], []];
+  const results = columns.map((names,index) => ({ schema: { elements: names.split(',').map(name => ({ name })) }, rows:rows[index] }));
+  const read = () => getSpacetimeCheckoutState({ account:'reader', item:'Keyboard',
+    app:join(STACK_BENCH_ROOT,'reference-apps/ecommerce/spacetime'),
+    spacetime:{buildContainer:{id:'owned',name:'test'},mod:'test',containerUri:'http://127.0.0.1:3000'},
+    exec:(_command,args) => {
+      if (args[0]==='inspect') return 'owned';
+      assert(args.at(-1)!.includes('"accountId","itemId","quantity" FROM cart_item'));
+      assert(args.at(-1)!.includes('"item_id","warehouse_id","quantity" FROM stock'));
+      return JSON.stringify(results);
+    },
+  });
+  assert.equal(read().state.priceMinor,1999);
+  results[2]!.schema.elements[0]!.name='account_id';
+  assert.throws(read,/invalid table shape/);
+  results.pop();
+  assert.throws(read,/incomplete result/);
 });

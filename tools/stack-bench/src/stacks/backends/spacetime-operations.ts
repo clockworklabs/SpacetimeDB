@@ -220,15 +220,15 @@ export function getSpacetimeCheckoutState({ account, item, app, spacetime, exec 
   const selections = [
     ['account', 'id', `username=${sqlString(account)}`],
     ['item', 'id,price', `name=${sqlString(item)}`],
-    ['cart_item', 'account_id,item_id,quantity'],
+    ['cart_item', 'accountId,itemId,quantity'],
     ['stock', 'item_id,warehouse_id,quantity'],
-    ['reservation', 'account_id,item_id,warehouse_id,quantity'],
-    ['customer_order', 'id,account_id,total,status'],
-    ['order_item', 'id,order_id,item_id,quantity,unit_price'],
-    ['payment_record', 'id,order_id,amount,status'],
-    ['order_item_stock', 'order_item_id,warehouse_id,quantity'],
+    ['reservation', 'accountId,itemId,warehouseId,quantity'],
+    ['customer_order', 'id,accountId,total,status'],
+    ['order_item', 'id,orderId,itemId,quantity,unitPrice'],
+    ['payment_record', 'id,orderId,amount,status'],
+    ['order_item_stock', 'orderItemId,warehouseId,quantity'],
   ] as const;
-  const sql = selections.map(([table, columns, where]) => `SELECT ${columns} FROM ${table}${where ? ` WHERE ${where}` : ''}`).join('; ');
+  const sql = selections.map(([table, columns, where]) => `SELECT ${columns.split(',').map(column => `"${column}"`).join(',')} FROM ${table}${where ? ` WHERE ${where}` : ''}`).join('; ');
   const output = exec('docker', [...agentExec(), container,
     ...codingContainerAgentCommand(CODING_CONTAINER_SPACETIME_CLI,
       ['sql', spacetime.mod, '-s', spacetime.containerUri, '--format', 'json', sql])],
