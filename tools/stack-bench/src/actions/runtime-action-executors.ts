@@ -551,9 +551,11 @@ export function createDatabaseWriteCapability({ backend, spacetime, databaseLeas
 }
 
 export function createDatabaseReadCapability({ backend, spacetime, databaseLease, skip = false, expand, app,
-  exec = execFileSync }: DatabaseWriteCapabilityOptions & { app?: string }) {
+  checkoutSnapshots = new Map<string, CheckoutSnapshot & { account: string; item: string }>(),
+  exec = execFileSync }: DatabaseWriteCapabilityOptions & { app?: string;
+    checkoutSnapshots?: Map<string, CheckoutSnapshot & { account: string; item: string }> }) {
   return Object.freeze({
-    checkoutSnapshots: new Map<string, CheckoutSnapshot & { account: string; item: string }>(),
+    checkoutSnapshots,
     getCheckoutState(input: { account: string; item: string }): CheckoutSnapshot {
       if (skip) throw new Error('checkout state reads are disabled for this control');
       if (!app) throw new Error('checkout state reads require a verified application source directory');

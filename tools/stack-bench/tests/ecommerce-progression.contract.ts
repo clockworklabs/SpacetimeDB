@@ -54,9 +54,9 @@ test('the ecommerce progression definition is complete and calculated from its d
   ])), { 1: 4, 2: 10, 3: 13, 4: 10, 5: 9, 6: 3 });
   assert.equal(definition.questlines.length, 12);
   assert.equal(new Set(definition.nodes.flatMap(node => node.gradingChecks.map(check => check.id))).size,
-    183);
+    185);
   assert.equal(definition.nodes.flatMap(node => node.gradingChecks)
-    .reduce((total, check) => total + check.points, 0), 353);
+    .reduce((total, check) => total + check.points, 0), 356);
   assert(definition.nodes.every(node => Object.keys(node.dependencyReasons).length
     === node.dependencies.length));
   assert(definition.questlines.every(questline =>
@@ -443,6 +443,7 @@ test('cross-feature grading requirements stay separate from product dependencies
     }));
   }).sort();
   assert.deepEqual(deferred, [
+    'faceted-search:ecommerce.spec.search-ordering.search-ordering.402b:purchasing',
     'inventory-dashboard:ecommerce.spec.live-state.inventory-dashboard.5a:purchasing',
     'price-history:ecommerce.returns-pricing.price-history.4a:purchasing',
     'price-history:ecommerce.returns-pricing.price-history.4c:checkout',

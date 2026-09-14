@@ -9,6 +9,7 @@ import type { CheckoutState } from '../src/stacks/checkout-state.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { executeAction } from '../src/actions/action-contract.js';
+import { createDatabaseReadCapability } from '../src/actions/runtime-action-executors.js';
 
 function states(): { before: CheckoutState; prepared: CheckoutState; after: CheckoutState } {
   const before: CheckoutState = { accountId: 'a', itemId: 'i', priceMinor: 1999, cart: [],
@@ -105,22 +106,23 @@ test('checkout actions retain a failed reconciliation and treat reader failures 
   for (const failedRead of [false, true]) {
     const snapshots = states();
     const queue = [snapshots.before, snapshots.prepared, snapshots.prepared];
-    const capabilities = { 'database-read': {
-      checkoutSnapshots: new Map(),
+    const checkoutSnapshots = new Map();
+    const capabilities = () => ({ 'database-read': {
+      ...createDatabaseReadCapability({ expand: value => value, checkoutSnapshots }),
       getCheckoutState: () => {
         if (failedRead) throw new Error('database unavailable');
         return { state: queue.shift()!, schemaSha256: { schema: 'verified' } };
       },
-    } };
+    } });
     for (const as of ['before', 'prepared']) {
       const result = await executeAction(ACTION_REGISTRY, 'dbRecordCheckout', {
         do: 'dbRecordCheckout', account: 'a', item: 'i', as,
-      }, { capabilities });
+      }, { capabilities: capabilities() });
       assert.equal(result.status, failedRead ? 'harness_failure' : 'passed');
     }
     const result = await executeAction(ACTION_REGISTRY, 'dbExpectCheckout', {
       do: 'dbExpectCheckout', before: 'before', prepared: 'prepared', quantity: 1,
-    }, { capabilities });
+    }, { capabilities: capabilities() });
     assert.equal(result.status, failedRead ? 'inconclusive' : 'failed');
     if (!failedRead) assert(result.observation);
   }

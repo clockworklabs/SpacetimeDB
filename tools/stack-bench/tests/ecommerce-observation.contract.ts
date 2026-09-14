@@ -38,7 +38,7 @@ test('catalog variants and pagination enter the declared observation surface', (
   assert.equal(variants.steps[0]!.unlessVisible, 'item-variant');
   const setup = read('progression-faceted-pagination.json').features[0]!.setup;
   assert.deepEqual(setup.map(step => [step.do, step.testid, step.text, step.enter]), [
-    ['fill', 'search-input', 'Air', undefined], ['fill', 'search-input', '', true],
+    ['fill', 'minimum-price', '1', undefined], ['click', 'filter-apply', undefined, undefined],
   ]);
 });
 
