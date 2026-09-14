@@ -59,14 +59,28 @@ impl PageMap {
     }
 
     /// Get the page at `index` for reading. Uses the volatile state.
-    fn get_page(&self, index: PageIndex) -> Option<Arc<Page>> {
+    fn readonly_page(&self, index: PageIndex) -> Option<Arc<Page>> {
         self.volatile.get(&index).cloned()
     }
 
     /// Get the page at `index` for writing, or allocate a new page.
     /// Uses the volatile state.
-    fn get_or_allocate_page(&mut self, index: PageIndex) -> Arc<Page> {
-        Arc::clone(self.volatile.entry(index).or_insert_with(|| Arc::new(Page::zeroed())))
+    fn writable_page(&mut self, index: PageIndex) -> Arc<Page> {
+        let page = self.volatile.entry(index).or_insert_with(|| Arc::new(Page::zeroed()));
+
+        // Copy-on-write if the page is in the durable state.
+        if self
+            .durable
+            .get(&index)
+            .is_some_and(|durable| Arc::ptr_eq(durable, page))
+        {
+            let bytes = *page.bytes.lock();
+            *page = Arc::new(Page {
+                bytes: spin::Mutex::new(bytes),
+            });
+        }
+
+        Arc::clone(page)
     }
 
     /// Change the allocated space, allocating or deallocating pages as needed.
@@ -117,45 +131,71 @@ pub enum Datasync {
 ///
 /// Read and write operations must be page-aligned. Only full pages can be read
 /// or written. Writing a page is atomic.
-#[derive(Clone)]
+#[derive(Clone, Debug, Default)]
 pub struct File {
-    pages: Arc<spin::Mutex<PageMap>>,
-
-    volatile_len: Arc<AtomicU64>,
-    durable_len: Arc<AtomicU64>,
+    inner: Arc<FileInner>,
 }
 
-impl fmt::Debug for File {
+impl File {
+    pub fn power_loss(&self) {
+        self.inner.power_loss();
+    }
+
+    pub fn len(&self) -> u64 {
+        self.inner.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    pub fn read_page(&self, dst: &mut [u8], index: u64) -> Result<usize> {
+        self.inner.read_page(dst, index)
+    }
+
+    pub fn write_page(&self, src: &[u8], index: u64) -> Result<usize> {
+        self.inner.write_page(src, index)
+    }
+
+    pub fn fdatasync(&self, ops: impl IntoIterator<Item = Datasync>) {
+        self.inner.fdatasync(ops);
+    }
+
+    pub fn set_len(&self, new_len: u64) -> Result<()> {
+        self.inner.set_len(new_len)
+    }
+}
+
+#[derive(Default)]
+struct FileInner {
+    pages: spin::Mutex<PageMap>,
+    volatile_len: AtomicU64,
+    durable_len: AtomicU64,
+}
+
+impl fmt::Debug for FileInner {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("File")
+        f.debug_struct("FileInner")
             .field("volatile_len", &self.volatile_len)
             .field("durable_len", &self.durable_len)
             .finish()
     }
 }
 
-impl File {
-    pub(super) fn new() -> Self {
-        Self {
-            pages: <_>::default(),
-            volatile_len: <_>::default(),
-            durable_len: <_>::default(),
-        }
-    }
-
+impl FileInner {
     /// Simulate a crash by resetting to the durable state.
-    pub(super) fn power_loss(&self) {
+    fn power_loss(&self) {
         self.volatile_len
             .store(self.durable_len.load(Ordering::Relaxed), Ordering::Relaxed);
         self.pages.lock().power_loss();
     }
 
-    pub(super) fn len(&self) -> u64 {
+    fn len(&self) -> u64 {
         self.volatile_len.load(Ordering::Relaxed)
     }
 
     #[allow(unused)]
-    pub(super) fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
@@ -165,7 +205,7 @@ impl File {
     ///
     /// Extending allocates pages eagerly as needed. Shrinking drops all pages
     /// at or beyond the new EOF.
-    pub(super) fn set_len(&self, new_len: u64) -> Result<()> {
+    fn set_len(&self, new_len: u64) -> Result<()> {
         if !new_len.is_multiple_of(PAGE_SIZE_U64) {
             return Err(Error::UnalignedOffset);
         }
@@ -178,7 +218,7 @@ impl File {
     }
 
     /// Read one complete page.
-    pub(super) fn read_page(&self, dst: &mut [u8], index: u64) -> Result<usize> {
+    fn read_page(&self, dst: &mut [u8], index: u64) -> Result<usize> {
         if dst.len() != PAGE_SIZE {
             return Err(Error::UnalignedBuffer);
         }
@@ -202,7 +242,7 @@ impl File {
     }
 
     /// Write one complete page.
-    pub(super) fn write_page(&self, src: &[u8], index: u64) -> Result<usize> {
+    fn write_page(&self, src: &[u8], index: u64) -> Result<usize> {
         if src.len() != PAGE_SIZE {
             return Err(Error::UnalignedBuffer);
         }
@@ -228,7 +268,7 @@ impl File {
     /// It is the caller's responsibility to decide whether the operation is
     /// considered successful - a partial operation may report success, or a
     /// complete operation may report failure.
-    pub(super) fn fdatasync(&self, ops: impl IntoIterator<Item = Datasync>) {
+    fn fdatasync(&self, ops: impl IntoIterator<Item = Datasync>) {
         for op in ops {
             match op {
                 Datasync::Sector(offset) => {
@@ -244,10 +284,10 @@ impl File {
     }
 
     fn get_page(&self, index: PageIndex) -> Option<Arc<Page>> {
-        self.pages.lock().get_page(index)
+        self.pages.lock().readonly_page(index)
     }
 
     fn get_or_allocate_page(&self, index: PageIndex) -> Arc<Page> {
-        self.pages.lock().get_or_allocate_page(index)
+        self.pages.lock().writable_page(index)
     }
 }

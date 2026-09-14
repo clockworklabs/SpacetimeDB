@@ -727,7 +727,7 @@ impl<UserData> Executor<UserData> {
             unreachable!("invalid sqe: expected create")
         };
         let run = |()| match self.fstree.entry(path) {
-            btree_map::Entry::Vacant(entry) => Ok(entry.insert(fs::File::new()).clone()),
+            btree_map::Entry::Vacant(entry) => Ok(entry.insert(fs::File::default()).clone()),
             btree_map::Entry::Occupied(entry) => Err(Error::FileAlreadyExists {
                 path: entry.key().clone(),
             }),
