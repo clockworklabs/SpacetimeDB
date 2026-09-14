@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "kind": "recipe-selection",
+  "entries": [
+    { "alias": "L1", "recipe": { "path": "recipes/sequential-l1.json", "id": "ecommerce.sequential-l1" } },
+    { "alias": "L2", "recipe": { "path": "recipes/sequential-l2.json", "id": "ecommerce.sequential-l2" } },
+    { "alias": "L3", "recipe": { "path": "recipes/sequential-l3.json", "id": "ecommerce.sequential-l3" } }
+  ]
+}

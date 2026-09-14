@@ -1,0 +1,139 @@
+{
+  "schemaVersion": 1,
+  "title": "Shop",
+  "slug": "ecom",
+  "validatedThrough": 0,
+  "plannedThrough": 6,
+  "portOffset": 300,
+  "restartProbe": "/api/items",
+  "reseedOnReset": true,
+  "databaseProvenance": {
+    "action": "signUp",
+    "markerParameter": "username",
+    "body": {
+      "username": "",
+      "password": "stack-bench-provenance-password"
+    }
+  },
+  "suites": {
+    "1": [
+      {
+        "id": "features",
+        "inherit": "none",
+        "spec": "scenarios/01-features.json"
+      },
+      {
+        "id": "invariants",
+        "inherit": "all-higher-levels",
+        "spec": "scenarios/01-invariants.json"
+      },
+      {
+        "id": "contention",
+        "inherit": "all-higher-levels",
+        "spec": "scenarios/01-contention.json"
+      },
+      {
+        "id": "systems",
+        "inherit": "all-higher-levels",
+        "spec": "scenarios/01-systems.json"
+      }
+    ],
+    "2": [
+      {
+        "id": "features",
+        "inherit": "none",
+        "spec": "scenarios/02-features.json"
+      },
+      {
+        "id": "invariants",
+        "inherit": "all-higher-levels",
+        "spec": "scenarios/02-invariants.json"
+      },
+      {
+        "id": "contention",
+        "inherit": "all-higher-levels",
+        "spec": "scenarios/01-contention.json"
+      }
+    ],
+    "3": [
+      {
+        "id": "features",
+        "inherit": "none",
+        "spec": "scenarios/03-features.json"
+      },
+      {
+        "id": "invariants",
+        "inherit": "all-higher-levels",
+        "spec": "scenarios/03-invariants.json"
+      },
+      {
+        "id": "systems",
+        "inherit": "all-higher-levels",
+        "spec": "scenarios/01-systems.json"
+      }
+    ]
+  },
+  "actions": [
+    {
+      "id": "buy",
+      "path": "/api/items/00000000-0000-0000-0000-000000000000/buy",
+      "reducer": "buy_now",
+      "args": [
+        0
+      ]
+    },
+    {
+      "id": "addToCart",
+      "path": "/api/cart",
+      "reducer": "add_to_cart",
+      "args": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "checkout",
+      "path": "/api/checkout",
+      "reducer": "checkout",
+      "args": []
+    },
+    {
+      "id": "restock",
+      "path": "/api/admin/restock",
+      "reducer": "admin_restock",
+      "args": [
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "signUp",
+      "path": "/api/auth/signup",
+      "reducer": "sign_up",
+      "args": [
+        "",
+        ""
+      ],
+      "params": [
+        {
+          "name": "username",
+          "in": "body"
+        },
+        {
+          "name": "password",
+          "in": "body"
+        }
+      ]
+    },
+    {
+      "id": "signIn",
+      "path": "/api/auth/signin",
+      "reducer": "sign_in",
+      "args": [
+        "",
+        ""
+      ]
+    }
+  ]
+}

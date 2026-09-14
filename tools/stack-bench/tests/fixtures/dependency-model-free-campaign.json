@@ -1,0 +1,139 @@
+{
+  "schemaVersion": 8,
+  "kind": "campaign-manifest",
+  "id": "dependency-model-free-proof",
+  "version": "1.0.0",
+  "state": "draft",
+  "title": "Internal dependency campaign proof",
+  "track": "ecommerce",
+  "mode": { "id": "dependency", "workSelection": "progressive" },
+  "repair": { "selection": "feature", "budget": { "total": 2, "perFeature": 1 } },
+  "selection": {
+    "levels": [
+      {
+        "level": 1,
+        "recipe": "ecommerce.sequential-l1"
+      }
+    ]
+  },
+  "featureCatalog": {
+    "schemaVersion": 1,
+    "kind": "feature-catalog",
+    "id": "dependency-model-free-proof",
+    "title": "Internal dependency campaign proof",
+    "nodes": [
+      {
+        "id": "accounts",
+        "title": "Accounts",
+        "questline": "identity",
+        "dependencies": [],
+        "featureRefs": ["ecommerce.feature.accounts"],
+        "promptModules": [],
+        "gradingChecks": [
+          {
+            "id": "ecommerce.feature.accounts.accounts.1a",
+            "points": 1,
+            "role": "feature"
+          }
+        ]
+      },
+      {
+        "id": "catalog",
+        "title": "Catalog",
+        "questline": "catalog",
+        "dependencies": [],
+        "featureRefs": ["ecommerce.feature.catalog-items"],
+        "promptModules": [],
+        "gradingChecks": [
+          {
+            "id": "ecommerce.feature.catalog.catalog-values.2a",
+            "points": 1,
+            "role": "feature"
+          }
+        ]
+      }
+    ],
+    "questlines": [
+      {
+        "id": "identity",
+        "title": "Identity",
+        "nodes": ["accounts"]
+      },
+      {
+        "id": "catalog",
+        "title": "Catalog",
+        "nodes": ["catalog"]
+      }
+    ]
+  },
+  "stacks": [
+    { "id": "stub", "adapterVersion": "1.1.0" }
+  ],
+  "agents": [
+    {
+      "adapter": "deterministic",
+      "adapterVersion": "1.3.0",
+      "model": "deterministic-stall"
+    }
+  ],
+  "conditions": [
+    {
+      "id": "model-free",
+      "guidanceProfile": "model-free-stub",
+      "repairPolicy": "scored-only"
+    }
+  ],
+  "repetitions": 1,
+  "parallelism": 1,
+  "ordering": {
+    "method": "balanced-rotation",
+    "seed": "internal-model-free-proof"
+  },
+  "budgets": {
+    "attemptTimeoutMinutes": 10,
+    "maxCostUsdPerAttempt": null
+  },
+  "attemptPolicy": {
+    "retries": 0,
+    "retryOn": [],
+    "excludeFromAnalysis": [
+      "contaminated",
+      "harness_failure",
+      "inconclusive",
+      "ungraded"
+    ]
+  },
+  "runtime": {
+    "releaseManifestSha256": null,
+    "controllerImage": null,
+    "buildImage": null,
+    "platform": "linux/amd64"
+  },
+  "pricing": {
+    "currency": "USD",
+    "unit": "USD-per-million-tokens",
+    "capturedAt": "2026-08-25T00:00:00.000Z",
+    "source": "internal deterministic adapter makes no provider calls",
+    "models": {
+      "deterministic-stall": {
+        "input": 0,
+        "output": 0,
+        "cacheWrite5m": 0,
+        "cacheWrite1h": 0,
+        "cacheRead": 0
+      }
+    }
+  },
+  "analysis": {
+    "primaryMetric": "finalScoreRate",
+    "secondaryMetrics": [
+      "totalCostUsd",
+      "totalDurationMs",
+      "invalidAttemptRate"
+    ],
+    "dispersion": "median-iqr",
+    "invalidAttempts": "report-separately",
+    "missingData": "no-imputation",
+    "comparisonUnit": "stack-agent-condition-recipe"
+  }
+}

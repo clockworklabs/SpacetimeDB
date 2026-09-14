@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 5,
+  "name": "Delivery notifications",
+  "features": [
+    {
+      "id": 501,
+      "name": "Delivery creates one private notification",
+      "actors": [
+        "owner",
+        "other",
+        "staff"
+      ],
+      "setup": [
+        {"do":"signUp","actor":"owner","name":"delivery-owner"},
+        {"do":"signUp","actor":"other","name":"delivery-other"},
+        {"do":"click","actor":"owner","testid":"notification-settings","unlessVisible":"notification-order"},
+        {"do":"click","actor":"owner","testid":"notification-order"},
+        {"do":"click","actor":"owner","testid":"notification-save"},
+        {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"within":1000},
+        {"do":"click","actor":"owner","testid":"catalog-link"},
+        {"do":"signIn","actor":"staff","name":"staff","password":"stackbench-staff-2026","exact":true},
+        {"do":"callAction","actor":"owner","action":"buy","namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Desk Lamp","attribute":"data-buy-input"}},
+        {"do":"expectActionOutcome","actor":"owner","outcome":"accepted"},
+        {"do":"reload","actor":"owner","settleMs":1000},
+        {"do":"ensureSignedIn","actor":"owner","name":"delivery-owner","readyTestid":"current-user"},
+        {"do":"click","actor":"owner","testid":"notifications-toggle","unlessVisible":"notifications-panel"},
+        {"do":"expect","actor":"owner","testid":"notifications-panel","attribute":"aria-busy","value":"false","within":10000},
+        {"do":"expectElementCount","actor":"owner","testid":"notification-item","contains":"Desk Lamp","equals":0},
+        {"do":"reload","actor":"owner","settleMs":1000},
+        {"do":"ensureSignedIn","actor":"owner","name":"delivery-owner","readyTestid":"current-user"},
+        {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"within":1000},
+        {"do":"click","actor":"owner","testid":"orders-toggle","unlessVisible":"order-item"},
+        {"do":"recordTime","as":"notification-shipped"},
+        {"do":"callAction","actor":"staff","from":"owner","action":"ship","namedAction":{"id":"ship","path":"/api/fulfilment/ship","reducer":"ship_order","args":[0],"params":[{"name":"orderId","in":"body","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Desk Lamp","attribute":"data-ship-input"}},
+        {"do":"expectActionOutcome","actor":"staff","outcome":"accepted"},
+        {"do":"recordTime","as":"notification-shipped-accepted"},
+        {"do":"reload","actor":"owner","settleMs":1000},
+        {"do":"ensureSignedIn","actor":"owner","name":"delivery-owner","readyTestid":"current-user"},
+        {"do":"click","actor":"owner","testid":"notifications-toggle","unlessVisible":"notifications-panel"},
+        {"do":"expect","actor":"owner","testid":"notifications-panel","attribute":"aria-busy","value":"false","within":10000},
+        {"do":"expectElapsed","since":"notification-shipped","atMost":40000},
+        {"do":"expectElementCount","actor":"owner","testid":"notification-item","contains":"Desk Lamp","equals":0},
+        {"do":"wait","actor":"owner","ms":75000,"since":"notification-shipped-accepted"},
+        {"do":"reload","actor":"owner","settleMs":1000},
+        {"do":"ensureSignedIn","actor":"owner","name":"delivery-owner","readyTestid":"current-user"},
+        {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"within":1000},
+        {"do":"click","actor":"owner","testid":"orders-toggle","unlessVisible":"order-item"},
+        {"do":"expect","actor":"owner","testid":"order-status","in":{"testid":"order-item","contains":"Desk Lamp"},"value":"delivered","ignoreCase":true}
+      ],
+      "criteria": [
+        {
+          "id": "501a",
+          "category": "feature",
+          "desc": "the order owner receives one delivery notification",
+          "points": 3,
+          "statedBy": "A delivered order creates one notification for its owner.",
+          "steps": [
+            {"do":"reload","actor":"owner","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"owner","name":"delivery-owner","readyTestid":"current-user"},
+            {"do":"click","actor":"owner","testid":"notifications-toggle","unlessVisible":"notifications-panel"},
+            {"do":"expect","actor":"owner","testid":"notifications-panel","attribute":"aria-busy","value":"false","within":10000},
+            {"do":"expectElementCount","actor":"owner","testid":"notification-item","contains":"Desk Lamp","equals":1,"within":10000}
+          ]
+        },
+        {
+          "id": "501b",
+          "category": "production",
+          "desc": "another customer cannot see the delivery notification",
+          "points": 2,
+          "statedBy": "Delivery notifications are private to the order owner.",
+          "steps": [
+            {"do":"reload","actor":"owner","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"owner","name":"delivery-owner","readyTestid":"current-user"},
+            {"do":"click","actor":"owner","testid":"notifications-toggle","unlessVisible":"notifications-panel"},
+            {"do":"expectElementCount","actor":"owner","testid":"notification-item","contains":"Desk Lamp","equals":1,"within":10000},
+            {"do":"click","actor":"other","testid":"notifications-toggle","unlessVisible":"notifications-panel"},
+            {"do":"expect","actor":"other","testid":"notifications-panel","attribute":"aria-busy","value":"false","within":10000},
+            {"do":"expect","actor":"other","testid":"notification-item","contains":"Desk Lamp","absent":true}
+          ]
+        }
+      ]
+    }
+  ],
+  "note": "Draft: revised observations require matching reference and defect-control qualification."
+}

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Progression signed-out purchase access",
+  "features": [
+    {
+      "id": 3,
+      "name": "Buying",
+      "actors": ["visitor"],
+      "setup": [
+        { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Keyboard" }
+      ],
+      "criteria": [
+        {
+          "id": "3a",
+          "category": "production",
+          "desc": "using the purchase control while signed out does not buy an item",
+          "points": 1,
+          "statedBy": "Unauthenticated callers cannot purchase.",
+          "steps": [
+            { "do": "recordNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Keyboard" }, "as": "keyboard-before-guest" },
+            { "do": "click", "actor": "visitor", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" }, "ifAvailable": true, "settleMs": 1500 },
+            { "do": "reload", "actor": "visitor", "settleMs": 2000 },
+            { "do": "click", "actor": "visitor", "testid": "overlay-close", "ifAvailable": true },
+            { "do": "click", "actor": "visitor", "testid": "catalog-link", "ifAvailable": true },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Keyboard" }, "relativeTo": "keyboard-before-guest", "plus": 0 }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Staff access",
+  "features": [
+    {
+      "id": 601,
+      "name": "Staff access",
+      "actors": ["customer", "staff", "admin", "authorized"],
+      "setup": [],
+      "criteria": [
+        {
+          "id": "601a",
+          "category": "feature",
+          "desc": "staff and administrators can sign in and open staff tools",
+          "points": 2,
+          "statedBy": "Staff and administrators can sign in and use staff areas.",
+          "steps": [
+            { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+            { "do": "click", "actor": "staff", "testid": "staff-link" },
+            { "do": "expect", "actor": "staff", "testid": "staff-area", "within": 6000 },
+            { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+            { "do": "click", "actor": "admin", "testid": "staff-link" },
+            { "do": "expect", "actor": "admin", "testid": "staff-area", "within": 6000 }
+          ]
+        },
+        {
+          "id": "601b",
+          "category": "production",
+          "desc": "customers cannot open staff tools",
+          "points": 2,
+          "statedBy": "Customers cannot open staff tools.",
+          "steps": [
+            { "do": "signIn", "actor": "authorized", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+            { "do": "click", "actor": "authorized", "testid": "staff-link" },
+            { "do": "expect", "actor": "authorized", "testid": "staff-area" },
+            { "do": "signIn", "actor": "customer", "name": "customer", "password": "stackbench-customer-2026", "exact": true },
+            { "do": "click", "actor": "customer", "testid": "staff-link", "ifAvailable": true, "settleMs": 1500 },
+            { "do": "expect", "actor": "customer", "testid": "staff-area", "absent": true }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.feature.checkout",
+  "stableId": "ecommerce.feature.cart-checkout",
+  "title": "Checkout",
+  "moduleType": "feature",
+  "description": "Turn a cart into an order.",
+  "requiresPacks": [
+    "ecommerce.feature.cart"
+  ],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser"
+  ],
+  "evidence": [
+    "browser-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 42000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.feature.checkout.requirement",
+        "path": "prompts/modular/checkout.md",
+        "order": 410,
+        "modes": [
+          "fresh",
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.feature.checkout.hooks",
+        "path": "contracts/checkout.md",
+        "order": 2310,
+        "modes": [
+          "fresh",
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "checkout",
+      "stableId": "cart",
+      "source": "scenarios/progression-cart-checkout.json",
+      "feature": 4,
+      "criteria": [
+        "4d"
+      ],
+      "role": "feature"
+    }
+  ]
+}

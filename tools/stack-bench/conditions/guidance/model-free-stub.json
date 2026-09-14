@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "kind": "backend-guidance-profile",
+  "id": "model-free-stub",
+  "mode": "neutral",
+  "material": {
+    "accessFacts": true,
+    "apiReference": false,
+    "designAdvice": false
+  },
+  "documents": {
+    "stub": "backends/model-free-stub.md"
+  },
+  "applicationInterfaces": {
+    "stub": "http"
+  },
+  "skills": {
+    "stub": []
+  }
+}

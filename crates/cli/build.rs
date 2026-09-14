@@ -6,6 +6,7 @@ use std::process::Command;
 use toml::Value;
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=SPACETIMEDB_NIX_BUILD_GIT_COMMIT");
     let git_hash = find_git_hash();
     println!("cargo:rustc-env=GIT_HASH={git_hash}");
 
@@ -110,6 +111,7 @@ fn generate_template_files() {
 
     // Embed skill files from skills/*/SKILL.md
     let skills_dir = repo_root.join("skills");
+    println!("cargo:rerun-if-changed={}", skills_dir.display());
     let skill_names = discover_skill_names(&skills_dir);
 
     generated_code.push_str("pub fn get_skill(name: &str) -> Option<&'static str> {\n");

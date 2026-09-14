@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 3,
+  "name": "Managed support privacy",
+  "features": [
+    {
+      "id": 613,
+      "name": "Managed support privacy",
+      "actors": ["owner", "other", "staff"],
+      "setup": [
+        { "do": "signUp", "actor": "owner", "name": "managed-private-owner" },
+        { "do": "click", "actor": "owner", "testid": "support-link" },
+        { "do": "fill", "actor": "owner", "testid": "support-email", "text": "managed-private@example.com" },
+        { "do": "fill", "actor": "owner", "testid": "support-subject", "text": "Private managed case {user:casemarker}" },
+        { "do": "fill", "actor": "owner", "testid": "support-message", "text": "Private case details." },
+        { "do": "click", "actor": "owner", "testid": "support-submit" },
+        { "do": "expect", "actor": "owner", "testid": "support-reference", "nonEmpty": true },
+        { "do": "signUp", "actor": "other", "name": "managed-private-other" },
+        { "do": "click", "actor": "other", "testid": "support-link" },
+        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+        {"do":"click","actor":"staff","testid":"staff-link","unlessVisible":"support-assignee"},
+        {"do":"click","actor":"staff","testid":"support-queue-link","unlessVisible":"support-assignee","ifAvailable":true}
+      ],
+      "criteria": [
+        {
+          "id": "613b",
+          "category": "production",
+          "desc": "another customer cannot read or reply to the managed case",
+          "points": 1,
+          "statedBy": "A customer can access only cases that belong to their account.",
+          "steps": [
+            { "do": "reload", "actor": "owner", "settleMs": 1000 },
+            { "do": "ensureSignedIn", "actor": "owner", "name": "managed-private-owner", "readyTestid": "current-user" },
+            { "do": "click", "actor": "owner", "testid": "support-link" },
+            { "do": "expect", "actor": "owner", "testid": "support-ticket", "contains": "Private managed case {user:casemarker}" },
+            { "do": "expectReceived", "actor": "owner", "contains": "Private managed case {user:casemarker}", "within": 10000 },
+            { "do": "expect", "actor": "other", "testid": "support-ticket", "contains": "Private managed case {user:casemarker}", "absent": true },
+            { "do": "expectNotReceived", "actor": "other", "contains": "Private managed case {user:casemarker}" },
+            { "do": "fill", "actor": "owner", "testid": "support-reply", "in": { "testid": "support-ticket", "contains": "Private managed case {user:casemarker}" }, "text": "Owner-only update" },
+            { "do": "click", "actor": "owner", "testid": "support-reply-submit", "in": { "testid": "support-ticket", "contains": "Private managed case {user:casemarker}" } },
+            { "do": "replayAs", "actor": "other", "from": "owner", "match": "Owner-only update", "namedAction": { "id": "replySupport", "path": "/api/support/:id/replies", "method": "POST", "reducer": "reply_support", "args": [0, "Owner-only update"], "params": [{ "name": "ticketId", "in": "path", "placeholder": ":id", "wireType": "u64" }, { "name": "body", "in": "body" }] }, "namedTarget": { "testid": "support-ticket", "contains": "Private managed case {user:casemarker}", "attribute": "data-entity-id", "valueType": "string" }, "settleMs": 1500 },
+            { "do": "expectReplayRejected", "actor": "other", "allowNotFound": true },
+            { "do": "reload", "actor": "staff", "settleMs": 2000 },
+            { "do": "ensureSignedIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true, "readyTestid": "current-user" },
+            {"do":"click","actor":"staff","testid":"staff-link","ifAvailable":true,"unlessVisible":"support-assignee"},
+            {"do":"click","actor":"staff","testid":"support-queue-link","unlessVisible":"support-assignee","ifAvailable":true},
+            { "do": "expect", "actor": "staff", "testid": "support-ticket", "contains": "Private managed case {user:casemarker}" },
+            { "do": "expectElementCount", "actor": "staff", "testid": "support-reply-item", "contains": "Owner-only update", "equals": 1, "within": 10000 },
+            { "do": "expectReceived", "actor": "staff", "contains": "Owner-only update", "within": 10000 },
+            { "do": "expectNotReceived", "actor": "other", "contains": "Owner-only update" }
+          ]
+        }
+      ]
+    }
+  ]
+}

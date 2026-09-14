@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.customer-profile", "moduleType": "feature",
+  "title": "Customer profile", "description": "Customer details and shipping address.",
+  "requiresPacks": ["ecommerce.feature.accounts"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 30000 },
+  "task": {
+    "requirements": [{ "id": "ecommerce.progression.customer-profile", "path": "prompts/modular/customer-profile.md", "order": 1200, "modes": ["upgrade"] }],
+    "contracts": [{ "id": "ecommerce.progression.customer-profile-hooks", "path": "contracts/customer-profile.md", "order": 1950, "modes": ["upgrade"] }]
+  },
+  "checks": [{ "id": "profile", "stableId": "customer-profile", "source": "scenarios/progression-customer-profile.json", "feature": 620, "criteria": ["620c"], "role": "feature" }]
+}

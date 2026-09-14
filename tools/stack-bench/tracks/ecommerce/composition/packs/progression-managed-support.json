@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.progression.managed-support",
+  "moduleType": "feature",
+  "title": "Managed support cases",
+  "description": "Customer and staff support case updates.",
+  "requiresPacks": [
+    "ecommerce.progression.support-history",
+    "ecommerce.progression.support-triage"
+  ],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 55000 },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.progression.managed-support",
+        "path": "prompts/modular/managed-support.md",
+        "order": 3100,
+        "modes": ["upgrade"]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.progression.managed-support-hooks",
+        "path": "contracts/managed-support.md",
+        "order": 3900,
+        "modes": ["upgrade"]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "case-updates",
+      "stableId": "managed-support",
+      "source": "scenarios/progression-managed-support-shared.json",
+      "feature": 613,
+      "criteria": ["613c"],
+      "role": "feature"
+    }
+  ]
+}

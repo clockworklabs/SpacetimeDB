@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 5,
+  "name": "Notification preferences",
+  "features": [
+    {
+      "id": 630,
+      "name": "Account notification preferences",
+      "actors": ["owner", "other"],
+      "setup": [
+        { "do": "signUp", "actor": "owner", "name": "notification-owner" },
+        { "do": "signUp", "actor": "other", "name": "notification-other" },
+        { "do": "click", "actor": "owner", "testid": "notification-settings", "unlessVisible": "notification-order" },
+        { "do": "click", "actor": "owner", "testid": "notification-order" },
+        { "do": "click", "actor": "owner", "testid": "notification-save" }
+      ],
+      "criteria": [
+        {
+          "id": "630c",
+          "category": "feature",
+          "desc": "the customer can save a notification choice",
+          "points": 1,
+          "statedBy": "Signed-in customers can turn order and stock notifications on or off.",
+          "steps": [
+            { "do": "click", "actor": "owner", "testid": "overlay-close", "ifAvailable": true },
+            { "do": "click", "actor": "owner", "testid": "catalog-link", "ifAvailable": true },
+            { "do": "click", "actor": "owner", "testid": "notification-settings", "unlessVisible": "notification-order" },
+            { "do": "expect", "actor": "owner", "testid": "notification-order", "attribute": "data-state", "value": "on" }
+          ]
+        },
+        {
+          "id": "630a",
+          "category": "production",
+          "desc": "notification choices survive reload and backend restart in a fresh browser",
+          "points": 2,
+          "statedBy": "Notification choices persist for the account.",
+          "steps": [
+            { "do": "reload", "actor": "owner", "settleMs": 3000 },
+            { "do": "ensureSignedIn", "actor": "owner", "name": "notification-owner", "readyTestid": "current-user" },
+            { "do": "click", "actor": "owner", "testid": "notification-settings", "unlessVisible": "notification-order" },
+            { "do": "expect", "actor": "owner", "testid": "notification-order", "attribute": "data-state", "value": "on" },
+            { "do": "restartBackend", "settleMs": 1000 },
+            { "do": "freshClient", "actor": "owner" },
+            { "do": "signIn", "actor": "owner-fresh", "name": "notification-owner" },
+            { "do": "click", "actor": "owner-fresh", "testid": "notification-settings", "unlessVisible": "notification-order" },
+            { "do": "expect", "actor": "owner-fresh", "testid": "notification-order", "attribute": "data-state", "value": "on" }
+          ]
+        },
+        {
+          "id": "630b",
+          "category": "production",
+          "desc": "the owner's choice does not change another account",
+          "points": 2,
+          "statedBy": "One customer's notification choices do not affect another customer.",
+          "steps": [
+            { "do": "click", "actor": "other", "testid": "notification-settings", "unlessVisible": "notification-order" },
+            { "do": "expect", "actor": "other", "testid": "notification-order", "attribute": "data-state", "value": "off" }
+          ]
+        }
+      ]
+    }
+  ]
+}

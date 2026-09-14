@@ -1,0 +1,130 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import { mutationWorkerCount, parseQualificationArgs, qualificationReadiness }
+  from '../commands/qualification-cli.js';
+
+test('mutation worker count uses only mutations selected by calibration', () => {
+  const calibration = { mutations: [{ backend: 'postgres', path: 'manifest.json',
+    targets: [{ id: 'selected' }] }] };
+  const manifest = { mutations: [
+    { id: 'selected', scenario: 'one.json' },
+    { id: 'not-selected-a', scenario: 'two.json' },
+    { id: 'not-selected-b', scenario: 'three.json' },
+    { id: 'not-selected-c', scenario: 'four.json' },
+  ] };
+  assert.equal(mutationWorkerCount(calibration, 'postgres', () => manifest), 1);
+  const calibrationMutation = calibration.mutations[0];
+  assert(calibrationMutation);
+  assert.throws(() => mutationWorkerCount({ mutations: [{ ...calibrationMutation,
+    targets: [{ id: 'missing' }] }] }, 'postgres', () => manifest), /missing mutations/);
+});
+
+test('mutation workers split defects even when they use one scenario', () => {
+  const calibration = { mutations: [{ backend: 'postgres', path: 'manifest.json',
+    targets: ['a', 'b', 'c', 'd', 'e'].map(id => ({ id })) }] };
+  const manifest = { scenario: 'shared.json',
+    mutations: ['a', 'b', 'c', 'd', 'e'].map(id => ({ id })) };
+  assert.equal(mutationWorkerCount(calibration, 'postgres', () => manifest), 5);
+  assert.equal(mutationWorkerCount(calibration, 'postgres', () => manifest, 2), 2);
+  for (const invalid of [0, -1, 1.5, 9, NaN]) {
+    assert.throws(() => mutationWorkerCount(calibration, 'postgres', () => manifest, invalid),
+      /--mutation-workers must be an integer from 1 through 8/);
+  }
+});
+
+test('qualification status forwards the requested worker count and defaults to eight', () => {
+  const argv = ['node', 'qualification-cli.js', 'status', '--track', 'ecommerce', '--level', '3',
+    '--recipe', 'ecommerce.progression-catalog'];
+  assert.equal(parseQualificationArgs([...argv, '--mutation-workers', '2']).mutationWorkers, 2);
+  assert.throws(() => parseQualificationArgs([...argv, '--mutation-workers', '9']), /--mutation-workers/);
+  const current = qualificationReadiness('ecommerce', 3, 'ecommerce.progression-catalog');
+  const limited = qualificationReadiness('ecommerce', 3, 'ecommerce.progression-catalog', 2);
+  for (const [status, workers] of [[current, 8], [limited, 2]] as const) {
+    assert(status.commands.filter(command => command.includes('--mutations '))
+      .every(command => command.includes(`--mutation-workers ${workers} `)));
+  }
+  assert.deepEqual(current.scope, limited.scope);
+  assert.deepEqual(current.requiredEvidence, limited.requiredEvidence);
+  assert.throws(() => qualificationReadiness('ecommerce', 3, 'ecommerce.progression-catalog', 0),
+    /--mutation-workers/);
+});
+
+test('pending L1 qualification lists the required evidence without writing', () => {
+  const status = qualificationReadiness('ecommerce', 1);
+  assert.match(status.scope.calibration.contentSha256, /^[a-f0-9]{64}$/);
+  assert.equal(status.requiredEvidence.length, 7);
+  assert.equal(status.commands.length, 4);
+  assert.equal(status.budgetPreparation.required, false);
+  assert.deepEqual(status.budgetPreparation.commands, []);
+  assert.equal(status.launch.ok, true);
+  assert.deepEqual(status.launch.blockers, []);
+  assert.equal(status.qualification.ready, false);
+  assert.equal(status.qualification.blockers.filter(item => item.code === 'evidence_missing').length, 7);
+});
+
+test('qualification status rejects ambiguous or undeclared scope', () => {
+  assert.deepEqual(parseQualificationArgs(['node', 'qualification-cli.mjs', 'status',
+    '--track', 'ecommerce', '--level', '1']), { command: 'status', track: 'ecommerce', level: 1 });
+  assert.throws(() => qualificationReadiness('ecommerce', 3), /has no L3 calibration/);
+  const dependency = qualificationReadiness('ecommerce', 3, 'ecommerce.progression-catalog');
+  assert.equal(dependency.defectChecks.totalChecks, 109);
+  assert.ok(dependency.commands.filter(command => command.startsWith('qualify-reference '))
+    .every(command => command.includes('--feature-catalog progression/ecommerce.json')));
+  assert.ok(dependency.commands.filter(command => command.startsWith('qualify-null '))
+    .every(command => !command.includes('--feature-catalog')));
+  assert.throws(() => qualificationReadiness('ecommerce', 4), /not declared/);
+  assert.throws(() => parseQualificationArgs(['node', 'qualification-cli.mjs', 'status',
+    '--track', 'ecommerce']), /usage/);
+});
+
+test('sequential L2 qualification uses its exact current L1 base', () => {
+  assert.equal(qualificationReadiness('ecommerce', 2).scope.recipe.id, 'ecommerce.sequential-l2');
+});
+
+test('qualification resolves the pending sequential L1 release exactly and by default', () => {
+  const parsed = parseQualificationArgs(['node', 'qualification-cli.mjs', 'status',
+    '--track', 'ecommerce', '--level', '1', '--recipe', 'ecommerce.sequential-l1']);
+  assert.equal(parsed.command, 'status');
+  assert.equal(parsed.recipe, 'ecommerce.sequential-l1');
+  const track = parsed.track;
+  assert(track);
+  const level = parsed.level;
+  assert(level !== null);
+  const recipe = parsed.recipe;
+  assert(recipe);
+  const status = qualificationReadiness(track, level, recipe);
+  assert.equal(status.scope.recipe.id, 'ecommerce.sequential-l1');
+  assert.match(status.scope.calibration.contentSha256, /^[a-f0-9]{64}$/);
+  assert.equal(status.launch.ok, true);
+  assert.equal(status.requiredEvidence.length, 7);
+  assert.equal(status.qualification.ready, false);
+  assert(status.commands.every(command => command.includes('--recipe ecommerce.sequential-l1')));
+  const defaultStatus = qualificationReadiness('ecommerce', 1);
+  assert.equal(defaultStatus.scope.recipe.id, 'ecommerce.sequential-l1');
+  assert(defaultStatus.commands.every(command =>
+    command.includes('--recipe ecommerce.sequential-l1')));
+});
+
+test('pending modular L2 resolves only the current exact recipe', () => {
+  assert.equal(qualificationReadiness('ecommerce', 2,
+    'ecommerce.sequential-l2').scope.recipe.id, 'ecommerce.sequential-l2');
+  assert.equal(qualificationReadiness('ecommerce', 2).scope.recipe.id, 'ecommerce.sequential-l2');
+});
+
+test('cumulative L3 qualification covers earlier depths and always runs the full calibration', () => {
+  const l1 = qualificationReadiness('ecommerce', 1, 'ecommerce.progression-catalog');
+  const l2 = qualificationReadiness('ecommerce', 2, 'ecommerce.progression-catalog');
+  const l3 = qualificationReadiness('ecommerce', 3, 'ecommerce.progression-catalog');
+  assert.equal(l2.scope.level, 2);
+  assert.equal(l3.scope.calibration.id, 'ecommerce.dependency-l3-calibration');
+  assert.notDeepEqual(l2.requiredEvidence, []);
+  for (const status of [l1, l2, l3]) {
+    assert.deepEqual(status.scope.calibration, l3.scope.calibration);
+    assert.deepEqual(status.defectChecks, l3.defectChecks);
+    assert.deepEqual(status.artifactPaths, l3.artifactPaths);
+    assert.ok(status.commands.every(command => command.includes('--level 3 ')));
+    assert.ok(status.commands.filter(command => command.startsWith('qualify-reference '))
+      .every(command => command.includes('--feature-catalog progression/ecommerce.json')));
+  }
+});

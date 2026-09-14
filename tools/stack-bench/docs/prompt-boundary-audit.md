@@ -1,0 +1,77 @@
+# Ecommerce prompt boundary audit
+
+This records the September 2026 product-prompt cleanup. It does not establish the
+disclosure or qualification status of later definitions; review each frozen request.
+The neutral no-repair condition measures expected behavior before failure feedback.
+It must not be designed to make a chosen stack fail. All stacks receive the same product
+work and equivalent application interfaces. Stack setup instructions remain stack-specific.
+
+## What changed
+
+Reviewed the selected modular feature requests and contracts across the dependency
+graph, plus sequential L1-L3 framing and action fragments. The exact rendered dependency
+request is checked for all three stacks at every depth.
+
+| Source | Removed from agent-facing product work | Retained |
+|---|---|---|
+| Stock transfers | Atomic quantity changes and conservation instruction | Move stock between named warehouses |
+| Cancellation and returns | Explicit revenue reconciliation instructions | Cancel before shipping, return after shipping, refund/restock policy and visible order state |
+| Payments and refunds | Retry deduplication and exactly-once instructions | Payment/refund display; successful refund resolves support case |
+| Price changes and delivery | No-reload instructions and cancelled-order progression rule | Price editing, delivered state after 60 seconds |
+| Support and recommendations | Cross-account isolation instructions | Product actions and recommendation ranking |
+| Automatic reorder | Pending-work deduplication instruction | Threshold and restock inputs |
+| Interface contracts | Repeated authorization, conservation, price and live-update instructions | Hooks, routes/reducers, identifiers, value formats, navigation and readiness |
+| Sequential cart input | The adversarial quantity and explicit rejection instruction | Item identifier; scenario supplies its own quantity |
+| Sequential framing | General real-time/restart/production guarantees | Current product scope and starting data |
+
+Expected specification documents remain unchanged. They are still available when a study
+explicitly selects requested specifications. They do not enter neutral dependency requests.
+No check, scenario, point value, or pass threshold was weakened by these prompt edits.
+
+## Necessary boundaries
+
+A product request still states what the product does: buyer reviews, cancellation before shipping,
+reservations, stock scheduling, and account-related features. These semantics must be clear.
+A statement such as "a shipped order becomes delivered after 60 seconds" defines the feature;
+restart survival, duplicate execution, clock authority, and cross-account access do not need
+implementation instructions in that request. Refund and restock policy remains explicit: a
+return could otherwise reasonably enter quarantine rather than saleable inventory. Verified-buyer
+reviews are a product policy, not a universal production guarantee. Keep that policy in the
+request and measure its enforcement separately.
+
+An interface still needs deterministic names and formats. A readiness flag must distinguish
+an empty result from a failed read. An action must be the actual UI action, not a separate
+endpoint that can pass while the product is broken. Direct stock-table access remains because
+external-write scenarios need a stable integration surface. These hooks reveal an operation's
+existence, but must not state the expected security or synchronization policy.
+
+The cart quantity action reads its item identifier from the app. Its private scenario retains
+the invalid quantity in the named action arguments. The shared executor already fills omitted
+fields from those arguments; no new runtime path is needed.
+
+## Skills and interpretation
+
+Full TypeScript server and client skills are intentional study inputs. All SpacetimeDB
+profiles must retain them, along with CLI and the selected dev workflow. Do not trim or
+replace these skills based on the product-request boundary. The short product request
+and the supplied SDK skills are separate inputs; material metadata records design advice
+as present. Historical runs that omitted these skills do not represent the intended setup.
+
+Repairs report conclusive failures, including expected production behavior, with the
+expected and observed result. They do not prescribe an algorithm or implementation.
+Do not withhold a guarantee failure merely because it was not in the initial request.
+A run with repairs measures assisted recovery. Use a no-repair condition for the
+primary analysis of behavior supplied without failure feedback. A later depth's
+first build can inherit earlier repair reports; it is not an independent no-repair trial.
+
+## Reporting and next validation
+
+Separate UI, feature, and production-quality checks. Report L3-only results alongside cumulative
+results. A high cumulative percentage must not obscure an authorization or concurrency failure.
+Some older feature packs contain production-quality checks, so category cannot be inferred from
+pack type or scoring treatment. Classification and disclosure are separate axes.
+
+All affected definition evidence must be renewed. Do not relabel historical results as if they
+used these requests. Validate the same checks on reference apps before publishing a verified
+comparison. The next experiment must compare stacks under the same pinned prompts, guidance,
+repair policy and budgets; it cannot assume which stack will fail.

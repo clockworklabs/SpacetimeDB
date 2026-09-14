@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "title": "Loop Fixture",
+  "slug": "loop",
+  "internal": true,
+  "validatedThrough": 1,
+  "plannedThrough": 1,
+  "portOffset": 600,
+  "restartProbe": "/",
+  "suites": {
+    "1": [
+      {
+        "id": "features",
+        "inherit": "none",
+        "spec": "scenarios/01-loop.json"
+      }
+    ]
+  }
+}
