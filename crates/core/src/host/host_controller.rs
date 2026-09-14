@@ -25,7 +25,7 @@ use crate::worker_metrics::{
     record_module_host_init_attempt, record_module_host_init_failure, record_module_host_unexpected_exit,
     ModuleHostInitFailureCause, WORKER_METRICS,
 };
-use anyhow::{anyhow, bail, Context};
+use anyhow::{bail, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
@@ -91,6 +91,24 @@ where
 }
 
 pub type ProgramStorage = Arc<dyn ExternalStorage>;
+
+#[derive(Debug, thiserror::Error)]
+#[error("database program changed before publication; reload environment metadata and retry")]
+pub struct EnvironmentVersionConflict;
+
+/// Private complete configuration for a not-yet-initialized database generation.
+/// Implementations must verify the exact persisted database identity, program and
+/// initialization generation. A source resolving the generation at load time must
+/// also check the replica nomination in that snapshot. This source is never
+/// consulted during ordinary reopen.
+#[async_trait]
+pub trait InitialEnvironmentSource: Send + Sync {
+    async fn load(
+        &self,
+        database: &Database,
+        replica_id: u64,
+    ) -> anyhow::Result<std::collections::BTreeMap<String, String>>;
+}
 
 /// A launched module host plus any pending controldb program-bootstrap completion work.
 pub struct ModuleHostWithBootstrap {
@@ -187,6 +205,7 @@ pub struct HostController {
     default_config: db::Config,
     /// The [`ProgramStorage`] to query when instantiating a module.
     program_storage: ProgramStorage,
+    initial_environment_source: Option<Arc<dyn InitialEnvironmentSource>>,
     /// The [`EnergyMonitor`] used by this controller.
     energy_monitor: Arc<dyn EnergyMonitor>,
     /// The [`MemoryObserver`] used by this controller.
@@ -357,6 +376,7 @@ impl HostController {
             hosts: <_>::default(),
             default_config,
             program_storage,
+            initial_environment_source: None,
             energy_monitor,
             memory_observer,
             persistence,
@@ -366,6 +386,12 @@ impl HostController {
             bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
             db_cores,
         }
+    }
+
+    /// Install the initial environment source before this controller is shared.
+    pub fn with_initial_environment_source(mut self, source: Arc<dyn InitialEnvironmentSource>) -> Self {
+        self.initial_environment_source = Some(source);
+        self
     }
 
     /// Replace the [`ProgramStorage`] used by this controller.
@@ -514,6 +540,16 @@ impl HostController {
     /// This is not necessary during hotswap publishes,
     /// as the automigration planner and executor accomplish the same validity checks.
     pub async fn check_module_validity(&self, database: Database, program: Program) -> anyhow::Result<Arc<ModuleInfo>> {
+        self.check_module_validity_with_environment(database, program, Default::default())
+            .await
+    }
+
+    pub async fn check_module_validity_with_environment(
+        &self,
+        database: Database,
+        program: Program,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> anyhow::Result<Arc<ModuleInfo>> {
         let (program, launched) = Host::try_init_in_memory_to_check(
             &self.runtimes,
             self.page_pool.clone(),
@@ -529,12 +565,20 @@ impl HostController {
         )
         .await?;
 
-        let InitDatabaseResult { reducer, .. } = launched.module_host.init_database(program).await?;
+        let result = launched
+            .module_host
+            .init_database_with_environment(program, environment)
+            .await;
+        let info = launched.module_host.info.clone();
+        // Validation never starts scheduled work. Release its receiver before
+        // waiting for scheduler closure, including when initialization failed.
+        drop(launched.scheduler_starter);
+        launched.module_host.exit().await;
+        let InitDatabaseResult { reducer, .. } = result?;
         if let Some(call_result) = reducer {
             Result::from(call_result)?;
         }
-
-        Ok(launched.module_host.info)
+        Ok(info)
     }
 
     /// Update the [`ModuleHost`] identified by `replica_id` to the given
@@ -546,6 +590,7 @@ impl HostController {
     /// If the host was running, and the update fails, the previous version of
     /// the host keeps running.
     #[tracing::instrument(level = "trace", skip_all, err)]
+    #[allow(clippy::too_many_arguments)]
     pub async fn update_module_host(
         &self,
         database: Database,
@@ -553,7 +598,15 @@ impl HostController {
         replica_id: u64,
         program_bytes: Box<[u8]>,
         policy: MigrationPolicy,
+        environment: spacetimedb_lib::environment::EnvironmentUpdate,
+        expected_module_version: Option<spacetimedb_lib::Hash>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
+        environment.validate()?;
+        let environment_only = program_bytes.is_empty();
+        anyhow::ensure!(
+            !environment_only || expected_module_version.is_some(),
+            "environment-only publication requires expected_module_version"
+        );
         let program = Program::from_bytes(host_type.into(), program_bytes);
         trace!(
             "update module host {}/{}: genesis={} update-to={}",
@@ -597,20 +650,47 @@ impl HostController {
                     host
                 }
             };
-            let update_result = host
-                .update_module(
+            let update_result = async {
+                let module = host.module.borrow().clone();
+                if let Some(expected) = expected_module_version
+                    && module.info.module_hash != expected
+                {
+                    return Err(EnvironmentVersionConflict.into());
+                }
+                let previous = host
+                    .replica_ctx
+                    .relational_db()
+                    .with_read_only(Workload::Internal, |tx| crate::db::environment::snapshot(tx))?;
+                let environment = environment.resulting_values(&previous)?;
+                if environment_only || program.hash == module.info.module_hash {
+                    if environment == previous {
+                        return Ok(UpdateDatabaseResult::NoUpdateNeeded);
+                    }
+                    let program = module
+                        .relational_db()
+                        .program()?
+                        .context("database program is not initialized")?;
+                    return module
+                        .update_database_with_environment(program, module.info.clone(), policy, environment)
+                        .await;
+                }
+                host.update_module(
                     this.runtimes.clone(),
                     program,
                     policy,
                     this.energy_monitor.clone(),
                     this.unregister_fn(replica_id, database_identity),
                     this.db_cores.take(),
+                    environment,
                 )
-                .await?;
+                .await
+            }
+            .await;
 
+            // Rejected publication leaves the existing host usable. Restore it
+            // before propagating validation or migration failure to the caller.
             *guard = Some(host);
-
-            Ok::<_, anyhow::Error>(update_result)
+            update_result
         })
         .await??;
 
@@ -725,6 +805,26 @@ impl HostController {
             .as_ref()
             .map(|Host { module, .. }| module.borrow().clone())
             .ok_or(NoSuchModule)
+    }
+
+    /// Read environment metadata while preventing module replacement or shutdown.
+    pub async fn environment_metadata(
+        &self,
+        replica_id: u64,
+    ) -> anyhow::Result<spacetimedb_client_api_messages::publish::EnvironmentMetadata> {
+        let guard = self
+            .acquire_read_lock(replica_id)
+            .await
+            .map_err(|_| anyhow::anyhow!("unable to lock database for environment metadata"))?;
+        let module = guard.as_ref().ok_or(NoSuchModule)?.module.borrow().clone();
+        let stored_keys = module.relational_db().with_read_only(Workload::Internal, |tx| {
+            crate::db::environment::snapshot(tx).map(|values| values.into_keys().collect())
+        })?;
+        Ok(spacetimedb_client_api_messages::publish::EnvironmentMetadata {
+            module_version: module.info.module_hash.to_string(),
+            declarations: module.info.module_def.environment().declarations().cloned().collect(),
+            stored_keys,
+        })
     }
 
     /// Subscribe to updates of the [`ModuleHost`] identified by `replica_id`,
@@ -1030,32 +1130,25 @@ fn repair_stale_view_backing_tables_on_launch(launched: &LaunchedModule) -> anyh
 /// If the `db` is not initialized yet (i.e. its program hash is `None`),
 /// return an error.
 ///
-/// Otherwise, if `db.program_hash` matches the given `program_hash`, do
-/// nothing and return an empty `UpdateDatabaseResult`.
-///
-/// Otherwise, invoke `module.update_database` and return the result.
+/// Otherwise publish the complete environment with the module, including when
+/// its program hash is unchanged.
 async fn update_module(
     db: &RelationalDB,
     module: &ModuleHost,
     program: Program,
     old_module_info: Arc<ModuleInfo>,
     policy: MigrationPolicy,
+    environment: std::collections::BTreeMap<String, String>,
 ) -> anyhow::Result<UpdateDatabaseResult> {
     let addr = db.database_identity();
-    match stored_program_hash(db)? {
-        None => Err(anyhow!("database `{addr}` not yet initialized")),
-        Some(stored) => {
-            let res = if stored == program.hash {
-                info!("database `{}` up to date with program `{}`", addr, program.hash);
-                UpdateDatabaseResult::NoUpdateNeeded
-            } else {
-                info!("updating `{}` from {} to {}", addr, stored, program.hash);
-                module.update_database(program, old_module_info, policy).await?
-            };
-
-            Ok(res)
-        }
-    }
+    let Some(stored) = stored_program_hash(db)? else {
+        bail!("database `{addr}` not yet initialized");
+    };
+    info!("publishing `{}` from {} to {}", addr, stored, program.hash);
+    // Even an unchanged program publishes a complete replacement environment.
+    module
+        .update_database_with_environment(program, old_module_info, policy, environment)
+        .await
 }
 
 /// Encapsulates a database, associated module, and auxiliary state.
@@ -1194,6 +1287,14 @@ impl Host {
             }
         };
         let bootstrap_generation = database.bootstrap_generation;
+        let initial_environment = if program_needs_init {
+            match &host_controller.initial_environment_source {
+                Some(source) => source.load(&database, replica_id).await?,
+                None => Default::default(),
+            }
+        } else {
+            Default::default()
+        };
         let mut bootstrap_completion = Some(BootstrapCompletion::durable(bootstrap_generation));
 
         let relational_db = Arc::new(db);
@@ -1284,7 +1385,10 @@ impl Host {
         };
 
         if program_needs_init {
-            let InitDatabaseResult { reducer, tx_offset } = launched.module_host.init_database(program).await?;
+            let InitDatabaseResult { reducer, tx_offset } = launched
+                .module_host
+                .init_database_with_environment(program, initial_environment)
+                .await?;
             if let Some(call_result) = reducer {
                 validate_init_reducer_call_result(call_result)?;
             }
@@ -1414,6 +1518,7 @@ impl Host {
         energy_monitor: Arc<dyn EnergyMonitor>,
         on_panic: impl Fn() + Send + Sync + 'static,
         core: AllocatedJobCore,
+        environment: std::collections::BTreeMap<String, String>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.replica_ctx;
         let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db().clone());
@@ -1432,8 +1537,15 @@ impl Host {
         // Get the old module info to diff against when building a migration plan.
         let old_module_info = self.module.borrow().info.clone();
 
-        let update_result =
-            update_module(replica_ctx.relational_db(), &module, program, old_module_info, policy).await?;
+        let update_result = update_module(
+            replica_ctx.relational_db(),
+            &module,
+            program,
+            old_module_info,
+            policy,
+            environment,
+        )
+        .await?;
 
         // Only replace the module + scheduler if the update succeeded.
         // Otherwise, we want the database to continue running with the old state.
