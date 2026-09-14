@@ -4,6 +4,39 @@ import test from 'node:test';
 import { chromium } from 'playwright';
 import { gradeFeature } from '../grader/grade.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
+import { runApplicationNavigation } from '../src/actions/browser-navigation.js';
+import { ActionInconclusive } from '../src/actions/action-contract.js';
+
+test('a stalled stylesheet leaves navigation unmeasured and the unchanged app can load later', async () => {
+  let stall = true;
+  const server = createServer((request, response) => {
+    if (request.url === '/style.css') {
+      if (!stall) response.writeHead(200, { 'Content-Type': 'text/css' }).end('');
+      return;
+    }
+    response.writeHead(200, { 'Content-Type': 'text/html' }).end(
+      '<link rel="stylesheet" href="/style.css"><script type="module">document.body.textContent="ready"</script>');
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  assert(address && typeof address !== 'string');
+  const url = `http://127.0.0.1:${address.port}`;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await assert.rejects(runApplicationNavigation(() => page.goto(url,
+      { waitUntil: 'domcontentloaded', timeout: 250 })), ActionInconclusive);
+    await assert.rejects(runApplicationNavigation(() => page.reload(
+      { waitUntil: 'domcontentloaded', timeout: 250 })), ActionInconclusive);
+    stall = false;
+    await runApplicationNavigation(() => page.goto(url, { waitUntil: 'domcontentloaded' }));
+    assert.equal(await page.locator('body').textContent(), 'ready');
+  } finally {
+    await browser.close();
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  }
+});
 
 test('fresh clients can retain identity without retaining authorized transport history', async () => {
   const browser = await chromium.launch({ headless: true });

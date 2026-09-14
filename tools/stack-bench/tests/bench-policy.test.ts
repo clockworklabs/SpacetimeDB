@@ -524,7 +524,7 @@ test('grade retries preserve evidence, retry once, and skip usable or excluded g
           if (gradeLabel.endsWith('-retry')) {
             assert.equal(readFileSync(join(output, 'candidate-grades', label, 'bundle.json'), 'utf8'), failed);
           }
-          return { outcome: { kind: 'harness_failure' } };
+          return { outcome: { kind: label === 'l3-before-retry' ? 'incomplete' : 'harness_failure' } };
         } });
       assert.deepEqual(calls, ['grade', 'grade-retry']);
     }

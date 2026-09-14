@@ -21,6 +21,9 @@ harness failures, and incomplete measurements remain separate.
 
 If an app prerequisite fails, the dependent checks are reported as **blocked**.
 They receive no credit, but this is not evidence that their target assertions failed.
+Page navigation timeouts are unmeasured: external resources can delay page readiness.
+The runner retries the same source once. If grading remains incomplete, it stops
+the attempt without treating the timeout as a failed feature or selecting later work.
 The prerequisite observation remains available for repair. Harness and provider
 failures remain unmeasured and cannot become app failures. The purchase-session,
 restock-race, and scheduled-restock probes use stored state or fresh reads for setup;

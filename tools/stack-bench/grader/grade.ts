@@ -24,6 +24,7 @@ import { resolveGradeRecipeArtifactBinding } from '../src/composition/recipe-rel
 import { selectScenarioChecks } from '../src/composition/recipe-selection.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { ActionApplicationFailure, ActionInconclusive, executeAction } from '../src/actions/action-contract.js';
+import { runApplicationNavigation } from '../src/actions/browser-navigation.js';
 import { createCheckEvidence, evidenceIsMeasured, evidencePassed } from '../src/evidence/check-evidence.js';
 import { evidenceNowMs } from '../src/evidence/evidence-timing.js';
 import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.js';
@@ -441,7 +442,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
         const fresh = await actor.context.newPage();
         fresh.setDefaultTimeout(defaultWithin);
         await actor.attach(fresh);
-        await fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        await runApplicationNavigation(() => fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 }));
         await abortableSleep(settleMs, signal);
       },
       async fresh(actor: Actor, sourceName: string, preserveStorage: boolean) {
@@ -476,7 +477,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
             });
             seed = script.identifier;
           }
-          await fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+          await runApplicationNavigation(() => fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 }));
         } finally {
           if (session) {
             try { if (seed) await session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: seed }); }
@@ -788,12 +789,12 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
       page.on('requestfinished', completed);
       page.on('requestfailed', completed);
       try {
-        await page.goto(args.url!, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        await runApplicationNavigation(() => page.goto(args.url!, { waitUntil: 'domcontentloaded', timeout: 20000 }));
       } catch (cause) {
         for (const resource of pending.values()) {
           result.consoleErrors.push(`[${name}] Navigation pending resource (up to 20): ${resource}`);
         }
-        if (harnessBrowserFailure(cause)) throw cause;
+        if (cause instanceof ActionInconclusive || harnessBrowserFailure(cause)) throw cause;
         throw new ActionApplicationFailure('application did not load during browser setup', {
           observation: errorMessage(cause), expected: 'a reachable application page',
         });

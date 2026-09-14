@@ -6,6 +6,7 @@ import { actorFor, fail, inconclusive, pad } from './actor-action-runtime.js';
 import { finding, findingText, renderFinding } from './action-findings.js';
 import { settledLocatorCount } from '../evidence/browser-evidence.js';
 import { harnessBrowserFailure } from '../evidence/harness-errors.js';
+import { runApplicationNavigation } from './browser-navigation.js';
 
 
 interface ScrollTarget {
@@ -329,7 +330,7 @@ async function reload({ input, capabilities, signal }:
     BrowserArguments<{ actor: string; settleMs?: number }>) {
   const actor = actorFor(capabilities, input.actor);
   const browser = interaction(capabilities);
-  await actor.page.reload({ waitUntil: 'domcontentloaded' });
+  await runApplicationNavigation(() => actor.page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 }));
   await browser.sleep(input.settleMs ?? 2500, signal);
   return { reloaded: true };
 }
