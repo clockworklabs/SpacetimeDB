@@ -37,7 +37,7 @@ test('dependency campaign scope must match the graph-derived scope', () => {
   assert.doesNotThrow(() => validateProgressionCampaignLevelScope(binding,
     featureCatalog, declared, 1));
   const tampered = structuredClone(declared);
-  tampered.selection.contentSha256 = '0'.repeat(64);
+  tampered.selection.sha256 = '0'.repeat(64);
   assert.throws(() => validateProgressionCampaignLevelScope(binding,
     featureCatalog, tampered, 1), /graph-derived scope changed/);
 });
@@ -83,9 +83,10 @@ test('real stack campaigns retain full preflight admission', async () => {
     assert(admission.payload.reports.every(report => report.request.guidance === 'prescribed'));
     assert(admission.payload.reports.every(report =>
       JSON.stringify(report.request.agentSkills) === JSON.stringify([
-        'typescript-client', 'typescript-server',
+        'cli', 'typescript-client', 'typescript-server',
       ])));
-    assert(admission.payload.reports.every(report => report.request.smoke === true));
+    // Application smoke runs in each real attempt after its resources exist.
+    assert(admission.payload.reports.every(report => report.request.smoke === false));
     assert(admission.payload.reports.every(report =>
       report.request.backends.some(backend => backend !== 'stub')));
   } finally {
@@ -185,10 +186,10 @@ test('a real model-free campaign persists dependency repairs and evidence', { ti
     const expectedChecks = [
       [
         'ecommerce.feature.accounts.accounts.1a',
-        'ecommerce.feature.catalog.catalog.2a',
+        'ecommerce.feature.catalog.catalog-values.2a',
       ],
       ['ecommerce.feature.accounts.accounts.1a'],
-      ['ecommerce.feature.catalog.catalog.2a'],
+      ['ecommerce.feature.catalog.catalog-values.2a'],
     ];
     for (let sequence = 1; sequence <= 3; sequence += 1) {
       const attempt = String(sequence).padStart(3, '0');
