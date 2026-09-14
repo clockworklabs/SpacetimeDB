@@ -90,8 +90,6 @@ services:
       service: controller
     profiles: ["dashboard"]
     network_mode: bridge
-    environment:
-      STACK_BENCH_DASHBOARD_CONTROL_SECRET_FILE: ${STACK_BENCH_DASHBOARD_CONTROL_SECRET_FILE:-${STACK_BENCH_STATE_ROOT:?run controller setup}/secrets/dashboard_control_secret}
     ports:
       - "127.0.0.1:7331:7331"
     command: ["dashboard", "--host", "0.0.0.0", "--port", "7331", "--allow-container-bind"]

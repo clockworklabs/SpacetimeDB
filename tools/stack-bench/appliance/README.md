@@ -73,8 +73,7 @@ POSIX shell. Docker must be running before `setup` or Compose commands.
 `setup` creates the state volume and directories, resolves both local images to
 immutable content IDs, and writes a UTF-8 Compose environment file. It installs
 the pinned PostgreSQL and MongoDB images when they are absent. It also installs
-four prepared plans and creates a dashboard control secret. It keeps existing
-plans and secrets. Keep `operator.env` locally; it is ignored by Git. In Windows
+four prepared plans. It keeps existing plans and model credentials. Keep `operator.env` locally; it is ignored by Git. In Windows
 PowerShell 5, use `| Out-File -Encoding utf8 tools/stack-bench/operator.env` instead
 of `>` so the environment file is not UTF-16.
 
@@ -530,12 +529,10 @@ Open `http://127.0.0.1:7331`. The dashboard reads the same campaign state as the
 CLI. Reading results does not require provider credentials. Run controls launch
 the Compose controller and check provider configuration at launch.
 
-To use controls, read the generated control secret locally and enter it in the
-dashboard:
-
-```sh
-docker run --rm --mount type=volume,source=stack-bench-state,target=/state,readonly --entrypoint cat stack-bench-controller:local /state/secrets/dashboard_control_secret
-```
+Run controls work directly in the local browser. There is no dashboard password
+to retrieve. Same-origin and browser-token checks protect control requests.
+The dashboard is for a trusted local machine; do not expose it on a shared network.
+Model credentials are configured separately.
 
 See [dashboard/README.md](../dashboard/README.md).
 

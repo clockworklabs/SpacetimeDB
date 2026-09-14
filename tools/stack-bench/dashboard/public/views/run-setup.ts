@@ -84,7 +84,6 @@ export function runSetupPage(catalog: RunSetupCatalog | null, request: RunSetupR
       + '<p class="summary-note">Cost caps use recorded token pricing. Subscription usage is not an invoice charge.</p>'
       + `<details><summary>Recorded pricing and runtime</summary><pre>${esc(JSON.stringify({ pricing: review.pricing, runtime: review.runtime }, null, 2))}</pre></details>`
       + `<form data-run="setup-start" class="setup-actions"><button type="button" class="btn" data-setup-edit>Edit</button>`
-      + field('Operator secret', '<input name="secret" type="password" required autocomplete="off">')
       + '<button class="btn primary" type="submit">Start run</button></form>' + alert + '</div>';
   }
   return head + (canStart ? '' : '<p class="warning">This dashboard is read-only. Start the appliance to run a study.</p>')
@@ -114,6 +113,5 @@ export function runSetupPage(catalog: RunSetupCatalog | null, request: RunSetupR
     + [...new Set(w.agents.map(a => a.adapter))].map(adapter => field(esc(adapter), `<select name="credential-${esc(adapter)}">${option('', 'Automatic', !request.credentials.adapters?.[adapter])}`
       + catalog.profiles.filter(p => p.provider === w.agents.find(a => a.adapter === adapter)?.provider).map(p => option(p.id, `${p.id} (${p.mode})`, p.id === request.credentials.adapters?.[adapter])).join('') + '</select>')).join('')
     + '</div></details><div class="setup-actions">'
-    + field('Operator secret', '<input name="secret" type="password" required autocomplete="off">')
     + '<button class="btn primary" type="submit">Review run</button></div>' + alert + '</form></div>';
 }

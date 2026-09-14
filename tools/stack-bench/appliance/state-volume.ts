@@ -34,12 +34,10 @@ export function prepareStateVolume(env: NodeJS.ProcessEnv = process.env, run: Do
   }
   run(['run', '--rm', '--platform', 'linux/amd64', '--network', 'none', '--mount',
     `type=volume,source=${STATE_VOLUME},target=${root}`, '--entrypoint', 'node', controller, '-e',
-    'const fs=require("node:fs"),p=require("node:path"),crypto=require("node:crypto");'
+    'const fs=require("node:fs"),p=require("node:path");'
       + 'const root=process.argv[1];'
       + 'for(const name of ["work","results/plans","results/run-presets","secrets","controller-home"])'
       + 'fs.mkdirSync(p.join(root,name),{recursive:true,mode:0o700});'
-      + 'const secret=p.join(root,"secrets/dashboard_control_secret");'
-      + 'if(!fs.existsSync(secret))fs.writeFileSync(secret,crypto.randomBytes(32).toString("hex")+"\\n",{flag:"wx",mode:0o600});'
       + 'for(const [source,name] of [["campaign.example.json","reference-check.json"],["campaign.ecommerce-progression-reference.json","ecommerce-progression.json"],["campaign.demo.json","demo.json"]]) {'
       + 'const target=p.join(root,"results/plans",name);if(!fs.existsSync(target))'
       + 'fs.copyFileSync(p.join("/opt/stack-bench/appliance",source),target,fs.constants.COPYFILE_EXCL);}'
@@ -72,7 +70,6 @@ export function prepareStateVolume(env: NodeJS.ProcessEnv = process.env, run: Do
     `STACK_BENCH_OPENROUTER_API_KEY_FILE=${root}/secrets/openrouter_api_key`,
     `STACK_BENCH_OPENAI_API_KEY_FILE=${root}/secrets/openai_api_key`,
     `STACK_BENCH_CODEX_AUTH_FILE=${root}/secrets/codex_auth`,
-    `STACK_BENCH_DASHBOARD_CONTROL_SECRET_FILE=${root}/secrets/dashboard_control_secret`,
     'STACK_BENCH_RELEASE_MANIFEST=',
     '',
   ].join('\n');
@@ -80,17 +77,16 @@ export function prepareStateVolume(env: NodeJS.ProcessEnv = process.env, run: Do
 
 export function writeStateSecret(name: string | undefined, input: string,
   root = '/state'): void {
-  if (!['claude_subscription_token', 'anthropic_api_key', 'openai_api_key', 'openrouter_api_key', 'codex_auth', 'dashboard_control_secret'].includes(name ?? '')) {
-    throw new Error('secret name must be claude_subscription_token, anthropic_api_key, openai_api_key, openrouter_api_key, codex_auth, or dashboard_control_secret');
+  if (!['claude_subscription_token', 'anthropic_api_key', 'openai_api_key', 'openrouter_api_key', 'codex_auth'].includes(name ?? '')) {
+    throw new Error('secret name must be claude_subscription_token, anthropic_api_key, openai_api_key, openrouter_api_key, codex_auth');
   }
   let value = input.trim();
   if (name === 'codex_auth') {
     try { value = JSON.stringify(JSON.parse(value)); }
     catch { throw new Error('codex_auth must be valid JSON from Codex account login'); }
   }
-  if (!value || /[\r\n]/.test(value)
-    || (name === 'dashboard_control_secret' && value.length < 32)) {
-    throw new Error('secret must be one non-empty line; dashboard control secrets need at least 32 characters');
+  if (!value || /[\r\n]/.test(value)) {
+    throw new Error('secret must be one non-empty line');
   }
   mkdirSync(join(root, 'secrets'), { recursive: true, mode: 0o700 });
   chmodSync(join(root, 'secrets'), 0o700);

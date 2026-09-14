@@ -6,7 +6,6 @@ import { DASH, duration, esc, money, num } from '../format.js';
 export type Page = 'campaigns' | 'plans' | 'campaign';
 
 export interface RunForm {
-  secret: string;
   error: string;
 }
 
@@ -22,11 +21,6 @@ export function runName(planId: string, now: Date): string {
     .replace(/^[^a-z0-9]+/, '').slice(0, 120);
 }
 
-// A 403 is the wrong operator secret: the tab forgets it and keeps the rest.
-export function afterRun(form: RunForm, status: number, error: string): RunForm {
-  return { ...form, secret: status === 403 ? '' : form.secret, error };
-}
-
 export function topbar({ page, key, canStart, resumable, controllerOwner, error, reportFiles = [] }: {
   page: Page; key: string; canStart: boolean; resumable: boolean; controllerOwner?: string | null; error: string;
   reportFiles?: string[];
@@ -40,12 +34,11 @@ export function topbar({ page, key, canStart, resumable, controllerOwner, error,
       + (reportFiles.includes('report/export-manifest.json') ? `<a href="${artifact('report/export-manifest.json')}">export manifest</a>` : '')
       + '</div></details>' : '';
   const resume = resumable
-    ? '<form class="secret" data-run="resume"><input name="secret" type="password" aria-label="Operator secret" placeholder="Operator secret" required>'
+    ? '<form class="secret" data-run="resume">'
       + '<button class="btn" type="submit">Resume</button>'
       + (error ? `<span class="err">${esc(error)}</span>` : '') + '</form>' : '';
   const stop = canStart && controllerOwner
     ? `<form class="secret" data-run="stop"><input type="hidden" name="owner" value="${esc(controllerOwner)}">`
-      + '<input name="secret" type="password" aria-label="Operator secret" placeholder="Operator secret" required>'
       + '<button class="btn" type="submit">Stop</button>'
       + (error ? `<span class="err">${esc(error)}</span>` : '') + '</form>' : '';
   const nav = (on: boolean, label: string, href: string): string =>

@@ -66,16 +66,18 @@ test('setup reviews exact dimensions, rejects changes, and dispatches one durabl
   assert.match(runSetupPage(catalog, request, review, '', true), /Work delivery.*Progressive dependency graph/);
   assert.match(runSetupPage(catalog, request, null, '', true), /name="parallelism"/);
 
+  assert.doesNotMatch(runSetupPage(catalog, request, review, '', true), /Operator secret|name="secret"/);
+  assert.doesNotMatch(runSetupPage(catalog, request, null, '', true), /name="secret"/);
   const launches: LaunchInput[] = [];
   const { server } = createDashboardServer({ resultsRoot: root, plansRoot: join(root, 'plans'),
-    allowLaunch: true, token: 'test-token', controlSecret: 'operator-secret-12345678901234567890',
+    allowLaunch: true, token: 'test-token',
     launch(input) { launches.push(input); return Object.assign(new EventEmitter(), { pid: 1 }); } });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => server.close());
   const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  const send = (path: string, value: unknown, secret = 'operator-secret-12345678901234567890') =>
+  const send = (path: string, value: unknown, token = 'test-token') =>
     fetch(origin + path, { method: 'POST', headers: { origin, 'content-type': 'application/json',
-      'x-stack-bench-token': 'test-token', 'x-stack-bench-control-secret': secret }, body: JSON.stringify(value) });
+      'x-stack-bench-token': token }, body: JSON.stringify(value) });
   assert.equal((await send('/api/runs', review, 'wrong')).status, 403);
   const preparation = await send('/api/runs/prepare', request);
   assert.equal(preparation.status, 200, await preparation.clone().text());

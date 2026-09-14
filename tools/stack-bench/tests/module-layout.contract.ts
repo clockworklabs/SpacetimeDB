@@ -125,8 +125,7 @@ test('owned appliance backends use the pinned source images without shared datab
     assert.match(local, new RegExp(`127\\.0\\.0\\.1:${port}`));
     assert.doesNotMatch(appliance, new RegExp(`127\\.0\\.0\\.1:${port}`));
   }
-  assert.match(appliance, /STACK_BENCH_DASHBOARD_CONTROL_SECRET_FILE:[^\n]*STACK_BENCH_STATE_ROOT[^\n]*\/secrets\/dashboard_control_secret/);
-  assert.doesNotMatch(appliance, /STACK_BENCH_DASHBOARD_CONTROL_SECRET:/);
+  assert.doesNotMatch(appliance, /STACK_BENCH_DASHBOARD_CONTROL_SECRET/);
   for (const resource of ['postgres', 'mongodb', 'pgdata', 'mongodata']) {
     assert.match(local, new RegExp(`stack-bench-dev-${resource}`));
     assert.doesNotMatch(appliance, new RegExp(`stack-bench-(?:appliance-)?${resource}\\b`));

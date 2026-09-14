@@ -17,7 +17,7 @@ import type { readCampaignTimeBudget } from '../../src/campaigns/campaign-time-g
 import { type QuestlineView, campaignPage, replayTimeline, selectedProgression } from './views/campaign.js';
 import { type AttemptTab, attemptPage } from './views/attempt.js';
 import { type CampaignFilter, campaignsPage } from './views/campaigns.js';
-import { type Page, type RunForm, afterRun, plansPage, topbar }
+import { type Page, type RunForm, plansPage, topbar }
   from './views/plans.js';
 import { duration, elapsed, esc } from './format.js';
 
@@ -51,7 +51,7 @@ const state = {
   canStart: false,
   csrfToken: '',
   readError: '',
-  form: { secret: '', error: '' } as RunForm,
+  form: { error: '' } as RunForm,
   sheets: new Map<string, CampaignSheet>(),
   progression: new Map<string, CampaignProgression | null>(),
   hiddenChartRuns: new Map<string, Set<string>>(),
@@ -150,9 +150,9 @@ function page(current: Route): string {
   if (pending) return `<div class="page"><h2>${esc(pending.pendingJob.job.key)}</h2><p>${esc(pending.pendingJob.status)}</p>`
     + `<p>${esc(pending.dispatchError ?? pending.pendingJob.error ?? pending.pendingJob.capacityWait?.reason ?? 'Waiting for the campaign to start. This page updates automatically.')}</p>`
     + (state.canStart && ['queued', 'running'].includes(pending.pendingJob.status)
-      ? '<form data-run="job-cancel"><input type="password" name="secret" placeholder="Operator secret" aria-label="Operator secret" required><button class="btn" type="submit">Cancel run</button></form>' : '')
+      ? '<form data-run="job-cancel"><button class="btn" type="submit">Cancel run</button></form>' : '')
     + (state.canStart && pending.pendingJob.status === 'queued' && pending.dispatchError
-      ? '<form data-run="job-start"><input type="password" name="secret" placeholder="Operator secret" aria-label="Operator secret" required><button class="btn" type="submit">Retry worker</button></form>' : '')
+      ? '<form data-run="job-start"><button class="btn" type="submit">Retry worker</button></form>' : '')
     + (state.form.error ? `<p class="err">${esc(state.form.error)}</p>` : '') + '</div>';
   if (current.newRun) return runSetupPage(state.setup, state.setupRequest, state.setupReview, state.form.error, state.canStart);
   if (current.plans) {
@@ -253,15 +253,12 @@ function render(): void {
     for (const tool of updated.querySelectorAll<HTMLDetailsElement>('details')) tool.open = openTools.includes(tool.dataset.key);
     updated.scrollTop = follow ? updated.scrollHeight : scroll;
   }
-  // The secret and the run name live in the tab, never in the markup.
+  // Keep the time limit input across background refreshes.
   for (const field of document.querySelectorAll<HTMLInputElement>('form[data-run] input')) {
     if (field.name === 'minutes') {
       field.value = state.timeGrantMinutes;
       updateTimeTotal(field);
     }
-    if (field.name !== 'secret') continue;
-    const value = state.form.secret;
-    if (field.value !== value) field.value = value;
   }
   for (const form of document.querySelectorAll<HTMLFormElement>('form[data-run]')) {
     form.setAttribute('aria-busy', String(submitting));
@@ -552,8 +549,7 @@ document.addEventListener('click', event => {
   go(href.startsWith('?') ? `${location.pathname}${href}` : href);
 });
 
-// Start and resume are the same request twice: the browser token, the operator
-// secret the operator just typed, and the plan the server re-reads itself.
+// Controls require the browser token and same origin; the server re-reads the plan.
 async function post(form: HTMLFormElement): Promise<void> {
   if (submitting) return;
   const current = route();
@@ -561,24 +557,23 @@ async function post(form: HTMLFormElement): Promise<void> {
   const action = form.dataset.run;
   if (action === 'setup-review' || action === 'setup-start') {
     if (action === 'setup-review') state.setupRequest = readRunForm(form, state.setup!);
-    const secret = String(data.get('secret') ?? '');
-    state.form = { ...state.form, secret, error: '' };
+    state.form = { error: '' };
     submitting = true; render();
     try {
       const response = await fetch(action === 'setup-review' ? '/api/runs/prepare' : '/api/runs', {
-        method: 'POST', headers: { 'content-type': 'application/json', 'x-stack-bench-token': state.csrfToken,
-          'x-stack-bench-control-secret': secret },
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-stack-bench-token': state.csrfToken },
         body: JSON.stringify(action === 'setup-review' ? state.setupRequest
           : { request: state.setupReview!.request, reviewId: state.setupReview!.reviewId }),
       });
       const result = await response.json();
       if (!response.ok) {
-        state.form = afterRun(state.form, response.status, result.error ?? `Request failed (${response.status})`);
+        state.form = { error: result.error ?? `Request failed (${response.status})` };
+        if (response.status === 403) { state.csrfToken = ''; void load(); }
         return;
       }
       if (action === 'setup-review') state.setupReview = result as RunSetupReview;
       else {
-        state.form.secret = ''; state.setupReview = null; state.setupRequest = null;
+        state.setupReview = null; state.setupRequest = null;
         go(`/c/${encodeURIComponent(result.campaignKey)}`);
       }
     } catch { state.form.error = 'Could not confirm the request. Retry with the same setup; it cannot create a second job.'; }
@@ -600,8 +595,7 @@ async function post(form: HTMLFormElement): Promise<void> {
   try {
     let response = await fetch(action === 'job-start' ? `/api/jobs/${current.key.slice(4)}/start` : action === 'job-cancel' ? `/api/jobs/${current.key.slice(4)}/cancel` : action === 'grant-time' ? attemptUrl(current, 'time') : `/api/campaigns/${encodeURIComponent(current.key)}/${action}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-stack-bench-token': state.csrfToken,
-        'x-stack-bench-control-secret': String(data.get('secret') ?? '') },
+      headers: { 'content-type': 'application/json', 'x-stack-bench-token': state.csrfToken },
       body: JSON.stringify(action === 'grant-time' ? { grantId, minutes: Number(data.get('minutes')) }
         : action === 'stop' ? { owner: data.get('owner') }
         : {}),
@@ -609,18 +603,18 @@ async function post(form: HTMLFormElement): Promise<void> {
     if (response.ok && resumeWithTime) {
       timeAccepted = true;
       response = await fetch(`/api/campaigns/${encodeURIComponent(current.key)}/resume`, {
-        method: 'POST', headers: { 'content-type': 'application/json', 'x-stack-bench-token': state.csrfToken,
-          'x-stack-bench-control-secret': String(data.get('secret') ?? '') }, body: '{}',
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-stack-bench-token': state.csrfToken }, body: '{}',
       });
     }
     if (response.ok) {
-      state.form = { ...state.form, secret: '', error: '' };
+      state.form = { error: '' };
       return void load();
     }
     const failure = await response.json().catch(() => ({})) as { error?: string };
-    state.form = afterRun(state.form, response.status,
+    if (response.status === 403) { state.csrfToken = ''; void load(); }
+    state.form = { error:
       (timeAccepted ? 'Time was added, but resume failed. ' : '')
-      + (failure.error || `Request failed (HTTP ${response.status}). Check campaign status before retrying.`));
+      + (failure.error || `Request failed (HTTP ${response.status}). Check campaign status before retrying.`) };
   } catch {
     state.form = { ...state.form,
       error: (timeAccepted ? 'Time was added. Could not confirm resume. ' : 'Could not confirm the request. ')
@@ -641,7 +635,7 @@ document.addEventListener('submit', event => {
 // Keep typed settings across background refreshes.
 document.addEventListener('input', event => {
   const field = event.target as HTMLInputElement;
-  if (field.form?.dataset.run === 'setup-review' && field.name !== 'secret') {
+  if (field.form?.dataset.run === 'setup-review') {
     state.setupRequest = field.name === 'workload' ? initialRun(state.setup!, field.value) : readRunForm(field.form, state.setup!);
     if (field.name === 'workload' || field.name === 'level') render();
     return;
@@ -651,7 +645,6 @@ document.addEventListener('input', event => {
     state.timeGrantMinutes = field.value;
     updateTimeTotal(field);
   }
-  if (field.name === 'secret') state.form = { ...state.form, secret: field.value };
 
 });
 

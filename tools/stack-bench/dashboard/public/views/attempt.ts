@@ -106,7 +106,6 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log, tran
   const timeControls = canControl && timeBudget && (resumeWithTime || (attempt.status === 'running' && timeBudget.liveGrantSupported))
     ? `<form class="time-grant secret" data-run="grant-time" data-resume="${resumeWithTime}">`
       + '<label>Add minutes <input name="minutes" type="number" min="1" step="1" value="120" required></label>'
-      + '<input name="secret" type="password" aria-label="Operator secret" placeholder="Operator secret" autocomplete="off" required>'
       + `<button class="btn" type="submit"${pending ? ' disabled' : ''}>${pending ? 'Awaiting controller' : resumeWithTime ? 'Add time and resume' : 'Add time'}</button>`
       + `<output data-time-base="${timeBudget.effectiveMinutes}">Limit after request: ${duration((timeBudget.effectiveMinutes + 120) * 60)}</output>`
       + `<span class="summary-note">${resumeWithTime ? 'Continues from the verified checkpoint.' : 'Keeps the agent running.'} Cost and repair limits stay fixed.</span></form>`

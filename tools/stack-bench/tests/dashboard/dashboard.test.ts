@@ -518,7 +518,7 @@ test('the attempt package exposes the evidence but not arbitrary campaign files'
   assert.equal((await fetch(`${origin}/api/campaigns/evidence-run/artifacts/${forbidden}`)).status, 404);
 });
 
-test('dashboard serves real state and protects campaign launch with a separate operator secret', async t => {
+test('dashboard serves real state and protects campaign launch with same-origin browser tokens', async t => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-'));
   const plansRoot = join(root, 'plans');
   mkdirSync(plansRoot, { recursive: true });
@@ -552,7 +552,7 @@ test('dashboard serves real state and protects campaign launch with a separate o
   }, { now: '2026-08-25T12:00:01.000Z', retries: 1, retryOn: ['harness_failure'] });
   writeCampaign(campaignDirectory, storedPlan, storedState);
   const { server } = createDashboardServer({ resultsRoot: root, plansRoot, allowLaunch: true,
-    token: 'test-session-token', controlSecret: 'test-control-secret-value-1234567890',
+    token: 'test-session-token',
     feed, plans: () => [frozenPlan],
     launch(input) { launches.push(input); const child = Object.assign(new EventEmitter(), { pid: 1234 });
       return child; } });
@@ -596,23 +596,21 @@ test('dashboard serves real state and protects campaign launch with a separate o
 
   const rejected = await fetch(`${origin}/api/runs`, { method: 'POST',
     headers: { origin, 'content-type': 'application/json',
-      'x-stack-bench-token': 'test-session-token' },
+      'x-stack-bench-token': 'wrong-token' },
     body: JSON.stringify({ planId: frozenPlan.id, outputName: 'meeting-run-1' }) });
   assert.equal(rejected.status, 403);
   assert.equal(launches.length, 0);
 
-  const wrongOperator = await fetch(`${origin}/api/runs`, { method: 'POST',
-    headers: { origin, 'content-type': 'application/json',
-      'x-stack-bench-token': 'test-session-token',
-      'x-stack-bench-control-secret': 'wrong-control-secret-value-1234567890' },
+  const wrongOrigin = await fetch(`${origin}/api/runs`, { method: 'POST',
+    headers: { origin: 'https://attacker.invalid', 'content-type': 'application/json',
+      'x-stack-bench-token': 'test-session-token' },
     body: JSON.stringify({ planId: frozenPlan.id, outputName: 'meeting-run-1' }) });
-  assert.equal(wrongOperator.status, 403);
+  assert.equal(wrongOrigin.status, 403);
   assert.equal(launches.length, 0);
 
   const resumed = await fetch(`${origin}/api/campaigns/prepared-run/resume`, { method: 'POST',
     headers: { origin, 'content-type': 'application/json',
-      'x-stack-bench-token': 'test-session-token',
-      'x-stack-bench-control-secret': 'test-control-secret-value-1234567890' }, body: '{}' });
+      'x-stack-bench-token': 'test-session-token' }, body: '{}' });
   assert.equal(resumed.status, 202);
   assert.equal(launches.length, 1);
   assert.equal(launches[0]?.output, campaignDirectory);
@@ -620,8 +618,7 @@ test('dashboard serves real state and protects campaign launch with a separate o
   assert.equal(((await resumed.json()) as { type?: string }).type, 'campaign.resume');
   const duplicate = await fetch(`${origin}/api/campaigns/prepared-run/resume`, { method: 'POST',
     headers: { origin, 'content-type': 'application/json',
-      'x-stack-bench-token': 'test-session-token',
-      'x-stack-bench-control-secret': 'test-control-secret-value-1234567890' }, body: '{}' });
+      'x-stack-bench-token': 'test-session-token' }, body: '{}' });
   assert.equal(duplicate.status, 409);
   assert.equal(launches.length, 1);
 });
@@ -1178,21 +1175,21 @@ test('cost and completion keep unknown spend and the full selected scope visible
 test('time controls require authorization and validate minutes before requesting a grant', async t => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-time-'));
   const { server } = createDashboardServer({ resultsRoot: root, plansRoot: join(root, 'plans'),
-    allowLaunch: true, token: 'time-token', controlSecret: 'time-control-secret-value-1234567890' });
+    allowLaunch: true, token: 'time-token' });
   const origin = await listenOrigin(server);
   t.after(() => { server.close(); rmSync(root, { recursive: true, force: true }); });
-  const send = (secret: string, minutes: number) => fetch(`${origin}/api/campaigns/time-run/attempts/attempt-1/time`, {
+  const send = (token: string, minutes: number) => fetch(`${origin}/api/campaigns/time-run/attempts/attempt-1/time`, {
     method: 'POST', headers: { origin, 'content-type': 'application/json',
-      'x-stack-bench-token': 'time-token', 'x-stack-bench-control-secret': secret },
+      'x-stack-bench-token': token },
     body: JSON.stringify({ grantId: 'time-1', minutes }),
   });
   assert.equal((await send('wrong', 120)).status, 403);
   for (const minutes of [0, -1, 1.5, Number.MAX_SAFE_INTEGER]) {
-    assert.equal((await send('time-control-secret-value-1234567890', minutes)).status, 400);
+    assert.equal((await send('time-token', minutes)).status, 400);
   }
 });
 
-test('Stop requires the operator secret and cannot cancel a successor controller',
+test('Stop requires the browser token and cannot cancel a successor controller',
   { skip: process.platform !== 'linux' ? 'native campaign control is tested in the Linux appliance' : false }, async t => {
     const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-stop-'));
     const directory = join(root, 'campaigns', 'stop-run');
@@ -1200,22 +1197,22 @@ test('Stop requires the operator secret and cannot cancel a successor controller
     writeCampaign(directory, plan, createCampaignState(plan));
     let lock = acquireCampaignLock(directory, plan);
     const { server } = createDashboardServer({ resultsRoot: root, plansRoot: join(root, 'plans'),
-      allowLaunch: true, token: 'stop-token', controlSecret: 'stop-control-secret-value-1234567890' });
+      allowLaunch: true, token: 'stop-token' });
     const origin = await listenOrigin(server);
     t.after(() => { server.close(); releaseCampaignLock(lock); rmSync(root, { recursive: true, force: true }); });
-    const send = (owner: string, secret: string) => fetch(`${origin}/api/campaigns/stop-run/stop`, {
+    const send = (owner: string, token: string) => fetch(`${origin}/api/campaigns/stop-run/stop`, {
       method: 'POST', headers: { origin, 'content-type': 'application/json',
-        'x-stack-bench-token': 'stop-token', 'x-stack-bench-control-secret': secret },
+        'x-stack-bench-token': token },
       body: JSON.stringify({ owner }),
     });
     const prior = lock.record.ownershipMarkerSha256;
     assert.equal((await send(prior, 'wrong')).status, 403);
     assert.equal(campaignCancellationRequested(lock), false);
-    assert.equal((await send(prior, 'stop-control-secret-value-1234567890')).status, 202);
+    assert.equal((await send(prior, 'stop-token')).status, 202);
     assert.equal(campaignCancellationRequested(lock), true);
     releaseCampaignLock(lock);
     lock = acquireCampaignLock(directory, plan);
-    assert.equal((await send(prior, 'stop-control-secret-value-1234567890')).status, 409);
+    assert.equal((await send(prior, 'stop-token')).status, 409);
     assert.equal(campaignCancellationRequested(lock), false);
   });
 
@@ -1283,12 +1280,11 @@ test('job endpoints authenticate writes, paginate reads, and queue without launc
   writeFileSync(join(plansRoot, 'test.json'), readFileSync(EXAMPLE_CAMPAIGN));
   let launches = 0;
   const { server } = createDashboardServer({ resultsRoot: root, plansRoot, allowLaunch: true,
-    token: 'job-token', controlSecret: 'job-control-secret-value-1234567890',
+    token: 'job-token',
     launch() { launches++; throw new Error('queue submission must not launch'); } });
   const origin = await listenOrigin(server);
   t.after(() => { server.close(); rmSync(root, { recursive: true, force: true }); });
-  const headers = { origin, 'content-type': 'application/json', 'x-stack-bench-token': 'job-token',
-    'x-stack-bench-control-secret': 'job-control-secret-value-1234567890' };
+  const headers = { origin, 'content-type': 'application/json', 'x-stack-bench-token': 'job-token' };
   const input = { key: 'dashboard-job', planFile: 'test.json' };
   assert.equal((await fetch(`${origin}/api/jobs`, { method: 'POST', body: JSON.stringify(input) })).status, 403);
   assert.equal((await fetch(`${origin}/api/jobs`, { method: 'POST', headers,

@@ -67,10 +67,12 @@ docker compose --env-file operator.env \
   -f appliance/docker-compose.yaml --profile dashboard stop dashboard
 ```
 
-Starting, resuming, or stopping a run needs the separate dashboard control secret, typed
-into the form. The server reads the expected value from the file configured by
-`STACK_BENCH_DASHBOARD_CONTROL_SECRET_FILE` and no dashboard API returns it. A
-wrong secret is answered with 403 and nothing is started. Starting a run submits
+Run controls need no separate password. This is a local, single-user dashboard:
+the port binds to loopback, requests must use a loopback Host, and writes require
+the exact browser origin and a per-server CSRF token. Other websites cannot read
+that token. Local processes that can access the dashboard are trusted. Do not
+publish this service through a proxy or on a shared network without authentication.
+Model credentials remain private. Starting a run submits
 an idempotent execution job and starts its worker in an
 owned controller. Retrying Start with the same reviewed settings returns the same
 job. A queued job has a status page before its campaign artifacts exist.
@@ -176,6 +178,6 @@ new review. It starts the same worker as the dashboard and returns the job ID be
 waiting for completion. No model or reasoning level is substituted.
 
 HTTP clients use `GET /api/run-setup`, `POST /api/runs/prepare`, and `POST /api/runs`.
-Writes require the same origin, browser token, and operator secret as other controls.
+Writes require the same origin and browser token as other controls.
 Named credential profiles expose only their labels, provider, version, and account
 mode. Secret paths and values remain on the server.

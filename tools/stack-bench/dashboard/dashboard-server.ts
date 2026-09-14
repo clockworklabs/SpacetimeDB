@@ -2,7 +2,7 @@
 import { prepareRun, runSetupCatalog, submitPreparedRun } from '../src/campaigns/run-setup.js';
 
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { appendFileSync, closeSync, createReadStream, existsSync, mkdirSync, openSync, readFileSync, statSync } from 'node:fs';
+import { appendFileSync, closeSync, createReadStream, existsSync, mkdirSync, openSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -110,8 +110,6 @@ export interface DashboardServerOptions {
   plansRoot: string;
   allowLaunch?: boolean;
   token?: string;
-  controlSecret?: string;
-  controlSecretFile?: string;
   feed?: OperationFeed;
   launch?: (input: LaunchInput) => LaunchChild;
   plans?: () => DashboardPlan[];
@@ -125,21 +123,6 @@ function loopbackHost(value: unknown): boolean {
   return /^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(String(value ?? ''));
 }
 
-function loadControlSecret(options: DashboardServerOptions, allowLaunch: boolean): string | null {
-  if (!allowLaunch) return null;
-  const file = options.controlSecretFile
-    ?? process.env.STACK_BENCH_DASHBOARD_CONTROL_SECRET_FILE;
-  let value = options.controlSecret;
-  if (value === undefined && file) {
-    try { value = readFileSync(resolve(file), 'utf8').trim(); }
-    catch { throw new Error('dashboard run controls require a readable operator control secret file'); }
-  }
-  if (typeof value !== 'string' || value.length < 32 || value.length > 4096 || /[\r\n]/.test(value)) {
-    throw new Error('dashboard run controls require a valid operator control secret file');
-  }
-  return value;
-}
-
 function sameSecret(actual: unknown, expected: unknown): boolean {
   if (typeof actual !== 'string' || typeof expected !== 'string') return false;
   const left = Buffer.from(actual);
@@ -148,10 +131,9 @@ function sameSecret(actual: unknown, expected: unknown): boolean {
 }
 
 function controlAuthorized(request: IncomingMessage, host: string | undefined,
-  csrfToken: string, controlSecret: string | null): boolean {
+  csrfToken: string): boolean {
   return request.headers.origin === `http://${host}`
-    && sameSecret(request.headers['x-stack-bench-token'], csrfToken)
-    && sameSecret(request.headers['x-stack-bench-control-secret'], controlSecret);
+    && sameSecret(request.headers['x-stack-bench-token'], csrfToken);
 }
 
 export function parseDashboardArgs(argv: string[], env: NodeJS.ProcessEnv = process.env): DashboardArgs {
@@ -259,7 +241,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
   const plansRoot = resolve(options.plansRoot);
   const allowLaunch = options.allowLaunch ?? process.env.STACK_BENCH_APPLIANCE === '1';
   const token = options.token ?? randomBytes(24).toString('base64url');
-  const controlSecret = loadControlSecret(options, allowLaunch);
   const feed = options.feed ?? createOperationFeed(resultsRoot);
   const launch = options.launch ?? launchCampaign;
   const plans = options.plans ?? (() => discoverPlans(plansRoot));
@@ -330,7 +311,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
       }
       if (request.method === 'POST' && ['/api/runs/prepare', '/api/runs'].includes(url.pathname)) {
         if (!allowLaunch) return json(response, 503, { error: 'Run controls require the appliance.' });
-        if (!controlAuthorized(request, request.headers.host, token, controlSecret)) {
+        if (!controlAuthorized(request, request.headers.host, token)) {
           return json(response, 403, { error: 'The run request is not authorized.' });
         }
         if (!String(request.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
@@ -375,7 +356,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
         }
         if (request.method === 'POST' && (!id || cancel)) {
           if (!allowLaunch) return json(response, 503, { error: 'Run controls are available inside the Stack Bench appliance.' });
-          if (!controlAuthorized(request, request.headers.host, token, controlSecret)) {
+          if (!controlAuthorized(request, request.headers.host, token)) {
             return json(response, 403, { error: 'The job request is not authorized.' });
           }
           if (id) {
@@ -422,7 +403,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
         const attemptId = decodeURIComponent(timeRoute[2] ?? '');
         if (request.method === 'GET') return json(response, 200, readCampaignTimeBudget(directory, attemptId));
         if (!allowLaunch) return json(response, 503, { error: 'Run controls are available inside the Stack Bench appliance.' });
-        if (!controlAuthorized(request, request.headers.host, token, controlSecret)) {
+        if (!controlAuthorized(request, request.headers.host, token)) {
           return json(response, 403, { error: 'The time request is not authorized.' });
         }
         const input = await body(request) as { minutes?: unknown; grantId?: unknown } | null;
@@ -443,7 +424,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
       const stopRoute = url.pathname.match(/^\/api\/campaigns\/([^/]+)\/stop$/);
       if (request.method === 'POST' && stopRoute) {
         if (!allowLaunch) return json(response, 503, { error: 'Run controls are available inside the Stack Bench appliance.' });
-        if (!controlAuthorized(request, request.headers.host, token, controlSecret)) {
+        if (!controlAuthorized(request, request.headers.host, token)) {
           return json(response, 403, { error: 'The stop request is not authorized.' });
         }
         const key = decodeURIComponent(stopRoute[1] ?? '');
@@ -468,7 +449,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
       const resumeRoute = url.pathname.match(/^\/api\/campaigns\/([^/]+)\/resume$/);
       if (request.method === 'POST' && resumeRoute) {
         if (!allowLaunch) return json(response, 503, { error: 'Run controls are available inside the Stack Bench appliance.' });
-        if (!controlAuthorized(request, request.headers.host, token, controlSecret)) {
+        if (!controlAuthorized(request, request.headers.host, token)) {
           return json(response, 403, { error: 'The run request is not authorized.' });
         }
         const key = decodeURIComponent(resumeRoute[1] ?? '');
