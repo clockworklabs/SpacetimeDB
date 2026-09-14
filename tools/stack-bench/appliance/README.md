@@ -228,6 +228,9 @@ the original scope. The separate `regrade.json`, grading bundle, and cleanup evi
 not replace the original run or create another build sample. For saved dependency
 candidates, select `--grade-level` and affected checks as described in the
 [dependency replay method](../docs/grading-coverage.md#replay-a-saved-dependency-candidate).
+An interrupted dependency run can replay an earlier candidate only after authenticated
+recovery proves cleanup and that candidate has its complete source-bound grade bundle.
+The diagnostic preserves the interrupted parent status; it does not finish the campaign.
 
 The campaign file is the run authority. Store it below
 `plans/` in the state volume.

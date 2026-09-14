@@ -66,6 +66,25 @@ test('dependency diagnostics bind the rejected first-build source and its own ch
     assert.equal(replay.serverUri, null);
     assert.deepEqual(replay.aliases, { staff: 'saved-staff' });
     assert.deepEqual(readFileSync(join(output, 'run.json')), before);
+    const pending = JSON.parse(before.toString());
+    pending.timestamps.completedAt = null;
+    writeFileSync(join(output, 'run.json'), JSON.stringify(pending));
+    assert.throws(() => inspectGradeSource(output, { level: 2, checkKeys: [check] }), /recovered/);
+    const recovery = { schemaVersion: 1, runId: run.id, backend: run.backend, status: 'clean', reason: null,
+      cleanup: { succeeded: true, retained: false },
+      resources: { backendState: 'released', listenerProcesses: [], locks: [] }, instructions: [] };
+    const saveRecovery = (parentId: string) => writeArtifact(join(output, 'recovery.json'), {
+      kind: 'recovery', id: 'recovery', attempt: { id: 'recovery', parentId }, payload: recovery,
+    });
+    saveRecovery('wrong-parent');
+    assert.throws(() => inspectGradeSource(output, { level: 2, checkKeys: [check] }), /cleanup/);
+    saveRecovery(run.id);
+    assert.equal(inspectGradeSource(output, { level: 2, checkKeys: [check] }).parent.timestamps.completedAt, null);
+    recovery.cleanup.retained = true;
+    recovery.status = 'retained';
+    saveRecovery(run.id);
+    assert.throws(() => inspectGradeSource(output, { level: 2, checkKeys: [check] }), /cleanup/);
+    writeFileSync(join(output, 'run.json'), before);
     assert.throws(() => inspectGradeSource(output), /grade-level/);
     assert.throws(() => inspectGradeSource(output, { level: 2 }), /check/);
     assert.throws(() => inspectGradeSource(output, { level: 3, checkKeys: [check] }), /level|depth|candidate/);

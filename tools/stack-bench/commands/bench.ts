@@ -812,11 +812,24 @@ export function inspectGradeSource(directory: string,
   const runPath = join(root, ARTIFACT_FILE.run);
   const parent = readArtifact<BenchmarkRunRecord>(runPath, { expectedKind: 'benchmark_run' });
   const run = parent.payload;
-  if (!parent.timestamps.completedAt || !object(run.mode)
+  if (!object(run.mode)
     || !['sequential', 'dependency'].includes(String(run.mode.id)) || run.contaminated) {
-    throw new Error('--grade-from requires a completed, uncontaminated sequential or dependency run');
+    throw new Error('--grade-from requires an uncontaminated sequential or dependency run');
   }
   const dependency = run.mode.id === 'dependency';
+  if (!parent.timestamps.completedAt) {
+    const recoveryPath = join(root, ARTIFACT_FILE.recovery);
+    if (!dependency || !existsSync(recoveryPath)) {
+      throw new Error('unfinished --grade-from requires a recovered dependency run and a completed candidate grade');
+    }
+    const recovery = readArtifact<{ runId: string; backend: string; status: string;
+      cleanup: { succeeded: boolean; retained: boolean } }>(recoveryPath, { expectedKind: 'recovery' });
+    if (recovery.attempt.parentId !== parent.id || recovery.payload.runId !== parent.id
+      || recovery.payload.backend !== run.backend || recovery.payload.status !== 'clean'
+      || recovery.payload.cleanup?.succeeded !== true || recovery.payload.cleanup.retained !== false) {
+      throw new Error('unfinished --grade-from recovery does not prove cleanup of its parent');
+    }
+  }
   if (dependency && (!Number.isSafeInteger(options.level) || options.level! < 1)) {
     throw new Error('dependency --grade-from requires a positive --grade-level');
   }
@@ -1483,6 +1496,7 @@ async function main() {
           kind: 'saved-source-regrade', diagnosticOnly: true,
           id: runId, startedAt, completedAt: new Date().toISOString(),
           parent: { id: regrade.parent.id, runSha256: regrade.runSha256,
+            completedAt: regrade.parent.timestamps.completedAt,
             engine: regrade.parent.identities.engine, source: regrade.source,
             serverUri: regrade.serverUri,
             selectionSha256: regrade.declared.selection.sha256,
