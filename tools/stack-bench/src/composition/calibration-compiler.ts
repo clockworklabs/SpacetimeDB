@@ -707,11 +707,14 @@ export function validateQualificationEvidenceArtifact(artifact: unknown,
     for (const result of results) {
       const key = `${read(result, 'scenario')}:${read(result, 'feature')}:${read(result, 'criterion')}`;
       const check = expected.get(key);
+      const evidenceStatus = read(result, 'evidenceStatus'), stage = read(result, 'failureStage');
+      const failed = evidenceStatus === 'failed' && isOneOf(stage, ['setup', 'assertion'])
+        || evidenceStatus === 'blocked' && stage === 'setup';
       if (!check || read(result, 'track') !== release.track
         || read(result, 'level') !== qualificationLevel
         || read(result, 'points') !== check.points
         || read(result, 'status') !== 'expected_fail'
-        || read(result, 'evidenceStatus') !== 'failed') {
+        || !failed) {
         evidenceFailure(at, `contains invalid null result ${key}`);
       }
       expected.delete(key);

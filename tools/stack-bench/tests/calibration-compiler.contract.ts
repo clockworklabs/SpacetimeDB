@@ -119,6 +119,34 @@ test('qualification accepts emitted artifact hashes and rejects mismatched ident
   }
 });
 
+test('null qualification accepts blocked setup but rejects unmeasured or contradictory results', () => {
+  const { release, plan } = current();
+  const scored = release.checkCatalog.filter(check => check.points > 0);
+  const zero = release.checkCatalog.length - scored.length;
+  const totals = { criteria: scored.length, points: release.scoring.points };
+  const artifact = createArtifact({ id: 'null-qualification', kind: 'null_control',
+    identities: { recipe: { id: release.id, sha256: release.contentSha256 },
+      calibration: { id: plan.id, sha256: plan.qualificationSha256 } },
+    payload: { ok: true, tracks: [release.track], summary: { ...totals, expectedFailures: totals,
+      vacuousPasses: { criteria: 0, points: 0 }, oracleGaps: { criteria: 0, points: 0 },
+      unscored: { criteria: zero, passed: 0, failed: zero, inconclusive: 0 } },
+      criteria: scored.map(check => ({ scenario: check.source, feature: check.featureId,
+        criterion: check.criterionId, track: release.track, level: 1, points: check.points,
+        status: 'expected_fail', evidenceStatus: 'blocked', failureStage: 'setup' })) } });
+  const entry = { kind: 'null' as const, repetition: 1, path: 'null.json', sha256: 'a'.repeat(64) };
+  const context = { calibration: { ...plan, qualification: { ...plan.qualification, runner: undefined } },
+    qualificationIdentity: calibrationQualificationIdentity(plan), release,
+    references: plan.references.entries, execution: [], stackBenchRoot: STACK_BENCH_ROOT,
+    enforceQualificationScope: false };
+  assert.doesNotThrow(() => validateQualificationEvidenceArtifact(artifact, entry, context));
+  for (const patch of [{ evidenceStatus: 'inconclusive' }, { evidenceStatus: 'harness_failure' },
+    { evidenceStatus: 'passed' }, { failureStage: 'assertion' }, { failureStage: null }]) {
+    const changed = structuredClone(artifact);
+    Object.assign(changed.payload.criteria[0]!, patch);
+    assert.throws(() => validateQualificationEvidenceArtifact(changed, entry, context), /invalid null result/);
+  }
+});
+
 test('calibration identity changes when selected checks change', () => {
   const value = compileCalibrationDefinition(calibrationSource());
   const identityInput = { ...value, mutations: value.mutations.map(mutation => ({
