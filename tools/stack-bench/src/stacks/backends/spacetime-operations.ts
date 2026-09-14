@@ -228,21 +228,31 @@ export function getSpacetimeCheckoutState({ account, item, app, spacetime, exec 
     ['payment_record', 'id,orderId,amount,status'],
     ['order_item_stock', 'orderItemId,warehouseId,quantity'],
   ] as const;
-  const sql = selections.map(([table, columns, where]) => `SELECT ${columns.split(',').map(column => `"${column}"`).join(',')} FROM ${table}${where ? ` WHERE ${where}` : ''}`).join('; ');
+  // One initial subscription snapshot covers every query at the same database
+  // state. The SQL endpoint accepts only one statement per request.
+  const queries = selections.map(([table, , where]) => `SELECT * FROM ${table}${where ? ` WHERE ${where}` : ''}`);
   const output = exec('docker', [...agentExec(), container,
     ...codingContainerAgentCommand(CODING_CONTAINER_SPACETIME_CLI,
-      ['sql', spacetime.mod, '-s', spacetime.containerUri, '--format', 'json', sql])],
+      ['subscribe', spacetime.mod, '-s', spacetime.containerUri, '--print-initial-update', '--num-updates', '0', '--timeout', '30', ...queries])],
     { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
   const results: unknown = JSON.parse(output.trim());
-  if (!Array.isArray(results) || results.length !== selections.length) throw new Error('checkout SQL returned an incomplete result');
-  const rows = selections.map(([, columns], index): unknown[][] => {
-    const result: unknown = results[index];
-    if (!record(result) || !record(result.schema) || !Array.isArray(result.schema.elements)
-      || JSON.stringify(result.schema.elements.map(element => record(element) ? element.name : null)) !== JSON.stringify(columns.split(','))
-      || !Array.isArray(result.rows) || result.rows.some(row => !Array.isArray(row) || row.length !== columns.split(',').length)) {
-      throw new Error('checkout SQL returned an invalid table shape');
+  if (!record(results) || Object.keys(results).some(key => !selections.some(([table]) => table === key))) {
+    throw new Error('checkout subscription returned an invalid snapshot');
+  }
+  const rows = selections.map(([table, columns]): unknown[][] => {
+    // A successful subscription acknowledges all queries, but empty tables may
+    // be omitted. Unknown tables fail the command; source mapping is checked above.
+    if (!(table in results)) return [];
+    const result = results[table];
+    if (!record(result) || !Array.isArray(result.inserts) || !Array.isArray(result.deletes) || result.deletes.length) {
+      throw new Error('checkout subscription returned an invalid initial table');
     }
-    return result.rows as unknown[][];
+    return result.inserts.map(row => {
+      if (!record(row) || columns.split(',').some(column => !(column in row))) {
+        throw new Error('checkout subscription returned an invalid row shape');
+      }
+      return columns.split(',').map(column => row[column]);
+    });
   });
   if (rows[0]!.length !== 1 || rows[1]!.length !== 1) throw new Error('checkout account or item is missing or ambiguous');
   const accountId = checkoutId(rows[0]![0]![0]);

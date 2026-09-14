@@ -129,25 +129,30 @@ test('checkout actions retain a failed reconciliation and treat reader failures 
   }
 });
 
-test('SpacetimeDB checkout SQL retains private column casing and rejects incomplete tables', () => {
-  const columns = ['id', 'id,price', 'accountId,itemId,quantity', 'item_id,warehouse_id,quantity',
-    'accountId,itemId,warehouseId,quantity', 'id,accountId,total,status',
-    'id,orderId,itemId,quantity,unitPrice', 'id,orderId,amount,status', 'orderItemId,warehouseId,quantity'];
-  const rows = [[[1]], [[2,19.99]], [], [[2,3,10]], [], [], [], [], []];
-  const results = columns.map((names,index) => ({ schema: { elements: names.split(',').map(name => ({ name })) }, rows:rows[index] }));
+test('SpacetimeDB checkout reads one bounded subscription snapshot and rejects malformed rows', () => {
+  const results: Record<string, { inserts: Record<string, unknown>[]; deletes: unknown[] }> = {
+    account:{inserts:[{id:1}],deletes:[]}, item:{inserts:[{id:2,price:19.99}],deletes:[]},
+    stock:{inserts:[{item_id:2,warehouse_id:3,quantity:10}],deletes:[]},
+    cart_item:{inserts:[{accountId:1,itemId:2,quantity:1}],deletes:[]},
+  };
   const read = () => getSpacetimeCheckoutState({ account:'reader', item:'Keyboard',
     app:join(STACK_BENCH_ROOT,'reference-apps/ecommerce/spacetime'),
     spacetime:{buildContainer:{id:'owned',name:'test'},mod:'test',containerUri:'http://127.0.0.1:3000'},
     exec:(_command,args) => {
       if (args[0]==='inspect') return 'owned';
-      assert(args.at(-1)!.includes('"accountId","itemId","quantity" FROM cart_item'));
-      assert(args.at(-1)!.includes('"item_id","warehouse_id","quantity" FROM stock'));
+      assert(args.includes('subscribe'));
+      assert.equal(args[args.indexOf('--num-updates')+1],'0');
+      assert.equal(args[args.indexOf('--timeout')+1],'30');
+      assert.equal(args.filter(value=>value.startsWith('SELECT *')).length,9);
       return JSON.stringify(results);
     },
   });
   assert.equal(read().state.priceMinor,1999);
-  results[2]!.schema.elements[0]!.name='account_id';
-  assert.throws(read,/invalid table shape/);
-  results.pop();
-  assert.throws(read,/incomplete result/);
+  assert.equal(read().state.cart[0]!.quantity,1);
+  results.cart_item!.inserts=[{account_id:1,itemId:2,quantity:1}];
+  assert.throws(read,/invalid row shape/);
+  delete results.cart_item;
+  assert.deepEqual(read().state.cart,[]);
+  delete results.account;
+  assert.throws(read,/account or item is missing/);
 });
