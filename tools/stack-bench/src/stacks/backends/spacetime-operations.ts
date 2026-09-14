@@ -215,18 +215,18 @@ export function getSpacetimeCheckoutState({ account, item, app, spacetime, exec 
   spacetime?: { buildContainer?: { id: string; name: string } | null; mod: string; containerUri: string };
 }) {
   const schemaSha256 = verifyCheckoutSchema('spacetime', app, ['backend/spacetimedb/src/schema.ts']);
-  if (!spacetime?.buildContainer) throw new Error('SpacetimeDB build container is unavailable for checkout SQL');
+  if (!spacetime?.buildContainer) throw new Error('SpacetimeDB build container is unavailable for checkout snapshot');
   const container = assertLeasedContainer(spacetime.buildContainer, exec, WRITE_TIMEOUT_MS, 'checkout state read');
   const selections = [
     ['account', 'id', `username=${sqlString(account)}`],
     ['item', 'id,price', `name=${sqlString(item)}`],
-    ['cart_item', 'accountId,itemId,quantity'],
+    ['cart_item', 'account_id,item_id,quantity'],
     ['stock', 'item_id,warehouse_id,quantity'],
-    ['reservation', 'accountId,itemId,warehouseId,quantity'],
-    ['customer_order', 'id,accountId,total,status'],
-    ['order_item', 'id,orderId,itemId,quantity,unitPrice'],
-    ['payment_record', 'id,orderId,amount,status'],
-    ['order_item_stock', 'orderItemId,warehouseId,quantity'],
+    ['reservation', 'account_id,item_id,warehouse_id,quantity'],
+    ['customer_order', 'id,account_id,total,status'],
+    ['order_item', 'id,order_id,item_id,quantity,unit_price'],
+    ['payment_record', 'id,order_id,amount,status'],
+    ['order_item_stock', 'order_item_id,warehouse_id,quantity'],
   ] as const;
   // One initial subscription snapshot covers every query at the same database
   // state. The SQL endpoint accepts only one statement per request.
@@ -249,7 +249,7 @@ export function getSpacetimeCheckoutState({ account, item, app, spacetime, exec 
     }
     return result.inserts.map(row => {
       if (!record(row) || columns.split(',').some(column => !(column in row))) {
-        throw new Error('checkout subscription returned an invalid row shape');
+        throw new Error(`checkout subscription returned an invalid row shape for ${table}: ${record(row) ? Object.keys(row).join(',') : 'not an object'}`);
       }
       return columns.split(',').map(column => row[column]);
     });

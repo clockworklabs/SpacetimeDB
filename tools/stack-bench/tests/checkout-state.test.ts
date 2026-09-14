@@ -133,7 +133,7 @@ test('SpacetimeDB checkout reads one bounded subscription snapshot and rejects m
   const results: Record<string, { inserts: Record<string, unknown>[]; deletes: unknown[] }> = {
     account:{inserts:[{id:1}],deletes:[]}, item:{inserts:[{id:2,price:19.99}],deletes:[]},
     stock:{inserts:[{item_id:2,warehouse_id:3,quantity:10}],deletes:[]},
-    cart_item:{inserts:[{accountId:1,itemId:2,quantity:1}],deletes:[]},
+    cart_item:{inserts:[{account_id:1,item_id:2,quantity:1}],deletes:[]},
   };
   const read = () => getSpacetimeCheckoutState({ account:'reader', item:'Keyboard',
     app:join(STACK_BENCH_ROOT,'reference-apps/ecommerce/spacetime'),
@@ -149,7 +149,7 @@ test('SpacetimeDB checkout reads one bounded subscription snapshot and rejects m
   });
   assert.equal(read().state.priceMinor,1999);
   assert.equal(read().state.cart[0]!.quantity,1);
-  results.cart_item!.inserts=[{account_id:1,itemId:2,quantity:1}];
+  results.cart_item!.inserts=[{accountId:1,itemId:2,quantity:1}];
   assert.throws(read,/invalid row shape/);
   delete results.cart_item;
   assert.deepEqual(read().state.cart,[]);
