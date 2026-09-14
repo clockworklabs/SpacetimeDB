@@ -28,6 +28,33 @@ add_library(spacetimedb::spacetimedb_cpp_library ALIAS spacetimedb_cpp_library)
 
 target_sources(spacetimedb_cpp_library PRIVATE ${LIBRARY_SOURCES})
 
+# A declared Environment adds named methods to the context member type. Every
+# SDK and module translation unit must see the same prelude before any context.
+if(NOT DEFINED SPACETIMEDB_ENV_HEADER)
+    set(SPACETIMEDB_ENV_HEADER "" CACHE FILEPATH "Absolute module environment declaration header")
+endif()
+if(SPACETIMEDB_ENV_HEADER)
+    if(NOT IS_ABSOLUTE "${SPACETIMEDB_ENV_HEADER}" OR NOT EXISTS "${SPACETIMEDB_ENV_HEADER}")
+        message(FATAL_ERROR "SPACETIMEDB_ENV_HEADER must name an existing absolute declaration header")
+    endif()
+    # The standalone WASI ABI shims have no context or Environment type. Their
+    # hand-written ABI declarations must not include the C++ standard library's
+    # WASI declarations through the module prelude.
+    set_source_files_properties(src/abi/wasi_shims.cpp PROPERTIES
+        COMPILE_DEFINITIONS SPACETIMEDB_WASI_SHIMS=1)
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/spacetimedb/environment_prelude.h.in
+        ${CMAKE_CURRENT_BINARY_DIR}/include/spacetimedb/environment_prelude.h
+        @ONLY)
+    set(SPACETIMEDB_ENV_PRELUDE "${CMAKE_CURRENT_BINARY_DIR}/include/spacetimedb/environment_prelude.h")
+    target_compile_definitions(spacetimedb_cpp_library PUBLIC SPACETIMEDB_ENV_HEADER_ACTIVE=1)
+    if(MSVC)
+        target_compile_options(spacetimedb_cpp_library PUBLIC "/FI${SPACETIMEDB_ENV_PRELUDE}")
+    else()
+        target_compile_options(spacetimedb_cpp_library PUBLIC -include "${SPACETIMEDB_ENV_PRELUDE}")
+    endif()
+endif()
+
 # Require C++20 for consumers of this library without forcing global flags
 target_compile_features(spacetimedb_cpp_library PUBLIC cxx_std_20)
 target_compile_definitions(spacetimedb_cpp_library PRIVATE SPACETIMEDB_UNSTABLE_FEATURES)

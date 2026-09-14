@@ -7,6 +7,7 @@ using System.Diagnostics.CodeAnalysis;
 public abstract class HandlerContextBase
 {
     public Random Rng => txState.Rng;
+    public DatabaseEnvironment Env { get; } = DatabaseEnvironment.Instance;
     public Timestamp Timestamp => txState.Timestamp;
 
     // NOTE: The host rejects procedure HTTP requests while a mut transaction is open
@@ -90,6 +91,7 @@ public abstract class HandlerTxContextBase(Internal.TxContext inner) : IRefresha
     void IRefreshableTxContext.Refresh(Internal.TxContext inner) => Refresh(inner);
 
     public LocalBase Db => (LocalBase)Inner.Db;
+    public DatabaseEnvironment Env { get; } = DatabaseEnvironment.Instance;
     public Timestamp Timestamp => Inner.Timestamp;
     public Random Rng => Inner.Rng;
 }
