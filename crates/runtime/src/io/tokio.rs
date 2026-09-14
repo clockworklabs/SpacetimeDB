@@ -94,9 +94,9 @@ impl SpacetimeIO for TokioIO {
     fn write_all_at<B: AlignedBytes + Send + 'static>(
         &self,
         fd: Self::Fd,
-        buf: B,
+        buf: Box<B>,
         offset: u64,
-    ) -> Self::Completion<Result<B, ErrorWith<Self::Error, B>>> {
+    ) -> Self::Completion<Result<Box<B>, ErrorWith<Self::Error, Box<B>>>> {
         self.rt
             .spawn_blocking(move || match platform::write_all_at(&fd, buf.as_bytes(), offset) {
                 Ok(()) => Ok(buf),
@@ -108,9 +108,9 @@ impl SpacetimeIO for TokioIO {
     fn read_exact_at<B: AlignedBytes + Send + 'static>(
         &self,
         fd: Self::Fd,
-        mut buf: B,
+        mut buf: Box<B>,
         offset: u64,
-    ) -> Self::Completion<Result<B, ErrorWith<Self::Error, B>>> {
+    ) -> Self::Completion<Result<Box<B>, ErrorWith<Self::Error, Box<B>>>> {
         self.rt
             .spawn_blocking(move || match platform::read_exact_at(&fd, buf.as_bytes_mut(), offset) {
                 Ok(()) => Ok(buf),

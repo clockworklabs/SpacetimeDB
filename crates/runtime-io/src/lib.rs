@@ -1,12 +1,11 @@
 #![no_std]
 
-#[cfg(any(test, feature = "alloc"))]
 extern crate alloc;
 
+use alloc::boxed::Box;
+
 mod buf;
-pub use buf::AlignedBytes;
-#[cfg(any(test, feature = "alloc"))]
-pub use buf::ErasedBox;
+pub use buf::{AlignedBytes, ErasedBox};
 
 mod error;
 pub use error::ErrorWith;
@@ -29,6 +28,8 @@ impl Statx {
         Self { size }
     }
 }
+
+pub type ReadWriteResult<B, E> = Result<Box<B>, ErrorWith<E, Box<B>>>;
 
 /// The canonical, low-level I/O API.
 ///
@@ -81,9 +82,9 @@ pub trait SpacetimeIO {
     fn write_all_at<B: AlignedBytes + Send + 'static>(
         &self,
         fd: Self::Fd,
-        buf: B,
+        buf: Box<B>,
         offset: u64,
-    ) -> Self::Completion<Result<B, ErrorWith<Self::Error, B>>>;
+    ) -> Self::Completion<ReadWriteResult<B, Self::Error>>;
 
     /// Read `size_of::<B>()` bytes from `fd` at `offset` and interpret them at
     /// type `B`.
@@ -97,9 +98,9 @@ pub trait SpacetimeIO {
     fn read_exact_at<B: AlignedBytes + Send + 'static>(
         &self,
         fd: Self::Fd,
-        buf: B,
+        buf: Box<B>,
         offset: u64,
-    ) -> Self::Completion<Result<B, ErrorWith<Self::Error, B>>>;
+    ) -> Self::Completion<ReadWriteResult<B, Self::Error>>;
 
     /// Call `fsync(2)` on `fd`.
     fn fsync(&self, fd: Self::Fd) -> Self::Completion<Result<(), Self::Error>>;

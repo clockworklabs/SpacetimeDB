@@ -123,9 +123,9 @@ impl SimulatorIO {
     fn submit_with<B: AlignedBytes + 'static>(
         &self,
         sqe: Sqe<usize>,
-        completion: impl FnOnce(Arc<SimulatorInner>, usize) -> Completion<Result<B, ErrorWith<Error, B>>>,
+        completion: impl FnOnce(Arc<SimulatorInner>, usize) -> Completion<Result<Box<B>, ErrorWith<Error, Box<B>>>>,
         completion_handle: impl FnOnce(CompletionState<Result<ErasedBox, ErrorWith<Error, ErasedBox>>>) -> CompletionHandle,
-    ) -> Completion<Result<B, ErrorWith<Error, B>>> {
+    ) -> Completion<Result<Box<B>, ErrorWith<Error, Box<B>>>> {
         let mut executor = self.inner.executor.lock();
         let mut pending = self.inner.pending.lock();
         let pending_entry = pending.vacant_entry();
@@ -179,9 +179,9 @@ impl SpacetimeIO for SimulatorIO {
     fn write_all_at<B: AlignedBytes + Send + 'static>(
         &self,
         fd: Self::Fd,
-        buf: B,
+        buf: Box<B>,
         offset: u64,
-    ) -> Self::Completion<Result<B, ErrorWith<Self::Error, B>>> {
+    ) -> Self::Completion<Result<Box<B>, ErrorWith<Self::Error, Box<B>>>> {
         self.submit_with(
             Sqe::write(fd, ErasedBox::from_aligned(buf), offset),
             Completion::write,
@@ -192,9 +192,9 @@ impl SpacetimeIO for SimulatorIO {
     fn read_exact_at<B: AlignedBytes + Send + 'static>(
         &self,
         fd: Self::Fd,
-        buf: B,
+        buf: Box<B>,
         offset: u64,
-    ) -> Self::Completion<Result<B, ErrorWith<Self::Error, B>>> {
+    ) -> Self::Completion<Result<Box<B>, ErrorWith<Self::Error, Box<B>>>> {
         self.submit_with(
             Sqe::read(fd, ErasedBox::from_aligned(buf), offset),
             Completion::read,
@@ -301,8 +301,9 @@ mod tests {
         let rt = Runtime::new();
 
         let fd = rt.run(|io| io.create_file("/data/test")).unwrap();
+        let buf = Box::new(Buf([22; 2 * SECTOR_SIZE]));
         let mut buf = rt
-            .run(|io| io.write_all_at(fd.clone(), Buf([22; 2 * SECTOR_SIZE]), 0))
+            .run(|io| io.write_all_at(fd.clone(), buf, 0))
             .map_err(ErrorWith::into_err)
             .unwrap();
         buf.clear();
@@ -316,8 +317,8 @@ mod tests {
         let rt = Runtime::new();
 
         let fd = rt.run(|io| io.create_file("/data/test")).unwrap();
-        let buf = {
-            let mut buf = Buf([0; SECTOR_SIZE]);
+        let buf: Box<Buf<SECTOR_SIZE>> = {
+            let mut buf = Box::new(Buf([0; SECTOR_SIZE]));
             for i in 0usize..2 {
                 buf.0.fill((i + 1) as u8 * 2);
                 let offset = (i * SECTOR_SIZE) as u64;
@@ -344,7 +345,7 @@ mod tests {
 
         // Check that reserved space reads as zeroes.
         let buf = rt
-            .run(|io| io.read_exact_at(fd.clone(), Buf([1; 2 * SECTOR_SIZE]), 0))
+            .run(|io| io.read_exact_at(fd.clone(), Box::new(Buf([1; 2 * SECTOR_SIZE])), 0))
             .unwrap();
         assert_eq!(buf.0, [0; 2 * SECTOR_SIZE]);
 
@@ -354,7 +355,7 @@ mod tests {
 
         // Overwriting the second sector works.
         let buf = rt
-            .run(|io| io.write_all_at(fd.clone(), Buf([42; SECTOR_SIZE]), SECTOR_SIZE as u64))
+            .run(|io| io.write_all_at(fd.clone(), Box::new(Buf([42; SECTOR_SIZE])), SECTOR_SIZE as u64))
             .unwrap();
         let buf = rt
             .run(|io| io.read_exact_at(fd.clone(), buf, SECTOR_SIZE as u64))
@@ -380,7 +381,7 @@ mod tests {
 
         let fd = rt.run(|io| io.create_file("/data/test")).unwrap();
         let mut buf = rt
-            .run(|io| io.write_all_at(fd.clone(), Buf([1; SECTOR_SIZE]), 0))
+            .run(|io| io.write_all_at(fd.clone(), Box::new(Buf([1; SECTOR_SIZE])), 0))
             .map_err(ErrorWith::into_err)
             .unwrap();
         buf.clear();
@@ -388,7 +389,7 @@ mod tests {
         rt.run(|io| io.fdatasync(fd.clone())).unwrap();
 
         let mut buf = rt
-            .run(|io| io.write_all_at(fd.clone(), Buf([2; SECTOR_SIZE]), SECTOR_SIZE as u64))
+            .run(|io| io.write_all_at(fd.clone(), Box::new(Buf([2; SECTOR_SIZE])), SECTOR_SIZE as u64))
             .map_err(ErrorWith::into_err)
             .unwrap();
         buf.clear();

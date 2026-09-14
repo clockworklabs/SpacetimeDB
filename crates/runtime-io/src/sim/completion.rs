@@ -4,7 +4,7 @@ use core::{
     task::{Context, Poll, Waker},
 };
 
-use alloc::sync::Arc;
+use alloc::{boxed::Box, sync::Arc};
 use slab::Slab;
 
 use crate::{
@@ -242,7 +242,7 @@ pub struct Completion<T> {
     poll: fn(&SimulatorInner, usize, &mut Context<'_>) -> Poll<T>,
 }
 
-impl<T: AlignedBytes + 'static> Completion<Result<T, ErrorWith<Error, T>>> {
+impl<T: AlignedBytes + 'static> Completion<Result<Box<T>, ErrorWith<Error, Box<T>>>> {
     pub(super) fn write(sim: Arc<SimulatorInner>, key: usize) -> Self {
         Self {
             sim,
@@ -456,7 +456,7 @@ impl<T> Future for Completion<T> {
 
 fn reify<T: AlignedBytes + 'static>(
     result: Result<ErasedBox, ErrorWith<Error, ErasedBox>>,
-) -> Result<T, ErrorWith<Error, T>> {
+) -> Result<Box<T>, ErrorWith<Error, Box<T>>> {
     match result {
         Ok(erased) => Ok(erased.into_aligned::<T>()),
         Err(ErrorWith { error, with }) => Err(ErrorWith {
