@@ -72,6 +72,14 @@ static class TestInit
             (sb) =>
             {
                 var unformattedCode = sb.ToString();
+                // CSharpier 0.28 cannot preserve C# 14 extension declarations, even in inactive branches.
+                // Only trim trailing whitespace; generator tests compile the original syntax trees.
+                if (unformattedCode.Contains("extension(global::SpacetimeDB.Local db)"))
+                {
+                    sb.Clear();
+                    sb.Append(string.Join("\n", unformattedCode.Split('\n').Select(line => line.TrimEnd())));
+                    return;
+                }
                 sb.Clear();
                 var result = CSharpier.CodeFormatter.Format(
                     unformattedCode,
