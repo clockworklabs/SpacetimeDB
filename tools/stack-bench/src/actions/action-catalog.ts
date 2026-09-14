@@ -30,6 +30,8 @@ const ACTION_CATEGORY = {
   expectNotReceived: 'transport',
   expectNumber: 'browser-observation',
   dbRecordStock: 'database',
+  dbRecordCheckout: 'database',
+  dbExpectCheckout: 'database',
   dbExpectStock: 'database',
   expectOrderMatches: 'browser-observation',
   expectSequence: 'browser-observation',
@@ -96,6 +98,8 @@ const CATEGORY_POLICY = {
 
 const ACTION_CAPABILITY_OVERRIDES: Partial<Record<ActionId, readonly string[]>> = {
   dbRecordStock: ['database-read', 'browser-observation'],
+  dbRecordCheckout: ['database-read'],
+  dbExpectCheckout: ['database-read'],
   recordTime: ['browser-observation'],
   expectElapsed: ['browser-observation'],
   wait: ['actors', 'clock', 'browser-observation'],

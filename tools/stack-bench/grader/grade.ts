@@ -542,6 +542,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
     clock: Object.freeze({ sleep: abortableSleep }),
     concurrency,
     'database-read': createDatabaseReadCapability({
+      app: ctx.appDir,
       backend: ctx.backend,
       spacetime: ctx.spacetime,
       databaseLease: ctx.databaseLease,

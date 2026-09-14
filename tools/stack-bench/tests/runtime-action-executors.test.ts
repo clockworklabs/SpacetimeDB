@@ -195,10 +195,17 @@ test('optional checkout diagnostic has fresh-account cohorts and cannot pass by 
   const widths: unknown[] = [];
   for (const feature of scenario.features) {
     assert(feature.setup.some(step => step.do === 'dbRecordStock'));
+    const account = feature.setup.find(step => step.do === 'signUp')!.name;
+    const initial = feature.setup.findIndex(step => step.do === 'dbRecordCheckout');
+    assert(initial < feature.setup.findIndex(step => step.do === 'click'));
+    assert.equal(feature.setup[initial]!.account, `{user:${account}}`);
     for (const criterion of feature.criteria) {
       assert.equal(criterion.points, 0, 'diagnostics must not add scored ladder credit');
       const call = criterion.steps.find(step => step.do === 'callConcurrently')!;
       widths.push(call.requests);
+      assert.equal(criterion.steps[0]!.do, 'dbRecordCheckout');
+      assert.equal(criterion.steps[0]!.account, `{user:${account}}`);
+      assert(criterion.steps.some(step => step.do === 'dbExpectCheckout' && step.quantity === 1));
       assert(criterion.steps.some(step => step.do === 'expectCallOutcomes'));
       assert(criterion.steps.some(step => step.do === 'dbExpectStock' && step.plus === -1));
       assert(criterion.steps.some(step => step.do === 'expect' && step.testid === 'order-item' && step.count === 1));

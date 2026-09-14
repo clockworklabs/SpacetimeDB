@@ -9,7 +9,7 @@ import { spacetimeOrchestratorConfig } from '../stack-orchestrator-operations.js
 import { stopSpacetimeHost } from '../stack-teardown-operations.js';
 import { stackLeaseOperations } from '../stack-lease-capabilities.js';
 import { prepareSpacetimeDatabase, proveSpacetimeUse,
-  resetSpacetime, setSpacetimeStock, getSpacetimeStock } from './spacetime-operations.js';
+  resetSpacetime, setSpacetimeStock, getSpacetimeStock, getSpacetimeCheckoutState } from './spacetime-operations.js';
 import { SPACETIME_ADAPTER_VERSION } from './spacetime-identity.js';
 import { defineStackAdapter } from '../stack-adapter-common.js';
 import { requireLeasedSpacetime } from '../backend-reset-guard.js';
@@ -49,7 +49,7 @@ export const spacetimeAdapter = defineStackAdapter('spacetime', {
   lease: stackLeaseOperations('spacetime'),
   reset: { run: resetSpacetime, requiresReseed: true },
   databaseWrite: { setStock: setSpacetimeStock },
-  databaseRead: { getStock: getSpacetimeStock },
+  databaseRead: { getStock: getSpacetimeStock, getCheckoutState: getSpacetimeCheckoutState },
   database: { prepare: prepareSpacetimeDatabase, proveUse: proveSpacetimeUse },
   grading: { context: createSpacetimeGradingContext,
     transport: 'reducer', capabilities: SPACETIME_GRADING_CAPABILITIES },

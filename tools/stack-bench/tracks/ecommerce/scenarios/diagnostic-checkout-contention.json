@@ -3,12 +3,13 @@
   "track": "ecommerce",
   "level": 2,
   "name": "Checkout contention diagnostic",
-  "note": "Draft diagnostic only; not selected by scored campaigns. Widths 1/4/16/64 are parallel requests cycled over two sessions of one fresh account, not distinct clients. Three fresh-account cohorts per width share one otherwise idle app. Each cohort prepares one cart and verifies one order and one stored stock decrement; rejecting all requests cannot pass. Timing is client dispatch through response, not server execution overlap or committed-operation latency. Use a reset disposable app copy and the same runtime/resources for each stack. Qualification is pending.",
+  "note": "Draft diagnostic only; not selected by scored campaigns. Widths 1/4/16/64 are parallel requests cycled over two sessions of one fresh account, not distinct clients. Three fresh-account cohorts per width share one otherwise idle app. Reference-only stored-state readers require matching source schemas. Each cohort records initial and prepared state, then verifies one order, exact lines and warehouse allocations, one payment, cleared reservations/cart and one stored stock decrement; rejecting all requests cannot pass. Timing is client dispatch through response, not server execution overlap or committed-operation latency. Use a reset disposable app copy and the same runtime/resources for each stack. Qualification is pending.",
   "features": [
     {"id": 9000, "name": "1 parallel checkout requests, cohort 1", "actors": ["a", "b"],
       "setup": [
         {"do":"signUp","actor":"a","name":"cohort-1-1"},
         {"do":"signIn","actor":"b","name":"cohort-1-1"},
+        {"do":"dbRecordCheckout","account":"{user:cohort-1-1}","item":"Keyboard","as":"checkout-before"},
         {"do":"dbRecordStock","item":"Keyboard","as":"stock-before"},
         {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
         {"do":"click","actor":"a","testid":"cart-toggle"},
@@ -17,8 +18,10 @@
       "criteria": [{"id": "9000a", "category": "production", "points": 0,
         "desc": "one prepared cart produces one order and one stored stock decrement",
         "steps": [
+          {"do":"dbRecordCheckout","account":"{user:cohort-1-1}","item":"Keyboard","as":"checkout-prepared"},
           {"do":"callConcurrently","actors":["a","b"],"action":"checkout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"requests":1,"requestTimeoutMs":30000,"settleMs":3000},
           {"do":"expectCallOutcomes"},
+          {"do":"dbExpectCheckout","before":"checkout-before","prepared":"checkout-prepared","quantity":1},
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-1},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"cohort-1-1","readyTestid":"current-user"},
@@ -34,6 +37,7 @@
       "setup": [
         {"do":"signUp","actor":"a","name":"cohort-1-2"},
         {"do":"signIn","actor":"b","name":"cohort-1-2"},
+        {"do":"dbRecordCheckout","account":"{user:cohort-1-2}","item":"Keyboard","as":"checkout-before"},
         {"do":"dbRecordStock","item":"Keyboard","as":"stock-before"},
         {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
         {"do":"click","actor":"a","testid":"cart-toggle"},
@@ -42,8 +46,10 @@
       "criteria": [{"id": "9001a", "category": "production", "points": 0,
         "desc": "one prepared cart produces one order and one stored stock decrement",
         "steps": [
+          {"do":"dbRecordCheckout","account":"{user:cohort-1-2}","item":"Keyboard","as":"checkout-prepared"},
           {"do":"callConcurrently","actors":["a","b"],"action":"checkout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"requests":1,"requestTimeoutMs":30000,"settleMs":3000},
           {"do":"expectCallOutcomes"},
+          {"do":"dbExpectCheckout","before":"checkout-before","prepared":"checkout-prepared","quantity":1},
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-1},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"cohort-1-2","readyTestid":"current-user"},
@@ -59,6 +65,7 @@
       "setup": [
         {"do":"signUp","actor":"a","name":"cohort-1-3"},
         {"do":"signIn","actor":"b","name":"cohort-1-3"},
+        {"do":"dbRecordCheckout","account":"{user:cohort-1-3}","item":"Keyboard","as":"checkout-before"},
         {"do":"dbRecordStock","item":"Keyboard","as":"stock-before"},
         {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
         {"do":"click","actor":"a","testid":"cart-toggle"},
@@ -67,8 +74,10 @@
       "criteria": [{"id": "9002a", "category": "production", "points": 0,
         "desc": "one prepared cart produces one order and one stored stock decrement",
         "steps": [
+          {"do":"dbRecordCheckout","account":"{user:cohort-1-3}","item":"Keyboard","as":"checkout-prepared"},
           {"do":"callConcurrently","actors":["a","b"],"action":"checkout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"requests":1,"requestTimeoutMs":30000,"settleMs":3000},
           {"do":"expectCallOutcomes"},
+          {"do":"dbExpectCheckout","before":"checkout-before","prepared":"checkout-prepared","quantity":1},
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-1},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"cohort-1-3","readyTestid":"current-user"},
@@ -84,6 +93,7 @@
       "setup": [
         {"do":"signUp","actor":"a","name":"cohort-4-1"},
         {"do":"signIn","actor":"b","name":"cohort-4-1"},
+        {"do":"dbRecordCheckout","account":"{user:cohort-4-1}","item":"Keyboard","as":"checkout-before"},
         {"do":"dbRecordStock","item":"Keyboard","as":"stock-before"},
         {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
         {"do":"click","actor":"a","testid":"cart-toggle"},
@@ -92,8 +102,10 @@
       "criteria": [{"id": "9003a", "category": "production", "points": 0,
         "desc": "one prepared cart produces one order and one stored stock decrement",
         "steps": [
+          {"do":"dbRecordCheckout","account":"{user:cohort-4-1}","item":"Keyboard","as":"checkout-prepared"},
           {"do":"callConcurrently","actors":["a","b"],"action":"checkout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"requests":4,"requestTimeoutMs":30000,"settleMs":3000},
           {"do":"expectCallOutcomes"},
+          {"do":"dbExpectCheckout","before":"checkout-before","prepared":"checkout-prepared","quantity":1},
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-1},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"cohort-4-1","readyTestid":"current-user"},
@@ -109,6 +121,7 @@
       "setup": [
         {"do":"signUp","actor":"a","name":"cohort-4-2"},
         {"do":"signIn","actor":"b","name":"cohort-4-2"},
+        {"do":"dbRecordCheckout","account":"{user:cohort-4-2}","item":"Keyboard","as":"checkout-before"},
         {"do":"dbRecordStock","item":"Keyboard","as":"stock-before"},
         {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
         {"do":"click","actor":"a","testid":"cart-toggle"},
@@ -117,8 +130,10 @@
       "criteria": [{"id": "9004a", "category": "production", "points": 0,
         "desc": "one prepared cart produces one order and one stored stock decrement",
         "steps": [
+          {"do":"dbRecordCheckout","account":"{user:cohort-4-2}","item":"Keyboard","as":"checkout-prepared"},
           {"do":"callConcurrently","actors":["a","b"],"action":"checkout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"requests":4,"requestTimeoutMs":30000,"settleMs":3000},
           {"do":"expectCallOutcomes"},
+          {"do":"dbExpectCheckout","before":"checkout-before","prepared":"checkout-prepared","quantity":1},
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-1},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"cohort-4-2","readyTestid":"current-user"},
@@ -134,6 +149,7 @@
       "setup": [
         {"do":"signUp","actor":"a","name":"cohort-4-3"},
         {"do":"signIn","actor":"b","name":"cohort-4-3"},
+        {"do":"dbRecordCheckout","account":"{user:cohort-4-3}","item":"Keyboard","as":"checkout-before"},
         {"do":"dbRecordStock","item":"Keyboard","as":"stock-before"},
         {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
         {"do":"click","actor":"a","testid":"cart-toggle"},
@@ -142,8 +158,10 @@
       "criteria": [{"id": "9005a", "category": "production", "points": 0,
         "desc": "one prepared cart produces one order and one stored stock decrement",
         "steps": [
+          {"do":"dbRecordCheckout","account":"{user:cohort-4-3}","item":"Keyboard","as":"checkout-prepared"},
           {"do":"callConcurrently","actors":["a","b"],"action":"checkout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"requests":4,"requestTimeoutMs":30000,"settleMs":3000},
           {"do":"expectCallOutcomes"},
+          {"do":"dbExpectCheckout","before":"checkout-before","prepared":"checkout-prepared","quantity":1},
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-1},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"cohort-4-3","readyTestid":"current-user"},
@@ -159,6 +177,7 @@
       "setup": [
         {"do":"signUp","actor":"a","name":"cohort-16-1"},
         {"do":"signIn","actor":"b","name":"cohort-16-1"},
+        {"do":"dbRecordCheckout","account":"{user:cohort-16-1}","item":"Keyboard","as":"checkout-before"},
         {"do":"dbRecordStock","item":"Keyboard","as":"stock-before"},
         {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
         {"do":"click","actor":"a","testid":"cart-toggle"},
@@ -167,8 +186,10 @@
       "criteria": [{"id": "9006a", "category": "production", "points": 0,
         "desc": "one prepared cart produces one order and one stored stock decrement",
         "steps": [
+          {"do":"dbRecordCheckout","account":"{user:cohort-16-1}","item":"Keyboard","as":"checkout-prepared"},
           {"do":"callConcurrently","actors":["a","b"],"action":"checkout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"requests":16,"requestTimeoutMs":30000,"settleMs":3000},
           {"do":"expectCallOutcomes"},
+          {"do":"dbExpectCheckout","before":"checkout-before","prepared":"checkout-prepared","quantity":1},
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-1},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"cohort-16-1","readyTestid":"current-user"},
@@ -184,6 +205,7 @@
       "setup": [
         {"do":"signUp","actor":"a","name":"cohort-16-2"},
         {"do":"signIn","actor":"b","name":"cohort-16-2"},
+        {"do":"dbRecordCheckout","account":"{user:cohort-16-2}","item":"Keyboard","as":"checkout-before"},
         {"do":"dbRecordStock","item":"Keyboard","as":"stock-before"},
         {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
         {"do":"click","actor":"a","testid":"cart-toggle"},
@@ -192,8 +214,10 @@
       "criteria": [{"id": "9007a", "category": "production", "points": 0,
         "desc": "one prepared cart produces one order and one stored stock decrement",
         "steps": [
+          {"do":"dbRecordCheckout","account":"{user:cohort-16-2}","item":"Keyboard","as":"checkout-prepared"},
           {"do":"callConcurrently","actors":["a","b"],"action":"checkout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"requests":16,"requestTimeoutMs":30000,"settleMs":3000},
           {"do":"expectCallOutcomes"},
+          {"do":"dbExpectCheckout","before":"checkout-before","prepared":"checkout-prepared","quantity":1},
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-1},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"cohort-16-2","readyTestid":"current-user"},
@@ -209,6 +233,7 @@
       "setup": [
         {"do":"signUp","actor":"a","name":"cohort-16-3"},
         {"do":"signIn","actor":"b","name":"cohort-16-3"},
+        {"do":"dbRecordCheckout","account":"{user:cohort-16-3}","item":"Keyboard","as":"checkout-before"},
         {"do":"dbRecordStock","item":"Keyboard","as":"stock-before"},
         {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
         {"do":"click","actor":"a","testid":"cart-toggle"},
@@ -217,8 +242,10 @@
       "criteria": [{"id": "9008a", "category": "production", "points": 0,
         "desc": "one prepared cart produces one order and one stored stock decrement",
         "steps": [
+          {"do":"dbRecordCheckout","account":"{user:cohort-16-3}","item":"Keyboard","as":"checkout-prepared"},
           {"do":"callConcurrently","actors":["a","b"],"action":"checkout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"requests":16,"requestTimeoutMs":30000,"settleMs":3000},
           {"do":"expectCallOutcomes"},
+          {"do":"dbExpectCheckout","before":"checkout-before","prepared":"checkout-prepared","quantity":1},
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-1},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"cohort-16-3","readyTestid":"current-user"},
@@ -234,6 +261,7 @@
       "setup": [
         {"do":"signUp","actor":"a","name":"cohort-64-1"},
         {"do":"signIn","actor":"b","name":"cohort-64-1"},
+        {"do":"dbRecordCheckout","account":"{user:cohort-64-1}","item":"Keyboard","as":"checkout-before"},
         {"do":"dbRecordStock","item":"Keyboard","as":"stock-before"},
         {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
         {"do":"click","actor":"a","testid":"cart-toggle"},
@@ -242,8 +270,10 @@
       "criteria": [{"id": "9009a", "category": "production", "points": 0,
         "desc": "one prepared cart produces one order and one stored stock decrement",
         "steps": [
+          {"do":"dbRecordCheckout","account":"{user:cohort-64-1}","item":"Keyboard","as":"checkout-prepared"},
           {"do":"callConcurrently","actors":["a","b"],"action":"checkout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"requests":64,"requestTimeoutMs":30000,"settleMs":3000},
           {"do":"expectCallOutcomes"},
+          {"do":"dbExpectCheckout","before":"checkout-before","prepared":"checkout-prepared","quantity":1},
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-1},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"cohort-64-1","readyTestid":"current-user"},
@@ -259,6 +289,7 @@
       "setup": [
         {"do":"signUp","actor":"a","name":"cohort-64-2"},
         {"do":"signIn","actor":"b","name":"cohort-64-2"},
+        {"do":"dbRecordCheckout","account":"{user:cohort-64-2}","item":"Keyboard","as":"checkout-before"},
         {"do":"dbRecordStock","item":"Keyboard","as":"stock-before"},
         {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
         {"do":"click","actor":"a","testid":"cart-toggle"},
@@ -267,8 +298,10 @@
       "criteria": [{"id": "9010a", "category": "production", "points": 0,
         "desc": "one prepared cart produces one order and one stored stock decrement",
         "steps": [
+          {"do":"dbRecordCheckout","account":"{user:cohort-64-2}","item":"Keyboard","as":"checkout-prepared"},
           {"do":"callConcurrently","actors":["a","b"],"action":"checkout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"requests":64,"requestTimeoutMs":30000,"settleMs":3000},
           {"do":"expectCallOutcomes"},
+          {"do":"dbExpectCheckout","before":"checkout-before","prepared":"checkout-prepared","quantity":1},
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-1},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"cohort-64-2","readyTestid":"current-user"},
@@ -284,6 +317,7 @@
       "setup": [
         {"do":"signUp","actor":"a","name":"cohort-64-3"},
         {"do":"signIn","actor":"b","name":"cohort-64-3"},
+        {"do":"dbRecordCheckout","account":"{user:cohort-64-3}","item":"Keyboard","as":"checkout-before"},
         {"do":"dbRecordStock","item":"Keyboard","as":"stock-before"},
         {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
         {"do":"click","actor":"a","testid":"cart-toggle"},
@@ -292,8 +326,10 @@
       "criteria": [{"id": "9011a", "category": "production", "points": 0,
         "desc": "one prepared cart produces one order and one stored stock decrement",
         "steps": [
+          {"do":"dbRecordCheckout","account":"{user:cohort-64-3}","item":"Keyboard","as":"checkout-prepared"},
           {"do":"callConcurrently","actors":["a","b"],"action":"checkout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"requests":64,"requestTimeoutMs":30000,"settleMs":3000},
           {"do":"expectCallOutcomes"},
+          {"do":"dbExpectCheckout","before":"checkout-before","prepared":"checkout-prepared","quantity":1},
           {"do":"dbExpectStock","item":"Keyboard","relativeTo":"stock-before","plus":-1},
           {"do":"reload","actor":"a","settleMs":1000},
           {"do":"ensureSignedIn","actor":"a","name":"cohort-64-3","readyTestid":"current-user"},

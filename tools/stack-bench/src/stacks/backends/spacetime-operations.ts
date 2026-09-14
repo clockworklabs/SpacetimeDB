@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { describesMissingStockInterface, stockInterfaceError, stockQuantity } from '../stock-interface.js';
+import { checkoutId, checkoutMinor, checkoutStateSchema, verifyCheckoutSchema } from '../checkout-state.js';
 import { assertLeasedContainer } from '../backend-reset-guard.js';
 
 import { leasedSpacetimeTarget } from '../../runtime/spacetime-target.js';
@@ -207,6 +208,59 @@ export function getSpacetimeStock({ item, warehouse, spacetime, exec = execFileS
     quantity = stockQuantity(quantity + stockQuantity(Number(value)));
   }
   return { backend: 'spacetime', item, ...(warehouse === undefined ? {} : { warehouse }), quantity };
+}
+
+export function getSpacetimeCheckoutState({ account, item, app, spacetime, exec = execFileSync }: {
+  account: string; item: string; app: string; exec?: TextCommandExecutor;
+  spacetime?: { buildContainer?: { id: string; name: string } | null; mod: string; containerUri: string };
+}) {
+  const schemaSha256 = verifyCheckoutSchema('spacetime', app, ['backend/spacetimedb/src/schema.ts']);
+  if (!spacetime?.buildContainer) throw new Error('SpacetimeDB build container is unavailable for checkout SQL');
+  const container = assertLeasedContainer(spacetime.buildContainer, exec, WRITE_TIMEOUT_MS, 'checkout state read');
+  const selections = [
+    ['account', 'id', `username=${sqlString(account)}`],
+    ['item', 'id,price', `name=${sqlString(item)}`],
+    ['cart_item', 'account_id,item_id,quantity'],
+    ['stock', 'item_id,warehouse_id,quantity'],
+    ['reservation', 'account_id,item_id,warehouse_id,quantity'],
+    ['customer_order', 'id,account_id,total,status'],
+    ['order_item', 'id,order_id,item_id,quantity,unit_price'],
+    ['payment_record', 'id,order_id,amount,status'],
+    ['order_item_stock', 'order_item_id,warehouse_id,quantity'],
+  ] as const;
+  const sql = selections.map(([table, columns, where]) => `SELECT ${columns} FROM ${table}${where ? ` WHERE ${where}` : ''}`).join('; ');
+  const output = exec('docker', [...agentExec(), container,
+    ...codingContainerAgentCommand(CODING_CONTAINER_SPACETIME_CLI,
+      ['sql', spacetime.mod, '-s', spacetime.containerUri, '--format', 'json', sql])],
+    { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
+  const results: unknown = JSON.parse(output.trim());
+  if (!Array.isArray(results) || results.length !== selections.length) throw new Error('checkout SQL returned an incomplete result');
+  const rows = selections.map(([, columns], index): unknown[][] => {
+    const result: unknown = results[index];
+    if (!record(result) || !record(result.schema) || !Array.isArray(result.schema.elements)
+      || JSON.stringify(result.schema.elements.map(element => record(element) ? element.name : null)) !== JSON.stringify(columns.split(','))
+      || !Array.isArray(result.rows) || result.rows.some(row => !Array.isArray(row) || row.length !== columns.split(',').length)) {
+      throw new Error('checkout SQL returned an invalid table shape');
+    }
+    return result.rows as unknown[][];
+  });
+  if (rows[0]!.length !== 1 || rows[1]!.length !== 1) throw new Error('checkout account or item is missing or ambiguous');
+  const accountId = checkoutId(rows[0]![0]![0]);
+  const itemId = checkoutId(rows[1]![0]![0]);
+  return { schemaSha256, state: checkoutStateSchema.parse({
+    accountId, itemId, priceMinor: checkoutMinor(rows[1]![0]![1]),
+    cart: rows[2]!.filter(row => checkoutId(row[0]) === accountId).map(row => ({ itemId: checkoutId(row[1]), quantity: row[2] })),
+    stock: rows[3]!.filter(row => checkoutId(row[0]) === itemId).map(row => ({ warehouseId: checkoutId(row[1]), quantity: row[2] })),
+    reservations: rows[4]!.filter(row => checkoutId(row[0]) === accountId)
+      .map(row => ({ itemId: checkoutId(row[1]), warehouseId: checkoutId(row[2]), quantity: row[3] })),
+    orders: rows[5]!.map(row => ({ id: checkoutId(row[0]), accountId: checkoutId(row[1]), totalMinor: checkoutMinor(row[2]), status: row[3],
+      lines: rows[6]!.filter(line => checkoutId(line[1]) === checkoutId(row[0]))
+        .map(line => ({ itemId: checkoutId(line[2]), quantity: line[3], priceMinor: checkoutMinor(line[4]),
+          allocations: rows[8]!.filter(allocation => checkoutId(allocation[0]) === checkoutId(line[0]))
+            .map(allocation => ({ warehouseId: checkoutId(allocation[1]), quantity: allocation[2] })) })) })),
+    payments: rows[7]!.map(row => ({ id: checkoutId(row[0]), orderId: checkoutId(row[1]), amountMinor: checkoutMinor(row[2]), status: row[3] })),
+    orphanOrderLines: rows[6]!.filter(line => !rows[5]!.some(order => checkoutId(order[0]) === checkoutId(line[1]))).length,
+  }) };
 }
 
 export function prepareSpacetimeDatabase({ lease, name, wipe, exec = execFileSync,

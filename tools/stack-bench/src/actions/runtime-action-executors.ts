@@ -1,7 +1,9 @@
 import { execFileSync } from 'node:child_process';
 
 import { ActionApplicationFailure, ActionInconclusive, actionImplementation } from './action-contract.js';
-import { finding, isFinding } from './action-findings.js';
+import { finding, isFinding, renderFinding } from './action-findings.js';
+import { checkoutDifferences } from '../stacks/checkout-state.js';
+import type { CheckoutState } from '../stacks/checkout-state.js';
 import type {
   ActionImplementation,
 } from './action-contract.js';
@@ -87,10 +89,17 @@ interface LifecycleConcurrencyCapabilities {
   readonly 'database-read': {
     getStock(input: { item: string; warehouse?: string }):
       { quantity: number } | Promise<{ quantity: number }>;
+    getCheckoutState(input: { account: string; item: string }): CheckoutSnapshot;
+    readonly checkoutSnapshots: Map<string, CheckoutSnapshot & { account: string; item: string }>;
   };
   readonly 'browser-observation': {
     readonly recorded: { get(key: string): number | undefined; set(key: string, value: number): void };
   };
+}
+
+interface CheckoutSnapshot {
+  readonly state: CheckoutState;
+  readonly schemaSha256: Record<string, string>;
 }
 
 interface ActionArguments<Input> {
@@ -169,6 +178,32 @@ async function dbRecordStock({ input, capabilities }: ActionArguments<ReadStockI
   const value = await capabilities['database-read'].getStock(input);
   capabilities['browser-observation'].recorded.set(input.as!, value.quantity);
   return { ...value, key: input.as };
+}
+
+async function dbRecordCheckout({ input, capabilities }: ActionArguments<{ account: string; item: string; as: string }>) {
+  const database = capabilities['database-read'];
+  const snapshot = database.getCheckoutState(input);
+  database.checkoutSnapshots.set(input.as, { ...snapshot, account: input.account, item: input.item });
+  return { ...snapshot, key: input.as };
+}
+
+async function dbExpectCheckout({ input, capabilities }: ActionArguments<{ before: string; prepared: string; quantity: number }>) {
+  const database = capabilities['database-read'];
+  const before = database.checkoutSnapshots.get(input.before);
+  const prepared = database.checkoutSnapshots.get(input.prepared);
+  if (!before || !prepared) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
+  if (before.account !== prepared.account || before.item !== prepared.item) throw new Error('checkout snapshots select different data');
+  const after = database.getCheckoutState(before);
+  if (JSON.stringify(before.schemaSha256) !== JSON.stringify(prepared.schemaSha256)
+    || JSON.stringify(before.schemaSha256) !== JSON.stringify(after.schemaSha256)) throw new Error('checkout reader schema changed during the test');
+  const differences = checkoutDifferences(before.state, prepared.state, after.state, input.quantity);
+  const observation = { ...after, differences, before: input.before, prepared: input.prepared };
+  if (differences[0]) {
+    const { control, observed, expected } = differences[0];
+    const value = finding('number-mismatch', { control, observed, expected: { equals: expected } });
+    throw new ActionApplicationFailure(renderFinding(value), { finding: value, observation });
+  }
+  return observation;
 }
 
 async function dbExpectStock({ input, capabilities, signal }: ActionArguments<ReadStockInput>) {
@@ -515,9 +550,20 @@ export function createDatabaseWriteCapability({ backend, spacetime, databaseLeas
   });
 }
 
-export function createDatabaseReadCapability({ backend, spacetime, databaseLease, skip = false, expand,
-  exec = execFileSync }: DatabaseWriteCapabilityOptions) {
+export function createDatabaseReadCapability({ backend, spacetime, databaseLease, skip = false, expand, app,
+  exec = execFileSync }: DatabaseWriteCapabilityOptions & { app?: string }) {
   return Object.freeze({
+    checkoutSnapshots: new Map<string, CheckoutSnapshot & { account: string; item: string }>(),
+    getCheckoutState(input: { account: string; item: string }): CheckoutSnapshot {
+      if (skip) throw new Error('checkout state reads are disabled for this control');
+      if (!app) throw new Error('checkout state reads require a verified application source directory');
+      const adapter = backend ? STACK_ADAPTER_REGISTRY.get(backend) : undefined;
+      if (!adapter || !('databaseRead' in adapter)) inconclusive('unsupported-backend', { backend: backend ?? '<unset>' });
+      const selection = { account: expand(input.account), item: expand(input.item), app, exec };
+      if (adapter.id === 'spacetime') return adapter.databaseRead.getCheckoutState({ ...selection, spacetime: spacetime ?? undefined });
+      if (!databaseLease) throw new Error('checkout state reads require an authenticated backend lease');
+      return adapter.databaseRead.getCheckoutState({ ...selection, lease: databaseLease });
+    },
     getStock(input: { item: string; warehouse?: string }) {
       if (skip) inconclusive('stock-read-unavailable', { detail: 'direct stock reads are disabled for this control' });
       const item = expand(input.item);
@@ -567,6 +613,8 @@ function contractBrowserLifecycleAction<Input, Result>(
 }
 
 export const RUNTIME_ACTION_IMPLEMENTATIONS = Object.freeze({
+  dbRecordCheckout: contractLifecycleAction(dbRecordCheckout),
+  dbExpectCheckout: contractLifecycleAction(dbExpectCheckout),
   dbRecordStock: contractLifecycleAction(dbRecordStock),
   dbExpectStock: contractLifecycleAction(dbExpectStock),
   clickConcurrently: contractLifecycleAction(clickConcurrently),

@@ -148,6 +148,8 @@ export const ACTION_DEFINITIONS = Object.freeze({
       requests: value => positiveInteger(value) && Number(value) <= 64,
       requestTimeoutMs: value => positiveInteger(value) && Number(value) <= 60000 }),
   dbRecordStock: fields({ item: nonEmptyString, as: nonEmptyString }, { warehouse: nonEmptyString }),
+  dbRecordCheckout: fields({ account: nonEmptyString, item: nonEmptyString, as: nonEmptyString }),
+  dbExpectCheckout: fields({ before: nonEmptyString, prepared: nonEmptyString, quantity: positiveInteger }),
   dbExpectStock: fields({ item: nonEmptyString },
     { warehouse: nonEmptyString, equals: integer, atLeast: integer, atMost: integer, relativeTo: nonEmptyString, plus: integer,
       within: value => positiveNumber(value) && Number(value) <= 80000 }),

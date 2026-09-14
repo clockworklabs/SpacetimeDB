@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { stockInterfaceError, stockQuantity } from '../stock-interface.js';
+import { checkoutId, checkoutMinor, checkoutStateSchema, verifyCheckoutSchema } from '../checkout-state.js';
 
 import { assertLeasedContainer } from '../backend-reset-guard.js';
 import type { LeasedDatabase } from '../backend-reset-guard.js';
@@ -23,6 +24,47 @@ const record = (value: unknown): value is Record<string, unknown> =>
 // A failed child process carries its output on the error.
 const streams = (error: unknown, ...keys: readonly string[]): string =>
   record(error) ? keys.map(key => String(error[key] ?? '')).join('') : '';
+
+export function getMongoDbCheckoutState({ account, item, app, lease, exec = execFileSync }: {
+  account: string; item: string; app: string; lease: LeasedDatabase; exec?: TextCommandExecutor;
+}) {
+  const schemaSha256 = verifyCheckoutSchema('mongodb', app, ['server/src/models.ts', 'server/src/progression-models.ts']);
+  const container = assertLeasedContainer(lease.resources.container, exec, WRITE_TIMEOUT_MS, 'checkout state read');
+  const script = `
+    const minor = ${checkoutMinor.toString()};
+    const exactId = ${checkoutId.toString()};
+    const key = value => exactId(value && typeof value.toHexString === 'function' ? value.toHexString() : value);
+    const session = db.getMongo().startSession();
+    const store = session.getDatabase(db.getName());
+    try {
+      session.startTransaction({readConcern:{level:'snapshot'}});
+      for (const name of ['users','carts','orders','progressionpayments','item','stock']) {
+        if (!db.getCollectionNames().includes(name)) throw new Error('checkout collection missing: '+name);
+      }
+      const users = store.users.find({username:${JSON.stringify(account)}}).toArray();
+      const items = store.item.find({name:${JSON.stringify(item)}}).toArray();
+      if (users.length!==1 || items.length!==1) throw new Error('checkout account or item is missing or ambiguous');
+      const user=users[0], item=items[0];
+      const carts=store.carts.find({userId:user._id}).toArray();
+      if (carts.length>1) throw new Error('checkout cart mapping is ambiguous');
+      const lines=carts.flatMap(cart=>cart.items);
+      const state={accountId:key(user._id),itemId:key(item._id),priceMinor:minor(item.price),
+        cart:lines.map(line=>({itemId:key(line.itemId),quantity:line.quantity})),
+        stock:store.stock.find({item_id:item._id}).toArray().map(row=>({warehouseId:key(row.warehouse_id),quantity:row.quantity})),
+        reservations:lines.flatMap(line=>line.reservedWarehouseIds.map(warehouseId=>({itemId:key(line.itemId),warehouseId:key(warehouseId),quantity:1}))),
+        orders:store.orders.find({}).toArray().map(order=>({id:key(order._id),accountId:key(order.userId),
+          totalMinor:minor(order.total),status:order.status,lines:order.items.map(line=>({itemId:key(line.itemId),quantity:line.quantity,priceMinor:minor(line.price),
+            allocations:line.allocations.map(row=>({warehouseId:key(row.warehouseId),quantity:row.quantity}))}))})),
+        payments:store.progressionpayments.find({}).toArray().map(row=>({id:key(row._id),orderId:key(row.orderId),amountMinor:minor(row.amount),status:row.status})),
+        orphanOrderLines:0};
+      session.commitTransaction();
+      print(JSON.stringify(state));
+    } finally { session.endSession(); }
+  `;
+  const output = exec('docker', ['exec', container, ...mongoShell(lease), '--quiet', '--eval', script],
+    { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
+  return { schemaSha256, state: checkoutStateSchema.parse(JSON.parse(output.trim())) };
+}
 
 export function resetMongoDb({ lease, exec = execFileSync }:
   { lease: LeasedDatabase; exec?: TextCommandExecutor }): string {

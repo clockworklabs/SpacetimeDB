@@ -8,7 +8,7 @@ import { standardOrchestratorConfig } from '../stack-orchestrator-operations.js'
 import { stopHostedHost } from '../stack-teardown-operations.js';
 import { stackLeaseOperations } from '../stack-lease-capabilities.js';
 import { prepareMongoDbDatabase, proveMongoDbUse, resetMongoDb,
-  setMongoDbStock, getMongoDbStock } from './mongodb-operations.js';
+  setMongoDbStock, getMongoDbStock, getMongoDbCheckoutState } from './mongodb-operations.js';
 import { MONGODB_ADAPTER_VERSION } from './mongodb-identity.js';
 import { controlHostedFor, defineStackAdapter } from '../stack-adapter-common.js';
 
@@ -35,7 +35,7 @@ const mongodbAdapter = defineStackAdapter('mongodb', {
   lease: stackLeaseOperations('mongodb'),
   reset: { run: resetMongoDb, requiresReseed: true },
   databaseWrite: { setStock: setMongoDbStock },
-  databaseRead: { getStock: getMongoDbStock },
+  databaseRead: { getStock: getMongoDbStock, getCheckoutState: getMongoDbCheckoutState },
   diagnostics: { capture: captureHostedDiagnostics },
   database: { prepare: prepareMongoDbDatabase, proveUse: proveMongoDbUse },
   grading: { context: createHttpGradingContext,

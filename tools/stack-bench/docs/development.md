@@ -95,11 +95,11 @@ provisional; it blocks publishing verified comparisons, not campaign execution.
 
 `tracks/ecommerce/scenarios/diagnostic-checkout-contention.json` is a separate,
 zero-point diagnostic. It does not run in scored campaigns. On a reset,
-disposable L2 app copy with its authenticated lease environment, use the existing
+disposable reference app copy with its authenticated lease environment, use the existing
 grader entry point:
 
 ```sh
-node dist/grader/grade.js --backend <stack> --url <app-url> --level 2 --spec tracks/ecommerce/scenarios/diagnostic-checkout-contention.json --out <diagnostic-result.json>
+node dist/grader/grade.js --backend <stack> --app <reference-source> --url <app-url> --level 2 --spec tracks/ecommerce/scenarios/diagnostic-checkout-contention.json --out <diagnostic-result.json>
 ```
 
 This standalone command deliberately omits `--track`. Both diagnostics include their named action mappings. Output is unbound to a recipe and has zero scored points; it cannot establish campaign completion. Backend reads still require the authenticated backend lease.
@@ -111,7 +111,18 @@ sessions of each fresh test account. It sends 1, 4, 16, and 64 parallel checkout
 requests, with three fresh-account cohorts per width. These are request counts,
 not distinct client counts or sustained throughput.
 
-Each cohort requires one order, one stored stock decrement, and an empty cart.
+The checkout diagnostic currently requires the verified reference schema. It does
+not guess the schema of a generated app. Saved apps need a separate audited mapping.
+Schema fingerprints are recorded with each stored-state observation. Unavailable
+or malformed reads stay unmeasured, rather than becoming empty data or app failures.
+
+Each cohort records stored state before adding the item, after preparing the cart,
+and after checkout. It requires one order with the correct owner, line quantities,
+prices and warehouse allocations, one booked payment, the exact stock change,
+and an empty cart with no remaining reservations. Existing orders and payments
+must remain intact. PostgreSQL stores payment fields on the order; MongoDB and
+SpacetimeDB use separate payment records. The shared assertion accepts either
+stock reservation during cart preparation or stock consumption at checkout.
 Rejecting all requests cannot pass. Retained action evidence contains each
 request's timing, response status, and transport error or timeout. Timings cover
 client dispatch through response, not server overlap or commit latency. Inspect
