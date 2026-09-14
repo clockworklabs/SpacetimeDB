@@ -10,6 +10,7 @@ using SpacetimeDB.BSATN;
 partial class RawModuleDefV10
 {
     private readonly Typespace typespace = new();
+    private readonly List<RawSubmoduleV10> submoduleDefs = [];
     private readonly List<RawTypeDefV10> typeDefs = [];
     private readonly List<RawTableDefV10> tableDefs = [];
     private readonly List<RawScheduleDefV10> scheduleDefs = [];
@@ -37,11 +38,16 @@ partial class RawModuleDefV10
 
     private static RawScopedTypeNameV10 MakeScopedTypeName(Type type) =>
         new([], GetFriendlyName(type));
+    
+    internal void RegisterSubmodule(RawSubmoduleV10 submodule) =>
+        submoduleDefs.Add(submodule);
 
-    internal AlgebraicType.Ref RegisterType<T>(Func<AlgebraicType.Ref, AlgebraicType> makeType)
+    // Receives types to store the reference in the dictionary so that we can resolve it later and to avoid infinite recursion inside `makeType`.
+    internal AlgebraicType.Ref RegisterType<T>(Dictionary<Type, AlgebraicType.Ref> types, Func<AlgebraicType.Ref, AlgebraicType> makeType)
     {
         var typeList = typespace.Types;
         var typeRef = new AlgebraicType.Ref(typeList.Count);
+        types.Add(typeof(T), typeRef);
         // Put a dummy self-reference just so that we get stable index even if `makeType` recursively adds more types.
         typeList.Add(typeRef);
         typeList[typeRef.Ref_] = makeType(typeRef);
@@ -169,6 +175,10 @@ partial class RawModuleDefV10
             new RawModuleDefV10Section.Environment(environment),
         };
 
+        if (submoduleDefs.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.Submodules([.. submoduleDefs]));
+        }
         if (typeDefs.Count > 0)
         {
             sections.Add(new RawModuleDefV10Section.Types(typeDefs));
@@ -335,9 +345,14 @@ public static class Module
     public static void SetAnonymousViewContextConstructor(Func<IAnonymousViewContext> ctor) =>
         newAnonymousViewContext = ctor;
 
-    public readonly struct TypeRegistrar() : ITypeRegistrar
+    public readonly struct TypeRegistrar : ITypeRegistrar
     {
         private readonly Dictionary<Type, AlgebraicType.Ref> types = [];
+        private readonly RawModuleDefV10 target;
+
+        public TypeRegistrar() : this(moduleDef) { }
+
+        internal TypeRegistrar(RawModuleDefV10 target) => this.target = target;
 
         // Registers type in the module definition.
         //
@@ -349,18 +364,13 @@ public static class Module
         // e.g. self-recursion even before the algebraic type itself is constructed.
         public AlgebraicType.Ref RegisterType<T>(Func<AlgebraicType.Ref, AlgebraicType> makeType)
         {
-            // Store for the closure access.
-            var types = this.types;
             if (types.TryGetValue(typeof(T), out var existingTypeRef))
             {
                 return existingTypeRef;
             }
-            return moduleDef.RegisterType<T>(typeRef =>
-            {
-                // Store the type reference in the dictionary so that we can resolve it later and to avoid infinite recursion inside `makeType`.
-                types.Add(typeof(T), typeRef);
-                return makeType(typeRef);
-            });
+
+            // Passes types down to register the type reference in the dictionary so that we can resolve it later and to avoid infinite recursion inside `makeType`.
+            return target.RegisterType<T>(types, makeType);
         }
     }
 
