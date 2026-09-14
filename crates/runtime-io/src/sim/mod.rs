@@ -1,15 +1,17 @@
 use alloc::{boxed::Box, sync::Arc};
 use core::result::Result;
-use slab::Slab;
 
-use crate::{sim::completion::CompletionState, AlignedBytes, ErasedBox, ErrorWith, SpacetimeIO, Statx};
+use crate::{
+    sim::completion::{CompletionState, PendingCompletions},
+    AlignedBytes, ErasedBox, ErrorWith, SpacetimeIO, Statx,
+};
 
 mod completion;
 pub use completion::Completion;
 use completion::CompletionHandle;
 
 mod executor;
-use executor::{Cqe, Executor, Sqe};
+use executor::{Executor, Sqe};
 
 mod fs;
 pub use fs::File;
@@ -54,96 +56,22 @@ impl SimulatorIO {
         let mut executor = self.inner.executor.lock();
 
         let mut progress = executor.tick(task_selector, faults);
-        for cqe in executor.completed() {
-            let mut pending = self.inner.pending.lock();
-            let completion = &mut pending[cqe.user_data().unwrap()];
-            let waker = match cqe {
-                Cqe::Write { result, buf, .. } => {
-                    let CompletionHandle::Write(state) = completion else {
-                        unreachable!("invalid cqe / completion pairing")
-                    };
-                    let result = match result {
-                        Ok(written) if written == buf.len() => Ok(buf),
-                        Ok(written) => Err(ErrorWith {
-                            error: Error::ShortWrite {
-                                expected: buf.len(),
-                                written,
-                            },
-                            with: buf,
-                        }),
-                        Err(error) => Err(ErrorWith { error, with: buf }),
-                    };
-                    state.complete(result)
+        executor
+            .completed()
+            .map(|cqe| {
+                let key = cqe.user_data().expect("user data must be set");
+                let mut pending = self.inner.pending.lock();
+                // If the handle is no longer present in `pending`, the
+                // completion future was dropped.
+                let handle = pending.get_mut(key)?;
+                cqe.complete(handle)
+            })
+            .for_each(|waker| {
+                if let Some(waker) = waker {
+                    waker.wake();
                 }
-                Cqe::Read { result, buf, .. } => {
-                    let CompletionHandle::Read(state) = completion else {
-                        unreachable!("invalid cqe / completion pairing")
-                    };
-                    let result = match result {
-                        Ok(read) if read == buf.len() => Ok(buf),
-                        Ok(read) => Err(ErrorWith {
-                            error: Error::UnexpectedEof {
-                                expected: buf.len(),
-                                read,
-                            },
-                            with: buf,
-                        }),
-                        Err(error) => Err(ErrorWith { error, with: buf }),
-                    };
-                    state.complete(result)
-                }
-                Cqe::Open { result, .. } => {
-                    let CompletionHandle::Open(state) = completion else {
-                        unreachable!("invalid cqe / completion pairing")
-                    };
-                    state.complete(result)
-                }
-                Cqe::Create { result, .. } => {
-                    let CompletionHandle::Create(state) = completion else {
-                        unreachable!("invalid cqe / completion pairing")
-                    };
-                    state.complete(result)
-                }
-                Cqe::Stat { result, .. } => {
-                    let CompletionHandle::Stat(state) = completion else {
-                        unreachable!("invalid cqe / completion pairing")
-                    };
-                    state.complete(result)
-                }
-                Cqe::Fallocate { result, .. } => {
-                    let CompletionHandle::Fallocate(state) = completion else {
-                        unreachable!("invalid cqe / completion pairing")
-                    };
-                    state.complete(result)
-                }
-                Cqe::Fsync { result, .. } => {
-                    let CompletionHandle::Fsync(state) = completion else {
-                        unreachable!("invalid cqe / completion pairing")
-                    };
-                    state.complete(result)
-                }
-                Cqe::Fdatasync { result, .. } => {
-                    let CompletionHandle::Fdatasync(state) = completion else {
-                        unreachable!("invalid cqe / completion pairing")
-                    };
-                    state.complete(result)
-                }
-                Cqe::Noop { result, .. } => {
-                    let CompletionHandle::Noop(state) = completion else {
-                        unreachable!("invalid cqe / completion pairing")
-                    };
-                    state.complete(result)
-                }
-            };
-
-            // Release lock as waking the future will try to acquire it.
-            drop(pending);
-            if let Some(waker) = waker {
-                waker.wake();
-            }
-
-            progress |= true;
-        }
+                progress |= true
+            });
 
         progress
     }
@@ -223,7 +151,7 @@ impl SimulatorIO {
 
 struct SimulatorInner {
     executor: spin::Mutex<Executor<usize>>,
-    pending: spin::Mutex<Slab<CompletionHandle>>,
+    pending: spin::Mutex<PendingCompletions>,
 }
 
 impl Default for SimulatorInner {
@@ -327,7 +255,7 @@ mod tests {
         fn run<T: 'static>(&self, f: impl FnOnce(&SimulatorIO) -> Completion<T>) -> T {
             let fut = self.rt.spawn_local(f(&self.io));
             while self.io.tick(&self.rng, &mut ()) {}
-            self.rt.block_on(fut).unwrap().unwrap()
+            self.rt.block_on(fut).unwrap()
         }
 
         fn power_loss(&self) {

@@ -5,29 +5,57 @@ use core::{
 };
 
 use alloc::sync::Arc;
+use slab::Slab;
 
 use crate::{
     sim::{fs, Error, SimulatorInner},
-    AlignedBytes, Cancelled, ErasedBox, ErrorWith, Statx,
+    AlignedBytes, ErasedBox, ErrorWith, Statx,
 };
+
+pub use slab::VacantEntry;
 
 pub(crate) enum CompletionState<T> {
     Pending(Option<Waker>),
     Ready(T),
-    Abandoned,
 }
 
 impl<T> CompletionState<T> {
-    pub(crate) fn complete(&mut self, v: T) -> Option<Waker> {
+    fn complete(&mut self, v: T) -> Option<Waker> {
         match self {
             Self::Pending(waker) => {
                 let waker = waker.take();
                 *self = CompletionState::Ready(v);
                 waker
             }
-            Self::Abandoned => None,
             Self::Ready(_) => unreachable!("completion completed twice"),
         }
+    }
+}
+
+#[derive(Default)]
+pub(super) struct PendingCompletions {
+    inner: Slab<CompletionHandle>,
+}
+
+impl PendingCompletions {
+    pub(super) fn get_mut(&mut self, key: usize) -> Option<&mut CompletionHandle> {
+        self.inner.get_mut(key)
+    }
+
+    pub(super) fn clear(&mut self) {
+        self.inner.clear();
+    }
+
+    pub(super) fn vacant_entry(&mut self) -> VacantEntry<'_, CompletionHandle> {
+        self.inner.vacant_entry()
+    }
+
+    fn remove(&mut self, key: usize) -> CompletionHandle {
+        self.inner.remove(key)
+    }
+
+    fn try_remove(&mut self, key: usize) -> Option<CompletionHandle> {
+        self.inner.try_remove(key)
     }
 }
 
@@ -59,6 +87,10 @@ impl CompletionHandle {
         }
     }
 
+    pub(crate) fn complete_write(&mut self, result: Result<ErasedBox, ErrorWith<Error, ErasedBox>>) -> Option<Waker> {
+        self.write_state_mut().complete(result)
+    }
+
     fn read_state_mut(&mut self) -> &mut CompletionState<Result<ErasedBox, ErrorWith<Error, ErasedBox>>> {
         match self {
             Self::Read(state) => state,
@@ -71,6 +103,10 @@ impl CompletionHandle {
             Self::Read(state) => state,
             _ => unreachable!(),
         }
+    }
+
+    pub(crate) fn complete_read(&mut self, result: Result<ErasedBox, ErrorWith<Error, ErasedBox>>) -> Option<Waker> {
+        self.read_state_mut().complete(result)
     }
 
     fn open_state_mut(&mut self) -> &mut CompletionState<Result<fs::File, Error>> {
@@ -87,6 +123,10 @@ impl CompletionHandle {
         }
     }
 
+    pub(crate) fn complete_open(&mut self, result: Result<fs::File, Error>) -> Option<Waker> {
+        self.open_state_mut().complete(result)
+    }
+
     fn create_state_mut(&mut self) -> &mut CompletionState<Result<fs::File, Error>> {
         match self {
             Self::Create(state) => state,
@@ -99,6 +139,10 @@ impl CompletionHandle {
             Self::Create(state) => state,
             _ => unreachable!(),
         }
+    }
+
+    pub(crate) fn complete_create(&mut self, result: Result<fs::File, Error>) -> Option<Waker> {
+        self.create_state_mut().complete(result)
     }
 
     fn stat_state_mut(&mut self) -> &mut CompletionState<Result<Statx, Error>> {
@@ -115,6 +159,10 @@ impl CompletionHandle {
         }
     }
 
+    pub(crate) fn complete_stat(&mut self, result: Result<Statx, Error>) -> Option<Waker> {
+        self.stat_state_mut().complete(result)
+    }
+
     fn fallocate_state_mut(&mut self) -> &mut CompletionState<Result<(), Error>> {
         match self {
             Self::Fallocate(state) => state,
@@ -127,6 +175,10 @@ impl CompletionHandle {
             Self::Fallocate(state) => state,
             _ => unreachable!(),
         }
+    }
+
+    pub(crate) fn complete_fallocate(&mut self, result: Result<(), Error>) -> Option<Waker> {
+        self.fallocate_state_mut().complete(result)
     }
 
     fn fsync_state_mut(&mut self) -> &mut CompletionState<Result<(), Error>> {
@@ -143,6 +195,10 @@ impl CompletionHandle {
         }
     }
 
+    pub(crate) fn complete_fsync(&mut self, result: Result<(), Error>) -> Option<Waker> {
+        self.fsync_state_mut().complete(result)
+    }
+
     fn fdatasync_state_mut(&mut self) -> &mut CompletionState<Result<(), Error>> {
         match self {
             Self::Fdatasync(state) => state,
@@ -157,7 +213,10 @@ impl CompletionHandle {
         }
     }
 
-    #[allow(unused)]
+    pub(crate) fn complete_fdatasync(&mut self, result: Result<(), Error>) -> Option<Waker> {
+        self.fdatasync_state_mut().complete(result)
+    }
+
     fn noop_state_mut(&mut self) -> &mut CompletionState<Result<(), Error>> {
         match self {
             Self::Noop(state) => state,
@@ -165,20 +224,22 @@ impl CompletionHandle {
         }
     }
 
-    #[allow(unused)]
     fn into_noop_state(self) -> CompletionState<Result<(), Error>> {
         match self {
             Self::Noop(state) => state,
             _ => unreachable!(),
         }
     }
+
+    pub(crate) fn complete_noop(&mut self, result: Result<(), Error>) -> Option<Waker> {
+        self.noop_state_mut().complete(result)
+    }
 }
 
 pub struct Completion<T> {
     sim: Arc<SimulatorInner>,
     key: usize,
-    poll: fn(&SimulatorInner, usize, &mut Context<'_>) -> Poll<Result<T, Cancelled>>,
-    drop: fn(&SimulatorInner, usize),
+    poll: fn(&SimulatorInner, usize, &mut Context<'_>) -> Poll<T>,
 }
 
 impl<T: AlignedBytes + 'static> Completion<Result<T, ErrorWith<Error, T>>> {
@@ -196,7 +257,6 @@ impl<T: AlignedBytes + 'static> Completion<Result<T, ErrorWith<Error, T>>> {
                     cx,
                 )
             },
-            drop: |sim, key| drop_completion(sim, key, CompletionHandle::write_state_mut),
         }
     }
 
@@ -214,8 +274,6 @@ impl<T: AlignedBytes + 'static> Completion<Result<T, ErrorWith<Error, T>>> {
                     cx,
                 )
             },
-
-            drop: |sim, key| drop_completion(sim, key, CompletionHandle::read_state_mut),
         }
     }
 }
@@ -235,8 +293,6 @@ impl Completion<Result<fs::File, Error>> {
                     cx,
                 )
             },
-
-            drop: |sim, key| drop_completion(sim, key, CompletionHandle::open_state_mut),
         }
     }
 
@@ -254,8 +310,6 @@ impl Completion<Result<fs::File, Error>> {
                     cx,
                 )
             },
-
-            drop: |sim, key| drop_completion(sim, key, CompletionHandle::create_state_mut),
         }
     }
 }
@@ -275,8 +329,6 @@ impl Completion<Result<Statx, Error>> {
                     cx,
                 )
             },
-
-            drop: |sim, key| drop_completion(sim, key, CompletionHandle::stat_state_mut),
         }
     }
 }
@@ -296,7 +348,6 @@ impl Completion<Result<(), Error>> {
                     cx,
                 )
             },
-            drop: |sim, key| drop_completion(sim, key, CompletionHandle::fallocate_state_mut),
         }
     }
 
@@ -314,7 +365,6 @@ impl Completion<Result<(), Error>> {
                     cx,
                 )
             },
-            drop: |sim, key| drop_completion(sim, key, CompletionHandle::fsync_state_mut),
         }
     }
 
@@ -332,7 +382,6 @@ impl Completion<Result<(), Error>> {
                     cx,
                 )
             },
-            drop: |sim, key| drop_completion(sim, key, CompletionHandle::fdatasync_state_mut),
         }
     }
 
@@ -351,33 +400,17 @@ impl Completion<Result<(), Error>> {
                     cx,
                 )
             },
-            drop: |sim, key| drop_completion(sim, key, CompletionHandle::noop_state_mut),
         }
     }
 }
 
+/// Dropping a [Completion] future removes the [CompletionHandle] from the
+/// pending list, if it is present.
+///
+/// If it is not present, then the future was polled to completion already.
 impl<T> Drop for Completion<T> {
     fn drop(&mut self) {
-        (self.drop)(&self.sim, self.key)
-    }
-}
-
-fn drop_completion<T>(
-    sim: &SimulatorInner,
-    key: usize,
-    state_mut: fn(&mut CompletionHandle) -> &mut CompletionState<T>,
-) {
-    let mut pending = sim.pending.lock();
-    if let Some(handle) = pending.get_mut(key) {
-        let state = (state_mut)(handle);
-        match state {
-            CompletionState::Ready(_) => {
-                pending.remove(key);
-            }
-            CompletionState::Pending(_) | CompletionState::Abandoned => {
-                *state = CompletionState::Abandoned;
-            }
-        }
+        self.sim.pending.lock().try_remove(self.key);
     }
 }
 
@@ -388,32 +421,32 @@ fn poll_completion<S, T>(
     into_state: fn(CompletionHandle) -> CompletionState<S>,
     map: fn(S) -> T,
     cx: &mut Context<'_>,
-) -> Poll<Result<T, Cancelled>> {
+) -> Poll<T> {
     let mut pending = sim.pending.lock();
-    let state = (state_mut)(&mut pending[key]);
-    match state {
-        CompletionState::Pending(waker) => {
-            if !waker.as_ref().is_some_and(|waker| waker.will_wake(cx.waker())) {
-                *waker = Some(cx.waker().clone());
+    match pending.get_mut(key) {
+        None => unreachable!("completion polled after already complete"),
+        Some(handle) => {
+            if let CompletionState::Pending(maybe_waker) = (state_mut)(handle) {
+                if !maybe_waker.as_ref().is_some_and(|waker| waker.will_wake(cx.waker())) {
+                    *maybe_waker = Some(cx.waker().clone());
+                }
+
+                return Poll::Pending;
             }
 
-            Poll::Pending
-        }
-        CompletionState::Ready(_result) => {
             let handle = pending.remove(key);
             let state = (into_state)(handle);
 
             match state {
-                CompletionState::Ready(result) => Poll::Ready(Ok((map)(result))),
+                CompletionState::Ready(result) => Poll::Ready((map)(result)),
                 _ => unreachable!(),
             }
         }
-        CompletionState::Abandoned => Poll::Ready(Err(Cancelled)),
     }
 }
 
 impl<T> Future for Completion<T> {
-    type Output = Result<T, Cancelled>;
+    type Output = T;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();

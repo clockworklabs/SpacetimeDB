@@ -3,12 +3,12 @@ use alloc::{
     collections::{btree_map, BTreeMap, VecDeque},
     vec::Vec,
 };
-use core::{mem, num::NonZeroUsize, result::Result};
+use core::{mem, num::NonZeroUsize, result::Result, task::Waker};
 use slab::Slab;
 
 use crate::{
-    sim::{fs, Error},
-    ErasedBox, Statx, SECTOR_SIZE,
+    sim::{completion::CompletionHandle, fs, Error},
+    ErasedBox, ErrorWith, Statx, SECTOR_SIZE,
 };
 
 pub use crate::sim::fs::Datasync;
@@ -114,6 +114,46 @@ impl<T> Cqe<T> {
             | Self::Fsync { user_data, .. }
             | Self::Fdatasync { user_data, .. }
             | Self::Noop { user_data, .. } => user_data,
+        }
+    }
+
+    pub(crate) fn complete(self, completion: &mut CompletionHandle) -> Option<Waker> {
+        match self {
+            Self::Write { result, buf, .. } => {
+                let result = match result {
+                    Ok(written) if written == buf.len() => Ok(buf),
+                    Ok(written) => Err(ErrorWith {
+                        error: Error::ShortWrite {
+                            expected: buf.len(),
+                            written,
+                        },
+                        with: buf,
+                    }),
+                    Err(error) => Err(ErrorWith { error, with: buf }),
+                };
+                completion.complete_write(result)
+            }
+            Self::Read { result, buf, .. } => {
+                let result = match result {
+                    Ok(read) if read == buf.len() => Ok(buf),
+                    Ok(read) => Err(ErrorWith {
+                        error: Error::UnexpectedEof {
+                            expected: buf.len(),
+                            read,
+                        },
+                        with: buf,
+                    }),
+                    Err(error) => Err(ErrorWith { error, with: buf }),
+                };
+                completion.complete_read(result)
+            }
+            Self::Open { result, .. } => completion.complete_open(result),
+            Self::Create { result, .. } => completion.complete_create(result),
+            Self::Stat { result, .. } => completion.complete_stat(result),
+            Self::Fallocate { result, .. } => completion.complete_fallocate(result),
+            Self::Fsync { result, .. } => completion.complete_fsync(result),
+            Self::Fdatasync { result, .. } => completion.complete_fdatasync(result),
+            Self::Noop { result, .. } => completion.complete_noop(result),
         }
     }
 }
