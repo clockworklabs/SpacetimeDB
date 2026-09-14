@@ -5,7 +5,8 @@ import test from 'node:test';
 
 import { calibrationQualificationIdentity, compileCalibrationDefinition,
   compileCalibrationFile, currentLevelPoints, hasExactSelectedPackRuntime,
-  resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
+  resolveCalibrationForRelease, validateQualificationEvidenceArtifact } from '../src/composition/calibration-compiler.js';
+import { createArtifact } from '../src/evidence/artifacts.js';
 import { buildRecipeRelease, executionPlanForRelease,
   requireRecipeRelease } from '../src/composition/recipe-release.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
@@ -75,6 +76,47 @@ test('covered depth metadata preserves the qualification identity', () => {
   delete exactDepthOnly.selection.coveredAliases;
   assert.deepEqual(calibrationQualificationIdentity(plan),
     calibrationQualificationIdentity(exactDepthOnly));
+});
+
+test('qualification accepts emitted artifact hashes and rejects mismatched identities', () => {
+  const { release, plan } = current();
+  const reference = plan.references.entries[0]!;
+  const calibration = { ...plan, qualification: { ...plan.qualification, runner: undefined } };
+  const context = { calibration, qualificationIdentity: calibrationQualificationIdentity(plan),
+    release, references: plan.references.entries, stackBenchRoot: STACK_BENCH_ROOT,
+    execution: executionPlanForRelease(join(TRACK.dir, 'composition/recipes/sequential-l1.json'),
+      { trackRoot: TRACK.dir, level: 1 }), enforceQualificationScope: false };
+  for (const kind of ['reference', 'mutation'] as const) {
+    const repetitions = kind === 'reference' ? plan.qualification.referenceRepetitions
+      : plan.qualification.mutationRepetitions;
+    const artifact = createArtifact({ id: `qualification-${kind}`, kind: 'reference_qualification',
+      identities: { recipe: { id: release.id, sha256: release.contentSha256 },
+        calibration: { id: plan.id, sha256: plan.qualificationSha256 },
+        fixture: { id: reference.id, sha256: reference.sourceSha256 },
+        stackAdapter: { id: reference.backend, sha256: null } },
+      payload: { fixture: reference.id, fixtureSha256: reference.sourceSha256,
+        requiredRepetitions: repetitions, isolation: 'docker', mutationControl: kind === 'mutation',
+        ok: true, stable: true, sameImage: true, sameHarness: true, harnessSha256: 'a'.repeat(64),
+        qualifiedCheckKeys: release.checkCatalog.map(check => check.stableKey),
+        runs: Array.from({ length: repetitions }, (_, index) => ({ repetition: index + 1,
+          ok: true, processError: null, outcome: 'passed', failures: [],
+          score: `${release.scoring.points}/${release.scoring.points}`, criteria: release.scoring.checks,
+          zeroPointCriteria: release.checkCatalog.filter(check => check.points === 0).length,
+          imageId: 'sha256:' + 'b'.repeat(64),
+          harnessSha256Before: 'a'.repeat(64), harnessSha256After: 'a'.repeat(64),
+          packRuntime: { packs: [...new Set(release.checkCatalog.map(check => check.packId))]
+            .map(id => ({ id, exceeded: false })) },
+          mutations: kind === 'mutation' ? { caught: 1, total: 1 } : null })) } });
+    const entry = { kind, stack: reference.backend, repetition: 1, path: 'test.json', sha256: 'c'.repeat(64) };
+    assert.doesNotThrow(() => validateQualificationEvidenceArtifact(artifact, entry, context));
+    for (const key of ['recipe', 'calibration', 'fixture'] as const) {
+      for (const field of ['id', 'sha256'] as const) {
+        const changed = structuredClone(artifact);
+        changed.identities[key]![field] = field === 'id' ? 'wrong-id' : '0'.repeat(64);
+        assert.throws(() => validateQualificationEvidenceArtifact(changed, entry, context), /identity|identities/);
+      }
+    }
+  }
 });
 
 test('calibration identity changes when selected checks change', () => {

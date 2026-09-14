@@ -534,15 +534,14 @@ const read = (value: unknown, ...path: readonly string[]): unknown => {
 };
 
 function exactEvidenceIdentity(actual: unknown, expected: unknown, at: string): void {
-  if (!actual || read(actual, 'id') !== read(expected, 'id')
-    || read(actual, 'contentSha256') !== read(expected, 'contentSha256')) {
+  if (!evidenceIdentityMatches(actual, expected)) {
     evidenceFailure(at, `has wrong ${at.split('.').at(-1)} identity`);
   }
 }
 
 function evidenceIdentityMatches(actual: unknown, expected: unknown): boolean {
   return read(actual, 'id') === read(expected, 'id')
-    && read(actual, 'contentSha256') === read(expected, 'contentSha256');
+    && read(actual, 'sha256') === read(expected, 'contentSha256');
 }
 
 function qualificationEvidenceOrigin(artifact: UnknownRecord,
