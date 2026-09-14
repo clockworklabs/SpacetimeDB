@@ -8,6 +8,18 @@
 //
 // (private documentation for the macro authors is totally fine here and you SHOULD write that!)
 
+mod environment;
+
+#[proc_macro_attribute]
+pub fn env(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| environment::expand(args.into(), syn::parse(item)?))
+}
+
+#[proc_macro_derive(EnvironmentValue, attributes(env))]
+pub fn derive_environment_value(item: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| environment::value::derive(syn::parse(item)?))
+}
+
 mod http;
 mod procedure;
 

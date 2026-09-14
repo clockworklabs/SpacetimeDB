@@ -5,12 +5,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>SpacetimeDB.Tests</AssemblyName>
+    <DefaultItemExcludes>$(DefaultItemExcludes);**/bin~/**;**/obj~/**;PerformanceBenchmarks/**</DefaultItemExcludes>
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="**/bin~/**/*.cs" />
+    <Compile Remove="**/obj~/**/*.cs" />
+    <Compile Remove="PerformanceBenchmarks/**/*.cs" />
+
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.6.0" />
     <PackageReference Include="Verify.XUnit" Version="25.0.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.4.5">

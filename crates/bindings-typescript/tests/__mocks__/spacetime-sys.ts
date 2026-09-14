@@ -91,3 +91,7 @@ export const procedure_http_request = (
 export const procedure_start_mut_tx = (): bigint => 0n;
 export const procedure_commit_mut_tx = (): void => {};
 export const procedure_abort_mut_tx = (): void => {};
+
+export const env_get = (_key: string): string | null => {
+  throw new Error('mock environment read is not configured');
+};
