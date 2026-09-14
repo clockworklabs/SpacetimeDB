@@ -16,15 +16,28 @@ export class WebsocketDecompressAdapter implements WebSocketAdapter {
   }
   set onmessage(handler: (msg: { data: Uint8Array }) => void) {
     let tail: Promise<void> = Promise.resolve();
-    this.#ws.onmessage = (msg: MessageEvent<ArrayBuffer>) => {
+    this.#ws.onmessage = async (msg: MessageEvent<ArrayBuffer>) => {
       const pending = this.#decompress(new Uint8Array(msg.data));
       // Mark the rejection handled now: the chain may not reach this frame for
       // several ticks, and without this an inflate failure surfaces as an
-      // unhandledrejection in the meantime. The real error still reaches .catch.
+      // unhandledrejection in the meantime. Awaiting pending still throws it.
       pending.catch(() => {});
-      tail = tail
-        .then(async () => handler({ data: await pending }))
-        .catch((e) => {
+
+      // Reserve this frame's position before yielding, while decompression
+      // proceeds concurrently with earlier frames.
+      const previous = tail;
+      let release!: () => void;
+      tail = new Promise<void>(resolve => {
+        release = resolve;
+      });
+
+      try {
+        await previous;
+
+        let data: Uint8Array;
+        try {
+          data = await pending;
+        } catch (e) {
           // A decompression failure (e.g. WebKit's DecompressionStream rejecting
           // with "Incomplete compressed input.") would otherwise become an
           // unhandled rejection: the frame is silently dropped and the
@@ -36,7 +49,13 @@ export class WebsocketDecompressAdapter implements WebSocketAdapter {
             e
           );
           this.#ws.close();
-        });
+          return;
+        }
+        handler({ data });
+      } finally {
+        // Handler exceptions must not prevent delivery of subsequent frames.
+        release();
+      }
     };
   }
   set onerror(handler: (msg: ErrorEvent) => void) {
