@@ -1,7 +1,6 @@
 use alloc::{
     boxed::Box,
     collections::{btree_map, BTreeMap, VecDeque},
-    vec::Vec,
 };
 use core::{mem, num::NonZeroUsize, result::Result, task::Waker};
 use slab::Slab;
@@ -170,39 +169,70 @@ pub struct InFlight<T> {
     pub user_data: Option<T>,
 }
 
+pub trait ResultAcc {
+    fn empty() -> Self;
+    fn add(&mut self, other: Self);
+}
+
+impl ResultAcc for usize {
+    fn empty() -> Self {
+        0
+    }
+
+    fn add(&mut self, other: Self) {
+        *self += other
+    }
+}
+
+impl ResultAcc for () {
+    fn empty() -> Self {}
+    fn add(&mut self, _: Self) {}
+}
+
+pub struct Results<T> {
+    remaining: usize,
+    value: T,
+    error: Option<Error>,
+}
+
+impl<T: ResultAcc> Results<T> {
+    fn new(op_count: usize) -> Self {
+        Self {
+            remaining: op_count,
+            value: T::empty(),
+            error: None,
+        }
+    }
+
+    fn push(&mut self, res: Result<T, Error>) {
+        match res {
+            Ok(value) => self.value.add(value),
+            Err(e) => {
+                self.error.get_or_insert(e);
+            }
+        }
+        self.remaining -= 1;
+    }
+
+    fn into_result(self) -> Result<T, Error> {
+        assert_eq!(self.remaining, 0);
+        self.error.map_or(Ok(self.value), Err)
+    }
+
+    fn is_complete(&self) -> bool {
+        self.remaining == 0
+    }
+}
+
 pub enum InFlightInner {
-    Write {
-        sqe: sqe::Write,
-        op_count: usize,
-        results: Vec<Result<usize, Error>>,
-    },
-    Read {
-        sqe: sqe::Read,
-        op_count: usize,
-        results: Vec<Result<usize, Error>>,
-    },
-    Open {
-        sqe: sqe::Open,
-    },
-    Create {
-        sqe: sqe::Create,
-    },
-    Stat {
-        sqe: sqe::Stat,
-    },
-    Fallocate {
-        sqe: sqe::Fallocate,
-    },
-    Fsync {
-        sqe: sqe::Fsync,
-        op_count: usize,
-        results: Vec<Result<(), Error>>,
-    },
-    Fdatasync {
-        sqe: sqe::Fdatasync,
-        op_count: usize,
-        results: Vec<Result<(), Error>>,
-    },
+    Write { sqe: sqe::Write, results: Results<usize> },
+    Read { sqe: sqe::Read, results: Results<usize> },
+    Open { sqe: sqe::Open },
+    Create { sqe: sqe::Create },
+    Stat { sqe: sqe::Stat },
+    Fallocate { sqe: sqe::Fallocate },
+    Fsync { sqe: sqe::Fsync, results: Results<()> },
+    Fdatasync { sqe: sqe::Fdatasync, results: Results<()> },
     Noop,
 }
 
@@ -220,6 +250,10 @@ impl Executing {
 
 pub enum Fault<T> {
     /// Drop the operation entirely.
+    ///
+    /// Note that this is not generally possible in `io-uring`: an SQE always
+    /// yields a CQE, even if it was cancelled or returned an error. It may be
+    /// useful occasionally to construct "byzantine" failures.
     Skip,
     /// Put the operation back onto the queue for later execution.
     Delay(T),
@@ -514,8 +548,7 @@ impl<UserData> Executor<UserData> {
                 }
             }
             let slot = self.in_flight.vacant_entry();
-            let (in_flight, ops) = sqe.inner.schedule(SqeId(slot.key()));
-            self.executing.extend(ops);
+            let in_flight = sqe.inner.schedule(SqeId(slot.key()), &mut self.executing);
             slot.insert(InFlight {
                 inner: in_flight,
                 blocked: successors,
@@ -590,7 +623,6 @@ impl<UserData> Executor<UserData> {
                 inner:
                     InFlightInner::Write {
                         sqe: sqe::Write { fd, buf, .. },
-                        op_count,
                         results,
                     },
                 ..
@@ -609,8 +641,7 @@ impl<UserData> Executor<UserData> {
                 fd.write_page(buf, page_offset as _).map_err(Into::into)
             };
             results.push(eff.traverse(run, Err));
-
-            results.len() == *op_count
+            results.is_complete()
         };
 
         if is_complete {
@@ -618,7 +649,6 @@ impl<UserData> Executor<UserData> {
                 inner:
                     InFlightInner::Write {
                         sqe: sqe::Write { buf, .. },
-                        op_count,
                         results,
                     },
                 blocked,
@@ -627,13 +657,7 @@ impl<UserData> Executor<UserData> {
             else {
                 unreachable!("invalid sqe: expected write")
             };
-            assert!(results.len() == op_count);
-            let bytes_written = results.iter().filter_map(|r| r.as_ref().ok()).sum();
-            // TODO: Propagate all errors?
-            let result = match results.into_iter().find_map(Result::err) {
-                Some(error) => Err(error),
-                None => Ok(bytes_written),
-            };
+            let result = results.into_result();
             let is_success = result.is_ok();
             self.complete(Cqe::Write { result, buf, user_data });
             self.schedule_linked(sqe, is_success, blocked);
@@ -646,7 +670,6 @@ impl<UserData> Executor<UserData> {
                 inner:
                     InFlightInner::Read {
                         sqe: sqe::Read { fd, buf, .. },
-                        op_count,
                         results,
                     },
                 ..
@@ -665,8 +688,7 @@ impl<UserData> Executor<UserData> {
                 fd.read_page(buf, page_offset as _).map_err(Into::into)
             };
             results.push(eff.traverse(run, Err));
-
-            results.len() == *op_count
+            results.is_complete()
         };
 
         if is_complete {
@@ -674,7 +696,6 @@ impl<UserData> Executor<UserData> {
                 inner:
                     InFlightInner::Read {
                         sqe: sqe::Read { buf, .. },
-                        op_count,
                         results,
                     },
                 blocked,
@@ -683,13 +704,7 @@ impl<UserData> Executor<UserData> {
             else {
                 unreachable!("invalid sqe: expected read")
             };
-            assert!(results.len() == op_count);
-            let bytes_read = results.iter().filter_map(|r| r.as_ref().ok()).sum();
-            // TODO: Propagate all errors?
-            let result = match results.into_iter().find_map(Result::err) {
-                Some(error) => Err(error),
-                None => Ok(bytes_read),
-            };
+            let result = results.into_result();
             let is_success = result.is_ok();
             self.complete(Cqe::Read { result, buf, user_data });
             self.schedule_linked(sqe, is_success, blocked);
@@ -778,7 +793,6 @@ impl<UserData> Executor<UserData> {
                 inner:
                     InFlightInner::Fsync {
                         sqe: sqe::Fsync { fd },
-                        op_count,
                         results,
                     },
                 ..
@@ -794,8 +808,7 @@ impl<UserData> Executor<UserData> {
                 Err,
             );
             results.push(result);
-
-            results.len() == *op_count
+            results.is_complete()
         };
 
         if is_complete {
@@ -807,8 +820,7 @@ impl<UserData> Executor<UserData> {
             else {
                 unreachable!("invalid sqe: expected fsync")
             };
-            // TODO: Propagate all errors?
-            let result = results.into_iter().find_map(Result::err).map(Err).unwrap_or(Ok(()));
+            let result = results.into_result();
             let is_success = result.is_ok();
             self.complete(Cqe::Fsync { result, user_data });
             self.schedule_linked(sqe, is_success, blocked);
@@ -821,7 +833,6 @@ impl<UserData> Executor<UserData> {
                 inner:
                     InFlightInner::Fdatasync {
                         sqe: sqe::Fdatasync { fd },
-                        op_count,
                         results,
                     },
                 ..
@@ -837,8 +848,7 @@ impl<UserData> Executor<UserData> {
                 Err,
             );
             results.push(result);
-
-            results.len() == *op_count
+            results.is_complete()
         };
 
         if is_complete {
@@ -850,8 +860,7 @@ impl<UserData> Executor<UserData> {
             else {
                 unreachable!("invalid sqe: expected fdatasync")
             };
-            // TODO: Propagate all errors?
-            let result = results.into_iter().find_map(Result::err).map(Err).unwrap_or(Ok(()));
+            let result = results.into_result();
             let is_success = result.is_ok();
             self.complete(Cqe::Fdatasync { result, user_data });
             self.schedule_linked(sqe, is_success, blocked);
@@ -893,8 +902,7 @@ impl<UserData> Executor<UserData> {
                     }
                 }
                 (LinkKind::Soft, true) | (LinkKind::Hard, _) => {
-                    let (inner, ops) = next.schedule(sqe);
-                    self.executing.extend(ops);
+                    let inner = next.schedule(sqe, &mut self.executing);
                     let slot = self.in_flight.get_mut(sqe.key()).expect("invalid sqe id");
                     *slot = InFlight {
                         inner,

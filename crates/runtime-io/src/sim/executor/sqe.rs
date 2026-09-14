@@ -1,8 +1,8 @@
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, collections::vec_deque::VecDeque};
 
 use crate::{
     sim::{
-        executor::{Cqe, Executing, FsyncEffect, InFlightInner, Operation, ReadSector, WriteSector},
+        executor::{Cqe, Executing, FsyncEffect, InFlightInner, Operation, ReadSector, Results, WriteSector},
         fs::{self, Datasync},
         Error,
     },
@@ -181,7 +181,7 @@ impl SqeInner {
         }
     }
 
-    pub(super) fn schedule(self, sqe_id: SqeId) -> (InFlightInner, Vec<Executing>) {
+    pub(super) fn schedule(self, sqe_id: SqeId, executing: &mut VecDeque<Executing>) -> InFlightInner {
         match self {
             SqeInner::Write(mut sqe) => {
                 let Write { buf, offset, .. } = &mut sqe;
@@ -189,23 +189,17 @@ impl SqeInner {
                 let first_sector = (*offset / SECTOR_SIZE as u64) as usize;
                 let page_count = buf_len / SECTOR_SIZE;
 
-                let ops = (0..page_count)
-                    .map(|page| Executing {
-                        sqe: sqe_id,
-                        inner: Operation::WriteSector(WriteSector {
-                            page_offset: first_sector + page,
-                            buf_offset: page * SECTOR_SIZE,
-                        }),
-                    })
-                    .collect::<Vec<_>>();
-                let op_count = ops.len();
-                let write = InFlightInner::Write {
+                executing.extend((0..page_count).map(|page| Executing {
+                    sqe: sqe_id,
+                    inner: Operation::WriteSector(WriteSector {
+                        page_offset: first_sector + page,
+                        buf_offset: page * SECTOR_SIZE,
+                    }),
+                }));
+                InFlightInner::Write {
                     sqe,
-                    op_count,
-                    results: Vec::with_capacity(op_count),
-                };
-
-                (write, ops)
+                    results: Results::new(page_count),
+                }
             }
             SqeInner::Read(mut sqe) => {
                 let Read { buf, offset, .. } = &mut sqe;
@@ -213,113 +207,101 @@ impl SqeInner {
                 let first_sector = (*offset / SECTOR_SIZE as u64) as usize;
                 let page_count = buf_len / SECTOR_SIZE;
 
-                let ops = (0..page_count)
-                    .map(|page| Executing {
-                        sqe: sqe_id,
-                        inner: Operation::ReadSector(ReadSector {
-                            page_offset: first_sector + page,
-                            buf_offset: page * SECTOR_SIZE,
-                        }),
-                    })
-                    .collect::<Vec<_>>();
-                let op_count = ops.len();
-                let read = InFlightInner::Read {
+                executing.extend((0..page_count).map(|page| Executing {
+                    sqe: sqe_id,
+                    inner: Operation::ReadSector(ReadSector {
+                        page_offset: first_sector + page,
+                        buf_offset: page * SECTOR_SIZE,
+                    }),
+                }));
+                InFlightInner::Read {
                     sqe,
-                    op_count,
-                    results: Vec::with_capacity(op_count),
-                };
-
-                (read, ops)
+                    results: Results::new(page_count),
+                }
             }
-            SqeInner::Open(sqe) => (
-                InFlightInner::Open { sqe },
-                alloc::vec![Executing {
+            SqeInner::Open(sqe) => {
+                executing.push_back(Executing {
                     sqe: sqe_id,
-                    inner: Operation::Open
-                }],
-            ),
-            SqeInner::Create(sqe) => (
-                InFlightInner::Create { sqe },
-                alloc::vec![Executing {
+                    inner: Operation::Open,
+                });
+                InFlightInner::Open { sqe }
+            }
+            SqeInner::Create(sqe) => {
+                executing.push_back(Executing {
                     sqe: sqe_id,
-                    inner: Operation::Create
-                }],
-            ),
-            SqeInner::Stat(sqe) => (
-                InFlightInner::Stat { sqe },
-                alloc::vec![Executing {
+                    inner: Operation::Create,
+                });
+                InFlightInner::Create { sqe }
+            }
+            SqeInner::Stat(sqe) => {
+                executing.push_back(Executing {
                     sqe: sqe_id,
-                    inner: Operation::Stat
-                }],
-            ),
-            SqeInner::Fallocate(sqe) => (
-                InFlightInner::Fallocate { sqe },
-                alloc::vec![Executing {
+                    inner: Operation::Stat,
+                });
+                InFlightInner::Stat { sqe }
+            }
+            SqeInner::Fallocate(sqe) => {
+                executing.push_back(Executing {
                     sqe: sqe_id,
-                    inner: Operation::Fallocate
-                }],
-            ),
+                    inner: Operation::Fallocate,
+                });
+                InFlightInner::Fallocate { sqe }
+            }
             SqeInner::Fsync(sqe) => {
                 let Fsync { fd } = &sqe;
 
                 let sector_count = fd.len() / SECTOR_SIZE as u64;
-                let ops = (0..sector_count)
-                    .map(|offset| Executing {
-                        sqe: sqe_id,
-                        inner: Operation::Fsync {
-                            effect: FsyncEffect::Datasync(Datasync::Sector(offset)),
-                        },
-                    })
-                    .chain([Executing {
-                        sqe: sqe_id,
-                        inner: Operation::Fsync {
-                            effect: FsyncEffect::Datasync(Datasync::Length),
-                        },
-                    }])
-                    .collect::<Vec<_>>();
-                let op_count = ops.len();
-                let in_flight = InFlightInner::Fsync {
+                executing.extend(
+                    (0..sector_count)
+                        .map(|offset| Executing {
+                            sqe: sqe_id,
+                            inner: Operation::Fsync {
+                                effect: FsyncEffect::Datasync(Datasync::Sector(offset)),
+                            },
+                        })
+                        .chain([Executing {
+                            sqe: sqe_id,
+                            inner: Operation::Fsync {
+                                effect: FsyncEffect::Datasync(Datasync::Length),
+                            },
+                        }]),
+                );
+                InFlightInner::Fsync {
                     sqe,
-                    op_count,
-                    results: Vec::with_capacity(op_count),
-                };
-
-                (in_flight, ops)
+                    results: Results::new(1 + sector_count as usize),
+                }
             }
             SqeInner::Fdatasync(sqe) => {
                 let Fdatasync { fd } = &sqe;
 
                 let sector_count = fd.len() / SECTOR_SIZE as u64;
-                let ops = (0..sector_count)
-                    .map(|offset| Executing {
-                        sqe: sqe_id,
-                        inner: Operation::Fdatasync {
-                            effect: Datasync::Sector(offset),
-                        },
-                    })
-                    .chain([Executing {
-                        sqe: sqe_id,
-                        inner: Operation::Fdatasync {
-                            effect: Datasync::Length,
-                        },
-                    }])
-                    .collect::<Vec<_>>();
-                let op_count = ops.len();
-                let in_flight = InFlightInner::Fdatasync {
+                executing.extend(
+                    (0..sector_count)
+                        .map(|offset| Executing {
+                            sqe: sqe_id,
+                            inner: Operation::Fdatasync {
+                                effect: Datasync::Sector(offset),
+                            },
+                        })
+                        .chain([Executing {
+                            sqe: sqe_id,
+                            inner: Operation::Fdatasync {
+                                effect: Datasync::Length,
+                            },
+                        }]),
+                );
+                InFlightInner::Fdatasync {
                     sqe,
-                    op_count,
-                    results: Vec::with_capacity(op_count),
-                };
-
-                (in_flight, ops)
+                    results: Results::new(1 + sector_count as usize),
+                }
             }
-            SqeInner::Noop => (
-                InFlightInner::Noop,
-                alloc::vec![Executing {
+            SqeInner::Noop => {
+                executing.push_back(Executing {
                     sqe: sqe_id,
-                    inner: Operation::Noop
-                }],
-            ),
+                    inner: Operation::Noop,
+                });
+                InFlightInner::Noop
+            }
         }
     }
 }
