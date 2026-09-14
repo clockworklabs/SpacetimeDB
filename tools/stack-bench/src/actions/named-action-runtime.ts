@@ -29,7 +29,7 @@ export interface ConcurrentCallOutcome {
   readonly startedAtMs?: number;
   readonly completedAtMs?: number;
   readonly durationMs?: number;
-  readonly transport?: 'response' | 'error' | 'timeout';
+  readonly transport?: 'response' | 'error' | 'timeout' | 'cancelled';
   readonly applicationRejected?: boolean;
   readonly name: string;
   readonly ok: boolean;

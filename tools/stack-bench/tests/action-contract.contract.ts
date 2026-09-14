@@ -192,6 +192,17 @@ test('deadline, cancellation, and unclassified exceptions are fail-closed eviden
   assert.equal(crashed.code, 'unclassified_exception');
 });
 
+test('deadline evidence retains a drained observation without making the action pass', async () => {
+  for (const observation of [{ responses: 1, unknown: 1 }, new Date()]) {
+    const result = await executeAction(registry(({ signal }) => new Promise(resolve => {
+      signal.addEventListener('abort', () => resolve(observation), { once: true });
+    }), { timeoutMs: 10 }), 'fakeAction', { do: 'fakeAction' }, context());
+    assert.equal(result.code, 'deadline_exceeded');
+    assert.equal(result.status, 'harness_failure');
+    assert.deepEqual(result.observation, observation instanceof Date ? null : observation);
+  }
+});
+
 test('invalid input, missing services, and malformed observations never become passes', async () => {
   const validRegistry = registry(() => ({ ok: true }));
   const invalid = await executeAction(validRegistry, 'fakeAction', { do: 'wrong' }, context());

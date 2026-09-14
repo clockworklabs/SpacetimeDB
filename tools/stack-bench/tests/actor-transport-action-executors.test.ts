@@ -854,7 +854,7 @@ test('concurrent calls classify every result before counting accepted requests',
       assert.equal((await run({ do: 'callConcurrently', actors: ['a', 'b'],
         action: 'checkout', settleMs: 0 }, provided)).status, 'passed');
       const checked = await run({ do: 'expectCallOutcomes', accepted: 1 }, provided);
-      assert.equal(checked.status, [400, 409, 422].includes(status)
+      assert.equal(checked.status, status === 0 ? 'inconclusive' : [400, 409, 422].includes(status)
         || (backend === 'spacetime' && status === 530) ? 'passed' : 'failed',
       `${backend}: ${status}`);
     }
@@ -863,7 +863,7 @@ test('concurrent calls classify every result before counting accepted requests',
   const named = provided.capabilities['named-actions'] as ReturnType<typeof createNamedActionsCapability>;
   named.lastCalls.set({ action: 'checkout', fired: 2, ms: 1,
     outcomes: [{ name: 'a', status: 200, ok: true, text: '' }] });
-  assert.equal((await run({ do: 'expectCallOutcomes', accepted: 1 }, provided)).status, 'failed',
+  assert.equal((await run({ do: 'expectCallOutcomes', accepted: 1 }, provided)).status, 'inconclusive',
     'a missing outcome must not pass');
 });
 
@@ -911,8 +911,53 @@ test('bounded checkout cohorts issue every request and retain client timing and 
     assert.equal(record(result.observation).transportErrors, 1);
     assert.equal(record(result.observation).timeouts, 1);
     assert.doesNotMatch(JSON.stringify(result), /sensitive transport internals/);
-    assert.equal((await run({ do: 'expectCallOutcomes' }, provided)).status, 'failed');
+    assert.equal((await run({ do: 'expectCallOutcomes' }, provided)).status, 'inconclusive');
   } finally { clearInterval(keepAlive); }
+});
+
+test('cancelled cohorts drain requests and retain their history in action evidence', async () => {
+  for (const duringSettle of [false, true]) {
+    const controller = new AbortController();
+    let drained = false;
+    let calls = 0;
+    const actors = new Map(['a', 'b'].map(name => [name, { name,
+      writes: [{ headers: { authorization: `Bearer ${name}-session` } }] }]));
+    const provided = services(actors, {
+      fetchImpl: async (_url, options) => {
+        if (calls++ === 0 || duringSettle) return namedResponse(200, true);
+        return new Promise((_resolve, reject) => {
+          options.signal!.addEventListener('abort', () => setTimeout(() => {
+            drained = true;
+            reject(options.signal!.reason);
+          }, 5), { once: true });
+          controller.abort('test cancellation');
+        });
+      },
+      sleep: async () => { controller.abort('test cancellation'); throw controller.signal.reason; },
+    });
+    const result = await executeAction(ACTION_REGISTRY, 'callConcurrently', {
+      do: 'callConcurrently', actors: ['a', 'b'], action: 'checkout', settleMs: 1,
+    }, { capabilities: provided.capabilities, signal: controller.signal, onAbort: async () => {} });
+    assert.equal(result.code, 'cancelled');
+    assert.equal(result.status, 'inconclusive');
+    assert.equal(calls, 2);
+    assert.equal(drained, !duringSettle);
+    const history = record(result.observation);
+    assert.deepEqual(history.outcomes, provided.calls!.outcomes);
+    assert.equal(history.responses, duringSettle ? 2 : 1);
+    assert.equal(history.cancelled, duringSettle ? 0 : 1);
+    assert.doesNotMatch(JSON.stringify(result), /Bearer|session/);
+  }
+});
+
+test('unknown request outcomes take priority over error responses in either order', async () => {
+  for (const statuses of [[0, 500], [500, 0]]) {
+    const provided = services(new Map());
+    const named = provided.capabilities['named-actions'] as ReturnType<typeof createNamedActionsCapability>;
+    named.lastCalls.set({ action: 'checkout', fired: 2, ms: 1,
+      outcomes: statuses.map(status => ({ name: 'a', status, ok: false, text: '' })) });
+    assert.equal((await run({ do: 'expectCallOutcomes' }, provided)).status, 'inconclusive');
+  }
 });
 
 test('purchase bursts reuse validated dynamic action inputs across stack transports', async () => {

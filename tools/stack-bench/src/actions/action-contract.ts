@@ -272,6 +272,7 @@ export async function executeAction(
       String(termination.current?.reason ?? controller.signal.reason))),
       { once: true });
   });
+  let completedObservation: unknown = null;
   const execution = Promise.resolve().then(() => {
     if (controller.signal.aborted) throw controller.signal.reason;
     return plugin.execute({
@@ -279,6 +280,9 @@ export async function executeAction(
       capabilities,
       signal: controller.signal,
     });
+  }).then(observation => {
+    if (structuredValue(observation)) completedObservation = observation;
+    return observation;
   });
   try {
     const observation = await Promise.race([execution, stopped]);
@@ -310,11 +314,11 @@ export async function executeAction(
     }
     if (termination.current?.kind === 'cancelled') {
       return evidence(plugin, startedAtMs, now(), 'inconclusive', 'cancelled',
-        String(termination.current.reason), { retryable: true });
+        String(termination.current.reason), { retryable: true, observation: completedObservation });
     }
     if (termination.current?.kind === 'deadline_exceeded') {
       return evidence(plugin, startedAtMs, now(), 'harness_failure', 'deadline_exceeded',
-        String(termination.current.reason), { retryable: true });
+        String(termination.current.reason), { retryable: true, observation: completedObservation });
     }
     if (error instanceof ActionApplicationFailure) {
       if (!structuredValue(error.details?.observation) || !structuredValue(error.details?.expected)) {

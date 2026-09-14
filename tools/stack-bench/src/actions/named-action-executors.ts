@@ -262,10 +262,10 @@ async function callConcurrently({ input, capabilities, signal }: NamedArguments<
       response = { status: reply.status, ok: reply.ok,
         applicationRejected: (request.applicationRejectionStatuses ?? []).includes(reply.status),
         text: reply.ok ? '' : (await reply.text()).slice(0, 120), transport: 'response' as const };
-    } catch (error) {
-      if (signal.aborted) throw error;
-      response = { status: 0, ok: false, text: timeout.aborted ? 'request timed out' : 'request transport failed',
-        transport: timeout.aborted ? 'timeout' as const : 'error' as const };
+    } catch {
+      response = { status: 0, ok: false,
+        text: signal.aborted ? 'request cancelled' : timeout.aborted ? 'request timed out' : 'request transport failed',
+        transport: signal.aborted ? 'cancelled' as const : timeout.aborted ? 'timeout' as const : 'error' as const };
     }
     const completedAtMs = named.now();
     return { ...response, name: preparedActor.name, requestIndex: index + 1,
@@ -275,15 +275,24 @@ async function callConcurrently({ input, capabilities, signal }: NamedArguments<
     responses: outcomes.filter(outcome => outcome.transport === 'response').length,
     transportErrors: outcomes.filter(outcome => outcome.transport === 'error').length,
     timeouts: outcomes.filter(outcome => outcome.transport === 'timeout').length,
+    cancelled: outcomes.filter(outcome => outcome.transport === 'cancelled').length,
     timingScope: 'client request dispatch through response; not server execution overlap' };
   named.lastCalls.set(result);
-  await named.sleep(input.settleMs ?? 3000, signal);
+  // Return the drained history even on cancellation. executeAction retains it
+  // with the interrupted verdict; cancellation must never turn into a pass.
+  if (!signal.aborted) {
+    try { await named.sleep(input.settleMs ?? 3000, signal); }
+    catch (error) { if (!signal.aborted) throw error; }
+  }
   return result;
 }
 
 async function expectCallOutcomes({ input, capabilities }: NamedArguments<ConcurrentOutcomeInput>) {
   const result = capabilities['named-actions'].lastCalls.get();
   if (!result) inconclusive('assertion-without-action', { action: 'callConcurrently' });
+  if (result.outcomes.length !== result.fired || result.outcomes.some(outcome => outcome.status === 0)) {
+    inconclusive('transport-incomplete', {});
+  }
   for (const outcome of result.outcomes) {
     if (!outcome.ok && ![400, 409, 422].includes(outcome.status)
       && outcome.applicationRejected !== true) {
@@ -292,9 +301,8 @@ async function expectCallOutcomes({ input, capabilities }: NamedArguments<Concur
     }
   }
   const accepted = result.outcomes.filter(outcome => outcome.ok).length;
-  if (result.outcomes.length !== result.fired
-    || (input.accepted !== undefined && accepted !== input.accepted)) {
-    fail('concurrent-calls-mismatch', { action: result.action, expected: input.accepted ?? result.fired, accepted,
+  if (input.accepted !== undefined && accepted !== input.accepted) {
+    fail('concurrent-calls-mismatch', { action: result.action, expected: input.accepted, accepted,
       fired: result.fired,
       detail: `${result.outcomes.map(outcome => `${outcome.name}:${outcome.status}`).join(' ')} within ${result.ms}ms` });
   }

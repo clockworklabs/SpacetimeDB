@@ -31,6 +31,13 @@ errors into missing controls. Concurrent actions drain every branch before retur
 measurement failures take priority over app failures. Bundle and dependency grading
 both inspect partial observations and cleanup evidence before accepting an app abort.
 Check verdicts cannot contradict failed or unmeasured action evidence.
+Concurrent named calls retain every request outcome when cancelled, including responses
+received before cancellation. A lost response or request timeout is an unknown result,
+not proof that the app rejected the operation or failed to commit it. Missing or unknown
+request outcomes make the response assertion inconclusive, even if another request
+returned an app error. HTTP success alone does not prove the stored business effects.
+This revised contention evidence remains draft until matching reference and defect
+controls are qualified; existing paid results are not rewritten.
 The prerequisite observation remains available for repair. Harness and provider
 failures remain unmeasured and cannot become app failures. The purchase-session,
 restock-race, and scheduled-restock probes use stored state or fresh reads for setup;
