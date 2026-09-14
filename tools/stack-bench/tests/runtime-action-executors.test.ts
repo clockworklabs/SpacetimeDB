@@ -5,7 +5,7 @@ import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
-import { executeAction } from '../src/actions/action-contract.js';
+import { ActionApplicationFailure, ActionInconclusive, executeAction } from '../src/actions/action-contract.js';
 import { describesMissingStockInterface } from '../src/stacks/stock-interface.js';
 import {
   createDatabaseWriteCapability,
@@ -264,6 +264,26 @@ test('race preserves branch ordering while overlapping branches through register
   } }));
   assert.equal(failed.status, 'failed');
   assert.equal(failed.summary, 'nested application mismatch');
+});
+
+test('concurrent branches drain and preserve uncertainty over an earlier app failure', async () => {
+  for (const later of [null, new ActionInconclusive('unmeasured'), new Error('browser protocol failed')]) {
+    let drained = false;
+    const result = await run({ do: 'race', settleMs: 0, branches: [
+      [{ do: 'wait', actor: 'a', ms: 1 }], [{ do: 'wait', actor: 'b', ms: 1 }],
+    ] }, services(new Map(), { concurrency: {
+      sleep,
+      dispatch: async (step: UnknownRecord) => {
+        if (step.actor === 'a') throw new ActionApplicationFailure('app failed');
+        await new Promise(resolve => setImmediate(resolve));
+        drained = true;
+        if (later) throw later;
+      },
+    } }));
+    assert.equal(drained, true, 'no branch may keep changing the app after the action returns');
+    assert.equal(result.status, later instanceof ActionInconclusive ? 'inconclusive'
+      : later ? 'harness_failure' : 'failed');
+  }
 });
 
 test('concurrent replay refuses to invent contention when fewer than two writes exist', async () => {

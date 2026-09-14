@@ -68,6 +68,24 @@ test('unknown fields and inconsistent timing are rejected', () => {
   assert.throws(() => validateCheckEvidence(badTiming), /does not match/);
 });
 
+test('check verdicts cannot hide action failures or convert missing evidence into measured results', () => {
+  for (const status of ['failed', 'inconclusive', 'harness_failure'] as const) {
+    const action = { ...evidence({ status }), actor: undefined,
+      action: { id: 'probe', version: '1' }, type: 'browser-observation-evidence', phase: 'execute',
+      timing: { startedAtMs: 10, completedAtMs: 15, durationMs: 5, deadlineMs: 100 },
+    };
+    // Action evidence has no actor or nested actions; the containing entry owns its actor.
+    const { actor: _actor, actions: _actions, ...entry } = action;
+    const actions = [{ actor: 'buyer', evidence: entry }];
+    assert.throws(() => evidence({ status: 'passed', actions }), /contradicts action status/);
+    if (status !== 'failed') {
+      assert.throws(() => evidence({ status: 'failed', actions }), /contradicts action status/);
+      assert.throws(() => evidence({ status: 'blocked', phase: 'setup', actions }), /contradicts action status/);
+    }
+    assert.equal(evidence({ status: 'harness_failure', actions }).status, 'harness_failure');
+  }
+});
+
 test('one immutable status table owns verdict, outcome and repair semantics', () => {
   assert.deepEqual(Object.fromEntries(Object.entries(CHECK_EVIDENCE_DISPOSITIONS)
     .map(([status, disposition]) => [status, {

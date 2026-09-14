@@ -1,5 +1,6 @@
 import { validateCheckEvidence, evidenceIsMeasured } from '../evidence/check-evidence.js';
 import type { CheckEvidence } from '../evidence/check-evidence.js';
+import { classifyObservedChecks } from '../evidence/outcomes.js';
 import { validateArtifact } from '../evidence/artifacts.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { sha256 } from '../evidence/provenance.js';
@@ -280,6 +281,13 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
     return inconclusive(attemptId, run.id, sourceSha256, selectionSha256, evidence,
       'inconclusive_evidence', bundleOutcome?.reason
       ?? bundle.error ?? 'grader evidence was inconclusive');
+  }
+  const observed = classifyObservedChecks({ suites: bundle.suites });
+  if (observed.kind === 'harness_failure'
+    || (observed.kind === 'inconclusive' && Array.isArray(selection.notRun) && selection.notRun.length > 0)) {
+    return inconclusive(attemptId, run.id, sourceSha256, selectionSha256, evidence,
+      observed.kind === 'harness_failure' ? 'harness_failure' : 'inconclusive_evidence',
+      observed.reason ?? 'grader observations include incomplete measurements');
   }
   if (bundleOutcome?.kind === 'app_failure'
     && Array.isArray(selection.notRun) && selection.notRun.length > 0) {

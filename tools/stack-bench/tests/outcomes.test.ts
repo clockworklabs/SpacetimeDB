@@ -82,6 +82,22 @@ test('a ladder advances only from a level that actually passed', () => {
   assert.equal(ladderMayAdvance({ kind: 'inconclusive' }), false);
   assert.equal(ladderMayAdvance({ kind: 'harness_failure' }), false);
   assert.equal(ladderMayAdvance({ kind: 'ungraded' }), false);
+  for (const outcome of [{ kind: 'passed', inconclusive: ['unmeasured'] },
+    { kind: 'passed', harnessFailures: ['cleanup'] }]) {
+    assert.equal(ladderMayAdvance(outcome), false);
+    assert.equal(mutationControlEligible(outcome), false);
+  }
+});
+
+test('a later application abort cannot hide earlier unmeasured observations', () => {
+  for (const status of ['harness_failure', 'inconclusive'] as const) {
+    const partial = { ...bundle([typed('first', status, 'observation unavailable')]),
+      outcome: { kind: 'app_failure', phase: 'application-start', reason: 'restart failed' },
+      selection: { checks: [{ stableKey: 'first', points: 1 }, { stableKey: 'later', points: 1 }],
+        reportedChecks: ['first'], notRun: ['later'] } };
+    assert.equal(classifyBundle(partial).kind, status);
+    assert.equal(ladderMayContinue(classifyBundle(partial)), false);
+  }
 });
 
 test('app failures and inconclusive evidence remain separately visible', () => {

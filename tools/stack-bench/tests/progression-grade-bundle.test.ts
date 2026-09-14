@@ -21,6 +21,7 @@ interface BundleFixture {
   totals: { score: number; max: number; regression: { score: number; max: number } | null };
   suites: { application: { features: Array<{
     id: number;
+    cleanupEvidence?: { status: string };
     setupEvidence: CheckEvidence;
     criteria: Array<{ stableKey: string; points: number; evidence: CheckEvidence }>;
   }> } };
@@ -202,6 +203,29 @@ test('one unmeasured check makes the grading attempt inconclusive', () => {
     category: 'inconclusive_evidence',
     reason: '1 selected check did not produce measured evidence',
   });
+});
+
+test('partial application aborts and completed scores cannot hide measurement or cleanup failures', () => {
+  for (const failure of ['inconclusive', 'harness_failure', 'cleanup'] as const) {
+    const partial = bundle();
+    partial.outcome = { kind: 'app_failure', phase: 'application-start', reason: 'restart failed' };
+    partial.selection.attemptedChecks = ['check.accounts'];
+    partial.selection.reportedChecks = ['check.accounts'];
+    partial.selection.notRun = [{ stableKey: 'check.catalog', reason: 'restart failed' }];
+    partial.totals.score = 0;
+    const feature = partial.suites.application.features[0]!;
+    feature.criteria.pop();
+    if (failure === 'cleanup') feature.cleanupEvidence = { status: 'harness_failure' };
+    else feature.criteria[0]!.evidence = evidence(failure);
+    const result = gradeBundleToProgressionResult(artifact(partial), action(), conversion);
+    assert.equal(result.outcome, 'inconclusive');
+    if (result.outcome === 'inconclusive') assert.equal(result.category,
+      failure === 'inconclusive' ? 'inconclusive_evidence' : 'harness_failure');
+  }
+  const complete = bundle();
+  complete.suites.application.features[0]!.cleanupEvidence = { status: 'harness_failure' };
+  assert.equal(gradeBundleToProgressionResult(artifact(complete), action(), conversion).outcome,
+    'inconclusive');
 });
 
 test('completed progression evidence outranks a stale application failure', () => {

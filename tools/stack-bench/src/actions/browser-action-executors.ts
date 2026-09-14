@@ -292,12 +292,15 @@ async function fill({ input, capabilities, signal }: BrowserArguments<Interactio
   const tag = await loc.evaluate(element => element.tagName);
   if (tag === 'SELECT') {
     try {
-      await loc.selectOption(text).catch(async () => { await loc.selectOption({ label: text }); });
+      await loc.selectOption(text).catch(async error => {
+        if (errorField(error, 'name') !== 'TimeoutError') throw error;
+        await loc.selectOption({ label: text });
+      });
     } catch (error) {
-      if (harnessBrowserFailure(error)) throw error;
+      if (errorField(error, 'name') !== 'TimeoutError') throw error;
       const options = await loc.evaluate(element => element.tagName === 'SELECT'
         ? Array.from(element.options ?? []).map(option => ({ value: option.value, label: option.label }))
-        : null).catch(() => null);
+        : null);
       if (options && !options.some(option => option.value === text || option.label === text)) {
         fail('choice-missing', { control: input.testid,
           ...(input.in ? { scope: input.in.testid } : {}),
@@ -396,7 +399,7 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
 
   const visible = await loc.waitFor({ state: 'visible', timeout: within })
     .then(() => true).catch(error => {
-      if (harnessBrowserFailure(error)) throw error;
+      if (errorField(error, 'name') !== 'TimeoutError') throw error;
       return false;
     });
   if (!visible) fail('control-missing', { control: input.testid,
@@ -466,7 +469,7 @@ async function waitUntilAbsent({ input, capabilities }: BrowserArguments<CommonI
   const within = input.within ?? browser.defaultWithin;
   const hidden = await loc.waitFor({ state: 'hidden', timeout: within })
     .then(() => true).catch(error => {
-      if (harnessBrowserFailure(error)) throw error;
+      if (errorField(error, 'name') !== 'TimeoutError') throw error;
       return false;
     });
   if (!hidden) fail('control-present', { control: input.testid,
@@ -637,7 +640,7 @@ async function expectNumber({ input, capabilities, signal }:
     : undefined;
   const loc = actor.loc(input.testid, { contains, scope });
   await loc.waitFor({ state: 'visible', timeout: within }).catch(error => {
-    if (harnessBrowserFailure(error)) throw error;
+    if (errorField(error, 'name') !== 'TimeoutError') throw error;
     fail('control-missing', { control: input.testid,
       ...(scope ? { scope: scope.testid } : {}),
       ...(contains ? { matchingText: findingText(contains) } : {}),
@@ -767,10 +770,10 @@ function errorField(error: unknown, field: string): unknown {
 function isExpectedBrowserFailure(error: unknown): boolean {
   if (error instanceof ActionApplicationFailure) return true;
   if (errorField(error, 'name') === 'TimeoutError') return true;
-  const stack = String(errorField(error, 'stack') ?? '');
   const message = String(errorField(error, 'message') ?? error ?? '');
-  return /node_modules[\\/]playwright/.test(stack)
-    || /^(?:locator|page|keyboard|browserContext)\./i.test(message);
+  // A Playwright stack frame does not prove an app defect. Only observed
+  // control failures belong here; selector, script and protocol errors stay errors.
+  return /^locator\.[^:]+: (?:Error: )?(?:strict mode violation:|Element is not (?:an? |editable)|Input of type \S+ cannot be filled|Element is outside of the viewport)/i.test(message);
 }
 
 // The one place raw browser text is read: a Playwright error becomes a

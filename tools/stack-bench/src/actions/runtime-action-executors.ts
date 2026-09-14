@@ -11,7 +11,7 @@ import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
 import type { CheckEvidenceStatus } from '../evidence/check-evidence.js';
 import { replayHeaders } from './actor-transport-action-executors.js';
 import { browserApplicationBoundary, numberMatches } from './browser-action-executors.js';
-import { harnessBrowserFailure, harnessProcessFailure } from '../evidence/harness-errors.js';
+import { harnessProcessFailure } from '../evidence/harness-errors.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import type { LeasedDatabase } from '../stacks/backend-reset-guard.js';
 import type { LeasedSpacetimeTarget } from '../runtime/spacetime-target.js';
@@ -198,6 +198,7 @@ async function dbExpectStock({ input, capabilities, signal }: ActionArguments<Re
 }
 
 interface ProcessErrorShape {
+  readonly name?: unknown;
   readonly classification?: unknown;
   readonly code?: unknown;
   readonly message?: unknown;
@@ -258,6 +259,18 @@ async function dispatchNested(
   }
 }
 
+// Drain every branch before another criterion can use the app. An early app
+// failure must not hide a later harness failure or leave writes in flight.
+async function settleConcurrentActions<T>(pending: readonly Promise<T>[]): Promise<T[]> {
+  const settled = await Promise.allSettled(pending);
+  const failures = settled.filter(result => result.status === 'rejected');
+  const failure = failures.find(result => !(result.reason instanceof ActionApplicationFailure)
+    && !(result.reason instanceof ActionInconclusive))
+    ?? failures.find(result => result.reason instanceof ActionInconclusive) ?? failures[0];
+  if (failure) throw failure.reason;
+  return settled.map(result => (result as PromiseFulfilledResult<T>).value);
+}
+
 async function replayConcurrently(
   { input, capabilities, signal }: ActionArguments<ReplayConcurrentlyInput>,
 ) {
@@ -308,22 +321,22 @@ async function clickConcurrently(
       : undefined;
     return { target, locator: actorFor(capabilities, target.actor).loc(input.testid, { scope }) };
   });
-  const notReady = (await Promise.all(resolved.map(async ({ target, locator }) => {
+  const notReady = (await settleConcurrentActions(resolved.map(async ({ target, locator }) => {
     try {
       await locator.waitFor({ state: 'visible', timeout: input.readyWithin ?? 15000 });
       return await locator.isEnabled() ? null : target.actor;
     } catch (error) {
-      if (harnessBrowserFailure(error)) throw error;
+      if (errorShape(error).name !== 'TimeoutError') throw error;
       return target.actor;
     }
   }))).filter(Boolean);
   if (notReady.length) {
     fail('control-not-ready', { control: input.testid, actors: notReady.map(String) });
   }
-  const outcomes = await Promise.all(resolved.map(({ target, locator }) =>
+  const outcomes = await settleConcurrentActions(resolved.map(({ target, locator }) =>
     locator.click({ timeout: input.within ?? concurrency.defaultWithin, force: true, noWaitAfter: true })
       .then(() => null, error => {
-        if (harnessBrowserFailure(error)) throw error;
+        if (errorShape(error).name !== 'TimeoutError') throw error;
         return `${target.actor}: ${String(errorShape(error).message ?? error).split('\n')[0]}`;
       })));
   const failed = outcomes.filter(Boolean);
@@ -337,7 +350,7 @@ async function clickConcurrently(
 
 async function race({ input, capabilities, signal }: ActionArguments<RaceInput>) {
   const concurrency = capabilities.concurrency;
-  await Promise.all(input.branches.map(async branch => {
+  await settleConcurrentActions(input.branches.map(async branch => {
     for (const step of branch) await dispatchNested(concurrency, step, signal);
   }));
   await concurrency.sleep(input.settleMs ?? 2000, signal);
@@ -348,7 +361,7 @@ async function sendConcurrently(
   { input, capabilities, signal }: ActionArguments<SendConcurrentlyInput>,
 ) {
   const concurrency = capabilities.concurrency;
-  await Promise.all(input.senders.map(sender => dispatchNested(concurrency, {
+  await settleConcurrentActions(input.senders.map(sender => dispatchNested(concurrency, {
     do: 'sendMany',
     actor: sender.actor,
     prefix: sender.prefix,

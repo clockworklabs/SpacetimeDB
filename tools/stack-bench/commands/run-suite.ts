@@ -755,6 +755,17 @@ async function gradeSuite(args: RunArguments, suite: DeclaredSuite, track: Track
   return r;
 }
 
+export async function closeSuiteBrowser(browser: Pick<BrowserServer, 'close'> | null,
+  bundle: Pick<Bundle, 'error' | 'outcome'>, persist: () => unknown): Promise<void> {
+  try { await browser?.close(); }
+  catch (error) {
+    bundle.error = `grader browser shutdown failed: ${error instanceof Error ? error.message : String(error)}`;
+    bundle.outcome = { kind: 'harness_failure', phase: 'grading-cleanup', reason: bundle.error };
+    persist();
+    throw error;
+  }
+}
+
 async function main() {
   const startedAt = new Date().toISOString();
   const args = parseArgs(process.argv);
@@ -1160,7 +1171,7 @@ async function main() {
     }
   } finally {
     args.browserWsEndpoint = undefined;
-    await browserServer?.close();
+    await closeSuiteBrowser(browserServer, bundle, writeBundle);
   }
 
   bundle.totals = {

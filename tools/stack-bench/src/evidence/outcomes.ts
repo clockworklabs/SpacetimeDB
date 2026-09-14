@@ -165,9 +165,9 @@ function selectedScoreMismatch(bundle: OutcomeBundle, all: readonly KeyedCriteri
   return null;
 }
 
-export function classifyBundle(bundle: OutcomeBundle | null | undefined): ClassifiedOutcome {
-  if (!bundle) return { kind: 'ungraded', phase: 'grading', reason: 'no grading bundle was produced',
-    appFailures: [], inconclusive: [], harnessFailures: [] };
+// Inspect observations even when execution stopped before the selected scope finished.
+// A later application abort must not hide an earlier measurement or cleanup failure.
+export function classifyObservedChecks(bundle: OutcomeBundle): ClassifiedOutcome {
   const cleanupFailures = cleanupFailureKeys(bundle);
   if (cleanupFailures.length) {
     return { kind: 'harness_failure', phase: 'grading-cleanup',
@@ -175,10 +175,36 @@ export function classifyBundle(bundle: OutcomeBundle | null | undefined): Classi
       appFailures: bundle.outcome?.appFailures ?? [], inconclusive: [],
       harnessFailures: cleanupFailures };
   }
+  const all = criteria(bundle);
+  // Zero-point criteria affect an outcome only in a zero-point-only scope.
+  const pointBearing = all.filter(criterion => Number(criterion.points) > 0);
+  const outcomeCriteria = pointBearing.length ? pointBearing : all;
+  const classified = outcomeCriteria.map(criterion => {
+    const evidence = criterionEvidence(criterion);
+    return { disposition: evidenceDisposition(evidence), key: criterion.key };
+  });
+  const keysFor = (kind: string): string[] =>
+    classified.filter(item => item.disposition.outcomeKind === kind)
+      .map(item => item.key);
+  const harnessFailures = keysFor('harness_failure');
+  const inconclusive = keysFor('inconclusive');
+  const appFailures = keysFor('app_failure');
+  if (bundle.suites?.lint?.pass === false) appFailures.unshift('contract-lint');
+  const kind = harnessFailures.length ? 'harness_failure'
+    : inconclusive.length ? 'inconclusive' : appFailures.length ? 'app_failure' : 'passed';
+  return { kind, phase: 'grading', reason: null, appFailures, inconclusive, harnessFailures };
+}
+
+export function classifyBundle(bundle: OutcomeBundle | null | undefined): ClassifiedOutcome {
+  if (!bundle) return { kind: 'ungraded', phase: 'grading', reason: 'no grading bundle was produced',
+    appFailures: [], inconclusive: [], harnessFailures: [] };
+  const observed = classifyObservedChecks(bundle);
+  if (observed.kind === 'harness_failure') return observed;
   const declaredOutcome = bundle.outcome;
   if (declaredOutcome && ['provider_failure', 'harness_failure'].includes(declaredOutcome.kind)) {
     return { ...declaredOutcome, appFailures: [], inconclusive: [], harnessFailures: [] };
   }
+  if (observed.kind === 'inconclusive') return observed;
   const selectedScopeComplete = Array.isArray(bundle.selection?.checks)
     && bundle.selection.checks.length > 0
     && bundle.selection.notRun?.length === 0
@@ -199,23 +225,7 @@ export function classifyBundle(bundle: OutcomeBundle | null | undefined): Classi
     return { kind: 'harness_failure', phase: 'grading', reason: scoreMismatch,
       appFailures: [], inconclusive: [], harnessFailures: ['score-consistency'] };
   }
-  // Zero-point criteria affect an outcome only in a zero-point-only scope.
-  const pointBearing = all.filter(criterion => Number(criterion.points) > 0);
-  const outcomeCriteria = pointBearing.length ? pointBearing : all;
-  const classified = outcomeCriteria.map(criterion => {
-    const evidence = criterionEvidence(criterion);
-    return { disposition: evidenceDisposition(evidence), key: criterion.key };
-  });
-  const keysFor = (kind: string): string[] =>
-    classified.filter(item => item.disposition.outcomeKind === kind)
-      .map(item => item.key);
-  const harnessFailures = keysFor('harness_failure');
-  const inconclusive = keysFor('inconclusive');
-  const appFailures = keysFor('app_failure');
-  if (bundle.suites?.lint?.pass === false) appFailures.unshift('contract-lint');
-  const kind = harnessFailures.length ? 'harness_failure'
-    : inconclusive.length ? 'inconclusive' : appFailures.length ? 'app_failure' : 'passed';
-  return { kind, phase: 'grading', reason: null, appFailures, inconclusive, harnessFailures };
+  return observed;
 }
 
 export function aggregateRunOutcome(levels: readonly LevelResult[],
@@ -250,9 +260,9 @@ export function ladderMayContinue(outcome: RunOutcome | null | undefined): boole
 
 // Advance only after the current level passes.
 export function ladderMayAdvance(outcome: RunOutcome | null | undefined): boolean {
-  return outcome?.kind === 'passed';
+  return outcome?.kind === 'passed' && ladderMayContinue(outcome);
 }
 
 export function mutationControlEligible(outcome: RunOutcome | null | undefined): boolean {
-  return outcome?.kind === 'passed';
+  return ladderMayAdvance(outcome);
 }

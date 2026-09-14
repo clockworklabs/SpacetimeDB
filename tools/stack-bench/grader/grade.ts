@@ -794,10 +794,7 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
         for (const resource of pending.values()) {
           result.consoleErrors.push(`[${name}] Navigation pending resource (up to 20): ${resource}`);
         }
-        if (cause instanceof ActionInconclusive || harnessBrowserFailure(cause)) throw cause;
-        throw new ActionApplicationFailure('application did not load during browser setup', {
-          observation: errorMessage(cause), expected: 'a reachable application page',
-        });
+        throw cause;
       } finally {
         page.off('request', requested);
         page.off('requestfinished', completed);

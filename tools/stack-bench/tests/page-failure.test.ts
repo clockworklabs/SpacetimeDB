@@ -4,6 +4,8 @@ import test from 'node:test';
 import { isFinding } from '../src/actions/action-findings.js';
 import { browserApplicationBoundary, pageFailure } from '../src/actions/browser-action-executors.js';
 import type { Finding } from '../src/actions/action-findings.js';
+import { createActionRegistry, executeAction } from '../src/actions/action-contract.js';
+import { chromium } from 'playwright';
 
 function findingOf(message: string): Finding {
   const failure = pageFailure(message);
@@ -58,4 +60,26 @@ test('alternative controls are not reported as nested controls', () => {
     assert.equal(finding.kind, 'page-timeout');
     if (finding.kind === 'page-timeout') assert.equal(finding.fields.scope, undefined);
   }
+});
+
+test('real browser control failures score, but grader selector and script errors do not', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    page.setDefaultTimeout(100);
+    await page.setContent('<button>Button</button>');
+    for (const [operation, status] of [
+      [() => page.locator('#missing').click(), 'failed'],
+      [() => page.locator('button').fill('value'), 'failed'],
+      [() => page.locator('[').count(), 'harness_failure'],
+      [() => page.evaluate(() => { throw new Error('broken grader observation'); }), 'harness_failure'],
+      [() => page.keyboard.press('NotAKey'), 'harness_failure'],
+    ] as const) {
+      const registry = createActionRegistry([{ id: 'probe', version: '1', category: 'browser-observation',
+        capabilities: [], sensitivity: [], timeoutMs: 5000, compile: input => input,
+        execute: browserApplicationBoundary(async () => { await operation(); }) }]);
+      const result = await executeAction(registry, 'probe', {}, {});
+      assert.equal(result.status, status, result.summary ?? undefined);
+    }
+  } finally { await browser.close(); }
 });

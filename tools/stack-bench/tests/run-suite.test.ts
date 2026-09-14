@@ -12,7 +12,7 @@ import { attachRegressionScope, childFailureDetail, clearPreviousGradeOutputs, f
   applicationFailureTotals, checkDatabaseProvenance, codeMetrics, resetFailureOutcome, suitesForRecipe,
   checkRuntimeDatabaseProvenance, databaseProvenanceFailure, writeApplicationDatabaseMarker,
   contractLintArgv, databaseLeaseForGrading, databaseNameForGrading, runGraderChild,
-  verifyApplicationProbe, waitForApplicationProbe }
+  verifyApplicationProbe, waitForApplicationProbe, closeSuiteBrowser }
   from '../commands/run-suite.js';
 import { loadTrack } from '../src/composition/tracks.js';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.js';
@@ -22,6 +22,20 @@ import { compileScenarioDefinition } from '../src/composition/definition-compile
 import { readArtifactPayload } from '../src/evidence/artifacts.js';
 
 const ECOMMERCE = join(STACK_BENCH_ROOT, 'tracks', 'ecommerce');
+
+test('browser shutdown failure replaces a previously written app outcome before returning', async () => {
+  const bundle = { error: 'app restart failed',
+    outcome: { kind: 'app_failure', phase: 'application-start', reason: 'app restart failed' } };
+  let saved = structuredClone(bundle);
+  const failure = new Error('browser control disconnected');
+  await assert.rejects(closeSuiteBrowser({ close: async () => { throw failure; } }, bundle,
+    () => { saved = structuredClone(bundle); }), error => error === failure);
+  assert.equal(saved.outcome.kind, 'harness_failure');
+  assert.equal(saved.outcome.phase, 'grading-cleanup');
+  assert.match(saved.outcome.reason, /browser control disconnected/);
+  await closeSuiteBrowser({ close: async () => {} }, bundle,
+    () => assert.fail('successful cleanup must not replace evidence'));
+});
 
 type JsonRecord = Record<string, unknown>;
 

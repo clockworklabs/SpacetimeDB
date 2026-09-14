@@ -219,6 +219,12 @@ export function validateCheckEvidence(
   evidence.actions.forEach((entry, index) => {
     const entryAt = `${at}.actions[${index}]`;
     validateActionEvidence(entry.evidence, `${entryAt}.evidence`);
+    const action = evidenceDisposition(entry.evidence.status);
+    const check = evidenceDisposition(evidence.status);
+    if ((check.passed && !action.passed) || (check.measured && !action.measured)
+      || (evidence.status === 'inconclusive' && action.status === 'harness_failure')) {
+      throw new Error(`${at}: check status ${evidence.status} contradicts action status ${action.status}`);
+    }
   });
   validateStringList(evidence.sensitivity, `${at}.sensitivity`);
   return value as CheckEvidence;

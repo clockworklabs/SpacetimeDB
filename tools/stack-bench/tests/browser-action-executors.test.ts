@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { errors } from 'playwright';
 
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { executeAction } from '../src/actions/action-contract.js';
@@ -75,7 +76,7 @@ test('UI failures retain bounded observations but exclude passwords and unproven
     const result = await run({ do: operation, actor: 'a', testid: 'stock',
       ...(operation === 'expect' ? { contains: 'Keyboard' } : {}),
       in: { testid: 'warehouse', contains: 'East' }, ...(operation === 'expectNumber' ? { equals: 1 } : {}) },
-    services({ loc: () => ({ waitFor: async () => { throw new Error('not visible'); } }) }));
+    services({ loc: () => ({ waitFor: async () => { throw new errors.TimeoutError('not visible'); } }) }));
     assert.equal(result.finding?.kind, 'control-missing');
     assert.match(result.summary ?? '', operation === 'expect' ? /East.*Keyboard/ : /East/);
   }
@@ -92,7 +93,7 @@ test('UI failures retain bounded observations but exclude passwords and unproven
     const select = { tagName: 'SELECT', options: [{ value: 'weekly', label: present ? 'Weekly' : 'Daily' }] };
     const result = await run({ do: 'fill', actor: 'a', testid: 'frequency', text: 'Weekly' }, services({ loc: () => ({
       waitFor: async () => {}, evaluate: async (read: (element: typeof select) => unknown) => read(select),
-      selectOption: async () => { throw new Error('locator.selectOption: Timeout exceeded'); },
+      selectOption: async () => { throw new errors.TimeoutError('locator.selectOption: Timeout exceeded'); },
     }) }));
     assert.equal(result.finding?.kind, present ? 'page-timeout' : 'choice-missing');
     if (!present) assert.match(result.summary ?? '', /required choice "Weekly"/);
@@ -112,6 +113,34 @@ test('timing executes through the contract and still rejects an unknown actor', 
   assert.equal(missing.status, 'harness_failure');
   assert.equal(missing.code, 'unclassified_exception');
   assert.equal(missing.summary, 'harness did not create actor "missing"');
+});
+
+test('observation and selection errors cannot become missing-control findings', async () => {
+  for (const operation of ['expect', 'expectNumber', 'waitUntilAbsent', 'fill']) {
+    const result = await run({ do: operation, actor: 'a', testid: 'field',
+        ...(operation === 'expectNumber' ? { equals: 1 } : {}),
+        ...(operation === 'fill' ? { text: 'Weekly' } : {}) }, services({ loc: () => ({
+        waitFor: async () => { throw new Error('locator.waitFor: invalid selector'); },
+      }) }));
+    assert.equal(result.status, 'harness_failure', `${operation}: ${result.summary}`);
+    assert.equal(result.finding, null);
+  }
+  for (const stage of ['select', 'options']) {
+    let reads = 0;
+    const result = await run({ do: 'fill', actor: 'a', testid: 'field', text: 'Weekly' },
+      services({ loc: () => ({ waitFor: async () => {},
+        evaluate: async () => {
+          if (reads++ === 0) return 'SELECT';
+          throw new Error('locator.evaluate: observation script failed');
+        },
+        selectOption: async () => {
+          if (stage === 'select') throw new Error('locator.selectOption: Protocol error');
+          throw new errors.TimeoutError('locator.selectOption: Timeout exceeded');
+        },
+      }) }));
+    assert.equal(result.status, 'harness_failure', result.summary ?? undefined);
+    assert.equal(result.finding, null);
+  }
 });
 
 test('message order requires observed messages and compares the merged sender sequence', async () => {
@@ -634,7 +663,7 @@ test('containsText polls the selected item without requiring an exact status val
 });
 
 test('failed disappearance identifies the matched entry and scope', async () => {
-  const provided = services({ loc: () => ({ waitFor: async () => { throw new Error('Timeout'); } }) });
+  const provided = services({ loc: () => ({ waitFor: async () => { throw new errors.TimeoutError('Timeout'); } }) });
   const result = await run({ do: 'waitUntilAbsent', actor: 'a', testid: 'item-card',
     contains: 'Coffee Grinder', in: { testid: 'search-results' }, within: 1 }, provided);
   assert.equal(result.status, 'failed');

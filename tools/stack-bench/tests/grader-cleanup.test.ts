@@ -67,6 +67,9 @@ test('navigation timeout is inconclusive; connection refusal blocks setup and pr
   for (const [error, expected] of [
     [new errors.TimeoutError('page.goto: Timeout 20000ms exceeded'), 'inconclusive'],
     [new Error('page.goto: net::ERR_CONNECTION_REFUSED'), 'failed'],
+    [new Error('page.goto: net::ERR_CONNECTION_RESET'), 'inconclusive'],
+    [new Error('page.goto: net::ERR_NAME_NOT_RESOLVED'), 'inconclusive'],
+    [new Error('page.goto: Protocol error: invalid parameters'), 'harness_failure'],
     [new Error('page.goto: Target crashed'), 'harness_failure'],
   ] as const) {
     let closed = false;

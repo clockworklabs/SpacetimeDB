@@ -24,6 +24,13 @@ They receive no credit, but this is not evidence that their target assertions fa
 Page navigation timeouts are unmeasured: external resources can delay page readiness.
 The runner retries the same source once. If grading remains incomplete, it stops
 the attempt without treating the timeout as a failed feature or selecting later work.
+Other navigation transport failures also remain unmeasured; connection refusal
+is a measured reachability failure. Invalid selectors, grader scripts, and browser
+protocol errors are harness failures. Observation helpers must not convert these
+errors into missing controls. Concurrent actions drain every branch before returning;
+measurement failures take priority over app failures. Bundle and dependency grading
+both inspect partial observations and cleanup evidence before accepting an app abort.
+Check verdicts cannot contradict failed or unmeasured action evidence.
 The prerequisite observation remains available for repair. Harness and provider
 failures remain unmeasured and cannot become app failures. The purchase-session,
 restock-race, and scheduled-restock probes use stored state or fresh reads for setup;
