@@ -757,6 +757,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-environment-publish"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-fail-initial-publish-broken"
 version = "0.1.0"
 dependencies = [
@@ -1168,7 +1175,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb"
-version = "2.9.0"
+version = "2.10.1"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -1187,7 +1194,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "2.9.0"
+version = "2.10.1"
 dependencies = [
  "heck 0.4.1",
  "humantime",
@@ -1198,14 +1205,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-sys"
-version = "2.9.0"
+version = "2.10.1"
 dependencies = [
  "spacetimedb-primitives",
 ]
 
 [[package]]
 name = "spacetimedb-lib"
-version = "2.9.0"
+version = "2.10.1"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1218,7 +1225,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-primitives"
-version = "2.9.0"
+version = "2.10.1"
 dependencies = [
  "bitflags",
  "either",
@@ -1229,14 +1236,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-query-builder"
-version = "2.9.0"
+version = "2.10.1"
 dependencies = [
  "spacetimedb-lib",
 ]
 
 [[package]]
 name = "spacetimedb-sats"
-version = "2.9.0"
+version = "2.10.1"
 dependencies = [
  "anyhow",
  "arrayvec",

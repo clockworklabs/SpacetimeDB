@@ -55,7 +55,7 @@ impl WasmtimeModule {
         WasmtimeModule { module }
     }
 
-    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(10, 5);
+    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(10, 6);
 
     pub(super) fn link_imports(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::Result<()> {
         link_imports(linker, AsyncImportMode::SyncStub)
@@ -625,8 +625,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         self.store.data().instance_env().tx.clone()
     }
 
-    fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
-        self.store.data_mut().set_module_def(module_def);
+    fn set_module_def(&mut self, module_def: Arc<ModuleDef>, module_hash: spacetimedb_lib::Hash) {
+        self.store.data_mut().set_module_def(module_def, module_hash);
     }
 
     #[tracing::instrument(level = "trace", skip_all)]

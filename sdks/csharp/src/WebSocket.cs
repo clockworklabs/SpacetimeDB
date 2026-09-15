@@ -3,7 +3,6 @@ using SpacetimeDB.ClientApi;
 
 using System;
 using System.Collections.Concurrent;
-using System.Linq;
 using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Runtime.InteropServices;
@@ -31,10 +30,11 @@ namespace SpacetimeDB
 
         // WebSocket buffer for incoming messages
         private static readonly int MAXMessageSize = 0x4000000; // 64MB
+        private static readonly int InitialReceiveBufferSize = 16 * 1024;
 
         // Connection parameters
         private readonly ConnectOptions _options;
-        private readonly byte[] _receiveBuffer = new byte[MAXMessageSize];
+        private byte[] _receiveBuffer = new byte[InitialReceiveBufferSize];
         private readonly ConcurrentQueue<Action> dispatchQueue = new();
 
         protected ClientWebSocket Ws = new();
@@ -365,15 +365,17 @@ namespace SpacetimeDB
                             return;
                         }
 
+                        EnsureReceiveCapacity(count + 1);
                         receiveResult = await Ws.ReceiveAsync(
-                            new ArraySegment<byte>(_receiveBuffer, count, MAXMessageSize - count),
+                            new ArraySegment<byte>(_receiveBuffer, count, _receiveBuffer.Length - count),
                             CancellationToken.None);
                         count += receiveResult.Count;
                     }
 
                     if (OnMessage != null)
                     {
-                        var message = _receiveBuffer.Take(count).ToArray();
+                        var message = new byte[count];
+                        Buffer.BlockCopy(_receiveBuffer, 0, message, 0, count);
                         // directly invoke message handling
                         OnMessage(message, startReceive);
                     }
@@ -423,6 +425,23 @@ namespace SpacetimeDB
             }
 #endif
             return Task.CompletedTask;
+        }
+
+        private void EnsureReceiveCapacity(int minimumCapacity)
+        {
+            if (_receiveBuffer.Length >= minimumCapacity)
+            {
+                return;
+            }
+
+            var newCapacity = _receiveBuffer.Length;
+            do
+            {
+                newCapacity = Math.Min(newCapacity * 2, MAXMessageSize);
+            }
+            while (newCapacity < minimumCapacity);
+
+            Array.Resize(ref _receiveBuffer, newCapacity);
         }
 
         /// <summary>
