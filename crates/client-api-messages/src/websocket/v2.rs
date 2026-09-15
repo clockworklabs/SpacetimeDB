@@ -84,7 +84,7 @@ pub struct Unsubscribe {
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq, SpacetimeType)]
-#[sats(crate = spacetimedb_lib)]
+#[sats(crate = spacetimedb_lib, allow_discriminants)]
 pub enum UnsubscribeFlags {
     #[default]
     Default = 0,
