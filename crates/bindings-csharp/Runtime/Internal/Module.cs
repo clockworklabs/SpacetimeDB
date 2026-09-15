@@ -56,10 +56,24 @@ public static class Module
 #else
         null;
 #endif
-    private static Func<Identity, IViewContext>? newViewContext = null;
-    private static Func<IAnonymousViewContext>? newAnonymousViewContext = null;
-    private static Func<Random, Timestamp, SpacetimeDB.HandlerContextBase>? newHandlerContext =
+    private static Func<Identity, IViewContext>? newViewContext =
+#if NET10_0_OR_GREATER
+        identity => new ViewContext(identity, new LocalReadOnly());
+#else
         null;
+#endif
+    private static Func<IAnonymousViewContext>? newAnonymousViewContext =
+#if NET10_0_OR_GREATER
+        () => new AnonymousViewContext(new LocalReadOnly());
+#else
+        null;
+#endif
+    private static Func<Random, Timestamp, SpacetimeDB.HandlerContextBase>? newHandlerContext =
+#if NET10_0_OR_GREATER
+        (random, time) => new HandlerContext(random, time);
+#else
+        null;
+#endif
 
     private static Func<
         Identity,
@@ -67,7 +81,13 @@ public static class Module
         Random,
         Timestamp,
         IProcedureContext
-    >? newProcedureContext = null;
+    >? newProcedureContext =
+#if NET10_0_OR_GREATER
+        (identity, connectionId, random, time) =>
+            new ProcedureContext(identity, connectionId, random, time);
+#else
+        null;
+#endif
 
     public static void SetReducerContextConstructor(
         Func<Identity, ConnectionId?, Random, Timestamp, IReducerContext> ctor
@@ -388,12 +408,9 @@ public partial class Local
 
 /// <summary>
 /// Read-only database access for view contexts.
-/// The code generator will extend this partial class to add table accessors.
+/// On .NET 10 the generator provides assembly-scoped extension properties.
+/// On .NET 8 generated modules declare their own type with table accessors.
 /// </summary>
 public sealed partial class LocalReadOnly
 {
-    // This class is intentionally empty - the code generator will add
-    // read-only table accessors for each table in the module.
-    // Example generated code:
-    // public Internal.ViewHandles.UserReadOnly User => new();
 }

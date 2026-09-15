@@ -52,7 +52,8 @@ public static class GeneratorSnapshotTests
 
         public Task Verify(string fileName, object target)
         {
-            if (fileName == nameof(Module) && ModuleTargetFramework == "net10.0")
+            if ((fileName == nameof(Module) || fileName == "ExtraCompilationErrors")
+                && ModuleTargetFramework == "net10.0")
             {
                 fileName += ".net10";
             }
@@ -193,7 +194,18 @@ public static class GeneratorSnapshotTests
         // Use the fixture's target, not the test host: the .NET 10 suite also compiles .NET 8 examples.
         var sharedContexts = ((CSharpParseOptions)compilation.SyntaxTrees.First().Options)
             .PreprocessorSymbolNames.Contains("NET10_0_OR_GREATER");
-        foreach (var name in new[] { "SpacetimeDB.Local", "SpacetimeDB.ReducerContext" })
+        foreach (var name in new[]
+        {
+            "SpacetimeDB.Local",
+            "SpacetimeDB.ReducerContext",
+            "SpacetimeDB.ProcedureContext",
+            "SpacetimeDB.ProcedureTxContext",
+            "SpacetimeDB.HandlerContext",
+            "SpacetimeDB.HandlerTxContext",
+            "SpacetimeDB.ViewContext",
+            "SpacetimeDB.AnonymousViewContext",
+            "SpacetimeDB.QueryBuilder",
+        })
         {
             var runtimeType = runtimeAssembly!.GetTypeByMetadataName(name);
             var generatedType = compilation.Assembly.GetTypeByMetadataName(name);
@@ -217,20 +229,16 @@ public static class GeneratorSnapshotTests
             );
         }
 
-        // These types are generated per-module by SpacetimeDB.Codegen.Module.
-        // If Runtime defines any of them too, user projects can hit CS0436 warnings.
-        var codegenOwnedTypes = new[]
+        // The legacy runtime shell remains on .NET 8, where generated code shadows it.
+        var readOnlyName = "SpacetimeDB.Internal.LocalReadOnly";
+        Assert.NotNull(runtimeAssembly!.GetTypeByMetadataName(readOnlyName));
+        if (sharedContexts)
         {
-            "SpacetimeDB.ProcedureContext",
-            "SpacetimeDB.ProcedureTxContext",
-            "SpacetimeDB.ViewContext",
-            "SpacetimeDB.AnonymousViewContext",
-        };
-
-        foreach (var name in codegenOwnedTypes)
+            Assert.Null(compilation.Assembly.GetTypeByMetadataName(readOnlyName));
+        }
+        else
         {
-            Assert.Null(runtimeAssembly!.GetTypeByMetadataName(name));
-            Assert.NotNull(compilation.Assembly.GetTypeByMetadataName(name));
+            Assert.NotNull(compilation.Assembly.GetTypeByMetadataName(readOnlyName));
         }
     }
 
@@ -279,6 +287,74 @@ public static class GeneratorSnapshotTests
 
         Assert.Empty(GetCompilationErrors(compilationAfterGen));
     }
+
+#if NET10_0_OR_GREATER
+    [Fact]
+    // Can a separately compiled DLL accept our module’s contexts, and can module code still access tables through the contexts it returns?
+    public static async Task NamespaceContextsCrossAssemblyBoundaries()
+    {
+        var fixture = await Fixture.Compile("server");
+        var contextNames = new[]
+        {
+            "ReducerContext", "ProcedureContext", "ProcedureTxContext",
+            "HandlerContext", "HandlerTxContext", "ViewContext", "AnonymousViewContext",
+        };
+        var helperSource = "#pragma warning disable STDB_UNSTABLE\npublic static class ContextHelpers {"
+            + string.Join("\n", contextNames.Select(name =>
+                $"public static SpacetimeDB.{name} Pass(SpacetimeDB.{name} ctx) => ctx;"))
+            + "}";
+        var helper = CSharpCompilation.Create(
+            "ContextHelperLibrary",
+            [CSharpSyntaxTree.ParseText(helperSource, fixture.ParseOptions)],
+            fixture.SampleCompilation.References,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+        );
+        using var dll = new MemoryStream();
+        var emitted = helper.Emit(dll);
+        Assert.True(emitted.Success, string.Join("\n", emitted.Diagnostics));
+
+        var compilation = fixture.SampleCompilation.AddReferences(
+            MetadataReference.CreateFromImage(dll.ToArray())
+        );
+        foreach (var generator in new IIncrementalGenerator[] { new Type(), new Module() })
+        {
+            compilation = compilation.AddSyntaxTrees(
+                fixture.RunGeneratorAndGetResult(generator).GeneratedTrees
+            );
+        }
+        var consumer = "#pragma warning disable STDB_UNSTABLE\n" + """
+            public static class ContextConsumer
+            {
+                public static void Write(SpacetimeDB.ProcedureTxContext ctx) =>
+                    ContextHelpers.Pass(ctx).Db.PublicTable.Insert(default);
+                public static void Write(SpacetimeDB.HandlerTxContext ctx) =>
+                    ContextHelpers.Pass(ctx).Db.PublicTable.Insert(default);
+                public static ulong Read(SpacetimeDB.ViewContext ctx) =>
+                    ContextHelpers.Pass(ctx).Db.PublicTable.Count;
+                public static SpacetimeDB.IQuery<PublicTable> Query(SpacetimeDB.AnonymousViewContext ctx) =>
+                    ContextHelpers.Pass(ctx).From.PublicTable();
+            }
+            """;
+        consumer += "\npublic static class ContextIdentityConsumer {"
+            + string.Join("\n", contextNames.Select(name =>
+                $"public static SpacetimeDB.{name} Pass(SpacetimeDB.{name} ctx) => ContextHelpers.Pass(ctx);"))
+            + "}";
+        compilation = compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(consumer, fixture.ParseOptions));
+        Assert.Empty(GetCompilationErrors(compilation));
+        AssertContextOwnership(compilation);
+
+        var invalidWrites = CSharpSyntaxTree.ParseText("""
+            public static class InvalidViewWrites
+            {
+                public static void Write(SpacetimeDB.ViewContext ctx) => ctx.Db.PublicTable.Insert(default);
+                public static void Write(SpacetimeDB.AnonymousViewContext ctx) => ctx.Db.PublicTable.Insert(default);
+            }
+            """, fixture.ParseOptions);
+        var errors = GetCompilationErrors(compilation.AddSyntaxTrees(invalidWrites)).ToArray();
+        Assert.Equal(2, errors.Length);
+        Assert.All(errors, error => Assert.Equal("CS1061", error.Id));
+    }
+#endif
 
     [Fact]
     public static async Task TypeAndModuleGeneratorsOnServer()
