@@ -93,7 +93,8 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
       catch (error) { recoveryError = error; }
     })().catch(error => { faultError ??= error; });
     const outcomes = await Promise.all(pending);
-    unsettled = input.target === 'database' && !runtime.spacetime && outcomes.some(row => row.status === null);
+    // Killing the app cannot retract a commit already sent to its database.
+    unsettled = !runtime.spacetime && outcomes.some(row => row.status === null);
     await fault;
     const observation = { before, prepared, outcomes, unsettled, receipt: receipt ?? null, recoveredAtMs: recoveredAtMs ?? null,
       faultError: faultError instanceof Error ? faultError.message : faultError ? String(faultError) : null,
@@ -128,7 +129,7 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
     const faultEndMs = Math.max(...signalTimes);
     const outstandingAtFault = outcomes.filter(row => row.startedAtMs <= faultAtMs && row.completedAtMs >= faultEndMs).length;
     const evidence = { ...observation, after, observedAtMs: named.now(), differences, confirmed, faultAtMs, faultEndMs, outstandingAtFault };
-    const unmeasured = unsettled ? 'a disconnected checkout may still be running after database recovery'
+    const unmeasured = unsettled ? 'a disconnected checkout may still be running in the database'
       : Date.now() - prepared.recordedAtMs >= 85_000 ? 'reservation expiry prevents a complete recovery comparison'
       : Math.abs(receipt.clockOffsetAfterMs - receipt.clockOffsetBeforeMs) > 5 ? 'clock changed during fault'
         : !outstandingAtFault ? 'fault missed the outstanding-request window' : null;

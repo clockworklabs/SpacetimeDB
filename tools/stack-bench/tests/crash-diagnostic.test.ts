@@ -52,7 +52,7 @@ test('native crash transport requires a correlated confirmed result and drains u
 });
 
 test('crash action retains partial fault evidence and distinguishes recovered state from acknowledged loss', async () => {
-  for (const mode of ['absent', 'committed', 'lost-acknowledged', 'partial', 'fault-error', 'cancelled-recovery', 'cancelled-read', 'recovery-error', 'disconnected-database']) {
+  for (const mode of ['absent', 'committed', 'lost-acknowledged', 'partial', 'fault-error', 'cancelled-recovery', 'cancelled-read', 'recovery-error', 'disconnected-database', 'disconnected-application']) {
     const cancellation = new AbortController();
     const timers: number[] = [];
     let recoveryStopped = false;
@@ -84,7 +84,8 @@ test('crash action retains partial fault evidence and distinguishes recovered st
       }, resolve: () => ({ id: 'checkout' }),
         request: () => ({ url: 'http://app/checkout' }), fetch: async () => {
           await waiting;
-          if (mode === 'absent' || mode === 'partial' || mode === 'disconnected-database') throw new Error('socket closed');
+          if (mode.startsWith('disconnected-')) throw new Error('socket closed');
+          if (mode === 'absent' || mode === 'partial') return { ok: false, status: 409, text: async () => '' };
           return { ok: true, status: 200, text: async () => '' };
         } },
       'process-crash': { prepare: async () => ({ spacetime: null,
@@ -115,8 +116,8 @@ test('crash action retains partial fault evidence and distinguishes recovered st
       assert(timers.includes(150_000));
       assert.equal(result.code, 'cancelled');
     }
-    assert.equal(unsettled, mode === 'disconnected-database');
-    assert.equal(result.status, mode.startsWith('cancelled-') || mode === 'disconnected-database' ? 'inconclusive' : mode === 'fault-error' ? 'harness_failure'
+    assert.equal(unsettled, mode.startsWith('disconnected-'));
+    assert.equal(result.status, mode.startsWith('cancelled-') || mode.startsWith('disconnected-') ? 'inconclusive' : mode === 'fault-error' ? 'harness_failure'
       : ['partial', 'lost-acknowledged', 'recovery-error'].includes(mode) ? 'failed' : 'passed', mode);
     assert(result.observation, mode);
     assert(!JSON.stringify(result.observation).includes('private-token'));
