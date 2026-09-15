@@ -17,7 +17,7 @@ mod fs;
 pub use fs::File;
 
 pub use crate::{
-    sim::executor::{FaultInjector, Options, TaskSelector},
+    sim::executor::{FaultInjector, LinkKind, Options, TaskSelector},
     SECTOR_SIZE,
 };
 

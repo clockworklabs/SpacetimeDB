@@ -47,7 +47,6 @@ impl<T> Sqe<T> {
         self
     }
 
-    #[allow(unused)]
     pub fn is_linked(&self) -> bool {
         self.link.is_some()
     }
