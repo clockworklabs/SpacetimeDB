@@ -369,11 +369,17 @@ pub struct Options {
     /// queue's. This can be insufficient for some workloads, so this setting
     /// can be used to override the default.
     ///
-    /// Should be a power of 2, or is otherwise rounder up to the next power of
+    /// Should be a power of 2, or is otherwise rounded up to the next power of
     /// two.
     pub cq_capacity: Option<NonZeroUsize>,
     /// What to do if the completion queue overflows.
     pub cq_overflow: OnCqOverflow,
+    /// Bound on the number of concurrently executing tasks.
+    ///
+    /// Note that one [Sqe] can result in many operations to be scheduled.
+    /// Should be a power of 2, or is otherwise rounded up to the next power of
+    /// two.
+    pub max_concurrency: NonZeroUsize,
 }
 
 impl Options {
@@ -386,6 +392,10 @@ impl Options {
             .map(|c| c.get().next_power_of_two())
             .unwrap_or_else(|| 2 * self.sq_capacity())
     }
+
+    pub(crate) fn max_concurrency(&self) -> usize {
+        self.max_concurrency.get().next_power_of_two()
+    }
 }
 
 impl Default for Options {
@@ -394,6 +404,7 @@ impl Default for Options {
             capacity: NonZeroUsize::new(8).unwrap(),
             cq_capacity: None,
             cq_overflow: OnCqOverflow::default(),
+            max_concurrency: NonZeroUsize::new(32).unwrap(),
         }
     }
 }
@@ -421,8 +432,8 @@ impl<UserData> Executor<UserData> {
             submissions: VecDeque::with_capacity(sq_capacity),
             completions: VecDeque::with_capacity(cq_capacity),
             in_flight: Slab::with_capacity(2 * sq_capacity),
-            executing: Vec::with_capacity(2 * sq_capacity),
-            select_executing: Vec::with_capacity(2 * sq_capacity),
+            executing: Vec::with_capacity(options.max_concurrency()),
+            select_executing: Vec::with_capacity(options.max_concurrency()),
             fstree: BTreeMap::new(),
             cq_overflow: options.cq_overflow,
             cq_dropped: 0,
@@ -524,31 +535,32 @@ impl<UserData> Executor<UserData> {
         let mut progress = false;
 
         while let Some(mut sqe) = self.submissions.pop_front() {
-            // If the sqe is linked, pop the whole chain.
-            // Links of sqes not submitted in the same batch are ignored.
-            let mut successors = VecDeque::new();
-            if let Some(link) = sqe.link {
-                let mut link_kind = link;
-                while let Some(Sqe { inner, link, user_data }) = self.submissions.pop_front() {
-                    successors.push_back(Blocked {
-                        link: link_kind,
-                        sqe: inner,
-                        user_data,
-                    });
-                    match link {
-                        Some(kind) => link_kind = kind,
-                        None => break,
+            let slot = self.in_flight.vacant_entry();
+            if let Some(pending) = sqe.inner.schedule(SqeId(slot.key()), &mut self.executing) {
+                // If the sqe is linked, pop the whole chain.
+                // Links of sqes not submitted in the same batch are ignored.
+                let mut successors = VecDeque::new();
+                if let Some(link) = sqe.link {
+                    let mut link_kind = link;
+                    while let Some(Sqe { inner, link, user_data }) = self.submissions.pop_front() {
+                        successors.push_back(Blocked {
+                            link: link_kind,
+                            sqe: inner,
+                            user_data,
+                        });
+                        match link {
+                            Some(kind) => link_kind = kind,
+                            None => break,
+                        }
                     }
                 }
+                slot.insert(InFlight {
+                    sqe: sqe.inner,
+                    pending,
+                    blocked: successors,
+                    user_data: sqe.user_data,
+                });
             }
-            let slot = self.in_flight.vacant_entry();
-            let pending = sqe.inner.schedule(SqeId(slot.key()), &mut self.executing);
-            slot.insert(InFlight {
-                sqe: sqe.inner,
-                pending,
-                blocked: successors,
-                user_data: sqe.user_data,
-            });
 
             progress = true
         }
@@ -748,11 +760,13 @@ impl<UserData> Executor<UserData> {
         else {
             unreachable!("invalid sqe: expected create")
         };
-        let run = |()| match self.fstree.entry(path) {
-            btree_map::Entry::Vacant(entry) => Ok(entry.insert(fs::File::default()).clone()),
-            btree_map::Entry::Occupied(entry) => Err(Error::FileAlreadyExists {
-                path: entry.key().clone(),
-            }),
+        let run = |()| {
+            // Avoid cloning `path` if already exists.
+            if self.fstree.contains_key(&path) {
+                Err(Error::FileAlreadyExists { path })
+            } else {
+                Ok(self.fstree.entry(path).or_insert_with(fs::File::default).clone())
+            }
         };
         let result = eff.traverse(run, Err);
         let is_success = result.is_ok();

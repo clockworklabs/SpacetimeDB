@@ -193,117 +193,126 @@ impl SqeInner {
         }
     }
 
-    pub(super) fn schedule(&mut self, sqe_id: SqeId, executing: &mut Vec<Executing>) -> Pending {
+    pub(super) fn schedule(&mut self, sqe_id: SqeId, executing: &mut Vec<Executing>) -> Option<Pending> {
+        let exe_cap = executing.spare_capacity_mut().len();
         match self {
             SqeInner::Write { buf, offset, .. } => {
                 let buf_len = buf.as_bytes().len();
                 let first_sector = (*offset / SECTOR_SIZE as u64) as usize;
                 let page_count = buf_len / SECTOR_SIZE;
 
-                executing.extend((0..page_count).map(|page| Executing {
-                    sqe: sqe_id,
-                    inner: Operation::WriteSector(WriteSector {
-                        page_offset: first_sector + page,
-                        buf_offset: page * SECTOR_SIZE,
-                    }),
-                }));
-                Pending::ReadWrite {
-                    results: Results::new(page_count),
-                }
+                (exe_cap >= page_count).then(|| {
+                    executing.extend((0..page_count).map(|page| Executing {
+                        sqe: sqe_id,
+                        inner: Operation::WriteSector(WriteSector {
+                            page_offset: first_sector + page,
+                            buf_offset: page * SECTOR_SIZE,
+                        }),
+                    }));
+                    Pending::ReadWrite {
+                        results: Results::new(page_count),
+                    }
+                })
             }
             SqeInner::Read { buf, offset, .. } => {
                 let buf_len = buf.as_bytes().len();
                 let first_sector = (*offset / SECTOR_SIZE as u64) as usize;
                 let page_count = buf_len / SECTOR_SIZE;
 
-                executing.extend((0..page_count).map(|page| Executing {
-                    sqe: sqe_id,
-                    inner: Operation::ReadSector(ReadSector {
-                        page_offset: first_sector + page,
-                        buf_offset: page * SECTOR_SIZE,
-                    }),
-                }));
-                Pending::ReadWrite {
-                    results: Results::new(page_count),
-                }
+                (exe_cap >= page_count).then(|| {
+                    executing.extend((0..page_count).map(|page| Executing {
+                        sqe: sqe_id,
+                        inner: Operation::ReadSector(ReadSector {
+                            page_offset: first_sector + page,
+                            buf_offset: page * SECTOR_SIZE,
+                        }),
+                    }));
+                    Pending::ReadWrite {
+                        results: Results::new(page_count),
+                    }
+                })
             }
-            SqeInner::Open { .. } => {
+            SqeInner::Open { .. } => (exe_cap >= 1).then(|| {
                 executing.push(Executing {
                     sqe: sqe_id,
                     inner: Operation::Open,
                 });
                 Pending::OneOff
-            }
-            SqeInner::Create { .. } => {
+            }),
+            SqeInner::Create { .. } => (exe_cap >= 1).then(|| {
                 executing.push(Executing {
                     sqe: sqe_id,
                     inner: Operation::Create,
                 });
                 Pending::OneOff
-            }
-            SqeInner::Stat { .. } => {
+            }),
+            SqeInner::Stat { .. } => (exe_cap >= 1).then(|| {
                 executing.push(Executing {
                     sqe: sqe_id,
                     inner: Operation::Stat,
                 });
                 Pending::OneOff
-            }
-            SqeInner::Fallocate { .. } => {
+            }),
+            SqeInner::Fallocate { .. } => (exe_cap >= 1).then(|| {
                 executing.push(Executing {
                     sqe: sqe_id,
                     inner: Operation::Fallocate,
                 });
                 Pending::OneOff
-            }
+            }),
             SqeInner::Fsync { fd } => {
                 let sector_count = fd.len() / SECTOR_SIZE as u64;
-                executing.extend(
-                    (0..sector_count)
-                        .map(|offset| Executing {
-                            sqe: sqe_id,
-                            inner: Operation::Fsync {
-                                effect: FsyncEffect::Datasync(Datasync::Sector(offset)),
-                            },
-                        })
-                        .chain([Executing {
-                            sqe: sqe_id,
-                            inner: Operation::Fsync {
-                                effect: FsyncEffect::Datasync(Datasync::Length),
-                            },
-                        }]),
-                );
-                Pending::Sync {
-                    results: Results::new(1 + sector_count as usize),
-                }
+                (exe_cap > sector_count as usize).then(|| {
+                    executing.extend(
+                        (0..sector_count)
+                            .map(|offset| Executing {
+                                sqe: sqe_id,
+                                inner: Operation::Fsync {
+                                    effect: FsyncEffect::Datasync(Datasync::Sector(offset)),
+                                },
+                            })
+                            .chain([Executing {
+                                sqe: sqe_id,
+                                inner: Operation::Fsync {
+                                    effect: FsyncEffect::Datasync(Datasync::Length),
+                                },
+                            }]),
+                    );
+                    Pending::Sync {
+                        results: Results::new(1 + sector_count as usize),
+                    }
+                })
             }
             SqeInner::Fdatasync { fd } => {
                 let sector_count = fd.len() / SECTOR_SIZE as u64;
-                executing.extend(
-                    (0..sector_count)
-                        .map(|offset| Executing {
-                            sqe: sqe_id,
-                            inner: Operation::Fdatasync {
-                                effect: Datasync::Sector(offset),
-                            },
-                        })
-                        .chain([Executing {
-                            sqe: sqe_id,
-                            inner: Operation::Fdatasync {
-                                effect: Datasync::Length,
-                            },
-                        }]),
-                );
-                Pending::Sync {
-                    results: Results::new(1 + sector_count as usize),
-                }
+                (exe_cap > sector_count as usize).then(|| {
+                    executing.extend(
+                        (0..sector_count)
+                            .map(|offset| Executing {
+                                sqe: sqe_id,
+                                inner: Operation::Fdatasync {
+                                    effect: Datasync::Sector(offset),
+                                },
+                            })
+                            .chain([Executing {
+                                sqe: sqe_id,
+                                inner: Operation::Fdatasync {
+                                    effect: Datasync::Length,
+                                },
+                            }]),
+                    );
+                    Pending::Sync {
+                        results: Results::new(1 + sector_count as usize),
+                    }
+                })
             }
-            SqeInner::Noop => {
+            SqeInner::Noop => (exe_cap >= 1).then(|| {
                 executing.push(Executing {
                     sqe: sqe_id,
                     inner: Operation::Noop,
                 });
                 Pending::OneOff
-            }
+            }),
         }
     }
 }
