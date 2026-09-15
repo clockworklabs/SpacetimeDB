@@ -2305,7 +2305,7 @@ impl AuthCtx {
     ///
     /// This is infallible because host reducer calls receive claims only after
     /// the server has validated them. Native unit tests should use
-    /// [`test_utils::TestAuth::from_jwt_payload`](crate::test_utils::TestAuth::from_jwt_payload)
+    /// `test_utils::TestAuth::from_jwt_payload`
     /// so invalid test payloads are rejected before constructing a reducer context.
     ///
     /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
