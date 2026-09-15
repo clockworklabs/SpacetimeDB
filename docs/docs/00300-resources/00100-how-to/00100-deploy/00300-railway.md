@@ -5,7 +5,7 @@ slug: /how-to/deploy/railway
 
 Railway is a hosted platform for deploying infrastructure and application services. If you want to run SpacetimeDB without managing your own VM, the official Railway template is a quick way to get started.
 
-The template deploys the first-party `clockworklabs/spacetime` image, exposes port `3000`, and provisions persistent storage at `/stdb`. Once the service is running, you can publish one or more databases to it with the SpacetimeDB CLI.
+The template deploys the first-party `clockworklabs/spacetime` image, exposes port `3000`, and provisions persistent storage at `/stdb`. The SpacetimeDB server data directory must be inside that volume, for example `/stdb/data`, so databases survive service redeploys. Once the service is running, you can publish one or more databases to it with the SpacetimeDB CLI.
 
 ## Prerequisites
 
@@ -27,6 +27,14 @@ Then:
 4. In Railway, open your service and copy its public domain or attach a custom domain.
 
 That domain is the base URL your CLI and clients will use to connect to this SpacetimeDB instance.
+
+Before publishing any databases, verify the service configuration:
+
+- The Railway volume is mounted at `/stdb`.
+- The SpacetimeDB start command includes `--data-dir=/stdb/data`.
+- If the service cannot write to the volume, set `RAILWAY_RUN_UID=0` in the service variables and redeploy.
+
+The template should configure the data directory for you, but check this setting if you edit the start command. If SpacetimeDB starts without a data directory under `/stdb`, Railway redeploys can discard published databases and other server state.
 
 ## Step 2: Add the Railway deployment to your CLI
 
