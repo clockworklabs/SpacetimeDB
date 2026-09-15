@@ -43,6 +43,18 @@ test('crash database drain requires observed zero work and preserves errors or a
     const expired = await drainApplicationDatabase(lease, Date.now() - 1, signal, () => id);
     assert.equal(expired.settled, false);
     assert.deepEqual(expired.samples, []);
+    const deadline = Date.now() + 20;
+    const timedOut = await drainApplicationDatabase(lease, deadline, signal, (_command, args) => {
+      if (args[0] === 'inspect') return id;
+      while (Date.now() < deadline) { /* Simulate a probe using its remaining deadline. */ }
+      throw Object.assign(new Error('private command details'), { code: 'ETIMEDOUT' });
+    });
+    assert.equal(timedOut.settled, false);
+    assert.deepEqual(timedOut.samples, []);
+    await assert.rejects(drainApplicationDatabase(lease, Date.now() + 5000, signal, (_command, args) => {
+      if (args[0] === 'inspect') return id;
+      throw Object.assign(new Error('private command details'), { code: 'ETIMEDOUT' });
+    }), /could not observe pending database work/);
     const cancelled = new AbortController();
     await assert.rejects(drainApplicationDatabase(lease, Date.now() + 5000, cancelled.signal, (_command, args) => {
       if (args[0] === 'inspect') return id;

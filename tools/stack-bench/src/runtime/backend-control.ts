@@ -79,7 +79,11 @@ export async function drainApplicationDatabase(lease: BackendLease, deadlineMs: 
       try {
         output = exec('docker', ['exec', container, ...command],
           { encoding: 'utf8', stdio: 'pipe', timeout: Math.max(1, Math.min(5000, deadlineMs - Date.now())) }).trim();
-      } catch { throw new Error('could not observe pending database work'); }
+      } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error && error.code === 'ETIMEDOUT'
+          && Date.now() >= deadlineMs) break;
+        throw new Error('could not observe pending database work');
+      }
       if (!/^\d+$/.test(output) || !Number.isSafeInteger(Number(output))) throw new Error('invalid database work count');
       receipt.samples.push({ atMs: Date.now(), pending: Number(output) });
       if (output === '0' && Date.now() <= deadlineMs) { receipt.settled = true; break; }
