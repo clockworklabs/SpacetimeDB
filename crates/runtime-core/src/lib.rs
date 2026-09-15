@@ -1,6 +1,6 @@
 #![no_std]
 
-#[cfg(feature = "sim")]
+#[cfg(any(feature = "sim", feature = "alloc"))]
 extern crate alloc;
 #[cfg(test)]
 extern crate std;
