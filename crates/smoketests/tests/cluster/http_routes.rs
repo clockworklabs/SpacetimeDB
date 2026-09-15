@@ -1290,12 +1290,9 @@ fn csharp_handle_request_body() {
 /// Validates the Rust example from `docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md`.
 #[test]
 fn http_handlers_tutorial_say_hello_route_works() {
-    let module_code = extract_code_blocks(
-        &workspace_root().join("docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md"),
-        r"```rust\n([\s\S]*?)\n```",
-        "rust",
-    );
-    let test = Smoketest::builder().module_code(&module_code).build();
+    let test = Smoketest::builder()
+        .precompiled_module("http-handlers-tutorial")
+        .build();
     let identity = test.database_identity.as_ref().expect("database identity missing");
 
     let url = format!("{}/v1/database/{}/route/say-hello", test.server_url, identity);

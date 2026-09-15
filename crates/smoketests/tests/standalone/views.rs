@@ -1,7 +1,22 @@
 use std::path::PathBuf;
 
 use serde_json::{json, Value};
-use spacetimedb_smoketests::{require_local_server, workspace_root, Smoketest};
+use spacetimedb_smoketests::{build_rust_module, require_local_server, workspace_root, Smoketest};
+
+/// A table and view with the same accessor collide during Rust compilation.
+#[test]
+fn test_fail_build_namespace_collision() {
+    let output = build_rust_module(include_str!("../../modules/views-broken-namespace/src/lib.rs"), "");
+    assert!(
+        !output.status.success(),
+        "Expected a namespace collision to fail compilation"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("the name `person` is defined multiple times"),
+        "Expected the duplicate person diagnostic, got: {stderr}"
+    );
+}
 
 const STALE_VIEW_BACKING_TABLE_FIXTURE_IDENTITY: &str =
     "c200f6ec405075e508c2ed6474019332d6a2a46c69614306cc4bd980e0b8b767";

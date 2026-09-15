@@ -263,22 +263,6 @@ fn test_st_view_tables() {
     );
 }
 
-/// Publishing a module should fail if a table and view have the same name
-#[test]
-fn test_fail_publish_namespace_collision() {
-    let mut test = Smoketest::builder()
-        // Can't be precompiled because the code is intentionally broken
-        .module_code(include_str!("../../modules/views-broken-namespace/src/lib.rs"))
-        .autopublish(false)
-        .build();
-
-    let result = test.publish().run();
-    assert!(
-        result.is_err(),
-        "Expected publish to fail when table and view have same name"
-    );
-}
-
 /// Publishing a module should fail if the inner return type is not a product type
 #[test]
 fn test_fail_publish_wrong_return_type() {
