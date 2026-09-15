@@ -287,7 +287,7 @@ export function startAttemptSpacetime(lease: BackendLease): void {
       + `stat=$(cat /proc/$$/stat); rest=${'${stat##*) }'}; set -- $rest; `
       + `printf "%s %s\\n" "$$" "${'${20}'}" > ${SPACETIME_PROCESS_RECORD}; `
       + `exec /opt/stack-bench-embedded-deps/spacetimedb-cli start --listen-addr 0.0.0.0:${port} `
-      + `--data-dir /var/lib/stack-bench-data' > /tmp/stack-bench-backend.log 2>&1`]);
+      + `--data-dir /var/lib/stack-bench-data' > ${CODING_CONTAINER_CONTROL_DIR}/stack-bench-backend.log 2>&1`]);
 }
 
 // Start an existing database without recreating users, keys, or the network.
@@ -299,7 +299,9 @@ export function startAttemptDatabaseProcess(lease: BackendLease): void {
   const launch = lease.backend === 'postgres' ? ['postgres']
     : ['mongod', '--bind_ip', '127.0.0.1', '--replSet', 'rs0', '--keyFile', '/data/configdb/stack-bench-keyfile'];
   attemptDocker(['exec', '-d', lease.resources.container.id, 'sh', '-c',
-    'exec "$@" > /tmp/stack-bench-backend.log 2>&1',
+    // Mongo's entrypoint changes the log owner. Reopening it in sticky /tmp
+    // fails under fs.protected_regular, even for the root restart shell.
+    `mkdir -p ${CODING_CONTAINER_CONTROL_DIR}; exec "$@" > ${CODING_CONTAINER_CONTROL_DIR}/stack-bench-backend.log 2>&1`,
     'sh', '/usr/local/bin/docker-entrypoint.sh', ...launch]);
 }
 

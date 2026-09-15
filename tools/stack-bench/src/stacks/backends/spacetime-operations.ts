@@ -40,6 +40,22 @@ function tableColumns(schema: unknown): Array<{ table: string; column: string; t
     ? typespace.Typespace.types : null;
   const tables = record(tablesSection) && Array.isArray(tablesSection.Tables) ? tablesSection.Tables : null;
   if (!types || !tables) throw new Error('SpacetimeDB describe omitted tables or types');
+  const namesSection = schema.sections.find(section => record(section) && 'ExplicitNames' in section);
+  const names = new Map<string, string>();
+  if (namesSection !== undefined) {
+    if (!record(namesSection) || !record(namesSection.ExplicitNames)
+      || !Array.isArray(namesSection.ExplicitNames.entries)) throw new Error('SpacetimeDB describe returned invalid explicit names');
+    for (const entry of namesSection.ExplicitNames.entries) {
+      if (!record(entry)) throw new Error('SpacetimeDB describe returned an invalid name entry');
+      if (!('Table' in entry)) continue;
+      const name = entry.Table;
+      if (!record(name) || typeof name.source_name !== 'string' || !name.source_name
+        || typeof name.canonical_name !== 'string' || !name.canonical_name || names.has(name.source_name)) {
+        throw new Error('SpacetimeDB describe returned an invalid table name');
+      }
+      names.set(name.source_name, name.canonical_name);
+    }
+  }
   const columns: Array<{ table: string; column: string; type: Record<string, unknown> }> = [];
   for (const table of tables) {
     if (!record(table) || typeof table.source_name !== 'string'
@@ -51,7 +67,8 @@ function tableColumns(schema: unknown): Array<{ table: string; column: string; t
     for (const element of elements) {
       if (!record(element) || !record(element.name) || typeof element.name.some !== 'string'
         || !record(element.algebraic_type)) throw new Error('SpacetimeDB describe returned an invalid column');
-      columns.push({ table: table.source_name, column: element.name.some, type: element.algebraic_type });
+      columns.push({ table: names.get(table.source_name) ?? table.source_name,
+        column: element.name.some, type: element.algebraic_type });
     }
   }
   return columns;

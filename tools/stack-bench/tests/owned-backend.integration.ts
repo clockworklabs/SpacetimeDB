@@ -35,6 +35,7 @@ for (const backend of ['postgres', 'mongodb', 'spacetime']) test(`owned ${backen
       import { releaseBackendLease } from './dist/src/runtime/backend-teardown.js';
       import { loadTrack, portsFor } from './dist/src/composition/tracks.js';
       import { activateAttemptBackend } from './dist/src/stacks/hosted-lifecycle.js';
+      import { stopCheckpointDatabase, startCheckpointDatabase } from './dist/src/stacks/database-checkpoint.js';
       import { controlSpacetime } from './dist/src/stacks/spacetime-lifecycle.js';
       import { attemptDatabaseIdentity } from './dist/src/stacks/hosted-database-identity.js';
       import { resetMongoDb } from './dist/src/stacks/backends/mongodb-operations.js';
@@ -71,18 +72,11 @@ for (const backend of ['postgres', 'mongodb', 'spacetime']) test(`owned ${backen
               +'session.startTransaction(); tx.proof.insertOne({id:10}); session.commitTransaction(); '
               +'session.startTransaction(); tx.proof.insertOne({id:11}); session.abortTransaction(); session.endSession(); '
               +'if(!db.proof.findOne({id:10}) || db.proof.findOne({id:11})) throw new Error("transaction commit or rollback failed");']);
-            attemptDocker(['exec','--user','mongodb',id,'mongod','--shutdown','--dbpath','/data/db']);
-            attemptDocker(['exec','-d','--user','mongodb',id,'sh','-c','exec mongod --bind_ip 127.0.0.1 --replSet rs0 --keyFile /data/configdb/stack-bench-keyfile > /tmp/stack-bench-mongodb-restart.log 2>&1']);
-            let restarted=false;
-            for(let retry=0;retry<60;retry++) {
-              try {
-                attemptDocker([...applicationShell,'if(!db.hello().isWritablePrimary) quit(1); if(!db.proof.findOne({id:10})) throw new Error("committed data lost after restart");']);
-                restarted=true;
-                break;
-              } catch { await new Promise(resolve=>setTimeout(resolve,500)); }
+            for(let restart=0;restart<2;restart++) {
+              stopCheckpointDatabase(active);
+              await startCheckpointDatabase(active);
+              attemptDocker([...applicationShell,'if(!db.hello().isWritablePrimary) quit(1); if(!db.proof.findOne({id:10})) throw new Error("committed data lost after restart");']);
             }
-            if(!restarted) console.error(attemptDocker(['exec',id,'tail','-n','20','/tmp/stack-bench-mongodb-restart.log']));
-            assert.equal(restarted,true,'MongoDB did not recover committed data as primary after restart');
             resetMongoDb({lease:requireLeasedDatabase(active)});
             attemptDocker([...applicationShell,
               'if(db.proof.countDocuments()!==0) throw new Error("reset left application data"); '
@@ -110,7 +104,7 @@ for (const backend of ['postgres', 'mongodb', 'spacetime']) test(`owned ${backen
         } catch(error) {
           const current=readBackendLease(path);
           if(current.resources.container) {
-            try { console.error(attemptDocker(['exec',current.resources.container.id,'tail','-n','30','/tmp/stack-bench-backend.log'])); } catch {}
+            try { console.error(attemptDocker(['exec',current.resources.container.id,'tail','-n','30','/run/application/stack-bench-backend.log'])); } catch {}
           }
           throw error;
         } finally {

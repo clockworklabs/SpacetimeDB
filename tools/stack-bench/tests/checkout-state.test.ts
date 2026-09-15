@@ -256,6 +256,19 @@ test('SpacetimeDB migration validates even empty business tables without requiri
     exec: (_command, args) => args[0] === 'inspect' ? 'owned'
       : JSON.stringify(args.includes('describe') ? description : subscription) });
   assert.deepEqual(read().state.stock, []);
+  const canonicalSchema = structuredClone(schema);
+  const sourceTable = canonicalSchema.sections[1]!.Tables![2]!;
+  sourceTable.source_name = 'cartItem';
+  const explicitNames = { ExplicitNames: { entries: [
+    { Table: { source_name: 'cartItem', canonical_name: 'cart_item' } },
+  ] } };
+  description = { sections: [...canonicalSchema.sections, explicitNames] };
+  assert.deepEqual(read().state.stock, []);
+  description = { sections: [...canonicalSchema.sections, { ExplicitNames: { entries: [
+    { Table: { source_name: 'cartItem' } },
+  ] } }] };
+  assert.throws(read, error => error instanceof Error && !(error instanceof CheckoutDataError));
+  description = schema;
   const emptyOrderType = types[5]!.Product.elements[0]!;
   emptyOrderType.name.some = 'renamed_id';
   assert.throws(read, CheckoutDataError);

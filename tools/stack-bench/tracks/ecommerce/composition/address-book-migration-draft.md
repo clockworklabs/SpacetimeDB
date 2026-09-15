@@ -1,6 +1,10 @@
 # Address-book migration: expected production behavior
 
 Draft recipe for nonbillable development, not a qualified scored selection.
+This is an optional existing-app upgrade task. It is not part of the core
+storefront tests or their scores. Its qualification is not required to run or
+qualify the core benchmark. Shared runner changes still require regression
+checks; choosing the migration recipe is what enables populated-state behavior.
 The normal product request and interface live under `prompts/modular` and
 `contracts`. This document is not delivered to the coding agent.
 
