@@ -376,6 +376,18 @@ pub struct Options {
     pub cq_overflow: OnCqOverflow,
 }
 
+impl Options {
+    pub(crate) fn sq_capacity(&self) -> usize {
+        self.capacity.get().next_power_of_two()
+    }
+
+    pub(crate) fn cq_capacity(&self) -> usize {
+        self.cq_capacity
+            .map(|c| c.get().next_power_of_two())
+            .unwrap_or_else(|| 2 * self.sq_capacity())
+    }
+}
+
 impl Default for Options {
     fn default() -> Self {
         Self {
@@ -402,17 +414,9 @@ pub struct Executor<UserData> {
 }
 
 impl<UserData> Executor<UserData> {
-    pub fn new(
-        Options {
-            capacity,
-            cq_capacity,
-            cq_overflow,
-        }: Options,
-    ) -> Self {
-        let sq_capacity = capacity.get().next_power_of_two();
-        let cq_capacity = cq_capacity
-            .map(|c| c.get().next_power_of_two())
-            .unwrap_or_else(|| 2 * sq_capacity);
+    pub fn new(options: Options) -> Self {
+        let sq_capacity = options.sq_capacity();
+        let cq_capacity = options.cq_capacity();
         Self {
             submissions: VecDeque::with_capacity(sq_capacity),
             completions: VecDeque::with_capacity(cq_capacity),
@@ -420,7 +424,7 @@ impl<UserData> Executor<UserData> {
             executing: Vec::with_capacity(2 * sq_capacity),
             select_executing: Vec::with_capacity(2 * sq_capacity),
             fstree: BTreeMap::new(),
-            cq_overflow,
+            cq_overflow: options.cq_overflow,
             cq_dropped: 0,
         }
     }

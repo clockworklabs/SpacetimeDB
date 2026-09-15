@@ -4,7 +4,7 @@ use core::{
     task::{Context, Poll, Waker},
 };
 
-use alloc::{boxed::Box, sync::Arc};
+use alloc::{boxed::Box, rc::Rc};
 use slab::Slab;
 
 use crate::{
@@ -32,12 +32,17 @@ impl<T> CompletionState<T> {
     }
 }
 
-#[derive(Default)]
 pub(super) struct PendingCompletions {
     inner: Slab<CompletionHandle>,
 }
 
 impl PendingCompletions {
+    pub(super) fn with_capacity(cap: usize) -> Self {
+        Self {
+            inner: Slab::with_capacity(cap),
+        }
+    }
+
     pub(super) fn get_mut(&mut self, key: usize) -> Option<&mut CompletionHandle> {
         self.inner.get_mut(key)
     }
@@ -237,13 +242,13 @@ impl CompletionHandle {
 }
 
 pub struct Completion<T> {
-    sim: Arc<SimulatorInner>,
+    sim: Rc<SimulatorInner>,
     key: usize,
     poll: fn(&SimulatorInner, usize, &mut Context<'_>) -> Poll<T>,
 }
 
 impl<T: AlignedBytes + 'static> Completion<Result<Box<T>, ErrorWith<Error, Box<T>>>> {
-    pub(super) fn write(sim: Arc<SimulatorInner>, key: usize) -> Self {
+    pub(super) fn write(sim: Rc<SimulatorInner>, key: usize) -> Self {
         Self {
             sim,
             key,
@@ -260,7 +265,7 @@ impl<T: AlignedBytes + 'static> Completion<Result<Box<T>, ErrorWith<Error, Box<T
         }
     }
 
-    pub(super) fn read(sim: Arc<SimulatorInner>, key: usize) -> Self {
+    pub(super) fn read(sim: Rc<SimulatorInner>, key: usize) -> Self {
         Self {
             sim,
             key,
@@ -279,7 +284,7 @@ impl<T: AlignedBytes + 'static> Completion<Result<Box<T>, ErrorWith<Error, Box<T
 }
 
 impl Completion<Result<fs::File, Error>> {
-    pub(super) fn open(sim: Arc<SimulatorInner>, key: usize) -> Self {
+    pub(super) fn open(sim: Rc<SimulatorInner>, key: usize) -> Self {
         Self {
             sim,
             key,
@@ -296,7 +301,7 @@ impl Completion<Result<fs::File, Error>> {
         }
     }
 
-    pub(super) fn create(sim: Arc<SimulatorInner>, key: usize) -> Self {
+    pub(super) fn create(sim: Rc<SimulatorInner>, key: usize) -> Self {
         Self {
             sim,
             key,
@@ -315,7 +320,7 @@ impl Completion<Result<fs::File, Error>> {
 }
 
 impl Completion<Result<Statx, Error>> {
-    pub(super) fn stat(sim: Arc<SimulatorInner>, key: usize) -> Self {
+    pub(super) fn stat(sim: Rc<SimulatorInner>, key: usize) -> Self {
         Self {
             sim,
             key,
@@ -334,7 +339,7 @@ impl Completion<Result<Statx, Error>> {
 }
 
 impl Completion<Result<(), Error>> {
-    pub(super) fn fallocate(sim: Arc<SimulatorInner>, key: usize) -> Self {
+    pub(super) fn fallocate(sim: Rc<SimulatorInner>, key: usize) -> Self {
         Self {
             sim,
             key,
@@ -351,7 +356,7 @@ impl Completion<Result<(), Error>> {
         }
     }
 
-    pub(super) fn fsync(sim: Arc<SimulatorInner>, key: usize) -> Self {
+    pub(super) fn fsync(sim: Rc<SimulatorInner>, key: usize) -> Self {
         Self {
             sim,
             key,
@@ -368,7 +373,7 @@ impl Completion<Result<(), Error>> {
         }
     }
 
-    pub(super) fn fdatasync(sim: Arc<SimulatorInner>, key: usize) -> Self {
+    pub(super) fn fdatasync(sim: Rc<SimulatorInner>, key: usize) -> Self {
         Self {
             sim,
             key,
@@ -386,7 +391,7 @@ impl Completion<Result<(), Error>> {
     }
 
     #[allow(unused)]
-    pub(super) fn noop(sim: Arc<SimulatorInner>, key: usize) -> Self {
+    pub(super) fn noop(sim: Rc<SimulatorInner>, key: usize) -> Self {
         Self {
             sim,
             key,

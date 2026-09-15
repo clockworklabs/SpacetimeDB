@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, sync::Arc};
+use alloc::{boxed::Box, rc::Rc, sync::Arc};
 use core::result::Result;
 
 use crate::{
@@ -17,7 +17,7 @@ mod fs;
 pub use fs::File;
 
 pub use crate::{
-    sim::executor::{FaultInjector, TaskSelector},
+    sim::executor::{FaultInjector, Options, TaskSelector},
     SECTOR_SIZE,
 };
 
@@ -48,10 +48,16 @@ impl From<fs::Error> for Error {
 
 #[derive(Clone, Default)]
 pub struct SimulatorIO {
-    inner: Arc<SimulatorInner>,
+    inner: Rc<SimulatorInner>,
 }
 
 impl SimulatorIO {
+    pub fn with_options(options: Options) -> Self {
+        Self {
+            inner: Rc::new(SimulatorInner::with_options(options)),
+        }
+    }
+
     pub fn tick(&self, task_selector: &impl TaskSelector, faults: &mut impl FaultInjector<usize>) -> bool {
         let mut executor = self.inner.executor.lock();
 
@@ -103,7 +109,7 @@ impl SimulatorIO {
     fn submit<T, U>(
         &self,
         sqe: Sqe<usize>,
-        completion: impl FnOnce(Arc<SimulatorInner>, usize) -> Completion<U>,
+        completion: impl FnOnce(Rc<SimulatorInner>, usize) -> Completion<U>,
         completion_handle: impl FnOnce(CompletionState<Result<T, Error>>) -> CompletionHandle,
     ) -> Completion<U> {
         let mut executor = self.inner.executor.lock();
@@ -123,7 +129,7 @@ impl SimulatorIO {
     fn submit_with<B: AlignedBytes + 'static>(
         &self,
         sqe: Sqe<usize>,
-        completion: impl FnOnce(Arc<SimulatorInner>, usize) -> Completion<ReadWriteResult<B, Error>>,
+        completion: impl FnOnce(Rc<SimulatorInner>, usize) -> Completion<ReadWriteResult<B, Error>>,
         completion_handle: impl FnOnce(CompletionState<Result<ErasedBox, ErrorWith<Error, ErasedBox>>>) -> CompletionHandle,
     ) -> Completion<ReadWriteResult<B, Error>> {
         let mut executor = self.inner.executor.lock();
@@ -154,12 +160,18 @@ struct SimulatorInner {
     pending: spin::Mutex<PendingCompletions>,
 }
 
+impl SimulatorInner {
+    fn with_options(options: Options) -> Self {
+        Self {
+            pending: spin::Mutex::new(PendingCompletions::with_capacity(options.cq_capacity())),
+            executor: spin::Mutex::new(Executor::new(options)),
+        }
+    }
+}
+
 impl Default for SimulatorInner {
     fn default() -> Self {
-        Self {
-            executor: spin::Mutex::new(Executor::new(<_>::default())),
-            pending: <_>::default(),
-        }
+        Self::with_options(<_>::default())
     }
 }
 
