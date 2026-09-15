@@ -12,6 +12,16 @@
           "points": 0,
           "steps": [
             {
+              "actor": "a",
+              "before": "before",
+              "do": "crashCheckout",
+              "offsetMs": 0,
+              "prepared": "prepared",
+              "quantity": 1,
+              "requests": 1,
+              "target": "database"
+            },
+            {
               "account": "a",
               "as": "before",
               "do": "dbRecordCheckout",

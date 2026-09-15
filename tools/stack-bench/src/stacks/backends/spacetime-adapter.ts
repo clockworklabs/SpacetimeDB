@@ -26,6 +26,7 @@ const SPACETIME_GRADING_CAPABILITIES = [
   'database-write',
   'database-read',
   'named-actions',
+  'process-crash',
   'subprocess',
   'transport-observation',
 ] as const satisfies readonly GradingCapabilityId[];

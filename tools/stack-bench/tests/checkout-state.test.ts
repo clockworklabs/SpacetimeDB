@@ -36,6 +36,25 @@ test('checkout reconciliation accepts stock reservation and atomic checkout alte
   for (const snapshot of [before, prepared, after]) assert.deepEqual(checkoutStateSchema.parse(snapshot), snapshot);
 });
 
+test('crash recovery permits complete or absent effects only without an acknowledgement', () => {
+  const { before, prepared, after } = states();
+  assert.deepEqual(checkoutDifferences(before, prepared, after, 1, true), []);
+  assert.deepEqual(checkoutDifferences(before, prepared, prepared, 1, true), []);
+  assert(checkoutDifferences(before, prepared, prepared, 1).length, 'acknowledged checkout cannot disappear');
+  for (const mutate of [
+    (state: CheckoutState) => { state.payments = []; },
+    (state: CheckoutState) => { state.cart = structuredClone(prepared.cart); },
+    (state: CheckoutState) => { state.stock[0]!.quantity++; },
+    (state: CheckoutState) => { state.orders.push({ ...structuredClone(state.orders[0]!), id: 'duplicate' }); },
+  ]) {
+    const partial = structuredClone(after); mutate(partial);
+    assert(checkoutDifferences(before, prepared, partial, 1, true).length);
+  }
+  const invalid = structuredClone(prepared);
+  invalid.cart[0]!.quantity++;
+  assert(checkoutDifferences(before, invalid, invalid, 1, true).length, 'an invalid setup cannot pass as absent');
+});
+
 test('purchase histories reconcile owners, money, old rows and each warehouse even when total stock is unchanged', () => {
   const { before, after } = states();
   before.orders.push({ ...structuredClone(after.orders[0]!), id: 'old', accountId: 'old' });

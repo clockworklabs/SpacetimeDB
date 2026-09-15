@@ -4,6 +4,7 @@ import { ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS }
   from './actor-transport-action-executors.js';
 import { BROWSER_ACTION_IMPLEMENTATIONS } from './browser-action-executors.js';
 import { RUNTIME_ACTION_IMPLEMENTATIONS } from './runtime-action-executors.js';
+import { crashCheckout } from './crash-action-executors.js';
 import { ACTION_DEFINITIONS, ACTION_IDS,
   compileActionInput } from '../composition/definition-compiler.js';
 import type { ActionId } from '../composition/definition-compiler.js';
@@ -11,6 +12,7 @@ import type { ActionId } from '../composition/definition-compiler.js';
 const ACTION_CATEGORY = {
   callAction: 'transport',
   callConcurrently: 'concurrency',
+  crashCheckout: 'lifecycle',
   clearInput: 'browser-interaction',
   click: 'browser-interaction',
   clickConcurrently: 'concurrency',
@@ -110,6 +112,7 @@ const ACTION_CAPABILITY_OVERRIDES: Partial<Record<ActionId, readonly string[]>> 
   dbExpectStock: ['database-read', 'browser-observation', 'clock'],
   callAction: ['actors', 'named-actions', 'transport-observation'],
   callConcurrently: ['actors', 'named-actions'],
+  crashCheckout: ['actors', 'named-actions', 'database-read', 'process-crash'],
   expectCallOutcomes: ['actors', 'named-actions'],
   replayAs: ['actors', 'named-actions', 'transport-observation'],
   startAppServer: ['application-lifecycle'],
@@ -123,6 +126,7 @@ const ACTION_SENSITIVITY_OVERRIDES: Partial<Record<ActionId, readonly string[]>>
 };
 
 export const ACTION_IMPLEMENTATIONS = Object.freeze({
+  crashCheckout,
   ...ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS,
   ...BROWSER_ACTION_IMPLEMENTATIONS,
   ...RUNTIME_ACTION_IMPLEMENTATIONS,
@@ -144,6 +148,8 @@ export function actionPlugin(id: string): ActionPlugin {
       compileActionInput(input, { source: `action:${id}`, expectedAction: id }),
     capabilities,
     timeoutMs: policy.timeoutMs,
+    // Recovery may be inside an existing 120-second synchronous Docker call.
+    ...(actionId === 'crashCheckout' ? { cancellationDrainMs: 150_000 } : {}),
     sensitivity: [...(sensitivity ?? []), ...policy.sensitivity],
     execute: ACTION_IMPLEMENTATIONS[actionId],
   };

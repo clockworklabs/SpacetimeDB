@@ -43,7 +43,7 @@ import {
 } from '../src/actions/runtime-action-executors.js';
 import { requireLeasedDatabase } from '../src/stacks/backend-reset-guard.js';
 import type { LeasedDatabase } from '../src/stacks/backend-reset-guard.js';
-import { controlAppServer, controlBackendRuntime, parseRuntimeControlSpec }
+import { controlAppServer, controlBackendRuntime, parseRuntimeControlSpec, prepareRuntimeCrash }
   from '../src/runtime/backend-control.js';
 import type { RuntimeControlSpec } from '../src/runtime/backend-control.js';
 import { leaseFromEnv } from '../src/runtime/backend-lease.js';
@@ -559,6 +559,10 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
       expand: (value: string) => String(expand(value, ctx)),
     }),
     'named-actions': namedActions,
+    'process-crash': Object.freeze({ prepare: (target: 'application' | 'database') => {
+      if (!ctx.restartSpec || ctx.nullControl) throw new Error('process crash requires an owned grading runtime');
+      return prepareRuntimeCrash(ctx.restartSpec, target);
+    } }),
     subprocess: Object.freeze({ sleep: abortableSleep }),
     'transport-observation': transportObservation,
   });

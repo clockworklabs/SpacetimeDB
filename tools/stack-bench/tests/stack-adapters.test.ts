@@ -24,6 +24,7 @@ const FULL_GRADING_CAPABILITIES = [
   'database-write',
   'database-read',
   'named-actions',
+  'process-crash',
   'subprocess',
   'transport-observation',
 ];
@@ -252,7 +253,7 @@ test('every adapter declares what the grader can measure on it', () => {
   const stub = STACK_ADAPTER_REGISTRY.get('stub');
   const stubCapabilities: readonly string[] = stub.grading.capabilities;
   assert.deepEqual(GRADING_CAPABILITY_IDS.filter(id => !stubCapabilities.includes(id)),
-    ['backend-lifecycle', 'database-write', 'database-read']);
+    ['backend-lifecycle', 'database-write', 'database-read', 'process-crash']);
   assert.equal('databaseWrite' in stub, false);
   assert.equal(stub.lifecycle.control, undefined);
 });

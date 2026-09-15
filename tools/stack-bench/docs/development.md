@@ -137,6 +137,23 @@ its exact order count, and stored stock must decrease by the request count.
 This diagnoses lost updates under bursts. It does not replace the separate
 scarce-stock overselling check or measure sustainable throughput.
 
+The draft `diagnostic-checkout-application-crash.json` and
+`diagnostic-checkout-database-crash.json` scenarios also have zero points and are
+not selected by campaigns. They require a disposable, owned lease and a
+`--restart-spec` with the backend, app path, port and probe. Select **one feature**
+with `--feature` on freshly reset reference data for each trial. Do not run the
+whole file on shared data: an earlier cart reservation can expire during a later
+trial. SpacetimeDB uses only the database scenario because its application logic
+and database share one process boundary.
+
+These probes kill owned processes with SIGKILL and restart them without resetting
+storage. They record request outcomes, signal times and recovered business state.
+Unconfirmed checkout effects may be absent or complete; partial effects and lost
+confirmed state fail. SpacetimeDB calls use its native confirmed WebSocket protocol.
+A separate checkout tests recovery progress. Missed fault windows remain
+inconclusive. These are process-crash tests, not power-loss tests or proof of a
+crash at a particular instruction inside a transaction. Full qualification is pending.
+
 ## Agent adapter contract
 
 Register an agent in `src/agents/agent-adapters.ts`. The existing registry accepts

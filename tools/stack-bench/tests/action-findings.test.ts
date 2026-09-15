@@ -143,11 +143,11 @@ test('executors fail with a finding, and the message is its rendering', () => {
 });
 
 // Executors use the runtime helpers. Browser boundaries classify Playwright
-// errors; the runtime executor also retains observations and nested findings.
+// errors; runtime and crash executors also retain observations and nested findings.
 test('executors fail only through the runtime helpers', () => {
   const directory = join(STACK_BENCH_ROOT, 'src', 'actions');
   const allowed = new Set(['action-contract.ts', 'actor-action-runtime.ts',
-    'browser-action-executors.ts', 'browser-navigation.ts', 'runtime-action-executors.ts']);
+    'browser-action-executors.ts', 'browser-navigation.ts', 'runtime-action-executors.ts', 'crash-action-executors.ts']);
   for (const file of readdirSync(directory).filter(name => name.endsWith('.ts'))) {
     const source = readFileSync(join(directory, file), 'utf8');
     const direct = source.match(/new Action(?:ApplicationFailure|Inconclusive)\(/g) ?? [];

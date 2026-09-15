@@ -102,6 +102,7 @@ interface LifecycleConcurrencyCapabilities {
 interface CheckoutSnapshot {
   readonly state: CheckoutState;
   readonly schemaSha256: Record<string, string>;
+  readonly recordedAtMs?: number;
 }
 
 interface ActionArguments<Input> {
@@ -184,7 +185,7 @@ async function dbRecordStock({ input, capabilities }: ActionArguments<ReadStockI
 
 async function dbRecordCheckout({ input, capabilities }: ActionArguments<{ account: string; item: string; as: string }>) {
   const database = capabilities['database-read'];
-  const snapshot = database.getCheckoutState(input);
+  const snapshot = { ...database.getCheckoutState(input), recordedAtMs: Date.now() };
   database.checkoutSnapshots.set(input.as, { ...snapshot, account: input.account, item: input.item });
   return { ...snapshot, key: input.as };
 }

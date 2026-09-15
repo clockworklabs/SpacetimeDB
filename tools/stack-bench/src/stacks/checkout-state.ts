@@ -125,7 +125,7 @@ export function checkoutMinor(value: unknown): number {
 }
 
 export function checkoutDifferences(before: CheckoutState, prepared: CheckoutState, after: CheckoutState,
-  quantity: number): Array<{ control: string; observed: number; expected: number }> {
+  quantity: number, allowUnchanged = false): Array<{ control: string; observed: number; expected: number }> {
   if (!Number.isSafeInteger(quantity) || quantity <= 0 || !Number.isSafeInteger(before.priceMinor * quantity)) {
     throw new Error('checkout expectation is not an exact quantity and amount');
   }
@@ -137,6 +137,13 @@ export function checkoutDifferences(before: CheckoutState, prepared: CheckoutSta
     check(control, Number(isDeepStrictEqual(observed, expected)), 1);
   const sorted = <T>(values: readonly T[]) => [...values].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
   const total = (rows: readonly { quantity: number }[]) => rows.reduce((sum, row) => integer.parse(sum + row.quantity), 0);
+  for (const state of [before, prepared, after]) {
+    check('order lines without an order', state.orphanOrderLines, 0);
+    check('duplicate stock warehouse rows', state.stock.length - new Set(state.stock.map(row => row.warehouseId)).size, 0);
+    check('negative stored stock rows', state.stock.filter(row => row.quantity < 0).length, 0);
+    check('duplicate order ids', state.orders.length - new Set(state.orders.map(row => row.id)).size, 0);
+    check('duplicate payment ids', state.payments.length - new Set(state.payments.map(row => row.id)).size, 0);
+  }
   for (const state of [prepared, after]) {
     same('checkout account and item identity', [state.accountId, state.itemId, state.priceMinor],
       [before.accountId, before.itemId, before.priceMinor]);
@@ -162,6 +169,9 @@ export function checkoutDifferences(before: CheckoutState, prepared: CheckoutSta
       if (prepared.reservations.length) check(`reserved stock in warehouse ${stock.warehouseId}`, finalStock.quantity, stock.quantity - reserved);
     }
   }
+  // A crash can lose the response. Only an unacknowledged checkout may leave
+  // its complete prepared state unchanged; an error response is not rollback proof.
+  if (allowUnchanged && isDeepStrictEqual(normalized(prepared), normalized(after))) return differences;
   check('remaining cart lines after checkout', after.cart.length, 0);
   check('remaining reservations after checkout', after.reservations.length, 0);
   const priorOrders = new Set(before.orders.map(order => order.id));
@@ -196,13 +206,6 @@ export function checkoutDifferences(before: CheckoutState, prepared: CheckoutSta
       same('checkout payment status', payments[0].status, 'paid');
       check('checkout payment in minor units', payments[0].amountMinor, before.priceMinor * quantity);
     }
-  }
-  for (const state of [before, prepared, after]) {
-    check('order lines without an order', state.orphanOrderLines, 0);
-    check('duplicate stock warehouse rows', state.stock.length - new Set(state.stock.map(row => row.warehouseId)).size, 0);
-    check('negative stored stock rows', state.stock.filter(row => row.quantity < 0).length, 0);
-    check('duplicate order ids', state.orders.length - new Set(state.orders.map(row => row.id)).size, 0);
-    check('duplicate payment ids', state.payments.length - new Set(state.payments.map(row => row.id)).size, 0);
   }
   same('stock warehouses preserved', sorted(after.stock.map(row => row.warehouseId)), sorted(before.stock.map(row => row.warehouseId)));
   check('stored stock consumed by one checkout', integer.parse(total(before.stock) - total(after.stock)), quantity);

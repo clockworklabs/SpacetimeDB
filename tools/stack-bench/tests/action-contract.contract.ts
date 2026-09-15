@@ -7,6 +7,7 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { ACTION_REGISTRY, actionPlugin } from '../src/actions/action-catalog.js';
 import {
   ActionApplicationFailure,
+  ActionHarnessFailure,
   ActionInconclusive,
   createActionRegistry,
   executeAction,
@@ -193,13 +194,16 @@ test('deadline, cancellation, and unclassified exceptions are fail-closed eviden
 });
 
 test('deadline evidence retains a drained observation without making the action pass', async () => {
+  for (const rejects of [false, true]) {
   for (const observation of [{ responses: 1, unknown: 1 }, new Date()]) {
-    const result = await executeAction(registry(({ signal }) => new Promise(resolve => {
-      signal.addEventListener('abort', () => resolve(observation), { once: true });
+    const result = await executeAction(registry(({ signal }) => new Promise((resolve, reject) => {
+      signal.addEventListener('abort', () => rejects
+        ? reject(new ActionHarnessFailure('partial fault', { observation })) : resolve(observation), { once: true });
     }), { timeoutMs: 10 }), 'fakeAction', { do: 'fakeAction' }, context());
     assert.equal(result.code, 'deadline_exceeded');
     assert.equal(result.status, 'harness_failure');
     assert.deepEqual(result.observation, observation instanceof Date ? null : observation);
+  }
   }
 });
 
@@ -211,10 +215,12 @@ test('invalid input, missing services, and malformed observations never become p
     { capabilities: {} });
   assert.equal(missingCapability.code, 'missing_capability');
   assert.equal(missingCapability.status, 'harness_failure');
-  const malformed = await executeAction(registry(() => new Date()), 'fakeAction',
+  for (const observation of [new Date(), { recovery: undefined }, [undefined]]) {
+  const malformed = await executeAction(registry(() => observation), 'fakeAction',
     { do: 'fakeAction' }, context());
   assert.equal(malformed.code, 'invalid_evidence');
   assert.equal(malformed.status, 'harness_failure');
+  }
   const cyclic: { ok: boolean; self?: unknown } = { ok: true };
   cyclic.self = cyclic;
   const nonSerializable = await executeAction(registry(() => cyclic), 'fakeAction',

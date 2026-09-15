@@ -44,6 +44,7 @@ export interface ActionPlugin {
   readonly compile: (input: unknown) => unknown;
   readonly capabilities: readonly string[];
   readonly timeoutMs: number;
+  readonly cancellationDrainMs?: number;
   readonly sensitivity: readonly string[];
   readonly execute: ActionImplementation;
 }
@@ -103,6 +104,7 @@ export const GRADING_CAPABILITY_IDS = Object.freeze([
   'database-write',
   'database-read',
   'named-actions',
+  'process-crash',
   'subprocess',
   'transport-observation',
 ] as const);
@@ -150,11 +152,11 @@ function createActionRunContext(value: ActionRunContextInput = {}): ActionRunCon
 }
 
 class ClassifiedActionError extends Error {
-  readonly classification: 'application_failure' | 'inconclusive';
+  readonly classification: 'application_failure' | 'inconclusive' | 'harness_failure';
   readonly details: UnknownRecord;
 
   constructor(
-    classification: 'application_failure' | 'inconclusive',
+    classification: 'application_failure' | 'inconclusive' | 'harness_failure',
     message: string,
     details: UnknownRecord = {},
   ) {
@@ -174,6 +176,12 @@ export class ActionApplicationFailure extends ClassifiedActionError {
 export class ActionInconclusive extends ClassifiedActionError {
   constructor(message: string, details: UnknownRecord = {}) {
     super('inconclusive', message, details);
+  }
+}
+
+export class ActionHarnessFailure extends ClassifiedActionError {
+  constructor(message: string, details: UnknownRecord = {}) {
+    super('harness_failure', message, details);
   }
 }
 
@@ -207,8 +215,9 @@ function evidence(
   };
 }
 
-function structuredValue(value: unknown, seen: Set<object> = new Set()): boolean {
-  if (value === undefined || value === null || typeof value === 'string' || typeof value === 'boolean') return true;
+function structuredValue(value: unknown, seen: Set<object> = new Set(), topLevel = true): boolean {
+  if (value === undefined) return topLevel;
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
   if (typeof value === 'number') return Number.isFinite(value);
   if (!object(value) && !Array.isArray(value)) return false;
   if (seen.has(value)) return false;
@@ -216,7 +225,7 @@ function structuredValue(value: unknown, seen: Set<object> = new Set()): boolean
   if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) return false;
   seen.add(value);
   const valid = (Array.isArray(value) ? value : Object.values(value))
-    .every(item => structuredValue(item, seen));
+    .every(item => structuredValue(item, seen, false));
   seen.delete(value);
   return valid;
 }
@@ -283,6 +292,11 @@ export async function executeAction(
   }).then(observation => {
     if (structuredValue(observation)) completedObservation = observation;
     return observation;
+  }, error => {
+    if (error instanceof ClassifiedActionError && structuredValue(error.details.observation)) {
+      completedObservation = error.details.observation ?? null;
+    }
+    throw error;
   });
   try {
     const observation = await Promise.race([execution, stopped]);
@@ -296,16 +310,19 @@ export async function executeAction(
     // Its owner must reject further actions if teardown cannot establish quiescence.
     if (termination.current && context.onAbort) {
       let cleanupTimer: TimerHandle | undefined;
+      const drainMs = plugin.cancellationDrainMs ?? 5000;
       try {
         await Promise.race([
-          context.onAbort().then(() => execution.catch(() => undefined)),
+          Promise.allSettled([context.onAbort(), execution]).then(([cleanup]) => {
+            if (cleanup.status === 'rejected') throw cleanup.reason;
+          }),
           new Promise<never>((_resolve, reject) => {
-            cleanupTimer = setTimer(() => reject(new Error('action cancellation cleanup exceeded 5000ms')), 5000);
+            cleanupTimer = setTimer(() => reject(new Error(`action cancellation cleanup exceeded ${drainMs}ms`)), drainMs);
           }),
         ]);
       } catch (cleanupError) {
         return evidence(plugin, startedAtMs, now(), 'harness_failure', 'cancellation_cleanup_failed',
-          cleanupError instanceof Error ? cleanupError.message : String(cleanupError), { retryable: false });
+          cleanupError instanceof Error ? cleanupError.message : String(cleanupError), { retryable: false, observation: completedObservation });
       } finally {
         if (cleanupTimer !== undefined) clearTimer(cleanupTimer);
       }
@@ -334,6 +351,9 @@ export async function executeAction(
       }
       return evidence(plugin, startedAtMs, now(), 'inconclusive', 'inconclusive',
         error.message, error.details);
+    }
+    if (error instanceof ActionHarnessFailure && structuredValue(error.details)) {
+      return evidence(plugin, startedAtMs, now(), 'harness_failure', 'harness_failure', error.message, error.details);
     }
     return evidence(plugin, startedAtMs, now(), 'harness_failure', 'unclassified_exception',
       error instanceof Error ? error.message : String(error), { retryable: false });
