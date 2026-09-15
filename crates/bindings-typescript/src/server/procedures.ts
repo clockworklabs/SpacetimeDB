@@ -130,8 +130,6 @@ export interface ProcedureCtx<S extends UntypedSchemaDef> {
 export interface TransactionCtx<S extends UntypedSchemaDef>
   extends ReducerCtx<S> {}
 
-type ITransactionCtx<S extends UntypedSchemaDef> = TransactionCtx<S>;
-
 function registerProcedure<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,

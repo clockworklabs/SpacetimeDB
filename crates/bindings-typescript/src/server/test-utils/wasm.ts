@@ -299,7 +299,9 @@ class WasmContext implements TestRuntimeContext {
   }
 }
 
-function isWasmTx(target: TestRuntimeTarget): target is WasmPortableTransaction {
+function isWasmTx(
+  target: TestRuntimeTarget
+): target is WasmPortableTransaction {
   return !(target instanceof WasmContext);
 }
 

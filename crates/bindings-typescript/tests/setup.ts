@@ -4,7 +4,7 @@ if (!Symbol.dispose) {
   });
 }
 
-if (!Promise.withResolvers) {
+if (!('withResolvers' in Promise)) {
   Object.defineProperty(Promise, 'withResolvers', {
     value: function withResolvers<T>() {
       let resolve!: (value: T | PromiseLike<T>) => void;

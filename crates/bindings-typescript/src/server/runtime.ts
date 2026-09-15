@@ -1262,9 +1262,7 @@ export function makeTableView(
 
   for (const indexDef of table.indexes) {
     const accessorName = indexDef.accessorName!;
-    const index_id = backend.indexIdFromName(
-      namePrefix + indexDef.sourceName!
-    );
+    const index_id = backend.indexIdFromName(namePrefix + indexDef.sourceName!);
 
     let column_ids: number[];
     let isHashIndex = false;

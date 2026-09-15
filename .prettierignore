@@ -4,3 +4,4 @@ dist
 target
 .github
 coverage
+crates/bindings-typescript/src/server/test-utils/portable-datastore-wasm

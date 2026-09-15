@@ -8,10 +8,7 @@ import type { AuthCtx, JwtClaims, ReducerCtx } from '../../lib/reducers';
 import type { UntypedSchemaDef } from '../../lib/schema';
 import { Timestamp } from '../../lib/timestamp';
 import type { TimeDuration } from '../../lib/time_duration';
-import {
-  type HttpRequest,
-  type HttpResponse,
-} from '../../lib/autogen/types';
+import { type HttpRequest, type HttpResponse } from '../../lib/autogen/types';
 import type { Table } from '../../lib/table';
 import type { DbView } from '../db_view';
 import {

@@ -224,6 +224,8 @@ export class TestDatastoreBackend implements DatastoreBackend {
   }
 
   procedureHttpRequest(): [Uint8Array, Uint8Array] {
-    throw new Error('test procedure HTTP requests are handled by TestHttpClient');
+    throw new Error(
+      'test procedure HTTP requests are handled by TestHttpClient'
+    );
   }
 }

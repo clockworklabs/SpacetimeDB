@@ -21,6 +21,7 @@ export default tseslint.config(
       '**/build/**',
       '**/coverage/**',
       '**/templates/angular-ts/.angular/**',
+      '**/src/server/test-utils/portable-datastore-wasm/**',
     ],
   },
   {

@@ -1,7 +1,10 @@
 import { defaultWasmTestRuntime } from './default_wasm_runtime';
 
 export interface TestRuntime {
-  createContext(moduleDef: Uint8Array, moduleIdentity: bigint): TestRuntimeContext;
+  createContext(
+    moduleDef: Uint8Array,
+    moduleIdentity: bigint
+  ): TestRuntimeContext;
 }
 
 export type TestRuntimeCommitMode = 'Normal' | 'DropEventTableRows';

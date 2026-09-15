@@ -13,16 +13,17 @@ import type {
 } from './portable-datastore-wasm/spacetimedb_portable_datastore_wasm';
 
 const require = createRequire(import.meta.url);
-const generated = require('./portable-datastore-wasm/spacetimedb_portable_datastore_wasm.cjs') as {
-  WasmCommitMode: {
-    Normal: number;
-    DropEventTableRows: number;
+const generated =
+  require('./portable-datastore-wasm/spacetimedb_portable_datastore_wasm.cjs') as {
+    WasmCommitMode: {
+      Normal: number;
+      DropEventTableRows: number;
+    };
+    WasmPortableDatastore: new (
+      rawModuleDefBsatn: Uint8Array,
+      moduleIdentityHex: string
+    ) => GeneratedPortableDatastore;
   };
-  WasmPortableDatastore: new (
-    rawModuleDefBsatn: Uint8Array,
-    moduleIdentityHex: string
-  ) => GeneratedPortableDatastore;
-};
 
 class DefaultWasmPortableDatastore implements WasmPortableDatastore {
   readonly #inner: GeneratedPortableDatastore;
