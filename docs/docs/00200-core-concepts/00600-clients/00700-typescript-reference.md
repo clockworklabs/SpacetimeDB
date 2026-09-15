@@ -924,7 +924,7 @@ Each table or view defined by a module has an accessor method, whose name is the
 
 ```typescript
 class TableHandle {
-  public count(): number;
+  public count(): bigint;
 }
 ```
 
