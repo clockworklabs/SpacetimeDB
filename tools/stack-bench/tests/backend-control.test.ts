@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { captureApplicationDiagnostics, controlAppServer, controlBackendRuntime, hostedStopScript,
+import { captureApplicationDiagnostics, controlAppServer, controlBackendRuntime, drainApplicationDatabase, hostedStopScript,
   parseRuntimeControlSpec }
   from '../src/runtime/backend-control.js';
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
@@ -17,6 +17,55 @@ interface RecordedCommand {
   argv: string[];
   options: TextCommandOptions;
 }
+
+test('crash database drain requires observed zero work and preserves errors or an expired deadline', async () => {
+  for (const backend of ['postgres', 'mongodb']) {
+    const id = 'a'.repeat(64);
+    const lease = createBackendLease({ runId: `drain-${backend}`, backend, track: 'ecommerce', runIndex: 0,
+      database: 'app_ecom_run0', container: { name: 'database', id } });
+    lease.resources.network = { name: 'attempt', id: 'b'.repeat(64), namespaceContainerId: id,
+      hostAddresses: ['172.20.0.1'], services: [], firewallSha256: null, firewallInstalledAt: null };
+    const signal = new AbortController().signal;
+    const counts = ['1', '0'];
+    const receipt = await drainApplicationDatabase(lease, Date.now() + 5000, signal, (_command, args) => {
+      if (args[0] === 'inspect') return id;
+      assert.equal(args[0], 'exec');
+      if (backend === 'postgres') assert.match(args.at(-1)!, /pg_stat_activity.*pid<>pg_backend_pid/);
+      else {
+        assert(args.some(arg => arg.includes('maxPoolSize=1')));
+        assert.match(args.at(-1)!, /idleSessions:true/);
+        assert.match(args.at(-1)!, /connectionId:\{\$ne:self\}/);
+      }
+      return counts.shift()!;
+    });
+    assert.equal(receipt.settled, true);
+    assert.deepEqual(receipt.samples.map(sample => sample.pending), [1, 0]);
+    const expired = await drainApplicationDatabase(lease, Date.now() - 1, signal, () => id);
+    assert.equal(expired.settled, false);
+    assert.deepEqual(expired.samples, []);
+    const cancelled = new AbortController();
+    await assert.rejects(drainApplicationDatabase(lease, Date.now() + 5000, cancelled.signal, (_command, args) => {
+      if (args[0] === 'inspect') return id;
+      cancelled.abort();
+      return '1';
+    }), /abort/i);
+    for (const output of ['', '-1', 'NaN', '9007199254740992']) {
+      await assert.rejects(drainApplicationDatabase(lease, Date.now() + 5000, signal,
+        (_command, args) => args[0] === 'inspect' ? id : output), /invalid database work count/);
+    }
+    let samples = 0;
+    await assert.rejects(drainApplicationDatabase(lease, Date.now() + 5000, signal, (_command, args) => {
+      if (args[0] === 'inspect') return id;
+      if (samples++ === 0) return '1';
+      throw new Error('command failed with private database credentials');
+    }), error => {
+      assert(error instanceof Error && error.message === 'could not observe pending database work');
+      assert('databaseDrain' in error);
+      assert.deepEqual((error.databaseDrain as { samples: Array<{ pending: number }> }).samples.map(row => row.pending), [1]);
+      return true;
+    });
+  }
+});
 
 test('runtime control input is typed at the serialized boundary', () => {
   const input = { backend: 'mongodb', app: '/app', port: 6301, probe: '/api/items' };

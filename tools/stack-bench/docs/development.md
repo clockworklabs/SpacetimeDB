@@ -150,10 +150,12 @@ These probes kill owned processes with SIGKILL and restart them without resettin
 storage. They record request outcomes, signal times and recovered business state.
 Unconfirmed checkout effects may be absent or complete; partial effects and lost
 confirmed state fail. SpacetimeDB calls use its native confirmed WebSocket protocol.
-A separate checkout tests recovery progress. If an HTTP call disconnects during
-a crash, its database work may continue, even when the app process was killed. That trial and later stored-state
-comparisons stay inconclusive until a fresh grade on reset data. A client timeout
-does not prove that server work stopped. Missed fault windows also remain
+A separate checkout tests recovery progress. Application-crash recovery first
+waits up to 70 seconds for the old database connections and transactions to end.
+It records read-only observations and does not kill sessions or change timeouts.
+If an HTTP call disconnects without proof that database work ended, that trial
+and later stored-state comparisons stay inconclusive until a fresh grade on reset data.
+A client timeout does not prove that server work stopped. Missed fault windows also remain
 inconclusive. These are process-crash tests, not power-loss tests or proof of a
 crash at a particular instruction inside a transaction. Full qualification is pending.
 

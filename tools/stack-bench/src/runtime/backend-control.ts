@@ -11,6 +11,10 @@ import { attemptDocker, requireAttemptNetwork } from './docker-network.js';
 import { Worker } from 'node:worker_threads';
 import { answers, waitFor } from '../stacks/lifecycle-readiness.js';
 import { attemptDatabaseIdentity } from '../stacks/hosted-database-identity.js';
+import type { BackendLease } from './backend-lease.js';
+import { assertLeasedContainer, requireLeasedDatabase } from '../stacks/backend-reset-guard.js';
+import { execFileSync } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
 
 export { hostedStopScript } from '../stacks/hosted-lifecycle.js';
 export type { RuntimeControlMode } from '../stacks/stack-adapter-contract.js';
@@ -28,15 +32,90 @@ interface RuntimeControlOptions { signal?: AbortSignal | null; exec?: TextComman
 export interface PreparedRuntimeCrash {
   crash(): Promise<ProcessCrashReceipt>;
   close(): Promise<void>;
-  recover(signal: AbortSignal): Promise<void>;
+  recover(signal: AbortSignal): Promise<DatabaseDrainReceipt | null>;
   spacetime: { uri: string; mod: string } | null;
 }
 
-export async function recoverRuntimeCrash(spec: RuntimeControlSpec, target: CrashTarget): Promise<void> {
+export interface DatabaseDrainReceipt {
+  backend: string;
+  database: string;
+  startedAtMs: number;
+  completedAtMs: number;
+  settled: boolean;
+  samples: Array<{ atMs: number; pending: number }>;
+}
+
+// The app stays stopped while this read-only probe waits for its old database
+// connections and transactions. A client SIGKILL cannot retract a sent COMMIT.
+export async function drainApplicationDatabase(lease: BackendLease, deadlineMs: number,
+  signal: AbortSignal, exec: TextCommandExecutor = execFileSync): Promise<DatabaseDrainReceipt> {
+  const database = requireLeasedDatabase(lease);
+  const container = assertLeasedContainer(database.resources.container, exec, 5000, 'crash database drain');
+  const receipt: DatabaseDrainReceipt = { backend: lease.backend, database: database.resources.database,
+    startedAtMs: Date.now(), completedAtMs: Date.now(), settled: false, samples: [] };
+  const identity = attemptDatabaseIdentity(lease.ownershipToken);
+  let command: string[];
+  if (lease.backend === 'postgres') {
+    command = ['psql', '-U', identity.user, '-d', database.resources.database, '-v', 'ON_ERROR_STOP=1', '-At', '-c',
+      "SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND backend_type='client backend' AND pid<>pg_backend_pid()"];
+  } else if (lease.backend === 'mongodb') {
+    // A single pooled connection lets us exclude precisely this observer, not
+    // app transactions that no longer have a live connection.
+    command = ['mongosh', `mongodb://127.0.0.1/${encodeURIComponent(database.resources.database)}?maxPoolSize=1&directConnection=true`,
+      '--username', identity.user, '--password', identity.password, '--authenticationDatabase', database.resources.database,
+      '--quiet', '--eval', `
+        const self = db.hello().connectionId;
+        if (!Number.isSafeInteger(Number(self)) || Number(self) <= 0) throw new Error('missing observer connection');
+        const work = db.getSiblingDB('admin').aggregate([
+          {$currentOp:{allUsers:false,idleConnections:true,idleSessions:true}},
+          {$match:{connectionId:{$ne:self}}}, {$count:'pending'}
+        ]).toArray();
+        print(work.length ? work[0].pending : 0);`];
+  } else throw new Error('database drain requires a separate hosted application');
+  try {
+    while (Date.now() < deadlineMs) {
+      signal.throwIfAborted();
+      let output: string;
+      try {
+        output = exec('docker', ['exec', container, ...command],
+          { encoding: 'utf8', stdio: 'pipe', timeout: Math.max(1, Math.min(5000, deadlineMs - Date.now())) }).trim();
+      } catch { throw new Error('could not observe pending database work'); }
+      if (!/^\d+$/.test(output) || !Number.isSafeInteger(Number(output))) throw new Error('invalid database work count');
+      receipt.samples.push({ atMs: Date.now(), pending: Number(output) });
+      if (output === '0' && Date.now() <= deadlineMs) { receipt.settled = true; break; }
+      await delay(Math.min(500, Math.max(0, deadlineMs - Date.now())), undefined, { signal });
+    }
+    signal.throwIfAborted();
+  } catch (error) {
+    receipt.completedAtMs = Date.now();
+    throw Object.assign(error instanceof Error ? error : new Error('database drain interrupted'), { databaseDrain: receipt });
+  }
+  receipt.completedAtMs = Date.now();
+  return receipt;
+}
+
+export async function recoverRuntimeCrash(spec: RuntimeControlSpec, target: CrashTarget): Promise<DatabaseDrainReceipt | null> {
   const { lease } = leaseFromEnv(process.env, { backend: spec.backend, active: true });
   requireAttemptNetwork(lease);
-  const signal = AbortSignal.timeout(45_000);
-  if (target === 'application') return controlAppServer(spec, 'start', { signal });
+  const signal = AbortSignal.timeout(target === 'application' ? 80_000 : 45_000);
+  if (target === 'application') {
+    let drain: DatabaseDrainReceipt | undefined, failure: Error | undefined;
+    try { drain = await drainApplicationDatabase(lease, Date.now() + 70_000, signal); }
+    catch (error) { failure = error instanceof Error ? error : new Error('database drain failed'); }
+    if (signal.aborted) throw failure ?? Object.assign(new Error('crash recovery interrupted'), { databaseDrain: drain ?? null });
+    // Restore service even after an observer error. Otherwise later checks
+    // would test a service that the harness itself left stopped.
+    try { await controlAppServer(spec, 'start', { signal }); }
+    catch (error) {
+      if (failure) {
+        failure.message += `; application restart also failed: ${error instanceof Error ? error.message : 'unknown restart error'}`;
+        if (error && typeof error === 'object' && 'startLog' in error) Object.assign(failure, { startLog: error.startLog });
+      }
+      else failure = Object.assign(error instanceof Error ? error : new Error('application restart failed'), { databaseDrain: drain });
+    }
+    if (failure) throw failure;
+    return drain!;
+  }
   if (target !== 'database') throw new Error('unsupported recovery target');
   startAttemptDatabaseProcess(lease);
   await waitFor(async () => {
@@ -57,6 +136,7 @@ export async function recoverRuntimeCrash(spec: RuntimeControlSpec, target: Cras
     throw Object.assign(new Error('application did not answer after database recovery', { cause }),
       { code: 'generated_app_not_restartable' });
   }
+  return null;
 }
 
 // Grading only, after the coding process has exited. An app crash kills all
@@ -74,17 +154,17 @@ export async function prepareRuntimeCrash(spec: RuntimeControlSpec, target: Cras
       // separate event loop so they cannot delay this observer's response times.
       const worker = new Worker(`const { parentPort, workerData } = require('node:worker_threads');
         import(workerData.module).then(m => m.recoverRuntimeCrash(workerData.spec, workerData.target))
-          .then(() => parentPort.postMessage(null), error => parentPort.postMessage({
-            message: error.message, code: error.code, startLog: error.startLog }));`,
+          .then(drain => parentPort.postMessage({ drain }), error => parentPort.postMessage({ error: {
+            message: error.message, code: error.code, startLog: error.startLog, databaseDrain: error.databaseDrain ?? null } }));`,
       { eval: true, workerData: { module: import.meta.url, spec, target } });
       try {
-        await new Promise<void>((resolve, reject) => {
+        return await new Promise<DatabaseDrainReceipt | null>((resolve, reject) => {
           const abort = () => { void worker.terminate(); reject(signal.reason); };
           signal.addEventListener('abort', abort, { once: true });
           if (signal.aborted) abort();
-          worker.once('message', error => {
+          worker.once('message', result => {
             signal.removeEventListener('abort', abort);
-            if (error) reject(Object.assign(new Error(error.message), error)); else resolve();
+            if (result.error) reject(Object.assign(new Error(result.error.message), result.error)); else resolve(result.drain);
           });
           worker.once('error', error => { signal.removeEventListener('abort', abort); reject(error); });
           worker.once('exit', code => {

@@ -8,7 +8,7 @@ import type { createDatabaseReadCapability } from './runtime-action-executors.js
 import { checkoutDifferences } from '../stacks/checkout-state.js';
 import { openCrashReducerConnection } from '../stacks/spacetime-crash-transport.js';
 import type { CrashTarget, ProcessCrashReceipt } from '../stacks/process-crash.js';
-import type { PreparedRuntimeCrash } from '../runtime/backend-control.js';
+import type { DatabaseDrainReceipt, PreparedRuntimeCrash } from '../runtime/backend-control.js';
 import { finding, renderFinding } from './action-findings.js';
 
 interface Input {
@@ -55,6 +55,7 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
       inconclusive('invalid-input', { detail: 'prepared cart is too old for a bounded crash trial' });
     }
     let receipt: ProcessCrashReceipt | undefined, faultError: unknown, recoveryError: unknown, recoveredAtMs: number | undefined;
+    let databaseDrain: DatabaseDrainReceipt | null | undefined;
     const pending = Array.from({ length: input.requests }, (_, index) => (async () => {
       const startedAtMs = named.now();
       const timeout = AbortSignal.timeout(30_000), requestSignal = AbortSignal.any([signal, timeout]);
@@ -87,16 +88,24 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
       // finish them. Recovery never resets or reseeds stored data.
       try {
         signal.throwIfAborted();
-        await runtime.recover(AbortSignal.any([signal, AbortSignal.timeout(45_000)]));
+        databaseDrain = await runtime.recover(AbortSignal.any([signal,
+          AbortSignal.timeout(input.target === 'application' ? 80_000 : 45_000)]));
         recoveredAtMs = named.now();
       }
-      catch (error) { recoveryError = error; }
+      catch (error) {
+        recoveryError = error;
+        if (error && typeof error === 'object' && 'databaseDrain' in error) {
+          databaseDrain = error.databaseDrain as DatabaseDrainReceipt | null;
+        }
+      }
     })().catch(error => { faultError ??= error; });
     const outcomes = await Promise.all(pending);
     // Killing the app cannot retract a commit already sent to its database.
     unsettled = !runtime.spacetime && outcomes.some(row => row.status === null);
     await fault;
-    const observation = { before, prepared, outcomes, unsettled, receipt: receipt ?? null, recoveredAtMs: recoveredAtMs ?? null,
+    if (databaseDrain) unsettled = !databaseDrain.settled;
+    const observation = { before, prepared, outcomes, unsettled, databaseDrain: databaseDrain ?? null,
+      receipt: receipt ?? null, recoveredAtMs: recoveredAtMs ?? null,
       faultError: faultError instanceof Error ? faultError.message : faultError ? String(faultError) : null,
       recoveryError: recoveryError instanceof Error ? recoveryError.message : recoveryError ? String(recoveryError) : null };
     if (faultError || !receipt || signal.aborted) {
