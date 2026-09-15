@@ -9,19 +9,21 @@
 // (private documentation for the macro authors is totally fine here and you SHOULD write that!)
 
 mod environment;
-
-#[proc_macro_attribute]
-pub fn env(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
-    ok_or_compile_error(|| environment::expand(args.into(), syn::parse(item)?))
-}
-
-#[proc_macro_derive(EnvironmentValue, attributes(env))]
-pub fn derive_environment_value(item: StdTokenStream) -> StdTokenStream {
-    ok_or_compile_error(|| environment::value::derive(syn::parse(item)?))
-}
-
 mod http;
 mod procedure;
+mod reducer;
+mod sats;
+mod table;
+mod util;
+mod view;
+
+use self::util::{cvt_attr, native_test_utils_registration, ok_or_compile_error};
+use proc_macro::TokenStream as StdTokenStream;
+use proc_macro2::TokenStream;
+use quote::quote;
+use std::time::Duration;
+use syn::{parse::ParseStream, Attribute};
+use syn::{ItemConst, ItemFn};
 
 #[proc_macro_attribute]
 pub fn procedure(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
@@ -29,6 +31,36 @@ pub fn procedure(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
         let args = procedure::ProcedureArgs::parse(args)?;
         procedure::procedure_impl(args, original_function)
     })
+}
+
+#[proc_macro_attribute]
+pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    cvt_attr::<ItemFn>(args, item, quote!(), |args, original_function| {
+        let args = reducer::ReducerArgs::parse(args)?;
+        reducer::reducer_impl(args, original_function)
+    })
+}
+
+#[proc_macro_attribute]
+pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    expand_table(args, item, false)
+}
+
+#[proc_macro_attribute]
+pub fn view(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    let item_ts: TokenStream = item.into();
+    let original_function = match syn::parse2::<ItemFn>(item_ts.clone()) {
+        Ok(f) => f,
+        Err(e) => return TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
+    };
+    let args = match view::ViewArgs::parse(args.into(), &original_function.sig.ident) {
+        Ok(a) => a,
+        Err(e) => return TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
+    };
+    match view::view_impl(args, &original_function) {
+        Ok(ts) => ts.into(),
+        Err(e) => TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
+    }
 }
 
 #[proc_macro_attribute]
@@ -47,22 +79,6 @@ pub fn http_router(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream
         let original_function: ItemFn = syn::parse2(item_ts)?;
         http::router_impl(args.into(), &original_function)
     })
-}
-mod reducer;
-
-#[proc_macro_attribute]
-pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
-    cvt_attr::<ItemFn>(args, item, quote!(), |args, original_function| {
-        let args = reducer::ReducerArgs::parse(args)?;
-        reducer::reducer_impl(args, original_function)
-    })
-}
-mod sats;
-mod table;
-
-#[proc_macro_attribute]
-pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
-    expand_table(args, item, false)
 }
 
 /// Expands an outbox table emitted by generated receiver bindings. A custom
@@ -110,33 +126,6 @@ fn expand_table(args: StdTokenStream, item: StdTokenStream, reset_accessor_span:
         Ok(TokenStream::from_iter([quote!(#derive_input), generated]))
     })
 }
-mod util;
-mod view;
-
-#[proc_macro_attribute]
-pub fn view(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
-    let item_ts: TokenStream = item.into();
-    let original_function = match syn::parse2::<ItemFn>(item_ts.clone()) {
-        Ok(f) => f,
-        Err(e) => return TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
-    };
-    let args = match view::ViewArgs::parse(args.into(), &original_function.sig.ident) {
-        Ok(a) => a,
-        Err(e) => return TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
-    };
-    match view::view_impl(args, &original_function) {
-        Ok(ts) => ts.into(),
-        Err(e) => TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
-    }
-}
-
-use proc_macro::TokenStream as StdTokenStream;
-use proc_macro2::TokenStream;
-use quote::quote;
-use std::time::Duration;
-use syn::{parse::ParseStream, Attribute};
-use syn::{ItemConst, ItemFn};
-use util::{cvt_attr, native_test_utils_registration, ok_or_compile_error};
 
 mod sym {
     /// A symbol known at compile-time against
@@ -239,13 +228,7 @@ mod sym {
 /// We need this [`Attribute`] in [`table`] so that we can "pushnew" it
 /// onto the end of a list of attributes. See comments within [`table`].
 fn derive_table_helper_attr() -> Attribute {
-    let source = quote!(#[derive(spacetimedb::__TableHelper)]);
-
-    syn::parse::Parser::parse2(Attribute::parse_outer, source)
-        .unwrap()
-        .into_iter()
-        .next()
-        .unwrap()
+    syn::parse_quote!(#[derive(spacetimedb::__TableHelper)])
 }
 
 /// Special alias for `derive(SpacetimeType)`, aka [`schema_type`], for use by [`table`].
@@ -415,4 +398,14 @@ pub fn settings(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
             };
         })
     })
+}
+
+#[proc_macro_attribute]
+pub fn env(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| environment::expand(args.into(), syn::parse(item)?))
+}
+
+#[proc_macro_derive(EnvironmentValue, attributes(env))]
+pub fn derive_environment_value(item: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| environment::value::derive(syn::parse(item)?))
 }
