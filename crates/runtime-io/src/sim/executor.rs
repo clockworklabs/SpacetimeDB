@@ -3,7 +3,7 @@ use alloc::{
     collections::{btree_map, BTreeMap, VecDeque},
     vec::Vec,
 };
-use core::{mem, num::NonZeroUsize, result::Result, task::Waker};
+use core::{num::NonZeroUsize, result::Result, task::Waker};
 use slab::Slab;
 
 use crate::{
@@ -456,8 +456,7 @@ impl<UserData> Executor<UserData> {
         self.submissions.clear();
         let cq_overflow_orig = self.cq_overflow;
         self.cq_overflow = OnCqOverflow::Drop;
-        let executing = mem::take(&mut self.executing);
-        for op in executing {
+        while let Some(op) = self.executing.pop() {
             self.execute_op(op, faults);
         }
         self.completions.clear();
