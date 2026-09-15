@@ -72,6 +72,69 @@ test('repeated depth aliases resolve the same release as direct compilation', ()
     buildRecipeRelease(selected.recipePath, { trackRoot: track.dir }));
 });
 
+test('a populated upgrade binds its preparation and reference sources without changing level defaults', () => {
+  const box = copyTrack();
+  try {
+    const track = copiedTrack(loadTrack('ecommerce'), box.root);
+    const original = requireRecipeRelease(track, 3);
+    const recipePath = join(box.root, 'composition', 'recipes', 'migration.json');
+    const recipe = JSON.parse(readFileSync(L2_RECIPE, 'utf8'));
+    delete recipe.sequence;
+    recipe.id = 'ecommerce.migration';
+    recipe.task.baseRecipe = { id: 'ecommerce.progression-catalog', path: 'progression-catalog.json' };
+    recipe.task.startingState = { preparation: 'scenarios/migration-start.json' };
+    const preparation = { schemaVersion: 1, track: 'ecommerce', level: 3,
+      features: [{ id: 1, name: 'Prepare populated store', actors: ['a'], setup: [], criteria: [
+        { id: '1a', desc: 'Prepared', points: 0, steps: [{ do: 'wait', actor: 'a', ms: 1 }] },
+      ] }] };
+    const preparationPath = join(box.root, 'scenarios', 'migration-start.json');
+    const write = () => {
+      writeFileSync(recipePath, JSON.stringify(recipe));
+      writeFileSync(preparationPath, JSON.stringify(preparation));
+    };
+    write();
+    const binding = requireRecipeRelease(track, 3, recipe.id);
+    assert.equal(binding.plan.recipe.task.mode, 'upgrade');
+    assert.equal(binding.plan.recipe.sequence, null);
+    assert.equal(binding.selection.path, 'composition/recipes/migration.json');
+    assert.equal(binding.release.task.startingState?.references.length, 3);
+    assert(binding.release.task.startingState?.references.every(reference => /^[a-f0-9]{64}$/.test(reference.sourceSha256)));
+    assert(binding.release.sourceManifest.some(source => source.path === 'scenarios/migration-start.json'
+      && source.kinds.includes('starting-state-preparation')));
+    assert.deepEqual(requireRecipeRelease(track, 3), original);
+    assert.throws(() => requireRecipeRelease(track, 2, recipe.id), /populated upgrade at L2/);
+    const catalogPath = join(box.root, 'composition', 'dependency.json');
+    const catalogText = readFileSync(catalogPath, 'utf8');
+    const catalog = JSON.parse(catalogText);
+    catalog.entries.find((entry: { alias: string }) => entry.alias === 'L2').recipe = {
+      id: recipe.id, path: 'recipes/migration.json',
+    };
+    writeFileSync(catalogPath, JSON.stringify(catalog));
+    assert.throws(() => requireRecipeRelease(track, 2, recipe.id), /populated upgrade at L2/);
+    writeFileSync(catalogPath, catalogText);
+
+    preparation.features[0]!.criteria[0]!.steps[0]!.ms = 2;
+    write();
+    const changed = requireRecipeRelease(track, 3, recipe.id);
+    assert.notEqual(changed.release.executionSha256, binding.release.executionSha256);
+    assert.notEqual(changed.release.contentSha256, binding.release.contentSha256);
+    assert.throws(() => requireRecipeRelease(track, 3,
+      { id: recipe.id, contentSha256: binding.release.contentSha256 }), /content changed/);
+
+    preparation.features[0]!.criteria[0]!.points = 1;
+    write();
+    assert.throws(() => requireRecipeRelease(track, 3, recipe.id), /zero points/);
+    preparation.features[0]!.criteria[0]!.points = 0;
+    recipe.task.startingState.preparation = '../outside.json';
+    write();
+    assert.throws(() => requireRecipeRelease(track, 3, recipe.id), /escapes/);
+    recipe.task.startingState.preparation = 'scenarios/migration-start.json';
+    recipe.sequence = { level: 2 };
+    write();
+    assert.throws(() => requireRecipeRelease(track, 3, recipe.id), /standalone upgrade/);
+  } finally { rmSync(box.temp, { recursive: true, force: true }); }
+});
+
 test('a recipe binding emits only its selected grade artifact', () => {
   const track = loadTrack('ecommerce');
   const binding = requireRecipeRelease(track, 2);

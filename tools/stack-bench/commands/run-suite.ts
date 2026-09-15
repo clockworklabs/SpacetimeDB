@@ -29,6 +29,7 @@ import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { requireLeasedDatabase, requireLeasedSpacetime } from '../src/stacks/backend-reset-guard.js';
 import { aggregatePackRuntime, exceededPackBudgets } from '../src/composition/pack-runtime.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
+import { preparePopulatedGrade, materializationAppFailure } from '../src/runtime/source-materialization.js';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.js';
 import { readBackendLease } from '../src/runtime/backend-lease.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
@@ -86,6 +87,7 @@ type RunArguments = {
   regressionChecks: string[];
   sourceSha256?: string;
   restartSpec?: RuntimeControlSpec;
+  populatedStart?: { checkpoint: string; source: string; dataSha256: string };
   applicationFailure?: ApplicationFailure;
   parentAttemptId?: string;
   databaseLease?: BackendLease | null;
@@ -129,6 +131,7 @@ type Bundle = {
   calibration: { id: string; contentSha256: string } | null;
   label: string; track: string; backend: string; url: string; app: string; level: number;
   observation: Observation; source?: { sha256: string };
+  startingState?: { sourceSha256: string; dataSha256: string };
   suites: Record<string, GradePayload | LintPayload | null>;
   totals: Record<string, unknown>;
   selection: BundleSelection | null;
@@ -205,7 +208,7 @@ export function clearPreviousGradeOutputs(output: string): void {
     /^grading-.+\.json$/.test(name) || /^grader-.+\.(?:stdout|stderr)\.log$/.test(name)) : [];
   for (const name of [ARTIFACT_FILE.gradeBundle, ARTIFACT_FILE.contractLint,
     ARTIFACT_FILE.actions, 'media', 'failure-media',
-    'database-provenance', ...generated]) {
+    'database-provenance', 'application-start.log', ...generated]) {
     rmSync(join(output, name), { recursive: true, force: true });
   }
 }
@@ -290,6 +293,7 @@ function parseArgs(argv: string[]): RunArguments {
     'restart-spec': { type: 'string' }, 'application-failure-json': { type: 'string' },
     'run-index': { type: 'string' }, 'no-reset': { type: 'boolean' },
     'parent-attempt-id': { type: 'string' },
+    'populated-start-json': { type: 'string' },
   } });
   const a: RunArguments = { app: values.app ?? '', url: values.url ?? '',
     backend: values.backend ?? '', label: values.label ?? '', out: values.out ?? '',
@@ -308,6 +312,8 @@ function parseArgs(argv: string[]): RunArguments {
     sourceSha256: values['source-sha256'],
     restartSpec: values['restart-spec'] === undefined
       ? undefined : parseRuntimeControlSpec(JSON.parse(values['restart-spec'])),
+    populatedStart: values['populated-start-json'] === undefined
+      ? undefined : JSON.parse(values['populated-start-json']),
     applicationFailure: values['application-failure-json'] === undefined
       ? undefined : JSON.parse(values['application-failure-json']),
     parentAttemptId: values['parent-attempt-id'], bundleArtifactId: '' };
@@ -323,6 +329,13 @@ function parseArgs(argv: string[]): RunArguments {
   }
   if (a.sourceSha256 !== undefined && !/^[a-f0-9]{64}$/.test(a.sourceSha256)) {
     throw new Error('--source-sha256 must be a SHA-256 digest');
+  }
+  if (a.populatedStart !== undefined && (!a.populatedStart || !a.reset || !a.restartSpec || !a.sourceSha256
+    || typeof a.populatedStart.checkpoint !== 'string' || !a.populatedStart.checkpoint
+    || typeof a.populatedStart.source !== 'string' || !a.populatedStart.source
+    || !/^[a-f0-9]{64}$/.test(a.populatedStart.dataSha256 ?? '')
+    || Object.keys(a.populatedStart).some(key => !['checkpoint', 'source', 'dataSha256'].includes(key)))) {
+    throw new Error('populated grading requires checkpoint, source, source hash and restart control with reset enabled');
   }
   if (a.applicationFailure && (a.applicationFailure.kind !== 'app_failure'
     || typeof a.applicationFailure.phase !== 'string' || !a.applicationFailure.phase
@@ -766,12 +779,22 @@ export async function closeSuiteBrowser(browser: Pick<BrowserServer, 'close'> | 
   }
 }
 
+export function preserveStartFailure(error: unknown, out: string): void {
+  if (isRecord(error) && typeof error.startLog === 'string' && error.startLog) {
+    writeFileSync(join(out, 'application-start.log'), redactCredentials(error.startLog) + '\n');
+  }
+}
+
 async function main() {
   const startedAt = new Date().toISOString();
   const args = parseArgs(process.argv);
   args.databaseLease = databaseLeaseForGrading(args.backend);
   const track = loadTrack(args.track);
   const recipeBinding = resolveRecipeRelease(track, Number(args.level), args.recipeTask?.recipe ?? args.recipe);
+  const startingState = recipeBinding?.release.task.startingState;
+  if (Boolean(startingState) !== Boolean(args.populatedStart)) {
+    throw new Error('populated grading requires both a compiled starting state and its private checkpoint');
+  }
   if (!recipeBinding && (args.packIds.length || args.checkKeys.length)) {
     throw new Error('--pack and --check require a recipe-bound level');
   }
@@ -917,6 +940,29 @@ async function main() {
     measurePhase(bundle.phaseTimings, phase, timingSuite, work);
   const freshen = async () => {
     if (!args.reset) return true;
+    if (args.populatedStart) {
+      try {
+        const reference = startingState?.references.find(reference => reference.backend === args.backend);
+        if (!reference || !args.restartSpec || !args.sourceSha256) throw new Error('populated grading has no bound reference or source');
+        const initial = { sourceSha256: reference.sourceSha256, dataSha256: args.populatedStart.dataSha256 };
+        await measure('reset', () => preparePopulatedGrade(args.populatedStart!.checkpoint,
+          args.populatedStart!.source, args.restartSpec!, initial, args.sourceSha256!, recipeBinding!.release.contentSha256));
+        bundle.startingState = initial;
+        applicationLeftStopped = false;
+        return true;
+      } catch (error) {
+        preserveStartFailure(error, args.out);
+        lastResetFailure = childFailureDetail(error instanceof Error ? error : new Error(String(error)));
+        try {
+          const failure = materializationAppFailure(error);
+          lastResetOutcome = { kind: 'app_failure', phase: failure.phase ?? 'application-restart',
+            appFailures: [...(failure.appFailures ?? ['application-restart'])] };
+        } catch {
+          lastResetOutcome = { kind: 'harness_failure', phase: 'database-reset' };
+        }
+        return false;
+      }
+    }
     const requiresReseed = STACK_ADAPTER_REGISTRY.get(args.backend).reset.requiresReseed;
     const restartSpec = args.restartSpec;
     if (track.reseedOnReset && requiresReseed && !restartSpec) {
@@ -967,6 +1013,7 @@ async function main() {
         await measure('start', () => controlAppServer(restartSpec, 'start'));
         applicationLeftStopped = false;
       } catch (err) {
+        preserveStartFailure(err, args.out);
         const failure: Failure = err instanceof Error ? err : new Error(String(err));
         lastResetOutcome = resetFailureOutcome(failure);
         const detail = ((failure.stderr || '') + (failure.stdout || '') + (failure.message || ''))

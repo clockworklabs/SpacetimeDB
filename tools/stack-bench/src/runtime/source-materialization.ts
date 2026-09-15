@@ -121,6 +121,7 @@ const receiptSchema = z.object({
   runId: z.string().min(1), ownershipSha256: hash, container: z.string().min(1),
   image: z.string().min(1), app: z.string().min(1), createdAt: z.string().datetime(),
   sourceSha256: hash, dataSha256: hash, dataBytes: z.number().int().positive(),
+  startingState: z.object({ recipeSha256: hash, preparationEvidenceSha256: hash }).strict().optional(),
 }).strict();
 export type PopulatedCheckpoint = z.infer<typeof receiptSchema>;
 
@@ -162,7 +163,7 @@ export async function validatePopulatedCheckpoint(directory: string, application
 }
 
 export async function capturePopulatedCheckpoint(directory: string,
-  application: RuntimeControlSpec): Promise<PopulatedCheckpoint> {
+  application: RuntimeControlSpec, startingState?: PopulatedCheckpoint['startingState']): Promise<PopulatedCheckpoint> {
   const target = checkpointLocation(directory, application.app, true);
   const { lease } = leaseFromEnv(process.env, { backend: application.backend, active: true });
   const database = checkpointDatabaseTarget(lease);
@@ -184,7 +185,8 @@ export async function capturePopulatedCheckpoint(directory: string,
   const receipt = receiptSchema.parse({ version: 1, backend: lease.backend, runId: lease.runId,
     ownershipSha256: ownershipHash(lease), container: database.container, image: lease.resources.container.image,
     app: realpathSync(application.app), createdAt: new Date().toISOString(), sourceSha256: source.sha256,
-    dataSha256: await checkpointFileHash(archive), dataBytes: statSync(archive).size });
+    dataSha256: await checkpointFileHash(archive), dataBytes: statSync(archive).size,
+    ...(startingState ? { startingState } : {}) });
   writeFileSync(join(target, 'checkpoint.json'), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   await startCheckpointDatabase(lease);
   await materializeAcceptedSource(join(target, 'source'), application.app, application);
@@ -208,5 +210,31 @@ export async function restorePopulatedCheckpoint(directory: string,
   copyCheckpointDatabase(lease, join(directory, 'database.tar'), true);
   await startCheckpointDatabase(lease);
   await materializeAcceptedSource(join(directory, 'source'), application.app, application);
+  return receipt;
+}
+
+// Grade saved code from the original population, not from data the coding
+// session changed. The caller restores the session's own pair after grading.
+export async function preparePopulatedGrade(directory: string, candidateSource: string,
+  application: RuntimeControlSpec, initial: Pick<PopulatedCheckpoint, 'sourceSha256' | 'dataSha256'>,
+  candidateSourceSha256: string, recipeSha256: string): Promise<PopulatedCheckpoint> {
+  checkpointLocation(candidateSource, application.app);
+  const { lease } = leaseFromEnv(process.env, { backend: application.backend, active: true });
+  const receipt = await validatePopulatedCheckpoint(directory, application, lease);
+  if (receipt.sourceSha256 !== initial.sourceSha256 || receipt.dataSha256 !== initial.dataSha256) {
+    throw new Error('populated grading baseline differs from the bound starting source and data');
+  }
+  if (receipt.startingState?.recipeSha256 !== recipeSha256) {
+    throw new Error('populated grading checkpoint has no matching compiled preparation identity');
+  }
+  if (hashAppSource(candidateSource).sha256 !== candidateSourceSha256) {
+    throw new Error('populated grading candidate differs from the selected source');
+  }
+  try { await restorePopulatedCheckpoint(directory, application); }
+  catch (error) {
+    throw Object.assign(new Error(`could not restore the original populated reference: ${message(error)}`, { cause: error }),
+      { startLog: error && typeof error === 'object' && 'startLog' in error ? error.startLog : undefined });
+  }
+  await materializeAcceptedSource(candidateSource, application.app, application);
   return receipt;
 }

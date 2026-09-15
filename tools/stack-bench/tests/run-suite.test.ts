@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import { createBoundRecipeTaskRequest, selectScenarioChecks } from '../src/composition/recipe-selection.js';
@@ -12,7 +13,7 @@ import { attachRegressionScope, childFailureDetail, clearPreviousGradeOutputs, f
   applicationFailureTotals, checkDatabaseProvenance, codeMetrics, resetFailureOutcome, suitesForRecipe,
   checkRuntimeDatabaseProvenance, databaseProvenanceFailure, writeApplicationDatabaseMarker,
   contractLintArgv, databaseLeaseForGrading, databaseNameForGrading, runGraderChild,
-  verifyApplicationProbe, waitForApplicationProbe, closeSuiteBrowser }
+  verifyApplicationProbe, waitForApplicationProbe, closeSuiteBrowser, preserveStartFailure }
   from '../commands/run-suite.js';
 import { loadTrack } from '../src/composition/tracks.js';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.js';
@@ -22,6 +23,37 @@ import { compileScenarioDefinition } from '../src/composition/definition-compile
 import { readArtifactPayload } from '../src/evidence/artifacts.js';
 
 const ECOMMERCE = join(STACK_BENCH_ROOT, 'tracks', 'ecommerce');
+
+test('populated grading cannot bypass reset or attach a checkpoint to an ordinary task', () => {
+  const app = mkdtempSync(join(tmpdir(), 'populated-grade-arguments-'));
+  const env = { ...process.env };
+  delete env.STACK_BENCH_LEASE;
+  delete env.STACK_BENCH_LEASE_TOKEN;
+  try {
+    preserveStartFailure(Object.assign(new Error('start failed'), { startLog: 'early cause\npassword=do-not-publish\nlast line' }), app);
+    const log = readFileSync(join(app, 'application-start.log'), 'utf8');
+    assert.match(log, /early cause/);
+    assert.match(log, /last line/);
+    assert.doesNotMatch(log, /do-not-publish/);
+    const populatedStart = { checkpoint: join(app, 'checkpoint'), source: join(app, 'candidate'), dataSha256: 'a'.repeat(64) };
+    const base = [fileURLToPath(new URL('../commands/run-suite.js', import.meta.url)),
+      '--app', app, '--url', 'http://127.0.0.1:1', '--backend', 'postgres', '--label', 'invalid-start',
+      '--track', 'ecommerce', '--level', '3', '--source-sha256', 'b'.repeat(64),
+      '--restart-spec', JSON.stringify({ backend: 'postgres', app, port: 1, probe: '/' })];
+    for (const [value, extra, reason] of [
+      [null, [], /populated grading requires checkpoint/],
+      [{ ...populatedStart, dataSha256: 'invalid' }, [], /populated grading requires checkpoint/],
+      [populatedStart, ['--no-reset'], /populated grading requires checkpoint/],
+      [populatedStart, [], /both a compiled starting state/],
+    ] as const) {
+      const result = spawnSync(process.execPath, [...base, '--populated-start-json', JSON.stringify(value), ...extra],
+        { encoding: 'utf8', env, timeout: 30_000 });
+      assert.equal(result.error, undefined);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, reason);
+    }
+  } finally { rmSync(app, { recursive: true, force: true }); }
+});
 
 test('browser shutdown failure replaces a previously written app outcome before returning', async () => {
   const bundle = { error: 'app restart failed',
@@ -368,6 +400,7 @@ test('a new grade removes every prior grade output but keeps operator records', 
     writeFileSync(join(root, 'grading-features.json'), 'old');
     writeFileSync(join(root, 'grader-features.stdout.log'), 'old');
     writeFileSync(join(root, 'grader-features.stderr.log'), 'old');
+    writeFileSync(join(root, 'application-start.log'), 'old startup failure');
     writeFileSync(join(root, 'grading-account-create@L1.json'), 'stale earlier level');
     writeFileSync(join(root, 'grader-account-create@L1.stdout.log'), 'stale earlier level');
     writeFileSync(join(root, 'operator-notes.txt'), 'keep');
@@ -376,6 +409,7 @@ test('a new grade removes every prior grade output but keeps operator records', 
     assert.equal(existsSync(join(root, 'grading-features.json')), false);
     assert.equal(existsSync(join(root, 'grader-features.stdout.log')), false);
     assert.equal(existsSync(join(root, 'grader-features.stderr.log')), false);
+    assert.equal(existsSync(join(root, 'application-start.log')), false);
     assert.equal(existsSync(join(root, 'grading-account-create@L1.json')), false);
     assert.equal(existsSync(join(root, 'grader-account-create@L1.stdout.log')), false);
     assert.equal(existsSync(join(root, 'failure-media')), false);

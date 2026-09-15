@@ -110,6 +110,7 @@ type CommandFailure = Error & { stdout?: string | Buffer; stderr?: string | Buff
   status?: number | null; signal?: NodeJS.Signals | null };
 type GradeOptions = { observation?: 'scored' | 'observed'; out?: string | null;
   sourceSha256?: string | null; applicationFailure?: RunOutcome | null;
+  populatedStart?: { checkpoint: string; source: string; dataSha256: string };
   recipeTask?: GradeRecipeTask };
 type MutationControlResult = UnknownRecord & { ok: boolean; artifact?: string;
   skipped?: boolean; processError?: string | null; outcome: RunOutcome | null };
@@ -686,6 +687,7 @@ export function gradeArgv(
     '--observation', observation,
     ...(out ? ['--out', out] : []),
     ...(sourceSha256 ? ['--source-sha256', sourceSha256] : []),
+    ...(options.populatedStart ? ['--populated-start-json', JSON.stringify(options.populatedStart)] : []),
     ...(args.recipe ? ['--recipe', args.recipe] : []),
     ...(task ? ['--recipe-task-json', JSON.stringify(task.request)] : []),
     ...(gradingCredentialAliases(args)
@@ -1104,6 +1106,9 @@ async function main() {
       throw new Error(`L${level} has no recipe release, so --pack/--check cannot be resolved`);
     }
     if (binding) {
+      if (binding.release.task.startingState) {
+        throw new Error('populated upgrade setup is not yet connected to the benchmark runner; no resources or coding sessions were started');
+      }
       args.recipeBindings.set(level, binding);
       if (args.featureCatalog) {
         validateProgressionCampaignLevelScope(binding, args.featureCatalog, declared, level);

@@ -4,9 +4,9 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { createBackendLease } from '../src/runtime/backend-lease.js';
+import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
-import { validatePopulatedCheckpoint, requirePopulatedWorkspace } from '../src/runtime/source-materialization.js';
+import { validatePopulatedCheckpoint, requirePopulatedWorkspace, preparePopulatedGrade } from '../src/runtime/source-materialization.js';
 import { inspectBuildContainer } from '../container/build-container-inspection.js';
 
 test('populated source must be the writable mount of the exact live leased container', () => {
@@ -29,6 +29,7 @@ test('populated source must be the writable mount of the exact live leased conta
 // without any lifecycle call. A matching source alone cannot authorize restore.
 test('populated checkpoint requires matching source, archive, app and lease', async () => {
   const root = mkdtempSync(join(tmpdir(), 'populated-checkpoint-'));
+  const previous = { path: process.env.STACK_BENCH_LEASE, token: process.env.STACK_BENCH_LEASE_TOKEN };
   try {
     const app = join(root, 'app'), checkpoint = join(root, 'checkpoint');
     mkdirSync(app); mkdirSync(checkpoint); mkdirSync(join(checkpoint, 'source'));
@@ -45,10 +46,25 @@ test('populated checkpoint requires matching source, archive, app and lease', as
         ownershipSha256: createHash('sha256').update(lease.ownershipToken).digest('hex'),
         container: 'test-id', image: 'test-image', app, createdAt: new Date().toISOString(),
         sourceSha256: hashAppSource(join(checkpoint, 'source')).sha256,
+        startingState: { recipeSha256: 'c'.repeat(64), preparationEvidenceSha256: 'd'.repeat(64) },
         dataSha256: createHash('sha256').update(archive).digest('hex'), dataBytes: archive.length };
       const save = (value: object) => writeFileSync(join(checkpoint, 'checkpoint.json'), JSON.stringify(value));
       save(receipt);
       assert.deepEqual(await validatePopulatedCheckpoint(checkpoint, application, lease), receipt);
+      lease.state = 'active';
+      const leasePath = join(root, 'lease.json');
+      writeBackendLease(leasePath, lease);
+      process.env.STACK_BENCH_LEASE = leasePath;
+      process.env.STACK_BENCH_LEASE_TOKEN = lease.ownershipToken;
+      const candidate = join(checkpoint, 'source');
+      for (const field of ['sourceSha256', 'dataSha256']) {
+        await assert.rejects(preparePopulatedGrade(checkpoint, candidate, application,
+          { ...receipt, [field]: '0'.repeat(64) }, receipt.sourceSha256, receipt.startingState.recipeSha256), /bound starting source and data/);
+      }
+      await assert.rejects(preparePopulatedGrade(checkpoint, candidate, application,
+        receipt, receipt.sourceSha256, '0'.repeat(64)), /compiled preparation identity/);
+      await assert.rejects(preparePopulatedGrade(checkpoint, candidate, application,
+        receipt, '0'.repeat(64), receipt.startingState.recipeSha256), /candidate differs/);
       for (const nested of [join(app, 'checkpoint'), join(app, '..checkpoint')]) {
         mkdirSync(nested, { recursive: true });
         await assert.rejects(validatePopulatedCheckpoint(nested, application, lease), /separate private/);
@@ -70,5 +86,11 @@ test('populated checkpoint requires matching source, archive, app and lease', as
       save({ version: 1 });
       await assert.rejects(validatePopulatedCheckpoint(checkpoint, application, lease));
     }
-  } finally { rmSync(root, { recursive: true, force: true }); }
+  } finally {
+    if (previous.path === undefined) delete process.env.STACK_BENCH_LEASE;
+    else process.env.STACK_BENCH_LEASE = previous.path;
+    if (previous.token === undefined) delete process.env.STACK_BENCH_LEASE_TOKEN;
+    else process.env.STACK_BENCH_LEASE_TOKEN = previous.token;
+    rmSync(root, { recursive: true, force: true });
+  }
 });
