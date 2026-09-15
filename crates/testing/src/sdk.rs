@@ -87,7 +87,7 @@ impl Test {
     }
     pub fn run(self) {
         if let Some(reason) = optional_module_skip_reason(&self.module_name) {
-            eprintln!("skipping {}: {reason}", self.module_name);
+            log::info!("skipping {}: {reason}", self.module_name);
             if self.name == "should-fail" || self.name == "subscribe-all-select-star" {
                 panic!("skipping {}: {reason}", self.module_name);
             }

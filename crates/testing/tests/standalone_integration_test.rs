@@ -121,7 +121,7 @@ fn test_calling_a_reducer_typescript() {
 #[serial]
 fn test_calling_a_reducer_cpp() {
     if !emcc_is_available() {
-        eprintln!("Skipping C++ module test because `emcc` is not available in PATH");
+        log::info!("Skipping C++ module test because `emcc` is not available in PATH");
         return;
     }
     test_calling_a_reducer_in_module("module-test-cpp");
@@ -441,7 +441,7 @@ fn test_calling_bench_db_circles_typescript() {
 #[serial]
 fn test_calling_bench_db_circles_cpp() {
     if !emcc_is_available() {
-        eprintln!("Skipping C++ module test because `emcc` is not available in PATH");
+        log::info!("Skipping C++ module test because `emcc` is not available in PATH");
         return;
     }
     test_calling_bench_db_circles::<Cpp>();
@@ -490,7 +490,7 @@ fn test_calling_bench_db_ia_loop_typescript() {
 #[serial]
 fn test_calling_bench_db_ia_loop_cpp() {
     if !emcc_is_available() {
-        eprintln!("Skipping C++ module test because `emcc` is not available in PATH");
+        log::info!("Skipping C++ module test because `emcc` is not available in PATH");
         return;
     }
     test_calling_bench_db_ia_loop::<Cpp>();
