@@ -41,6 +41,7 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
   if (!request?.url) inconclusive('unresolved-action', { action: 'checkout' });
   const runtime = await capabilities['process-crash'].prepare(input.target);
   let connection: Awaited<ReturnType<typeof openCrashReducerConnection>> | undefined;
+  let unsettled = false;
   try {
     if (runtime.spacetime) {
       const authorization = Object.entries(credentials).find(([key]) => key.toLowerCase() === 'authorization')?.[1];
@@ -92,8 +93,9 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
       catch (error) { recoveryError = error; }
     })().catch(error => { faultError ??= error; });
     const outcomes = await Promise.all(pending);
+    unsettled = input.target === 'database' && !runtime.spacetime && outcomes.some(row => row.status === null);
     await fault;
-    const observation = { before, prepared, outcomes, receipt: receipt ?? null, recoveredAtMs: recoveredAtMs ?? null,
+    const observation = { before, prepared, outcomes, unsettled, receipt: receipt ?? null, recoveredAtMs: recoveredAtMs ?? null,
       faultError: faultError instanceof Error ? faultError.message : faultError ? String(faultError) : null,
       recoveryError: recoveryError instanceof Error ? recoveryError.message : recoveryError ? String(recoveryError) : null };
     if (faultError || !receipt || signal.aborted) {
@@ -125,8 +127,9 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
     const faultAtMs = Math.min(...signalTimes);
     const faultEndMs = Math.max(...signalTimes);
     const outstandingAtFault = outcomes.filter(row => row.startedAtMs <= faultAtMs && row.completedAtMs >= faultEndMs).length;
-    const evidence = { ...observation, after, differences, confirmed, faultAtMs, faultEndMs, outstandingAtFault };
-    const unmeasured = Date.now() - prepared.recordedAtMs >= 85_000 ? 'reservation expiry prevents a complete recovery comparison'
+    const evidence = { ...observation, after, observedAtMs: named.now(), differences, confirmed, faultAtMs, faultEndMs, outstandingAtFault };
+    const unmeasured = unsettled ? 'a disconnected checkout may still be running after database recovery'
+      : Date.now() - prepared.recordedAtMs >= 85_000 ? 'reservation expiry prevents a complete recovery comparison'
       : Math.abs(receipt.clockOffsetAfterMs - receipt.clockOffsetBeforeMs) > 5 ? 'clock changed during fault'
         : !outstandingAtFault ? 'fault missed the outstanding-request window' : null;
     if (unmeasured) {
@@ -144,6 +147,7 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
     }
     return evidence;
   } finally {
+    if (unsettled) database.markCheckoutUnsettled();
     connection?.close();
     await runtime.close();
   }

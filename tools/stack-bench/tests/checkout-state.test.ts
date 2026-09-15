@@ -27,6 +27,17 @@ function states(): { before: CheckoutState; prepared: CheckoutState; after: Chec
   return { before, prepared, after };
 }
 
+test('unsettled server work blocks later checkout and stock comparisons until a new grade', () => {
+  const checkoutActivity = { unsettled: false };
+  const capability = createDatabaseReadCapability({ expand: value => value, skip: true, checkoutActivity });
+  capability.markCheckoutUnsettled();
+  const nextAction = createDatabaseReadCapability({ expand: value => value, skip: true, checkoutActivity });
+  assert.throws(() => nextAction.getCheckoutState({ account: 'buyer', item: 'Keyboard' }), /transport evidence is incomplete/);
+  assert.throws(() => nextAction.getStock({ item: 'Keyboard' }), /transport evidence is incomplete/);
+  const fresh = createDatabaseReadCapability({ expand: value => value, skip: true });
+  assert.throws(() => fresh.getCheckoutState({ account: 'buyer', item: 'Keyboard' }), /reads are disabled/);
+});
+
 test('checkout reconciliation accepts stock reservation and atomic checkout alternatives', () => {
   const { before, prepared, after } = states();
   assert.deepEqual(checkoutDifferences(before, prepared, after, 1), []);

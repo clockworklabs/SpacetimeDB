@@ -52,10 +52,11 @@ test('native crash transport requires a correlated confirmed result and drains u
 });
 
 test('crash action retains partial fault evidence and distinguishes recovered state from acknowledged loss', async () => {
-  for (const mode of ['absent', 'committed', 'lost-acknowledged', 'partial', 'fault-error', 'cancelled-recovery', 'cancelled-read', 'recovery-error']) {
+  for (const mode of ['absent', 'committed', 'lost-acknowledged', 'partial', 'fault-error', 'cancelled-recovery', 'cancelled-read', 'recovery-error', 'disconnected-database']) {
     const cancellation = new AbortController();
     const timers: number[] = [];
     let recoveryStopped = false;
+    let unsettled = false;
     const before: CheckoutState = { accountId: 'a', itemId: 'i', priceMinor: 100,
       stock: [{ warehouseId: 'w', quantity: 10 }], cart: [], reservations: [], orders: [], payments: [], orphanOrderLines: 0 };
     const prepared = structuredClone(before);
@@ -72,17 +73,18 @@ test('crash action retains partial fault evidence and distinguishes recovered st
     const waiting = new Promise<void>(resolve => { release = resolve; });
     const result = await executeAction(ACTION_REGISTRY, 'crashCheckout', {
       do: 'crashCheckout', actor: 'buyer', before: 'before', prepared: 'prepared', quantity: 1,
-      requests: 1, offsetMs: 0, target: 'application',
+      requests: 1, offsetMs: 0, target: mode === 'disconnected-database' ? 'database' : 'application',
     }, { signal: cancellation.signal, onAbort: async () => {}, capabilities: {
       actors: { get: () => ({ name: 'buyer', writes: [{ headers: { authorization: 'Bearer private-token' } }] }) },
       'database-read': { checkoutSnapshots: new Map([['before', wrap(before)], ['prepared', wrap(prepared)]]),
+        markCheckoutUnsettled: () => { unsettled = true; },
         getCheckoutState: () => { if (mode === 'cancelled-read') throw new Error('reader is not ready'); return wrap(after); } },
       'named-actions': { now: Date.now, sleep: async () => {
         if (mode === 'cancelled-read') { cancellation.abort('cancelled during read retry'); throw cancellation.signal.reason; }
       }, resolve: () => ({ id: 'checkout' }),
         request: () => ({ url: 'http://app/checkout' }), fetch: async () => {
           await waiting;
-          if (mode === 'absent' || mode === 'partial') throw new Error('socket closed');
+          if (mode === 'absent' || mode === 'partial' || mode === 'disconnected-database') throw new Error('socket closed');
           return { ok: true, status: 200, text: async () => '' };
         } },
       'process-crash': { prepare: async () => ({ spacetime: null,
@@ -113,7 +115,8 @@ test('crash action retains partial fault evidence and distinguishes recovered st
       assert(timers.includes(150_000));
       assert.equal(result.code, 'cancelled');
     }
-    assert.equal(result.status, mode.startsWith('cancelled-') ? 'inconclusive' : mode === 'fault-error' ? 'harness_failure'
+    assert.equal(unsettled, mode === 'disconnected-database');
+    assert.equal(result.status, mode.startsWith('cancelled-') || mode === 'disconnected-database' ? 'inconclusive' : mode === 'fault-error' ? 'harness_failure'
       : ['partial', 'lost-acknowledged', 'recovery-error'].includes(mode) ? 'failed' : 'passed', mode);
     assert(result.observation, mode);
     assert(!JSON.stringify(result.observation).includes('private-token'));

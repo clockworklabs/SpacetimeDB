@@ -623,11 +623,18 @@ export function createDatabaseWriteCapability({ backend, spacetime, databaseLeas
 
 export function createDatabaseReadCapability({ backend, spacetime, databaseLease, skip = false, expand, app,
   checkoutSnapshots = new Map<string, CheckoutSnapshot & { account: string; item: string }>(),
+  checkoutActivity = { unsettled: false },
   exec = execFileSync }: DatabaseWriteCapabilityOptions & { app?: string;
+    checkoutActivity?: { unsettled: boolean };
     checkoutSnapshots?: Map<string, CheckoutSnapshot & { account: string; item: string }> }) {
+  const requireSettled = () => { if (checkoutActivity.unsettled) inconclusive('transport-incomplete', {}); };
   return Object.freeze({
     checkoutSnapshots,
+    // A client disconnect cannot stop an HTTP handler retrying after a DB crash.
+    // This grade cannot safely compare later global state; reset in a new grade.
+    markCheckoutUnsettled() { checkoutActivity.unsettled = true; },
     getCheckoutState(input: { account: string; item: string }): CheckoutSnapshot {
+      requireSettled();
       if (skip) throw new Error('checkout state reads are disabled for this control');
       if (!app) throw new Error('checkout state reads require a verified application source directory');
       const adapter = backend ? STACK_ADAPTER_REGISTRY.get(backend) : undefined;
@@ -638,6 +645,7 @@ export function createDatabaseReadCapability({ backend, spacetime, databaseLease
       return adapter.databaseRead.getCheckoutState({ ...selection, lease: databaseLease });
     },
     getStock(input: { item: string; warehouse?: string }) {
+      requireSettled();
       if (skip) inconclusive('stock-read-unavailable', { detail: 'direct stock reads are disabled for this control' });
       const item = expand(input.item);
       const warehouse = input.warehouse === undefined ? undefined : expand(input.warehouse);

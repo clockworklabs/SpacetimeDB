@@ -111,6 +111,7 @@ type GradeArgs = {
   browserWsEndpoint?: string;
 };
 type GradeRunContext = {
+  checkoutActivity?: { unsettled: boolean };
   checkoutSnapshots?: ReturnType<typeof createDatabaseReadCapability>['checkoutSnapshots'];
   actionCancellation?: { reason: string | null };
   runId: string;
@@ -544,6 +545,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
     concurrency,
     'database-read': createDatabaseReadCapability({
       checkoutSnapshots: ctx.checkoutSnapshots ??= new Map(),
+      checkoutActivity: ctx.checkoutActivity ??= { unsettled: false },
       app: ctx.appDir,
       backend: ctx.backend,
       spacetime: ctx.spacetime,
@@ -716,6 +718,7 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
   // contexts, so user and room names are scoped per feature — otherwise a
   // defect in one feature (e.g. a hijacked account) corrupts later setups.
   const scope = `${runCtx.runId}f${feature.id}`;
+  runCtx.checkoutActivity ??= { unsettled: false };
   const extraContexts: ActorContextEntry[] = [];
   const ctx: GradeRunContext = { ...runCtx, scope, roomName: (base: string) => `${base}-${scope}`, extraContexts, recorded: {}, checkoutSnapshots: new Map(),
     unverified: [], verified: [], actionEvidence: [] };
