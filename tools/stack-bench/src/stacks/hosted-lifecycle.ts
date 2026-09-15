@@ -290,6 +290,19 @@ export function startAttemptSpacetime(lease: BackendLease): void {
       + `--data-dir /var/lib/stack-bench-data' > /tmp/stack-bench-backend.log 2>&1`]);
 }
 
+// Start an existing database without recreating users, keys, or the network.
+export function startAttemptDatabaseProcess(lease: BackendLease): void {
+  if (lease.backend === 'spacetime') return startAttemptSpacetime(lease);
+  if (!['postgres', 'mongodb'].includes(lease.backend) || !lease.resources.container?.owned) {
+    throw new Error('database start requires an owned supported backend');
+  }
+  const launch = lease.backend === 'postgres' ? ['postgres']
+    : ['mongod', '--bind_ip', '127.0.0.1', '--replSet', 'rs0', '--keyFile', '/data/configdb/stack-bench-keyfile'];
+  attemptDocker(['exec', '-d', lease.resources.container.id, 'sh', '-c',
+    'exec "$@" > /tmp/stack-bench-backend.log 2>&1',
+    'sh', '/usr/local/bin/docker-entrypoint.sh', ...launch]);
+}
+
 export function activateAttemptBackend({ leasePath, lease, ports }: {
   leasePath: string; lease: BackendLease; ports: StackRunPorts;
 }): void {
@@ -312,18 +325,12 @@ export function activateAttemptBackend({ leasePath, lease, ports }: {
     [...publish, ...environment, '--cap-add', 'CHOWN', '--cap-add', 'DAC_OVERRIDE',
       '--cap-add', 'FOWNER', '--cap-add', 'SETUID', '--cap-add', 'SETGID']);
   current = installAttemptFirewall(leasePath, readBackendLease(leasePath, { token: lease.ownershipToken }));
-  if (lease.backend === 'spacetime') startAttemptSpacetime(current);
-  else {
-    if (lease.backend === 'mongodb') {
-      attemptDocker(['exec', container.id, 'sh', '-c',
-        'umask 077; head -c 48 /dev/urandom | base64 > /data/configdb/stack-bench-keyfile; '
-          + 'chown mongodb:mongodb /data/configdb/stack-bench-keyfile; chmod 400 /data/configdb/stack-bench-keyfile']);
-    }
-    const launch = lease.backend === 'postgres' ? ['postgres']
-      : ['mongod', '--bind_ip', '127.0.0.1', '--replSet', 'rs0', '--keyFile', '/data/configdb/stack-bench-keyfile'];
-    attemptDocker(['exec', '-d', container.id, 'sh', '-c', 'exec "$@" > /tmp/stack-bench-backend.log 2>&1',
-      'sh', '/usr/local/bin/docker-entrypoint.sh', ...launch]);
+  if (lease.backend === 'mongodb') {
+    attemptDocker(['exec', container.id, 'sh', '-c',
+      'umask 077; head -c 48 /dev/urandom | base64 > /data/configdb/stack-bench-keyfile; '
+        + 'chown mongodb:mongodb /data/configdb/stack-bench-keyfile; chmod 400 /data/configdb/stack-bench-keyfile']);
   }
+  startAttemptDatabaseProcess(current);
   const deadline = Date.now() + 60_000;
   while (true) {
     try {

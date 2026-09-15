@@ -64,6 +64,10 @@ export function applyAddressBookMigration(app: string, backend: string) {
       to: `      <h3>Profile</h3>\n      <AddressBook ${httpActions} />` },
     { file: 'client/src/ProgressionPanel.tsx', from: '  const saveProfile = () =>',
       to: '  const addressRequest = (path: string, method = "GET", body?: unknown) => request(path, token, { method, body: body === undefined ? undefined : JSON.stringify(body) });\n  const saveProfile = () =>' },
+    { file: 'client/src/ProgressionPanel.tsx',
+      from: '      if (next.profile) {\n        setProfileName(next.profile.name || "");\n        setProfileAddress(next.profile.address || "");\n      }', to: '' },
+    { file: 'client/src/ProgressionPanel.tsx', from: '  const act = async (path:',
+      to: '  useEffect(() => {\n    setProfileName(state.profile?.name ?? "");\n    setProfileAddress(state.profile?.address ?? "");\n  }, [state.profile?.name, state.profile?.address, token]);\n\n  const act = async (path:' },
   ];
   // Check every anchor before writing any source file.
   const changed = new Map<string, string>();

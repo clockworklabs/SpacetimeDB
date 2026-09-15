@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
 import { attemptBrowserLaunchOptions } from '../../../dist/container/browser-pipe.js';
 import { addressImportDifferences, migrationCheckoutDifferences } from '../../../dist/src/stacks/migration-state.js';
@@ -160,6 +161,11 @@ export async function qualifyAddressBook({ audit, before, snapshot, checkoutStat
     phase('legacy-profile-write');
     await control(a,'profile-name').fill('New recipient');
     await control(a,'profile-address').fill('90 Market Street');
+    // Retain an unsaved edit across the reference's periodic refresh. Waiting
+    // here tests form stability; it is not a retry of a failed write.
+    await delay(1500);
+    assert.equal(await control(a,'profile-name').inputValue(),'New recipient');
+    assert.equal(await control(a,'profile-address').inputValue(),'90 Market Street');
     await control(a,'profile-save').click();
     await control(a,'profile-address-summary').filter({hasText:'90 Market Street'}).waitFor();
     book=await read(a,aid);

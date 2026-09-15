@@ -1,11 +1,19 @@
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { createHash } from 'node:crypto';
+import { z } from 'zod';
+import { leaseFromEnv } from './backend-lease.js';
+import type { BackendLease } from './backend-lease.js';
+import { handoffBuildWorkspace } from './backend-teardown.js';
+import { inspectBuildContainer } from '../stacks/hosted-lifecycle.js';
+import { checkpointDatabaseTarget, checkpointFileHash, copyCheckpointDatabase,
+  startCheckpointDatabase, stopCheckpointDatabase } from '../stacks/database-checkpoint.js';
 
 import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
 import type { RunOutcome } from '../evidence/outcomes.js';
 import { controlAppServer } from './backend-control.js';
 import type { RuntimeControlSpec } from './backend-control.js';
-import { hashAppSource, restoreAppSource } from './source-snapshot.js';
+import { hashAppSource, snapshotAppSource, restoreAppSource } from './source-snapshot.js';
 import { CODING_CONTAINER_START_SCRIPT } from './coding-container-policy.js';
 import { resetRepairBackend } from '../stacks/backend-reset.js';
 
@@ -17,7 +25,13 @@ const message = (error: unknown): string => error instanceof Error ? error.messa
 export async function restoreRepairSource(sourcePath: string, appDir: string,
   application: RuntimeControlSpec,
   lifecycle: typeof controlAppServer = controlAppServer,
-  reset: typeof resetRepairBackend = resetRepairBackend): Promise<void> {
+  reset: typeof resetRepairBackend = resetRepairBackend,
+  populatedCheckpoint?: string): Promise<void> {
+  if (populatedCheckpoint) {
+    if (resolve(appDir) !== resolve(application.app)) throw new Error('repair application paths do not match');
+    await restorePopulatedCheckpoint(populatedCheckpoint, application, sourcePath);
+    return;
+  }
   await materializeAcceptedSource(sourcePath, appDir, application, async (spec, mode, options) => {
     if (mode === 'start') reset({ backend: spec.backend, app: appDir });
     await lifecycle(spec, mode, options);
@@ -84,4 +98,98 @@ export function materializationAppFailure(error: unknown): RunOutcome {
     : `accepted application source has no ${CODING_CONTAINER_START_SCRIPT}`;
   return { kind: 'app_failure', phase: 'application-restart', reason,
     appFailures: ['application-restart'], inconclusive: [], harnessFailures: [] };
+}
+
+const hash = z.string().regex(/^[a-f0-9]{64}$/);
+const receiptSchema = z.object({
+  version: z.literal(1), backend: z.enum(['postgres', 'mongodb', 'spacetime']),
+  runId: z.string().min(1), ownershipSha256: hash, container: z.string().min(1),
+  image: z.string().min(1), app: z.string().min(1), createdAt: z.string().datetime(),
+  sourceSha256: hash, dataSha256: hash, dataBytes: z.number().int().positive(),
+}).strict();
+export type PopulatedCheckpoint = z.infer<typeof receiptSchema>;
+
+const ownershipHash = (lease: BackendLease) => createHash('sha256').update(lease.ownershipToken).digest('hex');
+const inside = (parent: string, child: string) => {
+  const path = relative(parent, child);
+  return path === '' || (path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path));
+};
+
+function checkpointLocation(directory: string, app: string, creating = false): string {
+  const target = resolve(directory);
+  const realApp = realpathSync(app);
+  // Resolve parent links before creating anything. A private checkpoint must
+  // never be in (or contain) a directory exposed to the coding agent.
+  const realTarget = creating ? join(realpathSync(dirname(target)), basename(target))
+    : realpathSync(target);
+  if (realTarget !== target || inside(realApp, target) || inside(target, realApp)) {
+    throw new Error('populated checkpoint must be a separate private directory without path links');
+  }
+  return target;
+}
+
+export async function validatePopulatedCheckpoint(directory: string, application: RuntimeControlSpec,
+  lease: BackendLease): Promise<PopulatedCheckpoint> {
+  const target = checkpointLocation(directory, application.app);
+  const receipt = receiptSchema.parse(JSON.parse(readFileSync(join(target, 'checkpoint.json'), 'utf8')));
+  if (receipt.backend !== application.backend || receipt.backend !== lease.backend
+    || receipt.runId !== lease.runId || receipt.ownershipSha256 !== ownershipHash(lease)
+    || receipt.container !== lease.resources.container?.id || receipt.image !== lease.resources.container?.image
+    || receipt.app !== realpathSync(application.app)) {
+    throw new Error('populated checkpoint does not belong to this application and lease');
+  }
+  if (hashAppSource(join(target, 'source')).sha256 !== receipt.sourceSha256
+    || statSync(join(target, 'database.tar')).size !== receipt.dataBytes
+    || await checkpointFileHash(join(target, 'database.tar')) !== receipt.dataSha256) {
+    throw new Error('populated checkpoint source or database archive changed');
+  }
+  return receipt;
+}
+
+export async function capturePopulatedCheckpoint(directory: string,
+  application: RuntimeControlSpec): Promise<PopulatedCheckpoint> {
+  const target = checkpointLocation(directory, application.app, true);
+  const { lease } = leaseFromEnv(process.env, { backend: application.backend, active: true });
+  const database = checkpointDatabaseTarget(lease);
+  if (!lease.resources.container?.image) throw new Error('database checkpoint requires a recorded image');
+  mkdirSync(target, { mode: 0o700 });
+  await controlAppServer(application, 'stop');
+  handoffBuildWorkspace(inspectBuildContainer(lease).id);
+  stopCheckpointDatabase(lease);
+  // Any failure stops the attempt; never restart a partially captured/restored
+  // database and pretend that the next candidate has a known starting state.
+  snapshotAppSource(application.app, join(target, 'source'));
+  const source = hashAppSource(application.app);
+  if (hashAppSource(join(target, 'source')).sha256 !== source.sha256) {
+    throw new Error('source changed during populated checkpoint capture');
+  }
+  const archive = join(target, 'database.tar');
+  copyCheckpointDatabase(lease, archive, false);
+  const receipt = receiptSchema.parse({ version: 1, backend: lease.backend, runId: lease.runId,
+    ownershipSha256: ownershipHash(lease), container: database.container, image: lease.resources.container.image,
+    app: realpathSync(application.app), createdAt: new Date().toISOString(), sourceSha256: source.sha256,
+    dataSha256: await checkpointFileHash(archive), dataBytes: statSync(archive).size });
+  writeFileSync(join(target, 'checkpoint.json'), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+  await startCheckpointDatabase(lease);
+  await materializeAcceptedSource(join(target, 'source'), application.app, application);
+  return receipt;
+}
+
+export async function restorePopulatedCheckpoint(directory: string,
+  application: RuntimeControlSpec, acceptedSource?: string): Promise<PopulatedCheckpoint> {
+  const { lease } = leaseFromEnv(process.env, { backend: application.backend, active: true });
+  // Authenticate and hash before stopping or changing any live state.
+  const receipt = await validatePopulatedCheckpoint(directory, application, lease);
+  if (acceptedSource && hashAppSource(acceptedSource).sha256 !== receipt.sourceSha256) {
+    throw new Error('repair source does not match its populated database checkpoint');
+  }
+  checkpointDatabaseTarget(lease);
+  await controlAppServer(application, 'stop');
+  handoffBuildWorkspace(inspectBuildContainer(lease).id);
+  stopCheckpointDatabase(lease);
+  restoreAppSource(join(directory, 'source'), application.app);
+  copyCheckpointDatabase(lease, join(directory, 'database.tar'), true);
+  await startCheckpointDatabase(lease);
+  await materializeAcceptedSource(join(directory, 'source'), application.app, application);
+  return receipt;
 }

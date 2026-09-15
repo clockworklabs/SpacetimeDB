@@ -13,7 +13,7 @@ import { activateAttemptBackend } from '../../../dist/src/stacks/hosted-lifecycl
 import { loadTrack, portsFor, dbName, moduleName } from '../../../dist/src/composition/tracks.js';
 import { hashAppSource } from '../../../dist/src/runtime/source-snapshot.js';
 import { runBounded } from '../../../dist/src/runtime/bounded-process.js';
-import { controlAppServer, controlBackendRuntime } from '../../../dist/src/runtime/backend-control.js';
+import { captureApplicationDiagnostics, controlAppServer, controlBackendRuntime } from '../../../dist/src/runtime/backend-control.js';
 import { leasedSpacetimeTarget } from '../../../dist/src/runtime/spacetime-target.js';
 import { getSpacetimeCheckoutState } from '../../../dist/src/stacks/backends/spacetime-operations.js';
 import { getPostgresCheckoutState } from '../../../dist/src/stacks/backends/postgres-operations.js';
@@ -22,11 +22,16 @@ import { assertLeasedContainer, requireLeasedDatabase } from '../../../dist/src/
 import { attemptDatabaseIdentity } from '../../../dist/src/stacks/hosted-database-identity.js';
 import { canonicalizeDefinition } from '../../../dist/src/composition/definition-plan.js';
 import { loadReferenceRegistry } from '../../../dist/src/references/reference-fixtures.js';
+import { migrationCheckoutDifferences } from '../../../dist/src/stacks/migration-state.js';
+import { capturePopulatedCheckpoint, restorePopulatedCheckpoint, restoreRepairSource } from '../../../dist/src/runtime/source-materialization.js';
 import { codingContainerAgentCommand, CODING_CONTAINER_SPACETIME_CLI,
   codingContainerAgentExecOptions } from '../../../dist/src/runtime/coding-container-policy.js';
 
 const [backend, indexText, defect] = process.argv.slice(2), runIndex = Number(indexText);
 assert(['postgres','mongodb','spacetime'].includes(backend) && Number.isSafeInteger(runIndex));
+const checkpointRun = process.env.M8_CHECKPOINT_RUN === '1';
+let migrationActive = false;
+assert(!checkpointRun || !defect, 'checkpoint qualification requires the correct starting migration');
 const track = loadTrack('ecommerce'), ports = portsFor(track, backend, runIndex);
 const id = `m8-migration-${backend}-${Date.now()}`;
 const directory = join(process.env.M8_OUTPUT_ROOT, id), app = join(directory,'source');
@@ -38,13 +43,25 @@ const lease = createBackendLease({ runId:id,backend,track:'ecommerce',runIndex,
     : { database:dbName(track,runIndex) }) });
 Object.assign(process.env,{ STACK_BENCH_LEASE:leasePath,STACK_BENCH_LEASE_TOKEN:lease.ownershipToken });
 if (backend==='spacetime') process.env.STACK_BENCH_STDB_URI=lease.resources.serverUri;
-const audit = { id,backend,runIndex,ports,revision:'2dbfce061',startedAt:new Date().toISOString(),
+const audit = { id,backend,runIndex,ports,startedAt:new Date().toISOString(),
   controllerImage:process.env.STACK_BENCH_CONTROLLER_IMAGE_ID,buildImage:process.env.STACK_BENCH_IMAGE,
   paidCalls:0,scope:'Live address-book reference migration diagnostic; no scored promotion' };
 writeFileSync(join(directory,'driver.mjs'),readFileSync(process.argv[1]));
 for(const name of ['m8-live-address-book.mjs','m8-native-request.mjs']) writeFileSync(join(directory,name),readFileSync(new URL(name,import.meta.url)));
 const save = (name,value) => writeFileSync(join(directory,name),JSON.stringify(value,null,2)+'\n');
 const spec = { backend,app,port:ports.vite,probe:'/' };
+function checkpointWriter(start) {
+  const {lease:active}=leaseFromEnv(process.env,{backend,active:true});
+  const container=assertLeasedContainer(active.resources.buildContainer,execFileSync,30000,'checkpoint writer control');
+  const record='/tmp/m8-checkpoint-writer.pid';
+  if(start) {
+    execFileSync('docker',['exec','-d',...codingContainerAgentExecOptions(),container,'sh','-c',
+      `echo $$ > ${record}; exec sleep 600`],{timeout:30000});
+    execFileSync('docker',['exec',container,'sh','-c',
+      `i=0; until test -s ${record}; do i=$((i+1)); test "$i" -lt 50 || exit 1; sleep 0.1; done`],{timeout:30000});
+  } else execFileSync('docker',['exec',container,'sh','-c',
+    `pid=$(cat ${record}); test ! -d /proc/"$pid"`],{timeout:30000});
+}
 async function run(name,argv,binary=process.execPath) {
   const result = await runBounded(binary,argv,{timeoutMs:1200000,stdio:'ignore',
     logs:{stdout:join(directory,`${name}.stdout.log`),stderr:join(directory,`${name}.stderr.log`)} });
@@ -96,7 +113,7 @@ function seedSteps() {
 function checkoutState(account) {
   const input={account,item:'Keyboard',app};
   const active=leaseFromEnv(process.env,{backend,active:true}).lease;
-  if(backend==='spacetime') return getSpacetimeCheckoutState({...input,addressBookMigration:Boolean(audit.migratedSource),spacetime:leasedSpacetimeTarget({requireBuildContainer:true})});
+  if(backend==='spacetime') return getSpacetimeCheckoutState({...input,addressBookMigration:migrationActive,spacetime:leasedSpacetimeTarget({requireBuildContainer:true})});
   return (backend==='postgres'?getPostgresCheckoutState:getMongoDbCheckoutState)({...input,lease:requireLeasedDatabase(active)});
 }
 function nativeTables(tables) {
@@ -217,8 +234,16 @@ try {
   audit.population={orders:2,payments:2,orderLines:4,customers:2,scopeTables:Object.keys(before.state),
     rows:Object.fromEntries(Object.entries(before.state).map(([table,rows])=>[table,rows.length]))};
   audit.beforeCheckout=checks.map(value=>value.state);
+  if(checkpointRun) {
+    audit.phase='capture-populated-start';
+    checkpointWriter(true);
+    audit.initialCheckpoint=await capturePopulatedCheckpoint(join(directory,'initial-checkpoint'),spec);
+    checkpointWriter(false);audit.detachedWriterStopped=true;
+    assert.deepEqual(snapshot().state,before.state,'checkpoint capture changed populated starting data');
+  }
   await controlAppServer(spec,'stop');
   audit.migratedSource=applyAddressBookMigration(app,backend);
+  migrationActive=true;
   if(defect) { audit.defect=defect; audit.migratedSource=applyAddressBookDefect(app,backend,defect); }
   if(backend==='spacetime') {
     const target=leasedSpacetimeTarget({requireBuildContainer:true});
@@ -247,8 +272,66 @@ try {
   }});
   audit.sourceAfter=hashAppSource(app);
   assert.equal(audit.sourceAfter.sha256,audit.migratedSource.sha256);
+  if(checkpointRun) {
+    audit.phase='capture-accepted-migration';
+    const accepted=snapshot(),books=storedBooks();
+    save('accepted-state.json',accepted);save('accepted-books.json',books);
+    audit.acceptedCheckpoint=await capturePopulatedCheckpoint(join(directory,'accepted-checkpoint'),spec);
+    await assert.rejects(restoreRepairSource(join(directory,'initial-checkpoint','source'),app,spec,
+      undefined,undefined,join(directory,'accepted-checkpoint')),/repair source does not match/);
+    assert.deepEqual(snapshot().state,accepted.state,'invalid checkpoint request changed the live database');
+    audit.mismatchedSourceRejected=true;
+    // Qualify the failure we are replacing: the fresh-build rollback really
+    // recreates an empty grading database and loses this populated task's data.
+    audit.phase='empty-reset-control';
+    await restoreRepairSource(join(directory,'accepted-checkpoint','source'),app,spec);
+    assert.notDeepEqual(snapshot().state,accepted.state,'empty-reset control did not lose populated data');
+    audit.emptyResetDetected=true;
+    await restoreRepairSource(join(directory,'accepted-checkpoint','source'),app,spec,
+      undefined,undefined,join(directory,'accepted-checkpoint'));
+    assert.deepEqual(snapshot().state,accepted.state,'accepted records did not survive recovery from empty reset');
+    for(let round=1;round<=2;round++) {
+      audit.phase=`rejected-repair-${round}`;
+      await grade(`change-price-${round}`,[login('admin','admin','stackbench-admin-2026'),click('admin','admin-link'),
+        fill('admin','price-input','8.76',{testid:'admin-item-row',contains:'Keyboard'}),
+        click('admin','price-submit',{testid:'admin-item-row',contains:'Keyboard'})],['admin']);
+      assert.notDeepEqual(snapshot().state,accepted.state,'repair control did not change data');
+      await controlAppServer(spec,'stop');
+      applyAddressBookDefect(app,backend,'cross-account');
+      assert.notEqual(hashAppSource(app).sha256,audit.migratedSource.sha256);
+      await restoreRepairSource(join(directory,'accepted-checkpoint','source'),app,spec,
+        undefined,undefined,join(directory,'accepted-checkpoint'));
+      assert.deepEqual(snapshot().state,accepted.state,'accepted business data did not restore');
+      assert.deepEqual(storedBooks(),books,'accepted address book did not restore');
+      assert.equal(hashAppSource(app).sha256,audit.migratedSource.sha256);
+      audit[`acceptedRestore${round}`]=true;
+    }
+    audit.phase='restore-pre-migration';
+    await restorePopulatedCheckpoint(join(directory,'initial-checkpoint'),spec);
+    assert.equal(hashAppSource(app).sha256,audit.source.sha256);
+    migrationActive=false;
+    assert.deepEqual(snapshot().state,before.state,'original populated records did not restore');
+    assert.deepEqual(migrationCheckoutDifferences(audit.beforeCheckout,
+      ['m8-customer','admin-helper'].map(checkoutState).map(value=>value.state)),[]);
+    await grade('purchase-after-restore',[login('a','m8-customer','m8-baseline-password'),
+      {do:'dbRecordCheckout',account:'m8-customer',item:'Keyboard',as:'before-restore-purchase'},
+      {...fill('a','search-input','Keyboard'),enter:true},expect('a','item-card','Keyboard'),
+      click('a','add-to-cart',{testid:'item-card',contains:'Keyboard'}),
+      {do:'expectNumber',actor:'a',testid:'cart-count',equals:1,within:10000},
+      {do:'dbRecordCheckout',account:'m8-customer',item:'Keyboard',as:'prepared-restore-purchase'},
+      checkout,{do:'expectCallOutcomes'},
+      {do:'dbExpectCheckout',before:'before-restore-purchase',prepared:'prepared-restore-purchase',quantity:1}],['a']);
+    await restorePopulatedCheckpoint(join(directory,'initial-checkpoint'),spec);
+    assert.deepEqual(snapshot().state,before.state,'second original restore retained later purchases');
+    audit.initialRestores=2;audit.purchaseAfterRestore=true;
+  }
   audit.preserved=true;
-} catch(error) {audit.error=error.message;audit.failureKind=error.code==='ERR_ASSERTION'?'observation-mismatch':'execution-error';process.exitCode=1;console.error(error.message);}
+} catch(error) {
+  audit.error=error.message;audit.failureKind=error.code==='ERR_ASSERTION'?'observation-mismatch':'execution-error';
+  try { audit.applicationDiagnostics=captureApplicationDiagnostics(join(directory,'application-error.log')); }
+  catch(diagnosticError) { audit.diagnosticError=diagnosticError.message; }
+  process.exitCode=1;console.error(error.message);
+}
 finally {
   try {audit.released=existsSync(leasePath)?releaseBackendLease(leasePath,lease.ownershipToken):true;}
   catch(error) {audit.cleanupError=error.message;audit.released=false;}

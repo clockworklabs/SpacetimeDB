@@ -51,8 +51,46 @@ result. Keep failed attempts with successful ones.
 
 No registered recipe, scored check or qualification status changes here.
 The draft specification still needs per-check controls and integration before
-scored promotion. Repair rollback, fault recovery, concurrent migration and
-full database coverage are not established by this diagnostic.
+scored promotion. Fault recovery, concurrent migration and full database
+coverage are not established by this diagnostic.
+
+## Populated repair checkpoints
+
+Set `M8_CHECKPOINT_RUN=1` on a correct reference diagnostic to test the shared
+repair restore path with populated data. It captures both the original app and
+the migrated app. Each checkpoint pairs source with a cold native database
+archive. Application writers and the database process stop during capture;
+the leased container and its network remain in place.
+
+The diagnostic checks that an empty database reset loses the populated state,
+then recovers it. It rejects a mismatched source, changes code and data twice,
+restores the accepted pair twice, and restores the original pair twice. A new
+purchase after restoration must have the expected stored order and stock effects.
+A detached application process must also stop before capture.
+
+These checkpoints are private and valid only for the same live lease, container
+and image. They include credentials. Do not publish or copy them to another run.
+Archive or source changes cause validation to fail before restoration starts.
+A failed capture or restore stops the diagnostic; it is not a passed repair.
+The clock is not restored, so this pilot waits for scheduled delivery to finish
+before capture. It does not cover active timed operations.
+
+This qualifies the restore boundary, not a complete migration agent episode.
+The normal benchmark command still uses its existing fresh-database policy;
+populated task setup, grading and repair selection still need integration.
+
+On 15 September, the final checkpoint protocol passed on all three stacks with
+image `sha256:763510743605256bd86cabca627b316dbb414462360557a550ae0320a389761e`.
+Each passed the empty-reset and mismatched-source controls, two accepted-pair
+restores, two original-pair restores, writer cleanup and a new stored purchase.
+Type checking, 52 focused tests and 23 Linux tests passed without skips in those
+final test sets. The Linux set includes the existing schema-rollback integration.
+All 11 development attempts remain recorded: seven passed and four failed.
+All owned containers were released. Earlier failures exposed MongoDB shutdown
+permissions, an order-sensitive comparator, an unsynchronized cart probe and a
+profile-save timeout. The migration copy now preserves unsaved profile edits
+across refresh; the old timeout's exact request sequence was not captured.
+These trials made no model calls and changed no benchmark scores.
 
 ## Local validation, 14 September 2026
 
