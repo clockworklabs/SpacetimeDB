@@ -39,6 +39,13 @@ can proceed before public qualification. A verified public comparison cannot.
 
 ## Collection sequence
 
+Core storefront testing comes first: grading reliability, concurrent operations,
+crash recovery, and applicable security checks. The address-book migration is an
+optional, separate task. It does not add to core scores or gate core execution
+or qualification. Keep it draft until its own controls pass. Shared runner
+changes still need core regression checks. Further migration work must not delay
+the core test program.
+
 Set sample counts from the study's purpose; a pilot count is not a statistical
 power calculation. One block means one fresh attempt on each selected stack under the same
 protocol. Repetitions start with clean apps and independent agent sessions.

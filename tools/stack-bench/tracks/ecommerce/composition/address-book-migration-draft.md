@@ -39,3 +39,21 @@ edits; a new checkout must then produce the expected order, payment and stock
 effects. These readers cover selected business records, not every account field
 or role. Promotion requires matching main-runner correct/defective qualification.
 Historical scores stay fixed.
+
+## Implementation status
+
+The normal runner completed the correct reference task on PostgreSQL, MongoDB
+and SpacetimeDB at commit `dccd65ab7`. Each trial passed the one atomic workflow
+with 118 action observations. These were model-free trials, not a paid study.
+
+Migration remains draft. Normal-runner defective controls, rejected-repair
+source/data restoration, interruption controls, an alternative valid storage
+layout and exact-recipe qualification remain open. The earlier standalone
+diagnostic does not replace these controls. The runner blocks paid migration
+sessions until migration qualification is complete.
+
+The existing runner and evidence modules own this path; migration behavior is
+selected by the explicit recipe. The local handoff and evidence index are
+`local-notes/m8-runner-plan-20260915.md` and
+`local-notes/m8-main-runner-audit-20260915.json`. Resume there if this optional
+task is needed. Core testing does not wait for it.
