@@ -13,6 +13,7 @@ use std::collections::{btree_map, BTreeMap};
 pub mod connection_id;
 pub mod db;
 mod direct_index_key;
+pub mod environment;
 pub mod error;
 mod filterable_value;
 pub mod http;

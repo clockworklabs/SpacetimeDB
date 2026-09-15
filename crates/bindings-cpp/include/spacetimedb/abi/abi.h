@@ -39,6 +39,9 @@
 #define STDB_IMPORT_10_5(name) \
     __attribute__((import_module("spacetime_10.5"), import_name(#name))) extern
 
+#define STDB_IMPORT_10_6(name) \
+    __attribute__((import_module("spacetime_10.6"), import_name(#name))) extern
+
 // Import opaque types into global namespace for C compatibility
 using SpacetimeDB::Status;
 using SpacetimeDB::TableId;
@@ -58,6 +61,9 @@ using SpacetimeDB::ConsoleTimerId;
 #pragma clang diagnostic ignored "-Wreturn-type-c-linkage"
 
 extern "C" {
+
+STDB_IMPORT_10_6(env_get)
+Status env_get(const uint8_t* key, uint32_t key_len, BytesSource* out);
 
 // ===== Table and Index Management =====
 STDB_IMPORT(table_id_from_name)

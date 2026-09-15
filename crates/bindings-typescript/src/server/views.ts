@@ -1,3 +1,4 @@
+import type { EnvironmentFor } from '../lib/environment';
 import {
   AlgebraicType,
   ProductType,
@@ -81,11 +82,13 @@ export function makeAnonViewExport<
 export type ViewCtx<S extends UntypedSchemaDef> = Readonly<{
   sender: Identity;
   db: ReadonlyDbView<S>;
+  env: EnvironmentFor<S>;
   from: QueryBuilder<S>;
 }>;
 
 export type AnonymousViewCtx<S extends UntypedSchemaDef> = Readonly<{
   db: ReadonlyDbView<S>;
+  env: EnvironmentFor<S>;
   from: QueryBuilder<S>;
 }>;
 
