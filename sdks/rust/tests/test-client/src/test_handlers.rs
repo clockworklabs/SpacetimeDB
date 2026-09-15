@@ -81,6 +81,9 @@ pub async fn dispatch(test: &str, db_name: &str) {
         "insert-simple-enum" => exec_insert_simple_enum(db_name).await,
         "insert-enum-with-payload" => exec_insert_enum_with_payload(db_name).await,
 
+        "delete-option-some" => exec_delete_option_some(db_name).await,
+        "delete-option-none" => exec_delete_option_none(db_name).await,
+
         "insert-delete-large-table" => exec_insert_delete_large_table(db_name).await,
 
         "insert-primitives-as-strings" => exec_insert_primitives_as_strings(db_name).await,
@@ -337,6 +340,23 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM unique_identity;",
     "SELECT * FROM unique_connection_id;",
     "SELECT * FROM unique_uuid;",
+    "SELECT * FROM unique_option_u_8;",
+    "SELECT * FROM unique_option_u_16;",
+    "SELECT * FROM unique_option_u_32;",
+    "SELECT * FROM unique_option_u_64;",
+    "SELECT * FROM unique_option_u_128;",
+    "SELECT * FROM unique_option_u_256;",
+    "SELECT * FROM unique_option_i_8;",
+    "SELECT * FROM unique_option_i_16;",
+    "SELECT * FROM unique_option_i_32;",
+    "SELECT * FROM unique_option_i_64;",
+    "SELECT * FROM unique_option_i_128;",
+    "SELECT * FROM unique_option_i_256;",
+    "SELECT * FROM unique_option_bool;",
+    "SELECT * FROM unique_option_string;",
+    "SELECT * FROM unique_option_identity;",
+    "SELECT * FROM unique_option_connection_id;",
+    "SELECT * FROM unique_option_uuid;",
     "SELECT * FROM pk_u_8;",
     "SELECT * FROM pk_u_16;",
     "SELECT * FROM pk_u_32;",
@@ -1423,6 +1443,79 @@ async fn exec_insert_enum_with_payload(db_name: &str) {
     });
 
     test_counter.wait_for_all().await;
+}
+
+async fn exec_delete_option_some(db_name: &str) {
+    let test_counter = TestCounter::new();
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    let connection = connect_then(db_name, &test_counter, {
+        let test_counter = test_counter.clone();
+        move |ctx| {
+            subscribe_all_then(ctx, move |ctx| {
+                insert_then_delete_one::<UniqueOptionU8>(ctx, &test_counter, Some(0), 0xbeef);
+                insert_then_delete_one::<UniqueOptionU16>(ctx, &test_counter, Some(0), 0xbeef);
+                insert_then_delete_one::<UniqueOptionU32>(ctx, &test_counter, Some(0), 0xbeef);
+                insert_then_delete_one::<UniqueOptionU64>(ctx, &test_counter, Some(0), 0xbeef);
+                insert_then_delete_one::<UniqueOptionU128>(ctx, &test_counter, Some(0), 0xbeef);
+                insert_then_delete_one::<UniqueOptionU256>(ctx, &test_counter, Some(0u8.into()), 0xbeef);
+
+                insert_then_delete_one::<UniqueOptionI8>(ctx, &test_counter, Some(0), 0xbeef);
+                insert_then_delete_one::<UniqueOptionI16>(ctx, &test_counter, Some(0), 0xbeef);
+                insert_then_delete_one::<UniqueOptionI32>(ctx, &test_counter, Some(0), 0xbeef);
+                insert_then_delete_one::<UniqueOptionI64>(ctx, &test_counter, Some(0), 0xbeef);
+                insert_then_delete_one::<UniqueOptionI128>(ctx, &test_counter, Some(0), 0xbeef);
+                insert_then_delete_one::<UniqueOptionI256>(ctx, &test_counter, Some(0i8.into()), 0xbeef);
+
+                insert_then_delete_one::<UniqueOptionBool>(ctx, &test_counter, Some(false), 0xbeef);
+                insert_then_delete_one::<UniqueOptionString>(ctx, &test_counter, Some("".to_string()), 0xbeef);
+
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+            });
+        }
+    })
+    .await;
+
+    test_counter.wait_for_all().await;
+
+    assert_all_tables_empty(&connection).unwrap();
+}
+
+async fn exec_delete_option_none(db_name: &str) {
+    let test_counter = TestCounter::new();
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    let connection = connect_then(db_name, &test_counter, {
+        let test_counter = test_counter.clone();
+        move |ctx| {
+            subscribe_all_then(ctx, move |ctx| {
+                insert_then_delete_one::<UniqueOptionU8>(ctx, &test_counter, None, 0xbeef);
+                insert_then_delete_one::<UniqueOptionU16>(ctx, &test_counter, None, 0xbeef);
+                insert_then_delete_one::<UniqueOptionU32>(ctx, &test_counter, None, 0xbeef);
+                insert_then_delete_one::<UniqueOptionU64>(ctx, &test_counter, None, 0xbeef);
+                insert_then_delete_one::<UniqueOptionU128>(ctx, &test_counter, None, 0xbeef);
+                insert_then_delete_one::<UniqueOptionU256>(ctx, &test_counter, None, 0xbeef);
+
+                insert_then_delete_one::<UniqueOptionI8>(ctx, &test_counter, None, 0xbeef);
+                insert_then_delete_one::<UniqueOptionI16>(ctx, &test_counter, None, 0xbeef);
+                insert_then_delete_one::<UniqueOptionI32>(ctx, &test_counter, None, 0xbeef);
+                insert_then_delete_one::<UniqueOptionI64>(ctx, &test_counter, None, 0xbeef);
+                insert_then_delete_one::<UniqueOptionI128>(ctx, &test_counter, None, 0xbeef);
+                insert_then_delete_one::<UniqueOptionI256>(ctx, &test_counter, None, 0xbeef);
+
+                insert_then_delete_one::<UniqueOptionBool>(ctx, &test_counter, None, 0xbeef);
+
+                insert_then_delete_one::<UniqueOptionString>(ctx, &test_counter, None, 0xbeef);
+
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+            });
+        }
+    })
+    .await;
+
+    test_counter.wait_for_all().await;
+
+    assert_all_tables_empty(&connection).unwrap();
 }
 
 /// This tests that the test machinery itself is functional and can detect failures.
