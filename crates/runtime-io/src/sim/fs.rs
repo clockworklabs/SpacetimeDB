@@ -114,8 +114,7 @@ impl PageMap {
             }
             Less => {
                 let first_removed = PageIndex::from_offset(new_len);
-                let removed = page_map.split_off(&first_removed);
-                drop(removed);
+                page_map.retain(|&index, _| index < first_removed);
             }
         }
     }
