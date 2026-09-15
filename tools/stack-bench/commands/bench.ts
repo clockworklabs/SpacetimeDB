@@ -711,8 +711,7 @@ export function gradeArgv(
       : ['--restart-spec', JSON.stringify(restartSpec)])];
 }
 
-export function archiveCandidateGrade(appDir: string, outputDir: string, label: string): void {
-  const gradingDirectory = join(appDir, 'stack-bench');
+export function archiveCandidateGrade(gradingDirectory: string, outputDir: string, label: string): void {
   if (!existsSync(gradingDirectory)) return;
   cpSync(gradingDirectory, join(outputDir, 'candidate-grades', label), {
     recursive: true,
@@ -720,15 +719,15 @@ export function archiveCandidateGrade(appDir: string, outputDir: string, label: 
   });
 }
 
-export async function gradeWithRetry({ appDir, outputDir, label, archiveLabel, runGrade,
+export async function gradeWithRetry({ gradingDirectory, outputDir, label, archiveLabel, runGrade,
   retry = true }: {
-  appDir: string; outputDir: string; label: string; archiveLabel: string;
+  gradingDirectory: string; outputDir: string; label: string; archiveLabel: string;
   runGrade: (label: string) => GradeBundlePayload | null | Promise<GradeBundlePayload | null>;
   retry?: boolean;
 }): Promise<GradeBundlePayload | null> {
   const bundle = await runGrade(label);
   if (!retry || levelGradeIsUsable(classifyBundle(bundle))) return bundle;
-  archiveCandidateGrade(appDir, outputDir, archiveLabel);
+  archiveCandidateGrade(gradingDirectory, outputDir, archiveLabel);
   console.log('  grade did not complete; retrying the same source once');
   return runGrade(`${label}-retry`);
 }
@@ -2237,14 +2236,15 @@ async function main() {
     };
     const gradeSourceWithRetry = async (sourcePath: string, label: string,
       archiveLabel: string, options: GradeOptions = {}): Promise<GradeBundlePayload | null> => {
-      if (!populatedStart) return gradeWithRetry({ appDir, outputDir, label, archiveLabel,
+      const gradingDirectory = options.out ?? join(appDir, 'stack-bench');
+      if (!populatedStart) return gradeWithRetry({ gradingDirectory, outputDir, label, archiveLabel,
         runGrade: nextLabel => gradeAcceptedSource(sourcePath, nextLabel, options) });
       if (!applicationControl) throw new Error('populated grading requires application control');
       const checkpoint = join(runtimeDir, `candidate-${++populatedCheckpointIndex}`);
       const sourceSha256 = hashAppSource(sourcePath).sha256;
       try {
         const bundle = await gradePopulatedCandidate(checkpoint, applicationControl, sourceSha256,
-          () => gradeWithRetry({ appDir, outputDir, label, archiveLabel,
+          () => gradeWithRetry({ gradingDirectory, outputDir, label, archiveLabel,
             runGrade: nextLabel => grade(args, appDir, url, nextLabel, level, track, runId,
               { ...options, sourceSha256, populatedStart: { ...populatedStart!, source: sourcePath } }) }));
         acceptedPopulatedCheckpoint = checkpoint;
@@ -2421,7 +2421,7 @@ async function main() {
     let bundle = firstBuildSource
       ? populatedStart ? await gradeSourceWithRetry(firstBuildPath, firstBuildLabel,
         `l${level}${featureActionSuffix}-before-retry`)
-      : await gradeWithRetry({ appDir, outputDir, label: firstBuildLabel,
+      : await gradeWithRetry({ gradingDirectory: join(appDir, 'stack-bench'), outputDir, label: firstBuildLabel,
         archiveLabel: `l${level}${featureActionSuffix}-before-retry`,
         retry: !materializationOutcome,
         runGrade: label => grade(args, appDir, url, label, level, track, runId,
@@ -2526,7 +2526,7 @@ async function main() {
     if (featureActionSequence !== null && progressionSelection
       && isProgressionWorkRecipeAction(progressionSelection)) {
       const candidateOutcome = classifyBundle(bundle);
-      archiveCandidateGrade(appDir, outputDir, `l${level}${featureActionSuffix}`);
+      archiveCandidateGrade(join(appDir, 'stack-bench'), outputDir, `l${level}${featureActionSuffix}`);
       if (!levelGradeIsUsable(candidateOutcome)) {
         await restoreFeatureAcceptedSource();
         initialProgressionFailure = progressionFailure(candidateOutcome);
@@ -2933,7 +2933,7 @@ async function main() {
         const rejectedBundle = bundle;
         if (rejectedBundle) checkpointGrade('repair', rejectedBundle,
           [...(build && !resumedRepair ? [runSessionRecord(build)] : []), ...repairSessions], false);
-        archiveCandidateGrade(appDir, outputDir, `l${level}${featureActionSuffix}-repair${repairs}`);
+        archiveCandidateGrade(join(appDir, 'stack-bench'), outputDir, `l${level}${featureActionSuffix}-repair${repairs}`);
         if (!await restoreAcceptedRepair(snapshot, gradingSnapshot)) break;
         if (!restoreProgressionGrade(acceptedBundle,
           `${args.backend}-l${level}${featureActionSuffix}-rollback${repairs}`)) break;
@@ -3041,8 +3041,16 @@ async function main() {
       } catch (error) {
         if (populatedStart) {
           preservePopulatedCheckpoints = true;
-          archiveCandidateGrade(appDir, outputDir, `l${level}-repair${repairs}-error`);
-          await restoreAcceptedRepair(snapshot, gradingSnapshot);
+          const failures = [error];
+          try {
+            archiveCandidateGrade(join(appDir, 'stack-bench'), outputDir, `l${level}-repair${repairs}-error`);
+          } catch (archiveError) { failures.push(archiveError); }
+          try {
+            if (!await restoreAcceptedRepair(snapshot, gradingSnapshot)) {
+              failures.push(new Error('accepted repair restoration failed; see retained rollback evidence'));
+            }
+          } catch (restoreError) { failures.push(restoreError); }
+          if (failures.length > 1) throw new AggregateError(failures, 'repair failure recovery did not complete');
         }
         throw error;
       } finally {

@@ -587,9 +587,24 @@ test('grade retries preserve evidence, retry once, and skip usable or excluded g
     writeFileSync(join(grading, 'grader-selected-source-093.stderr.log'), 'first failure');
     writeFileSync(join(grading, 'media', 'video.webm'), 'large media');
 
+    const observed = join(output, 'observed');
+    mkdirSync(observed, { recursive: true });
+    const observedFailure = JSON.stringify({ outcome: { kind: 'incomplete' }, observation: 'observed' });
+    writeFileSync(join(observed, 'bundle.json'), observedFailure);
+    await gradeWithRetry({ gradingDirectory: observed, outputDir: output, label: 'observed',
+      archiveLabel: 'observed-before-retry', runGrade: label => {
+        if (label.endsWith('-retry')) {
+          writeFileSync(join(observed, 'bundle.json'), 'later observed grade');
+          return { outcome: { kind: 'passed' } };
+        }
+        return { outcome: { kind: 'incomplete' } };
+      } });
+    assert.equal(readFileSync(join(output, 'candidate-grades', 'observed-before-retry', 'bundle.json'), 'utf8'), observedFailure);
+    assert.equal(readFileSync(join(grading, 'bundle.json'), 'utf8'), failed, 'observed retry leaves scored evidence intact');
+
     for (const label of ['l3-before-retry', 'l3-repair1-before-retry']) {
       const calls: string[] = [];
-      await gradeWithRetry({ appDir: app, outputDir: output, label: 'grade', archiveLabel: label,
+      await gradeWithRetry({ gradingDirectory: grading, outputDir: output, label: 'grade', archiveLabel: label,
         runGrade: gradeLabel => {
           calls.push(gradeLabel);
           if (gradeLabel.endsWith('-retry')) {
@@ -601,7 +616,7 @@ test('grade retries preserve evidence, retry once, and skip usable or excluded g
     }
     for (const retry of [true, false]) {
       let calls = 0;
-      await gradeWithRetry({ appDir: app, outputDir: output, label: 'grade',
+      await gradeWithRetry({ gradingDirectory: grading, outputDir: output, label: 'grade',
         archiveLabel: 'must-not-archive', retry,
         runGrade: () => { calls++; return { outcome: { kind: retry ? 'app_failure' : 'harness_failure' } }; } });
       assert.equal(calls, 1);
