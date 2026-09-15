@@ -3,10 +3,26 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { applyAddressBookMigration, applyAddressBookDefect, ADDRESS_BOOK_DEFECTS } from '../src/references/address-book-migration.js';
+import { applyAddressBookMigration, applyAddressBookDefect, ADDRESS_BOOK_DEFECTS,
+  addressBookReferenceRequest, ADDRESS_BOOK_MIGRATION_RECIPE } from '../src/references/address-book-migration.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { verifyCheckoutSchema } from '../src/stacks/checkout-state.js';
+
+test('reference migration selection cannot fall through to fresh deployment', () => {
+  const id = ADDRESS_BOOK_MIGRATION_RECIPE;
+  assert.equal(addressBookReferenceRequest('ecommerce.progression-catalog', 'build', 'ecommerce', 3), null);
+  for (const mode of ['upgrade', 'fix']) {
+    assert.deepEqual(addressBookReferenceRequest(id, mode, 'ecommerce', 3), {});
+    for (const defect of ADDRESS_BOOK_DEFECTS) {
+      assert.deepEqual(addressBookReferenceRequest(`${id}.${defect}`, mode, 'ecommerce', 3), { defect });
+    }
+  }
+  for (const [recipe, mode, track, level] of [
+    [id, 'build', 'ecommerce', 3], [id, 'upgrade', 'chat', 3], [id, 'upgrade', 'ecommerce', 2],
+    [`${id}.`, 'upgrade', 'ecommerce', 3], [`${id}.unknown`, 'upgrade', 'ecommerce', 3],
+  ] as const) assert.throws(() => addressBookReferenceRequest(recipe, mode, track, level), /invalid/);
+});
 
 test('migration delta requires an exact disposable starting source and keeps the registered reference intact', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-migration-'));

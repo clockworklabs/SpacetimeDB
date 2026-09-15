@@ -337,7 +337,7 @@ function effectiveReferenceSource(fixture: ReferenceFixtureSource,
   return { basePath, files };
 }
 
-function referenceSourcePath(fixture: ReferenceFixtureSource, root: string): string {
+export function referenceSourcePath(fixture: ReferenceFixtureSource, root: string = ROOT): string {
   const baseRelative = fixture.imported?.path ?? fixture.targetPath;
   if (!safeReferencePath(baseRelative)) throw new Error('imported fixture path is unsafe');
   const basePath = join(root, baseRelative);

@@ -6,7 +6,24 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { createBackendLease } from '../src/runtime/backend-lease.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
-import { validatePopulatedCheckpoint } from '../src/runtime/source-materialization.js';
+import { validatePopulatedCheckpoint, requirePopulatedWorkspace } from '../src/runtime/source-materialization.js';
+import { inspectBuildContainer } from '../container/build-container-inspection.js';
+
+test('populated source must be the writable mount of the exact live leased container', () => {
+  const lease={resources:{buildContainer:{name:'owned',id:'owned-id',owned:true}}};
+  const app=join(tmpdir(),'owned-app');
+  const mount={Type:'bind',Source:app,Destination:'/app',RW:true};
+  const container={Id:'owned-id',Image:'image',State:{Running:true},Mounts:[mount]};
+  const inspect=(value:object|null)=>()=>value===null?null:inspectBuildContainer('owned',{
+    execute:()=>({status:0,stdout:JSON.stringify([value]),stderr:'',pid:1,output:[],signal:null})});
+  assert.equal(requirePopulatedWorkspace(lease,app,inspect(container)).id,'owned-id');
+  for(const invalid of [null,{...container,Id:'other'}, {...container,State:{Running:false}},
+    {...container,Mounts:[]},{...container,Mounts:[mount,mount]},
+    ...[{Source:join(tmpdir(),'other')},{RW:false},{Type:'volume'}]
+      .map(change=>({...container,Mounts:[{...mount,...change}]})),
+  ]) assert.throws(()=>requirePopulatedWorkspace(lease,app,inspect(invalid)),/does not match/);
+  assert.throws(()=>requirePopulatedWorkspace({resources:{buildContainer:null}},app,inspect(container)),/owned build/);
+});
 
 // The invariant: corrupt, incomplete, or cross-lease checkpoints fail validation
 // without any lifecycle call. A matching source alone cannot authorize restore.

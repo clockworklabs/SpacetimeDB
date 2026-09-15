@@ -32,7 +32,7 @@ observer detected the intended defect.
 
 Use the controller's normal Docker socket, shared state, release dependency
 volume, runtime image and resource-lock environment. The diagnostic calls the
-existing reference deployment, grader, lease, restart and teardown operations.
+existing `runAgent` boundary, reference adapter, grader, lease, restart and teardown operations.
 It does not call a model. It refuses a source other than the recorded reference.
 
 The diagnostic creates populated starting data through the app. It waits for
@@ -63,8 +63,9 @@ archive. Application writers and the database process stop during capture;
 the leased container and its network remain in place.
 
 The diagnostic checks that an empty database reset loses the populated state,
-then recovers it. It rejects a mismatched source, changes code and data twice,
-restores the accepted pair twice, and restores the original pair twice. A new
+then recovers it. It rejects a mismatched source and an app path that does not
+match the writable `/app` mount of the exact leased build container. It changes
+code and data twice, restores the accepted pair twice, and restores the original pair twice. A new
 purchase after restoration must have the expected stored order and stock effects.
 A detached application process must also stop before capture.
 
@@ -75,9 +76,31 @@ A failed capture or restore stops the diagnostic; it is not a passed repair.
 The clock is not restored, so this pilot waits for scheduled delivery to finish
 before capture. It does not cover active timed operations.
 
-This qualifies the restore boundary, not a complete migration agent episode.
+The reference adapter has an explicit migration path. Upgrade and fix sessions
+retain the live database. Each session records its source hashes and uses the
+ordinary validated, nonbillable agent result. Invalid migration selections
+cannot fall through to a fresh deployment that resets data.
+
+Two actual defective repair sessions allow another customer to edit an owner's
+address. The diagnostic measures the unauthorized write, sends its evidence to
+the shared repair-decision function, requires rejection, and restores the
+accepted source/data pair. It preserves the first submission and both rejected
+sources. A correct repair must be kept. A separate control changes only data;
+restoration must recover it even when the source hash stays the same.
+
+This qualifies these shared boundaries, not a complete migration task.
 The normal benchmark command still uses its existing fresh-database policy;
 populated task setup, grading and repair selection still need integration.
+
+The final shared-agent protocol passed on all three stacks on 15 September,
+using image `sha256:c718dd04947595cd1daaf7187f9375ffca8ed17418b0ceaa50a9d166d6c94343`.
+Each completed six nonbillable sessions, both defective repair rejections, the
+correct repair, unchanged-source restoration and the workspace mismatch control.
+Source snapshots matched the session receipts. All nine development attempts
+for this increment passed and released their owned containers. Type checking
+and 55 focused tests passed, with no skipped tests. The first two development
+cohorts predate the final workspace mismatch control; they are not substitutes
+for the final three trials. No scored definition or historical result changed.
 
 On 15 September, the final checkpoint protocol passed on all three stacks with
 image `sha256:763510743605256bd86cabca627b316dbb414462360557a550ae0320a389761e`.

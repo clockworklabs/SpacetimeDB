@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
-import { applyAddressBookMigration, applyAddressBookDefect } from '../../../dist/src/references/address-book-migration.js';
-import { qualifyAddressBook } from './m8-live-address-book.mjs';
+import { ADDRESS_BOOK_MIGRATION_RECIPE } from '../../../dist/src/references/address-book-migration.js';
+import { qualifyAddressBook, probeCrossAccountEdit } from './m8-live-address-book.mjs';
+import { runAgent } from '../../../dist/commands/bench.js';
+import { parseBenchArguments } from '../../../dist/commands/bench-arguments.js';
+import { AGENT_ADAPTER_REGISTRY, agentAdapterIdentity } from '../../../dist/src/agents/agent-adapters.js';
+import { createCheckEvidence } from '../../../dist/src/evidence/check-evidence.js';
+import { repairEvidenceDecision } from '../../../dist/src/evidence/repair-evidence.js';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -11,7 +16,8 @@ import { createBackendLease, claimBackendResourcesWhenAvailable, resourceLockSco
 import { releaseBackendLease } from '../../../dist/src/runtime/backend-teardown.js';
 import { activateAttemptBackend } from '../../../dist/src/stacks/hosted-lifecycle.js';
 import { loadTrack, portsFor, dbName, moduleName } from '../../../dist/src/composition/tracks.js';
-import { hashAppSource } from '../../../dist/src/runtime/source-snapshot.js';
+import { hashAppSource, snapshotAppSource } from '../../../dist/src/runtime/source-snapshot.js';
+import { waitFor } from '../../../dist/src/stacks/lifecycle-readiness.js';
 import { runBounded } from '../../../dist/src/runtime/bounded-process.js';
 import { captureApplicationDiagnostics, controlAppServer, controlBackendRuntime } from '../../../dist/src/runtime/backend-control.js';
 import { leasedSpacetimeTarget } from '../../../dist/src/runtime/spacetime-target.js';
@@ -50,6 +56,24 @@ writeFileSync(join(directory,'driver.mjs'),readFileSync(process.argv[1]));
 for(const name of ['m8-live-address-book.mjs','m8-native-request.mjs']) writeFileSync(join(directory,name),readFileSync(new URL(name,import.meta.url)));
 const save = (name,value) => writeFileSync(join(directory,name),JSON.stringify(value,null,2)+'\n');
 const spec = { backend,app,port:ports.vite,probe:'/' };
+const agent=AGENT_ADAPTER_REGISTRY.get('reference-fixture');
+assert.equal(agent.costLimit,'non-billable');
+audit.agent=agentAdapterIdentity(agent);audit.sessions=[];
+async function agentSession(mode,recipe,label) {
+  const args={...parseBenchArguments(['node','bench','--backend',backend,'--track','ecommerce',
+    '--levels','3','--run-index',String(runIndex),'--model','reference-fixture',
+    '--agent-adapter','reference-fixture','--recipe',recipe]),recipeTasks:new Map(),recipeBindings:new Map()};
+  const result=await runAgent(args,agent,mode,3,app);
+  const session={label,recipe,...result};
+  audit.sessions.push(session);save(`${label}.session.json`,session);
+  assert(result.ok && result.costComplete && result.costUsd===0,`${label} did not complete as a non-billable session`);
+  console.log(`${id} ${label}: passed`);
+  return result;
+}
+const ownershipEvidence=observation=>({suites:{migration:{features:[{id:'address-book',criteria:[{
+  id:'owner-write',points:1,evidence:createCheckEvidence({status:observation.outcome==='rejected'?'passed':'failed',
+    code:'address_owner_write',phase:'assertion',observation,expected:'rejected',
+    startedAtMs:observation.startedAtMs,completedAtMs:observation.completedAtMs})}]}]}}});
 function checkpointWriter(start) {
   const {lease:active}=leaseFromEnv(process.env,{backend,active:true});
   const container=assertLeasedContainer(active.resources.buildContainer,execFileSync,30000,'checkpoint writer control');
@@ -196,8 +220,7 @@ function snapshot() {
 try {
   await claimBackendResourcesWhenAvailable(leasePath,lease,{...resourceLockScope(),keys:backendResourceLockKeys(lease,ports,[`workspace:${app}`])});
   activateAttemptBackend({leasePath,lease,ports});
-  await run('deploy',['dist/src/references/reference-agent.js','--backend',backend,'--app',app,'--track','ecommerce',
-    '--mode','build','--level','3','--recipe','ecommerce.progression-catalog','--run-index',String(runIndex)]);
+  await agentSession('build','ecommerce.progression-catalog','deploy');
   audit.source=hashAppSource(app);
   const reference=loadReferenceRegistry().fixtures.find(f=>f.backend===backend&&f.track==='ecommerce');
   assert.equal(audit.source.sha256,reference.imported.sourceSha256);
@@ -239,22 +262,25 @@ try {
     checkpointWriter(true);
     audit.initialCheckpoint=await capturePopulatedCheckpoint(join(directory,'initial-checkpoint'),spec);
     checkpointWriter(false);audit.detachedWriterStopped=true;
+    await assert.rejects(capturePopulatedCheckpoint(join(directory,'wrong-workspace-checkpoint'),
+      {...spec,app:join(directory,'initial-checkpoint','source')}),/does not match its leased build workspace/);
+    assert(!existsSync(join(directory,'wrong-workspace-checkpoint')));
+    audit.wrongWorkspaceRejected=true;
     assert.deepEqual(snapshot().state,before.state,'checkpoint capture changed populated starting data');
   }
-  await controlAppServer(spec,'stop');
-  audit.migratedSource=applyAddressBookMigration(app,backend);
+  if(defect) audit.defect=defect;
+  await agentSession('upgrade',ADDRESS_BOOK_MIGRATION_RECIPE+(defect?`.${defect}`:''),'migration-upgrade');
+  audit.migratedSource=hashAppSource(app);
+  snapshotAppSource(app,join(directory,'first-submission'));
+  audit.firstSubmission={directory:'first-submission',sha256:audit.migratedSource.sha256};
   migrationActive=true;
-  if(defect) { audit.defect=defect; audit.migratedSource=applyAddressBookDefect(app,backend,defect); }
   if(backend==='spacetime') {
-    const target=leasedSpacetimeTarget({requireBuildContainer:true});
-    await run('migration-publish',['exec',...codingContainerAgentExecOptions(),assertLeasedContainer(target.buildContainer,execFileSync,60000,'M8 migration'),
-      ...codingContainerAgentCommand(CODING_CONTAINER_SPACETIME_CLI,['publish',target.mod,'--module-path','/app/backend/spacetimedb','-s',target.containerUri,'-y'])],'docker');
     await controlBackendRuntime(spec,'restart');
+    await controlAppServer(spec,'restart');
     audit.restartBoundary='leased SpacetimeDB process, then application startup';
   } else {
     audit.restartBoundary='application startup against retained live database; no database crash claim';
   }
-  await controlAppServer(spec,'start');
   if(backend!=='spacetime' && !defect) {
     const active=leaseFromEnv(process.env,{backend,active:true}).lease;
     const container=assertLeasedContainer(active.resources.buildContainer,execFileSync,60000,'M8 source typecheck');
@@ -275,6 +301,21 @@ try {
   if(checkpointRun) {
     audit.phase='capture-accepted-migration';
     const accepted=snapshot(),books=storedBooks();
+    const owner=books.find(book=>book.accountId===audit.beforeCheckout[0].accountId);
+    assert(owner?.entries.length,'ownership repair control needs a saved owner entry');
+    const probe=()=>probeCrossAccountEdit({backend,url:`http://127.0.0.1:${ports.vite}`,id:owner.entries[0].id});
+    const baselineOwnership=await probe();
+    assert.equal(baselineOwnership.outcome,'rejected');
+    assert.deepEqual(storedBooks(),books,'correct ownership control changed stored data');
+    const baselineEvidence=ownershipEvidence(baselineOwnership);
+    save('accepted-ownership.json',baselineEvidence);
+    const changePrice=async name=>{
+      await grade(name,[login('admin','admin','stackbench-admin-2026'),click('admin','admin-link'),
+        fill('admin','price-input','8.76',{testid:'admin-item-row',contains:'Keyboard'}),
+        click('admin','price-submit',{testid:'admin-item-row',contains:'Keyboard'})],['admin']);
+      await waitFor(async()=>checkoutState('m8-customer').state.priceMinor===876,10000,'the candidate price write');
+      assert.notDeepEqual(snapshot().state,accepted.state,'repair control did not change data');
+    };
     save('accepted-state.json',accepted);save('accepted-books.json',books);
     audit.acceptedCheckpoint=await capturePopulatedCheckpoint(join(directory,'accepted-checkpoint'),spec);
     await assert.rejects(restoreRepairSource(join(directory,'initial-checkpoint','source'),app,spec,
@@ -292,13 +333,18 @@ try {
     assert.deepEqual(snapshot().state,accepted.state,'accepted records did not survive recovery from empty reset');
     for(let round=1;round<=2;round++) {
       audit.phase=`rejected-repair-${round}`;
-      await grade(`change-price-${round}`,[login('admin','admin','stackbench-admin-2026'),click('admin','admin-link'),
-        fill('admin','price-input','8.76',{testid:'admin-item-row',contains:'Keyboard'}),
-        click('admin','price-submit',{testid:'admin-item-row',contains:'Keyboard'})],['admin']);
-      assert.notDeepEqual(snapshot().state,accepted.state,'repair control did not change data');
-      await controlAppServer(spec,'stop');
-      applyAddressBookDefect(app,backend,'cross-account');
+      await changePrice(`change-price-${round}`);
+      await agentSession('fix',`${ADDRESS_BOOK_MIGRATION_RECIPE}.cross-account`,`rejected-repair-${round}`);
       assert.notEqual(hashAppSource(app).sha256,audit.migratedSource.sha256);
+      snapshotAppSource(app,join(directory,`rejected-repair-${round}-source`));
+      const failedOwnership=await probe();
+      assert.equal(failedOwnership.outcome,'committed','defective control did not allow an unauthorized edit');
+      assert.notDeepEqual(storedBooks(),books,'defective control did not change the owner record');
+      const failedEvidence=ownershipEvidence(failedOwnership);
+      const decision=repairEvidenceDecision(baselineEvidence,failedEvidence);
+      save(`rejected-repair-${round}.evidence.json`,{evidence:failedEvidence,decision});
+      save(`rejected-repair-${round}.state.json`,{business:snapshot(),books:storedBooks()});
+      assert.equal(decision.action,'rollback-regression');
       await restoreRepairSource(join(directory,'accepted-checkpoint','source'),app,spec,
         undefined,undefined,join(directory,'accepted-checkpoint'));
       assert.deepEqual(snapshot().state,accepted.state,'accepted business data did not restore');
@@ -306,6 +352,21 @@ try {
       assert.equal(hashAppSource(app).sha256,audit.migratedSource.sha256);
       audit[`acceptedRestore${round}`]=true;
     }
+    await agentSession('fix',ADDRESS_BOOK_MIGRATION_RECIPE,'accepted-repair');
+    assert.equal(hashAppSource(app).sha256,audit.migratedSource.sha256);
+    const repairedEvidence=ownershipEvidence(await probe());
+    const keep=repairEvidenceDecision(baselineEvidence,repairedEvidence);
+    assert.equal(keep.action,'keep');
+    assert.deepEqual(snapshot().state,accepted.state);assert.deepEqual(storedBooks(),books);
+    save('accepted-repair.evidence.json',{evidence:repairedEvidence,decision:keep});
+    await changePrice('state-only-repair');
+    await agentSession('fix',ADDRESS_BOOK_MIGRATION_RECIPE,'unchanged-source-repair');
+    assert.equal(hashAppSource(app).sha256,audit.migratedSource.sha256);
+    assert.notDeepEqual(snapshot().state,accepted.state,'unchanged-source control did not retain the data change');
+    await restoreRepairSource(join(directory,'accepted-checkpoint','source'),app,spec,
+      undefined,undefined,join(directory,'accepted-checkpoint'));
+    assert.deepEqual(snapshot().state,accepted.state);assert.deepEqual(storedBooks(),books);
+    audit.unchangedSourceDataRestored=true;
     audit.phase='restore-pre-migration';
     await restorePopulatedCheckpoint(join(directory,'initial-checkpoint'),spec);
     assert.equal(hashAppSource(app).sha256,audit.source.sha256);

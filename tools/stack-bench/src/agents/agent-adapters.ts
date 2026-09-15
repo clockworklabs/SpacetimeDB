@@ -85,7 +85,7 @@ export const AGENT_ADAPTER_REGISTRY = createAgentAdapterRegistry([
     { modes: ['build'], costLimit: 'non-billable', version: '1.2.0' }),
   adapter('reference-fixture', join('src', 'references', 'reference-agent.js'), 'reference-fixture',
     { modes: ['build', 'upgrade', 'fix'], costLimit: 'non-billable', gradesWithFixtureCredentials: true,
-      version: '1.4.0' }),
+      version: '1.5.0' }),
 ]);
 
 export function agentAdapterIdentity(value: AgentAdapter): AgentAdapterIdentity {

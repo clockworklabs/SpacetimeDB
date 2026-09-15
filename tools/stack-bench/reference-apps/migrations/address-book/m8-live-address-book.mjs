@@ -6,6 +6,46 @@ import { addressImportDifferences, migrationCheckoutDifferences } from '../../..
 import { checkoutDifferences } from '../../../dist/src/stacks/checkout-state.js';
 import { nativeRequest } from './m8-native-request.mjs';
 
+async function openAddressBook(browser, url, name) {
+  const context=await browser.newContext();
+  const page=await context.newPage();
+  page.setDefaultTimeout(10000);
+  await page.goto(url,{waitUntil:'domcontentloaded'});
+  const control=name=>page.locator(`[data-role="${name}"]`);
+  if(name) {
+    await control('signin-toggle').click();
+    await control('signin-username').fill(name);
+    await control('signin-password').fill('m8-baseline-password');
+    await control('signin-submit').click();
+    await control('current-user').filter({hasText:name}).waitFor();
+    await control('profile-link').click();
+    await control('address-book-link').click();
+    await page.locator('[data-role="address-book"][data-loaded="true"]').waitFor();
+  }
+  return page;
+}
+
+const httpRequest=(page,backend,path,method='GET',body)=>page.evaluate(async ({path,method,body,mongo})=>{
+  const token=mongo?localStorage.getItem('mongodb_shop_token'):null;
+  const response=await fetch(path,{method,credentials:'include',headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},
+    ...(body===undefined?{}:{body:JSON.stringify(body)})});
+  return {status:response.status,body:await response.json()};
+},{path,method,body,mongo:backend==='mongodb'});
+
+// A focused observation can run again on an accepted migrated state, without
+// replaying import/deletion setup or resetting the database.
+export async function probeCrossAccountEdit({backend,url,id}) {
+  const startedAtMs=Date.now();
+  const browser=await chromium.launch({headless:true,...attemptBrowserLaunchOptions()});
+  try {
+    const page=await openAddressBook(browser,url,'admin-helper');
+    if(backend==='spacetime') return {...await nativeRequest(page,'editAddress',{id,name:'intruder',address:'intruder'}),startedAtMs,completedAtMs:Date.now()};
+    const result=await httpRequest(page,backend,`/api/addresses/${encodeURIComponent(id)}`,'PUT',{name:'intruder',address:'intruder'});
+    assert([200,403,404].includes(result.status),`unexpected ownership probe status ${result.status}`);
+    return {...result,outcome:result.status===200?'committed':'rejected',startedAtMs,completedAtMs:Date.now()};
+  } finally {await browser.close();}
+}
+
 export async function qualifyAddressBook({ audit, before, snapshot, checkoutState, storedBooks, restart, save, url }) {
   const browser = await chromium.launch({ headless:true, ...attemptBrowserLaunchOptions() });
   const history = [];
@@ -19,32 +59,11 @@ export async function qualifyAddressBook({ audit, before, snapshot, checkoutStat
   const control = (page, name) => page.locator(`${roles}${name}"]`);
   const phase = name => { audit.phase=name; console.log(`address-book: ${name}`); };
   const request = async (page,path,method='GET',body) => {
-    const result = await page.evaluate(async ({path,method,body,mongo}) => {
-      const token=mongo?localStorage.getItem('mongodb_shop_token'):null;
-      const response=await fetch(path,{method,credentials:'include',headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},
-        ...(body === undefined ? {} : {body:JSON.stringify(body)})});
-      return {status:response.status,body:await response.json()};
-    },{path,method,body,mongo});
+    const result = await httpRequest(page,audit.backend,path,method,body);
     history.push({phase:audit.phase,path,method,status:result.status,body:result.body});
     return result;
   };
-  const open = async (name) => {
-    const context=await browser.newContext();
-    const page=await context.newPage();
-    page.setDefaultTimeout(10000);
-    await page.goto(url,{waitUntil:'domcontentloaded'});
-    if(name) {
-      await control(page,'signin-toggle').click();
-      await control(page,'signin-username').fill(name);
-      await control(page,'signin-password').fill('m8-baseline-password');
-      await control(page,'signin-submit').click();
-      await control(page,'current-user').filter({hasText:name}).waitFor();
-      await control(page,'profile-link').click();
-      await control(page,'address-book-link').click();
-      await page.locator('[data-role="address-book"][data-loaded="true"]').waitFor();
-    }
-    return page;
-  };
+  const open = name => openAddressBook(browser,url,name);
   const read = async (page, accountId) => {
     await control(page,'address-book-link').click();
     await page.locator('[data-role="address-book"][data-loaded="true"]').waitFor();

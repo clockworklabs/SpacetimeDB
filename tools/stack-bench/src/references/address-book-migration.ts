@@ -4,6 +4,22 @@ import { STACK_BENCH_ROOT } from '../package-root.js';
 import { hashAppSource } from '../runtime/source-snapshot.js';
 import { loadReferenceRegistry } from './reference-fixtures.js';
 
+// Reference adapter identity for the draft exercise. This does not register a
+// scored recipe; the ordinary benchmark compiler must still reject it.
+export const ADDRESS_BOOK_MIGRATION_RECIPE = 'ecommerce.address-book-migration';
+
+export function addressBookReferenceRequest(recipe: string | undefined,
+  mode: string | undefined, track: string, level: number): { defect?: string } | null {
+  if (!recipe || (recipe !== ADDRESS_BOOK_MIGRATION_RECIPE
+    && !recipe.startsWith(`${ADDRESS_BOOK_MIGRATION_RECIPE}.`))) return null;
+  const defect = recipe.slice(ADDRESS_BOOK_MIGRATION_RECIPE.length + 1);
+  if (track !== 'ecommerce' || level !== 3 || !['upgrade', 'fix'].includes(mode ?? '')
+    || (recipe !== ADDRESS_BOOK_MIGRATION_RECIPE && !(ADDRESS_BOOK_DEFECTS as readonly string[]).includes(defect))) {
+    throw new Error('invalid address-book reference migration request');
+  }
+  return defect ? { defect } : {};
+}
+
 export function addressBookSchemaSource(source: string): string {
   const anchor = 'const spacetimedb = schema({';
   if (source.split(anchor).length !== 2) throw new Error('SpacetimeDB schema anchor is not unique');
@@ -13,7 +29,7 @@ export function addressBookSchemaSource(source: string): string {
 }
 
 // Apply a versioned source delta to a disposable populated reference. Never
-// redeploy through reference-agent here: that path resets the database.
+// use the reference agent's ordinary deployment here: it resets the database.
 export function applyAddressBookMigration(app: string, backend: string) {
   if (!['postgres', 'mongodb', 'spacetime'].includes(backend)) throw new Error(`address-book migration not implemented for ${backend}`);
   const baseline = loadReferenceRegistry().fixtures.find(value => value.backend === backend && value.track === 'ecommerce');

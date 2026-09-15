@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { leaseFromEnv } from './backend-lease.js';
 import type { BackendLease } from './backend-lease.js';
 import { handoffBuildWorkspace } from './backend-teardown.js';
-import { inspectBuildContainer } from '../stacks/hosted-lifecycle.js';
+import { inspectBuildContainer, sameHostPath } from '../../container/build-container-inspection.js';
 import { checkpointDatabaseTarget, checkpointFileHash, copyCheckpointDatabase,
   startCheckpointDatabase, stopCheckpointDatabase } from '../stacks/database-checkpoint.js';
 
@@ -14,10 +14,25 @@ import type { RunOutcome } from '../evidence/outcomes.js';
 import { controlAppServer } from './backend-control.js';
 import type { RuntimeControlSpec } from './backend-control.js';
 import { hashAppSource, snapshotAppSource, restoreAppSource } from './source-snapshot.js';
-import { CODING_CONTAINER_START_SCRIPT } from './coding-container-policy.js';
+import { CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_START_SCRIPT } from './coding-container-policy.js';
 import { resetRepairBackend } from '../stacks/backend-reset.js';
 
 const message = (error: unknown): string => error instanceof Error ? error.message : String(error);
+
+// A source path and a database lease are not enough: the running application
+// must use that exact source tree. Refuse a mixed pair before any lifecycle call.
+export function requirePopulatedWorkspace(lease: { resources: Pick<BackendLease['resources'], 'buildContainer'> }, app: string,
+  inspect: typeof inspectBuildContainer = inspectBuildContainer) {
+  const recorded = lease.resources.buildContainer;
+  if (!recorded?.owned) throw new Error('populated task requires an owned build container');
+  const actual = inspect(recorded.name);
+  const mounts = actual?.mounts.filter(mount => mount.destination === CODING_CONTAINER_APP_ROOT) ?? [];
+  if (!actual?.running || actual.id !== recorded.id || mounts.length !== 1
+    || mounts[0]!.type !== 'bind' || mounts[0]!.readOnly || !sameHostPath(mounts[0]!.source, app)) {
+    throw new Error('populated task source does not match its leased build workspace');
+  }
+  return actual;
+}
 
 // A rejected repair may have published a different schema. Restore code and
 // recreate only its leased grading database before starting the accepted app.
@@ -151,10 +166,11 @@ export async function capturePopulatedCheckpoint(directory: string,
   const target = checkpointLocation(directory, application.app, true);
   const { lease } = leaseFromEnv(process.env, { backend: application.backend, active: true });
   const database = checkpointDatabaseTarget(lease);
+  const build = requirePopulatedWorkspace(lease, application.app);
   if (!lease.resources.container?.image) throw new Error('database checkpoint requires a recorded image');
   mkdirSync(target, { mode: 0o700 });
   await controlAppServer(application, 'stop');
-  handoffBuildWorkspace(inspectBuildContainer(lease).id);
+  handoffBuildWorkspace(build.id);
   stopCheckpointDatabase(lease);
   // Any failure stops the attempt; never restart a partially captured/restored
   // database and pretend that the next candidate has a known starting state.
@@ -184,8 +200,9 @@ export async function restorePopulatedCheckpoint(directory: string,
     throw new Error('repair source does not match its populated database checkpoint');
   }
   checkpointDatabaseTarget(lease);
+  const build = requirePopulatedWorkspace(lease, application.app);
   await controlAppServer(application, 'stop');
-  handoffBuildWorkspace(inspectBuildContainer(lease).id);
+  handoffBuildWorkspace(build.id);
   stopCheckpointDatabase(lease);
   restoreAppSource(join(directory, 'source'), application.app);
   copyCheckpointDatabase(lease, join(directory, 'database.tar'), true);
