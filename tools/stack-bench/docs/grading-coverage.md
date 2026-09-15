@@ -1,5 +1,20 @@
 # Grading coverage review
 
+## Concurrent cancellation diagnostic
+
+`diagnostic-cancellation-contention.json` sends overlapping cancellation calls
+from two authenticated sessions of one account. It verifies the pending order
+before dispatch, records every request outcome, then checks stored warehouse
+allocations, cancelled status, preserved order/payment history and fresh revenue.
+Repeated calls may refuse or succeed without additional effects. Unknown request
+outcomes remain unmeasured; refusing all work or returning success without the
+state change cannot pass. Request timings show client overlap, not server overlap.
+
+This diagnostic uses verified reference schemas and stays outside scored campaigns.
+It covers non-credit orders. Payment-provider refunds, account-credit refunds,
+other products' stock and arbitrary application schemas are outside its scope.
+The diagnostic adds no feature points and does not change historical results.
+
 ## Review failed checks
 
 The shipping-result check waits for the declared submission state to report success, then
