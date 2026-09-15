@@ -184,7 +184,8 @@ jobs:
     runs-on: spacetimedb-linux
     timeout-minutes: 20 # on a successful run, runs in 8 minutes
     container:
-      image: rust:1.93.0
+      # !rust-toolchain-sync
+      image: rust:1.98.1
       options: --privileged
     # disable until we fix the benchmarks
     if: false

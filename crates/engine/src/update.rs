@@ -705,7 +705,7 @@ pub fn create_table_from_view_def(
     view_def: &ViewDef,
 ) -> anyhow::Result<()> {
     stdb.create_view(tx, module_def, view_def)
-        .with_context(|| format!("failed to create table for view {}", &view_def.name))?;
+        .with_context(|| format!("failed to create table for view {}", view_def.name))?;
     Ok(())
 }
 
@@ -719,7 +719,7 @@ pub fn create_table_from_view_def_with_prefix(
     name_prefix: &NamespacePath,
 ) -> anyhow::Result<()> {
     stdb.create_view_with_prefix(tx, owning_def, view_def, name_prefix)
-        .with_context(|| format!("failed to create table for view {}{}", name_prefix, &view_def.name))?;
+        .with_context(|| format!("failed to create table for view {}{}", name_prefix, view_def.name))?;
     Ok(())
 }
 
