@@ -101,6 +101,32 @@ fn test_calling_a_reducer_csharp() {
 
 #[test]
 #[serial]
+fn namespace_csharp_root_selected_at_publish() {
+    init();
+
+    // Build the dependency first, then reuse its managed DLL without rebuilding or changing its project.
+    let dependency = CompiledModule::compile("root-selection-dependency-cs", CompilationMode::Debug);
+    dependency.with_module_async(DEFAULT_CONFIG, |module| async move {
+        module
+            .call_reducer_binary("dependency_entry", &product![])
+            .await
+            .unwrap();
+        assert!(module.read_log(None).await.contains("dependency published as root"));
+    });
+
+    // Both assemblies contain generated host entrypoint declarations. Only the published root's
+    // declarations must become native exports; otherwise publishing produces duplicate symbols.
+    CompiledModule::compile("root-selection-consumer-cs", CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |module| async move {
+            module.call_reducer_binary("consumer_entry", &product![]).await.unwrap();
+            assert!(module.read_log(None).await.contains("consumer published as root"));
+        },
+    );
+}
+
+#[test]
+#[serial]
 fn test_calling_a_reducer_typescript() {
     test_calling_a_reducer_in_module("module-test-ts");
 }
