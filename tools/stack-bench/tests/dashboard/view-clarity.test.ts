@@ -70,8 +70,8 @@ test('campaign separates aggregate scores from selected evidence and explains pe
   assert.match(page, /<summary>Explore · grid<\/summary>/);
   assert.match(page, /<nav aria-label="Feature progress view">/);
   assert.doesNotMatch(page.slice(0, page.indexOf('<section class="feature-progress"')), /aria-label="Feature progress view"/);
-  assert.match(page, /popovertarget="help-completion"/);
-  assert.match(page, /id="help-completion" popover role="tooltip"/);
+  assert.match(page, /popovertarget="help-checks-passed"/);
+  assert.match(page, /id="help-checks-passed" popover role="tooltip"/);
   assert.doesNotMatch(page, /<details class="metric-help"/);
   const noRepairSheet = { ...sheet, repetitions: 1, stacks: sheet.stacks.map(stack => ({
     ...stack, attempts: [{ ...attempt, model: 'gpt-6-astra', effort: 'medium', repairs: { used: 0, budget: 0 } }],
@@ -85,9 +85,9 @@ test('campaign separates aggregate scores from selected evidence and explains pe
     assert.match(detail, /Earlier fixes and feedback are retained/);
     assert.match(detail, /No (check results|screenshots|files|log output)/);
     assert.match(detail, /aria-current="page"/);
-    assert.match(detail, /popovertarget="help-completion"/);
+    assert.match(detail, /popovertarget="help-checks-passed"/);
     assert.doesNotMatch(detail, /<details class="metric-help"/);
-    assert.ok(detail.indexOf('About Completion') < detail.indexOf('About Weighted score'));
+    assert.ok(detail.indexOf('About Checks passed') < detail.indexOf('About Weighted score'));
   }
   attempt.checkCategories = {
     production: { selected: 2, passed: 1, failed: 1, blocked: 0, unmeasured: 0, rate: 0.5 },
@@ -97,10 +97,28 @@ test('campaign separates aggregate scores from selected evidence and explains pe
   };
   const categorized = attemptPage({ sheet, attemptId: attempt.id, tab: 'checks', evidence: null, log: '',
     checks: { attemptId: attempt.id, stack: 'spacetime', grades: [], checks: [{ id: 'p', key: 'p', description: 'Durable', feature: 'Orders', points: 1,
-      category: 'production', outcome: 'pass', regressed: false, history: ['pass'] }] } });
+      category: 'production', outcome: 'pass', regressed: false, history: ['fail', 'not-run', 'pass'],
+      observations: [
+        { status: 'FAIL', summary: '<script>Two orders for one cart</script>', expected: '1 order', actual: '2 orders' },
+        { status: 'INCONCLUSIVE', summary: 'Reader timed out', expected: null, actual: null },
+        { status: 'PASS', summary: null, expected: null, actual: null },
+      ] }] } });
   assert.match(categorized, /<th>Category<\/th>/);
   assert.match(categorized, /<td>Production<\/td>/);
   assert.match(categorized, /1 \/ 2/);
+  assert.match(categorized, /<th>Requirement<\/th>/);
+  assert.match(categorized, /<details class="check-evidence" data-key="p">/);
+  assert.match(categorized, /Expected<\/div><pre>1 order/);
+  assert.match(categorized, /Observed<\/div><pre>2 orders/);
+  assert.match(categorized, /Grade 2 · INCONCLUSIVE/);
+  assert.match(categorized, /Grade 3 · PASS/);
+  assert.match(categorized, /No observation details were recorded/);
+  assert.match(categorized, /&lt;script&gt;Two orders/);
+  assert.doesNotMatch(categorized, /<script>|check-evidence[^>]* open/);
+  const missing = attemptPage({ sheet, attemptId: attempt.id, tab: 'checks', evidence: null, log: '',
+    checks: { attemptId: attempt.id, stack: 'spacetime', checks: [],
+      grades: [{ id: 'grading', level: null, round: 0, score: null, error: 'grade bundle is missing' }] } });
+  assert.match(missing, /grade bundle is missing/);
   delete attempt.checkCategories;
   const grantInput = { sheet, attemptId: attempt.id, tab: 'checks' as const,
     checks: null, evidence: null, log: '', canControl: true };

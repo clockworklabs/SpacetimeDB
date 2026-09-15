@@ -137,3 +137,39 @@ export function checkoutDifferences(before: CheckoutState, prepared: CheckoutSta
   check('stored stock consumed by one checkout', integer.parse(total(before.stock) - total(after.stock)), quantity);
   return differences;
 }
+
+// Reference diagnostic: the account has one pending, non-credit, single-product
+// order. Paid records remain history; cancellation removes the order from revenue.
+// Other storage conventions need a verified mapping before this can score them.
+export function cancellationDifferences(before: CheckoutState, after: CheckoutState):
+  Array<{ control: string; observed: number; expected: number }> {
+  const orders = before.orders.filter(order => order.accountId === before.accountId);
+  const order = orders[0];
+  if (orders.length !== 1 || !order || order.status !== 'pending' || !order.lines.length
+    || order.lines.some(line => line.itemId !== before.itemId || line.quantity <= 0
+      || !line.allocations.length || line.allocations.some(row => row.quantity <= 0
+        || !before.stock.some(stock => stock.warehouseId === row.warehouseId))
+      || line.allocations.reduce((sum, row) => integer.parse(sum + row.quantity), 0) !== line.quantity)) {
+    throw new Error('cancellation diagnostic requires one pending single-product order with verified allocations');
+  }
+  const expected = structuredClone(before);
+  expected.orders.find(row => row.id === order.id)!.status = 'cancelled';
+  for (const stock of expected.stock) {
+    for (const allocation of order.lines.flatMap(line => line.allocations)) {
+      if (allocation.warehouseId === stock.warehouseId) stock.quantity = integer.parse(stock.quantity + allocation.quantity);
+    }
+  }
+  // Database row order is not part of cancellation. Keep nested allocation and
+  // line order independent too, while retaining duplicates for comparison.
+  const rows = <T>(values: readonly T[]) => [...values].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  const normalize = (state: CheckoutState) => ({ ...state,
+    cart: rows(state.cart), stock: rows(state.stock), reservations: rows(state.reservations),
+    payments: rows(state.payments), orders: rows(state.orders.map(row => ({ ...row,
+      lines: rows(row.lines.map(line => ({ ...line, allocations: rows(line.allocations) }))),
+    }))),
+  });
+  const wanted = normalize(expected), observed = normalize(after);
+  return (Object.keys(wanted) as Array<keyof CheckoutState>)
+    .filter(key => !isDeepStrictEqual(observed[key], wanted[key]))
+    .map(key => ({ control: `cancellation ${key}`, observed: 0, expected: 1 }));
+}

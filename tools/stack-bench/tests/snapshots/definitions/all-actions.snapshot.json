@@ -24,6 +24,10 @@
               "quantity": 1
             },
             {
+              "before": "before",
+              "do": "dbExpectCancellation"
+            },
+            {
               "action": "buy",
               "actor": "a",
               "authentication": "none",

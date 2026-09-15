@@ -1,6 +1,21 @@
 import assert from 'node:assert/strict';
+import { readFileSync, statSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { demoConfiguration } from '../appliance/demo.js';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
+
+test('demo build context contains the coding image Dockerfile and browser dependencies', () => {
+  const appliance = join(STACK_BENCH_ROOT, 'appliance');
+  const compose = readFileSync(join(appliance, 'demo.compose.yaml'), 'utf8');
+  const build = compose.match(/build-image:[\s\S]*?context:\s*(\S+)\s+dockerfile:\s*(\S+)/);
+  assert.ok(build, 'demo must declare its coding-image build context');
+  const context = resolve(appliance, build[1]!);
+  assert.ok(statSync(join(context, build[2]!)).isFile());
+  for (const file of ['package.json', 'package-lock.json']) {
+    assert.ok(statSync(join(context, 'browser-tools', file)).isFile());
+  }
+});
 
 test('demo uses three workers, isolated release dependencies and only a model-free trial', () => {
   const digest = 'a'.repeat(64);

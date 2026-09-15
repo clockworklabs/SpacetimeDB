@@ -25,6 +25,11 @@ dashboard does not have a separate execution engine.
   repair sessions, including tool calls. It follows live work at the newest
   page and pauses updates while you read earlier messages. The log tab shows
   controller output separately.
+  In Checks, expand a requirement to see the recorded status, summary, expected
+  value and observation for each grade. Missing details remain explicit. These
+  are raw grading observations, including unsuccessful repairs; the accepted
+  score remains in the run summary. Blocked, inconclusive and harness failures
+  retain their recorded status. Credentials and marked sensitive details are omitted.
 - New run (`/new`) — select workload, level, stacks, models, guidance, repetitions,
   repairs, and limits. Review the attempt count and cost cap, then start.
 - Saved plans (`/plans`) — inspect the exact configuration behind each run.

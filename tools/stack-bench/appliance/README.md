@@ -54,6 +54,20 @@ fresh machine. A passing source test alone does not prove the whole appliance.
 
 ## Advanced: manual setup and paid campaigns
 
+If you already ran the demo, its images and state are ready. To use the CLI
+commands below, copy its saved setup into a local environment file once. Run
+from the repository root:
+
+```sh
+docker run --rm --mount type=volume,source=stack-bench-state,target=/state,readonly --entrypoint cat stack-bench-controller:local /state/controller-home/demo.env > tools/stack-bench/operator.env
+```
+
+In Windows PowerShell 5, replace `>` with `| Out-File -Encoding utf8`.
+Then go to [provider credentials](#provider-credentials) for model work or
+[validate the appliance](#validate-the-appliance) for model-free checks.
+Do not repeat the image builds or setup below after a successful demo.
+
+For a new manual installation, build and prepare state as follows.
 From the repository root:
 
 ```sh
@@ -76,6 +90,8 @@ the pinned PostgreSQL and MongoDB images when they are absent. It also installs
 four prepared plans. It keeps existing plans and model credentials. Keep `operator.env` locally; it is ignored by Git. In Windows
 PowerShell 5, use `| Out-File -Encoding utf8 tools/stack-bench/operator.env` instead
 of `>` so the environment file is not UTF-16.
+
+### Provider credentials
 
 For a model-free check, no provider secret is needed. To configure model work,
 write the subscription token through stdin:

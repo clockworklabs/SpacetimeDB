@@ -29,6 +29,7 @@ import { progressionEngine } from '../src/progression/progression-engine.js';
 import { readCampaignState } from '../src/campaigns/campaign-scheduler.js';
 import { readProgressionState } from '../src/progression/progression-state.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
+import { CHECK_EVIDENCE_STATUSES, evidenceDisposition, type CheckEvidence } from '../src/evidence/check-evidence.js';
 import { repairBudgetLimit, type RepairBudget } from '../src/progression/repair-plan.js';
 import { MAX_LOG_BYTES, contained, parseRunProgress, readTextTail, attemptPause,
   walkPublicExecutionArtifacts } from './dashboard-model.js';
@@ -572,6 +573,7 @@ export interface AttemptCheck {
   outcome: string;
   regressed: boolean;
   history: string[];
+  observations: Array<{ status: string; summary: string | null; expected: string | null; actual: string | null } | null>;
 }
 
 export interface AttemptChecks {
@@ -587,6 +589,20 @@ function checkOutcome(evidence: unknown): string {
   if (status === 'passed') return 'pass';
   if (status === 'failed') return 'fail';
   return 'not-run';
+}
+
+function checkObservation(value: unknown): AttemptCheck['observations'][number] {
+  if (!value || typeof value !== 'object') return null;
+  const evidence = value as Partial<CheckEvidence>;
+  if (!evidence.status || !CHECK_EVIDENCE_STATUSES.includes(evidence.status)) return null;
+  const status = evidenceDisposition(evidence.status).label;
+  if (evidence.sensitivity?.length) return { status, summary: 'Sensitive evidence omitted.', expected: null, actual: null };
+  const text = (item: unknown): string | null => {
+    if (item == null) return null;
+    const result = redactCredentials(typeof item === 'string' ? item : JSON.stringify(item, null, 2));
+    return result.length <= 12_000 ? result : `${result.slice(0, 12_000)}\n[Truncated. Full evidence is in Files.]`;
+  };
+  return { status, summary: text(evidence.summary), expected: text(evidence.expected), actual: text(evidence.observation) };
 }
 
 function gradeDirectories(executionDirectory: string): AttemptCheckGrade[] {
@@ -634,7 +650,7 @@ export function attemptChecks(resultsRoot: string, key: string, attemptId: strin
     try {
       payload = readArtifactPayload<GradeBundlePayload>(path, { expectedKind: 'grade_bundle' });
     } catch (error) {
-      grade.error = errorMessage(error);
+      grade.error = redactCredentials(errorMessage(error));
       return;
     }
     grade.score = payload.totals?.score == null || payload.totals.max == null
@@ -647,8 +663,9 @@ export function attemptChecks(resultsRoot: string, key: string, attemptId: strin
             description: criterionDescription(criterion), points: criterion.points ?? 0,
             category: metadata.get(stableKey)?.category ?? null,
             feature: feature.name ?? '', outcome: 'not-run', regressed: false,
-            history: grades.map(() => 'not-run') };
+            history: grades.map(() => 'not-run'), observations: grades.map(() => null) };
           entry.history[index] = checkOutcome(criterion.evidence);
+          entry.observations[index] = checkObservation(criterion.evidence);
           checks.set(stableKey, entry);
         }
       }

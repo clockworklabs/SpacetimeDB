@@ -198,6 +198,15 @@ table.plans td.name { color: var(--n1); font-weight: 600; min-width: 240px; max-
 .checks .h .f { color: var(--red); }
 .checks .h .x { color: var(--n4); }
 .checks tr.group td { color: var(--n1); font-weight: 600; background: var(--shade6); }
+.check-evidence { padding: 8px 0; min-width: 240px; }
+.checks td:not(.d) { vertical-align: top; padding-top: 10px; }
+.checks td.k { max-width: 180px; white-space: normal; overflow-wrap: anywhere; }
+.check-evidence summary { cursor: pointer; }
+.check-evidence summary:focus-visible { outline: 2px solid var(--n2); outline-offset: 3px; }
+.check-evidence section { margin: 12px 0; padding-top: 12px; border-top: 1px solid var(--shade4); }
+.check-evidence strong { font-size: 12px; }
+.check-evidence p { margin: 8px 0; overflow-wrap: anywhere; }
+.check-evidence pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; font: 12px/1.5 var(--mono); }
 .grade-key { flex-wrap: wrap; display: flex; gap: 18px; padding: 10px 14px; color: var(--n4); font: 12px/1.6 var(--sans); }
 .grade-key .p { color: var(--green); }
 .grade-key .f { color: var(--red); }

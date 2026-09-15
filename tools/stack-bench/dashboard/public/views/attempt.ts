@@ -42,27 +42,39 @@ function locate(sheet: CampaignSheet, attemptId: string): {
 const CATEGORY = { feature: 'Feature', production: 'Production', interface: 'Interface', unknown: 'Unclassified' };
 
 function checksTable(checks: AttemptChecks | null): string {
-  if (!checks?.checks.length) return '<p class="summary-note">No check results are recorded yet. Check the log for current work or an execution error.</p>';
+  const errors = checks?.grades.filter(grade => grade.error).map(grade =>
+    `<p class="summary-note">${esc(grade.id)}: ${esc(grade.error)}</p>`).join('') ?? '';
+  if (!checks?.checks.length) return errors + '<p class="summary-note">No check results are recorded yet. Check the log for current work or an execution error.</p>';
   const features = new Map<string, AttemptCheck[]>();
   for (const check of checks.checks) {
     features.set(check.feature, [...features.get(check.feature) ?? [], check]);
   }
   const groups = [...features.entries()].map(([feature, items]) => {
-    const points = items.reduce((total, check) => total + check.points, 0);
-    const passed = items.filter(check => check.outcome === 'pass')
-      .reduce((total, check) => total + check.points, 0);
-    return `<tr class="group"><td colspan="4">${esc(feature)}`
-      + `<i>${ratio(passed, points)}</i></td></tr>`
+    return `<tr class="group"><td colspan="4">${esc(feature)}</td></tr>`
       + items.map(check => `<tr><td class="k">${esc(check.id)}</td>`
-        + `<td class="d">${esc(check.description)}</td>`
+        + `<td class="d"><details class="check-evidence" data-key="${esc(check.key)}">`
+        + `<summary>${esc(check.description || check.id)}</summary>`
+        + check.observations.map((observation, index) => {
+          const grade = checks.grades[index];
+          const label = `Grade ${index + 1}${grade?.level == null ? '' : ` · L${grade.level}`}`;
+          return `<section><strong>${esc(label)} · ${esc(observation?.status ?? 'NO RESULT')}</strong>`
+            + (observation?.summary ? `<p>${esc(observation.summary)}</p>` : '')
+            + (observation?.expected != null ? `<div>Expected</div><pre>${esc(observation.expected)}</pre>` : '')
+            + (observation?.actual != null ? `<div>Observed</div><pre>${esc(observation.actual)}</pre>` : '')
+            + (!observation ? `<p>${esc(grade?.error ?? 'This check has no recorded result in this grade.')}</p>`
+              : observation.expected == null && observation.actual == null && !observation.summary
+                ? '<p>No observation details were recorded.</p>' : '')
+            + '</section>';
+        }).join('') + '</details></td>'
         + `<td>${CATEGORY[check.category ?? 'unknown']}</td><td class="h">`
-        + `${check.history.map(outcome => GLYPH[outcome] ?? GLYPH['not-run']).join('')}`
+        + `${check.history.map((outcome, index) => `<span title="Grade ${index + 1}: ${esc(check.observations[index]?.status ?? 'NO RESULT')}"`
+          + ` aria-label="Grade ${index + 1}: ${esc(check.observations[index]?.status ?? 'NO RESULT')}">${GLYPH[outcome] ?? GLYPH['not-run']}</span>`).join('')}`
         + '</td></tr>').join('');
   }).join('');
-  return '<div class="grade-key">Raw check outcomes from each grade, from left to right. '
+  return errors + '<div class="grade-key">Recorded grades, oldest first. Expand a check for evidence. '
     + '<span class="p">✓ Pass</span><span class="f">✕ Fail</span>'
     + '<span class="x">· No pass/fail result</span></div>'
-    + '<div class="wrap"><table class="checks"><thead><tr><th>Check</th><th>Proves</th><th>Category</th>'
+    + '<div class="wrap"><table class="checks"><thead><tr><th>Check</th><th>Requirement</th><th>Category</th>'
     + `<th>Grades</th></tr></thead><tbody>${groups}</tbody></table></div>`;
 }
 
@@ -132,7 +144,7 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log, tran
     + `${entry[0]!.toUpperCase()}${entry.slice(1)}`
     + `${counts[entry] ? `<i>${esc(counts[entry])}</i>` : ''}</a>`).join('');
   const help: Record<string, string> = {
-    Completion: 'Accepted checks passed / selected, including checks not reached.',
+    'Checks passed': 'Accepted checks passed / selected, including checks not reached.',
     'Weighted score': 'Earned points / available points.',
     'Before repairs': 'First build at each level. Earlier fixes and feedback are retained.',
     Repairs: 'Completed repairs / allowance. Per-feature limits apply.',
@@ -164,7 +176,7 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log, tran
     + `<div class="title"><h2>${esc(stackLabel(stack.stack))} `
     + `<span>rep ${attempt.repetition}</span></h2></div>`
 
-    + `<div class="figs">${figure('Completion', completionLabel(attempt))}`
+    + `<div class="figs">${figure('Checks passed', completionLabel(attempt))}`
     + figure('Spend', spend(attempt.spend, attempt.spendPending, attempt.liveSpend))
     + figure('Status', esc(phrase(attempt)), attempt.stalling ? 'now warn' : 'now')
     + figure('Weighted score', pct(attempt.score))

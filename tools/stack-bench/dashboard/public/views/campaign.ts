@@ -199,7 +199,7 @@ export function campaignPage(input: CampaignPageInput): string {
   const cell = (render: (stack: SheetStack) => string): string =>
     stacks.map(stack => `<td>${render(stack)}</td>`).join('');
   const help: Record<string, string> = {
-    Completion: 'Median checks passed / selected, across valid completed runs.',
+    'Checks passed': 'Median percentage of selected checks passed, across valid completed runs.',
     'Weighted score': 'Median score weighted by check points, across valid completed runs.',
     'Before repairs': 'First build at each level. Earlier fixes and feedback are retained.',
     Regressions: 'Median count of previously passing checks that later failed, across valid completed runs.',
@@ -228,7 +228,7 @@ export function campaignPage(input: CampaignPageInput): string {
     + `<span class="state${sheet.provisional ? ' warn' : ''}" title="${esc([statusWord(sheet.status), sheet.facts.grading, ...sheet.facts.gradingReasons].join(' · '))}">${sheet.provisional ? 'Provisional' : esc(statusWord(sheet.status))}</span></div>${facts(sheet)}`
     + '<h3>Results</h3>'
     + `<div class="sheet-scroll" role="region" aria-label="Stack comparison" tabindex="0"><table class="sheet"><thead><tr><th scope="col" class="h">Metric</th>${heads}</tr></thead><tbody>`
-    + row('Completion', stack => `<div class="big">${pct(stack.completionRate === null ? null : 100 * stack.completionRate)}</div>`)
+    + row('Checks passed', stack => `<div class="big">${pct(stack.completionRate === null ? null : 100 * stack.completionRate)}</div>`)
     + row('Cost per valid run', stack => value(stack.costPerValidRun === null ? (stack.n ? 'Unknown' : 'Awaiting valid runs') : `$${stack.costPerValidRun.toFixed(2)}`))
     + row('Weighted score', stack => value(pct(stack.score)))
     + (showRepairs ? row('Before repairs', stack => value(pct(stack.unaided))) : '')
@@ -239,7 +239,7 @@ export function campaignPage(input: CampaignPageInput): string {
     + '</tbody></table></div>'
     + (sheet.mode === 'dependency' ? progressChart(sheet, input.progression, input.chart, input.view, input.hiddenChartRuns, input.unit) : '')
     + '<h3>Runs</h3>'
-    + `<div class="tablewrap"><div class="wrap"><table class="runs attempt-list"><thead><tr><th>Run</th><th>Model</th><th>Completion</th><th>Spend</th>${showRepairs ? '<th>Repairs</th>' : ''}<th>Elapsed</th><th>Status</th></tr></thead><tbody>`
+    + `<div class="tablewrap"><div class="wrap"><table class="runs attempt-list"><thead><tr><th>Run</th><th>Model</th><th>Checks passed</th><th>Spend</th>${showRepairs ? '<th>Repairs</th>' : ''}<th>Elapsed</th><th>Status</th></tr></thead><tbody>`
     + stacks.flatMap(stack => stack.attempts.map(attempt => {
       const href = `/c/${encodeURIComponent(sheet.key)}/a/${encodeURIComponent(attempt.id)}`;
       const effort = attempt.effort ? ` (${attempt.effort})` : '';

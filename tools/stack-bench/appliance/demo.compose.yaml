@@ -5,8 +5,8 @@ services:
     image: stack-bench-build:local
     platform: linux/amd64
     build:
-      context: ../../..
-      dockerfile: tools/stack-bench/container/Dockerfile
+      context: ../container
+      dockerfile: Dockerfile
     entrypoint: ["/bin/true"]
   demo:
     image: stack-bench-controller:local

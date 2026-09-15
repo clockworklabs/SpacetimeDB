@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import { agentSkillPaths, normalizePromptText, readAgentSkillDocuments,
@@ -19,6 +20,17 @@ test('skill documents are read in selected order with front matter removed', () 
     read: path => `---\nname: ignored\n---\n${path.split(/[\\/]/).at(-2)}`,
   });
   assert.equal(text, 'typescript-server\n\n---\n\ntypescript-client');
+});
+
+test('benchmark workflows resolve separately from public SDK skills in selected order', () => {
+  const ids = ['typescript-server', 'spacetime-dev', 'spacetime-managed-dev'];
+  const paths = [join('/repo', 'skills', 'typescript-server', 'SKILL.md'),
+    join('/repo', 'tools', 'stack-bench', 'backends', 'workflows', 'spacetime-dev.md'),
+    join('/repo', 'tools', 'stack-bench', 'backends', 'workflows', 'spacetime-managed-dev.md')];
+  assert.deepEqual(agentSkillPaths('/repo', ids), paths);
+  assert.equal(readAgentSkillDocuments('/repo', ids, {
+    read: path => `---\nname: ignored\n---\n${ids[paths.indexOf(path)]}`,
+  }), ids.join('\n\n---\n\n'));
 });
 
 test('prompt material is identical across platform line endings', () => {

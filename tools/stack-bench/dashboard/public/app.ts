@@ -280,6 +280,7 @@ function load(navigation = false, changedKey?: string, liveOnly = false): Promis
   if (changedKey) pendingKeys?.add(changedKey);
   else pendingKeys = null;
   if (navigation) {
+    state.form = { error: '' };
     ++loadVersion;
     loadController.abort();
   }
@@ -555,9 +556,10 @@ async function post(form: HTMLFormElement): Promise<void> {
   const current = route();
   const data = new FormData(form);
   const action = form.dataset.run;
+  // A response belongs to this form, even if the user leaves before it arrives.
+  const submittedForm = state.form = { error: '' };
   if (action === 'setup-review' || action === 'setup-start') {
     if (action === 'setup-review') state.setupRequest = readRunForm(form, state.setup!);
-    state.form = { error: '' };
     submitting = true; render();
     try {
       const response = await fetch(action === 'setup-review' ? '/api/runs/prepare' : '/api/runs', {
@@ -566,8 +568,9 @@ async function post(form: HTMLFormElement): Promise<void> {
           : { request: state.setupReview!.request, reviewId: state.setupReview!.reviewId }),
       });
       const result = await response.json();
+      if (state.form !== submittedForm) return;
       if (!response.ok) {
-        state.form = { error: result.error ?? `Request failed (${response.status})` };
+        submittedForm.error = result.error ?? `Request failed (${response.status})`;
         if (response.status === 403) { state.csrfToken = ''; void load(); }
         return;
       }
@@ -576,7 +579,7 @@ async function post(form: HTMLFormElement): Promise<void> {
         state.setupReview = null; state.setupRequest = null;
         go(`/c/${encodeURIComponent(result.campaignKey)}`);
       }
-    } catch { state.form.error = 'Could not confirm the request. Retry with the same setup; it cannot create a second job.'; }
+    } catch { submittedForm.error = 'Could not confirm the request. Retry with the same setup; it cannot create a second job.'; }
     finally { submitting = false; render(); }
     return;
   }
@@ -607,18 +610,16 @@ async function post(form: HTMLFormElement): Promise<void> {
       });
     }
     if (response.ok) {
-      state.form = { error: '' };
       return void load();
     }
     const failure = await response.json().catch(() => ({})) as { error?: string };
     if (response.status === 403) { state.csrfToken = ''; void load(); }
-    state.form = { error:
+    submittedForm.error =
       (timeAccepted ? 'Time was added, but resume failed. ' : '')
-      + (failure.error || `Request failed (HTTP ${response.status}). Check campaign status before retrying.`) };
+      + (failure.error || `Request failed (HTTP ${response.status}). Check campaign status before retrying.`);
   } catch {
-    state.form = { ...state.form,
-      error: (timeAccepted ? 'Time was added. Could not confirm resume. ' : 'Could not confirm the request. ')
-        + 'Check campaign status before retrying.' };
+    submittedForm.error = (timeAccepted ? 'Time was added. Could not confirm resume. ' : 'Could not confirm the request. ')
+      + 'Check campaign status before retrying.';
   } finally {
     submitting = false;
     render();

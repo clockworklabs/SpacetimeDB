@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 
 import { ActionApplicationFailure, ActionInconclusive, actionImplementation } from './action-contract.js';
 import { finding, isFinding, renderFinding } from './action-findings.js';
-import { checkoutDifferences } from '../stacks/checkout-state.js';
+import { checkoutDifferences, cancellationDifferences } from '../stacks/checkout-state.js';
 import type { CheckoutState } from '../stacks/checkout-state.js';
 import type {
   ActionImplementation,
@@ -198,6 +198,24 @@ async function dbExpectCheckout({ input, capabilities }: ActionArguments<{ befor
     || JSON.stringify(before.schemaSha256) !== JSON.stringify(after.schemaSha256)) throw new Error('checkout reader schema changed during the test');
   const differences = checkoutDifferences(before.state, prepared.state, after.state, input.quantity);
   const observation = { ...after, differences, before: input.before, prepared: input.prepared };
+  if (differences[0]) {
+    const { control, observed, expected } = differences[0];
+    const value = finding('number-mismatch', { control, observed, expected: { equals: expected } });
+    throw new ActionApplicationFailure(renderFinding(value), { finding: value, observation });
+  }
+  return observation;
+}
+
+async function dbExpectCancellation({ input, capabilities }: ActionArguments<{ before: string }>) {
+  const database = capabilities['database-read'];
+  const before = database.checkoutSnapshots.get(input.before);
+  if (!before) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
+  const after = database.getCheckoutState(before);
+  if (JSON.stringify(before.schemaSha256) !== JSON.stringify(after.schemaSha256)) {
+    throw new Error('checkout reader schema changed during cancellation');
+  }
+  const differences = cancellationDifferences(before.state, after.state);
+  const observation = { ...after, differences, before: input.before };
   if (differences[0]) {
     const { control, observed, expected } = differences[0];
     const value = finding('number-mismatch', { control, observed, expected: { equals: expected } });
@@ -617,6 +635,7 @@ function contractBrowserLifecycleAction<Input, Result>(
 export const RUNTIME_ACTION_IMPLEMENTATIONS = Object.freeze({
   dbRecordCheckout: contractLifecycleAction(dbRecordCheckout),
   dbExpectCheckout: contractLifecycleAction(dbExpectCheckout),
+  dbExpectCancellation: contractLifecycleAction(dbExpectCancellation),
   dbRecordStock: contractLifecycleAction(dbRecordStock),
   dbExpectStock: contractLifecycleAction(dbExpectStock),
   clickConcurrently: contractLifecycleAction(clickConcurrently),

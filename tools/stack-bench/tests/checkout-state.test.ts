@@ -3,7 +3,7 @@ import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { checkoutDifferences, checkoutId, checkoutMinor, checkoutStateSchema, verifyCheckoutSchema }
+import { checkoutDifferences, cancellationDifferences, checkoutId, checkoutMinor, checkoutStateSchema, verifyCheckoutSchema }
   from '../src/stacks/checkout-state.js';
 import type { CheckoutState } from '../src/stacks/checkout-state.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
@@ -89,6 +89,65 @@ test('unreadable or inexact checkout data cannot become empty or rounded success
   const { before, prepared, after } = states();
   before.stock.push({ warehouseId: 'large', quantity: Number.MAX_SAFE_INTEGER });
   assert.throws(() => checkoutDifferences(before, prepared, after, 1));
+});
+
+test('cancellation restores each allocation once and preserves other orders and payment history', () => {
+  const before = states().after;
+  before.stock.push({ warehouseId: 'west', quantity: 6 });
+  before.orders[0]!.lines[0]!.allocations.push({ warehouseId: 'west', quantity: 2 });
+  before.orders[0]!.lines[0]!.quantity = 3;
+  before.orders[0]!.totalMinor *= 3;
+  before.payments[0]!.amountMinor *= 3;
+  before.orders.push({ ...structuredClone(before.orders[0]!), id: 'other', accountId: 'other' });
+  const after = structuredClone(before);
+  after.orders[0]!.status = 'cancelled';
+  after.stock[0]!.quantity++;
+  after.stock[1]!.quantity += 2;
+  assert.deepEqual(cancellationDifferences(before, after), []);
+  after.stock.reverse();
+  after.orders.reverse();
+  after.orders.forEach(order => order.lines.forEach(line => line.allocations.reverse()));
+  assert.deepEqual(cancellationDifferences(before, after), []);
+  const defects: Record<string, (state: CheckoutState) => void> = {
+    duplicateStock: state => { state.stock[0]!.quantity += 2; },
+    missingStock: state => { state.stock = structuredClone(before.stock); },
+    wrongWarehouse: state => { state.stock[0]!.quantity--; state.stock[1]!.quantity++; },
+    missingHistory: state => { state.orders = []; },
+    wrongOrder: state => { state.orders.find(row => row.id === 'other')!.status = 'cancelled'; },
+    duplicatePayment: state => { state.payments.push({ ...state.payments[0]!, id: 'extra' }); },
+    changedTotal: state => { state.orders.find(row => row.id === 'o')!.totalMinor = 0; },
+    noOp: state => { state.orders.find(row => row.id === 'o')!.status = 'pending'; },
+  };
+  for (const [name, defect] of Object.entries(defects)) {
+    const value = structuredClone(after); defect(value);
+    assert(cancellationDifferences(before, value).length > 0, name);
+  }
+  assert(cancellationDifferences(before, before).length > 0, 'reject all');
+  assert.throws(() => cancellationDifferences(states().before, after), /one pending/);
+});
+
+test('cancellation action retains mismatches and cannot pass absent or unreadable evidence', async () => {
+  for (const mode of ['valid', 'mismatch', 'missing', 'reader-error', 'schema-change']) {
+    const before = states().after;
+    const after = structuredClone(before);
+    after.orders[0]!.status = 'cancelled'; after.stock[0]!.quantity++;
+    const checkoutSnapshots = new Map(mode === 'missing' ? [] : [['before', {
+      state: before, account: 'a', item: 'i', schemaSha256: { schema: 'verified' },
+    }]]);
+    const result = await executeAction(ACTION_REGISTRY, 'dbExpectCancellation', {
+      do: 'dbExpectCancellation', before: 'before',
+    }, { capabilities: { 'database-read': {
+      ...createDatabaseReadCapability({ expand: value => value, checkoutSnapshots }),
+      getCheckoutState: () => {
+        if (mode === 'reader-error') throw new Error('database unavailable');
+        return { state: mode === 'mismatch' ? before : after,
+          schemaSha256: { schema: mode === 'schema-change' ? 'changed' : 'verified' } };
+      },
+    } } });
+    assert.equal(result.status, mode === 'valid' ? 'passed' : mode === 'mismatch' ? 'failed'
+      : mode === 'missing' ? 'inconclusive' : 'harness_failure', mode);
+    if (mode === 'mismatch') assert(result.observation);
+  }
 });
 
 test('checkout reader rejects an unverified source mapping before a database read', () => {

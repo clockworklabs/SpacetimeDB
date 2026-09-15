@@ -4,6 +4,9 @@ Stack Bench compares how coding agents build the same application with different
 technology stacks. It runs each attempt in an isolated container, tests real
 behavior, supports optional bounded repairs, and keeps the evidence behind every result.
 
+**New here? [Start your first run](GETTING-STARTED.md).** The model-free demo needs
+only Git and Docker. The guide covers setup, results, and cleanup.
+
 ## Verified study baseline
 
 Tag: **`stack-bench/astra-repairs-2026-09-14`** — commit `4e1ecc037`.
