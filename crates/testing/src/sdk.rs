@@ -5,6 +5,7 @@ use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_guard::SpacetimeDbGuard;
 use spacetimedb_paths::{RootDir, SpacetimePaths};
 use std::fs::create_dir_all;
+use std::process::{Command, Stdio};
 use std::sync::Mutex;
 
 use crate::invoke_cli;
@@ -85,6 +86,14 @@ impl Test {
         TestBuilder::default()
     }
     pub fn run(self) {
+        if let Some(reason) = optional_module_skip_reason(&self.module_name) {
+            log::info!("skipping {}: {reason}", self.module_name);
+            if self.name == "should-fail" || self.name == "subscribe-all-select-star" {
+                panic!("skipping {}: {reason}", self.module_name);
+            }
+            return;
+        }
+
         let sdk_paths = SdkTestPaths::new();
         let paths = &sdk_paths.paths;
 
@@ -107,6 +116,25 @@ impl Test {
         let db_name = publish_module(paths, server_url, &file, host_type);
 
         run_client(&self.run_command, &self.client_project, server_url, &db_name);
+    }
+}
+
+fn emcc_is_available() -> bool {
+    Command::new("emcc")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+fn optional_module_skip_reason(module: &str) -> Option<&'static str> {
+    if module.ends_with("-cpp") && !emcc_is_available() {
+        Some("emcc is not available; activate Emscripten to run C++ SDK module tests")
+    } else if cfg!(target_os = "macos") && module.ends_with("-cs") {
+        Some("NativeAOT-LLVM is only supported on Windows and Linux")
+    } else {
+        None
     }
 }
 

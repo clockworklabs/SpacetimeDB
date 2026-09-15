@@ -118,7 +118,10 @@ function tbl<const Accessor extends string, Row extends RowObj>(
     delete_by?: [string, keyof Row];
   },
   row: Row
-): TableWithReducers<Accessor, ReturnType<typeof table<Row, { name: Accessor }>>> {
+): TableWithReducers<
+  Accessor,
+  ReturnType<typeof table<Row, { name: Accessor }>>
+> {
   const t = table({ public: true }, row);
   return {
     table: t,
@@ -148,7 +151,7 @@ function tbl<const Accessor extends string, Row extends RowObj>(
       if (ops.update_non_pk_by) {
         const [reducer, col] = ops.update_non_pk_by;
         exports[reducer] = spacetimedb.reducer(row, (ctx, args) => {
-          (ctx.db[accessor] as any)[col].delete(args[col as any]);
+          (ctx.db[accessor] as any)[col].delete((args as any)[col]);
           (ctx.db[accessor] as any).insert({ ...args });
         });
       }
@@ -157,7 +160,7 @@ function tbl<const Accessor extends string, Row extends RowObj>(
         exports[reducer] = spacetimedb.reducer(
           { [col]: row[col] },
           (ctx, args) => {
-            (ctx.db[accessor] as any)[col].delete(args[col as any]);
+            (ctx.db[accessor] as any)[col].delete((args as any)[col]);
           }
         );
       }
@@ -248,21 +251,9 @@ const singleValTables = {
 // Tables holding a Vec of various types.
 const vecTables = {
   vecU8: tbl('vecU8', { insert: 'insert_vec_u8' }, { n: t.array(t.u8()) }),
-  vecU16: tbl(
-    'vecU16',
-    { insert: 'insert_vec_u16' },
-    { n: t.array(t.u16()) }
-  ),
-  vecU32: tbl(
-    'vecU32',
-    { insert: 'insert_vec_u32' },
-    { n: t.array(t.u32()) }
-  ),
-  vecU64: tbl(
-    'vecU64',
-    { insert: 'insert_vec_u64' },
-    { n: t.array(t.u64()) }
-  ),
+  vecU16: tbl('vecU16', { insert: 'insert_vec_u16' }, { n: t.array(t.u16()) }),
+  vecU32: tbl('vecU32', { insert: 'insert_vec_u32' }, { n: t.array(t.u32()) }),
+  vecU64: tbl('vecU64', { insert: 'insert_vec_u64' }, { n: t.array(t.u64()) }),
   vecU128: tbl(
     'vecU128',
     { insert: 'insert_vec_u128' },
@@ -275,21 +266,9 @@ const vecTables = {
   ),
 
   vecI8: tbl('vecI8', { insert: 'insert_vec_i8' }, { n: t.array(t.i8()) }),
-  vecI16: tbl(
-    'vecI16',
-    { insert: 'insert_vec_i16' },
-    { n: t.array(t.i16()) }
-  ),
-  vecI32: tbl(
-    'vecI32',
-    { insert: 'insert_vec_i32' },
-    { n: t.array(t.i32()) }
-  ),
-  vecI64: tbl(
-    'vecI64',
-    { insert: 'insert_vec_i64' },
-    { n: t.array(t.i64()) }
-  ),
+  vecI16: tbl('vecI16', { insert: 'insert_vec_i16' }, { n: t.array(t.i16()) }),
+  vecI32: tbl('vecI32', { insert: 'insert_vec_i32' }, { n: t.array(t.i32()) }),
+  vecI64: tbl('vecI64', { insert: 'insert_vec_i64' }, { n: t.array(t.i64()) }),
   vecI128: tbl(
     'vecI128',
     { insert: 'insert_vec_i128' },
@@ -307,16 +286,8 @@ const vecTables = {
     { b: t.array(t.bool()) }
   ),
 
-  vecF32: tbl(
-    'vecF32',
-    { insert: 'insert_vec_f32' },
-    { f: t.array(t.f32()) }
-  ),
-  vecF64: tbl(
-    'vecF64',
-    { insert: 'insert_vec_f64' },
-    { f: t.array(t.f64()) }
-  ),
+  vecF32: tbl('vecF32', { insert: 'insert_vec_f32' }, { f: t.array(t.f32()) }),
+  vecF64: tbl('vecF64', { insert: 'insert_vec_f64' }, { f: t.array(t.f64()) }),
 
   vecString: tbl(
     'vecString',

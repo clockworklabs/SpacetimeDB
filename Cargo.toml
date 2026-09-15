@@ -25,6 +25,8 @@ members = [
   "crates/paths",
   "crates/pg",
   "crates/physical-plan",
+  "crates/portable-datastore",
+  "crates/portable-datastore-wasm",
   "crates/primitives",
   "crates/query",
   "crates/runtime",
@@ -40,6 +42,7 @@ members = [
   "crates/standalone",
   "crates/subscription",
   "crates/table",
+  "crates/test-datastore",
   "crates/testing",
   "crates/update",
   "modules/benchmarks",
@@ -78,6 +81,7 @@ members = [
   "tools/ci/commands/update-flow",
   "tools/ci/commands/cli-docs",
   "tools/ci/commands/global-json-policy",
+  "tools/ci/commands/portable-datastore",
   "tools/ci/commands/publish-checks",
   "tools/ci/commands/run-spacetime",
   "tools/ci/commands/typescript-test",
@@ -171,6 +175,7 @@ spacetimedb-metrics = { path = "crates/metrics", version = "=2.10.1" }
 spacetimedb-paths = { path = "crates/paths", version = "=2.10.1" }
 spacetimedb-pg = { path = "crates/pg", version = "=2.10.1" }
 spacetimedb-physical-plan = { path = "crates/physical-plan", version = "=2.10.1" }
+spacetimedb-portable-datastore = { path = "crates/portable-datastore", version = "=2.10.1" }
 spacetimedb-primitives = { path = "crates/primitives", version = "=2.10.1" }
 spacetimedb-query = { path = "crates/query", version = "=2.10.1" }
 spacetimedb-query-builder = { path = "crates/query-builder", version = "=2.10.1" }
@@ -183,6 +188,7 @@ spacetimedb-standalone = { path = "crates/standalone", version = "=2.10.1" }
 spacetimedb-subscription = { path = "crates/subscription", version = "=2.10.1" }
 spacetimedb-sql-parser = { path = "crates/sql-parser", version = "=2.10.1" }
 spacetimedb-table = { path = "crates/table", version = "=2.10.1" }
+spacetimedb-test-datastore = { path = "crates/test-datastore", version = "=2.10.1" }
 
 # Prevent `ahash` from pulling in `getrandom` by disabling default features.
 # Modules use `getrandom02` and we need to prevent an incompatible version
