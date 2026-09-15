@@ -35,7 +35,8 @@ test('populated grading cannot bypass reset or attach a checkpoint to an ordinar
     assert.match(log, /early cause/);
     assert.match(log, /last line/);
     assert.doesNotMatch(log, /do-not-publish/);
-    const populatedStart = { checkpoint: join(app, 'checkpoint'), source: join(app, 'candidate'), dataSha256: 'a'.repeat(64) };
+    const populatedStart = { checkpoint: join(app, 'checkpoint'), source: join(app, 'candidate'),
+      dataSha256: 'a'.repeat(64), preparationArtifact: join(app, 'preparation.json') };
     const base = [fileURLToPath(new URL('../commands/run-suite.js', import.meta.url)),
       '--app', app, '--url', 'http://127.0.0.1:1', '--backend', 'postgres', '--label', 'invalid-start',
       '--track', 'ecommerce', '--level', '3', '--source-sha256', 'b'.repeat(64),

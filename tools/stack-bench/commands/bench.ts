@@ -54,8 +54,8 @@ import { capturePopulatedCheckpoint, restorePopulatedCheckpoint,
 import { inspectImportedReference, loadReferenceRegistry, selectReferenceFixture }
   from '../src/references/reference-fixtures.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
-import type { CompiledScenarioDefinition } from '../src/composition/definition-compiler.js';
 import type { CompletedGradeReport } from '../src/evidence/grade-report.js';
+import { verifyPopulatedPreparation } from '../src/evidence/grade-report.js';
 import { compareRepairBaseline, createRepairGrant } from '../src/runtime/repair-grant.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { contractInterfaceNames } from '../src/composition/agent-visible-contract.js';
@@ -116,7 +116,7 @@ type CommandFailure = Error & { stdout?: string | Buffer; stderr?: string | Buff
   status?: number | null; signal?: NodeJS.Signals | null };
 type GradeOptions = { observation?: 'scored' | 'observed'; out?: string | null;
   sourceSha256?: string | null; applicationFailure?: RunOutcome | null;
-  populatedStart?: { checkpoint: string; source: string; dataSha256: string };
+  populatedStart?: { checkpoint: string; source: string; dataSha256: string; preparationArtifact: string };
   recipeTask?: GradeRecipeTask };
 type MutationControlResult = UnknownRecord & { ok: boolean; artifact?: string;
   skipped?: boolean; processError?: string | null; outcome: RunOutcome | null };
@@ -762,18 +762,6 @@ export function validatePopulatedRun(args: BenchArguments): void {
     || args.seedThrough !== undefined || args.mutations || args.referenceMutationOnly
     || (args.taskMode && args.taskMode !== 'upgrade')) {
     throw new Error('populated upgrades require one level and a new same-lease attempt; source-only continuation, progression and mutation runs are unsupported');
-  }
-}
-
-export function verifyPopulatedPreparation(scenario: CompiledScenarioDefinition,
-  report: CompletedGradeReport & { cleanupEvidence?: unknown }): void {
-  const expected = scenario.features.flatMap(feature => feature.criteria.map(check => `${feature.id}/${check.id}`)).sort();
-  const actual = report.features.flatMap(feature => feature.criteria.map(check => `${feature.id}/${check.id}`)).sort();
-  if (!expected.length || canonicalDefinitionJson(expected) !== canonicalDefinitionJson(actual)
-    || report.cleanupEvidence || report.total !== 0 || report.max !== 0
-    || report.features.some(feature => !evidencePassed(feature.setupEvidence) || feature.cleanupEvidence
-      || feature.criteria.some(check => check.points !== 0 || !evidencePassed(check.evidence)))) {
-    throw new Error('populated starting preparation did not produce complete passing evidence');
   }
 }
 
@@ -1685,7 +1673,7 @@ async function main() {
       const receipt = await capturePopulatedCheckpoint(checkpoint, application,
         { recipeSha256: binding.release.contentSha256, preparationEvidenceSha256 }, { startApplication: false });
       if (receipt.sourceSha256 !== sourceSha256) throw new Error('starting reference changed during preparation');
-      populatedStart = { checkpoint, source: '', dataSha256: receipt.dataSha256 };
+      populatedStart = { checkpoint, source: '', dataSha256: receipt.dataSha256, preparationArtifact: reportPath };
       acceptedPopulatedCheckpoint = checkpoint;
       run.startingState = { sourceSha256, dataSha256: receipt.dataSha256,
         recipeSha256: binding.release.contentSha256, preparationEvidenceSha256,

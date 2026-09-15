@@ -16,6 +16,8 @@ import type { RuntimeControlSpec } from './backend-control.js';
 import { hashAppSource, snapshotAppSource, restoreAppSource } from './source-snapshot.js';
 import { CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_START_SCRIPT } from './coding-container-policy.js';
 import { resetRepairBackend } from '../stacks/backend-reset.js';
+import { readPreparedCheckouts } from '../evidence/grade-report.js';
+import type { CompiledScenarioDefinition } from '../composition/definition-compiler.js';
 
 const message = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
@@ -219,7 +221,8 @@ export async function restorePopulatedCheckpoint(directory: string,
 // session changed. The caller restores the session's own pair after grading.
 export async function preparePopulatedGrade(directory: string, candidateSource: string,
   application: RuntimeControlSpec, initial: Pick<PopulatedCheckpoint, 'sourceSha256' | 'dataSha256'>,
-  candidateSourceSha256: string, recipeSha256: string): Promise<PopulatedCheckpoint> {
+  candidateSourceSha256: string, recipeSha256: string,
+  preparation: { artifact: string; scenario: CompiledScenarioDefinition }): Promise<PopulatedCheckpoint> {
   checkpointLocation(candidateSource, application.app);
   const { lease } = leaseFromEnv(process.env, { backend: application.backend, active: true });
   const receipt = await validatePopulatedCheckpoint(directory, application, lease);
@@ -232,6 +235,7 @@ export async function preparePopulatedGrade(directory: string, candidateSource: 
   if (hashAppSource(candidateSource).sha256 !== candidateSourceSha256) {
     throw new Error('populated grading candidate differs from the selected source');
   }
+  readPreparedCheckouts(preparation.scenario, preparation.artifact, receipt.startingState.preparationEvidenceSha256);
   try { await restorePopulatedCheckpoint(directory, application, undefined, { startApplication: false }); }
   catch (error) {
     throw Object.assign(new Error(`could not restore the original populated reference: ${message(error)}`, { cause: error }),

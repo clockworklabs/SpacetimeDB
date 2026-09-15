@@ -22,6 +22,10 @@ convention for these controls. A panel that blocks navigation must provide
 Use normal authenticated application requests. Entry IDs are opaque strings;
 their format and storage representation are not prescribed.
 
+Keep the existing account, catalog, stock, cart, order, payment and warehouse
+records queryable through their existing storage names and fields. Preserve
+their IDs and field types. Additional storage for the address book is unrestricted.
+
 The UI and other clients use the same owner-scoped operations below. Use the
 current customer's session for every read and write. Do not accept a customer ID
 from the caller to select the owner. A read returns all entries for that owner,

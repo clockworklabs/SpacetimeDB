@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { describesMissingStockInterface, stockInterfaceError, stockQuantity } from '../stock-interface.js';
-import { checkoutStateSchema, verifyCheckoutSchema } from '../checkout-state.js';
+import { parseCheckoutState, CheckoutDataError, verifyCheckoutSchema, checkoutInterfaceIdentity } from '../checkout-state.js';
 
 
 import { assertLeasedContainer } from '../backend-reset-guard.js';
@@ -49,10 +49,12 @@ WHERE stock.item_id = item.id AND stock.warehouse_id = warehouse.id
   AND (SELECT valid FROM stock_interface);
 `;
 
-export function getPostgresCheckoutState({ account, item, app, lease, exec = execFileSync }: {
+export function getPostgresCheckoutState({ account, item, app, lease, checkoutInterface, exec = execFileSync }: {
   account: string; item: string; app: string; lease: LeasedDatabase; exec?: TextCommandExecutor;
+  checkoutInterface?: 'ecommerce-checkout-v1';
 }) {
-  const schemaSha256 = verifyCheckoutSchema('postgres', app, ['server/src/schema.ts']);
+  const schemaSha256 = checkoutInterface === 'ecommerce-checkout-v1' ? checkoutInterfaceIdentity('postgres')
+    : verifyCheckoutSchema('postgres', app, ['server/src/schema.ts']);
   const container = assertLeasedContainer(lease.resources.container, exec, WRITE_TIMEOUT_MS, 'checkout state read');
   // One statement gives a consistent read of all effects. No app code or HTTP
   // response supplies these values. Payment is embedded in this reference's order.
@@ -77,10 +79,19 @@ export function getPostgresCheckoutState({ account, item, app, lease, exec = exe
         'amountMinor', payment_amount*100, 'status', payment_status)) FROM orders WHERE payment_status IS NOT NULL), '[]'::json),
       'orphanOrderLines', (SELECT count(*) FROM order_item li LEFT JOIN orders o ON o.id=li.order_id WHERE o.id IS NULL)
     )::text;`;
-  const output = exec('docker', ['exec', '-i', container,
-    'psql', '-U', POSTGRES_USER, '-d', lease.resources.database, '-v', 'ON_ERROR_STOP=1', '-At'],
-  { encoding: 'utf8', input: sql, stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
-  return { schemaSha256, state: checkoutStateSchema.parse(JSON.parse(output.trim())) };
+  let output: string;
+  try {
+    output = exec('docker', ['exec', '-i', container,
+      'psql', '-U', POSTGRES_USER, '-d', lease.resources.database, '-v', 'ON_ERROR_STOP=1', '-At'],
+    { encoding: 'utf8', input: sql, stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
+  } catch (error) {
+    const detail = streams(error, 'stderr');
+    if (checkoutInterface && (describesMissingStockInterface(detail) || /operator does not exist/.test(detail))) {
+      throw new CheckoutDataError(`existing checkout interface is missing or changed: ${detail}`, { cause: error });
+    }
+    throw error;
+  }
+  return { schemaSha256, state: parseCheckoutState(JSON.parse(output.trim()), checkoutInterface) };
 }
 
 export function getPostgresStock({ item, warehouse, lease, exec = execFileSync }: {

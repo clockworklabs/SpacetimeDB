@@ -30,6 +30,9 @@
       }
     ],
     "contracts": [
+      { "id": "ecommerce.existing-catalog-interface", "path": "contracts/catalog-discovery.md", "order": 16, "modes": ["upgrade"] },
+      { "id": "ecommerce.existing-cart-interface", "path": "contracts/cart.md", "order": 17, "modes": ["upgrade"] },
+      { "id": "ecommerce.existing-checkout-interface", "path": "contracts/checkout.md", "order": 18, "modes": ["upgrade"] },
       {
         "id": "ecommerce.address-book-interface",
         "path": "contracts/address-book-migration.md",

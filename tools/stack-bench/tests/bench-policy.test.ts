@@ -6,10 +6,11 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { pendingRunSnapshot, gradeWithRetry, gradePopulatedCandidate, validatePopulatedRun,
-  verifyPopulatedPreparation, auditFailureSummary, gradeArgv, parseAgentProcessResult }
+  auditFailureSummary, gradeArgv, parseAgentProcessResult }
   from '../commands/bench.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import type { CompletedGradeReport } from '../src/evidence/grade-report.js';
+import { verifyPopulatedPreparation } from '../src/evidence/grade-report.js';
 import type { PopulatedCheckpoint } from '../src/runtime/source-materialization.js';
 import { finalizeRunTotals }
   from '../src/evidence/benchmark-run.js';

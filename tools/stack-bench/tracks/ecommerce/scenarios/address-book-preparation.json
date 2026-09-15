@@ -3,7 +3,7 @@
   "track": "ecommerce",
   "level": 3,
   "name": "Address-book starting population",
-  "note": "Draft preparation. Add verified settled checkout observations before qualification.",
+  "note": "Draft preparation. Capture original checkout observations after delivery settles; these are bound to the populated checkpoint.",
   "features": [
     {
       "id": 9800,
@@ -28,9 +28,11 @@
             {"do":"fill","actor":"a","testid":"search-input","text":"Keyboard","enter":true},
             {"do":"expect","actor":"a","testid":"item-card","within":15000,"contains":"Keyboard"},
             {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
+            {"do":"expectNumber","actor":"a","testid":"cart-count","equals":1,"within":15000},
             {"do":"fill","actor":"a","testid":"search-input","text":"Headphones","enter":true},
             {"do":"expect","actor":"a","testid":"item-card","within":15000,"contains":"Headphones"},
             {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Headphones"}},
+            {"do":"expectNumber","actor":"a","testid":"cart-count","equals":2,"within":15000},
             {"do":"callConcurrently","actors":["a"],"action":"checkout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"requests":1,"requestTimeoutMs":30000,"settleMs":0},
             {"do":"expectCallOutcomes","accepted":1},
             {"do":"click","actor":"a","testid":"profile-link"},
@@ -42,9 +44,11 @@
             {"do":"fill","actor":"b","testid":"search-input","text":"Keyboard","enter":true},
             {"do":"expect","actor":"b","testid":"item-card","within":15000,"contains":"Keyboard"},
             {"do":"click","actor":"b","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
+            {"do":"expectNumber","actor":"b","testid":"cart-count","equals":1,"within":15000},
             {"do":"fill","actor":"b","testid":"search-input","text":"Laptop Stand","enter":true},
             {"do":"expect","actor":"b","testid":"item-card","within":15000,"contains":"Laptop Stand"},
             {"do":"click","actor":"b","testid":"add-to-cart","in":{"testid":"item-card","contains":"Laptop Stand"}},
+            {"do":"expectNumber","actor":"b","testid":"cart-count","equals":2,"within":15000},
             {"do":"callConcurrently","actors":["b"],"action":"checkout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"requests":1,"requestTimeoutMs":30000,"settleMs":0},
             {"do":"expectCallOutcomes","accepted":1},
             {"do":"click","actor":"b","testid":"profile-link"},
@@ -81,7 +85,15 @@
             {"do":"reload","actor":"a","settleMs":0},
             {"do":"fill","actor":"a","testid":"search-input","text":"M8","enter":true},
             {"do":"expect","actor":"a","testid":"item-card","within":15000,"contains":"M8 Café / blue"},
-            {"do":"expect","actor":"a","testid":"item-card","within":15000,"contains":"M8 Cafe - blue"}
+            {"do":"expect","actor":"a","testid":"item-card","within":15000,"contains":"M8 Cafe - blue"},
+            {"do":"fill","actor":"a","testid":"search-input","text":"Keyboard","enter":true},
+            {"do":"expectNumber","actor":"a","testid":"item-price","in":{"testid":"item-card","contains":"Keyboard"},"equals":12.34,"within":15000},
+            {"do":"expect","actor":"staff","testid":"completed-order-status","in":{"testid":"completed-order-item","contains":"Headphones"},"value":"delivered","ignoreCase":true,"within":60000},
+            {"do":"dbRecordCheckout","account":"m8-customer","item":"Keyboard","as":"customer-keyboard"},
+            {"do":"dbRecordCheckout","account":"m8-customer","item":"Headphones","as":"customer-headphones"},
+            {"do":"dbRecordCheckout","account":"admin-helper","item":"Laptop Stand","as":"other-customer-laptop"},
+            {"do":"dbRecordCheckout","account":"m8-customer","item":"M8 Café / blue","as":"catalog-accent"},
+            {"do":"dbRecordCheckout","account":"m8-customer","item":"M8 Cafe - blue","as":"catalog-plain"}
           ]
         }
       ]

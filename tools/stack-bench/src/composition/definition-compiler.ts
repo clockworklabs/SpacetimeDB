@@ -150,6 +150,7 @@ export const ACTION_DEFINITIONS = Object.freeze({
   dbRecordStock: fields({ item: nonEmptyString, as: nonEmptyString }, { warehouse: nonEmptyString }),
   dbRecordCheckout: fields({ account: nonEmptyString, item: nonEmptyString, as: nonEmptyString }),
   dbExpectCheckout: fields({ before: nonEmptyString, prepared: nonEmptyString, quantity: positiveInteger }),
+  dbExpectMigrationCheckout: fields({}),
   dbExpectStock: fields({ item: nonEmptyString },
     { warehouse: nonEmptyString, equals: integer, atLeast: integer, atMost: integer, relativeTo: nonEmptyString, plus: integer,
       within: value => positiveNumber(value) && Number(value) <= 80000 }),

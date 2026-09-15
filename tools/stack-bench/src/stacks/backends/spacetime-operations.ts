@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { describesMissingStockInterface, stockInterfaceError, stockQuantity } from '../stock-interface.js';
-import { checkoutId, checkoutMinor, checkoutStateSchema, verifyCheckoutSchema } from '../checkout-state.js';
+import { checkoutId, checkoutMinor, parseCheckoutState, CheckoutDataError, verifyCheckoutSchema, checkoutInterfaceIdentity } from '../checkout-state.js';
 import { assertLeasedContainer } from '../backend-reset-guard.js';
 
 import { leasedSpacetimeTarget } from '../../runtime/spacetime-target.js';
@@ -30,7 +30,7 @@ const streams = (error: unknown, ...keys: readonly string[]): string =>
 type SpacetimeLease = { resources: { module: string; serverUri: string } };
 const agentExec = () => ['exec', ...codingContainerAgentExecOptions()];
 
-function stringColumns(schema: unknown): Array<{ table: string; column: string }> {
+function tableColumns(schema: unknown): Array<{ table: string; column: string; type: Record<string, unknown> }> {
   if (!record(schema) || !Array.isArray(schema.sections)) {
     throw new Error('SpacetimeDB describe returned an invalid schema');
   }
@@ -40,17 +40,18 @@ function stringColumns(schema: unknown): Array<{ table: string; column: string }
     ? typespace.Typespace.types : null;
   const tables = record(tablesSection) && Array.isArray(tablesSection.Tables) ? tablesSection.Tables : null;
   if (!types || !tables) throw new Error('SpacetimeDB describe omitted tables or types');
-  const columns: Array<{ table: string; column: string }> = [];
+  const columns: Array<{ table: string; column: string; type: Record<string, unknown> }> = [];
   for (const table of tables) {
     if (!record(table) || typeof table.source_name !== 'string'
-      || !Number.isInteger(table.product_type_ref)) continue;
+      || !Number.isInteger(table.product_type_ref)) throw new Error('SpacetimeDB describe returned an invalid table');
     const type = types[Number(table.product_type_ref)];
     const elements = record(type) && record(type.Product) && Array.isArray(type.Product.elements)
-      ? type.Product.elements : [];
+      ? type.Product.elements : null;
+    if (!elements) throw new Error('SpacetimeDB describe returned an invalid table type');
     for (const element of elements) {
       if (!record(element) || !record(element.name) || typeof element.name.some !== 'string'
-        || !record(element.algebraic_type) || !('String' in element.algebraic_type)) continue;
-      columns.push({ table: sqlIdentifier(table.source_name), column: sqlIdentifier(element.name.some) });
+        || !record(element.algebraic_type)) throw new Error('SpacetimeDB describe returned an invalid column');
+      columns.push({ table: table.source_name, column: element.name.some, type: element.algebraic_type });
     }
   }
   return columns;
@@ -73,9 +74,9 @@ export function proveSpacetimeUse({ lease, marker, exec = execFileSync }:
   { encoding: 'utf8', stdio: 'pipe', timeout: RESET_TIMEOUT_MS });
   const schema = JSON.parse(run(['describe', '--json', target.mod, '-s', target.containerUri]));
   let matches = 0;
-  for (const { table, column } of stringColumns(schema)) {
+  for (const { table, column } of tableColumns(schema).filter(column => 'String' in column.type)) {
     const output = run(['sql', target.mod, '-s', target.containerUri,
-      `select ${column} from ${table} where ${column} = ${sqlString(marker)}`]);
+      `select ${sqlIdentifier(column)} from ${sqlIdentifier(table)} where ${sqlIdentifier(column)} = ${sqlString(marker)}`]);
     if (output.includes(`"${marker}"`)) matches += 1;
   }
   return { ok: matches > 0, verified: true, matches,
@@ -210,12 +211,14 @@ export function getSpacetimeStock({ item, warehouse, spacetime, exec = execFileS
   return { backend: 'spacetime', item, ...(warehouse === undefined ? {} : { warehouse }), quantity };
 }
 
-export function getSpacetimeCheckoutState({ account, item, app, spacetime, addressBookMigration = false, exec = execFileSync }: {
+export function getSpacetimeCheckoutState({ account, item, app, spacetime, addressBookMigration = false, checkoutInterface, exec = execFileSync }: {
   account: string; item: string; app: string; exec?: TextCommandExecutor;
   spacetime?: { buildContainer?: { id: string; name: string } | null; mod: string; containerUri: string };
   addressBookMigration?: boolean;
+  checkoutInterface?: 'ecommerce-checkout-v1';
 }) {
-  const schemaSha256 = verifyCheckoutSchema('spacetime', app, ['backend/spacetimedb/src/schema.ts'], { addressBookMigration });
+  const schemaSha256 = checkoutInterface === 'ecommerce-checkout-v1' ? checkoutInterfaceIdentity('spacetime')
+    : verifyCheckoutSchema('spacetime', app, ['backend/spacetimedb/src/schema.ts'], { addressBookMigration });
   if (!spacetime?.buildContainer) throw new Error('SpacetimeDB build container is unavailable for checkout snapshot');
   const container = assertLeasedContainer(spacetime.buildContainer, exec, WRITE_TIMEOUT_MS, 'checkout state read');
   const selections = [
@@ -229,6 +232,23 @@ export function getSpacetimeCheckoutState({ account, item, app, spacetime, addre
     ['payment_record', 'id,order_id,amount,status'],
     ['order_item_stock', 'order_item_id,warehouse_id,quantity'],
   ] as const;
+  if (checkoutInterface === 'ecommerce-checkout-v1') {
+    const schema = exec('docker', [...agentExec(), container,
+      ...codingContainerAgentCommand(CODING_CONTAINER_SPACETIME_CLI,
+        ['describe', '--json', spacetime.mod, '-s', spacetime.containerUri])],
+    { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
+    const columns = tableColumns(JSON.parse(schema));
+    for (const [table, names] of selections) {
+      for (const name of names.split(',')) {
+        const type = ['total', 'price', 'unit_price', 'amount'].includes(name) ? 'F64'
+          : name === 'quantity' ? 'U32' : name === 'status' ? 'String' : 'U64';
+        const matches = columns.filter(column => column.table === table && column.column === name);
+        if (matches.length !== 1 || !(type in matches[0]!.type)) {
+          throw new CheckoutDataError(`existing checkout interface changed: ${table}.${name} must remain ${type}`);
+        }
+      }
+    }
+  }
   // One initial subscription snapshot covers every query at the same database
   // state. The SQL endpoint accepts only one statement per request.
   const queries = selections.map(([table, , where]) => `SELECT * FROM ${table}${where ? ` WHERE ${where}` : ''}`);
@@ -255,10 +275,10 @@ export function getSpacetimeCheckoutState({ account, item, app, spacetime, addre
       return columns.split(',').map(column => row[column]);
     });
   });
-  if (rows[0]!.length !== 1 || rows[1]!.length !== 1) throw new Error('checkout account or item is missing or ambiguous');
+  if (rows[0]!.length !== 1 || rows[1]!.length !== 1) throw new CheckoutDataError('checkout account or item is missing or ambiguous');
   const accountId = checkoutId(rows[0]![0]![0]);
   const itemId = checkoutId(rows[1]![0]![0]);
-  return { schemaSha256, state: checkoutStateSchema.parse({
+  return { schemaSha256, state: parseCheckoutState({
     accountId, itemId, priceMinor: checkoutMinor(rows[1]![0]![1]),
     cart: rows[2]!.filter(row => checkoutId(row[0]) === accountId).map(row => ({ itemId: checkoutId(row[1]), quantity: row[2] })),
     stock: rows[3]!.filter(row => checkoutId(row[0]) === itemId).map(row => ({ warehouseId: checkoutId(row[1]), quantity: row[2] })),
@@ -271,7 +291,7 @@ export function getSpacetimeCheckoutState({ account, item, app, spacetime, addre
             .map(allocation => ({ warehouseId: checkoutId(allocation[1]), quantity: allocation[2] })) })) })),
     payments: rows[7]!.map(row => ({ id: checkoutId(row[0]), orderId: checkoutId(row[1]), amountMinor: checkoutMinor(row[2]), status: row[3] })),
     orphanOrderLines: rows[6]!.filter(line => !rows[5]!.some(order => checkoutId(order[0]) === checkoutId(line[1]))).length,
-  }) };
+  }, checkoutInterface) };
 }
 
 export function prepareSpacetimeDatabase({ lease, name, wipe, exec = execFileSync,

@@ -8,6 +8,7 @@ import { createBackendLease, writeBackendLease } from '../src/runtime/backend-le
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
 import { validatePopulatedCheckpoint, requirePopulatedWorkspace, preparePopulatedGrade } from '../src/runtime/source-materialization.js';
 import { inspectBuildContainer } from '../container/build-container-inspection.js';
+import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 
 test('populated source must be the writable mount of the exact live leased container', () => {
   const lease={resources:{buildContainer:{name:'owned',id:'owned-id',owned:true}}};
@@ -35,6 +36,13 @@ test('populated checkpoint requires matching source, archive, app and lease', as
     mkdirSync(app); mkdirSync(checkpoint); mkdirSync(join(checkpoint, 'source'));
     writeFileSync(join(checkpoint, 'source', 'start.sh'), '#!/bin/sh\n');
     const archive = Buffer.from('test archive');
+    const preparation = { artifact: join(root, 'preparation.json'), scenario: compileScenarioDefinition({
+      schemaVersion: 1, track: 'ecommerce', level: 3, name: 'prepare', features: [{
+        id: 1, name: 'prepare', actors: ['a'], setup: [], criteria: [{ id: '1a', desc: 'prepare',
+          points: 0, category: 'production', steps: [{ do: 'expect', actor: 'a', testid: 'item-card' }] }],
+      }],
+    }) };
+    writeFileSync(preparation.artifact, 'changed evidence');
     writeFileSync(join(checkpoint, 'database.tar'), archive);
     for (const backend of ['postgres', 'mongodb', 'spacetime']) {
       const lease = createBackendLease({ runId: `test-${backend}`, backend, track: 'ecommerce', runIndex: 0,
@@ -59,12 +67,14 @@ test('populated checkpoint requires matching source, archive, app and lease', as
       const candidate = join(checkpoint, 'source');
       for (const field of ['sourceSha256', 'dataSha256']) {
         await assert.rejects(preparePopulatedGrade(checkpoint, candidate, application,
-          { ...receipt, [field]: '0'.repeat(64) }, receipt.sourceSha256, receipt.startingState.recipeSha256), /bound starting source and data/);
+          { ...receipt, [field]: '0'.repeat(64) }, receipt.sourceSha256, receipt.startingState.recipeSha256, preparation), /bound starting source and data/);
       }
       await assert.rejects(preparePopulatedGrade(checkpoint, candidate, application,
-        receipt, receipt.sourceSha256, '0'.repeat(64)), /compiled preparation identity/);
+        receipt, receipt.sourceSha256, '0'.repeat(64), preparation), /compiled preparation identity/);
       await assert.rejects(preparePopulatedGrade(checkpoint, candidate, application,
-        receipt, '0'.repeat(64), receipt.startingState.recipeSha256), /candidate differs/);
+        receipt, '0'.repeat(64), receipt.startingState.recipeSha256, preparation), /candidate differs/);
+      await assert.rejects(preparePopulatedGrade(checkpoint, candidate, application,
+        receipt, receipt.sourceSha256, receipt.startingState.recipeSha256, preparation), /preparation evidence changed/);
       for (const nested of [join(app, 'checkpoint'), join(app, '..checkpoint')]) {
         mkdirSync(nested, { recursive: true });
         await assert.rejects(validatePopulatedCheckpoint(nested, application, lease), /separate private/);

@@ -28,7 +28,10 @@ are valid alternatives. Check observable behavior, not a chosen storage layout.
 
 Stable IDs are tested after the first imported observation; the grader does not
 invent an expected ID. Default-delete behavior follows the product request.
-The current address-book observations form one selectable workflow because its
-steps share saved IDs and application state. Original business-state preservation
-and a new purchase remain to be added. Promotion requires matching main-runner
-correct/defective qualification. Historical scores stay fixed.
+The current observations form one selectable workflow because its steps share
+saved IDs and application state. The preparation's stored checkout observations
+are bound to the original checkpoint. They are compared before and after address
+edits; a new checkout must then produce the expected order, payment and stock
+effects. These readers cover selected business records, not every account field
+or role. Promotion requires matching main-runner correct/defective qualification.
+Historical scores stay fixed.

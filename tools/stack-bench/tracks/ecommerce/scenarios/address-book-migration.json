@@ -3,7 +3,7 @@
   "track": "ecommerce",
   "level": 3,
   "name": "Address-book migration",
-  "note": "Draft atomic migration workflow. Steps share state and are not separately selectable. Original checkout preservation, new purchase and main-runner qualification remain pending.",
+  "note": "Draft atomic migration workflow. Steps share state and are not separately selectable. Compare original stored checkout records before a new purchase; main-runner qualification remains pending.",
   "features": [
     {
       "id": 9801,
@@ -40,6 +40,7 @@
           "points": 1,
           "desc": "Migrate existing profiles, preserve address identity and ownership, and keep edits, defaults, deletion and legacy profile behavior correct across restarts",
           "steps": [
+            {"do":"dbExpectMigrationCheckout"},
             {"do":"expectAddressBook","actor":"a","entries":[{"name":"Avery","address":"12 Café Street, Apt 2","isDefault":true}]},
             {"do":"expectAddressBook","actor":"b","entries":[{"name":"Blair","address":"34 Oak Street, Floor 3","isDefault":true}]},
             {"do":"expectAddressBook","actor":"c","entries":[]},
@@ -143,7 +144,20 @@
             {"do":"expectAddressBook","actor":"guest","entries":[],"authentication":"none"},
             {"do":"expectNotReceived","actor":"guest","contains":"34 Oak Street, Floor 3"},
             {"do":"expectAddressBook","actor":"a","entries":[{"name":"New default","address":"99 Elm Street","isDefault":true}]},
-            {"do":"expectNotReceived","actor":"a","contains":"34 Oak Street, Floor 3"}
+            {"do":"expectNotReceived","actor":"a","contains":"34 Oak Street, Floor 3"},
+            {"do":"dbExpectMigrationCheckout"},
+            {"do":"click","actor":"a","testid":"overlay-close","ifAvailable":true},
+            {"do":"click","actor":"a","testid":"catalog-link","unlessVisible":"search-input"},
+            {"do":"fill","actor":"a","testid":"search-input","text":"Keyboard","enter":true},
+            {"do":"expect","actor":"a","testid":"item-card","contains":"Keyboard","within":15000},
+            {"do":"dbRecordCheckout","account":"m8-customer","item":"Keyboard","as":"new-purchase-before"},
+            {"do":"click","actor":"a","testid":"add-to-cart","in":{"testid":"item-card","contains":"Keyboard"}},
+            {"do":"click","actor":"a","testid":"cart-toggle","unlessVisible":"cart-total"},
+            {"do":"expectNumber","actor":"a","testid":"cart-quantity","in":{"testid":"cart-item","contains":"Keyboard"},"equals":1,"within":15000},
+            {"do":"dbRecordCheckout","account":"m8-customer","item":"Keyboard","as":"new-purchase-prepared"},
+            {"do":"callConcurrently","actors":["a"],"action":"checkout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"requests":1,"requestTimeoutMs":30000,"settleMs":0},
+            {"do":"expectCallOutcomes","accepted":1},
+            {"do":"dbExpectCheckout","before":"new-purchase-before","prepared":"new-purchase-prepared","quantity":1}
           ]
         }
       ]
