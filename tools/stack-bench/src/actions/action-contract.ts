@@ -93,6 +93,7 @@ const object = (value: unknown): value is UnknownRecord =>
 // which of these it provides; an action declares which it needs.
 export const GRADING_CAPABILITY_IDS = Object.freeze([
   'actors',
+  'address-book-read',
   'application-files',
   'application-lifecycle',
   'backend-lifecycle',

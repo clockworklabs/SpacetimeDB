@@ -4,6 +4,7 @@ import { ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS }
   from './actor-transport-action-executors.js';
 import { BROWSER_ACTION_IMPLEMENTATIONS } from './browser-action-executors.js';
 import { RUNTIME_ACTION_IMPLEMENTATIONS } from './runtime-action-executors.js';
+import { ADDRESS_BOOK_ACTION_IMPLEMENTATIONS } from './address-book-action-executors.js';
 import { ACTION_DEFINITIONS, ACTION_IDS,
   compileActionInput } from '../composition/definition-compiler.js';
 import type { ActionId } from '../composition/definition-compiler.js';
@@ -48,6 +49,8 @@ const ACTION_CATEGORY = {
   pressKey: 'browser-interaction',
   race: 'concurrency',
   recordNumber: 'browser-observation',
+  recordAddressBook: 'transport',
+  expectAddressBook: 'transport',
   recordTime: 'timing',
   expectElapsed: 'timing',
   reload: 'browser-interaction',
@@ -97,6 +100,8 @@ const CATEGORY_POLICY = {
 } as const satisfies Record<ActionCategory, CategoryPolicy>;
 
 const ACTION_CAPABILITY_OVERRIDES: Partial<Record<ActionId, readonly string[]>> = {
+  recordAddressBook: ['actors', 'address-book-read', 'browser-observation'],
+  expectAddressBook: ['actors', 'address-book-read', 'browser-observation'],
   dbRecordStock: ['database-read', 'browser-observation'],
   dbRecordCheckout: ['database-read'],
   dbExpectCheckout: ['database-read'],
@@ -122,6 +127,7 @@ export const ACTION_IMPLEMENTATIONS = Object.freeze({
   ...ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS,
   ...BROWSER_ACTION_IMPLEMENTATIONS,
   ...RUNTIME_ACTION_IMPLEMENTATIONS,
+  ...ADDRESS_BOOK_ACTION_IMPLEMENTATIONS,
 } satisfies Record<ActionId, ActionImplementation>);
 
 export function actionPlugin(id: string): ActionPlugin {

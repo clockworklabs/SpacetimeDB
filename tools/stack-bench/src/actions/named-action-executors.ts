@@ -152,6 +152,7 @@ async function callAction({ input, capabilities, signal }: NamedTransportArgumen
     body: request.body,
     signal,
   }).catch(error => ({ status: 0, ok: false, error: error.message }));
+  if ('text' in response) caller.record(await response.text());
   caller.actionCall = {
     action: input.action,
     accepted: response.ok,

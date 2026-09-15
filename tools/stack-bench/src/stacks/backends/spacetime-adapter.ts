@@ -16,6 +16,7 @@ import { requireLeasedSpacetime } from '../backend-reset-guard.js';
 
 const SPACETIME_GRADING_CAPABILITIES = [
   'actors',
+  'address-book-read',
   'application-files',
   'application-lifecycle',
   'backend-lifecycle',

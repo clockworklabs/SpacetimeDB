@@ -3,6 +3,7 @@
 // Score declared criteria from one observed run in isolated actor contexts.
 //
 import { chromium } from 'playwright';
+import { readAddressBook } from '../src/stacks/address-book-read.js';
 import { attemptBrowserLaunchOptions } from '../container/browser-pipe.js';
 import type { Browser, BrowserContext, Page, Request } from 'playwright';
 import { sanitiseConsoleError } from '../src/evidence/diagnostic-sanitizer.js';
@@ -530,6 +531,10 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
   });
   return Object.freeze({
     actors: actorAccess,
+    'address-book-read': Object.freeze({
+      read: (credentials: Record<string, string>, signal: AbortSignal, recordResponse: (text: string) => void) =>
+        readAddressBook({ backend: ctx.backend!, url: ctx.url, spacetime: ctx.spacetime }, credentials, signal, recordResponse),
+    }),
     'application-files': Object.freeze({ root: ctx.appDir ?? null, expand: (value: unknown) => expand(value, ctx) }),
     'application-lifecycle': applicationLifecycle(ctx),
     'backend-lifecycle': createLifecycleCapability({

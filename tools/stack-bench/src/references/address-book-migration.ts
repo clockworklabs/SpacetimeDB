@@ -4,8 +4,8 @@ import { STACK_BENCH_ROOT } from '../package-root.js';
 import { hashAppSource } from '../runtime/source-snapshot.js';
 import { loadReferenceRegistry } from './reference-fixtures.js';
 
-// Reference adapter identity for the draft exercise. This does not register a
-// scored recipe; the ordinary benchmark compiler must still reject it.
+// Reference adapter identity for the draft exercise. The scored recipe remains
+// unqualified until the main-runner controls pass.
 export const ADDRESS_BOOK_MIGRATION_RECIPE = 'ecommerce.address-book-migration';
 
 export function addressBookReferenceRequest(recipe: string | undefined,

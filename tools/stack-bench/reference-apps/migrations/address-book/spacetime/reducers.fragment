@@ -35,40 +35,43 @@ export const addAddress = spacetimedb.reducer({ name: t.string(), address: t.str
   syncAddressProfile(ctx, accountId);
 });
 
-function ownedAddress(ctx: Ctx, id: bigint) {
+function ownedAddress(ctx: Ctx, id: string) {
   const accountId = requireAccount(ctx).id;
   ensureAddressBook(ctx, accountId);
-  const entry = ctx.db.addressEntry.id.find(id);
+  if (!/^[0-9]{1,20}$/.test(id) || BigInt(id) > 18446744073709551615n) throw new SenderError('Address missing');
+  const entry = ctx.db.addressEntry.id.find(BigInt(id));
   if (!entry || entry.accountId !== accountId) throw new SenderError('Address missing');
   return entry;
 }
 
-export const editAddress = spacetimedb.reducer({ id: t.u64(), name: t.string(), address: t.string() }, (ctx, { id, name, address }) => {
+export const editAddress = spacetimedb.reducer({ id: t.string(), name: t.string(), address: t.string() }, (ctx, { id, name, address }) => {
   const entry = ownedAddress(ctx, id);
   ctx.db.addressEntry.id.update({ ...entry, name, address });
   syncAddressProfile(ctx, entry.accountId);
 });
 
-export const chooseAddress = spacetimedb.reducer({ id: t.u64() }, (ctx, { id }) => {
+export const chooseAddress = spacetimedb.reducer({ id: t.string() }, (ctx, { id }) => {
   const entry = ownedAddress(ctx, id);
   for (const other of ctx.db.addressEntry.accountId.filter(entry.accountId)) {
-    ctx.db.addressEntry.id.update({ ...other, isDefault: other.id === id });
+    ctx.db.addressEntry.id.update({ ...other, isDefault: other.id === entry.id });
   }
   syncAddressProfile(ctx, entry.accountId);
 });
 
-export const deleteAddress = spacetimedb.reducer({ id: t.u64() }, (ctx, { id }) => {
+export const deleteAddress = spacetimedb.reducer({ id: t.string() }, (ctx, { id }) => {
   const entry = ownedAddress(ctx, id);
   if (entry.isDefault && [...ctx.db.addressEntry.accountId.filter(entry.accountId)].length > 1) {
     throw new SenderError('Choose another default first');
   }
-  ctx.db.addressEntry.id.delete(id);
+  ctx.db.addressEntry.id.delete(entry.id);
   syncAddressProfile(ctx, entry.accountId);
 });
 
 export const myAddresses = spacetimedb.view(
-  { name: 'my_addresses', public: true }, t.array(addressEntry.rowType), (ctx) => {
+  { name: 'my_addresses', public: true },
+  t.array(t.object('AddressBookEntry', { id: t.string(), name: t.string(), address: t.string(), isDefault: t.bool() })), (ctx) => {
     const accountId = getAccountId(ctx);
-    return accountId === null ? [] : [...ctx.db.addressEntry.accountId.filter(accountId)];
+    return accountId === null ? [] : [...ctx.db.addressEntry.accountId.filter(accountId)]
+      .map(entry => ({ id: String(entry.id), name: entry.name, address: entry.address, isDefault: entry.isDefault }));
   }
 );

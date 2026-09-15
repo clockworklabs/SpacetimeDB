@@ -3,6 +3,13 @@ import test from 'node:test';
 import { addressImportDifferences, migrationCheckoutDifferences }
   from '../src/stacks/migration-state.js';
 import type { CheckoutState } from '../src/stacks/checkout-state.js';
+import { ADDRESS_BOOK_ACTION_IMPLEMENTATIONS } from '../src/actions/address-book-action-executors.js';
+import { ActionApplicationFailure } from '../src/actions/action-contract.js';
+import { readAddressBook } from '../src/stacks/address-book-read.js';
+import { ReceivedTransport } from '../grader/transport-frames.js';
+import { ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS } from '../src/actions/actor-transport-action-executors.js';
+import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
+import { executeAction } from '../src/actions/action-contract.js';
 
 function population(): CheckoutState[] {
   return [{ accountId: 'customer-1', itemId: 'item-1', priceMinor: 1234,
@@ -124,4 +131,102 @@ test('invalid or ambiguous observation inputs throw instead of passing or invent
   assert.throws(() => migrationCheckoutDifferences(population(), invalid));
   delete (after[0] as Partial<typeof after[0]>)!.legacyProfile;
   assert.throws(() => addressImportDifferences(before, after));
+});
+
+test('address-book observations ignore row and object key order but detect changed identities and duplicates', async () => {
+  let entries = [
+    { id: 'opaque-1', name: 'Avery', address: ' 12 Café Street\nApt 2 ', isDefault: true },
+    { id: 'opaque-2', name: 'Other', address: '34 Oak Street', isDefault: false },
+  ];
+  const recorded = new Map<string, unknown>();
+  const capabilities = {
+    actors: { get: () => ({ name: 'owner', writes: [{ headers: { Authorization: 'Bearer owner' } }] }) },
+    'address-book-read': { read: async () => ({ status: 200, text: '', entries: structuredClone(entries) }) },
+    'browser-observation': { recorded },
+  };
+  const run = (action: keyof typeof ADDRESS_BOOK_ACTION_IMPLEMENTATIONS, input: Record<string, unknown>) =>
+    ADDRESS_BOOK_ACTION_IMPLEMENTATIONS[action]({ input: { actor: 'owner', ...input }, capabilities,
+      signal: new AbortController().signal });
+  await run('recordAddressBook', { as: 'before' });
+  await run('recordAddressBook', { as: 'home', entryName: 'Avery' });
+  await run('recordAddressBook', { as: 'other', entryName: 'Other' });
+  entries.reverse();
+  await run('expectAddressBook', { sameAs: 'before' });
+  const expected = entries.map(({ name, address, isDefault }) => ({ isDefault, address, name }));
+  await run('expectAddressBook', { entries: expected });
+  const bound = expected.map(entry => ({ ...entry, idFrom: entry.name === 'Avery' ? 'home' : 'other' }));
+  await run('expectAddressBook', { entries: bound });
+  [entries[0]!.id, entries[1]!.id] = [entries[1]!.id, entries[0]!.id];
+  await assert.rejects(async () => run('expectAddressBook', { entries: bound }), ActionApplicationFailure);
+  [entries[0]!.id, entries[1]!.id] = [entries[1]!.id, entries[0]!.id];
+  entries[0]!.id = 'replacement';
+  await assert.rejects(async () => run('expectAddressBook', { sameAs: 'before' }), ActionApplicationFailure);
+  await assert.rejects(async () => run('expectAddressBook', { entries: bound }), ActionApplicationFailure);
+  entries[0]!.id = entries[1]!.id;
+  await assert.rejects(async () => run('expectAddressBook', { entries: expected }), ActionApplicationFailure);
+  entries[0]!.id = 'opaque-2';
+  entries[1]!.address = entries[1]!.address.trim();
+  await assert.rejects(async () => run('expectAddressBook', { entries: expected }), ActionApplicationFailure);
+});
+
+test('compiled address-book actions require complete expectations and run through the shared registry', async () => {
+  const action = ACTION_REGISTRY.get('expectAddressBook');
+  for (const input of [{}, { sameAs: 'before', entries: [] }, { entries: [{ name: 'x', address: 'y' }] },
+    { entries: [{ name: 'x', address: 'y', isDefault: true, extra: 1 }] }, { entries: [], authentication: 'publisher' }]) {
+    assert.throws(() => action.compile({ do: 'expectAddressBook', actor: 'owner', ...input }), /invalid benchmark definition/);
+  }
+  const result = await executeAction(ACTION_REGISTRY, 'expectAddressBook', {
+    do: 'expectAddressBook', actor: 'owner', entries: [],
+  }, { capabilities: {
+    actors: { get: () => ({ name: 'owner', writes: [{ headers: { Authorization: 'Bearer owner' } }], record() {} }) },
+    'address-book-read': { read: async () => ({ status: 200, text: '{"entries":[]}', entries: [] }) },
+    'browser-observation': { recorded: new Map() },
+  } });
+  assert.equal(result.status, 'passed');
+});
+
+test('native address reads use actor auth and typed opaque IDs; failed or malformed reads never become empty books', async () => {
+  const signal = new AbortController().signal;
+  const captured: string[] = [];
+  const native = { backend: 'spacetime', url: 'http://ui.test', spacetime: { uri: 'http://db.test', mod: 'store' } };
+  const result = await readAddressBook(native, { Authorization: 'Bearer owner' }, signal, text => captured.push(text),
+    async (url, options) => {
+      assert.equal(url, 'http://db.test/v1/database/store/sql');
+      assert.equal(options?.method, 'POST');
+      assert.equal(options?.body, 'SELECT id, name, address, is_default FROM my_addresses');
+      assert.equal(new Headers(options?.headers).get('Authorization'), 'Bearer owner');
+      assert.equal(options?.signal, signal);
+      return new Response(JSON.stringify([{ rows: [['uuid:not-a-number', 'Owner', ' exact text ', true]] }]));
+    });
+  assert.equal(result.entries?.[0]?.id, 'uuid:not-a-number');
+  for (const response of [new Response('offline', { status: 503 }), new Response('not JSON'),
+    new Response(JSON.stringify([{ rows: [[1, 'Owner', 'Address', true]] }])), new Response('{}')]) {
+    await assert.rejects(readAddressBook(native, {}, signal, text => captured.push(text), async () => response));
+  }
+  assert.equal(captured.length, 5, 'failed response bodies are captured before interpretation');
+});
+
+test('address-book privacy checks inspect complete controller responses, including refusals and extra fields', async () => {
+  for (const status of [200, 401, 403]) {
+    const received = new ReceivedTransport();
+    const actor = { name: 'guest', record: (text: string) => received.record(text),
+      wasSent: (needle: string) => received.contains(needle) };
+    const signal = new AbortController().signal;
+    const capabilities = {
+      actors: { get: () => actor },
+      'address-book-read': { read: (credentials: Record<string, string>, cancellation: AbortSignal,
+        capture: (text: string) => void) => readAddressBook({ backend: 'postgres', url: 'http://app.test' },
+        credentials, cancellation, capture, async (_url, options) => {
+          assert.equal(options?.body, undefined, 'ordinary GET has no body');
+          return new Response(JSON.stringify({ entries: [], debug: 'other-owner-private-address' }), { status });
+        }) },
+      'transport-observation': { expand: (value: string) => value, sleep: async () => {} },
+    };
+    await ADDRESS_BOOK_ACTION_IMPLEMENTATIONS.expectAddressBook({
+      input: { actor: 'guest', authentication: 'none', entries: [] }, capabilities, signal,
+    });
+    await assert.rejects(async () => ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS.expectNotReceived({
+      input: { actor: 'guest', contains: 'other-owner-private-address', within: 1 }, capabilities, signal,
+    }), ActionApplicationFailure);
+  }
 });

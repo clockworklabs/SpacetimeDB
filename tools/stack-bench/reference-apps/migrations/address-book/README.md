@@ -62,8 +62,10 @@ The clock is not restored. Active timed operations are outside this pilot.
 These scripts qualify reference behavior and shared runtime boundaries. The
 normal compiled benchmark task, grading and repair lifecycle remain incomplete.
 No scored recipe or qualification is promoted by running this diagnostic.
-The native readers assume known reference storage and numeric native IDs;
-they cannot grade arbitrary valid application layouts unchanged.
+The diagnostic's stored-state readers assume known reference storage. The new
+grader address-book reader uses the declared authenticated interface with opaque
+string IDs. Original business-state comparison still needs its migration-safe
+reader and matching qualification.
 
 The direct diagnostic currently releases its lease on normal completion or a
 caught error. Direct SIGINT/SIGTERM can skip that cleanup. Final execution must

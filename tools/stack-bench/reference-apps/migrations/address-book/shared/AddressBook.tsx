@@ -32,7 +32,7 @@ export function AddressBook({ actions }: { actions: {
       <h3>Addresses</h3>
       {error && <p data-role="address-error" role="alert">{error}</p>}
       {loaded && entries.map(entry => <article key={entry.id} data-role="address-entry"
-        data-address-id={entry.id} data-default={entry.isDefault}>
+        data-address-id={entry.id} data-address-params={JSON.stringify({ id: entry.id })} data-default={entry.isDefault}>
         <p data-role="address-name">{entry.name}</p><p data-role="address-text">{entry.address}</p>
         <button data-role="address-edit" onClick={() => setEditor(entry)}>Edit</button>
         <button data-role="address-default" onClick={() => void write(() => actions.choose(entry.id))}>Make default</button>

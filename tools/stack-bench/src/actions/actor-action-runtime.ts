@@ -87,6 +87,7 @@ export interface Actor {
   forge?: ForgeResult;
   replay?: ReplayResult;
   loc(testid: string, options?: UnknownRecord): Locator;
+  record(payload: string | Buffer): void;
   wasSent(value: string, requireComplete?: boolean): boolean;
 }
 

@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.feature.address-book-migration",
+  "moduleType": "feature",
+  "title": "Address-book migration",
+  "description": "Draft populated profile-to-address-book upgrade; qualification is pending.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser",
+    "database-observation"
+  ],
+  "evidence": [
+    "browser-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 600000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.address-book-migration",
+        "path": "prompts/modular/address-book-migration.md",
+        "order": 10,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.address-book-interface",
+        "path": "contracts/address-book-migration.md",
+        "order": 20,
+        "modes": [
+          "upgrade"
+        ]
+      },
+      {
+        "id": "ecommerce.existing-profile-interface",
+        "path": "contracts/customer-profile.md",
+        "order": 15,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "migration",
+      "stableId": "address-book",
+      "source": "scenarios/address-book-migration.json",
+      "feature": 9801,
+      "criteria": [
+        "9801a"
+      ],
+      "role": "feature"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "kind": "benchmark-recipe",
+  "id": "ecommerce.address-book-migration",
+  "title": "Address-book migration (draft)",
+  "track": "ecommerce",
+  "fixture": {
+    "path": "../fixtures/operations.json",
+    "id": "ecommerce.operations"
+  },
+  "task": {
+    "mode": "upgrade",
+    "framing": {
+      "requirements": [{ "id": "ecommerce.address-book-migration", "path": "prompts/modular/address-book-migration.md", "order": 10, "modes": ["upgrade"] }],
+      "contracts": []
+    },
+    "baseRecipe": {
+      "path": "progression-catalog.json",
+      "id": "ecommerce.progression-catalog"
+    },
+    "startingState": {
+      "preparation": "scenarios/address-book-preparation.json"
+    }
+  },
+  "packs": [
+    {
+      "path": "../packs/feature-address-book-migration.json",
+      "id": "ecommerce.feature.address-book-migration",
+      "includeRoles": ["feature"]
+    }
+  ],
+  "execution": "all-selected-sources",
+  "scoring": {
+    "mode": "source-points"
+  }
+}

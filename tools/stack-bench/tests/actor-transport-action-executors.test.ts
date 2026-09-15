@@ -54,6 +54,7 @@ function services(
   actors: ReadonlyMap<string, unknown>,
   overrides: ServiceOverrides = {},
 ): ProvidedServices {
+  for (const value of actors.values()) record(value).record ??= () => {};
   const verification: Verification[] = [];
   let calls: Calls = null;
   const sleep = overrides.sleep
@@ -915,6 +916,18 @@ test('bounded checkout cohorts issue every request and retain client timing and 
     assert.doesNotMatch(JSON.stringify(result), /sensitive transport internals/);
     assert.equal((await run({ do: 'expectCallOutcomes' }, provided)).status, 'inconclusive');
   } finally { clearInterval(keepAlive); }
+});
+
+test('named writes expose refused response bodies to the existing privacy check', async () => {
+  const received: string[] = [];
+  const actor = { name: 'guest', record: (text: string) => received.push(text),
+    wasSent: (needle: string) => received.some(text => text.includes(needle)) };
+  const provided = services(new Map([['guest', actor]]), {
+    fetchImpl: async () => ({ ok: false, status: 403, text: async () => 'private-owner-address' }),
+  });
+  assert.equal((await run({ do: 'callAction', actor: 'guest', authentication: 'none', action: 'checkout',
+    namedAction: { id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] } }, provided)).status, 'passed');
+  assert.equal((await run({ do: 'expectNotReceived', actor: 'guest', contains: 'private-owner-address' }, provided)).status, 'failed');
 });
 
 test('cancelled cohorts drain requests and retain their history in action evidence', async () => {

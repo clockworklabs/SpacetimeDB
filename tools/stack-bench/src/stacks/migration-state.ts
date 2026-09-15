@@ -6,11 +6,13 @@ import { checkoutStateSchema, type CheckoutState } from './checkout-state.js';
 const identifier = z.string().min(1);
 const profile = z.strictObject({ name: z.string(), address: z.string() });
 const savedProfileSchema = profile.extend({ accountId: identifier });
+export const addressEntriesSchema = z.array(z.strictObject({
+  id: identifier, name: z.string(), address: z.string(), isDefault: z.boolean(),
+}));
+export type AddressEntry = z.infer<typeof addressEntriesSchema>[number];
 const addressBookSchema = z.strictObject({
   accountId: identifier,
-  entries: z.array(z.strictObject({
-    id: identifier, name: z.string(), address: z.string(), isDefault: z.boolean(),
-  })),
+  entries: addressEntriesSchema,
   legacyProfile: profile,
 });
 

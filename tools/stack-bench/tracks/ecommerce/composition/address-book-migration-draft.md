@@ -1,6 +1,6 @@
 # Address-book migration: expected production behavior
 
-Draft specification, not a registered pack or qualified scored selection.
+Draft recipe for nonbillable development, not a qualified scored selection.
 The normal product request and interface live under `prompts/modular` and
 `contracts`. This document is not delivered to the coding agent.
 
@@ -28,5 +28,7 @@ are valid alternatives. Check observable behavior, not a chosen storage layout.
 
 Stable IDs are tested after the first imported observation; the grader does not
 invent an expected ID. Default-delete behavior follows the product request.
-Scored IDs, points and recipe registration wait for executable observations and
-matching correct/defective reference qualification. Historical scores stay fixed.
+The current address-book observations form one selectable workflow because its
+steps share saved IDs and application state. Original business-state preservation
+and a new purchase remain to be added. Promotion requires matching main-runner
+correct/defective qualification. Historical scores stay fixed.

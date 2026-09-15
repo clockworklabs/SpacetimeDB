@@ -19,7 +19,7 @@ export const stubAdapter = defineStackAdapter('stub', {
   grading: { context: createHttpGradingContext, transport: 'http',
     capabilities: GRADING_CAPABILITY_IDS.filter(capability =>
       capability !== 'backend-lifecycle' && capability !== 'database-write'
-        && capability !== 'database-read') },
+        && capability !== 'database-read' && capability !== 'address-book-read') },
   namedAction: { request: httpNamedActionRequest },
   teardown: { host: stopHostedHost },
   runPolicy: { resetEnabled: false, retainHostSupported: false,

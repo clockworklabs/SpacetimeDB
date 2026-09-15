@@ -25,7 +25,6 @@ export async function nativeRequest(page, operation, args = {}) {
       else if(operation==='addresses') value=await Promise.race([read('SELECT * FROM my_addresses','myAddresses'),timeout]);
       else {
         const input={...args};
-        if(input.id!==undefined)input.id=BigInt(input.id);
         if(input.itemId!==undefined)input.itemId=BigInt(input.itemId);
         await Promise.race([connection.reducers[operation](input),timeout]);
       }
