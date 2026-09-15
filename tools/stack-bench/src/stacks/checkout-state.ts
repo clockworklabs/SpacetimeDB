@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { STACK_BENCH_ROOT } from '../package-root.js';
+import { addressBookSchemaSource } from '../references/address-book-migration.js';
 
 const id = z.string().min(1);
 const integer = z.number().int().safe();
@@ -24,11 +25,15 @@ export type CheckoutState = z.infer<typeof checkoutStateSchema>;
 
 // These readers are for audited reference schemas, not a schema discovery system.
 // Saved model apps need their own verified mapping before this diagnostic applies.
-export function verifyCheckoutSchema(backend: string, app: string, files: readonly string[]): Record<string, string> {
+export function verifyCheckoutSchema(backend: string, app: string, files: readonly string[],
+  { addressBookMigration = false }: { addressBookMigration?: boolean } = {}): Record<string, string> {
   return Object.fromEntries(files.map(file => {
     const read = (root: string) => readFileSync(join(root, file), 'utf8').replaceAll('\r\n', '\n');
     const actual = read(app);
-    if (actual !== read(join(STACK_BENCH_ROOT, 'reference-apps/ecommerce', backend))) {
+    const reference = read(join(STACK_BENCH_ROOT, 'reference-apps/ecommerce', backend));
+    const expected = addressBookMigration && backend === 'spacetime' && file === 'backend/spacetimedb/src/schema.ts'
+      ? addressBookSchemaSource(reference) : reference;
+    if (actual !== expected) {
       throw new Error(`checkout state reader has no verified mapping for ${backend}: ${file}`);
     }
     return [file, createHash('sha256').update(actual).digest('hex')];

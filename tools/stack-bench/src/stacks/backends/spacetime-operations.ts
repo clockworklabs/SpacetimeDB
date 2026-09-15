@@ -210,11 +210,12 @@ export function getSpacetimeStock({ item, warehouse, spacetime, exec = execFileS
   return { backend: 'spacetime', item, ...(warehouse === undefined ? {} : { warehouse }), quantity };
 }
 
-export function getSpacetimeCheckoutState({ account, item, app, spacetime, exec = execFileSync }: {
+export function getSpacetimeCheckoutState({ account, item, app, spacetime, addressBookMigration = false, exec = execFileSync }: {
   account: string; item: string; app: string; exec?: TextCommandExecutor;
   spacetime?: { buildContainer?: { id: string; name: string } | null; mod: string; containerUri: string };
+  addressBookMigration?: boolean;
 }) {
-  const schemaSha256 = verifyCheckoutSchema('spacetime', app, ['backend/spacetimedb/src/schema.ts']);
+  const schemaSha256 = verifyCheckoutSchema('spacetime', app, ['backend/spacetimedb/src/schema.ts'], { addressBookMigration });
   if (!spacetime?.buildContainer) throw new Error('SpacetimeDB build container is unavailable for checkout snapshot');
   const container = assertLeasedContainer(spacetime.buildContainer, exec, WRITE_TIMEOUT_MS, 'checkout state read');
   const selections = [
