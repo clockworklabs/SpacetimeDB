@@ -1,6 +1,7 @@
 use alloc::{
     boxed::Box,
     collections::{btree_map, BTreeMap, VecDeque},
+    vec::Vec,
 };
 use core::{mem, num::NonZeroUsize, result::Result, task::Waker};
 use slab::Slab;
@@ -27,8 +28,8 @@ pub trait TaskSelector {
     fn select_tasks(&self, task_count: usize) -> impl IntoIterator<Item = usize>;
 }
 
-// TODO: There is no difference between fsync and fdatasync as long as we don't
-// have an API to fsync the directory of a file after it was created.
+// TODO: There is no difference between fsync and fdatasync until we extend
+// [Statx] with additional fields.
 #[derive(Clone, Copy)]
 pub enum FsyncEffect {
     Datasync(Datasync),
@@ -390,7 +391,9 @@ pub struct Executor<UserData> {
     completions: VecDeque<Cqe<UserData>>,
 
     in_flight: Slab<InFlight<UserData>>,
-    executing: VecDeque<Executing>,
+    executing: Vec<Executing>,
+    // Scratch space for task selector
+    select_executing: Vec<usize>,
 
     fstree: BTreeMap<Box<str>, fs::File>,
 
@@ -414,7 +417,8 @@ impl<UserData> Executor<UserData> {
             submissions: VecDeque::with_capacity(sq_capacity),
             completions: VecDeque::with_capacity(cq_capacity),
             in_flight: Slab::with_capacity(2 * sq_capacity),
-            executing: VecDeque::with_capacity(2 * sq_capacity),
+            executing: Vec::with_capacity(2 * sq_capacity),
+            select_executing: Vec::with_capacity(2 * sq_capacity),
             fstree: BTreeMap::new(),
             cq_overflow,
             cq_dropped: 0,
@@ -505,7 +509,7 @@ impl<UserData> Executor<UserData> {
 
     /// Drain the submission queue and advance one scheduled operation.
     ///
-    /// The operation to advance is chosen randomly using `rng`.
+    /// The operation to advance is chosen by `task_selector`.
     /// The operation is subject to `faults`.
     pub fn tick(&mut self, task_selector: &impl TaskSelector, faults: &mut impl FaultInjector<UserData>) -> bool {
         let mut progress = self.schedule();
@@ -551,13 +555,28 @@ impl<UserData> Executor<UserData> {
 
     fn execute(&mut self, task_selector: &impl TaskSelector, faults: &mut impl FaultInjector<UserData>) -> bool {
         let mut progress = false;
-        for index in task_selector.select_tasks(self.executing.len()) {
-            let op = self.executing.remove(index).expect("task index out of bounds");
+
+        self.select_executing.clear();
+        self.select_executing.extend(
+            task_selector
+                .select_tasks(self.executing.len())
+                .into_iter()
+                .take(self.executing.len()),
+        );
+        self.select_executing.sort_unstable_by(|a, b| b.cmp(a));
+
+        let mut prev = None;
+        for i in 0..self.select_executing.len() {
+            let index = self.select_executing[i];
+            assert_ne!(prev, Some(index), "duplicate task selected");
+            prev = Some(index);
+            let op = self.executing.swap_remove(index);
             if let Some(delay) = self.execute_op(op, faults) {
-                self.executing.insert(index, delay);
+                self.executing.push(delay);
             }
-            progress |= true
+            progress |= true;
         }
+
         progress
     }
 

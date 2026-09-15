@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, collections::vec_deque::VecDeque};
+use alloc::{boxed::Box, vec::Vec};
 
 use crate::{
     sim::{
@@ -193,7 +193,7 @@ impl SqeInner {
         }
     }
 
-    pub(super) fn schedule(&mut self, sqe_id: SqeId, executing: &mut VecDeque<Executing>) -> Pending {
+    pub(super) fn schedule(&mut self, sqe_id: SqeId, executing: &mut Vec<Executing>) -> Pending {
         match self {
             SqeInner::Write { buf, offset, .. } => {
                 let buf_len = buf.as_bytes().len();
@@ -228,28 +228,28 @@ impl SqeInner {
                 }
             }
             SqeInner::Open { .. } => {
-                executing.push_back(Executing {
+                executing.push(Executing {
                     sqe: sqe_id,
                     inner: Operation::Open,
                 });
                 Pending::OneOff
             }
             SqeInner::Create { .. } => {
-                executing.push_back(Executing {
+                executing.push(Executing {
                     sqe: sqe_id,
                     inner: Operation::Create,
                 });
                 Pending::OneOff
             }
             SqeInner::Stat { .. } => {
-                executing.push_back(Executing {
+                executing.push(Executing {
                     sqe: sqe_id,
                     inner: Operation::Stat,
                 });
                 Pending::OneOff
             }
             SqeInner::Fallocate { .. } => {
-                executing.push_back(Executing {
+                executing.push(Executing {
                     sqe: sqe_id,
                     inner: Operation::Fallocate,
                 });
@@ -298,7 +298,7 @@ impl SqeInner {
                 }
             }
             SqeInner::Noop => {
-                executing.push_back(Executing {
+                executing.push(Executing {
                     sqe: sqe_id,
                     inner: Operation::Noop,
                 });
