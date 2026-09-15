@@ -456,6 +456,7 @@ mod tests {
             "select a from t where b = -1",
             "delete from t where a = +1",
             "insert into t values (-1, +2.5)",
+            "insert into t (a, b) values (-1, -2), (+3, -4.5)",
             "update t set a = -1, b = +2 where c = -3",
             "set x = -1",
             "set y to +2.5",
