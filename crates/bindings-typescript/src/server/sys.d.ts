@@ -123,3 +123,8 @@ declare module 'spacetime:sys@2.0' {
 declare module 'spacetime:sys@2.1' {
   export function datastore_clear(table_id: u32): u64;
 }
+
+declare module 'spacetime:sys@2.2' {
+  /** Null means missing; an empty string is a present value. */
+  export function env_get(key: string): string | null;
+}
