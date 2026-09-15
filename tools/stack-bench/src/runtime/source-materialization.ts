@@ -163,7 +163,8 @@ export async function validatePopulatedCheckpoint(directory: string, application
 }
 
 export async function capturePopulatedCheckpoint(directory: string,
-  application: RuntimeControlSpec, startingState?: PopulatedCheckpoint['startingState']): Promise<PopulatedCheckpoint> {
+  application: RuntimeControlSpec, startingState?: PopulatedCheckpoint['startingState'],
+  { startApplication = true } = {}): Promise<PopulatedCheckpoint> {
   const target = checkpointLocation(directory, application.app, true);
   const { lease } = leaseFromEnv(process.env, { backend: application.backend, active: true });
   const database = checkpointDatabaseTarget(lease);
@@ -189,12 +190,13 @@ export async function capturePopulatedCheckpoint(directory: string,
     ...(startingState ? { startingState } : {}) });
   writeFileSync(join(target, 'checkpoint.json'), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   await startCheckpointDatabase(lease);
-  await materializeAcceptedSource(join(target, 'source'), application.app, application);
+  if (startApplication) await materializeAcceptedSource(join(target, 'source'), application.app, application);
   return receipt;
 }
 
 export async function restorePopulatedCheckpoint(directory: string,
-  application: RuntimeControlSpec, acceptedSource?: string): Promise<PopulatedCheckpoint> {
+  application: RuntimeControlSpec, acceptedSource?: string,
+  { startApplication = true } = {}): Promise<PopulatedCheckpoint> {
   const { lease } = leaseFromEnv(process.env, { backend: application.backend, active: true });
   // Authenticate and hash before stopping or changing any live state.
   const receipt = await validatePopulatedCheckpoint(directory, application, lease);
@@ -209,7 +211,7 @@ export async function restorePopulatedCheckpoint(directory: string,
   restoreAppSource(join(directory, 'source'), application.app);
   copyCheckpointDatabase(lease, join(directory, 'database.tar'), true);
   await startCheckpointDatabase(lease);
-  await materializeAcceptedSource(join(directory, 'source'), application.app, application);
+  if (startApplication) await materializeAcceptedSource(join(directory, 'source'), application.app, application);
   return receipt;
 }
 
@@ -230,7 +232,7 @@ export async function preparePopulatedGrade(directory: string, candidateSource: 
   if (hashAppSource(candidateSource).sha256 !== candidateSourceSha256) {
     throw new Error('populated grading candidate differs from the selected source');
   }
-  try { await restorePopulatedCheckpoint(directory, application); }
+  try { await restorePopulatedCheckpoint(directory, application, undefined, { startApplication: false }); }
   catch (error) {
     throw Object.assign(new Error(`could not restore the original populated reference: ${message(error)}`, { cause: error }),
       { startLog: error && typeof error === 'object' && 'startLog' in error ? error.startLog : undefined });
