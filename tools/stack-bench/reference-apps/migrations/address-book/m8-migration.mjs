@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { ADDRESS_BOOK_MIGRATION_RECIPE } from '../../../dist/src/references/address-book-migration.js';
+import { ADDRESS_BOOK_MIGRATION_RECIPE, applyAddressBookDefect } from '../../../dist/src/references/address-book-migration.js';
 import { qualifyAddressBook, probeCrossAccountEdit } from './m8-live-address-book.mjs';
 import { runAgent } from '../../../dist/commands/bench.js';
 import { parseBenchArguments } from '../../../dist/commands/bench-arguments.js';
@@ -29,7 +29,7 @@ import { attemptDatabaseIdentity } from '../../../dist/src/stacks/hosted-databas
 import { canonicalizeDefinition } from '../../../dist/src/composition/definition-plan.js';
 import { loadReferenceRegistry } from '../../../dist/src/references/reference-fixtures.js';
 import { migrationCheckoutDifferences } from '../../../dist/src/stacks/migration-state.js';
-import { capturePopulatedCheckpoint, restorePopulatedCheckpoint, restoreRepairSource } from '../../../dist/src/runtime/source-materialization.js';
+import { capturePopulatedCheckpoint, restorePopulatedCheckpoint, restoreRepairSource, materializeAcceptedSource } from '../../../dist/src/runtime/source-materialization.js';
 import { codingContainerAgentCommand, CODING_CONTAINER_SPACETIME_CLI,
   codingContainerAgentExecOptions } from '../../../dist/src/runtime/coding-container-policy.js';
 
@@ -385,6 +385,41 @@ try {
     await restorePopulatedCheckpoint(join(directory,'initial-checkpoint'),spec);
     assert.deepEqual(snapshot().state,before.state,'second original restore retained later purchases');
     audit.initialRestores=2;audit.purchaseAfterRestore=true;
+
+    // A repair checkpoint proves rollback, not that saved code can perform the
+    // migration. Reapply candidate source to the immutable original database.
+    const verifyImport=async label=>{
+      const observed={...audit};
+      try {
+        await qualifyAddressBook({audit:observed,before,snapshot,checkoutState,storedBooks,
+          save:(name,value)=>save(`${label}-${name}`,value),url:`http://127.0.0.1:${ports.vite}`,importOnly:true});
+      } finally {save(`${label}.json`,{source:hashAppSource(app).sha256,phase:observed.phase});}
+    };
+    audit.phase='saved-source-replay';
+    await materializeAcceptedSource(join(directory,'first-submission'),app,spec);
+    migrationActive=true;
+    await verifyImport('saved-source-replay');
+    audit.savedSourceReplayPassed=true;
+
+    const broken=join(directory,'no-import-candidate');
+    snapshotAppSource(app,broken);
+    audit.noImportSource=applyAddressBookDefect(broken,backend,'no-import').sha256;
+    await materializeAcceptedSource(broken,app,spec);
+    await verifyImport('no-import-existing-state');
+    audit.noImportExistingStatePassed=true;
+
+    await restorePopulatedCheckpoint(join(directory,'initial-checkpoint'),spec);
+    await materializeAcceptedSource(broken,app,spec);
+    let replayFailure;
+    try {await verifyImport('no-import-original-state');}
+    catch(error) {replayFailure={code:error.code,message:error.message};}
+    save('no-import-original-state-failure.json',replayFailure??null);
+    assert.equal(replayFailure?.code,'ERR_ASSERTION');
+    assert.match(replayFailure.message,/imported address count differs/);
+    audit.noImportReplayRejected=true;
+    await restorePopulatedCheckpoint(join(directory,'initial-checkpoint'),spec);
+    migrationActive=false;
+    assert.deepEqual(snapshot().state,before.state,'source replay control changed the original state after restoration');
   }
   audit.preserved=true;
 } catch(error) {

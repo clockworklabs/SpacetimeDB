@@ -43,6 +43,8 @@ export function applyAddressBookMigration(app: string, backend: string) {
     choose: id => addressRequest('/api/addresses/' + id + '/default', 'PUT'),
   }}`;
   const patches = backend === 'spacetime' ? [
+    { file: 'start.sh', from: '/deps/spacetimedb-cli generate --lang typescript',
+      to: '/deps/spacetimedb-cli publish "$VITE_MODULE_NAME" --module-path /app/backend/spacetimedb -s "$VITE_SPACETIMEDB_URI" -y\n/deps/spacetimedb-cli generate --lang typescript' },
     { file: 'backend/spacetimedb/src/index.ts', from: '  customerProfile,', to: '  customerProfile,\n  addressEntry,' },
     { file: 'backend/spacetimedb/src/index.ts', from: '    const row = { accountId: acc.id, name: name.trim(), address: address.trim() };\n    const existing = ctx.db.customerProfile.accountId.find(acc.id);\n    if (existing) ctx.db.customerProfile.accountId.update(row);\n    else ctx.db.customerProfile.insert(row);',
       to: '    saveDefaultAddress(ctx, acc.id, name, address);' },

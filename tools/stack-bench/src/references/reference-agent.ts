@@ -10,7 +10,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { leaseFromEnv } from '../runtime/backend-lease.js';
 import { dbName, loadTrack, moduleName, portsFor } from '../composition/tracks.js';
 import { fetchStatus } from '../runtime/readiness.js';
-import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR, CODING_CONTAINER_SPACETIME_CLI,
+import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR,
   codingContainerAgentCommand, codingContainerAgentExecOptions,
   codingContainerWorkspaceHandoffCommands }
   from '../runtime/coding-container-policy.js';
@@ -29,7 +29,6 @@ import { handoffBuildWorkspace } from '../runtime/backend-teardown.js';
 import { requirePopulatedWorkspace } from '../runtime/source-materialization.js';
 import { addressBookReferenceRequest, applyAddressBookMigration, applyAddressBookDefect }
   from './address-book-migration.js';
-import { leasedSpacetimeTarget } from '../runtime/spacetime-target.js';
 
 import { compiledEntrypoint } from '../package-root.js';
 const RUN_BUILD = compiledEntrypoint('container', 'run-build.js');
@@ -278,11 +277,6 @@ async function main(): Promise<void> {
     if (args.mode === 'fix') restoreAppSource(referenceSourcePath(fixture), args.app);
     let source = applyAddressBookMigration(args.app, args.backend);
     if (migration.defect) source = applyAddressBookDefect(args.app, args.backend, migration.defect);
-    if (args.backend === 'spacetime') {
-      const target = leasedSpacetimeTarget({ requireBuildContainer: true });
-      docker(container.id, '/app', CODING_CONTAINER_SPACETIME_CLI,
-        ['publish', target.mod, '--module-path', '/app/backend/spacetimedb', '-s', target.containerUri, '-y']);
-    }
     await controlAppServer(spec, 'start');
     const after = hashAppSource(args.app);
     if (after.sha256 !== source.sha256) throw new Error('migration startup changed the supplied source');

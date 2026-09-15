@@ -46,7 +46,7 @@ export async function probeCrossAccountEdit({backend,url,id}) {
   } finally {await browser.close();}
 }
 
-export async function qualifyAddressBook({ audit, before, snapshot, checkoutState, storedBooks, restart, save, url }) {
+export async function qualifyAddressBook({ audit, before, snapshot, checkoutState, storedBooks, restart, save, url, importOnly=false }) {
   const browser = await chromium.launch({ headless:true, ...attemptBrowserLaunchOptions() });
   const history = [];
   const mongo=audit.backend==='mongodb';
@@ -117,6 +117,7 @@ export async function qualifyAddressBook({ audit, before, snapshot, checkoutStat
     assert.deepEqual(addressImportDifferences(profiles,initial),[]);
     const importedId=initial[0].entries[0].id;
     checkPreserved();
+    if(importOnly) return;
 
     phase('add-edit-default');
     await control(a,'address-add').click();
