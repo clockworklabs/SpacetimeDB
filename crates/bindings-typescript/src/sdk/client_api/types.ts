@@ -253,6 +253,7 @@ export const SubscribeSet = __t.object('SubscribeSet', {
 });
 export type SubscribeSet = __Infer<typeof SubscribeSet>;
 
+// The tagged union or sum type for the algebraic type `SubscribeSetOutcome`.
 export const SubscribeSetOutcome = __t.enum('SubscribeSetOutcome', {
   get Applied() {
     return QueryRows;
