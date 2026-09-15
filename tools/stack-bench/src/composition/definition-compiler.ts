@@ -150,7 +150,6 @@ export const ACTION_DEFINITIONS = Object.freeze({
   dbRecordStock: fields({ item: nonEmptyString, as: nonEmptyString }, { warehouse: nonEmptyString }),
   dbRecordCheckout: fields({ account: nonEmptyString, item: nonEmptyString, as: nonEmptyString }),
   dbExpectCheckout: fields({ before: nonEmptyString, prepared: nonEmptyString, quantity: positiveInteger }),
-  dbExpectMigrationCheckout: fields({}),
   dbExpectStock: fields({ item: nonEmptyString },
     { warehouse: nonEmptyString, equals: integer, atLeast: integer, atMost: integer, relativeTo: nonEmptyString, plus: integer,
       within: value => positiveNumber(value) && Number(value) <= 80000 }),
@@ -211,9 +210,6 @@ export const ACTION_DEFINITIONS = Object.freeze({
   race: fields({ branches: anyArray, settleMs: nonNegativeNumber }),
   recordNumber: fields({ ...actor, testid: nonEmptyString, as: nonEmptyString },
     { count: boolean, ...locator, ...within }),
-  recordAddressBook: fields({ ...actor, as: nonEmptyString }, { entryName: string }),
-  expectAddressBook: fields(actor, { sameAs: nonEmptyString, entries: anyArray,
-    authentication: value => oneOf(value, ['actor', 'none']) }),
   reload: fields({ ...actor, settleMs: number }),
   replayAs: fields({ ...actor, from: nonEmptyString, match: string },
     { swap: object, namedAction: object, namedTarget: object, ...settle }),
@@ -399,19 +395,6 @@ function validateStep(step: unknown, at: string): asserts step is CompiledStep {
     if (validator && !validator(value)) fail(`${at}.${name}`, 'has the wrong type or value');
   }
   if (step.in) validateLocator(step.in, `${at}.in`);
-  if (step.do === 'expectAddressBook') {
-    if ((step.sameAs === undefined) === (step.entries === undefined)) {
-      fail(at, 'expectAddressBook requires exactly one of sameAs or entries');
-    }
-    if (Array.isArray(step.entries)) step.entries.forEach((entry, index) => {
-      const where = `${at}.entries[${index}]`;
-      strictObject(entry, where, new Set(['name', 'address', 'isDefault', 'idFrom']));
-      if (!string(entry.name) || !string(entry.address) || !boolean(entry.isDefault)) {
-        fail(where, 'requires name and address strings and an isDefault boolean');
-      }
-      if (entry.idFrom !== undefined && !nonEmptyString(entry.idFrom)) fail(where, 'idFrom must name a saved entry');
-    });
-  }
   if (step.swap) validateSwap(step.swap, `${at}.swap`);
   if (step.namedAction) validateInlineNamedAction(step.namedAction, `${at}.namedAction`);
   if (step.namedTarget) validateNamedTarget(step.namedTarget, `${at}.namedTarget`);

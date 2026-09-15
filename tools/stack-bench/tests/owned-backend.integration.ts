@@ -34,8 +34,7 @@ for (const backend of ['postgres', 'mongodb', 'spacetime']) test(`owned ${backen
       import { createBackendLease, writeBackendLease, readBackendLease } from './dist/src/runtime/backend-lease.js';
       import { releaseBackendLease } from './dist/src/runtime/backend-teardown.js';
       import { loadTrack, portsFor } from './dist/src/composition/tracks.js';
-      import { activateAttemptBackend } from './dist/src/stacks/hosted-lifecycle.js';
-      import { stopCheckpointDatabase, startCheckpointDatabase } from './dist/src/stacks/database-checkpoint.js';
+      import { activateAttemptBackend, startAttemptDatabaseProcess } from './dist/src/stacks/hosted-lifecycle.js';
       import { controlSpacetime } from './dist/src/stacks/spacetime-lifecycle.js';
       import { attemptDatabaseIdentity } from './dist/src/stacks/hosted-database-identity.js';
       import { resetMongoDb } from './dist/src/stacks/backends/mongodb-operations.js';
@@ -73,9 +72,18 @@ for (const backend of ['postgres', 'mongodb', 'spacetime']) test(`owned ${backen
               +'session.startTransaction(); tx.proof.insertOne({id:11}); session.abortTransaction(); session.endSession(); '
               +'if(!db.proof.findOne({id:10}) || db.proof.findOne({id:11})) throw new Error("transaction commit or rollback failed");']);
             for(let restart=0;restart<2;restart++) {
-              stopCheckpointDatabase(active);
-              await startCheckpointDatabase(active);
-              attemptDocker([...applicationShell,'if(!db.hello().isWritablePrimary) quit(1); if(!db.proof.findOne({id:10})) throw new Error("committed data lost after restart");']);
+              attemptDocker(['exec','--user','mongodb',id,'mongod','--shutdown','--dbpath','/data/db']);
+              startAttemptDatabaseProcess(active);
+              let restarted=false;
+              for(let retry=0;retry<60;retry++) {
+                try {
+                  attemptDocker([...applicationShell,'if(!db.hello().isWritablePrimary) quit(1); if(!db.proof.findOne({id:10})) throw new Error("committed data lost after restart");']);
+                  restarted=true;
+                  break;
+                } catch { await new Promise(resolve=>setTimeout(resolve,500)); }
+              }
+              if(!restarted) console.error(attemptDocker(['exec',id,'tail','-n','20','/run/application/stack-bench-backend.log']));
+              assert.equal(restarted,true,'MongoDB did not recover committed data as primary after restart');
             }
             resetMongoDb({lease:requireLeasedDatabase(active)});
             attemptDocker([...applicationShell,

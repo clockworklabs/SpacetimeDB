@@ -253,11 +253,13 @@ test('SpacetimeDB runtime provenance finds an application marker in the exact le
       { name: { some: 'username' }, algebraic_type: { String: {} } },
       { name: { some: 'id' }, algebraic_type: { U64: {} } },
     ] } }] } },
-    { Tables: [{ source_name: 'account', product_type_ref: 0 }] },
+    { Tables: [{ source_name: 'accountSource', product_type_ref: 0 }] },
+    { ExplicitNames: { entries: [{ Table: { source_name: 'accountSource', canonical_name: 'account' } }] } },
   ] };
   const exec = (_command: string, args: readonly string[]): string => {
     if (args[0] === 'inspect') return `${lease.resources.buildContainer?.id}\n`;
     if (args.includes('describe')) return JSON.stringify(schema);
+    assert.match(args.at(-1)!, /from account where/);
     return args.at(-1)?.includes("'proof'") ? ' username\n----------\n "proof"\n' : '';
   };
   const proofLease = { resources: { module: 'app_ecom_run0', serverUri: 'http://127.0.0.1:3210' } };
@@ -271,6 +273,8 @@ test('SpacetimeDB runtime provenance finds an application marker in the exact le
     assert.equal(proveSpacetimeUse({ lease: proofLease, marker: 'missing', exec }).ok, false);
     assert.throws(() => proveSpacetimeUse({ lease: proofLease, marker: '', exec }),
       /requires a non-empty application marker/);
+    schema.sections[2]!.ExplicitNames!.entries.push({ Table: { source_name: 'accountSource', canonical_name: 'duplicate' } });
+    assert.throws(() => proveSpacetimeUse({ lease: proofLease, marker: 'proof', exec }), /invalid table name/);
   } finally {
     if (previousPath === undefined) delete process.env.STACK_BENCH_LEASE;
     else process.env.STACK_BENCH_LEASE = previousPath;

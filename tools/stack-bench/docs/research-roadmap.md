@@ -40,11 +40,12 @@ can proceed before public qualification. A verified public comparison cannot.
 ## Collection sequence
 
 Core storefront testing comes first: grading reliability, concurrent operations,
-crash recovery, and applicable security checks. The address-book migration is an
-optional, separate task. It does not add to core scores or gate core execution
-or qualification. Keep it draft until its own controls pass. Shared runner
-changes still need core regression checks. Further migration work must not delay
-the core test program.
+crash recovery, and applicable security checks. The unfinished address-book
+migration is archived on `bradley/stackbench-migration-experiment` at
+`50ad3a926`; it is not shipped in the core branch. Its code and retained evidence
+are experimental, not qualified production coverage. It does not add to core
+scores or gate core execution or qualification. Shared fixes retained in core
+still need regression checks. Do not restore migration as part of core testing.
 
 Set sample counts from the study's purpose; a pilot count is not a statistical
 power calculation. One block means one fresh attempt on each selected stack under the same

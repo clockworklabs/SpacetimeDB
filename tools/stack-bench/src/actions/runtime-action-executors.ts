@@ -2,10 +2,8 @@ import { execFileSync } from 'node:child_process';
 
 import { ActionApplicationFailure, ActionInconclusive, actionImplementation } from './action-contract.js';
 import { finding, isFinding, renderFinding } from './action-findings.js';
-import { checkoutDifferences, CheckoutDataError } from '../stacks/checkout-state.js';
+import { checkoutDifferences } from '../stacks/checkout-state.js';
 import type { CheckoutState } from '../stacks/checkout-state.js';
-import { migrationCheckoutDifferences } from '../stacks/migration-state.js';
-import type { PreparedCheckout } from '../evidence/grade-report.js';
 import type {
   ActionImplementation,
 } from './action-contract.js';
@@ -91,9 +89,8 @@ interface LifecycleConcurrencyCapabilities {
   readonly 'database-read': {
     getStock(input: { item: string; warehouse?: string }):
       { quantity: number } | Promise<{ quantity: number }>;
-    getCheckoutState(input: { account: string; item: string }, options?: { exact: boolean }): CheckoutSnapshot;
-    readonly checkoutSnapshots: Map<string, CheckoutSnapshot>;
-    readonly preparedCheckouts: readonly PreparedCheckout[];
+    getCheckoutState(input: { account: string; item: string }): CheckoutSnapshot;
+    readonly checkoutSnapshots: Map<string, CheckoutSnapshot & { account: string; item: string }>;
   };
   readonly 'browser-observation': {
     readonly recorded: { get(key: string): number | undefined; set(key: string, value: number): void };
@@ -101,8 +98,6 @@ interface LifecycleConcurrencyCapabilities {
 }
 
 interface CheckoutSnapshot {
-  readonly account: string;
-  readonly item: string;
   readonly state: CheckoutState;
   readonly schemaSha256: Record<string, string>;
 }
@@ -188,7 +183,7 @@ async function dbRecordStock({ input, capabilities }: ActionArguments<ReadStockI
 async function dbRecordCheckout({ input, capabilities }: ActionArguments<{ account: string; item: string; as: string }>) {
   const database = capabilities['database-read'];
   const snapshot = database.getCheckoutState(input);
-  database.checkoutSnapshots.set(input.as, snapshot);
+  database.checkoutSnapshots.set(input.as, { ...snapshot, account: input.account, item: input.item });
   return { ...snapshot, key: input.as };
 }
 
@@ -198,7 +193,7 @@ async function dbExpectCheckout({ input, capabilities }: ActionArguments<{ befor
   const prepared = database.checkoutSnapshots.get(input.prepared);
   if (!before || !prepared) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
   if (before.account !== prepared.account || before.item !== prepared.item) throw new Error('checkout snapshots select different data');
-  const after = database.getCheckoutState(before, { exact: true });
+  const after = database.getCheckoutState(before);
   if (JSON.stringify(before.schemaSha256) !== JSON.stringify(prepared.schemaSha256)
     || JSON.stringify(before.schemaSha256) !== JSON.stringify(after.schemaSha256)) throw new Error('checkout reader schema changed during the test');
   const differences = checkoutDifferences(before.state, prepared.state, after.state, input.quantity);
@@ -208,17 +203,6 @@ async function dbExpectCheckout({ input, capabilities }: ActionArguments<{ befor
     const value = finding('number-mismatch', { control, observed, expected: { equals: expected } });
     throw new ActionApplicationFailure(renderFinding(value), { finding: value, observation });
   }
-  return observation;
-}
-
-async function dbExpectMigrationCheckout({ capabilities }: ActionArguments<Record<string, never>>) {
-  const database = capabilities['database-read'];
-  if (!database.preparedCheckouts.length) throw new Error('migration checkout comparison requires the original preparation observations');
-  const after = database.preparedCheckouts.map(before => database.getCheckoutState(before, { exact: true }));
-  const differences = migrationCheckoutDifferences(database.preparedCheckouts.map(snapshot => snapshot.state),
-    after.map(snapshot => snapshot.state));
-  const observation = { before: database.preparedCheckouts, after, differences };
-  if (differences.length) throw new ActionApplicationFailure(`existing checkout data changed: ${differences.join('; ')}`, { observation });
   return observation;
 }
 
@@ -567,31 +551,20 @@ export function createDatabaseWriteCapability({ backend, spacetime, databaseLeas
 }
 
 export function createDatabaseReadCapability({ backend, spacetime, databaseLease, skip = false, expand, app,
-  checkoutSnapshots = new Map<string, CheckoutSnapshot>(), preparedCheckouts = [],
+  checkoutSnapshots = new Map<string, CheckoutSnapshot & { account: string; item: string }>(),
   exec = execFileSync }: DatabaseWriteCapabilityOptions & { app?: string;
-    checkoutSnapshots?: Map<string, CheckoutSnapshot>; preparedCheckouts?: readonly PreparedCheckout[] }) {
+    checkoutSnapshots?: Map<string, CheckoutSnapshot & { account: string; item: string }> }) {
   return Object.freeze({
     checkoutSnapshots,
-    preparedCheckouts,
-    getCheckoutState(input: { account: string; item: string }, { exact = false } = {}): CheckoutSnapshot {
+    getCheckoutState(input: { account: string; item: string }): CheckoutSnapshot {
       if (skip) throw new Error('checkout state reads are disabled for this control');
       if (!app) throw new Error('checkout state reads require a verified application source directory');
       const adapter = backend ? STACK_ADAPTER_REGISTRY.get(backend) : undefined;
       if (!adapter || !('databaseRead' in adapter)) inconclusive('unsupported-backend', { backend: backend ?? '<unset>' });
-      const selection = { account: exact ? input.account : expand(input.account), item: exact ? input.item : expand(input.item), app, exec,
-        checkoutInterface: preparedCheckouts.length ? 'ecommerce-checkout-v1' as const : undefined };
-      try {
-        if (adapter.id === 'spacetime') return { account: selection.account, item: selection.item,
-          ...adapter.databaseRead.getCheckoutState({ ...selection, spacetime: spacetime ?? undefined }) };
-        if (!databaseLease) throw new Error('checkout state reads require an authenticated backend lease');
-        return { account: selection.account, item: selection.item,
-          ...adapter.databaseRead.getCheckoutState({ ...selection, lease: databaseLease }) };
-      } catch (error) {
-        if (preparedCheckouts.length && error instanceof CheckoutDataError) {
-          throw new ActionApplicationFailure(error.message);
-        }
-        throw error;
-      }
+      const selection = { account: expand(input.account), item: expand(input.item), app, exec };
+      if (adapter.id === 'spacetime') return adapter.databaseRead.getCheckoutState({ ...selection, spacetime: spacetime ?? undefined });
+      if (!databaseLease) throw new Error('checkout state reads require an authenticated backend lease');
+      return adapter.databaseRead.getCheckoutState({ ...selection, lease: databaseLease });
     },
     getStock(input: { item: string; warehouse?: string }) {
       if (skip) inconclusive('stock-read-unavailable', { detail: 'direct stock reads are disabled for this control' });
@@ -644,7 +617,6 @@ function contractBrowserLifecycleAction<Input, Result>(
 export const RUNTIME_ACTION_IMPLEMENTATIONS = Object.freeze({
   dbRecordCheckout: contractLifecycleAction(dbRecordCheckout),
   dbExpectCheckout: contractLifecycleAction(dbExpectCheckout),
-  dbExpectMigrationCheckout: contractLifecycleAction(dbExpectMigrationCheckout),
   dbRecordStock: contractLifecycleAction(dbRecordStock),
   dbExpectStock: contractLifecycleAction(dbExpectStock),
   clickConcurrently: contractLifecycleAction(clickConcurrently),

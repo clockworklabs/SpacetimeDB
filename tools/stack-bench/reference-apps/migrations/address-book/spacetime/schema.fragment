@@ -1,7 +1,0 @@
-export const addressBookOwner = table({ name: 'address_book_owner' }, {
-  accountId: t.u64().primaryKey(),
-});
-export const addressEntry = table({ name: 'address_entry' }, {
-  id: t.u64().primaryKey().autoInc(), accountId: t.u64().index('btree'),
-  name: t.string(), address: t.string(), isDefault: t.bool(),
-});

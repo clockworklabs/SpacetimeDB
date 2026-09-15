@@ -239,8 +239,6 @@ export interface BenchmarkRunRecord {
   condition: unknown;
   skills: unknown[];
   runtime: { buildImage: string; url: string };
-  startingState?: { sourceSha256: string; dataSha256: string; recipeSha256: string;
-    preparationEvidenceSha256: string; preparationArtifact: string; durationMs: number };
   selectionRequest: unknown;
   featureCatalog: unknown;
   dependencyPolicy: unknown;

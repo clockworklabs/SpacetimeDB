@@ -3,7 +3,6 @@
 // Score declared criteria from one observed run in isolated actor contexts.
 //
 import { chromium } from 'playwright';
-import { readAddressBook } from '../src/stacks/address-book-read.js';
 import { attemptBrowserLaunchOptions } from '../container/browser-pipe.js';
 import type { Browser, BrowserContext, Page, Request } from 'playwright';
 import { sanitiseConsoleError } from '../src/evidence/diagnostic-sanitizer.js';
@@ -21,9 +20,7 @@ import { isFinding } from '../src/actions/action-findings.js';
 import type { Finding } from '../src/actions/action-findings.js';
 import { recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
-import { resolveGradeRecipeArtifactBinding, resolveRecipeRelease } from '../src/composition/recipe-release.js';
-import { readPreparedCheckouts } from '../src/evidence/grade-report.js';
-import type { PreparedCheckout } from '../src/evidence/grade-report.js';
+import { resolveGradeRecipeArtifactBinding } from '../src/composition/recipe-release.js';
 import { selectScenarioChecks } from '../src/composition/recipe-selection.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { ActionApplicationFailure, ActionInconclusive, executeAction } from '../src/actions/action-contract.js';
@@ -89,8 +86,6 @@ type FeatureResult = Omit<CompletedGradeFeatureResult, 'setupEvidence'> & {
   setupEvidence?: CheckEvidence;
 };
 type GradeArgs = {
-  preparationArtifact?: string;
-  preparationSha256?: string;
   url?: string;
   level: number;
   headed: boolean;
@@ -116,7 +111,6 @@ type GradeArgs = {
   browserWsEndpoint?: string;
 };
 type GradeRunContext = {
-  preparedCheckouts?: readonly PreparedCheckout[];
   checkoutSnapshots?: ReturnType<typeof createDatabaseReadCapability>['checkoutSnapshots'];
   actionCancellation?: { reason: string | null };
   runId: string;
@@ -203,10 +197,8 @@ export function parseGradeArgs(argv: readonly string[]): GradeArgs {
     trace: { type: 'boolean' }, headed: { type: 'boolean' },
     'null-control': { type: 'boolean' },
     'browser-ws-endpoint': { type: 'string' },
-    'preparation-artifact': { type: 'string' }, 'preparation-sha256': { type: 'string' },
   } });
   const args: GradeArgs = { url: values.url, level: values.level === undefined ? 1 : Number(values.level),
-    preparationArtifact: values['preparation-artifact'], preparationSha256: values['preparation-sha256'],
     out: values.out, label: values.label,
     feature: values.feature === undefined ? undefined : Number(values.feature), spec: values.spec,
     restartSpec: values['restart-spec'] === undefined ? undefined
@@ -224,10 +216,6 @@ export function parseGradeArgs(argv: readonly string[]): GradeArgs {
   if (!args.url || !args.spec) {
     throw new Error('Usage: node dist/grader/grade.js --url <app-url> --spec <scenario.json> '
       + '--level <N> [--out <file>] [--label <s>] [--feature <N>]');
-  }
-  if (Boolean(args.preparationArtifact) !== Boolean(args.preparationSha256)
-    || (args.preparationSha256 && !/^[a-f0-9]{64}$/.test(args.preparationSha256))) {
-    throw new Error('populated grading requires a preparation artifact and its checkpoint hash');
   }
   let url: URL;
   try { url = new URL(args.url); }
@@ -542,10 +530,6 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
   });
   return Object.freeze({
     actors: actorAccess,
-    'address-book-read': Object.freeze({
-      read: (credentials: Record<string, string>, signal: AbortSignal, recordResponse: (text: string) => void) =>
-        readAddressBook({ backend: ctx.backend!, url: ctx.url, spacetime: ctx.spacetime }, credentials, signal, recordResponse),
-    }),
     'application-files': Object.freeze({ root: ctx.appDir ?? null, expand: (value: unknown) => expand(value, ctx) }),
     'application-lifecycle': applicationLifecycle(ctx),
     'backend-lifecycle': createLifecycleCapability({
@@ -559,7 +543,6 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
     clock: Object.freeze({ sleep: abortableSleep }),
     concurrency,
     'database-read': createDatabaseReadCapability({
-      preparedCheckouts: ctx.preparedCheckouts,
       checkoutSnapshots: ctx.checkoutSnapshots ??= new Map(),
       app: ctx.appDir,
       backend: ctx.backend,
@@ -1006,7 +989,6 @@ async function main(): Promise<void> {
     recipeRelease: RecipeGradeRelease | null = null,
     recipeIdentityRelease: RecipeRelease | null = null,
     calibration: ReturnType<typeof resolveCalibrationForRelease> | null = null;
-  let prepared: PreparedCheckout[] | undefined;
   if (args.track) {
     const track = loadTrack(args.track);
     actions = track.actions;
@@ -1014,14 +996,7 @@ async function main(): Promise<void> {
       args.feature ?? null, args.recipe);
     recipeRelease = binding?.release ?? null;
     recipeIdentityRelease = binding?.sourceRelease ?? null;
-    const preparation = resolveRecipeRelease(track, args.level, args.recipe)?.plan.recipe.task.startingState;
-    if (Boolean(preparation) !== Boolean(args.preparationArtifact)) {
-      throw new Error('populated task grading requires the original preparation evidence');
-    }
-    if (preparation) prepared = readPreparedCheckouts(preparation.scenario,
-      args.preparationArtifact!, args.preparationSha256!);
   }
-  if (args.preparationArtifact && !prepared) throw new Error('preparation evidence requires a compiled populated task');
   if (args.expectedRecipeSha256
     && recipeRelease?.contentSha256 !== args.expectedRecipeSha256) {
     throw new Error(`recipe changed before grading: expected ${args.expectedRecipeSha256}, ` +
@@ -1046,7 +1021,6 @@ async function main(): Promise<void> {
   const databaseLease = gradeDatabaseLease(args.backend);
 
   const ctx: GradeRunContext = { actionCancellation: { reason: null }, runId, roomName: (base: string) => `${base}-${runId}`,
-    preparedCheckouts: prepared,
     restartSpec: args.restartSpec, url: args.url!,
     backend: args.backend, actions, spacetime, dbName: args.dbName,
     databaseLease,

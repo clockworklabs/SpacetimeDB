@@ -95,39 +95,6 @@ test('partial and invalid attempts are representable without invented scores', (
   assert.equal('totals' in artifact.payload, false);
 });
 
-test('populated run preparation survives artifact storage and rejects incomplete provenance', () => {
-  const root = mkdtempSync(join(tmpdir(), 'populated-run-artifact-'));
-  const startingState = { sourceSha256: 'a'.repeat(64), dataSha256: 'b'.repeat(64),
-    recipeSha256: 'c'.repeat(64), preparationEvidenceSha256: 'd'.repeat(64),
-    preparationArtifact: 'starting-state/preparation.json', durationMs: 1250 };
-  try {
-    const path = join(root, 'run.json');
-    writeArtifact(path, { kind: 'benchmark_run', id: 'populated-run', payload: { startingState } });
-    assert.deepEqual(readArtifactPayload(path).startingState, startingState);
-    for (const field of Object.keys(startingState)) {
-      const incomplete: Record<string, unknown> = { ...startingState };
-      delete incomplete[field];
-      assert.throws(() => createArtifact({ kind: 'benchmark_run', id: 'missing-provenance',
-        payload: { startingState: incomplete } }));
-    }
-    for (const change of [{ dataSha256: 'bad' }, { durationMs: -1 }, { durationMs: 0.5 },
-      { preparationArtifact: '../preparation.json' }, { extra: true }]) {
-      assert.throws(() => createArtifact({ kind: 'benchmark_run', id: 'bad-provenance',
-        payload: { startingState: { ...startingState, ...change } } }));
-    }
-    const bundleStart = { sourceSha256: startingState.sourceSha256, dataSha256: startingState.dataSha256 };
-    const bundlePath = join(root, 'bundle.json');
-    writeArtifact(bundlePath, { kind: 'grade_bundle', id: 'populated-grade', payload: { startingState: bundleStart } });
-    assert.deepEqual(readArtifactPayload(bundlePath).startingState, bundleStart);
-    for (const invalid of [{ sourceSha256: bundleStart.sourceSha256 }, { dataSha256: bundleStart.dataSha256 },
-      { ...bundleStart, sourceSha256: 'bad' }, { ...bundleStart, dataSha256: 'bad' },
-      { ...bundleStart, extra: true }]) {
-      assert.throws(() => createArtifact({ kind: 'grade_bundle', id: 'bad-grade-provenance',
-        payload: { startingState: invalid } }));
-    }
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
 test('campaign extension provenance is strict and records completed rechecks', () => {
   const seed = { fromDepth: 2, sourceSha256: 'a'.repeat(64), sourceFiles: 4,
     parent: { campaignId: 'parent', campaignSha256: 'b'.repeat(64),

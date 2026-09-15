@@ -48,14 +48,8 @@ import { applyAgentCredential } from '../src/agents/agent-credentials.js';
 import { assertPlainAppSourceTree, hashAppSource, resetAppToSource, seedAppSource, snapshotAppSource } from '../src/runtime/source-snapshot.js';
 import { finalPackageEvidenceRequired, preserveFinalPackageEvidence, preserveLevelCheckpoint,
   sourceBoundFirstBuildOutcome } from '../src/runtime/source-checkpoint.js';
-import { capturePopulatedCheckpoint, restorePopulatedCheckpoint,
-  materializationAppFailure, materializeAcceptedSource, restoreRepairSource }
+import { materializationAppFailure, materializeAcceptedSource, restoreRepairSource }
   from '../src/runtime/source-materialization.js';
-import { inspectImportedReference, loadReferenceRegistry, selectReferenceFixture }
-  from '../src/references/reference-fixtures.js';
-import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
-import type { CompletedGradeReport } from '../src/evidence/grade-report.js';
-import { verifyPopulatedPreparation } from '../src/evidence/grade-report.js';
 import { compareRepairBaseline, createRepairGrant } from '../src/runtime/repair-grant.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { contractInterfaceNames } from '../src/composition/agent-visible-contract.js';
@@ -116,7 +110,6 @@ type CommandFailure = Error & { stdout?: string | Buffer; stderr?: string | Buff
   status?: number | null; signal?: NodeJS.Signals | null };
 type GradeOptions = { observation?: 'scored' | 'observed'; out?: string | null;
   sourceSha256?: string | null; applicationFailure?: RunOutcome | null;
-  populatedStart?: { checkpoint: string; source: string; dataSha256: string; preparationArtifact: string };
   recipeTask?: GradeRecipeTask };
 type MutationControlResult = UnknownRecord & { ok: boolean; artifact?: string;
   skipped?: boolean; processError?: string | null; outcome: RunOutcome | null };
@@ -693,7 +686,6 @@ export function gradeArgv(
     '--observation', observation,
     ...(out ? ['--out', out] : []),
     ...(sourceSha256 ? ['--source-sha256', sourceSha256] : []),
-    ...(options.populatedStart ? ['--populated-start-json', JSON.stringify(options.populatedStart)] : []),
     ...(args.recipe ? ['--recipe', args.recipe] : []),
     ...(task ? ['--recipe-task-json', JSON.stringify(task.request)] : []),
     ...(gradingCredentialAliases(args)
@@ -711,7 +703,8 @@ export function gradeArgv(
       : ['--restart-spec', JSON.stringify(restartSpec)])];
 }
 
-export function archiveCandidateGrade(gradingDirectory: string, outputDir: string, label: string): void {
+export function archiveCandidateGrade(appDir: string, outputDir: string, label: string): void {
+  const gradingDirectory = join(appDir, 'stack-bench');
   if (!existsSync(gradingDirectory)) return;
   cpSync(gradingDirectory, join(outputDir, 'candidate-grades', label), {
     recursive: true,
@@ -719,50 +712,17 @@ export function archiveCandidateGrade(gradingDirectory: string, outputDir: strin
   });
 }
 
-export async function gradeWithRetry({ gradingDirectory, outputDir, label, archiveLabel, runGrade,
+export async function gradeWithRetry({ appDir, outputDir, label, archiveLabel, runGrade,
   retry = true }: {
-  gradingDirectory: string; outputDir: string; label: string; archiveLabel: string;
+  appDir: string; outputDir: string; label: string; archiveLabel: string;
   runGrade: (label: string) => GradeBundlePayload | null | Promise<GradeBundlePayload | null>;
   retry?: boolean;
 }): Promise<GradeBundlePayload | null> {
   const bundle = await runGrade(label);
   if (!retry || levelGradeIsUsable(classifyBundle(bundle))) return bundle;
-  archiveCandidateGrade(gradingDirectory, outputDir, archiveLabel);
+  archiveCandidateGrade(appDir, outputDir, archiveLabel);
   console.log('  grade did not complete; retrying the same source once');
   return runGrade(`${label}-retry`);
-}
-
-// Keep the session's state separate from the original population used to grade
-// its saved source. Neither checkpoint operation runs candidate startup code.
-export async function gradePopulatedCandidate(checkpoint: string, application: RuntimeControlSpec,
-  sourceSha256: string, runGrade: () => Promise<GradeBundlePayload | null>,
-  lifecycle = { capture: capturePopulatedCheckpoint, restore: restorePopulatedCheckpoint }): Promise<GradeBundlePayload | null> {
-  const receipt = await lifecycle.capture(checkpoint, application, undefined, { startApplication: false });
-  let gradeFailure: unknown;
-  try {
-    if (receipt.sourceSha256 !== sourceSha256) throw new Error('candidate changed before populated grading');
-    return await runGrade();
-  } catch (error) {
-    gradeFailure = error;
-    throw error;
-  } finally {
-    // A restore error is a harness failure and stops the attempt. Private
-    // checkpoints stay intact until the normal lease teardown completes.
-    try { await lifecycle.restore(checkpoint, application, undefined, { startApplication: false }); }
-    catch (error) {
-      if (gradeFailure) throw new AggregateError([gradeFailure, error], 'grading and candidate restore both failed');
-      throw error;
-    }
-  }
-}
-
-export function validatePopulatedRun(args: BenchArguments): void {
-  if (args.levelList.length !== 1 || args.seedFrom || args.repairFrom || args.gradeFrom
-    || args.progression || args.featureCatalog || args.dependencyPolicy || args.progressionResumeFrom
-    || args.seedThrough !== undefined || args.mutations || args.referenceMutationOnly
-    || (args.taskMode && args.taskMode !== 'upgrade')) {
-    throw new Error('populated upgrades require one level and a new same-lease attempt; source-only continuation, progression and mutation runs are unsupported');
-  }
 }
 
 function grade(
@@ -1123,7 +1083,6 @@ async function main() {
   // acquiring a backend lease or paying for a build. A pack that exists at L2
   // but not L1 is not a late grading surprise; it is an invalid run request.
   args.selectionRequest ??= { packs: [...args.packIds], checks: [...args.checkKeys] };
-  let populatedBinding: RecipeBinding | null = null;
   for (const level of args.levelList) {
     const declared = args.condition?.requested?.levels?.find(entry => entry.level === level) ?? null;
     const modularSelection = args.selectionRequest.levels?.find(entry => entry.level === level) ?? null;
@@ -1145,20 +1104,6 @@ async function main() {
       throw new Error(`L${level} has no recipe release, so --pack/--check cannot be resolved`);
     }
     if (binding) {
-      if (binding.release.task.startingState) {
-        validatePopulatedRun(args);
-        if (agentAdapter.costLimit !== 'non-billable') {
-          throw new Error('populated upgrade qualification is not complete; paid coding sessions are disabled');
-        }
-        const pinned = binding.release.task.startingState.references.find(reference => reference.backend === args.backend);
-        const fixture = selectReferenceFixture(loadReferenceRegistry(), { backend: args.backend,
-          track: args.track, level, recipe: binding.release.task.baseRecipe?.id });
-        const inspection = inspectImportedReference(fixture);
-        if (!inspection.ok || fixture.id !== pinned?.fixtureId || inspection.sourceSha256 !== pinned.sourceSha256) {
-          throw new Error('populated starting reference does not match the compiled task');
-        }
-        populatedBinding = binding;
-      }
       args.recipeBindings.set(level, binding);
       if (args.featureCatalog) {
         validateProgressionCampaignLevelScope(binding, args.featureCatalog, declared, level);
@@ -1397,7 +1342,6 @@ async function main() {
 
   let tornDown = false;
   let activeRun: BenchmarkRunRecord | null = null;
-  let preservePopulatedCheckpoints = false;
   const recoveryPath = join(outputDir, ARTIFACT_FILE.recovery);
   const writeLeaseEvidence = (knownLease: BackendLease | null = null) => {
     const lease = knownLease ?? readBackendLease(leasePath,
@@ -1453,7 +1397,7 @@ async function main() {
     }
     tornDown = released;
     if (released && !retainBackend && !finalLease.campaignDelegation) {
-      if (!preservePopulatedCheckpoints) rmSync(runtimeDir, { recursive: true, force: true });
+      rmSync(runtimeDir, { recursive: true, force: true });
       if (privateSupervisorStatePath) rmSync(privateSupervisorStatePath, { force: true });
     }
     if (cleanupError) throw cleanupError;
@@ -1625,69 +1569,6 @@ async function main() {
         requestedLevels: [...args.levelList],
         completedLevels: [], stoppedAfterLevel: null, blockedLevels: [] } }, levels: [] };
   activeRun = run;
-
-  let populatedStart: GradeOptions['populatedStart'];
-  let acceptedPopulatedCheckpoint: string | undefined;
-  let populatedCheckpointIndex = 0;
-  if (populatedBinding) {
-    const binding = populatedBinding;
-    const preparation = binding.plan.recipe.task.startingState!;
-    const level = preparation.scenario.level;
-    const application = restartSpecFor(args, appDir, track);
-    const setupStarted = Date.now();
-    const preparationDirectory = join(outputDir, 'starting-state');
-    mkdirSync(preparationDirectory);
-    const reportPath = join(preparationDirectory, 'preparation.json');
-    try {
-      const referenceAdapter = AGENT_ADAPTER_REGISTRY.get('reference-fixture');
-      const reference = await runAgent({ ...args, recipe: binding.release.task.baseRecipe!.id,
-        recipeTasks: new Map(), model: referenceAdapter.defaultModel, pricing: null,
-        apiKey: undefined, apiKeyFile: undefined, maxBudgetUsd: undefined }, referenceAdapter, 'build', level, appDir);
-      if (agentSessionFailure(reference)) throw new Error('populated starting reference deployment failed');
-      const sourceSha256 = binding.release.task.startingState!.references
-        .find(reference => reference.backend === args.backend)!.sourceSha256;
-      if (hashAppSource(appDir).sha256 !== sourceSha256) throw new Error('deployed starting reference source changed');
-      const spec = join(track.dir, preparation.preparation);
-      if (canonicalDefinitionJson(compileScenarioDefinition(JSON.parse(readFileSync(spec, 'utf8')), { source: spec }))
-        !== canonicalDefinitionJson(preparation.scenario)) throw new Error('starting preparation changed after task binding');
-      // Preparation uses the existing standalone scenario runner. It is not a
-      // scored pack; its explicit actions need no grading recipe selection.
-      const cancellation = new AbortController();
-      activeAgentCancellation = cancellation;
-      try {
-        const result = await runBounded(process.execPath, [compiledEntrypoint('grader', 'grade.js'),
-          '--backend', args.backend, '--app', appDir, '--url', url, '--level', String(level),
-          '--spec', spec, '--out', reportPath, '--parent-attempt-id', runId,
-          '--restart-spec', JSON.stringify(application)], {
-          timeoutMs: gradingRunTimeoutMs(1), stdio: 'ignore', signal: cancellation.signal,
-          logs: { stdout: join(preparationDirectory, 'stdout.log'), stderr: join(preparationDirectory, 'stderr.log') },
-        });
-        if (!result.ok) throw new Error('starting preparation process failed; see starting-state logs');
-      } finally {
-        if (activeAgentCancellation === cancellation) activeAgentCancellation = null;
-      }
-      verifyPopulatedPreparation(preparation.scenario,
-        readArtifactPayload<CompletedGradeReport>(reportPath, { expectedKind: 'grade' }));
-      const preparationEvidenceSha256 = sha256(readFileSync(reportPath));
-      const checkpoint = join(runtimeDir, 'starting-state');
-      const receipt = await capturePopulatedCheckpoint(checkpoint, application,
-        { recipeSha256: binding.release.contentSha256, preparationEvidenceSha256 }, { startApplication: false });
-      if (receipt.sourceSha256 !== sourceSha256) throw new Error('starting reference changed during preparation');
-      populatedStart = { checkpoint, source: '', dataSha256: receipt.dataSha256, preparationArtifact: reportPath };
-      acceptedPopulatedCheckpoint = checkpoint;
-      run.startingState = { sourceSha256, dataSha256: receipt.dataSha256,
-        recipeSha256: binding.release.contentSha256, preparationEvidenceSha256,
-        preparationArtifact: 'starting-state/preparation.json', durationMs: Date.now() - setupStarted };
-      persistRun(join(outputDir, ARTIFACT_FILE.run), run);
-    } catch (error) {
-      preservePopulatedCheckpoints = true;
-      const reason = `populated starting setup failed: ${errorMessage(error)}`;
-      run.outcome = { kind: 'harness_failure', phase: 'starting-state', reason,
-        appFailures: [], inconclusive: [], harnessFailures: [reason] };
-      persistRun(join(outputDir, ARTIFACT_FILE.run), run);
-      throw error;
-    }
-  }
 
   const progressionOwner = args.progression ? {
     ...args.progressionOwner,
@@ -2136,20 +2017,11 @@ async function main() {
       }
     }
 
-    const restorePopulatedAccepted = async (): Promise<void> => {
-      if (acceptedPopulatedCheckpoint && applicationControl) {
-        try {
-          await restorePopulatedCheckpoint(acceptedPopulatedCheckpoint, applicationControl,
-            undefined, { startApplication: false });
-        } catch (error) { preservePopulatedCheckpoints = true; throw error; }
-      }
-    };
     const firstMode = resumedRepair ? 'fix'
-      : continuing ? 'resume' : args.seedFrom || populatedStart ? 'upgrade' : 'build';
+      : continuing ? 'resume' : args.seedFrom ? 'upgrade' : 'build';
     const build = resumedGrade ? null : await runAgentForLevel(
       resumedRepair || run.levels.length === 0 ? firstMode : 'upgrade', level,
-      populatedStart ? restorePopulatedAccepted
-        : featureActionSequence === null ? undefined : restoreFeatureAcceptedSource);
+      featureActionSequence === null ? undefined : restoreFeatureAcceptedSource);
     // Only a resumed grade runs a level without a coding session.
     const requireBuild = (): NonNullable<typeof build> => {
       if (!build) throw new Error(`level ${level} has no coding session`);
@@ -2188,7 +2060,6 @@ async function main() {
     // that is a harness failure, not a result for this backend.
     if (buildFailure) {
       const session = requireBuild();
-      await restorePopulatedAccepted();
       await restoreFeatureAcceptedSource();
       console.log(`  ABORTED: ${buildFailure.reason}. Details will be kept in ${join(args.out, ARTIFACT_FILE.run)}`);
       const failedSession = runSessionRecord(session);
@@ -2207,7 +2078,7 @@ async function main() {
       break;
     }
     const gradeAcceptedSource = async (sourcePath: string,
-      label: string, options: GradeOptions = {}): Promise<GradeBundlePayload | null> => {
+      label: string): Promise<GradeBundlePayload | null> => {
       let failure: RunOutcome | null = null;
       if (applicationControl) {
         try {
@@ -2220,25 +2091,7 @@ async function main() {
         resetAppToSource(sourcePath, appDir);
       }
       return grade(args, appDir, url, label, level, track, runId,
-        { ...options, applicationFailure: failure });
-    };
-    const gradeSourceWithRetry = async (sourcePath: string, label: string,
-      archiveLabel: string, options: GradeOptions = {}): Promise<GradeBundlePayload | null> => {
-      const gradingDirectory = options.out ?? join(appDir, 'stack-bench');
-      if (!populatedStart) return gradeWithRetry({ gradingDirectory, outputDir, label, archiveLabel,
-        runGrade: nextLabel => gradeAcceptedSource(sourcePath, nextLabel, options) });
-      if (!applicationControl) throw new Error('populated grading requires application control');
-      const checkpoint = join(runtimeDir, `candidate-${++populatedCheckpointIndex}`);
-      const sourceSha256 = hashAppSource(sourcePath).sha256;
-      try {
-        const bundle = await gradePopulatedCandidate(checkpoint, applicationControl, sourceSha256,
-          () => gradeWithRetry({ gradingDirectory, outputDir, label, archiveLabel,
-            runGrade: nextLabel => grade(args, appDir, url, nextLabel, level, track, runId,
-              { ...options, sourceSha256, populatedStart: { ...populatedStart!, source: sourcePath } }) }));
-        acceptedPopulatedCheckpoint = checkpoint;
-        if (!levelGradeIsUsable(classifyBundle(bundle))) preservePopulatedCheckpoints = true;
-        return bundle;
-      } catch (error) { preservePopulatedCheckpoints = true; throw error; }
+        { applicationFailure: failure });
     };
     const checkpointGrade = (phase: RunCheckpoint['phase'], measured: GradeBundlePayload,
       sessions: RunSessionRecord[], accepted: boolean): void => {
@@ -2269,23 +2122,17 @@ async function main() {
           ? prompt.nodeIds.filter((id): id is string => typeof id === 'string') : [] });
       persistRun(join(outputDir, ARTIFACT_FILE.run), run);
     };
-    let repairPopulatedCheckpoint: string | undefined;
     const restoreAcceptedRepair = async (sourcePath: string, gradingPath: string,
       completedRepair = true): Promise<boolean> => {
       try {
         try {
-          if (applicationControl && repairPopulatedCheckpoint) {
-            await restorePopulatedCheckpoint(repairPopulatedCheckpoint, applicationControl,
-              sourcePath, { startApplication: false });
-            acceptedPopulatedCheckpoint = repairPopulatedCheckpoint;
-          } else if (applicationControl) await restoreRepairSource(sourcePath, appDir, applicationControl);
+          if (applicationControl) await restoreRepairSource(sourcePath, appDir, applicationControl);
           else resetAppToSource(sourcePath, appDir);
         } finally {
           restorePrivateGradingEvidence(appDir, gradingPath);
         }
         return true;
       } catch (error) {
-        if (populatedStart) preservePopulatedCheckpoints = true;
         let reason = `could not restore the accepted repair source: ${errorMessage(error)}`;
         const preserved = join(outputDir, `repair-rollback-l${level}${featureActionSuffix}-round${repairs}`);
         try {
@@ -2392,7 +2239,7 @@ async function main() {
         throw new Error('preserved first-build source differs from the live application source');
       }
       firstBuildSource = { sha256: liveSource.sha256, files: liveSource.files.length };
-      if (applicationControl && !populatedStart) {
+      if (applicationControl) {
         await materializeAcceptedSource(firstBuildPath, appDir, applicationControl);
       }
       console.log(`  kept the ${continuing ? 'continuation baseline' : 'unaided'} source at ${firstBuildPath}`);
@@ -2407,9 +2254,7 @@ async function main() {
     }
     const firstBuildLabel = `${args.backend}-l${level}${featureActionSuffix}`;
     let bundle = firstBuildSource
-      ? populatedStart ? await gradeSourceWithRetry(firstBuildPath, firstBuildLabel,
-        `l${level}${featureActionSuffix}-before-retry`)
-      : await gradeWithRetry({ gradingDirectory: join(appDir, 'stack-bench'), outputDir, label: firstBuildLabel,
+      ? await gradeWithRetry({ appDir, outputDir, label: firstBuildLabel,
         archiveLabel: `l${level}${featureActionSuffix}-before-retry`,
         retry: !materializationOutcome,
         runGrade: label => grade(args, appDir, url, label, level, track, runId,
@@ -2487,12 +2332,9 @@ async function main() {
         observationOutcome = { kind: 'ungraded', phase: 'first-build-observation',
           reason: 'scored first-build grading did not establish a usable environment' };
       } else {
-        const options: GradeOptions = { observation: 'observed', out: observationOut,
-          sourceSha256: firstBuildSource.sha256 };
-        observationBundle = populatedStart
-          ? await gradeSourceWithRetry(firstBuildPath, `${args.backend}-l${level}-observed`,
-            `l${level}-observed-before-retry`, options)
-          : grade(args, appDir, url, `${args.backend}-l${level}-observed`, level, track, runId, options);
+        observationBundle = grade(args, appDir, url, `${args.backend}-l${level}-observed`, level,
+          track, runId, { observation: 'observed', out: observationOut,
+            sourceSha256: firstBuildSource.sha256 });
         observationOutcome = classifyBundle(observationBundle);
       }
       firstBuild.observations = {
@@ -2514,7 +2356,7 @@ async function main() {
     if (featureActionSequence !== null && progressionSelection
       && isProgressionWorkRecipeAction(progressionSelection)) {
       const candidateOutcome = classifyBundle(bundle);
-      archiveCandidateGrade(join(appDir, 'stack-bench'), outputDir, `l${level}${featureActionSuffix}`);
+      archiveCandidateGrade(appDir, outputDir, `l${level}${featureActionSuffix}`);
       if (!levelGradeIsUsable(candidateOutcome)) {
         await restoreFeatureAcceptedSource();
         initialProgressionFailure = progressionFailure(candidateOutcome);
@@ -2774,7 +2616,6 @@ async function main() {
       const snapshot = join(tmpdir(), `stack-bench-snapshot-${args.backend}-${args.track}-run${args.runIndex}-l${level}`);
       const gradingSnapshot = `${snapshot}-grading`;
       const acceptedSource = hashAppSource(appDir);
-      repairPopulatedCheckpoint = acceptedPopulatedCheckpoint;
       snapshotSource(appDir, snapshot);
       rmSync(gradingSnapshot, { recursive: true, force: true });
       if (existsSync(join(appDir, 'stack-bench'))) {
@@ -2803,15 +2644,13 @@ async function main() {
         console.log(`--- repair ${priorRepairs + repairs + 1}/${displayedRepairBudget} ---`);
       }
       const fix = await runAgentForLevel('fix', level,
-        populatedStart ? async () => {
-          if (!await restoreAcceptedRepair(snapshot, gradingSnapshot, false)) throw new Error('populated repair restore failed');
-        } : featureActionSequence === null ? undefined : restoreFeatureAcceptedSource);
+        featureActionSequence === null ? undefined : restoreFeatureAcceptedSource);
       repairCost += fix.costUsd;
       repairSessions.push(runSessionRecord(fix, priorRepairs + repairs + 1));
 
       const fixFailure = agentSessionFailure(fix);
       if (fixFailure) {
-        if (featureActionSequence !== null || populatedStart) {
+        if (featureActionSequence !== null) {
           if (!await restoreAcceptedRepair(snapshot, gradingSnapshot, false)) break;
         }
         console.log(`    coding session failed: ${fixFailure.reason}; stopping repairs`);
@@ -2855,7 +2694,6 @@ async function main() {
         }, progressionSelection, true);
       }
       if (hashAppSource(appDir).sha256 === acceptedSource.sha256) {
-        if (populatedStart && !await restoreAcceptedRepair(snapshot, gradingSnapshot)) break;
         clearPrivateGradingEvidence(appDir);
         if (existsSync(gradingSnapshot)) {
           cpSync(gradingSnapshot, join(appDir, 'stack-bench'), { recursive: true });
@@ -2874,14 +2712,15 @@ async function main() {
         repairStopReason = 'no-source-change';
         break;
       }
-      const repairedSource = populatedStart
-        ? join(outputDir, `repair-source-l${level}-round${repairs}`) : `${snapshot}-accepted`;
+      const repairedSource = `${snapshot}-accepted`;
       snapshotSource(appDir, repairedSource);
       try {
-        bundle = await gradeSourceWithRetry(repairedSource, `${args.backend}-l${level}-fix${repairs}`,
-          `l${level}${featureActionSuffix}-repair${repairs}-before-retry`);
+        bundle = await gradeWithRetry({ appDir, outputDir,
+          label: `${args.backend}-l${level}-fix${repairs}`,
+          archiveLabel: `l${level}${featureActionSuffix}-repair${repairs}-before-retry`,
+          runGrade: label => gradeAcceptedSource(repairedSource, label) });
       } finally {
-        if (!populatedStart) rmSync(repairedSource, { recursive: true, force: true });
+        rmSync(repairedSource, { recursive: true, force: true });
       }
 
       const repairedOutcome = classifyBundle(bundle);
@@ -2896,15 +2735,11 @@ async function main() {
         try {
           repairCandidate = preserveRepairCandidate(candidateDirectory);
           console.log(`    repair grade failed: ${reason}; kept the repaired source at `
-            + `${join(outputDir, candidateDirectory)}${populatedStart ? ' for diagnosis; source-only resume is unsupported' : ' for grading on resume'}`);
+            + `${join(outputDir, candidateDirectory)} for grading on resume`);
         } catch (error) {
           preserveFailure = errorMessage(error).split(/\r?\n/)[0]
             ?? 'could not keep the repaired source';
           console.log(`    repair grade failed: ${reason}; ${preserveFailure}; restoring the accepted source`);
-          if (!populatedStart && !await restoreAcceptedRepair(snapshot, gradingSnapshot)) break;
-        }
-        if (populatedStart) {
-          preservePopulatedCheckpoints = true;
           if (!await restoreAcceptedRepair(snapshot, gradingSnapshot)) break;
         }
         repairHistory.push(repairHistoryEntry(repairs, beforeBundle, bundle,
@@ -2921,7 +2756,7 @@ async function main() {
         const rejectedBundle = bundle;
         if (rejectedBundle) checkpointGrade('repair', rejectedBundle,
           [...(build && !resumedRepair ? [runSessionRecord(build)] : []), ...repairSessions], false);
-        archiveCandidateGrade(join(appDir, 'stack-bench'), outputDir, `l${level}${featureActionSuffix}-repair${repairs}`);
+        archiveCandidateGrade(appDir, outputDir, `l${level}${featureActionSuffix}-repair${repairs}`);
         if (!await restoreAcceptedRepair(snapshot, gradingSnapshot)) break;
         if (!restoreProgressionGrade(acceptedBundle,
           `${args.backend}-l${level}${featureActionSuffix}-rollback${repairs}`)) break;
@@ -3026,21 +2861,6 @@ async function main() {
         shared.after === shared.before ? 'kept with no score gain' : 'kept'));
       if (!recordRepairProgression({ completedRepair: true })) break;
       if (pauseForRepeatedFindings()) break;
-      } catch (error) {
-        if (populatedStart) {
-          preservePopulatedCheckpoints = true;
-          const failures = [error];
-          try {
-            archiveCandidateGrade(join(appDir, 'stack-bench'), outputDir, `l${level}-repair${repairs}-error`);
-          } catch (archiveError) { failures.push(archiveError); }
-          try {
-            if (!await restoreAcceptedRepair(snapshot, gradingSnapshot)) {
-              failures.push(new Error('accepted repair restoration failed; see retained rollback evidence'));
-            }
-          } catch (restoreError) { failures.push(restoreError); }
-          if (failures.length > 1) throw new AggregateError(failures, 'repair failure recovery did not complete');
-        }
-        throw error;
       } finally {
         cleanupRepairSnapshots();
       }

@@ -91,7 +91,7 @@ const BENCHMARK_RUN_PAYLOAD_FIELDS = new Set(['status', 'mode', 'track', 'backen
   'condition', 'stack', 'setup', 'backendLease', 'backendDiagnostics', 'validation', 'levels',
   'contaminated', 'contamination', 'mutationControl', 'totals', 'outcome', 'selectionRequest',
   'skills', 'runtime', 'pricing', 'featureCatalog', 'dependencyPolicy', 'progressionOwner', 'progressionStatus',
-  'progressionResume', 'progressionSeed', 'checkpoints', 'pausedDurationMs', 'startingState']);
+  'progressionResume', 'progressionSeed', 'checkpoints', 'pausedDurationMs']);
 const PAYLOAD_FIELDS = Object.freeze({
   action_check: new Set(['backend', 'results', 'missing']),
   backend_lease_evidence: new Set(['version', 'runId', 'backend', 'track', 'runIndex', 'ownerPid',
@@ -114,7 +114,7 @@ const PAYLOAD_FIELDS = Object.freeze({
     'total', 'max', 'features', 'environment', 'inconclusive', 'selection', 'packRuntime']),
   grade_bundle: new Set(['definitionSchemaVersion', 'recipeRelease', 'calibration', 'label', 'track',
     'backend', 'url', 'app', 'level', 'suites', 'totals', 'code', 'error', 'outcome', 'provenance',
-    'actions', 'selection', 'packRuntime', 'observation', 'source', 'phaseTimings', 'startingState']),
+    'actions', 'selection', 'packRuntime', 'observation', 'source', 'phaseTimings']),
   mutation_control: new Set(['durationMs', 'app', 'mutations', 'manifestStatus', 'fixtureSha256',
     'spec', 'backend', 'track', 'shard', 'ok', 'outcome', 'baseline', 'summary', 'results',
     'checkpoint', 'gradeReports', 'priorMutationControl']),
@@ -259,16 +259,6 @@ function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
   };
   if (['benchmark_run', 'repair_continuation'].includes(kind)) {
     if (payload.checkpoints !== undefined) z.array(checkpointSchema).parse(payload.checkpoints);
-    if (payload.startingState !== undefined) {
-      z.strictObject({
-        sourceSha256: z.string().regex(HASH),
-        dataSha256: z.string().regex(HASH),
-        recipeSha256: z.string().regex(HASH),
-        preparationEvidenceSha256: z.string().regex(HASH),
-        preparationArtifact: z.literal('starting-state/preparation.json'),
-        durationMs: z.number().int().nonnegative(),
-      }).parse(payload.startingState);
-    }
     for (const [index, levelValue] of (arrayWhenPresent('levels') ?? []).entries()) {
       const level = asObject(levelValue, `${kind} payload.levels[${index}] must be an object`);
       if (level.outcome !== undefined) {
@@ -631,10 +621,6 @@ function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
     return validateGradePayload(payload);
   }
   if (kind === 'grade_bundle') {
-    if (payload.startingState !== undefined) {
-      z.strictObject({ sourceSha256: z.string().regex(HASH), dataSha256: z.string().regex(HASH) })
-        .parse(payload.startingState);
-    }
     if (payload.phaseTimings !== undefined) {
       if (!Array.isArray(payload.phaseTimings)) fail('grade_bundle phaseTimings must be an array');
       for (const timing of payload.phaseTimings) {

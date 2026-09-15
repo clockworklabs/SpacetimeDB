@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { STACK_BENCH_ROOT } from '../package-root.js';
-import { addressBookSchemaSource } from '../references/address-book-migration.js';
 
 const id = z.string().min(1);
 const integer = z.number().int().safe();
@@ -15,45 +14,21 @@ export const checkoutStateSchema = z.strictObject({
   itemId: id,
   priceMinor: integer,
   cart: z.array(z.strictObject({ itemId: id, quantity: integer })),
-  stock: z.array(z.strictObject({ warehouseId: id, quantity: integer })),
+  stock: z.array(z.strictObject({ warehouseId: id, quantity: integer })).min(1),
   reservations: z.array(z.strictObject({ itemId: id, warehouseId: id, quantity: integer })),
   orders: z.array(z.strictObject({ id, accountId: id, totalMinor: integer, status: z.string(), lines: z.array(line) })),
   payments: z.array(z.strictObject({ id, orderId: id, amountMinor: integer, status: z.string() })),
   orphanOrderLines: integer,
 });
 export type CheckoutState = z.infer<typeof checkoutStateSchema>;
-export class CheckoutDataError extends Error {}
-
-export function parseCheckoutState(value: unknown, checkoutInterface?: 'ecommerce-checkout-v1'): CheckoutState {
-  if (!value || typeof value !== 'object' || Object.keys(checkoutStateSchema.shape).some(key => !(key in value))) {
-    throw new Error('checkout reader returned an incomplete response');
-  }
-  try { return checkoutStateSchema.parse(value); }
-  catch (error) {
-    if (checkoutInterface && error instanceof z.ZodError) {
-      throw new CheckoutDataError(`stored checkout data violates the existing interface: ${error.message}`, { cause: error });
-    }
-    throw error;
-  }
-}
-
-// Version of the fixed, original business-storage interface. Each adapter still
-// validates its live query result; this identity is not a source-code whitelist.
-export function checkoutInterfaceIdentity(backend: string): Record<string, string> {
-  return { 'ecommerce-checkout-v1': createHash('sha256').update(`ecommerce-checkout-v1:${backend}`).digest('hex') };
-}
 
 // These readers are for audited reference schemas, not a schema discovery system.
 // Saved model apps need their own verified mapping before this diagnostic applies.
-export function verifyCheckoutSchema(backend: string, app: string, files: readonly string[],
-  { addressBookMigration = false }: { addressBookMigration?: boolean } = {}): Record<string, string> {
+export function verifyCheckoutSchema(backend: string, app: string, files: readonly string[]): Record<string, string> {
   return Object.fromEntries(files.map(file => {
     const read = (root: string) => readFileSync(join(root, file), 'utf8').replaceAll('\r\n', '\n');
     const actual = read(app);
-    const reference = read(join(STACK_BENCH_ROOT, 'reference-apps/ecommerce', backend));
-    const expected = addressBookMigration && backend === 'spacetime' && file === 'backend/spacetimedb/src/schema.ts'
-      ? addressBookSchemaSource(reference) : reference;
-    if (actual !== expected) {
+    if (actual !== read(join(STACK_BENCH_ROOT, 'reference-apps/ecommerce', backend))) {
       throw new Error(`checkout state reader has no verified mapping for ${backend}: ${file}`);
     }
     return [file, createHash('sha256').update(actual).digest('hex')];
@@ -63,18 +38,17 @@ export function verifyCheckoutSchema(backend: string, app: string, files: readon
 export function checkoutId(value: unknown): string {
   if (typeof value === 'string' && value) return value;
   if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return String(value);
-  if (typeof value === 'number') throw new Error('checkout reader cannot represent the observed identifier exactly');
-  throw new CheckoutDataError('checkout state reader received an invalid or inexact identifier');
+  throw new Error('checkout state reader received an invalid or inexact identifier');
 }
 
 export function checkoutMinor(value: unknown): number {
   if (typeof value !== 'number' && (typeof value !== 'string' || !/^-?\d+(?:\.\d+)?$/.test(value))) {
-    throw new CheckoutDataError('checkout state reader received an invalid amount');
+    throw new Error('checkout state reader received an invalid amount');
   }
   const scaled = Number(value) * 100;
   const minor = Math.round(scaled);
   if (!Number.isSafeInteger(minor) || Math.abs(scaled - minor) > 0.000001) {
-    throw new CheckoutDataError('checkout state amount is not an exact minor-unit amount');
+    throw new Error('checkout state amount is not an exact minor-unit amount');
   }
   return minor;
 }
@@ -92,7 +66,6 @@ export function checkoutDifferences(before: CheckoutState, prepared: CheckoutSta
     check(control, Number(isDeepStrictEqual(observed, expected)), 1);
   const sorted = <T>(values: readonly T[]) => [...values].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
   const total = (rows: readonly { quantity: number }[]) => rows.reduce((sum, row) => integer.parse(sum + row.quantity), 0);
-  check('initial stock available for checkout', Number(before.stock.length > 0), 1);
   for (const state of [prepared, after]) {
     same('checkout account and item identity', [state.accountId, state.itemId, state.priceMinor],
       [before.accountId, before.itemId, before.priceMinor]);

@@ -14,7 +14,6 @@ import { controlHostedFor, defineStackAdapter } from '../stack-adapter-common.js
 
 const POSTGRES_GRADING_CAPABILITIES = [
   'actors',
-  'address-book-read',
   'application-files',
   'application-lifecycle',
   'backend-lifecycle',

@@ -5,13 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { pendingRunSnapshot, gradeWithRetry, gradePopulatedCandidate, validatePopulatedRun,
-  auditFailureSummary, gradeArgv, parseAgentProcessResult }
+import { pendingRunSnapshot, gradeWithRetry, auditFailureSummary, gradeArgv, parseAgentProcessResult }
   from '../commands/bench.js';
-import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
-import type { CompletedGradeReport } from '../src/evidence/grade-report.js';
-import { verifyPopulatedPreparation } from '../src/evidence/grade-report.js';
-import type { PopulatedCheckpoint } from '../src/runtime/source-materialization.js';
 import { finalizeRunTotals }
   from '../src/evidence/benchmark-run.js';
 import { formatLevelSummary } from '../src/evidence/evidence-presentation.js';
@@ -35,73 +30,6 @@ import { hashAppSource } from '../src/runtime/source-snapshot.js';
 import type { GradeBundlePayload } from '../src/evidence/benchmark-run.js';
 import { compiledEntrypoint } from '../src/package-root.js';
 import { agentSessionFailure } from '../src/agents/agent-result-contract.js';
-
-test('populated grading restores the session pair after complete, incomplete and thrown grades', async () => {
-  const sourceSha256 = 'a'.repeat(64);
-  const receipt = { sourceSha256 } as PopulatedCheckpoint;
-  const application = { backend: 'postgres', app: '/app', port: 5000, probe: '/' };
-  for (const outcome of ['passed', 'incomplete', 'throws', 'changed-source', 'restore-fails', 'both-fail']) {
-    const events: string[] = [];
-    const result = gradePopulatedCandidate('/private/candidate', application, sourceSha256, async () => {
-      events.push('grade-original');
-      if (outcome === 'throws' || outcome === 'both-fail') throw new Error('grade failed');
-      return outcome === 'incomplete' ? null : { outcome: { kind: 'passed' } };
-    }, {
-      capture: async (_path, _application, _metadata, options) => {
-        assert.equal(options?.startApplication, false);
-        events.push('capture-session');
-        return outcome === 'changed-source' ? { ...receipt, sourceSha256: 'b'.repeat(64) } : receipt;
-      },
-      restore: async (_path, _application, _source, options) => {
-        assert.equal(options?.startApplication, false);
-        events.push('restore-session');
-        if (outcome === 'restore-fails' || outcome === 'both-fail') throw new Error('restore failed');
-        return receipt;
-      },
-    });
-    if (outcome === 'throws') await assert.rejects(result, /grade failed/);
-    else if (outcome === 'changed-source') await assert.rejects(result, /candidate changed/);
-    else if (outcome === 'restore-fails') await assert.rejects(result, /restore failed/);
-    else if (outcome === 'both-fail') await assert.rejects(result, error => {
-      assert(error instanceof AggregateError);
-      assert.deepEqual(error.errors.map(value => value.message), ['grade failed', 'restore failed']);
-      return true;
-    });
-    else assert.equal((await result)?.outcome?.kind ?? null, outcome === 'passed' ? 'passed' : null);
-    assert.deepEqual(events, outcome === 'changed-source'
-      ? ['capture-session', 'restore-session'] : ['capture-session', 'grade-original', 'restore-session']);
-  }
-});
-
-test('populated attempt rejects source-only continuation and incompatible work modes', () => {
-  const args = parseBenchArguments(['node', 'bench', '--backend', 'postgres', '--levels', '3']);
-  assert.doesNotThrow(() => validatePopulatedRun(args));
-  for (const change of [{ levelList: [2, 3] }, { seedFrom: '/old/source' }, { gradeFrom: '/old/run' },
-    { repairFrom: '/old/run' }, { progressionResumeFrom: '/old/run' }, { seedThrough: 2 },
-    { referenceMutationOnly: true }, { mutations: '/mutations.json' }, { taskMode: 'fresh' }]) {
-    assert.throws(() => validatePopulatedRun({ ...args, ...change }), /new same-lease attempt/);
-  }
-});
-
-test('zero-point preparation requires complete passing setup, checks and cleanup', () => {
-  const scenario = compileScenarioDefinition({ schemaVersion: 1, track: 'ecommerce', level: 3,
-    name: 'prepare', features: [{ id: 1, name: 'population', actors: ['a'], setup: [],
-      criteria: [{ id: '1a', desc: 'populate', category: 'production', points: 0,
-        steps: [{ do: 'expect', actor: 'a', testid: 'item-card' }] }] }] });
-  const passed = createCheckEvidence({ status: 'passed', code: 'measured', phase: 'assertion',
-    summary: 'done', startedAtMs: 1, completedAtMs: 2 });
-  const report: CompletedGradeReport = { selection: null, total: 0, max: 0,
-    features: [{ id: 1, name: 'population', score: 0, max: 0, consoleErrors: [], setupEvidence: passed,
-      criteria: [{ id: '1a', desc: 'populate', points: 0, evidence: passed }] }] };
-  assert.doesNotThrow(() => verifyPopulatedPreparation(scenario, report));
-  for (const invalid of [
-    { ...report, features: [] }, { ...report, total: 1 }, { ...report, cleanupEvidence: {} },
-    { ...report, features: [{ ...report.features[0]!, criteria: [] }] },
-    { ...report, features: [{ ...report.features[0]!, setupEvidence: { ...passed, status: 'inconclusive' as const } }] },
-    { ...report, features: [{ ...report.features[0]!, criteria: [
-      { ...report.features[0]!.criteria[0]!, evidence: { ...passed, status: 'failed' as const } }] }] },
-  ]) assert.throws(() => verifyPopulatedPreparation(scenario, invalid), /complete passing evidence/);
-});
 
 test('billable agent runs require the Docker appliance', () => {
   const env = { ...process.env };
@@ -588,24 +516,9 @@ test('grade retries preserve evidence, retry once, and skip usable or excluded g
     writeFileSync(join(grading, 'grader-selected-source-093.stderr.log'), 'first failure');
     writeFileSync(join(grading, 'media', 'video.webm'), 'large media');
 
-    const observed = join(output, 'observed');
-    mkdirSync(observed, { recursive: true });
-    const observedFailure = JSON.stringify({ outcome: { kind: 'incomplete' }, observation: 'observed' });
-    writeFileSync(join(observed, 'bundle.json'), observedFailure);
-    await gradeWithRetry({ gradingDirectory: observed, outputDir: output, label: 'observed',
-      archiveLabel: 'observed-before-retry', runGrade: label => {
-        if (label.endsWith('-retry')) {
-          writeFileSync(join(observed, 'bundle.json'), 'later observed grade');
-          return { outcome: { kind: 'passed' } };
-        }
-        return { outcome: { kind: 'incomplete' } };
-      } });
-    assert.equal(readFileSync(join(output, 'candidate-grades', 'observed-before-retry', 'bundle.json'), 'utf8'), observedFailure);
-    assert.equal(readFileSync(join(grading, 'bundle.json'), 'utf8'), failed, 'observed retry leaves scored evidence intact');
-
     for (const label of ['l3-before-retry', 'l3-repair1-before-retry']) {
       const calls: string[] = [];
-      await gradeWithRetry({ gradingDirectory: grading, outputDir: output, label: 'grade', archiveLabel: label,
+      await gradeWithRetry({ appDir: app, outputDir: output, label: 'grade', archiveLabel: label,
         runGrade: gradeLabel => {
           calls.push(gradeLabel);
           if (gradeLabel.endsWith('-retry')) {
@@ -617,7 +530,7 @@ test('grade retries preserve evidence, retry once, and skip usable or excluded g
     }
     for (const retry of [true, false]) {
       let calls = 0;
-      await gradeWithRetry({ gradingDirectory: grading, outputDir: output, label: 'grade',
+      await gradeWithRetry({ appDir: app, outputDir: output, label: 'grade',
         archiveLabel: 'must-not-archive', retry,
         runGrade: () => { calls++; return { outcome: { kind: retry ? 'app_failure' : 'harness_failure' } }; } });
       assert.equal(calls, 1);

@@ -1,5 +1,5 @@
 import type { CheckCategory } from './definition-compiler.js';
-import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { z } from 'zod';
 
@@ -15,7 +15,6 @@ import type {
 } from './composition-compiler.js';
 import type { CompiledStep } from './definition-compiler.js';
 import { TRACK_MANIFEST_FILE, type Track } from './tracks.js';
-import { loadReferenceRegistry, selectReferenceFixture } from '../references/reference-fixtures.js';
 
 export const RECIPE_RELEASE_SCHEMA_VERSION = 3;
 
@@ -91,11 +90,6 @@ export interface RecipeRelease extends RecipeReleaseIdentity {
   task: {
     mode: string;
     baseRecipe: RecipeReleaseIdentity | null;
-    startingState?: {
-      preparation: string;
-      level: number;
-      references: Array<{ backend: string; fixtureId: string; sourceSha256: string }>;
-    };
     requirements: RecipeTaskFragment[];
     contracts: RecipeTaskFragment[];
     requirementSha256: string;
@@ -387,22 +381,6 @@ function buildCompiledRecipeRelease(absoluteRecipe: string, root: string,
       trackRoot: root,
     });
   }
-  const preparation = plan.recipe.task.startingState;
-  let startingState: RecipeRelease['task']['startingState'];
-  if (preparation) {
-    if (!baseRelease) throw new Error('populated upgrade has no base recipe');
-    const registry = loadReferenceRegistry();
-    const references = ['mongodb', 'postgres', 'spacetime'].map(backend => {
-      const fixture = selectReferenceFixture(registry, { backend, track: plan.recipe.track,
-        level: preparation.scenario.level, recipe: baseRelease.id });
-      const sourceSha256 = fixture.imported?.sourceSha256;
-      if (!sourceSha256 || !SHA256.test(sourceSha256)) {
-        throw new Error(`populated upgrade reference ${fixture.id} has no pinned source`);
-      }
-      return { backend, fixtureId: fixture.id, sourceSha256 };
-    });
-    startingState = { preparation: preparation.preparation, level: preparation.scenario.level, references };
-  }
 
   const meaningDocument = canonicalizeDefinition({
     schemaVersion: RECIPE_RELEASE_SCHEMA_VERSION,
@@ -458,7 +436,6 @@ function buildCompiledRecipeRelease(absoluteRecipe: string, root: string,
     task: {
       mode: plan.recipe.task.mode,
       baseExecutionSha256: baseRelease?.executionSha256 ?? null,
-      ...(startingState ? { startingState, preparation: preparation!.scenario } : {}),
     },
     fixture: {
       warehouses: plan.fixture.warehouses,
@@ -523,7 +500,6 @@ function buildCompiledRecipeRelease(absoluteRecipe: string, root: string,
     sourceEntry(root, trackManifestPath, 'track-manifest'),
     sourceEntry(root, absoluteRecipe, 'recipe'),
     sourceEntry(root, fixturePath, 'fixture'),
-    ...(preparation ? [sourceEntry(root, join(root, preparation.preparation), 'starting-state-preparation')] : []),
     ...plan.packs.map(pack => sourceEntry(root, join(root, 'composition', pack.path), 'pack')),
     ...plan.execution.map(execution => sourceEntry(root, join(root, execution.source), 'scenario')),
     ...documents.requirements.map(fragment => sourceEntry(root, join(root, fragment.path), 'requirement-source')),
@@ -549,7 +525,6 @@ function buildCompiledRecipeRelease(absoluteRecipe: string, root: string,
     task: {
       mode: plan.recipe.task.mode,
       baseRecipe: baseRelease ? recipeReleaseIdentity(baseRelease) : null,
-      ...(startingState ? { startingState } : {}),
       requirements: documents.requirements.map(({ text: _text, ...fragment }) => fragment),
       contracts: documents.contracts.map(({ text: _text, ...fragment }) => fragment),
       requirementSha256: sha256(documents.requirementText),
@@ -754,39 +729,16 @@ export function resolveRecipeRelease(track: Track, level: number,
       && (!exact || entry.recipe.id === exact.id)).map(entry => ({ catalog, entry, path }));
   });
   if (!choices.length && !exact) return null;
-  let recipePath: string;
-  let selectionPath: string;
-  let catalog: CompiledRecipeSelectionCatalog | undefined;
-  const standalone = choices.length === 0 && exact;
-  if (standalone) {
-    const directory = join(track.dir, 'composition', 'recipes');
-    const matches = readdirSync(directory, { withFileTypes: true })
-      .filter(file => file.isFile() && file.name.endsWith('.json'))
-      .map(file => join(directory, file.name))
-      .filter(path => {
-        const recipe = readDefinitionJson(path, 'recipe');
-        return record(recipe) && recipe.id === exact.id;
-      });
-    if (matches.length !== 1) throw new Error(`${exact.id} requires exactly one recipe; found ${matches.length}`);
-    recipePath = matches[0]!;
-    selectionPath = recipePath;
-  } else {
-    if (choices.length !== 1) throw new Error(`${alias} requires exactly one selected recipe; found ${choices.length}`);
-    const choice = choices[0]!;
-    catalog = choice.catalog;
-    selectionPath = choice.path;
-    recipePath = join(track.dir, 'composition', choice.entry.recipe.path);
-  }
+  if (choices.length !== 1) throw new Error(`${alias} requires exactly one selected recipe; found ${choices.length}`);
+  const choice = choices[0];
+  if (!choice) throw new Error(`${alias} recipe selection disappeared`);
+  const { catalog, entry: selected, path: selectionPath } = choice;
+  const recipePath = join(track.dir, 'composition', selected.recipe.path);
   const plan = compileRecipeFile(recipePath, { trackRoot: track.dir });
-  if ((standalone && (!plan.recipe.task.startingState || plan.recipe.sequence))
-    || (plan.recipe.task.startingState && plan.recipe.task.startingState.scenario.level !== Number(level))) {
-    throw new Error(`${plan.recipe.id} must be a populated upgrade at ${alias}`);
-  }
   if (plan.recipe.sequence?.level !== undefined && plan.recipe.sequence.level !== Number(level)) {
     throw new Error(`${plan.recipe.id} is sequential L${plan.recipe.sequence.level}, not ${alias}`);
   }
   if (plan.recipe.sequence?.level && plan.recipe.sequence.level > 1) {
-    if (!catalog) throw new Error('sequential recipe has no selection catalog');
     assertSequentialBase(plan, catalog, track, level);
   }
   const release = buildCompiledRecipeRelease(realpathSync(recipePath), realpathSync(track.dir), plan);

@@ -138,7 +138,6 @@ export interface CompiledRecipePlan {
     task: {
       mode: string;
       baseRecipe: { id: string; path: string } | null;
-      startingState?: { preparation: string; scenario: CompiledScenarioDefinition };
       requirements: CompiledOwnedTaskFragment[];
       contracts: CompiledOwnedTaskFragment[];
       requirementText: string;
@@ -566,7 +565,7 @@ const RECIPE_FIELDS = new Set([
   'fixture', 'task', 'packs', 'execution', 'scoring', 'sequence',
 ]);
 const FILE_REF_FIELDS = new Set(['path', 'id']);
-const TASK_FIELDS = new Set(['mode', 'baseRecipe', 'framing', 'startingState']);
+const TASK_FIELDS = new Set(['mode', 'baseRecipe', 'framing']);
 const PACK_SELECTION_FIELDS = new Set(['path', 'id', 'includeRoles',
   'includeCheckGroups']);
 const EXECUTION_FIELDS = new Set(['id', 'source']);
@@ -584,7 +583,7 @@ type ValidatedRecipe = {
   fixture: FileRef;
   task: ({ mode: 'upgrade'; baseRecipe: FileRef }
     | { mode: 'fresh' | 'action'; baseRecipe?: undefined })
-    & { framing: ValidatedTaskFragmentSet; startingState?: { preparation: string } };
+    & { framing: ValidatedTaskFragmentSet };
   packs: Array<FileRef & { includeRoles: string[]; includeCheckGroups?: string[] }>;
   execution: 'all-selected-sources' | Array<{ id: string; source: string }>;
   scoring: { mode: 'explicit'; weights: Record<string, number> }
@@ -624,14 +623,6 @@ export function compileRecipeDefinition(input: unknown,
     validateFileRef(task.baseRecipe, `${source}.task.baseRecipe`);
   } else if (task.baseRecipe !== undefined) {
     fail(`${source}.task.baseRecipe`, 'is allowed only for upgrade recipes');
-  }
-  if (task.startingState !== undefined) {
-    const at = `${source}.task.startingState`;
-    strictObject(task.startingState, at, new Set(['preparation']));
-    string(task.startingState.preparation, `${at}.preparation`);
-    if (task.mode !== 'upgrade' || recipe.sequence !== undefined) {
-      fail(at, 'requires a standalone upgrade without a sequence');
-    }
   }
   const scoring = recipe.scoring;
   const framing = taskFragmentSet(task.framing, `${source}.task.framing`);
@@ -704,7 +695,7 @@ export function compileRecipeDefinition(input: unknown,
     if (Number(sequence.level) > 1 && task.mode !== 'upgrade') {
       fail(`${source}.task.mode`, 'sequence levels after 1 must use upgrade mode');
     }
-  } else if (task.mode !== 'action' && task.startingState === undefined) {
+  } else if (task.mode !== 'action') {
     fail(`${source}.sequence`, 'is required for fresh and upgrade recipes');
   }
   return recipe as ValidatedRecipe;
@@ -747,18 +738,6 @@ export function compileRecipeFile(recipePath: string,
       fail(at, `expected ${base.id}, found ${plan.recipe.id}`);
     }
     baseRecipe = { id: plan.recipe.id, path: ref.relative };
-  }
-  let startingState: CompiledRecipePlan['recipe']['task']['startingState'];
-  if (recipe.task.startingState) {
-    const at = `${recipeSource}.task.startingState.preparation`;
-    const ref = contained(root, root, recipe.task.startingState.preparation, at);
-    const scenario = compileScenarioDefinition(readDefinitionJson(ref.absolute, 'starting-state preparation'),
-      { source: ref.relative });
-    if (scenario.track !== recipe.track) fail(at, 'must declare the same track');
-    if (scenario.features.some(feature => feature.criteria.some(criterion => criterion.points !== 0))) {
-      fail(at, 'preparation criteria must have zero points');
-    }
-    startingState = { preparation: ref.relative, scenario };
   }
 
   const selectedPacks: SelectedPack[] = [];
@@ -1068,7 +1047,6 @@ export function compileRecipeFile(recipePath: string,
       task: {
         mode: recipe.task.mode,
         baseRecipe,
-        ...(startingState ? { startingState } : {}),
         requirements: taskRequirements,
         contracts: taskContracts,
         requirementText: taskRequirements.map(fragment => fragment.text).join(''),

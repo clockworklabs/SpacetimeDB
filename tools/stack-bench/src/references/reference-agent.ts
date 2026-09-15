@@ -20,15 +20,10 @@ import type { HostedReferenceMetadata, SpacetimeReferenceMetadata }
   from '../stacks/stack-reference-operations.js';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.js';
 import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtureSource,
-  REFERENCE_METADATA_FILE, referenceMetadataIssues, referenceSourcePath, validateReferenceRegistry }
+  REFERENCE_METADATA_FILE, referenceMetadataIssues, validateReferenceRegistry }
   from './reference-fixtures.js';
 import { resolveReferenceSelection } from './reference-selection.js';
-import { assertPlainAppSourceTree, hashAppSource, restoreAppSource } from '../runtime/source-snapshot.js';
-import { controlAppServer } from '../runtime/backend-control.js';
-import { handoffBuildWorkspace } from '../runtime/backend-teardown.js';
-import { requirePopulatedWorkspace } from '../runtime/source-materialization.js';
-import { addressBookReferenceRequest, applyAddressBookMigration, applyAddressBookDefect }
-  from './address-book-migration.js';
+import { assertPlainAppSourceTree, hashAppSource } from '../runtime/source-snapshot.js';
 
 import { compiledEntrypoint } from '../package-root.js';
 const RUN_BUILD = compiledEntrypoint('container', 'run-build.js');
@@ -238,52 +233,10 @@ function containerLogs(container: string, ...names: readonly string[]): string {
   }).join('\n');
 }
 
-function reportReferenceResult(args: ReferenceAgentArgs, started: number,
-  imageId: string | undefined, provenance?: Record<string, unknown>): void {
-  console.log(JSON.stringify({ appDir: args.app, mode: args.mode, level: args.level,
-    track: args.track, backend: args.backend, model: 'reference-fixture',
-    setup: { isolation: { mode: 'container', image: IMAGE, imageId }, session: 'model-free-reference' },
-    costUsd: 0, tokens: 0, outputTokens: 0,
-    usage: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 }, turns: 0,
-    promptBytes: 0, durationMs: Date.now() - started,
-    sessionId: `reference-${args.backend}-${Date.now()}`, ok: true,
-    ...(provenance ? { provenance } : {}) }));
-}
-
 async function main(): Promise<void> {
   const started = Date.now();
   phase('starting');
   const args = parseReferenceAgentArgs(process.argv);
-  const migration = addressBookReferenceRequest(args.recipe, args.mode, args.track, args.level);
-  if (migration) {
-    const { lease } = leaseFromEnv(process.env, { backend: args.backend, active: true });
-    if (lease.track !== args.track || lease.runIndex !== args.runIndex) throw new Error('migration lease does not match request');
-    const container = requirePopulatedWorkspace(lease, args.app);
-    const ports = portsFor(loadTrack(args.track), args.backend, args.runIndex);
-    const spec = { backend: args.backend, app: args.app, port: ports.vite, probe: '/' };
-    assertPlainAppSourceTree(args.app);
-    const before = hashAppSource(args.app);
-    const fixture = resolveReferenceSelection(loadReferenceRegistry(),
-      { ...args, recipe: 'ecommerce.progression-catalog' }).fixture;
-    const inspection = inspectImportedReference(fixture);
-    if (!inspection.ok) throw new Error(`invalid migration starting reference: ${inspection.failures.join('; ')}`);
-    if (before.files.length === 0 || (args.mode === 'upgrade' && before.sha256 !== fixture.imported?.sourceSha256)) {
-      throw new Error('migration upgrade requires the populated starting reference source');
-    }
-    await controlAppServer(spec, 'stop');
-    handoffBuildWorkspace(container.id);
-    // A reference fix supplies the correct implementation, while retaining the
-    // candidate's database. Only the runner may restore a rejected data state.
-    if (args.mode === 'fix') restoreAppSource(referenceSourcePath(fixture), args.app);
-    let source = applyAddressBookMigration(args.app, args.backend);
-    if (migration.defect) source = applyAddressBookDefect(args.app, args.backend, migration.defect);
-    await controlAppServer(spec, 'start');
-    const after = hashAppSource(args.app);
-    if (after.sha256 !== source.sha256) throw new Error('migration startup changed the supplied source');
-    reportReferenceResult(args, started, container.image, {
-      sourceBefore: before.sha256, sourceAfter: after.sha256, databaseStatePolicy: 'retain' });
-    return;
-  }
   const source = prepareReferenceSource(args);
   phase(`${source.seeded ? 'seeded' : 'verified'} ${source.fixture.id} (${source.sourceSha256.slice(0, 12)})`);
   const adapter = STACK_ADAPTER_REGISTRY.get(args.backend);
@@ -354,7 +307,14 @@ async function main(): Promise<void> {
   });
 
   phase('deployment complete');
-  reportReferenceResult(args, started, containerIdentity.split(' ')[1]);
+  console.log(JSON.stringify({ appDir: args.app, mode: args.mode, level: args.level,
+    track: args.track, backend: args.backend, model: 'reference-fixture',
+    setup: { isolation: { mode: 'container', image: IMAGE,
+      imageId: containerIdentity.split(' ')[1] }, session: 'model-free-reference' },
+    costUsd: 0, tokens: 0, outputTokens: 0,
+    usage: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 }, turns: 0,
+    promptBytes: 0, durationMs: Date.now() - started,
+    sessionId: `reference-${args.backend}-${Date.now()}`, ok: true }));
 }
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
