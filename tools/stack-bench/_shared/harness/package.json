@@ -1,0 +1,15 @@
+{
+  "name": "@stack-bench/harness",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Backend-neutral behavioral grader for stack-bench tasks. Compiled to dist/ and injected into each task's tests/ by build-task.sh.",
+  "main": "dist/runScenario.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0"
+  }
+}

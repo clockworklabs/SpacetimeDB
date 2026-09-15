@@ -1,0 +1,11 @@
+[package]
+name = "chat-module"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Pin to the SpacetimeDB version installed in the environment image.
+spacetimedb = "1"
