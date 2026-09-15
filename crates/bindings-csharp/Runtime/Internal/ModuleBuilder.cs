@@ -5,11 +5,11 @@ using System.Collections.Generic;
 using System.Linq;
 using SpacetimeDB.BSATN;
 
-internal sealed class ModuleBuilder
+public sealed class ModuleBuilder
 {
-    internal Module.TypeRegistrar TypeRegistrar { get; }
+    private Module.TypeRegistrar TypeRegistrar { get; }
 
-    internal ModuleBuilder() => TypeRegistrar = new Module.TypeRegistrar(this);
+    public ModuleBuilder() => TypeRegistrar = new Module.TypeRegistrar(this);
 
     private static class ReducerCache<R>
         where R : IReducer, new()
@@ -94,7 +94,7 @@ internal sealed class ModuleBuilder
         return typeRef;
     }
 
-    internal void RegisterReducer<R>()
+    public void RegisterReducer<R>()
         where R : IReducer, new()
     {
         var reducer = ReducerCache<R>.Instance;
@@ -113,7 +113,7 @@ internal sealed class ModuleBuilder
         }
     }
 
-    internal void RegisterProcedure<P>()
+    public void RegisterProcedure<P>()
         where P : IProcedure, new()
     {
         var procedure = ProcedureCache<P>.Instance;
@@ -122,7 +122,7 @@ internal sealed class ModuleBuilder
 
     internal void RegisterProcedure(RawProcedureDefV10 procedure) => procedureDefs.Add(procedure);
 
-    internal void RegisterHttpHandler<H>()
+    public void RegisterHttpHandler<H>()
         where H : IHttpHandler, new()
     {
         var handler = HttpHandlerCache<H>.Instance;
@@ -131,7 +131,7 @@ internal sealed class ModuleBuilder
 
     internal void RegisterHttpHandler(RawHttpHandlerDefV10 handler) => httpHandlerDefs.Add(handler);
 
-    internal void RegisterHttpRouter(SpacetimeDB.Router router)
+    public void RegisterHttpRouter(SpacetimeDB.Router router)
     {
         foreach (var route in router.GetRoutes())
         {
@@ -158,12 +158,10 @@ internal sealed class ModuleBuilder
 
     internal void RegisterHttpRoute(RawHttpRouteDefV10 route) => httpRouteDefs.Add(route);
 
-    internal void RegisterTable<T, View>()
+    public void RegisterTable<T, View>()
         where T : IStructuralReadWrite, new()
-        where View : ITableView<View, T>, new()
-    {
+        where View : ITableView<View, T>, new() =>
         RegisterTable(View.MakeTableDesc(TypeRegistrar), View.MakeScheduleDesc());
-    }
 
     internal void RegisterTable(RawTableDefV10 table, RawScheduleDefV10? schedule)
     {
@@ -174,7 +172,7 @@ internal sealed class ModuleBuilder
         }
     }
 
-    internal void RegisterView<TDispatcher>()
+    public void RegisterView<TDispatcher>()
         where TDispatcher : IView, new()
     {
         var dispatcher = ViewDispatcherCache<TDispatcher>.Instance;
@@ -182,7 +180,7 @@ internal sealed class ModuleBuilder
         RegisterView(def);
     }
 
-    internal void RegisterAnonymousView<TDispatcher>()
+    public void RegisterAnonymousView<TDispatcher>()
         where TDispatcher : IAnonymousView, new()
     {
         var dispatcher = AnonymousViewDispatcherCache<TDispatcher>.Instance;
@@ -192,10 +190,10 @@ internal sealed class ModuleBuilder
 
     internal void RegisterView(RawViewDefV10 view) => viewDefs.Add(view);
 
-    internal void RegisterViewPrimaryKey(string viewSourceName, IEnumerable<string> columns) =>
+    public void RegisterViewPrimaryKey(string viewSourceName, IEnumerable<string> columns) =>
         viewPrimaryKeyDefs.Add(new RawViewPrimaryKeyDefV10(viewSourceName, [.. columns]));
 
-    internal void RegisterClientVisibilityFilter(Filter rlsFilter)
+    public void RegisterClientVisibilityFilter(Filter rlsFilter)
     {
         if (rlsFilter is Filter.Sql(var rlsSql))
         {
@@ -210,7 +208,7 @@ internal sealed class ModuleBuilder
     internal void RegisterRowLevelSecurity(RawRowLevelSecurityDefV9 rls) =>
         rowLevelSecurityDefs.Add(rls);
 
-    internal void RegisterTableDefaultValue(string table, ushort colId, byte[] value)
+    public void RegisterTableDefaultValue(string table, ushort colId, byte[] value)
     {
         if (!defaultValuesByTable.TryGetValue(table, out var defaults))
         {
@@ -220,18 +218,18 @@ internal sealed class ModuleBuilder
         defaults.Add(new RawColumnDefaultValueV10(colId, [.. value]));
     }
 
-    internal void SetCaseConversionPolicy(SpacetimeDB.CaseConversionPolicy policy) =>
+    public void SetCaseConversionPolicy(SpacetimeDB.CaseConversionPolicy policy) =>
         caseConversionPolicy = policy;
 
-    internal void RegisterExplicitTableName(string sourceName, string canonicalName) =>
+    public void RegisterExplicitTableName(string sourceName, string canonicalName) =>
         explicitNames.Add(new ExplicitNameEntry.Table(new NameMapping(sourceName, canonicalName)));
 
-    internal void RegisterExplicitFunctionName(string sourceName, string canonicalName) =>
+    public void RegisterExplicitFunctionName(string sourceName, string canonicalName) =>
         explicitNames.Add(
             new ExplicitNameEntry.Function(new NameMapping(sourceName, canonicalName))
         );
 
-    internal void RegisterExplicitIndexName(string sourceName, string canonicalName) =>
+    public void RegisterExplicitIndexName(string sourceName, string canonicalName) =>
         explicitNames.Add(new ExplicitNameEntry.Index(new NameMapping(sourceName, canonicalName)));
 
     internal RawModuleDefV10 BuildModuleDefinition()

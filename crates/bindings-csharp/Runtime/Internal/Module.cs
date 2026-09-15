@@ -42,6 +42,7 @@ public static class Module
     }
 
     private static readonly ModuleBuilder moduleDef = new();
+    public static ModuleBuilder RootBuilder => moduleDef;
 
     private static Func<
         Identity,
