@@ -233,18 +233,14 @@ fn auto_migrate_database(
                     .ty
                     .clone();
 
-                // Convert `SequenceDef` min/max to `AlgebraicValue`s of the correct type.
+                // Convert `SequenceSchema` min/max to `AlgebraicValue`s of the correct type.
                 let min = ty
-                    .saturating_value_from_i128(sequence_def.min_value.unwrap_or(1))
+                    .saturating_value_from_i128(SequenceSchema::MIN_VALUE)
                     .ok_or_else(|| {
                         anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid min value")
                     })?;
 
-                let max = match sequence_def.max_value {
-                    Some(max) => ty.saturating_value_from_i128(max),
-                    None => ty.saturating_value_from_i128(i128::MAX),
-                }
-                .ok_or_else(|| {
+                let max = ty.saturating_value_from_i128(i128::MAX).ok_or_else(|| {
                     anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid max value")
                 })?;
 
@@ -1640,11 +1636,13 @@ mod test {
         let stdb = stdb.reopen()?;
 
         // After replay, the allocation cursor should be preserved.
+        // We only care that the next value is strictly higher than all the previous ones,
+        // but we happen to get the value 4 here because we do not perform any sequence allocation batching.
         {
             let ids = insert_and_collect_ids(&stdb, product![0i64, 99u64].into())?;
             assert!(
-                ids.iter().last().unwrap() == &4097,
-                "expected id 4097 after reopen, got {ids:?}"
+                ids.iter().last().unwrap() == &4,
+                "expected id 4 after reopen, got {ids:?}"
             );
         }
 
