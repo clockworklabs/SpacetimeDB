@@ -5,8 +5,8 @@ ecommerce starting references. The starting references stay unchanged.
 
 `src/references/address-book-migration.ts` checks the starting source identity
 and patch anchors. It adds the native implementation without deploying or
-resetting the database. Normal application startup performs migration against
-the retained database. Each live receipt must include both source identities.
+resetting the database. Startup or first use performs migration against the
+retained database. Each live receipt must include both source identities.
 
 Implemented: PostgreSQL transactions, MongoDB transactions with an embedded
 address book, and SpacetimeDB reducers with private tables and an owner view.
@@ -53,3 +53,18 @@ No registered recipe, scored check or qualification status changes here.
 The draft specification still needs per-check controls and integration before
 scored promotion. Repair rollback, fault recovery, concurrent migration and
 full database coverage are not established by this diagnostic.
+
+## Local validation, 14 September 2026
+
+Code `8dd180fa6` passed one positive migration and detected all six selected
+defects on each stack: 21 planned, started and measured cases. All 21 stored
+source hashes matched their records, and all owned run containers were released.
+Package type checking and 48 focused tests passed. The diagnostic image was
+`sha256:41f12f5d9552e3b8633521a482f65b9c9efe6ebc19cc942ff05379957947ef1c`.
+
+The earlier 29 development attempts remain in the local audit, including nine
+unqualified attempts. Their issues included a container argument error, a pinned
+SDK callback mismatch, an invalid negative-control build, scheduled delivery
+changing the baseline, and three browser setup timeouts. The timeout cause is
+not proven by the later passes. These results qualify this reference stage;
+they do not promote a scored migration task or establish model performance.
