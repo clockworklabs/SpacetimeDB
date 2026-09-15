@@ -1,5 +1,21 @@
 # Grading coverage review
 
+## Purchase contention diagnostics
+
+The optional purchase, scarce-stock, and restock contention scenarios use the
+existing request recorder and verified reference database readers. They compare
+accepted purchases with each buyer's new orders and payments, preserve earlier
+records, and reconcile stock against order allocations and restock requests.
+Scarce stock limits accepted sales. Ample stock requires every purchase to succeed.
+Mixed groups prepare credentials and inputs before dispatch and retain each result.
+Unknown responses remain unmeasured.
+
+These are reference diagnostics, outside scored campaigns. They establish net
+per-warehouse conservation and per-buyer counts. They do not identify each order
+by a durable request ID, expose every compensating error, or prove intermediate
+state correctness, server execution overlap, crash safety, or sustained throughput.
+Saved model apps need verified reader mappings before these observations apply.
+
 ## Concurrent cancellation diagnostic
 
 `diagnostic-cancellation-contention.json` sends overlapping cancellation calls
