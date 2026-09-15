@@ -15,6 +15,7 @@ import type {
 } from '../lib/indexes.ts';
 import type { Bound } from '../server/range.ts';
 import type { Prettify } from '../lib/type_util.ts';
+import { TableCacheIndex } from './table_cache_index.ts';
 
 export type Operation<
   RowType extends Record<string, any> = Record<string, any>,
@@ -73,6 +74,7 @@ export class TableCacheImpl<
   >;
   private tableDef: TableDefForTableName<RemoteModule, TableName>;
   private emitter: EventEmitter<'insert' | 'delete' | 'update'>;
+  readonly #indexes: TableCacheIndex[] = [];
 
   /**
    * @param name the table name
@@ -93,16 +95,17 @@ export class TableCacheImpl<
     // - `indexes` is declarative table-level config (`IndexOpts`) used mainly for typing.
     // - `resolvedIndexes` is the runtime shape (`UntypedIndex`) that includes both
     //   field-level and explicit table-level indexes.
-    for (const idxDef of this.tableDef.resolvedIndexes) {
+    // Later entries win for duplicate accessor names, matching the previous
+    // assignment semantics. Only maintain dictionaries for visible accessors.
+    const indexesByName = new Map(
+      this.tableDef.resolvedIndexes.map(index => [index.name, index])
+    );
+    for (const idxDef of indexesByName.values()) {
       const index = this.#makeReadonlyIndex(this.tableDef, idxDef);
-      // IMPORTANT: for duplicate accessor names, client cache uses assignment
-      // semantics and later entries overwrite earlier ones. This matches prior
-      // behavior and is intentionally different from server runtime merge logic.
       (this as any)[idxDef.name] = index;
     }
   }
 
-  // TODO: this just scans the whole table; we should build proper index structures
   #makeReadonlyIndex<
     I extends TableDefForTableName<
       RemoteModule,
@@ -121,68 +124,26 @@ export class TableCacheImpl<
     }
 
     const columns = idx.columns;
+    const index = new TableCacheIndex(tableDef, columns);
+    this.#indexes.push(index);
 
-    // Extract the tuple key for this btree index (column order preserved)
-    const getKey = (row: Row): readonly unknown[] =>
-      columns.map(c => (row as Record<string, unknown>)[c]);
-
-    // The server’s ranged scan fixes all prefix cols to equality and applies
-    // the bound only to the *last* term. We mirror that.
-    //
-    // rangeArg for multi-col index is:
-    //   [...prefixEqualValues, (lastTerm | Range<lastTerm>)]
-    //
-    // If only one element is provided, it’s the last term (scalar or Range).
-    const matchRange = (row: Row, rangeArg: any): boolean => {
-      const key = getKey(row);
-
-      // Normalize rangeArg into an array.
-      // With multi-col b-tree, IndexScanRangeBounds always yields at least one element.
-      const arr = Array.isArray(rangeArg) ? rangeArg : [rangeArg];
-
-      const prefixLen = Math.max(0, arr.length - 1);
-      // Check equality over the prefix (all but the last provided element)
-      for (let i = 0; i < prefixLen; i++) {
-        if (!deepEqual(key[i], arr[i])) return false;
+    // Prefix equality is handled by the dictionary. Apply bounds only to the
+    // last provided term; any remaining index columns are unconstrained.
+    const matchRange = (
+      value: unknown,
+      { from, to }: { from: Bound<any>; to: Bound<any> }
+    ): boolean => {
+      if (from.tag !== 'unbounded') {
+        const c = scalarCompare(value, from.value);
+        if (c < 0) return false;
+        if (c === 0 && from.tag === 'excluded') return false;
       }
-
-      const lastProvided = arr[arr.length - 1];
-      const kLast = key[prefixLen];
-
-      // If the last provided is a Range<T>, apply bounds; otherwise equality.
-      if (
-        lastProvided &&
-        typeof lastProvided === 'object' &&
-        'from' in lastProvided &&
-        'to' in lastProvided
-      ) {
-        // Range<T>
-        const from = lastProvided.from as Bound<any>;
-        const to = lastProvided.to as Bound<any>;
-
-        // Lower bound
-        if (from.tag !== 'unbounded') {
-          const c = scalarCompare(kLast, from.value);
-          if (c < 0) return false;
-          if (c === 0 && from.tag === 'excluded') return false;
-        }
-
-        // Upper bound
-        if (to.tag !== 'unbounded') {
-          const c = scalarCompare(kLast, to.value);
-          if (c > 0) return false;
-          if (c === 0 && to.tag === 'excluded') return false;
-        }
-
-        // All good on last term; any remaining columns (if any) are unconstrained,
-        // which matches server behavior for a prefix scan.
-        return true;
-      } else {
-        // Equality on the last provided element
-        if (!deepEqual(kLast, lastProvided)) return false;
-        // Any remaining columns are unconstrained (prefix equality only).
-        return true;
+      if (to.tag !== 'unbounded') {
+        const c = scalarCompare(value, to.value);
+        if (c > 0) return false;
+        if (c === 0 && to.tag === 'excluded') return false;
       }
+      return true;
     };
 
     // An index is unique if it shares all columns with a unique constraint
@@ -200,8 +161,12 @@ export class TableCacheImpl<
         find: (colVal: any): Row | null => {
           // For unique btree, caller supplies the *full* key (tuple if multi-col).
           const expected = Array.isArray(colVal) ? colVal : [colVal];
-          for (const row of self.iter()) {
-            if (deepEqual(getKey(row), expected)) return row;
+          if (expected.length !== columns.length) return null;
+          const rowIds = index.lookup(expected);
+          if (rowIds) {
+            for (const rowId of rowIds) {
+              return self.rows.get(rowId)![0] as Row;
+            }
           }
           return null;
         },
@@ -210,13 +175,49 @@ export class TableCacheImpl<
     } else {
       const impl: ReadonlyRangedIndex<TableDef, I> = {
         *filter(range: any): IteratorObject<Row, undefined> {
-          for (const row of self.iter()) {
-            if (matchRange(row, range)) yield row;
+          const terms = Array.isArray(range) ? range : [range];
+          const last = terms[terms.length - 1];
+          const isRange =
+            last && typeof last === 'object' && 'from' in last && 'to' in last;
+          const prefix = isRange ? terms.slice(0, -1) : terms;
+          if (isRange && prefix.length === 0) {
+            // A range without an equality prefix still needs a scan.
+            for (const row of self.iter()) {
+              const value = (row as Record<string, unknown>)[columns[0]];
+              if (matchRange(value, last)) yield row;
+            }
+          } else {
+            const rowIds = index.lookup(prefix);
+            if (rowIds) {
+              for (const rowId of rowIds) {
+                const row = self.rows.get(rowId)![0] as Row;
+                if (
+                  !isRange ||
+                  matchRange(
+                    (row as Record<string, unknown>)[columns[prefix.length]],
+                    last
+                  )
+                )
+                  yield row;
+              }
+            }
           }
         },
       };
       return impl as ReadonlyIndex<TableDef, I>;
     }
+  }
+
+  #setRow(
+    rowId: ComparablePrimitive,
+    row: RowType<TableDefForTableName<RemoteModule, TableName>>,
+    refCount: number
+  ): void {
+    const oldRow = this.rows.get(rowId)?.[0];
+    for (const index of this.#indexes) {
+      index.replace(rowId, oldRow, row);
+    }
+    this.rows.set(rowId, [row, refCount]);
   }
 
   /**
@@ -383,7 +384,7 @@ export class TableCacheImpl<
       );
       return undefined;
     }
-    this.rows.set(rowId, [newRow, refCount]);
+    this.#setRow(rowId, newRow, refCount);
     // This indicates something is wrong, so we could arguably crash here.
     if (previousCount === 0) {
       stdbLogger(
@@ -418,7 +419,7 @@ export class TableCacheImpl<
       operation.row,
       0,
     ];
-    this.rows.set(operation.rowId, [operation.row, previousCount + count]);
+    this.#setRow(operation.rowId, operation.row, previousCount + count);
     if (previousCount === 0) {
       return {
         type: 'insert',
@@ -439,7 +440,7 @@ export class TableCacheImpl<
     >,
     count: number = 1
   ): PendingCallback | undefined => {
-    const [_, previousCount] = this.rows.get(operation.rowId) || [
+    const [oldRow, previousCount] = this.rows.get(operation.rowId) || [
       operation.row,
       0,
     ];
@@ -451,6 +452,9 @@ export class TableCacheImpl<
     // If this was the last reference, we are actually deleting the row.
     if (previousCount <= count) {
       // TODO: Log a warning/error if previousCount is less than count.
+      for (const index of this.#indexes) {
+        index.remove(operation.rowId, oldRow);
+      }
       this.rows.delete(operation.rowId);
       return {
         type: 'delete',
@@ -460,7 +464,7 @@ export class TableCacheImpl<
         },
       };
     }
-    this.rows.set(operation.rowId, [operation.row, previousCount - count]);
+    this.#setRow(operation.rowId, operation.row, previousCount - count);
     return undefined;
   };
 
