@@ -1036,6 +1036,40 @@ test('purchase bursts reuse validated dynamic action inputs across stack transpo
   }
 });
 
+test('mixed groups prepare every input before release and keep each operation and buyer in the history', async () => {
+  let reads=0;
+  const requests: CapturedRequest[]=[];
+  const actors=new Map(['a','admin'].map(name=>[name,{name,
+    writes:[{headers:{authorization:`Bearer ${name}`}}],
+    loc:()=>({waitFor:async()=>{},getAttribute:async()=>{reads++;return name==='a'?'{"itemId":"1"}':'{"itemId":"1","warehouseId":"2","quantity":2}';}}),
+  }]));
+  const provided=services(actors,{fetchImpl:async(url,options)=>{
+    assert.equal(reads,2,'no mutation before all inputs are prepared');
+    requests.push({url,options:options as unknown as UnknownRecord});return namedResponse(200,true);
+  }});
+  const call={do:'callConcurrently',action:'buy',actors:['a'],requests:4,settleMs:0,
+    namedAction:{id:'buy',path:'/api/items/:id/buy',reducer:'buy_now',args:[0],params:[{name:'itemId',in:'path',placeholder:':id',wireType:'u64'}]},
+    input:{testid:'item',attribute:'data-buy-input'},alongside:[{action:'restock',actors:['admin'],requests:4,delayMs:5,
+      namedAction:{id:'restock',path:'/api/admin/restock',reducer:'admin_restock',args:[0,0,1],params:[{name:'itemId',in:'body',wireType:'u64'},{name:'warehouseId',in:'body',wireType:'u64'},{name:'quantity',in:'body'}]},
+      input:{testid:'stock',attribute:'data-restock-input'}}]};
+  const result=await run(call,provided);
+  assert.equal(result.status,'passed',JSON.stringify(result));assert.equal(requests.length,8);
+  const outcomes=record(result.observation).outcomes as UnknownRecord[];
+  assert.equal(outcomes.length,8);
+  for(const row of outcomes){
+    assert.equal(row.name,row.action==='buy'?'a':'admin');
+    assert.equal(row.dispatched,true);
+    assert.deepEqual(row.values,row.action==='buy'?{itemId:'1'}:{itemId:'1',warehouseId:'2',quantity:2});
+    assert(Number(row.startedAtMs)>=Number(row.scheduledAtMs));
+  }
+  for (const invalid of [{body:{}}, {actors:['admin','admin']}, {input:{}}, {alongside:[]},
+    {namedAction:{...call.alongside[0]!.namedAction,id:'wrong'}}]) {
+    const rejected=await run({...call,alongside:[{...call.alongside[0],...invalid}]},provided);
+    assert.equal(rejected.status,'harness_failure');
+    assert.equal(requests.length,8,'invalid nested input cannot dispatch mutations');
+  }
+});
+
 test('named calls keep actor credentials separate in storage and in-memory accessors', async () => {
   for (const inMemory of [false, true]) {
     const requests: CapturedRequest[] = [];

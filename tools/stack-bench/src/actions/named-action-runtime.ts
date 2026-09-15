@@ -25,6 +25,8 @@ export interface NamedActionRequest {
 }
 
 export interface ConcurrentCallOutcome {
+  readonly action?: string;
+  readonly values?: Readonly<Record<string, unknown>>;
   readonly requestIndex?: number;
   readonly startedAtMs?: number;
   readonly completedAtMs?: number;

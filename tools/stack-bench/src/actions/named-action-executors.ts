@@ -62,6 +62,8 @@ interface ConcurrentCallInput {
   readonly settleMs?: number;
   readonly requests?: number;
   readonly requestTimeoutMs?: number;
+  readonly delayMs?: number;
+  readonly alongside?: readonly Omit<ConcurrentCallInput, 'alongside' | 'settleMs'>[];
 }
 
 interface ConcurrentOutcomeInput { readonly accepted?: number }
@@ -231,30 +233,44 @@ async function expectActionOutcome({ input, capabilities }: NamedTransportArgume
 
 async function callConcurrently({ input, capabilities, signal }: NamedArguments<ConcurrentCallInput>) {
   const named = capabilities['named-actions'];
-  const action = input.namedAction ?? named.resolve(input.action);
-  if (!action) inconclusive('unknown-action', { action: input.action });
-  const prepared: Array<{ name: string; credentials: HeaderRecord }> = [];
-  for (const name of input.actors) {
-    const actor = actorFor(capabilities, name);
-    const credentials = capturedCredentials(actor) ?? await browserCredentials(actor);
-    if (!credentials) inconclusive('no-session', { actor: name, action: input.action });
-    prepared.push({ name, credentials });
+  const prepared: Array<{ name: string; credentials: HeaderRecord; action: string;
+    values: Readonly<Record<string, unknown>>; request: NonNullable<ReturnType<typeof namedActionRequest>>;
+    delayMs: number; timeoutMs: number }> = [];
+  for (const group of [input, ...(input.alongside ?? [])]) {
+    const action = group.namedAction ?? named.resolve(group.action);
+    if (!action) inconclusive('unknown-action', { action: group.action });
+    const actors: Array<{ name: string; credentials: HeaderRecord }> = [];
+    for (const name of group.actors) {
+      const actor = actorFor(capabilities, name);
+      const credentials = capturedCredentials(actor) ?? await browserCredentials(actor);
+      if (!credentials) inconclusive('no-session', { actor: name, action: group.action });
+      actors.push({ name, credentials });
+    }
+    const values = group.input ? await readActionValues(
+      capabilities, actorFor(capabilities, group.from ?? group.actors[0]!), action,
+      { action: group.action, input: group.input }, group.requestTimeoutMs ?? 30000) : undefined;
+    const request = namedActionRequest(named, action, values === undefined ? group : { values });
+    if (!request?.url) inconclusive('unresolved-action', { action: group.action });
+    for (let index = 0; index < (group.requests ?? actors.length); index++) {
+      prepared.push({ ...actors[index % actors.length]!, action: group.action, values: values ?? {}, request,
+        delayMs: group.delayMs ?? 0, timeoutMs: group.requestTimeoutMs ?? 30000 });
+    }
   }
-  const values = input.input ? await readActionValues(
-    capabilities, actorFor(capabilities, input.from ?? input.actors[0]!), action,
-    { action: input.action, input: input.input }, input.requestTimeoutMs ?? 30000) : undefined;
-  const request = namedActionRequest(named, action, values === undefined ? input : { values });
-  const requestUrl = request?.url;
-  if (!requestUrl) inconclusive('unresolved-action', { action: input.action });
   const started = named.now();
-  const outcomes = await Promise.all(Array.from({ length: input.requests ?? prepared.length }, async (_, index) => {
-    const preparedActor = prepared[index % prepared.length]!;
-    const startedAtMs = named.now();
-    const timeout = AbortSignal.timeout(input.requestTimeoutMs ?? 30000);
+  const outcomes = await Promise.all(prepared.map(async (preparedActor, index) => {
+    const request = preparedActor.request;
+    const scheduledAtMs = named.now();
+    let startedAtMs = scheduledAtMs;
+    let dispatched = false;
+    const timeout = AbortSignal.timeout(preparedActor.timeoutMs);
     const requestSignal = AbortSignal.any([signal, timeout]);
     let response;
     try {
-      const reply = await named.fetch(requestUrl, {
+      if (preparedActor.delayMs) await named.sleep(preparedActor.delayMs, requestSignal);
+      requestSignal.throwIfAborted();
+      startedAtMs = named.now();
+      dispatched = true;
+      const reply = await named.fetch(request.url!, {
         method: request.method ?? 'POST',
         headers: { 'Content-Type': 'application/json', ...preparedActor.credentials },
         body: request.body,
@@ -271,6 +287,7 @@ async function callConcurrently({ input, capabilities, signal }: NamedArguments<
     }
     const completedAtMs = named.now();
     return { ...response, name: preparedActor.name, requestIndex: index + 1,
+      action: preparedActor.action, values: preparedActor.values, delayMs: preparedActor.delayMs, scheduledAtMs, dispatched,
       startedAtMs, completedAtMs, durationMs: Math.max(0, completedAtMs - startedAtMs) };
   }));
   const result = { action: input.action, fired: outcomes.length, ms: named.now() - started, outcomes,

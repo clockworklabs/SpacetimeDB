@@ -221,20 +221,38 @@ test('optional purchase cohorts require all affordable requests and stored effec
   assert.equal(new Set(accounts).size, 24);
   const widths: unknown[] = [];
   for (const feature of scenario.features) {
-    assert(feature.setup.some(step => step.do === 'dbExpectStock' && step.equals === 128));
+    assert(feature.setup.some(step => step.do === 'dbSetStock' && step.quantity === 128));
     for (const criterion of feature.criteria) {
       assert.equal(criterion.points, 0);
       const call = criterion.steps.find(step => step.do === 'callConcurrently')!;
       widths.push(call.requests);
       assert.equal(call.action, 'buy');
       assert(criterion.steps.some(step => step.do === 'expectCallOutcomes' && step.accepted === call.requests));
-      assert(criterion.steps.some(step => step.do === 'dbExpectStock' && step.plus === -Number(call.requests)));
-      const orders = criterion.steps.filter(step => step.do === 'expect' && step.testid === 'order-item');
-      assert(orders.every(step => step.absent === true || Number(step.count) > 0));
-      assert.equal(orders.reduce((sum, step) => sum + (step.absent ? 0 : Number(step.count)), 0), call.requests);
+      assert(criterion.steps.some(step => step.do === 'dbExpectPurchases' && step.purchases === call.requests));
+      assert.equal(feature.setup.filter(step => step.do === 'dbRecordCheckout').length,2);
     }
   }
   assert.deepEqual(widths, [1, 1, 1, 4, 4, 4, 16, 16, 16, 64, 64, 64]);
+});
+
+test('scarce and mixed diagnostics keep the fixed schedules and mandatory stored progress', () => {
+  for (const [file, cohorts, calls] of [['diagnostic-scarce-stock.json',12,255],['diagnostic-restock-contention.json',80,1000]] as const) {
+    const path=join(STACK_BENCH_ROOT,'tracks/ecommerce/scenarios',file);
+    const scenario=compileScenarioDefinition(JSON.parse(readFileSync(path,'utf8')),{source:path});
+    assert.equal(scenario.features.length,cohorts);
+    let count=0;
+    for(const feature of scenario.features){
+      const criterion=feature.criteria[0]!;
+      assert.equal(criterion.points,0);
+      const call=criterion.steps[0]!;
+      const restock=(call.alongside as Array<{requests:number}>|undefined)?.[0];
+      count+=Number(call.requests)+(restock?.requests??0);
+      assert.equal(criterion.steps[1]!.do,'dbExpectPurchases');
+      assert.equal(criterion.steps[1]!.purchases,restock?call.requests:Math.min(3,Number(call.requests)));
+      if(restock)assert(feature.setup.some(step=>step.do==='signIn' && step.actor==='admin'));
+    }
+    assert.equal(count,calls);
+  }
 });
 
 test('race preserves branch ordering while overlapping branches through registered dispatch', async () => {

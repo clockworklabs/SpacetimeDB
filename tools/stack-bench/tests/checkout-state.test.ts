@@ -3,7 +3,7 @@ import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { checkoutDifferences, cancellationDifferences, checkoutId, checkoutMinor, checkoutStateSchema, verifyCheckoutSchema }
+import { checkoutDifferences, cancellationDifferences, purchaseDifferences, checkoutId, checkoutMinor, checkoutStateSchema, verifyCheckoutSchema }
   from '../src/stacks/checkout-state.js';
 import type { CheckoutState } from '../src/stacks/checkout-state.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
@@ -34,6 +34,58 @@ test('checkout reconciliation accepts stock reservation and atomic checkout alte
   prepared.reservations = [];
   assert.deepEqual(checkoutDifferences(before, prepared, after, 1), []);
   for (const snapshot of [before, prepared, after]) assert.deepEqual(checkoutStateSchema.parse(snapshot), snapshot);
+});
+
+test('purchase histories reconcile owners, money, old rows and each warehouse even when total stock is unchanged', () => {
+  const { before, after } = states();
+  before.orders.push({ ...structuredClone(after.orders[0]!), id: 'old', accountId: 'old' });
+  before.payments.push({ ...after.payments[0]!, id: 'old', orderId: 'old' });
+  after.orders.push(...structuredClone(before.orders)); after.payments.push(...before.payments);
+  for (const state of [before, after]) state.stock.push({ warehouseId: 'west', quantity: 5 });
+  after.stock[1]!.quantity += 2;
+  const accepted = new Map([['a', 1], ['b', 0]]), restocked = new Map([['west', 2]]);
+  assert.deepEqual(purchaseDifferences(before, after, accepted, restocked), []);
+  after.orders.reverse(); after.payments.reverse(); after.stock.reverse();
+  assert.deepEqual(purchaseDifferences(before, after, accepted, restocked), []);
+  const defects: Record<string, (state: CheckoutState) => void> = {
+    duplicate: state => state.orders.push({ ...structuredClone(state.orders.find(row => row.id === 'o')!), id: 'extra' }),
+    wrongBuyer: state => { state.orders.find(row => row.id === 'o')!.accountId = 'b'; },
+    missingPayment: state => { state.payments = state.payments.filter(row => row.orderId !== 'o'); },
+    wrongPrice: state => { state.orders.find(row => row.id === 'o')!.lines[0]!.priceMinor++; },
+    wrongAmount: state => { state.payments.find(row => row.orderId === 'o')!.amountMinor++; },
+    lostRestock: state => { state.stock.find(row => row.warehouseId === 'west')!.quantity -= 2; },
+    lostPurchase: state => { state.stock.find(row => row.warehouseId === 'w')!.quantity++; },
+    wrongWarehouse: state => { state.stock[0]!.quantity--; state.stock[1]!.quantity++; },
+    corruptHistory: state => { state.orders.find(row => row.id === 'old')!.totalMinor = 0; },
+    retainedCart: state => { state.cart = [{itemId:'i',quantity:1}]; },
+    oversell: state => { state.stock[0]!.quantity = -1; },
+    noOp: state => { Object.assign(state, structuredClone(before)); },
+  };
+  for (const [name, defect] of Object.entries(defects)) {
+    const value = structuredClone(after); defect(value);
+    assert(purchaseDifferences(before, value, accepted, restocked).length, name);
+  }
+  assert.throws(() => purchaseDifferences(before, after, accepted, new Map([['missing',1]])), /invalid restock/);
+});
+
+test('purchase action retains failed business evidence and keeps unknown outcomes unmeasured', async () => {
+  for (const mode of ['valid','no-op','reject-all','unknown','missing','reader-error','schema-change']) {
+    const {before,after}=states();
+    const snapshots=new Map([['before',{state:before,account:'a',item:'i',schemaSha256:{schema:'same'}}]]);
+    const result=await executeAction(ACTION_REGISTRY,'dbExpectPurchases',{
+      do:'dbExpectPurchases',before:{buyer:'before'},purchases:1,
+    },{capabilities:{
+      'database-read':{...createDatabaseReadCapability({expand:value=>value,checkoutSnapshots:snapshots}),getCheckoutState:()=>{
+        if(mode==='reader-error')throw new Error('unavailable');
+        return {state:['no-op','reject-all'].includes(mode)?before:after,schemaSha256:{schema:mode==='schema-change'?'changed':'same'}};
+      }},
+      'named-actions':{lastCalls:{get:()=>mode==='missing'?null:{action:'buy',fired:1,ms:1,outcomes:[{
+        action:'buy',values:{itemId:'i'},name:'buyer',ok:!['reject-all','unknown'].includes(mode),status:mode==='unknown'?0:mode==='reject-all'?409:200,text:'',
+      }]}}},
+    }});
+    assert.equal(result.status,mode==='valid'?'passed':['unknown','missing'].includes(mode)?'inconclusive':['reader-error','schema-change'].includes(mode)?'harness_failure':'failed',mode);
+    if(['no-op','reject-all'].includes(mode))assert(result.observation);
+  }
 });
 
 test('one order can split a product across warehouse lines', () => {

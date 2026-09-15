@@ -139,18 +139,23 @@ const actors = { actors: stringArray };
 const settle = { settleMs: nonNegativeNumber };
 const within = { within: positiveNumber };
 const locator = { in: object };
+const callCount = (value: unknown) => positiveInteger(value) && Number(value) <= 64;
+const callTimeout = (value: unknown) => positiveInteger(value) && Number(value) <= 60000;
+const callDelay = (value: unknown) => nonNegativeInteger(value) && Number(value) <= 1000;
 
 export const ACTION_DEFINITIONS = Object.freeze({
   callAction: fields({ ...actor, action: nonEmptyString },
     { input: object, from: nonEmptyString, authentication: nonEmptyString, namedAction: object, ...settle }),
   callConcurrently: fields({ ...actors, action: nonEmptyString, settleMs: nonNegativeNumber },
     { args: anyArray, body: object, input: object, namedAction: object, from: nonEmptyString,
-      requests: value => positiveInteger(value) && Number(value) <= 64,
-      requestTimeoutMs: value => positiveInteger(value) && Number(value) <= 60000 }),
+      requests: callCount, requestTimeoutMs: callTimeout, delayMs: callDelay,
+      alongside: value => array(value) && value.length === 1 && value.every(object) }),
   dbRecordStock: fields({ item: nonEmptyString, as: nonEmptyString }, { warehouse: nonEmptyString }),
   dbRecordCheckout: fields({ account: nonEmptyString, item: nonEmptyString, as: nonEmptyString }),
   dbExpectCheckout: fields({ before: nonEmptyString, prepared: nonEmptyString, quantity: positiveInteger }),
   dbExpectCancellation: fields({ before: nonEmptyString }),
+  dbExpectPurchases: fields({ before: value => object(value) && Object.keys(value).length > 0
+    && Object.values(value).every(nonEmptyString), purchases: positiveInteger }),
   dbExpectStock: fields({ item: nonEmptyString },
     { warehouse: nonEmptyString, equals: integer, atLeast: integer, atMost: integer, relativeTo: nonEmptyString, plus: integer,
       within: value => positiveNumber(value) && Number(value) <= 80000 }),
@@ -433,6 +438,13 @@ function validateStep(step: unknown, at: string): asserts step is CompiledStep {
     }
   }
   if (step.do === 'callConcurrently') {
+    if (Array.isArray(step.alongside)) {
+      step.alongside.forEach((group, index) => {
+        const where = `${at}.alongside[${index}]`;
+        if ('alongside' in group || 'do' in group || 'settleMs' in group) fail(where, 'nested groups cannot set alongside, do or settleMs');
+        validateStep({ ...group, do: 'callConcurrently', settleMs: 0 }, where);
+      });
+    }
     if (step.input !== undefined && (step.args !== undefined || step.body !== undefined)) {
       fail(at, 'callConcurrently input cannot be combined with args or body');
     }

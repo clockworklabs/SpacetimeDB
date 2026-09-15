@@ -2,7 +2,8 @@ import { execFileSync } from 'node:child_process';
 
 import { ActionApplicationFailure, ActionInconclusive, actionImplementation } from './action-contract.js';
 import { finding, isFinding, renderFinding } from './action-findings.js';
-import { checkoutDifferences, cancellationDifferences } from '../stacks/checkout-state.js';
+import { checkoutDifferences, cancellationDifferences, purchaseDifferences, checkoutId } from '../stacks/checkout-state.js';
+import type { NamedActionsCapability } from './named-action-runtime.js';
 import type { CheckoutState } from '../stacks/checkout-state.js';
 import type {
   ActionImplementation,
@@ -71,6 +72,7 @@ interface LifecycleCapability {
 }
 
 interface LifecycleConcurrencyCapabilities {
+  readonly 'named-actions': NamedActionsCapability;
   readonly actors: { get(name: string): Actor | undefined };
   readonly 'application-lifecycle': LifecycleCapability;
   readonly 'backend-lifecycle': LifecycleCapability;
@@ -216,6 +218,56 @@ async function dbExpectCancellation({ input, capabilities }: ActionArguments<{ b
   }
   const differences = cancellationDifferences(before.state, after.state);
   const observation = { ...after, differences, before: input.before };
+  if (differences[0]) {
+    const { control, observed, expected } = differences[0];
+    const value = finding('number-mismatch', { control, observed, expected: { equals: expected } });
+    throw new ActionApplicationFailure(renderFinding(value), { finding: value, observation });
+  }
+  return observation;
+}
+
+async function dbExpectPurchases({ input, capabilities }: ActionArguments<{
+  before: Record<string, string>; purchases: number;
+}>) {
+  const database = capabilities['database-read'];
+  const history = capabilities['named-actions'].lastCalls.get();
+  if (!history) inconclusive('assertion-without-action', { action: 'callConcurrently' });
+  if (history.fired !== history.outcomes.length || history.outcomes.some(row => row.status === 0)) {
+    inconclusive('transport-incomplete', {});
+  }
+  const snapshots = Object.entries(input.before).map(([actor, key]) => {
+    const before = database.checkoutSnapshots.get(key);
+    if (!before) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
+    return { actor, before };
+  });
+  const accepted = new Map(snapshots.map(({ before }) => [before.state.accountId, 0]));
+  if (accepted.size !== snapshots.length) throw new Error('purchase buyers must have distinct accounts');
+  const restocked = new Map<string, number>();
+  const differences: Array<{ control: string; observed: number; expected: number }> = [];
+  for (const row of history.outcomes) {
+    if (row.action === 'buy') {
+      const buyer = snapshots.find(snapshot => snapshot.actor === row.name);
+      if (!buyer || checkoutId(row.values?.itemId) !== buyer.before.state.itemId) throw new Error('purchase history selects different data');
+      if (row.ok) accepted.set(buyer.before.state.accountId, accepted.get(buyer.before.state.accountId)! + 1);
+    } else if (row.action === 'restock') {
+      if (checkoutId(row.values?.itemId) !== snapshots[0]!.before.state.itemId) throw new Error('restock history selects different item');
+      const warehouse = checkoutId(row.values?.warehouseId), quantity = row.values?.quantity;
+      if (typeof quantity !== 'number' || !Number.isSafeInteger(quantity) || quantity < 1) throw new Error('invalid restock request quantity');
+      const total = (restocked.get(warehouse) ?? 0) + quantity;
+      if (!Number.isSafeInteger(total)) throw new Error('inexact restock total');
+      restocked.set(warehouse, total);
+      if (!row.ok) differences.push({ control: 'restock accepted', observed: 0, expected: 1 });
+    } else throw new Error('purchase reconciliation requires buy/restock request history');
+  }
+  const count = [...accepted.values()].reduce((sum, value) => sum + value, 0);
+  if (count !== input.purchases) differences.push({ control: 'purchase progress', observed: count, expected: input.purchases });
+  const after = snapshots.map(({ actor, before }) => {
+    const value = database.getCheckoutState(before);
+    if (JSON.stringify(value.schemaSha256) !== JSON.stringify(before.schemaSha256)) throw new Error('purchase reader schema changed');
+    differences.push(...purchaseDifferences(before.state, value.state, accepted, restocked));
+    return { actor, ...value };
+  });
+  const observation = { before: input.before, after, differences, history };
   if (differences[0]) {
     const { control, observed, expected } = differences[0];
     const value = finding('number-mismatch', { control, observed, expected: { equals: expected } });
@@ -636,6 +688,7 @@ export const RUNTIME_ACTION_IMPLEMENTATIONS = Object.freeze({
   dbRecordCheckout: contractLifecycleAction(dbRecordCheckout),
   dbExpectCheckout: contractLifecycleAction(dbExpectCheckout),
   dbExpectCancellation: contractLifecycleAction(dbExpectCancellation),
+  dbExpectPurchases: contractLifecycleAction(dbExpectPurchases),
   dbRecordStock: contractLifecycleAction(dbRecordStock),
   dbExpectStock: contractLifecycleAction(dbExpectStock),
   clickConcurrently: contractLifecycleAction(clickConcurrently),

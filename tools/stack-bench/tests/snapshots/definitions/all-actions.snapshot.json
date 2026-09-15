@@ -28,6 +28,13 @@
               "do": "dbExpectCancellation"
             },
             {
+              "before": {
+                "a": "before"
+              },
+              "do": "dbExpectPurchases",
+              "purchases": 1
+            },
+            {
               "action": "buy",
               "actor": "a",
               "authentication": "none",

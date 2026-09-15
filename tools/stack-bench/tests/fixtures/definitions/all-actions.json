@@ -18,6 +18,7 @@
             { "do": "dbRecordCheckout", "account": "a", "item": "Keyboard", "as": "before" },
             { "do": "dbExpectCheckout", "before": "before", "prepared": "prepared", "quantity": 1 },
             { "do": "dbExpectCancellation", "before": "before" },
+            { "do": "dbExpectPurchases", "before": {"a":"before"}, "purchases": 1 },
             { "do": "callAction", "actor": "a", "action": "buy", "input": { "testid": "item-card", "contains": "item", "attribute": "data-action-input" }, "authentication": "none", "settleMs": 1 },
             { "do": "callConcurrently", "actors": ["a", "b"], "action": "buy", "settleMs": 1 },
             { "do": "clearInput", "actor": "a" },

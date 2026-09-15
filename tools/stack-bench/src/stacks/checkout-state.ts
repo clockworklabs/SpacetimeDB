@@ -22,6 +22,77 @@ export const checkoutStateSchema = z.strictObject({
 });
 export type CheckoutState = z.infer<typeof checkoutStateSchema>;
 
+// Row order is not business state. Preserve duplicates while normalizing nesting.
+function normalized(state: CheckoutState): CheckoutState {
+  const rows = <T>(values: readonly T[]) => [...values].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  return { ...state, cart: rows(state.cart), stock: rows(state.stock), reservations: rows(state.reservations),
+    payments: rows(state.payments), orders: rows(state.orders.map(row => ({ ...row,
+      lines: rows(row.lines.map(line => ({ ...line, allocations: rows(line.allocations) }))),
+    }))) };
+}
+
+// One-unit, non-credit purchases on idle reference apps. Histories identify the
+// buyer, not a durable request ID: reconcile per-buyer counts, not request identity.
+export function purchaseDifferences(before: CheckoutState, after: CheckoutState,
+  accepted: ReadonlyMap<string, number>, restocked: ReadonlyMap<string, number>) {
+  const differences: Array<{ control: string; observed: number; expected: number }> = [];
+  const check = (control: string, observed: number, expected: number) => {
+    if (observed !== expected) differences.push({ control, observed, expected });
+  };
+  const oldOrders = new Set(before.orders.map(row => row.id));
+  const oldPayments = new Set(before.payments.map(row => row.id));
+  const orders = after.orders.filter(row => !oldOrders.has(row.id));
+  const payments = after.payments.filter(row => !oldPayments.has(row.id));
+  const expected = structuredClone(before);
+  expected.orders.push(...orders);
+  expected.payments.push(...payments);
+  for (const [account, count] of accepted) {
+    check(`purchase orders for account ${account}`, orders.filter(row => row.accountId === account).length, count);
+  }
+  check('purchase orders for unexpected accounts', orders.filter(row => !accepted.has(row.accountId)).length, 0);
+  for (const order of orders) {
+    check('purchase order status', Number(order.status === 'pending'), 1);
+    check('purchase order total', order.totalMinor, before.priceMinor);
+    check('purchase order line count', order.lines.length, 1);
+    for (const line of order.lines) {
+      check('purchase item', Number(line.itemId === before.itemId), 1);
+      check('purchase quantity', line.quantity, 1);
+      check('purchase unit price', line.priceMinor, before.priceMinor);
+      check('purchase allocation count', line.allocations.length, 1);
+      for (const allocation of line.allocations) {
+        check('purchase allocated quantity', allocation.quantity, 1);
+        const stock = expected.stock.find(row => row.warehouseId === allocation.warehouseId);
+        check('purchase allocation warehouse', Number(Boolean(stock)), 1);
+        if (stock) stock.quantity = integer.parse(stock.quantity - allocation.quantity);
+      }
+    }
+    const paid = payments.filter(row => row.orderId === order.id);
+    check('purchase payment count per order', paid.length, 1);
+    for (const payment of paid) {
+      check('purchase payment amount', payment.amountMinor, before.priceMinor);
+      check('purchase payment status', Number(payment.status === 'paid'), 1);
+    }
+  }
+  check('purchase orphan payments', payments.filter(row => !orders.some(order => order.id === row.orderId)).length, 0);
+  for (const [warehouse, quantity] of restocked) {
+    const stock = expected.stock.find(row => row.warehouseId === warehouse);
+    if (!stock || !Number.isSafeInteger(quantity) || quantity < 1) throw new Error('invalid restock expectation');
+    stock.quantity = integer.parse(stock.quantity + quantity);
+  }
+  for (const state of [before, after]) {
+    check('purchase orphan order lines', state.orphanOrderLines, 0);
+    check('purchase negative stock', state.stock.filter(row => row.quantity < 0).length, 0);
+    check('purchase duplicate warehouse', state.stock.length - new Set(state.stock.map(row => row.warehouseId)).size, 0);
+    check('purchase duplicate order', state.orders.length - new Set(state.orders.map(row => row.id)).size, 0);
+    check('purchase duplicate payment', state.payments.length - new Set(state.payments.map(row => row.id)).size, 0);
+  }
+  const wanted = normalized(expected), observed = normalized(after);
+  for (const key of Object.keys(wanted) as Array<keyof CheckoutState>) {
+    check(`purchase ${key}`, Number(isDeepStrictEqual(observed[key], wanted[key])), 1);
+  }
+  return differences;
+}
+
 // These readers are for audited reference schemas, not a schema discovery system.
 // Saved model apps need their own verified mapping before this diagnostic applies.
 export function verifyCheckoutSchema(backend: string, app: string, files: readonly string[]): Record<string, string> {
@@ -161,14 +232,7 @@ export function cancellationDifferences(before: CheckoutState, after: CheckoutSt
   }
   // Database row order is not part of cancellation. Keep nested allocation and
   // line order independent too, while retaining duplicates for comparison.
-  const rows = <T>(values: readonly T[]) => [...values].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
-  const normalize = (state: CheckoutState) => ({ ...state,
-    cart: rows(state.cart), stock: rows(state.stock), reservations: rows(state.reservations),
-    payments: rows(state.payments), orders: rows(state.orders.map(row => ({ ...row,
-      lines: rows(row.lines.map(line => ({ ...line, allocations: rows(line.allocations) }))),
-    }))),
-  });
-  const wanted = normalize(expected), observed = normalize(after);
+  const wanted = normalized(expected), observed = normalized(after);
   return (Object.keys(wanted) as Array<keyof CheckoutState>)
     .filter(key => !isDeepStrictEqual(observed[key], wanted[key]))
     .map(key => ({ control: `cancellation ${key}`, observed: 0, expected: 1 }));

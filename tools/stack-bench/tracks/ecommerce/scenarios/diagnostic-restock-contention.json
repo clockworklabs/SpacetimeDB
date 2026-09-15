@@ -1,0 +1,1447 @@
+{
+  "schemaVersion": 1, "track": "ecommerce", "level": 2,
+  "name": "Restock versus purchase contention",
+  "note": "Draft reference diagnostic; not selected by scored campaigns. 80 fresh cohorts, 1000 calls per app. Half buy one unit and half restock one unit through the declared default action input. Starting stock 128 makes every purchase affordable regardless of ordering. Groups are fully prepared before release with 0/-20/-5/+5/+20ms restock offsets. Final snapshots verify net per-warehouse conservation and buyer order/payment counts; compensating errors can remain invisible. Histories record actual client dispatch; no server-overlap or throughput claim. Correct and defective reference qualification required.",
+  "features": [
+    {"id":9300,"name":"restock: 2 calls, cohort 0-1, restock offset 0ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-2-0-1-a"},
+        {"do":"signUp","actor":"b","name":"restock-2-0-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-0-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-0-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9300a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":1,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":1,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":1},
+          {"do":"expectCallOutcomes","accepted":2}
+        ]}]
+    },
+    {"id":9301,"name":"restock: 2 calls, cohort 0-2, restock offset 0ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-2-0-2-a"},
+        {"do":"signUp","actor":"b","name":"restock-2-0-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-0-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-0-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9301a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":1,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":1,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":1},
+          {"do":"expectCallOutcomes","accepted":2}
+        ]}]
+    },
+    {"id":9302,"name":"restock: 2 calls, cohort 0-3, restock offset 0ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-2-0-3-a"},
+        {"do":"signUp","actor":"b","name":"restock-2-0-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-0-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-0-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9302a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":1,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":1,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":1},
+          {"do":"expectCallOutcomes","accepted":2}
+        ]}]
+    },
+    {"id":9303,"name":"restock: 2 calls, cohort 0-4, restock offset 0ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-2-0-4-a"},
+        {"do":"signUp","actor":"b","name":"restock-2-0-4-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-0-4-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-0-4-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9303a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":1,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":1,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":1},
+          {"do":"expectCallOutcomes","accepted":2}
+        ]}]
+    },
+    {"id":9304,"name":"restock: 2 calls, cohort -20-1, restock offset -20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-2--20-1-a"},
+        {"do":"signUp","actor":"b","name":"restock-2--20-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2--20-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2--20-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9304a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":1,"settleMs":0,"delayMs":20,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":1,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":1},
+          {"do":"expectCallOutcomes","accepted":2}
+        ]}]
+    },
+    {"id":9305,"name":"restock: 2 calls, cohort -20-2, restock offset -20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-2--20-2-a"},
+        {"do":"signUp","actor":"b","name":"restock-2--20-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2--20-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2--20-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9305a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":1,"settleMs":0,"delayMs":20,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":1,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":1},
+          {"do":"expectCallOutcomes","accepted":2}
+        ]}]
+    },
+    {"id":9306,"name":"restock: 2 calls, cohort -20-3, restock offset -20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-2--20-3-a"},
+        {"do":"signUp","actor":"b","name":"restock-2--20-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2--20-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2--20-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9306a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":1,"settleMs":0,"delayMs":20,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":1,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":1},
+          {"do":"expectCallOutcomes","accepted":2}
+        ]}]
+    },
+    {"id":9307,"name":"restock: 2 calls, cohort -20-4, restock offset -20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-2--20-4-a"},
+        {"do":"signUp","actor":"b","name":"restock-2--20-4-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2--20-4-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2--20-4-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9307a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":1,"settleMs":0,"delayMs":20,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":1,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":1},
+          {"do":"expectCallOutcomes","accepted":2}
+        ]}]
+    },
+    {"id":9308,"name":"restock: 2 calls, cohort -5-1, restock offset -5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-2--5-1-a"},
+        {"do":"signUp","actor":"b","name":"restock-2--5-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2--5-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2--5-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9308a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":1,"settleMs":0,"delayMs":5,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":1,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":1},
+          {"do":"expectCallOutcomes","accepted":2}
+        ]}]
+    },
+    {"id":9309,"name":"restock: 2 calls, cohort -5-2, restock offset -5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-2--5-2-a"},
+        {"do":"signUp","actor":"b","name":"restock-2--5-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2--5-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2--5-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9309a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":1,"settleMs":0,"delayMs":5,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":1,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":1},
+          {"do":"expectCallOutcomes","accepted":2}
+        ]}]
+    },
+    {"id":9310,"name":"restock: 2 calls, cohort -5-3, restock offset -5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-2--5-3-a"},
+        {"do":"signUp","actor":"b","name":"restock-2--5-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2--5-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2--5-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9310a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":1,"settleMs":0,"delayMs":5,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":1,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":1},
+          {"do":"expectCallOutcomes","accepted":2}
+        ]}]
+    },
+    {"id":9311,"name":"restock: 2 calls, cohort -5-4, restock offset -5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-2--5-4-a"},
+        {"do":"signUp","actor":"b","name":"restock-2--5-4-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2--5-4-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2--5-4-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9311a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":1,"settleMs":0,"delayMs":5,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":1,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":1},
+          {"do":"expectCallOutcomes","accepted":2}
+        ]}]
+    },
+    {"id":9312,"name":"restock: 2 calls, cohort 5-1, restock offset 5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-2-5-1-a"},
+        {"do":"signUp","actor":"b","name":"restock-2-5-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-5-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-5-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9312a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":1,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":1,"delayMs":5}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":1},
+          {"do":"expectCallOutcomes","accepted":2}
+        ]}]
+    },
+    {"id":9313,"name":"restock: 2 calls, cohort 5-2, restock offset 5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-2-5-2-a"},
+        {"do":"signUp","actor":"b","name":"restock-2-5-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-5-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-5-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9313a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":1,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":1,"delayMs":5}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":1},
+          {"do":"expectCallOutcomes","accepted":2}
+        ]}]
+    },
+    {"id":9314,"name":"restock: 2 calls, cohort 5-3, restock offset 5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-2-5-3-a"},
+        {"do":"signUp","actor":"b","name":"restock-2-5-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-5-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-5-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9314a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":1,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":1,"delayMs":5}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":1},
+          {"do":"expectCallOutcomes","accepted":2}
+        ]}]
+    },
+    {"id":9315,"name":"restock: 2 calls, cohort 5-4, restock offset 5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-2-5-4-a"},
+        {"do":"signUp","actor":"b","name":"restock-2-5-4-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-5-4-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-5-4-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9315a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":1,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":1,"delayMs":5}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":1},
+          {"do":"expectCallOutcomes","accepted":2}
+        ]}]
+    },
+    {"id":9316,"name":"restock: 2 calls, cohort 20-1, restock offset 20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-2-20-1-a"},
+        {"do":"signUp","actor":"b","name":"restock-2-20-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-20-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-20-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9316a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":1,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":1,"delayMs":20}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":1},
+          {"do":"expectCallOutcomes","accepted":2}
+        ]}]
+    },
+    {"id":9317,"name":"restock: 2 calls, cohort 20-2, restock offset 20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-2-20-2-a"},
+        {"do":"signUp","actor":"b","name":"restock-2-20-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-20-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-20-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9317a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":1,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":1,"delayMs":20}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":1},
+          {"do":"expectCallOutcomes","accepted":2}
+        ]}]
+    },
+    {"id":9318,"name":"restock: 2 calls, cohort 20-3, restock offset 20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-2-20-3-a"},
+        {"do":"signUp","actor":"b","name":"restock-2-20-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-20-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-20-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9318a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":1,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":1,"delayMs":20}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":1},
+          {"do":"expectCallOutcomes","accepted":2}
+        ]}]
+    },
+    {"id":9319,"name":"restock: 2 calls, cohort 20-4, restock offset 20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-2-20-4-a"},
+        {"do":"signUp","actor":"b","name":"restock-2-20-4-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-20-4-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-2-20-4-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9319a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":1,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":1,"delayMs":20}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":1},
+          {"do":"expectCallOutcomes","accepted":2}
+        ]}]
+    },
+    {"id":9320,"name":"restock: 8 calls, cohort 0-1, restock offset 0ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-8-0-1-a"},
+        {"do":"signUp","actor":"b","name":"restock-8-0-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-0-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-0-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9320a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":4,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":4,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":4},
+          {"do":"expectCallOutcomes","accepted":8}
+        ]}]
+    },
+    {"id":9321,"name":"restock: 8 calls, cohort 0-2, restock offset 0ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-8-0-2-a"},
+        {"do":"signUp","actor":"b","name":"restock-8-0-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-0-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-0-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9321a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":4,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":4,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":4},
+          {"do":"expectCallOutcomes","accepted":8}
+        ]}]
+    },
+    {"id":9322,"name":"restock: 8 calls, cohort 0-3, restock offset 0ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-8-0-3-a"},
+        {"do":"signUp","actor":"b","name":"restock-8-0-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-0-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-0-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9322a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":4,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":4,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":4},
+          {"do":"expectCallOutcomes","accepted":8}
+        ]}]
+    },
+    {"id":9323,"name":"restock: 8 calls, cohort 0-4, restock offset 0ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-8-0-4-a"},
+        {"do":"signUp","actor":"b","name":"restock-8-0-4-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-0-4-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-0-4-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9323a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":4,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":4,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":4},
+          {"do":"expectCallOutcomes","accepted":8}
+        ]}]
+    },
+    {"id":9324,"name":"restock: 8 calls, cohort -20-1, restock offset -20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-8--20-1-a"},
+        {"do":"signUp","actor":"b","name":"restock-8--20-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8--20-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8--20-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9324a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":4,"settleMs":0,"delayMs":20,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":4,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":4},
+          {"do":"expectCallOutcomes","accepted":8}
+        ]}]
+    },
+    {"id":9325,"name":"restock: 8 calls, cohort -20-2, restock offset -20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-8--20-2-a"},
+        {"do":"signUp","actor":"b","name":"restock-8--20-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8--20-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8--20-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9325a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":4,"settleMs":0,"delayMs":20,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":4,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":4},
+          {"do":"expectCallOutcomes","accepted":8}
+        ]}]
+    },
+    {"id":9326,"name":"restock: 8 calls, cohort -20-3, restock offset -20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-8--20-3-a"},
+        {"do":"signUp","actor":"b","name":"restock-8--20-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8--20-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8--20-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9326a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":4,"settleMs":0,"delayMs":20,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":4,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":4},
+          {"do":"expectCallOutcomes","accepted":8}
+        ]}]
+    },
+    {"id":9327,"name":"restock: 8 calls, cohort -20-4, restock offset -20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-8--20-4-a"},
+        {"do":"signUp","actor":"b","name":"restock-8--20-4-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8--20-4-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8--20-4-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9327a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":4,"settleMs":0,"delayMs":20,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":4,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":4},
+          {"do":"expectCallOutcomes","accepted":8}
+        ]}]
+    },
+    {"id":9328,"name":"restock: 8 calls, cohort -5-1, restock offset -5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-8--5-1-a"},
+        {"do":"signUp","actor":"b","name":"restock-8--5-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8--5-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8--5-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9328a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":4,"settleMs":0,"delayMs":5,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":4,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":4},
+          {"do":"expectCallOutcomes","accepted":8}
+        ]}]
+    },
+    {"id":9329,"name":"restock: 8 calls, cohort -5-2, restock offset -5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-8--5-2-a"},
+        {"do":"signUp","actor":"b","name":"restock-8--5-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8--5-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8--5-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9329a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":4,"settleMs":0,"delayMs":5,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":4,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":4},
+          {"do":"expectCallOutcomes","accepted":8}
+        ]}]
+    },
+    {"id":9330,"name":"restock: 8 calls, cohort -5-3, restock offset -5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-8--5-3-a"},
+        {"do":"signUp","actor":"b","name":"restock-8--5-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8--5-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8--5-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9330a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":4,"settleMs":0,"delayMs":5,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":4,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":4},
+          {"do":"expectCallOutcomes","accepted":8}
+        ]}]
+    },
+    {"id":9331,"name":"restock: 8 calls, cohort -5-4, restock offset -5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-8--5-4-a"},
+        {"do":"signUp","actor":"b","name":"restock-8--5-4-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8--5-4-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8--5-4-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9331a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":4,"settleMs":0,"delayMs":5,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":4,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":4},
+          {"do":"expectCallOutcomes","accepted":8}
+        ]}]
+    },
+    {"id":9332,"name":"restock: 8 calls, cohort 5-1, restock offset 5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-8-5-1-a"},
+        {"do":"signUp","actor":"b","name":"restock-8-5-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-5-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-5-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9332a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":4,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":4,"delayMs":5}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":4},
+          {"do":"expectCallOutcomes","accepted":8}
+        ]}]
+    },
+    {"id":9333,"name":"restock: 8 calls, cohort 5-2, restock offset 5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-8-5-2-a"},
+        {"do":"signUp","actor":"b","name":"restock-8-5-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-5-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-5-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9333a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":4,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":4,"delayMs":5}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":4},
+          {"do":"expectCallOutcomes","accepted":8}
+        ]}]
+    },
+    {"id":9334,"name":"restock: 8 calls, cohort 5-3, restock offset 5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-8-5-3-a"},
+        {"do":"signUp","actor":"b","name":"restock-8-5-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-5-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-5-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9334a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":4,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":4,"delayMs":5}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":4},
+          {"do":"expectCallOutcomes","accepted":8}
+        ]}]
+    },
+    {"id":9335,"name":"restock: 8 calls, cohort 5-4, restock offset 5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-8-5-4-a"},
+        {"do":"signUp","actor":"b","name":"restock-8-5-4-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-5-4-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-5-4-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9335a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":4,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":4,"delayMs":5}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":4},
+          {"do":"expectCallOutcomes","accepted":8}
+        ]}]
+    },
+    {"id":9336,"name":"restock: 8 calls, cohort 20-1, restock offset 20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-8-20-1-a"},
+        {"do":"signUp","actor":"b","name":"restock-8-20-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-20-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-20-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9336a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":4,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":4,"delayMs":20}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":4},
+          {"do":"expectCallOutcomes","accepted":8}
+        ]}]
+    },
+    {"id":9337,"name":"restock: 8 calls, cohort 20-2, restock offset 20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-8-20-2-a"},
+        {"do":"signUp","actor":"b","name":"restock-8-20-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-20-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-20-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9337a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":4,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":4,"delayMs":20}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":4},
+          {"do":"expectCallOutcomes","accepted":8}
+        ]}]
+    },
+    {"id":9338,"name":"restock: 8 calls, cohort 20-3, restock offset 20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-8-20-3-a"},
+        {"do":"signUp","actor":"b","name":"restock-8-20-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-20-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-20-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9338a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":4,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":4,"delayMs":20}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":4},
+          {"do":"expectCallOutcomes","accepted":8}
+        ]}]
+    },
+    {"id":9339,"name":"restock: 8 calls, cohort 20-4, restock offset 20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-8-20-4-a"},
+        {"do":"signUp","actor":"b","name":"restock-8-20-4-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-20-4-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-8-20-4-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9339a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":4,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":4,"delayMs":20}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":4},
+          {"do":"expectCallOutcomes","accepted":8}
+        ]}]
+    },
+    {"id":9340,"name":"restock: 16 calls, cohort 0-1, restock offset 0ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-16-0-1-a"},
+        {"do":"signUp","actor":"b","name":"restock-16-0-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-0-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-0-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9340a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":8,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":8,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":8},
+          {"do":"expectCallOutcomes","accepted":16}
+        ]}]
+    },
+    {"id":9341,"name":"restock: 16 calls, cohort 0-2, restock offset 0ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-16-0-2-a"},
+        {"do":"signUp","actor":"b","name":"restock-16-0-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-0-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-0-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9341a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":8,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":8,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":8},
+          {"do":"expectCallOutcomes","accepted":16}
+        ]}]
+    },
+    {"id":9342,"name":"restock: 16 calls, cohort 0-3, restock offset 0ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-16-0-3-a"},
+        {"do":"signUp","actor":"b","name":"restock-16-0-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-0-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-0-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9342a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":8,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":8,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":8},
+          {"do":"expectCallOutcomes","accepted":16}
+        ]}]
+    },
+    {"id":9343,"name":"restock: 16 calls, cohort 0-4, restock offset 0ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-16-0-4-a"},
+        {"do":"signUp","actor":"b","name":"restock-16-0-4-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-0-4-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-0-4-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9343a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":8,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":8,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":8},
+          {"do":"expectCallOutcomes","accepted":16}
+        ]}]
+    },
+    {"id":9344,"name":"restock: 16 calls, cohort -20-1, restock offset -20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-16--20-1-a"},
+        {"do":"signUp","actor":"b","name":"restock-16--20-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16--20-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16--20-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9344a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":8,"settleMs":0,"delayMs":20,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":8,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":8},
+          {"do":"expectCallOutcomes","accepted":16}
+        ]}]
+    },
+    {"id":9345,"name":"restock: 16 calls, cohort -20-2, restock offset -20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-16--20-2-a"},
+        {"do":"signUp","actor":"b","name":"restock-16--20-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16--20-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16--20-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9345a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":8,"settleMs":0,"delayMs":20,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":8,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":8},
+          {"do":"expectCallOutcomes","accepted":16}
+        ]}]
+    },
+    {"id":9346,"name":"restock: 16 calls, cohort -20-3, restock offset -20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-16--20-3-a"},
+        {"do":"signUp","actor":"b","name":"restock-16--20-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16--20-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16--20-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9346a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":8,"settleMs":0,"delayMs":20,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":8,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":8},
+          {"do":"expectCallOutcomes","accepted":16}
+        ]}]
+    },
+    {"id":9347,"name":"restock: 16 calls, cohort -20-4, restock offset -20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-16--20-4-a"},
+        {"do":"signUp","actor":"b","name":"restock-16--20-4-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16--20-4-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16--20-4-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9347a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":8,"settleMs":0,"delayMs":20,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":8,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":8},
+          {"do":"expectCallOutcomes","accepted":16}
+        ]}]
+    },
+    {"id":9348,"name":"restock: 16 calls, cohort -5-1, restock offset -5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-16--5-1-a"},
+        {"do":"signUp","actor":"b","name":"restock-16--5-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16--5-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16--5-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9348a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":8,"settleMs":0,"delayMs":5,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":8,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":8},
+          {"do":"expectCallOutcomes","accepted":16}
+        ]}]
+    },
+    {"id":9349,"name":"restock: 16 calls, cohort -5-2, restock offset -5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-16--5-2-a"},
+        {"do":"signUp","actor":"b","name":"restock-16--5-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16--5-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16--5-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9349a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":8,"settleMs":0,"delayMs":5,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":8,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":8},
+          {"do":"expectCallOutcomes","accepted":16}
+        ]}]
+    },
+    {"id":9350,"name":"restock: 16 calls, cohort -5-3, restock offset -5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-16--5-3-a"},
+        {"do":"signUp","actor":"b","name":"restock-16--5-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16--5-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16--5-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9350a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":8,"settleMs":0,"delayMs":5,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":8,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":8},
+          {"do":"expectCallOutcomes","accepted":16}
+        ]}]
+    },
+    {"id":9351,"name":"restock: 16 calls, cohort -5-4, restock offset -5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-16--5-4-a"},
+        {"do":"signUp","actor":"b","name":"restock-16--5-4-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16--5-4-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16--5-4-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9351a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":8,"settleMs":0,"delayMs":5,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":8,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":8},
+          {"do":"expectCallOutcomes","accepted":16}
+        ]}]
+    },
+    {"id":9352,"name":"restock: 16 calls, cohort 5-1, restock offset 5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-16-5-1-a"},
+        {"do":"signUp","actor":"b","name":"restock-16-5-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-5-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-5-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9352a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":8,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":8,"delayMs":5}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":8},
+          {"do":"expectCallOutcomes","accepted":16}
+        ]}]
+    },
+    {"id":9353,"name":"restock: 16 calls, cohort 5-2, restock offset 5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-16-5-2-a"},
+        {"do":"signUp","actor":"b","name":"restock-16-5-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-5-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-5-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9353a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":8,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":8,"delayMs":5}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":8},
+          {"do":"expectCallOutcomes","accepted":16}
+        ]}]
+    },
+    {"id":9354,"name":"restock: 16 calls, cohort 5-3, restock offset 5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-16-5-3-a"},
+        {"do":"signUp","actor":"b","name":"restock-16-5-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-5-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-5-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9354a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":8,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":8,"delayMs":5}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":8},
+          {"do":"expectCallOutcomes","accepted":16}
+        ]}]
+    },
+    {"id":9355,"name":"restock: 16 calls, cohort 5-4, restock offset 5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-16-5-4-a"},
+        {"do":"signUp","actor":"b","name":"restock-16-5-4-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-5-4-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-5-4-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9355a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":8,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":8,"delayMs":5}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":8},
+          {"do":"expectCallOutcomes","accepted":16}
+        ]}]
+    },
+    {"id":9356,"name":"restock: 16 calls, cohort 20-1, restock offset 20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-16-20-1-a"},
+        {"do":"signUp","actor":"b","name":"restock-16-20-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-20-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-20-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9356a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":8,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":8,"delayMs":20}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":8},
+          {"do":"expectCallOutcomes","accepted":16}
+        ]}]
+    },
+    {"id":9357,"name":"restock: 16 calls, cohort 20-2, restock offset 20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-16-20-2-a"},
+        {"do":"signUp","actor":"b","name":"restock-16-20-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-20-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-20-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9357a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":8,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":8,"delayMs":20}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":8},
+          {"do":"expectCallOutcomes","accepted":16}
+        ]}]
+    },
+    {"id":9358,"name":"restock: 16 calls, cohort 20-3, restock offset 20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-16-20-3-a"},
+        {"do":"signUp","actor":"b","name":"restock-16-20-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-20-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-20-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9358a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":8,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":8,"delayMs":20}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":8},
+          {"do":"expectCallOutcomes","accepted":16}
+        ]}]
+    },
+    {"id":9359,"name":"restock: 16 calls, cohort 20-4, restock offset 20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-16-20-4-a"},
+        {"do":"signUp","actor":"b","name":"restock-16-20-4-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-20-4-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-16-20-4-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9359a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":8,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":8,"delayMs":20}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":8},
+          {"do":"expectCallOutcomes","accepted":16}
+        ]}]
+    },
+    {"id":9360,"name":"restock: 24 calls, cohort 0-1, restock offset 0ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-24-0-1-a"},
+        {"do":"signUp","actor":"b","name":"restock-24-0-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-0-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-0-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9360a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":12,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":12,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":12},
+          {"do":"expectCallOutcomes","accepted":24}
+        ]}]
+    },
+    {"id":9361,"name":"restock: 24 calls, cohort 0-2, restock offset 0ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-24-0-2-a"},
+        {"do":"signUp","actor":"b","name":"restock-24-0-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-0-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-0-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9361a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":12,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":12,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":12},
+          {"do":"expectCallOutcomes","accepted":24}
+        ]}]
+    },
+    {"id":9362,"name":"restock: 24 calls, cohort 0-3, restock offset 0ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-24-0-3-a"},
+        {"do":"signUp","actor":"b","name":"restock-24-0-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-0-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-0-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9362a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":12,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":12,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":12},
+          {"do":"expectCallOutcomes","accepted":24}
+        ]}]
+    },
+    {"id":9363,"name":"restock: 24 calls, cohort 0-4, restock offset 0ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-24-0-4-a"},
+        {"do":"signUp","actor":"b","name":"restock-24-0-4-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-0-4-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-0-4-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9363a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":12,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":12,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":12},
+          {"do":"expectCallOutcomes","accepted":24}
+        ]}]
+    },
+    {"id":9364,"name":"restock: 24 calls, cohort -20-1, restock offset -20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-24--20-1-a"},
+        {"do":"signUp","actor":"b","name":"restock-24--20-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24--20-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24--20-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9364a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":12,"settleMs":0,"delayMs":20,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":12,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":12},
+          {"do":"expectCallOutcomes","accepted":24}
+        ]}]
+    },
+    {"id":9365,"name":"restock: 24 calls, cohort -20-2, restock offset -20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-24--20-2-a"},
+        {"do":"signUp","actor":"b","name":"restock-24--20-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24--20-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24--20-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9365a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":12,"settleMs":0,"delayMs":20,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":12,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":12},
+          {"do":"expectCallOutcomes","accepted":24}
+        ]}]
+    },
+    {"id":9366,"name":"restock: 24 calls, cohort -20-3, restock offset -20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-24--20-3-a"},
+        {"do":"signUp","actor":"b","name":"restock-24--20-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24--20-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24--20-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9366a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":12,"settleMs":0,"delayMs":20,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":12,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":12},
+          {"do":"expectCallOutcomes","accepted":24}
+        ]}]
+    },
+    {"id":9367,"name":"restock: 24 calls, cohort -20-4, restock offset -20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-24--20-4-a"},
+        {"do":"signUp","actor":"b","name":"restock-24--20-4-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24--20-4-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24--20-4-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9367a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":12,"settleMs":0,"delayMs":20,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":12,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":12},
+          {"do":"expectCallOutcomes","accepted":24}
+        ]}]
+    },
+    {"id":9368,"name":"restock: 24 calls, cohort -5-1, restock offset -5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-24--5-1-a"},
+        {"do":"signUp","actor":"b","name":"restock-24--5-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24--5-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24--5-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9368a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":12,"settleMs":0,"delayMs":5,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":12,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":12},
+          {"do":"expectCallOutcomes","accepted":24}
+        ]}]
+    },
+    {"id":9369,"name":"restock: 24 calls, cohort -5-2, restock offset -5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-24--5-2-a"},
+        {"do":"signUp","actor":"b","name":"restock-24--5-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24--5-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24--5-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9369a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":12,"settleMs":0,"delayMs":5,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":12,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":12},
+          {"do":"expectCallOutcomes","accepted":24}
+        ]}]
+    },
+    {"id":9370,"name":"restock: 24 calls, cohort -5-3, restock offset -5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-24--5-3-a"},
+        {"do":"signUp","actor":"b","name":"restock-24--5-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24--5-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24--5-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9370a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":12,"settleMs":0,"delayMs":5,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":12,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":12},
+          {"do":"expectCallOutcomes","accepted":24}
+        ]}]
+    },
+    {"id":9371,"name":"restock: 24 calls, cohort -5-4, restock offset -5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-24--5-4-a"},
+        {"do":"signUp","actor":"b","name":"restock-24--5-4-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24--5-4-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24--5-4-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9371a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":12,"settleMs":0,"delayMs":5,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":12,"delayMs":0}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":12},
+          {"do":"expectCallOutcomes","accepted":24}
+        ]}]
+    },
+    {"id":9372,"name":"restock: 24 calls, cohort 5-1, restock offset 5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-24-5-1-a"},
+        {"do":"signUp","actor":"b","name":"restock-24-5-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-5-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-5-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9372a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":12,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":12,"delayMs":5}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":12},
+          {"do":"expectCallOutcomes","accepted":24}
+        ]}]
+    },
+    {"id":9373,"name":"restock: 24 calls, cohort 5-2, restock offset 5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-24-5-2-a"},
+        {"do":"signUp","actor":"b","name":"restock-24-5-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-5-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-5-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9373a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":12,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":12,"delayMs":5}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":12},
+          {"do":"expectCallOutcomes","accepted":24}
+        ]}]
+    },
+    {"id":9374,"name":"restock: 24 calls, cohort 5-3, restock offset 5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-24-5-3-a"},
+        {"do":"signUp","actor":"b","name":"restock-24-5-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-5-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-5-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9374a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":12,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":12,"delayMs":5}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":12},
+          {"do":"expectCallOutcomes","accepted":24}
+        ]}]
+    },
+    {"id":9375,"name":"restock: 24 calls, cohort 5-4, restock offset 5ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-24-5-4-a"},
+        {"do":"signUp","actor":"b","name":"restock-24-5-4-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-5-4-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-5-4-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9375a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":12,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":12,"delayMs":5}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":12},
+          {"do":"expectCallOutcomes","accepted":24}
+        ]}]
+    },
+    {"id":9376,"name":"restock: 24 calls, cohort 20-1, restock offset 20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-24-20-1-a"},
+        {"do":"signUp","actor":"b","name":"restock-24-20-1-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-20-1-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-20-1-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9376a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":12,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":12,"delayMs":20}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":12},
+          {"do":"expectCallOutcomes","accepted":24}
+        ]}]
+    },
+    {"id":9377,"name":"restock: 24 calls, cohort 20-2, restock offset 20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-24-20-2-a"},
+        {"do":"signUp","actor":"b","name":"restock-24-20-2-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-20-2-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-20-2-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9377a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":12,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":12,"delayMs":20}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":12},
+          {"do":"expectCallOutcomes","accepted":24}
+        ]}]
+    },
+    {"id":9378,"name":"restock: 24 calls, cohort 20-3, restock offset 20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-24-20-3-a"},
+        {"do":"signUp","actor":"b","name":"restock-24-20-3-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-20-3-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-20-3-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9378a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":12,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":12,"delayMs":20}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":12},
+          {"do":"expectCallOutcomes","accepted":24}
+        ]}]
+    },
+    {"id":9379,"name":"restock: 24 calls, cohort 20-4, restock offset 20ms","actors":["a","b","admin"],
+      "setup": [
+        {"do":"signUp","actor":"a","name":"restock-24-20-4-a"},
+        {"do":"signUp","actor":"b","name":"restock-24-20-4-b"},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"East","quantity":128,"settleMs":0},
+        {"do":"dbSetStock","item":"Keyboard","warehouse":"West","quantity":0,"settleMs":0},
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"click","actor":"admin","testid":"admin-link"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-20-4-a}","item":"Keyboard","as":"before-a"},
+        {"do":"dbRecordCheckout","account":"{user:restock-24-20-4-b}","item":"Keyboard","as":"before-b"}
+      ],
+      "criteria": [{"id":"9379a","category":"production","points":0,"desc":"buyer orders and payments match responses; warehouse stock has the expected net change",
+        "steps": [
+          {"do":"callConcurrently","action":"buy","actors":["a","b"],"namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"requestTimeoutMs":30000,"requests":12,"settleMs":0,"delayMs":0,"alongside":[{"action":"restock","actors":["admin"],"namedAction":{"id":"restock","path":"/api/admin/restock","reducer":"admin_restock","args":[0,0,1],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"warehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-location-row","contains":"Keyboard","attribute":"data-restock-input"},"requestTimeoutMs":30000,"requests":12,"delayMs":20}]},
+          {"do":"dbExpectPurchases","before":{"a":"before-a","b":"before-b"},"purchases":12},
+          {"do":"expectCallOutcomes","accepted":24}
+        ]}]
+    }
+  ]
+}
