@@ -293,6 +293,247 @@ public static class GeneratorSnapshotTests
     }
 
 #if NET10_0_OR_GREATER
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public static async Task NamespaceDependenciesRegisterOnceInStableOrder(bool rootHasTable)
+    {
+        var fixture = await Fixture.Compile("server", "net10.0");
+        const string usings = "global using System; global using System.IO; "
+            + "global using System.Collections.Generic; global using System.Linq;\n";
+        CSharpCompilation Create(string name, string source, params MetadataReference[] references) =>
+            CSharpCompilation.Create(
+                name,
+                [CSharpSyntaxTree.ParseText(usings + source, fixture.ParseOptions)],
+                fixture.SampleCompilation.References.Concat(references),
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+            );
+        CSharpCompilation Generate(CSharpCompilation input)
+        {
+            var driver = CSharpGeneratorDriver.Create(
+                [new Type().AsSourceGenerator(), new Module().AsSourceGenerator()],
+                parseOptions: fixture.ParseOptions
+            );
+            driver.RunGeneratorsAndUpdateCompilation(input, out var output, out var diagnostics);
+            Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+            Assert.Empty(GetCompilationErrors(output));
+            return (CSharpCompilation)output;
+        }
+        MetadataReference Emit(CSharpCompilation compilation)
+        {
+            using var dll = new MemoryStream();
+            var result = compilation.Emit(dll);
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+            return MetadataReference.CreateFromImage(dll.ToArray());
+        }
+        string Table(string name) => $$"""
+            namespace {{name}} {
+                public class Sentinel { }
+                [SpacetimeDB.Table]
+                public partial struct {{name}}Row { public uint Id; }
+            }
+            """;
+        string Descriptor(CSharpCompilation compilation) => Assert.Single(
+            compilation.GetSymbolsWithName("AssemblyDescriptor", SymbolFilter.Type)
+        ).ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        MethodDeclarationSyntax Method(CSharpCompilation compilation, string name) => Assert.Single(
+            compilation.SyntaxTrees.SelectMany(tree => tree.GetRoot().DescendantNodes())
+                .OfType<ClassDeclarationSyntax>()
+                .Where(type => type.Identifier.ValueText == "ModuleRegistration")
+                .SelectMany(type => type.Members.OfType<MethodDeclarationSyntax>())
+                .Where(method => method.Identifier.ValueText == name)
+        );
+
+        var sharedCompilation = Generate(Create("Shared", Table("Shared")));
+        var shared = Emit(sharedCompilation);
+        var alphaCompilation = Generate(Create("Alpha", Table("Alpha")
+            + "public class AlphaLink { public Shared.Sentinel Value; }", shared));
+        var alpha = Emit(alphaCompilation);
+        var betaCompilation = Generate(Create("Beta", Table("Beta")
+            + "public class BetaLink { public Shared.Sentinel Value; }", shared));
+        var beta = Emit(betaCompilation);
+        var utility = Emit(Create("Utility",
+            "public class UtilityLink { public Shared.Sentinel Value; }", shared));
+        var rootSource = rootHasTable ? Table("Root") : "";
+        var root = Generate(Create("Root", rootSource, beta, utility, shared, alpha));
+        var reordered = Generate(Create("Root", rootSource, alpha, shared, utility, beta));
+        Emit(root);
+        Emit(reordered);
+
+        string[] Calls(CSharpCompilation compilation) =>
+            [.. Method(compilation, "Main").DescendantNodes()
+                .OfType<InvocationExpressionSyntax>()
+                .Select(call => call.Expression.ToString())];
+        var expected = new[]
+        {
+            Descriptor(root) + ".Register",
+            Descriptor(alphaCompilation) + ".Register",
+            Descriptor(betaCompilation) + ".Register",
+            Descriptor(sharedCompilation) + ".Register",
+        };
+        Assert.Equal(expected, Calls(root));
+        Assert.Equal(expected, Calls(reordered));
+        Assert.DoesNotContain(Method(root, "Register").DescendantNodes()
+            .OfType<InvocationExpressionSyntax>(), call =>
+                call.Expression.ToString().Contains("AssemblyDescriptor.Register"));
+
+        // An unrelated utility alone must not cause an otherwise empty module to register.
+        var plainUtility = Emit(Create("PlainUtility", "public class PlainUtility { }"));
+        var empty = Generate(Create("Empty", "", plainUtility));
+        Assert.Empty(empty.GetSymbolsWithName("AssemblyDescriptor", SymbolFilter.Type));
+    }
+
+    [Fact]
+    // A separately compiled consumer can call the descriptor, registration populates only the supplied builder, and two builders receive identical metadata without modifying the static root.
+    public static async Task NamespaceDescriptorCrossAssemblyRegistration()
+    {
+        var fixture = await Fixture.Compile("server", "net10.0");
+        var compilation = fixture.SampleCompilation;
+        foreach (var generator in new IIncrementalGenerator[] { new Type(), new Module() })
+        {
+            compilation = compilation.AddSyntaxTrees(
+                fixture.RunGeneratorAndGetResult(generator).GeneratedTrees
+            );
+        }
+        using var moduleDll = new MemoryStream();
+        var moduleEmit = compilation.Emit(moduleDll);
+        Assert.True(moduleEmit.Success, string.Join("\n", moduleEmit.Diagnostics));
+
+        var moduleReference = MetadataReference.CreateFromImage(moduleDll.ToArray());
+        var consumer = CSharpCompilation.Create(
+            "DescriptorConsumer",
+            references: fixture.SampleCompilation.References.Append(moduleReference),
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+        );
+        var moduleAssembly = (IAssemblySymbol)consumer.GetAssemblyOrModuleSymbol(moduleReference)!;
+        var markerType = consumer.GetTypeByMetadataName("SpacetimeDB.ModuleDescriptorAttribute");
+        Assert.NotNull(markerType);
+        var marker = Assert.Single(moduleAssembly.GetAttributes().Where(attribute =>
+            SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, markerType)
+        ));
+        var argument = Assert.Single(marker.ConstructorArguments);
+        Assert.Equal(TypedConstantKind.Type, argument.Kind);
+        var descriptor = Assert.IsAssignableFrom<INamedTypeSymbol>(argument.Value);
+        Assert.Equal(TypeKind.Class, descriptor.TypeKind);
+        Assert.True(descriptor.IsStatic);
+        Assert.Equal(Accessibility.Public, descriptor.DeclaredAccessibility);
+        Assert.Equal("AssemblyDescriptor", descriptor.Name);
+        Assert.True(SymbolEqualityComparer.Default.Equals(
+            moduleAssembly, descriptor.ContainingAssembly
+        ));
+        var descriptorName = descriptor.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+        var consumerSource = $$"""
+            using System.IO;
+            using System.Linq;
+            using System.Reflection;
+            using SpacetimeDB.Internal;
+
+            public static class DescriptorConsumer
+            {
+                public static void Register(ModuleBuilder builder) =>
+                    {{descriptorName}}.Register(builder);
+
+                private static RawModuleDefV10 Describe(ModuleBuilder builder) =>
+                    (RawModuleDefV10)typeof(ModuleBuilder).GetMethod(
+                        "BuildModuleDefinition", BindingFlags.Instance | BindingFlags.NonPublic
+                    )!.Invoke(builder, null)!;
+
+                public static byte[] Snapshot(ModuleBuilder builder)
+                {
+                    using var stream = new MemoryStream();
+                    using var writer = new BinaryWriter(stream);
+                    new RawModuleDefV10.BSATN().Write(writer, Describe(builder));
+                    return stream.ToArray();
+                }
+
+                public static string[] TableNames(ModuleBuilder builder) =>
+                    Describe(builder).Sections.OfType<RawModuleDefV10Section.Tables>()
+                        .SelectMany(section => section.Tables_)
+                        .Select(table => table.SourceName).ToArray();
+
+                public static string[] ReducerNames(ModuleBuilder builder) =>
+                    Describe(builder).Sections.OfType<RawModuleDefV10Section.Reducers>()
+                        .SelectMany(section => section.Reducers_)
+                        .Select(reducer => reducer.SourceName).ToArray();
+            }
+            """;
+        consumer = consumer.AddSyntaxTrees(
+            CSharpSyntaxTree.ParseText(consumerSource, fixture.ParseOptions)
+        );
+        using var consumerDll = new MemoryStream();
+        var consumerEmit = consumer.Emit(consumerDll);
+        Assert.True(consumerEmit.Success, string.Join("\n", consumerEmit.Diagnostics));
+
+        // Isolate the module's static root and Runtime types from other tests.
+        var loadContext = new System.Runtime.Loader.AssemblyLoadContext(
+            nameof(NamespaceDescriptorCrossAssemblyRegistration), isCollectible: true
+        );
+        loadContext.Resolving += (_, name) =>
+        {
+            if (!name.Name!.StartsWith("SpacetimeDB."))
+            {
+                return null;
+            }
+            var reference = fixture.SampleCompilation.References.Single(r =>
+                fixture.SampleCompilation.GetAssemblyOrModuleSymbol(r)?.Name == name.Name
+            );
+            if (reference is CompilationReference projectReference)
+            {
+                using var implementation = new MemoryStream();
+                var result = projectReference.Compilation.Emit(implementation);
+                Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+                implementation.Position = 0;
+                return loadContext.LoadFromStream(implementation);
+            }
+            var path = ((PortableExecutableReference)reference).FilePath!;
+            // Reference assemblies cannot execute; use the sibling implementation assembly.
+            var directory = new DirectoryInfo(Path.GetDirectoryName(path)!);
+            if (directory.Name is "ref" or "refint")
+            {
+                path = Path.Combine(directory.Parent!.FullName, Path.GetFileName(path));
+            }
+            return loadContext.LoadFromAssemblyPath(path);
+        };
+        try
+        {
+            moduleDll.Position = 0;
+            loadContext.LoadFromStream(moduleDll);
+            consumerDll.Position = 0;
+            var consumerType = loadContext.LoadFromStream(consumerDll)
+                .GetType("DescriptorConsumer", throwOnError: true)!;
+            var register = consumerType.GetMethod("Register")!;
+            var builderType = register.GetParameters()[0].ParameterType;
+            var first = Activator.CreateInstance(builderType)!;
+            var second = Activator.CreateInstance(builderType)!;
+            var root = builderType.Assembly.GetType("SpacetimeDB.Internal.Module")!
+                .GetProperty("RootBuilder")!.GetValue(null)!;
+            byte[] Snapshot(object builder) => (byte[])consumerType.GetMethod("Snapshot")!
+                .Invoke(null, [builder])!;
+            var empty = Snapshot(second);
+            var rootBefore = Snapshot(root);
+
+            register.Invoke(null, [first]);
+            Assert.Contains("PublicTable", (string[])consumerType.GetMethod("TableNames")!
+                .Invoke(null, [first])!);
+            Assert.Contains("InsertData", (string[])consumerType.GetMethod("ReducerNames")!
+                .Invoke(null, [first])!);
+            var registered = Snapshot(first);
+            Assert.False(empty.SequenceEqual(registered));
+            Assert.Equal(empty, Snapshot(second));
+            Assert.Equal(rootBefore, Snapshot(root));
+
+            register.Invoke(null, [second]);
+            Assert.Equal(registered, Snapshot(second));
+            Assert.Equal(registered, Snapshot(first));
+            Assert.Equal(rootBefore, Snapshot(root));
+        }
+        finally
+        {
+            loadContext.Unload();
+        }
+    }
+
     [Fact]
     // Can a separately compiled DLL accept our module’s contexts, and can module code still access tables through the contexts it returns?
     public static async Task NamespaceContextsCrossAssemblyBoundaries()
