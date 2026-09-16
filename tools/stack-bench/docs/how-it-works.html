@@ -178,7 +178,7 @@ function build(scene) {
   for (const s of scene.slabs) {
     const b = box({ x: s.x, y: s.y, w: s.w, d: s.d, h: .35, z0: Z, color: '#132129', top: 1.35, side: .95, back: .7, district: s.id, layer: 'slabs', lit: false });
     const [lx, ly, anchor, dx, dy] = s.labelAt ?? [s.x + s.w, s.y + s.d, 'middle', 0, 18];
-    const t = label(lx, ly, Z, s.label, 'title' + (s.detail ? ' door' : ''), s.id, anchor, dx, dy);
+    const t = label(lx, ly, Z, s.detail ? `${s.label} ›` : s.label, 'title' + (s.detail ? ' door' : ''), s.id, anchor, dx, dy);
     if (s.detail) door(b, s.detail, t);
     s.node = b;
   }
@@ -314,7 +314,7 @@ const STACKS = ['SpacetimeDB', 'PostgreSQL', 'MongoDB'];
       }
     },
     chapters: [
-      { k: 'stack bench', h: 'Three stacks build the same product. A machine grades every one.', p: 'One benchmark for the whole question: how well do coding agents ship on SpacetimeDB, PostgreSQL, and MongoDB, and what does it cost. Click any district to open it.', focus: null, view: null },
+      { k: 'stack bench', h: 'Three stacks build the same product. A machine grades every one.', p: 'One benchmark for the whole question: how well do coding agents ship on SpacetimeDB, PostgreSQL, and MongoDB, and what does it cost.', focus: null, view: null },
       { k: 'one plan', h: 'Same request. Three stacks. Nothing else changes.', p: 'A frozen plan fixes the product, the model, the checks, and the budget. The blue token is that request, delivered identically to each cell.', focus: ['plan', 'cell0', 'cell1', 'cell2'], view: [0, 7, 24, 14.5, 3] },
       { k: 'sealed cells', h: 'The agent never sees the exam.', p: 'Each attempt runs in an isolated container with the product request and its stack material. No grader, no answers, no keys.', focus: ['cell0', 'cell1', 'cell2', 'celltags'], view: [7, 7, 26, 14.5, 2.5] },
       { k: 'real tests', h: 'Real browsers use the real app.', p: 'The green tokens are probes: 120 scenarios driving the running application as customers and staff would. Passed, failed, or inconclusive. Never a guess.', focus: ['grader', 'gradertags', 'cell0', 'cell1', 'cell2'], view: [7, 0, 26, 14.5, 3] },
@@ -691,16 +691,21 @@ const TRACK = {"questlines":[{"id":"identity-profiles","title":"Identity and pro
   wires('w:hubtags', hub.map(id => ['warehouse-admin', id]));
   const blocked = new Set(['purchasing', ...struck]);
   wires('w:striketags', nodes.filter(n => blocked.has(n.id)).flatMap(n => n.deps.filter(d => blocked.has(d)).map(d => [d, n.id])), 'blocked');
+  const depth = {}, depthOf = id => depth[id] ??= byId[id].deps.length ? 1 + Math.max(...byId[id].deps.map(depthOf)) : 0;
+  const passed = nodes.filter(n => depthOf(n.id) <= 1).map(n => n.id);
+  const shares = ALLQ.map(q => { const m = nodes.filter(n => n.q === q); return { q, n: m.length, p: m.filter(n => passed.includes(n.id)).length }; });
+  const pct = x => `${Math.round(x * 100)}%`, avg = pct(shares.reduce((s, x) => s + x.p / x.n, 0) / shares.length), flat = pct(passed.length / nodes.length);
+  for (const s of slabs) { const x = shares.find(t => t.q === s.id); labels.push([s.x + 2, s.y + s.d - .8, ZS, `${x.p} of ${x.n}`, 'num', `q:${s.id}tags`, 'middle', 0, -14]); }
   const paint = (ids, color) => Object.fromEntries(ids.map(id => [id, color])), FULL = [0, 0, 34, 32, 1, -.06, 1.15];
   scenes.track = {
     id: 'track', name: 'the ecommerce track', parent: 'plan', plate: [34, 32], slabs, units, labels, lanes,
     chapters: [
-      { k: 'the ecommerce track', h: `${nodes.length} features in ${TRACK.questlines.length} questlines make one product.`, p: 'A questline is one thread of the product, from its first feature to its last. A feature is graded only when every feature it depends on has passed, so the agent builds in an order the product allows.', focus: null, view: FULL },
+      { k: 'the ecommerce track', h: `${nodes.length} features in ${TRACK.questlines.length} questlines make one product.`, p: 'A questline is one thread of the product, from its first feature to its last. A feature is graded only when every feature it depends on has passed, so the agent builds in an order the product allows. Any block opens.', focus: null, view: FULL },
       { k: 'roots', h: `${roots.length} features need nothing. Everything starts there.`, p: `${roots.map(id => byId[id].title).join(', ')} unlock the first wave of work. Every other feature waits behind at least one of them.`, focus: [...ALLQ, ...tagsOf(roots), 'w:rootstags'], view: FULL, paint: paint(roots, BLUE) },
       { k: 'a questline', h: 'Cart, then checkout, then reservations.', p: 'Shopping and checkout is six features. Cart needs an account and a catalog. Checkout needs the cart. Reservations need checkout and warehouse stock, which lives in another questline.', focus: ['shopping-checkout', 'inventory', ...tagsOf(shop), 'w:shoptags'], view: [shopSlab.x - 9, 0, shopSlab.x + 9, shopSlab.y + shopSlab.d + 1, 2, .14] },
       { k: 'the hub', h: `One feature unblocks ${hub.length}.`, p: `Warehouse admin sits under ${hub.map(id => byId[id].title.toLowerCase()).join(', ')}. Building it early pays across the map.`, focus: [...ALLQ, ...tagsOf(['warehouse-admin', ...hub]), 'w:hubtags'], view: FULL, paint: { 'warehouse-admin': GREEN, ...paint(hub, WHITE) } },
       { k: 'a strike', h: 'A failed feature blocks everything behind it.', p: `When purchasing fails its checks, ${struck.length} features are never attempted. They earn no points and no blame. Strike policy decides whether the agent gets another try at purchasing first.`, focus: [...ALLQ, ...tagsOf(['purchasing']), 'w:striketags'], view: FULL, paint: { purchasing: RED, ...paint(struck, INK) } },
-      { k: 'the score', h: `The score is the average of ${TRACK.questlines.length} questlines.`, p: 'Each questline is the share of its features passed. The average is the number; the count of unique checks passed is reported beside it, so a long questline cannot outvote a short one.', focus: null, view: FULL },
+      { k: 'the score', h: `The score is the average of ${TRACK.questlines.length} questline shares.`, p: `Suppose the roots and every feature one step behind them passed: ${passed.length} of ${nodes.length}. Each questline's share is counted, and the average of the ${shares.length} shares is the score, ${avg} here, where a flat count would say ${flat}. A long questline cannot outvote a short one. Unique checks passed are reported beside it.`, focus: [...ALLQ, ...ALLQ.map(q => `q:${q}tags`)], view: FULL, paint: paint(passed, GREEN) },
     ],
   };
 
