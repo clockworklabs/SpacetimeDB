@@ -4,6 +4,8 @@ import { ActionApplicationFailure, ActionInconclusive, actionImplementation } fr
 import { finding, isFinding, renderFinding } from './action-findings.js';
 import { checkoutDifferences, orderCheckoutDifferences, cancellationDifferences, purchaseDifferences, checkoutId } from '../stacks/checkout-state.js';
 import { getSavedPostgresCheckoutState } from '../stacks/backends/saved-postgres-checkout.js';
+import { getSavedMongoDbCheckoutState } from '../stacks/backends/saved-mongodb-checkout.js';
+import { getSavedSpacetimeCheckoutState } from '../stacks/backends/saved-spacetime-checkout.js';
 import type { NamedActionsCapability } from './named-action-runtime.js';
 import type { CheckoutState } from '../stacks/checkout-state.js';
 import type {
@@ -649,8 +651,10 @@ export function createDatabaseReadCapability({ backend, spacetime, databaseLease
       if (!adapter || !('databaseRead' in adapter)) inconclusive('unsupported-backend', { backend: backend ?? '<unset>' });
       const selection = { account: expand(input.account), item: expand(input.item), app, exec };
       if (savedReader) {
-        if (backend !== 'postgres' || !databaseLease) throw new Error('saved order reader requires PostgreSQL');
-        return getSavedPostgresCheckoutState({ ...selection, reader: savedReader, lease: databaseLease });
+        if (backend === 'spacetime') return getSavedSpacetimeCheckoutState({ ...selection, reader: savedReader, spacetime: spacetime ?? undefined });
+        if (!databaseLease) throw new Error('saved order reader requires an authenticated backend lease');
+        const read = backend === 'postgres' ? getSavedPostgresCheckoutState : getSavedMongoDbCheckoutState;
+        return read({ ...selection, reader: savedReader, lease: databaseLease });
       }
       if (adapter.id === 'spacetime') return adapter.databaseRead.getCheckoutState({ ...selection, spacetime: spacetime ?? undefined });
       if (!databaseLease) throw new Error('checkout state reads require an authenticated backend lease');

@@ -13,6 +13,7 @@ export interface Locator {
   first(): Locator;
   getAttribute(name: string): Promise<string | null>;
   innerText(): Promise<string>;
+  inputValue(): Promise<string>;
   isVisible(): Promise<boolean>;
   or(locator: Locator): Locator;
   press(key: string): Promise<void>;

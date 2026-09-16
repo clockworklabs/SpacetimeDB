@@ -374,10 +374,12 @@ test('an invalid Spacetime u64 input fails before transport and cannot prove ref
 
 test('account setup preserves scoped credentials and classifies browser failures', async () => {
   const calls: unknown[][] = [];
+  let actualUser = 'Alicescope';
   const locator = (purpose: string) => ({
     first() { return this; },
     isVisible: async () => true,
     fill: async (value: string) => { calls.push([purpose, 'fill', value]); },
+    inputValue: async () => actualUser,
     click: async () => { calls.push([purpose, 'click']); },
     waitFor: async (options: unknown) => { calls.push([purpose, 'waitFor', options]); },
   });
@@ -390,6 +392,12 @@ test('account setup preserves scoped credentials and classifies browser failures
   assert.equal(passed.status, 'passed');
   assert.equal(record(passed.observation).user, 'Alicescope');
   assert(calls.some(call => call[2] === 'pw-Alicescope'));
+  actualUser = 'Alice'; calls.length = 0;
+  const truncated = await run({ do: 'signUp', actor: 'a', name: 'Alice' },
+    services(new Map<string, unknown>([['a', actor]])));
+  assert.equal(truncated.status, 'inconclusive');
+  assert.match(JSON.stringify(truncated.finding), /input changed the requested username/);
+  assert(!calls.some(call => call[1] === 'click'));
 
   const timeout = Object.assign(new Error('locator.fill: timed out'), { name: 'TimeoutError' });
   const timedOutActor = { page: { locator: () => ({ first() { return this; },
@@ -423,6 +431,7 @@ test('sign in waits for a rendered toggle instead of silently missing the form',
       assert.equal(formVisible, true);
     },
     fill: async (value: string) => { calls.push(['username', 'fill', value]); },
+    inputValue: async () => 'admin',
   };
   const fields: Record<string, unknown> = {
     '[data-testid="signin-username"]': username,

@@ -16,16 +16,18 @@ export const checkoutStateSchema = z.strictObject({
   cart: z.array(z.strictObject({ itemId: id, quantity: integer })),
   stock: z.array(z.strictObject({ warehouseId: id, quantity: integer })).min(1),
   reservations: z.array(z.strictObject({ itemId: id, warehouseId: id, quantity: integer })),
-  orders: z.array(z.strictObject({ id, accountId: id, totalMinor: integer, refundedMinor: integer.optional(), status: z.string(), lines: z.array(line) })),
+  orders: z.array(z.strictObject({ id, accountId: id, totalMinor: integer, refundedMinor: integer.nullable().optional(), status: z.string(), lines: z.array(line) })),
   payments: z.array(z.strictObject({ id, orderId: id, amountMinor: integer, status: z.string() })),
+  refunds: z.array(z.strictObject({ id: id.optional(), orderId: id, accountId: id, amountMinor: integer })).optional(),
   orphanOrderLines: integer,
   orphanAllocations: integer.optional(),
+  orphanRefunds: integer.optional(),
 });
 export type CheckoutState = z.infer<typeof checkoutStateSchema>;
 // Saved L3 orders have no payment records or cart reservations. These fields
 // are absent capabilities, not fabricated evidence of a successful payment.
 export const orderCheckoutStateSchema = checkoutStateSchema.extend({
-  orders: z.array(checkoutStateSchema.shape.orders.element.extend({ refundedMinor: integer })),
+  orders: z.array(checkoutStateSchema.shape.orders.element.extend({ refundedMinor: integer.nullable() })),
   orphanAllocations: integer,
   payments: checkoutStateSchema.shape.payments.length(0),
   reservations: checkoutStateSchema.shape.reservations.length(0),
@@ -35,6 +37,7 @@ export const orderCheckoutStateSchema = checkoutStateSchema.extend({
 function normalized(state: CheckoutState): CheckoutState {
   const rows = <T>(values: readonly T[]) => [...values].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
   return { ...state, cart: rows(state.cart), stock: rows(state.stock), reservations: rows(state.reservations),
+    ...(state.refunds ? { refunds: rows(state.refunds) } : {}),
     payments: rows(state.payments), orders: rows(state.orders.map(row => ({ ...row,
       lines: rows(row.lines.map(line => ({ ...line, allocations: rows(line.allocations) }))),
     }))) };
@@ -161,6 +164,7 @@ function compareCheckout(before: CheckoutState, prepared: CheckoutState, after: 
   for (const state of [before, prepared, after]) {
     check('order lines without an order', state.orphanOrderLines, 0);
     if (state.orphanAllocations !== undefined) check('allocations without an order line', state.orphanAllocations, 0);
+    if (state.orphanRefunds !== undefined) check('refunds without an order', state.orphanRefunds, 0);
     check('duplicate stock warehouse rows', state.stock.length - new Set(state.stock.map(row => row.warehouseId)).size, 0);
     check('negative stored stock rows', state.stock.filter(row => row.quantity < 0).length, 0);
     check('duplicate order ids', state.orders.length - new Set(state.orders.map(row => row.id)).size, 0);
@@ -175,6 +179,8 @@ function compareCheckout(before: CheckoutState, prepared: CheckoutState, after: 
   same('prepared cart', prepared.cart, [{ itemId: before.itemId, quantity }]);
   same('orders unchanged during cart preparation', sorted(prepared.orders), sorted(before.orders));
   same('payments unchanged during cart preparation', sorted(prepared.payments), sorted(before.payments));
+  same('refunds unchanged during cart preparation', prepared.refunds, before.refunds);
+  same('refunds unchanged after checkout', after.refunds, before.refunds);
   same('stock warehouses preserved during preparation', sorted(prepared.stock.map(row => row.warehouseId)), sorted(before.stock.map(row => row.warehouseId)));
   check('invalid reservation rows', prepared.reservations.filter(row => row.itemId !== before.itemId
     || row.quantity <= 0 || !before.stock.some(stock => stock.warehouseId === row.warehouseId)).length, 0);
@@ -209,7 +215,7 @@ function compareCheckout(before: CheckoutState, prepared: CheckoutState, after: 
     same('checkout order owner', order.accountId, before.accountId);
     same('checkout order status', order.status, 'pending');
     check('checkout order total in minor units', order.totalMinor, before.priceMinor * quantity);
-    if (order.refundedMinor !== undefined) check('checkout order refunded amount', order.refundedMinor, 0);
+    if (typeof order.refundedMinor === 'number') check('checkout order refunded amount', order.refundedMinor, 0);
     // Relational orders may split one product across warehouse allocation lines.
     check('checkout order quantity', total(order.lines), quantity);
     check('unexpected checkout order lines', order.lines.filter(line => line.itemId !== before.itemId

@@ -229,8 +229,9 @@ export function parseGradeArgs(argv: readonly string[]): GradeArgs {
     throw new Error('diagnostic grades cannot select a scored recipe or check catalog');
   }
   if (values['saved-diagnostic']) {
-    if (!args.diagnostic || args.backend !== 'postgres') throw new Error('saved readers require zero-point PostgreSQL diagnostics');
+    if (!args.diagnostic) throw new Error('saved readers require zero-point diagnostics');
     args.savedDiagnostic = inspectSavedDiagnostic(JSON.parse(values['saved-diagnostic']), process.cwd());
+    if (args.backend !== args.savedDiagnostic.backend) throw new Error('saved diagnostic backend mismatch');
   }
   let url: URL;
   try { url = new URL(args.url); }

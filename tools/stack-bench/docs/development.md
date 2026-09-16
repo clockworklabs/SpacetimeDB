@@ -194,7 +194,7 @@ Declare exact criterion IDs in `expectedFailures` for defect controls. Source
 paths and scenario paths are relative to the plan. Candidate source is copied;
 the supplied tree is never edited.
 
-For an accepted saved PostgreSQL L3 app, use `saved` instead of `source`:
+For an accepted saved L3 app, use `saved` instead of `source`:
 
 ```json
 {
@@ -205,15 +205,27 @@ For an accepted saved PostgreSQL L3 app, use `saved` instead of `source`:
 ```
 
 This path requires the final accepted checkpoint, its source and selection hashes,
-and the original build image and run index. It installs the app's own dependencies;
-do not set `STACK_BENCH_RELEASE_DEPS_VOLUME`. It does not deploy a reference app.
-The trusted reader JSON contains `sourceSha256` and one reviewed PostgreSQL `sql`
-query. The query uses `:'account'` and `:'item'` and returns `accountMatches`,
-`itemMatches`, and `state`. Both counts must equal one. Reads use a read-only,
-repeatable-read transaction on the owned database.
+and the original build image, run index, and database or module address. It installs
+the app's own dependencies and does not deploy a reference app. Saved SpacetimeDB
+apps require `STACK_BENCH_RELEASE_DEPS_VOLUME`, initialized from the original backend
+image with the existing `appliance/dependency-volume` command. The runner verifies
+the mounted SDK and native binaries against that backend image's manifest before
+app startup. This volume supplies stack artifacts, not the app's `node_modules`.
+Each trusted reader JSON contains `sourceSha256` and a reviewed mapping:
 
-Saved order-only state includes refunds, allocations and orphan counts. It cannot
-claim payment or reservation coverage. It supports checkout and crash recovery;
+- PostgreSQL: `sql` uses `:'account'` and `:'item'` in a read-only, repeatable-read transaction.
+- MongoDB: `script` reads through `store` in an aborted snapshot transaction. It receives `account`, `item`, `key`, and `minor` helpers.
+- SpacetimeDB: `tables` selects one native subscription snapshot; `convert(tables, account, item)` maps its rows.
+
+Each mapping returns `accountMatches`, `itemMatches`, and `state`. Both counts must
+equal one. Reads require the owned container. Mapping programs are trusted operator
+code, never supplied by the tested app. SpacetimeDB connection hooks can change
+state before a fresh subscription; disclose this limit when the app has such hooks.
+
+Saved order-only state includes allocations and orphan counts. Map separate refund
+records when present. Use `refundedMinor: null` when no order refund amount is stored.
+These mappings cover selected accounting fields, not the entire database. They cannot
+claim payment or reservation coverage. They support checkout and crash recovery;
 direct-purchase histories and cancellation require separate qualified mappings.
 Every new source needs a reviewed reader and deliberate defect controls before
 running the audit. Saved-app failures are measured results, not expected-control

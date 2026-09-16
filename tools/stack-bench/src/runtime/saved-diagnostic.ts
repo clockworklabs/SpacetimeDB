@@ -11,10 +11,14 @@ export const savedDiagnosticSchema = z.strictObject({
   source: z.string().min(1), reader: z.strictObject({ path: z.string().min(1), sha256: sha }),
 });
 const digest = (path: string) => createHash('sha256').update(readFileSync(path)).digest('hex');
+const backend = z.enum(['postgres', 'mongodb', 'spacetime']);
 const runSchema = z.object({
-  backend: z.literal('postgres'), track: z.literal('ecommerce'), contaminated: z.literal(false),
+  backend, track: z.literal('ecommerce'), contaminated: z.literal(false),
   runtime: z.object({ buildImage: z.string().regex(/^sha256:[a-f0-9]{64}$/) }),
-  backendLease: z.object({ runIndex: z.number().int().nonnegative() }),
+  backendLease: z.object({ runIndex: z.number().int().nonnegative(), resources: z.object({
+    serverUri: z.string().nullable(), module: z.string().nullable(), database: z.string().nullable(),
+    container: z.object({ image: z.string().regex(/^sha256:[a-f0-9]{64}$/) }).optional(),
+  }) }),
   checkpoints: z.array(z.object({ sequence: z.number(), level: z.number(), accepted: z.boolean(), excluded: z.boolean().optional(),
     sourceSha256: sha, selectionSha256: sha, evidence: z.object({ path: z.string(), sha256: sha }) })),
   condition: z.object({ guidance: z.object({ credentialAliases: z.record(z.string(), z.unknown()).optional() }) }),
@@ -30,6 +34,13 @@ export function inspectSavedDiagnostic(input: unknown, base: string) {
   const artifact = readArtifact(runPath, { expectedKind: 'benchmark_run' });
   if (!artifact.timestamps.completedAt) throw new Error('saved diagnostic requires a completed run');
   const run = runSchema.parse(artifact.payload);
+  const { serverUri, module, database } = run.backendLease.resources;
+  if (run.backend === 'spacetime') {
+    if (!run.backendLease.resources.container) throw new Error('saved SpacetimeDB requires its original backend image');
+    const uri = new URL(serverUri ?? '');
+    if (uri.protocol !== 'http:' || uri.hostname !== '127.0.0.1' || !uri.port || uri.username || uri.password
+      || uri.pathname !== '/' || uri.search || uri.hash || !module) throw new Error('saved diagnostic requires a local SpacetimeDB target');
+  } else if (!database) throw new Error('saved diagnostic requires the original database name');
   if (new Set(run.checkpoints.map(row => row.sequence)).size !== run.checkpoints.length) {
     throw new Error('saved diagnostic checkpoint sequences are ambiguous');
   }
@@ -43,11 +54,11 @@ export function inspectSavedDiagnostic(input: unknown, base: string) {
   if (isAbsolute(pathFromRun) || pathFromRun.startsWith('..') || digest(checkpointPath) !== declaration.evidence.sha256) {
     throw new Error('saved diagnostic checkpoint changed or escaped its run');
   }
-  const checkpoint = z.object({ backend: z.literal('postgres'), track: z.literal('ecommerce'), level: z.literal(3),
+  const checkpoint = z.object({ backend, track: z.literal('ecommerce'), level: z.literal(3),
     source: z.object({ sha256: sha }), selection: z.object({ sha256: sha,
       checks: z.array(z.object({ stableKey: z.string() })).nonempty() })
   }).parse(readArtifact(checkpointPath, { expectedKind: 'grade_bundle' }).payload);
-  if (checkpoint.source.sha256 !== declaration.sourceSha256
+  if (checkpoint.backend !== run.backend || checkpoint.source.sha256 !== declaration.sourceSha256
     || checkpoint.selection.sha256 !== declaration.selectionSha256
     || hashAppSource(source).sha256 !== declaration.sourceSha256) throw new Error('saved diagnostic source or selection mismatch');
   const keys = checkpoint.selection.checks.map(row => row.stableKey);
@@ -61,5 +72,6 @@ export function inspectSavedDiagnostic(input: unknown, base: string) {
   return { ...request, run: runPath, source, reader, sourceSha256: declaration.sourceSha256,
     selectionSha256: declaration.selectionSha256, backend: run.backend, track: run.track,
     runIndex: run.backendLease.runIndex, buildImage: run.runtime.buildImage,
+    serverUri, module, database, backendImage: run.backendLease.resources.container?.image ?? null,
     credentialAliases: run.condition.guidance.credentialAliases ?? {} };
 }

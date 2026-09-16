@@ -34,6 +34,7 @@ test('order-only checkout rejects partial, duplicate, lost and refunded effects 
     state.payments = []; state.reservations = []; state.orphanAllocations = 0;
     for (const order of state.orders) order.refundedMinor = 0;
     state.orders.push({ ...structuredClone(after.orders[0]!), id: 'prior', refundedMinor: 0 });
+    state.refunds = [{ orderId: 'prior', accountId: 'a', amountMinor: 0 }]; state.orphanRefunds = 0;
   }
   assert.deepEqual(orderCheckoutDifferences(before, prepared, after, 1), []);
   assert.deepEqual(orderCheckoutDifferences(before, prepared, prepared, 1, true), []);
@@ -46,12 +47,19 @@ test('order-only checkout rejects partial, duplicate, lost and refunded effects 
     (state: CheckoutState) => { state.orders[0]!.refundedMinor = 1999; },
     (state: CheckoutState) => { state.stock[0]!.quantity++; },
     (state: CheckoutState) => { state.orphanAllocations = 1; },
+    (state: CheckoutState) => { state.refunds![0]!.amountMinor = 1; },
+    (state: CheckoutState) => { state.refunds!.push({ orderId: 'o', accountId: 'a', amountMinor: 1999 }); },
+    (state: CheckoutState) => { state.orphanRefunds = 1; },
   ]) {
     const broken = structuredClone(after); mutate(broken);
     assert(orderCheckoutDifferences(before, prepared, broken, 1, true).length);
   }
   const missing = structuredClone(after); delete missing.orders[0]!.refundedMinor;
   assert.throws(() => orderCheckoutDifferences(before, prepared, missing, 1));
+  for (const state of [before, prepared, after]) for (const order of state.orders) order.refundedMinor = null;
+  assert.deepEqual(orderCheckoutDifferences(before, prepared, after, 1), []);
+  const preparedRefund = structuredClone(prepared); preparedRefund.refunds = [];
+  assert(orderCheckoutDifferences(before, preparedRefund, after, 1).some(row => row.control === 'refunds unchanged during cart preparation'));
 });
 
 test('unsettled server work blocks later checkout and stock comparisons until a new grade', () => {

@@ -221,6 +221,7 @@ async function claimGroup(group: DiagnosticGroup, directory: string, id: string,
     signal.throwIfAborted();
     if (existsSync(stopPath)) throw new Error('dispatch stopped before admission');
     const serverUri = (index: number) => {
+      if (group.saved) return group.saved.serverUri;
       if (18000 + index > 65535) throw new RangeError('database listener exceeds TCP port range');
       return group.backend === 'spacetime' ? `http://127.0.0.1:${18000 + index}` : null;
     };
@@ -228,14 +229,14 @@ async function claimGroup(group: DiagnosticGroup, directory: string, id: string,
       serverUri, probePort: probeLoopbackPort, signal })).runIndices[0];
     if (runIndex === undefined) throw new Error('no free diagnostic run resources');
     const ports = portsFor(track, group.backend, runIndex);
-    if (group.saved && ![ports.vite, ports.express].filter((port): port is number => typeof port === 'number')
+    if (group.saved && ![ports.vite, ports.express, ...(group.saved.serverUri ? [Number(new URL(group.saved.serverUri).port)] : [])].filter((port): port is number => typeof port === 'number')
       .every(port => probeLoopbackPort(port).free)) {
       await delay(1000, undefined, { signal }); continue;
     }
       const lease = createBackendLease({ runId: id, backend: group.backend, track: group.track, runIndex,
         ...(group.backend === 'spacetime' ? { serverUri: serverUri(runIndex),
-          module: moduleName(track, runIndex), dataDir: join(directory, 'database') }
-          : { database: dbName(track, runIndex) }) });
+          module: group.saved?.module ?? moduleName(track, runIndex), dataDir: join(directory, 'database') }
+          : { database: group.saved?.database ?? dbName(track, runIndex) }) });
       const keys = backendResourceLockKeys(lease, ports, [`workspace:${join(directory, 'source')}`]);
       try { claimBackendResources(path, lease, { ...scope, keys }); return { lease, path, ports }; }
       catch (error) {
@@ -284,7 +285,32 @@ async function runGroup(plan: FrozenPlan, groupIndex: number, directory: string,
         const verified = inspectSavedDiagnostic(savedDiagnosticSchema.strip().parse(group.saved), STACK_BENCH_ROOT);
         if (JSON.stringify(verified) !== JSON.stringify(group.saved)
           || verified.buildImage !== process.env.STACK_BENCH_IMAGE) throw new Error('saved diagnostic provenance or runtime changed');
-        if (process.env.STACK_BENCH_RELEASE_DEPS_VOLUME) throw new Error('saved apps must install their own dependencies');
+        if (group.backend === 'spacetime' && !process.env.STACK_BENCH_RELEASE_DEPS_VOLUME?.trim()) {
+          throw new Error('saved SpacetimeDB requires its original backend image release dependency volume');
+        }
+        if (group.backend === 'spacetime') {
+          const name = `stack-bench-dependencies-${audit.id}`;
+          let failure: unknown;
+          try {
+            // The original backend image owns the manifest; the slim build
+            // image does not. App dependencies remain installed by start.sh.
+            const verified = await runBounded('docker', ['run', '--rm', '--name', name, '--network', 'none', '--read-only',
+              '--mount', `type=volume,source=${process.env.STACK_BENCH_RELEASE_DEPS_VOLUME!.trim()},target=/release-deps,readonly`,
+              '--entrypoint', 'node', group.saved.backendImage!, '/opt/stack-bench/dist/appliance/dependency-volume.js',
+              'verify', '--target', '/release-deps'], {
+              cwd: STACK_BENCH_ROOT, timeoutMs: 60_000, signal: cancellation.signal,
+              logs: { stdout: join(directory, 'dependencies.stdout.log'), stderr: join(directory, 'dependencies.stderr.log') },
+            });
+            if (!verified.ok) failure = new Error(`saved SpacetimeDB dependency provenance failed: ${verified.stderrTail}`);
+          } catch (error) { failure = error; }
+          finally {
+            const removed = await runBounded('docker', ['rm', '-f', name], { cwd: STACK_BENCH_ROOT, timeoutMs: 10_000 });
+            if (!removed.ok && !removed.stderrTail.includes('No such container')) {
+              failure = new Error(`${failure ? `${message(failure)}; ` : ''}dependency verifier cleanup failed: ${removed.stderrTail}`);
+            }
+          }
+          if (failure) throw failure;
+        }
       }
       activateAttemptBackend({ leasePath, lease, ports });
       if (group.saved) {

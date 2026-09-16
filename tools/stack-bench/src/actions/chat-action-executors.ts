@@ -3,6 +3,7 @@ import { harnessBrowserFailure } from '../evidence/harness-errors.js';
 import {
   actorFor,
   browserFor,
+  inconclusive,
   pad,
 } from './actor-action-runtime.js';
 import type { ActorActionArguments, BrowserActorCapabilities } from './actor-action-runtime.js';
@@ -62,6 +63,9 @@ async function signUp({ input, capabilities, signal }: ChatArguments<AccountInpu
     }
   }
   await username.fill(user);
+  if (!input.expectFailure && await username.inputValue() !== user) {
+    inconclusive('invalid-input', { detail: 'signup input changed the requested username; use a compatible scenario account name' });
+  }
   await actor.page.locator(browser.testId('signup-password')).first().fill(password);
   await actor.page.locator(browser.testId('signup-submit')).first().click();
   if (input.expectFailure) {
@@ -101,6 +105,9 @@ async function signIn({ input, capabilities, signal }: ChatArguments<AccountInpu
       if (await restoredSession()) return { user, signedIn: false };
     }
     await username.fill(user);
+    if (!input.expectFailure && await username.inputValue() !== user) {
+      inconclusive('invalid-input', { detail: 'signin input changed the requested username; use a compatible scenario account name' });
+    }
     await actor.page.locator(browser.testId('signin-password')).first().fill(password);
     await actor.page.locator(browser.testId('signin-submit')).first().click();
   } catch (error) {

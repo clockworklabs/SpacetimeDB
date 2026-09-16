@@ -23,7 +23,9 @@ function fixture(t: TestContext) {
     completion: { selected: 1, passed: 1, failed: 0, blocked: 0, unmeasured: 0, rate: 1 },
     checks: [{ id: 'ecommerce.checkout.complete', status: 'passed' }] };
   const run = { backend: 'postgres', track: 'ecommerce', contaminated: false,
-    runtime: { buildImage: `sha256:${'b'.repeat(64)}` }, backendLease: { runIndex: 1 },
+    runtime: { buildImage: `sha256:${'b'.repeat(64)}` }, backendLease: { runIndex: 1,
+      resources: { serverUri: null as string | null, module: null as string | null, database: 'app_ecom_run1' as string | null,
+        container: undefined as { image: string } | undefined } },
     condition: { guidance: { credentialAliases: { 'role:admin': 'admin' } } }, checkpoints: [declaration] };
   const readerPath = join(root, 'reader.json');
   writeFileSync(readerPath, JSON.stringify({ sourceSha256, sql: 'SELECT 1' }));
@@ -48,6 +50,24 @@ test('saved diagnostic binds accepted final source, original build and run index
   assert.equal(result.buildImage, f.run.runtime.buildImage); assert.equal(result.runIndex, 1);
   assert.equal(result.selectionSha256, f.declaration.selectionSha256);
   assert.deepEqual(result.credentialAliases, { 'role:admin': 'admin' });
+});
+
+test('saved diagnostics retain native target identity and reject a cross-stack checkpoint', t => {
+  const f = fixture(t);
+  f.run.backend = f.checkpoint.backend = 'spacetime';
+  f.run.backendLease.resources = { serverUri: 'http://127.0.0.1:3211', module: 'original-module', database: null,
+    container: { image: `sha256:${'c'.repeat(64)}` } };
+  f.save();
+  const result = inspectSavedDiagnostic(f.input, f.root);
+  assert.equal(result.serverUri, 'http://127.0.0.1:3211'); assert.equal(result.module, 'original-module');
+  assert.equal(result.backendImage, f.run.backendLease.resources.container!.image);
+  f.checkpoint.backend = 'mongodb'; f.save();
+  assert.throws(() => inspectSavedDiagnostic(f.input, f.root), /mismatch/);
+  f.checkpoint.backend = 'spacetime'; f.run.backendLease.resources.serverUri = 'http://remote:3211'; f.save();
+  assert.throws(() => inspectSavedDiagnostic(f.input, f.root), /local SpacetimeDB/);
+  f.run.backendLease.resources.serverUri = 'http://127.0.0.1:3211';
+  f.run.backendLease.resources.container = undefined; f.save();
+  assert.throws(() => inspectSavedDiagnostic(f.input, f.root), /original backend image/);
 });
 
 test('saved diagnostic rejects changed run, checkpoint, source and reader bytes', t => {
