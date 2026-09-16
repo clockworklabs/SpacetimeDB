@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { criterionEvidence, evidencePassed } from '../evidence/check-evidence.js';
 import { ARTIFACT_FILE, readArtifactPayload } from '../evidence/artifacts.js';
+import { hasExactSelectedPackRuntime } from '../composition/calibration-compiler.js';
 
 import type { ReferenceFixture } from './reference-fixtures.js';
 
@@ -144,7 +145,7 @@ export function auditReferenceRun(output: string, fixture: ReferenceFixture,
     };
     const order = (checks: readonly unknown[]): Array<{ stableKey: string }> =>
       checks.map(shape).sort((a, b) => a.stableKey.localeCompare(b.stableKey));
-    const catalog: Array<{ stableKey: string }> = Array.isArray(release.checkCatalog)
+    const catalog: Array<{ stableKey: string; packId?: string }> = Array.isArray(release.checkCatalog)
       ? release.checkCatalog : [];
     const selected = selectedCheckKeys === null ? catalog : (() => {
       const requested = new Set(selectedCheckKeys);
@@ -153,6 +154,9 @@ export function auditReferenceRun(output: string, fixture: ReferenceFixture,
         [...requested].sort().join(', ')}`);
       return checks;
     })();
+    if (!hasExactSelectedPackRuntime(bundle.packRuntime, { checkCatalog: selected })) {
+      failures.push('selected pack runtime evidence is missing, incomplete, or exceeds its budget');
+    }
     const expectedChecks = order(selected);
     const selectedChecks = Array.isArray(bundle.selection?.checks)
       ? order(bundle.selection.checks) : null;

@@ -91,7 +91,20 @@ export function createAttemptNetwork(leasePath: string, lease: BackendLease,
   const reserved = hostRouteRanges(routes);
   const networks = docker(['network', 'ls', '--quiet']).split(/\s+/).filter(Boolean);
   if (networks.length) {
-    const inspected = JSON.parse(docker(['network', 'inspect', ...networks]));
+    let output: string;
+    try { output = docker(['network', 'inspect', ...networks]); }
+    catch (error) {
+      // Other attempts can remove networks after listing. Docker still returns
+      // the surviving networks on stdout; IPAM handles new allocation races.
+      if (!error || typeof error !== 'object' || !('stderr' in error) || !('stdout' in error)
+        || !('status' in error) || error.status !== 1 || !('signal' in error) || error.signal !== null
+        || !String(error.stderr).trim().split(/\r?\n/).every(line => {
+          const missing = /^Error response from daemon: network (\S+) not found$/.exec(line);
+          return missing && networks.includes(missing[1]!);
+        })) throw error;
+      output = String(error.stdout);
+    }
+    const inspected = JSON.parse(output);
     for (const network of inspected) {
       for (const config of network.IPAM?.Config ?? []) {
         if (config.Subnet && !config.Subnet.includes(':')) reserved.push(subnetRange(config.Subnet));

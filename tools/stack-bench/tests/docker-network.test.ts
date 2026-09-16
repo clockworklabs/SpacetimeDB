@@ -129,7 +129,7 @@ test('host services use the address reachable from the selected network namespac
 
 test('attempt subnets avoid host routes and Docker IPAM, and retry only overlap races', () => {
   const header = 'Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT';
-  for (const mode of ['race', 'host-route', 'exhausted', 'daemon-error'] as const) {
+  for (const mode of ['race', 'host-route', 'exhausted', 'daemon-error', 'removed-network', 'inspect-error', 'inspect-timeout'] as const) {
     const root = mkdtempSync(join(tmpdir(), 'attempt-subnet-'));
     try {
       const lease = createBackendLease({ backend: 'postgres', track: 'chat', runIndex: 0,
@@ -143,10 +143,18 @@ test('attempt subnets avoid host routes and Docker IPAM, and retry only overlap 
         : [mode === 'host-route' ? '10.0.1.0/29' : '10.0.0.0/29', 'fd00::/64'];
       const id = 'b'.repeat(64);
       const docker = (args: string[]) => {
-        if (args[1] === 'ls') return 'existing';
-        if (args[1] === 'inspect') return JSON.stringify([{ IPAM: { Config:
+        if (args[1] === 'ls') return 'existing removed';
+        if (args[1] === 'inspect') {
+          const output = JSON.stringify([{ IPAM: { Config:
           args[2] === id ? [{ Subnet: attempts.at(-1)![5], Gateway: '10.0.0.17' }]
             : reserved.map(Subnet => ({ Subnet })) } }]);
+          if (args[2] !== id && ['removed-network', 'inspect-error', 'inspect-timeout'].includes(mode)) {
+            throw Object.assign(new Error('inspect failed'), { stdout: output,
+              status: mode === 'inspect-timeout' ? null : 1, signal: mode === 'inspect-timeout' ? 'SIGTERM' : null, stderr:
+              `Error response from daemon: network removed not found\n${mode === 'inspect-error' ? 'permission denied\n' : ''}` });
+          }
+          return output;
+        }
         assert.equal(args[1], 'create');
         attempts.push(args);
         if (mode === 'daemon-error') throw Object.assign(new Error('permission denied'), { stderr: 'permission denied' });
@@ -159,6 +167,9 @@ test('attempt subnets avoid host routes and Docker IPAM, and retry only overlap 
       if (mode === 'exhausted') {
         assert.throws(create, /No unused private IPv4/);
         assert.equal(attempts.length, 0);
+      } else if (mode === 'inspect-error' || mode === 'inspect-timeout') {
+        assert.throws(create, /inspect failed/);
+        assert.equal(attempts.length, 0, 'do not allocate after an unknown inspection error');
       } else if (mode === 'daemon-error') {
         assert.throws(create, /permission denied/);
         assert.equal(attempts.length, 1);
@@ -166,7 +177,7 @@ test('attempt subnets avoid host routes and Docker IPAM, and retry only overlap 
         const updated = create();
         assert.equal(updated.resources.network?.id, id);
         assert.deepEqual(attempts.map(args => args[5]), mode === 'race'
-          ? ['10.0.0.8/29', '10.0.0.16/29'] : ['10.0.1.8/29']);
+          ? ['10.0.0.8/29', '10.0.0.16/29'] : mode === 'removed-network' ? ['10.0.0.8/29'] : ['10.0.1.8/29']);
         assert.ok(attempts.every(args => args[7]!.includes(updated.resources.creationIntents!.network!.creationToken)));
       }
     } finally { rmSync(root, { recursive: true, force: true }); }

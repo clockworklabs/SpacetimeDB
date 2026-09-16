@@ -547,7 +547,7 @@ function writeEvidence(root: string, { id, points, passed }: {
     payload: { recipeRelease: release, selection: {
       recipe: { id: release.id, contentSha256: release.contentSha256 },
       checks: release.checkCatalog, reportedChecks: [stableKey], notRun: [],
-    }, suites: {
+    }, packRuntime: { packs: [{ id: 'test.reference', exceeded: false }] }, suites: {
       lint: { pass: true },
       systems: { features: [{ id: 901, setupEvidence,
         criteria: [{ id, stableKey, points, evidence }] }] },
@@ -563,6 +563,22 @@ test('reference qualification audits zero-point criteria and teardown evidence',
     assert.equal(audit.ok, true);
     assert.equal(audit.criteria, 1);
     assert.equal(audit.zeroPointCriteria, 1);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('reference qualification rejects missing and over-budget runtime evidence before reporting success', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-runtime-test-'));
+  try {
+    const release = writeEvidence(root, { id: '901a', points: 2, passed: true });
+    const path = join(root, 'grading', 'bundle.json');
+    const artifact = JSON.parse(readFileSync(path, 'utf8'));
+    for (const packRuntime of [undefined, { packs: [] }, { packs: [{ id: 'test.reference', exceeded: true }] }]) {
+      artifact.payload.packRuntime = packRuntime;
+      writeFileSync(path, JSON.stringify(artifact));
+      const audit = auditReferenceRun(root, fixture, { release });
+      assert.equal(audit.ok, false);
+      assert(audit.failures.some(value => value.includes('pack runtime evidence')));
+    }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
