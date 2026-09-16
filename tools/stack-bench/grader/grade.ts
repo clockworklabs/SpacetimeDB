@@ -108,6 +108,7 @@ type GradeArgs = {
   failureMedia?: string;
   trace?: boolean;
   nullControl: boolean;
+  diagnostic?: boolean;
   browserWsEndpoint?: string;
 };
 type GradeRunContext = {
@@ -197,6 +198,7 @@ export function parseGradeArgs(argv: readonly string[]): GradeArgs {
     app: { type: 'string' }, media: { type: 'string' }, 'failure-media': { type: 'string' },
     trace: { type: 'boolean' }, headed: { type: 'boolean' },
     'null-control': { type: 'boolean' },
+    diagnostic: { type: 'boolean' },
     'browser-ws-endpoint': { type: 'string' },
   } });
   const args: GradeArgs = { url: values.url, level: values.level === undefined ? 1 : Number(values.level),
@@ -213,10 +215,14 @@ export function parseGradeArgs(argv: readonly string[]): GradeArgs {
     dbName: values['db-name'], app: values.app, media: values.media,
     failureMedia: values['failure-media'], trace: values.trace, headed: values.headed ?? false,
     nullControl: values['null-control'] ?? false,
+    diagnostic: values.diagnostic ?? false,
     browserWsEndpoint: values['browser-ws-endpoint'] };
   if (!args.url || !args.spec) {
     throw new Error('Usage: node dist/grader/grade.js --url <app-url> --spec <scenario.json> '
       + '--level <N> [--out <file>] [--label <s>] [--feature <N>]');
+  }
+  if (args.diagnostic && (args.recipe || args.expectedRecipeSha256 || args.selectedCheckKeys.length)) {
+    throw new Error('diagnostic grades cannot select a scored recipe or check catalog');
   }
   let url: URL;
   try { url = new URL(args.url); }
@@ -985,6 +991,9 @@ async function main(): Promise<void> {
   }
 
   const candidateFeatures = args.feature ? spec.features.filter(f => f.id === args.feature) : spec.features;
+  if (args.diagnostic && candidateFeatures.some(feature => feature.criteria.some(check => check.points !== 0))) {
+    throw new Error('diagnostic grades require zero-point checks');
+  }
   if (args.feature && candidateFeatures.length === 0) {
     throw new Error(`scenario ${specPath} has no feature ${args.feature}`);
   }
@@ -999,7 +1008,7 @@ async function main(): Promise<void> {
   if (args.track) {
     const track = loadTrack(args.track);
     actions = track.actions;
-    const binding = resolveGradeRecipeArtifactBinding(track, args.level, specPath,
+    const binding = args.diagnostic ? null : resolveGradeRecipeArtifactBinding(track, args.level, specPath,
       args.feature ?? null, args.recipe);
     recipeRelease = binding?.release ?? null;
     recipeIdentityRelease = binding?.sourceRelease ?? null;

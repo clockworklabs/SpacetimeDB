@@ -926,6 +926,11 @@ export function qualificationArtifactsOk(artifact: UnknownRecord,
 }
 
 async function main(): Promise<void> {
+  if (process.argv.includes('--diagnostic-plan') || process.argv.includes('--diagnostic-group')) {
+    const { runReferenceDiagnostics } = await import('./reference-diagnostics.js');
+    await runReferenceDiagnostics(process.argv.slice(2));
+    return;
+  }
   const args = parseReferenceQualificationArgs(process.argv);
   const registry = loadReferenceRegistry();
   const validation = validateReferenceRegistry(registry);

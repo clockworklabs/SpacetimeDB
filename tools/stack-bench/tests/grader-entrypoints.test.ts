@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -9,6 +11,7 @@ import { parseMutationArgs, remainingMutationBatchMs } from '../grader/mutation-
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { createDatabaseWriteCapability } from '../src/actions/runtime-action-executors.js';
 import { attemptDatabaseIdentity } from '../src/stacks/hosted-database-identity.js';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 test('the grader preserves private MongoDB authority through its stock-write caller', t => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-grade-lease-'));
@@ -68,6 +71,22 @@ test('mutation arguments fail before execution when the batch bounds are invalid
   assert.throws(() => parseMutationArgs([...base, '--max-runtime-minutes', '0']),
     /from 1 through 120/);
   assert.equal(parseMutationArgs([...base, '--max-runtime-minutes', '30']).maxRuntimeMinutes, 30);
+});
+
+test('diagnostic grading cannot bypass the scored recipe boundary', t => {
+  const args = ['node', 'grade', '--url', 'http://localhost:1', '--spec', 'scenario.json', '--diagnostic'];
+  assert.equal(parseGradeArgs(args).diagnostic, true);
+  assert.throws(() => parseGradeArgs([...args, '--recipe', 'ecommerce.progression-catalog']), /scored recipe/);
+  const root = mkdtempSync(join(tmpdir(), 'diagnostic-points-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const spec = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+    'tracks/ecommerce/scenarios/diagnostic-checkout-database-crash.json'), 'utf8'));
+  spec.features[0].criteria[0].points = 1;
+  const path = join(root, 'scenario.json'); writeFileSync(path, JSON.stringify(spec));
+  const result = spawnSync(process.execPath, [fileURLToPath(new URL('../grader/grade.js', import.meta.url)),
+    '--url', 'http://localhost:1', '--spec', path, '--diagnostic'], { encoding: 'utf8', timeout: 10_000 });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /diagnostic grades require zero-point checks/);
 });
 
 test('mutation operations use only the remaining batch time', () => {

@@ -161,6 +161,48 @@ inconclusive. These are process-crash tests, not power-loss tests or proof of a
 crash at a particular instruction inside a transaction. The diagnostics remain
 draft and outside scored campaigns.
 
+Run independent diagnostic cases through the reference command inside the Linux
+appliance. Set `STACK_BENCH_CONTROLLER_IMAGE_ID` and `STACK_BENCH_IMAGE` to immutable
+image IDs. No model credentials or paid calls are needed.
+
+```sh
+node dist/src/references/reference-live.js --diagnostic-plan /evidence/diagnostics.json --out /evidence/result.json
+```
+
+The plan selects existing zero-point scenarios and imported references:
+
+```json
+{
+  "schemaVersion": 1,
+  "groups": [{
+    "backend": "postgres", "track": "ecommerce", "level": 3,
+    "recipe": "ecommerce.progression-catalog",
+    "scenario": "/workspace/tools/stack-bench/tracks/ecommerce/scenarios/diagnostic-checkout-database-crash.json",
+    "features": [9800, 9803], "repetitions": 10
+  }]
+}
+```
+
+Each feature gets its own leased worker, source copy, database and ports. The
+worker builds once and resets data between repetitions. Host resource admission
+controls startup. Use `--diagnostic-workers 1` for the same execution path in
+serial, or set a per-command concurrency limit. There is no additional host cap.
+
+For a disposable candidate, add `source: { "path": "...", "sha256": "..." }`.
+Its dependency files and deployment metadata must match the imported reference.
+Declare exact criterion IDs in `expectedFailures` for defect controls. Source
+paths and scenario paths are relative to the plan. Candidate source is copied;
+the supplied tree is never edited.
+
+The output retains planned, started, collected, interrupted and unstarted trials.
+Collected includes inconclusive results; it does not mean qualified. Raw grades
+retain setup, action and assertion timing. Worker audits add deployment, reset,
+grade and cleanup time. Unexpected failures stop new trials. Active trials finish;
+explicit cancellation stops owned processes and releases their leases.
+`--diagnostic-resume /evidence/previous.json` with a new output resumes only whole
+groups that were never dispatched, under the same plan and images. Interrupted
+executions stay visible and require an explicit new study to rerun.
+
 ## Agent adapter contract
 
 Register an agent in `src/agents/agent-adapters.ts`. The existing registry accepts

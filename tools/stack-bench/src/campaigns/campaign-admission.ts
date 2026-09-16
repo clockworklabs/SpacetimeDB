@@ -7,11 +7,12 @@ import { z } from 'zod';
 import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.js';
-import { loadTrack, portsFor, RUN_INDEX_CAP } from '../composition/tracks.js';
+import { loadTrack, RUN_INDEX_CAP } from '../composition/tracks.js';
 import { emptyArtifactIdentities, readArtifact, writeArtifact } from '../evidence/artifacts.js';
-import { claimBackendResources, createBackendLease, runResourceLockKeys,
+import { claimBackendResources, createBackendLease,
   readBackendLease, writeBackendLease, releaseResourceLocks, verifyResourceLocks, resourceLockScope,
-  loopbackHttpUri, existingResourceLockKeys, runnerCapacity } from '../runtime/backend-lease.js';
+  existingResourceLockKeys, runnerCapacity } from '../runtime/backend-lease.js';
+import { selectRunResources } from '../runtime/run-resource-selection.js';
 import type { BackendLease } from '../runtime/backend-lease.js';
 import { releaseBackendLease } from '../runtime/backend-teardown.js';
 import { probeLoopbackPort, runPreflight } from '../runtime/preflight.js';
@@ -284,41 +285,11 @@ async function reserveRunIndices(plan: CompiledCampaignPlan, directory: string, 
   // Selection is a hint. The kernel-locked claim below admits the complete set
   // or none of it. A competing campaign can win between selection and claim.
   for (let retry = 0; retry <= RUN_INDEX_CAP; retry += 1) {
-    const selected: number[] = [];
-    const keys: string[] = [];
-    const selectedKeys = new Set<string>();
-    for (let runIndex = 0; runIndex <= RUN_INDEX_CAP; runIndex += 1) {
-      // Yield bounded scan batches so cancellation and other campaign workers can run.
-      if (runIndex % 16 === 0) await yieldTurn(undefined, { signal });
-      if (excludedRunIndices.includes(runIndex)) continue;
-      let candidateKeys: string[];
-      let ports: Set<number>;
-      try {
-        const slotEnv = campaignSlotEnvironment(env, 'spacetime', runIndex);
-        ports = new Set(plan.stacks.flatMap(stack => {
-          const assigned = portsFor(track, stack.id, runIndex);
-          return [assigned.vite, assigned.express].filter((port): port is number => typeof port === 'number');
-        }));
-        if (plan.stacks.some(stack => stack.id === 'spacetime')) {
-          ports.add(Number(loopbackHttpUri(slotEnv.STACK_BENCH_STDB_URI!).port));
-        }
-        candidateKeys = plan.stacks.flatMap(stack => runResourceLockKeys({
-          track: plan.definition.track, backend: stack.id, runIndex,
-          ports: portsFor(track, stack.id, runIndex),
-          serverUri: stack.id === 'spacetime' ? slotEnv.STACK_BENCH_STDB_URI : null,
-        }));
-      } catch (error) {
-        if (error instanceof RangeError) continue;
-        throw error;
-      }
-      if (candidateKeys.some(key => selectedKeys.has(key))
-        || existingResourceLockKeys({ ...scope, keys: candidateKeys }).length
-        || ![...ports].every(port => probePort(port).free)) continue;
-      selected.push(runIndex);
-      keys.push(...candidateKeys);
-      for (const key of candidateKeys) selectedKeys.add(key);
-      if (selected.length === plan.summary.parallelism) break;
-    }
+    const { runIndices: selected, keys } = await selectRunResources({
+      track, backends: plan.stacks.map(stack => stack.id), count: plan.summary.parallelism,
+      serverUri: runIndex => campaignSlotEnvironment(env, 'spacetime', runIndex).STACK_BENCH_STDB_URI!,
+      env, probePort, excludedRunIndices, signal,
+    });
     if (selected.length !== plan.summary.parallelism) {
       throw new CampaignResourceUnavailable(`only ${selected.length} of ${plan.summary.parallelism} required run slots are free`);
     }
