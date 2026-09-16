@@ -1,5 +1,24 @@
 namespace SpacetimeDB
 {
+#if NET10_0_OR_GREATER
+    /// <summary>
+    /// Places the module contributions of the marker type's assembly in a namespace.
+    /// The consuming module chooses the placement; the marker may be any accessible type.
+    /// Requires .NET 10 and C# 14.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+    public sealed class NamespaceAttribute(System.Type marker) : Attribute
+    {
+        public System.Type Marker { get; } = marker;
+
+        /// <summary>The C# member name used to access the mounted module.</summary>
+        public string Accessor { get; set; } = "";
+
+        /// <summary>The database namespace, independent of the C# accessor.</summary>
+        public string Name { get; set; } = "";
+    }
+#endif
+
     /// <summary>Declares the complete environment schema for this module.</summary>
     [AttributeUsage(AttributeTargets.Struct)]
     public sealed class EnvAttribute : Attribute { }
