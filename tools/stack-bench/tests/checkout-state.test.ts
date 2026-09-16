@@ -46,6 +46,7 @@ test('order-only checkout rejects partial, duplicate, lost and refunded effects 
     (state: CheckoutState) => { state.orders.find(order => order.id === 'prior')!.refundedMinor = 1999; },
     (state: CheckoutState) => { state.orders[0]!.refundedMinor = 1999; },
     (state: CheckoutState) => { state.stock[0]!.quantity++; },
+    (state: CheckoutState) => { state.stock = []; },
     (state: CheckoutState) => { state.orphanAllocations = 1; },
     (state: CheckoutState) => { state.refunds![0]!.amountMinor = 1; },
     (state: CheckoutState) => { state.refunds!.push({ orderId: 'o', accountId: 'a', amountMinor: 1999 }); },
@@ -207,11 +208,34 @@ test('unreadable or inexact checkout data cannot become empty or rounded success
   for (const value of [null, '', NaN, Infinity, 1.001, Number.MAX_SAFE_INTEGER]) assert.throws(() => checkoutMinor(value));
   assert.equal(checkoutId('18446744073709551615'), '18446744073709551615');
   assert.throws(() => checkoutId(Number('18446744073709551615')));
-  assert.throws(() => checkoutStateSchema.parse({ ...states().before, stock: [] }));
+  assert.throws(() => checkoutStateSchema.parse({ ...states().before, stock: null }));
   assert.throws(() => checkoutStateSchema.parse({ ...states().before, accountId: null }));
   const { before, prepared, after } = states();
   before.stock.push({ warehouseId: 'large', quantity: Number.MAX_SAFE_INTEGER });
   assert.throws(() => checkoutDifferences(before, prepared, after, 1));
+});
+
+test('empty stock is measurable after checkout but cannot establish a setup snapshot', async () => {
+  const { before, prepared, after } = states();
+  after.stock = [];
+  assert.deepEqual(checkoutStateSchema.parse(after), after);
+  assert(checkoutDifferences(before, prepared, after, 1).some(row => row.control === 'stored stock consumed by one checkout'));
+  before.stock = []; prepared.stock = []; prepared.reservations = [];
+  assert(checkoutDifferences(before, prepared, prepared, 1, true).some(row => row.control === 'initial stock warehouses'));
+  const checkoutSnapshots = new Map();
+  const result = await executeAction(ACTION_REGISTRY, 'dbRecordCheckout', {
+    do: 'dbRecordCheckout', account: 'buyer', item: 'item', as: 'before',
+  }, { capabilities: { 'database-read': {
+    ...createDatabaseReadCapability({ expand: value => value, checkoutSnapshots }),
+    getCheckoutState: () => ({ state: before, schemaSha256: { schema: 'same' } }),
+  } } });
+  assert.equal(result.status, 'inconclusive');
+  assert.equal(checkoutSnapshots.size, 0);
+  // A mapped warehouse with zero remaining units is still a valid observation.
+  const zero = states();
+  zero.before.stock[0]!.quantity = 1;
+  zero.prepared.stock[0]!.quantity = 0; zero.after.stock[0]!.quantity = 0;
+  assert.deepEqual(checkoutDifferences(zero.before, zero.prepared, zero.after, 1), []);
 });
 
 test('cancellation restores each allocation once and preserves other orders and payment history', () => {
@@ -335,6 +359,8 @@ test('SpacetimeDB checkout reads one bounded subscription snapshot and rejects m
   assert.throws(read,/invalid row shape/);
   delete results.cart_item;
   assert.deepEqual(read().state.cart,[]);
+  delete results.stock;
+  assert.deepEqual(read().state.stock,[], 'a successful empty subscription must reach reconciliation');
   delete results.account;
   assert.throws(read,/account or item is missing/);
 });

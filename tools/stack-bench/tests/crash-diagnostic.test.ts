@@ -3,7 +3,7 @@ import test from 'node:test';
 import { openCrashReducerConnection } from '../src/stacks/spacetime-crash-transport.js';
 import { executeAction } from '../src/actions/action-contract.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
-import type { CheckoutState } from '../src/stacks/checkout-state.js';
+import { checkoutStateSchema, type CheckoutState } from '../src/stacks/checkout-state.js';
 import { createCheckEvidence } from '../src/evidence/check-evidence.js';
 
 class Socket extends EventTarget {
@@ -52,7 +52,7 @@ test('native crash transport requires a correlated confirmed result and drains u
 });
 
 test('crash action retains partial fault evidence and distinguishes recovered state from acknowledged loss', async () => {
-  for (const mode of ['absent', 'committed', 'orders-only', 'lost-acknowledged', 'partial', 'fault-error', 'cancelled-recovery', 'cancelled-read', 'recovery-error', 'disconnected-database', 'disconnected-application', 'drained-application', 'undrained-application', 'drained-recovery-error', 'disconnected-recovery-error', 'cancelled-disconnected-recovery-error']) {
+  for (const mode of ['absent', 'committed', 'orders-only', 'empty-stock', 'lost-acknowledged', 'partial', 'fault-error', 'cancelled-recovery', 'cancelled-read', 'recovery-error', 'disconnected-database', 'disconnected-application', 'drained-application', 'undrained-application', 'drained-recovery-error', 'disconnected-recovery-error', 'cancelled-disconnected-recovery-error']) {
     const cancellation = new AbortController();
     const timers: number[] = [];
     let recoveryStopped = false;
@@ -62,17 +62,18 @@ test('crash action retains partial fault evidence and distinguishes recovered st
     const prepared = structuredClone(before);
     prepared.cart.push({ itemId: 'i', quantity: 1 });
     const after = structuredClone(prepared);
-    if (mode === 'committed' || mode === 'partial' || mode === 'orders-only') {
+    if (mode === 'committed' || mode === 'partial' || mode === 'orders-only' || mode === 'empty-stock') {
       after.cart = []; after.stock[0]!.quantity--;
       after.orders.push({ id: 'o', accountId: 'a', status: 'pending', totalMinor: 100,
         lines: [{ itemId: 'i', quantity: 1, priceMinor: 100, allocations: [{ warehouseId: 'w', quantity: 1 }] }] });
-      if (mode === 'committed') after.payments.push({ id: 'p', orderId: 'o', amountMinor: 100, status: 'paid' });
+      if (mode === 'committed' || mode === 'empty-stock') after.payments.push({ id: 'p', orderId: 'o', amountMinor: 100, status: 'paid' });
     }
+    if (mode === 'empty-stock') after.stock = [];
     if (mode === 'orders-only') for (const state of [before, prepared, after]) {
       state.orphanAllocations = 0;
       for (const order of state.orders) order.refundedMinor = 0;
     }
-    const wrap = (state: CheckoutState) => ({ state, schemaSha256: { schema: 'same' }, account: 'a', item: 'i',
+    const wrap = (state: CheckoutState) => ({ state: checkoutStateSchema.parse(state), schemaSha256: { schema: 'same' }, account: 'a', item: 'i',
       ...(mode === 'orders-only' ? { scope: 'orders' as const } : {}),
       recordedAtMs: Date.now() - (mode === 'orders-only' ? 90_000 : 0) });
     let release!: () => void;
@@ -130,7 +131,11 @@ test('crash action retains partial fault evidence and distinguishes recovered st
     }
     assert.equal(unsettled, mode.includes('disconnected-') || mode === 'undrained-application');
     assert.equal(result.status, mode.startsWith('cancelled-') || ['disconnected-database', 'disconnected-application', 'undrained-application'].includes(mode) ? 'inconclusive' : mode === 'fault-error' ? 'harness_failure'
-      : ['partial', 'lost-acknowledged'].includes(mode) || mode.endsWith('recovery-error') ? 'failed' : 'passed', mode);
+      : ['partial', 'lost-acknowledged', 'empty-stock'].includes(mode) || mode.endsWith('recovery-error') ? 'failed' : 'passed', mode);
+    if (mode === 'empty-stock') {
+      assert.equal(result.code, 'application_failure');
+      assert.deepEqual((result.observation as { after: { state: CheckoutState } }).after.state.stock, []);
+    }
     if (mode === 'disconnected-recovery-error') assert.equal(result.code, 'application_failure');
     if (mode === 'drained-recovery-error') assert.equal((result.observation as { databaseDrain: { settled: boolean } }).databaseDrain.settled, true);
     assert(result.observation, mode);

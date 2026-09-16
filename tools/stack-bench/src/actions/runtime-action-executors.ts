@@ -190,6 +190,7 @@ async function dbRecordStock({ input, capabilities }: ActionArguments<ReadStockI
 async function dbRecordCheckout({ input, capabilities }: ActionArguments<{ account: string; item: string; as: string }>) {
   const database = capabilities['database-read'];
   const snapshot = { ...database.getCheckoutState(input), recordedAtMs: Date.now() };
+  if (!snapshot.state.stock.length) inconclusive('invalid-input', { detail: 'checkout setup requires known stock warehouses' });
   database.checkoutSnapshots.set(input.as, { ...snapshot, account: input.account, item: input.item });
   return { ...snapshot, key: input.as };
 }

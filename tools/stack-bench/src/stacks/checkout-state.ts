@@ -14,7 +14,8 @@ export const checkoutStateSchema = z.strictObject({
   itemId: id,
   priceMinor: integer,
   cart: z.array(z.strictObject({ itemId: id, quantity: integer })),
-  stock: z.array(z.strictObject({ warehouseId: id, quantity: integer })).min(1),
+  // Empty query results are evidence too. Validate setup separately from reads.
+  stock: z.array(z.strictObject({ warehouseId: id, quantity: integer })),
   reservations: z.array(z.strictObject({ itemId: id, warehouseId: id, quantity: integer })),
   orders: z.array(z.strictObject({ id, accountId: id, totalMinor: integer, refundedMinor: integer.nullable().optional(), status: z.string(), lines: z.array(line) })),
   payments: z.array(z.strictObject({ id, orderId: id, amountMinor: integer, status: z.string() })),
@@ -175,6 +176,7 @@ function compareCheckout(before: CheckoutState, prepared: CheckoutState, after: 
       [before.accountId, before.itemId, before.priceMinor]);
   }
   check('initial cart lines', before.cart.length, 0);
+  check('initial stock warehouses', Number(before.stock.length > 0), 1);
   check('initial cart reservations', before.reservations.length, 0);
   same('prepared cart', prepared.cart, [{ itemId: before.itemId, quantity }]);
   same('orders unchanged during cart preparation', sorted(prepared.orders), sorted(before.orders));
