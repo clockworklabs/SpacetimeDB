@@ -875,6 +875,11 @@ Procedures can't send requests at the same time as holding open a [transaction](
 </TabItem>
 </Tabs>
 
+Procedure HTTP requests automatically accept gzip and Brotli responses and expose the decoded
+response body to module code. If you set an `Accept-Encoding` header yourself, the response body is
+still decoded by the host, so do not manually decompress it in the module. Headers that describe the
+compressed wire body, such as `Content-Encoding` and `Content-Length`, may be absent after decoding.
+
 :::note
 If no timeout is specified, HTTP requests default to 30 seconds. User-specified timeouts are clamped to a maximum of 180 seconds by the host.
 :::
