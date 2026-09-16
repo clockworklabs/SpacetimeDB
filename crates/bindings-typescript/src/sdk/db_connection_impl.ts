@@ -754,8 +754,11 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
     const attempt = this.#reconnectAttempt + 1;
     const delayMs = computeReconnectDelayMs(attempt);
+try {
     this.#emitter.emit('connectError', this, error, attempt, delayMs);
+} finally {
     this.#scheduleReconnect(attempt, delayMs);
+}
   }
 
   #scheduleReconnect(attempt: number, delayMs: number): void {
