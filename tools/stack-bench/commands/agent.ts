@@ -631,7 +631,7 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
     agentVisibleContractText(backendDoc(args, p, track), args.credentialAliases,
       applicationInterface),
   ];
-  const skills = materials.skillsText ?? readAgentSkillDocuments(REPO, args.skills ?? []);
+  const skills = materials.skillsText ?? readAgentSkillDocuments(ROOT, args.skills ?? []);
   if (skills) common.push('', '## Selected API reference', '', skills);
 
   if (args.mode === 'resume') {
@@ -752,7 +752,7 @@ async function main() {
   const defaultSkills = profileSkills ?? [...adapter.agent.defaultSkills];
   const selectedSkills = selectAgentSkills(defaultSkills,
     args.skillIdentity?.ids ?? args.skills ?? null);
-  const skillsText = readAgentSkillDocuments(REPO, selectedSkills);
+  const skillsText = readAgentSkillDocuments(ROOT, selectedSkills);
   if (args.skillIdentity && (sha256(skillsText) !== args.skillIdentity.sha256
     || Buffer.byteLength(skillsText) !== args.skillIdentity.bytes)) {
     throw new Error('campaign skill material changed after compilation');

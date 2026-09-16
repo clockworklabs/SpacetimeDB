@@ -90,6 +90,7 @@ RUN node dist/container/binary-provenance.js verify \
     && test "$(node -p "require('playwright/package.json').version")" = "1.62.1" \
     && rm -rf tests dist/tests \
     && node --input-type=module -e 'import {AGENT_ADAPTER_REGISTRY,agentAdapterIdentity} from "./dist/src/agents/agent-adapters.js"; for (const id of AGENT_ADAPTER_REGISTRY.ids) agentAdapterIdentity(AGENT_ADAPTER_REGISTRY.get(id));' \
+    && node --input-type=module -e 'import {resolveGuidanceProfile} from "./dist/src/campaigns/condition-compiler.js"; for (const id of ["neutral-dev","neutral-managed-dev"]) resolveGuidanceProfile(id,["mongodb","postgres","spacetime"]);' \
     && install -m 0555 container/bin/spacetimedb-cli \
       /opt/stack-bench-embedded-deps/spacetimedb-cli \
     && install -m 0555 container/bin/spacetimedb-standalone \

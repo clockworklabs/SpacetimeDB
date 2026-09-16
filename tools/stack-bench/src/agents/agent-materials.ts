@@ -31,20 +31,20 @@ export function selectAgentSkills(defaults: string[], requested: string[] | null
   return [...(requested ?? defaults)];
 }
 
-export function agentSkillPaths(repository: string, skills: string[]): string[] {
+export function agentSkillPaths(stackBenchRoot: string, skills: string[]): string[] {
   // Container workflow instructions belong to Stack Bench, not the public SDK skills.
   return validateSkills(skills).map(skill => ['spacetime-dev', 'spacetime-managed-dev'].includes(skill)
-    ? join(repository, 'tools', 'stack-bench', 'backends', 'workflows', `${skill}.md`)
-    : join(repository, 'skills', skill, 'SKILL.md'));
+    ? join(stackBenchRoot, 'backends', 'workflows', `${skill}.md`)
+    : join(stackBenchRoot, '..', '..', 'skills', skill, 'SKILL.md'));
 }
 
 export function readAgentSkillDocuments(
-  repository: string,
+  stackBenchRoot: string,
   skills: string[],
   { read = (path, encoding) => readFileSync(path, encoding) }: ReadAgentSkillDocumentOptions = {},
 ): string {
   const strip = (markdown: string): string => markdown.replace(/^---\n[\s\S]*?\n---\n/, '');
-  return agentSkillPaths(repository, skills)
+  return agentSkillPaths(stackBenchRoot, skills)
     .map(path => strip(normalizePromptText(read(path, 'utf8'))))
     .join('\n\n---\n\n');
 }

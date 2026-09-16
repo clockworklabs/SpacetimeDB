@@ -240,7 +240,7 @@ function resolveGuidance(catalog: Catalog, reference: string, stacks: readonly s
     }
     const skillIds = ids as string[];
     let text = '';
-    try { text = readAgentSkillDocuments(resolve(stackBenchRoot, '..', '..'), skillIds); }
+    try { text = readAgentSkillDocuments(stackBenchRoot, skillIds); }
     catch (error) {
       fail(`${reference}.skills.${stack}`,
         `cannot be read: ${error instanceof Error ? error.message : String(error)}`);

@@ -10,13 +10,13 @@ test('stack defaults and explicit agent skill selections resolve predictably', (
   assert.deepEqual(selectAgentSkills(['typescript-server'], []), []);
   assert.deepEqual(selectAgentSkills([], ['typescript-server']), ['typescript-server']);
   assert.throws(() => selectAgentSkills(['../private'], null), /invalid/);
-  assert.throws(() => agentSkillPaths('/repo', ['same', 'same']), /invalid/);
+  assert.throws(() => agentSkillPaths('/repo/tools/stack-bench', ['same', 'same']), /invalid/);
 });
 
 test('skill documents are read in selected order with front matter removed', () => {
-  const paths = agentSkillPaths('/repo', ['typescript-server', 'typescript-client']);
+  const paths = agentSkillPaths('/repo/tools/stack-bench', ['typescript-server', 'typescript-client']);
   assert.equal(paths.length, 2);
-  const text = readAgentSkillDocuments('/repo', ['typescript-server', 'typescript-client'], {
+  const text = readAgentSkillDocuments('/repo/tools/stack-bench', ['typescript-server', 'typescript-client'], {
     read: path => `---\nname: ignored\n---\n${path.split(/[\\/]/).at(-2)}`,
   });
   assert.equal(text, 'typescript-server\n\n---\n\ntypescript-client');
@@ -27,15 +27,20 @@ test('benchmark workflows resolve separately from public SDK skills in selected 
   const paths = [join('/repo', 'skills', 'typescript-server', 'SKILL.md'),
     join('/repo', 'tools', 'stack-bench', 'backends', 'workflows', 'spacetime-dev.md'),
     join('/repo', 'tools', 'stack-bench', 'backends', 'workflows', 'spacetime-managed-dev.md')];
-  assert.deepEqual(agentSkillPaths('/repo', ids), paths);
-  assert.equal(readAgentSkillDocuments('/repo', ids, {
+  assert.deepEqual(agentSkillPaths('/repo/tools/stack-bench', ids), paths);
+  assert.deepEqual(agentSkillPaths('/opt/stack-bench', ids), [
+    join('/skills', 'typescript-server', 'SKILL.md'),
+    join('/opt/stack-bench/backends/workflows', 'spacetime-dev.md'),
+    join('/opt/stack-bench/backends/workflows', 'spacetime-managed-dev.md'),
+  ]);
+  assert.equal(readAgentSkillDocuments('/repo/tools/stack-bench', ids, {
     read: path => `---\nname: ignored\n---\n${ids[paths.indexOf(path)]}`,
   }), ids.join('\n\n---\n\n'));
 });
 
 test('prompt material is identical across platform line endings', () => {
   assert.equal(normalizePromptText('one\r\ntwo\rthree\n'), 'one\ntwo\nthree\n');
-  const text = readAgentSkillDocuments('/repo', ['typescript-server'], {
+  const text = readAgentSkillDocuments('/repo/tools/stack-bench', ['typescript-server'], {
     read: () => '---\r\nname: ignored\r\n---\r\nreference\r\nline\r\n',
   });
   assert.equal(text, 'reference\nline\n');

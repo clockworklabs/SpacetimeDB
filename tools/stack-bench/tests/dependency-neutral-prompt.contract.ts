@@ -66,7 +66,7 @@ test('SDK skills and dev guidance vary independently without changing product re
     const task = resolveProgressionRecipeLevelSelection(binding, catalog, level, { cumulative: true }).agent.request;
     for (const stack of STACKS) {
       const prompts = profiles.map(guidance => {
-        const skills = readAgentSkillDocuments(resolve(STACK_BENCH_ROOT, '..', '..'), guidance.skills[stack]!.ids);
+        const skills = readAgentSkillDocuments(STACK_BENCH_ROOT, guidance.skills[stack]!.ids);
         const prompt = renderPrompt({ level, stack, task, guidance });
         assert(prompt.includes(skills));
         return skills ? prompt.replace('\n\n## Selected API reference\n\n' + skills, '') : prompt;
@@ -113,7 +113,7 @@ function renderPrompt({ level, stack, task, guidance, repair = false, cli = fals
     const binding = resolveRecipeRelease(track, level, 'ecommerce.progression-catalog');
     const selected = resolveBoundRecipeTaskRequest(binding, args.recipeTask!);
     return buildPrompt(args, portsFor(track, stack, 0), track, {
-      skillsText: readAgentSkillDocuments(resolve(STACK_BENCH_ROOT, '..', '..'), skills.ids),
+      skillsText: readAgentSkillDocuments(STACK_BENCH_ROOT, skills.ids),
       requirementText: selected.task.requirementText,
       contractText: selected.task.contractText,
       startingCatalog: JSON.stringify({
@@ -197,7 +197,7 @@ test('neutral dependency prompts include only selected product and stack contrac
   const catalog = resolveFeatureCatalog('progression/ecommerce.json', track);
   const guidance = resolveGuidanceProfile('neutral', STACKS);
   const spacetimeReference = readAgentSkillDocuments(
-    resolve(STACK_BENCH_ROOT, '..', '..'), guidance.skills.spacetime?.ids ?? []);
+    STACK_BENCH_ROOT, guidance.skills.spacetime?.ids ?? []);
   assert.deepEqual(guidance.skills.spacetime?.ids, ['typescript-server', 'typescript-client', 'cli']);
   assert.match(spacetimeReference, /spacetime publish/);
   assert.match(spacetimeReference, /withToken/);

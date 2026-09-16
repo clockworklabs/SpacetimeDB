@@ -636,7 +636,7 @@ export function runPreflight(
       const defaultSkills = profileSkills ?? [...adapter.agent.defaultSkills];
       const skills = agent?.usesStackSkills
         ? selectAgentSkills(defaultSkills, request.agentSkills ?? null) : [];
-      const missingSkills = agentSkillPaths(REPO, skills).filter(path => !exists(path));
+      const missingSkills = agentSkillPaths(ROOT, skills).filter(path => !exists(path));
       add(`materials.${backend}.skills`, missingSkills.length ? 'fail' : 'pass', skills.length
         ? `${skills.length} selected skill document(s) are present`
         : 'No skill documents are required', missingSkills.length
