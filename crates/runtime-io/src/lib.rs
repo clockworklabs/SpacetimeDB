@@ -15,6 +15,7 @@ pub mod sim;
 
 /// Size in bytes of a disk sector.
 pub const SECTOR_SIZE: usize = 4096;
+const SECTOR_SIZE64: u64 = SECTOR_SIZE as u64;
 
 /// Subset of the `statx` metadata.
 #[derive(Debug)]

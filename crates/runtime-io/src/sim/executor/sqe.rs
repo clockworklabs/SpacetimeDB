@@ -6,7 +6,7 @@ use crate::{
         fs::{self, Datasync},
         Error,
     },
-    ErasedBox, SECTOR_SIZE,
+    ErasedBox, SECTOR_SIZE, SECTOR_SIZE64,
 };
 
 /// Opaque identifier of a scheduled [Sqe].
@@ -65,12 +65,12 @@ impl<T> Sqe<T> {
     }
 
     pub fn write(fd: fs::File, buf: ErasedBox, offset: u64) -> Self {
-        assert!(offset.is_multiple_of(SECTOR_SIZE as u64));
+        assert!(offset.is_multiple_of(SECTOR_SIZE64));
         Self::new(SqeInner::Write { fd, buf, offset })
     }
 
     pub fn read(fd: fs::File, buf: ErasedBox, offset: u64) -> Self {
-        assert!(offset.is_multiple_of(SECTOR_SIZE as u64));
+        assert!(offset.is_multiple_of(SECTOR_SIZE64));
         Self::new(SqeInner::Read { fd, buf, offset })
     }
 
@@ -196,67 +196,49 @@ impl SqeInner {
         match self {
             SqeInner::Write { buf, offset, .. } => {
                 let buf_len = buf.as_bytes().len();
-                let first_sector = (*offset / SECTOR_SIZE as u64) as usize;
-                let page_count = buf_len / SECTOR_SIZE;
+                let first_sector = (*offset / SECTOR_SIZE64) as usize;
+                let sector_count = buf_len / SECTOR_SIZE;
 
                 Pending::ReadWrite {
-                    ops: (0..page_count).scan(first_sector, |first_sector, page| {
+                    ops: (0..sector_count).scan(first_sector, |first_sector, sector| {
                         Some(Operation::WriteSector(WriteSector {
-                            page_offset: *first_sector + page,
-                            buf_offset: page * SECTOR_SIZE,
+                            sector: *first_sector + sector,
+                            buf_offset: sector * SECTOR_SIZE,
                         }))
                     }),
-                    results: Results::new(page_count),
+                    results: Results::new(sector_count),
                 }
             }
             SqeInner::Read { buf, offset, .. } => {
                 let buf_len = buf.as_bytes().len();
-                let first_sector = (*offset / SECTOR_SIZE as u64) as usize;
-                let page_count = buf_len / SECTOR_SIZE;
+                let first_sector = (*offset / SECTOR_SIZE64) as usize;
+                let sector_count = buf_len / SECTOR_SIZE;
 
                 Pending::ReadWrite {
-                    ops: (0..page_count).scan(first_sector, |first_sector, page| {
+                    ops: (0..sector_count).scan(first_sector, |first_sector, sector| {
                         Some(Operation::ReadSector(ReadSector {
-                            page_offset: *first_sector + page,
-                            buf_offset: page * SECTOR_SIZE,
+                            sector: *first_sector + sector,
+                            buf_offset: sector * SECTOR_SIZE,
                         }))
                     }),
-                    results: Results::new(page_count),
+                    results: Results::new(sector_count),
                 }
             }
             SqeInner::Fsync { fd } => {
-                let sector_count = fd.len() / SECTOR_SIZE as u64;
-
-                let f = |offset: u64| -> Operation {
-                    Operation::Fsync {
-                        effect: FsyncEffect::Datasync(Datasync::Sector(offset)),
-                    }
-                };
-
+                let sector_count = fd.len() / SECTOR_SIZE64;
                 Pending::Sync {
-                    ops: (0..sector_count)
-                        .map(f as fn(u64) -> Operation)
-                        .chain(Some(Operation::Fsync {
-                            effect: Datasync::Length.into(),
-                        })),
+                    ops: fd.prepare_datasync().map(
+                        (|effect| Operation::Fsync {
+                            effect: FsyncEffect::Datasync(effect),
+                        }) as fn(Datasync) -> Operation,
+                    ),
                     results: Results::new(1 + sector_count as usize),
                 }
             }
             SqeInner::Fdatasync { fd } => {
-                let sector_count = fd.len() / SECTOR_SIZE as u64;
-
-                let f = |offset: u64| -> Operation {
-                    Operation::Fdatasync {
-                        effect: Datasync::Sector(offset),
-                    }
-                };
-
+                let sector_count = fd.len() / SECTOR_SIZE64;
                 Pending::Sync {
-                    ops: (0..sector_count)
-                        .map(f as fn(u64) -> Operation)
-                        .chain(Some(Operation::Fdatasync {
-                            effect: Datasync::Length,
-                        })),
+                    ops: fd.prepare_datasync().map(|effect| Operation::Fdatasync { effect }),
                     results: Results::new(1 + sector_count as usize),
                 }
             }

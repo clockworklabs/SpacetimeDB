@@ -23,10 +23,6 @@ pub use crate::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("file not found")]
-    FileNotFound { path: Box<str> },
-    #[error("file already exists")]
-    FileAlreadyExists { path: Box<str> },
     #[error("failed to write expected number of bytes")]
     ShortWrite { expected: usize, written: usize },
     #[error("unexpected eof")]
@@ -176,11 +172,11 @@ struct SimulatorInner {
 
 impl SimulatorInner {
     fn with_options(options: Options) -> Self {
+        let pending = PendingCompletions::with_capacity(options.cq_capacity());
+        let executor = Executor::new(options);
         Self {
-            pending: Arc::new(spin::Mutex::new(PendingCompletions::with_capacity(
-                options.cq_capacity(),
-            ))),
-            executor: spin::Mutex::new(Executor::new(options)),
+            pending: Arc::new(spin::Mutex::new(pending)),
+            executor: spin::Mutex::new(executor),
         }
     }
 }
@@ -254,6 +250,8 @@ impl SpacetimeIO for SimulatorIO {
 #[cfg(test)]
 mod tests {
     use spacetimedb_runtime_core::sim::Rng;
+
+    use crate::SECTOR_SIZE64;
 
     use super::*;
 
@@ -359,7 +357,7 @@ mod tests {
             buf.clear();
             buf
         };
-        let buf = rt.run(|io| io.read_exact_at(fd, buf, SECTOR_SIZE as u64)).unwrap();
+        let buf = rt.run(|io| io.read_exact_at(fd, buf, SECTOR_SIZE64)).unwrap();
 
         assert_eq!(buf.0, [4; SECTOR_SIZE]);
     }
@@ -369,7 +367,7 @@ mod tests {
         let rt = Runtime::new();
 
         let fd = rt.run(|io| io.create_file("/data/test".into())).unwrap();
-        rt.run(|io| io.reserve(fd.clone(), 2 * SECTOR_SIZE as u64)).unwrap();
+        rt.run(|io| io.reserve(fd.clone(), 2 * SECTOR_SIZE64)).unwrap();
 
         // Check that reserved space reads as zeroes.
         let buf = rt
@@ -379,15 +377,13 @@ mod tests {
 
         // The length is reported as the preallocated length.
         let stat = rt.run(|io| io.statx(fd.clone())).unwrap();
-        assert_eq!(stat.size, 2 * SECTOR_SIZE as u64);
+        assert_eq!(stat.size, 2 * SECTOR_SIZE64);
 
         // Overwriting the second sector works.
         let buf = rt
-            .run(|io| io.write_all_at(fd.clone(), Box::new(Buf([42; SECTOR_SIZE])), SECTOR_SIZE as u64))
+            .run(|io| io.write_all_at(fd.clone(), Box::new(Buf([42; SECTOR_SIZE])), SECTOR_SIZE64))
             .unwrap();
-        let buf = rt
-            .run(|io| io.read_exact_at(fd.clone(), buf, SECTOR_SIZE as u64))
-            .unwrap();
+        let buf = rt.run(|io| io.read_exact_at(fd.clone(), buf, SECTOR_SIZE64)).unwrap();
         assert_eq!(buf.0, [42; SECTOR_SIZE]);
         // The first sector still reads as zeroes.
         let buf = rt.run(|io| io.read_exact_at(fd, buf, 0)).unwrap();
@@ -400,7 +396,7 @@ mod tests {
 
         matches!(
             rt.run(|io| io.open_file("/data/test".into())),
-            Err(Error::FileNotFound { .. })
+            Err(Error::Fs(fs::Error::FileNotFound))
         );
         rt.run(|io| io.create_file("/data/test".into())).unwrap();
         assert!(rt.run(|io| io.open_file("/data/test".into())).is_ok());
@@ -420,7 +416,7 @@ mod tests {
         rt.run(|io| io.fdatasync(fd.clone())).unwrap();
 
         let mut buf = rt
-            .run(|io| io.write_all_at(fd.clone(), Box::new(Buf([2; SECTOR_SIZE])), SECTOR_SIZE as u64))
+            .run(|io| io.write_all_at(fd.clone(), Box::new(Buf([2; SECTOR_SIZE])), SECTOR_SIZE64))
             .map_err(ErrorWith::into_err)
             .unwrap();
         buf.clear();

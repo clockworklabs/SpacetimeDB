@@ -1,10 +1,6 @@
-use alloc::{
-    boxed::Box,
-    collections::{BTreeMap, VecDeque},
-    vec::Vec,
-};
+use alloc::{collections::VecDeque, vec::Vec};
 use core::{
-    iter::{Chain, Map, Scan},
+    iter::{Map, Scan},
     num::NonZeroUsize,
     ops::Range,
     result::Result,
@@ -14,7 +10,7 @@ use slab::Slab;
 
 use crate::{
     sim::{completion::CompletionHandle, fs, Error},
-    ErasedBox, ErrorWith, Statx, SECTOR_SIZE,
+    ErasedBox, ErrorWith, Statx, SECTOR_SIZE, SECTOR_SIZE64,
 };
 
 pub use crate::sim::fs::Datasync;
@@ -62,13 +58,13 @@ pub enum Operation {
 
 #[derive(Clone, Copy)]
 pub struct WriteSector {
-    pub page_offset: usize,
+    pub sector: usize,
     pub buf_offset: usize,
 }
 
 #[derive(Clone, Copy)]
 pub struct ReadSector {
-    pub page_offset: usize,
+    pub sector: usize,
     pub buf_offset: usize,
 }
 
@@ -255,7 +251,7 @@ impl<T: ResultAcc> Results<T> {
 }
 
 type ReadWriteOps = Scan<Range<usize>, usize, fn(&mut usize, usize) -> Option<Operation>>;
-type SyncOps = Chain<Map<Range<u64>, fn(u64) -> Operation>, core::option::IntoIter<Operation>>;
+type SyncOps = Map<fs::IterDatasync, fn(Datasync) -> Operation>;
 
 enum Pending {
     ReadWrite { ops: ReadWriteOps, results: Results<usize> },
@@ -413,7 +409,7 @@ pub struct Options {
     /// This basically limits how many [Sqe]s can be submitted in one batch.
     /// Should be a power of 2, or is otherwise rounded up to the next power of
     /// 2.
-    pub capacity: NonZeroUsize,
+    pub sq_capacity: NonZeroUsize,
     /// Override the completion queue capacity.
     ///
     /// By default, the completion queue's capacity is twice the submission
@@ -431,11 +427,15 @@ pub struct Options {
     /// Should be a power of 2, or is otherwise rounded up to the next power of
     /// two.
     pub max_concurrency: NonZeroUsize,
+    /// Size in bytes of the virtual disk / filesystem.
+    ///
+    /// Should be a multiple of [SECTOR_SIZE] and is rounded if it isn't.
+    pub disk_space_bytes: u64,
 }
 
 impl Options {
     pub(crate) fn sq_capacity(&self) -> usize {
-        self.capacity.get().next_power_of_two()
+        self.sq_capacity.get().next_power_of_two()
     }
 
     pub(crate) fn cq_capacity(&self) -> usize {
@@ -452,10 +452,11 @@ impl Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            capacity: NonZeroUsize::new(8).unwrap(),
+            sq_capacity: NonZeroUsize::new(8).unwrap(),
             cq_capacity: None,
             cq_overflow: OnCqOverflow::default(),
             max_concurrency: NonZeroUsize::new(32).unwrap(),
+            disk_space_bytes: 2 * 4096,
         }
     }
 }
@@ -469,7 +470,7 @@ pub struct Executor<UserData> {
     // Scratch space for task selector
     select_executing: Vec<usize>,
 
-    fstree: BTreeMap<Box<str>, fs::File>,
+    fs: fs::Filesystem,
 
     cq_overflow: OnCqOverflow,
     cq_dropped: usize,
@@ -479,13 +480,14 @@ impl<UserData> Executor<UserData> {
     pub fn new(options: Options) -> Self {
         let sq_capacity = options.sq_capacity();
         let cq_capacity = options.cq_capacity();
+        let fs_capacity = options.disk_space_bytes.next_multiple_of(SECTOR_SIZE64) as usize;
         Self {
             submissions: VecDeque::with_capacity(sq_capacity),
             completions: VecDeque::with_capacity(cq_capacity),
             in_flight: Slab::with_capacity(2 * sq_capacity),
             executing: Vec::with_capacity(options.max_concurrency()),
             select_executing: Vec::with_capacity(options.max_concurrency()),
-            fstree: BTreeMap::new(),
+            fs: fs::Filesystem::new(fs_capacity),
             cq_overflow: options.cq_overflow,
             cq_dropped: 0,
         }
@@ -502,10 +504,7 @@ impl<UserData> Executor<UserData> {
         self.in_flight.clear();
         self.executing.clear();
         self.cq_dropped = 0;
-
-        for file in self.fstree.values_mut() {
-            file.power_loss();
-        }
+        self.fs.power_loss();
     }
 
     /// Restart the executor, simulating a process crash.
@@ -757,15 +756,14 @@ impl<UserData> Executor<UserData> {
             else {
                 unreachable!("invalid sqe: expected write")
             };
-            let run = |WriteSector {
-                           page_offset,
-                           buf_offset,
-                       }| {
+            let run = |WriteSector { sector, buf_offset }| {
                 let bytes = buf.as_bytes();
                 let end = (buf_offset + SECTOR_SIZE).min(bytes.len());
 
-                let buf = &buf.as_bytes()[buf_offset..end];
-                fd.write_page(buf, page_offset as _).map_err(Into::into)
+                let buf: &[u8; SECTOR_SIZE] = buf.as_bytes()[buf_offset..end]
+                    .try_into()
+                    .expect("buffer must be sector aligned");
+                fd.write_sector(buf, sector as _).map_err(Into::into)
             };
             results.push(eff.traverse(run, Err));
             results.is_complete()
@@ -801,15 +799,14 @@ impl<UserData> Executor<UserData> {
             else {
                 unreachable!("invalid sqe: expected read")
             };
-            let run = |ReadSector {
-                           page_offset,
-                           buf_offset,
-                       }| {
+            let run = |ReadSector { sector, buf_offset }| {
                 let bytes = buf.as_bytes_mut();
                 let end = (buf_offset + SECTOR_SIZE).min(bytes.len());
 
-                let buf = &mut buf.as_bytes_mut()[buf_offset..end];
-                fd.read_page(buf, page_offset as _).map_err(Into::into)
+                let buf: &mut [u8; SECTOR_SIZE] = (&mut buf.as_bytes_mut()[buf_offset..end])
+                    .try_into()
+                    .expect("buffer must be sector aligned");
+                fd.read_sector(buf, sector as _).map_err(Into::into)
             };
             results.push(eff.traverse(run, Err));
             results.is_complete()
@@ -845,10 +842,7 @@ impl<UserData> Executor<UserData> {
         else {
             unreachable!("invalid sqe: expected open")
         };
-        let result = eff.traverse(
-            |()| self.fstree.get(&path).cloned().ok_or(Error::FileNotFound { path }),
-            Err,
-        );
+        let result = eff.traverse(|()| self.fs.open(&path).map_err(Into::into), Err);
 
         let is_success = result.is_ok();
         self.complete(Cqe {
@@ -868,14 +862,7 @@ impl<UserData> Executor<UserData> {
         else {
             unreachable!("invalid sqe: expected create")
         };
-        let run = |()| {
-            // Avoid cloning `path` if already exists.
-            if self.fstree.contains_key(&path) {
-                Err(Error::FileAlreadyExists { path })
-            } else {
-                Ok(self.fstree.entry(path).or_default().clone())
-            }
-        };
+        let run = |()| self.fs.create(path).map_err(Into::into);
         let result = eff.traverse(run, Err);
         let is_success = result.is_ok();
         self.complete(Cqe {
@@ -914,7 +901,7 @@ impl<UserData> Executor<UserData> {
         else {
             unreachable!("invalid sqe: expected fallocate")
         };
-        let result = eff.traverse(|()| fd.set_len(total_len).map_err(Into::into), Err);
+        let result = eff.traverse(|()| fd.reserve(total_len).map_err(Into::into), Err);
         let is_success = result.is_ok();
         self.complete(Cqe {
             inner: CqeInner::Fallocate { result },
@@ -934,10 +921,7 @@ impl<UserData> Executor<UserData> {
                 unreachable!("invalid sqe: expected fsync")
             };
             let result = eff.traverse(
-                |FsyncEffect::Datasync(effect)| {
-                    fd.fdatasync([effect]);
-                    Ok(())
-                },
+                |FsyncEffect::Datasync(effect)| fd.apply_datasync(effect).map_err(Into::into),
                 Err,
             );
             results.push(result);
@@ -974,13 +958,7 @@ impl<UserData> Executor<UserData> {
             else {
                 unreachable!("invalid sqe: expected fdatasync")
             };
-            let result = eff.traverse(
-                |effect| {
-                    fd.fdatasync([effect]);
-                    Ok(())
-                },
-                Err,
-            );
+            let result = eff.traverse(|effect| fd.apply_datasync(effect).map_err(Into::into), Err);
             results.push(result);
             results.is_complete()
         };

@@ -1,295 +1,378 @@
-use alloc::{collections::BTreeMap, sync::Arc};
-use core::{
-    fmt,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec};
+use core::mem;
 
-pub const PAGE_SIZE: usize = 4096;
-const PAGE_SIZE_U64: u64 = PAGE_SIZE as u64;
+use spin::Mutex;
+
+use crate::{SECTOR_SIZE, SECTOR_SIZE64};
+
+type SectorId = usize;
+type FileId = usize;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum Error {
-    #[error("unaligned offset")]
-    UnalignedOffset,
-    #[error("unaligned buffer")]
-    UnalignedBuffer,
-    #[error("offset overflow")]
-    OffsetOverflow,
+    #[error("file already exists")]
+    FileAlreadyExists,
+    #[error("file not found")]
+    FileNotFound,
+    #[error("no space left on device")]
+    NoSpace,
+    #[error("invalid argument")]
+    InvalidArgument,
 }
 
 pub type Result<T> = core::result::Result<T, Error>;
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct PageIndex(u64);
-
-impl PageIndex {
-    fn from_offset(offset: u64) -> Self {
-        assert!(offset.is_multiple_of(PAGE_SIZE_U64));
-        Self(offset / PAGE_SIZE_U64)
-    }
+#[derive(Debug)]
+struct Sector {
+    volatile: Box<[u8; SECTOR_SIZE]>,
+    durable: Box<[u8; SECTOR_SIZE]>,
 }
 
-struct Page {
-    bytes: spin::Mutex<[u8; PAGE_SIZE]>,
+#[derive(Debug)]
+struct FileState {
+    // Logical sector index -> physical sector.
+    sectors: Vec<SectorId>,
+
+    volatile_len: u64,
+    durable_len: u64,
+
+    // Incremented whenever a datasync snapshot is created.
+    dirty_generation: u64,
+    // Logical sector -> generation it was last dirtied.
+    dirty_sectors: BTreeMap<usize, u64>,
+    // Generation in which the length was last dirtied.
+    dirty_len: Option<u64>,
 }
 
-impl Page {
-    fn zeroed() -> Self {
-        Self {
-            bytes: spin::Mutex::new([0; PAGE_SIZE]),
-        }
-    }
+/// A virtual filesystem that keeps track of files, allocated space and
+/// name->file mappings.
+#[derive(Clone, Debug)]
+pub struct Filesystem {
+    inner: Arc<Mutex<FsInner>>,
 }
 
-#[derive(Default)]
-struct PageMap {
-    volatile: BTreeMap<PageIndex, Arc<Page>>,
-    durable: BTreeMap<PageIndex, Arc<Page>>,
+#[derive(Debug)]
+struct FsInner {
+    sectors: Vec<Sector>,
+    free: Vec<SectorId>,
+
+    files: Vec<FileState>,
+    paths: BTreeMap<Box<str>, FileId>,
 }
 
-impl PageMap {
-    /// Reset the volatile to the durable state.
-    fn power_loss(&mut self) {
-        self.volatile.clear();
-        for (idx, page) in &self.durable {
-            self.volatile.insert(*idx, Arc::clone(page));
-        }
-    }
-
-    /// Move the page at `index` from the volatile to the durable state.
-    fn sync(&mut self, index: PageIndex) {
-        self.durable.insert(index, self.volatile.get(&index).cloned().unwrap());
-    }
-
-    /// Get the page at `index` for reading. Uses the volatile state.
-    fn readonly_page(&self, index: PageIndex) -> Option<Arc<Page>> {
-        self.volatile.get(&index).cloned()
-    }
-
-    /// Get the page at `index` for writing, or allocate a new page.
-    /// Uses the volatile state.
-    fn writable_page(&mut self, index: PageIndex) -> Arc<Page> {
-        let page = self.volatile.entry(index).or_insert_with(|| Arc::new(Page::zeroed()));
-
-        // Copy-on-write if the page is in the durable state.
-        if self
-            .durable
-            .get(&index)
-            .is_some_and(|durable| Arc::ptr_eq(durable, page))
-        {
-            let bytes = *page.bytes.lock();
-            *page = Arc::new(Page {
-                bytes: spin::Mutex::new(bytes),
-            });
-        }
-
-        Arc::clone(page)
-    }
-
-    /// Change the allocated space, allocating or deallocating pages as needed.
-    /// Changes the volatile state only.
-    fn set_len_volatile(&mut self, old_len: u64, new_len: u64) {
-        Self::set_len(&mut self.volatile, old_len, new_len);
-    }
-
-    /// Like [Self::set_len_volatile], but operate on the durable state only.
-    fn set_len_durable(&mut self, old_len: u64, new_len: u64) {
-        Self::set_len(&mut self.durable, old_len, new_len);
-    }
-
-    fn set_len(page_map: &mut BTreeMap<PageIndex, Arc<Page>>, old_len: u64, new_len: u64) {
-        use core::cmp::Ordering::*;
-
-        match new_len.cmp(&old_len) {
-            Equal => {}
-            Greater => {
-                let first_new_page = old_len / PAGE_SIZE_U64;
-                let end_page = new_len / PAGE_SIZE_U64;
-
-                for index in first_new_page..end_page {
-                    page_map
-                        .entry(PageIndex(index))
-                        .or_insert_with(|| Arc::new(Page::zeroed()));
-                }
-            }
-            Less => {
-                let first_removed = PageIndex::from_offset(new_len);
-                page_map.retain(|&index, _| index < first_removed);
-            }
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-pub enum Datasync {
-    Sector(u64),
-    Length,
-}
-
-/// A memory-backed file.
-///
-/// A [File] is backed by a sparse array of [Page]s. Missing pages are read as
-/// zeroes.
-///
-/// Read and write operations must be page-aligned. Only full pages can be read
-/// or written. Writing a page is atomic.
-#[derive(Clone, Debug, Default)]
+/// A virtual file in the [Filesystem].
+#[derive(Clone, Debug)]
 pub struct File {
-    inner: Arc<FileInner>,
+    fs: Filesystem,
+    id: FileId,
+}
+
+/// Individual effects produced by [File::prepare_datasync].
+///
+/// `fsync` / `fdatasync` is modelled as a series of sector effects and
+/// potentially the file length. This allows to inject failures, in particular
+/// partial failure of a sync operation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Datasync {
+    Sector { sector: usize, generation: u64 },
+    Length { generation: u64 },
+}
+
+impl Filesystem {
+    pub fn new(capacity: usize) -> Self {
+        assert!(capacity.is_multiple_of(SECTOR_SIZE));
+
+        let sector_count = capacity / SECTOR_SIZE;
+        let sectors = (0..sector_count)
+            .map(|_| Sector {
+                volatile: Box::new([0; SECTOR_SIZE]),
+                durable: Box::new([0; SECTOR_SIZE]),
+            })
+            .collect();
+
+        Self {
+            inner: Arc::new(Mutex::new(FsInner {
+                sectors,
+                free: (0..sector_count).rev().collect(),
+                files: Vec::new(),
+                paths: BTreeMap::new(),
+            })),
+        }
+    }
+
+    pub fn create(&self, path: Box<str>) -> Result<File> {
+        let mut fs = self.inner.lock();
+
+        if fs.paths.contains_key(&path) {
+            return Err(Error::FileAlreadyExists);
+        }
+
+        let id = fs.files.len();
+
+        fs.files.push(FileState {
+            sectors: Vec::new(),
+            volatile_len: 0,
+            durable_len: 0,
+            dirty_generation: 0,
+            dirty_sectors: BTreeMap::new(),
+            dirty_len: None,
+        });
+
+        fs.paths.insert(path, id);
+
+        Ok(File { fs: self.clone(), id })
+    }
+
+    pub fn open(&self, path: &str) -> Result<File> {
+        let fs = self.inner.lock();
+
+        let id = *fs.paths.get(path).ok_or(Error::FileNotFound)?;
+
+        Ok(File { fs: self.clone(), id })
+    }
+
+    /// Simulate power loss.
+    ///
+    /// All unsynced data and metadata are discarded.
+    pub fn power_loss(&self) {
+        let mut fs = self.inner.lock();
+
+        for file_id in 0..fs.files.len() {
+            let durable_len = fs.files[file_id].durable_len;
+            let durable_sectors = sector_count(durable_len);
+
+            // Allocations beyond the durable file length were not durably
+            // reachable, so they become free again.
+            while fs.files[file_id].sectors.len() > durable_sectors {
+                let sector_id = fs.files[file_id].sectors.pop().unwrap();
+                fs.free.push(sector_id);
+            }
+
+            let sector_ids = fs.files[file_id].sectors.clone();
+
+            for sector_id in sector_ids {
+                let sector = &mut fs.sectors[sector_id];
+                sector.volatile.copy_from_slice(&*sector.durable);
+            }
+
+            let file = &mut fs.files[file_id];
+            file.volatile_len = file.durable_len;
+            file.dirty_generation = 0;
+            file.dirty_sectors.clear();
+            file.dirty_len = None;
+        }
+    }
 }
 
 impl File {
-    pub fn power_loss(&self) {
-        self.inner.power_loss();
+    pub(super) fn len(&self) -> u64 {
+        self.fs.inner.lock().files[self.id].volatile_len
     }
 
-    pub fn len(&self) -> u64 {
-        self.inner.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
-    }
-
-    pub fn read_page(&self, dst: &mut [u8], index: u64) -> Result<usize> {
-        self.inner.read_page(dst, index)
-    }
-
-    pub fn write_page(&self, src: &[u8], index: u64) -> Result<usize> {
-        self.inner.write_page(src, index)
-    }
-
-    pub fn fdatasync(&self, ops: impl IntoIterator<Item = Datasync>) {
-        self.inner.fdatasync(ops);
-    }
-
-    pub fn set_len(&self, new_len: u64) -> Result<()> {
-        self.inner.set_len(new_len)
-    }
-}
-
-#[derive(Default)]
-struct FileInner {
-    pages: spin::Mutex<PageMap>,
-    volatile_len: AtomicU64,
-    durable_len: AtomicU64,
-}
-
-impl fmt::Debug for FileInner {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("FileInner")
-            .field("volatile_len", &self.volatile_len)
-            .field("durable_len", &self.durable_len)
-            .finish()
-    }
-}
-
-impl FileInner {
-    /// Simulate a crash by resetting to the durable state.
-    fn power_loss(&self) {
-        self.volatile_len
-            .store(self.durable_len.load(Ordering::Relaxed), Ordering::Relaxed);
-        self.pages.lock().power_loss();
-    }
-
-    fn len(&self) -> u64 {
-        self.volatile_len.load(Ordering::Relaxed)
-    }
-
-    #[allow(unused)]
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    /// Change the file length.
+    /// Preallocate enough physical sectors to cover `new_len`.
     ///
-    /// The new length must be page-aligned.
+    /// Growing fails with [Error::NoSpace] if the fixed filesystem pool cannot
+    /// satisfy the allocation.
     ///
-    /// Extending allocates pages eagerly as needed. Shrinking drops all pages
-    /// at or beyond the new EOF.
-    fn set_len(&self, new_len: u64) -> Result<()> {
-        if !new_len.is_multiple_of(PAGE_SIZE_U64) {
-            return Err(Error::UnalignedOffset);
-        }
-        self.pages
-            .lock()
-            .set_len_volatile(self.volatile_len.load(Ordering::Relaxed), new_len);
-        self.volatile_len.store(new_len, Ordering::Relaxed);
-
-        Ok(())
+    /// Shrinking is deliberately not handled by this operation.
+    ///
+    /// The result of this operation is not durable until [Self::apply_datasync]
+    /// is called.
+    pub(super) fn reserve(&self, new_len: u64) -> Result<()> {
+        let mut fs = self.fs.inner.lock();
+        grow(&mut fs, self.id, new_len)
     }
 
-    /// Read one complete page.
-    fn read_page(&self, dst: &mut [u8], index: u64) -> Result<usize> {
-        if dst.len() != PAGE_SIZE {
-            return Err(Error::UnalignedBuffer);
-        }
+    /// Read one complete sector.
+    ///
+    /// Returns 0 at or beyond EOF. Reading one sector is atomic.
+    pub(super) fn read_sector(&self, dst: &mut [u8; SECTOR_SIZE], sector: usize) -> Result<usize> {
+        let fs = self.fs.inner.lock();
+        let file = &fs.files[self.id];
 
-        let offset = index.checked_mul(PAGE_SIZE as u64).ok_or(Error::OffsetOverflow)?;
-        let len = self.volatile_len.load(Ordering::Relaxed);
-        if offset >= len {
+        let offset = sector as u64 * SECTOR_SIZE64;
+        if offset >= file.volatile_len {
             return Ok(0);
         }
 
-        match self.get_page(PageIndex(index)) {
-            Some(page) => {
-                dst.copy_from_slice(&*page.bytes.lock());
-            }
-            None => {
-                dst.fill(0);
-            }
-        }
+        let sector_id = file.sectors[sector];
+        dst.copy_from_slice(&fs.sectors[sector_id].volatile[..]);
 
-        Ok(PAGE_SIZE)
+        Ok(SECTOR_SIZE)
     }
 
-    /// Write one complete page.
-    fn write_page(&self, src: &[u8], index: u64) -> Result<usize> {
-        if src.len() != PAGE_SIZE {
-            return Err(Error::UnalignedBuffer);
-        }
-
-        let end = index
-            .checked_add(1)
-            .and_then(|pages| pages.checked_mul(PAGE_SIZE_U64))
-            .ok_or(Error::OffsetOverflow)?;
-
-        let page = self.get_or_allocate_page(PageIndex(index));
-        page.bytes.lock().copy_from_slice(src);
-
-        self.volatile_len.fetch_max(end, Ordering::Relaxed);
-
-        Ok(src.len())
-    }
-
-    /// Execute an `fdatasync(2)` operation as a series of [Datasync] effects.
+    /// Write one complete sector.
     ///
-    /// The result may or may not leave the durable state in the same state as
-    /// the volatile state at the time the operation started.
+    /// Like `pwrite`, this may extend the file. Extending can fail with
+    /// [Error::NoSpace]. Writing one sector is atomic.
+    pub(super) fn write_sector(&self, src: &[u8; SECTOR_SIZE], sector: usize) -> Result<usize> {
+        let mut fs = self.fs.inner.lock();
+
+        let end = (sector + 1).checked_mul(SECTOR_SIZE).ok_or(Error::InvalidArgument)? as u64;
+        grow(&mut fs, self.id, end)?;
+
+        let sector_id = fs.files[self.id].sectors[sector];
+
+        fs.sectors[sector_id].volatile.copy_from_slice(src);
+        let generation = fs.files[self.id].dirty_generation;
+        fs.files[self.id].dirty_sectors.insert(sector, generation);
+
+        Ok(SECTOR_SIZE)
+    }
+
+    /// Produce a series of [Datasync] effects to model `fdatasync`.
     ///
-    /// It is the caller's responsibility to decide whether the operation is
-    /// considered successful - a partial operation may report success, or a
-    /// complete operation may report failure.
-    fn fdatasync(&self, ops: impl IntoIterator<Item = Datasync>) {
-        for op in ops {
-            match op {
-                Datasync::Sector(offset) => {
-                    self.pages.lock().sync(PageIndex(offset));
-                }
-                Datasync::Length => {
-                    let new_durable_len = self.volatile_len.load(Ordering::Relaxed);
-                    let old_durable_len = self.durable_len.swap(new_durable_len, Ordering::Relaxed);
-                    self.pages.lock().set_len_durable(old_durable_len, new_durable_len);
-                }
-            }
+    /// The iterator captures sectors that are marked dirty at the time this
+    /// method is called, and ignores sectors dirtied later (while traversing
+    /// the iterator). Similarly for the file length.
+    ///
+    /// This is not an accurate model of how `fdatasync` works, but allows
+    /// interleaving of effects and injection of faults to produce
+    /// partially-durable states.
+    ///
+    /// [Datasync] effects are executed via [Self::apply_datasync].
+    pub(super) fn prepare_datasync(&self) -> IterDatasync {
+        let mut fs = self.fs.inner.lock();
+        let file = &mut fs.files[self.id];
+
+        let generation = file.dirty_generation;
+        file.dirty_generation += 1;
+
+        IterDatasync {
+            file: self.clone(),
+            generation,
+            next_sector: 0,
+            length_pending: true,
         }
     }
 
-    fn get_page(&self, index: PageIndex) -> Option<Arc<Page>> {
-        self.pages.lock().readonly_page(index)
+    /// Execute one [Datasync] effect produced by [Self::prepare_datasync].
+    ///
+    /// A sector is removed from the dirty set only after it succeeds.
+    pub(super) fn apply_datasync(&self, effect: Datasync) -> Result<()> {
+        let mut fs = self.fs.inner.lock();
+
+        match effect {
+            Datasync::Sector { sector, generation } => {
+                // The sector may cease to exist if the file was concurrently
+                // truncated (not currently supported). Treat such an obsolete
+                // sync effect as already satisfied.
+                let Some(&sector_id) = fs.files[self.id].sectors.get(sector) else {
+                    fs.files[self.id].dirty_sectors.remove(&sector);
+                    return Ok(());
+                };
+
+                // Persist what is visible when this effect executes.
+                let volatile = fs.sectors[sector_id].volatile.clone();
+                fs.sectors[sector_id].durable.copy_from_slice(&*volatile);
+
+                // Clear dirty flag only if the sector hasn't been modified
+                // since.
+                let file = &mut fs.files[self.id];
+                if file
+                    .dirty_sectors
+                    .get(&sector)
+                    .is_some_and(|&dirty_generation| dirty_generation <= generation)
+                {
+                    file.dirty_sectors.remove(&sector);
+                }
+            }
+
+            Datasync::Length { generation } => {
+                let volatile_len = fs.files[self.id].volatile_len;
+                let file = &mut fs.files[self.id];
+                // Persist the length visible when this effect executes.
+                file.durable_len = volatile_len;
+                // Clear dirty flag only if no resize happened since.
+                if file
+                    .dirty_len
+                    .is_some_and(|dirty_generation| dirty_generation <= generation)
+                {
+                    file.dirty_len = None;
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+pub(super) struct IterDatasync {
+    file: File,
+    generation: u64,
+    next_sector: usize,
+    length_pending: bool,
+}
+
+impl Iterator for IterDatasync {
+    type Item = Datasync;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let fs = self.file.fs.inner.lock();
+        let file = &fs.files[self.file.id];
+
+        if let Some((&sector, _)) = file
+            .dirty_sectors
+            .range(self.next_sector..)
+            .find(|(_, generation)| **generation <= self.generation)
+        {
+            self.next_sector = sector + 1;
+            return Some(Datasync::Sector {
+                sector,
+                generation: self.generation,
+            });
+        }
+
+        if mem::take(&mut self.length_pending) && file.dirty_len.is_some_and(|generation| generation <= self.generation)
+        {
+            return Some(Datasync::Length {
+                generation: self.generation,
+            });
+        }
+
+        None
+    }
+}
+
+fn sector_count(len: u64) -> usize {
+    len.div_ceil(SECTOR_SIZE64) as usize
+}
+
+fn grow(fs: &mut FsInner, file_id: FileId, new_len: u64) -> Result<()> {
+    let old_len = fs.files[file_id].volatile_len;
+
+    if new_len < old_len {
+        return Err(Error::InvalidArgument);
     }
 
-    fn get_or_allocate_page(&self, index: PageIndex) -> Arc<Page> {
-        self.pages.lock().writable_page(index)
+    if new_len == old_len {
+        return Ok(());
     }
+
+    let old_sector_count = sector_count(old_len);
+    let new_sector_count = sector_count(new_len);
+    let needed = new_sector_count - old_sector_count;
+
+    // Make growth atomic with respect to ENOSPC: either all required sectors
+    // are allocated, or nothing changes.
+    if fs.free.len() < needed {
+        return Err(Error::NoSpace);
+    }
+
+    for _ in 0..needed {
+        let sector_id = fs.free.pop().unwrap();
+
+        // Newly allocated filesystem space reads as zero. Clearing both copies
+        // also prevents data from a previous owner from becoming observable.
+        fs.sectors[sector_id].volatile.fill(0);
+        fs.sectors[sector_id].durable.fill(0);
+
+        fs.files[file_id].sectors.push(sector_id);
+    }
+
+    let file = &mut fs.files[file_id];
+    file.volatile_len = new_len;
+    file.dirty_len = Some(file.dirty_generation);
+
+    Ok(())
 }
