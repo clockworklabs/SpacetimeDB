@@ -52,7 +52,7 @@ test('native crash transport requires a correlated confirmed result and drains u
 });
 
 test('crash action retains partial fault evidence and distinguishes recovered state from acknowledged loss', async () => {
-  for (const mode of ['absent', 'committed', 'orders-only', 'empty-stock', 'lost-acknowledged', 'partial', 'fault-error', 'cancelled-recovery', 'cancelled-read', 'recovery-error', 'disconnected-database', 'disconnected-application', 'drained-application', 'undrained-application', 'drained-recovery-error', 'disconnected-recovery-error', 'cancelled-disconnected-recovery-error']) {
+  for (const mode of ['absent', 'committed', 'orders-only', 'empty-stock', 'lost-acknowledged', 'partial', 'queued', 'queued-committed', 'queued-drained', 'queued-recovery-error', 'fault-error', 'cancelled-recovery', 'cancelled-read', 'recovery-error', 'disconnected-database', 'disconnected-application', 'drained-application', 'undrained-application', 'drained-recovery-error', 'disconnected-recovery-error', 'cancelled-disconnected-recovery-error']) {
     const cancellation = new AbortController();
     const timers: number[] = [];
     let recoveryStopped = false;
@@ -62,11 +62,11 @@ test('crash action retains partial fault evidence and distinguishes recovered st
     const prepared = structuredClone(before);
     prepared.cart.push({ itemId: 'i', quantity: 1 });
     const after = structuredClone(prepared);
-    if (mode === 'committed' || mode === 'partial' || mode === 'orders-only' || mode === 'empty-stock') {
+    if (mode === 'committed' || mode === 'partial' || mode === 'orders-only' || mode === 'empty-stock' || mode === 'queued-committed') {
       after.cart = []; after.stock[0]!.quantity--;
       after.orders.push({ id: 'o', accountId: 'a', status: 'pending', totalMinor: 100,
         lines: [{ itemId: 'i', quantity: 1, priceMinor: 100, allocations: [{ warehouseId: 'w', quantity: 1 }] }] });
-      if (mode === 'committed' || mode === 'empty-stock') after.payments.push({ id: 'p', orderId: 'o', amountMinor: 100, status: 'paid' });
+      if (mode === 'committed' || mode === 'empty-stock' || mode === 'queued-committed') after.payments.push({ id: 'p', orderId: 'o', amountMinor: 100, status: 'paid' });
     }
     if (mode === 'empty-stock') after.stock = [];
     if (mode === 'orders-only') for (const state of [before, prepared, after]) {
@@ -93,6 +93,7 @@ test('crash action retains partial fault evidence and distinguishes recovered st
           await waiting;
           if (mode.includes('disconnected-') || mode.endsWith('drained-application')) throw new Error('socket closed');
           if (mode === 'absent' || mode === 'partial') return { ok: false, status: 409, text: async () => '' };
+          if (mode.startsWith('queued')) return { ok: true, status: 202, text: async () => '' };
           return { ok: true, status: 200, text: async () => '' };
         } },
       'process-crash': { prepare: async () => ({ spacetime: null,
@@ -116,9 +117,9 @@ test('crash action retains partial fault evidence and distinguishes recovered st
             code: 'generated_app_not_restartable',
             ...(mode === 'drained-recovery-error' ? { databaseDrain: { settled: true, samples: [{ pending: 0 }] } } : {}),
           });
-          return mode.endsWith('drained-application') ? { settled: mode === 'drained-application',
+          return mode.endsWith('drained-application') || mode === 'queued-drained' ? { settled: mode !== 'undrained-application',
             startedAtMs: Date.now(), completedAtMs: Date.now(), backend: 'postgres', database: 'app',
-            samples: [{ atMs: Date.now(), pending: mode === 'drained-application' ? 0 : 1 }] } : null;
+            samples: [{ atMs: Date.now(), pending: mode === 'undrained-application' ? 1 : 0 }] } : null;
         } }) },
     } }, { setTimer: (callback, ms) => {
       timers.push(ms);
@@ -129,14 +130,19 @@ test('crash action retains partial fault evidence and distinguishes recovered st
       assert(timers.includes(150_000));
       assert.equal(result.code, 'cancelled');
     }
-    assert.equal(unsettled, mode.includes('disconnected-') || mode === 'undrained-application');
-    assert.equal(result.status, mode.startsWith('cancelled-') || ['disconnected-database', 'disconnected-application', 'undrained-application'].includes(mode) ? 'inconclusive' : mode === 'fault-error' ? 'harness_failure'
+    assert.equal(unsettled, mode.startsWith('queued') || mode.includes('disconnected-') || mode === 'undrained-application');
+    assert.equal(result.status, (mode.startsWith('queued') && mode !== 'queued-recovery-error') || mode.startsWith('cancelled-') || ['disconnected-database', 'disconnected-application', 'undrained-application'].includes(mode) ? 'inconclusive' : mode === 'fault-error' ? 'harness_failure'
       : ['partial', 'lost-acknowledged', 'empty-stock'].includes(mode) || mode.endsWith('recovery-error') ? 'failed' : 'passed', mode);
     if (mode === 'empty-stock') {
       assert.equal(result.code, 'application_failure');
       assert.deepEqual((result.observation as { after: { state: CheckoutState } }).after.state.stock, []);
     }
-    if (mode === 'disconnected-recovery-error') assert.equal(result.code, 'application_failure');
+    if (mode.startsWith('queued')) {
+      const evidence = result.observation as { confirmed: boolean; outcomes: Array<{ outcome: string; status: number }> };
+      assert.equal(evidence.confirmed, false);
+      assert.deepEqual(evidence.outcomes.map(row => [row.outcome, row.status]), [['not-confirmed', 202]]);
+    }
+    if (mode === 'disconnected-recovery-error' || mode === 'queued-recovery-error') assert.equal(result.code, 'application_failure');
     if (mode === 'drained-recovery-error') assert.equal((result.observation as { databaseDrain: { settled: boolean } }).databaseDrain.settled, true);
     assert(result.observation, mode);
     assert(!JSON.stringify(result.observation).includes('private-token'));

@@ -71,7 +71,8 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
             headers: { 'Content-Type': 'application/json', ...credentials }, body: request.body, signal: requestSignal });
           await reply.text();
           status = reply.status;
-          if (reply.ok) outcome = 'committed';
+          // 202 acknowledges queued work, not a completed checkout.
+          if (reply.ok && reply.status !== 202) outcome = 'committed';
         }
       } catch { /* A disconnected or failed response does not prove rollback. */ }
       return { requestIndex: index + 1, actor: input.actor, startedAtMs, completedAtMs: named.now(),
@@ -102,10 +103,13 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
       }
     })().catch(error => { faultError ??= error; });
     const outcomes = await Promise.all(pending);
+    const queued = outcomes.some(row => row.status === 202);
     // Killing the app cannot retract a commit already sent to its database.
     unsettled = !runtime.spacetime && outcomes.some(row => row.status === null);
     await fault;
     if (databaseDrain) unsettled = !databaseDrain.settled;
+    // An idle database cannot prove that an application queue is empty.
+    unsettled ||= queued;
     const observation = { before, prepared, outcomes, unsettled, databaseDrain: databaseDrain ?? null,
       receipt: receipt ?? null, recoveredAtMs: recoveredAtMs ?? null,
       faultError: faultError instanceof Error ? faultError.message : faultError ? String(faultError) : null,
@@ -143,7 +147,8 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
     const unmeasured = prepared.scope !== 'orders' && Date.now() - prepared.recordedAtMs >= 85_000 ? 'reservation expiry prevents a complete recovery comparison'
       : Math.abs(receipt.clockOffsetAfterMs - receipt.clockOffsetBeforeMs) > 5 ? 'clock changed during fault'
         : !outstandingAtFault ? 'fault missed the outstanding-request window'
-          : unsettled && !appRecoveryFailed ? 'a disconnected checkout may still be running in the database' : null;
+          : unsettled && !appRecoveryFailed ? queued ? 'asynchronous checkout has no verified completion receipt'
+            : 'a disconnected checkout may still be running in the database' : null;
     if (unmeasured) {
       const value = finding('invalid-input', { detail: unmeasured });
       throw new ActionInconclusive(renderFinding(value), { finding: value, observation: evidence });
