@@ -91,6 +91,12 @@ reassurance. Add a test only when it protects a distinct invariant that an
 existing test does not cover. Pending qualification marks campaign scores as
 provisional; it blocks publishing verified comparisons, not campaign execution.
 
+For a pack with an unmeasured runtime budget, use `qualify-reference --timing-only`
+to collect clean-reference timings before `pack-budget recommend`. This mode
+cannot run mutations. Its artifacts are diagnostic and cannot qualify a release.
+After setting the measured budget, run ordinary qualification on the frozen
+candidate. Timing collection does not replace that gate.
+
 ## Optional contention diagnostic
 
 `tracks/ecommerce/scenarios/diagnostic-checkout-contention.json` is a separate,

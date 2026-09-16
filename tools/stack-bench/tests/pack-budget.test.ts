@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import test from 'node:test';
 
 import { createArtifact, currentEngineIdentity, recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
-import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
+import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
 import { PACK_RUNTIME_METRIC } from '../src/composition/pack-runtime.js';
 import { parsePackBudgetArgs } from '../commands/pack-budget.js';
 import { loadPackBudgetEvidence, PACK_BUDGET_POLICY, recommendPackBudgets }
@@ -50,7 +50,7 @@ function reference(stack: string, stackIndex: number,
   return createArtifact({ kind: 'reference_qualification', id: `reference-${stack}`,
     identities: recipeArtifactIdentities(binding.release, {
       engine: currentEngineIdentity(), calibration: { id: calibration.id,
-        sha256: calibration.contentSha256 }, stackAdapter: { id: stack },
+        sha256: calibrationQualificationIdentity(calibration).contentSha256 }, stackAdapter: { id: stack },
       fixture: { id: fixture.id, sha256: fixture.sourceSha256 },
     }),
     payload: { fixture: fixture.id, fixtureSha256: fixture.sourceSha256,
@@ -97,9 +97,16 @@ test('budget recommendation requires every exact reference repetition and applie
   assert.deepEqual(result.measuredEngine, currentEngineIdentity());
   assert.deepEqual(result.measuredRunner, { ...applianceRunner, containersRunning: 18 });
   assert.deepEqual(evidence, original);
+  assert.notEqual(evidence[0]!.artifact.identities.calibration!.sha256, evidence[0]!.runtimeCalibration!.sha256,
+    'qualification and runtime calibration hashes have different meanings');
 });
 
 test('budget recommendation rejects mutation, duplicate, incomplete, and cross-scope evidence', () => {
+  const diagnostic = exactEvidence();
+  evidenceAt(diagnostic, 0).artifact.payload.diagnostic = true;
+  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: diagnostic }), /targeted diagnostic/);
+  evidenceAt(diagnostic, 0).artifact.payload.timingOnly = true;
+  assert.doesNotThrow(() => recommendPackBudgets({ binding, calibration, evidence: diagnostic }));
   const mutation = exactEvidence();
   evidenceAt(mutation, 0).artifact.payload.mutationControl = true;
   assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: mutation }), /mutation evidence/);
@@ -118,6 +125,10 @@ test('budget recommendation rejects mutation, duplicate, incomplete, and cross-s
   staleRuntimeIdentity.sha256 = 'f'.repeat(64);
   assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: staleRuntime }),
     /retainedRuntimeCalibration.sha256/);
+  const wrongQualification = exactEvidence();
+  identity(evidenceAt(wrongQualification, 0).artifact.identities.calibration).sha256 = calibration.contentSha256;
+  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: wrongQualification }),
+    /identities.calibration.sha256/);
 });
 
 test('progression L3 budgets require exactly the selected pack counts, not the full catalog', () => {
@@ -138,7 +149,8 @@ test('progression L3 budgets require exactly the selected pack counts, not the f
     item.runtimeCalibration = { id: calibration.id, sha256: calibration.contentSha256 };
     item.artifact.identities = recipeArtifactIdentities(binding.release, {
       ...item.artifact.identities, recipe: { id: binding.release.id, sha256: binding.release.contentSha256 },
-      calibration: item.runtimeCalibration, fixture: { id: fixture.id, sha256: fixture.sourceSha256 },
+      calibration: { id: calibration.id, sha256: calibrationQualificationIdentity(calibration).contentSha256 },
+      fixture: { id: fixture.id, sha256: fixture.sourceSha256 },
     });
     item.artifact.payload.fixture = fixture.id;
     item.artifact.payload.fixtureSha256 = fixture.sourceSha256;

@@ -109,6 +109,11 @@ test('qualification accepts emitted artifact hashes and rejects mismatched ident
           mutations: kind === 'mutation' ? { caught: 1, total: 1 } : null })) } });
     const entry = { kind, stack: reference.backend, repetition: 1, path: 'test.json', sha256: 'c'.repeat(64) };
     assert.doesNotThrow(() => validateQualificationEvidenceArtifact(artifact, entry, context));
+    const timing = createArtifact({ ...artifact,
+      payload: { ...artifact.payload, diagnostic: true, timingOnly: true } });
+    assert.throws(() => validateQualificationEvidenceArtifact(timing, entry, context), /diagnostic evidence/);
+    timing.payload.diagnostic = false;
+    assert.throws(() => validateQualificationEvidenceArtifact(timing, entry, context), /diagnostic evidence/);
     for (const key of ['recipe', 'calibration', 'fixture'] as const) {
       for (const field of ['id', 'sha256'] as const) {
         const changed = structuredClone(artifact);

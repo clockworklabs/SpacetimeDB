@@ -58,6 +58,7 @@ export interface ReferenceQualificationArgs {
   spacetimePort: number | null;
   timeoutMinutes: number | null;
   mutations: boolean;
+  timingOnly?: boolean;
   mutationWorkers: number;
   mutationShardIndex: number | null;
   mutationShardCount: number | null;
@@ -189,6 +190,7 @@ export function parseReferenceQualificationArgs(argv: readonly string[]):
     repetitions: { type: 'string' }, 'run-index': { type: 'string' },
     'spacetime-port': { type: 'string' }, 'timeout-minutes': { type: 'string' },
     mutations: { type: 'boolean' }, 'full-mutations': { type: 'boolean' },
+    'timing-only': { type: 'boolean' },
     'selected-check': { type: 'string', multiple: true },
     'mutation-id': { type: 'string', multiple: true }, 'mutation-workers': { type: 'string' },
     'mutation-shard-index': { type: 'string' }, 'mutation-shard-count': { type: 'string' },
@@ -207,6 +209,7 @@ export function parseReferenceQualificationArgs(argv: readonly string[]):
     spacetimePortExplicit: values['spacetime-port'] !== undefined,
     timeoutMinutes: number(values['timeout-minutes'], null),
     mutations: values.mutations ?? false, fullMutations: values['full-mutations'],
+    timingOnly: values['timing-only'] ?? false,
     selectedCheckKeys: values['selected-check'] ?? [],
     mutationIds: values['mutation-id'] ?? [], mutationWorkers: number(values['mutation-workers'], 1) as number,
     mutationShardIndex: number(values['mutation-shard-index'], null),
@@ -234,6 +237,9 @@ export function parseReferenceQualificationArgs(argv: readonly string[]):
     throw new Error('--run-index must be a non-negative integer');
   }
   validateMutationWorkerCount(args.mutationWorkers);
+  if (args.timingOnly && (args.mutations || args.selectedCheckKeys.length)) {
+    throw new Error('--timing-only cannot be combined with mutations or selected checks');
+  }
   if (args.mutationWorkers > 1 && !args.mutations) {
     throw new Error('--mutation-workers above 1 requires --mutations');
   }
@@ -567,6 +573,7 @@ async function runOnce(fixture: ReferenceFixture, args: ReferenceQualificationAr
         release: context.binding.release,
         level: args.level,
         selectedCheckKeys: context.selectedCheckKeys,
+        timingOnly: args.timingOnly,
       });
   } catch (error) {
     audit = { ok: false, failures: [`qualification evidence is invalid: ${errorMessage(error)}`] };
@@ -1007,7 +1014,8 @@ async function main(): Promise<void> {
     fixtureSha256: fixture.imported?.sourceSha256, requiredRepetitions: args.repetitions,
     startedAt: new Date().toISOString(), isolation: 'docker',
     runner: controllerRunner(), qualificationScope, mutationControl: args.mutations,
-    diagnostic: args.mutationIds.length > 0 || args.selectedCheckKeys.length > 0,
+    diagnostic: Boolean(args.timingOnly) || args.mutationIds.length > 0 || args.selectedCheckKeys.length > 0,
+    ...(args.timingOnly ? { timingOnly: true } : {}),
     qualifiedCheckKeys: [...(runContext.selectedCheckKeys ?? [])].sort(),
     ...(runContext.featureCatalog ? { featureCatalog: runContext.featureCatalog } : {}), runs: [] };
   const companion: QualificationArtifact | null = companionPath ? {

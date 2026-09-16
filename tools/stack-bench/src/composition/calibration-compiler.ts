@@ -736,7 +736,7 @@ export function validateQualificationEvidenceArtifact(artifact: unknown,
     evidenceFailure(at, 'has wrong stack adapter');
   }
   const payload = artifact.payload;
-  if (read(payload, 'diagnostic') === true) {
+  if (read(payload, 'diagnostic') === true || read(payload, 'timingOnly') === true) {
     evidenceFailure(at, 'is targeted diagnostic evidence, not qualification evidence');
   }
   if (calibration.qualification.checks !== undefined) {

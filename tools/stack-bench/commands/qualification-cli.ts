@@ -220,7 +220,7 @@ export function qualificationReadiness(trackName: string, level: number, recipe:
       policy: PACK_BUDGET_POLICY,
       commands: budgetPreparationRequired ? [
         ...stacks.map((stack, index) =>
-          `qualify-reference --backend ${stack} --track ${trackName} --level ${qualificationLevel}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.referenceRepetitions} --out ${budgetEvidence[index]}`),
+          `qualify-reference --timing-only --backend ${stack} --track ${trackName} --level ${qualificationLevel}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.referenceRepetitions} --out ${budgetEvidence[index]}`),
         `pack-budget recommend --track ${trackName} --level ${qualificationLevel}${recipeOption} ${budgetEvidence
           .map(path => `--evidence ${path}`).join(' ')} --out ${output}/${trackName}-l${qualificationLevel}-pack-budgets.json`,
       ] : [],

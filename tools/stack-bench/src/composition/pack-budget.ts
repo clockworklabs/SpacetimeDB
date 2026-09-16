@@ -5,7 +5,7 @@ import { ARTIFACT_FILE, currentEngineIdentity, readArtifact } from '../evidence/
 import type { Artifact, ArtifactIdentity }
   from '../evidence/artifacts.js';
 import type { CalibrationPlan } from './calibration-compiler.js';
-import { calibrationQualificationRelease } from './calibration-compiler.js';
+import { calibrationQualificationIdentity, calibrationQualificationRelease } from './calibration-compiler.js';
 import { canonicalDefinitionJson } from './definition-plan.js';
 import { nonNegativeInteger, PACK_RUNTIME_METRIC } from './pack-runtime.js';
 import { sha256 } from '../evidence/provenance.js';
@@ -59,6 +59,8 @@ export interface ReferenceQualificationPayload {
   sameImage: boolean;
   sameHarness: boolean;
   ok: boolean;
+  diagnostic?: boolean;
+  timingOnly?: boolean;
   runs: ReferenceRun[];
 }
 
@@ -144,6 +146,7 @@ export function recommendPackBudgets({ binding, calibration, evidence }: {
   }
   if (!Array.isArray(evidence) || evidence.length === 0) throw new Error('reference evidence is required');
   const calibrationIdentity = { id: calibration.id, sha256: calibration.contentSha256 };
+  const qualificationIdentity = calibrationQualificationIdentity(calibration);
   const expectedStacks = [...calibration.qualification.stacks].sort();
   const { release: selectedRelease } = calibrationQualificationRelease(
     calibration, binding.release, binding.execution);
@@ -160,15 +163,16 @@ export function recommendPackBudgets({ binding, calibration, evidence }: {
     if (artifact?.kind !== 'reference_qualification') throw new Error(`${item.path} is not reference qualification evidence`);
     const payload = artifact.payload;
     if (payload.mutationControl !== false) throw new Error(`${item.path} is mutation evidence, not a pristine reference`);
+    if (payload.diagnostic && payload.timingOnly !== true) throw new Error(`${item.path} is targeted diagnostic evidence, not timing-only evidence`);
     if (!payload.ok || !payload.stable || !payload.sameImage || !payload.sameHarness) {
       throw new Error(`${item.path} is not a passing stable reference qualification`);
     }
     equalIdentity(artifact.identities.recipe, { id: binding.release.id,
       sha256: binding.release.contentSha256 }, `${item.path}.identities.recipe`);
-    equalIdentity(artifact.identities.calibration, calibrationIdentity,
+    equalIdentity(artifact.identities.calibration,
+      { id: qualificationIdentity.id, sha256: qualificationIdentity.contentSha256 },
       `${item.path}.identities.calibration`);
-    equalIdentity(item.runtimeCalibration, { id: calibration.id,
-      sha256: calibration.contentSha256 }, `${item.path}.retainedRuntimeCalibration`);
+    equalIdentity(item.runtimeCalibration, calibrationIdentity, `${item.path}.retainedRuntimeCalibration`);
     const stack = artifact.identities.stackAdapter?.id;
     if (typeof stack !== 'string' || !expectedStacks.includes(stack)) {
       throw new Error(`${item.path} has unexpected stack ${stack ?? '<missing>'}`);
@@ -299,8 +303,10 @@ export function loadPackBudgetEvidence(paths: string[]): PackBudgetEvidence[] {
         equalIdentity(bundle.identities[identity], artifact.identities[identity],
           `${path} retained run ${run.repetition}.identities.${identity}`);
       }
+      // The summary binds qualification rules; the bundle binds runtime content.
+      // recommendPackBudgets checks each hash against its own compiled identity.
       equalIdentityFields(bundle.identities.calibration, artifact.identities.calibration,
-        ['id', 'sha256'], `${path} retained run ${run.repetition}.identities.calibration`);
+        ['id'], `${path} retained run ${run.repetition}.identities.calibration`);
       if (runtimeCalibration === null) runtimeCalibration = bundle.identities.calibration;
       else equalIdentity(bundle.identities.calibration, runtimeCalibration,
         `${path} retained run ${run.repetition}.identities.calibration`);

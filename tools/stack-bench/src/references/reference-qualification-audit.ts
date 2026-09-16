@@ -4,6 +4,10 @@ import { join } from 'node:path';
 import { criterionEvidence, evidencePassed } from '../evidence/check-evidence.js';
 import { ARTIFACT_FILE, readArtifactPayload } from '../evidence/artifacts.js';
 import { hasExactSelectedPackRuntime } from '../composition/calibration-compiler.js';
+import { aggregatePackRuntime } from '../composition/pack-runtime.js';
+import type { AggregatedPackRuntimeEvidence } from '../composition/pack-runtime.js';
+import type { CompiledPackBudget } from '../composition/composition-compiler.js';
+import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 
 import type { ReferenceFixture } from './reference-fixtures.js';
 
@@ -68,11 +72,32 @@ const record = (value: unknown): value is UnknownRecord =>
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
+// Timing collection can bootstrap an unmeasured budget, but cannot qualify it.
+function hasTimingOnlyPackRuntime(runtime: unknown, release: UnknownRecord,
+  selected: Array<{ packId?: string }>): boolean {
+  try {
+    if (!record(runtime) || !Array.isArray(runtime.packs) || !Array.isArray(release.packs)) return false;
+    const measured = runtime as unknown as AggregatedPackRuntimeEvidence;
+    const definitions = release.packs as Array<{ id: string; budget: CompiledPackBudget }>;
+    const expected = aggregatePackRuntime([{ packRuntime: measured }], definitions);
+    if (expected.packs.length !== measured.packs.length) return false;
+    for (const pack of measured.packs) {
+      const calculated = expected.packs.find(candidate => candidate.id === pack.id);
+      if (!calculated || pack.checkCount !== selected.filter(check => check.packId === pack.id).length
+        || canonicalDefinitionJson(pack.budget) !== canonicalDefinitionJson(calculated.budget)
+        || pack.exceeded !== calculated.exceeded || calculated.exceeded === true) return false;
+    }
+    return hasExactSelectedPackRuntime({ packs: expected.packs.map(pack => ({
+      id: pack.id, exceeded: pack.exceeded ?? false,
+    })) }, { checkCatalog: selected });
+  } catch { return false; }
+}
+
 export function auditReferenceRun(output: string, fixture: ReferenceFixture,
   { requireMutationControl = false, release = null, level = fixture.level,
-    selectedCheckKeys = null }: {
+    selectedCheckKeys = null, timingOnly = false }: {
       requireMutationControl?: boolean; release?: UnknownRecord | null;
-      level?: number; selectedCheckKeys?: string[] | null;
+      level?: number; selectedCheckKeys?: string[] | null; timingOnly?: boolean;
     } = {}): { ok: boolean; failures: string[]; [key: string]: unknown } {
   const runPath = join(output, ARTIFACT_FILE.run);
   const bundlePath = join(output, 'grading', ARTIFACT_FILE.gradeBundle);
@@ -90,6 +115,7 @@ export function auditReferenceRun(output: string, fixture: ReferenceFixture,
     return { ok: false, failures: [`qualification evidence is invalid: ${errorMessage(error)}`] };
   }
   const failures = [];
+  if (timingOnly && requireMutationControl) failures.push('timing-only evidence cannot use mutation controls');
   if (!release?.contentSha256 || !Array.isArray(release.checkCatalog)
       || release.checkCatalog.length === 0) {
     failures.push('exact recipe release was not supplied to the qualification audit');
@@ -154,7 +180,8 @@ export function auditReferenceRun(output: string, fixture: ReferenceFixture,
         [...requested].sort().join(', ')}`);
       return checks;
     })();
-    if (!hasExactSelectedPackRuntime(bundle.packRuntime, { checkCatalog: selected })) {
+    if (!(timingOnly ? hasTimingOnlyPackRuntime(bundle.packRuntime, release, selected)
+      : hasExactSelectedPackRuntime(bundle.packRuntime, { checkCatalog: selected }))) {
       failures.push('selected pack runtime evidence is missing, incomplete, or exceeds its budget');
     }
     const expectedChecks = order(selected);

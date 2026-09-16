@@ -33,6 +33,7 @@ import { rescueSupervisedLease } from '../src/runtime/recovery.js';
 import { emptyArtifactIdentities, readArtifact, writeArtifact, writeRunJson }
   from '../src/evidence/artifacts.js';
 import { createCheckEvidence } from '../src/evidence/check-evidence.js';
+import { PACK_RUNTIME_METRIC } from '../src/composition/pack-runtime.js';
 import { readMutationManifest } from '../src/evidence/mutation-analysis.js';
 import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.js';
 import { requireRecipeRelease as resolveRecipeRelease } from '../src/composition/recipe-release.js';
@@ -563,6 +564,48 @@ test('reference qualification audits zero-point criteria and teardown evidence',
     assert.equal(audit.ok, true);
     assert.equal(audit.criteria, 1);
     assert.equal(audit.zeroPointCriteria, 1);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('timing-only reference mode cannot select mutations or individual checks', () => {
+  const argv = ['node', 'reference-live.js', '--backend', 'postgres', '--timing-only'];
+  assert.equal(parseReferenceQualificationArgs(argv).timingOnly, true);
+  for (const extra of [['--mutations'], ['--selected-check', 'test.check']]) {
+    assert.throws(() => parseReferenceQualificationArgs([...argv, ...extra]), /--timing-only cannot/);
+  }
+});
+
+test('timing-only audit accepts complete unmeasured budgets without weakening qualification', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-timing-test-'));
+  try {
+    const base = writeEvidence(root, { id: '901a', points: 2, passed: true });
+    const budget = { status: 'unmeasured' };
+    const release = { ...base, packs: [{ id: 'test.reference', budget }] };
+    const path = join(root, 'grading', 'bundle.json');
+    const artifact = JSON.parse(readFileSync(path, 'utf8'));
+    const pack = { id: 'test.reference', checkCount: 1, setupRuntimeMs: 1,
+      criterionRuntimeMs: 1, measuredRuntimeMs: 2, budget, exceeded: null };
+    const runtime = { schemaVersion: 1, metric: PACK_RUNTIME_METRIC, packs: [pack] };
+    artifact.payload.packRuntime = runtime;
+    writeFileSync(path, JSON.stringify(artifact));
+    assert.equal(auditReferenceRun(root, fixture, { release }).ok, false);
+    assert.deepEqual(auditReferenceRun(root, fixture, { release, timingOnly: true }).failures, []);
+    for (const invalid of [undefined, { ...runtime, packs: [] },
+      { ...runtime, packs: [pack, pack] },
+      { ...runtime, packs: [{ ...pack, checkCount: 0 }] },
+      { ...runtime, packs: [{ ...pack, measuredRuntimeMs: 3 }] },
+      { ...runtime, packs: [{ ...pack, criterionRuntimeMs: undefined }] },
+      { ...runtime, packs: [{ ...pack, budget: { status: 'bounded', maxRuntimeMs: 1 } }] }]) {
+      artifact.payload.packRuntime = invalid;
+      writeFileSync(path, JSON.stringify(artifact));
+      assert.equal(auditReferenceRun(root, fixture, { release, timingOnly: true }).ok, false);
+    }
+    artifact.payload.packRuntime = runtime;
+    writeFileSync(path, JSON.stringify(artifact));
+    const bounded = { ...release, packs: [{ id: 'test.reference',
+      budget: { status: 'bounded', maxRuntimeMs: 1 } }] };
+    assert.equal(auditReferenceRun(root, fixture, { release: bounded, timingOnly: true }).ok, false,
+      'a null receipt cannot bypass a compiled bound');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
