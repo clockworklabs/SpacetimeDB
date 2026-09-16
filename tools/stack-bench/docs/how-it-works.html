@@ -168,7 +168,8 @@ const scenes = {};
 function build(scene) {
   root.replaceChildren(); layers = { ground: el('g'), lanes: el('g'), slabs: el('g'), wires: el('g'), shadows: el('g'), blocks: el('g'), packets: el('g'), labels: el('g') }; Object.values(layers).forEach(g => root.append(g));
   districts = {}; risers = []; anim = []; pulses = []; doors = [];
-  const [W, D] = scene.plate; OX = 940 - ((W - D) * U * CX) / 2; OY = 520 - ((W + D) * U * .5) / 2;
+  const APRON = 2.4, rows = scene.rows ?? []; const sy = y => y + APRON * rows.filter(e => y > e + .05).length; scene.sy = sy;
+  const [W, D] = [scene.plate[0], scene.plate[1] + APRON * rows.length]; OX = 940 - ((W - D) * U * CX) / 2; OY = 520 - ((W + D) * U * .5) / 2;
   const Z = .4; box({ x: 0, y: 0, w: W, d: D, h: Z, color: '#0e1a21', top: 1.25, side: .8, back: .6, layer: 'ground', lit: false });
   const clip = el('clipPath', { id: 'plate' }); clip.replaceChildren(el('polygon', { points: P([iso(0, 0, Z), iso(W, 0, Z), iso(W, D, Z), iso(0, D, Z)]) })); defs.querySelector('#plate')?.remove(); defs.append(clip);
   const grid = el('g', { 'clip-path': 'url(#plate)' }); layers.ground.append(grid);
@@ -176,20 +177,21 @@ function build(scene) {
   for (let j = 0; j <= D; j += 2) { const a = iso(0, j, Z), b = iso(W, j, Z); grid.append(el('line', { x1: a[0], y1: a[1], x2: b[0], y2: b[1], class: 'grid' })); }
   const ZS = Z + .35; scene.ZS = ZS;
   for (const s of scene.slabs) {
-    const b = box({ x: s.x, y: s.y, w: s.w, d: s.d, h: .35, z0: Z, color: '#132129', top: 1.35, side: .95, back: .7, district: s.id, layer: 'slabs', lit: false });
-    const [lx, ly, anchor, dx, dy] = s.labelAt ?? [s.x + s.w, s.y + s.d, 'middle', 0, 18];
-    const t = label(lx, ly, Z, s.detail ? `${s.label} ›` : s.label, 'title' + (s.detail ? ' door' : ''), s.id, anchor, dx, dy);
+    const y0 = sy(s.y), d = s.d + (rows.length ? APRON : 0);
+    const b = box({ x: s.x, y: y0, w: s.w, d, h: .35, z0: Z, color: '#132129', top: 1.35, side: .95, back: .7, district: s.id, layer: 'slabs', lit: false });
+    const [lx, ly, lz, anchor, dx, dy] = s.labelAt ? [s.labelAt[0], sy(s.labelAt[1]), Z, ...s.labelAt.slice(2)] : [s.x + (s.titleX ?? s.w / 2), y0 + d - .9, ZS + .02, 'middle', 0, 4];
+    const t = label(lx, ly, lz, s.detail ? `${s.label} ›` : s.label, 'title' + (s.detail ? ' door' : ''), s.id, anchor, dx, dy);
     if (s.detail) door(b, s.detail, t);
     s.node = b;
   }
   for (const u of scene.units) {
-    const kind = KINDS[u.kind ?? 'block']; const o = { w: 1.6, d: 1.6, h: 1.4, z0: ZS, rise: true, shadow: true, ...u };
+    const kind = KINDS[u.kind ?? 'block']; const o = { w: 1.6, d: 1.6, h: 1.4, z0: ZS, rise: true, shadow: true, ...u, y: sy(u.y) };
     const b = kind(o); if (o.rise) risers.push(b); u.node = b; if (u.detail) door(b, u.detail);
   }
-  for (const l of scene.labels ?? []) label(...l);
+  for (const l of scene.labels ?? []) label(l[0], sy(l[1]), ...l.slice(2));
   scene.extra?.({ iso, label, el, layers, ZS });
   for (const l of scene.lanes) {
-    const p = lane(l.pts, l.district, l.wire ? ZS + .02 : Z + .02, l.wire); const n = l.token ? l.n ?? 1 : 0;
+    const p = lane(l.pts.map(([x, y]) => [x, sy(y)]), l.district, l.wire ? ZS + .02 : Z + .02, l.wire); const n = l.token ? l.n ?? 1 : 0;
     for (let i = 0; i < n; i++) anim.push(token(p, { kind: l.token, speed: l.speed ?? .3, offset: (l.offset ?? 0) + i / n, district: l.district, plain: l.plain, r: l.plain ? 2.6 : 3.5, onEnd: l.pulse ? () => { const target = scene.slabs.find(s => s.id === l.pulse); if (target) pulse(target.node); } : null }));
   }
   [...layers.blocks.children].sort((a, b) => Number(a.dataset.depth) - Number(b.dataset.depth)).forEach(n => layers.blocks.append(n));
@@ -225,7 +227,7 @@ function go(i, jump = false) {
   chapter = (i + scene.chapters.length) % scene.chapters.length; since = performance.now(); const c = scene.chapters[chapter];
   card.classList.remove('on'); setTimeout(() => { card.querySelector('.k').textContent = c.k; card.querySelector('h1').textContent = c.h; card.querySelector('p').textContent = c.p; card.classList.add('on'); }, 220);
   [...dots.children].forEach((d, j) => { d.className = j === chapter ? 'on' : j < chapter ? 'done' : ''; });
-  view.from = jump ? [0, 0, 1600, 900] : view.cur.slice(); view.to = c.view ? viewFor(...c.view) : [0, 0, 1600, 900]; view.t0 = performance.now() - (jump ? 1400 : 0);
+  view.from = jump ? [0, 0, 1600, 900] : view.cur.slice(); view.to = c.view ? viewFor(c.view[0], scene.sy(c.view[1]), c.view[2], scene.sy(c.view[3]), ...c.view.slice(4)) : [0, 0, 1600, 900]; view.t0 = performance.now() - (jump ? 1400 : 0);
   for (const [name, nodes] of Object.entries(districts)) {
     const tagd = name.endsWith('tags'); const on = c.focus ? c.focus.includes(name) || name === 'base' : !tagd;
     nodes.forEach(n => n.style.opacity = on ? 1 : tagd || n.tagName === 'text' ? 0 : .22);
@@ -278,19 +280,19 @@ const STACKS = ['SpacetimeDB', 'PostgreSQL', 'MongoDB'];
   const SCORES = [[.76, .90], [.58, .76], [.62, .82]]; const COST = ['$41 · 1h 48m', '$58 · 2h 10m', '$63 · 2h 21m'];
   SCORES.forEach(([ua, re], i) => units.push({ id: 'col' + i, x: 25.3 + i * 1.8, y: 16.6, w: .8, d: .8, h: 3 * re, color: WHITE, top: 1.1, side: .85, back: .62, district: 'score', ua, re }));
   scenes.run = {
-    id: 'run', name: 'the run', plate: [30, 20],
+    id: 'run', name: 'the run', plate: [30, 20], rows: [5, 12, 19],
     slabs: [
-      { id: 'plan', x: 1, y: 8, w: 4, d: 4, label: 'campaign plan', labelAt: [1, 12, 'end', -12, 4], detail: 'plan' },
-      { id: 'ops', x: 1, y: 15, w: 5, d: 4, label: 'operations', labelAt: [1, 19, 'end', -12, 4], detail: 'ops' },
+      { id: 'plan', x: 1, y: 8, w: 4, d: 4, label: 'campaign plan', detail: 'plan' },
+      { id: 'ops', x: 1, y: 15, w: 5, d: 4, label: 'operations', detail: 'ops' },
       ...cells.map((c, i) => ({ id: 'cell' + i, x: c.x, y: c.y, w: 5, d: 4, label: STACKS[i], detail: 'cell' })),
-      { id: 'grader', x: 12, y: 1, w: 6, d: 4, label: 'grader', labelAt: [12, 5, 'end', -12, 4], detail: 'grader' },
-      { id: 'qual', x: 20, y: 1, w: 8, d: 4, label: 'proving ground', labelAt: [28, 1, 'start', 12, 4], detail: 'qual' },
-      { id: 'vault', x: 24, y: 8, w: 4, d: 4, label: 'evidence', labelAt: [28, 8, 'start', 12, 4], detail: 'evidence' },
-      { id: 'score', x: 25, y: 15, w: 5, d: 4, label: 'result', labelAt: [30, 15, 'start', 12, 4], detail: 'result' },
+      { id: 'grader', x: 12, y: 1, w: 6, d: 4, label: 'grader', detail: 'grader' },
+      { id: 'qual', x: 20, y: 1, w: 8, d: 4, label: 'proving ground', detail: 'qual' },
+      { id: 'vault', x: 24, y: 8, w: 4, d: 4, label: 'evidence', detail: 'evidence' },
+      { id: 'score', x: 25, y: 15, w: 5, d: 4, label: 'result', detail: 'result' },
     ],
     units,
     labels: [
-      ...cells.flatMap(c => [[c.x + .6, c.y + 2.1, ZS + .7, 'agent', 'lab', 'celltags', 'end', -10, 0], [c.x + 4.4, c.y + .5, ZS + .6, 'app', 'lab', 'celltags', 'start', 8, 0], [c.x + 2.5, c.y + 3.9, Z, 'database', 'lab', 'celltags', 'middle', 0, 16]]),
+      ...cells.flatMap(c => [[c.x + .6, c.y + 2.1, ZS + .7, 'agent', 'lab', 'celltags', 'end', -10, 0], [c.x + 4.4, c.y + .5, ZS + .6, 'app', 'lab', 'celltags', 'start', 8, 0], [c.x + 3.3, c.y + 3.0, ZS + .5, 'database', 'lab', 'celltags', 'start', 10, 4]]),
       [12.6, 3.9, ZS + 1.1, '120 scenarios · real browsers', 'lab', 'gradertags', 'end', -8, 0],
       [20.8, 2.2, ZS + 1.8, 'correct app', 'lab', 'qualtags', 'end', -8, 0], [23.2, 2.2, ZS + 1.8, 'empty app', 'lab', 'qualtags', 'middle', 20, -10], [27.5, 2.6, ZS + .9, '472 defects', 'lab', 'qualtags', 'start', 8, 0],
       [28, 8, Z, 'screenshots · traces', 'lab', 'vaulttags', 'start', 12, 22], [28, 8, Z, 'receipts · hashes', 'lab', 'vaulttags', 'start', 12, 38],
@@ -328,10 +330,10 @@ const STACKS = ['SpacetimeDB', 'PostgreSQL', 'MongoDB'];
 
 /* ---- the cell ---- */
 scenes.cell = {
-  id: 'cell', name: 'a cell', parent: 'run', plate: [26, 16],
+  id: 'cell', name: 'a cell', parent: 'run', plate: [26, 16], rows: [14],
   slabs: [
-    { id: 'controller', x: 1, y: 3, w: 6, d: 10, label: 'trusted controller', labelAt: [1, 13, 'end', -12, 4] },
-    { id: 'cell', x: 10, y: 2, w: 14, d: 12, label: 'attempt namespace', labelAt: [24, 14, 'middle', 0, 18] },
+    { id: 'controller', x: 1, y: 3, w: 6, d: 10, label: 'trusted controller' },
+    { id: 'cell', x: 10, y: 2, w: 14, d: 12, label: 'attempt namespace' },
   ],
   units: [
     { kind: 'tower', x: 2, y: 4, h: 2.0, color: GREEN, district: 'controller' },
@@ -373,13 +375,13 @@ scenes.cell = {
 
 /* ---- the grader ---- */
 scenes.grader = {
-  id: 'grader', name: 'the grader', parent: 'run', plate: [28, 16],
+  id: 'grader', name: 'the grader', parent: 'run', plate: [28, 16], rows: [7, 14],
   slabs: [
-    { id: 'shelf', x: 1, y: 2, w: 6, d: 5, label: 'scenarios', labelAt: [1, 7, 'end', -12, 4] },
-    { id: 'actors', x: 9, y: 2, w: 8, d: 5, label: 'actors', labelAt: [17, 2, 'start', 12, 4] },
-    { id: 'app', x: 19, y: 2, w: 8, d: 5, label: 'the app under test', labelAt: [27, 2, 'start', 12, 4] },
-    { id: 'exec', x: 9, y: 9, w: 18, d: 5, label: 'five ways to act', labelAt: [27, 14, 'middle', 0, 18] },
-    { id: 'outcomes', x: 1, y: 9, w: 6, d: 5, label: 'outcomes', labelAt: [1, 14, 'end', -12, 4] },
+    { id: 'shelf', x: 1, y: 2, w: 6, d: 5, label: 'scenarios' },
+    { id: 'actors', x: 9, y: 2, w: 8, d: 5, label: 'actors' },
+    { id: 'app', x: 19, y: 2, w: 8, d: 5, label: 'the app under test' },
+    { id: 'exec', x: 9, y: 9, w: 18, d: 5, label: 'five ways to act' },
+    { id: 'outcomes', x: 1, y: 9, w: 6, d: 5, label: 'outcomes' },
   ],
   units: [
     { kind: 'rack', x: 1.8, y: 2.8, w: 4.4, d: 3.2, h: 1.6, color: SLATE, district: 'shelf' },
@@ -393,7 +395,7 @@ scenes.grader = {
   labels: [
     [1.8, 6, ZS + .9, '120 versioned json files', 'lab', 'shelftags', 'end', -8, 0],
     ...['alice', 'bob', 'staff'].map((n, i) => [10.45 + i * 2.4, 4.7, Z, n, 'lab', 'actortags', 'middle', 0, 16]),
-    [22, 3, ZS + .8, 'built by the agent', 'lab', 'apptags', 'start', 8, 0], [24.6, 5.5, Z, 'its database', 'lab', 'apptags', 'middle', 0, 16],
+    [22, 3, ZS + .8, 'built by the agent', 'lab', 'apptags', 'start', 8, 0], [25.6, 4.6, ZS + .6, 'its database', 'lab', 'apptags', 'start', 8, 4],
     ...['browser', 'transport', 'lifecycle', 'database', 'concurrency'].map((n, i) => [10.6 + i * 3.4, 12.2, Z, n, 'lab', 'exectags', 'middle', 0, 16]),
     [2.4, 11.2, Z, 'passed', 'lab', 'outtags', 'middle', 0, 14], [4.4, 11.2, Z, 'failed', 'lab', 'outtags', 'middle', 0, 14],
     [2.4, 13.2, Z, 'inconclusive', 'lab', 'outtags', 'middle', 0, 14], [4.4, 13.2, Z, 'harness', 'lab', 'outtags', 'middle', 0, 14], [6.15, 13.3, Z, 'findings', 'lab', 'outtags', 'middle', 0, 14],
@@ -416,14 +418,14 @@ scenes.grader = {
 
 /* ---- the proving ground ---- */
 scenes.qual = {
-  id: 'qual', name: 'the proving ground', parent: 'run', plate: [28, 16],
+  id: 'qual', name: 'the proving ground', parent: 'run', plate: [28, 16], rows: [6, 14],
   slabs: [
-    { id: 'refs', x: 1, y: 2, w: 8, d: 4, label: 'reference apps', labelAt: [1, 6, 'end', -12, 4] },
-    { id: 'press', x: 11, y: 2, w: 8, d: 4, label: 'planted defects', labelAt: [19, 2, 'start', 12, 4] },
-    { id: 'null', x: 21, y: 2, w: 6, d: 4, label: 'empty app', labelAt: [27, 2, 'start', 12, 4] },
-    { id: 'grader', x: 11, y: 9, w: 8, d: 5, label: 'grader', labelAt: [19, 14, 'middle', 0, 18] },
-    { id: 'calib', x: 1, y: 9, w: 8, d: 5, label: 'calibration', labelAt: [1, 14, 'end', -12, 4] },
-    { id: 'ladder', x: 21, y: 9, w: 6, d: 5, label: 'promotion', labelAt: [27, 14, 'middle', 0, 18] },
+    { id: 'refs', x: 1, y: 2, w: 8, d: 4, label: 'reference apps' },
+    { id: 'press', x: 11, y: 2, w: 8, d: 4, label: 'planted defects' },
+    { id: 'null', x: 21, y: 2, w: 6, d: 4, label: 'empty app' },
+    { id: 'grader', x: 11, y: 9, w: 8, d: 5, label: 'grader' },
+    { id: 'calib', x: 1, y: 9, w: 8, d: 5, label: 'calibration' },
+    { id: 'ladder', x: 21, y: 9, w: 6, d: 5, label: 'promotion' },
   ],
   units: [
     ...[0, 1, 2].map(i => ({ x: 1.8 + i * 2.2, y: 3, w: 1.4, d: 1.4, h: 1.2, color: GREEN, district: 'refs' })),
@@ -462,27 +464,27 @@ scenes.qual = {
 
 /* ---- evidence ---- */
 scenes.evidence = {
-  id: 'evidence', name: 'evidence', parent: 'run', plate: [30, 14],
+  id: 'evidence', name: 'evidence', parent: 'run', plate: [30, 14], rows: [6, 12],
   slabs: [
-    { id: 'chain', x: 1, y: 2, w: 22, d: 4, label: 'the chain', labelAt: [1, 6, 'end', -12, 4] },
-    { id: 'release', x: 25, y: 2, w: 4, d: 4, label: 'release', labelAt: [29, 2, 'start', 12, 4] },
-    { id: 'package', x: 1, y: 8, w: 10, d: 4, label: 'retained package', labelAt: [1, 12, 'end', -12, 4] },
-    { id: 'audit', x: 13, y: 8, w: 5, d: 4, label: 'transcript audit', labelAt: [18, 12, 'middle', 0, 18] },
-    { id: 'bins', x: 20, y: 8, w: 9, d: 4, label: 'what counts', labelAt: [29, 8, 'start', 12, 4] },
+    { id: 'chain', x: 1, y: 2, w: 22, d: 4, label: 'the chain' },
+    { id: 'release', x: 25, y: 2, w: 4, d: 4, label: 'release' },
+    { id: 'package', x: 1, y: 8, w: 10, d: 4, label: 'retained package' },
+    { id: 'audit', x: 13, y: 8, w: 5, d: 4, label: 'transcript audit' },
+    { id: 'bins', x: 20, y: 8, w: 9, d: 4, label: 'what counts' },
   ],
   units: [
     ...['definitions', 'plan', 'admission', 'state', 'run', 'bundle', 'report'].map((n, i) => ({ kind: i === 6 ? 'block' : 'ledger', x: 1.8 + i * 3.1, y: 2.9, w: 1.5, d: 1.5, h: i === 6 ? 1.4 : 1.2, n: 2, color: i === 6 ? WHITE : SLATE, top: i === 6 ? 1.1 : 1.3, district: 'chain' })),
-    { x: 25.7, y: 2.7, w: 1.2, d: 1.2, h: .8, color: SLATE, district: 'release' }, { x: 27.3, y: 2.7, w: 1.2, d: 1.2, h: 1.4, color: GREEN, district: 'release' },
+    { x: 25.7, y: 2.3, w: 1.2, d: 1.2, h: .8, color: SLATE, district: 'release' }, { x: 27.3, y: 2.3, w: 1.2, d: 1.2, h: 1.4, color: GREEN, district: 'release' },
     { kind: 'ledger', x: 2, y: 8.8, w: 2.4, d: 2.4, h: 1.8, n: 3, color: SLATE, district: 'package' },
     ...[0, 1, 2].map(i => ({ x: 5.6 + i * 1.7, y: 9.6, w: .9, d: .9, h: .7, color: SLATE, district: 'package' })),
-    { kind: 'tower', x: 14.7, y: 9.2, w: 1.6, d: 1.6, h: 1.6, color: GREEN, district: 'audit' },
+    { kind: 'tower', x: 14.7, y: 8.6, w: 1.6, d: 1.6, h: 1.6, color: GREEN, district: 'audit' },
     { x: 20.8, y: 9.2, w: 3, d: 1.8, h: .6, color: WHITE, top: 1.1, side: .85, back: .62, district: 'bins' }, { x: 25.2, y: 9.2, w: 3, d: 1.8, h: .6, color: DARK, district: 'bins' },
   ],
   labels: [
     ...['definitions', 'plan.json', 'admission', 'state.json', 'run.json', 'bundle.json', 'report'].map((n, i) => [2.55 + i * 3.1, 3.65, ZS + (i === 6 ? 1.4 : 1.2) + .35, n, 'lab', 'chaintags', 'middle', 0, -4]),
-    [26.3, 3.9, Z, 'candidate', 'lab', 'reltags', 'middle', 0, 14], [27.9, 3.9, Z, 'qualified', 'lab', 'reltags', 'middle', 0, 14], [27, 6, Z, 'sbom · signature · exact digests', 'lab', 'reltags', 'middle', 0, 16],
+    [26.3, 3.5, Z, 'candidate', 'lab', 'reltags', 'middle', 0, 14], [27.9, 3.5, Z, 'qualified', 'lab', 'reltags', 'middle', 0, 14], [27.3, 2.9, ZS + 1.9, 'sbom · signature · exact digests', 'lab', 'reltags', 'middle', 0, -8],
     [3.2, 11.2, Z, 'transcripts', 'lab', 'pkgtags', 'middle', 0, 14], ...['screenshots', 'traces', 'receipts'].map((n, i) => [6.05 + i * 1.7, 10.5, Z, n, 'lab', 'pkgtags', 'middle', 0, 14]),
-    [15.5, 10.8, Z, 'did the agent read grading material?', 'lab', 'audittags', 'middle', 0, 18],
+    [15.5, 10.2, Z, 'did the agent read grading material?', 'lab', 'audittags', 'middle', 0, 14],
     [22.3, 11, Z, 'comparison data', 'lab', 'bintags', 'middle', 0, 14], [26.7, 11, Z, 'excluded', 'lab', 'bintags', 'middle', 0, 14],
     [22.3, 11, Z, 'compatible · validated', 'lab', 'bintags', 'middle', 0, 30], [26.7, 11, Z, 'harness · provider · contaminated', 'lab', 'bintags', 'middle', 0, 30],
   ],
@@ -505,33 +507,33 @@ scenes.evidence = {
 
 /* ---- the plan: definitions to a frozen plan ---- */
 scenes.plan = {
-  id: 'plan', name: 'the plan', parent: 'run', plate: [28, 16],
+  id: 'plan', name: 'the plan', parent: 'run', plate: [28, 16], rows: [7, 14],
   slabs: [
-    { id: 'tracks', x: 1, y: 2, w: 8, d: 5, label: 'tracks', labelAt: [1, 7, 'end', -12, 4], detail: 'track' },
-    { id: 'conditions', x: 11, y: 2, w: 6, d: 5, label: 'conditions', labelAt: [17, 2, 'start', 12, 4] },
-    { id: 'backends', x: 19, y: 2, w: 8, d: 5, label: 'stack material', labelAt: [27, 2, 'start', 12, 4] },
-    { id: 'compiler', x: 11, y: 9, w: 6, d: 5, label: 'compiler', labelAt: [17, 14, 'middle', 0, 18] },
-    { id: 'planslab', x: 19, y: 9, w: 8, d: 5, label: 'the frozen plan', labelAt: [27, 14, 'middle', 0, 18] },
+    { id: 'tracks', x: 1, y: 2, w: 8, d: 5, label: 'tracks', detail: 'track' },
+    { id: 'conditions', x: 11, y: 2, w: 6, d: 5, label: 'conditions' },
+    { id: 'backends', x: 19, y: 2, w: 8, d: 5, label: 'stack material' },
+    { id: 'compiler', x: 11, y: 9, w: 6, d: 5, label: 'compiler' },
+    { id: 'planslab', x: 19, y: 9, w: 8, d: 5, label: 'the frozen plan' },
   ],
   units: [
-    { kind: 'rack', x: 1.6, y: 2.8, w: 2.2, d: 3.2, h: 1.4, color: SLATE, district: 'tracks' },
-    { kind: 'rack', x: 4.2, y: 2.8, w: 2.2, d: 3.2, h: 1.4, color: SLATE, district: 'tracks' },
+    { kind: 'rack', x: 1.6, y: 2.2, w: 2.2, d: 3.2, h: 1.4, color: SLATE, district: 'tracks' },
+    { kind: 'rack', x: 4.2, y: 2.2, w: 2.2, d: 3.2, h: 1.4, color: SLATE, district: 'tracks' },
     { kind: 'ledger', x: 6.9, y: 2.9, w: 1.5, d: 1.5, h: 1.2, n: 3, color: SLATE, district: 'tracks' },
-    { kind: 'drum', x: 7.7, y: 5.6, r: .55, h: .7, color: SLATE, district: 'tracks' },
+    { kind: 'drum', x: 7.9, y: 5.0, r: .55, h: .7, color: SLATE, district: 'tracks' },
     { x: 12, y: 3, color: SLATE, district: 'conditions' }, { x: 14.6, y: 3.2, w: 1.2, d: 1.2, h: 1, color: SLATE, district: 'conditions' },
     ...[0, 1, 2].map(i => ({ x: 19.8 + i * 2.4, y: 3, w: 1.4, d: 1.4, h: 1.2, color: SLATE, district: 'backends' })),
-    { kind: 'tower', x: 12.8, y: 10.2, w: 2, d: 2, h: 2.2, color: BLUE, district: 'compiler' },
-    { kind: 'ledger', x: 20.4, y: 10.2, w: 2.4, d: 2.4, h: 1.8, n: 3, color: WHITE, top: 1.1, side: .85, back: .62, district: 'planslab' },
+    { kind: 'tower', x: 12.8, y: 9.4, w: 2, d: 2, h: 2.2, color: BLUE, district: 'compiler' },
+    { kind: 'ledger', x: 20.4, y: 9.6, w: 2.4, d: 2.4, h: 1.8, n: 3, color: WHITE, top: 1.1, side: .85, back: .62, district: 'planslab' },
     { x: 24.6, y: 10.8, w: 1, d: 1, h: .8, color: GREEN, district: 'planslab' },
   ],
   labels: [
-    [2.7, 6.2, Z, 'feature packs', 'lab', 'tracktags', 'middle', 0, 14], [5.3, 6.2, Z, 'specification packs', 'lab', 'tracktags', 'middle', 0, 14],
-    [7.65, 2.9, ZS + 1.5, 'recipes', 'lab', 'tracktags', 'middle', 0, -4], [8.4, 5.6, ZS + .9, 'fixture', 'lab', 'tracktags', 'start', 6, 0],
-    [5.3, 6.2, Z, 'requested · expected · observed', 'lab', 'disctags', 'middle', 0, 30],
+    [2.7, 5.4, Z, 'feature packs', 'lab', 'tracktags', 'middle', 0, 14], [5.3, 5.4, Z, 'specification packs', 'lab', 'tracktags', 'middle', 0, 14],
+    [7.65, 2.9, ZS + 1.5, 'recipes', 'lab', 'tracktags', 'middle', 0, -4], [8.6, 5.0, ZS + .9, 'fixture', 'lab', 'tracktags', 'start', 6, 0],
+    [4, 2.2, ZS + 1.9, 'requested · expected · observed', 'lab', 'disctags', 'middle', 0, -8],
     [12.8, 4.6, Z, 'guidance profiles', 'lab', 'condtags', 'middle', 0, 14], [15.2, 4.6, Z, 'repair policy', 'lab', 'condtags', 'middle', 0, 14],
     ...STACKS.map((s, i) => [20.5 + i * 2.4, 4.4, Z, s, 'lab', 'backtags', 'middle', 0, 14]),
-    [13.8, 13, Z, 'every check × every stack', 'lab', 'comptags', 'middle', 0, 20], [13.8, 13, Z, 'refuses what a stack cannot measure', 'lab', 'comptags', 'middle', 0, 36],
-    [21.6, 12.8, Z, 'plan.json', 'lab', 'plantags', 'middle', 0, 16], [21.6, 12.8, Z, 'contentSha256 · frozen', 'lab', 'plantags', 'middle', 0, 32],
+    [13.8, 11.4, Z, 'every check × every stack', 'lab', 'comptags', 'middle', 0, 14], [13.8, 11.4, Z, 'refuses what a stack cannot measure', 'lab', 'comptags', 'middle', 0, 30],
+    [21.6, 12, Z, 'plan.json · contentSha256', 'lab', 'plantags', 'middle', 0, 14],
     [25.1, 10.8, ZS + 1.1, 'frozen', 'lab', 'plantags', 'middle', 0, -6],
   ],
   lanes: [
@@ -557,30 +559,30 @@ scenes.plan = {
     { x: 1.8, y: 3, color: GREEN, district: 'checks' }, { x: 4.2, y: 3.2, w: 1.2, d: 1.2, h: 1, color: RED, district: 'checks' },
     { x: 6.2, y: 3.2, w: 1.2, d: 1.2, h: 1, color: '#6f7987', district: 'checks' }, { x: 7.9, y: 3.4, w: .9, d: .9, h: .7, color: DARK, district: 'checks' },
     { kind: 'ledger', x: 20, y: 3, w: 2, d: 2, h: 1.5, n: 3, color: SLATE, district: 'cost' }, { x: 24, y: 3.2, w: 1.4, d: 1.4, h: 1, color: SLATE, district: 'cost' },
-    { x: 2, y: 10.4, w: 6, d: 2.2, h: .5, color: DARK, district: 'excluded' },
-    { x: 12, y: 10.4, w: 4, d: 2.2, h: .5, color: WHITE, top: 1.1, side: .85, back: .62, district: 'compare' },
+    { x: 2, y: 9.3, w: 6, d: 2.2, h: .5, color: DARK, district: 'excluded' },
+    { x: 12, y: 9.3, w: 4, d: 2.2, h: .5, color: WHITE, top: 1.1, side: .85, back: .62, district: 'compare' },
     { x: 20.5, y: 10.6, w: 1.4, d: 1.4, h: .9, color: '#6f7987', district: 'seal' }, { x: 23.6, y: 10.2, w: 1.6, d: 1.6, h: 1.4, color: GREEN, district: 'seal' },
   ];
   SC.forEach(([ua, re], i) => units.push({ x: 12 + i * 1.8, y: 3.4, w: .8, d: .8, h: 3 * re, color: WHITE, top: 1.1, side: .85, back: .62, district: 'score', ua, re }));
   scenes.result = {
-    id: 'result', name: 'the result', parent: 'run', plate: [28, 16],
+    id: 'result', name: 'the result', parent: 'run', plate: [28, 16], rows: [7, 14],
     slabs: [
-      { id: 'checks', x: 1, y: 2, w: 8, d: 5, label: 'checks', labelAt: [1, 7, 'end', -12, 4] },
-      { id: 'score', x: 11, y: 2, w: 6, d: 5, label: 'score', labelAt: [17, 2, 'start', 12, 4] },
-      { id: 'cost', x: 19, y: 2, w: 8, d: 5, label: 'cost and time', labelAt: [27, 2, 'start', 12, 4] },
-      { id: 'excluded', x: 1, y: 9, w: 8, d: 5, label: 'excluded', labelAt: [1, 14, 'end', -12, 4] },
-      { id: 'compare', x: 11, y: 9, w: 6, d: 5, label: 'comparison', labelAt: [17, 14, 'middle', 0, 18] },
-      { id: 'seal', x: 19, y: 9, w: 8, d: 5, label: 'publishable', labelAt: [27, 14, 'middle', 0, 18] },
+      { id: 'checks', x: 1, y: 2, w: 8, d: 5, label: 'checks' },
+      { id: 'score', x: 11, y: 2, w: 6, d: 5, label: 'score' },
+      { id: 'cost', x: 19, y: 2, w: 8, d: 5, label: 'cost and time' },
+      { id: 'excluded', x: 1, y: 9, w: 8, d: 5, label: 'excluded' },
+      { id: 'compare', x: 11, y: 9, w: 6, d: 5, label: 'comparison' },
+      { id: 'seal', x: 19, y: 9, w: 8, d: 5, label: 'publishable' },
     ],
     units,
     labels: [
-      [3.4, 7, Z, 'passed · earns its points', 'lab', 'checktags', 'end', -6, 4], [5.6, 7, Z, 'failed · zero', 'lab', 'checktags', 'end', -6, 4],
-      [7.6, 7, Z, 'inconclusive · zero', 'lab', 'checktags', 'end', -6, 4], [9.2, 7, Z, 'harness · unmeasured', 'lab', 'checktags', 'end', -6, 4],
+      [3.4, 9, Z, 'passed · earns its points', 'lab', 'checktags', 'end', -6, 4], [5.6, 9, Z, 'failed · zero', 'lab', 'checktags', 'end', -6, 4],
+      [7.6, 9, Z, 'inconclusive · zero', 'lab', 'checktags', 'end', -6, 4], [9.2, 9, Z, 'harness · unmeasured', 'lab', 'checktags', 'end', -6, 4],
       ...STACKS.map((s, i) => [12.4 + i * 1.8, 4.2, Z, s.slice(0, 3), 'lab', 'scoretags', 'middle', 0, 14]),
       [14, 7, Z, 'line = unaided · top = repaired', 'lab', 'scoretags', 'middle', 0, 30],
       [21, 5, Z, 'receipts · one per session', 'lab', 'costtags', 'middle', 0, 14], [24.7, 4.6, Z, 'duration', 'lab', 'costtags', 'middle', 0, 14],
-      [5, 13.2, Z, 'harness failure · provider failure · contaminated', 'lab', 'extags', 'middle', 0, 20], [5, 13.2, Z, 'kept as evidence · never compared', 'lab', 'extags', 'middle', 0, 36],
-      [14, 13.2, Z, 'compatible · validated · same scope', 'lab', 'comptags', 'middle', 0, 20], [14, 13.2, Z, 'medians over repetitions', 'lab', 'comptags', 'middle', 0, 36],
+      [5, 11.4, Z, 'harness failure · provider failure · contaminated', 'lab', 'extags', 'middle', 0, 14], [5, 11.4, Z, 'kept as evidence · never compared', 'lab', 'extags', 'middle', 0, 30],
+      [14, 11.4, Z, 'compatible · validated · same scope', 'lab', 'comptags', 'middle', 0, 14], [14, 11.4, Z, 'medians over repetitions', 'lab', 'comptags', 'middle', 0, 30],
       [21.2, 12, Z, 'provisional', 'lab', 'sealtags', 'middle', 0, 14], [24.4, 11.8, Z, 'qualified', 'lab', 'sealtags', 'middle', 0, 14],
     ],
     lanes: [
@@ -610,17 +612,17 @@ scenes.plan = {
 
 /* ---- operations: how it runs at scale ---- */
 scenes.ops = {
-  id: 'ops', name: 'operations', parent: 'run', plate: [30, 16],
+  id: 'ops', name: 'operations', parent: 'run', plate: [30, 16], rows: [7, 14],
   slabs: [
-    { id: 'jobs', x: 1, y: 2, w: 6, d: 5, label: 'jobs', labelAt: [1, 7, 'end', -12, 4] },
-    { id: 'creds', x: 9, y: 2, w: 5, d: 5, label: 'credentials', labelAt: [14, 2, 'start', 12, 4] },
-    { id: 'workers', x: 16, y: 2, w: 13, d: 5, label: 'workers', labelAt: [29, 2, 'start', 12, 4] },
-    { id: 'admission', x: 1, y: 9, w: 8, d: 5, label: 'admission', labelAt: [1, 14, 'end', -12, 4] },
-    { id: 'leases', x: 11, y: 9, w: 8, d: 5, label: 'leases and locks', labelAt: [19, 14, 'middle', 0, 18] },
-    { id: 'recovery', x: 21, y: 9, w: 8, d: 5, label: 'recovery', labelAt: [29, 14, 'middle', 0, 18] },
+    { id: 'jobs', x: 1, y: 2, w: 6, d: 5, label: 'jobs' },
+    { id: 'creds', x: 9, y: 2, w: 5, d: 5, label: 'credentials' },
+    { id: 'workers', x: 16, y: 2, w: 13, d: 5, label: 'workers' },
+    { id: 'admission', x: 1, y: 9, w: 8, d: 5, label: 'admission' },
+    { id: 'leases', x: 11, y: 9, w: 8, d: 5, label: 'leases and locks' },
+    { id: 'recovery', x: 21, y: 9, w: 8, d: 5, label: 'recovery' },
   ],
   units: [
-    { kind: 'rack', x: 1.8, y: 2.8, w: 4, d: 3.2, h: 1.4, color: SLATE, district: 'jobs' },
+    { kind: 'rack', x: 1.8, y: 2.2, w: 4, d: 3.2, h: 1.4, color: SLATE, district: 'jobs' },
     { kind: 'ledger', x: 9.8, y: 2.9, w: 1.6, d: 1.6, h: 1.2, n: 3, color: SLATE, district: 'creds' }, { x: 12.8, y: 3, w: .9, d: .9, h: .7, color: RED, district: 'creds' },
     ...[0, 1, 2].map(i => ({ kind: 'tower', x: 17 + i * 4, y: 2.9, w: 1.8, d: 1.8, h: 2, color: SLATE, district: 'workers' })),
     { x: 1.8, y: 10.2, w: 1.4, d: 1.4, h: 1, color: SLATE, district: 'admission' }, { x: 4, y: 10.2, w: 1.4, d: 1.4, h: 1, color: GREEN, district: 'admission' },
@@ -631,7 +633,7 @@ scenes.ops = {
     { x: 24.8, y: 10.6, w: 1.2, d: 1.2, h: .8, color: DARK, district: 'recovery' }, { x: 26.8, y: 10.2, w: 1.2, d: 1.2, h: 1, color: '#6f7987', district: 'recovery' },
   ],
   labels: [
-    [3.8, 6.6, Z, 'queue · one campaign per job', 'lab', 'jobtags', 'middle', 0, 20],
+    [3.4, 5.6, Z, 'queue · one campaign per job', 'lab', 'jobtags', 'middle', 0, 14],
     [10.6, 4.5, Z, 'named profiles', 'lab', 'credtags', 'middle', 0, 14], [13.25, 3.9, Z, 'secret files', 'lab', 'credtags', 'middle', 0, 14],
     ...['worker-east', 'worker-west', 'local'].map((n, i) => [17.9 + i * 4, 4.7, Z, n, 'lab', 'workertags', 'middle', 0, 14]),
     [2.5, 11.6, Z, 'probes', 'lab', 'admtags', 'middle', 0, 14], [4.7, 11.6, Z, 'smoke', 'lab', 'admtags', 'middle', 0, 14], [7, 11.8, Z, 'admission record', 'lab', 'admtags', 'middle', 0, 14],
@@ -770,20 +772,20 @@ const TRACK = {"questlines":[{"id":"identity-profiles","title":"Identity and pro
     const ptsOf = c => c.criteria.reduce((t, cr) => t + cr.points, 0), points = n.checks.reduce((s, c) => s + ptsOf(c), 0), blocks = below(n.id).length;
     const fchecks = n.checks.filter(c => c.role === 'feature'), gchecks = n.checks.filter(c => c.role !== 'feature');
     const pick = (fchecks.length ? fchecks : n.checks).flatMap(c => c.criteria.map(cr => ({ c, cr }))).sort((a, b) => a.cr.steps.length - b.cr.steps.length)[0];
-    const shown = pick.cr.steps.slice(0, 12), more = pick.cr.steps.length - shown.length, packD = 7.5, actorsD = Math.max(4, 2 + pick.cr.actors.length * 1.6), PITCH = 4.2;
+    const shown = pick.cr.steps.slice(0, 12), more = pick.cr.steps.length - shown.length, packD = 9, actorsD = Math.max(6, 2 + pick.cr.actors.length * 1.6), PITCH = 4.2;
     const packW = Math.max(9, Math.max(packs.length, caps.length) * 2.6 + 1.2), depsD = Math.max(1, n.deps.length) * 1.5 + 1, checksX = 6 + packW + 2, checksD = n.checks.length * PITCH + 1;
     const stepsY = 2 + Math.max(packD, depsD, checksD) + 2, stepsEnd = 4 + shown.length * 3 + (more ? 3 : 0), stepsW = stepsEnd + 6;
     const W = Math.max(checksX + 3.5 + 1, stepsW + 2), D = stepsY + actorsD + 1;
     const slabs = [
-      { id: 'deps', x: 1, y: 2, w: 3.5, d: depsD, label: n.deps.length ? 'needs' : 'needs nothing', labelAt: [2.75, 2 + depsD, 'middle', 0, 18] },
-      { id: 'pack', x: 6, y: 2, w: packW, d: packD, label: 'the request', labelAt: [6 + packW, 2, 'start', 12, -8] },
-      { id: 'checks', x: checksX, y: 2, w: 3.5, d: checksD, label: 'checks', labelAt: [checksX + 1.75, 2 + checksD, 'middle', 0, 18] },
-      { id: 'steps', x: 1, y: stepsY, w: stepsW, d: actorsD, label: 'one check, step by step', labelAt: [1, stepsY, 'middle', 0, -10] },
+      { id: 'deps', x: 1, y: 2, w: 3.5, d: depsD, label: n.deps.length ? 'needs' : 'needs nothing' },
+      { id: 'pack', x: 6, y: 2, w: packW, d: packD, label: 'the request' },
+      { id: 'checks', x: checksX, y: 2, w: 3.5, d: checksD, label: 'checks' },
+      { id: 'steps', x: 1, y: stepsY, w: stepsW, d: actorsD, label: 'one check, step by step', titleX: 2.5 },
     ];
     const units = [], labels = [], lanes = [];
     n.deps.forEach((id, j) => { units.push({ id: `dep:${id}`, x: 1.7, y: 2.6 + j * 1.5, w: 1.2, d: 1.2, h: .9, color: SLATE, district: 'deps', detail: `feature:${id}` }); labels.push([2.9, 2.6 + j * 1.5, ZS, byId[id].title, 'lab', 'depstags', 'start', 8, 8]); });
     packs.forEach((p, i) => { const x = 6.8 + i * 2.6; units.push({ kind: 'ledger', x, y: 2.7, w: 1.6, d: 1.6, h: 1.2, n: 2, color: p.type === 'feature' ? WHITE : SLATE, top: p.type === 'feature' ? 1.1 : 1.3, side: p.type === 'feature' ? .85 : 1, back: p.type === 'feature' ? .62 : .66, district: 'pack' }); labels.push([x + .8, 4.3, Z, p.title.toLowerCase(), 'lab', 'packtags', 'middle', 0, 14]); });
-    caps.forEach((c, i) => { const x = 7.2 + i * 2.6; units.push({ x, y: 7.8, w: .8, d: .8, h: .5, color: c === 'browser' ? BLUE : SLATE, district: 'pack' }); labels.push([x + .4, 9.1, Z, words(c), 'lab', 'captags', 'middle', 0, 14]); });
+    caps.forEach((c, i) => { const x = 7.2 + i * 2.6; units.push({ x, y: 7.4, w: .8, d: .8, h: .5, color: c === 'browser' ? BLUE : SLATE, district: 'pack' }); labels.push([x + .4, 8.3, Z, words(c), 'lab', 'captags', 'middle', 0, 12]); });
     n.checks.forEach((c, j) => {
       const y = 2.6 + j * PITCH, pts = ptsOf(c), said = c.criteria.map(cr => cr.said || cr.desc).join(' '), lines = wrap(cap(said));
       units.push({ id: `check:${c.id}`, x: checksX + .7, y, w: 1.2, d: 1.2, h: .9, color: c.role === 'feature' ? GREEN : WHITE, top: c.role === 'feature' ? 1.3 : 1.1, side: c.role === 'feature' ? 1 : .85, back: c.role === 'feature' ? .66 : .62, district: 'checks' });
@@ -804,7 +806,7 @@ const TRACK = {"questlines":[{"id":"identity-profiles","title":"Identity and pro
     const needs = n.deps.map((id, i) => `${byId[id].title} · ${n.why[i]}`).join(' ');
     const contract = feature.contractIds ? `The contract names ${feature.contractIds} element ids the grader will look for, and nothing about how to build it.` : 'No interface contract travels with it beyond the shared application interface.';
     scenes[`feature:${n.id}`] = {
-      id: `feature:${n.id}`, name: n.title.toLowerCase(), parent: 'track', plate: [W, D], slabs, units, labels, lanes,
+      id: `feature:${n.id}`, name: n.title.toLowerCase(), parent: 'track', plate: [W, D], rows: [stepsY - 2, stepsY + actorsD], slabs, units, labels, lanes,
       chapters: [
         { k: n.title.toLowerCase(), h: `${n.title} is ${n.checks.length} check${n.checks.length === 1 ? '' : 's'} worth ${points} point${points === 1 ? '' : 's'}.`, p: `${feature.desc} ${n.deps.length ? `It is graded after ${n.deps.map(id => byId[id].title.toLowerCase()).join(' and ')}.` : 'It needs nothing else first.'}`, focus: null, view: [W > 30 ? -8 : 0, 0, W, D, 1.5, .12, 1.2] },
         { k: 'the request', h: 'What the agent is asked to build.', p: `“${feature.reqText ?? feature.desc}” ${contract}`, focus: ['pack', 'packtags', 'captags'], view: [5, 1, 6 + packW + 4, 2 + packD + 1, 2.5, .1] },
