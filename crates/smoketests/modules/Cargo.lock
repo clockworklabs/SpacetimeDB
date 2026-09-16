@@ -735,6 +735,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-connection-session"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-delete-database"
 version = "0.1.0"
 dependencies = [
