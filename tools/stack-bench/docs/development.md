@@ -158,7 +158,8 @@ comparisons stay inconclusive until a fresh grade on reset data. A proven app
 recovery failure still fails the recovery check when the crash window is valid.
 A client timeout does not prove that server work stopped. Missed fault windows also remain
 inconclusive. These are process-crash tests, not power-loss tests or proof of a
-crash at a particular instruction inside a transaction. Full qualification is pending.
+crash at a particular instruction inside a transaction. The diagnostics remain
+draft and outside scored campaigns.
 
 ## Agent adapter contract
 
