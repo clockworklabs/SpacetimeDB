@@ -73,6 +73,9 @@ public sealed class ModuleBuilder
 
     internal void RegisterSubmodule(RawSubmoduleV10 submodule) => submoduleDefs.Add(submodule);
 
+    public void RegisterSubmodule(string name, ModuleBuilder child) =>
+        RegisterSubmodule(new RawSubmoduleV10(name, child.BuildModuleDefinition()));
+
     // Receives types to store the reference in the dictionary so that we can resolve it later and to avoid infinite recursion inside `makeType`.
     internal AlgebraicType.Ref RegisterType<T>(
         Dictionary<Type, AlgebraicType.Ref> types,
@@ -189,7 +192,13 @@ public sealed class ModuleBuilder
         RegisterView(def);
     }
 
-    internal void RegisterView(RawViewDefV10 view) => viewDefs.Add(view);
+    internal void RegisterView(RawViewDefV10 view)
+    {
+        // Several descriptors may share this builder. IDs are local to the composed
+        // definition, with independent sequences for anonymous and sender views.
+        view.Index = (uint)viewDefs.Count(previous => previous.IsAnonymous == view.IsAnonymous);
+        viewDefs.Add(view);
+    }
 
     internal void RegisterEnvironment(EnvironmentDeclaration declaration) =>
         environment.Add(declaration);
