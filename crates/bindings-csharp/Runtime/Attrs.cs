@@ -11,11 +11,8 @@ namespace SpacetimeDB
     {
         public System.Type Marker { get; } = marker;
 
-        /// <summary>The C# member name used to access the mounted module.</summary>
+        /// <summary>The C# member name and database namespace used for the mounted module.</summary>
         public string Accessor { get; set; } = "";
-
-        /// <summary>The database namespace, independent of the C# accessor.</summary>
-        public string Name { get; set; } = "";
     }
 #endif
 

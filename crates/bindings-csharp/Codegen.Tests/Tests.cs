@@ -341,8 +341,8 @@ public static class GeneratorSnapshotTests
         }
         var auth = Dependency("Auth");
         var audit = Dependency("Audit");
-        string Mount(string marker = "Auth.Marker", string accessor = "MyAuth", string name = "auth_data") =>
-            $"[assembly: SpacetimeDB.Namespace(typeof({marker}), Accessor = \"{accessor}\", Name = \"{name}\")]\n";
+        string Mount(string marker = "Auth.Marker", string accessor = "MyAuth") =>
+            $"[assembly: SpacetimeDB.Namespace(typeof({marker}), Accessor = \"{accessor}\")]\n";
         GeneratorDriver Run(string source) => CSharpGeneratorDriver.Create(
                 [new Module().AsSourceGenerator()],
                 parseOptions: fixture.ParseOptions,
@@ -367,7 +367,6 @@ public static class GeneratorSnapshotTests
             var driver = Run(Mount(accessor: accessor));
             Assert.Empty(driver.GetRunResult().Diagnostics);
             var declaration = Assert.Single(Parsed(driver));
-            Assert.Equal("auth_data", declaration.GetType().GetProperty("Name")!.GetValue(declaration));
             Assert.Equal(accessor, declaration.GetType().GetProperty("Accessor")!.GetValue(declaration));
             Assert.Equal(
                 accessor == "MyAuth" ? accessor : "@" + accessor,
@@ -378,22 +377,22 @@ public static class GeneratorSnapshotTests
                 declaration.GetType().GetProperty("AssemblyIdentity")!.GetValue(declaration)
             );
         }
-        Assert.Empty(Run(Mount(name: new string('a', 63))).GetRunResult().Diagnostics);
-        Assert.Empty(Run(Mount(name: "public")).GetRunResult().Diagnostics);
-        Reject(Mount(name: new string('a', 64)), "63 UTF-8 bytes");
+        Assert.Empty(Run(Mount(accessor: new string('a', 63))).GetRunResult().Diagnostics);
+        Assert.Empty(Run(Mount(accessor: "public")).GetRunResult().Diagnostics);
+        Reject(Mount(accessor: new string('a', 64)), "63 UTF-8 bytes");
         foreach (var name in new[] { "", "auth.data", "a-b", "1auth", " auth" })
-            Reject(Mount(name: name), "database identifier");
+            Reject(Mount(accessor: name), "database identifier");
         foreach (var name in new[] { "st", "ST", "spacetimedb", "pg_catalog", "PG_temp" })
-            Reject(Mount(name: name), "reserved");
+            Reject(Mount(accessor: name), "reserved");
         foreach (var accessor in new[] { "", "a.b", "a-b", "1auth", "@class", " auth" })
             Reject(Mount(accessor: accessor), "C# identifier");
         Reject("[assembly: SpacetimeDB.Namespace(typeof(Auth.Marker))]", "C# identifier");
         Reject("[assembly: SpacetimeDB.Namespace(null)]", "marker type");
         Reject(Mount("LocalMarker") + "public class LocalMarker { }", "cannot mount itself");
         Reject(Mount("System.String"), "no discovered module descriptor");
-        Reject(Mount() + Mount(accessor: "Other", name: "other"), "only be mounted once");
-        Reject(Mount() + Mount("Audit.Marker", "Audit", "AUTH_DATA"), "case-insensitive");
-        Reject(Mount() + Mount("Audit.Marker", "MyAuth", "audit_data"), "accessor 'MyAuth'");
+        Reject(Mount() + Mount(accessor: "Other"), "only be mounted once");
+        Reject(Mount() + Mount("Audit.Marker", "MYAUTH"), "case-insensitive");
+        Reject(Mount() + Mount("Audit.Marker", "MyAuth"), "accessor 'MyAuth'");
         Reject(Mount() + "[SpacetimeDB.Table(Accessor = \"MyAuth\")] public partial struct Row { public uint Id; }",
             "root table accessor");
 
@@ -408,9 +407,12 @@ public static class GeneratorSnapshotTests
         // Only assembly targets are legal, independently of generator validation.
         var wrongTarget = Create("Consumer", "[SpacetimeDB.Namespace(typeof(Auth.Marker))] public class Wrong { }", auth);
         Assert.Contains(wrongTarget.GetDiagnostics(), d => d.Id == "CS0592");
+        var obsoleteName = Create("Consumer",
+            "[assembly: SpacetimeDB.Namespace(typeof(Auth.Marker), Accessor = \"MyAuth\", Name = \"auth_data\")]", auth);
+        Assert.Contains(obsoleteName.GetDiagnostics(), d => d.Id == "CS0246");
 
         var original = Run(Mount());
-        foreach (var source in new[] { Mount(name: "other_data"), Mount(accessor: "Other") })
+        foreach (var source in new[] { Mount(accessor: "Other"), Mount(accessor: "class") })
         {
             var changed = original.RunGenerators(Create("Consumer", source, auth, audit));
             Assert.Empty(changed.GetRunResult().Diagnostics);
@@ -510,8 +512,8 @@ public static class GeneratorSnapshotTests
             "public class UtilityLink { public Shared.Sentinel Value; }", shared));
         var rootSource = rootHasTable ? Table("Root") : "";
         if (mounted)
-            rootSource = "[assembly: SpacetimeDB.Namespace(typeof(Alpha.Sentinel), Accessor = \"Auth\", Name = \"auth_data\")]\n"
-                + "[assembly: SpacetimeDB.Namespace(typeof(Beta.Sentinel), Accessor = \"class\", Name = \"audit_data\")]\n"
+            rootSource = "[assembly: SpacetimeDB.Namespace(typeof(Alpha.Sentinel), Accessor = \"Auth\")]\n"
+                + "[assembly: SpacetimeDB.Namespace(typeof(Beta.Sentinel), Accessor = \"class\")]\n"
                 + rootSource
                 + "public static class Helpers { public static ulong Count(SpacetimeDB.ReducerContext ctx) => ctx.Db.Auth.AlphaRow.Count + ctx.Db.@class.BetaRow.Count + ctx.Db.SharedRow.Count; }";
         rootSource += $$"""
@@ -541,7 +543,7 @@ public static class GeneratorSnapshotTests
             var init = Method(root, "Initialize");
             var submodules = init.DescendantNodes().OfType<InvocationExpressionSyntax>()
                 .Where(call => call.Expression.ToString().EndsWith(".RegisterSubmodule")).ToArray();
-            Assert.Equal(["\"auth_data\"", "\"audit_data\""],
+            Assert.Equal(["\"Auth\"", "\"class\""],
                 submodules.Select(call => call.ArgumentList.Arguments[0].ToString()));
             var invalid = root.AddSyntaxTrees(CSharpSyntaxTree.ParseText(
                 "public static class BadView { public static void Write(SpacetimeDB.ViewContext ctx) => ctx.Db.Auth.AlphaRow.Insert(new Alpha.AlphaRow()); }",
@@ -585,7 +587,7 @@ public static class GeneratorSnapshotTests
         Assert.Empty(empty.GetSymbolsWithName("AssemblyDescriptor", SymbolFilter.Type));
 
         var nested = Emit(Generate(Create("Nested",
-            "[assembly: SpacetimeDB.Namespace(typeof(Alpha.Sentinel), Accessor = \"Auth\", Name = \"auth_data\")]",
+            "[assembly: SpacetimeDB.Namespace(typeof(Alpha.Sentinel), Accessor = \"Auth\")]",
             alpha, shared)));
         var nestedResult = CSharpGeneratorDriver.Create(
             [new Module().AsSourceGenerator()], parseOptions: fixture.ParseOptions
@@ -605,15 +607,15 @@ public static class GeneratorSnapshotTests
             var lifecycleResult = CSharpGeneratorDriver.Create(
                 [new Module().AsSourceGenerator()], parseOptions: fixture.ParseOptions
             ).RunGenerators(Create("LifecycleConsumer",
-                "[assembly: SpacetimeDB.Namespace(typeof(Marker), Accessor = \"Auth\", Name = \"auth_data\")]",
+                "[assembly: SpacetimeDB.Namespace(typeof(Marker), Accessor = \"Auth\")]",
                 lifecycle)).GetRunResult();
             Assert.Contains(lifecycleResult.Diagnostics, diagnostic =>
                 diagnostic.GetMessage().Contains("LifecycleFunctions.Handle (" + kind + ")")
-                && diagnostic.GetMessage().Contains("auth_data"));
+                && diagnostic.GetMessage().Contains("Auth"));
             // The same dependency can still be published alone or merged into the root scope.
             Generate(Create("FlatLifecycleConsumer", "", lifecycle));
             Generate(Create("PublicLifecycleConsumer",
-                "[assembly: SpacetimeDB.Namespace(typeof(Marker), Accessor = \"Auth\", Name = \"public\")]",
+                "[assembly: SpacetimeDB.Namespace(typeof(Marker), Accessor = \"public\")]",
                 lifecycle));
         }
     }
