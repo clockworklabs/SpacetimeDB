@@ -1,4 +1,5 @@
-import { actionImplementation, ActionApplicationFailure } from './action-contract.js';
+import { stripVTControlCharacters } from 'node:util';
+import { actionImplementation, ActionApplicationFailure, ActionInconclusive } from './action-contract.js';
 import type {
   ActionImplementation,
 } from './action-contract.js';
@@ -803,7 +804,17 @@ export function browserApplicationBoundary<Arguments, Result>(
       return await implementation(args);
     } catch (error) {
       if (errorField(error, 'classification') || harnessBrowserFailure(error)) throw error;
-      if (isExpectedBrowserFailure(error)) throw pageFailure(String(errorField(error, 'message') ?? error), scopeOf?.(args));
+      const message = String(errorField(error, 'message') ?? error);
+      // Playwright can time out after delivering the input (for example, while
+      // a close handler removes the target). Its call log proves dispatch began,
+      // not whether the action completed. Do not score a defect or repeat input.
+      if (errorField(error, 'name') === 'TimeoutError' && /^locator\.click:/.test(message)
+        && /^\s*- (?:performing click action|click action done)\s*$/m.test(stripVTControlCharacters(message))) {
+        throw new ActionInconclusive('browser click timed out after input dispatch began', {
+          observation: { detail: message }, expected: 'confirmed completion of the browser click',
+        });
+      }
+      if (isExpectedBrowserFailure(error)) throw pageFailure(message, scopeOf?.(args));
       throw error;
     }
   };

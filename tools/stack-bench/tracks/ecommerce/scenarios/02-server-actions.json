@@ -3,7 +3,7 @@
   "track": "ecommerce",
   "level": 2,
   "name": "Ecommerce L2 direct server checks",
-  "note": "Draft: revised observations require matching reference and defect-control qualification.",
+  "note": "Draft: revised observations and uncertain click delivery require matching reference and defect-control qualification.",
   "features": [
     {
       "id": 201,

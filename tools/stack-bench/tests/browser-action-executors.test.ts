@@ -482,7 +482,7 @@ test('relative count assertions reject missing records and invalid count targets
   }
 });
 
-test('browser timeouts are application evidence while crashes and code bugs remain harness failures', async () => {
+test('unactionable controls are application evidence while crashes and code bugs remain harness failures', async () => {
   const timeout = Object.assign(new Error('locator.click: element was never actionable'),
     { name: 'TimeoutError' });
   const timedOut = await run({ do: 'click', actor: 'a', testid: 'submit' },
@@ -501,6 +501,27 @@ test('browser timeouts are application evidence while crashes and code bugs rema
     services({ loc: () => ({ click: async () => { throw new TypeError('executor bug'); } }) }));
   assert.equal(bug.status, 'harness_failure');
   assert.equal(bug.code, 'unclassified_exception');
+});
+
+test('a click that removes its target before timing out is inconclusive and is not repeated', async () => {
+  const { chromium } = await import('playwright');
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`<button id="close" onclick="this.remove();document.body.dataset.clicks='1';
+      const until=Date.now()+2000;while(Date.now()<until){}">Close</button>`);
+    let clicks = 0;
+    const result = await run({ do: 'click', actor: 'a', testid: 'close', within: 1000 },
+      services({ loc: () => ({ click: async (options: Parameters<ReturnType<typeof page.locator>['click']>[0]) => {
+        clicks += 1;
+        await page.locator('#close').click(options);
+      } }) }));
+    assert.equal(result.status, 'inconclusive', result.summary ?? undefined);
+    assert.equal(clicks, 1);
+    assert.equal(await page.locator('#close').count(), 0);
+    assert.equal(await page.locator('body').getAttribute('data-clicks'), '1');
+    assert.match(JSON.stringify(result.observation), /performing click action/);
+  } finally { await browser.close(); }
 });
 
 
