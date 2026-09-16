@@ -171,6 +171,10 @@ fn namespace_csharp_mounted_dependencies() {
                             "SELECT * FROM extra_rows",
                             "SELECT * FROM auth_data.users",
                             "SELECT * FROM auth_data.anonymous_users",
+                            "SELECT * FROM query_users",
+                            "SELECT * FROM query_users_right",
+                            "SELECT * FROM query_extra",
+                            "SELECT * FROM auth_data.query_users",
                         ]
                         .map(Box::<str>::from)
                         .into(),
@@ -186,7 +190,7 @@ fn namespace_csharp_mounted_dependencies() {
                         message @ spacetimedb::client::messages::SerializableMessage::Subscribe(_),
                     ) = message
                     {
-                        assert_eq!(message.num_rows(), Some(5));
+                        assert_eq!(message.num_rows(), Some(9));
                         return;
                     }
                 }

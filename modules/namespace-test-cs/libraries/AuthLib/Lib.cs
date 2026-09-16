@@ -22,6 +22,12 @@ public static partial class Functions
 
     public static ulong Count(ReducerContext ctx) => ctx.Db.User.Count;
 
+    public static FromWhere<User, UserCols, UserIxCols> Query(ViewContext ctx) =>
+        ctx.From.User().Where(row => row.Score.Eq(99u));
+
+    [View(Accessor = "QueryUsers", Public = true)]
+    public static IQuery<User> QueryUsers(ViewContext ctx) => Query(ctx);
+
     [Reducer]
     public static void Add(ReducerContext ctx, uint id) => Insert(ctx, id);
 

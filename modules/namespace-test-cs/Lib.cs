@@ -23,7 +23,7 @@ public static partial class Functions
     [Reducer]
     public static void Exercise(ReducerContext ctx)
     {
-        ctx.Db.User.Insert(new User { Id = 1 });
+        ctx.Db.User.Insert(new User { Id = 2 });
         AuthLib.Functions.Insert(ctx, 2);
         ctx.Db.MyAuth.User.Insert(new AuthLib.User { Id = 3, Score = 43 });
         ctx.Db.@class.User.Insert(new AuditLib.User { Id = 4, Message = "consumer" });
@@ -49,7 +49,19 @@ public static partial class Functions
         ctx.WithTx(tx => tx.Db.User.Count + tx.Db.MyAuth.User.Count + tx.Db.@class.User.Count);
 
     [View(Accessor = "Users", Public = true)]
-    public static User? Users(ViewContext ctx) => ctx.Db.User.Id.Find(1);
+    public static User? Users(ViewContext ctx) => ctx.Db.User.Id.Find(2);
+
+    [View(Accessor = "QueryUsers", Public = true)]
+    public static IQuery<User> QueryUsers(AnonymousViewContext ctx) =>
+        ctx.From.User().LeftSemijoin(ctx.From.MyAuth.User(), (root, auth) => root.Id.Eq(auth.Id));
+
+    [View(Accessor = "QueryUsersRight", Public = true)]
+    public static IQuery<User> QueryUsersRight(ViewContext ctx) =>
+        AuthLib.Functions.Query(ctx).RightSemijoin(ctx.From.User(), (auth, root) => auth.Id.Eq(root.Id));
+
+    [View(Accessor = "QueryExtra", Public = true)]
+    public static IQuery<ExtraLib.ExtraRow> QueryExtra(AnonymousViewContext ctx) =>
+        ctx.From.ExtraRow().Where(row => row.Id.Eq(7u));
 
     [View(Accessor = "AuthUsers", Public = true)]
     public static List<AuthSummary> AuthUsers(ViewContext ctx) =>
