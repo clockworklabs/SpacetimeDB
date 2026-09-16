@@ -1081,6 +1081,10 @@ impl RawModuleDefV10Builder {
         self.module.submodules.get_or_insert_default().push(submodule);
     }
 
+    pub fn add_migration(&mut self, migration: RawMigrationDefV10) {
+        self.module.migrations.get_or_insert_default().push(migration);
+    }
+
     /// Set the case conversion policy for this module.
     ///
     /// By default, SpacetimeDB applies `SnakeCase` conversion to table names,

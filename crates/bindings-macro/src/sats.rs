@@ -23,6 +23,7 @@ pub(crate) struct SatsType<'a> {
     #[allow(unused)]
     pub original_attrs: &'a [syn::Attribute],
     pub data: SatsTypeData<'a>,
+    pub data_span: Span,
     /// Was the type marked as `#[repr(C)]`?
     pub is_repr_c: bool,
 }
@@ -41,6 +42,18 @@ pub(crate) struct SatsField<'a> {
     pub original_attrs: &'a [syn::Attribute],
 }
 
+impl<'a> From<&'a syn::Field> for SatsField<'a> {
+    fn from(field: &'a syn::Field) -> Self {
+        SatsField {
+            ident: field.ident.as_ref(),
+            vis: &field.vis,
+            name: field.ident.as_ref().map(syn::Ident::to_string),
+            ty: &field.ty,
+            original_attrs: &field.attrs,
+        }
+    }
+}
+
 pub(crate) struct SatsVariant<'a> {
     pub ident: &'a syn::Ident,
     pub name: String,
@@ -55,18 +68,19 @@ pub(crate) fn sats_type_from_derive(
     input: &syn::DeriveInput,
     crate_fallback: TokenStream,
 ) -> syn::Result<SatsType<'_>> {
+    let data_span;
     let data = match &input.data {
         syn::Data::Struct(struc) => {
-            let fields = struc.fields.iter().map(|field| SatsField {
-                ident: field.ident.as_ref(),
-                vis: &field.vis,
-                name: field.ident.as_ref().map(syn::Ident::to_string),
-                ty: &field.ty,
-                original_attrs: &field.attrs,
-            });
-            SatsTypeData::Product(fields.collect())
+            data_span = match &struc.fields {
+                syn::Fields::Named(named) => named.brace_token.span.join(),
+                syn::Fields::Unnamed(unnamed) => unnamed.paren_token.span.join(),
+                syn::Fields::Unit => struc.struct_token.span,
+            };
+            let fields = struc.fields.iter().map(Into::into).collect();
+            SatsTypeData::Product(fields)
         }
         syn::Data::Enum(enu) => {
+            data_span = enu.brace_token.span.join();
             let variants = enu.variants.iter().map(|var| {
                 let (member, ty) = variant_data(var)?.unzip();
                 Ok(SatsVariant {
@@ -81,7 +95,33 @@ pub(crate) fn sats_type_from_derive(
         }
         syn::Data::Union(u) => return Err(syn::Error::new(u.union_token.span, "unions not supported")),
     };
-    extract_sats_type(&input.ident, &input.generics, &input.attrs, data, crate_fallback)
+    extract_sats_type(
+        &input.ident,
+        &input.generics,
+        &input.attrs,
+        data,
+        data_span,
+        crate_fallback,
+    )
+}
+
+pub(crate) fn extract_sats_type_from_item_struct<'a>(
+    struc: &'a syn::ItemStruct,
+    crate_fallback: TokenStream,
+) -> syn::Result<SatsType<'a>> {
+    let data_span = match &struc.fields {
+        syn::Fields::Named(named) => named.brace_token.span.join(),
+        syn::Fields::Unnamed(unnamed) => unnamed.paren_token.span.join(),
+        syn::Fields::Unit => struc.struct_token.span,
+    };
+    extract_sats_type(
+        &struc.ident,
+        &struc.generics,
+        &struc.attrs,
+        SatsTypeData::Product(struc.fields.iter().map(Into::into).collect()),
+        data_span,
+        crate_fallback,
+    )
 }
 
 fn is_repr_c(attrs: &[syn::Attribute]) -> bool {
@@ -100,6 +140,7 @@ pub(crate) fn extract_sats_type<'a>(
     generics: &'a syn::Generics,
     attrs: &'a [syn::Attribute],
     data: SatsTypeData<'a>,
+    data_span: Span,
     crate_fallback: TokenStream,
 ) -> syn::Result<SatsType<'a>> {
     let mut name = None;
@@ -138,6 +179,7 @@ pub(crate) fn extract_sats_type<'a>(
         krate,
         original_attrs: attrs,
         data,
+        data_span,
         is_repr_c,
     })
 }

@@ -1,8 +1,8 @@
 use std::fmt;
 
 use proc_macro::TokenStream as StdTokenStream;
-use proc_macro2::{Span, TokenStream};
-use quote::{format_ident, quote};
+use proc_macro2::{Literal, Span, TokenStream};
+use quote::{format_ident, quote, quote_spanned};
 use syn::parse::Parse;
 use syn::Ident;
 
@@ -22,6 +22,22 @@ pub(crate) fn cvt_attr<Item: Parse + quote::ToTokens>(
     };
     let generated = f(args.into(), &parsed_item).unwrap_or_else(syn::Error::into_compile_error);
     TokenStream::from_iter([extra_attr, item, generated]).into()
+}
+
+/// Parses `item`, passing it and `args` to `f`,
+/// which will mutate item and return extra tokens to emit.
+pub(crate) fn cvt_attr_mut<Item: Parse + quote::ToTokens>(
+    args: StdTokenStream,
+    item: StdTokenStream,
+    f: impl FnOnce(TokenStream, &mut Item) -> syn::Result<TokenStream>,
+) -> StdTokenStream {
+    let item: TokenStream = item.into();
+    let mut parsed_item = match syn::parse2::<Item>(item.clone()) {
+        Ok(i) => i,
+        Err(e) => return TokenStream::from_iter([item, e.into_compile_error()]).into(),
+    };
+    let generated = f(args.into(), &mut parsed_item).unwrap_or_else(syn::Error::into_compile_error);
+    TokenStream::from_iter([parsed_item.into_token_stream(), generated]).into()
 }
 
 /// Run `f`, converting `Err` returns into a compile error.
@@ -94,6 +110,75 @@ pub(crate) fn preinit(prio: u8, kind: &str, name: impl fmt::Display, body: Token
                 #body
             }
         };
+    }
+}
+
+pub(crate) fn superize_path(mut path: syn::Path) -> syn::Path {
+    let first = path.segments.first_mut().unwrap();
+    if path.leading_colon.is_some() || first.ident == "crate" {
+        // the path is absolute
+    } else if first.ident == "self" {
+        first.ident = Ident::new("super", first.ident.span());
+    } else {
+        let super_ = Ident::new("super", first.ident.span());
+        path.segments.insert(0, super_.into());
+    }
+    path
+}
+
+pub(crate) struct HexLiteral<const BYTES: usize> {
+    inner: Literal,
+    hex: String,
+    data: [u8; BYTES],
+}
+
+impl<const BYTES: usize> Parse for HexLiteral<BYTES> {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let lit = input.parse::<Literal>()?;
+        let err = |msg| syn::Error::new(lit.span(), msg);
+        let suffix_err = || err("hex literal cannot have suffix");
+
+        let is_hexstring = |s: &str| s.bytes().all(|c| c.is_ascii_hexdigit());
+
+        // parse a hexadecimal int literal manually, because `syn::LitInt` doesn't have a radix
+        let hex = match lit.to_string().strip_prefix("0x") {
+            Some(hex) if is_hexstring(hex) => hex.to_owned(),
+            Some(_) => return Err(suffix_err()),
+            // allow string literals because syn seems to normalize integer literals into base-10
+            None => {
+                let syn::Lit::Str(s) = syn::Lit::new(lit.clone()) else {
+                    return Err(syn::Error::new(lit.span(), "expected hexadecimal literal"));
+                };
+                let hex = s.value();
+                if !is_hexstring(&hex) {
+                    return Err(err("invalid hex literal"));
+                };
+                if !s.suffix().is_empty() {
+                    return Err(suffix_err());
+                }
+                hex
+            }
+        };
+
+        let (chunks, extra) = hex.as_bytes().as_chunks::<2>();
+        let chunks = chunks
+            .as_array::<BYTES>()
+            .filter(|_| extra.is_empty())
+            .ok_or_else(|| syn::Error::new(lit.span(), format_args!("hex literal must be {BYTES} bytes")))?;
+        let data = chunks
+            .map(|[hi, lo]| (char::from(hi).to_digit(16).unwrap() << 8 | char::from(lo).to_digit(16).unwrap()) as u8);
+        Ok(Self { inner: lit, hex, data })
+    }
+}
+
+impl<const BYTES: usize> HexLiteral<BYTES> {
+    pub(crate) fn as_hex(&self) -> &str {
+        &self.hex
+    }
+
+    pub(crate) fn to_array(&self) -> TokenStream {
+        let hex = self.data.iter().copied().map(Literal::u8_suffixed);
+        quote_spanned!(self.inner.span() => [#(#hex),*])
     }
 }
 

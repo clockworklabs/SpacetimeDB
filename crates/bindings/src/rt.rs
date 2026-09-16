@@ -2,10 +2,13 @@
 
 use crate::query_builder::{FromWhere, HasCols, LeftSemiJoin, RawQuery, RightSemiJoin, Table as QbTable};
 use crate::table::IndexAlgo;
-use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, ViewContext};
+use crate::{
+    sys, AnonymousViewContext, IterBuf, MigrationContext, ReducerContext, ReducerResult, SpacetimeType, Table,
+    ViewContext,
+};
 use spacetimedb_lib::bsatn::EncodeError;
 use spacetimedb_lib::db::raw_def::v10::{
-    CaseConversionPolicy, ExplicitNames as RawExplicitNames, RawEnvironmentDeclarationV10, RawModuleDefV10Builder,
+    CaseConversionPolicy, ExplicitNames as RawExplicitNames, RawEnvironmentDeclarationV10, RawMigrationDefV10, RawModuleDefV10Builder,
 };
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableType, ViewResultHeader};
@@ -13,7 +16,7 @@ use spacetimedb_lib::de::{self, Deserialize, DeserializeOwned, Error as _, SeqPr
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, ProductTypeElement};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
-use spacetimedb_lib::{bsatn, AlgebraicType, ConnectionId, Identity, ProductType, RawModuleDef, Timestamp};
+use spacetimedb_lib::{bsatn, AlgebraicType, ConnectionId, Hash, Identity, ProductType, RawModuleDef, Timestamp};
 use spacetimedb_primitives::*;
 use std::convert::Infallible;
 use std::fmt;
@@ -742,43 +745,44 @@ pub fn register_reftype<T: SpacetimeType>() {
 
 /// Registers a describer for the `TableType` `T`.
 pub fn register_table<T: Table>() {
-    register_describer(|module| {
-        let product_type_ref = *T::Row::make_type(&mut module.inner).as_ref().unwrap();
-        if let Some(schedule) = T::SCHEDULE {
-            module.inner.add_schedule(
-                T::TABLE_NAME,
-                schedule.scheduled_at_column,
-                schedule.reducer_or_procedure_name,
-            );
-        }
+    register_describer(|module| add_table_to_module::<T>(&mut module.inner))
+}
 
-        let mut table = module
-            .inner
-            .build_table(T::TABLE_NAME, product_type_ref)
-            .with_type(TableType::User)
-            .with_access(T::TABLE_ACCESS)
-            .with_event(T::IS_EVENT);
+fn add_table_to_module<T: Table>(module: &mut RawModuleDefV10Builder) {
+    let product_type_ref = *T::Row::make_type(module).as_ref().unwrap();
+    if let Some(schedule) = T::SCHEDULE {
+        module.add_schedule(
+            T::TABLE_NAME,
+            schedule.scheduled_at_column,
+            schedule.reducer_or_procedure_name,
+        );
+    }
 
-        for &col in T::UNIQUE_COLUMNS {
-            table = table.with_unique_constraint(col);
-        }
-        for index in T::INDEXES {
-            table = table.with_index(index.algo.into(), index.source_name, index.accessor_name);
-        }
-        if let Some(primary_key) = T::PRIMARY_KEY {
-            table = table.with_primary_key(primary_key);
-        }
-        for &col in T::SEQUENCES {
-            table = table.with_column_sequence(col);
-        }
-        for col in T::get_default_col_values().iter_mut() {
-            table = table.with_default_column_value(col.col_id, col.value.clone())
-        }
+    let mut table = module
+        .build_table(T::TABLE_NAME, product_type_ref)
+        .with_type(TableType::User)
+        .with_access(T::TABLE_ACCESS)
+        .with_event(T::IS_EVENT);
 
-        table.finish();
+    for &col in T::UNIQUE_COLUMNS {
+        table = table.with_unique_constraint(col);
+    }
+    for index in T::INDEXES {
+        table = table.with_index(index.algo.into(), index.source_name, index.accessor_name);
+    }
+    if let Some(primary_key) = T::PRIMARY_KEY {
+        table = table.with_primary_key(primary_key);
+    }
+    for &col in T::SEQUENCES {
+        table = table.with_column_sequence(col);
+    }
+    for col in T::get_default_col_values().iter_mut() {
+        table = table.with_default_column_value(col.col_id, col.value.clone())
+    }
 
-        module.inner.add_explicit_names(T::explicit_names());
-    })
+    table.finish();
+
+    module.add_explicit_names(T::explicit_names());
 }
 
 impl From<IndexAlgo<'_>> for RawIndexAlgorithm {
@@ -897,6 +901,49 @@ where
 
         module.inner.add_explicit_names(I::explicit_names());
     })
+}
+
+pub trait MigrationModule {
+    const HASH: Hash;
+    fn invoke() -> ReducerResult;
+    fn describe_tables(migration: &mut MigrationBuilder);
+}
+
+pub struct MigrationBuilder {
+    inner: RawModuleDefV10Builder,
+}
+
+impl MigrationBuilder {
+    pub fn add_table<T: Table>(&mut self) {
+        add_table_to_module::<T>(&mut self.inner)
+    }
+}
+
+pub fn register_migration<T: MigrationModule>() {
+    register_describer(|module| {
+        let mut migration = MigrationBuilder {
+            inner: Default::default(),
+        };
+        T::describe_tables(&mut migration);
+        module.inner.add_migration(RawMigrationDefV10 {
+            schema_hash: T::HASH,
+            dropped: migration.inner.finish(),
+        });
+        module.functions.migrations.push(T::invoke);
+    });
+}
+
+pub fn invoke_migration<T, F, R>(dropped: T, f: F) -> ReducerResult
+where
+    T: MigrationModule,
+    F: Fn(&MigrationContext<T>) -> R,
+    R: IntoReducerResult,
+{
+    let ctx = MigrationContext {
+        db: crate::Local {},
+        dropped,
+    };
+    f(&ctx).into_result()
 }
 
 /// Registers a row-level security policy.
@@ -1027,6 +1074,8 @@ struct ModuleFunctions {
     views: Vec<ViewFn>,
     /// The anonymous views of the module.
     views_anon: Vec<AnonymousFn>,
+    /// The migrations of the module.
+    migrations: Vec<MigrationFn>,
 }
 
 // Not actually a mutex; because WASM is single-threaded this basically just turns into a refcell.
@@ -1048,6 +1097,8 @@ pub type ViewFn = fn(ViewContext, &[u8]) -> Vec<u8>;
 
 /// An anonymous view function takes in `(AnonymousViewContext, Args)` and returns a Vec of bytes.
 pub type AnonymousFn = fn(AnonymousViewContext, &[u8]) -> Vec<u8>;
+
+pub type MigrationFn = fn() -> Result<(), Box<str>>;
 
 /// Called by the host when the module is initialized
 /// to describe the module into a serialized form that is returned.
@@ -1370,6 +1421,13 @@ extern "C" fn __call_view__(
         &with_read_args(args, |args| views[id](ViewContext::new(sender), args)),
     );
     2
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn __call_migration__(id: usize, _args: BytesSource, sink: BytesSink) -> i16 {
+    let migrations = &FUNCTIONS.get().unwrap().migrations;
+    let res = migrations[id]();
+    convert_err_to_errno(res, sink)
 }
 
 /// Run `logic` with `args` read from the host into a `&[u8]`.
