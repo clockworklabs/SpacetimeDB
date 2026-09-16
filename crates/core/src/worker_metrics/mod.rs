@@ -224,6 +224,13 @@ pub fn record_module_host_init_failure(database_identity: Identity, cause: Modul
         .inc();
 }
 
+pub fn record_module_host_unexpected_exit(database_identity: Identity) {
+    WORKER_METRICS
+        .module_host_unexpected_exits
+        .with_label_values(&database_identity)
+        .inc();
+}
+
 /// Records at most one disconnect cause for a single accepted websocket client.
 #[derive(Clone, Debug)]
 pub struct ClientDisconnectRecorder {
@@ -552,6 +559,11 @@ metrics_group!(
         #[labels(database_identity: Identity, cause: str)]
         pub module_host_init_failures: IntCounterVec,
 
+        #[name = spacetime_module_host_unexpected_exits_total]
+        #[help = "The cumulative number of unexpected module host exits"]
+        #[labels(database_identity: Identity)]
+        pub module_host_unexpected_exits: IntCounterVec,
+
         #[name = spacetime_reducer_wait_time_sec]
         #[help = "The amount of time (in seconds) a reducer spends in the queue waiting to run"]
         #[labels(db: Identity, reducer: str)]
@@ -570,6 +582,11 @@ metrics_group!(
         #[labels(db: Identity, function: str)]
         #[buckets(0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30, 60, 300)]
         pub scheduled_function_delay: HistogramVec,
+
+        #[name = spacetime_scheduler_active_scheduled_functions]
+        #[help = "The number of scheduled functions dispatched by the scheduler and not yet completed"]
+        #[labels(db: Identity)]
+        pub scheduler_active_scheduled_functions: IntGaugeVec,
 
         #[name = spacetime_worker_wasm_instance_errors_total]
         #[help = "The number of fatal WASM instance errors, such as reducer panics."]

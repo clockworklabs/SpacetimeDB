@@ -1083,13 +1083,14 @@ describe('reconnect regressions', () => {
     }
   );
 
-  test('legacy sockets still emit both error and close events', async () => {
+  test('established legacy socket errors are reported through disconnect', async () => {
     const harness = build({ automaticReconnect: false });
     await establish(harness);
-    harness.factory.current.error(new Error('network error'));
-    harness.factory.current.close();
-    expect(harness.connectErrors).toHaveLength(1);
-    expect(harness.disconnects).toHaveLength(1);
+    const error = new Error('network error');
+    harness.factory.current.error(error);
+    expect(harness.factory.current.closed).toBe(true);
+    expect(harness.connectErrors).toHaveLength(0);
+    expect(harness.disconnects).toEqual([{ error }]);
   });
 
   test.each([1002, 1003, 1007, 1008])(

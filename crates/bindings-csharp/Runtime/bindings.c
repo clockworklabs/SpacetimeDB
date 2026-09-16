@@ -135,6 +135,10 @@ IMPORT(Status, datastore_clear,
        (table_id, count));
 #undef SPACETIME_MODULE_VERSION
 
+#define SPACETIME_MODULE_VERSION "spacetime_10.6"
+IMPORT(Status, env_get, (const uint8_t* key, uint32_t key_len, BytesSource* source), (key, key_len, source));
+#undef SPACETIME_MODULE_VERSION
+
 #ifndef EXPERIMENTAL_WASM_AOT
 static MonoClass* ffi_class;
 
@@ -150,10 +154,10 @@ PREINIT(10, startup) {
   _start();
 
   ffi_class = mono_wasm_assembly_find_class(
-      mono_wasm_assembly_load("SpacetimeDB.Runtime.dll"),
-      "SpacetimeDB.Internal", "Module");
+      mono_wasm_assembly_load("StdbModule.dll"),
+      "", "ModuleRegistration");
   assert(ffi_class &&
-         "FFI export class (SpacetimeDB.Internal.Module) not found");
+         "FFI export class (ModuleRegistration) not found");
 }
 
 #define EXPORT_WITH_MONO_RES(ret, res_code, name, params, args...)            \

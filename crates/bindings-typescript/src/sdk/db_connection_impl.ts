@@ -215,10 +215,10 @@ function errorFromEvent(value: unknown, fallbackMessage: string): Error {
       return error;
     }
     if (typeof message === 'string' && message.length > 0) {
-      return new Error(message);
+      return new Error(message, { cause: value });
     }
   }
-  return new Error(fallbackMessage);
+  return new Error(fallbackMessage, { cause: value });
 }
 
 /**
@@ -337,6 +337,13 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    * after an intentional disconnect.
    */
   isDisconnectRequested = false;
+
+  /**
+   * The websocket error that ended an established connection, if any,
+   * normalized to `Error`. Passed to the `disconnect` emit so `onDisconnect`
+   * callbacks receive the documented `error?: Error` shape.
+   */
+  #connectionError?: Error = undefined;
 
   /**
    * Whether the underlying websocket has entered `CLOSING` (2) or `CLOSED`
@@ -615,7 +622,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           this.#emitter.emit(
             isErrorEvent ? 'connectError' : 'disconnect',
             this,
-            isErrorEvent ? error : undefined
+            isErrorEvent ? error : this.#connectionError
           );
         } else if (this.#socketEstablished) {
           this.#handleConnectionLoss(error);
@@ -651,8 +658,17 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           : new Error(message);
         handleLoss(error, false);
       };
-      ws.onerror = event =>
-        handleLoss(errorFromEvent(event, 'WebSocket error'), true);
+      ws.onerror = event => {
+        if (!isCurrent()) return;
+        const error = errorFromEvent(event, 'WebSocket error');
+        if (!this.#automaticReconnect && this.#hasEverConnected) {
+          this.isActive = false;
+          this.#connectionError = error;
+          ws.close();
+          return;
+        }
+        handleLoss(error, true);
+      };
       ws.onopen = () => {
         if (isCurrent()) this.#handleOnOpen();
       };

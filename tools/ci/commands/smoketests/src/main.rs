@@ -144,8 +144,11 @@ fn run_binary_build(mut cmd: Command, failure_message: &str) -> Result<()> {
     // Remove cargo/rust env vars that could cause fingerprint mismatches
     // when the test later runs cargo build from a different environment
     for (key, _) in env::vars() {
-        let should_remove = (key.starts_with("CARGO") && key != "CARGO_HOME" && key != "CARGO_TARGET_DIR")
-            || key.starts_with("RUST")
+        let should_remove = (key.starts_with("CARGO")
+            && key != "CARGO_HOME"
+            && key != "CARGO_TARGET_DIR"
+            && key != "CARGO_INCREMENTAL")
+            || (key.starts_with("RUST") && key != "RUSTC_WRAPPER")
             // > The environment variable `__CARGO_FIX_YOLO` is an undocumented, internal-use-only feature
             // > for the Rust cargo fix command (and cargo clippy --fix) that forces the application of all
             // > available suggestions, including those that are marked as potentially incorrect or dangerous.
