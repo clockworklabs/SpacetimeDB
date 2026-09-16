@@ -6,7 +6,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using static Utils;
 
-record NamespaceDeclaration(string AssemblyIdentity, string Accessor, string Name)
+record NamespaceDeclaration(string AssemblyIdentity, string Accessor)
 {
     public string AccessorIdentifier => EscapeIdentifier(Accessor);
 
@@ -23,8 +23,7 @@ record NamespaceDeclaration(string AssemblyIdentity, string Accessor, string Nam
         if (attributeType is null)
             return new(result.ToImmutable());
         var identities = new Dictionary<string, AttributeData>(StringComparer.Ordinal);
-        var names = new Dictionary<string, AttributeData>(StringComparer.OrdinalIgnoreCase);
-        var accessors = new Dictionary<string, AttributeData>(StringComparer.Ordinal);
+        var accessors = new Dictionary<string, AttributeData>(StringComparer.OrdinalIgnoreCase);
         var tables = new HashSet<string>(tableAccessors, StringComparer.Ordinal);
         var supported = compilation.SyntaxTrees.Any(tree =>
             tree.Options is CSharpParseOptions options
@@ -73,9 +72,6 @@ record NamespaceDeclaration(string AssemblyIdentity, string Accessor, string Nam
                 attribute.NamedArguments.FirstOrDefault(a => a.Key == "Accessor").Value.Value
                     as string
                 ?? "";
-            var name =
-                attribute.NamedArguments.FirstOrDefault(a => a.Key == "Name").Value.Value as string
-                ?? "";
             // Keywords are stored unescaped and escaped only when rendering C#.
             if (
                 accessor.Length == 0
@@ -88,25 +84,25 @@ record NamespaceDeclaration(string AssemblyIdentity, string Accessor, string Nam
             )
                 Error("Accessor must be a nonempty C# identifier (use keyword names without '@').");
 
-            // Keep database names separate from C# identifier/keyword rules.
+            // The accessor is also the database namespace, so both sets of rules apply.
             // The host remains authoritative for full Unicode identifier validation.
             if (
-                name.Length == 0
-                || !(char.IsLetter(name[0]) || name[0] == '_')
-                || name.Any(c => !(char.IsLetterOrDigit(c) || c == '_'))
-                || !name.IsNormalized(NormalizationForm.FormC)
+                accessor.Length == 0
+                || !(char.IsLetter(accessor[0]) || accessor[0] == '_')
+                || accessor.Any(c => !(char.IsLetterOrDigit(c) || c == '_'))
+                || !accessor.IsNormalized(NormalizationForm.FormC)
             )
                 Error(
-                    "Name must be a nonempty database identifier: letters, digits or underscores, starting with a letter or underscore."
+                    "Accessor must also be a nonempty database identifier: letters, digits or underscores, starting with a letter or underscore."
                 );
-            if (Encoding.UTF8.GetByteCount(name) > 63)
+            if (Encoding.UTF8.GetByteCount(accessor) > 63)
                 Error("Namespace names cannot exceed 63 UTF-8 bytes (the current host limit).");
             if (
-                name.Equals("st", StringComparison.OrdinalIgnoreCase)
-                || name.Equals("spacetimedb", StringComparison.OrdinalIgnoreCase)
-                || name.StartsWith("pg_", StringComparison.OrdinalIgnoreCase)
+                accessor.Equals("st", StringComparison.OrdinalIgnoreCase)
+                || accessor.Equals("spacetimedb", StringComparison.OrdinalIgnoreCase)
+                || accessor.StartsWith("pg_", StringComparison.OrdinalIgnoreCase)
             )
-                Error($"Namespace '{name}' is reserved.");
+                Error($"Namespace '{accessor}' is reserved.");
 
             void CheckDuplicate(Dictionary<string, AttributeData> seen, string key, string message)
             {
@@ -124,23 +120,17 @@ record NamespaceDeclaration(string AssemblyIdentity, string Accessor, string Nam
                 identity,
                 $"Assembly '{identity}' may only be mounted once."
             );
-            if (name.Length > 0)
-                CheckDuplicate(
-                    names,
-                    name,
-                    $"Namespace '{name}' is declared more than once (case-insensitive)."
-                );
             if (accessor.Length > 0)
                 CheckDuplicate(
                     accessors,
                     accessor,
-                    $"Namespace accessor '{accessor}' is declared more than once."
+                    $"Namespace accessor '{accessor}' is declared more than once (case-insensitive)."
                 );
             if (tables.Contains(accessor))
                 Error($"Namespace accessor '{accessor}' conflicts with a root table accessor.");
 
             if (valid)
-                result.Add(new(identity, accessor, name));
+                result.Add(new(identity, accessor));
         }
         return new(result.ToImmutable());
     }

@@ -142,18 +142,15 @@ fn namespace_csharp_mounted_dependencies() {
             module.call_reducer_binary("exercise", &product![]).await.unwrap();
             assert!(module.read_log(None).await.contains("namespace composition works"));
             module
-                .call_reducer_binary("auth_data.add", &product![10u32])
+                .call_reducer_binary("MyAuth.add", &product![10u32])
                 .await
                 .unwrap();
-            module
-                .call_reducer_binary("audit_data.add", &product![11u32])
-                .await
-                .unwrap();
+            module.call_reducer_binary("class.add", &product![11u32]).await.unwrap();
             assert_eq!(
                 module.call_procedure_with_args("count_users", "[]").await.unwrap(),
                 AlgebraicValue::U64(5)
             );
-            for name in ["auth_data.count_users", "audit_data.count_users"] {
+            for name in ["MyAuth.count_users", "class.count_users"] {
                 assert_eq!(
                     module.call_procedure_with_args(name, "[]").await.unwrap(),
                     AlgebraicValue::U64(2)
@@ -169,12 +166,12 @@ fn namespace_csharp_mounted_dependencies() {
                             "SELECT * FROM users",
                             "SELECT * FROM auth_users",
                             "SELECT * FROM extra_rows",
-                            "SELECT * FROM auth_data.users",
-                            "SELECT * FROM auth_data.anonymous_users",
+                            "SELECT * FROM \"MyAuth\".users",
+                            "SELECT * FROM \"MyAuth\".anonymous_users",
                             "SELECT * FROM query_users",
                             "SELECT * FROM query_users_right",
                             "SELECT * FROM query_extra",
-                            "SELECT * FROM auth_data.query_users",
+                            "SELECT * FROM \"MyAuth\".query_users",
                         ]
                         .map(Box::<str>::from)
                         .into(),
