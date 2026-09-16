@@ -6,6 +6,8 @@
 // and clippy misunderstands `#[allow]` attributes in macro-expansions.
 #![allow(clippy::too_many_arguments)]
 
+mod fake_migration;
+
 use anyhow::{anyhow, Context, Result};
 use spacetimedb::{
     sats::{i256, u256},
