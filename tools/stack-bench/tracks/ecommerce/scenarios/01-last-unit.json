@@ -4,7 +4,7 @@
   "track": "ecommerce",
   "name": "Storefront and warehouse — last-unit accounting",
   "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
-  "note": "Draft: updated observations require matching reference and defect-control qualification.",
+  "note": "Draft: per-warehouse stored-stock assertions require matching reference and defect-control qualification.",
   "features": [
     {
       "id": 201,
@@ -47,9 +47,11 @@
         {
           "id": "201a",
           "category": "production",
-          "desc": "after six customers try to buy the last three units, all observed clients show exactly zero stock",
+          "desc": "after six customers try to buy the last three units, each warehouse stores zero stock and all observed clients show zero stock",
           "points": 1,
           "steps": [
+            { "do": "dbExpectStock", "item": "Air Purifier", "warehouse": "East", "equals": 0 },
+            { "do": "dbExpectStock", "item": "Air Purifier", "warehouse": "West", "equals": 0 },
             {
               "do": "expectNumber",
               "actor": "a",
@@ -65,7 +67,7 @@
               "numeric": true
             }
           ],
-          "provenBy": "The existing three-stack L1 qualification catches the declared oversell or missing-reservation defect at this assertion. The new focused suite must pass its own repeated Docker qualification before promotion.",
+          "provenBy": "Prior qualification covers the client observations only. The added stored-stock observations need matching three-stack reference and defect-control evidence before promotion.",
           "statedBy": "stock may never go negative, and two customers must never both get the last unit"
         },
         {

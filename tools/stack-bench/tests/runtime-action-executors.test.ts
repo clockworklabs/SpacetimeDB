@@ -104,6 +104,30 @@ test('stock observations compare authoritative quantities and cannot use a missi
   assert.equal((await run({ do: 'dbExpectStock', item: 'Keyboard', equals: 18 }, disabled)).status, 'inconclusive');
 });
 
+test('contention checks reject negative warehouse stock even when the total is correct', async () => {
+  for (const [file, criterionId, good, bad] of [
+    ['01-last-unit.json', '201a', [0, 0], [1, -1]],
+    ['01-restock-race.json', '202a', [51, 51], [103, -1]],
+  ] as const) {
+    const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios', file);
+    const criterion = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source })
+      .features.flatMap(feature => feature.criteria).find(check => check.id === criterionId)!;
+    const steps = criterion.steps.filter(step => step.do === 'dbExpectStock' && step.warehouse);
+    assert.equal(steps.length, 2);
+    assert.equal(good[0] + good[1], bad[0] + bad[1]);
+    for (const quantities of [good, bad]) {
+      const results = await Promise.all(steps.map(step => run(step, {
+        clock: { sleep }, 'browser-observation': { recorded: new Map() },
+        'database-read': { getStock: async ({ warehouse }: { warehouse: string }) => ({
+          quantity: quantities[warehouse === 'East' ? 0 : 1],
+        }) },
+      })));
+      assert.equal(results.every(result => result.status === 'passed'), quantities === good);
+      if (quantities === bad) assert(results.some(result => result.status === 'failed'));
+    }
+  }
+});
+
 test('timed observations use the original origin and a missed window is unmeasured', async () => {
   const recorded = new Map<string, number>();
   const waits: number[] = [];

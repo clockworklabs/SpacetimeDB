@@ -4,7 +4,7 @@
   "track": "ecommerce",
   "name": "Storefront and warehouse — restock during purchases",
   "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
-  "note": "Draft: updated observations require matching reference and defect-control qualification.",
+  "note": "Draft: per-warehouse stored-stock bounds require matching reference and defect-control qualification.",
   "features": [
     {
       "id": 202,
@@ -339,6 +339,8 @@
               "relativeTo": "stored-before-rush",
               "plus": 2
             },
+            { "do": "dbExpectStock", "item": "Bluetooth Speaker", "warehouse": "East", "atLeast": 0 },
+            { "do": "dbExpectStock", "item": "Bluetooth Speaker", "warehouse": "West", "atLeast": 0 },
             {
               "do": "reload",
               "actor": "a",
