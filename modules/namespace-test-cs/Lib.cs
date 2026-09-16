@@ -1,7 +1,7 @@
 using SpacetimeDB;
 
-[assembly: Namespace(typeof(AuthLib.Marker), Accessor = "MyAuth", Name = "auth_data")]
-[assembly: Namespace(typeof(AuditLib.Marker), Accessor = "class", Name = "audit_data")]
+[assembly: Namespace(typeof(AuthLib.Marker), Accessor = "MyAuth")]
+[assembly: Namespace(typeof(AuditLib.Marker), Accessor = "class")]
 
 namespace NamespaceRoot;
 

@@ -2616,7 +2616,7 @@ public class Module : IIncrementalGenerator
                     .ToDictionary(m => m.AssemblyIdentity, StringComparer.Ordinal);
                 bool IsChild(AssemblyDeclaration assembly) =>
                     mountByIdentity.TryGetValue(assembly.Identity, out var mount)
-                    && !mount.Name.Equals("public", StringComparison.OrdinalIgnoreCase);
+                    && !mount.Accessor.Equals("public", StringComparison.OrdinalIgnoreCase);
                 var unmountedAssemblies = assemblies.Where(a => !IsChild(a)).ToArray();
                 var mountedAssemblies = assemblies.Where(IsChild).ToArray();
                 var registrationOrder = unmountedAssemblies.Concat(mountedAssemblies).ToArray();
@@ -2624,7 +2624,7 @@ public class Module : IIncrementalGenerator
                     context.ReportDiagnostic(ErrorDescriptor.DependencyNamespaceMounts.ToDiag(assembly.Identity));
                 foreach (var assembly in mountedAssemblies.Where(a => a.LifecycleReducers.Length != 0))
                     context.ReportDiagnostic(ErrorDescriptor.MountedLifecycleReducers.ToDiag(
-                        (assembly.Identity, mountByIdentity[assembly.Identity].Name, assembly.LifecycleReducers)));
+                        (assembly.Identity, mountByIdentity[assembly.Identity].Accessor, assembly.LifecycleReducers)));
 
                 string GenerateDispatchRouting(string category, string arguments, string unknownId)
                 {
@@ -2704,7 +2704,7 @@ public class Module : IIncrementalGenerator
                     "global::SpacetimeDB.Internal.Module.InstallNamespaces(new global::SpacetimeDB.Internal.NamespaceRegistry("
                     + SymbolDisplay.FormatLiteral(assemblyContext.Identity, true) + ", new global::System.Collections.Generic.KeyValuePair<string, string>[] {"
                     + string.Join(",", mountByIdentity.Values.Select(m =>
-                        $"new({SymbolDisplay.FormatLiteral(m.AssemblyIdentity, true)}, {SymbolDisplay.FormatLiteral(m.Name, true)})")) + "}));",
+                        $"new({SymbolDisplay.FormatLiteral(m.AssemblyIdentity, true)}, {SymbolDisplay.FormatLiteral(m.Accessor, true)})")) + "}));",
                     $"global::{extensionNamespaceName}.AssemblyDescriptor.Register(global::SpacetimeDB.Internal.Module.RootBuilder);"
                 };
                 foreach (var assembly in unmountedAssemblies)
@@ -2714,7 +2714,7 @@ public class Module : IIncrementalGenerator
                     var assembly = mountedAssemblies[i];
                     compositionRegistration.Add($"var child{i} = new global::SpacetimeDB.Internal.ModuleBuilder();");
                     compositionRegistration.Add($"{assembly.DescriptorTypeName}.Register(child{i}, global::SpacetimeDB.Internal.Module.RootBuilder);");
-                    compositionRegistration.Add($"global::SpacetimeDB.Internal.Module.RootBuilder.RegisterSubmodule({SymbolDisplay.FormatLiteral(mountByIdentity[assembly.Identity].Name, true)}, child{i});");
+                    compositionRegistration.Add($"global::SpacetimeDB.Internal.Module.RootBuilder.RegisterSubmodule({SymbolDisplay.FormatLiteral(mountByIdentity[assembly.Identity].Accessor, true)}, child{i});");
                 }
 
                 if (settings.Array.Length > 1)
