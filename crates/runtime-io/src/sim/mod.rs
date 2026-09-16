@@ -111,7 +111,7 @@ impl SimulatorIO {
     fn submit<T, U>(
         &self,
         sqe: Sqe<usize>,
-        completion: impl FnOnce(Rc<spin::Mutex<PendingCompletions>>, usize) -> Completion<Result<U, Error>>,
+        completion: impl FnOnce(Arc<spin::Mutex<PendingCompletions>>, usize) -> Completion<Result<U, Error>>,
         completion_handle: impl FnOnce(CompletionState<Result<T, Error>>) -> CompletionHandle,
     ) -> Completion<Result<U, Error>> {
         let mut executor = self.inner.executor.lock();
@@ -130,10 +130,10 @@ impl SimulatorIO {
         }
     }
 
-    fn submit_with<B: AlignedBytes + 'static>(
+    fn submit_with<B: AlignedBytes + Send + 'static>(
         &self,
         sqe: Sqe<usize>,
-        completion: impl FnOnce(Rc<spin::Mutex<PendingCompletions>>, usize) -> Completion<ReadWriteResult<B, Error>>,
+        completion: impl FnOnce(Arc<spin::Mutex<PendingCompletions>>, usize) -> Completion<ReadWriteResult<B, Error>>,
         completion_handle: impl FnOnce(CompletionState<Result<ErasedBox, ErrorWith<Error, ErasedBox>>>) -> CompletionHandle,
     ) -> Completion<ReadWriteResult<B, Error>> {
         let mut executor = self.inner.executor.lock();
@@ -171,13 +171,13 @@ impl SimulatorIO {
 
 struct SimulatorInner {
     executor: spin::Mutex<Executor<usize>>,
-    pending: Rc<spin::Mutex<PendingCompletions>>,
+    pending: Arc<spin::Mutex<PendingCompletions>>,
 }
 
 impl SimulatorInner {
     fn with_options(options: Options) -> Self {
         Self {
-            pending: Rc::new(spin::Mutex::new(PendingCompletions::with_capacity(
+            pending: Arc::new(spin::Mutex::new(PendingCompletions::with_capacity(
                 options.cq_capacity(),
             ))),
             executor: spin::Mutex::new(Executor::new(options)),

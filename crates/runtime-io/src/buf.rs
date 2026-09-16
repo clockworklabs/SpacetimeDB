@@ -71,7 +71,7 @@ pub struct ErasedBox {
 
 impl ErasedBox {
     /// Create an [ErasedBox] from boxed [AlignedBytes]..
-    pub fn from_aligned<B: AlignedBytes + 'static>(b: Box<B>) -> Self {
+    pub fn from_aligned<B: AlignedBytes + Send + 'static>(b: Box<B>) -> Self {
         let () = B::ASSERT_VALID_LAYOUT;
 
         let ptr = Box::into_raw(b);
@@ -84,7 +84,7 @@ impl ErasedBox {
     }
 
     /// Reify `B` via casting.
-    pub fn into_aligned<B: AlignedBytes + 'static>(self) -> Box<B> {
+    pub fn into_aligned<B: AlignedBytes + Send + 'static>(self) -> Box<B> {
         assert_eq!(self.len, size_of::<B>());
         assert_eq!(self.ty, TypeId::of::<B>());
 
@@ -121,6 +121,10 @@ impl Drop for ErasedBox {
         unsafe { alloc::alloc::dealloc(self.ptr.as_ptr(), self.layout) }
     }
 }
+
+// SAFETY: [ErasedBox] is `Send` because it can only be constructed from a
+// `Send` [AlignedBuffer].
+unsafe impl Send for ErasedBox {}
 
 #[cfg(test)]
 mod tests {

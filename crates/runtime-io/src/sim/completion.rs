@@ -4,7 +4,7 @@ use core::{
     task::{Context, Poll, Waker},
 };
 
-use alloc::{boxed::Box, rc::Rc};
+use alloc::{boxed::Box, sync::Arc};
 use slab::Slab;
 
 use crate::{
@@ -255,8 +255,8 @@ impl<T> Completion<T> {
     }
 }
 
-impl<T: AlignedBytes + 'static> Completion<Result<Box<T>, ErrorWith<Error, Box<T>>>> {
-    pub(super) fn write(pending: Rc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
+impl<T: AlignedBytes + Send + 'static> Completion<Result<Box<T>, ErrorWith<Error, Box<T>>>> {
+    pub(super) fn write(pending: Arc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
         CompletionInner::Poll {
             pending,
             key,
@@ -274,7 +274,7 @@ impl<T: AlignedBytes + 'static> Completion<Result<Box<T>, ErrorWith<Error, Box<T
         .into()
     }
 
-    pub(super) fn read(pending: Rc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
+    pub(super) fn read(pending: Arc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
         CompletionInner::Poll {
             pending,
             key,
@@ -294,7 +294,7 @@ impl<T: AlignedBytes + 'static> Completion<Result<Box<T>, ErrorWith<Error, Box<T
 }
 
 impl Completion<Result<fs::File, Error>> {
-    pub(super) fn open(pending: Rc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
+    pub(super) fn open(pending: Arc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
         CompletionInner::Poll {
             pending,
             key,
@@ -312,7 +312,7 @@ impl Completion<Result<fs::File, Error>> {
         .into()
     }
 
-    pub(super) fn create(pending: Rc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
+    pub(super) fn create(pending: Arc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
         CompletionInner::Poll {
             pending,
             key,
@@ -332,7 +332,7 @@ impl Completion<Result<fs::File, Error>> {
 }
 
 impl Completion<Result<Statx, Error>> {
-    pub(super) fn stat(pending: Rc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
+    pub(super) fn stat(pending: Arc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
         CompletionInner::Poll {
             pending,
             key,
@@ -352,7 +352,7 @@ impl Completion<Result<Statx, Error>> {
 }
 
 impl Completion<Result<(), Error>> {
-    pub(super) fn fallocate(pending: Rc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
+    pub(super) fn fallocate(pending: Arc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
         CompletionInner::Poll {
             pending,
             key,
@@ -370,7 +370,7 @@ impl Completion<Result<(), Error>> {
         .into()
     }
 
-    pub(super) fn fsync(pending: Rc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
+    pub(super) fn fsync(pending: Arc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
         CompletionInner::Poll {
             pending,
             key,
@@ -388,7 +388,7 @@ impl Completion<Result<(), Error>> {
         .into()
     }
 
-    pub(super) fn fdatasync(pending: Rc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
+    pub(super) fn fdatasync(pending: Arc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
         CompletionInner::Poll {
             pending,
             key,
@@ -407,7 +407,7 @@ impl Completion<Result<(), Error>> {
     }
 
     #[allow(unused)]
-    pub(super) fn noop(pending: Rc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
+    pub(super) fn noop(pending: Arc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
         CompletionInner::Poll {
             pending,
             key,
@@ -438,7 +438,7 @@ impl<T> From<CompletionInner<T>> for Completion<T> {
 /// If it is not present, then the future was polled to completion already.
 enum CompletionInner<T> {
     Poll {
-        pending: Rc<spin::Mutex<PendingCompletions>>,
+        pending: Arc<spin::Mutex<PendingCompletions>>,
         key: usize,
         poll: fn(spin::MutexGuard<'_, PendingCompletions>, usize, &mut Context<'_>) -> Poll<T>,
     },
@@ -501,7 +501,7 @@ impl<T> Future for Completion<T> {
     }
 }
 
-fn reify<T: AlignedBytes + 'static>(
+fn reify<T: AlignedBytes + Send + 'static>(
     result: Result<ErasedBox, ErrorWith<Error, ErasedBox>>,
 ) -> Result<Box<T>, ErrorWith<Error, Box<T>>> {
     match result {
