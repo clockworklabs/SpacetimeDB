@@ -264,6 +264,50 @@ describe('DbConnection', () => {
     expect(client.isActive).toBe(false);
   });
 
+  test('routes websocket error after connect to onDisconnect as an Error', async () => {
+    const onDisconnectPromise = new Deferred<void>();
+    const wsAdapter = new WebsocketTestAdapter();
+    let connectErrorCalled = false;
+    let disconnectError: Error | undefined;
+
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.openWebSocket)
+      .onConnectError(() => {
+        connectErrorCalled = true;
+      })
+      .onDisconnect((_ctx, error) => {
+        disconnectError = error;
+        onDisconnectPromise.resolve();
+      })
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'a-token',
+        connectionId: ConnectionId.random(),
+      })
+    );
+
+    // Browser-style ErrorEvent shape: not an instanceof Error.
+    wsAdapter.error({
+      type: 'error',
+      message: 'mid-stream failure',
+    } as unknown as Error);
+
+    await onDisconnectPromise.promise;
+
+    expect(connectErrorCalled).toBe(false);
+    expect(wsAdapter.closed).toBe(true);
+    expect(client.isActive).toBe(false);
+    expect(disconnectError).toBeInstanceOf(Error);
+    expect(disconnectError!.message).toBe('mid-stream failure');
+  });
+
   test('call onConnect callback after getting an identity', async () => {
     const onConnectPromise = new Deferred<void>();
 

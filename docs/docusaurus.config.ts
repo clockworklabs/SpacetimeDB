@@ -3,6 +3,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 import rehypeShiki, { RehypeShikiOptions } from '@shikijs/rehype';
 import bash from 'shiki/langs/bash.mjs';
 import c from 'shiki/langs/c.mjs';
+import cmake from 'shiki/langs/cmake.mjs';
 import csharp from 'shiki/langs/csharp.mjs';
 import fsharp from 'shiki/langs/fsharp.mjs';
 import json from 'shiki/langs/json.mjs';
@@ -158,6 +159,7 @@ const config: Config = {
                   toml,
                   python,
                   c,
+                  cmake,
                   cpp,
                   protobuf,
                   fsharp,
@@ -181,11 +183,11 @@ const config: Config = {
   themeConfig: {
     navbar: {
       logo: {
-        alt: 'SpacetimeDB Logo',
-        src: '/images/brand.svg',
+        alt: 'Spacetime Logo',
+        src: 'https://spacetimedb.com/images/brand.svg',
         href: 'https://spacetimedb.com',
         target: '_self',
-        width: 152,
+        width: 133,
         height: 32,
       },
       hideOnScroll: false,

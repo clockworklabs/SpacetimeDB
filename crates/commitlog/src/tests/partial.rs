@@ -30,6 +30,25 @@ fn panics_on_partial_write() {
     }
 }
 
+#[test]
+#[should_panic(expected = "failed to write commit")]
+fn panics_on_partial_buffer_write() {
+    enable_logging();
+
+    let mut log = open_log_with_options::<[u8; 32]>(
+        ShortMem::new(800),
+        Options {
+            max_segment_size: 1024,
+            write_buffer_size: 64,
+            ..<_>::default()
+        },
+    );
+    for i in 0..20 {
+        info!("commit {i}");
+        log.commit([(i, [b'z'; 32])]).expect("unexpected `Err` result");
+    }
+}
+
 fn fill_log(mut log: commitlog::Generic<ShortMem, [u8; 32]>, range: Range<TxOffset>) {
     debug!("writing range {range:?}");
 
@@ -167,14 +186,17 @@ fn first_commit_in_last_segment_corrupt() {
 }
 
 fn open_log<T>(repo: ShortMem) -> commitlog::Generic<ShortMem, T> {
-    commitlog::Generic::open(
+    open_log_with_options(
         repo,
         Options {
             max_segment_size: 1024,
             ..Options::default()
         },
     )
-    .unwrap()
+}
+
+fn open_log_with_options<T>(repo: ShortMem, options: Options) -> commitlog::Generic<ShortMem, T> {
+    commitlog::Generic::open(repo, options).unwrap()
 }
 
 const ENOSPC: i32 = 28;

@@ -7,6 +7,8 @@ SDK_PATH="$(realpath "$SDK_PATH")"
 STDB_PATH="$SDK_PATH/../.."
 DOTNET_VERSION="${1:-}"
 
+cd "$STDB_PATH"
+
 GLOBAL_JSON_BACKUPS=()
 
 expected_global_json_symlink_target() {
@@ -81,7 +83,6 @@ if [ -n "$DOTNET_VERSION" ]; then
     BUILD_OPTIONS+=("--build-options=--dotnet-version $DOTNET_VERSION")
 fi
 
-cargo build --manifest-path "$STDB_PATH/crates/standalone/Cargo.toml"
-cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/client/module_bindings" --module-path "$SDK_PATH/examples~/regression-tests/server" "${BUILD_OPTIONS[@]}"
-cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/republishing/client/module_bindings" --module-path "$SDK_PATH/examples~/regression-tests/republishing/server-republish" "${BUILD_OPTIONS[@]}"
-cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/procedure-client/module_bindings" --module-path "$STDB_PATH/modules/sdk-test-procedure" "${BUILD_OPTIONS[@]}"
+cargo spacetime generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/client/module_bindings" --module-path "$SDK_PATH/examples~/regression-tests/server" "${BUILD_OPTIONS[@]}"
+cargo spacetime generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/republishing/client/module_bindings" --module-path "$SDK_PATH/examples~/regression-tests/republishing/server-republish" "${BUILD_OPTIONS[@]}"
+cargo spacetime generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/procedure-client/module_bindings" --module-path "$STDB_PATH/modules/sdk-test-procedure" "${BUILD_OPTIONS[@]}"

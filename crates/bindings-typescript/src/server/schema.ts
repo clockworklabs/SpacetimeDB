@@ -1,3 +1,4 @@
+import { environmentDeclarations, type EnvironmentSchema } from './environment';
 import { moduleHooks, type ModuleDefaultExport } from 'spacetime:sys@2.0';
 import {
   CaseConversionPolicy,
@@ -322,6 +323,9 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     const rawDef = this.buildRawModuleDefV10(exports, {
       ignoreNonModuleExports: true,
     });
+    if (this.#ctx.moduleDef.environment.length !== 0) {
+      throw new TypeError('Submodules cannot declare environment variables');
+    }
     this.#ctx.resolveHttpRoutes();
     return {
       rawDef,
@@ -747,7 +751,11 @@ export type InferSchema<SchemaDef extends Schema<any>> =
 /**
  * Module-level settings that can be passed to `schema()`.
  */
-export interface ModuleSettings {
+export interface ModuleSettings<
+  E extends EnvironmentSchema = EnvironmentSchema,
+> {
+  /** Declared strings installed only through publishing; omitted means empty. */
+  env?: E;
   /**
    * The case conversion policy for this module.
    * Defaults to `SnakeCase` if not specified.
@@ -825,11 +833,17 @@ function registerModuleExports(
   }
 }
 
-export function schema<const H extends Record<string, SchemaEntry>>(
+export function schema<
+  const H extends Record<string, SchemaEntry>,
+  const E extends EnvironmentSchema = {},
+>(
   entries: H,
-  moduleSettings?: ModuleSettings
-): Schema<SchemaDefForEntries<H>> {
-  const ctx = new SchemaInner<SchemaDefForEntries<H>>(ctx => {
+  moduleSettings?: ModuleSettings<E>
+): Schema<SchemaDefForEntries<H> & { env: E }> {
+  const ctx = new SchemaInner<SchemaDefForEntries<H> & { env: E }>(ctx => {
+    ctx.moduleDef.environment = environmentDeclarations(
+      moduleSettings?.env ?? {}
+    );
     // Apply module settings.
     if (moduleSettings?.CASE_CONVERSION_POLICY != null) {
       ctx.setCaseConversionPolicy(moduleSettings.CASE_CONVERSION_POLICY);
@@ -884,7 +898,10 @@ export function schema<const H extends Record<string, SchemaEntry>>(
         });
       }
     }
-    return { tables: tableSchemas } as SchemaDefForEntries<H>;
+    return {
+      tables: tableSchemas,
+      env: moduleSettings?.env ?? {},
+    } as SchemaDefForEntries<H> & { env: E };
   });
 
   return new Schema(ctx);

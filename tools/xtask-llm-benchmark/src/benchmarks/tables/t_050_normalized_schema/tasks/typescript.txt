@@ -1,0 +1,18 @@
+Write a SpacetimeDB backend module in TypeScript that normalizes organization data into three related tables.
+
+TABLES
+- organization (public)
+  - id: u64 (primary key, auto increment)
+  - name: string
+- department (public)
+  - id: u64 (primary key, auto increment)
+  - organizationId: u64
+  - name: string
+  - index byOrganization: btree(organizationId)
+- employee (public)
+  - id: u64 (primary key, auto increment)
+  - departmentId: u64
+  - name: string
+  - index byDepartment: btree(departmentId)
+
+Do not use nested arrays. No reducers are required.

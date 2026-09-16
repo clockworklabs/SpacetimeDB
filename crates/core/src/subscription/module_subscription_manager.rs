@@ -1479,7 +1479,8 @@ impl SubscriptionManager {
                 let table_name = plan.subscribed_table_name().clone();
                 match eval_delta(tx, &mut acc.metrics, plan) {
                     Err(err) => {
-                        tracing::error!(
+                        // TODO: Redirect subscription query errors attributable to user SQL to guest logs.
+                        tracing::warn!(
                             message = "Query errored during tx update",
                             sql = qstate.query.sql,
                             reason = ?err,
@@ -1636,7 +1637,8 @@ impl SubscriptionManager {
 
                 match eval_delta(tx, &mut acc.metrics, plan) {
                     Err(err) => {
-                        tracing::error!(
+                        // TODO: Redirect subscription query errors attributable to user SQL to guest logs.
+                        tracing::warn!(
                             message = "Query errored during tx update",
                             sql = qstate.query.sql,
                             reason = ?err,

@@ -1,0 +1,14 @@
+Write a SpacetimeDB backend module in TypeScript that performs outbound HTTP in a procedure.
+
+TYPES
+- FetchSummary
+  - status: u16
+  - htmlContentType: bool
+  - hasExampleDomain: bool
+
+PROCEDURE
+- fetch_page_summary(url: string) -> FetchSummary
+  - Perform an outbound GET to the supplied public URL
+  - Set status from the response status
+  - Set htmlContentType based on whether Content-Type contains "text/html"
+  - Set hasExampleDomain based on whether the body contains "Example Domain"

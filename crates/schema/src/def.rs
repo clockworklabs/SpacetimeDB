@@ -18,6 +18,7 @@
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Write};
 use std::hash::Hash;
+use std::sync::LazyLock;
 
 use crate::error::{IdentifierError, ValidationErrors};
 use crate::identifier::{Identifier, NamespacePath, NamespacedIdentifier};
@@ -44,6 +45,7 @@ use spacetimedb_lib::db::raw_def::v9::{
     RawUniqueConstraintDataV9, RawViewDefV9, TableAccess, TableType,
 };
 use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
+use spacetimedb_lib::environment::EnvironmentSchema;
 use spacetimedb_lib::{ProductType, RawModuleDef};
 use spacetimedb_primitives::{
     ColId, ColList, ColOrCols, ColSet, HttpHandlerId, ProcedureId, ReducerId, TableId, ViewFnPtr,
@@ -179,6 +181,9 @@ pub struct ModuleDef {
 
     /// Submodules, keyed by the namespace they are registered under.
     submodules: IndexMap<Identifier, ModuleDef>,
+
+    /// `None` means undeclared; an explicitly empty declaration is `Some(empty)`.
+    environment: Option<EnvironmentSchema>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -190,6 +195,20 @@ pub enum RawModuleDefVersion {
 }
 
 impl ModuleDef {
+    /// The validated root environment schema. Legacy modules have an empty schema.
+    pub fn environment(&self) -> &EnvironmentSchema {
+        static EMPTY: LazyLock<EnvironmentSchema> = LazyLock::new(EnvironmentSchema::default);
+        match &self.environment {
+            Some(schema) => schema,
+            None => &EMPTY,
+        }
+    }
+
+    /// Whether the raw module explicitly required environment support.
+    pub fn environment_declared(&self) -> bool {
+        self.environment.is_some()
+    }
+
     /// The raw module definition version this module was authored under.
     pub fn raw_module_def_version(&self) -> RawModuleDefVersion {
         self.raw_module_def_version
@@ -823,15 +842,27 @@ impl ModuleDef {
 
     /// Look up a procuedure by its id, returning `None` if it doesn't exist.
     pub fn get_procedure_by_id(&self, id: ProcedureId) -> Option<&ProcedureDef> {
+        self.get_procedure_by_id_with_module(id).map(|(_, def, _)| def)
+    }
+
+    /// Resolve a flattened wire ID to its host-qualified name, definition and
+    /// owning module. Procedure definitions store local names and type refs.
+    pub fn get_procedure_by_id_with_module(
+        &self,
+        id: ProcedureId,
+    ) -> Option<(NamespacedIdentifier, &ProcedureDef, &ModuleDef)> {
         let idx = id.idx();
         if idx < self.procedures.len() {
-            return self.procedures.get_index(idx).map(|(_, def)| def);
+            return self
+                .procedures
+                .get_index(idx)
+                .map(|(_, def)| (self.path.join(def.name.clone()), def, self));
         }
         let mut offset = self.procedures.len();
         for submodule in self.submodules.values() {
             let count = submodule.procedure_count();
             if idx < offset + count {
-                return submodule.get_procedure_by_id(ProcedureId::from(idx - offset));
+                return submodule.get_procedure_by_id_with_module(ProcedureId::from(idx - offset));
             }
             offset += count;
         }
@@ -986,6 +1017,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
             http_routes: _,
             raw_module_def_version: _,
             submodules: _,
+            environment: _,
         } = val;
 
         // Extract column defaults from tables before consuming tables
@@ -1046,9 +1078,13 @@ impl From<ModuleDef> for RawModuleDefV10 {
             http_routes,
             raw_module_def_version: _,
             submodules,
+            environment,
         } = val;
 
         let mut sections = Vec::new();
+        if let Some(environment) = environment {
+            sections.push(RawModuleDefV10Section::Environment(environment.into_declarations()));
+        }
         let mut explicit_names = ExplicitNames::default();
 
         sections.push(RawModuleDefV10Section::Typespace(typespace));

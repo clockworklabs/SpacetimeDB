@@ -1,0 +1,29 @@
+Write a SpacetimeDB backend module in C# that defines a public view joining three normalized tables.
+
+TABLES
+- Customer (public, accessor Customer)
+  - Fields:
+    - Id: ulong (primary key)
+    - Name: string
+- Purchase (public, accessor Purchase)
+  - Fields:
+    - Id: ulong (primary key)
+    - CustomerId: ulong (btree index)
+- LineItem (public, accessor LineItem)
+  - Fields:
+    - Id: ulong (primary key)
+    - PurchaseId: ulong (btree index)
+    - Sku: string
+    - Visible: bool (btree index)
+
+REDUCERS
+- Seed()
+  - Insert one complete visible Customer -> Purchase -> LineItem chain
+  - Use Customer Id 1 named "Ada"
+  - Use Purchase Id 10 for Customer 1
+  - Use visible LineItem Id 100 for Purchase 10 with Sku "SKU-1"
+
+VIEW
+- OrderLineDetail (anonymous procedural, public)
+  - Returns rows with LineId: ulong, CustomerName: string, and Sku: string
+  - Return only rows connected through matching Customer, Purchase, and LineItem IDs

@@ -1,0 +1,14 @@
+Write a SpacetimeDB backend module in Rust that writes reducer results to a table.
+
+TABLE
+- command_result (public), struct CommandResult
+  - Fields:
+    - request_id: String (primary key)
+    - success: bool
+    - message: String
+
+REDUCERS
+- run_command(request_id: String, value: i32)
+  - Reducers do not return application data
+  - Insert a command_result row with success set to true
+  - Set message to "value=<value>" using the supplied value

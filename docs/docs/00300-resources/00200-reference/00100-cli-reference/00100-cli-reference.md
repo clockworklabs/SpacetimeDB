@@ -11,6 +11,9 @@ This document contains the help content for the `spacetime` command-line program
 
 * [`spacetime`↴](#spacetime)
 * [`spacetime publish`↴](#spacetime-publish)
+* [`spacetime env`↴](#spacetime-env)
+* [`spacetime env get`↴](#spacetime-env-get)
+* [`spacetime env list`↴](#spacetime-env-list)
 * [`spacetime delete`↴](#spacetime-delete)
 * [`spacetime logs`↴](#spacetime-logs)
 * [`spacetime call`↴](#spacetime-call)
@@ -48,6 +51,7 @@ This document contains the help content for the `spacetime` command-line program
 ###### **Subcommands:**
 
 * `publish` — Create and update a SpacetimeDB database
+* `env` — Inspect published database environment variables
 * `delete` — Deletes a SpacetimeDB database
 * `logs` — Prints logs from a SpacetimeDB database
 * `call` — Invokes a function (reducer or procedure) in a database. WARNING: This command is UNSTABLE and subject to breaking changes.
@@ -82,7 +86,7 @@ Create and update a SpacetimeDB database
 
 **Usage:** `spacetime publish [OPTIONS] [name|identity]`
 
-Run `spacetime help publish` for more detailed information.
+Publishing preserves unspecified environment values. Put an env map in spacetime.json in order to specify variables in config. Explicit keys which are not declared in the module are allowed. Declared shell variables override config values (including empty strings). The CLI displays supplied keys and sources. --env-only updates an existing database's environment without publishing the module. --unset-env explicitly removes a previously published environment variable, unless the variable is declared required by the currently published module. --replace-env replaces all stored values with the supplied set, including deleting unspecified undeclared keys, and cannot be combined with --unset-env. The host validates the resulting environment atomically against the declared module. --env selects which config file to use.
 
 ###### **Arguments:**
 
@@ -132,8 +136,71 @@ Run `spacetime help publish` for more detailed information.
 
 * `--no-config` — Ignore spacetime.json configuration
 * `--env <ENV>` — Environment name for config file layering (e.g., dev, staging)
-* `--native-aot` — Use NativeAOT-LLVM compilation for C# modules (experimental, Windows only)
+* `--native-aot` — Use NativeAOT-LLVM compilation for C# modules (experimental; supported on Windows, and on Linux with .NET 10)
 * `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.
+* `--env-only` — Update environment values without building or uploading a module.
+* `--unset-env <KEY>` — Delete an environment value. Repeat for multiple keys.
+* `--replace-env` — Replace all environment values, deleting every unspecified key.
+
+
+
+## `spacetime env`
+
+Inspect published database environment variables
+
+**Usage:** `spacetime env <COMMAND>`
+
+###### **Subcommands:**
+
+* `get` — Read one published environment value
+* `list` — List published environment keys and values
+
+
+
+## `spacetime env get`
+
+Read one published environment value
+
+**Usage:** `spacetime env get [OPTIONS] <database> <key>`
+
+###### **Arguments:**
+
+* `<KEY>` — The stored environment key to read
+* `<DATABASE>` — The database name, identity, or configured target
+
+###### **Options:**
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server
+* `--anonymous` — Perform this action with an anonymous identity
+* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--confirmed <CONFIRMED>` — Instruct the server to deliver only updates of confirmed transactions
+
+  Possible values: `true`, `false`
+
+* `--no-config` — Ignore project configuration when resolving the database target
+
+
+
+## `spacetime env list`
+
+List published environment keys and values
+
+**Usage:** `spacetime env list [OPTIONS] <database>`
+
+###### **Arguments:**
+
+* `<DATABASE>` — The database name, identity, or configured target
+
+###### **Options:**
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server
+* `--anonymous` — Perform this action with an anonymous identity
+* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--confirmed <CONFIRMED>` — Instruct the server to deliver only updates of confirmed transactions
+
+  Possible values: `true`, `false`
+
+* `--no-config` — Ignore project configuration when resolving the database target
 
 
 
@@ -268,6 +335,7 @@ Start development mode with auto-regenerate client module bindings, auto-rebuild
 
 * `-t`, `--template <TEMPLATE>` — Template ID or GitHub repository (owner/repo or URL) for project initialization
 * `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.
+* `--native-aot` — Build C# projects with NativeAOT-LLVM. Ignored with .NET 10 because NativeAOT-LLVM is always used.
 * `--run <COMMAND>` — Command to run the client development server (overrides spacetime.json config)
 * `--server-only` — Only run the server (module) without starting the client
 * `--no-config` — Ignore spacetime.json configuration
@@ -324,6 +392,7 @@ Run `spacetime help mcp` for more detailed information.
 
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
 * `--anonymous` — Perform this action with an anonymous identity
+* `--no-config` — Ignore spacetime.json configuration
 
 
 
@@ -345,6 +414,7 @@ Run `spacetime rename --help` for more detailed information.
 * `--to <NEW-NAME>` — The new name you would like to assign
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server on which to set the name
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--no-config` — Ignore spacetime.json configuration
 
 
 
@@ -399,6 +469,7 @@ Lists the databases attached to an identity. WARNING: This command is UNSTABLE a
 
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server from which to list databases
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `--no-config` — Ignore spacetime.json configuration
 
 
 
@@ -465,7 +536,7 @@ Initializes a new spacetime project.
 * `-t`, `--template <TEMPLATE>` — Template ID or GitHub repository (owner/repo or URL)
 * `--local` — Use local deployment instead of Maincloud
 * `--non-interactive` — Run in non-interactive mode
-* `--native-aot` — Configure C# project for NativeAOT-LLVM compilation (experimental, Windows only)
+* `--native-aot` — Configure C# project for NativeAOT-LLVM compilation (experimental; supported on Windows, and on Linux with .NET 10)
 * `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Defaults to 10 except on macOS or when only .NET 8 is installed.
 
 
@@ -740,4 +811,3 @@ Run `spacetime version --help` to see all options.
     This document was generated automatically by
     <a href="https://crates.io/crates/clap-markdown"><code>clap-markdown</code></a>.
 </i></small>
-

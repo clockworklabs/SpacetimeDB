@@ -14,6 +14,10 @@ struct Cli {}
 
 fn main() -> Result<()> {
     Cli::parse();
+    let use_prebuilt_runtime = std::env::var_os("SPACETIME_BIN").is_some();
+    if use_prebuilt_runtime {
+        ci_common::require_runtime()?;
+    }
 
     pnpm(["build"]).dir("crates/bindings-typescript").run()?;
 
@@ -53,18 +57,20 @@ fn main() -> Result<()> {
     .run()?;
     // The SDK test harness uses the same child-process server guard as smoketests,
     // which expects release CLI/standalone binaries to already exist.
-    cmd!(
-        "cargo",
-        "build",
-        "--release",
-        "-p",
-        "spacetimedb-cli",
-        "-p",
-        "spacetimedb-standalone",
-        "--features",
-        "spacetimedb-standalone/allow_loopback_http_for_tests",
-    )
-    .run()?;
+    if !use_prebuilt_runtime {
+        cmd!(
+            "cargo",
+            "build",
+            "--release",
+            "-p",
+            "spacetimedb-cli",
+            "-p",
+            "spacetimedb-standalone",
+            "--features",
+            "spacetimedb-standalone/allow_loopback_http_for_tests",
+        )
+        .run()?;
+    }
     // SDK procedure tests intentionally make localhost HTTP requests.
     cmd!(
         "cargo",
@@ -123,6 +129,20 @@ fn main() -> Result<()> {
     cmd!("dotnet", "test", "-warnaserror")
         .dir("crates/bindings-csharp")
         .run()?;
+    cmd!(
+        "bash",
+        "crates/bindings-cpp/tests/compile/run-compile-tests.sh",
+        "--suite",
+        "http-handlers",
+    )
+    .run()?;
+    cmd!(
+        "bash",
+        "crates/bindings-cpp/tests/compile/run-compile-tests.sh",
+        "--suite",
+        "indexes",
+    )
+    .run()?;
 
     Ok(())
 }

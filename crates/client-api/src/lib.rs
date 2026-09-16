@@ -146,7 +146,8 @@ impl Host {
             .await
             .map_err(|_| (StatusCode::NOT_FOUND, "module not found".to_string()))?;
 
-        tracing::debug!(sql = body);
+        // Environment SQL contains values; routine request logs must omit them.
+        tracing::debug!(sql_bytes = body.len(), "executing SQL");
         let mut header = vec![];
         let sql_start = std::time::Instant::now();
         let sql_span = tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty,);
@@ -164,7 +165,8 @@ impl Host {
         )
         .await
         .map_err(|e| {
-            log::warn!("{e}");
+            // Parser diagnostics can quote values. Return them only to the caller.
+            log::debug!("SQL request rejected");
             (StatusCode::BAD_REQUEST, e.to_string())
         })?;
 
@@ -193,15 +195,31 @@ impl Host {
         Ok(json)
     }
 
+    pub async fn environment_metadata(
+        &self,
+    ) -> anyhow::Result<spacetimedb_client_api_messages::publish::EnvironmentMetadata> {
+        self.host_controller.environment_metadata(self.replica_id).await
+    }
+
     pub async fn update(
         &self,
         database: Database,
         host_type: HostType,
         program_bytes: Box<[u8]>,
         policy: MigrationPolicy,
+        environment: spacetimedb_lib::environment::EnvironmentUpdate,
+        expected_module_version: Option<spacetimedb_lib::Hash>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         self.host_controller
-            .update_module_host(database, host_type, self.replica_id, program_bytes, policy)
+            .update_module_host(
+                database,
+                host_type,
+                self.replica_id,
+                program_bytes,
+                policy,
+                environment,
+                expected_module_version,
+            )
             .await
     }
 }
@@ -213,6 +231,11 @@ pub struct DatabaseDef {
     pub database_identity: Identity,
     /// The compiled program of the database module.
     pub program_bytes: Bytes,
+    /// Supplied overrides, never persisted in the public Database record.
+    pub environment: std::collections::BTreeMap<String, String>,
+    pub environment_remove: Vec<String>,
+    pub environment_replace: bool,
+    pub expected_module_version: Option<spacetimedb_lib::Hash>,
     /// The desired number of replicas the database shall have.
     ///
     /// If `None`, the edition default is used.
@@ -230,6 +253,9 @@ pub struct DatabaseDef {
 pub struct DatabaseResetDef {
     pub database_identity: Identity,
     pub program_bytes: Option<Bytes>,
+    pub environment: std::collections::BTreeMap<String, String>,
+    pub environment_remove: Vec<String>,
+    pub environment_replace: bool,
     pub num_replicas: Option<NonZeroU8>,
     pub host_type: Option<HostType>,
 }
@@ -638,7 +664,8 @@ impl<T: Authorization> Authorization for Arc<T> {
     }
 }
 
+// TODO: Review each caller and split this helper by the appropriate log severity.
 pub fn log_and_500(e: impl std::fmt::Display) -> ErrorResponse {
-    log::error!("internal error: {e:#}");
+    log::warn!("internal error: {e:#}");
     (StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")).into()
 }

@@ -1,13 +1,13 @@
 Write a SpacetimeDB backend module in TypeScript that defines a user table and a stats table, with a reducer that counts total users and active users without collecting into an array.
 
 TABLES
-- user
+- user (private)
   - Fields:
     - id: number (u64, primary key, autoInc)
     - name: string
     - active: boolean
 
-- user_stats
+- user_stats (private)
   - Fields:
     - key: string (primary key)
     - count: number (u64)
