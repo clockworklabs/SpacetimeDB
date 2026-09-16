@@ -266,6 +266,7 @@ export interface SheetAttempt {
   timeSec: number | null;
   executionStartedAt: string | null;
   executionCompletedAt: string | null;
+  executionCost?: CostEvidence;
   spend: CostEvidence;
   spendPending: boolean;
   completion: CheckCompletion | null;
@@ -453,6 +454,7 @@ function sheetAttemptView(plan: CompiledCampaignPlan, state: CampaignAttemptStat
       timeSec: metrics?.duration ?? null,
       executionStartedAt: execution?.startedAt ?? null,
       executionCompletedAt: execution?.completedAt ?? null,
+      executionCost: inspected.cost,
       spend: inspected.spend,
       spendPending: inspected.status === 'running' || inspected.status === 'pending',
       completion: inspected.completion,

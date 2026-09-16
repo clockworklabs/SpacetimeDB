@@ -55,7 +55,7 @@ test('campaign separates aggregate scores from selected evidence and explains pe
   assert.doesNotMatch(selected, /82%|9 \/ 10|Questline average/);
   assert.match(page, /Valid runs/);
   const metricsTable = page.split('<table class="sheet">')[1]!.split('</table>')[0]!;
-  for (const label of ['Cost per valid run', 'Weighted score', 'Before repairs', 'Regressions', 'Time', 'Valid runs', 'Excluded', 'Total spend']) {
+  for (const label of ['Cost per valid run', 'Weighted score', 'First builds', 'Regressions', 'Active time', 'Valid runs', 'Excluded', 'Total spend']) {
     assert.ok(metricsTable.includes(label), `${label} belongs in the comparison table`);
   }
   assert.match(metricsTable, /\$6\.00/);

@@ -100,7 +100,7 @@ function levelRows(stacks: readonly SheetStack[]): string {
       return `<td><div class="q"><span class="v">${points
         ? ratio(points.score, points.max) : DASH}</span></div></td>`;
     }).join('');
-    return `<tr><th scope="row" class="q k">L${level.level} ${kind === 'unaided' ? 'before repairs' : 'score'}</th>${cells}</tr>`;
+    return `<tr><th scope="row" class="q k">L${level.level} ${kind === 'unaided' ? 'first build' : 'score'}</th>${cells}</tr>`;
   }).join('')).join('');
 }
 
@@ -201,12 +201,12 @@ export function campaignPage(input: CampaignPageInput): string {
   const help: Record<string, string> = {
     'Checks passed': 'Median percentage of selected checks passed, across valid completed runs.',
     'Weighted score': 'Median score weighted by check points, across valid completed runs.',
-    'Before repairs': 'First build at each level. Earlier fixes and feedback are retained.',
+    'First builds': 'Summed first-build points across levels. Earlier fixes and feedback are retained; this is not an unaided run.',
     Regressions: 'Median count of previously passing checks that later failed, across valid completed runs.',
     'Valid runs': 'Completed runs with usable evidence; not necessarily all checks passed.',
     Excluded: 'Invalid or incomplete evidence. Spend is retained in Total spend.',
-    Time: 'Median duration of valid completed runs.',
-    'Cost per valid run': 'Mean exact spend of valid completed runs with matching scope.',
+    'Active time': 'Median measured-run time, excluding recorded provider waits and operator pauses. Run Elapsed shows wall time.',
+    'Cost per valid run': 'Mean exact measured-run cost, including explicit resume history. Independent failed retries remain in Total spend.',
     'Total spend': 'All runs, including excluded. ~ estimate; ≤ upper bound. Pinned prices.',
   };
   const row = (label: string, render: (stack: SheetStack) => string): string =>
@@ -231,9 +231,9 @@ export function campaignPage(input: CampaignPageInput): string {
     + row('Checks passed', stack => `<div class="big">${pct(stack.completionRate === null ? null : 100 * stack.completionRate)}</div>`)
     + row('Cost per valid run', stack => value(stack.costPerValidRun === null ? (stack.n ? 'Unknown' : 'Awaiting valid runs') : `$${stack.costPerValidRun.toFixed(2)}`))
     + row('Weighted score', stack => value(pct(stack.score)))
-    + (showRepairs ? row('Before repairs', stack => value(pct(stack.unaided))) : '')
+    + (showRepairs ? row('First builds', stack => value(pct(stack.unaided))) : '')
     + row('Regressions', stack => value(num(stack.regressions)))
-    + row('Time', stack => value(duration(stack.timeSec)))
+    + row('Active time', stack => value(duration(stack.timeSec)))
     + repetitions
     + row('Total spend', stack => value(spend(stack.spend, stack.spendPending, stack.liveSpend)))
     + '</tbody></table></div>'

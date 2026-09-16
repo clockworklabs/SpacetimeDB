@@ -9,7 +9,7 @@ test('score charts explain missing grades and preserve circular marker geometry'
   const html = bigClimb(series, String);
   assert.match(html, /preserveAspectRatio="xMidYMid meet"/);
   assert.match(html, /1 \/ 2 points/);
-  assert.match(html, /Before repairs at this level; earlier fixes and feedback retained/);
+  assert.match(html, /First build at this level; earlier fixes and feedback retained/);
   assert.doesNotMatch(html, /NaN|Infinity/);
   assert.match(html, /aria-label="Score history" tabindex="0"/);
 });
@@ -172,11 +172,14 @@ test('cost chart includes excluded receipts and uses model effort labels', () =>
     status: 'invalid', excluded: 'Request failure',
     executionStartedAt: '2026-09-11T00:00:00Z',
     executionCompletedAt: '2026-09-11T00:02:00Z',
-    spend: { status: 'exact', costUsd: 3.25 },
+    executionCost: { status: 'exact', costUsd: 3.25 },
+    spend: { status: 'exact', costUsd: 9.25 },
   }] }] } as CampaignSheet;
   const html = progressChart(sheet, null, 'cost');
   assert.match(html, /Astra.*medium.*Rep 1/);
   assert.match(html, /\$3.25/);
+  assert.doesNotMatch(html, /\$9.25/);
+  assert.match(html, /Current-execution cost/);
   assert.match(html, /data-chart-series="failed"/);
   assert.doesNotMatch(html, /Awaiting first timed cost receipt/);
   sheet.repetitions = 1;

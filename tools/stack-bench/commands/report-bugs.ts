@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { privateGradingDirectory } from '../src/evidence/repair-evidence.js';
 // Turns grading results into a behavioral BUG_REPORT.md for the fix agent.
 //
 // Report behavior and typed observations, never implementation advice. A setup
@@ -188,7 +189,7 @@ export function parseReportBugsArgs(argv: string[]): ReportBugsArgs {
   if (!args.app) {
     throw new Error('Usage: report-bugs --app <dir> [--out <file>]');
   }
-  args.results ??= join(args.app, 'stack-bench');
+  args.results ??= privateGradingDirectory(args.app);
   args.out ??= join(args.app, CODING_CONTAINER_BUG_REPORT_FILE);
   args.history ??= [];
   if (!Array.isArray(args.history)) throw new Error('--history-json must contain an array');

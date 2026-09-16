@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { privateGradingDirectory } from '../src/evidence/repair-evidence.js';
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, existsSync, rmSync, mkdirSync, mkdtempSync, readdirSync } from 'node:fs';
@@ -120,7 +121,7 @@ if (!existsSync(runPath)) {
 
 const run = readArtifactPayload<LoopRun>(runPath);
 const level = run.levels?.[0];
-const evidenceDir = join(APP, 'stack-bench');
+const evidenceDir = privateGradingDirectory(APP);
 const bundleArtifact = readArtifact(join(evidenceDir, ARTIFACT_FILE.gradeBundle),
   { expectedKind: 'grade_bundle' });
 const lintArtifact = readArtifact(join(evidenceDir, ARTIFACT_FILE.contractLint),

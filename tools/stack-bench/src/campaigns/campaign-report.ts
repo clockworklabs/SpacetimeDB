@@ -351,13 +351,39 @@ function summarize(values: Array<number | null | undefined>, dispersion: string)
     min: present[0]!, max: present.at(-1)! };
 }
 
+export function campaignFirstBuildRate(run: { levels?: Array<{ firstBuild?: { score?: number; max?: number } | null }> }): number | null {
+  const levels = run.levels ?? [];
+  if (!levels.length || levels.some(level => number(level.firstBuild?.score) === null || number(level.firstBuild?.max) === null)) return null;
+  return ratio(levels.reduce((sum, level) => sum + level.firstBuild!.score!, 0),
+    levels.reduce((sum, level) => sum + level.firstBuild!.max!, 0));
+}
+
+export function campaignActiveDurationMs(run: {
+  totals?: { durationSec?: number | null; pausedDurationSec?: number | null };
+  levels?: Array<{ sessionTotals?: { providerThrottle?: { waitedMs?: number } } }>;
+}): number | null {
+  if (number(run.totals?.durationSec) === null) return null;
+  const wait = (run.levels ?? []).reduce((sum, level) => sum + (number(level.sessionTotals?.providerThrottle?.waitedMs) ?? 0), 0);
+  return Math.max(0, run.totals!.durationSec! * 1000 - wait - (number(run.totals?.pausedDurationSec) ?? 0) * 1000);
+}
+
+// Independent failed executions belong to campaign spend, not measured-run cost.
+export function campaignMeasuredRunCost(run: unknown, runs: readonly unknown[], seen = new Set<string>()): CostEvidence {
+  if (!isRecord(run)) return { status: 'unknown', costUsd: null };
+  if (!run.progressionResume) return runCostEvidence(run, 'execution');
+  const priorId = isRecord(run.progressionResume) ? run.progressionResume.priorRunId : null;
+  if (typeof priorId !== 'string' || seen.has(priorId)) return { status: 'unknown', costUsd: null };
+  const prior = runs.find(candidate => isRecord(candidate) && candidate.id === priorId);
+  if (!prior) return { status: 'unknown', costUsd: null };
+  seen.add(priorId);
+  return sumCostEvidence([runCostEvidence(run, 'execution'), campaignMeasuredRunCost(prior, runs, seen)]);
+}
+
 export function campaignRunMetrics(run: BenchmarkRun): Record<string, number | null> {
   const cost = runCostEvidence(run);
   const levels = run.levels ?? [];
   const completeFirstBuild = levels.length > 0 && levels.every(level =>
     number(level.firstBuild?.score) !== null && number(level.firstBuild?.max) !== null);
-  const firstScore = completeFirstBuild
-    ? levels.reduce((total, level) => total + level.firstBuild!.score!, 0) : null;
   const firstMax = completeFirstBuild
     ? levels.reduce((total, level) => total + level.firstBuild!.max!, 0) : null;
   const correctionNeeded = completeFirstBuild
@@ -391,16 +417,12 @@ export function campaignRunMetrics(run: BenchmarkRun): Record<string, number | n
         number(run.progressionStatus?.score?.uniqueChecks?.availablePoints)) : null;
   // Time spent waiting for the provider to lift a rate limit is recorded per
   // session and is not the stack's or the agent's to answer for.
-  const throttleWaitMs = levels.reduce((total, level) =>
-    total + (number(level.sessionTotals?.providerThrottle?.waitedMs) ?? 0), 0);
-  const durationMs = number(run.totals?.durationSec) === null
-    ? null : Math.max(0, (run.totals!.durationSec! * 1000) - throttleWaitMs
-      - (number(run.totals?.pausedDurationSec) ?? 0) * 1000);
+  const durationMs = campaignActiveDurationMs(run);
   return {
     checkCompletionRate: run.progressionStatus !== undefined && !terminal ? null
       : run.progressionStatus?.score?.completion?.rate
         ?? run.checkpoints?.findLast(checkpoint => checkpoint.accepted)?.completion.rate ?? null,
-    firstBuildScoreRate: ratio(firstScore, firstMax),
+    firstBuildScoreRate: campaignFirstBuildRate(run),
     finalScoreRate: progressionScore === undefined
       ? ratio(number(run.totals?.score), number(run.totals?.max))
       : ratio(progressionScore, 100),
@@ -899,15 +921,7 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
     const accepted = latestRun?.checkpoints?.findLast(checkpoint => checkpoint.accepted);
     const outcomes = new Map<string, CheckStatus>((accepted?.checks ?? []).map(check => [check.id, check.status]));
     const completion = latestRun?.progressionStatus?.score?.completion ?? checkCompletion(selected, outcomes);
-    const costForRun = (run: BenchmarkRun, seen = new Set<string>()): CostEvidence => {
-      if (!run.progressionResume) return runCostEvidence(run, 'execution');
-      const priorId = run.progressionResume.priorRunId;
-      const prior = [...runs.values()].find(candidate => candidate.id === priorId);
-      if (!prior || seen.has(priorId)) return { status: 'unknown', costUsd: null };
-      seen.add(priorId);
-      return sumCostEvidence([runCostEvidence(run, 'execution'), costForRun(prior, seen)]);
-    };
-    const validCost = latestRun ? costForRun(latestRun) : undefined;
+    const validCost = latestRun ? campaignMeasuredRunCost(latestRun, [...runs.values()]) : undefined;
     const metrics = latest?.status === 'completed' ? { ...latest.metrics,
       totalCostUsd: validCost?.status === 'exact' ? validCost.costUsd : null,
       totalCostUpperBoundUsd: validCost?.status === 'upper-bound' ? validCost.costUsd : null } : null;
@@ -973,7 +987,9 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
       'Usage in USD comes from retained receipts at the recorded API rates. Upper bounds remain marked; unknown spend is not zero. These are API-equivalent costs, not invoices.',
       'knownCostUsd sums available exact amounts and upper bounds. With bounded or unknown executions, it is not exact spend and must not be assumed to be a lower bound.',
       'Group costs are not allocated when one coding session covers several groups. No token spend is attributed by guessing.',
-      'Durations exclude time spent waiting for the provider to lift a rate limit.',
+      'Comparison durations are active time: wall duration minus recorded provider waits and operator pauses. Raw execution timestamps remain available.',
+      'First-build score sums first-build points across depths. Earlier repairs and feedback remain in later builds; this is not fully unaided performance.',
+      'Measured-run cost includes the latest execution and explicit resume ancestry. Independent failed retries remain in all-execution spend.',
       'Results describe only the agents and model ids recorded per attempt. They do not generalize to other agents.',
       ...(plan.agents.some(agent => agent.adapter === 'reference-fixture')
         ? ['Reference-fixture attempts use hand-written apps and make no model calls. They do not measure model implementation ability or comparative token efficiency.'] : []),

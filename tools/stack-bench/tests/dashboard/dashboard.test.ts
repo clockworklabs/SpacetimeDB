@@ -101,7 +101,8 @@ test('dashboard run progress reports only completed grades while the next repair
 test('dashboard compares the declared stack treatments but separates changed models, guidance, and scope', () => {
   const inspected = inspectCampaignSummary(join(shared.completed, 'campaigns', 'fixture-run-0'));
   const attempts = inspected.attempts.map(attempt => ({ ...attempt,
-    spend: { status: 'exact' as const, costUsd: 1 } }));
+    spend: { status: 'exact' as const, costUsd: 1 },
+    measuredCost: { status: 'exact' as const, costUsd: 1 } }));
   const comparison = compareCampaign({ attempts });
   assert.equal(comparison.rows.length, 3);
   assert.equal(comparison.mixedScope, false);

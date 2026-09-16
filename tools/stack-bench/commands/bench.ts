@@ -53,7 +53,7 @@ import { materializationAppFailure, materializeAcceptedSource, restoreRepairSour
 import { compareRepairBaseline, createRepairGrant } from '../src/runtime/repair-grant.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { contractInterfaceNames } from '../src/composition/agent-visible-contract.js';
-import { clearPrivateGradingEvidence, levelGradeIsUsable, repairEvidenceDecision,
+import { clearPrivateGradingEvidence, privateGradingDirectory, levelGradeIsUsable, repairEvidenceDecision,
   repairHistoryEntry, repairProgressState, repairRegressionDecision,
   restorePrivateGradingEvidence }
   from '../src/evidence/repair-evidence.js';
@@ -684,7 +684,7 @@ export function gradeArgv(
     '--run-index', String(args.runIndex),
     '--parent-attempt-id', parentAttemptId,
     '--observation', observation,
-    ...(out ? ['--out', out] : []),
+    '--out', privateGradingDirectory(appDir, out),
     ...(sourceSha256 ? ['--source-sha256', sourceSha256] : []),
     ...(args.recipe ? ['--recipe', args.recipe] : []),
     ...(task ? ['--recipe-task-json', JSON.stringify(task.request)] : []),
@@ -704,9 +704,9 @@ export function gradeArgv(
 }
 
 export function archiveCandidateGrade(appDir: string, outputDir: string, label: string): void {
-  const gradingDirectory = join(appDir, 'stack-bench');
+  const gradingDirectory = privateGradingDirectory(appDir);
   if (!existsSync(gradingDirectory)) return;
-  cpSync(gradingDirectory, join(outputDir, 'candidate-grades', label), {
+  cpSync(gradingDirectory, privateGradingDirectory(appDir, join(outputDir, 'candidate-grades', label)), {
     recursive: true,
     filter: source => !/[\\/]media([\\/]|$)/.test(source),
   });
@@ -735,12 +735,12 @@ function grade(
   parentAttemptId: string,
   options: GradeOptions = {},
 ): GradeBundlePayload | null {
-  const { out = null } = options;
+  const out = privateGradingDirectory(appDir, options.out);
   const source = hashAppSource(appDir);
   const argv = gradeArgv(args, appDir, url, label, level, track, parentAttemptId, {
     ...options, sourceSha256: options.sourceSha256 ?? source.sha256,
   });
-  const bundle = join(out ?? join(appDir, 'stack-bench'), ARTIFACT_FILE.gradeBundle);
+  const bundle = join(out, ARTIFACT_FILE.gradeBundle);
   rmSync(bundle, { force: true });
   const task = options.recipeTask ?? args.recipeTasks?.get(level);
   const currentChecks = checksForGrade(task, options.observation);
@@ -1263,6 +1263,7 @@ async function main() {
   const ownWorkDir = !args.app;
   const appDir = args.app ?? join(workDirFor(track, args.backend, args.runIndex, runId), 'app');
   if (args.app) mkdirSync(appDir, { recursive: true });
+  privateGradingDirectory(appDir, join(outputDir, 'grading'));
   if (args.repairGrant && url.startsWith('file:')) {
     url = pathToFileURL(join(appDir, 'index.html')).href;
   }
@@ -2097,7 +2098,7 @@ async function main() {
       sessions: RunSessionRecord[], accepted: boolean): void => {
       if (!args.condition?.requested?.levels.length || !measured.source?.sha256
         || !measured.selection?.sha256) return;
-      const source = join(appDir, 'stack-bench', ARTIFACT_FILE.gradeBundle);
+      const source = join(privateGradingDirectory(appDir), ARTIFACT_FILE.gradeBundle);
       const evidence = readArtifactPayload<GradeBundlePayload>(source, { expectedKind: 'grade_bundle' });
       if (evidence.source?.sha256 !== measured.source.sha256
         || evidence.selection?.sha256 !== measured.selection.sha256) {
@@ -2379,7 +2380,7 @@ async function main() {
       ? `baseline-l${level}${featureActionSuffix}-grading`
       : `first-build-l${level}${featureActionSuffix}-grading`;
     try {
-      const gradingFrom = join(appDir, 'stack-bench');
+      const gradingFrom = privateGradingDirectory(appDir);
       if (existsSync(gradingFrom)) {
         const gradingTo = join(args.out, acceptedGradingDirectory);
         cpSync(gradingFrom, gradingTo, {
@@ -2618,8 +2619,8 @@ async function main() {
       const acceptedSource = hashAppSource(appDir);
       snapshotSource(appDir, snapshot);
       rmSync(gradingSnapshot, { recursive: true, force: true });
-      if (existsSync(join(appDir, 'stack-bench'))) {
-        cpSync(join(appDir, 'stack-bench'), gradingSnapshot, { recursive: true });
+      if (existsSync(privateGradingDirectory(appDir))) {
+        cpSync(privateGradingDirectory(appDir), gradingSnapshot, { recursive: true });
       }
       const cleanupRepairSnapshots = () => {
         rmSync(snapshot, { recursive: true, force: true });
@@ -2694,10 +2695,8 @@ async function main() {
         }, progressionSelection, true);
       }
       if (hashAppSource(appDir).sha256 === acceptedSource.sha256) {
-        clearPrivateGradingEvidence(appDir);
-        if (existsSync(gradingSnapshot)) {
-          cpSync(gradingSnapshot, join(appDir, 'stack-bench'), { recursive: true });
-        }
+        // A source hash does not cover installed dependencies or a live process.
+        if (!await restoreAcceptedRepair(snapshot, gradingSnapshot)) break;
         const reason = 'repair made no source change';
         console.log(`    ${reason}; ${args.progression
           ? 'counting the failed attempt'

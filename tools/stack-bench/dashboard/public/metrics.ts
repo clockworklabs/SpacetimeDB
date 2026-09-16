@@ -3,7 +3,7 @@ import type { CampaignRunLevelResult, CampaignRunResult, DependencyProgress }
 import type { CostEvidence } from '../../src/evidence/cost-proof.js';
 import type { CheckCompletion } from '../../src/evidence/check-completion.js';
 
-// The dashboard's vocabulary in one place: Unaided, Score, Repairs, Regressions,
+// The dashboard's vocabulary in one place: First builds, Score, Repairs, Regressions,
 // Stalling and Excluded are defined here and nowhere else, so the server-rendered
 // sheet and the browser read the same numbers from the same evidence.
 
@@ -27,6 +27,7 @@ export interface MetricAttempt {
   result: CampaignRunResult | null;
   dependency: DependencyProgress | null;
   spend?: CostEvidence;
+  measuredCost?: CostEvidence;
   completion?: CheckCompletion | null;
   comparisonKey?: string;
 }
@@ -85,13 +86,13 @@ export function attemptMetrics(attempt: MetricAttempt): AttemptMetrics | null {
     if (score?.status !== 'final' || unique?.percentage == null) return null;
     const available = unique.availablePoints ?? 0;
     return {
-      first: dependency.history ? dependency.history.firstTryPercentage / 100 : null,
-      // Passed points over every selected point in the graph, the same scale
-      // as the first build. The questline average is the sheet's secondary view.
+      first: run.firstBuildRate ?? null,
+      // Final completion counts each selected graph point once. First builds
+      // instead sum the cumulative scored scope at each depth.
       final: unique.percentage / 100,
       repairs: dependency.history?.repairAttempts ?? 0,
-      spend: attemptSpend(attempt),
-      duration: run.durationSec ?? null,
+      spend: attempt.measuredCost?.status === 'exact' ? attempt.measuredCost.costUsd : null,
+      duration: run.activeDurationSec ?? null,
       scope: `${attempt.comparisonKey ?? ''}:dependency:${dependency.nodes.length}:${available}`,
       abortedFirst: 0,
       raw: { first: null, final: unique.passedPoints == null
@@ -111,16 +112,15 @@ export function attemptMetrics(attempt: MetricAttempt): AttemptMetrics | null {
   const firstMax = sum(scored, level => level.firstScore.max);
   const finalMax = sum(levels, level => level.finalScore.max);
   return {
-    first: firstMax ? sum(scored, level => level.firstScore.score) / firstMax : null,
+    first: run.firstBuildRate ?? null,
     final: sum(levels, level => level.finalScore.score) / finalMax,
     repairs: sum(levels, level => level.used ?? 0),
-    spend: attemptSpend(attempt),
-    duration: run.durationSec ?? null,
+    spend: attempt.measuredCost?.status === 'exact' ? attempt.measuredCost.costUsd : null,
+    duration: run.activeDurationSec ?? null,
     scope: `${attempt.comparisonKey ?? ''}:sequential:${levels.map(level => level.level).join(',')}`,
     abortedFirst,
-    // Raw sums over the same set of levels, so a first and a final score shown
-    // side by side are always out of the same total.
-    raw: { first: firstMax ? { score: sum(scored, l => l.firstScore.score), max: firstMax } : null,
+    // Do not show a partial first-build sum when the complete rate is unknown.
+    raw: { first: run.firstBuildRate != null && firstMax ? { score: sum(scored, l => l.firstScore.score), max: firstMax } : null,
       final: { score: sum(levels, l => l.finalScore.score), max: finalMax } },
   };
 }

@@ -11,6 +11,7 @@ import { createCheckEvidence } from '../src/evidence/check-evidence.js';
 import { finding } from '../src/actions/action-findings.js';
 import type { ActionEvidence } from '../src/actions/action-contract.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { privateGradingDirectory } from '../src/evidence/repair-evidence.js';
 
 const CLI = join(STACK_BENCH_ROOT, 'dist', 'commands', 'report-bugs.js');
 
@@ -39,11 +40,12 @@ interface WriteGradeOptions {
 }
 
 function writeGrade(app: string, status: EvidenceStatus, summary: string,
-  { grading = join(app, 'stack-bench'), feature = 'Accounts', points = 1,
+  { grading = privateGradingDirectory(app), feature = 'Accounts', points = 1,
     criterion = 'owner', stableKey = criterion, file = 'grading-features.json',
     url = 'http://app', consoleErrors = [], statedBy, desc, evidence: suppliedEvidence,
     setupEvidence: suppliedSetup }:
     WriteGradeOptions = {}): void {
+  mkdirSync(app, { recursive: true });
   mkdirSync(grading, { recursive: true });
   const setupEvidence = suppliedSetup ?? (suppliedEvidence?.phase === 'setup' ? suppliedEvidence
     : createCheckEvidence({ status: 'passed', code: 'completed', phase: 'setup',
@@ -138,7 +140,7 @@ test('repair feedback includes actionable runtime evidence without private artif
     assert.match(repair, /Actual:\*\* the cart-total control reads 9, expected exactly 12/);
     assert.match(repair, /5 percent discount/);
     assert.doesNotMatch(repair, /the cart survives a reload/);
-    assert.match(readFileSync(join(app, 'stack-bench', 'grading-features.json'), 'utf8'), /"equals": 12/);
+    assert.match(readFileSync(join(privateGradingDirectory(app), 'grading-features.json'), 'utf8'), /"equals": 12/);
     assert.doesNotMatch(repair, /cart total was wrong/);
     assert.doesNotMatch(repair, /Application URL|http:\/\//);
     assert.doesNotMatch(repair, /failure-buyer\.png/);
@@ -421,7 +423,8 @@ test('application setup failures become actionable repair feedback without crite
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-setup-repair-'));
   try {
     const app = join(root, 'app');
-    const grading = join(app, 'stack-bench');
+    const grading = privateGradingDirectory(app);
+    mkdirSync(app, { recursive: true });
     mkdirSync(grading, { recursive: true });
     writeArtifact(join(grading, 'bundle.json'), {
       kind: 'grade_bundle', id: 'setup-failure-bundle', identities: {},
@@ -452,7 +455,8 @@ test('contract feedback reports the clean-state observation without claiming the
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-contract-repair-'));
   try {
     const app = join(root, 'app');
-    const grading = join(app, 'stack-bench');
+    const grading = privateGradingDirectory(app);
+    mkdirSync(app, { recursive: true });
     mkdirSync(grading, { recursive: true });
     writeArtifact(join(grading, 'contract-lint.json'), {
       kind: 'contract_lint', id: 'contract-repair-lint', identities: {},
@@ -484,7 +488,8 @@ test('dependency repair feedback contains only interfaces selected for that feat
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-control-selection-'));
   try {
     const app = join(root, 'app');
-    const grading = join(app, 'stack-bench');
+    const grading = privateGradingDirectory(app);
+    mkdirSync(app, { recursive: true });
     mkdirSync(grading, { recursive: true });
     writeArtifact(join(grading, 'contract-lint.json'), {
       kind: 'contract_lint', id: 'contract-repair-lint', identities: {},
@@ -520,7 +525,7 @@ test('repair feedback states clean authority without exposing scoring history', 
       { round: 2, beforeScore: 4, beforeMax: 6, afterScore: 4,
         afterMax: 6, result: 'kept with no score gain', remainingFailures: ['accounts/owner'] },
     ];
-    const archive = join(app, 'stack-bench', 'records', 'bug-report-round2.md');
+    const archive = join(privateGradingDirectory(app), 'records', 'bug-report-round2.md');
     const reported = spawnSync(process.execPath,
       [CLI, '--app', app, '--history-json', JSON.stringify(history), '--archive', archive],
       { encoding: 'utf8' });

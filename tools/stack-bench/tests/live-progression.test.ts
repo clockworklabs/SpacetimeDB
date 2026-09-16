@@ -1,3 +1,4 @@
+import { privateGradingDirectory } from '../src/evidence/repair-evidence.js';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync }
   from 'node:fs';
@@ -210,7 +211,8 @@ test('live progression binds and persists one exact accepted action', () => {
   try {
     const appDir = join(root, 'app');
     const outputDir = join(root, 'result');
-    mkdirSync(join(appDir, 'stack-bench'), { recursive: true });
+    mkdirSync(appDir, { recursive: true });
+    mkdirSync(privateGradingDirectory(appDir), { recursive: true });
     mkdirSync(outputDir, { recursive: true });
     writeFileSync(join(appDir, 'index.js'), 'export const ready = true;\n');
 
@@ -292,7 +294,7 @@ test('live progression binds and persists one exact accepted action', () => {
       }),
       payload: grade,
     };
-    writeArtifact(join(appDir, 'stack-bench', 'bundle.json'), gradeArtifact);
+    writeArtifact(join(privateGradingDirectory(appDir), 'bundle.json'), gradeArtifact);
     mkdirSync(join(outputDir, 'grading'), { recursive: true });
     writeArtifact(join(outputDir, 'grading', 'bundle.json'), gradeArtifact);
 
@@ -531,8 +533,9 @@ test('an interrupted execution restores the saved source and resumes the next gr
         checks.map(check => ({ ...check, evidence: evidence('passed') })) }] } },
       outcome: { kind: 'passed' },
     };
-    mkdirSync(join(firstApp, 'stack-bench'), { recursive: true });
-    writeArtifact(join(firstApp, 'stack-bench', 'bundle.json'), {
+    mkdirSync(firstApp, { recursive: true });
+    mkdirSync(privateGradingDirectory(firstApp), { recursive: true });
+    writeArtifact(join(privateGradingDirectory(firstApp), 'bundle.json'), {
       kind: 'grade_bundle', id: 'grade-1',
       attempt: { id: 'grade-1', parentId: 'run-1' },
       identities: emptyArtifactIdentities({ recipe: { id: recipe.id,
@@ -689,8 +692,9 @@ test('an interrupted repair resumes with its failed evidence and regression feed
       suites: { application: { features: [{ setupEvidence: setupEvidence(), criteria: [
         { stableKey: key, points: 1, evidence: evidence('failed') },
       ] }] } } };
-    mkdirSync(join(firstApp, 'stack-bench'), { recursive: true });
-    writeArtifact(join(firstApp, 'stack-bench', 'bundle.json'), {
+    mkdirSync(firstApp, { recursive: true });
+    mkdirSync(privateGradingDirectory(firstApp), { recursive: true });
+    writeArtifact(join(privateGradingDirectory(firstApp), 'bundle.json'), {
       kind: 'grade_bundle', id: 'grade-failed',
       attempt: { id: 'grade-failed', parentId: 'run-1' },
       identities: emptyArtifactIdentities({ recipe: { id: recipe.id,
@@ -705,7 +709,7 @@ test('an interrupted repair resumes with its failed evidence and regression feed
     const repairGrade = { ...grade, selection: {
       ...grade.selection, sha256: repairSelected.grader.selectionSha256,
     } };
-    writeArtifact(join(firstApp, 'stack-bench', 'bundle.json'), {
+    writeArtifact(join(privateGradingDirectory(firstApp), 'bundle.json'), {
       kind: 'grade_bundle', id: 'grade-regression',
       attempt: { id: 'grade-regression', parentId: 'run-1' },
       identities: emptyArtifactIdentities({ recipe: { id: repairRecipe.id,
@@ -732,8 +736,9 @@ test('an interrupted repair resumes with its failed evidence and regression feed
       backend: owner.attempt.stack, identities, resumeFrom: firstOutput,
       recipeBindings: new Map([[1, binding]]),
       getRunArtifact: () => { throw new Error('grading is not part of this resume check'); } });
-    mkdirSync(join(secondApp, 'stack-bench'), { recursive: true });
-    writeFileSync(join(secondApp, 'stack-bench', 'stale.json'), '{}\n');
+    mkdirSync(secondApp, { recursive: true });
+    mkdirSync(privateGradingDirectory(secondApp), { recursive: true });
+    writeFileSync(join(privateGradingDirectory(secondApp), 'stale.json'), '{}\n');
     const restored = resumed.initialize();
     assert.equal(restored.action.type, 'repair');
     assert.equal(restored.action.level, 1);
@@ -743,8 +748,8 @@ test('an interrupted repair resumes with its failed evidence and regression feed
         report: '# Previous repair regression\n\nThe earlier account behavior stopped working.\n' });
     assert.equal(readFileSync(join(secondApp, 'index.js'), 'utf8'),
       'export const broken = true;\n');
-    assert(existsSync(join(secondApp, 'stack-bench', 'bundle.json')));
-    assert.equal(existsSync(join(secondApp, 'stack-bench', 'stale.json')), false);
+    assert(existsSync(join(privateGradingDirectory(secondApp), 'bundle.json')));
+    assert.equal(existsSync(join(privateGradingDirectory(secondApp), 'stale.json')), false);
     assert(existsSync(join(secondOutput, 'progression', 'attempt-002', 'bundle.json')));
     assert(restored.priorRun);
     const totals = restored.priorRun.payload.totals;

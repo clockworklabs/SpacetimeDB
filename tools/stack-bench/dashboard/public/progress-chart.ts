@@ -26,14 +26,15 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
         && Number.isFinite(step.value) && step.value >= 0
         ? [{ elapsed, value: step.value, upper: step.upper }] : [];
     }).sort((a, b) => a.elapsed - b.elapsed);
-    if (metric === 'cost' && attempt.spend) {
-      const total = attempt.liveSpend ?? attempt.spend.costUsd;
+    if (metric === 'cost' && attempt.executionCost) {
+      const liveTotal = track.liveCosts?.at(-1)?.costUsd;
+      const total = liveTotal ?? attempt.executionCost.costUsd;
       const end = Date.parse(attempt.executionCompletedAt ?? attempt.activityUpdatedAt ?? attempt.logUpdatedAt ?? '');
       const elapsed = (end - start) / 1000;
       if (total != null && Number.isFinite(total) && Number.isFinite(elapsed) && elapsed >= 0) {
         // The sheet owns the total; histories can arrive in a different refresh.
         while (observations.length && observations.at(-1)!.elapsed >= elapsed) observations.pop();
-        observations.push({ elapsed, value: total, upper: attempt.liveSpend === undefined && attempt.spend.status === 'upper-bound' });
+        observations.push({ elapsed, value: total, upper: liveTotal === undefined && attempt.executionCost.status === 'upper-bound' });
       }
     }
     const points = [{ elapsed: 0, value: 0, upper: false }, ...observations];
@@ -46,7 +47,7 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
   const description = metric === 'distribution'
     ? `One point per eligible completed run, grouped by stack. ${unitDescription} Running and excluded runs are not plotted.`
     : metric === 'cost'
-    ? 'Live cost estimates use reported response usage; final receipts replace estimates. Other runs show saved grade checkpoints. Includes repairs and excluded runs. Subscription costs use the pinned API-equivalent price snapshot, not invoice charges. Unknown costs are not plotted; upper bounds are labelled. Time starts at the current execution. Lines connect observations; intermediate values are not measured.'
+    ? 'Current-execution cost, including repairs and excluded runs. Earlier executions remain in Total spend; Cost per valid run also includes explicit resume history. Live estimates use reported response usage; final receipts replace estimates. Other runs show saved grade checkpoints. Subscription costs use the pinned API-equivalent price snapshot, not invoice charges. Unknown costs are not plotted; upper bounds are labelled. Time starts at the current execution. Lines connect observations; intermediate values are not measured.'
     : `${unitDescription} Each point is a saved grade. Zero marks run start. Each line is one repetition; elapsed time starts at that run. Excluded runs are labelled. Lines can fall after regressions. Intermediate values are not measured.`;
   const heading = `<div class="section-heading progress-heading"><h3>${label}${metric === 'distribution' ? '' : ' over time'}</h3><div class="chart-options"><nav aria-label="Chart metric">`
     + (['completion', 'cost', 'distribution'] as const).map(option => `<a class="chip sm${metric === option ? ' on' : ''}"${metric === option ? ' aria-current="page"' : ''} href="?questlines=${encodeURIComponent(view)}&amp;chart=${option}&amp;unit=${unit}">${option === 'distribution' ? 'Distribution' : option === 'cost' ? 'Cost' : 'Completion'}</a>`).join('') + '</nav>'

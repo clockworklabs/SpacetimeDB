@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -13,7 +13,7 @@ import { formatLevelSummary } from '../src/evidence/evidence-presentation.js';
 import type { BenchmarkRunRecord, RunLevelRecord, RunSessionRecord, RunTotalsInput } from '../src/evidence/benchmark-run.js';
 import { parseBenchArguments } from '../commands/bench-arguments.js';
 import { pristineMutationBaselinePath } from '../src/evidence/mutation-control.js';
-import { clearPrivateGradingEvidence, levelGradeIsUsable, repairEvidenceDecision,
+import { clearPrivateGradingEvidence, privateGradingDirectory, levelGradeIsUsable, repairEvidenceDecision,
   repairHistoryEntry, repairProgressState, repairRegressionDecision,
   restorePrivateGradingEvidence }
   from '../src/evidence/repair-evidence.js';
@@ -82,7 +82,7 @@ test('accepted source is materialized through the application lifecycle before g
         }
         if (mode === 'start') {
           assert.match(readFileSync(join(app, 'index.js'), 'utf8'), /accepted/);
-          assert.equal(readFileSync(join(app, 'node_modules', 'state'), 'utf8'), 'stale\n');
+          assert.equal(existsSync(join(app, 'node_modules')), false);
           writeFileSync(join(app, '.server.pid'), '200\n');
         }
       });
@@ -130,7 +130,7 @@ test('accepted source is materialized through the application lifecycle before g
       failedStart = error;
     }
     assert.deepEqual(failedStartModes, ['stop', 'start', 'stop']);
-    assert.equal(existsSync(join(app, 'node_modules')), true);
+    assert.equal(existsSync(join(app, 'node_modules')), false);
     assert.equal(existsSync(join(app, 'dist')), false);
     const failedStartOutcome = materializationAppFailure(failedStart);
     assert.equal(failedStartOutcome?.kind, 'app_failure');
@@ -192,11 +192,12 @@ test('final package preservation verifies both source and grading before success
   try {
     const app = join(root, 'app');
     const output = join(root, 'output');
-    mkdirSync(join(app, 'stack-bench'), { recursive: true });
+    mkdirSync(app, { recursive: true });
+    mkdirSync(privateGradingDirectory(app), { recursive: true });
     mkdirSync(output, { recursive: true });
     writeFileSync(join(app, 'index.js'), 'export const ready = true;\n');
     const source = hashAppSource(app);
-    writeArtifact(join(app, 'stack-bench', 'bundle.json'), {
+    writeArtifact(join(privateGradingDirectory(app), 'bundle.json'), {
       kind: 'grade_bundle', id: 'final-grade', payload: {
         observation: 'scored', source: { sha256: source.sha256 },
         suites: {}, totals: { score: 1, max: 1 },
@@ -208,11 +209,46 @@ test('final package preservation verifies both source and grading before success
     assert.equal(evidence.source.sha256, source.sha256);
     assert.equal(existsSync(join(output, 'grading', 'bundle.json')), true);
 
-    rmSync(join(app, 'stack-bench', 'bundle.json'));
+    rmSync(join(privateGradingDirectory(app), 'bundle.json'));
     assert.throws(() => preserveFinalPackageEvidence({ appDir: app, outputDir: output }),
       /mandatory result package evidence.*final grader produced no bundle/);
     assert.equal(existsSync(join(output, 'source', 'index.js')), true,
       'source evidence remains available when grading preservation fails');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('hostile app-local grade output cannot replace accepted private evidence', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-private-grade-'));
+  try {
+    const app = join(root, 'app');
+    const output = join(root, 'result');
+    mkdirSync(app);
+    writeFileSync(join(app, 'index.js'), 'export {};');
+    const source = hashAppSource(app);
+    const grading = privateGradingDirectory(app);
+    mkdirSync(grading);
+    writeArtifact(join(grading, 'bundle.json'), {
+      kind: 'grade_bundle', id: 'trusted-grade', payload: {
+        source: { sha256: source.sha256 }, totals: { score: 0, max: 1 },
+      },
+    });
+    const attacker = spawnSync(process.execPath, ['-e', `
+      const fs = require('node:fs');
+      fs.mkdirSync('stack-bench', { recursive: true });
+      fs.writeFileSync('stack-bench/bundle.json', JSON.stringify({ totals: { score: 1, max: 1 } }));
+    `], { cwd: app, encoding: 'utf8' });
+    assert.equal(attacker.status, 0, attacker.stderr);
+    preserveFinalPackageEvidence({ appDir: app, outputDir: output });
+    assert.deepEqual(readFileSync(join(output, 'grading', 'bundle.json')),
+      readFileSync(join(grading, 'bundle.json')));
+    const argv = gradeArgv({ backend: 'postgres', track: 'ecommerce', runIndex: 0,
+      media: false }, app, 'http://localhost:3000', 'isolation', 1,
+    loadTrack('ecommerce'), 'test');
+    assert.equal(argv[argv.indexOf('--out') + 1], grading);
+    assert.throws(() => privateGradingDirectory(app, join(app, 'stack-bench')), /outside/);
+    const alias = join(root, 'alias');
+    symlinkSync(app, alias, 'junction');
+    assert.throws(() => privateGradingDirectory(app, join(alias, 'new-grades')), /outside/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -344,12 +380,12 @@ test('audit failures retain the exit code and stderr needed for diagnosis', () =
 test('repair preparation removes raw grading evidence but keeps the app and bug report', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-isolation-'));
   try {
-    mkdirSync(join(root, 'stack-bench'), { recursive: true });
-    writeFileSync(join(root, 'stack-bench', 'bundle.json'), '{"private":true}\n');
+    mkdirSync(privateGradingDirectory(root), { recursive: true });
+    writeFileSync(join(privateGradingDirectory(root), 'bundle.json'), '{"private":true}\n');
     writeFileSync(join(root, 'BUG_REPORT.md'), '# Behaviour only\n');
     writeFileSync(join(root, 'app.js'), 'export {};\n');
     clearPrivateGradingEvidence(root);
-    assert.equal(existsSync(join(root, 'stack-bench')), false);
+    assert.equal(existsSync(privateGradingDirectory(root)), false);
     assert.equal(existsSync(join(root, 'BUG_REPORT.md')), true);
     assert.equal(existsSync(join(root, 'app.js')), true);
   } finally {
@@ -504,7 +540,7 @@ test('grade retries preserve evidence, retry once, and skip usable or excluded g
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-grade-retry-'));
   try {
     const app = join(root, 'app');
-    const grading = join(app, 'stack-bench');
+    const grading = privateGradingDirectory(app);
     const output = join(root, 'run');
     mkdirSync(join(grading, 'media'), { recursive: true });
     const failed = JSON.stringify({ outcome: { kind: 'harness_failure' },
@@ -555,14 +591,15 @@ test('repair rollback restores the accepted grading evidence without another gra
   try {
     const app = join(root, 'app');
     const snapshot = join(root, 'snapshot');
-    mkdirSync(join(app, 'stack-bench'), { recursive: true });
+    mkdirSync(app, { recursive: true });
+    mkdirSync(privateGradingDirectory(app), { recursive: true });
     mkdirSync(snapshot, { recursive: true });
-    writeFileSync(join(app, 'stack-bench', 'bundle.json'), 'new grade\n');
+    writeFileSync(join(privateGradingDirectory(app), 'bundle.json'), 'new grade\n');
     writeFileSync(join(snapshot, 'bundle.json'), 'accepted grade\n');
 
     restorePrivateGradingEvidence(app, snapshot);
 
-    assert.equal(readFileSync(join(app, 'stack-bench', 'bundle.json'), 'utf8'),
+    assert.equal(readFileSync(join(privateGradingDirectory(app), 'bundle.json'), 'utf8'),
       'accepted grade\n');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

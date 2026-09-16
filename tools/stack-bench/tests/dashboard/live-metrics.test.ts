@@ -2,9 +2,46 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseRunProgress } from '../../dashboard/dashboard-model.js';
 import { elapsed, executionClock } from '../../dashboard/public/format.js';
-import { compareCampaign, outputSilentMinutes, type MetricAttempt } from '../../dashboard/public/metrics.js';
+import { attemptMetrics, compareCampaign, outputSilentMinutes, type MetricAttempt } from '../../dashboard/public/metrics.js';
 import { recordedExecutionSpend } from '../../src/evidence/run-checkpoints.js';
 import { runCostEvidence } from '../../src/evidence/cost-proof.js';
+import { campaignActiveDurationMs, campaignFirstBuildRate, campaignMeasuredRunCost,
+  campaignRunMetrics, executionSpend } from '../../src/campaigns/campaign-report.js';
+
+test('dashboard and export share retry, prior-repair, wait and pause definitions', () => {
+  const session = (costUsd: number) => ({ costUsd, costComplete: true,
+    costReceipts: [{ receipt: { costUsd, exact: true, complete: true, reconciled: true, error: null } }] });
+  const failed = { id: 'failed', totals: { costUsd: 2, costComplete: true },
+    levels: [{ level: 1, buildSessions: [session(2)] }] };
+  const measured = { id: 'measured', totals: { costUsd: 3, costComplete: true, durationSec: 100, pausedDurationSec: 10 },
+    levels: [
+      { level: 1, firstBuild: { score: 5, max: 10 }, buildSessions: [session(1)], repairSessions: [session(1)],
+        sessionTotals: { providerThrottle: { waitedMs: 20_000 } } },
+      { level: 2, firstBuild: { score: 10, max: 10 }, buildSessions: [session(1)] },
+    ] };
+  const cost = campaignMeasuredRunCost(measured, [failed, measured]);
+  const report = campaignRunMetrics(measured as Parameters<typeof campaignRunMetrics>[0]);
+  const first = campaignFirstBuildRate(measured), active = campaignActiveDurationMs(measured);
+  assert.equal(first, 0.75); assert.equal(active, 70_000);
+  const spend = executionSpend([failed, measured].map(run => ({ cost: runCostEvidence(run, 'execution') })));
+  const attempt: MetricAttempt = { id: 'measured', stack: 'example', status: 'completed', execution: null,
+    dependency: null, measuredCost: cost, spend, result: {
+      firstBuildRate: first, activeDurationSec: active! / 1000, durationSec: 100,
+      levels: [{ level: 2, firstScore: { score: 10, max: 10 }, firstAbort: null,
+        finalScore: { score: 10, max: 10 }, used: 1, repairStatus: null, outcome: null,
+        durationSec: 100, costUsd: 3, cost, failures: [], regressions: 0, repairs: null, continued: false }],
+    } };
+  const row = compareCampaign({ attempts: [attempt] }).rows[0]!;
+  assert.equal(row.first, report.firstBuildScoreRate);
+  assert.equal(row.duration, report.totalDurationMs! / 1000);
+  assert.equal(row.costPerValidRun, report.totalCostUsd);
+  assert.equal(row.costPerValidRun, 3); assert.equal(row.spendSoFar, 5);
+  assert.equal(attemptMetrics({ ...attempt, result: { ...attempt.result!, firstBuildRate: null } })!.raw.first, null);
+  const resumed = { id: 'resumed', progressionResume: { priorRunId: 'measured', inheritedLevels: [1, 2] },
+    totals: { currentExecutionCostUsd: 1 }, levels: [{ level: 3, buildSessions: [session(1)] }] };
+  assert.deepEqual(campaignMeasuredRunCost(resumed, [failed, measured, resumed]), { status: 'exact', costUsd: 4 });
+  assert.equal(campaignMeasuredRunCost(resumed, [resumed]).status, 'unknown');
+});
 
 test('live spend validates recorded sessions without treating them as final execution cost', () => {
   const session = (costUsd: number) => ({ costUsd, costComplete: true,
@@ -34,13 +71,13 @@ test('live spend validates recorded sessions without treating them as final exec
 test('cost per valid run uses only completed comparable runs with complete exact costs', () => {
   const run: MetricAttempt = {
     id: 'valid', stack: 'example', status: 'completed', execution: null, dependency: null,
-    spend: { status: 'exact', costUsd: 2 }, result: { levels: [{
+    spend: { status: 'exact', costUsd: 2 }, measuredCost: { status: 'exact', costUsd: 2 }, result: { levels: [{
       level: 1, firstScore: null, firstAbort: null, finalScore: { score: 5, max: 10 },
       used: 0, repairStatus: null, outcome: null, durationSec: null, costUsd: 2,
       cost: { status: 'exact', costUsd: 2 }, failures: [], regressions: 0, repairs: null, continued: false,
     }] },
   };
-  const second = { ...run, id: 'second', spend: { status: 'exact' as const, costUsd: 10 } };
+  const second = { ...run, id: 'second', spend: { status: 'exact' as const, costUsd: 10 }, measuredCost: { status: 'exact' as const, costUsd: 10 } };
   const attempts = [run, second,
     { ...run, id: 'invalid', status: 'invalid', spend: { status: 'exact' as const, costUsd: 100 } },
     { ...run, id: 'running', status: 'running', spend: { status: 'exact' as const, costUsd: 50 } }];
@@ -50,7 +87,7 @@ test('cost per valid run uses only completed comparable runs with complete exact
   assert.equal(row.spendSoFar, 162);
   for (const spend of [{ status: 'unknown' as const, costUsd: null },
     { status: 'upper-bound' as const, costUsd: 10 }]) {
-    assert.equal(compareCampaign({ attempts: [run, { ...second, spend }] }).rows[0]!.costPerValidRun, null);
+    assert.equal(compareCampaign({ attempts: [run, { ...second, measuredCost: spend }] }).rows[0]!.costPerValidRun, null);
   }
   assert.equal(compareCampaign({ attempts: [run, { ...second, comparisonKey: 'different' }] }).rows[0]!.costPerValidRun, null);
   assert.equal(compareCampaign({ attempts: [{ ...run, status: 'running' }] }).rows[0]!.costPerValidRun, null);

@@ -1,3 +1,4 @@
+import { privateGradingDirectory } from '../evidence/repair-evidence.js';
 import { closeSync, cpSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync,
   readdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
@@ -398,7 +399,7 @@ export function createLiveProgressionExecution(
       cpSync(from, target, { recursive: true,
         filter: source => !/[\\/]media([\\/]|$)/.test(source) });
     }
-    const gradingDirectory = join(appDir, 'stack-bench');
+    const gradingDirectory = privateGradingDirectory(appDir);
     rmSync(gradingDirectory, { recursive: true, force: true });
     cpSync(target, gradingDirectory, { recursive: true,
       filter: source => !/[\\/]media([\\/]|$)/.test(source) });
@@ -494,7 +495,7 @@ export function createLiveProgressionExecution(
     const sequence = activeState.attempts.length + 1;
     const evidenceDirectory = join(outputDir, 'progression',
       `attempt-${String(sequence).padStart(3, '0')}`);
-    const gradingDirectory = join(appDir, 'stack-bench');
+    const gradingDirectory = privateGradingDirectory(appDir);
     if (!failure && existsSync(gradingDirectory)) {
       cpSync(gradingDirectory, evidenceDirectory, {
         recursive: true,

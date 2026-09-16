@@ -10,7 +10,8 @@ import { readProgressionState } from '../progression/progression-state.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../progression/progression-definition.js';
 import type { DependencyEvent, DependencyState } from '../progression/dependency-mode.js';
-import { campaignCohortKey, campaignComparisonKey, executionSpend } from './campaign-report.js';
+import { campaignCohortKey, campaignComparisonKey, executionSpend, campaignFirstBuildRate,
+  campaignActiveDurationMs, campaignMeasuredRunCost } from './campaign-report.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { recordedExecutionSpend, type RunCheckpoint } from '../evidence/run-checkpoints.js';
 import { campaignGradingQualification, campaignProgressionOwner } from './campaign-compiler.js';
@@ -45,6 +46,7 @@ interface RunNodeRepairs {
 }
 
 interface RunLevel {
+  sessionTotals?: { providerThrottle?: { waitedMs?: number } };
   buildSessions?: RunSessionRecord[];
   repairSessions?: RunSessionRecord[];
   resumeSession?: RunSessionRecord;
@@ -71,6 +73,7 @@ interface BenchmarkRunPayload {
     costUsd?: number | null;
     costComplete?: boolean | null;
     durationSec?: number | null;
+    pausedDurationSec?: number | null;
   };
   backendLease?: { state?: string | null };
   levels?: RunLevel[];
@@ -95,6 +98,8 @@ export interface CampaignRunLevelResult {
 }
 
 export interface CampaignRunResult {
+  firstBuildRate?: number | null;
+  activeDurationSec?: number | null;
   measurementClassification?: ReturnType<typeof classifyCampaignExecution>;
   completion?: CheckCompletion | null;
   cost?: CostEvidence;
@@ -128,6 +133,7 @@ function readCampaignRunResult(path: string, plan: CompiledCampaignPlan,
     const run = readArtifactPayload<BenchmarkRunPayload>(path, { expectedKind: 'benchmark_run' });
     validateCampaignRun(plan, attempt, run, { resultDir: dirname(path) });
     const cost = runCostEvidence(run, 'execution');
+    const activeDurationMs = campaignActiveDurationMs(run);
     const incompleteMeasurement = (run.progressionStatus !== undefined
       && run.progressionStatus.phase !== 'terminal') || (run.outcome?.inconclusive?.length ?? 0) > 0;
     return {
@@ -142,6 +148,8 @@ function readCampaignRunResult(path: string, plan: CompiledCampaignPlan,
       costUsd: cost.status === 'exact' ? cost.costUsd : null,
       costComplete: cost.status !== 'unknown',
       durationSec: run.totals?.durationSec ?? null,
+      activeDurationSec: activeDurationMs === null ? null : activeDurationMs / 1000,
+      firstBuildRate: campaignFirstBuildRate(run),
       cleanup: run.backendLease?.state ?? null,
       levels: (run.levels ?? []).map(level => {
         const sessions = [...(level.buildSessions ?? []), ...(level.repairSessions ?? []),
@@ -418,6 +426,7 @@ export function inspectCampaignAttempt(plan: CompiledCampaignPlan, attempt: Camp
   const result = executionDirectory && execution
     ? readCampaignRunResult(join(executionDirectory, ARTIFACT_FILE.run), plan, attempt.plan, execution) : null;
   const classified = result?.measurementClassification;
+  const costRuns = new Map<string, unknown>();
   const costs = attempt.executions.map(item => {
     try {
       const run = readArtifactPayload(join(directory, item.output, ARTIFACT_FILE.run), { expectedKind: 'benchmark_run' });
@@ -429,6 +438,7 @@ export function inspectCampaignAttempt(plan: CompiledCampaignPlan, attempt: Camp
         || canonicalDefinitionJson(run.pricing) !== canonicalDefinitionJson(attempt.plan.pricing)) {
         throw new Error('cost evidence belongs to another variant');
       }
+      costRuns.set(item.id, run);
       const recorded = recordedExecutionSpend(run);
       const retained = item.status !== 'running' && item.status !== 'pending'
         ? retainedRunCost(run) : null;
@@ -445,6 +455,7 @@ export function inspectCampaignAttempt(plan: CompiledCampaignPlan, attempt: Camp
     variantLabel: `${attempt.plan.model} / ${attempt.plan.guidance} / ${attempt.plan.condition.id}`,
     cost: costs.at(-1)?.cost ?? { status: 'unknown' as const, costUsd: null },
     spend: executionSpend(costs),
+    measuredCost: campaignMeasuredRunCost(execution ? costRuns.get(execution.id) : null, [...costRuns.values()]),
     completion: dependency?.score?.completion ?? result?.completion ?? null,
     stack: attempt.plan.stack,
     model: attempt.plan.model,

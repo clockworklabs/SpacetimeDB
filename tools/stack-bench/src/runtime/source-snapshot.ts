@@ -81,8 +81,13 @@ function copySourceTree(from: string, to: string, rel = '', writable = false): v
   }
 }
 
-// Restore source in place without replacing active dependency directories.
-function removeAbsent(path: string, rel: string): void {
+// Source-only restores can keep dependencies for a live coding workspace.
+// Stopped-runtime materialization must remove them before accepted startup.
+function removeAbsent(path: string, rel: string, cleanDependencies: boolean): void {
+  if (cleanDependencies && basename(rel) === 'node_modules') {
+    rmSync(path, { recursive: true, force: true });
+    return;
+  }
   const disposition = directoryDisposition(rel);
   if (disposition === 'preserve') return;
   if (disposition === 'transient') {
@@ -95,18 +100,22 @@ function removeAbsent(path: string, rel: string): void {
     return;
   }
   for (const entry of readdirSync(path, { withFileTypes: true })) {
-    removeAbsent(join(path, entry.name), join(rel, entry.name));
+    removeAbsent(join(path, entry.name), join(rel, entry.name), cleanDependencies);
   }
   if (readdirSync(path).length === 0) rmSync(path, { recursive: true, force: true });
 }
 
-function syncSourceTree(snapshot: string, appDir: string, rel = ''): void {
+function syncSourceTree(snapshot: string, appDir: string, cleanDependencies: boolean, rel = ''): void {
   mkdirSync(appDir, { recursive: true });
   ensureWritable(appDir);
   const snapshotNames = new Set(readdirSync(snapshot));
 
   for (const entry of readdirSync(appDir, { withFileTypes: true })) {
     const childRel = rel ? join(rel, entry.name) : entry.name;
+    if (cleanDependencies && entry.name === 'node_modules') {
+      rmSync(join(appDir, entry.name), { recursive: true, force: true });
+      continue;
+    }
     const disposition = directoryDisposition(childRel);
     if (disposition === 'preserve') continue;
     if (!entry.isDirectory() && preservedRuntimeFile(childRel)) continue;
@@ -114,16 +123,17 @@ function syncSourceTree(snapshot: string, appDir: string, rel = ''): void {
       rmSync(join(appDir, entry.name), { recursive: true, force: true });
       continue;
     }
-    if (!snapshotNames.has(entry.name)) removeAbsent(join(appDir, entry.name), childRel);
+    if (!snapshotNames.has(entry.name)) removeAbsent(join(appDir, entry.name), childRel, cleanDependencies);
   }
 
   for (const entry of readdirSync(snapshot, { withFileTypes: true })) {
+    if (cleanDependencies && entry.name === 'node_modules') continue;
     const childRel = rel ? join(rel, entry.name) : entry.name;
     const source = join(snapshot, entry.name);
     const target = join(appDir, entry.name);
     if (entry.isDirectory()) {
       if (existsSync(target) && !lstatSync(target).isDirectory()) rmSync(target, { force: true });
-      syncSourceTree(source, target, childRel);
+      syncSourceTree(source, target, cleanDependencies, childRel);
       continue;
     }
     if (!entry.isFile()) {
@@ -131,7 +141,7 @@ function syncSourceTree(snapshot: string, appDir: string, rel = ''): void {
     }
     if (existsSync(target) && !lstatSync(target).isFile()) {
       if (lstatSync(target).isDirectory()) {
-        removeAbsent(target, childRel);
+        removeAbsent(target, childRel, cleanDependencies);
         if (existsSync(target)) {
           throw new Error(`cannot restore source file over preserved directory: ${childRel}`);
         }
@@ -182,10 +192,11 @@ export function assertPlainAppSourceTree(appDir: string): void {
   walk(appDir);
 }
 
-export function restoreAppSource(from: string, appDir: string): void {
+export function restoreAppSource(from: string, appDir: string,
+  { cleanDependencies = false }: { cleanDependencies?: boolean } = {}): void {
   if (!existsSync(from)) throw new Error(`source snapshot does not exist: ${from}`);
   assertSeparateTrees(from, appDir);
-  syncSourceTree(from, appDir);
+  syncSourceTree(from, appDir, cleanDependencies);
 }
 
 export function resetAppToSource(from: string, appDir: string): void {

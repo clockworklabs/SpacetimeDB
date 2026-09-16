@@ -29,7 +29,10 @@ export async function materializeAcceptedSource(sourcePath: string, appDir: stri
   lifecycle: typeof controlAppServer = controlAppServer): Promise<void> {
   const accepted = hashAppSource(sourcePath);
   await lifecycle(application, 'stop');
-  restoreAppSource(sourcePath, appDir);
+  // Installed code is not part of a source snapshot. A rejected repair can
+  // change it without changing the source hash. The accepted start contract
+  // installs dependencies from its restored manifests and lockfiles.
+  restoreAppSource(sourcePath, appDir, { cleanDependencies: true });
   if (!existsSync(join(appDir, 'start.sh'))) {
     throw Object.assign(new Error(`accepted application source has no ${CODING_CONTAINER_START_SCRIPT}`),
       { code: 'generated_app_start_contract_missing' });
@@ -48,7 +51,7 @@ export async function materializeAcceptedSource(sourcePath: string, appDir: stri
       cleanupFailure = error;
     }
     try {
-      restoreAppSource(sourcePath, appDir);
+      restoreAppSource(sourcePath, appDir, { cleanDependencies: true });
     } catch (error) {
       cleanupFailure ??= error;
     }

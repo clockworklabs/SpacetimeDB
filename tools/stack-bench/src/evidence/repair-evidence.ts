@@ -1,5 +1,5 @@
-import { cpSync, existsSync, rmSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { cpSync, existsSync, realpathSync, rmSync } from 'node:fs';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import type { ProgressionAttempt } from '../progression/progression-state.js';
@@ -18,14 +18,37 @@ export interface RepairProgress {
   stalledRounds: number;
 }
 
+// The generated server owns /app even while the coding agent is stopped.
+// Private evidence must never be placed in that writable mount.
+export function privateGradingDirectory(appDir: string, out?: string | null): string {
+  const app = resolve(appDir);
+  const target = resolve(out || join(dirname(app), `${basename(app)}-grading`));
+  const physical = (path: string): string => {
+    if (existsSync(path)) return realpathSync(path);
+    return join(physical(dirname(path)), basename(path));
+  };
+  const contains = (parent: string, child: string): boolean => {
+    const rel = relative(parent, child);
+    return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`));
+  };
+  const appPath = physical(app);
+  const outputPath = physical(target);
+  if (contains(appPath, outputPath) || contains(outputPath, appPath)) {
+    throw new Error('private grading output must be outside the application tree');
+  }
+  return target;
+}
+
 export function clearPrivateGradingEvidence(appDir: string): void {
+  rmSync(privateGradingDirectory(appDir), { recursive: true, force: true });
+  // Remove legacy output on resumed workspaces. Never read it as evidence.
   rmSync(join(resolve(appDir), 'stack-bench'), { recursive: true, force: true });
 }
 
 export function restorePrivateGradingEvidence(appDir: string, snapshot: string): void {
   if (!existsSync(snapshot)) throw new Error('repair grading snapshot does not exist');
   clearPrivateGradingEvidence(appDir);
-  cpSync(snapshot, join(resolve(appDir), 'stack-bench'), { recursive: true });
+  cpSync(snapshot, privateGradingDirectory(appDir), { recursive: true });
 }
 
 export function repairProgressState(previous: RepairProgress | null,

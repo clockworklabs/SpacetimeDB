@@ -1,3 +1,4 @@
+import { privateGradingDirectory } from '../evidence/repair-evidence.js';
 import { cpSync, existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -61,8 +62,8 @@ export function preserveFinalPackageEvidence(
   }
 
   try {
-    const from = join(appDir, 'stack-bench');
-    const gradingDirectory = join(outputDir, 'grading');
+    const from = privateGradingDirectory(appDir);
+    const gradingDirectory = privateGradingDirectory(appDir, join(outputDir, 'grading'));
     if (!existsSync(join(from, ARTIFACT_FILE.gradeBundle))) {
       throw new Error(`final grader produced no ${ARTIFACT_FILE.gradeBundle}`);
     }

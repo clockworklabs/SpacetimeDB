@@ -48,6 +48,7 @@ test('rejected schema repair restores accepted source and a fresh spacetime dev 
   writeFileSync(source, moduleSource('string', "'accepted'"));
   writeFileSync(join(app, 'server.cjs'), `require('http').createServer((q,s)=>s.end('ready')).listen(${port},'0.0.0.0');`);
   writeFileSync(join(app, 'start.sh'), `#!/bin/bash\nset -eu\n`
+    + `(cd /app/spacetimedb && npm ci --ignore-scripts --no-audit --no-fund)\n`
     + `exec /deps/spacetimedb-cli dev repair-proof --no-config --project-path /app --module-path /app/spacetimedb `
     + `--module-bindings-path client/src/module_bindings --client-lang typescript -s http://127.0.0.1:3299 -y `
     + `--run '/deps/spacetimedb-cli call repair-proof seed -s http://127.0.0.1:3299 -y && node /app/server.cjs'\n`);

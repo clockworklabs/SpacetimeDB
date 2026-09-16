@@ -324,10 +324,26 @@ test('Spacetime reset publishes inside the exact leased build container', () => 
     assert.equal(calls.every(call => call.options.timeout === 120_000), true);
     calls.length = 0;
     resetRepairBackend({ backend: 'spacetime', app, exec });
-    const handoffIndex = calls.findIndex(call => call.argv.some(arg => arg.includes('chown')));
-    const publishIndex = calls.findIndex(call => call.argv.includes('publish'));
-    assert(handoffIndex >= 0 && publishIndex > handoffIndex,
-      'restored source ownership must be assigned before unprivileged publish');
+    const removal = calls.find(call => call.argv.includes('delete'));
+    assert(removal, 'repair reset must remove the rejected schema before clean startup');
+    assert.ok(removal.argv.includes(buildContainer.id));
+    assert.ok(removal.argv.includes('10001:10001'));
+    assert.ok(removal.argv.includes('app-ecom-run0'));
+    assert.ok(removal.argv.includes('http://host.docker.internal:3310'));
+    assert.equal(calls.some(call => call.argv.includes('publish')), false,
+      'repair reset cannot compile before accepted startup installs dependencies');
+    assert.throws(() => resetRepairBackend({ backend: 'spacetime', app,
+      exec: (_command, args) => args[0] === 'inspect' ? 'wrong-container' : '' }), /changed after lease creation/);
+    assert.throws(() => resetRepairBackend({ backend: 'spacetime', app,
+      exec: (_command, args) => {
+        if (args[0] === 'inspect') return buildContainer.id;
+        throw new Error('permission denied');
+      } }), /could not delete prior module/);
+    assert.doesNotThrow(() => resetRepairBackend({ backend: 'spacetime', app,
+      exec: (_command, args) => {
+        if (args[0] === 'inspect') return buildContainer.id;
+        throw new Error('404 Not Found');
+      } }), 'an already absent rejected module is ready for accepted startup');
 
   } finally {
     if (previousLease === undefined) delete process.env.STACK_BENCH_LEASE;

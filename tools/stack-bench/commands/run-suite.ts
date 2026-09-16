@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { privateGradingDirectory } from '../src/evidence/repair-evidence.js';
 
 import { execFile, execFileSync } from 'node:child_process';
 import type { ExecFileException, ExecFileSyncOptionsWithStringEncoding } from 'node:child_process';
@@ -329,7 +330,7 @@ function parseArgs(argv: string[]): RunArguments {
     || typeof a.applicationFailure.reason !== 'string' || !a.applicationFailure.reason)) {
     throw new Error('--application-failure-json must describe an application failure');
   }
-  a.out ||= join(a.app, 'stack-bench');
+  a.out = privateGradingDirectory(a.app, a.out);
   if (!Array.isArray(a.regressionChecks)
     || a.regressionChecks.some(key => typeof key !== 'string' || !key)) {
     throw new Error('--regression-checks-json must contain stable check keys');
