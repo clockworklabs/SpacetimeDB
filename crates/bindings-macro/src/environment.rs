@@ -6,6 +6,8 @@ use syn::ext::IdentExt as _;
 use syn::punctuated::Punctuated;
 use syn::{Fields, ItemStruct, LitStr, Token};
 
+use crate::util::preinit;
+
 pub(crate) fn expand(args: TokenStream, mut item: ItemStruct) -> syn::Result<TokenStream> {
     if !args.is_empty() {
         return Err(syn::Error::new_spanned(args, "env does not accept arguments"));
@@ -98,7 +100,14 @@ pub(crate) fn expand(args: TokenStream, mut item: ItemStruct) -> syn::Result<Tok
     }
     let vis = &item.vis;
     let access = format_ident!("{}Access", item.ident.unraw());
-    let symbol = "__preinit__20_register_environment_there_can_only_be_one";
+    let register_environment = preinit(
+        20,
+        "register_environment",
+        "there_can_only_be_one",
+        quote!(::spacetimedb::rt::register_environment(
+            || ::std::vec![#(#declarations),*]
+        )),
+    );
     Ok(quote! {
         #[allow(non_snake_case)]
         #item
@@ -112,12 +121,7 @@ pub(crate) fn expand(args: TokenStream, mut item: ItemStruct) -> syn::Result<Tok
         impl #access for ::spacetimedb::Environment {
             #(#methods)*
         }
-        const _: () = {
-            #[unsafe(export_name = #symbol)]
-            extern "C" fn __register_environment() {
-                ::spacetimedb::rt::register_environment(|| ::std::vec![#(#declarations),*]);
-            }
-        };
+        #register_environment
     })
 }
 
