@@ -3,10 +3,34 @@ namespace SpacetimeDB.Codegen.Tests;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 
 // Global Verify setup for all tests we might have.
 static class TestInit
 {
+    internal static (string Code, IEnumerable<Diagnostic> Errors) FormatCode(string code)
+    {
+        var header = "";
+        // CSharpier reorders conditional global imports below ordinary imports.
+        // Keep this already-formatted header intact and format the declarations only.
+        if (code.Contains("global using "))
+        {
+            var root = CSharpSyntaxTree.ParseText(code).GetCompilationUnitRoot();
+            var headerEnd = root.Usings.Last().FullSpan.End;
+            header = code[..headerEnd];
+            code = code[headerEnd..];
+        }
+        var result = CSharpier.Core.CSharp.CSharpFormatter.Format(
+            code,
+            new() { IncludeGenerated = true, EndOfLine = CSharpier.Core.EndOfLine.LF }
+        );
+#if NET10_0_OR_GREATER
+        return (header + result.Code, result.ErrorDiagnostics);
+#else
+        return (header + result.Code, result.CompilationErrors);
+#endif
+    }
+
     // A custom Diagnostic converter that pretty-prints the error with the source code snippet and squiggly underline.
     // TODO: upstream this?
     class DiagConverter : WriteOnlyJsonConverter<Diagnostic>
@@ -72,26 +96,15 @@ static class TestInit
             (sb) =>
             {
                 var unformattedCode = sb.ToString();
-                // CSharpier 0.28 cannot preserve C# 14 extension declarations, even in inactive branches.
-                // Only trim trailing whitespace; generator tests compile the original syntax trees.
-                if (unformattedCode.Contains("extension(global::SpacetimeDB.Local db)"))
-                {
-                    sb.Clear();
-                    sb.Append(string.Join("\n", unformattedCode.Split('\n').Select(line => line.TrimEnd())));
-                    return;
-                }
                 sb.Clear();
-                var result = CSharpier.CodeFormatter.Format(
-                    unformattedCode,
-                    new() { IncludeGenerated = true, EndOfLine = CSharpier.EndOfLine.LF }
-                );
+                var result = FormatCode(unformattedCode);
                 sb.Append(result.Code);
                 // Print errors in the end so that their line numbers are still meaningful.
-                if (result.CompilationErrors.Any())
+                if (result.Errors.Any())
                 {
                     sb.AppendLine();
                     sb.AppendLine("// Generated code produced compilation errors:");
-                    foreach (var diag in result.CompilationErrors)
+                    foreach (var diag in result.Errors)
                     {
                         sb.Append("// ").AppendLine(diag.ToString());
                     }

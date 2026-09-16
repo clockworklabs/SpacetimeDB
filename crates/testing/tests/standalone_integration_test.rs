@@ -121,6 +121,79 @@ fn namespace_csharp_root_selected_at_publish() {
         |module| async move {
             module.call_reducer_binary("consumer_entry", &product![]).await.unwrap();
             assert!(module.read_log(None).await.contains("consumer published as root"));
+            module
+                .call_reducer_binary("dependency_entry", &product![])
+                .await
+                .unwrap();
+            assert!(module.read_log(None).await.contains("dependency published as root"));
+        },
+    );
+}
+
+#[test]
+#[serial]
+fn namespace_csharp_mounted_dependencies() {
+    init();
+    CompiledModule::compile("namespace-test-cs", CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |mut module| async move {
+            // Extra is discovered without any application reference to its helpers.
+            module.call_reducer_binary("extra", &product![]).await.unwrap();
+            module.call_reducer_binary("exercise", &product![]).await.unwrap();
+            assert!(module.read_log(None).await.contains("namespace composition works"));
+            module
+                .call_reducer_binary("auth_data.add", &product![10u32])
+                .await
+                .unwrap();
+            module
+                .call_reducer_binary("audit_data.add", &product![11u32])
+                .await
+                .unwrap();
+            assert_eq!(
+                module.call_procedure_with_args("count_users", "[]").await.unwrap(),
+                AlgebraicValue::U64(5)
+            );
+            for name in ["auth_data.count_users", "audit_data.count_users"] {
+                assert_eq!(
+                    module.call_procedure_with_args(name, "[]").await.unwrap(),
+                    AlgebraicValue::U64(2)
+                );
+            }
+            assert_eq!(module.call_http_route_get("/auth-count").await.unwrap().as_ref(), b"2");
+
+            module
+                .client
+                .subscribe(
+                    spacetimedb_client_api_messages::websocket::v1::Subscribe {
+                        query_strings: [
+                            "SELECT * FROM users",
+                            "SELECT * FROM auth_users",
+                            "SELECT * FROM extra_rows",
+                            "SELECT * FROM auth_data.users",
+                            "SELECT * FROM auth_data.anonymous_users",
+                        ]
+                        .map(Box::<str>::from)
+                        .into(),
+                        request_id: 99,
+                    },
+                    Instant::now(),
+                )
+                .await
+                .unwrap();
+            tokio::time::timeout(Duration::from_secs(10), async {
+                while let Some(message) = module.recv_message().await {
+                    if let spacetimedb::client::OutboundMessage::V1(
+                        message @ spacetimedb::client::messages::SerializableMessage::Subscribe(_),
+                    ) = message
+                    {
+                        assert_eq!(message.num_rows(), Some(5));
+                        return;
+                    }
+                }
+                panic!("connection closed before the view subscription response");
+            })
+            .await
+            .unwrap();
         },
     );
 }

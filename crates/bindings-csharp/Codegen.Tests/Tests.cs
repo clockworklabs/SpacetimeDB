@@ -276,6 +276,155 @@ public static class GeneratorSnapshotTests
         }
     }
 
+    [Theory]
+    [InlineData("server")]
+    [InlineData("explicitnames")]
+    public static async Task FormattedGeneratedCodeCompiles(string fixtureName)
+    {
+        var fixture = await Fixture.Compile(fixtureName);
+        var compilation = fixture.SampleCompilation;
+        foreach (var generator in new IIncrementalGenerator[] { new Type(), new Module() })
+        {
+            foreach (var tree in fixture.RunGeneratorAndGetResult(generator).GeneratedTrees)
+            {
+                var formatted = TestInit.FormatCode(tree.ToString());
+                Assert.Empty(formatted.Errors);
+                compilation = compilation.AddSyntaxTrees(
+                    CSharpSyntaxTree.ParseText(
+                        formatted.Code,
+                        fixture.ParseOptions,
+                        path: tree.FilePath
+                    )
+                );
+            }
+        }
+        Assert.Empty(GetCompilationErrors(compilation));
+        AssertContextOwnership(compilation);
+    }
+
+    [Fact]
+    public static async Task NamespaceDeclarationsParseAndValidate()
+    {
+        var fixture = await Fixture.Compile("server");
+        const string usings = "global using System; global using System.IO; "
+            + "global using System.Collections.Generic; global using System.Linq;\n";
+        CSharpCompilation Create(string name, string source, params MetadataReference[] references) =>
+            CSharpCompilation.Create(
+                name,
+                [CSharpSyntaxTree.ParseText(usings + source, fixture.ParseOptions)],
+                fixture.SampleCompilation.References.Concat(references),
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+            );
+        MetadataReference Dependency(string name)
+        {
+            var compilation = Create(name, $$"""
+                namespace {{name}} {
+                    public class Marker { }
+                    [SpacetimeDB.Table(Accessor = "{{name}}Row")]
+                    public partial struct Row { public uint Id; }
+                }
+                """);
+            var driver = CSharpGeneratorDriver.Create(
+                [new Type().AsSourceGenerator(), new Module().AsSourceGenerator()],
+                parseOptions: fixture.ParseOptions
+            );
+            driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var diagnostics);
+            Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+            using var dll = new MemoryStream();
+            var emitted = output.Emit(dll);
+            Assert.True(emitted.Success, string.Join("\n", emitted.Diagnostics));
+            return MetadataReference.CreateFromImage(dll.ToArray());
+        }
+        var auth = Dependency("Auth");
+        var audit = Dependency("Audit");
+        string Mount(string marker = "Auth.Marker", string accessor = "MyAuth", string name = "auth_data") =>
+            $"[assembly: SpacetimeDB.Namespace(typeof({marker}), Accessor = \"{accessor}\", Name = \"{name}\")]\n";
+        GeneratorDriver Run(string source) => CSharpGeneratorDriver.Create(
+                [new Module().AsSourceGenerator()],
+                parseOptions: fixture.ParseOptions,
+                driverOptions: new GeneratorDriverOptions(
+                    IncrementalGeneratorOutputKind.None,
+                    trackIncrementalGeneratorSteps: true
+                )
+            ).RunGenerators(Create("Consumer", source, auth, audit));
+#if NET10_0_OR_GREATER
+        void Reject(string source, string message)
+        {
+            var diagnostics = Run(source).GetRunResult().Diagnostics;
+            Assert.Contains(diagnostics, d => d.GetMessage().Contains(message));
+            Assert.All(diagnostics, d => Assert.True(d.Location.IsInSource, d.ToString()));
+        }
+
+        object[] Parsed(GeneratorDriver driver) => [.. driver.GetRunResult().Results.Single()
+            .TrackedSteps["SpacetimeDB.Namespace.Parse"].Single().Outputs
+            .SelectMany(o => ((System.Collections.IEnumerable)o.Value).Cast<object>())];
+        foreach (var accessor in new[] { "MyAuth", "class", "event" })
+        {
+            var driver = Run(Mount(accessor: accessor));
+            Assert.Empty(driver.GetRunResult().Diagnostics);
+            var declaration = Assert.Single(Parsed(driver));
+            Assert.Equal("auth_data", declaration.GetType().GetProperty("Name")!.GetValue(declaration));
+            Assert.Equal(accessor, declaration.GetType().GetProperty("Accessor")!.GetValue(declaration));
+            Assert.Equal(
+                accessor == "MyAuth" ? accessor : "@" + accessor,
+                declaration.GetType().GetProperty("AccessorIdentifier")!.GetValue(declaration)
+            );
+            Assert.Equal(
+                "Auth, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null",
+                declaration.GetType().GetProperty("AssemblyIdentity")!.GetValue(declaration)
+            );
+        }
+        Assert.Empty(Run(Mount(name: new string('a', 63))).GetRunResult().Diagnostics);
+        Assert.Empty(Run(Mount(name: "public")).GetRunResult().Diagnostics);
+        Reject(Mount(name: new string('a', 64)), "63 UTF-8 bytes");
+        foreach (var name in new[] { "", "auth.data", "a-b", "1auth", " auth" })
+            Reject(Mount(name: name), "database identifier");
+        foreach (var name in new[] { "st", "ST", "spacetimedb", "pg_catalog", "PG_temp" })
+            Reject(Mount(name: name), "reserved");
+        foreach (var accessor in new[] { "", "a.b", "a-b", "1auth", "@class", " auth" })
+            Reject(Mount(accessor: accessor), "C# identifier");
+        Reject("[assembly: SpacetimeDB.Namespace(typeof(Auth.Marker))]", "C# identifier");
+        Reject("[assembly: SpacetimeDB.Namespace(null)]", "marker type");
+        Reject(Mount("LocalMarker") + "public class LocalMarker { }", "cannot mount itself");
+        Reject(Mount("System.String"), "no discovered module descriptor");
+        Reject(Mount() + Mount(accessor: "Other", name: "other"), "only be mounted once");
+        Reject(Mount() + Mount("Audit.Marker", "Audit", "AUTH_DATA"), "case-insensitive");
+        Reject(Mount() + Mount("Audit.Marker", "MyAuth", "audit_data"), "accessor 'MyAuth'");
+        Reject(Mount() + "[SpacetimeDB.Table(Accessor = \"MyAuth\")] public partial struct Row { public uint Id; }",
+            "root table accessor");
+
+        var oldLanguage = fixture.ParseOptions.WithLanguageVersion(LanguageVersion.CSharp13);
+        var oldCompilation = Create("Consumer", "", auth, audit).RemoveAllSyntaxTrees()
+            .AddSyntaxTrees(CSharpSyntaxTree.ParseText(usings + Mount(), oldLanguage));
+        var oldResult = CSharpGeneratorDriver.Create(
+            [new Module().AsSourceGenerator()], parseOptions: oldLanguage
+        ).RunGenerators(oldCompilation).GetRunResult();
+        Assert.Contains(oldResult.Diagnostics, d => d.GetMessage().Contains("require .NET 10 and C# 14"));
+
+        // Only assembly targets are legal, independently of generator validation.
+        var wrongTarget = Create("Consumer", "[SpacetimeDB.Namespace(typeof(Auth.Marker))] public class Wrong { }", auth);
+        Assert.Contains(wrongTarget.GetDiagnostics(), d => d.Id == "CS0592");
+
+        var original = Run(Mount());
+        foreach (var source in new[] { Mount(name: "other_data"), Mount(accessor: "Other") })
+        {
+            var changed = original.RunGenerators(Create("Consumer", source, auth, audit));
+            Assert.Empty(changed.GetRunResult().Diagnostics);
+            Assert.NotEqual(Assert.Single(Parsed(original)), Assert.Single(Parsed(changed)));
+            Assert.Contains(
+                changed.GetRunResult().Results.Single().TrackedSteps["SpacetimeDB.Namespace.Parse"]
+                    .SelectMany(s => s.Outputs),
+                o => o.Reason == IncrementalStepRunReason.Modified
+            );
+        }
+#else
+        var compilation = Create("Consumer", Mount(), auth, audit);
+        Assert.Null(compilation.GetTypeByMetadataName("SpacetimeDB.NamespaceAttribute"));
+        Assert.Contains(compilation.GetDiagnostics(), d => d.Id == "CS0234");
+        Assert.Empty(Run(Mount()).GetRunResult().Diagnostics);
+#endif
+    }
+
     [Fact]
     public static async Task TypeGeneratorOnClient()
     {
@@ -290,9 +439,11 @@ public static class GeneratorSnapshotTests
 
 #if NET10_0_OR_GREATER
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public static async Task NamespaceDependenciesRegisterOnceInStableOrder(bool rootHasTable)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public static async Task NamespaceDependenciesRegisterOnceInStableOrder(bool rootHasTable, bool mounted)
     {
         var fixture = await Fixture.Compile("server", "net10.0");
         const string usings = "global using System; global using System.IO; "
@@ -351,24 +502,65 @@ public static class GeneratorSnapshotTests
         var utility = Emit(Create("Utility",
             "public class UtilityLink { public Shared.Sentinel Value; }", shared));
         var rootSource = rootHasTable ? Table("Root") : "";
+        if (mounted)
+            rootSource = "[assembly: SpacetimeDB.Namespace(typeof(Alpha.Sentinel), Accessor = \"Auth\", Name = \"auth_data\")]\n"
+                + "[assembly: SpacetimeDB.Namespace(typeof(Beta.Sentinel), Accessor = \"class\", Name = \"audit_data\")]\n"
+                + rootSource
+                + "public static class Helpers { public static ulong Count(SpacetimeDB.ReducerContext ctx) => ctx.Db.Auth.AlphaRow.Count + ctx.Db.@class.BetaRow.Count + ctx.Db.SharedRow.Count; }";
         var root = Generate(Create("Root", rootSource, beta, utility, shared, alpha));
         var reordered = Generate(Create("Root", rootSource, alpha, shared, utility, beta));
         Emit(root);
         Emit(reordered);
 
         string[] Calls(CSharpCompilation compilation) =>
-            [.. Method(compilation, "Main").DescendantNodes()
+            [.. Method(compilation, "Initialize").DescendantNodes()
                 .OfType<InvocationExpressionSyntax>()
-                .Select(call => call.Expression.ToString())];
-        var expected = new[]
+                .Select(call => call.Expression.ToString())
+                .Where(call => call.EndsWith(".Register"))];
+        CSharpCompilation[] orderedDependencies = mounted
+            ? [sharedCompilation, alphaCompilation, betaCompilation]
+            : [alphaCompilation, betaCompilation, sharedCompilation];
+        var expected = new[] { Descriptor(root) + ".Register" }
+            .Concat(orderedDependencies.Select(c => Descriptor(c) + ".Register")).ToArray();
+        if (mounted)
         {
-            Descriptor(root) + ".Register",
-            Descriptor(alphaCompilation) + ".Register",
-            Descriptor(betaCompilation) + ".Register",
-            Descriptor(sharedCompilation) + ".Register",
-        };
+            var init = Method(root, "Initialize");
+            var submodules = init.DescendantNodes().OfType<InvocationExpressionSyntax>()
+                .Where(call => call.Expression.ToString().EndsWith(".RegisterSubmodule")).ToArray();
+            Assert.Equal(["\"auth_data\"", "\"audit_data\""],
+                submodules.Select(call => call.ArgumentList.Arguments[0].ToString()));
+            var invalid = root.AddSyntaxTrees(CSharpSyntaxTree.ParseText(
+                "public static class BadView { public static void Write(SpacetimeDB.ViewContext ctx) => ctx.Db.Auth.AlphaRow.Insert(new Alpha.AlphaRow()); }",
+                fixture.ParseOptions));
+            Assert.Contains(GetCompilationErrors(invalid), d => d.Id == "CS1061");
+        }
         Assert.Equal(expected, Calls(root));
         Assert.Equal(expected, Calls(reordered));
+        foreach (var (export, category) in new[]
+        {
+            ("__call_reducer__", "Reducer"),
+            ("__call_procedure__", "Procedure"),
+            ("__call_http_handler__", "HttpHandler"),
+            ("__call_view__", "View"),
+            ("__call_view_anon__", "AnonymousView"),
+        })
+        {
+            var body = Method(root, export).Body!;
+            var routes = body.DescendantNodes().OfType<InvocationExpressionSyntax>()
+                .Where(call => call.Expression is MemberAccessExpressionSyntax member
+                    && member.Name.Identifier.ValueText == "CallLocal" + category).ToArray();
+            Assert.Equal(expected.Select(name => name.Replace(".Register", ".CallLocal" + category)),
+                routes.Select(call => call.Expression.ToString()));
+            Assert.All(routes, call => Assert.Equal("localId",
+                call.ArgumentList.Arguments[0].Expression.ToString()));
+            var offsets = body.DescendantNodes().OfType<AssignmentExpressionSyntax>()
+                .Where(assignment => assignment.IsKind(SyntaxKind.SubtractAssignmentExpression));
+            Assert.Equal(expected.Select(name => name.Replace(".Register", "." + category + "Count")),
+                offsets.Select(assignment => assignment.Right.ToString()));
+            var negativeGuard = Assert.IsType<IfStatementSyntax>(body.Statements[0]);
+            Assert.Equal("id < 0", negativeGuard.Condition.ToString());
+            Assert.Equal(Method(root, export).ToString(), Method(reordered, export).ToString());
+        }
         Assert.DoesNotContain(Method(root, "Register").DescendantNodes()
             .OfType<InvocationExpressionSyntax>(), call =>
                 call.Expression.ToString().Contains("AssemblyDescriptor.Register"));
@@ -377,6 +569,39 @@ public static class GeneratorSnapshotTests
         var plainUtility = Emit(Create("PlainUtility", "public class PlainUtility { }"));
         var empty = Generate(Create("Empty", "", plainUtility));
         Assert.Empty(empty.GetSymbolsWithName("AssemblyDescriptor", SymbolFilter.Type));
+
+        var nested = Emit(Generate(Create("Nested",
+            "[assembly: SpacetimeDB.Namespace(typeof(Alpha.Sentinel), Accessor = \"Auth\", Name = \"auth_data\")]",
+            alpha, shared)));
+        var nestedResult = CSharpGeneratorDriver.Create(
+            [new Module().AsSourceGenerator()], parseOptions: fixture.ParseOptions
+        ).RunGenerators(Create("Outer", "", nested, alpha, shared)).GetRunResult();
+        Assert.Contains(nestedResult.Diagnostics, diagnostic =>
+            diagnostic.GetMessage().Contains("Only the consuming root"));
+
+        foreach (var kind in new[] { "Init", "ClientConnected", "ClientDisconnected" })
+        {
+            var lifecycle = Emit(Generate(Create("LifecycleDependency", $$"""
+                public class Marker { }
+                public static partial class LifecycleFunctions {
+                    [SpacetimeDB.Reducer(SpacetimeDB.ReducerKind.{{kind}})]
+                    public static void Handle(SpacetimeDB.ReducerContext ctx) { }
+                }
+                """)));
+            var lifecycleResult = CSharpGeneratorDriver.Create(
+                [new Module().AsSourceGenerator()], parseOptions: fixture.ParseOptions
+            ).RunGenerators(Create("LifecycleConsumer",
+                "[assembly: SpacetimeDB.Namespace(typeof(Marker), Accessor = \"Auth\", Name = \"auth_data\")]",
+                lifecycle)).GetRunResult();
+            Assert.Contains(lifecycleResult.Diagnostics, diagnostic =>
+                diagnostic.GetMessage().Contains("LifecycleFunctions.Handle (" + kind + ")")
+                && diagnostic.GetMessage().Contains("auth_data"));
+            // The same dependency can still be published alone or merged into the root scope.
+            Generate(Create("FlatLifecycleConsumer", "", lifecycle));
+            Generate(Create("PublicLifecycleConsumer",
+                "[assembly: SpacetimeDB.Namespace(typeof(Marker), Accessor = \"Auth\", Name = \"public\")]",
+                lifecycle));
+        }
     }
 
     [Fact]
@@ -418,6 +643,38 @@ public static class GeneratorSnapshotTests
             moduleAssembly, descriptor.ContainingAssembly
         ));
         var descriptorName = descriptor.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var dispatchCalls = new List<string>();
+        foreach (var category in new[] { "Reducer", "Procedure", "HttpHandler", "View", "AnonymousView" })
+        {
+            var methodName = "CallLocal" + category;
+            var method = Assert.IsAssignableFrom<IMethodSymbol>(
+                Assert.Single(descriptor.GetMembers(methodName))
+            );
+            Assert.Equal(Accessibility.Public, method.DeclaredAccessibility);
+            Assert.True(method.IsStatic);
+            Assert.DoesNotContain(method.GetAttributes(), attribute =>
+                attribute.AttributeClass?.Name == "UnmanagedCallersOnlyAttribute");
+            var count = Assert.IsAssignableFrom<IFieldSymbol>(
+                Assert.Single(descriptor.GetMembers(category + "Count"))
+            );
+            Assert.True(count.IsConst);
+            Assert.Equal(Accessibility.Public, count.DeclaredAccessibility);
+            var localMethod = Assert.Single(compilation.SyntaxTrees
+                .SelectMany(tree => tree.GetRoot().DescendantNodes())
+                .OfType<MethodDeclarationSyntax>()
+                .Where(method => method.Identifier.ValueText == methodName
+                    && method.Parent is ClassDeclarationSyntax type
+                    && type.Identifier.ValueText == "ModuleRegistration"));
+            var localSwitch = Assert.IsType<SwitchExpressionSyntax>(localMethod.ExpressionBody!.Expression);
+            Assert.Equal(localSwitch.Arms.Count - 1, Assert.IsType<int>(count.ConstantValue));
+
+            var parameters = string.Join(", ", method.Parameters.Select(parameter =>
+                parameter.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                + " " + parameter.Name));
+            var arguments = string.Join(", ", method.Parameters.Select(parameter => parameter.Name));
+            dispatchCalls.Add($"public static global::SpacetimeDB.Internal.Errno {methodName}({parameters})"
+                + $" => {descriptorName}.{methodName}({arguments});");
+        }
 
         var consumerSource = $$"""
             using System.IO;
@@ -427,6 +684,8 @@ public static class GeneratorSnapshotTests
 
             public static class DescriptorConsumer
             {
+                {{string.Join("\n", dispatchCalls)}}
+
                 public static void Register(ModuleBuilder builder) =>
                     {{descriptorName}}.Register(builder);
 
@@ -452,6 +711,37 @@ public static class GeneratorSnapshotTests
                     Describe(builder).Sections.OfType<RawModuleDefV10Section.Reducers>()
                         .SelectMany(section => section.Reducers_)
                         .Select(reducer => reducer.SourceName).ToArray();
+
+                public static bool CheckNamespaces()
+                {
+                    const string first = "Library, Version=1.0.0.0";
+                    const string second = "Library, Version=2.0.0.0";
+                    var placements = new System.Collections.Generic.Dictionary<string, string>
+                    {
+                        [first] = "auth_data",
+                        [second] = "audit_data",
+                        ["merged"] = "public",
+                    };
+                    var registry = new NamespaceRegistry("root", placements);
+                    placements[first] = "changed";
+                    if (registry.Resolve(first, "User") != "auth_data.User"
+                        || registry.Resolve(second, "User") != "audit_data.User"
+                        || registry.Resolve("root", "User") != "User"
+                        || registry.Resolve("unmounted", "User") != "User"
+                        || registry.Resolve("merged", "User") != "User")
+                        return false;
+                    try { SpacetimeDB.Internal.Module.ResolveName(first, "User"); return false; }
+                    catch (System.InvalidOperationException) { }
+                    SpacetimeDB.Internal.Module.InstallNamespaces(registry);
+                    if (SpacetimeDB.Internal.Module.ResolveName(first, "User") != "auth_data.User") return false;
+                    try { SpacetimeDB.Internal.Module.InstallNamespaces(registry); return false; }
+                    catch (System.InvalidOperationException) { }
+                    try { new NamespaceRegistry(first, placements); return false; }
+                    catch (System.ArgumentException) { }
+                    try { new NamespaceRegistry("root", placements.Concat(placements)); return false; }
+                    catch (System.ArgumentException) { }
+                    return true;
+                }
             }
             """;
         consumer = consumer.AddSyntaxTrees(
@@ -523,6 +813,8 @@ public static class GeneratorSnapshotTests
             Assert.Equal(registered, Snapshot(second));
             Assert.Equal(registered, Snapshot(first));
             Assert.Equal(rootBefore, Snapshot(root));
+
+            Assert.True((bool)consumerType.GetMethod("CheckNamespaces")!.Invoke(null, null)!);
         }
         finally
         {
