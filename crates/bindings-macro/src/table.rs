@@ -1,5 +1,6 @@
 use crate::sats;
 use crate::sym;
+use crate::util::preinit;
 use crate::util::{check_duplicate, check_duplicate_msg, match_meta};
 use core::slice;
 use heck::ToSnakeCase;
@@ -1173,14 +1174,12 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let explicit_names_impl =
         generate_explicit_names_impl(&table_name, &tablehandle_ident, &explicit_table_name, &indices);
 
-    let register_describer_symbol = format!("__preinit__20_register_describer_{table_ident}");
-
-    let describe_table_func = quote! {
-        #[unsafe(export_name = #register_describer_symbol)]
-        extern "C" fn __register_describer() {
-            spacetimedb::rt::register_table::<#tablehandle_ident>()
-        }
-    };
+    let describe_table_func = preinit(
+        20,
+        "register_describer",
+        table_ident,
+        quote!(spacetimedb::rt::register_table::<#tablehandle_ident>()),
+    );
 
     // Output all macro data
     let trait_def = quote_spanned! {table_ident.span()=>
