@@ -39,9 +39,13 @@ test('the focused 902a candidate deterministically checks an already-open live l
   assert(criterion, 'feature 902 must include criterion 902a');
   assert.equal(criterion.points, 1);
   assert.deepEqual(criterion.steps.map(step => step.do),
-    ['openItem', 'expect', 'fill', 'click', 'expectElementCount', 'expectElementCount']);
+    ['openItem', 'expect', 'click', 'fill', 'click', 'expectElementCount', 'expectElementCount']);
   assert.deepEqual(criterion.steps.slice(0, 2).map(step => step.actor), ['reader', 'reader'],
     'the reader view must be visibly open before the write begins');
+  assert.deepEqual(criterion.steps[2], {
+    do: 'click', actor: 'reviewer', testid: 'review-toggle',
+    unlessVisible: 'review-rating', ifAvailable: true,
+  }, 'only the writer may open its review form; the reader must remain open');
   assert.equal(criterion.steps.some(action => action.do === 'race' || action.do === 'wait'), false);
   assert.deepEqual(criterion.steps.at(-2), {
     do: 'expectElementCount', actor: 'reviewer', testid: 'review-item',

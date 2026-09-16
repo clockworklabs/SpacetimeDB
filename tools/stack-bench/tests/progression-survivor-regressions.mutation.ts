@@ -108,18 +108,40 @@ test('cart expiration waits for the durable expiration state after restart', () 
   const scenario = readJson('tracks', 'ecommerce', 'scenarios',
     '03-deferred-durability.json');
   const steps = criterion(scenario, '316a').steps;
-  const reload = steps.find(step => step.do === 'reload');
-  // A session restore may follow the reload; the observations are located by control.
-  const observed = steps.filter(step => step.do !== 'reload' && step.do !== 'ensureSignedIn');
-  const [cartToggle, cartCount, expiredNotice, itemStock] = observed;
-  assert(reload && cartToggle && cartCount && expiredNotice && itemStock,
-    'criterion 316a must contain all durable expiration checks');
-  assert.equal(reload.do, 'reload');
-  assert.equal(cartToggle.testid, 'cart-toggle');
-  assert.equal(cartCount.testid, 'cart-count');
-  assert.equal(cartCount.within, 220000);
-  assert.equal(expiredNotice.testid, 'cart-expired-notice');
-  assert.equal(itemStock.testid, 'item-stock');
+  const waitIndex = steps.findIndex(step => step.do === 'wait'
+    && step.since === 'pending-316-accepted');
+  const expiryWait = steps[waitIndex];
+  assert(expiryWait && waitIndex > 0, 'expiration must be measured from the accepted reservation');
+  assert.equal(expiryWait.ms, 310000);
+  const beforeExpiry = steps.slice(0, waitIndex);
+  assert(beforeExpiry.some(step => step.do === 'reload' && step.actor === 'customer'));
+  assert(beforeExpiry.some(step => step.do === 'click' && step.testid === 'cart-toggle'
+    && step.unlessVisible === 'cart-item'), 'opening an existing cart must not close it');
+  const retainedIndex = beforeExpiry.findIndex(step => step.do === 'expectNumber'
+    && step.testid === 'cart-count');
+  assert(retainedIndex > 0, 'the restarted app must retain the reservation before expiry');
+  assert.deepEqual(beforeExpiry[retainedIndex], {
+    do: 'expectNumber', actor: 'customer', testid: 'cart-count', equals: 1, within: 1000,
+  });
+  for (const index of [retainedIndex - 1, retainedIndex + 1]) {
+    assert.deepEqual(beforeExpiry[index], {
+      do: 'expectElapsed', since: 'pending-316', atMost: 250000,
+    }, 'the positive reservation check must finish before the expiration deadline');
+  }
+  assert.deepEqual(steps.slice(waitIndex + 1).map(step => step.do),
+    ['reload', 'ensureSignedIn', 'click', 'expectNumber', 'expect', 'reload', 'expectNumber']);
+  assert.equal(steps[waitIndex + 3]?.testid, 'cart-toggle');
+  assert.deepEqual(steps[waitIndex + 4], {
+    do: 'expectNumber', actor: 'customer', testid: 'cart-count', equals: 0, within: 10000,
+  });
+  assert.deepEqual(steps[waitIndex + 5], {
+    do: 'expect', actor: 'customer', testid: 'cart-expired-notice', within: 10000,
+  });
+  assert.deepEqual(steps.at(-1), {
+    do: 'expectNumber', actor: 'watcher', testid: 'item-stock',
+    in: { testid: 'item-card', contains: 'Bluetooth Speaker' },
+    relativeTo: 'before', plus: 0, within: 10000,
+  });
 });
 
 test('PostgreSQL cart live-update mutation changes the route used by the owned check', () => {

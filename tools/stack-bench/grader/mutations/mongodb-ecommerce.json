@@ -843,11 +843,11 @@
         "ecommerce.feature.catalog.catalog-ranking.2b"
       ],
       "desc": "The initial catalog uses reverse alphabetical order.",
-      "file": "server/src/index.ts",
+      "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "return a.name.localeCompare(b.name);",
-          "replace": "return b.name.localeCompare(a.name);"
+          "find": ".sort((a, b) => (filtering ? 0 : b.purchaseCount - a.purchaseCount) || a.name.localeCompare(b.name))",
+          "replace": ".sort((a, b) => (filtering ? 0 : b.purchaseCount - a.purchaseCount) || b.name.localeCompare(a.name))"
         }
       ]
     },

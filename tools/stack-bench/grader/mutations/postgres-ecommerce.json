@@ -1538,8 +1538,8 @@
       "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": ".sort((a, b) => b.purchaseCount - a.purchaseCount || a.name.localeCompare(b.name))",
-          "replace": ".sort((a, b) => b.purchaseCount - a.purchaseCount || b.name.localeCompare(a.name))"
+          "find": ".sort((a, b) => (filtering ? 0 : b.purchaseCount - a.purchaseCount) || a.name.localeCompare(b.name))",
+          "replace": ".sort((a, b) => (filtering ? 0 : b.purchaseCount - a.purchaseCount) || b.name.localeCompare(a.name))"
         }
       ]
     },
