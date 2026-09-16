@@ -1,5 +1,8 @@
+use std::fmt;
+
 use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::{Span, TokenStream};
+use quote::{format_ident, quote};
 use syn::parse::Parse;
 use syn::Ident;
 
@@ -78,6 +81,19 @@ pub(crate) fn one_of(options: &[crate::sym::Symbol]) -> String {
             let join = options.join("`, `");
             format!("expected one of: `{join}`")
         }
+    }
+}
+
+pub(crate) fn preinit(prio: u8, kind: &str, name: impl fmt::Display, body: TokenStream) -> TokenStream {
+    let symbol_name = format!("__preinit__{prio:02}_{kind}_{name}");
+    let ident = format_ident!("__{}", kind);
+    quote! {
+        const _: () = {
+            #[unsafe(export_name = #symbol_name)]
+            extern "C" fn #ident() {
+                #body
+            }
+        };
     }
 }
 
