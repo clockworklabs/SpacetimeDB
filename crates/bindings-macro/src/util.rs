@@ -1,6 +1,8 @@
+use std::fmt;
+
 use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::{Span, TokenStream};
-use quote::quote;
+use quote::{format_ident, quote};
 use syn::parse::Parse;
 use syn::Ident;
 
@@ -118,6 +120,31 @@ pub(crate) fn native_test_utils_registration(register_body: TokenStream) -> Toke
         }
     } else {
         quote! {}
+    }
+}
+
+pub(crate) fn preinit(
+    prio: u8,
+    kind: &str,
+    name: impl fmt::Display,
+    register_native_test: bool,
+    body: TokenStream,
+) -> TokenStream {
+    let symbol_name = format!("__preinit__{prio:02}_{kind}_{name}");
+    let ident = format_ident!("__{}", kind);
+    let test_utils_registration = register_native_test.then(|| {
+        native_test_utils_registration(quote! {
+            #ident()
+        })
+    });
+    quote! {
+        const _: () = {
+            #[unsafe(export_name = #symbol_name)]
+            extern "C" fn #ident() {
+                #body
+            }
+            #test_utils_registration
+        };
     }
 }
 
