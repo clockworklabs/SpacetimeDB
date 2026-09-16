@@ -19,6 +19,7 @@ interface FixtureSelection extends RepairSelection {
 }
 
 interface FixtureOverrides {
+  productionQuality?: boolean;
   repair?: RunRepairRecord;
   outcome?: RepairOutcome;
   selection?: FixtureSelection;
@@ -58,6 +59,7 @@ function parentFixture(root: string, overrides: FixtureOverrides = {}) {
     identities,
     track: 'loop', backend: 'stub', model: 'deterministic', guidance: 'prescribed',
     condition: null, selectionRequest: { packs: [], checks: [] }, skills: [],
+    ...(overrides.productionQuality === undefined ? {} : { productionQuality: overrides.productionQuality }),
     ...(overrides.mode ? { mode: overrides.mode } : {}),
     runtime: { buildImage: 'test-build-image', url: 'http://localhost:1234' },
     backendLease: { runIndex: 0 },
@@ -82,9 +84,18 @@ test('a finite grant is derived only from the exact exhausted parent checkpoint'
     assert.equal(resolved.configuration.recipe, 'ecommerce.sequential-l1');
     assert.equal(resolved.configuration.runIndex, 0);
     assert.equal(resolved.configuration.url, 'http://localhost:1234');
+    assert.equal(resolved.configuration.productionQuality, undefined);
     assert.equal(resolved.grant.cumulativeCostBeforeUsd, 101.5);
     assert.equal(resolved.grant.cumulativeDurationBeforeSec, 160);
     assert.deepEqual(resolved.grant.downstreamLevelsToRerun, [2]);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a direct repair preserves its recorded production framing', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-framing-'));
+  try {
+    parentFixture(root, { productionQuality: true });
+    assert.equal(createRepairGrant(root, { level: 1, repairs: 1 }).configuration.productionQuality, true);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

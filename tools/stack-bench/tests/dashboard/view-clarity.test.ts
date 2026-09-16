@@ -39,7 +39,7 @@ test('campaign separates aggregate scores from selected evidence and explains pe
     resumable: false, createdAt: '', updatedAt: '',
     facts: { mode: 'dependency', workSelection: 'progressive', repairSelection: 'feature',
       repairLimits: { perFeature: 5 }, agent: null, model: null,
-      guidance: 'neutral', recipes: [], timeLimitMinutes: 240, spendLimitUsd: 50,
+      guidance: 'neutral', productionQuality: false, recipes: [], timeLimitMinutes: 240, spendLimitUsd: 50,
       controllerImage: null, buildImage: null, planSha256: 'example', grading: 'pending', gradingReasons: [] },
     stacks: [{ stack: 'spacetime', costPerValidRun: 6, selectedAttemptId: attempt.id, score: 82, points: null,
       unaided: null, continued: false, regressions: 0,

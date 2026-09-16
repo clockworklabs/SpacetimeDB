@@ -236,6 +236,7 @@ export interface BenchmarkRunRecord {
   maxOutputTokens?: number;
   pricing: unknown;
   guidance: string;
+  productionQuality?: boolean;
   condition: unknown;
   skills: unknown[];
   runtime: { buildImage: string; url: string };

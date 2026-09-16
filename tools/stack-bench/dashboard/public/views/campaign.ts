@@ -59,6 +59,8 @@ function facts(sheet: CampaignSheet): string {
   cells.push(['Repetitions', String(sheet.repetitions), ''],
     ['Agent', fact.agent ?? DASH, ''], ['Model', fact.model ?? DASH, ''],
     ['Guidance', fact.guidance ?? DASH, ''],
+    ['Production quality', fact.productionQuality === null ? 'Mixed'
+      : fact.productionQuality ? 'Requested' : 'Not requested', 'Whether the prompt explicitly requests a production-quality app.'],
     ['Recipe', [...new Set(fact.recipes.map(recipe =>
       [recipe.id, short(recipe.contentSha256)].filter(Boolean).join(' ')))].join(' · ') || DASH, ''],
     ['Time limit', `${fact.timeLimitMinutes} min`, ''],

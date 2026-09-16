@@ -81,6 +81,7 @@ interface AgentArgs {
   runIndex: number;
   model: string;
   guidance: GuidanceMode;
+  productionQuality?: boolean;
   track: string;
   pricing: Readonly<PricingAuthority> | null;
   guidanceDocument?: ResolvedGuidanceDocument;
@@ -317,9 +318,12 @@ export function parseAgentArgs(argv: readonly string[]): AgentArgs {
   const { values: rawValues } = parseNodeArgs({ args: [...argv.slice(2)], options: Object.fromEntries([
     ...strings.map(name => [name, { type: 'string' as const }]),
     ['print-prompt', { type: 'boolean' as const }],
+    ['production-quality', { type: 'boolean' as const }],
+    ['no-production-quality', { type: 'boolean' as const }],
   ]), strict: true, allowPositionals: false });
   const values = rawValues as Partial<Record<(typeof strings)[number], string>>
-    & { 'print-prompt'?: boolean };
+    & { 'print-prompt'?: boolean; 'production-quality'?: boolean; 'no-production-quality'?: boolean };
+  if (values['production-quality'] && values['no-production-quality']) throw new Error('choose only one production-quality flag');
   const mode = values.mode;
   if (mode !== 'build' && mode !== 'upgrade' && mode !== 'fix' && mode !== 'resume') {
     throw new Error('--mode must be build, upgrade, fix, or resume');
@@ -370,6 +374,7 @@ export function parseAgentArgs(argv: readonly string[]): AgentArgs {
   return { provider, ...(providerRoute ? { providerRoute } : {}), mode, backend, app, level, runIndex, model,
     ...(maxOutputTokens ? { maxOutputTokens } : {}),
     guidance: parseGuidanceMode(values.guidance ?? 'prescribed'),
+    productionQuality: mode !== 'resume' && !values['no-production-quality'],
     track: values.track ?? DEFAULT_TRACK, pricing: pricing ?? null,
     ...(values['guidance-document-json'] ? {
       guidanceDocument: JSON.parse(values['guidance-document-json']) as ResolvedGuidanceDocument,
@@ -644,6 +649,7 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
     ]);
   }
 
+  if (args.productionQuality) common.unshift('Build a production-quality application suitable for real users, not a prototype or demo.', '');
   const startingCatalog = materials.startingCatalog
     ? ['', '## Starting catalog', '', args.mode === 'build'
       ? 'Use exactly this starting data:'
@@ -829,6 +835,7 @@ async function main() {
     provider: args.provider, providerRoute: args.providerRoute, imageId: imageIdentity.id, provenance, pricing: args.pricing,
     maxOutputTokens: args.maxOutputTokens,
     guidance: args.guidance, skillIdentity: args.skillIdentity,
+    ...(args.productionQuality ? { productionQuality: true } : {}),
     continuationMessage: PROVIDER_CONTINUATION_MESSAGE };
   let coding: CodingSessionRetryResult;
   try {
@@ -914,6 +921,7 @@ async function main() {
     helpers: { linuxSpacetimeVersion, bindingsIdentity, containerImage },
   });
   const out = {
+    ...(args.productionQuality ? { productionQuality: true } : {}),
     appDir: args.app,
     mode: args.mode,
     level: args.level,

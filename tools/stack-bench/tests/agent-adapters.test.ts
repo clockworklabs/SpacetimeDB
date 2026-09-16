@@ -27,6 +27,17 @@ const pricing: PricingAuthority = { unit: 'USD-per-million-tokens', rates: {
   input: 3, output: 15, cacheWrite5m: 3.75, cacheWrite1h: 6, cacheRead: 0.3,
 } };
 
+test('production framing follows every coding adapter but not model-free controls', () => {
+  for (const id of AGENT_ADAPTER_REGISTRY.ids) {
+    const adapter = AGENT_ADAPTER_REGISTRY.get(id);
+    const input = { ...request, ...(adapter.provider === 'openrouter' ? { providerRoute: 'openai', maxOutputTokens: 1000 } : {}) };
+    const enabled = agentRequestArgv(adapter, { ...input, productionQuality: true });
+    const legacy = agentRequestArgv(adapter, input);
+    assert.equal(enabled.includes('--production-quality'), Boolean(adapter.provider));
+    assert.equal(legacy.includes('--no-production-quality'), Boolean(adapter.provider));
+  }
+});
+
 test('built-in agent adapters are statically registered and content identified', () => {
   assert.deepEqual(AGENT_ADAPTER_REGISTRY.ids,
     ['claude-code', 'codex', 'deterministic', 'fault-injection', 'openrouter', 'reference-fixture']);
@@ -241,6 +252,10 @@ test('completion validation rejects wrong identity and malformed usage', () => {
   const normalized = validateAgentResult(valid, nativeRequest);
   assert.equal(normalized.backend, request.backend);
   assert.equal(normalized.model, request.model);
+  assert.equal(validateAgentResult({ ...valid, productionQuality: true },
+    { ...nativeRequest, productionQuality: true }).productionQuality, true);
+  assert.throws(() => validateAgentResult({ ...valid, productionQuality: 'true' }, nativeRequest), /productionQuality/);
+  assert.throws(() => validateAgentResult({ ...valid, productionQuality: true }, nativeRequest), /does not match/);
   assert.deepEqual(normalized.transcript, { kind: 'provider-session', id: 'session-1' });
   assert.deepEqual(normalized.costReceipts, valid.costReceipts);
   assert.deepEqual(normalized.setup.resources, valid.setup.resources);

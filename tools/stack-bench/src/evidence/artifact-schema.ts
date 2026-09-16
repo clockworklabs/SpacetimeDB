@@ -87,7 +87,7 @@ const SECRET_KEYS = new Set([
   'apikey', 'authorization', 'credential', 'credentials', 'leasetoken', 'ownershiptoken',
   'password', 'secret',
 ]);
-const BENCHMARK_RUN_PAYLOAD_FIELDS = new Set(['status', 'mode', 'track', 'backend', 'model', 'providerRoute', 'maxOutputTokens', 'guidance',
+const BENCHMARK_RUN_PAYLOAD_FIELDS = new Set(['status', 'mode', 'track', 'backend', 'model', 'providerRoute', 'maxOutputTokens', 'guidance', 'productionQuality',
   'condition', 'stack', 'setup', 'backendLease', 'backendDiagnostics', 'validation', 'levels',
   'contaminated', 'contamination', 'mutationControl', 'totals', 'outcome', 'selectionRequest',
   'skills', 'runtime', 'pricing', 'featureCatalog', 'dependencyPolicy', 'progressionOwner', 'progressionStatus',
@@ -258,6 +258,9 @@ function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
     }
   };
   if (['benchmark_run', 'repair_continuation'].includes(kind)) {
+    if (payload.productionQuality !== undefined && typeof payload.productionQuality !== 'boolean') {
+      fail(`${kind} payload.productionQuality must be a boolean`);
+    }
     if (payload.checkpoints !== undefined) z.array(checkpointSchema).parse(payload.checkpoints);
     for (const [index, levelValue] of (arrayWhenPresent('levels') ?? []).entries()) {
       const level = asObject(levelValue, `${kind} payload.levels[${index}] must be an object`);

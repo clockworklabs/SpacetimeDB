@@ -584,6 +584,7 @@ export async function runAgent(
     ?? args.recipeTasks?.get(level)?.request ?? null;
   const request: AgentRequest = { mode, level, app: appDir, backend: args.backend, track: args.track,
     runIndex: args.runIndex, model: args.model, guidance: args.guidance, skills: args.skills,
+    productionQuality: args.productionQuality,
     ...(adapter.usesStackSkills
       ? { skillIdentity: args.condition?.guidance.skills[args.backend] } : {}),
     recipe: agentRecipeIdentity(args.recipe, recipeTask),
@@ -1015,6 +1016,7 @@ async function main() {
       maxOutputTokens: config.maxOutputTokens,
       guidance: config.guidance,
       guidanceDocument: config.guidanceDocument,
+      productionQuality: config.condition?.productionQuality === true || (!config.condition && config.productionQuality === true),
       condition: config.condition,
       selectionRequest: campaignSelection(config.selectionRequest, 'repair configuration.selectionRequest'),
       skills: config.skills,
@@ -1550,6 +1552,7 @@ async function main() {
     ...(args.maxOutputTokens ? { maxOutputTokens: args.maxOutputTokens } : {}),
     pricing: args.pricing,
     guidance: args.guidance, condition: args.condition ?? null,
+    ...(args.productionQuality && agentAdapter.provider ? { productionQuality: true } : {}),
     skills: args.skills ?? [],
     runtime: { buildImage: process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE, url },
     selectionRequest: args.selectionRequest,

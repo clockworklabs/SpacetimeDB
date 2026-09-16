@@ -90,6 +90,7 @@ interface SourceCheckpointPayload extends Record<string, unknown> {
 }
 
 export interface RepairConfiguration {
+  productionQuality?: boolean;
   backend: string;
   track: string;
   level: number;
@@ -339,6 +340,7 @@ export function inspectRepairParent(parentDirectory: string,
       guidance: parent.guidance,
       guidanceDocument,
       condition: parent.condition ?? null,
+      ...(!parent.condition && parent.productionQuality === true ? { productionQuality: true } : {}),
       selectionRequest: parent.selectionRequest ?? { packs: [], checks: [] },
       skills: parent.skills ?? [],
       buildImage: parent.runtime?.buildImage ?? null,

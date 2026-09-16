@@ -23,6 +23,7 @@ const requestSchema = z.strictObject({
   repetitions: z.number().int().positive(), parallelism: z.number().int().positive(),
   repairs: z.number().int().nonnegative(), timeoutMinutes: z.number().int().positive(),
   maxCostUsd: z.number().positive().finite(),
+  productionQuality: z.boolean().default(true),
   pauseAfterDepth: z.number().int().positive().nullable(),
   credentials: executionCredentialsSchema.omit({ attempts: true }),
 });
@@ -121,6 +122,7 @@ export function prepareRun(results: string, input: unknown, env: NodeJS.ProcessE
   });
   d.conditions = select(d.conditions, request.conditions, condition => condition.id);
   for (const condition of d.conditions) {
+    condition.productionQuality = request.productionQuality;
     if (condition.specifications?.levels) {
       condition.specifications.levels = condition.specifications.levels.filter(level => d.levels.includes(level.level));
     }

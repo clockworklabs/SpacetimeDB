@@ -16,6 +16,22 @@ import { agentVisibleContractText } from '../src/composition/agent-visible-contr
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { readAgentSkillDocuments } from '../src/agents/agent-materials.js';
 
+test('production framing is one sentence and never changes restoration prompts', () => {
+  const sentence = 'Build a production-quality application suitable for real users, not a prototype or demo.';
+  const track = loadTrack('ecommerce');
+  for (const backend of ['mongodb', 'postgres', 'spacetime']) for (const level of [1, 2, 3, 4, 5, 6])
+    for (const mode of ['build', 'upgrade', 'fix', 'resume']) {
+    const argv = ['node', 'agent', '--mode', mode, '--backend', backend, '--level', String(level), '--app', '/app', '--guidance', 'neutral'];
+    const enabled = parseAgentArgs(argv), disabled = parseAgentArgs([...argv, '--no-production-quality']);
+    const materials = { skillsText: '', requirementText: 'Build the requested store.', contractText: '' };
+    const render = (args: typeof enabled) => buildPrompt(args, portsFor(track, backend, 0), track, materials);
+    const on = render(enabled), off = render(disabled);
+    assert.equal(on.includes(sentence), mode !== 'resume');
+    assert.equal(on.replace(sentence + '\n\n', ''), off);
+    assert.equal(render({ ...disabled, productionQuality: undefined }), off, 'legacy prompt bytes remain unchanged');
+  }
+});
+
 const AGENT = resolve(STACK_BENCH_ROOT, 'dist', 'commands', 'agent.js');
 const STACKS = ['mongodb', 'postgres', 'spacetime'] as const;
 const EVALUATION_LANGUAGE =

@@ -73,6 +73,7 @@ export interface ValidatedAgentResult {
   track: string;
   model: string;
   guidance: unknown;
+  productionQuality?: boolean;
   stack?: unknown;
   ok: boolean;
   sessionId: string | null;
@@ -138,6 +139,7 @@ const resultSchema = z.strictObject({
   backend: z.string().optional(),
   model: z.string().optional(),
   guidance: z.unknown().optional(),
+  productionQuality: z.boolean().optional(),
   stack: z.unknown().optional(),
   setup: z.looseObject({
     session: z.string().min(1).optional(),
@@ -235,6 +237,9 @@ export function validateAgentResult(value: unknown, request: AgentRequest): Vali
     throw new Error(formatZodError(parsed.error, 'agent result'));
   }
   const result = parsed.data;
+  if (result.productionQuality !== undefined && result.productionQuality !== (request.productionQuality === true)) {
+    throw new Error('agent result productionQuality does not match the request');
+  }
   if (result.appDir !== request.app) throw new Error('agent result appDir does not match the request');
   if (result.mode !== request.mode) throw new Error('agent result mode does not match the request');
   if (result.level !== request.level) throw new Error('agent result level does not match the request');
@@ -285,6 +290,7 @@ export function validateAgentResult(value: unknown, request: AgentRequest): Vali
     track: request.track,
     model: request.model,
     guidance: result.guidance ?? request.guidance,
+    ...(result.productionQuality === undefined ? {} : { productionQuality: result.productionQuality }),
     stack: result.stack,
     ok: result.ok,
     sessionId: result.sessionId,

@@ -29,6 +29,7 @@ test('setup reviews exact dimensions, rejects changes, and dispatches one durabl
     { id: 'neutral-dev', guidance: 'neutral-dev', sdkSkills: true, devWorkflow: true },
   ];
   const initial = initialRun(choices)!;
+  assert.equal(initial.productionQuality, true);
   assert.deepEqual(initial.conditions, ['neutral-dev']);
   const single = { ...choices.workloads[0]!, id: 'single-build', workSelection: 'all-at-once' as const };
   const reordered = { ...choices, workloads: [single, ...choices.workloads] };
@@ -37,6 +38,9 @@ test('setup reviews exact dimensions, rejects changes, and dispatches one durabl
   const page = runSetupPage(choices, initial, null, '', true);
   assert.match(page, /name="sdkSkills"/);
   assert.match(page, /name="devWorkflow"/);
+  assert.match(page, /name="productionQuality" checked/);
+  assert.doesNotMatch(runSetupPage(choices, { ...initial, productionQuality: false }, null, '', true),
+    /name="productionQuality" checked/);
   assert.doesNotMatch(page, /Both \(compare\)/);
   assert.match(page, /Progressive dependency graph/);
   assert.match(runSetupPage(reordered, initialRun(reordered, single.id), null, '', true), /Full graph in one build/);
@@ -50,6 +54,12 @@ test('setup reviews exact dimensions, rejects changes, and dispatches one durabl
   assert.equal(review.parallelism, 6);
   assert.equal(review.maxCostUsd, 72);
   assert.equal(review.mode.workSelection, 'progressive');
+  assert.equal(review.request.productionQuality, true);
+  const prototypeReview = prepareRun(root, { ...request, productionQuality: false }, {});
+  assert.notEqual(prototypeReview.planSha256, review.planSha256);
+  assert.match(runSetupPage(catalog, request, review, '', true), /Production-quality app<\/dt><dd>Requested/);
+  assert.match(runSetupPage(catalog, prototypeReview.request, prototypeReview, '', true),
+    /Production-quality app<\/dt><dd>Not requested/);
   assert.equal(prepareRun(root, request, {}).reviewId, review.reviewId);
   assert.equal(existsSync(join(root, 'jobs')), false);
   assert.throws(() => prepareRun(root, { ...request, stacks: [...request.stacks, request.stacks[0]] }, {}), /duplicates/);
@@ -57,6 +67,8 @@ test('setup reviews exact dimensions, rejects changes, and dispatches one durabl
   assert.throws(() => prepareRun(root, { ...request, parallelism: 0 }, {}));
   assert.throws(() => prepareRun(root, { ...request, workload: '../escape' }, {}));
   assert.throws(() => submitPreparedRun(root, { request: { ...request, maxCostUsd: 24 }, reviewId: review.reviewId }, {}), /Setup changed/);
+  assert.throws(() => submitPreparedRun(root,
+    { request: { ...request, productionQuality: false }, reviewId: review.reviewId }, {}), /Setup changed/);
   const changed = JSON.parse(source); changed.pricing.models['reference-fixture'].input = 1;
   writeFileSync(presetPath, JSON.stringify(changed));
   assert.throws(() => submitPreparedRun(root, review, {}), /Workload changed/);

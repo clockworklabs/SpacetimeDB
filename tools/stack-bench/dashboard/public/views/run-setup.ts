@@ -17,7 +17,7 @@ export function initialRun(catalog: RunSetupCatalog, id?: string): RunSetupReque
     agents: [{ index: 0, effort: w.agents[0]!.effort ?? 'medium' }],
     conditions: [(w.conditions.find(c => c.guidance === 'neutral-dev')
       ?? w.conditions.find(c => c.guidance === 'neutral') ?? w.conditions[0])!.id], ...w.defaults,
-    maxCostUsd: w.defaults.maxCostUsd ?? 0, credentials: {} };
+    productionQuality: true, maxCostUsd: w.defaults.maxCostUsd ?? 0, credentials: {} };
 }
 
 export function selectGuidance(conditions: RunSetupCatalog['workloads'][number]['conditions'], sdk: string, dev: string): string[] {
@@ -33,6 +33,7 @@ export function readRunForm(form: HTMLFormElement, catalog: RunSetupCatalog): Ru
       effort: String(data.get(`effort-${index}`)) as RunSetupRequest['agents'][number]['effort'] })),
     conditions: data.has('sdkSkills') ? selectGuidance(catalog.workloads.find(w => w.id === data.get('workload'))!.conditions,
       String(data.get('sdkSkills')), String(data.get('devWorkflow'))) : data.getAll('condition').map(String), repetitions: Number(data.get('repetitions')),
+    productionQuality: data.has('productionQuality'),
     parallelism: Number(data.get('parallelism')), repairs: Number(data.get('repairs')),
     timeoutMinutes: Number(data.get('timeoutMinutes')), maxCostUsd: Number(data.get('maxCostUsd')),
     pauseAfterDepth: data.get('pauseAfterDepth') ? Number(data.get('pauseAfterDepth')) : null,
@@ -71,6 +72,7 @@ export function runSetupPage(catalog: RunSetupCatalog | null, request: RunSetupR
       ['Stacks', request.stacks.map(stackLabel).join(', ')],
       ['Models', request.agents.map(a => `${modelLabel(model(a.index).model)} (${a.effort})`).join(', ')],
       ['Guidance', request.conditions.map(id => guidanceLabel(w.conditions.find(c => c.id === id)!.guidance)).join(', ')],
+      ['Production-quality app', request.productionQuality ? 'Requested' : 'Not requested'],
       ['Runs', `${review.attempts} attempts · ${request.repetitions} per combination · ${review.parallelism} concurrent`],
       ['Repairs', `${request.repairs} per attempt`],
       ['Limits', `${request.timeoutMinutes} minutes and ${money(request.maxCostUsd)} per attempt`],
@@ -97,6 +99,9 @@ export function runSetupPage(catalog: RunSetupCatalog | null, request: RunSetupR
     + '</div></fieldset><fieldset><legend>Models and reasoning</legend>'
     + w.agents.map((agent, index) => `<div class="setup-model"><label><input type="checkbox" name="agent" value="${index}"${request.agents.some(a => a.index === index) ? ' checked' : ''}>${esc(modelLabel(agent.model))}</label>`
       + `<select name="effort-${index}" aria-label="Reasoning for ${esc(agent.model)}">${['low', 'medium', 'high', 'xhigh', 'max'].map(e => option(e, e, e === (request.agents.find(a => a.index === index)?.effort ?? agent.effort ?? 'medium'))).join('')}</select></div>`).join('')
+    + '</fieldset><fieldset><legend>App requirement</legend>'
+    + `<label><input type="checkbox" name="productionQuality"${request.productionQuality ? ' checked' : ''}>Production-quality app</label>`
+    + '<p>Build a production-quality application suitable for real users, not a prototype or demo.</p>'
     + '</fieldset><fieldset><legend>SpacetimeDB guidance</legend>'
     + (splitGuidance ? '<div class="setup-fields">' + guidanceChoice('sdkSkills', 'SDK skills')
       + guidanceChoice('devWorkflow', 'Dev workflow') : '<div class="setup-choices">' + w.conditions.map(c => `<label><input type="checkbox" name="condition" value="${esc(c.id)}"${request.conditions.includes(c.id) ? ' checked' : ''}>${esc(guidanceLabel(c.guidance))}</label>`).join(''))

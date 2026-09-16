@@ -229,6 +229,7 @@ export interface SheetFacts {
   agent: string | null;
   model: string | null;
   guidance: string | null;
+  productionQuality: boolean | null;
   recipes: Array<{ level: number; id: string | null; contentSha256: string | null }>;
   timeLimitMinutes: number;
   spendLimitUsd: number | null;
@@ -350,6 +351,8 @@ function sheetFacts(plan: CompiledCampaignPlan): SheetFacts {
     agent: agent?.adapter ?? null,
     model: agent?.model ?? null,
     guidance: plan.attempts[0]?.guidance ?? null,
+    productionQuality: plan.attempts.every(attempt => attempt.condition.productionQuality === true)
+      ? true : plan.attempts.some(attempt => attempt.condition.productionQuality === true) ? null : false,
     recipes: facts.recipes,
     timeLimitMinutes: plan.definition.budgets.attemptTimeoutMinutes,
     spendLimitUsd: plan.definition.budgets.maxCostUsdPerAttempt,

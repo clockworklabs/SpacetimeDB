@@ -13,6 +13,14 @@ import { formatLevelSummary } from '../src/evidence/evidence-presentation.js';
 import type { BenchmarkRunRecord, RunLevelRecord, RunSessionRecord, RunTotalsInput } from '../src/evidence/benchmark-run.js';
 import { parseBenchArguments } from '../commands/bench-arguments.js';
 import { pristineMutationBaselinePath } from '../src/evidence/mutation-control.js';
+
+test('new direct runs default to production framing with an explicit opt-out', () => {
+  const argv = ['node', 'bench', '--backend', 'postgres'];
+  assert.equal(parseBenchArguments(argv).productionQuality, true);
+  assert.equal(parseBenchArguments([...argv, '--production-quality']).productionQuality, true);
+  assert.equal(parseBenchArguments([...argv, '--no-production-quality']).productionQuality, false);
+  assert.throws(() => parseBenchArguments([...argv, '--production-quality', '--no-production-quality']), /only one/);
+});
 import { clearPrivateGradingEvidence, privateGradingDirectory, levelGradeIsUsable, repairEvidenceDecision,
   repairHistoryEntry, repairProgressState, repairRegressionDecision,
   restorePrivateGradingEvidence }

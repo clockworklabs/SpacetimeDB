@@ -44,6 +44,7 @@ export interface BenchArguments {
   media: boolean;
   retainBackend?: boolean;
   guidance: GuidanceMode;
+  productionQuality?: boolean;
   guidanceDocument?: unknown;
   condition?: StudyCondition;
   /** Aliases the grader expects instead of the condition's; `{}` grades with the fixture credentials. */
@@ -118,7 +119,7 @@ function parseCli(argv: readonly string[]): BenchCliOptions {
   const options = Object.fromEntries([
     ...strings.map(name => [name, { type: 'string' as const }]),
     ...multiple.map(name => [name, { type: 'string' as const, multiple: true }]),
-    ...['no-media', 'retain-backend', 'reference-mutation-only'].map(name =>
+    ...['no-media', 'retain-backend', 'reference-mutation-only', 'production-quality', 'no-production-quality'].map(name =>
       [name, { type: 'boolean' as const }]),
   ]);
   const { values } = parseArgs({ args: [...argv.slice(2)], options, strict: true,
@@ -148,13 +149,16 @@ function parseCli(argv: readonly string[]): BenchCliOptions {
   if (typeof parsed.skills === 'string') parsed.skills = parsed.skills.split(',').filter(Boolean);
   if (parsed.noMedia === true) parsed.media = false;
   delete parsed.noMedia;
+  if (parsed.productionQuality && parsed.noProductionQuality) throw new Error('choose only one production-quality flag');
+  if (parsed.noProductionQuality) parsed.productionQuality = false;
+  delete parsed.noProductionQuality;
   return parsed as BenchCliOptions;
 }
 
 export function parseBenchArguments(argv: readonly string[]): BenchArguments {
   const args: BenchArguments = { model: null, agentAdapter: 'claude-code',
     repairs: 10, runIndex: 0, levels: '1', levelsProvided: false, media: true,
-    levelList: [], maxStalledRepairs: 3, guidance: 'prescribed', track: DEFAULT_TRACK,
+    levelList: [], maxStalledRepairs: 3, guidance: 'prescribed', productionQuality: true, track: DEFAULT_TRACK,
     packIds: [], checkKeys: [], featureIds: [], requestedSpecifications: [],
     expectedSpecifications: [], observedSpecifications: [],
     mutationMaxRuntimeMinutes: 60 };
@@ -325,6 +329,7 @@ function bindCampaign(args: BenchArguments): void {
   args.pricing = validatePricingAuthority(attempt.pricing, { at: 'compiled campaign pricing' });
   args.guidance = parseGuidanceMode(attempt.guidance);
   args.condition = structuredClone(attempt.condition);
+  args.productionQuality = attempt.condition.productionQuality === true;
   args.skills = structuredClone(attempt.skills);
   args.selectionRequest = structuredClone(plan.definition.selection);
   args.guidanceDocument = structuredClone(

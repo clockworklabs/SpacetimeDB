@@ -38,13 +38,21 @@ This checks the runner; it does not measure a coding model.
    [credential setup instructions](appliance/README.md#provider-credentials).
    There is no separate dashboard password.
 2. Open **New run**. Select the workload, level, stacks, model, reasoning effort,
-   SDK skills, dev workflow, repetitions, repairs, and limits.
+   SDK skills, dev workflow, repetitions, repairs, and limits. **Production-quality
+   app** is on by default. It adds: “Build a production-quality application suitable
+   for real users, not a prototype or demo.” You can turn it off before review.
 3. Review the configuration, attempt count, and cost cap. Select **Start**.
 4. Open the run to follow its status. Keep excluded and incomplete attempts in
    your review. Provisional results are not qualified comparisons.
 
 The demo and model runs use the same local dashboard. Starting model work can
 consume provider credit or account usage; the demo does not.
+
+The production-quality option changes the request, not the checks. It is recorded
+with the run. Earlier frozen runs retain their original prompts. Compare results
+with the same setting, or label the prompt difference.
+For CLI/API run preparation, set `productionQuality` to `false` to opt out; omitted
+values default to `true`. Direct coding runs also accept `--no-production-quality`.
 
 ## Read and keep results
 

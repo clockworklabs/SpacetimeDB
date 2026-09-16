@@ -71,6 +71,7 @@ interface ConditionSpecifications {
 
 export interface ConditionReference {
   id: string;
+  productionQuality?: boolean;
   guidanceProfile: string;
   repairPolicy: string;
   specifications?: ConditionSpecifications;
@@ -112,6 +113,7 @@ export interface RequestedScope { track: string; levels: [RequestedLevel, ...Req
 
 export interface ResolvedStudyCondition {
   id: string;
+  productionQuality?: boolean;
   contentSha256: string;
   requested: RequestedScope;
   guidance: ResolvedGuidanceProfile;
@@ -303,12 +305,15 @@ export function validateConditionReference(input: unknown, at = 'condition'): Co
   if (!object(input)) fail(at, 'must be an object');
   const value = structuredClone(input) as UnknownRecord;
   const fields = new Set(['id', 'guidanceProfile', 'repairPolicy',
-    'specifications']);
+    'specifications', 'productionQuality']);
   for (const key of Object.keys(value)) if (!fields.has(key)) fail(`${at}.${key}`, 'is unknown');
   for (const key of ['id', 'guidanceProfile', 'repairPolicy']) {
     if (!Object.hasOwn(value, key)) fail(`${at}.${key}`, 'is required');
   }
   if (typeof value.id !== 'string' || !ID.test(value.id)) fail(`${at}.id`, 'is invalid');
+  if (value.productionQuality !== undefined && typeof value.productionQuality !== 'boolean') {
+    fail(`${at}.productionQuality`, 'must be a boolean');
+  }
   for (const field of ['guidanceProfile', 'repairPolicy'] as const) {
     const reference = value[field];
     if (!conditionReference(reference)) {
@@ -493,6 +498,7 @@ export function resolveStudyConditions(inputs: unknown[], stacks: string[],
     const guidance = resolveGuidance(catalog, ref.guidanceProfile, stacks, resolve(stackBenchRoot));
     const repair = resolveRepair(catalog, ref.repairPolicy);
     const content = { id: ref.id, requested: requestedScope,
+      ...(ref.productionQuality === undefined ? {} : { productionQuality: ref.productionQuality }),
       guidance, repair };
     return { ...content, contentSha256: sha256(canonicalDefinitionJson(content)) };
   });

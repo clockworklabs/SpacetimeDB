@@ -36,6 +36,22 @@ const writeJson = (path: string, value: unknown): void => {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 };
 
+test('production framing is explicit and does not change legacy or grading scope', () => {
+  const resolve = (productionQuality?: boolean) => resolveStudyConditions([
+    { ...prescribed, ...(productionQuality === undefined ? {} : { productionQuality }) },
+  ], ['mongodb'], { requested })[0];
+  const legacy = resolve(), enabled = resolve(true), disabled = resolve(false);
+  assert.equal(Object.hasOwn(legacy, 'productionQuality'), false);
+  assert.deepEqual(resolve(), legacy);
+  assert.equal(enabled.productionQuality, true);
+  assert.equal(disabled.productionQuality, false);
+  assert.notEqual(enabled.contentSha256, disabled.contentSha256);
+  assert.notEqual(enabled.contentSha256, legacy.contentSha256);
+  assert.deepEqual(enabled.requested, legacy.requested);
+  assert.deepEqual(enabled.guidance, legacy.guidance);
+  assert.throws(() => validateConditionReference({ ...prescribed, productionQuality: 'true' }), /must be a boolean/);
+});
+
 test('dev workflow is opt-in and changes only the SpacetimeDB skill identity', () => {
   const stacks = ['spacetime', 'mongodb', 'postgres'];
   const neutral = resolveGuidanceProfile('neutral', stacks);
