@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, rc::Rc};
+use alloc::{boxed::Box, rc::Rc, sync::Arc};
 use core::result::Result;
 
 use crate::{
@@ -38,6 +38,8 @@ pub enum Error {
     Cancelled,
     #[error("submission queue overflow")]
     SubmissionQueueOverflow,
+    #[error("too many pending completion futures")]
+    TooManyCompletions,
 }
 
 impl From<fs::Error> for Error {
@@ -109,61 +111,75 @@ impl SimulatorIO {
     fn submit<T, U>(
         &self,
         sqe: Sqe<usize>,
-        completion: impl FnOnce(Rc<SimulatorInner>, usize) -> Completion<U>,
+        completion: impl FnOnce(Rc<spin::Mutex<PendingCompletions>>, usize) -> Completion<Result<U, Error>>,
         completion_handle: impl FnOnce(CompletionState<Result<T, Error>>) -> CompletionHandle,
-    ) -> Completion<U> {
+    ) -> Completion<Result<U, Error>> {
         let mut executor = self.inner.executor.lock();
         let mut pending = self.inner.pending.lock();
-        let pending_entry = pending.vacant_entry();
+        match pending.vacant_entry() {
+            Some(pending_entry) => match executor.submit([sqe.attach(pending_entry.key())]) {
+                Err(_sqe) => Completion::ready(Err(Error::SubmissionQueueOverflow)),
+                Ok(()) => {
+                    let key = pending_entry.key();
+                    pending_entry.insert(completion_handle(CompletionState::Pending(None)));
 
-        let mut state = CompletionState::Pending(None);
-        if let Err(_sqe) = executor.submit([sqe.attach(pending_entry.key())]) {
-            state = CompletionState::Ready(Err(Error::SubmissionQueueOverflow));
+                    completion(self.inner.pending.clone(), key)
+                }
+            },
+            None => Completion::ready(Err(Error::TooManyCompletions)),
         }
-        let key = pending_entry.key();
-        pending_entry.insert(completion_handle(state));
-
-        completion(self.inner.clone(), key)
     }
 
     fn submit_with<B: AlignedBytes + 'static>(
         &self,
         sqe: Sqe<usize>,
-        completion: impl FnOnce(Rc<SimulatorInner>, usize) -> Completion<ReadWriteResult<B, Error>>,
+        completion: impl FnOnce(Rc<spin::Mutex<PendingCompletions>>, usize) -> Completion<ReadWriteResult<B, Error>>,
         completion_handle: impl FnOnce(CompletionState<Result<ErasedBox, ErrorWith<Error, ErasedBox>>>) -> CompletionHandle,
     ) -> Completion<ReadWriteResult<B, Error>> {
         let mut executor = self.inner.executor.lock();
         let mut pending = self.inner.pending.lock();
-        let pending_entry = pending.vacant_entry();
 
-        let mut state = CompletionState::Pending(None);
-        if let Err(mut sqe) = executor.submit([sqe.attach(pending_entry.key())]) {
-            let buf = sqe
-                .next()
-                .expect("submitted one sqe therefore one must be returned on overflow")
-                .into_buf()
-                .expect("sqe must have been buffer-carrying");
-            state = CompletionState::Ready(Err(ErrorWith {
-                error: Error::SubmissionQueueOverflow,
-                with: buf,
-            }));
+        let reify = |sqe: Sqe<usize>| {
+            sqe.into_buf()
+                .map(|erased| erased.into_aligned())
+                .expect("sqe must have been buffer-carrying")
+        };
+
+        match pending.vacant_entry() {
+            Some(pending_entry) => match executor.submit([sqe.attach(pending_entry.key())]) {
+                Err(mut sqe) => Completion::ready(Err(ErrorWith {
+                    error: Error::SubmissionQueueOverflow,
+                    with: reify(
+                        sqe.next()
+                            .expect("submitted one sqe therefore one must be returned on overflow"),
+                    ),
+                })),
+                Ok(()) => {
+                    let key = pending_entry.key();
+                    pending_entry.insert(completion_handle(CompletionState::Pending(None)));
+
+                    completion(self.inner.pending.clone(), key)
+                }
+            },
+            None => Completion::ready(Err(ErrorWith {
+                error: Error::TooManyCompletions,
+                with: reify(sqe),
+            })),
         }
-        let key = pending_entry.key();
-        pending_entry.insert(completion_handle(state));
-
-        completion(self.inner.clone(), key)
     }
 }
 
 struct SimulatorInner {
     executor: spin::Mutex<Executor<usize>>,
-    pending: spin::Mutex<PendingCompletions>,
+    pending: Rc<spin::Mutex<PendingCompletions>>,
 }
 
 impl SimulatorInner {
     fn with_options(options: Options) -> Self {
         Self {
-            pending: spin::Mutex::new(PendingCompletions::with_capacity(options.cq_capacity())),
+            pending: Rc::new(spin::Mutex::new(PendingCompletions::with_capacity(
+                options.cq_capacity(),
+            ))),
             executor: spin::Mutex::new(Executor::new(options)),
         }
     }

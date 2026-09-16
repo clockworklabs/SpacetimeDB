@@ -8,7 +8,7 @@ use alloc::{boxed::Box, rc::Rc};
 use slab::Slab;
 
 use crate::{
-    sim::{fs, Error, SimulatorInner},
+    sim::{fs, Error},
     AlignedBytes, ErasedBox, ErrorWith, Statx,
 };
 
@@ -51,8 +51,12 @@ impl PendingCompletions {
         self.inner.clear();
     }
 
-    pub(super) fn vacant_entry(&mut self) -> VacantEntry<'_, CompletionHandle> {
-        self.inner.vacant_entry()
+    pub(super) fn vacant_entry(&mut self) -> Option<VacantEntry<'_, CompletionHandle>> {
+        if self.inner.capacity() == self.inner.len() {
+            None
+        } else {
+            Some(self.inner.vacant_entry())
+        }
     }
 
     fn remove(&mut self, key: usize) -> CompletionHandle {
@@ -242,19 +246,23 @@ impl CompletionHandle {
 }
 
 pub struct Completion<T> {
-    sim: Rc<SimulatorInner>,
-    key: usize,
-    poll: fn(&SimulatorInner, usize, &mut Context<'_>) -> Poll<T>,
+    inner: CompletionInner<T>,
+}
+
+impl<T> Completion<T> {
+    pub(super) fn ready(val: T) -> Self {
+        CompletionInner::Ready(Some(val)).into()
+    }
 }
 
 impl<T: AlignedBytes + 'static> Completion<Result<Box<T>, ErrorWith<Error, Box<T>>>> {
-    pub(super) fn write(sim: Rc<SimulatorInner>, key: usize) -> Self {
-        Self {
-            sim,
+    pub(super) fn write(pending: Rc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
+        CompletionInner::Poll {
+            pending,
             key,
-            poll: |sim, key, cx| {
+            poll: |pending, key, cx| {
                 poll_completion(
-                    sim,
+                    pending,
                     key,
                     CompletionHandle::write_state_mut,
                     CompletionHandle::into_write_state,
@@ -263,15 +271,16 @@ impl<T: AlignedBytes + 'static> Completion<Result<Box<T>, ErrorWith<Error, Box<T
                 )
             },
         }
+        .into()
     }
 
-    pub(super) fn read(sim: Rc<SimulatorInner>, key: usize) -> Self {
-        Self {
-            sim,
+    pub(super) fn read(pending: Rc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
+        CompletionInner::Poll {
+            pending,
             key,
-            poll: |sim, key, cx| {
+            poll: |pending, key, cx| {
                 poll_completion(
-                    sim,
+                    pending,
                     key,
                     CompletionHandle::read_state_mut,
                     CompletionHandle::into_read_state,
@@ -280,17 +289,18 @@ impl<T: AlignedBytes + 'static> Completion<Result<Box<T>, ErrorWith<Error, Box<T
                 )
             },
         }
+        .into()
     }
 }
 
 impl Completion<Result<fs::File, Error>> {
-    pub(super) fn open(sim: Rc<SimulatorInner>, key: usize) -> Self {
-        Self {
-            sim,
+    pub(super) fn open(pending: Rc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
+        CompletionInner::Poll {
+            pending,
             key,
-            poll: |sim, key, cx| {
+            poll: |pending, key, cx| {
                 poll_completion(
-                    sim,
+                    pending,
                     key,
                     CompletionHandle::open_state_mut,
                     CompletionHandle::into_open_state,
@@ -299,15 +309,16 @@ impl Completion<Result<fs::File, Error>> {
                 )
             },
         }
+        .into()
     }
 
-    pub(super) fn create(sim: Rc<SimulatorInner>, key: usize) -> Self {
-        Self {
-            sim,
+    pub(super) fn create(pending: Rc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
+        CompletionInner::Poll {
+            pending,
             key,
-            poll: |sim, key, cx| {
+            poll: |pending, key, cx| {
                 poll_completion(
-                    sim,
+                    pending,
                     key,
                     CompletionHandle::create_state_mut,
                     CompletionHandle::into_create_state,
@@ -316,17 +327,18 @@ impl Completion<Result<fs::File, Error>> {
                 )
             },
         }
+        .into()
     }
 }
 
 impl Completion<Result<Statx, Error>> {
-    pub(super) fn stat(sim: Rc<SimulatorInner>, key: usize) -> Self {
-        Self {
-            sim,
+    pub(super) fn stat(pending: Rc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
+        CompletionInner::Poll {
+            pending,
             key,
-            poll: |sim, key, cx| {
+            poll: |pending, key, cx| {
                 poll_completion(
-                    sim,
+                    pending,
                     key,
                     CompletionHandle::stat_state_mut,
                     CompletionHandle::into_stat_state,
@@ -335,17 +347,18 @@ impl Completion<Result<Statx, Error>> {
                 )
             },
         }
+        .into()
     }
 }
 
 impl Completion<Result<(), Error>> {
-    pub(super) fn fallocate(sim: Rc<SimulatorInner>, key: usize) -> Self {
-        Self {
-            sim,
+    pub(super) fn fallocate(pending: Rc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
+        CompletionInner::Poll {
+            pending,
             key,
-            poll: |sim, key, cx| {
+            poll: |pending, key, cx| {
                 poll_completion(
-                    sim,
+                    pending,
                     key,
                     CompletionHandle::fallocate_state_mut,
                     CompletionHandle::into_fallocate_state,
@@ -354,15 +367,16 @@ impl Completion<Result<(), Error>> {
                 )
             },
         }
+        .into()
     }
 
-    pub(super) fn fsync(sim: Rc<SimulatorInner>, key: usize) -> Self {
-        Self {
-            sim,
+    pub(super) fn fsync(pending: Rc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
+        CompletionInner::Poll {
+            pending,
             key,
-            poll: |sim, key, cx| {
+            poll: |pending, key, cx| {
                 poll_completion(
-                    sim,
+                    pending,
                     key,
                     CompletionHandle::fsync_state_mut,
                     CompletionHandle::into_fsync_state,
@@ -371,15 +385,16 @@ impl Completion<Result<(), Error>> {
                 )
             },
         }
+        .into()
     }
 
-    pub(super) fn fdatasync(sim: Rc<SimulatorInner>, key: usize) -> Self {
-        Self {
-            sim,
+    pub(super) fn fdatasync(pending: Rc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
+        CompletionInner::Poll {
+            pending,
             key,
-            poll: |sim, key, cx| {
+            poll: |pending, key, cx| {
                 poll_completion(
-                    sim,
+                    pending,
                     key,
                     CompletionHandle::fdatasync_state_mut,
                     CompletionHandle::into_fdatasync_state,
@@ -388,16 +403,17 @@ impl Completion<Result<(), Error>> {
                 )
             },
         }
+        .into()
     }
 
     #[allow(unused)]
-    pub(super) fn noop(sim: Rc<SimulatorInner>, key: usize) -> Self {
-        Self {
-            sim,
+    pub(super) fn noop(pending: Rc<spin::Mutex<PendingCompletions>>, key: usize) -> Self {
+        CompletionInner::Poll {
+            pending,
             key,
-            poll: |sim, key, cx| {
+            poll: |pending, key, cx| {
                 poll_completion(
-                    sim,
+                    pending,
                     key,
                     CompletionHandle::noop_state_mut,
                     CompletionHandle::into_noop_state,
@@ -406,6 +422,13 @@ impl Completion<Result<(), Error>> {
                 )
             },
         }
+        .into()
+    }
+}
+
+impl<T> From<CompletionInner<T>> for Completion<T> {
+    fn from(inner: CompletionInner<T>) -> Self {
+        Self { inner }
     }
 }
 
@@ -413,21 +436,32 @@ impl Completion<Result<(), Error>> {
 /// pending list, if it is present.
 ///
 /// If it is not present, then the future was polled to completion already.
-impl<T> Drop for Completion<T> {
+enum CompletionInner<T> {
+    Poll {
+        pending: Rc<spin::Mutex<PendingCompletions>>,
+        key: usize,
+        poll: fn(spin::MutexGuard<'_, PendingCompletions>, usize, &mut Context<'_>) -> Poll<T>,
+    },
+    Ready(Option<T>),
+}
+
+impl<T> Drop for CompletionInner<T> {
     fn drop(&mut self) {
-        self.sim.pending.lock().try_remove(self.key);
+        let Self::Poll { pending, key, .. } = self else {
+            return;
+        };
+        pending.lock().try_remove(*key);
     }
 }
 
 fn poll_completion<S, T>(
-    sim: &SimulatorInner,
+    mut pending: spin::MutexGuard<'_, PendingCompletions>,
     key: usize,
     state_mut: fn(&mut CompletionHandle) -> &mut CompletionState<S>,
     into_state: fn(CompletionHandle) -> CompletionState<S>,
     map: fn(S) -> T,
     cx: &mut Context<'_>,
 ) -> Poll<T> {
-    let mut pending = sim.pending.lock();
     match pending.get_mut(key) {
         None => unreachable!("completion polled after already complete"),
         Some(handle) => {
@@ -450,12 +484,20 @@ fn poll_completion<S, T>(
     }
 }
 
+impl<T> Unpin for Completion<T> {}
+
 impl<T> Future for Completion<T> {
     type Output = T;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
-        (this.poll)(&this.sim, this.key, cx)
+        match &mut this.inner {
+            CompletionInner::Poll { pending, key, poll } => poll(pending.lock(), *key, cx),
+            CompletionInner::Ready(val) => match val.take() {
+                Some(val) => Poll::Ready(val),
+                None => Poll::Pending,
+            },
+        }
     }
 }
 
