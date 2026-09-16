@@ -138,10 +138,10 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
     const faultEndMs = Math.max(...signalTimes);
     const outstandingAtFault = outcomes.filter(row => row.startedAtMs <= faultAtMs && row.completedAtMs >= faultEndMs).length;
     const evidence = { ...observation, after, observedAtMs: named.now(), differences, confirmed, faultAtMs, faultEndMs, outstandingAtFault };
-    const unmeasured = unsettled ? 'a disconnected checkout may still be running in the database'
-      : Date.now() - prepared.recordedAtMs >= 85_000 ? 'reservation expiry prevents a complete recovery comparison'
+    const unmeasured = Date.now() - prepared.recordedAtMs >= 85_000 ? 'reservation expiry prevents a complete recovery comparison'
       : Math.abs(receipt.clockOffsetAfterMs - receipt.clockOffsetBeforeMs) > 5 ? 'clock changed during fault'
-        : !outstandingAtFault ? 'fault missed the outstanding-request window' : null;
+        : !outstandingAtFault ? 'fault missed the outstanding-request window'
+          : unsettled && !appRecoveryFailed ? 'a disconnected checkout may still be running in the database' : null;
     if (unmeasured) {
       const value = finding('invalid-input', { detail: unmeasured });
       throw new ActionInconclusive(renderFinding(value), { finding: value, observation: evidence });

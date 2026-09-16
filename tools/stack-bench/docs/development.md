@@ -153,8 +153,9 @@ confirmed state fail. SpacetimeDB calls use its native confirmed WebSocket proto
 A separate checkout tests recovery progress. Application-crash recovery first
 waits up to 70 seconds for the old database connections and transactions to end.
 It records read-only observations and does not kill sessions or change timeouts.
-If an HTTP call disconnects without proof that database work ended, that trial
-and later stored-state comparisons stay inconclusive until a fresh grade on reset data.
+If an HTTP call disconnects without proof that database work ended, stored-state
+comparisons stay inconclusive until a fresh grade on reset data. A proven app
+recovery failure still fails the recovery check when the crash window is valid.
 A client timeout does not prove that server work stopped. Missed fault windows also remain
 inconclusive. These are process-crash tests, not power-loss tests or proof of a
 crash at a particular instruction inside a transaction. Full qualification is pending.

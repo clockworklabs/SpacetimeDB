@@ -52,7 +52,7 @@ test('native crash transport requires a correlated confirmed result and drains u
 });
 
 test('crash action retains partial fault evidence and distinguishes recovered state from acknowledged loss', async () => {
-  for (const mode of ['absent', 'committed', 'lost-acknowledged', 'partial', 'fault-error', 'cancelled-recovery', 'cancelled-read', 'recovery-error', 'disconnected-database', 'disconnected-application', 'drained-application', 'undrained-application', 'drained-recovery-error']) {
+  for (const mode of ['absent', 'committed', 'lost-acknowledged', 'partial', 'fault-error', 'cancelled-recovery', 'cancelled-read', 'recovery-error', 'disconnected-database', 'disconnected-application', 'drained-application', 'undrained-application', 'drained-recovery-error', 'disconnected-recovery-error', 'cancelled-disconnected-recovery-error']) {
     const cancellation = new AbortController();
     const timers: number[] = [];
     let recoveryStopped = false;
@@ -84,7 +84,7 @@ test('crash action retains partial fault evidence and distinguishes recovered st
       }, resolve: () => ({ id: 'checkout' }),
         request: () => ({ url: 'http://app/checkout' }), fetch: async () => {
           await waiting;
-          if (mode.startsWith('disconnected-') || mode.endsWith('drained-application')) throw new Error('socket closed');
+          if (mode.includes('disconnected-') || mode.endsWith('drained-application')) throw new Error('socket closed');
           if (mode === 'absent' || mode === 'partial') return { ok: false, status: 409, text: async () => '' };
           return { ok: true, status: 200, text: async () => '' };
         } },
@@ -97,7 +97,7 @@ test('crash action retains partial fault evidence and distinguishes recovered st
           if (mode === 'fault-error') throw Object.assign(new Error('partial injection'), { receipt });
           return receipt;
         }, recover: async (signal: AbortSignal) => {
-          if (mode === 'cancelled-recovery') {
+          if (mode === 'cancelled-recovery' || mode === 'cancelled-disconnected-recovery-error') {
             cancellation.abort('cancelled during recovery');
             assert(signal.aborted, 'recovery must receive action cancellation');
             // Model a worker waiting for an in-flight native call to finish.
@@ -105,7 +105,7 @@ test('crash action retains partial fault evidence and distinguishes recovered st
           }
           recoveryStopped = true;
           release();
-          if (mode === 'recovery-error' || mode === 'drained-recovery-error') throw Object.assign(new Error('application did not recover'), {
+          if (mode.endsWith('recovery-error')) throw Object.assign(new Error('application did not recover'), {
             code: 'generated_app_not_restartable',
             ...(mode === 'drained-recovery-error' ? { databaseDrain: { settled: true, samples: [{ pending: 0 }] } } : {}),
           });
@@ -122,9 +122,10 @@ test('crash action retains partial fault evidence and distinguishes recovered st
       assert(timers.includes(150_000));
       assert.equal(result.code, 'cancelled');
     }
-    assert.equal(unsettled, mode.startsWith('disconnected-') || mode === 'undrained-application');
-    assert.equal(result.status, mode.startsWith('cancelled-') || mode.startsWith('disconnected-') || mode === 'undrained-application' ? 'inconclusive' : mode === 'fault-error' ? 'harness_failure'
-      : ['partial', 'lost-acknowledged', 'recovery-error', 'drained-recovery-error'].includes(mode) ? 'failed' : 'passed', mode);
+    assert.equal(unsettled, mode.includes('disconnected-') || mode === 'undrained-application');
+    assert.equal(result.status, mode.startsWith('cancelled-') || ['disconnected-database', 'disconnected-application', 'undrained-application'].includes(mode) ? 'inconclusive' : mode === 'fault-error' ? 'harness_failure'
+      : ['partial', 'lost-acknowledged'].includes(mode) || mode.endsWith('recovery-error') ? 'failed' : 'passed', mode);
+    if (mode === 'disconnected-recovery-error') assert.equal(result.code, 'application_failure');
     if (mode === 'drained-recovery-error') assert.equal((result.observation as { databaseDrain: { settled: boolean } }).databaseDrain.settled, true);
     assert(result.observation, mode);
     assert(!JSON.stringify(result.observation).includes('private-token'));
