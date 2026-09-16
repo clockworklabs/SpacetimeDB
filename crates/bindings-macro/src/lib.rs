@@ -298,18 +298,18 @@ pub fn client_visibility_filter(args: StdTokenStream, item: StdTokenStream) -> S
         }
 
         let item: ItemConst = syn::parse(item)?;
-        let rls_ident = item.ident.clone();
-        let register_rls_symbol = format!("__preinit__20_register_row_level_security_{rls_ident}");
+        let rls_ident = &item.ident;
+        let register_func = util::preinit(
+            20,
+            "register_row_level_security",
+            rls_ident,
+            quote!(spacetimedb::rt::register_row_level_security(#rls_ident.sql_text())),
+        );
 
         Ok(quote! {
             #item
 
-            const _: () = {
-                #[unsafe(export_name = #register_rls_symbol)]
-                extern "C" fn __register_client_visibility_filter() {
-                    spacetimedb::rt::register_row_level_security(#rls_ident.sql_text())
-                }
-            };
+            #register_func
         })
     })
 }
@@ -341,10 +341,6 @@ pub fn settings(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
             ));
         }
 
-        // Use a fixed export name so that two `#[spacetimedb::settings]` consts
-        // for the same setting produce a linker error (duplicate symbol).
-        let register_symbol = format!("__preinit__05_setting_{ident_str}");
-
         // Generate the registration call based on the setting name.
         let register_call = match ident_str.as_str() {
             "CASE_CONVERSION_POLICY" => quote! {
@@ -353,15 +349,14 @@ pub fn settings(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
             _ => unreachable!("validated above"),
         };
 
+        // Use a fixed export name so that two `#[spacetimedb::settings]` consts
+        // for the same setting produce a linker error (duplicate symbol).
+        let register_func = util::preinit(5, "register_setting", ident_str, register_call);
+
         Ok(quote! {
             #item
 
-            const _: () = {
-                #[unsafe(export_name = #register_symbol)]
-                extern "C" fn __register_setting() {
-                    #register_call
-                }
-            };
+            #register_func
         })
     })
 }

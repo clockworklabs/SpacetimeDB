@@ -7,7 +7,7 @@ use syn::{FnArg, ItemFn, LitStr};
 
 use crate::reducer::generate_explicit_names_impl;
 use crate::sym;
-use crate::util::{check_duplicate_msg, match_meta};
+use crate::util::{check_duplicate_msg, match_meta, preinit};
 
 pub(crate) struct ViewArgs {
     name: Option<LitStr>,
@@ -215,17 +215,15 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
         }
     };
 
-    let register_describer_symbol = format!("__preinit__20_register_describer_{}", view_name);
-
     let lt_params = &original_function.sig.generics;
     let lt_where_clause = &lt_params.where_clause;
 
-    let generated_describe_function = quote! {
-        #[unsafe(export_name = #register_describer_symbol)]
-        pub extern "C" fn __register_describer() {
-            spacetimedb::rt::ViewRegistrar::<#ctx_ty>::register::<_, #func_name, _, _>(#func_name)
-        }
-    };
+    let generated_describe_function = preinit(
+        20,
+        "register_describer",
+        &view_name,
+        quote!(spacetimedb::rt::ViewRegistrar::<#ctx_ty>::register::<_, #func_name, _, _>(#func_name)),
+    );
 
     let explicit_name = args.name.as_ref();
     let generate_explicit_names = generate_explicit_names_impl(&view_name, func_name, explicit_name);
@@ -306,7 +304,7 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
     Ok(quote! {
         #emitted_fn
 
-        const _: () = { #generated_describe_function };
+        #generated_describe_function
 
         #[allow(non_camel_case_types)]
         #vis struct #func_name { _never: ::core::convert::Infallible }

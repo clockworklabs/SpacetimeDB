@@ -1,5 +1,5 @@
 use crate::reducer::{assert_only_lifetime_generics, extract_typed_args};
-use crate::util::ident_to_litstr;
+use crate::util::{ident_to_litstr, preinit};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{ItemFn, ReturnType};
@@ -44,17 +44,15 @@ pub(crate) fn handler_impl(args: TokenStream, original_function: &ItemFn) -> syn
     let mut inner_fn = original_function.clone();
     inner_fn.sig.ident = internal_ident.clone();
 
-    let register_describer_symbol = format!("__preinit__20_register_http_handler_{}", handler_name.value());
-
     let lifetime_params = &original_function.sig.generics;
     let lifetime_where_clause = &lifetime_params.where_clause;
 
-    let generated_describe_function = quote! {
-        #[unsafe(export_name = #register_describer_symbol)]
-        pub extern "C" fn __register_describer() {
-            spacetimedb::rt::register_http_handler(#handler_name, #internal_ident)
-        }
-    };
+    let generated_describe_function = preinit(
+        20,
+        "register_http_handler",
+        handler_name.value(),
+        quote!(spacetimedb::rt::register_http_handler(#handler_name, #internal_ident)),
+    );
 
     Ok(quote! {
         #inner_fn
@@ -62,9 +60,7 @@ pub(crate) fn handler_impl(args: TokenStream, original_function: &ItemFn) -> syn
         #[allow(non_upper_case_globals)]
         #vis const #func_name: spacetimedb::http::Handler = spacetimedb::http::Handler::new(#handler_name);
 
-        const _: () = {
-            #generated_describe_function
-        };
+        #generated_describe_function
 
         const _: () = {
             fn _assert_args #lifetime_params () #lifetime_where_clause {
@@ -92,7 +88,12 @@ pub(crate) fn router_impl(args: TokenStream, original_function: &ItemFn) -> syn:
     }
 
     let func_name = &original_function.sig.ident;
-    let register_symbol = "__preinit__30_register_http_router";
+    let register_router = preinit(
+        30,
+        "register_http",
+        "router",
+        quote!(spacetimedb::rt::register_http_router(#func_name)),
+    );
 
     Ok(quote! {
         #original_function
@@ -103,11 +104,6 @@ pub(crate) fn router_impl(args: TokenStream, original_function: &ItemFn) -> syn:
             }
         };
 
-        const _: () = {
-            #[unsafe(export_name = #register_symbol)]
-            pub extern "C" fn __register_router() {
-                spacetimedb::rt::register_http_router(#func_name)
-            }
-        };
+        #register_router
     })
 }
