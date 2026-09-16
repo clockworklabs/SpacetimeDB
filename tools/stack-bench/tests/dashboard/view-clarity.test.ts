@@ -22,6 +22,10 @@ test('invalid completion is not displayed as a low application score', () => {
   assert.equal(completionLabel({ ...attempt, status: 'running' }), '9 / 109');
   assert.equal(completionLabel({ ...attempt, status: 'completed' }), 'Excluded');
   assert.equal(completionLabel({ ...attempt, status: 'completed', excluded: null }), '9 / 109');
+  const features = { passed: 2, selected: 27 };
+  assert.equal(completionLabel(attempt, features), 'Incomplete');
+  assert.equal(completionLabel({ ...attempt, status: 'running' }, features), '2 / 27');
+  assert.equal(completionLabel({ ...attempt, status: 'completed' }, features), 'Excluded');
 });
 
 // Distinct aggregate and selected values catch accidental cross-repetition labels.
@@ -74,11 +78,15 @@ test('campaign separates aggregate scores from selected evidence and explains pe
   assert.match(page, /id="help-checks-passed" popover role="tooltip"/);
   assert.doesNotMatch(page, /<details class="metric-help"/);
   const noRepairSheet = { ...sheet, repetitions: 1, stacks: sheet.stacks.map(stack => ({
-    ...stack, attempts: [{ ...attempt, model: 'gpt-6-astra', effort: 'medium', repairs: { used: 0, budget: 0 } }],
+    ...stack, attempts: [{ ...attempt, model: 'gpt-6-astra', effort: 'medium', repairs: { used: 0, budget: 0 },
+      featureCompletion: { passed: 20, selected: 27, rate: 20 / 27 },
+      completion: { passed: 98, selected: 111, failed: 13, blocked: 0, unmeasured: 0, rate: 98 / 111 } }],
   })) };
   const noRepairPage = campaignPage({ sheet: noRepairSheet, progression: null, view: 'grid', step: 0 });
   assert.doesNotMatch(noRepairPage, /<th>Repairs<|Before repairs|<small>Rep 1/);
   assert.match(noRepairPage, /Astra<span class="run-effort"> \(medium\)<\/span>/);
+  assert.match(noRepairPage, /<th>Features passed<\/th><th>Checks passed<\/th>/);
+  assert.match(noRepairPage, /<td>20 \/ 27<\/td><td>98 \/ 111<\/td>/);
   for (const tab of ['checks', 'screenshots', 'files', 'log'] as const) {
     const detail = attemptPage({ sheet, attemptId: attempt.id, tab, checks: null, evidence: null, log: '' });
     assert.doesNotMatch(detail, /Unaided/);

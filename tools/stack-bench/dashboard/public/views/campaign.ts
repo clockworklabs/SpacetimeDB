@@ -241,13 +241,13 @@ export function campaignPage(input: CampaignPageInput): string {
     + '</tbody></table></div>'
     + (sheet.mode === 'dependency' ? progressChart(sheet, input.progression, input.chart, input.view, input.hiddenChartRuns, input.unit) : '')
     + '<h3>Runs</h3>'
-    + `<div class="tablewrap"><div class="wrap"><table class="runs attempt-list"><thead><tr><th>Run</th><th>Model</th><th>Checks passed</th><th>Spend</th>${showRepairs ? '<th>Repairs</th>' : ''}<th>Elapsed</th><th>Status</th></tr></thead><tbody>`
+    + `<div class="tablewrap"><div class="wrap"><table class="runs attempt-list"><thead><tr><th>Run</th><th>Model</th><th>Features passed</th><th>Checks passed</th><th>Spend</th>${showRepairs ? '<th>Repairs</th>' : ''}<th>Elapsed</th><th>Status</th></tr></thead><tbody>`
     + stacks.flatMap(stack => stack.attempts.map(attempt => {
       const href = `/c/${encodeURIComponent(sheet.key)}/a/${encodeURIComponent(attempt.id)}`;
       const effort = attempt.effort ? ` (${attempt.effort})` : '';
       return `<tr data-chart-series="${esc(attempt.id)}"><td><a class="run-name" href="${href}">${esc(stackLabel(stack.stack))} ${attempt.repetition}</a></td>`
         + `<td title="${esc(attempt.model ?? attempt.variant)}">${esc(modelLabel(attempt.model))}<span class="run-effort">${esc(effort)}</span></td>`
-        + `<td>${completionLabel(attempt)}</td>`
+        + `<td>${completionLabel(attempt, attempt.featureCompletion ?? null)}</td><td>${completionLabel(attempt)}</td>`
         + `<td>${spend(attempt.spend, attempt.spendPending, attempt.liveSpend)}</td>`
         + (showRepairs ? `<td>${ratio(attempt.repairs.used, attempt.repairs.budget)}</td>` : '')
         + `<td>${attempt.status === 'running' || attempt.executionCompletedAt ? executionClock(attempt.executionStartedAt, attempt.executionCompletedAt) : DASH}</td>`

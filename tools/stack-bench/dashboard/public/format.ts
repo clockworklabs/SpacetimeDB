@@ -107,11 +107,12 @@ export function modelLabel(model?: string): string {
   return ({ 'claude-sonnet-5': 'Sonnet 5', 'claude-fable-5-1': 'Fable 5.1', 'claude-opus-5': 'Opus 5', 'gpt-5.6-sol': 'Sol', 'gpt-6-astra': 'Astra' } as Record<string, string>)[model ?? ''] ?? model ?? '';
 }
 
-export function completionLabel(attempt: Pick<SheetAttempt, 'status' | 'excluded' | 'completion'>): string {
+export function completionLabel(attempt: Pick<SheetAttempt, 'status' | 'excluded' | 'completion'>,
+  completion: Pick<NonNullable<SheetAttempt['completion']>, 'passed' | 'selected'> | null = attempt.completion): string {
   if (attempt.excluded && attempt.status !== 'running' && attempt.status !== 'pending') {
     return attempt.status === 'completed' ? 'Excluded' : 'Incomplete';
   }
-  return attempt.completion ? ratio(attempt.completion.passed, attempt.completion.selected) : DASH;
+  return completion ? ratio(completion.passed, completion.selected) : DASH;
 }
 
 export function runLabel(attempt: Pick<SheetAttempt, "repetition" | "model" | "effort">, showRepetition = true): string {
