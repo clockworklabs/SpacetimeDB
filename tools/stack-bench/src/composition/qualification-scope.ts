@@ -109,6 +109,9 @@ const STACK_OWNED_MODULES = new Map<string, string>([
   ['src/stacks/backends/postgres-adapter.ts', 'postgres'],
   ['src/stacks/backends/postgres-identity.ts', 'postgres'],
   ['src/stacks/backends/postgres-operations.ts', 'postgres'],
+  ['src/stacks/backends/saved-mongodb-checkout.ts', 'mongodb'],
+  ['src/stacks/backends/saved-postgres-checkout.ts', 'postgres'],
+  ['src/stacks/backends/saved-spacetime-checkout.ts', 'spacetime'],
   ['src/stacks/backends/spacetime-adapter.ts', 'spacetime'],
   ['src/stacks/backends/spacetime-identity.ts', 'spacetime'],
   ['src/stacks/backends/spacetime-operations.ts', 'spacetime'],
@@ -166,7 +169,13 @@ function localImports(path: string, root: string): string[] {
   const trackLoaderCall = ['import', '(pathToFileURL(track.walk).href)'].join('');
   const declaredTrackLoader = relativePath === 'linter/lint.ts'
     && source.includes(trackLoaderCall);
-  if (dynamicCalls !== literalDynamicCalls + (declaredTrackLoader ? 1 : 0)) {
+  // The recovery worker imports this same module. Its source and imports are
+  // already in the graph; reject a changed worker target instead of omitting it.
+  const selfLoaderCall = ['import', '(workerData.module)'].join('');
+  const declaredRecoveryLoader = relativePath === 'src/runtime/backend-control.ts'
+    && source.includes(selfLoaderCall)
+    && source.includes('workerData: { module: import.meta.url, spec, target }');
+  if (dynamicCalls !== literalDynamicCalls + (declaredTrackLoader ? 1 : 0) + (declaredRecoveryLoader ? 1 : 0)) {
     fail(`unmapped dynamic import in ${relativePath}`);
   }
   return imports;

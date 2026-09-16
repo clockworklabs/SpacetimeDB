@@ -7,6 +7,7 @@ import test from 'node:test';
 import { qualificationScopeIdentity, validateQualificationScopeIdentity }
   from '../src/composition/qualification-scope.js';
 import type { QualificationKind } from '../src/composition/qualification-scope.js';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 type TestStack = 'mongodb' | 'postgres';
 
@@ -24,6 +25,19 @@ const references: Record<TestStack, { backend: TestStack; id: string; sourceSha2
   mongodb: { backend: 'mongodb', id: 'mongo-reference', sourceSha256: digest('b') },
   postgres: { backend: 'postgres', id: 'postgres-reference', sourceSha256: digest('c') },
 };
+
+test('qualification scopes resolve the current executable tree for every real stack', () => {
+  const nullScope = qualificationScopeIdentity({ kind: 'null', release, stackBenchRoot: STACK_BENCH_ROOT });
+  assert.deepEqual(validateQualificationScopeIdentity(nullScope), nullScope);
+  for (const stack of ['postgres', 'mongodb', 'spacetime']) {
+    for (const kind of ['reference', 'mutation'] as const) {
+      const identity = qualificationScopeIdentity({ kind, release, stack, stackBenchRoot: STACK_BENCH_ROOT,
+        reference: { backend: stack, id: `reference-${stack}`, sourceSha256: digest('b') },
+        ...(kind === 'mutation' ? { mutation: { backend: stack, executionSha256: digest('c') } } : {}) });
+      assert.deepEqual(validateQualificationScopeIdentity(identity), identity);
+    }
+  }
+});
 const mutations: Record<TestStack, { backend: TestStack; executionSha256: string }> = {
   mongodb: { backend: 'mongodb', executionSha256: digest('d') },
   postgres: { backend: 'postgres', executionSha256: digest('e') },
@@ -216,6 +230,13 @@ test('unmapped executable imports and tampered identities fail closed', () => {
   const root = fixture();
   try {
     write(root, 'grader/grade.ts', 'await import(runtimeModule)\n');
+    assert.throws(() => scoped(root, 'reference', 'mongodb'), /unmapped dynamic import/);
+    write(root, 'grader/grade.ts', "import '../src/runtime/backend-control.js';\n");
+    write(root, 'src/runtime/backend-control.ts',
+      'import(workerData.module); const options = { workerData: { module: import.meta.url, spec, target } };\n');
+    assert.doesNotThrow(() => scoped(root, 'reference', 'mongodb'));
+    write(root, 'src/runtime/backend-control.ts',
+      'import(workerData.module); const options = { workerData: { module: otherModule, spec, target } };\n');
     assert.throws(() => scoped(root, 'reference', 'mongodb'), /unmapped dynamic import/);
     write(root, 'grader/grade.ts', 'shared grader\n');
     const identity = scoped(root, 'reference', 'mongodb');
