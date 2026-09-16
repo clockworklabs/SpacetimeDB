@@ -17,11 +17,17 @@ reqwest = { workspace = true, features = ["blocking"] }
 which = "8.0.0"
 
 [dev-dependencies]
+spacetimedb-core.workspace = true
+spacetimedb-client-api-messages.workspace = true
+spacetimedb-lib.workspace = true
 cargo_metadata.workspace = true
+assert_cmd = "2"
+futures.workspace = true
 predicates = "3"
 socket2.workspace = true
 tokio.workspace = true
 tokio-postgres.workspace = true
+tokio-tungstenite.workspace = true
 xmltree.workspace = true
 
 [lints]
