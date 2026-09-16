@@ -44,6 +44,19 @@ public static class Module
     private static readonly ModuleBuilder moduleDef = new();
     public static ModuleBuilder RootBuilder => moduleDef;
 
+    private static NamespaceRegistry? namespaces;
+
+    public static void InstallNamespaces(NamespaceRegistry registry)
+    {
+        if (namespaces is not null)
+            throw new InvalidOperationException("Module namespaces have already been installed.");
+        namespaces = registry;
+    }
+
+    public static string ResolveName(string assemblyIdentity, string localName) =>
+        (namespaces ?? throw new InvalidOperationException("Module namespaces have not been installed."))
+            .Resolve(assemblyIdentity, localName);
+
     private static Func<
         Identity,
         ConnectionId?,
