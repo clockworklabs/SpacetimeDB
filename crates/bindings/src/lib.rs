@@ -947,6 +947,8 @@ pub use spacetimedb_bindings_macro::procedure;
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::view;
 
+pub use spacetimedb_bindings_macro::migration;
+
 pub struct QueryBuilder {}
 pub use query_builder::{Query, RawQuery};
 
@@ -1908,6 +1910,12 @@ impl ProcedureContext {
         self.rng().try_fill_bytes(&mut random_bytes)?;
         Uuid::from_counter_v7(&self.counter_uuid, self.timestamp, &random_bytes)
     }
+}
+
+#[non_exhaustive]
+pub struct MigrationContext<Dropped> {
+    pub db: Local,
+    pub dropped: Dropped,
 }
 
 /// A handle on a database with a particular table schema.

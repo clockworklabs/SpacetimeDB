@@ -10,6 +10,7 @@
 
 mod environment;
 mod http;
+mod migration;
 mod procedure;
 mod reducer;
 mod sats;
@@ -17,7 +18,7 @@ mod table;
 mod util;
 mod view;
 
-use self::util::{cvt_attr, ok_or_compile_error};
+use self::util::{cvt_attr, cvt_attr_mut, ok_or_compile_error};
 use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -118,12 +119,20 @@ fn expand_table(args: StdTokenStream, item: StdTokenStream, reset_accessor_span:
             derive_input.attrs.push(derive_table_helper);
         }
 
-        let mut args = table::TableArgs::parse(args.into(), &derive_input.ident)?;
+        let mut args = table::TableArgs::parse(args.into(), proc_macro2::Span::call_site(), &derive_input.ident)?;
         if reset_accessor_span {
             args.use_call_site_accessor_span();
         }
         let generated = table::table_impl(args, &derive_input)?;
         Ok(TokenStream::from_iter([quote!(#derive_input), generated]))
+    })
+}
+
+#[proc_macro_attribute]
+pub fn migration(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    cvt_attr_mut::<syn::ItemMod>(args, item, |args, mod_| {
+        let args = migration::MigrationArgs::parse(args)?;
+        migration::migration_impl(args, mod_)
     })
 }
 
@@ -153,7 +162,10 @@ mod sym {
     symbol!(column);
     symbol!(columns);
     symbol!(crate_, crate);
+    symbol!(default);
     symbol!(direct);
+    symbol!(event);
+    symbol!(function);
     symbol!(hash);
     symbol!(index);
     symbol!(init);
@@ -173,8 +185,6 @@ mod sym {
     symbol!(target);
     symbol!(unique);
     symbol!(update);
-    symbol!(default);
-    symbol!(event);
 
     symbol!(u8);
     symbol!(i8);
@@ -191,7 +201,7 @@ mod sym {
 
     impl PartialEq<Symbol> for syn::Ident {
         fn eq(&self, sym: &Symbol) -> bool {
-            self == sym.0
+            *self == *sym.0
         }
     }
     impl PartialEq<Symbol> for &syn::Ident {
