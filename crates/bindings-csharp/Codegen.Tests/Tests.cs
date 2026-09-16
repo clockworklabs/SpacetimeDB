@@ -452,6 +452,7 @@ public static class GeneratorSnapshotTests
             [
                 new SpacetimeDB.Codegen.Type().AsSourceGenerator(),
                 new SpacetimeDB.Codegen.Module().AsSourceGenerator(),
+                new EnvironmentGenerator().AsSourceGenerator(),
             ],
             driverOptions: new(
                 disabledOutputs: IncrementalGeneratorOutputKind.None,

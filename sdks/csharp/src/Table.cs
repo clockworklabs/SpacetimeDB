@@ -223,7 +223,7 @@ namespace SpacetimeDB
             }
 
             public IEnumerable<Row> Filter(Column value) =>
-                cache.TryGetValue(new IndexKey(value), out var rows) ? rows : Enumerable.Empty<Row>();
+                cache.TryGetValue(new IndexKey(value), out var rows) ? rows : Array.Empty<Row>();
         }
 
         /// <summary>
