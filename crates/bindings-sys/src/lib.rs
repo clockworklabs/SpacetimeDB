@@ -1205,6 +1205,16 @@ mod native_link_stubs {
         NOT_IN_TRANSACTION
     }
 
+    #[unsafe(no_mangle)]
+    pub extern "C" fn env_get(_key: *const u8, _key_len: usize, bytes_source_id: *mut BytesSource) -> u16 {
+        if !bytes_source_id.is_null() {
+            // SAFETY: The pointer is provided by the safe wrapper and points to a
+            // BytesSource output slot when non-null.
+            unsafe { bytes_source_id.write(BytesSource::INVALID) };
+        }
+        NOT_IN_TRANSACTION
+    }
+
     #[cfg(feature = "unstable")]
     #[unsafe(no_mangle)]
     pub extern "C" fn procedure_sleep_until(wake_at_micros_since_unix_epoch: i64) -> i64 {
