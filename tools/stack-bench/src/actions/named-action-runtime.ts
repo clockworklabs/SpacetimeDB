@@ -47,6 +47,7 @@ export interface ConcurrentCallResult {
 }
 
 export interface NamedActionsCapability {
+  readonly spacetime?: SpacetimeTarget | null;
   readonly lastCalls: {
     get(): ConcurrentCallResult | null;
     set(result: ConcurrentCallResult): void;
@@ -169,6 +170,7 @@ export function createNamedActionsCapability({
   readonly now?: () => number;
 }): NamedActionsCapability {
   return Object.freeze({
+    spacetime,
     resolve: (id: string) => (actions ?? []).find(action => action.id === id) ?? null,
     request(action: NamedAction, input: unknown) {
       return STACK_ADAPTER_REGISTRY.get(backend).namedAction.request(

@@ -1,10 +1,57 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { openCrashReducerConnection } from '../src/stacks/spacetime-crash-transport.js';
 import { executeAction } from '../src/actions/action-contract.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { checkoutStateSchema, type CheckoutState } from '../src/stacks/checkout-state.js';
 import { createCheckEvidence } from '../src/evidence/check-evidence.js';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
+
+test('baseline checkout retains completion evidence and cannot confirm queued or lost responses', async () => {
+  for (const status of [200, 201, 204, 202, 409, 500, null]) {
+    let unsettled = false;
+    const result = await executeAction(ACTION_REGISTRY, 'confirmCheckout', {
+      do: 'confirmCheckout', actor: 'buyer',
+    }, { capabilities: {
+      actors: { get: () => ({ name: 'buyer', writes: [{ headers: { authorization: 'Bearer private-token' } }] }) },
+      'database-read': { markCheckoutUnsettled: () => { unsettled = true; } },
+      'named-actions': { now: Date.now, resolve: () => ({ id: 'checkout' }),
+        request: () => ({ url: 'http://app/checkout', method: 'POST' }), fetch: async () => {
+          if (status === null) throw new Error('response lost');
+          return { ok: status < 300, status, text: async () => 'private response body' };
+        } },
+    } });
+    const confirmed = status !== null && [200, 201, 204].includes(status);
+    assert.equal(result.status, confirmed ? 'passed' : status === null || status === 202 ? 'inconclusive' : 'failed');
+    assert.equal(unsettled, !confirmed);
+    const receipt = result.observation as { outcome: string; protocol: string; actor: string; action: string };
+    assert.equal(receipt.outcome, confirmed ? 'committed' : 'not-confirmed');
+    assert.equal(receipt.protocol, 'http');
+    assert.equal(receipt.actor, 'buyer');
+    assert.equal(receipt.action, 'checkout');
+    assert(!JSON.stringify(result).includes('private'));
+  }
+});
+
+test('every draft crash baseline confirms then reconciles checkout before reloading', () => {
+  for (const boundary of ['application', 'database']) {
+    const scenario = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+      `tracks/ecommerce/scenarios/diagnostic-checkout-${boundary}-crash.json`), 'utf8'));
+    for (const feature of scenario.features) {
+      const steps = feature.setup as Array<{ do: string; before?: string; prepared?: string; testid?: string }>;
+      const index = steps.findIndex(step => step.do === 'confirmCheckout');
+      assert(index > 0);
+      assert.equal(steps[index - 1]!.do, 'dbRecordCheckout');
+      assert.deepEqual(steps.slice(index + 1, index + 3).map(step => step.do), ['dbExpectCheckout', 'reload']);
+      assert.equal(steps[index + 1]!.before, 'baseline-before');
+      assert.equal(steps[index + 1]!.prepared, 'baseline-prepared');
+      assert(!steps.some(step => step.testid === 'checkout-submit'));
+      assert(feature.criteria.every((criterion: { points: number }) => criterion.points === 0));
+    }
+  }
+});
 
 class Socket extends EventTarget {
   protocol = 'v1.json.spacetimedb';
@@ -23,6 +70,44 @@ class Socket extends EventTarget {
       reducer_call: { request_id: requestId, reducer_name: 'checkout' }, status } });
   }
 }
+
+test('baseline SpacetimeDB checkout records native completion or refusal and closes its connection', async t => {
+  const websocket = globalThis.WebSocket;
+  t.after(() => { globalThis.WebSocket = websocket; });
+  for (const committed of [true, false]) {
+    const sockets: Socket[] = [];
+    globalThis.WebSocket = class extends Socket {
+      static OPEN = websocket.OPEN;
+      static CLOSED = websocket.CLOSED;
+      constructor(address: string, protocol: string) {
+        super(); sockets.push(this);
+        assert.equal(new URL(address).searchParams.get('confirmed'), 'true');
+        assert.equal(protocol, this.protocol);
+        queueMicrotask(() => this.message({ IdentityToken: { identity: { __identity__: `0x${'1'.repeat(64)}` },
+          connection_id: { __connection_id__: '224514910607798700000000000000000000001' } } }));
+      }
+      override send(value: string) {
+        super.send(value);
+        queueMicrotask(() => this.reply(1, committed ? { Committed: {} } : { Failed: 'refused' }));
+      }
+    } as unknown as typeof WebSocket;
+    const result = await executeAction(ACTION_REGISTRY, 'confirmCheckout', {
+      do: 'confirmCheckout', actor: 'buyer',
+    }, { capabilities: {
+      actors: { get: () => ({ name: 'buyer', writes: [{ headers: { authorization: 'Bearer private-token' } }] }) },
+      'database-read': { markCheckoutUnsettled: () => assert.fail('native completion or refusal must settle') },
+      'named-actions': { spacetime: { uri: 'http://127.0.0.1:3000', mod: 'shop' }, now: Date.now,
+        resolve: () => ({ id: 'checkout', reducer: 'checkout' }),
+        request: () => ({ url: 'http://app/call/checkout', body: '[]' }),
+        fetch: async () => assert.fail('baseline must not use the unconfirmed HTTP reducer path') },
+    } });
+    assert.equal(result.status, committed ? 'passed' : 'failed');
+    assert.equal((result.observation as { protocol: string }).protocol, 'websocket-v1-confirmed');
+    assert.equal(sockets.length, 1);
+    assert.equal(sockets[0]!.sent.length, 1);
+    assert.equal(sockets[0]!.readyState, websocket.CLOSED);
+  }
+});
 
 test('native crash transport requires a correlated confirmed result and drains unknowns without replay', async () => {
   const socket = new Socket();

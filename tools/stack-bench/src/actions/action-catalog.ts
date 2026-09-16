@@ -4,7 +4,7 @@ import { ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS }
   from './actor-transport-action-executors.js';
 import { BROWSER_ACTION_IMPLEMENTATIONS } from './browser-action-executors.js';
 import { RUNTIME_ACTION_IMPLEMENTATIONS } from './runtime-action-executors.js';
-import { crashCheckout } from './crash-action-executors.js';
+import { confirmCheckout, crashCheckout } from './crash-action-executors.js';
 import { ACTION_DEFINITIONS, ACTION_IDS,
   compileActionInput } from '../composition/definition-compiler.js';
 import type { ActionId } from '../composition/definition-compiler.js';
@@ -12,6 +12,7 @@ import type { ActionId } from '../composition/definition-compiler.js';
 const ACTION_CATEGORY = {
   callAction: 'transport',
   callConcurrently: 'concurrency',
+  confirmCheckout: 'transport',
   crashCheckout: 'lifecycle',
   clearInput: 'browser-interaction',
   click: 'browser-interaction',
@@ -113,6 +114,7 @@ const ACTION_CAPABILITY_OVERRIDES: Partial<Record<ActionId, readonly string[]>> 
   callAction: ['actors', 'named-actions', 'transport-observation'],
   callConcurrently: ['actors', 'named-actions'],
   crashCheckout: ['actors', 'named-actions', 'database-read', 'process-crash'],
+  confirmCheckout: ['actors', 'named-actions', 'database-read'],
   expectCallOutcomes: ['actors', 'named-actions'],
   replayAs: ['actors', 'named-actions', 'transport-observation'],
   startAppServer: ['application-lifecycle'],
@@ -126,6 +128,7 @@ const ACTION_SENSITIVITY_OVERRIDES: Partial<Record<ActionId, readonly string[]>>
 };
 
 export const ACTION_IMPLEMENTATIONS = Object.freeze({
+  confirmCheckout,
   crashCheckout,
   ...ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS,
   ...BROWSER_ACTION_IMPLEMENTATIONS,

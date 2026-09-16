@@ -154,6 +154,7 @@ export const ACTION_DEFINITIONS = Object.freeze({
     quantity: positiveInteger, requests: value => value === 1 || value === 16,
     offsetMs: value => value === 0 || value === 5 || value === 20,
     target: value => value === 'application' || value === 'database' }, { namedAction: object }),
+  confirmCheckout: fields({ actor: nonEmptyString }, { namedAction: object }),
   dbRecordStock: fields({ item: nonEmptyString, as: nonEmptyString }, { warehouse: nonEmptyString }),
   dbRecordCheckout: fields({ account: nonEmptyString, item: nonEmptyString, as: nonEmptyString }),
   dbExpectCheckout: fields({ before: nonEmptyString, prepared: nonEmptyString, quantity: positiveInteger }),
@@ -407,7 +408,7 @@ function validateStep(step: unknown, at: string): asserts step is CompiledStep {
   if (step.in) validateLocator(step.in, `${at}.in`);
   if (step.swap) validateSwap(step.swap, `${at}.swap`);
   if (step.namedAction) validateInlineNamedAction(step.namedAction, `${at}.namedAction`);
-  if (step.do === 'crashCheckout' && object(step.namedAction) && step.namedAction.id !== 'checkout') {
+  if ((step.do === 'crashCheckout' || step.do === 'confirmCheckout') && object(step.namedAction) && step.namedAction.id !== 'checkout') {
     fail(`${at}.namedAction.id`, 'must be checkout');
   }
   if (step.namedTarget) validateNamedTarget(step.namedTarget, `${at}.namedTarget`);

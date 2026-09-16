@@ -10,6 +10,7 @@ import { openCrashReducerConnection } from '../stacks/spacetime-crash-transport.
 import type { CrashTarget, ProcessCrashReceipt } from '../stacks/process-crash.js';
 import type { DatabaseDrainReceipt, PreparedRuntimeCrash } from '../runtime/backend-control.js';
 import { finding, renderFinding } from './action-findings.js';
+import type { SpacetimeTarget } from '../stacks/stack-grading-operations.js';
 
 interface Input {
   actor: string; before: string; prepared: string; quantity: number;
@@ -21,6 +22,73 @@ interface Capabilities extends ActorCapabilities {
   'database-read': ReturnType<typeof createDatabaseReadCapability>;
   'process-crash': { prepare(target: CrashTarget): Promise<PreparedRuntimeCrash> };
 }
+
+// Setup and fault calls must use the same completion semantics.
+async function checkoutCaller(input: { actor: string; namedAction?: NamedAction },
+  capabilities: Pick<Capabilities, 'actors' | 'named-actions'>, signal: AbortSignal,
+  spacetime: SpacetimeTarget | null | undefined) {
+  const named = capabilities['named-actions'];
+  const actor = actorFor(capabilities, input.actor);
+  const credentials = capturedCredentials(actor) ?? await browserCredentials(actor);
+  if (!credentials) inconclusive('no-session', { actor: input.actor, action: 'checkout' });
+  const action = input.namedAction ?? named.resolve('checkout');
+  if (!action) inconclusive('unknown-action', { action: 'checkout' });
+  const request = namedActionRequest(named, action, {});
+  if (!request?.url) inconclusive('unresolved-action', { action: 'checkout' });
+  let connection: Awaited<ReturnType<typeof openCrashReducerConnection>> | undefined;
+  if (spacetime) {
+    const authorization = Object.entries(credentials).find(([key]) => key.toLowerCase() === 'authorization')?.[1];
+    const token = authorization?.match(/^Bearer (\S+)$/i)?.[1];
+    if (!token || !action.reducer) inconclusive('no-session', { actor: input.actor, action: 'checkout' });
+    connection = await openCrashReducerConnection(spacetime, token, signal);
+  }
+  return {
+    close: () => connection?.close(),
+    async call() {
+      const startedAtMs = named.now();
+      const timeout = AbortSignal.timeout(30_000), requestSignal = AbortSignal.any([signal, timeout]);
+      let outcome: 'committed' | 'not-confirmed' = 'not-confirmed', status: number | null = null;
+      let responseFailed = false;
+      try {
+        if (connection) {
+          const reply = await connection.call(action.reducer!, request.body ?? '[]', requestSignal);
+          if (reply.outcome === 'committed') outcome = 'committed';
+          responseFailed = reply.outcome === 'refused';
+        } else {
+          const reply = await named.fetch(request.url!, { method: request.method ?? 'POST',
+            headers: { 'Content-Type': 'application/json', ...credentials }, body: request.body, signal: requestSignal });
+          await reply.text();
+          status = reply.status;
+          // 202 acknowledges queued work, not a completed checkout.
+          if (reply.ok && reply.status !== 202) outcome = 'committed';
+          responseFailed = !reply.ok;
+        }
+      } catch { /* A disconnected or failed response does not prove rollback. */ }
+      return { actor: input.actor, action: 'checkout', startedAtMs, completedAtMs: named.now(), outcome, status, responseFailed,
+        cancelled: signal.aborted, timedOut: timeout.aborted,
+        protocol: connection ? 'websocket-v1-confirmed' : 'http' };
+    },
+  };
+}
+
+export const confirmCheckout = actionImplementation(async ({ input, capabilities, signal }: {
+  input: { actor: string; namedAction?: NamedAction };
+  capabilities: Pick<Capabilities, 'actors' | 'named-actions' | 'database-read'>; signal: AbortSignal;
+}) => {
+  const caller = await checkoutCaller(input, capabilities, signal, capabilities['named-actions'].spacetime);
+  try {
+    const receipt = await caller.call();
+    if (receipt.outcome === 'committed') return receipt;
+    // A correlated native refusal is complete. An HTTP error can follow a commit.
+    if (receipt.protocol === 'http' || !receipt.responseFailed) capabilities['database-read'].markCheckoutUnsettled();
+    if (receipt.responseFailed) {
+      const value = finding('number-mismatch', { control: 'completed checkout', observed: 0, expected: { equals: 1 } });
+      throw new ActionApplicationFailure(renderFinding(value), { finding: value, observation: receipt });
+    }
+    const value = finding('invalid-input', { detail: 'baseline checkout has no verified completion receipt' });
+    throw new ActionInconclusive(renderFinding(value), { finding: value, observation: receipt });
+  } finally { caller.close(); }
+});
 
 export const crashCheckout = actionImplementation(async ({ input, capabilities, signal }: {
   input: Input; capabilities: Capabilities; signal: AbortSignal;
@@ -34,23 +102,11 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
   const compare = before.scope === 'orders' ? orderCheckoutDifferences : checkoutDifferences;
   const setupDifferences = compare(before.state, prepared.state, prepared.state, input.quantity, true);
   if (setupDifferences.length) inconclusive('invalid-input', { detail: 'checkout crash requires a valid prepared cart' });
-  const actor = actorFor(capabilities, input.actor);
-  const credentials = capturedCredentials(actor) ?? await browserCredentials(actor);
-  if (!credentials) inconclusive('no-session', { actor: input.actor, action: 'checkout' });
-  const action = input.namedAction ?? named.resolve('checkout');
-  if (!action) inconclusive('unknown-action', { action: 'checkout' });
-  const request = namedActionRequest(named, action, {});
-  if (!request?.url) inconclusive('unresolved-action', { action: 'checkout' });
   const runtime = await capabilities['process-crash'].prepare(input.target);
-  let connection: Awaited<ReturnType<typeof openCrashReducerConnection>> | undefined;
+  let caller: Awaited<ReturnType<typeof checkoutCaller>> | undefined;
   let unsettled = false;
   try {
-    if (runtime.spacetime) {
-      const authorization = Object.entries(credentials).find(([key]) => key.toLowerCase() === 'authorization')?.[1];
-      const token = authorization?.match(/^Bearer (\S+)$/i)?.[1];
-      if (!token || !action.reducer) inconclusive('no-session', { actor: input.actor, action: 'checkout' });
-      connection = await openCrashReducerConnection(runtime.spacetime, token, signal);
-    }
+    caller = await checkoutCaller(input, capabilities, signal, runtime.spacetime);
     // Reference reservations last 90 seconds. Leave time for recovery and mark
     // expired trials unmeasured; expiry is not a failed atomic checkout.
     if (prepared.scope !== 'orders' && Date.now() - prepared.recordedAtMs > 30_000) {
@@ -58,27 +114,9 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
     }
     let receipt: ProcessCrashReceipt | undefined, faultError: unknown, recoveryError: unknown, recoveredAtMs: number | undefined;
     let databaseDrain: DatabaseDrainReceipt | null | undefined;
-    const pending = Array.from({ length: input.requests }, (_, index) => (async () => {
-      const startedAtMs = named.now();
-      const timeout = AbortSignal.timeout(30_000), requestSignal = AbortSignal.any([signal, timeout]);
-      let outcome: 'committed' | 'not-confirmed' = 'not-confirmed', status: number | null = null;
-      try {
-        if (connection) {
-          const reply = await connection.call(action.reducer!, request.body ?? '[]', requestSignal);
-          if (reply.outcome === 'committed') outcome = 'committed';
-        } else {
-          const reply = await named.fetch(request.url!, { method: request.method ?? 'POST',
-            headers: { 'Content-Type': 'application/json', ...credentials }, body: request.body, signal: requestSignal });
-          await reply.text();
-          status = reply.status;
-          // 202 acknowledges queued work, not a completed checkout.
-          if (reply.ok && reply.status !== 202) outcome = 'committed';
-        }
-      } catch { /* A disconnected or failed response does not prove rollback. */ }
-      return { requestIndex: index + 1, actor: input.actor, startedAtMs, completedAtMs: named.now(),
-        outcome, status, cancelled: signal.aborted, timedOut: timeout.aborted,
-        protocol: connection ? 'websocket-v1-confirmed' : 'http' };
-    })());
+    const pending = Array.from({ length: input.requests }, async (_, index) => ({
+      requestIndex: index + 1, ...await caller!.call(),
+    }));
     const fault = (async () => {
       signal.throwIfAborted();
       if (input.offsetMs) await named.sleep(input.offsetMs, signal);
@@ -165,7 +203,7 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
     return evidence;
   } finally {
     if (unsettled) database.markCheckoutUnsettled();
-    connection?.close();
+    caller?.close();
     await runtime.close();
   }
 });

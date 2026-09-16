@@ -13,6 +13,10 @@
           "steps": [
             {
               "actor": "a",
+              "do": "confirmCheckout"
+            },
+            {
+              "actor": "a",
               "before": "before",
               "do": "crashCheckout",
               "offsetMs": 0,
