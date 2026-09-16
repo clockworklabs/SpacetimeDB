@@ -1007,13 +1007,44 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
             var ixColsDecls = string.Join("\n    ", ixMembers.Select(IxColDecl));
             var ixColsInits = string.Join("\n        ", ixMembers.Select(IxColInit));
+            var nameType = useExtensions ? "global::SpacetimeDB.SqlTableName" : "string";
+            var queryType = $"global::SpacetimeDB.Table<{globalRowName}, {colsTypeName}, {ixColsTypeName}>";
+            var queryMember = useExtensions
+                ? $$"""
+                    public static partial class AssemblyDescriptor
+                    {
+                        public readonly partial struct Queries
+                        {
+                            {{vis}} {{queryType}} {{accessorIdentifier}}()
+                            {
+                                var tableName = global::SpacetimeDB.Internal.Module.ResolveSqlName({{SymbolDisplay.FormatLiteral(assemblyIdentity, true)}}, {{SymbolDisplay.FormatLiteral(tableName, true)}});
+                                return new(tableName, new {{colsTypeName}}(tableName), new {{ixColsTypeName}}(tableName));
+                            }
+                        }
+                    }
+
+                    public static partial class QueryTableExtensions
+                    {
+                        extension(global::SpacetimeDB.QueryBuilder from)
+                        {
+                            {{vis}} {{queryType}} {{accessorIdentifier}}() => new AssemblyDescriptor.Queries().{{accessorIdentifier}}();
+                        }
+                    }
+                    """
+                : $$"""
+                    public readonly partial struct QueryBuilder
+                    {
+                        {{vis}} {{queryType}} {{accessorIdentifier}}() =>
+                            new("{{tableName}}", new {{colsTypeName}}("{{tableName}}"), new {{ixColsTypeName}}("{{tableName}}"));
+                    }
+                    """;
 
             yield return $$"""
                 {{vis}} readonly struct {{colsTypeName}}
                 {
                     {{colsDecls}}
 
-                    internal {{colsTypeName}}(string tableName)
+                    internal {{colsTypeName}}({{nameType}} tableName)
                     {
                         {{colsInits}}
                     }
@@ -1023,17 +1054,13 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 {
                     {{ixColsDecls}}
 
-                    internal {{ixColsTypeName}}(string tableName)
+                    internal {{ixColsTypeName}}({{nameType}} tableName)
                     {
                         {{ixColsInits}}
                     }
                 }
 
-                {{(useExtensions ? "public static partial class QueryTableExtensions" : "public readonly partial struct QueryBuilder")}}
-                {
-                {{(useExtensions ? "    extension(global::SpacetimeDB.QueryBuilder from) {\n        " : "    ")}}{{vis}} global::SpacetimeDB.Table<{{globalRowName}}, {{colsTypeName}}, {{ixColsTypeName}}> {{accessorIdentifier}}() =>
-                {{(useExtensions ? "            " : "        ")}}new("{{tableName}}", new {{colsTypeName}}("{{tableName}}"), new {{ixColsTypeName}}("{{tableName}}"));
-                {{(useExtensions ? "    }\n" : "")}}}
+                {{queryMember}}
                 """;
         }
     }
@@ -2048,7 +2075,8 @@ record AssemblyDeclaration(
     bool DeclaresMounts,
     string LifecycleReducers,
     EquatableArray<AssemblyTableAccessor> Tables,
-    EquatableArray<AssemblyTableAccessor> ReadOnlyTables
+    EquatableArray<AssemblyTableAccessor> ReadOnlyTables,
+    EquatableArray<AssemblyTableAccessor> Queries
 );
 
 [Generator]
@@ -2130,7 +2158,16 @@ public class Module : IIncrementalGenerator
                     descriptor.GetMembers("LifecycleReducers").OfType<IFieldSymbol>()
                         .FirstOrDefault()?.ConstantValue as string ?? "",
                     ReadAccessors("Tables"),
-                    ReadAccessors("ReadOnlyTables")
+                    ReadAccessors("ReadOnlyTables"),
+                    new(descriptor.GetTypeMembers("Queries").SelectMany(type => type.GetMembers())
+                        .OfType<IMethodSymbol>()
+                        .Where(method => method.DeclaredAccessibility == Accessibility.Public
+                            && method.MethodKind == MethodKind.Ordinary && method.Parameters.IsEmpty
+                            && !method.IsStatic)
+                        .Select(method => new AssemblyTableAccessor(
+                            method.Name,
+                            method.ReturnType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                        )).ToImmutableArray())
                 )
             );
 
@@ -2617,7 +2654,7 @@ public class Module : IIncrementalGenerator
                     columnDefaultValues
                 ) = inputs;
 
-                string ConsumerAccessors(bool readOnly)
+                string ConsumerAccessors(string container)
                 {
                     var members = new List<string>();
                     var used = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -2627,7 +2664,7 @@ public class Module : IIncrementalGenerator
                     {
                         if (used.TryGetValue(name, out var previous))
                         {
-                            if (!readOnly)
+                            if (container == "Tables")
                                 context.ReportDiagnostic(ErrorDescriptor.NamespaceAccessorCollision.ToDiag(
                                     (name, previous, owner)));
                             return;
@@ -2639,21 +2676,28 @@ public class Module : IIncrementalGenerator
                     {
                         if (mountByIdentity.TryGetValue(assembly.Identity, out var mount))
                         {
-                            var container = readOnly ? "ReadOnlyTables" : "Tables";
                             Add(mount.Accessor, assembly.Identity,
                                 $"public {assembly.DescriptorTypeName}.{container} {mount.AccessorIdentifier} => new();");
                         }
                         else
                         {
-                            foreach (var table in readOnly ? assembly.ReadOnlyTables : assembly.Tables)
+                            var accessors = container switch
+                            {
+                                "ReadOnlyTables" => assembly.ReadOnlyTables,
+                                "Queries" => assembly.Queries,
+                                _ => assembly.Tables,
+                            };
+                            var invocation = container == "Queries" ? "()" : "";
+                            foreach (var table in accessors)
                                 Add(table.Name, assembly.Identity,
-                                    $"public {table.TypeName} {EscapeIdentifier(table.Name)} => new {assembly.DescriptorTypeName}.{(readOnly ? "ReadOnlyTables" : "Tables")}().{EscapeIdentifier(table.Name)};");
+                                    $"public {table.TypeName} {EscapeIdentifier(table.Name)}{invocation} => new {assembly.DescriptorTypeName}.{container}().{EscapeIdentifier(table.Name)}{invocation};");
                         }
                     }
                     return string.Join("\n", members);
                 }
-                var consumerWritableAccessors = ConsumerAccessors(false);
-                var consumerReadOnlyAccessors = ConsumerAccessors(true);
+                var consumerWritableAccessors = ConsumerAccessors("Tables");
+                var consumerReadOnlyAccessors = ConsumerAccessors("ReadOnlyTables");
+                var consumerQueryAccessors = ConsumerAccessors("Queries");
 
                 var compositionRegistration = new List<string>
                 {
@@ -3039,7 +3083,7 @@ public class Module : IIncrementalGenerator
                     
                     #if NET10_0_OR_GREATER
                     namespace {{extensionNamespaceName}} {
-                        public static class AssemblyDescriptor {
+                        public static partial class AssemblyDescriptor {
                             public const string LifecycleReducers = {{SymbolDisplay.FormatLiteral(string.Join(", ", addReducers.Where(r => r.Kind != ReducerKind.UserDefined).Select(r => $"{r.FullName} ({r.Kind})")), true)}};
                             public const int ReducerCount = {{addReducers.Array.Length}};
                             public const int ProcedureCount = {{addProcedures.Array.Length}};
@@ -3120,6 +3164,8 @@ public class Module : IIncrementalGenerator
                             public readonly struct ReadOnlyTables {
                                 {{IndentGeneratedCode(string.Join("\n", readOnlyAccessors.Select(v => v.ReadOnlyGetter)), 12)}}
                             }
+
+                            public readonly partial struct Queries { }
                         }
                         public static class LocalTableExtensions {
                             extension(global::SpacetimeDB.Local db) {
@@ -3131,6 +3177,11 @@ public class Module : IIncrementalGenerator
                             extension(global::SpacetimeDB.Internal.LocalReadOnly db) {
                                 {{IndentGeneratedCode(string.Join("\n", readOnlyAccessors.Select(v => v.ReadOnlyGetter)), 12)}}
                                 {{IndentGeneratedCode(consumerReadOnlyAccessors, 12)}}
+                            }
+                        }
+                        public static partial class QueryTableExtensions {
+                            extension(global::SpacetimeDB.QueryBuilder from) {
+                                {{IndentGeneratedCode(consumerQueryAccessors, 12)}}
                             }
                         }
                         {{IndentGeneratedCode(queryBuilderExtensionMembers, 4)}}

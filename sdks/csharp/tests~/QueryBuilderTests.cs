@@ -95,6 +95,45 @@ public sealed class QueryBuilderTests
 
 
     [Fact]
+    public void QualifiedName_QuotesSegmentsAndCopiesInput()
+    {
+        var segments = new[] { "select", "we\"ird.namespace" };
+        var name = new SqlTableName(segments, "users.with.dots");
+        segments[0] = "changed";
+        Assert.Equal(new[] { "select", "we\"ird.namespace" }, name.NamespaceSegments);
+        Assert.Equal("users.with.dots", name.LocalName);
+        Assert.Equal("\"select\".\"we\"\"ird.namespace\".\"users.with.dots\"", name.ToString());
+        Assert.Throws<NotSupportedException>(() =>
+            ((System.Collections.Generic.IList<string>)name.NamespaceSegments)[0] = "changed");
+        Assert.Equal("SELECT * FROM \"auth.users\"", MakeTable("auth.users").ToSql());
+        Assert.Equal("\"auth.users\".\"id\"", new Col<Row, int>("auth.users", "id").ToString());
+        Assert.Equal("\"auth.users\".\"id\"", new IxCol<Row, int>("auth.users", "id").ToString());
+    }
+
+    [Fact]
+    public void QualifiedName_FiltersAndBothSemijoinsKeepSameLeafNamesDistinct()
+    {
+        var leftName = new SqlTableName(new[] { "auth" }, "users");
+        var rightName = new SqlTableName(new[] { "audit" }, "users");
+        var left = new Table<LeftRow, Col<LeftRow, int>, IxCol<LeftRow, int>>(
+            leftName, new(leftName, "id"), new(leftName, "id"));
+        var right = new Table<RightRow, Col<RightRow, int>, IxCol<RightRow, int>>(
+            rightName, new(rightName, "id"), new(rightName, "id"));
+        Assert.Equal("SELECT * FROM \"auth\".\"users\" WHERE (\"auth\".\"users\".\"id\" = 1)",
+            left.Where(c => c.Eq(1)).ToSql());
+        Assert.Equal("SELECT * FROM \"auth\".\"users\" WHERE (\"auth\".\"users\".\"id\" = 1)",
+            left.Where((_, ix) => ix.Eq(SqlLit.Int(1))).ToSql());
+        const string join = " FROM \"auth\".\"users\" JOIN \"audit\".\"users\" ON \"auth\".\"users\".\"id\" = \"audit\".\"users\".\"id\"";
+        Assert.Equal("SELECT \"auth\".\"users\".*" + join,
+            left.LeftSemijoin(right, (l, r) => l.Eq(r)).ToSql());
+        Assert.Equal("SELECT \"audit\".\"users\".*" + join,
+            left.RightSemijoin(right, (l, r) => l.Eq(r)).ToSql());
+        var escaped = new SqlTableName(new[] { "auth\"data" }, "select");
+        Assert.Equal("\"auth\"\"data\".\"select\".\"i\"\"d\"", new Col<Row, int>(escaped, "i\"d").ToString());
+        Assert.Equal("\"auth\"\"data\".\"select\".\"i\"\"d\"", new IxCol<Row, int>(escaped, "i\"d").ToString());
+    }
+
+    [Fact]
     public void All_QuotesTableName()
     {
         var table = MakeTable("My\"Table");
