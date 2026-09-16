@@ -1,8 +1,8 @@
-use alloc::{boxed::Box, vec::Vec};
+use alloc::boxed::Box;
 
 use crate::{
     sim::{
-        executor::{Cqe, CqeInner, Executing, FsyncEffect, Operation, Pending, ReadSector, Results, WriteSector},
+        executor::{Cqe, CqeInner, FsyncEffect, Operation, Pending, ReadSector, Results, WriteSector},
         fs::{self, Datasync},
         Error,
     },
@@ -41,6 +41,14 @@ pub struct Sqe<T> {
 }
 
 impl<T> Sqe<T> {
+    fn new(inner: SqeInner) -> Self {
+        Self {
+            inner,
+            link: None,
+            user_data: None,
+        }
+    }
+
     #[allow(unused)]
     pub fn link(mut self, kind: Option<LinkKind>) -> Self {
         self.link = kind;
@@ -57,40 +65,42 @@ impl<T> Sqe<T> {
     }
 
     pub fn write(fd: fs::File, buf: ErasedBox, offset: u64) -> Self {
-        SqeInner::Write { fd, buf, offset }.into()
+        assert!(offset.is_multiple_of(SECTOR_SIZE as u64));
+        Self::new(SqeInner::Write { fd, buf, offset })
     }
 
     pub fn read(fd: fs::File, buf: ErasedBox, offset: u64) -> Self {
-        SqeInner::Read { fd, buf, offset }.into()
+        assert!(offset.is_multiple_of(SECTOR_SIZE as u64));
+        Self::new(SqeInner::Read { fd, buf, offset })
     }
 
     pub fn open(path: Box<str>) -> Self {
-        SqeInner::Open { path }.into()
+        Self::new(SqeInner::Open { path })
     }
 
     pub fn create(path: Box<str>) -> Self {
-        SqeInner::Create { path }.into()
+        Self::new(SqeInner::Create { path })
     }
 
     pub fn stat(fd: fs::File) -> Self {
-        SqeInner::Stat { fd }.into()
+        Self::new(SqeInner::Stat { fd })
     }
 
     pub fn fallocate(fd: fs::File, len: u64) -> Self {
-        SqeInner::Fallocate { fd, total_len: len }.into()
+        Self::new(SqeInner::Fallocate { fd, total_len: len })
     }
 
     pub fn fsync(fd: fs::File) -> Self {
-        SqeInner::Fsync { fd }.into()
+        Self::new(SqeInner::Fsync { fd })
     }
 
     pub fn fdatasync(fd: fs::File) -> Self {
-        SqeInner::Fdatasync { fd }.into()
+        Self::new(SqeInner::Fdatasync { fd })
     }
 
     #[allow(unused)]
     pub fn noop() -> Self {
-        SqeInner::Noop.into()
+        Self::new(SqeInner::Noop)
     }
 
     /// Extract the [ErasedBox] buffer if the [Sqe] carries one.
@@ -104,16 +114,6 @@ impl<T> Sqe<T> {
             | SqeInner::Fsync { .. }
             | SqeInner::Fdatasync { .. }
             | SqeInner::Noop => None,
-        }
-    }
-}
-
-impl<T, U: Into<SqeInner>> From<U> for Sqe<T> {
-    fn from(inner: U) -> Self {
-        Self {
-            inner: inner.into(),
-            link: None,
-            user_data: None,
         }
     }
 }
@@ -192,126 +192,89 @@ impl SqeInner {
         }
     }
 
-    pub(super) fn schedule(&mut self, sqe_id: SqeId, executing: &mut Vec<Executing>) -> Option<Pending> {
-        let exe_cap = executing.spare_capacity_mut().len();
+    pub(super) fn prepare(&self) -> Pending {
         match self {
             SqeInner::Write { buf, offset, .. } => {
                 let buf_len = buf.as_bytes().len();
                 let first_sector = (*offset / SECTOR_SIZE as u64) as usize;
                 let page_count = buf_len / SECTOR_SIZE;
 
-                (exe_cap >= page_count).then(|| {
-                    executing.extend((0..page_count).map(|page| Executing {
-                        sqe: sqe_id,
-                        inner: Operation::WriteSector(WriteSector {
-                            page_offset: first_sector + page,
+                Pending::ReadWrite {
+                    ops: (0..page_count).scan(first_sector, |first_sector, page| {
+                        Some(Operation::WriteSector(WriteSector {
+                            page_offset: *first_sector + page,
                             buf_offset: page * SECTOR_SIZE,
-                        }),
-                    }));
-                    Pending::ReadWrite {
-                        results: Results::new(page_count),
-                    }
-                })
+                        }))
+                    }),
+                    results: Results::new(page_count),
+                }
             }
             SqeInner::Read { buf, offset, .. } => {
                 let buf_len = buf.as_bytes().len();
                 let first_sector = (*offset / SECTOR_SIZE as u64) as usize;
                 let page_count = buf_len / SECTOR_SIZE;
 
-                (exe_cap >= page_count).then(|| {
-                    executing.extend((0..page_count).map(|page| Executing {
-                        sqe: sqe_id,
-                        inner: Operation::ReadSector(ReadSector {
-                            page_offset: first_sector + page,
+                Pending::ReadWrite {
+                    ops: (0..page_count).scan(first_sector, |first_sector, page| {
+                        Some(Operation::ReadSector(ReadSector {
+                            page_offset: *first_sector + page,
                             buf_offset: page * SECTOR_SIZE,
-                        }),
-                    }));
-                    Pending::ReadWrite {
-                        results: Results::new(page_count),
-                    }
-                })
+                        }))
+                    }),
+                    results: Results::new(page_count),
+                }
             }
-            SqeInner::Open { .. } => (exe_cap >= 1).then(|| {
-                executing.push(Executing {
-                    sqe: sqe_id,
-                    inner: Operation::Open,
-                });
-                Pending::OneOff
-            }),
-            SqeInner::Create { .. } => (exe_cap >= 1).then(|| {
-                executing.push(Executing {
-                    sqe: sqe_id,
-                    inner: Operation::Create,
-                });
-                Pending::OneOff
-            }),
-            SqeInner::Stat { .. } => (exe_cap >= 1).then(|| {
-                executing.push(Executing {
-                    sqe: sqe_id,
-                    inner: Operation::Stat,
-                });
-                Pending::OneOff
-            }),
-            SqeInner::Fallocate { .. } => (exe_cap >= 1).then(|| {
-                executing.push(Executing {
-                    sqe: sqe_id,
-                    inner: Operation::Fallocate,
-                });
-                Pending::OneOff
-            }),
             SqeInner::Fsync { fd } => {
                 let sector_count = fd.len() / SECTOR_SIZE as u64;
-                (exe_cap > sector_count as usize).then(|| {
-                    executing.extend(
-                        (0..sector_count)
-                            .map(|offset| Executing {
-                                sqe: sqe_id,
-                                inner: Operation::Fsync {
-                                    effect: FsyncEffect::Datasync(Datasync::Sector(offset)),
-                                },
-                            })
-                            .chain([Executing {
-                                sqe: sqe_id,
-                                inner: Operation::Fsync {
-                                    effect: FsyncEffect::Datasync(Datasync::Length),
-                                },
-                            }]),
-                    );
-                    Pending::Sync {
-                        results: Results::new(1 + sector_count as usize),
+
+                let f = |offset: u64| -> Operation {
+                    Operation::Fsync {
+                        effect: FsyncEffect::Datasync(Datasync::Sector(offset)),
                     }
-                })
+                };
+
+                Pending::Sync {
+                    ops: (0..sector_count)
+                        .map(f as fn(u64) -> Operation)
+                        .chain(Some(Operation::Fsync {
+                            effect: Datasync::Length.into(),
+                        })),
+                    results: Results::new(1 + sector_count as usize),
+                }
             }
             SqeInner::Fdatasync { fd } => {
                 let sector_count = fd.len() / SECTOR_SIZE as u64;
-                (exe_cap > sector_count as usize).then(|| {
-                    executing.extend(
-                        (0..sector_count)
-                            .map(|offset| Executing {
-                                sqe: sqe_id,
-                                inner: Operation::Fdatasync {
-                                    effect: Datasync::Sector(offset),
-                                },
-                            })
-                            .chain([Executing {
-                                sqe: sqe_id,
-                                inner: Operation::Fdatasync {
-                                    effect: Datasync::Length,
-                                },
-                            }]),
-                    );
-                    Pending::Sync {
-                        results: Results::new(1 + sector_count as usize),
+
+                let f = |offset: u64| -> Operation {
+                    Operation::Fdatasync {
+                        effect: Datasync::Sector(offset),
                     }
-                })
+                };
+
+                Pending::Sync {
+                    ops: (0..sector_count)
+                        .map(f as fn(u64) -> Operation)
+                        .chain(Some(Operation::Fdatasync {
+                            effect: Datasync::Length,
+                        })),
+                    results: Results::new(1 + sector_count as usize),
+                }
             }
-            SqeInner::Noop => (exe_cap >= 1).then(|| {
-                executing.push(Executing {
-                    sqe: sqe_id,
-                    inner: Operation::Noop,
-                });
-                Pending::OneOff
-            }),
+            SqeInner::Open { .. } => Pending::Unit {
+                op: Some(Operation::Open),
+            },
+            SqeInner::Create { .. } => Pending::Unit {
+                op: Some(Operation::Create),
+            },
+            SqeInner::Stat { .. } => Pending::Unit {
+                op: Some(Operation::Stat),
+            },
+            SqeInner::Fallocate { .. } => Pending::Unit {
+                op: Some(Operation::Fallocate),
+            },
+            SqeInner::Noop => Pending::Unit {
+                op: Some(Operation::Noop),
+            },
         }
     }
 }

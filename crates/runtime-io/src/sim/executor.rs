@@ -3,7 +3,13 @@ use alloc::{
     collections::{BTreeMap, VecDeque},
     vec::Vec,
 };
-use core::{num::NonZeroUsize, result::Result, task::Waker};
+use core::{
+    iter::{Chain, Map, Scan},
+    num::NonZeroUsize,
+    ops::Range,
+    result::Result,
+    task::Waker,
+};
 use slab::Slab;
 
 use crate::{
@@ -33,6 +39,12 @@ pub trait TaskSelector {
 #[derive(Clone, Copy)]
 pub enum FsyncEffect {
     Datasync(Datasync),
+}
+
+impl From<Datasync> for FsyncEffect {
+    fn from(value: Datasync) -> Self {
+        Self::Datasync(value)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -151,8 +163,8 @@ impl CqeInner {
 }
 
 pub struct InFlight<T> {
-    pub sqe: SqeInner,
-    pub state: InFlightState,
+    sqe: SqeInner,
+    state: InFlightState,
     next: Option<Link>,
     pub user_data: Option<T>,
 }
@@ -162,28 +174,19 @@ impl<T> InFlight<T> {
         self.state.is_blocked()
     }
 
-    fn is_ready(&self) -> bool {
-        self.state.is_ready()
-    }
-
     fn is_active(&self) -> bool {
         self.state.is_active()
     }
 }
 
-pub enum InFlightState {
+enum InFlightState {
     Blocked,
-    Ready,
     Active(Pending),
 }
 
 impl InFlightState {
     fn is_blocked(&self) -> bool {
         matches!(self, Self::Blocked)
-    }
-
-    fn is_ready(&self) -> bool {
-        matches!(self, Self::Ready)
     }
 
     fn is_active(&self) -> bool {
@@ -251,10 +254,25 @@ impl<T: ResultAcc> Results<T> {
     }
 }
 
-pub enum Pending {
-    OneOff,
-    ReadWrite { results: Results<usize> },
-    Sync { results: Results<()> },
+type ReadWriteOps = Scan<Range<usize>, usize, fn(&mut usize, usize) -> Option<Operation>>;
+type SyncOps = Chain<Map<Range<u64>, fn(u64) -> Operation>, core::option::IntoIter<Operation>>;
+
+enum Pending {
+    ReadWrite { ops: ReadWriteOps, results: Results<usize> },
+    Sync { ops: SyncOps, results: Results<()> },
+    Unit { op: Option<Operation> },
+}
+
+impl Iterator for Pending {
+    type Item = Operation;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::ReadWrite { ops, .. } => ops.next(),
+            Self::Sync { ops, .. } => ops.next(),
+            Self::Unit { op } => op.take(),
+        }
+    }
 }
 
 struct Executing {
@@ -505,8 +523,14 @@ impl<UserData> Executor<UserData> {
         let cq_overflow_orig = self.cq_overflow;
         self.cq_overflow = OnCqOverflow::Drop;
         while let Some(op) = self.executing.pop() {
+            if let Some(in_flight) = self.in_flight.get(op.sqe.key())
+                && !in_flight.is_active()
+            {
+                continue;
+            }
             self.execute_op(op, faults);
         }
+        self.in_flight.clear();
         self.completions.clear();
         self.cq_overflow = cq_overflow_orig;
         self.cq_dropped = 0;
@@ -519,7 +543,7 @@ impl<UserData> Executor<UserData> {
         Batch::IntoIter: ExactSizeIterator,
     {
         let sqes = sqes.into_iter();
-        if self.submissions.len() + sqes.len() >= self.submissions.capacity() {
+        if self.submissions.len() + sqes.len() > self.submissions.capacity() {
             Err(sqes)
         } else {
             self.submissions.extend(sqes);
@@ -583,12 +607,12 @@ impl<UserData> Executor<UserData> {
 
         let in_flight = in_flight.get_mut(sqe.key()).expect("invalid sqe id");
         assert!(in_flight.is_blocked(), "in-flight sqe unblocked more than once");
-        in_flight.state = InFlightState::Ready;
+        in_flight.state = InFlightState::Active(in_flight.sqe.prepare());
     }
 
     fn have_in_flight_capacity(&self) -> bool {
-        // The batch size if the prefix of linked SQEs, plus the first unlinked
-        // one. They all need to be scheduled together to presever linking
+        // The batch size is the prefix of linked SQEs, plus the first unlinked
+        // one. They all need to be scheduled together to preserve linking
         // semantics.
         let batch_size = self
             .submissions
@@ -602,45 +626,49 @@ impl<UserData> Executor<UserData> {
     fn schedule(&mut self) -> bool {
         let mut progress = false;
 
-        if !self.have_in_flight_capacity() {
-            return true;
+        if self.have_in_flight_capacity() {
+            while let Some(Sqe { inner, link, user_data }) = self.submissions.pop_front() {
+                let head = self.schedule_blocked(inner, user_data);
+
+                let mut prev = head;
+                let mut prev_link = link;
+                while let Some(kind) = prev_link {
+                    let Some(Sqe { inner, link, user_data }) = self.submissions.pop_front() else {
+                        break;
+                    };
+
+                    let next = self.schedule_blocked(inner, user_data);
+                    let prev_in_flight = self.in_flight.get_mut(prev.key()).expect("invalid sqe id");
+                    prev_in_flight.next = Some(Link { kind, next });
+
+                    prev = next;
+                    prev_link = link;
+                }
+
+                self.unblock(head);
+                progress |= true;
+
+                if !self.have_in_flight_capacity() {
+                    break;
+                }
+            }
         }
 
-        while let Some(Sqe { inner, link, user_data }) = self.submissions.pop_front() {
-            let head = self.schedule_blocked(inner, user_data);
-
-            let mut prev = head;
-            let mut prev_link = link;
-            while let Some(kind) = prev_link {
-                let Some(Sqe { inner, link, user_data }) = self.submissions.pop_front() else {
-                    break;
-                };
-
-                let next = self.schedule_blocked(inner, user_data);
-                let prev_in_flight = self.in_flight.get_mut(prev.key()).expect("invalid sqe id");
-                prev_in_flight.next = Some(Link { kind, next });
-
-                prev = next;
-                prev_link = link;
-            }
-
-            self.unblock(head);
-            progress |= true;
-
-            if !self.have_in_flight_capacity() {
+        for (sqe_id, in_flight) in self.in_flight.iter_mut() {
+            if self.executing.capacity() == self.executing.len() {
                 break;
             }
-        }
 
-        for (key, in_flight) in self.in_flight.iter_mut() {
-            if in_flight.is_ready() {
-                let Some(pending) = in_flight.sqe.schedule(SqeId(key), &mut self.executing) else {
-                    break;
-                };
-                in_flight.state = InFlightState::Active(pending);
+            let InFlightState::Active(pending) = &mut in_flight.state else {
+                continue;
+            };
+            if let Some(op) = pending.next() {
+                self.executing.push(Executing {
+                    sqe: SqeId(sqe_id),
+                    inner: op,
+                });
+                progress |= true;
             }
-
-            progress |= true;
         }
 
         progress
@@ -723,7 +751,7 @@ impl<UserData> Executor<UserData> {
         let is_complete = {
             let InFlight {
                 sqe: SqeInner::Write { fd, buf, .. },
-                state: InFlightState::Active(Pending::ReadWrite { results }),
+                state: InFlightState::Active(Pending::ReadWrite { results, .. }),
                 ..
             } = self.in_flight.get_mut(sqe.key()).expect("invalid sqe id")
             else {
@@ -746,7 +774,7 @@ impl<UserData> Executor<UserData> {
         if is_complete {
             let InFlight {
                 sqe: SqeInner::Write { buf, .. },
-                state: InFlightState::Active(Pending::ReadWrite { results }),
+                state: InFlightState::Active(Pending::ReadWrite { results, .. }),
                 next,
                 user_data,
             } = self.in_flight.remove(sqe.key())
@@ -767,7 +795,7 @@ impl<UserData> Executor<UserData> {
         let is_complete = {
             let InFlight {
                 sqe: SqeInner::Read { fd, buf, .. },
-                state: InFlightState::Active(Pending::ReadWrite { results }),
+                state: InFlightState::Active(Pending::ReadWrite { results, .. }),
                 ..
             } = self.in_flight.get_mut(sqe.key()).expect("invalid sqe id")
             else {
@@ -790,7 +818,7 @@ impl<UserData> Executor<UserData> {
         if is_complete {
             let InFlight {
                 sqe: SqeInner::Read { buf, .. },
-                state: InFlightState::Active(Pending::ReadWrite { results }),
+                state: InFlightState::Active(Pending::ReadWrite { results, .. }),
                 next,
                 user_data,
             } = self.in_flight.remove(sqe.key())
@@ -810,7 +838,7 @@ impl<UserData> Executor<UserData> {
     fn execute_open(&mut self, sqe: SqeId, eff: EitherOrBoth<(), Error>) {
         let InFlight {
             sqe: SqeInner::Open { path },
-            state: InFlightState::Active(Pending::OneOff),
+            state: InFlightState::Active(Pending::Unit { .. }),
             next,
             user_data,
         } = self.in_flight.remove(sqe.key())
@@ -833,7 +861,7 @@ impl<UserData> Executor<UserData> {
     fn execute_create(&mut self, sqe: SqeId, eff: EitherOrBoth<(), Error>) {
         let InFlight {
             sqe: SqeInner::Create { path },
-            state: InFlightState::Active(Pending::OneOff),
+            state: InFlightState::Active(Pending::Unit { .. }),
             next,
             user_data,
         } = self.in_flight.remove(sqe.key())
@@ -860,7 +888,7 @@ impl<UserData> Executor<UserData> {
     fn execute_stat(&mut self, sqe: SqeId, eff: EitherOrBoth<(), Error>) {
         let InFlight {
             sqe: SqeInner::Stat { fd },
-            state: InFlightState::Active(Pending::OneOff),
+            state: InFlightState::Active(Pending::Unit { .. }),
             next,
             user_data,
         } = self.in_flight.remove(sqe.key())
@@ -879,7 +907,7 @@ impl<UserData> Executor<UserData> {
     fn execute_fallocate(&mut self, sqe: SqeId, eff: EitherOrBoth<(), Error>) {
         let InFlight {
             sqe: SqeInner::Fallocate { fd, total_len },
-            state: InFlightState::Active(Pending::OneOff),
+            state: InFlightState::Active(Pending::Unit { .. }),
             next,
             user_data,
         } = self.in_flight.remove(sqe.key())
@@ -899,7 +927,7 @@ impl<UserData> Executor<UserData> {
         let is_complete = {
             let InFlight {
                 sqe: SqeInner::Fsync { fd },
-                state: InFlightState::Active(Pending::Sync { results }),
+                state: InFlightState::Active(Pending::Sync { results, .. }),
                 ..
             } = self.in_flight.get_mut(sqe.key()).expect("invalid sqe id")
             else {
@@ -918,7 +946,7 @@ impl<UserData> Executor<UserData> {
 
         if is_complete {
             let InFlight {
-                state: InFlightState::Active(Pending::Sync { results }),
+                state: InFlightState::Active(Pending::Sync { results, .. }),
                 next,
                 user_data,
                 ..
@@ -940,7 +968,7 @@ impl<UserData> Executor<UserData> {
         let is_complete = {
             let InFlight {
                 sqe: SqeInner::Fdatasync { fd },
-                state: InFlightState::Active(Pending::Sync { results }),
+                state: InFlightState::Active(Pending::Sync { results, .. }),
                 ..
             } = self.in_flight.get_mut(sqe.key()).expect("invalid sqe id")
             else {
@@ -959,7 +987,7 @@ impl<UserData> Executor<UserData> {
 
         if is_complete {
             let InFlight {
-                state: InFlightState::Active(Pending::Sync { results }),
+                state: InFlightState::Active(Pending::Sync { results, .. }),
                 next,
                 user_data,
                 ..
@@ -980,7 +1008,7 @@ impl<UserData> Executor<UserData> {
     fn execute_noop(&mut self, sqe: SqeId, eff: EitherOrBoth<(), Error>) {
         let InFlight {
             sqe: SqeInner::Noop,
-            state: InFlightState::Active(Pending::OneOff),
+            state: InFlightState::Active(Pending::Unit { .. }),
             next,
             user_data,
         } = self.in_flight.remove(sqe.key())
