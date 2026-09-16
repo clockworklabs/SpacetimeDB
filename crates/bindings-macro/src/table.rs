@@ -1,3 +1,4 @@
+use crate::migration::MigrationData;
 use crate::sats;
 use crate::sym;
 use crate::util::preinit;
@@ -76,7 +77,7 @@ enum IndexType {
 }
 
 impl TableArgs {
-    pub(crate) fn parse(input: TokenStream, struct_ident: &Ident) -> syn::Result<Self> {
+    pub(crate) fn parse(input: TokenStream, call_site: Span, struct_ident: &Ident) -> syn::Result<Self> {
         let mut access = None;
         let mut scheduled = None;
         let mut accessor = None;
@@ -177,7 +178,7 @@ If you're migrating from SpacetimeDB 1.*, replace `name = {name_str_value:?}` wi
             } else {
                 let table = struct_ident.to_string().to_snake_case();
                 syn::Error::new(
-                    Span::call_site(),
+                    call_site,
                     format_args!("must specify table accessor, e.g. `#[spacetimedb::table(accessor = {table})]"),
                 )
             }
@@ -823,10 +824,28 @@ fn is_first_appearance(struct_name: &str) -> bool {
     set.insert(struct_name.to_string())
 }
 
-pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::Result<TokenStream> {
+pub(crate) fn table_impl(args: TableArgs, item: &syn::DeriveInput) -> syn::Result<TokenStream> {
     let vis = &item.vis;
-    let sats_ty = sats::sats_type_from_derive(item, quote!(spacetimedb::spacetimedb_lib))?;
 
+    for param in &item.generics.params {
+        let err = |msg| syn::Error::new_spanned(param, msg);
+        match param {
+            syn::GenericParam::Lifetime(_) => {}
+            syn::GenericParam::Type(_) => return Err(err("type parameters are not allowed on tables")),
+            syn::GenericParam::Const(_) => return Err(err("const parameters are not allowed on tables")),
+        }
+    }
+
+    let sats_ty = sats::sats_type_from_derive(item, quote!(spacetimedb::spacetimedb_lib))?;
+    table_impl_inner(args, vis, sats_ty, None)
+}
+
+pub(crate) fn table_impl_inner(
+    mut args: TableArgs,
+    vis: &syn::Visibility,
+    sats_ty: sats::SatsType<'_>,
+    migration: Option<&mut MigrationData<'_>>,
+) -> syn::Result<TokenStream> {
     let original_struct_ident = sats_ty.ident;
     let table_ident = &args.accessor;
     let explicit_table_name = args.name.as_ref().map(|s| s.value());
@@ -839,27 +858,22 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         return Err(syn::Error::new(Span::call_site(), "spacetimedb table must be a struct"));
     };
 
-    for param in &item.generics.params {
-        let err = |msg| syn::Error::new_spanned(param, msg);
-        match param {
-            syn::GenericParam::Lifetime(_) => {}
-            syn::GenericParam::Type(_) => return Err(err("type parameters are not allowed on tables")),
-            syn::GenericParam::Const(_) => return Err(err("const parameters are not allowed on tables")),
-        }
-    }
-
+    let table_name_for_id = match &migration {
+        Some(migration) => &*["dropped._", migration.hash.as_hex(), ".", &table_name].concat(),
+        None => &table_name,
+    };
     let table_id_from_name_func = quote! {
         fn table_id() -> spacetimedb::TableId {
             static TABLE_ID: std::sync::OnceLock<spacetimedb::TableId> = std::sync::OnceLock::new();
             *TABLE_ID.get_or_init(|| {
-                spacetimedb::table_id_from_name(<Self as spacetimedb::table::TableInternal>::TABLE_NAME)
+                spacetimedb::table_id_from_name(#table_name_for_id)
             })
         }
     };
 
     if fields.len() > u16::MAX.into() {
-        return Err(syn::Error::new_spanned(
-            item,
+        return Err(syn::Error::new(
+            sats_ty.data_span,
             "too many columns; the most a table can have is 2^16",
         ));
     }
@@ -996,7 +1010,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             spacetimedb::table::SequenceTrigger::maybe_decode_into(&mut __row.#field, &mut __generated_cols);
         )
     });
-    let integrate_generated_columns = quote_spanned!(item.span() =>
+    let integrate_generated_columns = quote_spanned!(sats_ty.data_span =>
         fn integrate_generated_columns(__row: &mut #row_type, mut __generated_cols: &[u8]) {
             #(#integrate_gen_col)*
         }
@@ -1074,6 +1088,11 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         }
     };
 
+    if migration.is_some()
+        && let Some(scheduled) = &args.scheduled
+    {
+        return Err(syn::Error::new(scheduled.span, "cannot specify schedule in migration"));
+    }
     let (schedule, schedule_typecheck) = args
         .scheduled
         .as_ref()
@@ -1301,6 +1320,54 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         #vis struct #viewhandle_ident {}
     };
 
+    let typechecks = quote! {
+        const _: () = {
+            #(let _ = <#field_types as spacetimedb::rt::TableColumn>::_ITEM;)*
+            #schedule_typecheck
+            #default_type_check
+        };
+    };
+
+    if let Some(migration) = migration {
+        migration.tablehandle_idents.push(tablehandle_ident.clone());
+        let db_view = &migration.db_view_ident;
+        return Ok(quote! {
+            #typechecks
+
+            #tablehandle_def
+            // #table_query_handle_def
+
+            impl #db_view {
+                #[allow(non_camel_case_types, dead_code)]
+                pub(super) fn #table_ident(&self) -> &#tablehandle_ident {
+                    &#tablehandle_ident {}
+                }
+            }
+
+            const _: () = {
+                impl #tablehandle_ident {
+                    #[inline]
+                    pub fn count(&self) -> u64 {
+                        spacetimedb::table::count::<#tablehandle_ident>()
+                    }
+
+                    #(#index_accessors_ro)*
+                }
+
+                #tabletype_impl
+
+                #explicit_names_impl
+
+                #[allow(non_camel_case_types)]
+                mod __indices {
+                    #[allow(unused)]
+                    use super::*;
+                    #(#index_marker_types)*
+                }
+            };
+        });
+    }
+
     let struct_name = original_struct_ident.to_string();
     let is_first_table = is_first_appearance(&struct_name);
 
@@ -1311,11 +1378,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     };
 
     let emission = quote! {
-        const _: () = {
-            #(let _ = <#field_types as spacetimedb::rt::TableColumn>::_ITEM;)*
-            #schedule_typecheck
-            #default_type_check
-        };
+        #typechecks
 
         #trait_def
         #trait_def_view
