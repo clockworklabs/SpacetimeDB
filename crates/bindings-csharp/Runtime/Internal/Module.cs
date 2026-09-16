@@ -57,6 +57,10 @@ public static class Module
         (namespaces ?? throw new InvalidOperationException("Module namespaces have not been installed."))
             .Resolve(assemblyIdentity, localName);
 
+    public static SqlTableName ResolveSqlName(string assemblyIdentity, string localName) =>
+        (namespaces ?? throw new InvalidOperationException("Module namespaces have not been installed."))
+            .ResolveSqlName(assemblyIdentity, localName);
+
     private static Func<
         Identity,
         ConnectionId?,

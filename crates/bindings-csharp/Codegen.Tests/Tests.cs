@@ -478,6 +478,9 @@ public static class GeneratorSnapshotTests
                 public class Sentinel { }
                 [SpacetimeDB.Table]
                 public partial struct {{name}}Row { public uint Id; }
+                public static class QueryHelpers {
+                    public static SpacetimeDB.IQuery<{{name}}Row> Query(SpacetimeDB.AnonymousViewContext ctx) => ctx.From.{{name}}Row().Where(c => c.Id.Eq(SpacetimeDB.SqlLit.Int(1u)));
+                }
             }
             """;
         string Descriptor(CSharpCompilation compilation) => Assert.Single(
@@ -507,6 +510,13 @@ public static class GeneratorSnapshotTests
                 + "[assembly: SpacetimeDB.Namespace(typeof(Beta.Sentinel), Accessor = \"class\", Name = \"audit_data\")]\n"
                 + rootSource
                 + "public static class Helpers { public static ulong Count(SpacetimeDB.ReducerContext ctx) => ctx.Db.Auth.AlphaRow.Count + ctx.Db.@class.BetaRow.Count + ctx.Db.SharedRow.Count; }";
+        rootSource += $$"""
+            public static class RootQueries {
+                public static SpacetimeDB.IQuery<Alpha.AlphaRow> Alpha(SpacetimeDB.ViewContext ctx) => ctx.From.{{(mounted ? "Auth." : "")}}AlphaRow();
+                public static SpacetimeDB.IQuery<Beta.BetaRow> Beta(SpacetimeDB.AnonymousViewContext ctx) => ctx.From.{{(mounted ? "@class." : "")}}BetaRow();
+                public static SpacetimeDB.IQuery<Shared.SharedRow> Shared(SpacetimeDB.ViewContext ctx) => ctx.From.SharedRow();
+            }
+            """;
         var root = Generate(Create("Root", rootSource, beta, utility, shared, alpha));
         var reordered = Generate(Create("Root", rootSource, alpha, shared, utility, beta));
         Emit(root);
@@ -734,6 +744,10 @@ public static class GeneratorSnapshotTests
                     catch (System.InvalidOperationException) { }
                     SpacetimeDB.Internal.Module.InstallNamespaces(registry);
                     if (SpacetimeDB.Internal.Module.ResolveName(first, "User") != "auth_data.User") return false;
+                    if (SpacetimeDB.Internal.Module.ResolveSqlName(first, "User").ToString() != "\"auth_data\".\"User\"") return false;
+                    if (registry.ResolveSqlName("unmounted", "User").ToString() != "\"User\"") return false;
+                    if (registry.ResolveSqlName("merged", "User").ToString() != "\"User\"") return false;
+                    if (registry.ResolveSqlName("root", "User.With.Dot").ToString() != "\"User.With.Dot\"") return false;
                     try { SpacetimeDB.Internal.Module.InstallNamespaces(registry); return false; }
                     catch (System.InvalidOperationException) { }
                     try { new NamespaceRegistry(first, placements); return false; }
