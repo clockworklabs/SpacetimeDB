@@ -19,9 +19,17 @@ public sealed class NamespaceRegistry
         }
     }
 
-    public string Resolve(string assemblyIdentity, string localName) =>
+    private string? ResolveNamespace(string assemblyIdentity) =>
         mounts.TryGetValue(assemblyIdentity, out var name)
         && !name.Equals("public", StringComparison.OrdinalIgnoreCase)
-            ? name + "." + localName
-            : localName;
+            ? name
+            : null;
+
+    public string Resolve(string assemblyIdentity, string localName) =>
+        ResolveNamespace(assemblyIdentity) is { } name ? name + "." + localName : localName;
+
+    public SqlTableName ResolveSqlName(string assemblyIdentity, string localName) =>
+        ResolveNamespace(assemblyIdentity) is { } name
+            ? new SqlTableName([name], localName)
+            : new SqlTableName(localName);
 }
