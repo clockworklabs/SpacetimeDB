@@ -3,7 +3,7 @@ import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { checkoutDifferences, cancellationDifferences, purchaseDifferences, checkoutId, checkoutMinor, checkoutStateSchema, verifyCheckoutSchema }
+import { checkoutDifferences, orderCheckoutDifferences, cancellationDifferences, purchaseDifferences, checkoutId, checkoutMinor, checkoutStateSchema, verifyCheckoutSchema }
   from '../src/stacks/checkout-state.js';
 import type { CheckoutState } from '../src/stacks/checkout-state.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
@@ -27,6 +27,33 @@ function states(): { before: CheckoutState; prepared: CheckoutState; after: Chec
   return { before, prepared, after };
 }
 
+test('order-only checkout rejects partial, duplicate, lost and refunded effects without inventing payments', () => {
+  const { before, prepared, after } = states();
+  prepared.stock = structuredClone(before.stock);
+  for (const state of [before, prepared, after]) {
+    state.payments = []; state.reservations = []; state.orphanAllocations = 0;
+    for (const order of state.orders) order.refundedMinor = 0;
+    state.orders.push({ ...structuredClone(after.orders[0]!), id: 'prior', refundedMinor: 0 });
+  }
+  assert.deepEqual(orderCheckoutDifferences(before, prepared, after, 1), []);
+  assert.deepEqual(orderCheckoutDifferences(before, prepared, prepared, 1, true), []);
+  assert(checkoutDifferences(before, prepared, after, 1).some(row => row.control === 'payments created by one checkout'));
+  for (const mutate of [
+    (state: CheckoutState) => { state.orders[0]!.lines = []; },
+    (state: CheckoutState) => { state.orders.push({ ...structuredClone(state.orders[0]!), id: 'duplicate' }); },
+    (state: CheckoutState) => { state.orders = state.orders.filter(order => order.id !== 'prior'); },
+    (state: CheckoutState) => { state.orders.find(order => order.id === 'prior')!.refundedMinor = 1999; },
+    (state: CheckoutState) => { state.orders[0]!.refundedMinor = 1999; },
+    (state: CheckoutState) => { state.stock[0]!.quantity++; },
+    (state: CheckoutState) => { state.orphanAllocations = 1; },
+  ]) {
+    const broken = structuredClone(after); mutate(broken);
+    assert(orderCheckoutDifferences(before, prepared, broken, 1, true).length);
+  }
+  const missing = structuredClone(after); delete missing.orders[0]!.refundedMinor;
+  assert.throws(() => orderCheckoutDifferences(before, prepared, missing, 1));
+});
+
 test('unsettled server work blocks later checkout and stock comparisons until a new grade', () => {
   const checkoutActivity = { unsettled: false };
   const capability = createDatabaseReadCapability({ expand: value => value, skip: true, checkoutActivity });
@@ -45,6 +72,12 @@ test('checkout reconciliation accepts stock reservation and atomic checkout alte
   prepared.reservations = [];
   assert.deepEqual(checkoutDifferences(before, prepared, after, 1), []);
   for (const snapshot of [before, prepared, after]) assert.deepEqual(checkoutStateSchema.parse(snapshot), snapshot);
+  const prior = { ...structuredClone(after.orders[0]!), id: 'prior',
+    lines: [{ ...structuredClone(after.orders[0]!.lines[0]!), itemId: 'old-a' },
+      { ...structuredClone(after.orders[0]!.lines[0]!), itemId: 'old-b' }] };
+  before.orders.push(structuredClone(prior)); prepared.orders.push(structuredClone(prior));
+  prior.lines.reverse(); after.orders.push(prior);
+  assert.deepEqual(checkoutDifferences(before, prepared, after, 1), [], 'nested database row order is not corruption');
 });
 
 test('crash recovery permits complete or absent effects only without an acknowledgement', () => {

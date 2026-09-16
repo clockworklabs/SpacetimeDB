@@ -2,7 +2,8 @@ import { execFileSync } from 'node:child_process';
 
 import { ActionApplicationFailure, ActionInconclusive, actionImplementation } from './action-contract.js';
 import { finding, isFinding, renderFinding } from './action-findings.js';
-import { checkoutDifferences, cancellationDifferences, purchaseDifferences, checkoutId } from '../stacks/checkout-state.js';
+import { checkoutDifferences, orderCheckoutDifferences, cancellationDifferences, purchaseDifferences, checkoutId } from '../stacks/checkout-state.js';
+import { getSavedPostgresCheckoutState } from '../stacks/backends/saved-postgres-checkout.js';
 import type { NamedActionsCapability } from './named-action-runtime.js';
 import type { CheckoutState } from '../stacks/checkout-state.js';
 import type {
@@ -103,6 +104,7 @@ interface CheckoutSnapshot {
   readonly state: CheckoutState;
   readonly schemaSha256: Record<string, string>;
   readonly recordedAtMs?: number;
+  readonly scope?: 'orders';
 }
 
 interface ActionArguments<Input> {
@@ -199,7 +201,9 @@ async function dbExpectCheckout({ input, capabilities }: ActionArguments<{ befor
   const after = database.getCheckoutState(before);
   if (JSON.stringify(before.schemaSha256) !== JSON.stringify(prepared.schemaSha256)
     || JSON.stringify(before.schemaSha256) !== JSON.stringify(after.schemaSha256)) throw new Error('checkout reader schema changed during the test');
-  const differences = checkoutDifferences(before.state, prepared.state, after.state, input.quantity);
+  if (before.scope !== prepared.scope || before.scope !== after.scope) throw new Error('checkout scope changed');
+  const compare = before.scope === 'orders' ? orderCheckoutDifferences : checkoutDifferences;
+  const differences = compare(before.state, prepared.state, after.state, input.quantity);
   const observation = { ...after, differences, before: input.before, prepared: input.prepared };
   if (differences[0]) {
     const { control, observed, expected } = differences[0];
@@ -213,6 +217,7 @@ async function dbExpectCancellation({ input, capabilities }: ActionArguments<{ b
   const database = capabilities['database-read'];
   const before = database.checkoutSnapshots.get(input.before);
   if (!before) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
+  if (before.scope === 'orders') inconclusive('invalid-input', { detail: 'saved order cancellation has no qualified mapping' });
   const after = database.getCheckoutState(before);
   if (JSON.stringify(before.schemaSha256) !== JSON.stringify(after.schemaSha256)) {
     throw new Error('checkout reader schema changed during cancellation');
@@ -239,6 +244,7 @@ async function dbExpectPurchases({ input, capabilities }: ActionArguments<{
   const snapshots = Object.entries(input.before).map(([actor, key]) => {
     const before = database.checkoutSnapshots.get(key);
     if (!before) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
+    if (before.scope === 'orders') inconclusive('invalid-input', { detail: 'saved direct-purchase histories have no qualified mapping' });
     return { actor, before };
   });
   const accepted = new Map(snapshots.map(({ before }) => [before.state.accountId, 0]));
@@ -622,9 +628,11 @@ export function createDatabaseWriteCapability({ backend, spacetime, databaseLeas
 }
 
 export function createDatabaseReadCapability({ backend, spacetime, databaseLease, skip = false, expand, app,
+  savedReader,
   checkoutSnapshots = new Map<string, CheckoutSnapshot & { account: string; item: string }>(),
   checkoutActivity = { unsettled: false },
   exec = execFileSync }: DatabaseWriteCapabilityOptions & { app?: string;
+    savedReader?: { path: string; sha256: string };
     checkoutActivity?: { unsettled: boolean };
     checkoutSnapshots?: Map<string, CheckoutSnapshot & { account: string; item: string }> }) {
   const requireSettled = () => { if (checkoutActivity.unsettled) inconclusive('transport-incomplete', {}); };
@@ -640,6 +648,10 @@ export function createDatabaseReadCapability({ backend, spacetime, databaseLease
       const adapter = backend ? STACK_ADAPTER_REGISTRY.get(backend) : undefined;
       if (!adapter || !('databaseRead' in adapter)) inconclusive('unsupported-backend', { backend: backend ?? '<unset>' });
       const selection = { account: expand(input.account), item: expand(input.item), app, exec };
+      if (savedReader) {
+        if (backend !== 'postgres' || !databaseLease) throw new Error('saved order reader requires PostgreSQL');
+        return getSavedPostgresCheckoutState({ ...selection, reader: savedReader, lease: databaseLease });
+      }
       if (adapter.id === 'spacetime') return adapter.databaseRead.getCheckoutState({ ...selection, spacetime: spacetime ?? undefined });
       if (!databaseLease) throw new Error('checkout state reads require an authenticated backend lease');
       return adapter.databaseRead.getCheckoutState({ ...selection, lease: databaseLease });

@@ -16,11 +16,20 @@ export const checkoutStateSchema = z.strictObject({
   cart: z.array(z.strictObject({ itemId: id, quantity: integer })),
   stock: z.array(z.strictObject({ warehouseId: id, quantity: integer })).min(1),
   reservations: z.array(z.strictObject({ itemId: id, warehouseId: id, quantity: integer })),
-  orders: z.array(z.strictObject({ id, accountId: id, totalMinor: integer, status: z.string(), lines: z.array(line) })),
+  orders: z.array(z.strictObject({ id, accountId: id, totalMinor: integer, refundedMinor: integer.optional(), status: z.string(), lines: z.array(line) })),
   payments: z.array(z.strictObject({ id, orderId: id, amountMinor: integer, status: z.string() })),
   orphanOrderLines: integer,
+  orphanAllocations: integer.optional(),
 });
 export type CheckoutState = z.infer<typeof checkoutStateSchema>;
+// Saved L3 orders have no payment records or cart reservations. These fields
+// are absent capabilities, not fabricated evidence of a successful payment.
+export const orderCheckoutStateSchema = checkoutStateSchema.extend({
+  orders: z.array(checkoutStateSchema.shape.orders.element.extend({ refundedMinor: integer })),
+  orphanAllocations: integer,
+  payments: checkoutStateSchema.shape.payments.length(0),
+  reservations: checkoutStateSchema.shape.reservations.length(0),
+});
 
 // Row order is not business state. Preserve duplicates while normalizing nesting.
 function normalized(state: CheckoutState): CheckoutState {
@@ -126,6 +135,18 @@ export function checkoutMinor(value: unknown): number {
 
 export function checkoutDifferences(before: CheckoutState, prepared: CheckoutState, after: CheckoutState,
   quantity: number, allowUnchanged = false): Array<{ control: string; observed: number; expected: number }> {
+  return compareCheckout(before, prepared, after, quantity, allowUnchanged, true);
+}
+
+export function orderCheckoutDifferences(before: CheckoutState, prepared: CheckoutState, after: CheckoutState,
+  quantity: number, allowUnchanged = false): Array<{ control: string; observed: number; expected: number }> {
+  for (const state of [before, prepared, after]) orderCheckoutStateSchema.parse(state);
+  return compareCheckout(before, prepared, after, quantity, allowUnchanged, false);
+}
+
+function compareCheckout(before: CheckoutState, prepared: CheckoutState, after: CheckoutState,
+  quantity: number, allowUnchanged: boolean, requirePayment: boolean) {
+  before = normalized(before); prepared = normalized(prepared); after = normalized(after);
   if (!Number.isSafeInteger(quantity) || quantity <= 0 || !Number.isSafeInteger(before.priceMinor * quantity)) {
     throw new Error('checkout expectation is not an exact quantity and amount');
   }
@@ -139,6 +160,7 @@ export function checkoutDifferences(before: CheckoutState, prepared: CheckoutSta
   const total = (rows: readonly { quantity: number }[]) => rows.reduce((sum, row) => integer.parse(sum + row.quantity), 0);
   for (const state of [before, prepared, after]) {
     check('order lines without an order', state.orphanOrderLines, 0);
+    if (state.orphanAllocations !== undefined) check('allocations without an order line', state.orphanAllocations, 0);
     check('duplicate stock warehouse rows', state.stock.length - new Set(state.stock.map(row => row.warehouseId)).size, 0);
     check('negative stored stock rows', state.stock.filter(row => row.quantity < 0).length, 0);
     check('duplicate order ids', state.orders.length - new Set(state.orders.map(row => row.id)).size, 0);
@@ -171,7 +193,7 @@ export function checkoutDifferences(before: CheckoutState, prepared: CheckoutSta
   }
   // A crash can lose the response. Only an unacknowledged checkout may leave
   // its complete prepared state unchanged; an error response is not rollback proof.
-  if (allowUnchanged && isDeepStrictEqual(normalized(prepared), normalized(after))) return differences;
+  if (allowUnchanged && isDeepStrictEqual(prepared, after)) return differences;
   check('remaining cart lines after checkout', after.cart.length, 0);
   check('remaining reservations after checkout', after.reservations.length, 0);
   const priorOrders = new Set(before.orders.map(order => order.id));
@@ -181,12 +203,13 @@ export function checkoutDifferences(before: CheckoutState, prepared: CheckoutSta
   const orders = after.orders.filter(order => !priorOrders.has(order.id));
   const payments = after.payments.filter(payment => !priorPayments.has(payment.id));
   check('orders created by one checkout', orders.length, 1);
-  check('payments created by one checkout', payments.length, 1);
+  if (requirePayment) check('payments created by one checkout', payments.length, 1);
   const order = orders[0];
   if (order) {
     same('checkout order owner', order.accountId, before.accountId);
     same('checkout order status', order.status, 'pending');
     check('checkout order total in minor units', order.totalMinor, before.priceMinor * quantity);
+    if (order.refundedMinor !== undefined) check('checkout order refunded amount', order.refundedMinor, 0);
     // Relational orders may split one product across warehouse allocation lines.
     check('checkout order quantity', total(order.lines), quantity);
     check('unexpected checkout order lines', order.lines.filter(line => line.itemId !== before.itemId

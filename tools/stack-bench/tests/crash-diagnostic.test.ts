@@ -52,7 +52,7 @@ test('native crash transport requires a correlated confirmed result and drains u
 });
 
 test('crash action retains partial fault evidence and distinguishes recovered state from acknowledged loss', async () => {
-  for (const mode of ['absent', 'committed', 'lost-acknowledged', 'partial', 'fault-error', 'cancelled-recovery', 'cancelled-read', 'recovery-error', 'disconnected-database', 'disconnected-application', 'drained-application', 'undrained-application', 'drained-recovery-error', 'disconnected-recovery-error', 'cancelled-disconnected-recovery-error']) {
+  for (const mode of ['absent', 'committed', 'orders-only', 'lost-acknowledged', 'partial', 'fault-error', 'cancelled-recovery', 'cancelled-read', 'recovery-error', 'disconnected-database', 'disconnected-application', 'drained-application', 'undrained-application', 'drained-recovery-error', 'disconnected-recovery-error', 'cancelled-disconnected-recovery-error']) {
     const cancellation = new AbortController();
     const timers: number[] = [];
     let recoveryStopped = false;
@@ -62,13 +62,19 @@ test('crash action retains partial fault evidence and distinguishes recovered st
     const prepared = structuredClone(before);
     prepared.cart.push({ itemId: 'i', quantity: 1 });
     const after = structuredClone(prepared);
-    if (mode === 'committed' || mode === 'partial') {
+    if (mode === 'committed' || mode === 'partial' || mode === 'orders-only') {
       after.cart = []; after.stock[0]!.quantity--;
       after.orders.push({ id: 'o', accountId: 'a', status: 'pending', totalMinor: 100,
         lines: [{ itemId: 'i', quantity: 1, priceMinor: 100, allocations: [{ warehouseId: 'w', quantity: 1 }] }] });
       if (mode === 'committed') after.payments.push({ id: 'p', orderId: 'o', amountMinor: 100, status: 'paid' });
     }
-    const wrap = (state: CheckoutState) => ({ state, schemaSha256: { schema: 'same' }, account: 'a', item: 'i', recordedAtMs: Date.now() });
+    if (mode === 'orders-only') for (const state of [before, prepared, after]) {
+      state.orphanAllocations = 0;
+      for (const order of state.orders) order.refundedMinor = 0;
+    }
+    const wrap = (state: CheckoutState) => ({ state, schemaSha256: { schema: 'same' }, account: 'a', item: 'i',
+      ...(mode === 'orders-only' ? { scope: 'orders' as const } : {}),
+      recordedAtMs: Date.now() - (mode === 'orders-only' ? 90_000 : 0) });
     let release!: () => void;
     const waiting = new Promise<void>(resolve => { release = resolve; });
     const result = await executeAction(ACTION_REGISTRY, 'crashCheckout', {

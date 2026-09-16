@@ -194,6 +194,31 @@ Declare exact criterion IDs in `expectedFailures` for defect controls. Source
 paths and scenario paths are relative to the plan. Candidate source is copied;
 the supplied tree is never edited.
 
+For an accepted saved PostgreSQL L3 app, use `saved` instead of `source`:
+
+```json
+{
+  "run": "/evidence/attempt/run.json", "runSha256": "<sha256>",
+  "checkpoint": 11, "source": "/evidence/accepted-source",
+  "reader": { "path": "/evidence/reader.json", "sha256": "<sha256>" }
+}
+```
+
+This path requires the final accepted checkpoint, its source and selection hashes,
+and the original build image and run index. It installs the app's own dependencies;
+do not set `STACK_BENCH_RELEASE_DEPS_VOLUME`. It does not deploy a reference app.
+The trusted reader JSON contains `sourceSha256` and one reviewed PostgreSQL `sql`
+query. The query uses `:'account'` and `:'item'` and returns `accountMatches`,
+`itemMatches`, and `state`. Both counts must equal one. Reads use a read-only,
+repeatable-read transaction on the owned database.
+
+Saved order-only state includes refunds, allocations and orphan counts. It cannot
+claim payment or reservation coverage. It supports checkout and crash recovery;
+direct-purchase histories and cancellation require separate qualified mappings.
+Every new source needs a reviewed reader and deliberate defect controls before
+running the audit. Saved-app failures are measured results, not expected-control
+failures. All results remain zero-point diagnostics and leave prior scores intact.
+
 The output retains planned, started, collected, interrupted and unstarted trials.
 Collected includes inconclusive results; it does not mean qualified. Raw grades
 retain setup, action and assertion timing. Worker audits add deployment, reset,

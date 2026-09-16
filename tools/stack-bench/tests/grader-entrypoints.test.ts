@@ -77,6 +77,9 @@ test('diagnostic grading cannot bypass the scored recipe boundary', t => {
   const args = ['node', 'grade', '--url', 'http://localhost:1', '--spec', 'scenario.json', '--diagnostic'];
   assert.equal(parseGradeArgs(args).diagnostic, true);
   assert.throws(() => parseGradeArgs([...args, '--recipe', 'ecommerce.progression-catalog']), /scored recipe/);
+  const ordinary = ['node', 'grade', '--url', 'http://localhost:1', '--spec', 'scenario.json'];
+  assert.throws(() => parseGradeArgs([...ordinary, '--backend', 'postgres', '--saved-diagnostic', '{}']), /zero-point/);
+  assert.throws(() => parseGradeArgs([...args, '--backend', 'mongodb', '--saved-diagnostic', '{}']), /zero-point/);
   const root = mkdtempSync(join(tmpdir(), 'diagnostic-points-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const spec = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,

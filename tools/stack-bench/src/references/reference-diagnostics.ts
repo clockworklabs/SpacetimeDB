@@ -20,6 +20,8 @@ import { probeLoopbackPort } from '../runtime/preflight.js';
 import { selectRunResources } from '../runtime/run-resource-selection.js';
 import { controllerRunner } from '../runtime/runner-environment.js';
 import { hashAppSource, restoreAppSource, snapshotAppSource } from '../runtime/source-snapshot.js';
+import { inspectSavedDiagnostic, savedDiagnosticSchema } from '../runtime/saved-diagnostic.js';
+import { materializeAcceptedSource } from '../runtime/source-materialization.js';
 import { activateAttemptBackend } from '../stacks/hosted-lifecycle.js';
 import { resetMutationDatabase } from '../../grader/mutation-test.js';
 import { inspectImportedReference, loadReferenceRegistry } from './reference-fixtures.js';
@@ -41,12 +43,14 @@ const planSchema = z.object({ schemaVersion: z.literal(1), groups: z.array(z.obj
   level: positive, recipe: z.string().min(1), scenario: z.string().min(1),
   features: z.array(positive).nonempty(), repetitions: positive,
   source: sourceSchema.optional(), expectedFailures: z.array(z.string().min(1)).default([]),
+  saved: savedDiagnosticSchema.optional(),
 }).strict()).nonempty() }).strict();
 
 export interface DiagnosticTrial { key: string; feature: number; repetition: number }
 interface DiagnosticGroup {
   backend: string; track: string; level: number; recipe: string;
   fixture: string; referenceSha256: string; source?: z.infer<typeof sourceSchema>;
+  saved?: ReturnType<typeof inspectSavedDiagnostic>;
   scenario: CompiledScenarioDefinition; scenarioSha256: string;
   expectedFailures: string[]; trials: DiagnosticTrial[];
 }
@@ -87,7 +91,8 @@ export function validateDiagnosticGroup(plan: FrozenPlan, index: number, audit: 
     gradeIds.add(artifact.id);
     const payload = validateGradePayload(artifact.payload);
     auditDiagnosticGrade({ payload }, trial.feature,
-      group.scenario.features.find(feature => feature.id === trial.feature)!.criteria.map(check => check.id), group.expectedFailures);
+      group.scenario.features.find(feature => feature.id === trial.feature)!.criteria.map(check => check.id), group.expectedFailures,
+      Boolean(group.saved));
     // Counts are derived from the raw artifact, including inconclusive checks.
     trial.checkOutcomes = {};
     for (const feature of payload.features) for (const check of feature.criteria) {
@@ -111,9 +116,14 @@ export function freezeDiagnosticPlan(input: unknown, base: string): FrozenPlan {
   const registry = loadReferenceRegistry();
   const keys = new Set<string>();
   const groups = request.groups.flatMap(entry => {
-    const fixture = resolveReferenceSelection(registry, entry).fixture;
-    const inspection = inspectImportedReference(fixture);
-    if (!inspection.ok || !inspection.sourceSha256) throw new Error(`invalid reference ${fixture.id}`);
+    if (entry.saved && entry.source) throw new Error('saved diagnostics cannot also replace a reference source');
+    const saved = entry.saved ? inspectSavedDiagnostic(entry.saved, base) : undefined;
+    if (saved && (entry.backend !== saved.backend || entry.track !== saved.track || entry.level !== 3)) {
+      throw new Error('saved diagnostic assignment differs from its accepted run');
+    }
+    const fixture = saved ? undefined : resolveReferenceSelection(registry, entry).fixture;
+    const inspection = fixture ? inspectImportedReference(fixture) : undefined;
+    if (fixture && (!inspection?.ok || !inspection.sourceSha256)) throw new Error(`invalid reference ${fixture.id}`);
     const scenarioText = readFileSync(resolve(base, entry.scenario), 'utf8');
     const scenario = compileScenarioDefinition(JSON.parse(scenarioText), { source: entry.scenario });
     const selected = scenario.features.filter(feature => entry.features.includes(feature.id));
@@ -124,10 +134,12 @@ export function freezeDiagnosticPlan(input: unknown, base: string): FrozenPlan {
     const checks = new Set(selected.flatMap(feature => feature.criteria.map(check => check.id)));
     if (new Set(entry.expectedFailures).size !== entry.expectedFailures.length
       || entry.expectedFailures.some(id => !checks.has(id))) throw new Error('unknown or duplicate expected failure');
-    const source = entry.source ? { ...entry.source, path: resolve(base, entry.source.path) } : undefined;
+    const source = saved ? { path: saved.source, sha256: saved.sourceSha256 }
+      : entry.source ? { ...entry.source, path: resolve(base, entry.source.path) } : undefined;
     if (source && hashAppSource(source.path).sha256 !== source.sha256) throw new Error('candidate source hash mismatch');
     const scenarioSha256 = hash(scenarioText);
-    const identity = [entry.backend, entry.track, entry.level, entry.recipe, fixture.id, source?.sha256 ?? inspection.sourceSha256,
+    const identity = [entry.backend, entry.track, entry.level, entry.recipe, fixture?.id ?? saved?.runSha256, source?.sha256 ?? inspection?.sourceSha256,
+      saved?.reader.sha256 ?? '',
       scenarioSha256, ...entry.expectedFailures.slice().sort()].join(':');
     // Each case owns fresh storage. Repetitions share only their own built app.
     return selected.map(feature => {
@@ -137,7 +149,7 @@ export function freezeDiagnosticPlan(input: unknown, base: string): FrozenPlan {
         keys.add(trial.key);
       }
       return { backend: entry.backend, track: entry.track, level: entry.level, recipe: entry.recipe,
-        fixture: fixture.id, referenceSha256: inspection.sourceSha256!, source,
+        fixture: fixture?.id ?? 'saved-checkpoint', referenceSha256: inspection?.sourceSha256 ?? saved!.sourceSha256, source, saved,
         scenario, scenarioSha256, expectedFailures: entry.expectedFailures.filter(id =>
           feature.criteria.some(check => check.id === id)), trials };
     });
@@ -147,7 +159,7 @@ export function freezeDiagnosticPlan(input: unknown, base: string): FrozenPlan {
 
 // Validate the actual selection and each expected control, including nonzero exit grades.
 export function auditDiagnosticGrade(value: unknown, feature: number, criteria: readonly string[],
-  expectedFailures: readonly string[]): void {
+  expectedFailures: readonly string[], savedApp = false): void {
   const grade = z.object({ payload: z.object({ features: z.array(z.object({ id: z.number(),
     criteria: z.array(z.object({ id: z.string(), evidence: z.object({ status: z.string() }).passthrough() })) })) }) }).parse(value);
   const features = grade.payload.features;
@@ -157,7 +169,10 @@ export function auditDiagnosticGrade(value: unknown, feature: number, criteria: 
     || checks.some(check => !criteria.includes(check.id))) throw new Error('grade does not match assigned checks');
   for (const check of checks) {
     const status = check.evidence.status;
-    if (expectedFailures.includes(check.id) ? status !== 'failed' : !['passed', 'inconclusive'].includes(status)) {
+    // A saved app has no predetermined result. A measured application failure
+    // is evidence, while a harness failure still stops further dispatch.
+    if (expectedFailures.includes(check.id) ? status !== 'failed'
+      : !['passed', 'inconclusive', ...(savedApp ? ['failed'] : [])].includes(status)) {
       throw new Error(`unexpected ${status} for ${check.id}`);
     }
   }
@@ -209,11 +224,14 @@ async function claimGroup(group: DiagnosticGroup, directory: string, id: string,
       if (18000 + index > 65535) throw new RangeError('database listener exceeds TCP port range');
       return group.backend === 'spacetime' ? `http://127.0.0.1:${18000 + index}` : null;
     };
-    const selected = await selectRunResources({ track, backends: [group.backend], count: 1,
-      serverUri, probePort: probeLoopbackPort, signal });
-    const runIndex = selected.runIndices[0];
+    const runIndex = group.saved?.runIndex ?? (await selectRunResources({ track, backends: [group.backend], count: 1,
+      serverUri, probePort: probeLoopbackPort, signal })).runIndices[0];
     if (runIndex === undefined) throw new Error('no free diagnostic run resources');
     const ports = portsFor(track, group.backend, runIndex);
+    if (group.saved && ![ports.vite, ports.express].filter((port): port is number => typeof port === 'number')
+      .every(port => probeLoopbackPort(port).free)) {
+      await delay(1000, undefined, { signal }); continue;
+    }
       const lease = createBackendLease({ runId: id, backend: group.backend, track: group.track, runIndex,
         ...(group.backend === 'spacetime' ? { serverUri: serverUri(runIndex),
           module: moduleName(track, runIndex), dataDir: join(directory, 'database') }
@@ -262,7 +280,25 @@ async function runGroup(plan: FrozenPlan, groupIndex: number, directory: string,
     });
     const restartSpec = { backend: group.backend, app, port: ports.vite, probe: '/' };
     await phase('deploymentMs', async () => {
+      if (group.saved) {
+        const verified = inspectSavedDiagnostic(savedDiagnosticSchema.strip().parse(group.saved), STACK_BENCH_ROOT);
+        if (JSON.stringify(verified) !== JSON.stringify(group.saved)
+          || verified.buildImage !== process.env.STACK_BENCH_IMAGE) throw new Error('saved diagnostic provenance or runtime changed');
+        if (process.env.STACK_BENCH_RELEASE_DEPS_VOLUME) throw new Error('saved apps must install their own dependencies');
+      }
       activateAttemptBackend({ leasePath, lease, ports });
+      if (group.saved) {
+        snapshotAppSource(group.saved.source, app);
+        writeFileSync(join(directory, '.stack-bench-isolation'), 'container');
+        writeFileSync(join(directory, '.stack-bench-backend'), group.backend);
+        const result = await command('prepare', [compiledEntrypoint('container', 'run-build.js'),
+          '--app', app, '--backend', group.backend, '--image', group.saved.buildImage,
+          '--ports', [ports.vite, ports.express].filter(Boolean).join(','), '--prepare-only']);
+        if (!result.ok) throw new Error(`saved application preparation failed: ${result.stderrTail}`);
+        await materializeAcceptedSource(group.saved.source, app, restartSpec);
+        if (hashAppSource(app).sha256 !== audit.sourceSha256) throw new Error('saved app changed on startup');
+        return;
+      }
       const result = await command('deploy', [compiledEntrypoint('src', 'references', 'reference-agent.js'),
         '--backend', group.backend, '--track', group.track, '--level', String(group.level),
         '--recipe', group.recipe, '--run-index', String(lease.runIndex), '--app', app, '--mode', 'build']);
@@ -295,7 +331,9 @@ async function runGroup(plan: FrozenPlan, groupIndex: number, directory: string,
       const result = await command(entry.executionId, [compiledEntrypoint('grader', 'grade.js'),
         '--diagnostic', '--backend', group.backend, '--track', group.track, '--app', app, '--url', `http://127.0.0.1:${ports.vite}`,
         '--level', String(group.scenario.level), '--restart-spec', JSON.stringify(restartSpec),
-        '--spec', spec, '--feature', String(trial.feature), '--out', gradePath]);
+        '--spec', spec, '--feature', String(trial.feature), '--out', gradePath,
+        ...(group.saved ? ['--saved-diagnostic', JSON.stringify(savedDiagnosticSchema.strip().parse(group.saved)),
+          '--credential-aliases-json', JSON.stringify(group.saved.credentialAliases)] : [])]);
       entry.gradeMs = Date.now() - gradeStarted;
       if (existsSync(gradePath)) entry.grade = gradePath;
       if (result.timedOut || result.cancelled || result.error || ![0, 1].includes(result.code ?? -1)
@@ -309,7 +347,7 @@ async function runGroup(plan: FrozenPlan, groupIndex: number, directory: string,
       entry.state = 'collected'; save();
       auditDiagnosticGrade({ payload }, trial.feature,
         group.scenario.features.find(feature => feature.id === trial.feature)!.criteria.map(check => check.id),
-        group.expectedFailures);
+        group.expectedFailures, Boolean(group.saved));
     }
   } catch (error) {
     audit.error = message(error);
@@ -442,8 +480,9 @@ export async function runReferenceDiagnostics(argv: string[]): Promise<void> {
             if (trial.state === 'started') { trial.state = 'interrupted'; trial.error = entry.error; }
           }
         } finally {
-          try { if (!rescueGroup(entry.directory)) throw new Error('worker cleanup incomplete'); }
-          catch (error) { entry.error = message(error); entry.state = 'interrupted'; writeFileSync(join(root, 'stop'), entry.error); }
+          try { if (!rescueGroup(entry.directory)) entry.error = 'worker cleanup incomplete'; }
+          catch (error) { entry.error = message(error); }
+          if (entry.error) { entry.state = 'interrupted'; writeFileSync(join(root, 'stop'), entry.error); }
           save();
           console.log(`Diagnostic group ${entry.groupIndex + 1}: ${entry.state}${entry.error ? `: ${entry.error}` : ''}`);
         }

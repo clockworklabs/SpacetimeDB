@@ -42,6 +42,9 @@ test('diagnostics require the exact checks and declared defect, with inconclusiv
     criteria: statuses.map((status, index) => ({ id: `c${index}`, evidence: { status } })) }] } });
   auditDiagnosticGrade(grade('inconclusive', 'passed'), 9800, ['c0', 'c1'], []);
   auditDiagnosticGrade(grade('failed', 'passed'), 9800, ['c0', 'c1'], ['c0']);
+  auditDiagnosticGrade(grade('failed', 'passed'), 9800, ['c0', 'c1'], [], true);
+  assert.throws(() => auditDiagnosticGrade(grade('failed', 'passed'), 9800, ['c0', 'c1'], []), /unexpected/);
+  assert.throws(() => auditDiagnosticGrade(grade('harness_failure', 'passed'), 9800, ['c0', 'c1'], [], true), /unexpected/);
   assert.throws(() => auditDiagnosticGrade(grade('passed', 'passed'), 9800, ['c0', 'c1'], ['c0']), /unexpected/);
   assert.throws(() => auditDiagnosticGrade(grade('inconclusive', 'passed'), 9800, ['c0', 'c1'], ['c0']), /unexpected/);
   assert.throws(() => auditDiagnosticGrade(grade('harness_failure', 'passed'), 9800, ['c0', 'c1'], []), /unexpected/);

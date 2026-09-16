@@ -6,6 +6,7 @@ import { chromium } from 'playwright';
 import { attemptBrowserLaunchOptions } from '../container/browser-pipe.js';
 import type { Browser, BrowserContext, Page, Request } from 'playwright';
 import { sanitiseConsoleError } from '../src/evidence/diagnostic-sanitizer.js';
+import { inspectSavedDiagnostic } from '../src/runtime/saved-diagnostic.js';
 import { randomUUID } from 'node:crypto';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
@@ -109,9 +110,11 @@ type GradeArgs = {
   trace?: boolean;
   nullControl: boolean;
   diagnostic?: boolean;
+  savedDiagnostic?: ReturnType<typeof inspectSavedDiagnostic>;
   browserWsEndpoint?: string;
 };
 type GradeRunContext = {
+  savedReader?: { path: string; sha256: string };
   checkoutActivity?: { unsettled: boolean };
   checkoutSnapshots?: ReturnType<typeof createDatabaseReadCapability>['checkoutSnapshots'];
   actionCancellation?: { reason: string | null };
@@ -199,6 +202,7 @@ export function parseGradeArgs(argv: readonly string[]): GradeArgs {
     trace: { type: 'boolean' }, headed: { type: 'boolean' },
     'null-control': { type: 'boolean' },
     diagnostic: { type: 'boolean' },
+    'saved-diagnostic': { type: 'string' },
     'browser-ws-endpoint': { type: 'string' },
   } });
   const args: GradeArgs = { url: values.url, level: values.level === undefined ? 1 : Number(values.level),
@@ -223,6 +227,10 @@ export function parseGradeArgs(argv: readonly string[]): GradeArgs {
   }
   if (args.diagnostic && (args.recipe || args.expectedRecipeSha256 || args.selectedCheckKeys.length)) {
     throw new Error('diagnostic grades cannot select a scored recipe or check catalog');
+  }
+  if (values['saved-diagnostic']) {
+    if (!args.diagnostic || args.backend !== 'postgres') throw new Error('saved readers require zero-point PostgreSQL diagnostics');
+    args.savedDiagnostic = inspectSavedDiagnostic(JSON.parse(values['saved-diagnostic']), process.cwd());
   }
   let url: URL;
   try { url = new URL(args.url); }
@@ -550,6 +558,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
     clock: Object.freeze({ sleep: abortableSleep }),
     concurrency,
     'database-read': createDatabaseReadCapability({
+      savedReader: ctx.savedReader,
       checkoutSnapshots: ctx.checkoutSnapshots ??= new Map(),
       checkoutActivity: ctx.checkoutActivity ??= { unsettled: false },
       app: ctx.appDir,
@@ -1041,7 +1050,7 @@ async function main(): Promise<void> {
     backend: args.backend, actions, spacetime, dbName: args.dbName,
     databaseLease,
     nullControl: args.nullControl,
-    appDir: args.app };
+    appDir: args.app, savedReader: args.savedDiagnostic?.reader };
 
   const browser = args.browserWsEndpoint
     ? await chromium.connect(args.browserWsEndpoint)
