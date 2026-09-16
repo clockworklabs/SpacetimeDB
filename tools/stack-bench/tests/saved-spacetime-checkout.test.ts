@@ -7,6 +7,7 @@ import test from 'node:test';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
 import type { TextCommandExecutor } from '../src/runtime/command-executor.js';
 import { getSavedSpacetimeCheckoutState } from '../src/stacks/backends/saved-spacetime-checkout.js';
+import { orderCheckoutDifferences } from '../src/stacks/checkout-state.js';
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'saved-spacetime-')), app = join(root, 'app');
@@ -48,6 +49,29 @@ test('saved snapshot source, reader and owned container bindings fail closed', t
   assert.throws(() => getSavedSpacetimeCheckoutState({ ...f.args, exec: noExec }), /source hash mismatch/);
   writeFileSync(join(f.args.app, 'module.ts'), 'accepted');
   assert.throws(() => getSavedSpacetimeCheckoutState({ ...f.args, exec: () => 'replacement' }), /changed after lease creation/);
+});
+
+test('saved reader accepts reconstructed current stock but exposes lost checkout effects', t => {
+  const f = fixture(); t.after(() => rmSync(f.root, { recursive: true, force: true }));
+  f.mapping.tables.push('orders');
+  f.mapping.convert = `(tables) => ({accountMatches: tables.account.length, itemMatches: tables.item.length,
+    state: {...${JSON.stringify(f.state)}, stock: tables.stock, orders: tables.orders}})`;
+  f.save();
+  const before = structuredClone(f.state), prepared = { ...structuredClone(before), cart: [{ itemId: '2', quantity: 1 }] };
+  const order = { id: 'order', accountId: '1', totalMinor: 8900, refundedMinor: 0, status: 'pending',
+    lines: [{ itemId: '2', quantity: 1, priceMinor: 8900, allocations: [{ warehouseId: '3', quantity: 1 }] }] };
+  // These are the native subscription results after connection hooks finish.
+  // Restoring the current quantity is valid; restoring the original quantity
+  // would erase the acknowledged purchase's stock effect.
+  const read = (stock: typeof before.stock, orders: typeof order[]) => getSavedSpacetimeCheckoutState({ ...f.args,
+    exec: (_file, args) => args[0] === 'inspect' ? 'owned-id' : JSON.stringify({ ...f.snapshot,
+      stock: { inserts: stock, deletes: [] }, orders: { inserts: orders, deletes: [] } }) }).state;
+  const currentStock = [{ warehouseId: '3', quantity: 3 }];
+  assert.deepEqual(orderCheckoutDifferences(before, prepared, read(currentStock, [order]), 1), []);
+  for (const state of [read(before.stock, [order]), read([], [order]), read(currentStock, []),
+    read(currentStock, [{ ...order, lines: [] }])]) {
+    assert(orderCheckoutDifferences(before, prepared, state, 1).length > 0);
+  }
 });
 
 test('saved snapshot rejects malformed tables, missing entities, invalid canonical state and a stuck converter', t => {

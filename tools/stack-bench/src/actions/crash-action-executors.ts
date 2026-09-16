@@ -126,7 +126,8 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
         if (error && typeof error === 'object' && 'receipt' in error) receipt = error.receipt as ProcessCrashReceipt;
       }
       // Recover while requests are still pending, so ordinary driver recovery can
-      // finish them. Recovery never resets or reseeds stored data.
+      // finish them. The harness does not reset data. Application startup and
+      // reader connection hooks can reconstruct it; compare recovered state.
       try {
         signal.throwIfAborted();
         databaseDrain = await runtime.recover(AbortSignal.any([signal,

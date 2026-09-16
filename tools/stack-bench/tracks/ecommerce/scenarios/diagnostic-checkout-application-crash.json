@@ -3,7 +3,7 @@
   "track": "ecommerce",
   "level": 2,
   "name": "Checkout application crash diagnostic",
-  "note": "Draft reference diagnostic, zero points, not selected by scored campaigns. Run ten fresh trials per width/offset on disposable leased apps. STDB uses only the database boundary, with confirmed native WebSocket acknowledgements. PG/Mongo test application and database separately. Failed responses may follow a commit. Unknown checkout effects must be absent or complete; confirmed success and earlier confirmed state must survive. Missed fault windows, expired reservations and incomplete injection stay unmeasured. The baseline retains a synchronous HTTP or confirmed native WebSocket completion receipt before stored-state reconciliation. A separate post-recovery checkout tests app progress. No power-loss or storage-device guarantee is claimed.",
+  "note": "Draft reference diagnostic, zero points, not selected by scored campaigns. Run ten fresh trials per width/offset on disposable leased apps. STDB uses only the database boundary, with confirmed native WebSocket acknowledgements. PG/Mongo test application and database separately. Failed responses may follow a commit. Unknown checkout effects must be absent or complete; confirmed success and earlier confirmed state must survive. Missed fault windows, expired reservations and incomplete injection stay unmeasured. The baseline retains a synchronous HTTP or confirmed native WebSocket completion receipt before stored-state reconciliation. A separate post-recovery checkout tests app progress. State is compared after process recovery and reader connection; valid reconstruction from current durable data is allowed. This tests recovered application consistency, not untouched physical rows or raw database transaction atomicity. No power-loss or storage-device guarantee is claimed.",
   "features": [
     {
       "id": 9700,
@@ -28,7 +28,7 @@
           "id": "9700a",
           "category": "production",
           "points": 0,
-          "desc": "a verified process crash preserves complete acknowledged effects and rejects partial checkout state",
+          "desc": "after a verified process crash and reconnection, recovered state retains acknowledged checkout effects and contains no partial checkout",
           "steps": [
             {"do":"crashCheckout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"actor":"a","before":"before","prepared":"prepared","quantity":1,"requests":1,"offsetMs":0,"target":"application"}
           ]
@@ -75,7 +75,7 @@
           "id": "9701a",
           "category": "production",
           "points": 0,
-          "desc": "a verified process crash preserves complete acknowledged effects and rejects partial checkout state",
+          "desc": "after a verified process crash and reconnection, recovered state retains acknowledged checkout effects and contains no partial checkout",
           "steps": [
             {"do":"crashCheckout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"actor":"a","before":"before","prepared":"prepared","quantity":1,"requests":1,"offsetMs":5,"target":"application"}
           ]
@@ -122,7 +122,7 @@
           "id": "9702a",
           "category": "production",
           "points": 0,
-          "desc": "a verified process crash preserves complete acknowledged effects and rejects partial checkout state",
+          "desc": "after a verified process crash and reconnection, recovered state retains acknowledged checkout effects and contains no partial checkout",
           "steps": [
             {"do":"crashCheckout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"actor":"a","before":"before","prepared":"prepared","quantity":1,"requests":1,"offsetMs":20,"target":"application"}
           ]
@@ -169,7 +169,7 @@
           "id": "9703a",
           "category": "production",
           "points": 0,
-          "desc": "a verified process crash preserves complete acknowledged effects and rejects partial checkout state",
+          "desc": "after a verified process crash and reconnection, recovered state retains acknowledged checkout effects and contains no partial checkout",
           "steps": [
             {"do":"crashCheckout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"actor":"a","before":"before","prepared":"prepared","quantity":1,"requests":16,"offsetMs":0,"target":"application"}
           ]
@@ -216,7 +216,7 @@
           "id": "9704a",
           "category": "production",
           "points": 0,
-          "desc": "a verified process crash preserves complete acknowledged effects and rejects partial checkout state",
+          "desc": "after a verified process crash and reconnection, recovered state retains acknowledged checkout effects and contains no partial checkout",
           "steps": [
             {"do":"crashCheckout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"actor":"a","before":"before","prepared":"prepared","quantity":1,"requests":16,"offsetMs":5,"target":"application"}
           ]
@@ -263,7 +263,7 @@
           "id": "9705a",
           "category": "production",
           "points": 0,
-          "desc": "a verified process crash preserves complete acknowledged effects and rejects partial checkout state",
+          "desc": "after a verified process crash and reconnection, recovered state retains acknowledged checkout effects and contains no partial checkout",
           "steps": [
             {"do":"crashCheckout","namedAction":{"id":"checkout","path":"/api/checkout","reducer":"checkout","args":[]},"actor":"a","before":"before","prepared":"prepared","quantity":1,"requests":16,"offsetMs":20,"target":"application"}
           ]
