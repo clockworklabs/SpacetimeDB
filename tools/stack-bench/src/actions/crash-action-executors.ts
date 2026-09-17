@@ -5,7 +5,7 @@ import type { ActorCapabilities } from './actor-action-runtime.js';
 import { browserCredentials, capturedCredentials, namedActionRequest } from './named-action-runtime.js';
 import type { NamedAction, NamedActionsCapability } from './named-action-runtime.js';
 import type { createDatabaseReadCapability } from './runtime-action-executors.js';
-import { checkoutDifferences, orderCheckoutDifferences } from '../stacks/checkout-state.js';
+import { checkoutDifferences, orderCheckoutDifferences, checkoutCrashDifferences } from '../stacks/checkout-state.js';
 import { openCrashReducerConnection } from '../stacks/spacetime-crash-transport.js';
 import type { CrashTarget, ProcessCrashReceipt } from '../stacks/process-crash.js';
 import type { DatabaseDrainReceipt, PreparedRuntimeCrash } from '../runtime/backend-control.js';
@@ -15,12 +15,13 @@ import type { SpacetimeTarget } from '../stacks/stack-grading-operations.js';
 interface Input {
   actor: string; before: string; prepared: string; quantity: number;
   requests: 1 | 16; offsetMs: 0 | 5 | 20; target: CrashTarget;
-  namedAction?: NamedAction;
+  namedAction?: NamedAction; as?: string;
 }
 interface Capabilities extends ActorCapabilities {
   'named-actions': NamedActionsCapability;
   'database-read': ReturnType<typeof createDatabaseReadCapability>;
   'process-crash': { prepare(target: CrashTarget): Promise<PreparedRuntimeCrash> };
+  'browser-observation': { recorded: { get(key: string): unknown; set(key: string, value: unknown): void } };
 }
 
 // Setup and fault calls must use the same completion semantics.
@@ -93,6 +94,7 @@ export const confirmCheckout = actionImplementation(async ({ input, capabilities
 export const crashCheckout = actionImplementation(async ({ input, capabilities, signal }: {
   input: Input; capabilities: Capabilities; signal: AbortSignal;
 }) => {
+  if (input.as) capabilities['browser-observation'].recorded.set(input.as, undefined);
   const named = capabilities['named-actions'], database = capabilities['database-read'];
   const before = database.checkoutSnapshots.get(input.before), prepared = database.checkoutSnapshots.get(input.prepared);
   if (!before || !prepared || !prepared.recordedAtMs) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
@@ -184,12 +186,13 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
       throw new ActionHarnessFailure('crash reader schema changed', { observation: { ...observation, after } });
     }
     const confirmed = outcomes.some(row => row.outcome === 'committed');
-    const differences = compare(after.state, !confirmed);
+    const verdicts = checkoutCrashDifferences(before.state, after.state, confirmed, compare);
+    const differences = [...verdicts.atomicity, ...verdicts.durability];
     const signalTimes = [...receipt.processEvidence.matchAll(/^KILLED \d+ \d+ (\d+)$/gm)].map(match => Number(match[1]) - receipt!.clockOffsetBeforeMs);
     const faultAtMs = Math.min(...signalTimes);
     const faultEndMs = Math.max(...signalTimes);
     const outstandingAtFault = outcomes.filter(row => row.startedAtMs <= faultAtMs && row.completedAtMs >= faultEndMs).length;
-    const evidence = { ...observation, after, observedAtMs: named.now(), differences, confirmed, faultAtMs, faultEndMs, outstandingAtFault };
+    const evidence = { ...observation, after, observedAtMs: named.now(), differences, verdicts, confirmed, faultAtMs, faultEndMs, outstandingAtFault };
     const unmeasured = prepared.state.reservations.length && Date.now() - prepared.recordedAtMs >= 85_000 ? 'reservation expiry prevents a complete recovery comparison'
       : Math.abs(receipt.clockOffsetAfterMs - receipt.clockOffsetBeforeMs) > 5 ? 'clock changed during fault'
         : !outstandingAtFault ? 'fault missed the outstanding-request window'
@@ -203,6 +206,10 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
       const value = finding('app-control-failed', { mode: 'start', target: 'app-server', detail: observation.recoveryError! });
       throw new ActionApplicationFailure(renderFinding(value), { finding: value, observation: evidence });
     }
+    if (input.as) {
+      capabilities['browser-observation'].recorded.set(input.as, evidence);
+      return evidence;
+    }
     if (differences[0]) {
       const { control, observed, expected } = differences[0];
       const value = finding('number-mismatch', { control, observed, expected: { equals: expected } });
@@ -214,4 +221,22 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
     caller?.close();
     await runtime.close();
   }
+});
+
+export const expectCrashCheckout = actionImplementation(({ input, capabilities }: {
+  input: { from: string; verdict: 'atomicity' | 'durability' };
+  capabilities: Pick<Capabilities, 'browser-observation'>;
+}) => {
+  const observation = capabilities['browser-observation'].recorded.get(input.from) as
+    { verdicts: Record<'atomicity' | 'durability', ReturnType<typeof checkoutDifferences>> } | undefined;
+  if (!observation?.verdicts || !Array.isArray(observation.verdicts[input.verdict])) {
+    inconclusive('assertion-without-action', { action: 'crashCheckout' });
+  }
+  const difference = observation.verdicts[input.verdict][0];
+  if (difference) {
+    const { control, observed, expected } = difference;
+    const value = finding('number-mismatch', { control, observed, expected: { equals: expected } });
+    throw new ActionApplicationFailure(renderFinding(value), { finding: value, observation });
+  }
+  return observation;
 });

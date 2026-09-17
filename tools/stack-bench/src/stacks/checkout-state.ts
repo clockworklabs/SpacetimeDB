@@ -160,6 +160,37 @@ export function orderCheckoutDifferences(before: CheckoutState, prepared: Checko
   return compareCheckout(before, prepared, after, quantity, allowUnchanged, false, warehouses);
 }
 
+// Separate the interrupted transaction from history that was already committed.
+// Durability adds only the requirement introduced by an acknowledgement; a
+// malformed new order remains an atomicity failure even when acknowledged.
+export function checkoutCrashDifferences(before: CheckoutState, after: CheckoutState, confirmed: boolean,
+  compare: (state: CheckoutState, allowUnchanged: boolean) => ReturnType<typeof checkoutDifferences>) {
+  const current = structuredClone(after);
+  const durability: ReturnType<typeof checkoutDifferences> = [];
+  const initial = normalized(before), recovered = normalized(after);
+  for (const key of ['orders', 'payments'] as const) {
+    const ids = new Set(initial[key].map(row => row.id));
+    const retained = recovered[key].filter(row => ids.has(row.id));
+    if (!isDeepStrictEqual(retained, initial[key])) {
+      durability.push({ control: `acknowledged ${key} preserved`, observed: 0, expected: 1 });
+    }
+  }
+  const orderIds = new Set(before.orders.map(row => row.id));
+  const paymentIds = new Set(before.payments.map(row => row.id));
+  current.orders = [...before.orders, ...after.orders.filter(row => !orderIds.has(row.id))];
+  current.payments = [...before.payments, ...after.payments.filter(row => !paymentIds.has(row.id))];
+  if (!isDeepStrictEqual(recovered.refunds, initial.refunds)) {
+    durability.push({ control: 'recorded refund history preserved', observed: 0, expected: 1 });
+  }
+  if (before.refunds) current.refunds = before.refunds;
+  else delete current.refunds;
+  const atomicity = compare(current, true);
+  if (confirmed) {
+    durability.push(...compare(current, false).filter(row => !atomicity.some(value => isDeepStrictEqual(value, row))));
+  }
+  return { atomicity, durability };
+}
+
 function compareCheckout(before: CheckoutState, prepared: CheckoutState, after: CheckoutState,
   quantity: number, allowUnchanged: boolean, requirePayment: boolean, warehouses = true) {
   if (!warehouses && [before, prepared, after].some(state => state.stock.length || state.reservations.length

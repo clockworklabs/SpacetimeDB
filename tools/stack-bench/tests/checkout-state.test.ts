@@ -3,7 +3,7 @@ import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { checkoutDifferences, orderCheckoutDifferences, cancellationDifferences, purchaseDifferences, checkoutId, checkoutMinor, checkoutStateSchema, verifyCheckoutSchema }
+import { checkoutDifferences, orderCheckoutDifferences, checkoutCrashDifferences, cancellationDifferences, purchaseDifferences, checkoutId, checkoutMinor, checkoutStateSchema, verifyCheckoutSchema }
   from '../src/stacks/checkout-state.js';
 import type { CheckoutState } from '../src/stacks/checkout-state.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
@@ -396,4 +396,42 @@ test('SpacetimeDB checkout reads one bounded subscription snapshot and rejects m
   assert.deepEqual(read().state.stock,[], 'a successful empty subscription must reach reconciliation');
   delete results.account;
   assert.throws(read,/account or item is missing/);
+});
+
+
+test('one crash observation separates partial effects, acknowledged rollback and prior history loss', () => {
+  for (const scoped of [false, true]) {
+    const { before, prepared, after } = states();
+    for (const state of [before, prepared, after]) {
+      state.orders.push({ ...structuredClone(after.orders[0]!), id: 'prior' });
+      if (scoped) {
+        state.payments = []; state.reservations = []; state.stock = []; state.orphanAllocations = 0;
+        for (const order of state.orders) {
+          order.refundedMinor = 0;
+          for (const line of order.lines) line.allocations = [];
+        }
+      } else state.payments.push({ id: 'prior-payment', orderId: 'prior', amountMinor: 1999, status: 'paid' });
+    }
+    const compare = (state: CheckoutState, allow: boolean) => scoped
+      ? orderCheckoutDifferences(before, prepared, state, 1, allow, false)
+      : checkoutDifferences(before, prepared, state, 1, allow);
+    const verdict = (state: CheckoutState, confirmed: boolean) => checkoutCrashDifferences(before, state, confirmed, compare);
+    assert.deepEqual(verdict(after, true), { atomicity: [], durability: [] });
+    assert.deepEqual(verdict(prepared, false), { atomicity: [], durability: [] });
+    const rollback = verdict(prepared, true);
+    assert.equal(rollback.atomicity.length, 0);
+    assert(rollback.durability.length > 0);
+    for (const confirmed of [false, true]) {
+      const partial = structuredClone(after); partial.orders[0]!.lines = [];
+      const broken = verdict(partial, confirmed);
+      assert(broken.atomicity.length > 0);
+      assert.equal(broken.durability.length, 0, 'do not score the same partial order twice');
+      for (const recovered of [after, prepared]) {
+        const lost = structuredClone(recovered); lost.orders = lost.orders.filter(row => row.id !== 'prior');
+        const result = verdict(lost, confirmed);
+        assert.equal(result.atomicity.length, 0, 'old history loss is not an interrupted partial write');
+        assert(result.durability.some(row => row.control === 'acknowledged orders preserved'));
+      }
+    }
+  }
 });

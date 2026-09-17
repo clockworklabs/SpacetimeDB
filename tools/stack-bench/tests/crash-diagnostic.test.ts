@@ -159,6 +159,7 @@ test('crash setup rejects missing cart scope, changed scope and old native reser
       'database-read': { checkoutSnapshots: new Map([['before', wrap(before, false)], ['prepared', wrap(prepared, true)]]) },
       'named-actions': { resolve: () => ({ id: 'checkout' }), request: () => ({ url: 'http://app/checkout' }),
         fetch: async () => assert.fail('invalid crash setup must not submit checkout') },
+      'browser-observation': { recorded: new Map() },
       'process-crash': { prepare: async () => {
         assert.equal(mode, 'old-reservation', 'invalid scopes must fail before process preparation');
         return { spacetime: null, close: async () => { closed = true; },
@@ -171,7 +172,9 @@ test('crash setup rejects missing cart scope, changed scope and old native reser
 });
 
 test('crash action retains partial fault evidence and distinguishes recovered state from acknowledged loss', async () => {
-  for (const mode of ['absent', 'committed', 'orders-only', 'orders-scoped', 'orders-scoped-wrong-total', 'orders-scoped-changed-after', 'orders-scoped-lost-acknowledged', 'empty-stock', 'lost-acknowledged', 'partial', 'queued', 'queued-committed', 'queued-drained', 'queued-recovery-error', 'fault-error', 'cancelled-recovery', 'cancelled-read', 'recovery-error', 'disconnected-database', 'disconnected-application', 'drained-application', 'undrained-application', 'drained-recovery-error', 'disconnected-recovery-error', 'cancelled-disconnected-recovery-error']) {
+  for (const record of [false, true]) for (const mode of ['absent', 'committed', 'orders-only', 'orders-scoped', 'orders-scoped-wrong-total', 'orders-scoped-changed-after', 'orders-scoped-lost-acknowledged', 'empty-stock', 'lost-acknowledged', 'partial', 'queued', 'queued-committed', 'queued-drained', 'queued-recovery-error', 'fault-error', 'cancelled-recovery', 'cancelled-read', 'recovery-error', 'disconnected-database', 'disconnected-application', 'drained-application', 'undrained-application', 'drained-recovery-error', 'disconnected-recovery-error', 'cancelled-disconnected-recovery-error']) {
+    const recorded = new Map<string, unknown>(record
+      ? [['captured-crash', { verdicts: { atomicity: [], durability: [] } }]] : []);
     const cancellation = new AbortController();
     const timers: number[] = [];
     let recoveryStopped = false;
@@ -205,6 +208,7 @@ test('crash action retains partial fault evidence and distinguishes recovered st
     const waiting = new Promise<void>(resolve => { release = resolve; });
     const result = await executeAction(ACTION_REGISTRY, 'crashCheckout', {
       do: 'crashCheckout', actor: 'buyer', before: 'before', prepared: 'prepared', quantity: 1,
+      ...(record ? { as: 'captured-crash' } : {}),
       requests: 1, offsetMs: 0, target: mode === 'disconnected-database' ? 'database' : 'application',
     }, { signal: cancellation.signal, onAbort: async () => {}, capabilities: {
       actors: { get: () => ({ name: 'buyer', writes: [{ headers: { authorization: 'Bearer private-token' } }] }) },
@@ -221,6 +225,7 @@ test('crash action retains partial fault evidence and distinguishes recovered st
           if (mode.startsWith('queued')) return { ok: true, status: 202, text: async () => '' };
           return { ok: true, status: 200, text: async () => '' };
         } },
+      'browser-observation': { recorded },
       'process-crash': { prepare: async () => ({ spacetime: null,
         close: async () => {},
         crash: async () => {
@@ -256,10 +261,23 @@ test('crash action retains partial fault evidence and distinguishes recovered st
       assert.equal(result.code, 'cancelled');
     }
     assert.equal(unsettled, mode.startsWith('queued') || mode.includes('disconnected-') || mode === 'undrained-application');
-    assert.equal(result.status, (mode.startsWith('queued') && mode !== 'queued-recovery-error') || mode.startsWith('cancelled-') || ['disconnected-database', 'disconnected-application', 'undrained-application'].includes(mode) ? 'inconclusive' : ['fault-error', 'orders-scoped-changed-after'].includes(mode) ? 'harness_failure'
-      : ['partial', 'lost-acknowledged', 'empty-stock', 'orders-scoped-wrong-total', 'orders-scoped-lost-acknowledged'].includes(mode) || mode.endsWith('recovery-error') ? 'failed' : 'passed', mode);
+    const expected = (mode.startsWith('queued') && mode !== 'queued-recovery-error') || mode.startsWith('cancelled-') || ['disconnected-database', 'disconnected-application', 'undrained-application'].includes(mode) ? 'inconclusive' : ['fault-error', 'orders-scoped-changed-after'].includes(mode) ? 'harness_failure'
+      : ['partial', 'lost-acknowledged', 'empty-stock', 'orders-scoped-wrong-total', 'orders-scoped-lost-acknowledged'].includes(mode) || mode.endsWith('recovery-error') ? 'failed' : 'passed';
+    const capturedFailure = record && ['partial', 'lost-acknowledged', 'empty-stock', 'orders-scoped-wrong-total', 'orders-scoped-lost-acknowledged'].includes(mode);
+    assert.equal(result.status, capturedFailure ? 'passed' : expected, mode);
+    if (record && result.status === 'passed') {
+      const results = [];
+      for (const verdict of ['atomicity', 'durability']) {
+        results.push(await executeAction(ACTION_REGISTRY, 'expectCrashCheckout', {
+          do: 'expectCrashCheckout', from: 'captured-crash', verdict,
+        }, { capabilities: { 'browser-observation': { recorded } } }));
+      }
+      assert.equal(results.some(row => row.status === 'failed'), expected === 'failed', mode);
+      assert(results.every(row => ['passed', 'failed'].includes(row.status)), mode);
+      assert(results.every(row => row.observation === recorded.get('captured-crash')));
+    } else assert.equal(recorded.get('captured-crash'), undefined, 'failed capture must clear the previous verdict');
     if (mode === 'empty-stock') {
-      assert.equal(result.code, 'application_failure');
+      assert.equal(result.status, record ? 'passed' : 'failed');
       assert.deepEqual((result.observation as { after: { state: CheckoutState } }).after.state.stock, []);
     }
     if (mode.startsWith('queued')) {
@@ -274,5 +292,15 @@ test('crash action retains partial fault evidence and distinguishes recovered st
     assert.doesNotThrow(() => createCheckEvidence({ status: result.status, code: result.code, phase: 'assertion',
       observation: result.observation, actions: [{ actor: 'buyer', evidence: result }],
       startedAtMs: result.timing.startedAtMs, completedAtMs: result.timing.completedAtMs }));
+  }
+});
+
+
+test('crash verdict without a measured observation remains inconclusive', async () => {
+  for (const verdict of ['atomicity', 'durability']) {
+    const result = await executeAction(ACTION_REGISTRY, 'expectCrashCheckout', {
+      do: 'expectCrashCheckout', from: 'missing', verdict,
+    }, { capabilities: { 'browser-observation': { recorded: new Map() } } });
+    assert.equal(result.status, 'inconclusive');
   }
 });

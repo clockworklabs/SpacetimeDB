@@ -17,6 +17,7 @@
             },
             {
               "actor": "a",
+              "as": "crash",
               "before": "before",
               "do": "crashCheckout",
               "offsetMs": 0,
@@ -24,6 +25,11 @@
               "quantity": 1,
               "requests": 1,
               "target": "database"
+            },
+            {
+              "do": "expectCrashCheckout",
+              "from": "crash",
+              "verdict": "atomicity"
             },
             {
               "account": "a",

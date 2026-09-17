@@ -4,7 +4,7 @@ import { ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS }
   from './actor-transport-action-executors.js';
 import { BROWSER_ACTION_IMPLEMENTATIONS } from './browser-action-executors.js';
 import { RUNTIME_ACTION_IMPLEMENTATIONS } from './runtime-action-executors.js';
-import { confirmCheckout, crashCheckout } from './crash-action-executors.js';
+import { confirmCheckout, crashCheckout, expectCrashCheckout } from './crash-action-executors.js';
 import { ACTION_DEFINITIONS, ACTION_IDS,
   compileActionInput } from '../composition/definition-compiler.js';
 import type { ActionId } from '../composition/definition-compiler.js';
@@ -14,6 +14,7 @@ const ACTION_CATEGORY = {
   callConcurrently: 'concurrency',
   confirmCheckout: 'transport',
   crashCheckout: 'lifecycle',
+  expectCrashCheckout: 'database',
   clearInput: 'browser-interaction',
   click: 'browser-interaction',
   clickConcurrently: 'concurrency',
@@ -113,7 +114,8 @@ const ACTION_CAPABILITY_OVERRIDES: Partial<Record<ActionId, readonly string[]>> 
   dbExpectStock: ['database-read', 'browser-observation', 'clock'],
   callAction: ['actors', 'named-actions', 'transport-observation'],
   callConcurrently: ['actors', 'named-actions'],
-  crashCheckout: ['actors', 'named-actions', 'database-read', 'process-crash'],
+  crashCheckout: ['actors', 'named-actions', 'database-read', 'process-crash', 'browser-observation'],
+  expectCrashCheckout: ['browser-observation'],
   confirmCheckout: ['actors', 'named-actions', 'database-read'],
   expectCallOutcomes: ['actors', 'named-actions'],
   replayAs: ['actors', 'named-actions', 'transport-observation'],
@@ -130,6 +132,7 @@ const ACTION_SENSITIVITY_OVERRIDES: Partial<Record<ActionId, readonly string[]>>
 export const ACTION_IMPLEMENTATIONS = Object.freeze({
   confirmCheckout,
   crashCheckout,
+  expectCrashCheckout,
   ...ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS,
   ...BROWSER_ACTION_IMPLEMENTATIONS,
   ...RUNTIME_ACTION_IMPLEMENTATIONS,
