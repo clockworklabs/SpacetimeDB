@@ -130,6 +130,17 @@ test('purchase and cancellation scoring uses disclosed native interfaces without
   for (const step of [...purchases.setup, ...progress.steps, ...cancel.steps].filter(step => step.do === 'dbRecordCheckout')) {
     assert.deepEqual(step.storage, { kind: 'order-data', cart: false, warehouses: true });
   }
+  const mixed = read('01-restock-race.json').features[0]!.criteria.find(row => row.id === '202a')!;
+  const callIndex = mixed.steps.findIndex(step => step.do === 'callConcurrently');
+  assert(mixed.steps.findIndex(step => step.do === 'race') < callIndex,
+    'native reconciliation supplements the UI race instead of bypassing stale-form controls');
+  const call = mixed.steps[callIndex]!;
+  assert.equal(call.requests, 3);
+  assert.deepEqual(call.actors, ['a', 'b', 'c']);
+  const [restock] = call.alongside as Array<{ action: string; requests: number }>;
+  assert.deepEqual([restock!.action, restock!.requests], ['restock', 1]);
+  assert.deepEqual(mixed.steps.slice(callIndex + 1).map(step => step.do), ['expectCallOutcomes', 'dbExpectPurchases']);
+  assert.deepEqual(mixed.steps.at(-1)!.before, { a: 'mixed-a', b: 'mixed-b', c: 'mixed-c' });
   for (const backend of ['postgres', 'mongodb', 'spacetime']) {
     const manifest = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, 'grader/mutations', `${backend}-ecommerce.json`), 'utf8'));
     const mutant = manifest.mutations.find((row: { id: string }) => row.id === 'cancellation-accounting-loses-stock-restoration');
@@ -141,6 +152,11 @@ test('purchase and cancellation scoring uses disclosed native interfaces without
       'the mutation baseline must contain every targeted check in its own scenario');
     const code = readFileSync(join(STACK_BENCH_ROOT, 'reference-apps/ecommerce', backend, mutant.file), 'utf8').replaceAll('\r\n', '\n');
     for (const edit of mutant.edits) assert.equal(code.split(edit.find).length, 2, 'defect edit must have one exact source match');
+    const mixedMutant = manifest.mutations.find((row: { id: string }) => row.id === 'restock-race-records-wrong-order-total');
+    assert.equal(mixedMutant.scenario, 'tracks/ecommerce/scenarios/01-restock-race.json');
+    assert.deepEqual(mixedMutant.targets, ['ecommerce.spec.concurrency-safety.restock-race.202a']);
+    const mixedCode = readFileSync(join(STACK_BENCH_ROOT, 'reference-apps/ecommerce', backend, mixedMutant.file), 'utf8').replaceAll('\r\n', '\n');
+    for (const edit of mixedMutant.edits) assert.equal(mixedCode.split(edit.find).length, 2);
   }
 });
 

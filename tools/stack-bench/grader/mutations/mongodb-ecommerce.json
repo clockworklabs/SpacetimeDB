@@ -191,6 +191,21 @@
       ]
     },
     {
+      "id": "restock-race-records-wrong-order-total",
+      "scenario": "tracks/ecommerce/scenarios/01-restock-race.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.restock-race.202a"
+      ],
+      "desc": "Purchases preserve stock and visible order counts but record the wrong booked total. Native mixed-race reconciliation must reject them.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    total: item.price,\n  });",
+          "replace": "    total: 0, // mutant: purchase receipt loses the authoritative price\n  });"
+        }
+      ]
+    },
+    {
       "id": "purchase-order-uses-zero-price",
       "scenario": "tracks/ecommerce/scenarios/progression-purchasing.json",
       "targets": [

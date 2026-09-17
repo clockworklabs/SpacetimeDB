@@ -4,7 +4,7 @@
   "track": "ecommerce",
   "name": "Storefront and warehouse — restock during purchases",
   "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
-  "note": "Draft: per-warehouse stored-stock bounds require matching reference and defect-control qualification.",
+  "note": "Draft: retain the UI race, then reconcile a bounded named-action race against native orders and warehouse allocations. Both phases require matching reference and defect-control qualification.",
   "features": [
     {
       "id": 202,
@@ -273,7 +273,7 @@
           "id": "202a",
           "category": "production",
           "points": 1,
-          "desc": "three purchases and a restock of five during the rush leave stock at start + 2",
+          "desc": "restocking during purchases preserves stock, complete buyer orders and their warehouse allocations",
           "steps": [
             {
               "do": "dbRecordStock",
@@ -509,7 +509,23 @@
               "relativeTo": "stored-before-rush",
               "plus": 2,
               "within": 10000
-            }
+            },
+            { "do": "ensureSignedIn", "actor": "a", "name": "r1", "readyTestid": "current-user" },
+            { "do": "dbRecordCheckout", "account": "{user:r1}", "item": "Bluetooth Speaker", "as": "mixed-a", "storage": { "kind": "order-data", "cart": false, "warehouses": true } },
+            { "do": "dbRecordCheckout", "account": "{user:r2}", "item": "Bluetooth Speaker", "as": "mixed-b", "storage": { "kind": "order-data", "cart": false, "warehouses": true } },
+            { "do": "dbRecordCheckout", "account": "{user:r3}", "item": "Bluetooth Speaker", "as": "mixed-c", "storage": { "kind": "order-data", "cart": false, "warehouses": true } },
+            {
+              "do": "callConcurrently", "action": "buy", "actors": ["a", "b", "c"], "from": "a", "requests": 3, "settleMs": 3000,
+              "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] },
+              "input": { "testid": "item-card", "contains": "Bluetooth Speaker", "attribute": "data-buy-input" },
+              "alongside": [{
+                "action": "restock", "actors": ["admin"], "requests": 1,
+                "namedAction": { "id": "restock", "path": "/api/admin/restock", "reducer": "admin_restock", "args": [0, 0, 1], "params": [{ "name": "itemId", "in": "body", "wireType": "u64" }, { "name": "warehouseId", "in": "body", "wireType": "u64" }, { "name": "quantity", "in": "body" }] },
+                "input": { "testid": "admin-location-row", "contains": "Bluetooth Speaker", "attribute": "data-restock-input" }
+              }]
+            },
+            { "do": "expectCallOutcomes", "accepted": 4 },
+            { "do": "dbExpectPurchases", "before": { "a": "mixed-a", "b": "mixed-b", "c": "mixed-c" }, "purchases": 3 }
           ],
           "statedBy": "a restock in one warehouse raises the storefront number live"
         }

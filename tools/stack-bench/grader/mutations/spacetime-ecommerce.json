@@ -276,6 +276,21 @@
       ]
     },
     {
+      "id": "restock-race-records-wrong-order-total",
+      "scenario": "tracks/ecommerce/scenarios/01-restock-race.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.restock-race.202a"
+      ],
+      "desc": "Purchases preserve stock and visible order counts but record the wrong booked total. Native mixed-race reconciliation must reject them.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    total: Math.round(price * 100) * quantity / 100,\n    status: 'pending',",
+          "replace": "    total: Math.round(price * 100) * quantity / 100 + 1,\n    status: 'pending',"
+        }
+      ]
+    },
+    {
       "id": "buy-now-records-the-wrong-order-total",
       "scenario": "tracks/ecommerce/scenarios/progression-purchasing.json",
       "targets": [

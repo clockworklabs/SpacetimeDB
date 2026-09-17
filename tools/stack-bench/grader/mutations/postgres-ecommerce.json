@@ -206,6 +206,21 @@
       ]
     },
     {
+      "id": "restock-race-records-wrong-order-total",
+      "scenario": "tracks/ecommerce/scenarios/01-restock-race.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.restock-race.202a"
+      ],
+      "desc": "Purchases preserve stock and visible order counts but record the wrong booked total. Native mixed-race reconciliation must reject them.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "        [accountId, price]\n      );",
+          "replace": "        [accountId, Number(price) + 1]\n      );"
+        }
+      ]
+    },
+    {
       "id": "direct-purchase-order-total-is-offset",
       "scenario": "tracks/ecommerce/scenarios/progression-purchasing.json",
       "targets": [
