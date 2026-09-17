@@ -10,8 +10,8 @@ transactions are available.
 
 ## Requirements
 
-- SpacetimeDB CLI 2.8.3
-- `spacetimedb` npm package 2.8.3
+- A SpacetimeDB CLI and server compatible with the host SDK
+- The `spacetimedb` npm version required by this package's peer dependency
 - Host support for the `spacetime:sys@2.0` volatile procedure used by failure
   recovery
 - Node.js 20 or later for package tooling
@@ -19,7 +19,7 @@ transactions are available.
 ## Install
 
 ```bash
-npm install @spacetimedb/cron spacetimedb@^2.8.3
+npm install @spacetimedb/cron spacetimedb
 ```
 
 `spacetimedb` is a peer dependency. Use the same SDK version for the application module and this package.
@@ -386,4 +386,4 @@ See the [browser example](./example/) for a complete integration.
 
 ## License
 
-BUSL-1.1. See [`LICENSE.txt`](./LICENSE.txt).
+Apache-2.0. See [`LICENSE.txt`](./LICENSE.txt).

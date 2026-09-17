@@ -10,7 +10,7 @@ synchronous and webhook payloads use valibot validation.
 ## Install
 
 ```bash
-npm install @spacetimedb/stripe spacetimedb@^2.8.3
+npm install @spacetimedb/stripe spacetimedb
 ```
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.
@@ -50,12 +50,12 @@ validates every price against a server-owned catalog, fixes the allowed return
 URL origins, and delegates to Stripe:
 
 ```ts
-export const create_store_checkout_session = spacetimedb.procedure(
+export const createStoreCheckoutSession = spacetimedb.procedure(
   storeCheckoutParams,
   storeCheckoutResult,
   (ctx, args) => {
     const checkout = authorizeStoreCheckout(ctx, args);
-    return stripe.create_checkout_session(ctx.as.stripe, checkout);
+    return stripe.createCheckoutSession(ctx.as.stripe, checkout);
   }
 );
 ```
@@ -239,4 +239,4 @@ Credentialed sandbox coverage is described in **Integration testing** above.
 
 ## License
 
-[BUSL-1.1](./LICENSE.txt) - same as SpacetimeDB.
+[Apache-2.0](./LICENSE.txt).

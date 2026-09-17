@@ -134,7 +134,7 @@ function callStripe(
   path: string,
   body?: string
 ) {
-  return stripe.stripe_api_request(ctx.as.stripe, {
+  return stripe.stripeApiRequest(ctx.as.stripe, {
     method,
     path,
     formBody: body,
@@ -246,7 +246,7 @@ function createStripePrice(
   );
 }
 
-function upsertStoreProduct(
+function upsertStoreProductRow(
   ctx: WriteCtx,
   now: ModuleTimestamp,
   args: {
@@ -280,15 +280,10 @@ function upsertStoreProduct(
     ctx.db.storeProduct.insert(row);
     return;
   }
-  if (ctx.db.storeProduct.productId.update) {
-    ctx.db.storeProduct.productId.update(row);
-  } else {
-    ctx.db.storeProduct.delete(existing);
-    ctx.db.storeProduct.insert(row);
-  }
+  ctx.db.storeProduct.productId.update(row);
 }
 
-export const upsert_store_product = spacetimedb.reducer(
+export const upsertStoreProduct = spacetimedb.reducer(
   {
     productId: t.string(),
     name: t.string(),
@@ -303,7 +298,7 @@ export const upsert_store_product = spacetimedb.reducer(
   (ctx, args) => {
     const tx = ctx;
     requireAdmin(tx, ctx.sender);
-    upsertStoreProduct(tx, ctx.timestamp, {
+    upsertStoreProductRow(tx, ctx.timestamp, {
       productId: args.productId,
       name: args.name,
       description: args.description,
@@ -317,7 +312,7 @@ export const upsert_store_product = spacetimedb.reducer(
   }
 );
 
-export const seed_default_store_products = spacetimedb.reducer(
+export const seedDefaultStoreProducts = spacetimedb.reducer(
   { force: t.option(t.bool()) },
   (ctx, args) => {
     const force = args.force ?? false;
@@ -327,7 +322,7 @@ export const seed_default_store_products = spacetimedb.reducer(
     if (hasAnyProducts && !force) return;
 
     for (const product of DEFAULT_STORE_PRODUCTS) {
-      upsertStoreProduct(tx, ctx.timestamp, {
+      upsertStoreProductRow(tx, ctx.timestamp, {
         productId: product.productId,
         name: product.name,
         description: product.description,
@@ -342,7 +337,7 @@ export const seed_default_store_products = spacetimedb.reducer(
   }
 );
 
-export const list_store_products_json = spacetimedb.procedure(
+export const listStoreProductsJson = spacetimedb.procedure(
   {},
   t.string(),
   ctx =>
@@ -364,7 +359,7 @@ export const list_store_products_json = spacetimedb.procedure(
     })
 );
 
-export const configure_stripe = spacetimedb.procedure(
+export const configureStripe = spacetimedb.procedure(
   {
     secretKey: t.string(),
     stripeVersion: t.option(t.string()),
@@ -377,7 +372,7 @@ export const configure_stripe = spacetimedb.procedure(
       return true;
     });
     void verdict;
-    return stripe.set_stripe_config(ctx.as.stripe, {
+    return stripe.setStripeConfig(ctx.as.stripe, {
       secretKey: args.secretKey,
       stripeVersion: args.stripeVersion,
       webhookSigningSecret: args.webhookSigningSecret,
@@ -385,7 +380,7 @@ export const configure_stripe = spacetimedb.procedure(
   }
 );
 
-export const store_stripe_api_request = spacetimedb.procedure(
+export const storeStripeApiRequest = spacetimedb.procedure(
   {
     method: t.string(),
     path: t.string(),
@@ -395,7 +390,7 @@ export const store_stripe_api_request = spacetimedb.procedure(
   stripeHttpResponse,
   (ctx, args) => {
     ctx.withTx(tx => requireAdmin(tx, ctx.sender));
-    return stripe.stripe_api_request(ctx.as.stripe, {
+    return stripe.stripeApiRequest(ctx.as.stripe, {
       method: args.method,
       path: args.path,
       formBody: args.formBody,
@@ -404,11 +399,11 @@ export const store_stripe_api_request = spacetimedb.procedure(
   }
 );
 
-export const validate_store_stripe_price = spacetimedb.procedure(
+export const validateStoreStripePrice = spacetimedb.procedure(
   { priceId: t.string() },
   storeValidateStripePriceResult,
   (ctx, args) =>
-    stripe.validate_stripe_price(ctx.as.stripe, {
+    stripe.validateStripePrice(ctx.as.stripe, {
       priceId: args.priceId,
     }) as {
       valid: boolean;
@@ -424,13 +419,13 @@ export const validate_store_stripe_price = spacetimedb.procedure(
     }
 );
 
-export const get_store_webhook_event_count = spacetimedb.procedure(
+export const getStoreWebhookEventCount = spacetimedb.procedure(
   {},
   t.i64(),
-  ctx => stripe.get_webhook_event_count(ctx.as.stripe, {}) as bigint
+  ctx => stripe.getWebhookEventCount(ctx.as.stripe, {}) as bigint
 );
 
-export const get_or_create_store_customer = spacetimedb.procedure(
+export const getOrCreateStoreCustomer = spacetimedb.procedure(
   {
     userId: t.string(),
     email: t.option(t.string()),
@@ -438,14 +433,14 @@ export const get_or_create_store_customer = spacetimedb.procedure(
   },
   storeGetOrCreateCustomerResult,
   (ctx, args) =>
-    stripe.get_or_create_customer(ctx.as.stripe, {
+    stripe.getOrCreateCustomer(ctx.as.stripe, {
       userId: args.userId,
       email: args.email,
       name: args.name,
     }) as { customerId: string; isNew: boolean }
 );
 
-export const create_store_checkout_session = spacetimedb.procedure(
+export const createStoreCheckoutSession = spacetimedb.procedure(
   {
     items: t.array(storeCheckoutLineItem),
     customerId: t.option(t.string()),
@@ -458,7 +453,7 @@ export const create_store_checkout_session = spacetimedb.procedure(
   },
   storeCheckoutSessionResult,
   (ctx, args) =>
-    stripe.create_checkout_session(ctx.as.stripe, {
+    stripe.createCheckoutSession(ctx.as.stripe, {
       items: args.items,
       customerId: args.customerId,
       mode: args.mode,
@@ -470,7 +465,7 @@ export const create_store_checkout_session = spacetimedb.procedure(
     }) as { sessionId: string; url: string | undefined }
 );
 
-export const sync_store_products_with_stripe = spacetimedb.procedure(
+export const syncStoreProductsWithStripe = spacetimedb.procedure(
   {},
   t.string(),
   ctx => {
@@ -520,7 +515,7 @@ export const sync_store_products_with_stripe = spacetimedb.procedure(
         const current = tx.db.storeProduct.productId.find(row.productId);
         if (!current)
           throwSenderError(`store.product_not_found:${row.productId}`);
-        upsertStoreProduct(tx, ctx.timestamp, {
+        upsertStoreProductRow(tx, ctx.timestamp, {
           productId: current.productId,
           name: current.name,
           description: current.description,
@@ -543,7 +538,7 @@ export const sync_store_products_with_stripe = spacetimedb.procedure(
   }
 );
 
-export const set_store_product_price = spacetimedb.reducer(
+export const setStoreProductPrice = spacetimedb.reducer(
   { productId: t.string(), stripePriceId: t.string() },
   (ctx, args) => {
     const tx = ctx;
@@ -552,7 +547,7 @@ export const set_store_product_price = spacetimedb.reducer(
     if (!existing) {
       throwSenderError(`store.product_not_found:${args.productId}`);
     }
-    upsertStoreProduct(tx, ctx.timestamp, {
+    upsertStoreProductRow(tx, ctx.timestamp, {
       productId: existing.productId,
       name: existing.name,
       description: existing.description,
@@ -566,7 +561,7 @@ export const set_store_product_price = spacetimedb.reducer(
   }
 );
 
-export const clear_store_product_price = spacetimedb.reducer(
+export const clearStoreProductPrice = spacetimedb.reducer(
   { productId: t.string() },
   (ctx, args) => {
     const tx = ctx;
@@ -575,7 +570,7 @@ export const clear_store_product_price = spacetimedb.reducer(
     if (!existing) {
       throwSenderError(`store.product_not_found:${args.productId}`);
     }
-    upsertStoreProduct(tx, ctx.timestamp, {
+    upsertStoreProductRow(tx, ctx.timestamp, {
       productId: existing.productId,
       name: existing.name,
       description: existing.description,

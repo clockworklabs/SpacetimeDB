@@ -106,5 +106,5 @@ export function handleStripeWebhook(
   }
 }
 
-export const stripe_webhook_handler =
+export const stripeWebhookHandler =
   spacetimedb.httpHandler(handleStripeWebhook);

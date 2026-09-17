@@ -2,7 +2,7 @@ import { Router, SyncResponse } from 'spacetimedb/server';
 import { handleStripeWebhook } from '@spacetimedb/stripe/submodule';
 import { spacetimedb } from './schema';
 
-export const stripe_webhook_handler = spacetimedb.httpHandler((ctx, req) =>
+export const stripeWebhookHandler = spacetimedb.httpHandler((ctx, req) =>
   handleStripeWebhook(ctx.as.stripe, req)
 );
 
@@ -35,5 +35,5 @@ export const router = spacetimedb.httpRouter(
   new Router()
     .get('/health', health)
     .post('/echo', echo)
-    .post('/stripe/webhook', stripe_webhook_handler)
+    .post('/stripe/webhook', stripeWebhookHandler)
 );

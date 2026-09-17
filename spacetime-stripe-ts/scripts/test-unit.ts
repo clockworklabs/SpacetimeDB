@@ -1,4 +1,6 @@
 import * as assert from 'node:assert/strict';
+import { Timestamp } from 'spacetimedb';
+import { latestSubscription } from '../src/submodule/subscription-order.ts';
 import { buildStripeHttpRequest } from '../src/submodule/http.ts';
 import { parseStripeEventMetadata } from '../src/submodule/webhook-metadata.ts';
 import {
@@ -96,5 +98,19 @@ assert.equal(
   413
 );
 assert.equal(validateWebhookRequestBody('{}'), undefined);
+
+const subscriptions = Array.from({ length: 5001 }, (_, index) => ({
+  stripeSubscriptionId: `sub_${index}`,
+  insertedAt: new Timestamp(BigInt(index)),
+}));
+assert.equal(latestSubscription(subscriptions.values()), subscriptions[5000]);
+assert.equal(latestSubscription([]), undefined);
+assert.equal(
+  latestSubscription([
+    { stripeSubscriptionId: 'sub_b', insertedAt: new Timestamp(1n) },
+    { stripeSubscriptionId: 'sub_a', insertedAt: new Timestamp(1n) },
+  ])?.stripeSubscriptionId,
+  'sub_b'
+);
 
 console.log('stripe unit tests passed');

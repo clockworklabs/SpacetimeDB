@@ -54,15 +54,10 @@ function upsertConfig(
     ctx.db.stripeConfig.insert(row);
     return;
   }
-  if (ctx.db.stripeConfig.singleton.update) {
-    ctx.db.stripeConfig.singleton.update(row);
-  } else {
-    ctx.db.stripeConfig.delete(existing);
-    ctx.db.stripeConfig.insert(row);
-  }
+  ctx.db.stripeConfig.singleton.update(row);
 }
 
-export const set_stripe_config = spacetimedb.procedure(
+export const setStripeConfig = spacetimedb.procedure(
   {
     secretKey: t.string(),
     stripeVersion: t.option(t.string()),
@@ -83,7 +78,7 @@ export const set_stripe_config = spacetimedb.procedure(
   }
 );
 
-export const set_stripe_webhook_signing_secret = spacetimedb.procedure(
+export const setStripeWebhookSigningSecret = spacetimedb.procedure(
   { webhookSigningSecret: t.string() },
   t.unit(),
   (ctx, { webhookSigningSecret }) => {
@@ -108,7 +103,7 @@ export const set_stripe_webhook_signing_secret = spacetimedb.procedure(
   }
 );
 
-export const get_stripe_config_status = spacetimedb.procedure(
+export const getStripeConfigStatus = spacetimedb.procedure(
   {},
   t.object('StripeConfigStatus', {
     isConfigured: t.bool(),

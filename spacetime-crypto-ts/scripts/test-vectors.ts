@@ -1,4 +1,4 @@
-// Verify the pure-TS implementations against published test vectors.
+// Verify the @noble/hashes wrappers and signature helpers against test vectors.
 // Run via: pnpm test
 //
 // Sources:

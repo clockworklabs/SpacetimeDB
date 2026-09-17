@@ -42,7 +42,7 @@ export function seedAdmin(
   });
 }
 
-export const add_admin_identity = spacetimedb.procedure(
+export const addAdminIdentity = spacetimedb.procedure(
   { identity: t.identity() },
   t.unit(),
   (ctx: ProcedureModuleCtx, { identity }) => {
@@ -60,7 +60,7 @@ export const add_admin_identity = spacetimedb.procedure(
   }
 );
 
-export const remove_admin_identity = spacetimedb.procedure(
+export const removeAdminIdentity = spacetimedb.procedure(
   { identity: t.identity() },
   t.unit(),
   (ctx: ProcedureModuleCtx, { identity }) => {

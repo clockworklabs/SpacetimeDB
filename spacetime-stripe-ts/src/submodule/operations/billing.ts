@@ -34,13 +34,13 @@ import {
   deriveCancelAtPeriodEnd,
   formPairsToBody,
   metadataJsonToFormPairs,
-  upsertCustomer,
-  upsertSubscription,
+  upsertCustomerRow,
+  upsertSubscriptionRow,
   callStripe,
   createCustomerInStripeAndSync,
 } from '../operations';
 
-export const validate_stripe_price = spacetimedb.procedure(
+export const validateStripePrice = spacetimedb.procedure(
   { priceId: t.string() },
   t.object('ValidateStripePriceResult', {
     valid: t.bool(),
@@ -100,7 +100,7 @@ export const validate_stripe_price = spacetimedb.procedure(
   }
 );
 
-export const get_remote_checkout_session = spacetimedb.procedure(
+export const getRemoteCheckoutSession = spacetimedb.procedure(
   { sessionId: t.string() },
   t.object('RemoteCheckoutSessionResult', {
     ok: t.bool(),
@@ -170,11 +170,11 @@ export const get_remote_checkout_session = spacetimedb.procedure(
 );
 
 // Cheap count of stripe_webhook_event rows; exposes the metric without leaking payloads.
-export const get_webhook_event_count = spacetimedb.procedure({}, t.i64(), ctx =>
+export const getWebhookEventCount = spacetimedb.procedure({}, t.i64(), ctx =>
   withAdminTx(ctx, tx => BigInt(tx.db.stripeWebhookEvent.count()))
 );
 
-export const stripe_api_request = spacetimedb.procedure(
+export const stripeApiRequest = spacetimedb.procedure(
   {
     method: t.string(),
     path: t.string(),
@@ -197,7 +197,7 @@ export const stripe_api_request = spacetimedb.procedure(
   }
 );
 
-export const create_customer = spacetimedb.procedure(
+export const createCustomer = spacetimedb.procedure(
   {
     email: t.option(t.string()),
     name: t.option(t.string()),
@@ -220,7 +220,7 @@ export const create_customer = spacetimedb.procedure(
   }
 );
 
-export const create_or_update_customer = spacetimedb.procedure(
+export const createOrUpdateCustomer = spacetimedb.procedure(
   {
     stripeCustomerId: t.string(),
     email: t.option(t.string()),
@@ -232,7 +232,7 @@ export const create_or_update_customer = spacetimedb.procedure(
     requireProcedureAdmin(ctx);
     const details = coerceMetadataFromJson(args.metadataJson);
     ctx.withTx(tx => {
-      upsertCustomer(tx, ctx.timestamp, {
+      upsertCustomerRow(tx, ctx.timestamp, {
         stripeCustomerId: args.stripeCustomerId,
         appUserId: undefined,
         email: args.email,
@@ -245,7 +245,7 @@ export const create_or_update_customer = spacetimedb.procedure(
   }
 );
 
-export const update_subscription_metadata = spacetimedb.procedure(
+export const updateSubscriptionMetadata = spacetimedb.procedure(
   {
     stripeSubscriptionId: t.string(),
     metadataJson: t.string(),
@@ -265,7 +265,7 @@ export const update_subscription_metadata = spacetimedb.procedure(
           `stripe.subscription_not_found:${args.stripeSubscriptionId}`
         );
       }
-      upsertSubscription(tx, ctx.timestamp, {
+      upsertSubscriptionRow(tx, ctx.timestamp, {
         stripeSubscriptionId: existing.stripeSubscriptionId,
         stripeCustomerId: existing.stripeCustomerId,
         status: existing.status,
@@ -282,7 +282,7 @@ export const update_subscription_metadata = spacetimedb.procedure(
     return {};
   }
 );
-export const get_or_create_customer = spacetimedb.procedure(
+export const getOrCreateCustomer = spacetimedb.procedure(
   {
     userId: t.string(),
     email: t.option(t.string()),
@@ -346,7 +346,7 @@ export const get_or_create_customer = spacetimedb.procedure(
 );
 
 // Stripe enforces one mode per session; all items must share mode.
-export const create_checkout_session = spacetimedb.procedure(
+export const createCheckoutSession = spacetimedb.procedure(
   {
     items: t.array(
       t.object('CheckoutLineItem', {
@@ -432,7 +432,7 @@ export const create_checkout_session = spacetimedb.procedure(
   }
 );
 
-export const create_customer_portal_session = spacetimedb.procedure(
+export const createCustomerPortalSession = spacetimedb.procedure(
   {
     customerId: t.string(),
     returnUrl: t.string(),
@@ -529,7 +529,7 @@ function syncSubscriptionObjectFromStripe(
   const meta = metadataInfo(stripeSubscription.metadata);
 
   ctx.withTx(tx => {
-    upsertSubscription(tx, ctx.timestamp, {
+    upsertSubscriptionRow(tx, ctx.timestamp, {
       stripeSubscriptionId: subscriptionId,
       stripeCustomerId: customerId,
       status,
@@ -545,7 +545,7 @@ function syncSubscriptionObjectFromStripe(
   });
 }
 
-export const cancel_subscription = spacetimedb.procedure(
+export const cancelSubscription = spacetimedb.procedure(
   {
     stripeSubscriptionId: t.string(),
     cancelAtPeriodEnd: t.option(t.bool()),
@@ -588,7 +588,7 @@ export const cancel_subscription = spacetimedb.procedure(
   }
 );
 
-export const reactivate_subscription = spacetimedb.procedure(
+export const reactivateSubscription = spacetimedb.procedure(
   {
     stripeSubscriptionId: t.string(),
   },
@@ -607,7 +607,7 @@ export const reactivate_subscription = spacetimedb.procedure(
   }
 );
 
-export const update_subscription_quantity = spacetimedb.procedure(
+export const updateSubscriptionQuantity = spacetimedb.procedure(
   {
     stripeSubscriptionId: t.string(),
     quantity: t.i64(),
@@ -659,7 +659,7 @@ export const update_subscription_quantity = spacetimedb.procedure(
         args.stripeSubscriptionId
       );
       if (!localSub) return;
-      upsertSubscription(tx, ctx.timestamp, {
+      upsertSubscriptionRow(tx, ctx.timestamp, {
         stripeSubscriptionId: localSub.stripeSubscriptionId,
         stripeCustomerId: localSub.stripeCustomerId,
         status: localSub.status,

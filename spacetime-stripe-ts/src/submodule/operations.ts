@@ -192,7 +192,7 @@ export function metadataJsonToFormPairs(
   return out;
 }
 
-export function upsertCustomer(
+export function upsertCustomerRow(
   ctx: WriteCtx,
   now: ModuleTimestamp,
   args: {
@@ -222,15 +222,10 @@ export function upsertCustomer(
     ctx.db.stripeCustomer.insert(row);
     return;
   }
-  if (ctx.db.stripeCustomer.stripeCustomerId.update) {
-    ctx.db.stripeCustomer.stripeCustomerId.update(row);
-  } else {
-    ctx.db.stripeCustomer.delete(existing);
-    ctx.db.stripeCustomer.insert(row);
-  }
+  ctx.db.stripeCustomer.stripeCustomerId.update(row);
 }
 
-export function upsertSubscription(
+export function upsertSubscriptionRow(
   ctx: WriteCtx,
   now: ModuleTimestamp,
   args: {
@@ -270,12 +265,7 @@ export function upsertSubscription(
     ctx.db.stripeSubscription.insert(row);
     return;
   }
-  if (ctx.db.stripeSubscription.stripeSubscriptionId.update) {
-    ctx.db.stripeSubscription.stripeSubscriptionId.update(row);
-  } else {
-    ctx.db.stripeSubscription.delete(existing);
-    ctx.db.stripeSubscription.insert(row);
-  }
+  ctx.db.stripeSubscription.stripeSubscriptionId.update(row);
 }
 
 export function upsertCheckoutSession(
@@ -306,12 +296,7 @@ export function upsertCheckoutSession(
     ctx.db.stripeCheckoutSession.insert(row);
     return;
   }
-  if (ctx.db.stripeCheckoutSession.stripeCheckoutSessionId.update) {
-    ctx.db.stripeCheckoutSession.stripeCheckoutSessionId.update(row);
-  } else {
-    ctx.db.stripeCheckoutSession.delete(existing);
-    ctx.db.stripeCheckoutSession.insert(row);
-  }
+  ctx.db.stripeCheckoutSession.stripeCheckoutSessionId.update(row);
 }
 
 export function upsertPayment(
@@ -350,12 +335,7 @@ export function upsertPayment(
     ctx.db.stripePayment.insert(row);
     return;
   }
-  if (ctx.db.stripePayment.stripePaymentIntentId.update) {
-    ctx.db.stripePayment.stripePaymentIntentId.update(row);
-  } else {
-    ctx.db.stripePayment.delete(existing);
-    ctx.db.stripePayment.insert(row);
-  }
+  ctx.db.stripePayment.stripePaymentIntentId.update(row);
 }
 
 export function upsertInvoice(
@@ -395,12 +375,7 @@ export function upsertInvoice(
     ctx.db.stripeInvoice.insert(row);
     return;
   }
-  if (ctx.db.stripeInvoice.stripeInvoiceId.update) {
-    ctx.db.stripeInvoice.stripeInvoiceId.update(row);
-  } else {
-    ctx.db.stripeInvoice.delete(existing);
-    ctx.db.stripeInvoice.insert(row);
-  }
+  ctx.db.stripeInvoice.stripeInvoiceId.update(row);
 }
 
 export function updateWebhookStatus(
@@ -423,12 +398,7 @@ export function updateWebhookStatus(
     processedAt: isTerminal ? ctx.timestamp : existing.processedAt,
   };
 
-  if (ctx.db.stripeWebhookEvent.eventId.update) {
-    ctx.db.stripeWebhookEvent.eventId.update(updated);
-  } else {
-    ctx.db.stripeWebhookEvent.delete(existing);
-    ctx.db.stripeWebhookEvent.insert(updated);
-  }
+  ctx.db.stripeWebhookEvent.eventId.update(updated);
 }
 
 export function metadataInfoFromRecord(
@@ -550,7 +520,7 @@ function dispatchEvent(
     case 'customer.updated': {
       const obj = event.data.object;
       const meta = metadataInfoFromRecord(obj.metadata);
-      upsertCustomer(ctx, ctx.timestamp, {
+      upsertCustomerRow(ctx, ctx.timestamp, {
         stripeCustomerId: obj.id,
         appUserId: undefined,
         email: obj.email ?? undefined,
@@ -579,7 +549,7 @@ function dispatchEvent(
         obj.cancel_at_period_end ??
         deriveCancelAtPeriodEnd(cancelAtUnix, currentPeriodEnd);
       const meta = metadataInfoFromRecord(obj.metadata);
-      upsertSubscription(ctx, ctx.timestamp, {
+      upsertSubscriptionRow(ctx, ctx.timestamp, {
         stripeSubscriptionId: obj.id,
         stripeCustomerId: customerId,
         status,
@@ -731,7 +701,7 @@ export function createCustomerInStripeAndSync(
 
   const details = coerceMetadataFromJson(args.metadataJson);
   ctx.withTx(tx => {
-    upsertCustomer(tx, ctx.timestamp, {
+    upsertCustomerRow(tx, ctx.timestamp, {
       stripeCustomerId: customerId,
       appUserId: undefined,
       email: args.email,
@@ -743,7 +713,7 @@ export function createCustomerInStripeAndSync(
   return customerId;
 }
 
-export const upsert_customer = spacetimedb.reducer(
+export const upsertCustomer = spacetimedb.reducer(
   {
     stripeCustomerId: t.string(),
     appUserId: t.option(t.string()),
@@ -754,7 +724,7 @@ export const upsert_customer = spacetimedb.reducer(
   },
   (ctx, args) => {
     requireAdmin(ctx, ctx.sender);
-    upsertCustomer(ctx, ctx.timestamp, {
+    upsertCustomerRow(ctx, ctx.timestamp, {
       stripeCustomerId: args.stripeCustomerId,
       appUserId: args.appUserId,
       email: args.email,
@@ -765,7 +735,7 @@ export const upsert_customer = spacetimedb.reducer(
   }
 );
 
-export const upsert_subscription = spacetimedb.reducer(
+export const upsertSubscription = spacetimedb.reducer(
   {
     stripeSubscriptionId: t.string(),
     stripeCustomerId: t.string(),
@@ -781,7 +751,7 @@ export const upsert_subscription = spacetimedb.reducer(
   },
   (ctx, args) => {
     requireAdmin(ctx, ctx.sender);
-    upsertSubscription(ctx, ctx.timestamp, {
+    upsertSubscriptionRow(ctx, ctx.timestamp, {
       stripeSubscriptionId: args.stripeSubscriptionId,
       stripeCustomerId: args.stripeCustomerId,
       status: args.status,
@@ -797,7 +767,7 @@ export const upsert_subscription = spacetimedb.reducer(
   }
 );
 
-export const update_payment_customer = spacetimedb.reducer(
+export const updatePaymentCustomer = spacetimedb.reducer(
   {
     stripePaymentIntentId: t.string(),
     stripeCustomerId: t.string(),
@@ -822,7 +792,7 @@ export const update_payment_customer = spacetimedb.reducer(
   }
 );
 
-export const update_subscription_quantity_internal = spacetimedb.reducer(
+export const updateSubscriptionQuantityInternal = spacetimedb.reducer(
   {
     stripeSubscriptionId: t.string(),
     quantity: t.i64(),
@@ -832,7 +802,7 @@ export const update_subscription_quantity_internal = spacetimedb.reducer(
     const existing =
       ctx.db.stripeSubscription.stripeSubscriptionId.find(stripeSubscriptionId);
     if (!existing) return;
-    upsertSubscription(ctx, ctx.timestamp, {
+    upsertSubscriptionRow(ctx, ctx.timestamp, {
       stripeSubscriptionId: existing.stripeSubscriptionId,
       stripeCustomerId: existing.stripeCustomerId,
       status: existing.status,
@@ -848,7 +818,7 @@ export const update_subscription_quantity_internal = spacetimedb.reducer(
   }
 );
 
-export const ingest_stripe_webhook = spacetimedb.reducer(
+export const ingestStripeWebhook = spacetimedb.reducer(
   {
     eventId: t.string(),
     eventType: t.string(),
@@ -923,7 +893,7 @@ export const ingest_stripe_webhook = spacetimedb.reducer(
   }
 );
 
-export const replay_webhook_event = spacetimedb.reducer(
+export const replayWebhookEvent = spacetimedb.reducer(
   { eventId: t.string() },
   (ctx, { eventId }) => {
     // Administrators may run this operation over stored events.

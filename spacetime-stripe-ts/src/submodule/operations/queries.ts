@@ -10,8 +10,9 @@ import {
   subscriptionWithCreationTime,
 } from '../schema';
 import { withAdminTx, takeRows } from '../operations';
+import { latestSubscription } from '../subscription-order';
 
-export const get_customer = spacetimedb.procedure(
+export const getCustomer = spacetimedb.procedure(
   { stripeCustomerId: t.string() },
   t.option(stripeCustomerTable.rowType),
   (ctx, { stripeCustomerId }) =>
@@ -23,7 +24,7 @@ export const get_customer = spacetimedb.procedure(
     )
 );
 
-export const get_customer_by_email = spacetimedb.procedure(
+export const getCustomerByEmail = spacetimedb.procedure(
   { email: t.string() },
   t.option(stripeCustomerTable.rowType),
   (ctx, { email }) =>
@@ -34,7 +35,7 @@ export const get_customer_by_email = spacetimedb.procedure(
     })
 );
 
-export const get_customer_by_user_id = spacetimedb.procedure(
+export const getCustomerByUserId = spacetimedb.procedure(
   { userId: t.string() },
   t.option(stripeCustomerTable.rowType),
   (ctx, { userId }) =>
@@ -45,7 +46,7 @@ export const get_customer_by_user_id = spacetimedb.procedure(
     })
 );
 
-export const get_subscription = spacetimedb.procedure(
+export const getSubscription = spacetimedb.procedure(
   { stripeSubscriptionId: t.string() },
   t.option(stripeSubscriptionTable.rowType),
   (ctx, { stripeSubscriptionId }) =>
@@ -58,7 +59,7 @@ export const get_subscription = spacetimedb.procedure(
     )
 );
 
-export const list_subscriptions = spacetimedb.procedure(
+export const listSubscriptions = spacetimedb.procedure(
   { stripeCustomerId: t.string() },
   t.array(stripeSubscriptionTable.rowType),
   (ctx, { stripeCustomerId }) =>
@@ -67,7 +68,7 @@ export const list_subscriptions = spacetimedb.procedure(
     )
 );
 
-export const list_subscriptions_with_creation_time = spacetimedb.procedure(
+export const listSubscriptionsWithCreationTime = spacetimedb.procedure(
   { stripeCustomerId: t.string() },
   t.array(subscriptionWithCreationTime),
   (ctx, { stripeCustomerId }) =>
@@ -86,36 +87,18 @@ export const list_subscriptions_with_creation_time = spacetimedb.procedure(
     )
 );
 
-export const get_subscription_by_org_id = spacetimedb.procedure(
+export const getSubscriptionByOrgId = spacetimedb.procedure(
   { orgId: t.string() },
   t.option(stripeSubscriptionTable.rowType),
   (ctx, { orgId }) =>
-    withAdminTx(ctx, tx => {
-      const matches = takeRows(
-        tx.db.stripeSubscription.byOrgInsertedAt.filter([orgId, new Range()]),
-        5000
-      );
-      let latest = matches[0];
-      for (const sub of matches) {
-        if (!latest) {
-          latest = sub;
-          continue;
-        }
-        const currentMicros = sub.insertedAt.microsSinceUnixEpoch;
-        const latestMicros = latest.insertedAt.microsSinceUnixEpoch;
-        if (
-          currentMicros > latestMicros ||
-          (currentMicros === latestMicros &&
-            sub.stripeSubscriptionId > latest.stripeSubscriptionId)
-        ) {
-          latest = sub;
-        }
-      }
-      return latest;
-    })
+    withAdminTx(ctx, tx =>
+      latestSubscription(
+        tx.db.stripeSubscription.byOrgInsertedAt.filter([orgId, new Range()])
+      )
+    )
 );
 
-export const list_subscriptions_by_org_id = spacetimedb.procedure(
+export const listSubscriptionsByOrgId = spacetimedb.procedure(
   { orgId: t.string() },
   t.array(stripeSubscriptionTable.rowType),
   (ctx, { orgId }) =>
@@ -126,7 +109,7 @@ export const list_subscriptions_by_org_id = spacetimedb.procedure(
     )
 );
 
-export const list_subscriptions_by_user_id = spacetimedb.procedure(
+export const listSubscriptionsByUserId = spacetimedb.procedure(
   { userId: t.string() },
   t.array(stripeSubscriptionTable.rowType),
   (ctx, { userId }) =>
@@ -137,7 +120,7 @@ export const list_subscriptions_by_user_id = spacetimedb.procedure(
     )
 );
 
-export const get_payment = spacetimedb.procedure(
+export const getPayment = spacetimedb.procedure(
   { stripePaymentIntentId: t.string() },
   t.option(stripePaymentTable.rowType),
   (ctx, { stripePaymentIntentId }) =>
@@ -149,7 +132,7 @@ export const get_payment = spacetimedb.procedure(
     )
 );
 
-export const list_payments = spacetimedb.procedure(
+export const listPayments = spacetimedb.procedure(
   { stripeCustomerId: t.string() },
   t.array(stripePaymentTable.rowType),
   (ctx, { stripeCustomerId }) =>
@@ -158,7 +141,7 @@ export const list_payments = spacetimedb.procedure(
     )
 );
 
-export const list_payments_by_user_id = spacetimedb.procedure(
+export const listPaymentsByUserId = spacetimedb.procedure(
   { userId: t.string() },
   t.array(stripePaymentTable.rowType),
   (ctx, { userId }) =>
@@ -167,14 +150,14 @@ export const list_payments_by_user_id = spacetimedb.procedure(
     )
 );
 
-export const list_payments_by_org_id = spacetimedb.procedure(
+export const listPaymentsByOrgId = spacetimedb.procedure(
   { orgId: t.string() },
   t.array(stripePaymentTable.rowType),
   (ctx, { orgId }) =>
     withAdminTx(ctx, tx => takeRows(tx.db.stripePayment.byOrgId.filter(orgId)))
 );
 
-export const list_invoices = spacetimedb.procedure(
+export const listInvoices = spacetimedb.procedure(
   { stripeCustomerId: t.string() },
   t.array(stripeInvoiceTable.rowType),
   (ctx, { stripeCustomerId }) =>
@@ -183,14 +166,14 @@ export const list_invoices = spacetimedb.procedure(
     )
 );
 
-export const list_invoices_by_org_id = spacetimedb.procedure(
+export const listInvoicesByOrgId = spacetimedb.procedure(
   { orgId: t.string() },
   t.array(stripeInvoiceTable.rowType),
   (ctx, { orgId }) =>
     withAdminTx(ctx, tx => takeRows(tx.db.stripeInvoice.byOrgId.filter(orgId)))
 );
 
-export const list_invoices_by_user_id = spacetimedb.procedure(
+export const listInvoicesByUserId = spacetimedb.procedure(
   { userId: t.string() },
   t.array(stripeInvoiceTable.rowType),
   (ctx, { userId }) =>
@@ -199,7 +182,7 @@ export const list_invoices_by_user_id = spacetimedb.procedure(
     )
 );
 
-export const get_checkout_session = spacetimedb.procedure(
+export const getCheckoutSession = spacetimedb.procedure(
   { stripeCheckoutSessionId: t.string() },
   t.option(stripeCheckoutSessionTable.rowType),
   (ctx, { stripeCheckoutSessionId }) =>
@@ -212,7 +195,7 @@ export const get_checkout_session = spacetimedb.procedure(
     )
 );
 
-export const list_checkout_sessions = spacetimedb.procedure(
+export const listCheckoutSessions = spacetimedb.procedure(
   { stripeCustomerId: t.string() },
   t.array(stripeCheckoutSessionTable.rowType),
   (ctx, { stripeCustomerId }) =>
