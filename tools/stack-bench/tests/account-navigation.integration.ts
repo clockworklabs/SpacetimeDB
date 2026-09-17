@@ -573,6 +573,29 @@ test('purchase history handles confirmation dialogs without hiding missing order
   }
 });
 
+test('review setup closes a modal but bounds the wait when an inline view has no close control', async t => {
+  const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/01-review-visibility.json');
+  const feature = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source }).features[0]!;
+  const step = feature.setup.filter(step => step.testid === 'overlay-close').at(-1)!;
+  assert.equal(step.within, 1000);
+  const browser = await chromium.launch({ headless: true });
+  t.after(() => browser.close());
+  const page = await browser.newPage();
+  const actor = { page, loc: (id: string) => page.locator(stableElementSelector(id)).filter({ visible: true }).first() };
+  const service = { defaultWithin: 20000, expand: (value: string) => value, testId: stableElementSelector,
+    sleep: (ms: number) => new Promise(resolve => setTimeout(resolve, ms)) };
+  for (const modal of [false, true]) {
+    await page.setContent('<dialog><button id="overlay-close" onclick="this.closest(\'dialog\').close()">Close</button></dialog>');
+    if (modal) await page.locator('dialog').evaluate(element => (element as HTMLDialogElement).showModal());
+    const result = await executeAction(ACTION_REGISTRY, step.do, step, {
+      capabilities: { actors: { get: () => actor }, 'browser-interaction': service },
+    });
+    assert.equal(result.status, 'passed', result.summary ?? 'optional close failed');
+    assert.equal(await page.locator('dialog').isVisible(), false);
+    assert.deepEqual(result.observation, modal ? { clicked: 'overlay-close' } : { clicked: false, testid: 'overlay-close' });
+  }
+});
+
 test('role assignment targets the account ID despite role text in every dropdown', async () => {
   const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/progression-staff-roles.json');
   const feature = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source }).features[0]!;

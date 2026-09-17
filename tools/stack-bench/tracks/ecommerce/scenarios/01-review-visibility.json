@@ -15,7 +15,7 @@
         {"do":"click","actor":"author","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
         { "do": "click", "actor": "author", "testid": "orders-toggle", "unlessVisible": "order-item" },
         { "do": "expect", "actor": "author", "testid": "order-item", "contains": "Induction Cooktop", "within": 10000 },
-        { "do": "click", "actor": "author", "testid": "overlay-close", "ifAvailable": true },
+        { "do": "click", "actor": "author", "testid": "overlay-close", "ifAvailable": true, "within": 1000 },
         { "do": "click", "actor": "author", "testid": "catalog-link", "ifAvailable": true }
       ],
       "criteria": [
