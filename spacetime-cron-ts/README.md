@@ -10,7 +10,7 @@ transactions are available.
 
 ## Requirements
 
-- SpacetimeDB CLI 2.8.3 or later
+- A SpacetimeDB CLI and server compatible with the host SDK
 - The `spacetimedb` npm version required by this package's peer dependency
 - Host support for the `spacetime:sys@2.0` volatile procedure used by failure
   recovery
