@@ -548,7 +548,7 @@ export const rateLimitEventsAdmin = spacetimedb.view(
       : []
 );
 
-export const start_reactor = spacetimedb.procedure(
+export const startReactor = spacetimedb.procedure(
   {},
   reactorActionResult,
   ctx => {
@@ -562,7 +562,7 @@ export const start_reactor = spacetimedb.procedure(
   }
 );
 
-export const tap_reactor = spacetimedb.procedure(
+export const tapReactor = spacetimedb.procedure(
   {},
   reactorActionResult,
   ctx => {
@@ -799,7 +799,7 @@ export const overcharge = spacetimedb.procedure(
   }
 );
 
-export const buy_upgrade = spacetimedb.procedure(
+export const buyUpgrade = spacetimedb.procedure(
   { upgradeId: t.string() },
   reactorActionResult,
   (ctx, args) => {
@@ -931,7 +931,7 @@ export const buy_upgrade = spacetimedb.procedure(
   }
 );
 
-export const repair_reactor = spacetimedb.procedure(
+export const repairReactor = spacetimedb.procedure(
   {},
   reactorActionResult,
   ctx => {
@@ -1060,7 +1060,7 @@ export const runSweep = spacetimedb.procedure(
   }
 );
 
-export const set_player_color = spacetimedb.reducer(
+export const setPlayerColor = spacetimedb.reducer(
   { color: t.string() },
   (ctx, args) => {
     const color = requirePlayerColor(args.color);
@@ -1116,7 +1116,7 @@ export const updateConfig = spacetimedb.reducer(
   }
 );
 
-export const rate_limit_demo_sweep = spacetimedb.reducer(
+export const rateLimitDemoSweep = spacetimedb.reducer(
   { onSchedule: rateLimitDemoSweepTick },
   { arg: rateLimitDemoSweepTick.rowType },
   (ctx, _args) => {

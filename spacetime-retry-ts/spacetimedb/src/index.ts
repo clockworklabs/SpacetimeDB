@@ -30,6 +30,7 @@ interface FlakyTransaction {
 const flakyArgs = t.object('FlakyArgs', {
   taskName: t.string(),
   succeedAtAttempt: t.u8(),
+  throwOnFailure: t.bool(),
 });
 
 const flaky = retryHandler(flakyArgs, (ctx, args): RetryResult => {
@@ -37,7 +38,9 @@ const flaky = retryHandler(flakyArgs, (ctx, args): RetryResult => {
   const task = tx.db.retryTask.name.filter(args.taskName).next().value;
   const attempt = Number(task?.attempt ?? 0);
   if (attempt < args.succeedAtAttempt) {
-    return retryFailed(`simulated failure at attempt ${attempt}`);
+    const message = `simulated failure at attempt ${attempt}`;
+    if (args.throwOnFailure) throw new Error(message);
+    return retryFailed(message);
   }
   tx.db.retryMetric.insert({
     id: 0n,
@@ -92,23 +95,23 @@ export const init = spacetimedb.init(ctx => {
   retry.installRetry(ctx);
 });
 
-export const retry_fire = spacetimedb.reducer(
+export const retryFire = spacetimedb.reducer(
   { onSchedule: retryTask },
   { arg: retryTask.rowType },
   retry.reducers.retryFire
 );
 
-export const submit_retry_task = spacetimedb.reducer(
+export const submitRetryTask = spacetimedb.reducer(
   retry.reducers.submitRetryTask.params,
   retry.reducers.submitRetryTask.handler
 );
 
-export const add_retry_admin_identity = spacetimedb.reducer(
+export const addRetryAdminIdentity = spacetimedb.reducer(
   retry.reducers.addRetryAdminIdentity.params,
   retry.reducers.addRetryAdminIdentity.handler
 );
 
-export const remove_retry_admin_identity = spacetimedb.reducer(
+export const removeRetryAdminIdentity = spacetimedb.reducer(
   retry.reducers.removeRetryAdminIdentity.params,
   retry.reducers.removeRetryAdminIdentity.handler
 );

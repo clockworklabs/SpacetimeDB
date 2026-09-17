@@ -72,7 +72,7 @@ This workspace tests the submodule source in this repository. Consumer
 applications install the published release:
 
 ```bash
-npm install @spacetimedb/cron spacetimedb@^2.8.3
+npm install @spacetimedb/cron spacetimedb
 ```
 
 The complete server integration is in [`spacetimedb/src/index.ts`](./spacetimedb/src/index.ts). The browser integration is in [`src/app.ts`](./src/app.ts).

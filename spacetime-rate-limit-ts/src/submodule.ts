@@ -21,7 +21,7 @@ export {
   adminRateLimitBuckets,
   addRateLimitAdmin,
   consume,
-  rate_limit_sweep,
+  rateLimitSweep,
   resetBuckets,
   runSweep,
   updateConfig,

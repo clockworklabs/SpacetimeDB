@@ -60,7 +60,7 @@ This workspace tests the submodule source in this repository. Consumer
 applications install the published release:
 
 ```bash
-npm install @spacetimedb/rate-limit spacetimedb@^2.8.3
+npm install @spacetimedb/rate-limit spacetimedb
 ```
 
 Follow the package's
