@@ -264,8 +264,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Test Discord formatter
-        run: python3 tools/xtask-llm-benchmark/scripts/test_discord_summary.py
+      - uses: dsherret/rust-toolchain-file@v1
 
       - name: Download analysis reports
         continue-on-error: true
@@ -301,7 +300,7 @@ jobs:
           RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
           RUN_LABEL: ${{ github.event_name == 'schedule' && 'Weekly scheduled run' || 'Manual run' }}
         run: >
-          python3 tools/xtask-llm-benchmark/scripts/discord_summary.py
+          cargo ci other-workflows llm-benchmark-summary
           --reports-dir reports
           --run-url "$RUN_URL"
           --run-label "$RUN_LABEL"
