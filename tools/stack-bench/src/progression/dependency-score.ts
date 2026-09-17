@@ -56,6 +56,19 @@ interface ScoringState extends ProgressionState {
   definition: CompiledProgressionDefinition;
 }
 
+function guaranteeBlocked(state: ScoringState, nodeId: string,
+  check: CompiledProgressionDefinition['nodes'][number]['gradingChecks'][number]): boolean {
+  if (check.role !== 'guarantee' || dependencyNodeState(state, nodeId).checks[check.id] != null) return false;
+  return (check.requiresFeatures ?? []).some(feature => {
+    const owner = state.definition.nodes.find(node => node.featureRefs.includes(feature));
+    if (!owner) return false;
+    const current = dependencyNodeState(state, owner.id);
+    return current.status === 'blocked' || current.status === 'failed'
+      || owner.gradingChecks.some(required => required.role === 'feature'
+        && ['fail', 'blocked'].includes(current.checks[required.id] ?? ''));
+  });
+}
+
 function nodePoints(state: ScoringState, nodeId: string): PointTotals {
   const node = state.definition.nodes.find(candidate => candidate.id === nodeId);
   if (!node) throw new Error(`unknown dependency node ${nodeId}`);
@@ -67,7 +80,7 @@ function nodePoints(state: ScoringState, nodeId: string): PointTotals {
   const failedPoints = node.gradingChecks.reduce((total, check) =>
     total + (!blocked && checks[check.id] === 'fail' ? check.points : 0), 0);
   const blockedPoints = node.gradingChecks.reduce((total, check) =>
-    total + (blocked || checks[check.id] === 'blocked' ? check.points : 0), 0);
+    total + (blocked || checks[check.id] === 'blocked' || guaranteeBlocked(state, nodeId, check) ? check.points : 0), 0);
   const gradedPoints = passedPoints + failedPoints;
   const availablePoints = node.gradingChecks.reduce((total, check) => total + check.points, 0);
   return { passedPoints, failedPoints, gradedPoints, blockedPoints,
@@ -105,7 +118,8 @@ export interface DependencyCompletionBreakdown {
 function dependencyOutcomes(state: ScoringState): Map<string, CheckStatus> {
   return new Map<string, CheckStatus>(state.definition.nodes.flatMap(node => {
     const current = dependencyNodeState(state, node.id);
-    return node.gradingChecks.map(check => [check.id, current.status === 'blocked' || current.checks[check.id] === 'blocked' ? 'blocked'
+    return node.gradingChecks.map(check => [check.id, current.status === 'blocked' || current.checks[check.id] === 'blocked'
+      || guaranteeBlocked(state, node.id, check) ? 'blocked'
       : current.checks[check.id] === 'pass' ? 'passed'
       : current.checks[check.id] === 'fail' ? 'failed' : 'unmeasured'] as const);
   }));

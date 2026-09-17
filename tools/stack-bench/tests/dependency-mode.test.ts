@@ -216,6 +216,13 @@ test('a guarantee stays deferred when its same-pass prerequisite fails', () => {
   assert.equal(state.nodes.owner!.status, 'working');
   assert.equal(state.nodes.descendant!.status, 'active');
   assert.deepEqual(prompt(state).nodeIds, ['descendant']);
+  const score = progressionEngine.score(state) as DependencyScore;
+  const owner = score.nodes.find(node => node.id === 'owner')!;
+  assert.equal(owner.completion.blocked, 1);
+  assert.equal(owner.completion.unmeasured, 0);
+  assert.equal(owner.blockedPoints, 1);
+  assert.equal(owner.ungradedPoints, 0);
+  assert.equal(dependencyCompletionBreakdown(state).checkCategories.production.blocked, 1);
 });
 
 test('a regressed prerequisite clears a guarantee result from an earlier pass', () => {
@@ -229,6 +236,7 @@ test('a regressed prerequisite clears a guarantee result from an earlier pass', 
     other: 'fail', descendant: 'pass',
   }));
   assert.equal(state.nodes.owner!.checks['check.owner.guarantee'], null);
+  assert.equal(dependencyCompletionBreakdown(state).checkCategories.production.blocked, 1);
 });
 
 test('the graph compiles by depth, then declared order, and the order is identity', () => {
