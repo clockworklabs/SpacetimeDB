@@ -86,3 +86,7 @@ fi
 cargo spacetime generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/client/module_bindings" --module-path "$SDK_PATH/examples~/regression-tests/server" "${BUILD_OPTIONS[@]}"
 cargo spacetime generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/republishing/client/module_bindings" --module-path "$SDK_PATH/examples~/regression-tests/republishing/server-republish" "${BUILD_OPTIONS[@]}"
 cargo spacetime generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/procedure-client/module_bindings" --module-path "$STDB_PATH/modules/sdk-test-procedure" "${BUILD_OPTIONS[@]}"
+
+if [ -z "$DOTNET_VERSION" ] || [ "$DOTNET_VERSION" = "10" ]; then
+    cargo spacetime generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/namespaces/module_bindings" --module-path "$STDB_PATH/modules/namespace-test-cs" --build-options="--dotnet-version 10"
+fi

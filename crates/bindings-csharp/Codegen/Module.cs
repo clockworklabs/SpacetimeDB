@@ -2617,9 +2617,9 @@ public class Module : IIncrementalGenerator
                 bool IsChild(AssemblyDeclaration assembly) =>
                     mountByIdentity.TryGetValue(assembly.Identity, out var mount)
                     && !mount.Accessor.Equals("public", StringComparison.OrdinalIgnoreCase);
-                var unmountedAssemblies = assemblies.Where(a => !IsChild(a)).ToArray();
+                var publicScopeAssemblies = assemblies.Where(a => !IsChild(a)).ToArray();
                 var mountedAssemblies = assemblies.Where(IsChild).ToArray();
-                var registrationOrder = unmountedAssemblies.Concat(mountedAssemblies).ToArray();
+                var registrationOrder = publicScopeAssemblies.Concat(mountedAssemblies).ToArray();
                 foreach (var assembly in assemblies.Where(a => a.DeclaresMounts))
                     context.ReportDiagnostic(ErrorDescriptor.DependencyNamespaceMounts.ToDiag(assembly.Identity));
                 foreach (var assembly in mountedAssemblies.Where(a => a.LifecycleReducers.Length != 0))
@@ -2707,7 +2707,7 @@ public class Module : IIncrementalGenerator
                         $"new({SymbolDisplay.FormatLiteral(m.AssemblyIdentity, true)}, {SymbolDisplay.FormatLiteral(m.Accessor, true)})")) + "}));",
                     $"global::{extensionNamespaceName}.AssemblyDescriptor.Register(global::SpacetimeDB.Internal.Module.RootBuilder);"
                 };
-                foreach (var assembly in unmountedAssemblies)
+                foreach (var assembly in publicScopeAssemblies)
                     compositionRegistration.Add($"{assembly.DescriptorTypeName}.Register(global::SpacetimeDB.Internal.Module.RootBuilder);");
                 for (var i = 0; i < mountedAssemblies.Length; i++)
                 {
