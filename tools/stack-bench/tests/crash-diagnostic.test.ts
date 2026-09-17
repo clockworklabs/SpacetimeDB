@@ -136,8 +136,42 @@ test('native crash transport requires a correlated confirmed result and drains u
   assert.equal(socket.readyState, WebSocket.CLOSED);
 });
 
+test('crash setup rejects missing cart scope, changed scope and old native reservations before issuing writes', async () => {
+  for (const mode of ['missing-cart', 'changed-scope', 'old-reservation']) {
+    const before: CheckoutState = { accountId: 'a', itemId: 'i', priceMinor: 100,
+      stock: [{ warehouseId: 'w', quantity: 10 }], cart: [], reservations: [], orders: [], payments: [],
+      orphanOrderLines: 0, orphanAllocations: 0 };
+    const prepared = structuredClone(before);
+    prepared.cart.push({ itemId: 'i', quantity: 1 });
+    if (mode === 'old-reservation') {
+      prepared.stock[0]!.quantity--;
+      prepared.reservations.push({ itemId: 'i', warehouseId: 'w', quantity: 1 });
+    }
+    const wrap = (state: CheckoutState, ready: boolean) => ({ state, schemaSha256: { schema: 'same' },
+      account: 'a', item: 'i', scope: 'orders' as const, recordedAtMs: Date.now() - 31_000,
+      storage: { kind: 'order-data' as const, cart: mode !== 'missing-cart', warehouses: !(ready && mode === 'changed-scope') } });
+    let closed = false;
+    const result = await executeAction(ACTION_REGISTRY, 'crashCheckout', {
+      do: 'crashCheckout', actor: 'buyer', before: 'before', prepared: 'prepared', quantity: 1,
+      requests: 1, offsetMs: 0, target: 'database',
+    }, { capabilities: {
+      actors: { get: () => ({ name: 'buyer', writes: [{ headers: { authorization: 'Bearer private-token' } }] }) },
+      'database-read': { checkoutSnapshots: new Map([['before', wrap(before, false)], ['prepared', wrap(prepared, true)]]) },
+      'named-actions': { resolve: () => ({ id: 'checkout' }), request: () => ({ url: 'http://app/checkout' }),
+        fetch: async () => assert.fail('invalid crash setup must not submit checkout') },
+      'process-crash': { prepare: async () => {
+        assert.equal(mode, 'old-reservation', 'invalid scopes must fail before process preparation');
+        return { spacetime: null, close: async () => { closed = true; },
+          crash: async () => assert.fail('expired preparation must not inject a fault') };
+      } },
+    } });
+    assert.equal(result.status, mode === 'old-reservation' ? 'inconclusive' : 'harness_failure', mode);
+    assert.equal(closed, mode === 'old-reservation');
+  }
+});
+
 test('crash action retains partial fault evidence and distinguishes recovered state from acknowledged loss', async () => {
-  for (const mode of ['absent', 'committed', 'orders-only', 'empty-stock', 'lost-acknowledged', 'partial', 'queued', 'queued-committed', 'queued-drained', 'queued-recovery-error', 'fault-error', 'cancelled-recovery', 'cancelled-read', 'recovery-error', 'disconnected-database', 'disconnected-application', 'drained-application', 'undrained-application', 'drained-recovery-error', 'disconnected-recovery-error', 'cancelled-disconnected-recovery-error']) {
+  for (const mode of ['absent', 'committed', 'orders-only', 'orders-scoped', 'orders-scoped-wrong-total', 'orders-scoped-changed-after', 'orders-scoped-lost-acknowledged', 'empty-stock', 'lost-acknowledged', 'partial', 'queued', 'queued-committed', 'queued-drained', 'queued-recovery-error', 'fault-error', 'cancelled-recovery', 'cancelled-read', 'recovery-error', 'disconnected-database', 'disconnected-application', 'drained-application', 'undrained-application', 'drained-recovery-error', 'disconnected-recovery-error', 'cancelled-disconnected-recovery-error']) {
     const cancellation = new AbortController();
     const timers: number[] = [];
     let recoveryStopped = false;
@@ -147,19 +181,25 @@ test('crash action retains partial fault evidence and distinguishes recovered st
     const prepared = structuredClone(before);
     prepared.cart.push({ itemId: 'i', quantity: 1 });
     const after = structuredClone(prepared);
-    if (mode === 'committed' || mode === 'partial' || mode === 'orders-only' || mode === 'empty-stock' || mode === 'queued-committed') {
+    if (mode === 'committed' || mode === 'partial' || mode === 'orders-only' || mode === 'orders-scoped' || mode === 'orders-scoped-wrong-total' || mode === 'orders-scoped-changed-after' || mode === 'empty-stock' || mode === 'queued-committed') {
       after.cart = []; after.stock[0]!.quantity--;
       after.orders.push({ id: 'o', accountId: 'a', status: 'pending', totalMinor: 100,
         lines: [{ itemId: 'i', quantity: 1, priceMinor: 100, allocations: [{ warehouseId: 'w', quantity: 1 }] }] });
       if (mode === 'committed' || mode === 'empty-stock' || mode === 'queued-committed') after.payments.push({ id: 'p', orderId: 'o', amountMinor: 100, status: 'paid' });
     }
     if (mode === 'empty-stock') after.stock = [];
-    if (mode === 'orders-only') for (const state of [before, prepared, after]) {
+    if (mode.startsWith('orders-')) for (const state of [before, prepared, after]) {
       state.orphanAllocations = 0;
+      if (mode.startsWith('orders-scoped')) {
+        state.stock = [];
+        for (const order of state.orders) for (const line of order.lines) line.allocations = [];
+      }
       for (const order of state.orders) order.refundedMinor = 0;
     }
+    if (mode === 'orders-scoped-wrong-total') after.orders[0]!.totalMinor++;
     const wrap = (state: CheckoutState) => ({ state: checkoutStateSchema.parse(state), schemaSha256: { schema: 'same' }, account: 'a', item: 'i',
-      ...(mode === 'orders-only' ? { scope: 'orders' as const } : {}),
+      ...(mode.startsWith('orders-') ? { scope: 'orders' as const } : {}),
+      ...(mode.startsWith('orders-scoped') ? { storage: { kind: 'order-data' as const, cart: true, warehouses: mode === 'orders-scoped-changed-after' && state === after } } : {}),
       recordedAtMs: Date.now() - (mode === 'orders-only' ? 90_000 : 0) });
     let release!: () => void;
     const waiting = new Promise<void>(resolve => { release = resolve; });
@@ -216,8 +256,8 @@ test('crash action retains partial fault evidence and distinguishes recovered st
       assert.equal(result.code, 'cancelled');
     }
     assert.equal(unsettled, mode.startsWith('queued') || mode.includes('disconnected-') || mode === 'undrained-application');
-    assert.equal(result.status, (mode.startsWith('queued') && mode !== 'queued-recovery-error') || mode.startsWith('cancelled-') || ['disconnected-database', 'disconnected-application', 'undrained-application'].includes(mode) ? 'inconclusive' : mode === 'fault-error' ? 'harness_failure'
-      : ['partial', 'lost-acknowledged', 'empty-stock'].includes(mode) || mode.endsWith('recovery-error') ? 'failed' : 'passed', mode);
+    assert.equal(result.status, (mode.startsWith('queued') && mode !== 'queued-recovery-error') || mode.startsWith('cancelled-') || ['disconnected-database', 'disconnected-application', 'undrained-application'].includes(mode) ? 'inconclusive' : ['fault-error', 'orders-scoped-changed-after'].includes(mode) ? 'harness_failure'
+      : ['partial', 'lost-acknowledged', 'empty-stock', 'orders-scoped-wrong-total', 'orders-scoped-lost-acknowledged'].includes(mode) || mode.endsWith('recovery-error') ? 'failed' : 'passed', mode);
     if (mode === 'empty-stock') {
       assert.equal(result.code, 'application_failure');
       assert.deepEqual((result.observation as { after: { state: CheckoutState } }).after.state.stock, []);

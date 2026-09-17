@@ -96,14 +96,17 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
   const named = capabilities['named-actions'], database = capabilities['database-read'];
   const before = database.checkoutSnapshots.get(input.before), prepared = database.checkoutSnapshots.get(input.prepared);
   if (!before || !prepared || !prepared.recordedAtMs) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
-  if (before.storage && (!before.storage.cart || !before.storage.warehouses)) {
-    throw new Error('checkout crash reconciliation requires cart and warehouse evidence');
+  if (before.storage && !before.storage.cart) {
+    throw new Error('checkout crash reconciliation requires cart evidence');
   }
   if (!isDeepStrictEqual(before.schemaSha256, prepared.schemaSha256)
+    || !isDeepStrictEqual(before.storage, prepared.storage)
     || before.scope !== prepared.scope
     || before.account !== prepared.account || before.item !== prepared.item) throw new Error('crash snapshots do not describe the same verified state');
-  const compare = before.scope === 'orders' ? orderCheckoutDifferences : checkoutDifferences;
-  const setupDifferences = compare(before.state, prepared.state, prepared.state, input.quantity, true);
+  const compare = (after: typeof before.state, allowUnchanged: boolean) => before.scope === 'orders'
+    ? orderCheckoutDifferences(before.state, prepared.state, after, input.quantity, allowUnchanged, before.storage?.warehouses ?? true)
+    : checkoutDifferences(before.state, prepared.state, after, input.quantity, allowUnchanged);
+  const setupDifferences = compare(prepared.state, true);
   if (setupDifferences.length) inconclusive('invalid-input', { detail: 'checkout crash requires a valid prepared cart' });
   const runtime = await capabilities['process-crash'].prepare(input.target);
   let caller: Awaited<ReturnType<typeof checkoutCaller>> | undefined;
@@ -112,7 +115,7 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
     caller = await checkoutCaller(input, capabilities, signal, runtime.spacetime);
     // Reference reservations last 90 seconds. Leave time for recovery and mark
     // expired trials unmeasured; expiry is not a failed atomic checkout.
-    if (prepared.scope !== 'orders' && Date.now() - prepared.recordedAtMs > 30_000) {
+    if (prepared.state.reservations.length && Date.now() - prepared.recordedAtMs > 30_000) {
       inconclusive('invalid-input', { detail: 'prepared cart is too old for a bounded crash trial' });
     }
     let receipt: ProcessCrashReceipt | undefined, faultError: unknown, recoveryError: unknown, recoveredAtMs: number | undefined;
@@ -176,17 +179,18 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
         catch { throw new ActionHarnessFailure('stored state read interrupted after recovery', { observation }); }
       }
     }
-    if (!isDeepStrictEqual(after.schemaSha256, prepared.schemaSha256) || after.scope !== prepared.scope) {
+    if (!isDeepStrictEqual(after.schemaSha256, prepared.schemaSha256) || after.scope !== prepared.scope
+      || !isDeepStrictEqual(after.storage, prepared.storage)) {
       throw new ActionHarnessFailure('crash reader schema changed', { observation: { ...observation, after } });
     }
     const confirmed = outcomes.some(row => row.outcome === 'committed');
-    const differences = compare(before.state, prepared.state, after.state, input.quantity, !confirmed);
+    const differences = compare(after.state, !confirmed);
     const signalTimes = [...receipt.processEvidence.matchAll(/^KILLED \d+ \d+ (\d+)$/gm)].map(match => Number(match[1]) - receipt!.clockOffsetBeforeMs);
     const faultAtMs = Math.min(...signalTimes);
     const faultEndMs = Math.max(...signalTimes);
     const outstandingAtFault = outcomes.filter(row => row.startedAtMs <= faultAtMs && row.completedAtMs >= faultEndMs).length;
     const evidence = { ...observation, after, observedAtMs: named.now(), differences, confirmed, faultAtMs, faultEndMs, outstandingAtFault };
-    const unmeasured = prepared.scope !== 'orders' && Date.now() - prepared.recordedAtMs >= 85_000 ? 'reservation expiry prevents a complete recovery comparison'
+    const unmeasured = prepared.state.reservations.length && Date.now() - prepared.recordedAtMs >= 85_000 ? 'reservation expiry prevents a complete recovery comparison'
       : Math.abs(receipt.clockOffsetAfterMs - receipt.clockOffsetBeforeMs) > 5 ? 'clock changed during fault'
         : !outstandingAtFault ? 'fault missed the outstanding-request window'
           : unsettled && !appRecoveryFailed ? queued ? 'asynchronous checkout has no verified completion receipt'
