@@ -150,6 +150,7 @@ test('dependent feature actions validate graph ancestors without restating their
     'ecommerce.sequential-l1.interface',
     'ecommerce.feature.purchasing.hooks',
     'ecommerce.sequential-l1.purchase-action-input',
+    'ecommerce.orders.data',
   ]);
 
   const malformed = structuredClone(value);

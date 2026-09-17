@@ -87,11 +87,14 @@ test('reader rejects missing or ambiguous entities, omitted accounting and fabri
     { ...valid, state: { ...f.state, orphanAllocations: undefined } },
     { ...valid, state: { ...f.state, orders: [{ ...f.state.orders[0], refundedMinor: undefined }] } },
     { ...valid, state: { ...f.state, payments: [{ id: 'made-up', orderId: 'old', amountMinor: 8900, status: 'paid' }] } },
-    { ...valid, state: { ...f.state, reservations: [{ itemId: 'keyboard', warehouseId: 'east', quantity: 1 }] } },
   ]) {
     const exec: TextCommandExecutor = (_file, args) => args[0] === 'inspect' ? 'owned-id' : JSON.stringify(value);
     assert.throws(() => getSavedMongoDbCheckoutState({ ...f.args, exec }));
   }
+  const reservations = [{ itemId: 'keyboard', warehouseId: 'east', quantity: 1 }];
+  const exec: TextCommandExecutor = (_file, args) => args[0] === 'inspect' ? 'owned-id'
+    : JSON.stringify({ ...valid, state: { ...f.state, reservations } });
+  assert.deepEqual(getSavedMongoDbCheckoutState({ ...f.args, exec }).state.reservations, reservations);
 });
 
 test('database errors retain stderr without exposing credentials or the evaluated program', t => {

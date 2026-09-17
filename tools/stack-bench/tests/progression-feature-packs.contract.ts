@@ -97,15 +97,19 @@ test('every feature pack states one whole product request and one interface it c
     const at = pack.id;
     assert.equal(pack.moduleType, 'feature', at);
     assert.equal(pack.task.requirements.length, 1, `${at} must state one product request`);
-    assert.equal(pack.task.contracts.length, 1, `${at} must state one application interface`);
+    const ownedContracts = pack.task.contracts.filter(fragment => fragment.id !== 'ecommerce.orders.data');
+    assert.equal(ownedContracts.length, 1, `${at} must state one application interface`);
     const [requirement] = pack.task.requirements;
-    const [contract] = pack.task.contracts;
+    const [contract] = ownedContracts;
     assert(requirement && contract);
     // Dependency mode adds features to an existing app, so every feature
     // must compose as an upgrade, and its interface must travel with it.
     assert(requirement.modes?.includes('upgrade'), `${at} must compose as an upgrade`);
-    assert.deepEqual(contract.modes, requirement.modes, `${at} interface modes must match its request`);
-    for (const fragment of [requirement, contract]) {
+    for (const fragment of pack.task.contracts) {
+      assert.deepEqual(fragment.modes, requirement.modes, `${at} interface modes must match its request`);
+      if (fragment.id === 'ecommerce.orders.data') assert.equal(fragment.path, 'contracts/order-data.md');
+    }
+    for (const fragment of [requirement, ...pack.task.contracts]) {
       assert.equal(fragment.from, undefined, `${at} must not slice ${fragment.path}`);
       assert.equal(fragment.until, undefined, `${at} must not slice ${fragment.path}`);
     }

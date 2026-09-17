@@ -54,9 +54,9 @@ test('the ecommerce progression definition is complete and calculated from its d
   ])), { 1: 4, 2: 10, 3: 13, 4: 10, 5: 9, 6: 3 });
   assert.equal(definition.questlines.length, 12);
   assert.equal(new Set(definition.nodes.flatMap(node => node.gradingChecks.map(check => check.id))).size,
-    185);
+    187);
   assert.equal(definition.nodes.flatMap(node => node.gradingChecks)
-    .reduce((total, check) => total + check.points, 0), 356);
+    .reduce((total, check) => total + check.points, 0), 358);
   assert(definition.nodes.every(node => Object.keys(node.dependencyReasons).length
     === node.dependencies.length));
   assert(definition.questlines.every(questline =>
@@ -217,7 +217,7 @@ test('every progression feature is a whole module and every direct graph edge is
     for (const pack of requiredPacks) {
       assert.equal(pack.task.requirements.length, 1,
         `${node.id} must have one product prompt module`);
-      assert.equal(pack.task.contracts.length, 1,
+      assert.equal(pack.task.contracts.filter(fragment => fragment.id !== 'ecommerce.orders.data').length, 1,
         `${node.id} must have one application interface module`);
       for (const fragment of [...pack.task.requirements, ...pack.task.contracts]) {
         assert.equal(fragment.from, undefined, `${node.id} must not slice ${fragment.path}`);
