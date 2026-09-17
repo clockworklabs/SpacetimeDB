@@ -48,6 +48,18 @@ var conn = DbConnection.Builder()
 
 Compression options are `Compression.Brotli`, `Compression.Gzip`, and `Compression.None`. The SDK uses Brotli when `WithCompression` is omitted.
 
+## Automatic Reconnect and Token Refresh
+
+Automatic reconnect is opt-in: add `.WithAutomaticReconnect()` to the builder. Initial connection failures do not retry. After an established connection is lost, the SDK retries with exponential backoff and jitter, capped at 30 seconds. `Disconnect()` permanently stops recovery.
+
+Keep calling `FrameTick()` while `IsActive` is false. `IsReconnecting` is true while recovering before the next handshake. Use `.OnDisconnect((conn, error, next) => ...)` and `.OnConnectError((error, next) => ...)` to inspect `NextReconnect?`: a non-null value provides `Attempt` and `Delay`; null means no retry is scheduled. Existing callback overloads still work.
+
+`OnConnect` runs on every successful reconnect, so create the subscription in the example above only on the first connection, or move it after `Build()`. Register row callbacks once as well. The same connection, identity, table handles, and subscriptions survive; each attempt gets a fresh `ConnectionId`. Cached rows stay readable but stale during outages. The SDK replays subscriptions in one batch and emits only net row changes. Subscription `OnApplied` runs again after replay; use it to mark data ready, not for repeated one-time setup.
+
+For expiring credentials, combine `.WithToken(initialToken)` with `.WithTokenProvider(() => RefreshTokenAsync())`, where your provider returns `Task<string>` for the same identity. The provider is not called for the initial connection. Before retries, it is called when remaining validity is at most 30 seconds or 5% of the token lifetime, whichever is greater, when expiry cannot be read, or after a reused token is rejected. Provider failures retry; rejection of a freshly provided token is terminal. No periodic refresh runs while connected. Disconnecting ignores a pending provider result but does not cancel the provider's own work.
+
+Calls made while disconnected fail immediately. Pending reducer calls receive `Status.UnknownResult`; pending procedures and one-off queries fail with `UnknownResultException`. These calls may already have executed and are never replayed. Regenerate bindings so unhandled unknown reducer outcomes reach `OnUnhandledReducerError`.
+
 ## Event Loop (Critical)
 
 **`FrameTick()` must be called in your main loop.** The SDK queues all network messages and only processes them when you call `FrameTick()`. Without it, no callbacks fire.
@@ -153,6 +165,8 @@ conn.Reducers.OnSendMessage += (ReducerEventContext ctx, string text) =>
         Console.WriteLine($"Message sent: {text}");
     else if (ctx.Event.Status is Status.Failed(var reason))
         Console.Error.WriteLine($"Send failed: {reason}");
+    else if (ctx.Event.Status is Status.UnknownResult)
+        Console.Error.WriteLine("Connection lost before the result arrived; the message may have been sent.");
 };
 ```
 

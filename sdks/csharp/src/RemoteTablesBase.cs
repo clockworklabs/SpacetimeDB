@@ -11,6 +11,8 @@ namespace SpacetimeDB
             tables.Add(table.RemoteTableName, table);
         }
 
+        internal IEnumerable<IRemoteTableHandle> AllTables => tables.Values;
+
         internal IRemoteTableHandle? GetTable(string name)
         {
             if (tables.TryGetValue(name, out var table))
