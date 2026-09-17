@@ -1298,7 +1298,7 @@ test('failed dispatch drains and records already active attempts before returnin
 });
 
 
-test('capacity wait retries while an existing attempt is active and wakes on cancellation', async () => {
+test('capacity wait retries while an existing attempt is active and wakes on cancellation', { timeout: 30_000 }, async t => {
   const { CampaignResourceUnavailable } = await import('../src/campaigns/campaign-admission.js');
   const root = mkdtempSync(join(tmpdir(), 'campaign-active-capacity-wait-'));
   try {
@@ -1310,11 +1310,10 @@ test('capacity wait retries while an existing attempt is active and wakes on can
       const controller = new AbortController();
       let releaseFirst!: () => void;
       const first = new Promise<void>(resolve => { releaseFirst = resolve; });
-      const deadline = setTimeout(releaseFirst, 5000);
       let admissions = 0, started = 0, waits = 0;
       try {
         const state = await executeCampaign(path, join(root, cancel ? 'cancel' : 'resume'), {
-          mode: 'model-free-trial', capacityPolicy: 'wait', signal: controller.signal,
+          mode: 'model-free-trial', capacityPolicy: 'wait', signal: AbortSignal.any([controller.signal, t.signal]),
           admit: (_plan, _directory, options) => {
             admissions++;
             if (admissions === 2) throw new CampaignResourceUnavailable('another campaign owns the slot');
@@ -1338,7 +1337,7 @@ test('capacity wait retries while an existing attempt is active and wakes on can
         assert.equal(started, cancel ? 1 : 2);
         assert.equal(state.summary.running, 0);
         assert.equal(state.summary.executions, started);
-      } finally { clearTimeout(deadline); releaseFirst(); }
+      } finally { releaseFirst(); }
     }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
