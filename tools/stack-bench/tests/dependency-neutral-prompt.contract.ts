@@ -229,6 +229,14 @@ test('neutral dependency prompts include only selected product and stack contrac
         assert.match(request, /Startup must work with an empty database by creating the supplied starting data and accounts/);
         assert.match(request, /On an existing database, preserve current quantities, prices, and user data/);
         assert.match(request, /This applies after upgrades and repairs too/);
+        // Direct level requests disclose it with purchasing/checkout. Campaigns retain prior contracts separately.
+        assert.equal(request.split('# Order data interface').length - 1, level === 2 || level === 3 ? 1 : 0,
+          `${stack} L${level} order data contract`);
+        if (level === 2 || level === 3) {
+          assert.match(request, /database-native views over the\s+application's current records are allowed/);
+          assert.match(request, /When carts are available/);
+          assert.match(request, /When warehouse stock is available/);
+        }
       }
       if (level === 2) {
         assert.match(prompt, /Use `profile-address-summary` to display\s+the saved address in the profile view/);

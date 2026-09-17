@@ -34,6 +34,12 @@
     ],
     "contracts": [
       {
+        "id": "ecommerce.orders.data",
+        "path": "contracts/order-data.md",
+        "order": 2315,
+        "modes": ["fresh", "upgrade"]
+      },
+      {
         "id": "ecommerce.feature.checkout.hooks",
         "path": "contracts/checkout.md",
         "order": 2310,

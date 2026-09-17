@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { describesMissingStockInterface, stockInterfaceError, stockQuantity } from '../stock-interface.js';
 import { checkoutStateSchema, verifyCheckoutSchema } from '../checkout-state.js';
+import { ORDER_DATA_COLUMNS, orderDataError, readOrderDataSnapshot } from '../order-data.js';
 
 
 import { assertLeasedContainer } from '../backend-reset-guard.js';
@@ -49,9 +50,29 @@ WHERE stock.item_id = item.id AND stock.warehouse_id = warehouse.id
   AND (SELECT valid FROM stock_interface);
 `;
 
-export function getPostgresCheckoutState({ account, item, app, lease, exec = execFileSync }: {
-  account: string; item: string; app: string; lease: LeasedDatabase; exec?: TextCommandExecutor;
+export function getPostgresCheckoutState({ account, item, app, lease, storage, exec = execFileSync }: {
+  account: string; item: string; app: string; lease: LeasedDatabase; storage?: 'order-data'; exec?: TextCommandExecutor;
 }) {
+  if (storage === 'order-data') {
+    const container = assertLeasedContainer(lease.resources.container, exec, WRITE_TIMEOUT_MS, 'order data read');
+    // A single statement observes every table at one MVCC snapshot. Cast ids before JSON to retain bigint precision.
+    const tables = Object.entries(ORDER_DATA_COLUMNS).map(([table, columns]) => `'${table}',
+      COALESCE((SELECT json_agg(row) FROM (SELECT ${columns.map(column =>
+        column === 'id' || column.endsWith('_id') ? `${column}::text AS ${column}` : column).join(',')}
+        FROM public.${table}) row), '[]'::json)`);
+    let output: string;
+    try {
+      output = exec('docker', ['exec', '-i', container, 'psql', '-U', POSTGRES_USER, '-d', lease.resources.database,
+        '-v', 'ON_ERROR_STOP=1', '-At'], { encoding: 'utf8', input: `SELECT json_build_object(${tables.join(',')})::text;`,
+        stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
+    } catch (error) {
+      if (describesMissingStockInterface(streams(error, 'stdout', 'stderr', 'message'))) {
+        throw orderDataError('required order data table or column is missing', error);
+      }
+      throw error;
+    }
+    return readOrderDataSnapshot(JSON.parse(output.trim()), account, item);
+  }
   const schemaSha256 = verifyCheckoutSchema('postgres', app, ['server/src/schema.ts']);
   const container = assertLeasedContainer(lease.resources.container, exec, WRITE_TIMEOUT_MS, 'checkout state read');
   // One statement gives a consistent read of all effects. No app code or HTTP

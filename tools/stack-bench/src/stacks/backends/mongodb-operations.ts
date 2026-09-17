@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { stockInterfaceError, stockQuantity } from '../stock-interface.js';
 import { checkoutId, checkoutMinor, checkoutStateSchema, verifyCheckoutSchema } from '../checkout-state.js';
+import { ORDER_DATA_COLUMNS, orderDataError, readOrderDataSnapshot } from '../order-data.js';
 
 import { assertLeasedContainer } from '../backend-reset-guard.js';
 import type { LeasedDatabase } from '../backend-reset-guard.js';
@@ -25,9 +26,45 @@ const record = (value: unknown): value is Record<string, unknown> =>
 const streams = (error: unknown, ...keys: readonly string[]): string =>
   record(error) ? keys.map(key => String(error[key] ?? '')).join('') : '';
 
-export function getMongoDbCheckoutState({ account, item, app, lease, exec = execFileSync }: {
-  account: string; item: string; app: string; lease: LeasedDatabase; exec?: TextCommandExecutor;
+export function getMongoDbCheckoutState({ account, item, app, lease, storage, exec = execFileSync }: {
+  account: string; item: string; app: string; lease: LeasedDatabase; storage?: 'order-data'; exec?: TextCommandExecutor;
 }) {
+  if (storage === 'order-data') {
+    const container = assertLeasedContainer(lease.resources.container, exec, WRITE_TIMEOUT_MS, 'order data read');
+    const script = `
+      const columns=${JSON.stringify(ORDER_DATA_COLUMNS)};
+      const session=db.getMongo().startSession();
+      const store=session.getDatabase(db.getName());
+      try {
+        const names=db.getCollectionNames(), result={};
+        session.startTransaction({readConcern:{level:'snapshot'}});
+        for (const [table, fields] of Object.entries(columns)) {
+          if (!names.includes(table)) throw new Error('ORDER_DATA_MISSING:'+table);
+          result[table]=store.getCollection(table).find({}).toArray().map(row=>Object.fromEntries(fields.map(field=>{
+            let value=field==='id' ? row.id ?? row._id : row[field];
+            if (value && value._bsontype) {
+              value=value.toString();
+              if (field==='quantity') value=Number(value);
+            }
+            return [field,value];
+          })));
+        }
+        session.commitTransaction();
+        print(JSON.stringify(result));
+      } finally { session.endSession(); }
+    `;
+    let output: string;
+    try {
+      output = exec('docker', ['exec', container, ...mongoShell(lease), '--quiet', '--eval', script],
+        { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
+    } catch (error) {
+      if (/ORDER_DATA_MISSING:/.test(streams(error, 'stdout', 'stderr', 'message'))) {
+        throw orderDataError('required order data collection is missing', error);
+      }
+      throw error;
+    }
+    return readOrderDataSnapshot(JSON.parse(output.trim()), account, item);
+  }
   const schemaSha256 = verifyCheckoutSchema('mongodb', app, ['server/src/models.ts', 'server/src/progression-models.ts']);
   const container = assertLeasedContainer(lease.resources.container, exec, WRITE_TIMEOUT_MS, 'checkout state read');
   const script = `

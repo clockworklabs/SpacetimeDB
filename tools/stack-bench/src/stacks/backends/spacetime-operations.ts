@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { describesMissingStockInterface, stockInterfaceError, stockQuantity } from '../stock-interface.js';
 import { checkoutId, checkoutMinor, checkoutStateSchema, verifyCheckoutSchema } from '../checkout-state.js';
+import { ORDER_DATA_COLUMNS, orderDataError, readOrderDataSnapshot } from '../order-data.js';
 import { assertLeasedContainer } from '../backend-reset-guard.js';
 
 import { leasedSpacetimeTarget } from '../../runtime/spacetime-target.js';
@@ -226,10 +227,48 @@ export function getSpacetimeStock({ item, warehouse, spacetime, exec = execFileS
   return { backend: 'spacetime', item, ...(warehouse === undefined ? {} : { warehouse }), quantity };
 }
 
-export function getSpacetimeCheckoutState({ account, item, app, spacetime, exec = execFileSync }: {
-  account: string; item: string; app: string; exec?: TextCommandExecutor;
+export function getSpacetimeCheckoutState({ account, item, app, spacetime, storage, exec = execFileSync }: {
+  account: string; item: string; app: string; storage?: 'order-data'; exec?: TextCommandExecutor;
   spacetime?: { buildContainer?: { id: string; name: string } | null; mod: string; containerUri: string };
 }) {
+  if (storage === 'order-data') {
+    if (!spacetime?.buildContainer) throw new Error('SpacetimeDB build container is unavailable for order data');
+    const container = assertLeasedContainer(spacetime.buildContainer, exec, WRITE_TIMEOUT_MS, 'order data read');
+    const tables = Object.keys(ORDER_DATA_COLUMNS);
+    let output: string;
+    try {
+      output = exec('docker', [...agentExec(), container,
+        ...codingContainerAgentCommand(CODING_CONTAINER_SPACETIME_CLI, ['subscribe', spacetime.mod,
+          '-s', spacetime.containerUri, '--print-initial-update', '--num-updates', '0', '--timeout', '30',
+          ...tables.map(table => `SELECT * FROM ${table}`)])],
+        { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
+    } catch (error) {
+      if (describesMissingStockInterface(streams(error, 'stdout', 'stderr', 'message'))) {
+        throw orderDataError('required order data table is absent or unreadable', error);
+      }
+      throw error;
+    }
+    const snapshot: unknown = JSON.parse(output.trim(), (key: string, value: unknown, context?: { source?: string }) => {
+      if ((key === 'id' || key.endsWith('_id')) && typeof value === 'number' && !Number.isSafeInteger(value)) {
+        // The native CLI emits u64 ids as JSON numbers. Recover the original token, not its rounded JS value.
+        if (!context?.source || !/^\d+$/.test(context.source)) throw new Error('native order snapshot cannot preserve an exact identifier');
+        return context.source;
+      }
+      return value;
+    });
+    if (!record(snapshot) || Object.keys(snapshot).some(key => !tables.includes(key))) {
+      throw new Error('order subscription returned an invalid snapshot');
+    }
+    const rows = Object.fromEntries(tables.map(table => {
+      const value = snapshot[table];
+      if (value === undefined) return [table, []]; // Native initial updates omit empty tables.
+      if (!record(value) || !Array.isArray(value.inserts) || !Array.isArray(value.deletes) || value.deletes.length) {
+        throw new Error('order subscription returned an invalid initial table');
+      }
+      return [table, value.inserts];
+    }));
+    return readOrderDataSnapshot(rows, account, item);
+  }
   const schemaSha256 = verifyCheckoutSchema('spacetime', app, ['backend/spacetimedb/src/schema.ts']);
   if (!spacetime?.buildContainer) throw new Error('SpacetimeDB build container is unavailable for checkout snapshot');
   const container = assertLeasedContainer(spacetime.buildContainer, exec, WRITE_TIMEOUT_MS, 'checkout state read');

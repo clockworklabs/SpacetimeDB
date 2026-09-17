@@ -48,6 +48,17 @@ function normalized(state: CheckoutState): CheckoutState {
 // buyer, not a durable request ID: reconcile per-buyer counts, not request identity.
 export function purchaseDifferences(before: CheckoutState, after: CheckoutState,
   accepted: ReadonlyMap<string, number>, restocked: ReadonlyMap<string, number>) {
+  return comparePurchases(before, after, accepted, restocked, true);
+}
+
+export function orderPurchaseDifferences(before: CheckoutState, after: CheckoutState,
+  accepted: ReadonlyMap<string, number>, restocked: ReadonlyMap<string, number>) {
+  for (const state of [before, after]) orderCheckoutStateSchema.parse(state);
+  return comparePurchases(before, after, accepted, restocked, false);
+}
+
+function comparePurchases(before: CheckoutState, after: CheckoutState,
+  accepted: ReadonlyMap<string, number>, restocked: ReadonlyMap<string, number>, requirePayment: boolean) {
   const differences: Array<{ control: string; observed: number; expected: number }> = [];
   const check = (control: string, observed: number, expected: number) => {
     if (observed !== expected) differences.push({ control, observed, expected });
@@ -66,6 +77,7 @@ export function purchaseDifferences(before: CheckoutState, after: CheckoutState,
   for (const order of orders) {
     check('purchase order status', Number(order.status === 'pending'), 1);
     check('purchase order total', order.totalMinor, before.priceMinor);
+    if (!requirePayment) check('purchase refunded amount', order.refundedMinor ?? -1, 0);
     check('purchase order line count', order.lines.length, 1);
     for (const line of order.lines) {
       check('purchase item', Number(line.itemId === before.itemId), 1);
@@ -80,7 +92,7 @@ export function purchaseDifferences(before: CheckoutState, after: CheckoutState,
       }
     }
     const paid = payments.filter(row => row.orderId === order.id);
-    check('purchase payment count per order', paid.length, 1);
+    if (requirePayment) check('purchase payment count per order', paid.length, 1);
     for (const payment of paid) {
       check('purchase payment amount', payment.amountMinor, before.priceMinor);
       check('purchase payment status', Number(payment.status === 'paid'), 1);
@@ -94,6 +106,7 @@ export function purchaseDifferences(before: CheckoutState, after: CheckoutState,
   }
   for (const state of [before, after]) {
     check('purchase orphan order lines', state.orphanOrderLines, 0);
+    if (state.orphanAllocations !== undefined) check('purchase orphan allocations', state.orphanAllocations, 0);
     check('purchase negative stock', state.stock.filter(row => row.quantity < 0).length, 0);
     check('purchase duplicate warehouse', state.stock.length - new Set(state.stock.map(row => row.warehouseId)).size, 0);
     check('purchase duplicate order', state.orders.length - new Set(state.orders.map(row => row.id)).size, 0);
@@ -248,6 +261,22 @@ function compareCheckout(before: CheckoutState, prepared: CheckoutState, after: 
 // Other storage conventions need a verified mapping before this can score them.
 export function cancellationDifferences(before: CheckoutState, after: CheckoutState):
   Array<{ control: string; observed: number; expected: number }> {
+  return compareCancellation(before, after, false);
+}
+
+export function orderCancellationDifferences(before: CheckoutState, after: CheckoutState) {
+  for (const state of [before, after]) orderCheckoutStateSchema.parse(state);
+  const differences = compareCancellation(before, after, true);
+  for (const state of [before, after]) {
+    for (const key of ['orphanOrderLines', 'orphanAllocations'] as const) {
+      if (state[key] !== 0) differences.push({ control: `cancellation ${key}`, observed: state[key]!, expected: 0 });
+    }
+  }
+  return differences;
+}
+
+function compareCancellation(before: CheckoutState, after: CheckoutState, refund: boolean):
+  Array<{ control: string; observed: number; expected: number }> {
   const orders = before.orders.filter(order => order.accountId === before.accountId);
   const order = orders[0];
   if (orders.length !== 1 || !order || order.status !== 'pending' || !order.lines.length
@@ -258,7 +287,9 @@ export function cancellationDifferences(before: CheckoutState, after: CheckoutSt
     throw new Error('cancellation diagnostic requires one pending single-product order with verified allocations');
   }
   const expected = structuredClone(before);
-  expected.orders.find(row => row.id === order.id)!.status = 'cancelled';
+  const cancelled = expected.orders.find(row => row.id === order.id)!;
+  cancelled.status = 'cancelled';
+  if (refund) cancelled.refundedMinor = cancelled.totalMinor;
   for (const stock of expected.stock) {
     for (const allocation of order.lines.flatMap(line => line.allocations)) {
       if (allocation.warehouseId === stock.warehouseId) stock.quantity = integer.parse(stock.quantity + allocation.quantity);

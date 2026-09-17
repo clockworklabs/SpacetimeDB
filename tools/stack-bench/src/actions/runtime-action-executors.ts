@@ -2,7 +2,8 @@ import { execFileSync } from 'node:child_process';
 
 import { ActionApplicationFailure, ActionInconclusive, actionImplementation } from './action-contract.js';
 import { finding, isFinding, renderFinding } from './action-findings.js';
-import { checkoutDifferences, orderCheckoutDifferences, cancellationDifferences, purchaseDifferences, checkoutId } from '../stacks/checkout-state.js';
+import { checkoutDifferences, orderCheckoutDifferences, cancellationDifferences, orderCancellationDifferences,
+  purchaseDifferences, orderPurchaseDifferences, checkoutId } from '../stacks/checkout-state.js';
 import { getSavedPostgresCheckoutState } from '../stacks/backends/saved-postgres-checkout.js';
 import { getSavedMongoDbCheckoutState } from '../stacks/backends/saved-mongodb-checkout.js';
 import { getSavedSpacetimeCheckoutState } from '../stacks/backends/saved-spacetime-checkout.js';
@@ -94,7 +95,7 @@ interface LifecycleConcurrencyCapabilities {
   readonly 'database-read': {
     getStock(input: { item: string; warehouse?: string }):
       { quantity: number } | Promise<{ quantity: number }>;
-    getCheckoutState(input: { account: string; item: string }): CheckoutSnapshot;
+    getCheckoutState(input: { account: string; item: string; storage?: 'order-data' }): CheckoutSnapshot;
     readonly checkoutSnapshots: Map<string, CheckoutSnapshot & { account: string; item: string }>;
   };
   readonly 'browser-observation': {
@@ -107,6 +108,7 @@ interface CheckoutSnapshot {
   readonly schemaSha256: Record<string, string>;
   readonly recordedAtMs?: number;
   readonly scope?: 'orders';
+  readonly storage?: 'order-data';
 }
 
 interface ActionArguments<Input> {
@@ -187,7 +189,7 @@ async function dbRecordStock({ input, capabilities }: ActionArguments<ReadStockI
   return { ...value, key: input.as };
 }
 
-async function dbRecordCheckout({ input, capabilities }: ActionArguments<{ account: string; item: string; as: string }>) {
+async function dbRecordCheckout({ input, capabilities }: ActionArguments<{ account: string; item: string; as: string; storage?: 'order-data' }>) {
   const database = capabilities['database-read'];
   const snapshot = { ...database.getCheckoutState(input), recordedAtMs: Date.now() };
   if (!snapshot.state.stock.length) inconclusive('invalid-input', { detail: 'checkout setup requires known stock warehouses' });
@@ -220,12 +222,14 @@ async function dbExpectCancellation({ input, capabilities }: ActionArguments<{ b
   const database = capabilities['database-read'];
   const before = database.checkoutSnapshots.get(input.before);
   if (!before) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
-  if (before.scope === 'orders') inconclusive('invalid-input', { detail: 'saved order cancellation has no qualified mapping' });
+  if (before.scope === 'orders' && before.storage !== 'order-data') inconclusive('invalid-input', { detail: 'saved order cancellation has no qualified mapping' });
   const after = database.getCheckoutState(before);
   if (JSON.stringify(before.schemaSha256) !== JSON.stringify(after.schemaSha256)) {
     throw new Error('checkout reader schema changed during cancellation');
   }
-  const differences = cancellationDifferences(before.state, after.state);
+  if (before.scope !== after.scope) throw new Error('checkout scope changed during cancellation');
+  const compare = before.scope === 'orders' ? orderCancellationDifferences : cancellationDifferences;
+  const differences = compare(before.state, after.state);
   const observation = { ...after, differences, before: input.before };
   if (differences[0]) {
     const { control, observed, expected } = differences[0];
@@ -247,7 +251,7 @@ async function dbExpectPurchases({ input, capabilities }: ActionArguments<{
   const snapshots = Object.entries(input.before).map(([actor, key]) => {
     const before = database.checkoutSnapshots.get(key);
     if (!before) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
-    if (before.scope === 'orders') inconclusive('invalid-input', { detail: 'saved direct-purchase histories have no qualified mapping' });
+    if (before.scope === 'orders' && before.storage !== 'order-data') inconclusive('invalid-input', { detail: 'saved direct-purchase histories have no qualified mapping' });
     return { actor, before };
   });
   const accepted = new Map(snapshots.map(({ before }) => [before.state.accountId, 0]));
@@ -274,7 +278,9 @@ async function dbExpectPurchases({ input, capabilities }: ActionArguments<{
   const after = snapshots.map(({ actor, before }) => {
     const value = database.getCheckoutState(before);
     if (JSON.stringify(value.schemaSha256) !== JSON.stringify(before.schemaSha256)) throw new Error('purchase reader schema changed');
-    differences.push(...purchaseDifferences(before.state, value.state, accepted, restocked));
+    if (value.scope !== before.scope) throw new Error('checkout scope changed during purchase');
+    const compare = before.scope === 'orders' ? orderPurchaseDifferences : purchaseDifferences;
+    differences.push(...compare(before.state, value.state, accepted, restocked));
     return { actor, ...value };
   });
   const observation = { before: input.before, after, differences, history };
@@ -313,6 +319,7 @@ async function dbExpectStock({ input, capabilities, signal }: ActionArguments<Re
 }
 
 interface ProcessErrorShape {
+  readonly orderDataInterface?: unknown;
   readonly name?: unknown;
   readonly classification?: unknown;
   readonly code?: unknown;
@@ -644,22 +651,30 @@ export function createDatabaseReadCapability({ backend, spacetime, databaseLease
     // A client disconnect cannot stop an HTTP handler retrying after a DB crash.
     // This grade cannot safely compare later global state; reset in a new grade.
     markCheckoutUnsettled() { checkoutActivity.unsettled = true; },
-    getCheckoutState(input: { account: string; item: string }): CheckoutSnapshot {
+    getCheckoutState(input: { account: string; item: string; storage?: 'order-data' }): CheckoutSnapshot {
       requireSettled();
       if (skip) throw new Error('checkout state reads are disabled for this control');
       if (!app) throw new Error('checkout state reads require a verified application source directory');
       const adapter = backend ? STACK_ADAPTER_REGISTRY.get(backend) : undefined;
       if (!adapter || !('databaseRead' in adapter)) inconclusive('unsupported-backend', { backend: backend ?? '<unset>' });
-      const selection = { account: expand(input.account), item: expand(input.item), app, exec };
+      const selection = { account: expand(input.account), item: expand(input.item), app, exec, storage: input.storage };
       if (savedReader) {
+        if (input.storage) throw new Error('saved schema mapping cannot replace the declared order data interface');
         if (backend === 'spacetime') return getSavedSpacetimeCheckoutState({ ...selection, reader: savedReader, spacetime: spacetime ?? undefined });
         if (!databaseLease) throw new Error('saved order reader requires an authenticated backend lease');
         const read = backend === 'postgres' ? getSavedPostgresCheckoutState : getSavedMongoDbCheckoutState;
         return read({ ...selection, reader: savedReader, lease: databaseLease });
       }
-      if (adapter.id === 'spacetime') return adapter.databaseRead.getCheckoutState({ ...selection, spacetime: spacetime ?? undefined });
-      if (!databaseLease) throw new Error('checkout state reads require an authenticated backend lease');
-      return adapter.databaseRead.getCheckoutState({ ...selection, lease: databaseLease });
+      try {
+        if (adapter.id === 'spacetime') return adapter.databaseRead.getCheckoutState({ ...selection, spacetime: spacetime ?? undefined });
+        if (!databaseLease) throw new Error('checkout state reads require an authenticated backend lease');
+        return adapter.databaseRead.getCheckoutState({ ...selection, lease: databaseLease });
+      } catch (error) {
+        if (errorShape(error).orderDataInterface === true) {
+          fail('interface-invalid', { action: 'read orders', attribute: 'order data', detail: databaseWriteFailureDetail(error) });
+        }
+        throw error;
+      }
     },
     getStock(input: { item: string; warehouse?: string }) {
       requireSettled();

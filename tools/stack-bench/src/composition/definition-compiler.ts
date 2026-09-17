@@ -156,7 +156,8 @@ export const ACTION_DEFINITIONS = Object.freeze({
     target: value => value === 'application' || value === 'database' }, { namedAction: object }),
   confirmCheckout: fields({ actor: nonEmptyString }, { namedAction: object }),
   dbRecordStock: fields({ item: nonEmptyString, as: nonEmptyString }, { warehouse: nonEmptyString }),
-  dbRecordCheckout: fields({ account: nonEmptyString, item: nonEmptyString, as: nonEmptyString }),
+  dbRecordCheckout: fields({ account: nonEmptyString, item: nonEmptyString, as: nonEmptyString },
+    { storage: value => value === 'order-data' }),
   dbExpectCheckout: fields({ before: nonEmptyString, prepared: nonEmptyString, quantity: positiveInteger }),
   dbExpectCancellation: fields({ before: nonEmptyString }),
   dbExpectPurchases: fields({ before: value => object(value) && Object.keys(value).length > 0
