@@ -2654,6 +2654,36 @@
           "replace": "export const onDisconnect = spacetimedb.clientDisconnected((ctx) => { for (const order of ctx.db.customerOrder.iter()) if ([...ctx.db.cartItem.iter()].some(row => row.accountId === order.accountId)) ctx.db.customerOrder.id.update({ ...order, total: 0 }); });"
         }
       ]
+    },
+    {
+      "id": "review-script-unsafe-render",
+      "scenario": "tracks/ecommerce/scenarios/progression-review-script.json",
+      "targets": [
+        "ecommerce.progression.review-access-specifications.stored-review-script.9180a"
+      ],
+      "desc": "Render stored review text as HTML so it executes in another customer session.",
+      "file": "client/src/components/ItemDetail.tsx",
+      "edits": [
+        {
+          "find": "<div>{r.comment}</div>",
+          "replace": "<div dangerouslySetInnerHTML={{ __html: r.comment }} />"
+        }
+      ]
+    },
+    {
+      "id": "review-script-reject-all",
+      "scenario": "tracks/ecommerce/scenarios/progression-review-script.json",
+      "targets": [
+        "ecommerce.progression.review-access-specifications.stored-review-script.9180a"
+      ],
+      "desc": "Reject all nonempty reviews, including the required benign review; absence of script is insufficient.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "(ctx, { itemId, rating, comment }) => {",
+          "replace": "(ctx, { itemId, rating, comment }) => {\n    if (comment.length > 0) throw new SenderError(\"Review rejected\");"
+        }
+      ]
     }
   ]
 }

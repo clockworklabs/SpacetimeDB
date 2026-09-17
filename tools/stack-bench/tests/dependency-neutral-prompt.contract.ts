@@ -227,6 +227,7 @@ test('neutral dependency prompts include only selected product and stack contrac
       const repair = renderPrompt({ level, stack, task: selected.agent.request, guidance, repair: true });
       for (const request of [prompt, repair]) {
         assert.doesNotMatch(request, /an interrupted checkout leaves|earlier orders remain recorded correctly/);
+        assert.doesNotMatch(request, /__stackBenchScriptCanary|Stored review marker|stored-review-script/);
         assert.match(request, /Startup must work with an empty database by creating the supplied starting data and accounts/);
         assert.match(request, /On an existing database, preserve current quantities, prices, and user data/);
         assert.match(request, /This applies after upgrades and repairs too/);

@@ -7,9 +7,9 @@
   "recipe": {
     "path": "../recipes/progression-catalog.json",
     "id": "ecommerce.progression-catalog",
-    "meaningSha256": "1d99689e149af37edf3f395ba36044ca5d35f0e69d92be90303a58104db8b19f",
-    "executionSha256": "c9d84555e5722857a3c698da3e67e46f03c7cfc7cd50fb643ccd1571403bb9ec",
-    "contentSha256": "add0647be965132c0b9702c5db3ba8265a01b0edc8ca5d820cc152e4ceeb5a89"
+    "meaningSha256": "9724c6dc245ca2cc7d19c9f17938c6edcf3a0234ffbf84b4a48bc8f627aa9337",
+    "executionSha256": "0012e15ab072cb76cee577540c90930a38ed4cac1738dc924fd286026414056f",
+    "contentSha256": "92878786dd4e1fdb3f21b3d25593ce1d69ff7f3d010380fed463a5fb9ea00a39"
   },
   "fixture": {
     "id": "ecommerce.operations",
@@ -39,19 +39,19 @@
     {
       "backend": "mongodb",
       "path": "grader/mutations/mongodb-ecommerce.json",
-      "sha256": "a84e4d7d63d58ec9e1da167f7f96d80eb55af3b08a9d090543895437d6a9cf1c",
+      "sha256": "90ae4b351ef5e7b06435c1c99f8df96fb850ccad338eeba4e68910560845d875",
       "referenceId": "ecommerce-reference-mongodb"
     },
     {
       "backend": "postgres",
       "path": "grader/mutations/postgres-ecommerce.json",
-      "sha256": "9cb8fa5b0f6ac8c59725474d85ef6e64d6355625f905d8762010a98e2d45b39e",
+      "sha256": "ead84228c726f2b69d80de5c7bad2e96757a16b9540874fd291de8ddb7542c75",
       "referenceId": "ecommerce-reference-postgres"
     },
     {
       "backend": "spacetime",
       "path": "grader/mutations/spacetime-ecommerce.json",
-      "sha256": "61edb7ec5ad5059a094e9d8718ede1a29e712ed479977ded513595738ee0ea03",
+      "sha256": "158212f01a8b0bfd29976eed0361855bcb1ffbd71f00e4bb22707695098efcba",
       "referenceId": "ecommerce-reference-spacetime"
     }
   ],
@@ -110,6 +110,7 @@
       "ecommerce.progression.notification-preferences.notification-preferences.630c",
       "ecommerce.progression.promotion-rules.promotion-rule-values.620a",
       "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a",
+      "ecommerce.progression.review-access-specifications.stored-review-script.9180a",
       "ecommerce.progression.staff-access.staff-access.601a",
       "ecommerce.progression.staff-roles.staff-roles.621c",
       "ecommerce.progression.stock-alerts.stock-alert-delivery.631c",
@@ -166,6 +167,8 @@
       "ecommerce.spec.state-durability.account-state-recovery.105a",
       "ecommerce.spec.state-durability.account-state-recovery.105b",
       "ecommerce.spec.state-durability.cart-reload.4b",
+      "ecommerce.spec.state-durability.checkout-crash-durability.910b",
+      "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
       "ecommerce.spec.state-durability.customer-profile-reload.620a",
       "ecommerce.spec.state-durability.notification-preferences-reload.630a",
       "ecommerce.spec.state-durability.session-reload.1e",
@@ -176,9 +179,7 @@
       "ecommerce.spec.transactional-integrity.server-price.104a",
       "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a",
       "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c",
-      "ecommerce.spec.transactional-integrity.unique-review.6b",
-      "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
-      "ecommerce.spec.state-durability.checkout-crash-durability.910b"
+      "ecommerce.spec.transactional-integrity.unique-review.6b"
     ],
     "runner": {
       "schemaVersion": 1,
@@ -191,59 +192,10 @@
       "postgres",
       "spacetime"
     ],
-    "evidence": [
-      {
-        "kind": "mutation",
-        "stack": "mongodb",
-        "repetition": 1,
-        "path": "qualification-evidence/ecommerce-l3-78ccb6966/mongodb-mutation.json",
-        "sha256": "d9b0213175192e2811ac2d41a99a7156826cb6bf569cce8457eb4347af1925b3"
-      },
-      {
-        "kind": "reference",
-        "stack": "mongodb",
-        "repetition": 1,
-        "path": "qualification-evidence/ecommerce-l3-78ccb6966/mongodb-reference.json",
-        "sha256": "c636ebb19270a2605b16cafe720d4070a6a1af27486cbcf77a34270027f6a191"
-      },
-      {
-        "kind": "null",
-        "repetition": 1,
-        "path": "qualification-evidence/ecommerce-l3-78ccb6966/null.json",
-        "sha256": "96309b979ebd84e033d304a6575f5a65dfe6e53dd69663c32b9a6378fbfa5e3f"
-      },
-      {
-        "kind": "mutation",
-        "stack": "postgres",
-        "repetition": 1,
-        "path": "qualification-evidence/ecommerce-l3-78ccb6966/postgres-mutation.json",
-        "sha256": "ae477e9c5f822ca4485be037fb2662871dccc49bf1491f63a59868722f13f2f1"
-      },
-      {
-        "kind": "reference",
-        "stack": "postgres",
-        "repetition": 1,
-        "path": "qualification-evidence/ecommerce-l3-78ccb6966/postgres-reference.json",
-        "sha256": "989e885fb4240e634b150aeff06e24cd7fc906c8c84a3f402fcb850e1f3f0868"
-      },
-      {
-        "kind": "mutation",
-        "stack": "spacetime",
-        "repetition": 1,
-        "path": "qualification-evidence/ecommerce-l3-78ccb6966/spacetime-mutation.json",
-        "sha256": "21b14bc6ca4edfd0d979e0cc972702a88b604d0bf64cb48636fc5256390992b7"
-      },
-      {
-        "kind": "reference",
-        "stack": "spacetime",
-        "repetition": 1,
-        "path": "qualification-evidence/ecommerce-l3-78ccb6966/spacetime-reference.json",
-        "sha256": "c089e4d711a656950adc428bb184a66b4613fb309c97361ee2a1b0e414f54d3e"
-      }
-    ],
+    "evidence": [],
     "featureCatalog": {
       "path": "progression/ecommerce.json",
-      "contentSha256": "a8c0bf542ec57e0189b99cd3e70a9cea7373c2c83bf4867e11f2c76db329a087",
+      "contentSha256": "8671f7883c2e5a24474a546ef1517407cd9334258e1a7cfe91e292a9af1952f2",
       "id": "ecommerce.questlines"
     }
   },

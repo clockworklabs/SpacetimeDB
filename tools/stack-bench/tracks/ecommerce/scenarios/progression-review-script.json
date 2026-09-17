@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "track": "ecommerce",
   "level": 3,
-  "name": "Stored review script diagnostic",
-  "note": "Draft zero-point diagnostic, not selected by campaigns. Uses the declared real review write and a grader-owned browser binding. A separate eligible buyer must successfully store benign content and fresh readers must display it, preventing reject-all or blank-renderer false passes. The attack may be deliberately rejected or safely rendered. HTTP 5xx/unknown outcomes cannot pass. Observe one second after rendering; not comprehensive XSS coverage. Missing observer is unmeasured. Three-stack reference, unsafe-rendering and reject-all qualification is required before scoring.",
+  "name": "Stored review script safety",
+  "note": "A separate eligible buyer must store benign content and existing and fresh readers must display it. The attack may be rejected or safely displayed. Server errors and unknown outcomes cannot pass. The grader-owned browser binding records script execution outside the page. Observe one second after rendering; this is a bounded stored-review script check, not comprehensive XSS coverage. Missing observer is unmeasured.",
   "features": [{
     "id": 9180,
     "name": "Stored review content",
@@ -19,7 +19,7 @@
       {"do":"armScriptCanary","actor":"owner"}
     ],
     "criteria": [{
-      "id": "9180a", "category": "production", "points": 0,
+      "id": "9180a", "category": "production", "points": 1,
       "desc": "review input is rejected or displayed without executing script in another customer session",
       "steps": [
         {"do":"callAction","actor":"owner","action":"submitReview","namedAction":{"id":"submitReview","path":"/api/items/:id/reviews","method":"POST","reducer":"submit_review","args":[0,5,"Benign stored review"],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"},{"name":"rating","in":"body"},{"name":"comment","in":"body"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"settleMs":0},

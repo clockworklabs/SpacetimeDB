@@ -40,6 +40,21 @@ test('search ordering after purchases does not make purchasing a pagination prer
   assert.deepEqual(pagination.requiresFeatures ?? [], []);
 });
 
+test('stored review script safety belongs to reviews and requires successful product behavior', () => {
+  const pack = packs.get('ecommerce.progression.review-access-specifications')!;
+  const check = pack.checks.find(check => check.id === 'stored-review-script')!;
+  assert.equal(check.role, 'guarantee');
+  assert.deepEqual(check.requiresFeatures, ['ecommerce.feature.purchasing', 'ecommerce.feature.reviews']);
+  assert.deepEqual(definition.nodes.filter(node => node.gradingChecks.some(item =>
+    item.id === `${pack.id}.${check.id}.9180a`)).map(node => node.id), ['reviews']);
+  const feature = scenarioFeature(check, check.id).feature;
+  const steps = feature.criteria[0]!.steps;
+  assert(steps.some(step => step.do === 'expectActionOutcome' && step.actor === 'owner'
+    && step.outcome === 'accepted'), 'reject-all cannot pass');
+  assert.deepEqual(steps.filter(step => step.do === 'expectNoScriptExecution').map(step => step.actor),
+    ['owner', 'reader-fresh']);
+});
+
 test('shipping accounting is an unprompted production check owned only by fulfilment', () => {
   const pack = packs.get('ecommerce.progression.inventory-conservation-specifications')!;
   const check = pack.checks.find(check => check.id === 'shipping-accounting')!;

@@ -2565,6 +2565,36 @@
           "replace": "  await initializeProgressionSchema(pool);\n  await pool.query('UPDATE orders SET total=0');"
         }
       ]
+    },
+    {
+      "id": "review-script-unsafe-render",
+      "scenario": "tracks/ecommerce/scenarios/progression-review-script.json",
+      "targets": [
+        "ecommerce.progression.review-access-specifications.stored-review-script.9180a"
+      ],
+      "desc": "Render stored review text as HTML so it executes in another customer session.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "<div>{r.comment}</div>",
+          "replace": "<div dangerouslySetInnerHTML={{ __html: r.comment }} />"
+        }
+      ]
+    },
+    {
+      "id": "review-script-reject-all",
+      "scenario": "tracks/ecommerce/scenarios/progression-review-script.json",
+      "targets": [
+        "ecommerce.progression.review-access-specifications.stored-review-script.9180a"
+      ],
+      "desc": "Reject all nonempty reviews, including the required benign review; absence of script is insufficient.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "const { rating, comment } = req.body ?? {};",
+          "replace": "const { rating, comment } = req.body ?? {};\n    if (String(comment).length > 0) { res.status(400).json({ error: \"Review rejected\" }); return; }"
+        }
+      ]
     }
   ]
 }

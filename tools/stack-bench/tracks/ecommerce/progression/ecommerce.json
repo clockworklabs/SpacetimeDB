@@ -184,7 +184,8 @@
         "ecommerce.spec.access-control#review-eligibility",
         "ecommerce.spec.live-state#open-list",
         "ecommerce.spec.live-state#rating",
-        "ecommerce.spec.transactional-integrity#unique-review"
+        "ecommerce.spec.transactional-integrity#unique-review",
+        "ecommerce.progression.review-access-specifications#stored-review-script"
       ],
       "dependencies": [
         {
