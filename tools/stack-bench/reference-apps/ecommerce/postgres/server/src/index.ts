@@ -12,6 +12,7 @@ import { parse as parseCookie } from "cookie";
 import { Server as SocketIOServer } from "socket.io";
 import { sql, eq, and } from "drizzle-orm";
 import { db, pool, initializeCoreSchema } from "./db.js";
+import { initializeOrderData } from "./order-data.js";
 import { item, warehouse, stock, account, session, cart, cartItem, orders, orderItem, review } from "./schema.js";
 import { hashPassword, verifyPassword, newToken } from "./auth.js";
 import { seed } from "./seed.js";
@@ -1051,6 +1052,7 @@ async function main() {
   await initializeBundles(pool);
   await initializeCredit(pool);
   await initializeSubscriptions(pool);
+  await initializeOrderData(pool);
   await seed();
   httpServer.listen(PORT, () => {
     console.log(`PostgreSQL Shop server listening on port ${PORT}`);

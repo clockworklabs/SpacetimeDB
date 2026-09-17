@@ -1,13 +1,15 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
+import ts from 'typescript';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { getPostgresCheckoutState } from '../src/stacks/backends/postgres-operations.js';
 import { getMongoDbCheckoutState } from '../src/stacks/backends/mongodb-operations.js';
-import { checkoutDifferences } from '../src/stacks/checkout-state.js';
+import { checkoutDifferences, orderCancellationDifferences } from '../src/stacks/checkout-state.js';
 
 const enabled = process.env.STACK_BENCH_CHECKOUT_READ_DOCKER === '1';
 const docker = (args: string[], input?: string): string => execFileSync('docker', args,
@@ -43,17 +45,37 @@ for (const backend of ['postgres', 'mongodb'] as const) {
       run(postgres ? `
         CREATE TABLE account(id integer, username text);
         CREATE TABLE item(id integer, name text, price numeric);
+        CREATE TABLE warehouse(id integer);
         CREATE TABLE stock(item_id integer, warehouse_id integer, quantity integer);
         CREATE TABLE cart(id integer, account_id integer);
         CREATE TABLE cart_item(id integer, cart_id integer, item_id integer, quantity integer);
         CREATE TABLE cart_reservation_allocation(cart_item_id integer, warehouse_id integer, quantity integer);
-        CREATE TABLE orders(id integer, account_id integer, total numeric, status text, payment_amount numeric, payment_status text);
-        CREATE TABLE order_item(order_id integer, item_id integer, quantity integer, price numeric, warehouse_id integer);
+        CREATE TABLE orders(id integer, account_id integer, total numeric, status text, payment_amount numeric, payment_status text, refund_total numeric DEFAULT 0);
+        CREATE TABLE order_item(id integer DEFAULT 8, order_id integer, item_id integer, quantity integer, price numeric, warehouse_id integer);
         INSERT INTO account VALUES(1,'reader'); INSERT INTO item VALUES(2,'Keyboard',19.99);
-        INSERT INTO stock VALUES(2,3,10); INSERT INTO cart VALUES(4,1);`
-        : `for (const name of ['users','item','stock','carts','orders','progressionpayments']) db.createCollection(name);
+        INSERT INTO warehouse VALUES(3); INSERT INTO stock VALUES(2,3,10); INSERT INTO cart VALUES(4,1);`
+        : `for (const name of ['users','item','warehouse','stock','carts','orders','progressionpayments']) db.createCollection(name);
           db.users.insertOne({_id:'1',username:'reader'}); db.item.insertOne({_id:'2',name:'Keyboard',price:19.99});
+          db.warehouse.insertOne({_id:'3'});
           db.stock.insertOne({item_id:'2',warehouse_id:'3',quantity:10}); db.carts.insertOne({userId:'1',items:[]});`);
+      // Run the reference's actual view definitions against the native database.
+      // Only the driver is replaced with the container's CLI; no view behavior is mocked.
+      const source = readFileSync(join(STACK_BENCH_ROOT, 'reference-apps/ecommerce', backend, 'server/src/order-data.ts'), 'utf8');
+      const code = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.CommonJS } }).outputText;
+      const initialize = new Function('exports', `${code}; return exports.initializeOrderData;`)({});
+      const command = (value: unknown) => JSON.parse(run(`const r=db.runCommand(${JSON.stringify(value)}); if(!r.ok) throw Error(JSON.stringify(r)); print(JSON.stringify(r));`));
+      const connection = postgres ? { query: async (sql: string) => run(sql) } : { db: {
+        listCollections: () => ({ toArray: async () => command({ listCollections: 1, nameOnly: true }).cursor.firstBatch }),
+        command: async (value: unknown) => command(value),
+        createCollection: async (name: string, options: object) => command({ create: name, ...options }),
+      } };
+      await initialize(connection);
+      await initialize(connection); // Restart must keep the views readable without changing app data.
+      const readOrders = () => (postgres ? getPostgresCheckoutState : getMongoDbCheckoutState)({
+        account: 'reader', item: 'Keyboard', app: '/not-a-reference', lease, storage: 'order-data',
+      }).state;
+      assert.deepEqual(readOrders().orders, []);
       const read = () => (postgres ? getPostgresCheckoutState : getMongoDbCheckoutState)({
         account: 'reader', item: 'Keyboard', app: join(STACK_BENCH_ROOT, 'reference-apps/ecommerce', backend), lease,
       });
@@ -62,20 +84,28 @@ for (const backend of ['postgres', 'mongodb'] as const) {
         UPDATE stock SET quantity=9;` : `db.carts.updateOne({userId:'1'},{$set:{items:[{itemId:'2',quantity:1,reservedWarehouseIds:['3']}]}});
         db.stock.updateOne({item_id:'2'},{$set:{quantity:9}});`);
       const prepared = read();
-      run(postgres ? `INSERT INTO orders VALUES(6,1,19.99,'pending',19.99,'paid');
-        INSERT INTO order_item VALUES(6,2,1,19.99,3); DELETE FROM cart_item; DELETE FROM cart_reservation_allocation;`
-        : `db.orders.insertOne({_id:'6',userId:'1',total:19.99,status:'pending',items:[{itemId:'2',quantity:1,price:19.99,allocations:[{warehouseId:'3',quantity:1}]}]});
+      assert.deepEqual(readOrders().cart, [{ itemId: '2', quantity: 1 }]);
+      run(postgres ? `INSERT INTO orders VALUES(6,1,19.99,'pending',19.99,'paid',0);
+        INSERT INTO order_item VALUES(8,6,2,1,19.99,3); DELETE FROM cart_item; DELETE FROM cart_reservation_allocation;`
+        : `db.orders.insertOne({_id:'6',userId:'1',total:19.99,refundTotal:0,status:'pending',items:[{itemId:'2',quantity:1,price:19.99,allocations:[{warehouseId:'3',quantity:1}]}]});
           db.progressionpayments.insertOne({_id:'7',orderId:'6',amount:19.99,status:'paid'});
           db.carts.updateOne({userId:'1'},{$set:{items:[]}});`);
       const after = read();
       assert.deepEqual(checkoutDifferences(before.state, prepared.state, after.state, 1), []);
       assert.equal(after.state.orders[0]!.totalMinor, 1999);
+      const pending = readOrders();
+      assert.deepEqual(pending.orders, after.state.orders.map(order => ({ ...order, refundedMinor: 0 })));
+      run(postgres ? "UPDATE orders SET status='cancelled'; UPDATE stock SET quantity=10;"
+        : "db.orders.updateOne({},{$set:{status:'cancelled'}}); db.stock.updateOne({},{$set:{quantity:10}});");
+      assert.deepEqual(orderCancellationDifferences(pending, readOrders()), []);
+      run(postgres ? "UPDATE orders SET status='pending'; UPDATE stock SET quantity=9;"
+        : "db.orders.updateOne({},{$set:{status:'pending'}}); db.stock.updateOne({},{$set:{quantity:9}});");
       run(postgres ? 'UPDATE orders SET payment_amount=0;' : 'db.progressionpayments.updateOne({},{$set:{amount:0}});');
       assert(checkoutDifferences(before.state, prepared.state, read().state, 1).some(row => row.control.includes('payment')));
       run(postgres ? 'UPDATE stock SET warehouse_id=NULL;' : 'db.stock.updateOne({},{$unset:{warehouse_id:1}});');
       assert.throws(read, 'missing identifiers must not become string placeholders');
       run(postgres ? 'UPDATE stock SET warehouse_id=3;' : "db.stock.updateOne({},{$set:{warehouse_id:'3'}});");
-      run(postgres ? 'DROP TABLE order_item;' : 'db.orders.drop();');
+      run(postgres ? 'DROP TABLE order_item CASCADE;' : 'db.orders.drop();');
       assert.throws(read);
     } finally { docker(['rm', '-f', id]); }
   });

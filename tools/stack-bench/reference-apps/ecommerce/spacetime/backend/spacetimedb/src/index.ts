@@ -50,6 +50,7 @@ import {
 import { createSubscription, changeSubscription, processSubscriptions } from './subscriptions';
 
 export { default } from './schema';
+export * from './order-data';
 
 type S = InferSchema<typeof spacetimedb>;
 type Ctx = ReducerCtx<S>;
@@ -362,6 +363,7 @@ const CATALOGUE: Array<[string, number, number, number, string]> = [
 ];
 
 export const init = spacetimedb.init((ctx) => {
+  ctx.db.orderDataReader.insert({ identity: ctx.sender });
   const hasItems = [...ctx.db.item.iter()].length > 0;
 
   if (!hasItems) {

@@ -6,6 +6,7 @@ import cors from "cors";
 import http from "http";
 import { Server as SocketIOServer } from "socket.io";
 import mongoose, { Types } from "mongoose";
+import { initializeOrderData } from "./order-data.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { Item, Warehouse, Stock, User, Cart, Order, Review } from "./models.js";
@@ -1001,6 +1002,7 @@ async function main() {
   await mongoose.connect(DATABASE_URL);
   console.log("Connected to MongoDB");
   await seed();
+  await initializeOrderData(mongoose.connection);
   server.listen(PORT, () => {
     console.log(`API server listening on port ${PORT}`);
   });

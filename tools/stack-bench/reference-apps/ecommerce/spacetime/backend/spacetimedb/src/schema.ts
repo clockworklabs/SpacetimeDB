@@ -36,6 +36,8 @@ export const stock = table(
 
 // --- App-owned tables ---
 
+export const orderDataReader = table({ name: 'order_data_reader' }, { identity: t.identity().primaryKey() });
+
 export const account = table(
   { name: 'account' },
   {
@@ -411,6 +413,7 @@ export const creditEntry = table({ name: 'credit_entry', indexes: [{ accessor: '
 });
 
 const spacetimedb = schema({
+  orderDataReader,
   creditWallet,
   creditEntry,
   item,
