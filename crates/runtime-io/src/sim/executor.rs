@@ -173,6 +173,10 @@ impl<T> InFlight<T> {
     fn is_active(&self) -> bool {
         self.state.is_active()
     }
+
+    fn cancel(self) -> Cqe<T> {
+        self.sqe.cancel(self.user_data)
+    }
 }
 
 enum InFlightState {
@@ -509,18 +513,24 @@ impl<UserData> Executor<UserData> {
 
     /// Restart the executor, simulating a process crash.
     ///
-    /// Unlike [Self::crash], this will drive the currently executing operations
-    /// to completion. Submissions that were not yet scheduled are dropped. The
-    /// file state remains unchanged.
+    /// Unlike [Self::crash], this will allow the currently executing operations
+    /// to complete. It will, however, cancel all in-flight submissions, even if
+    /// they were partly completed.
+    ///
+    /// Submissions that were not yet scheduled are dropped. The file state
+    /// remains unchanged.
     ///
     /// Execution is subject to `faults`. If a fault evaluates to [Fault::Skip],
     /// that operation is dropped.
     ///
-    /// After this method returns, the completion queue is empty.
-    pub fn restart(&mut self, faults: &mut impl FaultInjector<UserData>) {
+    /// All outstanding [Cqe]s are fed to `complete`, including completions that
+    /// happen as part of the shutdown. The completion queue is empty after this
+    /// method returns.
+    pub fn restart(&mut self, faults: &mut impl FaultInjector<UserData>, mut complete: impl FnMut(Cqe<UserData>)) {
         self.submissions.clear();
-        let cq_overflow_orig = self.cq_overflow;
-        self.cq_overflow = OnCqOverflow::Drop;
+        self.cq_dropped = 0;
+
+        self.completed().for_each(&mut complete);
         while let Some(op) = self.executing.pop() {
             if let Some(in_flight) = self.in_flight.get(op.sqe.key())
                 && !in_flight.is_active()
@@ -528,11 +538,12 @@ impl<UserData> Executor<UserData> {
                 continue;
             }
             self.execute_op(op, faults);
+            self.completed().for_each(&mut complete);
         }
-        self.in_flight.clear();
-        self.completions.clear();
-        self.cq_overflow = cq_overflow_orig;
-        self.cq_dropped = 0;
+        self.executing.clear();
+        for in_flight in self.in_flight.drain() {
+            complete(in_flight.cancel());
+        }
     }
 
     /// Submit a batch of [Sqe]s for later execution.

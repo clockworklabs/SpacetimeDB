@@ -478,7 +478,7 @@ fn poll_completion<S, T>(
 
             match state {
                 CompletionState::Ready(result) => Poll::Ready((map)(result)),
-                _ => unreachable!(),
+                CompletionState::Pending(_) => unreachable!("pending case already handled"),
             }
         }
     }

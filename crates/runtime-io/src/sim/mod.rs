@@ -1,8 +1,11 @@
 use alloc::{boxed::Box, rc::Rc, sync::Arc};
-use core::result::Result;
+use core::{result::Result, task::Waker};
 
 use crate::{
-    sim::completion::{CompletionState, PendingCompletions},
+    sim::{
+        completion::{CompletionState, PendingCompletions},
+        executor::Cqe,
+    },
     AlignedBytes, ErasedBox, ErrorWith, ReadWriteResult, SpacetimeIO, Statx,
 };
 
@@ -60,31 +63,36 @@ impl SimulatorIO {
         let mut executor = self.inner.executor.lock();
 
         let mut progress = executor.tick(task_selector, faults);
-        executor
-            .completed()
-            .map(|cqe| {
-                let key = cqe.user_data().expect("user data must be set");
-                let mut pending = self.inner.pending.lock();
-                // If the handle is no longer present in `pending`, the
-                // completion future was dropped.
-                let handle = pending.get_mut(key)?;
-                cqe.complete(handle)
-            })
-            .for_each(|waker| {
-                if let Some(waker) = waker {
-                    waker.wake();
-                }
-                progress |= true
-            });
+        executor.completed().for_each(|cqe| {
+            self.process_cqe(cqe);
+            progress |= true;
+        });
 
         progress
+    }
+
+    fn process_cqe(&self, cqe: Cqe<usize>) {
+        let key = cqe.user_data().expect("user data must be set");
+        let maybe_waker = (|| -> Option<Waker> {
+            let mut pending = self.inner.pending.lock();
+            // If the handle is no longer present in `pending`, the
+            // completion future was dropped.
+            let handle = pending.get_mut(key)?;
+            cqe.complete(handle)
+        })();
+        if let Some(waker) = maybe_waker {
+            waker.wake();
+        }
     }
 
     /// Simulate a power loss event.
     ///
     /// All submitted and executing operations are cancelled, and files reset to
-    /// their durable state. Completions that have not been signalled will be
-    /// dropped, too.
+    /// their durable state.
+    ///
+    /// The caller must uphold that no pending [Completion] futures are live (as
+    /// would happen during an actual power loss event). Polling a [Completion]
+    /// future after calling this method will panic.
     pub fn power_loss(&self) {
         self.inner.executor.lock().power_loss();
         self.inner.pending.lock().clear();
@@ -98,10 +106,14 @@ impl SimulatorIO {
     /// Submissions that were not yet scheduled are dropped. The file state
     /// remains unchanged.
     ///
-    /// Completions that were not signalled during shutdown are dropped.
+    /// Pending [Completion]s will resolve to [Error::Cancelled].
+    ///
+    /// Note that the simulator owns the storage for [Completion]s until they
+    /// are either dropped or completed. So they count toward the completion
+    /// queue capacity. To simulate an actual process crash, the caller should
+    /// prefer to drop pending [Completion]s.
     pub fn restart(&self, faults: &mut impl FaultInjector<usize>) {
-        self.inner.executor.lock().restart(faults);
-        self.inner.pending.lock().clear();
+        self.inner.executor.lock().restart(faults, |cqe| self.process_cqe(cqe))
     }
 
     fn submit<T, U>(
