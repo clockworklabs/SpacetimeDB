@@ -130,4 +130,10 @@ for dotnet_version in "${DOTNET_VERSIONS[@]}"; do
     run_client "$SDK_PATH/examples~/regression-tests/client" "$dotnet_version"
     run_client "$SDK_PATH/examples~/regression-tests/republishing/client" "$dotnet_version"
     run_client "$SDK_PATH/examples~/regression-tests/procedure-client" "$dotnet_version"
+
+    if [ "$dotnet_version" = "10" ]; then
+        cargo spacetime publish --dotnet-version 10 -c -y --server "$SPACETIMEDB_SERVER_URL" -p "$STDB_PATH/modules/namespace-test-cs" namespace-tests
+        # The module needs .NET 10; its generated client deliberately stays on C# 9 / .NET 8.
+        run_client "$SDK_PATH/examples~/regression-tests/namespaces" 8
+    fi
 done

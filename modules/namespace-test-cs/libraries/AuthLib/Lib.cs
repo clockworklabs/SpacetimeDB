@@ -15,6 +15,18 @@ public partial struct User
     public uint Score;
 }
 
+[Table(Accessor = "Notice", Public = true, Event = true)]
+public partial struct Notice
+{
+    public uint Id;
+}
+
+[Table(Accessor = "Secret")]
+public partial struct Secret
+{
+    public uint Id;
+}
+
 public static partial class Functions
 {
     public static void Insert(ReducerContext ctx, uint id) =>
@@ -29,7 +41,34 @@ public static partial class Functions
     public static IQuery<User> QueryUsers(ViewContext ctx) => Query(ctx);
 
     [Reducer]
-    public static void Add(ReducerContext ctx, uint id) => Insert(ctx, id);
+    public static void Add(ReducerContext ctx, uint id)
+    {
+        Insert(ctx, id);
+        ctx.Db.Notice.Insert(new Notice { Id = id });
+        ctx.Db.Secret.Insert(new Secret { Id = id });
+    }
+
+    [Reducer]
+    public static void Fail(ReducerContext ctx, uint id)
+    {
+        Insert(ctx, id);
+        throw new Exception("namespace rollback");
+    }
+
+    [Reducer]
+    public static void Update(ReducerContext ctx, uint id, uint score)
+    {
+        var row = ctx.Db.User.Id.Find(id)!.Value;
+        row.Score = score;
+        ctx.Db.User.Id.Update(row);
+    }
+
+    [Reducer]
+    public static void Remove(ReducerContext ctx, uint id) => ctx.Db.User.Id.Delete(id);
+
+    [Procedure]
+    public static uint ReadScore(ProcedureContext ctx, uint id) =>
+        ctx.WithTx(tx => tx.Db.User.Id.Find(id)?.Score ?? throw new Exception("missing auth user"));
 
     [Procedure]
     public static ulong CountUsers(ProcedureContext ctx) => ctx.WithTx(tx => tx.Db.User.Count);
