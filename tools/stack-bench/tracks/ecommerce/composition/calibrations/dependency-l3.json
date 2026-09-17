@@ -192,7 +192,56 @@
       "postgres",
       "spacetime"
     ],
-    "evidence": [],
+    "evidence": [
+      {
+        "kind": "null",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-7cd96d01b/null.json",
+        "sha256": "208efdd6b111d7769c6a03d96786057e4042ae1e6531e3d7bfea2b609cb8c46a"
+      },
+      {
+        "kind": "reference",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-7cd96d01b/postgres-reference.json",
+        "sha256": "baaba1487f36fa51907c8ff4fc866997fc2625097e7fe333b3d2250801ed9baf"
+      },
+      {
+        "kind": "mutation",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-7cd96d01b/postgres-mutation.json",
+        "sha256": "37ee3c783660a96f44bc9a9f8c5f58968972d0e1a3f8137779720bbaa4fb0f3b"
+      },
+      {
+        "kind": "reference",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-7cd96d01b/mongodb-reference.json",
+        "sha256": "9cef5bf86b29d0ce519fe5b1e05f8596af65518619974b0d64af174ac567dda4"
+      },
+      {
+        "kind": "mutation",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-7cd96d01b/mongodb-mutation.json",
+        "sha256": "2d81f1ab1d611701e6a0c280e4f3f9368bc81932afe6e95e7a84bbda1a00a613"
+      },
+      {
+        "kind": "reference",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-7cd96d01b/spacetime-reference.json",
+        "sha256": "83989faa0da22b7a2bb13e491476813a40be352d08bd79ac617f10d980b26095"
+      },
+      {
+        "kind": "mutation",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l3-7cd96d01b/spacetime-mutation.json",
+        "sha256": "d84ef17127281df87dad20fceb4efab78a33a59b374dceb206efb98e571fb1eb"
+      }
+    ],
     "featureCatalog": {
       "path": "progression/ecommerce.json",
       "contentSha256": "8671f7883c2e5a24474a546ef1517407cd9334258e1a7cfe91e292a9af1952f2",
