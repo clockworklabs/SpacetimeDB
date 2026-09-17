@@ -205,6 +205,7 @@ export class ModuleContext {
       entries: [],
     },
     submodules: [],
+    environment: [],
   };
 
   get moduleDef(): ModuleDef {
@@ -275,6 +276,7 @@ export class ModuleContext {
         value: module.submodules,
       }
     );
+    push({ tag: 'Environment', value: module.environment });
     return { sections };
   }
 
