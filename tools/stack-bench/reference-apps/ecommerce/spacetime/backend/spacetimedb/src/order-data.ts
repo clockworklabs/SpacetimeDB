@@ -32,3 +32,9 @@ export const orderAllocation = spacetimedb.view({ name: 'order_allocation', publ
     ctx.db.orderDataReader.identity.find(ctx.sender)
       ? [...ctx.db.orderItemStock.iter()].map(row => ({ order_line_id: row.orderItemId,
         warehouse_id: row.warehouseId, quantity: row.quantity })) : []);
+
+export const orderReservation = spacetimedb.view({ name: 'order_reservation', public: true },
+  t.array(t.object('OrderDataReservation', { account_id: t.u64(), item_id: t.u64(), warehouse_id: t.u64(), quantity: t.u32() })), ctx =>
+    ctx.db.orderDataReader.identity.find(ctx.sender)
+      ? [...ctx.db.reservation.iter()].filter(row => !row.expired).map(row => ({ account_id: row.accountId,
+        item_id: row.itemId, warehouse_id: row.warehouseId, quantity: row.quantity })) : []);

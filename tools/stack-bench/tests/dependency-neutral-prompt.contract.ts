@@ -235,6 +235,8 @@ test('neutral dependency prompts include only selected product and stack contrac
         if (level === 2 || level === 3) {
           assert.match(request, /database-native views over the\s+application's current records are allowed/);
           assert.match(request, /When carts are available/);
+          assert.match(request, /order_reservation\(account_id, item_id, warehouse_id, quantity\)/);
+          assert.match(request, /This does not require adding stock reservations to the app/);
           assert.match(request, /When warehouse stock is available/);
         }
       }

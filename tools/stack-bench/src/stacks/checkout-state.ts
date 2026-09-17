@@ -25,13 +25,12 @@ export const checkoutStateSchema = z.strictObject({
   orphanRefunds: integer.optional(),
 });
 export type CheckoutState = z.infer<typeof checkoutStateSchema>;
-// Saved L3 orders have no payment records or cart reservations. These fields
-// are absent capabilities, not fabricated evidence of a successful payment.
+// Order accounting does not require a separate payment feature. Reservations,
+// when present, explain stock already held during cart preparation.
 export const orderCheckoutStateSchema = checkoutStateSchema.extend({
   orders: z.array(checkoutStateSchema.shape.orders.element.extend({ refundedMinor: integer.nullable() })),
   orphanAllocations: integer,
   payments: checkoutStateSchema.shape.payments.length(0),
-  reservations: checkoutStateSchema.shape.reservations.length(0),
 });
 
 // Row order is not business state. Preserve duplicates while normalizing nesting.
@@ -200,7 +199,9 @@ function compareCheckout(before: CheckoutState, prepared: CheckoutState, after: 
   check('invalid reservation rows', prepared.reservations.filter(row => row.itemId !== before.itemId
     || row.quantity <= 0 || !before.stock.some(stock => stock.warehouseId === row.warehouseId)).length, 0);
   if (prepared.reservations.length) {
-    check('prepared reserved quantity', total(prepared.reservations), quantity);
+    const reserved = total(prepared.reservations);
+    if (requirePayment) check('prepared reserved quantity', reserved, quantity);
+    else check('reserved quantity exceeds prepared cart', Number(reserved > quantity), 0);
   }
   for (const stock of before.stock) {
     const reserved = total(prepared.reservations.filter(row => row.warehouseId === stock.warehouseId));
@@ -209,7 +210,7 @@ function compareCheckout(before: CheckoutState, prepared: CheckoutState, after: 
     if (readyStock) check(`prepared stock in warehouse ${stock.warehouseId}`, readyStock.quantity, stock.quantity - reserved);
     if (finalStock) {
       check('warehouses with an unexpected stock increase', Number(finalStock.quantity > stock.quantity), 0);
-      if (prepared.reservations.length) check(`reserved stock in warehouse ${stock.warehouseId}`, finalStock.quantity, stock.quantity - reserved);
+      if (requirePayment && prepared.reservations.length) check(`reserved stock in warehouse ${stock.warehouseId}`, finalStock.quantity, stock.quantity - reserved);
     }
   }
   // A crash can lose the response. Only an unacknowledged checkout may leave

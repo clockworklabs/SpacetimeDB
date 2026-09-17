@@ -18,6 +18,11 @@ export async function initializeOrderData(connection: Connection) {
       { $unwind: '$items' },
       { $project: { _id: 0, account_id: '$userId', item_id: '$items.itemId', quantity: '$items.quantity' } },
     ] },
+    { name: 'order_reservation', viewOn: 'carts', pipeline: [
+      { $unwind: '$items' }, { $unwind: '$items.reservedWarehouseIds' },
+      { $project: { _id: 0, account_id: '$userId', item_id: '$items.itemId',
+        warehouse_id: '$items.reservedWarehouseIds', quantity: { $literal: 1 } } },
+    ] },
     { name: 'order_allocation', viewOn: 'orders', pipeline: [
       { $unwind: { path: '$items', includeArrayIndex: 'lineIndex' } },
       { $unwind: '$items.allocations' },

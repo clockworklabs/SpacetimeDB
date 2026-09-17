@@ -17,7 +17,7 @@ function data(): Record<keyof typeof ORDER_DATA_COLUMNS, Record<string, unknown>
     order_account: [{ id: '1', username: 'buyer' }], item: [{ id: '2', name: 'Keyboard', price: '19.99' }],
     warehouse: [{ id: '3' }],
     stock: [{ item_id: '2', warehouse_id: '3', quantity: 10 }],
-    order_cart: [], order_header: [], order_line: [], order_allocation: [],
+    order_cart: [], order_reservation: [], order_header: [], order_line: [], order_allocation: [],
   };
 }
 
@@ -49,7 +49,7 @@ test('order data uses one SpacetimeDB subscription and preserves the explicit re
   const exec = (_: string, args: readonly string[]) => {
     if (args[0] === 'inspect') return 'owned';
     assert(args.includes('subscribe'));
-    assert.equal(args.filter(arg => arg.startsWith('SELECT *')).length, 8);
+    assert.equal(args.filter(arg => arg.startsWith('SELECT *')).length, 9);
     return JSON.stringify(Object.fromEntries(Object.entries(raw).filter(([, rows]) => rows.length)
       .map(([table, inserts]) => [table, { inserts, deletes: [] }]))).replace('"9007199254740993"', '9007199254740993');
   };
@@ -141,6 +141,7 @@ for (const backend of ['postgres', 'mongodb'] as const) {
         CREATE TABLE warehouse(id bigint);
         CREATE TABLE stock(item_id bigint, warehouse_id bigint, quantity integer);
         CREATE TABLE order_cart(account_id bigint, item_id bigint, quantity integer);
+        CREATE TABLE order_reservation(account_id bigint, item_id bigint, warehouse_id bigint, quantity integer);
         CREATE TABLE order_header(id bigint, account_id bigint, total numeric, refunded numeric, status text);
         CREATE TABLE order_line(id bigint, order_id bigint, item_id bigint, quantity integer, unit_price numeric);
         CREATE TABLE order_allocation(order_line_id bigint, warehouse_id bigint, quantity integer);

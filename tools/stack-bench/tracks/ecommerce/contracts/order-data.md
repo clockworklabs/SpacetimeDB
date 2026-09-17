@@ -9,6 +9,7 @@ this interface. Extra columns are allowed.
 - `order_header(id, account_id, total, refunded, status)` contains every order from direct purchase or checkout, including cancelled orders. `total` is the amount booked for the order. `refunded` is the amount refunded so far, initially zero.
 - `order_line(id, order_id, item_id, quantity, unit_price)` contains each order's purchased lines and their booked unit prices.
 - When carts are available, `order_cart(account_id, item_id, quantity)` contains their current lines. An empty cart has no lines.
+- When carts are available, `order_reservation(account_id, item_id, warehouse_id, quantity)` contains any stock held for those carts and already deducted from available `stock.quantity`. If the app does not hold stock for carts, this read interface is empty. This does not require adding stock reservations to the app.
 - When warehouse stock is available, `order_allocation(order_line_id, warehouse_id, quantity)` contains the original warehouse quantities used for each order line. Keep these quantities available after cancellation.
 
 Each `id` is a nonempty string or an exact nonnegative integer. Related identifiers

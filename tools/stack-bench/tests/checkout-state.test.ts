@@ -74,6 +74,38 @@ test('unsettled server work blocks later checkout and stock comparisons until a 
   assert.throws(() => fresh.getCheckoutState({ account: 'buyer', item: 'Keyboard' }), /reads are disabled/);
 });
 
+test('order checkout accounts for optional stock holds without accepting unexplained loss or duplicate purchases', () => {
+  const { before, prepared, after } = states();
+  for (const state of [before, prepared, after]) {
+    state.payments = []; state.orphanAllocations = 0;
+    for (const order of state.orders) order.refundedMinor = 0;
+  }
+  assert.deepEqual(orderCheckoutDifferences(before, prepared, after, 1), []);
+  assert.deepEqual(orderCheckoutDifferences(before, prepared, prepared, 1, true), []);
+  assert(orderCheckoutDifferences(before, prepared, prepared, 1).length, 'confirmed checkout cannot remain just a stock hold');
+  const unexplained = structuredClone(prepared); unexplained.reservations = [];
+  assert(orderCheckoutDifferences(before, unexplained, after, 1).length, 'stock debit needs an actual hold');
+  const overheld = structuredClone(prepared); overheld.reservations[0]!.quantity = 2; overheld.stock[0]!.quantity = 8;
+  assert(orderCheckoutDifferences(before, overheld, after, 1).length, 'hold cannot exceed the cart');
+  for (const change of [
+    (state: CheckoutState) => { state.stock[0]!.quantity--; },
+    (state: CheckoutState) => { state.stock[0]!.quantity++; },
+    (state: CheckoutState) => { state.orders = []; },
+    (state: CheckoutState) => { state.orders.push({ ...structuredClone(state.orders[0]!), id: 'extra' }); },
+    (state: CheckoutState) => { state.reservations = structuredClone(prepared.reservations); },
+  ]) {
+    const broken = structuredClone(after); change(broken);
+    assert(orderCheckoutDifferences(before, prepared, broken, 1, true).length);
+  }
+  // A cart may hold only part of its quantity; final allocations must still account for the whole order.
+  prepared.cart[0]!.quantity = 2;
+  after.stock[0]!.quantity = 8;
+  after.orders[0]!.totalMinor *= 2;
+  after.orders[0]!.lines[0]!.quantity = 2;
+  after.orders[0]!.lines[0]!.allocations[0]!.quantity = 2;
+  assert.deepEqual(orderCheckoutDifferences(before, prepared, after, 2), []);
+});
+
 test('checkout reconciliation accepts stock reservation and atomic checkout alternatives', () => {
   const { before, prepared, after } = states();
   assert.deepEqual(checkoutDifferences(before, prepared, after, 1), []);

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "832d58b5b2ef3b441d5304ce18789970793b38570b8daad0385d6421389f0f98",
+  "fixtureSha256": "7ba1f548e89f461b95b5caf843b0fbcf2b81278428d02869d7f47e1a199eaf6e",
   "backend": "spacetime",
   "track": "ecommerce",
   "note": "Mutation definitions for the SpacetimeDB ecommerce reference.",

@@ -9,7 +9,7 @@ import ts from 'typescript';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { getPostgresCheckoutState } from '../src/stacks/backends/postgres-operations.js';
 import { getMongoDbCheckoutState } from '../src/stacks/backends/mongodb-operations.js';
-import { checkoutDifferences, orderCancellationDifferences } from '../src/stacks/checkout-state.js';
+import { checkoutDifferences, orderCheckoutDifferences, orderCancellationDifferences } from '../src/stacks/checkout-state.js';
 
 const enabled = process.env.STACK_BENCH_CHECKOUT_READ_DOCKER === '1';
 const docker = (args: string[], input?: string): string => execFileSync('docker', args,
@@ -80,10 +80,13 @@ for (const backend of ['postgres', 'mongodb'] as const) {
         account: 'reader', item: 'Keyboard', app: join(STACK_BENCH_ROOT, 'reference-apps/ecommerce', backend), lease,
       });
       const before = read();
+      const orderBefore = readOrders();
       run(postgres ? `INSERT INTO cart_item VALUES(5,4,2,1); INSERT INTO cart_reservation_allocation VALUES(5,3,1);
         UPDATE stock SET quantity=9;` : `db.carts.updateOne({userId:'1'},{$set:{items:[{itemId:'2',quantity:1,reservedWarehouseIds:['3']}]}});
         db.stock.updateOne({item_id:'2'},{$set:{quantity:9}});`);
       const prepared = read();
+      const orderPrepared = readOrders();
+      assert.deepEqual(orderPrepared.reservations, [{ itemId: '2', warehouseId: '3', quantity: 1 }]);
       assert.deepEqual(readOrders().cart, [{ itemId: '2', quantity: 1 }]);
       run(postgres ? `INSERT INTO orders VALUES(6,1,19.99,'pending',19.99,'paid',0);
         INSERT INTO order_item VALUES(8,6,2,1,19.99,3); DELETE FROM cart_item; DELETE FROM cart_reservation_allocation;`
@@ -94,6 +97,7 @@ for (const backend of ['postgres', 'mongodb'] as const) {
       assert.deepEqual(checkoutDifferences(before.state, prepared.state, after.state, 1), []);
       assert.equal(after.state.orders[0]!.totalMinor, 1999);
       const pending = readOrders();
+      assert.deepEqual(orderCheckoutDifferences(orderBefore, orderPrepared, pending, 1), []);
       assert.deepEqual(pending.orders, after.state.orders.map(order => ({ ...order, refundedMinor: 0 })));
       run(postgres ? "UPDATE orders SET status='cancelled'; UPDATE stock SET quantity=10;"
         : "db.orders.updateOne({},{$set:{status:'cancelled'}}); db.stock.updateOne({},{$set:{quantity:10}});");

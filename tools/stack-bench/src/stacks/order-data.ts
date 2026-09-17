@@ -22,6 +22,7 @@ const tablesSchema = z.object({
   warehouse: z.array(z.object({ id })),
   stock: z.array(z.object({ item_id: id, warehouse_id: id, quantity: integer })),
   order_cart: z.array(z.object({ account_id: id, item_id: id, quantity: integer })),
+  order_reservation: z.array(z.object({ account_id: id, item_id: id, warehouse_id: id, quantity: integer })),
   order_header: z.array(z.object({ id, account_id: id, total: money, refunded: money, status: z.string() })),
   order_line: z.array(z.object({ id, order_id: id, item_id: id, quantity: integer, unit_price: money })),
   order_allocation: z.array(z.object({ order_line_id: id, warehouse_id: id, quantity: integer })),
@@ -48,8 +49,9 @@ export function readOrderDataSnapshot(raw: unknown, account: string, item: strin
   const lines = new Set(tables.order_line.map(row => row.id));
   if (tables.order_header.some(row => !tables.order_account.some(account => account.id === row.account_id))
     || tables.order_cart.some(row => !tables.order_account.some(account => account.id === row.account_id))
-    || [...tables.order_line, ...tables.order_cart, ...tables.stock].some(row => !tables.item.some(item => item.id === row.item_id))
-    || [...tables.stock, ...tables.order_allocation].some(row => !tables.warehouse.some(warehouse => warehouse.id === row.warehouse_id))) {
+    || tables.order_reservation.some(row => !tables.order_account.some(account => account.id === row.account_id))
+    || [...tables.order_line, ...tables.order_cart, ...tables.order_reservation, ...tables.stock].some(row => !tables.item.some(item => item.id === row.item_id))
+    || [...tables.stock, ...tables.order_allocation, ...tables.order_reservation].some(row => !tables.warehouse.some(warehouse => warehouse.id === row.warehouse_id))) {
     throw orderDataError('order account, item or warehouse link is missing');
   }
   const state = orderCheckoutStateSchema.parse({
@@ -68,7 +70,8 @@ export function readOrderDataSnapshot(raw: unknown, account: string, item: strin
     })),
     orphanOrderLines: tables.order_line.filter(row => !orders.has(row.order_id)).length,
     orphanAllocations: tables.order_allocation.filter(row => !lines.has(row.order_line_id)).length,
-    payments: [], reservations: [],
+    payments: [], reservations: tables.order_reservation.filter(row => row.account_id === accountId)
+      .map(row => ({ itemId: row.item_id, warehouseId: row.warehouse_id, quantity: row.quantity })),
   });
   const contract = readFileSync(join(STACK_BENCH_ROOT, 'tracks/ecommerce/contracts/order-data.md'), 'utf8').replaceAll('\r\n', '\n');
   return { state, scope: 'orders' as const, storage: 'order-data' as const,
