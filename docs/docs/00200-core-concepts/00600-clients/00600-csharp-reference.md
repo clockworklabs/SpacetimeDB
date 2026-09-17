@@ -111,6 +111,8 @@ Construct a `DbConnection` by calling `DbConnection.Builder()`, chaining configu
 | [OnConnectError callback](#callback-onconnecterror)     | Register a callback to run if the connection is rejected or the host is unreachable. |
 | [OnDisconnect callback](#callback-ondisconnect)         | Register a callback to run when the connection ends.                                 |
 | [WithToken method](#method-withtoken)                   | Supply a token to authenticate with the remote database.                             |
+| [WithAutomaticReconnect method](#method-withautomaticreconnect) | Reconnect automatically after an established connection is lost.             |
+| [WithTokenProvider method](#method-withtokenprovider)   | Obtain refreshed credentials before a reconnect attempt.                            |
 | [Build method](#method-build)                           | Finalize configuration and open the connection.                                      |
 
 #### Method `WithUri`
@@ -174,27 +176,39 @@ class DbConnectionBuilder<DbConnection>
 
 Chain a call to `.OnConnect(callback)` to your builder to register a callback to run when your new `DbConnection` successfully initiates its connection to the remote database. The callback accepts three arguments: a reference to the `DbConnection`, the `Identity` by which SpacetimeDB identifies this connection, and a private access token which can be saved and later passed to [`WithToken`](#method-withtoken) to authenticate the same user in future connections.
 
+With automatic reconnect enabled, this callback also runs after each successful reconnect, before subscriptions are replayed. Register row callbacks and subscriptions only once. Use subscription `OnApplied` callbacks to know when the cache is ready. The token argument is the retained or refreshed authentication token, including on Unity WebGL, rather than the transport's short-lived WebSocket token.
+
 #### Callback `OnConnectError`
 
 ```csharp
 class DbConnectionBuilder<DbConnection>
 {
-    public DbConnectionBuilder<DbConnection> OnConnectError(Action<Exception> callback);
+    public delegate void ConnectErrorCallback(Exception error);
+    public delegate void ConnectErrorWithReconnectCallback(Exception error, NextReconnect? nextReconnect);
+
+    public DbConnectionBuilder<DbConnection> OnConnectError(ConnectErrorCallback callback);
+    public DbConnectionBuilder<DbConnection> OnConnectError(ConnectErrorWithReconnectCallback callback);
 }
 ```
 
-Chain a call to `.OnConnectError(callback)` to your builder to register a callback to run when your connection fails.
+Register a callback for an initial connection failure or a failed reconnect attempt. The overload accepting [`NextReconnect?`](#type-nextreconnect) reports the next attempt and delay, or `null` when no retry will occur. Initial connection failures never retry automatically. Both overloads remain supported.
 
 #### Callback `OnDisconnect`
 
 ```csharp
 class DbConnectionBuilder<DbConnection>
 {
-    public DbConnectionBuilder<DbConnection> OnDisconnect(Action<DbConnection, Exception?> callback);
+    public delegate void DisconnectCallback(DbConnection conn, Exception? error);
+    public delegate void DisconnectWithReconnectCallback(DbConnection conn, Exception? error, NextReconnect? nextReconnect);
+
+    public DbConnectionBuilder<DbConnection> OnDisconnect(DisconnectCallback callback);
+    public DbConnectionBuilder<DbConnection> OnDisconnect(DisconnectWithReconnectCallback callback);
 }
 ```
 
 Chain a call to `.OnDisconnect(callback)` to your builder to register a callback to run when your `DbConnection` disconnects from the remote database, either as a result of a call to [`Disconnect`](#method-disconnect) or due to an error.
+
+With automatic reconnect enabled, losing an established connection reports the scheduled retry through [`NextReconnect?`](#type-nextreconnect). Keep the connection and its update loop running when this value is non-null. A null value means the connection has ended permanently. An explicit `Disconnect()` reports a null error and no retry, including when called during recovery.
 
 #### Method `WithToken`
 
@@ -206,6 +220,87 @@ class DbConnectionBuilder<DbConnection>
 ```
 
 Chain a call to `.WithToken(token)` to your builder to provide an OpenID Connect compliant JSON Web Token to authenticate with, or to explicitly select an anonymous connection. If this method is not called or `null` is passed, SpacetimeDB will generate a new `Identity` and sign a new private access token for the connection.
+
+#### Method `WithAutomaticReconnect`
+
+```csharp
+class DbConnectionBuilder<DbConnection>
+{
+    public DbConnectionBuilder<DbConnection> WithAutomaticReconnect();
+}
+```
+
+Enable automatic recovery after a connection has succeeded at least once. This is opt-in; without it, a lost connection must be replaced by the application. Initial connection failures do not retry.
+
+Retries use exponential backoff starting at one second, with jitter and a maximum delay of 30 seconds. There is no attempt limit, and a successful connection resets the retry counter. Explicit `Disconnect()`, a changed identity, or a terminal protocol or authentication error stops recovery. See [token refresh](#method-withtokenprovider) for authentication rejection handling.
+
+The SDK keeps the same `DbConnection`, `Identity`, table handles, subscriptions, and callbacks. Each reconnect attempt uses a fresh `ConnectionId`. Keep calling `FrameTick()` during outages; it drives retries as well as callbacks.
+
+```csharp
+var conn = DbConnection.Builder()
+    .WithUri("http://localhost:3000")
+    .WithDatabaseName("my-database")
+    .WithAutomaticReconnect()
+    .OnConnect((connection, identity, token) => Console.WriteLine($"Connected as {identity}"))
+    .OnDisconnect((connection, error, next) =>
+    {
+        if (next is { } retry)
+            Console.WriteLine($"Retry {retry.Attempt} in {retry.Delay}.");
+    })
+    .OnConnectError((error, next) => Console.WriteLine(error.Message))
+    .Build();
+
+conn.SubscriptionBuilder()
+    .OnApplied(ctx => Console.WriteLine("Subscription ready"))
+    .SubscribeToAllTables();
+```
+
+Arrange for your application's update loop to call `conn.FrameTick()`. With automatic reconnect enabled, subscriptions may be created immediately after `Build()` or during an outage; they are sent once the connection is ready.
+
+During an outage, cached rows remain readable but may be stale. After `OnConnect`, the SDK replays the retained subscriptions in one batch and reconciles the resulting snapshot with the cache. All tables are updated before row callbacks run; unchanged rows do not fire callbacks, and changed rows produce net insert, update, or delete events. Each successful subscription's `OnApplied` runs again. A rejected subscription gets `OnError` after the successful subscriptions are reconciled.
+
+Reducer, procedure, and one-off query calls made while disconnected fail immediately and are not queued. Calls awaiting a result when the connection is lost are not replayed: reducer callbacks receive [`Status.UnknownResult`](#variant-unknownresult), while procedures and one-off queries fail with `UnknownResultException`. The server may already have executed those calls; do not automatically repeat non-idempotent operations.
+
+#### Method `WithTokenProvider`
+
+```csharp
+class DbConnectionBuilder<DbConnection>
+{
+    public DbConnectionBuilder<DbConnection> WithTokenProvider(Func<Task<string>> provider);
+}
+```
+
+Register an optional asynchronous provider of authentication tokens for automatic reconnect. Use it together with `WithAutomaticReconnect()`. The provider is not called for the initial connection; supply the initial token through `WithToken(initialToken)`.
+
+```csharp
+var conn = DbConnection.Builder()
+    .WithUri("http://localhost:3000")
+    .WithDatabaseName("my-database")
+    .WithToken(initialToken)
+    .WithAutomaticReconnect()
+    .WithTokenProvider(() => RefreshTokenAsync())
+    .Build();
+```
+
+`initialToken` and `RefreshTokenAsync` come from your authentication integration. The provider must return a non-empty token for the same identity. To switch users, disconnect and build a new connection.
+
+Before each reconnect attempt, the SDK checks the retained token's JWT `exp` and `iat` claims. It calls the provider when the remaining lifetime is at most 30 seconds or 5% of the token's original lifetime, whichever is greater. If expiry cannot be read, it calls the provider on every attempt. Without a provider, the SDK reuses the retained token. This does not schedule background token refresh while the connection is healthy.
+
+If the server rejects a reused token, the next attempt forces a provider call regardless of expiry. Rejection of a freshly provided token, or rejection with no provider available, is terminal. If the provider throws, its task faults, or it returns an empty token, `OnConnectError` reports the failure and schedules another attempt.
+
+The provider is invoked from `FrameTick`; return a task instead of blocking that thread. `Disconnect()` prevents a pending provider result from opening another connection, but does not cancel the provider's own asynchronous work.
+
+#### Type `NextReconnect`
+
+```csharp
+public readonly struct NextReconnect
+{
+    public int Attempt { get; }
+    public TimeSpan Delay { get; }
+}
+```
+
+Retry information supplied to the connection-error and disconnect callbacks. `Attempt` starts at 1 and `Delay` is the scheduled wait before that attempt. A nullable `NextReconnect` value of `null` means no retry is scheduled. A server response indicating that the previous session is still closing retains the current attempt number and uses the initial backoff delay.
 
 #### Method `Build`
 
@@ -234,9 +329,11 @@ class DbConnection {
 }
 ```
 
-`FrameTick` will advance the connection until no work remains or until it is disconnected, then return rather than blocking. Games might arrange for this message to be called every frame.
+`FrameTick` processes pending updates and advances reconnect timers and token-provider tasks, then returns rather than blocking. Games might call this method every frame. Keep calling it even when `IsActive` is false so automatic reconnect can progress.
 
-In Unity projects, a `SpacetimeDBNetworkManager` component can call `FrameTick` for active connections automatically. Use either the manager or your own update loop; without one of them, callbacks will not be invoked.
+In Unity projects, a `SpacetimeDBNetworkManager` component can call `FrameTick` for active and reconnecting connections automatically. Use either the manager or your own update loop; without one of them, callbacks will not be invoked.
+
+In Godot projects, register the connection with `STDBUpdateManager.Add(conn)` and keep it registered during recovery, or call `FrameTick()` from your own `_Process` method. Remove and disconnect it when the application is done with the connection.
 
 It is not advised to run `FrameTick` on a background thread, since it modifies [`dbConnection.Db`](#property-db). If main thread code is also accessing the `Db`, it may observe data races when `FrameTick` runs on another thread.
 
@@ -344,7 +441,7 @@ interface IRemoteDbContext
 }
 ```
 
-Gracefully close the `DbConnection`. Throws an error if the connection is already closed.
+Permanently close the `DbConnection`, cancel scheduled reconnects, and ignore any pending token-provider result. This also works during an outage. Repeated calls have no effect. To connect again after an explicit disconnect or terminal failure, build a new connection.
 
 ### Subscribe to queries
 
@@ -386,6 +483,8 @@ class SubscriptionBuilder
 ```
 
 Register a callback to run when the subscription is applied and the matching rows are inserted into the client cache.
+
+With automatic reconnect enabled, this callback runs again after each successful replay. Use it to mark data ready, and keep one-time setup separate so it is not repeated on every reconnect.
 
 ##### Callback `OnError`
 
@@ -613,6 +712,8 @@ Terminate this subscription, causing matching rows to be removed from the client
 
 Unsubscribing is an asynchronous operation. Matching rows are not removed from the client cache immediately. Use [`UnsubscribeThen`](#method-unsubscribethen) to run a callback once the unsubscribe operation is completed.
 
+With automatic reconnect enabled, you can also unsubscribe while offline or while the subscription is pending. An offline unsubscribe ends the handle locally and excludes it from replay; its cached rows remain until the next snapshot reconciliation. In that case, `UnsubscribeThen` runs when the handle ends, before stale rows are removed.
+
 Returns an error if the subscription has already ended, either due to a previous call to `Unsubscribe` or [`UnsubscribeThen`](#method-unsubscribethen), or due to an error.
 
 ##### Method `UnsubscribeThen`
@@ -625,6 +726,8 @@ class SubscriptionHandle
 ```
 
 Terminate this subscription, and run the `onEnded` callback when the subscription is ended and its matching rows are removed from the client cache. Any rows removed from the client cache this way will have [`OnDelete` callbacks](#callback-ondelete) run for them.
+
+During an automatic-reconnect outage, the callback instead runs when the handle ends locally. Stale rows are removed on the next snapshot reconciliation, as described under [`Unsubscribe`](#method-unsubscribe).
 
 Returns an error if the subscription has already ended, either due to a previous call to [`Unsubscribe`](#method-unsubscribe) or `UnsubscribeThen`, or due to an error.
 
@@ -652,6 +755,8 @@ interface IDbContext
 
 Get the [`ConnectionId`](#type-connectionid) with which SpacetimeDB identifies the connection.
 
+Automatic reconnect preserves `Identity` but assigns a fresh `ConnectionId` for each attempt.
+
 #### Property `IsActive`
 
 ```csharp
@@ -661,7 +766,18 @@ interface IDbContext
 }
 ```
 
-`true` if the connection has not yet disconnected. Note that a connection `IsActive` when it is constructed, before its [`OnConnect` callback](#callback-onconnect) is invoked.
+`true` when the transport is connected and the connection has not closed. With automatic reconnect enabled, it also requires the initial handshake to have completed; it is false before the first `OnConnect` and during outages. It becomes true before subscription replay completes, so use subscription `OnApplied` to determine when cached data is current.
+
+#### Property `IsReconnecting`
+
+```csharp
+class DbConnection
+{
+    public bool IsReconnecting { get; }
+}
+```
+
+`true` while an automatically reconnecting connection that previously succeeded is waiting for a retry, obtaining a token, or connecting again. It is false during the initial connection, after a successful reconnect handshake, and after a terminal failure or explicit `Disconnect()`. Continue ticking the connection while this property is true.
 
 ## Type `EventContext`
 
@@ -806,7 +922,8 @@ A `ReducerEvent` contains metadata about a reducer run.
 record Status : TaggedEnum<(
     Unit Committed,
     string Failed,
-    Unit OutOfEnergy
+    Unit OutOfEnergy,
+    Unit UnknownResult
 )>;
 ```
 
@@ -817,6 +934,7 @@ record Status : TaggedEnum<(
 | [`Committed` variant](#variant-committed)     | The reducer ran successfully.                       |
 | [`Failed` variant](#variant-failed)           | The reducer errored.                                |
 | [`OutOfEnergy` variant](#variant-outofenergy) | The reducer was aborted due to insufficient energy. |
+| [`UnknownResult` variant](#variant-unknownresult) | The connection was lost before the reducer's result arrived. |
 
 #### Variant `Committed`
 
@@ -829,6 +947,12 @@ The reducer returned an error, panicked, or threw an exception. The record paylo
 #### Variant `OutOfEnergy`
 
 The reducer was aborted due to insufficient energy balance of the module owner.
+
+#### Variant `UnknownResult`
+
+With automatic reconnect enabled, the SDK reports this status for reducer calls whose results were still pending when the connection was lost. The reducer may have committed; this status does not mean that it failed. The SDK does not retry the call. Check the reconciled state or use an application-level idempotency key before deciding to repeat it.
+
+Regenerate your C# bindings when upgrading. Generated dispatch code forwards this status as an `UnknownResultException` to `OnUnhandledReducerError` when no callback is registered for that reducer. Include `Status.UnknownResult` in your own reducer-result handling as well.
 
 ### Record `Reducer`
 
@@ -1107,7 +1231,7 @@ All [`IDbContext`](#interface-idbcontext) implementors, including [`DbConnection
 For a reducer named `send_message`, generated C# bindings use PascalCase names:
 
 - An invoke method, like `SendMessage(...)`. This requests that the module run the reducer.
-- A result event, like `OnSendMessage`. This event fires on the calling connection when SpacetimeDB reports that reducer call's result, including committed, failed, and out-of-energy statuses.
+- A result event, like `OnSendMessage`. This event fires on the calling connection for committed, failed, and out-of-energy results, or with `Status.UnknownResult` if automatic reconnect is enabled and the connection is lost before the result arrives.
 
 Subscribe to reducer result events with `+=` and unsubscribe with `-=`, as with any C# event.
 
