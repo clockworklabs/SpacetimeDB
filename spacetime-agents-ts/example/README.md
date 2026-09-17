@@ -20,18 +20,16 @@ and file HTTP handlers.
 ## Prerequisites
 
 - Node.js 20 or later and pnpm 10.
-- The released SpacetimeDB 2.8 CLI.
+- A SpacetimeDB CLI and server built from this checkout, with the CLI available as `spacetime`.
 - A local SpacetimeDB server registered as `local`.
 - A logged-in CLI identity. A fresh publish seeds the publisher as the initial auth
   and agents administrator.
 - At least one supported model-provider API key for successful model responses.
 
-Select the supported CLI release, then keep the local server running in a
-separate terminal:
+This example uses the workspace SDK. Keep the matching local server running in
+a separate terminal:
 
 ```powershell
-spacetime version install 2.8.3
-spacetime version use 2.8.3
 spacetime start
 ```
 
@@ -66,7 +64,7 @@ database. Use `pnpm run build:module` to republish while preserving existing row
 This workspace tests the submodule source in this repository. Consumer applications install published releases:
 
 ```bash
-npm install @spacetimedb/agents spacetimedb@^2.8.3
+npm install @spacetimedb/agents spacetimedb
 ```
 
 Start with the package's

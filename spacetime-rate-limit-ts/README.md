@@ -5,7 +5,7 @@ Fixed-window rate limiter submodule for SpacetimeDB TypeScript modules.
 ## Install
 
 ```bash
-npm install @spacetimedb/rate-limit spacetimedb@^2.8.3
+npm install @spacetimedb/rate-limit spacetimedb
 ```
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.
@@ -149,4 +149,4 @@ pnpm run typecheck
 
 ## License
 
-[BUSL-1.1](./LICENSE.txt) - same as SpacetimeDB.
+[Apache-2.0](./LICENSE.txt).

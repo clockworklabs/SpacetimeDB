@@ -156,13 +156,12 @@ function isUnitType(at: AlgebraicTypeLike): boolean {
 function optionPayload(at: AlgebraicTypeLike): AlgebraicTypeLike | undefined {
   if (at.tag !== 'Sum') return undefined;
   const variants = sumVariants(at);
-  if (variants.length !== 2) return undefined;
-  const unitIndex = variants.findIndex(variant =>
-    isUnitType(variant.algebraicType)
-  );
-  return unitIndex < 0
-    ? undefined
-    : variants[unitIndex === 0 ? 1 : 0]?.algebraicType;
+  return variants.length === 2 &&
+    variants[0].name === 'some' &&
+    variants[1].name === 'none' &&
+    isUnitType(variants[1].algebraicType)
+    ? variants[0].algebraicType
+    : undefined;
 }
 
 function invalidToolValue(path: string, expected: string): never {
@@ -576,31 +575,28 @@ function algebraicTypeToJsonSchema(at: AlgebraicTypeLike): {
     }
     case 'Sum': {
       const variants = sumVariants(at);
-      // Unwrap option<T> = Sum { some: T, none: () }.
-      if (variants.length === 2) {
-        const unitVariantIdx = variants.findIndex(v =>
-          isUnitType(v.algebraicType)
-        );
-        const payloadIdx =
-          unitVariantIdx === 0 ? 1 : unitVariantIdx === 1 ? 0 : -1;
-        if (unitVariantIdx >= 0 && payloadIdx >= 0) {
-          const inner = algebraicTypeToJsonSchema(
-            variants[payloadIdx].algebraicType
-          );
-          return { schema: inner.schema, required: false };
-        }
+      const payload = optionPayload(at);
+      if (payload !== undefined) {
+        return {
+          schema: algebraicTypeToJsonSchema(payload).schema,
+          required: false,
+        };
       }
       return {
         schema: {
           oneOf: variants.map(v => {
-            const inner = algebraicTypeToJsonSchema(v.algebraicType);
+            const unit = isUnitType(v.algebraicType);
             return {
               type: 'object',
               properties: {
                 tag: { type: 'string', enum: [v.name] },
-                value: inner.schema,
+                ...(unit
+                  ? {}
+                  : {
+                      value: algebraicTypeToJsonSchema(v.algebraicType).schema,
+                    }),
               },
-              required: ['tag'],
+              required: unit ? ['tag'] : ['tag', 'value'],
             };
           }),
         },

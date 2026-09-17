@@ -18,7 +18,6 @@ import {
   ownerPathKey,
   readFileBytesParams,
   readFileBytesReturn,
-  readFileBytes,
   validateMimeType,
 } from '@spacetimedb/files/submodule';
 import * as files from '@spacetimedb/files/submodule';
@@ -205,7 +204,7 @@ export const myFileSummaries = spacetimedb.view(
   }
 );
 
-export const create_folder = spacetimedb.reducer(
+export const createFolder = spacetimedb.reducer(
   { path: t.string() },
   (ctx, args) => {
     const owner = ownerUserId(ctx);
@@ -226,7 +225,7 @@ export const create_folder = spacetimedb.reducer(
   }
 );
 
-export const delete_folder = spacetimedb.reducer(
+export const deleteFolder = spacetimedb.reducer(
   { path: t.string() },
   (ctx, args) => {
     const owner = ownerUserId(ctx);
@@ -239,7 +238,7 @@ export const delete_folder = spacetimedb.reducer(
   }
 );
 
-export const rename_folder = spacetimedb.reducer(
+export const renameFolder = spacetimedb.reducer(
   { path: t.string(), newName: t.string() },
   (ctx, args) => {
     const owner = ownerUserId(ctx);
@@ -306,7 +305,7 @@ export const rename_folder = spacetimedb.reducer(
   }
 );
 
-export const upload_file = spacetimedb.reducer(
+export const uploadFile = spacetimedb.reducer(
   {
     path: t.string(),
     mimeType: t.string(),
@@ -364,7 +363,7 @@ export const upload_file = spacetimedb.reducer(
   }
 );
 
-export const delete_file = spacetimedb.reducer(
+export const deleteFile = spacetimedb.reducer(
   { path: t.string() },
   (ctx, args) => {
     const owner = ownerUserId(ctx);
@@ -377,7 +376,7 @@ export const delete_file = spacetimedb.reducer(
   }
 );
 
-export const rename_file = spacetimedb.reducer(
+export const renameFile = spacetimedb.reducer(
   { oldPath: t.string(), newPath: t.string() },
   (ctx, args) => {
     const owner = ownerUserId(ctx);
@@ -387,7 +386,7 @@ export const rename_file = spacetimedb.reducer(
   }
 );
 
-export const move_file = spacetimedb.reducer(
+export const moveFile = spacetimedb.reducer(
   { oldPath: t.string(), targetFolderPath: t.string() },
   (ctx, args) => {
     const targetFolderPath = normalizePath(args.targetFolderPath, 'folder');
@@ -401,7 +400,7 @@ export const move_file = spacetimedb.reducer(
   }
 );
 
-export const set_file_visibility = spacetimedb.reducer(
+export const setFileVisibility = spacetimedb.reducer(
   { path: t.string(), visibility: t.string() },
   (ctx, args) => {
     if (!VALID_VISIBILITIES.has(args.visibility))
@@ -420,11 +419,11 @@ export const set_file_visibility = spacetimedb.reducer(
 
 // Private bytes travel over the authenticated connection. HTTP handlers
 // never see the caller's identity.
-export const read_file_bytes = spacetimedb.procedure(
+export const readFileBytes = spacetimedb.procedure(
   readFileBytesParams,
   readFileBytesReturn,
   (ctx, args) =>
-    readFileBytes(
+    files.readFileBytes(
       ctx,
       { path: normalizePath(args.path, 'file') },
       ctx.sender.toHexString()
@@ -435,10 +434,10 @@ const serveFile = createFileHttpHandler({
   getOwner: ctx => ctx.identity?.toHexString?.(),
 });
 
-export const file_serve = spacetimedb.httpHandler((ctx, req) => {
+export const fileServe = spacetimedb.httpHandler((ctx, req) => {
   return serveFile(ctx, req);
 });
 
 export const router = spacetimedb.httpRouter(
-  new Router().get('/files', file_serve).head('/files', file_serve)
+  new Router().get('/files', fileServe).head('/files', fileServe)
 );

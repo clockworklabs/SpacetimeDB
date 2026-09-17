@@ -11,26 +11,7 @@ import {
   authUserTable as authUser,
   authVerificationTable as authVerification,
 } from '../tables';
-import {
-  setAuthConfigParams,
-  setAuthConfig,
-  authSweep,
-  getPublicKeyPemParams,
-  getPublicKeyPem,
-  linkConnectionParams,
-  linkConnection,
-  unlinkConnectionParams,
-  unlinkConnection,
-  updateProfileParams,
-  updateProfile,
-  revokeSessionParams,
-  revokeSession,
-  listMySessionsParams,
-  listMySessions,
-  revokeMySessionParams,
-  revokeMySession,
-  getCallerUserId,
-} from '../index';
+import * as auth from '../index';
 
 const authSweeperTick = table(
   { name: 'auth_sweeper_tick' },
@@ -58,52 +39,52 @@ export const init = spacetimedb.init(ctx => {
   installAuth(ctx);
 });
 
-// On the first set_auth_config call, setAuthConfig generates an ES256 keypair when no PEM is supplied.
-export const set_auth_config = spacetimedb.reducer(
-  setAuthConfigParams,
+// Generate an ES256 keypair when the first configuration has no PEM.
+export const setAuthConfig = spacetimedb.reducer(
+  auth.setAuthConfigParams,
   (ctx, args) => {
-    setAuthConfig(ctx, args);
+    auth.setAuthConfig(ctx, args);
   }
 );
 
-export const get_auth_public_key = spacetimedb.procedure(
-  getPublicKeyPemParams,
+export const getAuthPublicKey = spacetimedb.procedure(
+  auth.getPublicKeyPemParams,
   t.object('AuthPubKey', {
     publicKeyPem: t.string(),
     keyId: t.string(),
     issuerUrl: t.string(),
   }),
-  getPublicKeyPem
+  auth.getPublicKeyPem
 );
 
-export const link_connection = spacetimedb.reducer(
-  linkConnectionParams,
+export const linkConnection = spacetimedb.reducer(
+  auth.linkConnectionParams,
   (ctx, args) => {
-    linkConnection(ctx, args);
+    auth.linkConnection(ctx, args);
   }
 );
 
-export const unlink_connection = spacetimedb.reducer(
-  unlinkConnectionParams,
+export const unlinkConnection = spacetimedb.reducer(
+  auth.unlinkConnectionParams,
   (ctx, args) => {
-    unlinkConnection(ctx, args);
+    auth.unlinkConnection(ctx, args);
   }
 );
 
-export const update_profile = spacetimedb.reducer(
-  updateProfileParams,
-  updateProfile
+export const updateProfile = spacetimedb.reducer(
+  auth.updateProfileParams,
+  auth.updateProfile
 );
 
-export const revoke_session = spacetimedb.reducer(
-  revokeSessionParams,
+export const revokeSession = spacetimedb.reducer(
+  auth.revokeSessionParams,
   (ctx, args) => {
-    revokeSession(ctx, args);
+    auth.revokeSession(ctx, args);
   }
 );
 
-export const list_my_sessions = spacetimedb.procedure(
-  listMySessionsParams,
+export const listMySessions = spacetimedb.procedure(
+  auth.listMySessionsParams,
   t.object('MySessions', {
     sessions: t.array(
       t.object('MySession', {
@@ -116,21 +97,21 @@ export const list_my_sessions = spacetimedb.procedure(
       })
     ),
   }),
-  listMySessions
+  auth.listMySessions
 );
 
-export const revoke_my_session = spacetimedb.reducer(
-  revokeMySessionParams,
+export const revokeMySession = spacetimedb.reducer(
+  auth.revokeMySessionParams,
   (ctx, args) => {
-    revokeMySession(ctx, args);
+    auth.revokeMySession(ctx, args);
   }
 );
 
-export const auth_sweep = spacetimedb.reducer(
+export const authSweep = spacetimedb.reducer(
   { onSchedule: authSweeperTick },
   { arg: authSweeperTick.rowType },
   (ctx, _arg) => {
-    authSweep(ctx);
+    auth.authSweep(ctx);
   }
 );
 
@@ -152,7 +133,7 @@ export const whoami = spacetimedb.procedure(
     senderIdentityHex: t.string(),
   }),
   (ctx, _args) => {
-    const userId = getCallerUserId(ctx);
+    const userId = auth.getCallerUserId(ctx);
     return {
       userId: userId ?? undefined,
       senderIdentityHex: ctx.sender.toHexString(),
