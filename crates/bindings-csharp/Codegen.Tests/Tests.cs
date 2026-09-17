@@ -739,7 +739,7 @@ public static class GeneratorSnapshotTests
                     if (registry.Resolve(first, "User") != "auth_data.User"
                         || registry.Resolve(second, "User") != "audit_data.User"
                         || registry.Resolve("root", "User") != "User"
-                        || registry.Resolve("unmounted", "User") != "User"
+                        || registry.Resolve("publicDependency", "User") != "User"
                         || registry.Resolve("merged", "User") != "User")
                         return false;
                     try { SpacetimeDB.Internal.Module.ResolveName(first, "User"); return false; }
@@ -747,7 +747,7 @@ public static class GeneratorSnapshotTests
                     SpacetimeDB.Internal.Module.InstallNamespaces(registry);
                     if (SpacetimeDB.Internal.Module.ResolveName(first, "User") != "auth_data.User") return false;
                     if (SpacetimeDB.Internal.Module.ResolveSqlName(first, "User").ToString() != "\"auth_data\".\"User\"") return false;
-                    if (registry.ResolveSqlName("unmounted", "User").ToString() != "\"User\"") return false;
+                    if (registry.ResolveSqlName("publicDependency", "User").ToString() != "\"User\"") return false;
                     if (registry.ResolveSqlName("merged", "User").ToString() != "\"User\"") return false;
                     if (registry.ResolveSqlName("root", "User.With.Dot").ToString() != "\"User.With.Dot\"") return false;
                     try { SpacetimeDB.Internal.Module.InstallNamespaces(registry); return false; }
