@@ -140,7 +140,7 @@ const myTable = table(
 const spacetimedb = schema({ myTable });
 export default spacetimedb;
 
-export const insertAValue = spacetimedb.procedure({ a: t.u32(), b: t.u32() }, t.unit(), (ctx, { a, b }) => {
+export const insertAValue = spacetimedb.procedure({ a: t.u32(), b: t.string() }, t.unit(), (ctx, { a, b }) => {
     ctx.withTx(ctx => {
         ctx.db.myTable.insert({ a, b });
     });
