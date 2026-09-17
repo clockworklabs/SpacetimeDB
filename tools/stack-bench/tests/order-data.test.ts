@@ -11,6 +11,15 @@ import { getSpacetimeCheckoutState } from '../src/stacks/backends/spacetime-oper
 import { createDatabaseReadCapability } from '../src/actions/runtime-action-executors.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { executeAction } from '../src/actions/action-contract.js';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
+import { loadTrack } from '../src/composition/tracks.js';
+import { requireRecipeRelease } from '../src/composition/recipe-release.js';
+import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.js';
+
+const fullStorage = { kind: 'order-data' as const, cart: true, warehouses: true };
 
 function data(): Record<keyof typeof ORDER_DATA_COLUMNS, Record<string, unknown>[]> {
   return {
@@ -21,9 +30,75 @@ function data(): Record<keyof typeof ORDER_DATA_COLUMNS, Record<string, unknown>
   };
 }
 
+test('compiled duplicate checkout reconciles real order effects without requesting warehouse records', async () => {
+  const binding = requireRecipeRelease(loadTrack('ecommerce'), 3, 'ecommerce.progression-catalog');
+  const request = createBoundRecipeTaskRequest(binding, {
+    featureIds: ['ecommerce.feature.checkout'], taskMode: 'fresh',
+    expectedSpecifications: ['ecommerce.spec.concurrency-safety'],
+    checkKeys: ['ecommerce.spec.concurrency-safety.duplicate-checkout.203b'],
+  });
+  assert(!request.selection.features?.includes('ecommerce.feature.warehouse-admin'));
+  assert.match(request.task.contractText, /item\(id, name, price\)/);
+  assert.match(request.task.contractText, /order_cart\(account_id, item_id, quantity\)/);
+  assert(!request.task.requirementText.includes('Warehouse administration'));
+  const path = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/01-duplicate-checkout.json');
+  const scenario = compileScenarioDefinition(JSON.parse(readFileSync(path, 'utf8')), { source: path });
+  const criterion = scenario.features[0]!.criteria.find(row => row.id === '203b')!;
+  const steps = criterion.steps.filter(step => ['dbRecordCheckout', 'dbExpectCheckout'].includes(step.do));
+  assert.equal(steps.length, 3);
+  const raceIndex = criterion.steps.findIndex(step => step.do === 'callConcurrently');
+  assert(criterion.steps.indexOf(steps[1]!) < raceIndex && criterion.steps.indexOf(steps[2]!) > raceIndex);
+  for (const defect of ['none', 'no-op', 'duplicate', 'wrong-owner', 'wrong-price', 'retained-cart', 'lost-prior']) {
+    const initial = data();
+    for (const key of ['warehouse', 'stock', 'order_reservation', 'order_allocation'] as const) delete (initial as Partial<typeof initial>)[key];
+    initial.order_header = [{ id: 'old', account_id: '1', total: 0, refunded: 0, status: 'cancelled' }];
+    const prepared = structuredClone(initial); prepared.order_cart = [{ account_id: '1', item_id: '2', quantity: 1 }];
+    const after = structuredClone(initial);
+    after.order_header.push({ id: 'new', account_id: '1', total: 19.99, refunded: 0, status: 'pending' });
+    after.order_line.push({ id: 'line', order_id: 'new', item_id: '2', quantity: 1, unit_price: 19.99 });
+    if (defect === 'no-op') Object.assign(after, prepared);
+    if (defect === 'duplicate') after.order_header.push({ ...after.order_header[1]!, id: 'extra' });
+    if (defect === 'wrong-owner') {
+      after.order_account.push({ id: 'other', username: 'other' }); after.order_header[1]!.account_id = 'other';
+    }
+    if (defect === 'wrong-price') after.order_line[0]!.unit_price = 0;
+    if (defect === 'retained-cart') after.order_cart = prepared.order_cart;
+    if (defect === 'lost-prior') after.order_header.shift();
+    const queue = [initial, prepared, after];
+    const capability = createDatabaseReadCapability({ backend: 'spacetime', app: '/minimal-checkout', expand: value => value === '{user:twin}' ? 'buyer' : value,
+      spacetime: { buildContainer: { id: 'owned', name: 'owned' }, mod: 'app', uri: 'http://localhost:3000', containerUri: 'http://localhost:3000' },
+      exec: (_command, args) => {
+        if (args[0] === 'inspect') return 'owned';
+        const tables = args.filter(arg => arg.startsWith('SELECT * FROM ')).map(arg => arg.slice('SELECT * FROM '.length));
+        assert.deepEqual(tables.sort(), ['item', 'order_account', 'order_cart', 'order_header', 'order_line']);
+        const raw = queue.shift()!;
+        return JSON.stringify(Object.fromEntries(tables.map(table => [table, { inserts: raw[table as keyof typeof raw], deletes: [] }])));
+      } });
+    for (const [index, step] of steps.entries()) {
+      const result = await executeAction(ACTION_REGISTRY, step.do, step, { capabilities: { 'database-read': capability } });
+      assert.equal(result.status, index < 2 || defect === 'none' ? 'passed' : 'failed', defect);
+    }
+  }
+});
+
+test('order read scope requires selected data and never infers features from missing tables', () => {
+  for (const cart of [false, true]) for (const warehouses of [false, true]) {
+    const storage = { kind: 'order-data' as const, cart, warehouses }, raw = data();
+    if (!cart) delete (raw as Partial<typeof raw>).order_cart;
+    if (!cart || !warehouses) delete (raw as Partial<typeof raw>).order_reservation;
+    if (!warehouses) for (const key of ['warehouse', 'stock', 'order_allocation'] as const) delete (raw as Partial<typeof raw>)[key];
+    const snapshot = readOrderDataSnapshot(raw, 'buyer', 'Keyboard', storage);
+    assert.deepEqual(snapshot.storage, storage);
+    assert.equal(snapshot.state.stock.length, warehouses ? 1 : 0);
+    if (!cart || !warehouses) assert.throws(() => readOrderDataSnapshot(raw, 'buyer', 'Keyboard', fullStorage));
+    delete (raw as Partial<typeof raw>).order_line;
+    assert.throws(() => readOrderDataSnapshot(raw, 'buyer', 'Keyboard', storage), /missing fields/);
+  }
+});
+
 test('order data preserves empty state, orphan effects and exact identifiers without a reference source', () => {
   const raw = data();
-  const read = () => readOrderDataSnapshot(raw, 'buyer', 'Keyboard');
+  const read = () => readOrderDataSnapshot(raw, 'buyer', 'Keyboard', fullStorage);
   assert.equal(read().state.priceMinor, 1999);
   assert.deepEqual(read().state.orders, []);
   raw.order_header.push({ id: '9007199254740993', account_id: '1', total: '19.99', refunded: 0, status: 'pending' });
@@ -56,16 +131,16 @@ test('order data uses one SpacetimeDB subscription and preserves the explicit re
   const capability = createDatabaseReadCapability({ backend: 'spacetime', app: '/not-a-reference', expand: value => value, exec,
     spacetime: { buildContainer: { id: 'owned', name: 'owned' }, mod: 'app', uri: 'http://localhost:3000', containerUri: 'http://localhost:3000' } });
   const result = await executeAction(ACTION_REGISTRY, 'dbRecordCheckout', {
-    do: 'dbRecordCheckout', storage: 'order-data', account: 'buyer', item: 'Keyboard', as: 'before',
+    do: 'dbRecordCheckout', storage: { kind: 'order-data', cart: true, warehouses: true }, account: 'buyer', item: 'Keyboard', as: 'before',
   }, { capabilities: { 'database-read': capability } });
   assert.equal(result.status, 'passed');
   const snapshot = capability.checkoutSnapshots.get('before')!;
-  assert.equal(snapshot.storage, 'order-data');
+  assert.deepEqual(snapshot.storage, fullStorage);
   assert.equal(snapshot.state.orders[0]!.id, '9007199254740993');
   assert.deepEqual(capability.getCheckoutState(snapshot).state, snapshot.state);
   raw.item[0]!.price = 0.001;
   const invalid = await executeAction(ACTION_REGISTRY, 'dbRecordCheckout', {
-    do: 'dbRecordCheckout', storage: 'order-data', account: 'buyer', item: 'Keyboard', as: 'bad',
+    do: 'dbRecordCheckout', storage: { kind: 'order-data', cart: true, warehouses: true }, account: 'buyer', item: 'Keyboard', as: 'bad',
   }, { capabilities: { 'database-read': capability } });
   assert.equal(invalid.status, 'failed', 'bad declared data is an app failure');
   assert.throws(() => getSpacetimeCheckoutState({ account: 'buyer', item: 'Keyboard', app: '/not-a-reference' }),
@@ -77,28 +152,28 @@ test('order data preserves infrastructure failures instead of blaming the app', 
     databaseLease: { resources: { container: { id: 'owned', name: 'owned' }, database: 'app' } },
     exec: (_command, args) => { if (args[0] === 'inspect') return 'owned'; throw new Error('connection refused'); } });
   const result = await executeAction(ACTION_REGISTRY, 'dbRecordCheckout', {
-    do: 'dbRecordCheckout', storage: 'order-data', account: 'buyer', item: 'Keyboard', as: 'before',
+    do: 'dbRecordCheckout', storage: { kind: 'order-data', cart: true, warehouses: true }, account: 'buyer', item: 'Keyboard', as: 'before',
   }, { capabilities: { 'database-read': capability } });
   assert.notEqual(result.status, 'passed');
   assert.notEqual(result.status, 'failed');
 });
 
 test('order-only purchase and cancellation reject no-op, wrong allocation and wrong refund effects', () => {
-  const raw = data(), before = readOrderDataSnapshot(raw, 'buyer', 'Keyboard').state;
+  const raw = data(), before = readOrderDataSnapshot(raw, 'buyer', 'Keyboard', fullStorage).state;
   raw.stock[0]!.quantity = 9;
   raw.order_header.push({ id: '4', account_id: '1', total: 19.99, refunded: 0, status: 'pending' });
   raw.order_line.push({ id: '5', order_id: '4', item_id: '2', quantity: 1, unit_price: 19.99 });
   raw.order_allocation.push({ order_line_id: '5', warehouse_id: '3', quantity: 1 });
-  const after = readOrderDataSnapshot(raw, 'buyer', 'Keyboard').state;
+  const after = readOrderDataSnapshot(raw, 'buyer', 'Keyboard', fullStorage).state;
   assert.deepEqual(orderPurchaseDifferences(before, after, new Map([['1', 1]]), new Map()), []);
   raw.warehouse = [];
-  assert.throws(() => readOrderDataSnapshot(raw, 'buyer', 'Keyboard'), /warehouse link is missing/);
+  assert.throws(() => readOrderDataSnapshot(raw, 'buyer', 'Keyboard', fullStorage), /warehouse link is missing/);
   raw.warehouse = [{ id: '3' }];
   assert(orderPurchaseDifferences(before, before, new Map([['1', 1]]), new Map()).length);
   raw.order_header[0]!.status = 'cancelled';
   raw.order_header[0]!.refunded = 19.99;
   raw.stock[0]!.quantity = 10;
-  const cancelled = readOrderDataSnapshot(raw, 'buyer', 'Keyboard').state;
+  const cancelled = readOrderDataSnapshot(raw, 'buyer', 'Keyboard', fullStorage).state;
   assert.deepEqual(orderCancellationDifferences(after, cancelled), []);
   assert(orderCancellationDifferences(after, after).length);
   cancelled.orders[0]!.refundedMinor = 0;
@@ -150,8 +225,8 @@ for (const backend of ['postgres', 'mongodb'] as const) {
         : `for (const [table, rows] of Object.entries(${JSON.stringify(data())})) {
             db.createCollection(table); if (rows.length) db.getCollection(table).insertMany(rows);
           }`);
-      const read = () => (pg ? getPostgresCheckoutState : getMongoDbCheckoutState)({ account: 'buyer', item: 'Keyboard',
-        storage: 'order-data', app: '/not-a-reference', lease: { resources: { container: { id, name }, database: 'bench' } } });
+      const read = (storage = fullStorage) => (pg ? getPostgresCheckoutState : getMongoDbCheckoutState)({ account: 'buyer', item: 'Keyboard',
+        storage, app: '/not-a-reference', lease: { resources: { container: { id, name }, database: 'bench' } } });
       const before = read().state;
       run(pg ? 'INSERT INTO order_cart VALUES(1,2,1);'
         : "db.order_cart.insertOne({account_id:'1',item_id:'2',quantity:1})");
@@ -174,6 +249,15 @@ for (const backend of ['postgres', 'mongodb'] as const) {
       assert(orderCheckoutDifferences(before, prepared, read().state, 1).length > 0);
       run(pg ? 'DROP TABLE order_line;' : 'db.order_line.drop()');
       assert.throws(read, error => error instanceof Error && 'orderDataInterface' in error);
+      run(pg ? `CREATE TABLE order_line(id bigint, order_id bigint, item_id bigint, quantity integer, unit_price numeric);
+          DROP TABLE stock, warehouse, order_allocation, order_reservation, order_cart;`
+        : `db.createCollection('order_line'); for (const table of ['stock','warehouse','order_allocation','order_reservation','order_cart']) db[table].drop();`);
+      const minimal = { kind: 'order-data' as const, cart: false, warehouses: false };
+      assert.deepEqual(read(minimal).state.stock, []);
+      assert.throws(() => read({ ...minimal, cart: true }), error => error instanceof Error && 'orderDataInterface' in error);
+      assert.throws(() => read({ ...minimal, warehouses: true }), error => error instanceof Error && 'orderDataInterface' in error);
+      run(pg ? 'CREATE TABLE order_cart(account_id bigint, item_id bigint, quantity integer);' : "db.createCollection('order_cart')");
+      assert.deepEqual(read({ ...minimal, cart: true }).state.cart, []);
     } finally { docker(['rm', '-f', id]); }
   });
 }

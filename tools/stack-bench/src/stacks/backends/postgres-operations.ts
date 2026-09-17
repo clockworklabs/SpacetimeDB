@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { describesMissingStockInterface, stockInterfaceError, stockQuantity } from '../stock-interface.js';
 import { checkoutStateSchema, verifyCheckoutSchema } from '../checkout-state.js';
-import { ORDER_DATA_COLUMNS, orderDataError, readOrderDataSnapshot } from '../order-data.js';
+import { orderDataColumns, orderDataError, readOrderDataSnapshot, type OrderDataStorage } from '../order-data.js';
 
 
 import { assertLeasedContainer } from '../backend-reset-guard.js';
@@ -51,12 +51,12 @@ WHERE stock.item_id = item.id AND stock.warehouse_id = warehouse.id
 `;
 
 export function getPostgresCheckoutState({ account, item, app, lease, storage, exec = execFileSync }: {
-  account: string; item: string; app: string; lease: LeasedDatabase; storage?: 'order-data'; exec?: TextCommandExecutor;
+  account: string; item: string; app: string; lease: LeasedDatabase; storage?: OrderDataStorage; exec?: TextCommandExecutor;
 }) {
-  if (storage === 'order-data') {
+  if (storage?.kind === 'order-data') {
     const container = assertLeasedContainer(lease.resources.container, exec, WRITE_TIMEOUT_MS, 'order data read');
     // A single statement observes every table at one MVCC snapshot. Cast ids before JSON to retain bigint precision.
-    const tables = Object.entries(ORDER_DATA_COLUMNS).map(([table, columns]) => `'${table}',
+    const tables = Object.entries(orderDataColumns(storage)).map(([table, columns]) => `'${table}',
       COALESCE((SELECT json_agg(row) FROM (SELECT ${columns.map(column =>
         column === 'id' || column.endsWith('_id') ? `${column}::text AS ${column}` : column).join(',')}
         FROM public.${table}) row), '[]'::json)`);
@@ -71,7 +71,7 @@ export function getPostgresCheckoutState({ account, item, app, lease, storage, e
       }
       throw error;
     }
-    return readOrderDataSnapshot(JSON.parse(output.trim()), account, item);
+    return readOrderDataSnapshot(JSON.parse(output.trim()), account, item, storage);
   }
   const schemaSha256 = verifyCheckoutSchema('postgres', app, ['server/src/schema.ts']);
   const container = assertLeasedContainer(lease.resources.container, exec, WRITE_TIMEOUT_MS, 'checkout state read');

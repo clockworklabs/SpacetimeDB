@@ -66,14 +66,23 @@ for (const backend of ['postgres', 'mongodb'] as const) {
       const initialize = new Function('exports', `${code}; return exports.initializeOrderData;`)({});
       const command = (value: unknown) => JSON.parse(run(`const r=db.runCommand(${JSON.stringify(value)}); if(!r.ok) throw Error(JSON.stringify(r)); print(JSON.stringify(r));`));
       const connection = postgres ? { query: async (sql: string) => run(sql) } : { db: {
-        listCollections: () => ({ toArray: async () => command({ listCollections: 1, nameOnly: true }).cursor.firstBatch }),
-        command: async (value: unknown) => command(value),
+        listCollections: () => ({ toArray: async () => command({ listCollections: 1, nameOnly: false }).cursor.firstBatch }),
+        dropCollection: async (name: string) => command({ drop: name }),
         createCollection: async (name: string, options: object) => command({ create: name, ...options }),
       } };
       await initialize(connection);
       await initialize(connection); // Restart must keep the views readable without changing app data.
+      if (!postgres) {
+        run("db.order_cart.drop(); db.createView('order_cart','carts',[{$match:{impossible:true}}]);");
+        await initialize(connection);
+        run("db.order_account.drop(); db.createCollection('order_account'); db.order_account.insertOne({keep:true});");
+        await assert.rejects(initialize(connection), /refusing to replace stored data/);
+        assert.equal(run('print(db.order_account.countDocuments({keep:true}))'), '1');
+        run('db.order_account.drop()');
+        await initialize(connection);
+      }
       const readOrders = () => (postgres ? getPostgresCheckoutState : getMongoDbCheckoutState)({
-        account: 'reader', item: 'Keyboard', app: '/not-a-reference', lease, storage: 'order-data',
+        account: 'reader', item: 'Keyboard', app: '/not-a-reference', lease, storage: { kind: 'order-data', cart: true, warehouses: true },
       }).state;
       assert.deepEqual(readOrders().orders, []);
       const read = () => (postgres ? getPostgresCheckoutState : getMongoDbCheckoutState)({

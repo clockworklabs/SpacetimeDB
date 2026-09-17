@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { describesMissingStockInterface, stockInterfaceError, stockQuantity } from '../stock-interface.js';
 import { checkoutId, checkoutMinor, checkoutStateSchema, verifyCheckoutSchema } from '../checkout-state.js';
-import { ORDER_DATA_COLUMNS, orderDataError, readOrderDataSnapshot } from '../order-data.js';
+import { orderDataColumns, orderDataError, readOrderDataSnapshot, type OrderDataStorage } from '../order-data.js';
 import { assertLeasedContainer } from '../backend-reset-guard.js';
 
 import { leasedSpacetimeTarget } from '../../runtime/spacetime-target.js';
@@ -228,13 +228,13 @@ export function getSpacetimeStock({ item, warehouse, spacetime, exec = execFileS
 }
 
 export function getSpacetimeCheckoutState({ account, item, app, spacetime, storage, exec = execFileSync }: {
-  account: string; item: string; app: string; storage?: 'order-data'; exec?: TextCommandExecutor;
+  account: string; item: string; app: string; storage?: OrderDataStorage; exec?: TextCommandExecutor;
   spacetime?: { buildContainer?: { id: string; name: string } | null; mod: string; containerUri: string };
 }) {
-  if (storage === 'order-data') {
+  if (storage?.kind === 'order-data') {
     if (!spacetime?.buildContainer) throw new Error('SpacetimeDB build container is unavailable for order data');
     const container = assertLeasedContainer(spacetime.buildContainer, exec, WRITE_TIMEOUT_MS, 'order data read');
-    const tables = Object.keys(ORDER_DATA_COLUMNS);
+    const tables = Object.keys(orderDataColumns(storage));
     let output: string;
     try {
       output = exec('docker', [...agentExec(), container,
@@ -267,7 +267,7 @@ export function getSpacetimeCheckoutState({ account, item, app, spacetime, stora
       }
       return [table, value.inserts];
     }));
-    return readOrderDataSnapshot(rows, account, item);
+    return readOrderDataSnapshot(rows, account, item, storage);
   }
   const schemaSha256 = verifyCheckoutSchema('spacetime', app, ['backend/spacetimedb/src/schema.ts']);
   if (!spacetime?.buildContainer) throw new Error('SpacetimeDB build container is unavailable for checkout snapshot');

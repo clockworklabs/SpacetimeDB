@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { resetBackend, resetRepairBackend } from '../src/stacks/backend-reset.js';
 import { prepareMongoDbDatabase, proveMongoDbUse, resetMongoDb } from '../src/stacks/backends/mongodb-operations.js';
@@ -226,6 +227,21 @@ test('MongoDB runtime provenance finds an application marker in the exact leased
   assert(script);
   assert.match(script, /const marker = "ann-proof"/);
   assert.match(script, /containsMarker/);
+  for (const found of [true, false]) {
+    let count = -1;
+    runInNewContext(script, {
+      db: {
+        getCollectionNames: () => ['system.views', 'accounts'],
+        getCollection: (name: string) => {
+          assert.equal(name, 'accounts');
+          const rows = [{ username: found ? 'ann-proof' : 'someone-else' }];
+          return { find: () => ({ hasNext: () => rows.length > 0, next: () => rows.shift() }) };
+        },
+      },
+      print: (value: number) => { count = value; },
+    });
+    assert.equal(count, found ? 1 : 0);
+  }
   assert.equal(proveMongoDbUse({ lease, marker: 'missing', exec: execWith('0\n') }).ok, false);
   assert.throws(() => proveMongoDbUse({ lease, marker: 'proof', exec: execWith('not-a-count\n') }),
     /invalid count/);

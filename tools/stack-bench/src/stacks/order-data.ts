@@ -9,6 +9,11 @@ export function orderDataError(message: string, cause?: unknown): Error {
   return Object.assign(new Error(message, { cause }), { orderDataInterface: true });
 }
 
+export const orderDataStorageSchema = z.strictObject({
+  kind: z.literal('order-data'), cart: z.boolean(), warehouses: z.boolean(),
+});
+export type OrderDataStorage = z.infer<typeof orderDataStorageSchema>;
+
 const id = z.unknown().transform((value, ctx) => {
   try { return checkoutId(value); } catch { ctx.addIssue({ code: 'custom', message: 'invalid identifier' }); return z.NEVER; }
 });
@@ -32,8 +37,22 @@ const tablesSchema = z.object({
 export const ORDER_DATA_COLUMNS = Object.fromEntries(Object.entries(tablesSchema.shape)
   .map(([table, rows]) => [table, Object.keys(rows.element.shape)])) as Record<keyof typeof tablesSchema.shape, string[]>;
 
-export function readOrderDataSnapshot(raw: unknown, account: string, item: string) {
-  const parsed = tablesSchema.safeParse(raw);
+export function orderDataColumns(storage: OrderDataStorage) {
+  orderDataStorageSchema.parse(storage);
+  return Object.fromEntries(Object.entries(ORDER_DATA_COLUMNS).filter(([table]) => {
+    if (table === 'order_cart') return storage.cart;
+    if (table === 'order_reservation') return storage.cart && storage.warehouses;
+    if (['warehouse', 'stock', 'order_allocation'].includes(table)) return storage.warehouses;
+    return true;
+  }));
+}
+
+export function readOrderDataSnapshot(raw: unknown, account: string, item: string, storage: OrderDataStorage) {
+  const columns = orderDataColumns(storage);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw orderDataError('invalid order data snapshot');
+  // Unselected data is not observed. A selected missing table must still fail validation.
+  const parsed = tablesSchema.safeParse(Object.fromEntries(Object.keys(ORDER_DATA_COLUMNS)
+    .map(table => [table, table in columns ? (raw as Record<string, unknown>)[table] : []])));
   if (!parsed.success) throw orderDataError('order data has missing fields or invalid values', parsed.error);
   const tables = parsed.data;
   // Ambiguous parents must never duplicate, drop, or silently reassign stored effects.
@@ -74,6 +93,7 @@ export function readOrderDataSnapshot(raw: unknown, account: string, item: strin
       .map(row => ({ itemId: row.item_id, warehouseId: row.warehouse_id, quantity: row.quantity })),
   });
   const contract = readFileSync(join(STACK_BENCH_ROOT, 'tracks/ecommerce/contracts/order-data.md'), 'utf8').replaceAll('\r\n', '\n');
-  return { state, scope: 'orders' as const, storage: 'order-data' as const,
-    schemaSha256: { contract: createHash('sha256').update(contract).digest('hex') } };
+  return { state, scope: 'orders' as const, storage,
+    schemaSha256: { contract: createHash('sha256').update(contract).digest('hex'),
+      selection: createHash('sha256').update(JSON.stringify(columns)).digest('hex') } };
 }

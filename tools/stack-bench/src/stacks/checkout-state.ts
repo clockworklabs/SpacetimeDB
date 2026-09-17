@@ -155,13 +155,17 @@ export function checkoutDifferences(before: CheckoutState, prepared: CheckoutSta
 }
 
 export function orderCheckoutDifferences(before: CheckoutState, prepared: CheckoutState, after: CheckoutState,
-  quantity: number, allowUnchanged = false): Array<{ control: string; observed: number; expected: number }> {
+  quantity: number, allowUnchanged = false, warehouses = true): Array<{ control: string; observed: number; expected: number }> {
   for (const state of [before, prepared, after]) orderCheckoutStateSchema.parse(state);
-  return compareCheckout(before, prepared, after, quantity, allowUnchanged, false);
+  return compareCheckout(before, prepared, after, quantity, allowUnchanged, false, warehouses);
 }
 
 function compareCheckout(before: CheckoutState, prepared: CheckoutState, after: CheckoutState,
-  quantity: number, allowUnchanged: boolean, requirePayment: boolean) {
+  quantity: number, allowUnchanged: boolean, requirePayment: boolean, warehouses = true) {
+  if (!warehouses && [before, prepared, after].some(state => state.stock.length || state.reservations.length
+    || state.orders.some(order => order.lines.some(line => line.allocations.length)))) {
+    throw new Error('checkout state includes warehouse data outside the declared scope');
+  }
   before = normalized(before); prepared = normalized(prepared); after = normalized(after);
   if (!Number.isSafeInteger(quantity) || quantity <= 0 || !Number.isSafeInteger(before.priceMinor * quantity)) {
     throw new Error('checkout expectation is not an exact quantity and amount');
@@ -188,7 +192,7 @@ function compareCheckout(before: CheckoutState, prepared: CheckoutState, after: 
       [before.accountId, before.itemId, before.priceMinor]);
   }
   check('initial cart lines', before.cart.length, 0);
-  check('initial stock warehouses', Number(before.stock.length > 0), 1);
+  if (warehouses) check('initial stock warehouses', Number(before.stock.length > 0), 1);
   check('initial cart reservations', before.reservations.length, 0);
   same('prepared cart', prepared.cart, [{ itemId: before.itemId, quantity }]);
   same('orders unchanged during cart preparation', sorted(prepared.orders), sorted(before.orders));
@@ -237,7 +241,7 @@ function compareCheckout(before: CheckoutState, prepared: CheckoutState, after: 
     check('unexpected checkout order lines', order.lines.filter(line => line.itemId !== before.itemId
       || line.priceMinor !== before.priceMinor || line.quantity <= 0).length, 0);
     for (const line of order.lines) {
-      check('allocated order quantity', total(line.allocations), line.quantity);
+      if (warehouses) check('allocated order quantity', total(line.allocations), line.quantity);
       check('invalid order allocations', line.allocations.filter(row => row.quantity <= 0
         || !before.stock.some(stock => stock.warehouseId === row.warehouseId)).length, 0);
     }
@@ -253,7 +257,7 @@ function compareCheckout(before: CheckoutState, prepared: CheckoutState, after: 
     }
   }
   same('stock warehouses preserved', sorted(after.stock.map(row => row.warehouseId)), sorted(before.stock.map(row => row.warehouseId)));
-  check('stored stock consumed by one checkout', integer.parse(total(before.stock) - total(after.stock)), quantity);
+  if (warehouses) check('stored stock consumed by one checkout', integer.parse(total(before.stock) - total(after.stock)), quantity);
   return differences;
 }
 

@@ -96,6 +96,9 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
   const named = capabilities['named-actions'], database = capabilities['database-read'];
   const before = database.checkoutSnapshots.get(input.before), prepared = database.checkoutSnapshots.get(input.prepared);
   if (!before || !prepared || !prepared.recordedAtMs) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
+  if (before.storage && (!before.storage.cart || !before.storage.warehouses)) {
+    throw new Error('checkout crash reconciliation requires cart and warehouse evidence');
+  }
   if (!isDeepStrictEqual(before.schemaSha256, prepared.schemaSha256)
     || before.scope !== prepared.scope
     || before.account !== prepared.account || before.item !== prepared.item) throw new Error('crash snapshots do not describe the same verified state');

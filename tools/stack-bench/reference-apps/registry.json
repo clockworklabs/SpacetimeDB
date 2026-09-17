@@ -27,7 +27,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/mongodb",
-        "sourceSha256": "df8f7fab8717f11e60c17871fb251aaae3b5ff9d88af0f94f3e1bda69c3b34c9"
+        "sourceSha256": "0d21bbc4b2768f4077a81d676f0d4c87a65067dda8f2c5ffeb2fa9208381dc7e"
       },
       "mutationManifests": [
         "grader/mutations/mongodb-ecommerce.json"

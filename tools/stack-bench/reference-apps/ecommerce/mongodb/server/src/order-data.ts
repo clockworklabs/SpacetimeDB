@@ -30,9 +30,15 @@ export async function initializeOrderData(connection: Connection) {
         quantity: '$items.allocations.quantity' } },
     ] },
   ];
-  const existing = new Set((await db.listCollections({}, { nameOnly: true }).toArray()).map(row => row.name));
+  const existing = new Map((await db.listCollections({}, { nameOnly: false }).toArray()).map(row => [row.name, row]));
   for (const { name, viewOn, pipeline } of views) {
-    if (existing.has(name)) await db.command({ collMod: name, viewOn, pipeline });
-    else await db.createCollection(name, { viewOn, pipeline });
+    const current = existing.get(name);
+    if (current) {
+      if (current.type !== 'view') throw new Error(`${name} is not a view; refusing to replace stored data`);
+      if (current.options?.viewOn === viewOn && JSON.stringify(current.options.pipeline) === JSON.stringify(pipeline)) continue;
+      // The supplied readWrite role can recreate views, but cannot use collMod.
+      await db.dropCollection(name);
+    }
+    await db.createCollection(name, { viewOn, pipeline });
   }
 }

@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { stockInterfaceError, stockQuantity } from '../stock-interface.js';
 import { checkoutId, checkoutMinor, checkoutStateSchema, verifyCheckoutSchema } from '../checkout-state.js';
-import { ORDER_DATA_COLUMNS, orderDataError, readOrderDataSnapshot } from '../order-data.js';
+import { orderDataColumns, orderDataError, readOrderDataSnapshot, type OrderDataStorage } from '../order-data.js';
 
 import { assertLeasedContainer } from '../backend-reset-guard.js';
 import type { LeasedDatabase } from '../backend-reset-guard.js';
@@ -27,12 +27,12 @@ const streams = (error: unknown, ...keys: readonly string[]): string =>
   record(error) ? keys.map(key => String(error[key] ?? '')).join('') : '';
 
 export function getMongoDbCheckoutState({ account, item, app, lease, storage, exec = execFileSync }: {
-  account: string; item: string; app: string; lease: LeasedDatabase; storage?: 'order-data'; exec?: TextCommandExecutor;
+  account: string; item: string; app: string; lease: LeasedDatabase; storage?: OrderDataStorage; exec?: TextCommandExecutor;
 }) {
-  if (storage === 'order-data') {
+  if (storage?.kind === 'order-data') {
     const container = assertLeasedContainer(lease.resources.container, exec, WRITE_TIMEOUT_MS, 'order data read');
     const script = `
-      const columns=${JSON.stringify(ORDER_DATA_COLUMNS)};
+      const columns=${JSON.stringify(orderDataColumns(storage))};
       const session=db.getMongo().startSession();
       const store=session.getDatabase(db.getName());
       try {
@@ -63,7 +63,7 @@ export function getMongoDbCheckoutState({ account, item, app, lease, storage, ex
       }
       throw error;
     }
-    return readOrderDataSnapshot(JSON.parse(output.trim()), account, item);
+    return readOrderDataSnapshot(JSON.parse(output.trim()), account, item, storage);
   }
   const schemaSha256 = verifyCheckoutSchema('mongodb', app, ['server/src/models.ts', 'server/src/progression-models.ts']);
   const container = assertLeasedContainer(lease.resources.container, exec, WRITE_TIMEOUT_MS, 'checkout state read');
@@ -132,6 +132,7 @@ function containsMarker(value) {
 }
 let matches = 0;
 for (const name of db.getCollectionNames()) {
+  if (name.startsWith('system.')) continue;
   const cursor = db.getCollection(name).find();
   while (cursor.hasNext()) {
     if (containsMarker(cursor.next())) { matches += 1; break; }

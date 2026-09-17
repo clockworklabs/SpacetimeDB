@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import type { OrderDataStorage } from '../stacks/order-data.js';
 
 import { ActionApplicationFailure, ActionInconclusive, actionImplementation } from './action-contract.js';
 import { finding, isFinding, renderFinding } from './action-findings.js';
@@ -95,7 +96,7 @@ interface LifecycleConcurrencyCapabilities {
   readonly 'database-read': {
     getStock(input: { item: string; warehouse?: string }):
       { quantity: number } | Promise<{ quantity: number }>;
-    getCheckoutState(input: { account: string; item: string; storage?: 'order-data' }): CheckoutSnapshot;
+    getCheckoutState(input: { account: string; item: string; storage?: OrderDataStorage }): CheckoutSnapshot;
     readonly checkoutSnapshots: Map<string, CheckoutSnapshot & { account: string; item: string }>;
   };
   readonly 'browser-observation': {
@@ -108,7 +109,7 @@ interface CheckoutSnapshot {
   readonly schemaSha256: Record<string, string>;
   readonly recordedAtMs?: number;
   readonly scope?: 'orders';
-  readonly storage?: 'order-data';
+  readonly storage?: OrderDataStorage;
 }
 
 interface ActionArguments<Input> {
@@ -189,10 +190,10 @@ async function dbRecordStock({ input, capabilities }: ActionArguments<ReadStockI
   return { ...value, key: input.as };
 }
 
-async function dbRecordCheckout({ input, capabilities }: ActionArguments<{ account: string; item: string; as: string; storage?: 'order-data' }>) {
+async function dbRecordCheckout({ input, capabilities }: ActionArguments<{ account: string; item: string; as: string; storage?: OrderDataStorage }>) {
   const database = capabilities['database-read'];
   const snapshot = { ...database.getCheckoutState(input), recordedAtMs: Date.now() };
-  if (!snapshot.state.stock.length) inconclusive('invalid-input', { detail: 'checkout setup requires known stock warehouses' });
+  if (snapshot.storage?.warehouses !== false && !snapshot.state.stock.length) inconclusive('invalid-input', { detail: 'checkout setup requires known stock warehouses' });
   database.checkoutSnapshots.set(input.as, { ...snapshot, account: input.account, item: input.item });
   return { ...snapshot, key: input.as };
 }
@@ -207,8 +208,10 @@ async function dbExpectCheckout({ input, capabilities }: ActionArguments<{ befor
   if (JSON.stringify(before.schemaSha256) !== JSON.stringify(prepared.schemaSha256)
     || JSON.stringify(before.schemaSha256) !== JSON.stringify(after.schemaSha256)) throw new Error('checkout reader schema changed during the test');
   if (before.scope !== prepared.scope || before.scope !== after.scope) throw new Error('checkout scope changed');
-  const compare = before.scope === 'orders' ? orderCheckoutDifferences : checkoutDifferences;
-  const differences = compare(before.state, prepared.state, after.state, input.quantity);
+  if (before.storage && !before.storage.cart) throw new Error('checkout reconciliation requires cart evidence');
+  const differences = before.scope === 'orders'
+    ? orderCheckoutDifferences(before.state, prepared.state, after.state, input.quantity, false, before.storage?.warehouses ?? true)
+    : checkoutDifferences(before.state, prepared.state, after.state, input.quantity);
   const observation = { ...after, differences, before: input.before, prepared: input.prepared };
   if (differences[0]) {
     const { control, observed, expected } = differences[0];
@@ -222,7 +225,8 @@ async function dbExpectCancellation({ input, capabilities }: ActionArguments<{ b
   const database = capabilities['database-read'];
   const before = database.checkoutSnapshots.get(input.before);
   if (!before) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
-  if (before.scope === 'orders' && before.storage !== 'order-data') inconclusive('invalid-input', { detail: 'saved order cancellation has no qualified mapping' });
+  if (before.scope === 'orders' && before.storage?.kind !== 'order-data') inconclusive('invalid-input', { detail: 'saved order cancellation has no qualified mapping' });
+  if (before.storage && !before.storage.warehouses) throw new Error('cancellation reconciliation requires warehouse evidence');
   const after = database.getCheckoutState(before);
   if (JSON.stringify(before.schemaSha256) !== JSON.stringify(after.schemaSha256)) {
     throw new Error('checkout reader schema changed during cancellation');
@@ -251,7 +255,8 @@ async function dbExpectPurchases({ input, capabilities }: ActionArguments<{
   const snapshots = Object.entries(input.before).map(([actor, key]) => {
     const before = database.checkoutSnapshots.get(key);
     if (!before) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
-    if (before.scope === 'orders' && before.storage !== 'order-data') inconclusive('invalid-input', { detail: 'saved direct-purchase histories have no qualified mapping' });
+    if (before.scope === 'orders' && before.storage?.kind !== 'order-data') inconclusive('invalid-input', { detail: 'saved direct-purchase histories have no qualified mapping' });
+    if (before.storage && !before.storage.warehouses) throw new Error('purchase reconciliation requires warehouse evidence');
     return { actor, before };
   });
   const accepted = new Map(snapshots.map(({ before }) => [before.state.accountId, 0]));
@@ -651,7 +656,7 @@ export function createDatabaseReadCapability({ backend, spacetime, databaseLease
     // A client disconnect cannot stop an HTTP handler retrying after a DB crash.
     // This grade cannot safely compare later global state; reset in a new grade.
     markCheckoutUnsettled() { checkoutActivity.unsettled = true; },
-    getCheckoutState(input: { account: string; item: string; storage?: 'order-data' }): CheckoutSnapshot {
+    getCheckoutState(input: { account: string; item: string; storage?: OrderDataStorage }): CheckoutSnapshot {
       requireSettled();
       if (skip) throw new Error('checkout state reads are disabled for this control');
       if (!app) throw new Error('checkout state reads require a verified application source directory');
