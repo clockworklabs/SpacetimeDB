@@ -9,7 +9,7 @@ state, synchronous procedures, and valibot-validated webhook payloads.
 ## Install
 
 ```bash
-npm install @spacetimedb/resend spacetimedb@^2.8.3
+npm install @spacetimedb/resend spacetimedb
 ```
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.
@@ -109,7 +109,7 @@ Host modules should prefer the submodule helper export:
 ```ts
 import * as resend from '@spacetimedb/resend/submodule';
 
-resend.sendEmail(ctx.as.resend, {
+resend.sendEmailRequest(ctx.as.resend, {
   to: ['delivered@resend.dev'],
   subject: 'Welcome',
   html: '<p>Hello.</p>',
@@ -231,4 +231,4 @@ Credentialed smoke coverage is described in **Integration testing** above.
 
 ## License
 
-[BUSL-1.1](./LICENSE.txt) - same as SpacetimeDB.
+[Apache-2.0](./LICENSE.txt).

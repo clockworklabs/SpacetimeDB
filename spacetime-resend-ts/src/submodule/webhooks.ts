@@ -99,12 +99,7 @@ function updateWebhookStatus(
     processedAt: isTerminal ? ctx.timestamp : existing.processedAt,
   };
 
-  if (ctx.db.resendWebhookEvent.eventId.update) {
-    ctx.db.resendWebhookEvent.eventId.update(updated);
-  } else {
-    ctx.db.resendWebhookEvent.delete(existing);
-    ctx.db.resendWebhookEvent.insert(updated);
-  }
+  ctx.db.resendWebhookEvent.eventId.update(updated);
 }
 
 function makeEmailUpsertArgs(
@@ -242,9 +237,8 @@ const MAX_WEBHOOK_BODY_LENGTH = 1024 * 1024;
 const MAX_WEBHOOK_HEADER_LENGTH = 8192;
 const MAX_WEBHOOK_METADATA_LENGTH = 255;
 
-// Verify the Svix signature in-module, then store and apply the event. The
-// reducer and native HTTP route share this single ingest path and receive an
-function ingestResendWebhook(
+// The reducer and HTTP route verify, store, and apply events in one transaction.
+function applyResendWebhook(
   ctx: WriteCtx,
   args: ResendWebhookIngestArgs
 ): { status: number; code: string } {
@@ -317,7 +311,7 @@ function ingestResendWebhook(
   return { status: 200, code: 'ok' };
 }
 
-export const ingest_resend_webhook = spacetimedb.reducer(
+export const ingestResendWebhook = spacetimedb.reducer(
   {
     eventId: t.string(),
     eventType: t.string(),
@@ -326,7 +320,7 @@ export const ingest_resend_webhook = spacetimedb.reducer(
     timestampHeader: t.option(t.string()),
   },
   (ctx, args) => {
-    const result = ingestResendWebhook(ctx, args);
+    const result = applyResendWebhook(ctx, args);
     if (result.status !== 200) throwSenderError(result.code);
   }
 );
@@ -368,7 +362,7 @@ export function makeResendWebhookHandler() {
     if (!eventType) return webhookJson({ error: 'missing_event_type' }, 400);
 
     const result = ctx.withTx(tx =>
-      ingestResendWebhook(tx as WriteCtx, {
+      applyResendWebhook(tx as WriteCtx, {
         eventId: svixId,
         eventType,
         payloadJson: rawBody,
@@ -383,7 +377,7 @@ export function makeResendWebhookHandler() {
   };
 }
 
-export const replay_webhook_event = spacetimedb.reducer(
+export const replayWebhookEvent = spacetimedb.reducer(
   { eventId: t.string() },
   (ctx, { eventId }) => {
     // Administrators may run this operation over stored events.

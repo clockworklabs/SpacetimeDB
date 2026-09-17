@@ -54,16 +54,11 @@ function upsertConfig(
     ctx.db.resendConfig.insert(row);
     return;
   }
-  if (ctx.db.resendConfig.singleton.update) {
-    ctx.db.resendConfig.singleton.update(row);
-  } else {
-    ctx.db.resendConfig.delete(existing);
-    ctx.db.resendConfig.insert(row);
-  }
+  ctx.db.resendConfig.singleton.update(row);
 }
 
 // Requires an admin seeded by the database owner; no public first-call bootstrap.
-export const set_resend_config = spacetimedb.procedure(
+export const setResendConfig = spacetimedb.procedure(
   {
     apiKey: t.string(),
     webhookSigningSecret: t.option(t.string()),
@@ -80,7 +75,7 @@ export const set_resend_config = spacetimedb.procedure(
   }
 );
 
-export const get_resend_config_status = spacetimedb.procedure(
+export const getResendConfigStatus = spacetimedb.procedure(
   {},
   t.object('ResendConfigStatus', {
     isConfigured: t.bool(),

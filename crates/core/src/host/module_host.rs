@@ -608,15 +608,23 @@ pub(crate) fn init_database(
     replica_ctx: &ReplicaContext,
     module_def: &ModuleDef,
     program: Program,
+    environment: std::collections::BTreeMap<String, String>,
     call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResultWithTxOffset, bool),
 ) -> (anyhow::Result<InitDatabaseResult>, bool) {
-    extract_trapped(init_database_inner(replica_ctx, module_def, program, call_reducer))
+    extract_trapped(init_database_inner(
+        replica_ctx,
+        module_def,
+        program,
+        environment,
+        call_reducer,
+    ))
 }
 
 fn init_database_inner(
     replica_ctx: &ReplicaContext,
     module_def: &ModuleDef,
     program: Program,
+    environment: std::collections::BTreeMap<String, String>,
     call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResultWithTxOffset, bool),
 ) -> anyhow::Result<(InitDatabaseResult, bool)> {
     log::debug!("init database");
@@ -674,6 +682,7 @@ fn init_database_inner(
                     .with_context(|| format!("failed to create row-level security for table `{table_id}`: `{sql}`",))?;
             }
 
+            crate::db::environment::replace(stdb, tx, module_def.environment(), &environment)?;
             stdb.set_initialized(tx, program)?;
 
             anyhow::Ok(())
@@ -876,6 +885,12 @@ pub enum ViewCommand {
         request: ws_v2::Subscribe,
         _timer: Instant,
     },
+    AddBatchSubscription {
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: ws_v2::SubscribeBatch,
+        _timer: Instant,
+    },
     RemoveSingleSubscription {
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
@@ -916,6 +931,13 @@ pub(in crate::host) enum ViewCommandErrorTarget {
         request_id: Option<RequestId>,
         query_set_id: ws_v2::QuerySetId,
     },
+    /// A [`ViewCommand::AddBatchSubscription`] which failed as a whole.
+    /// Every set in the batch is reported as failed with the same error.
+    Batch {
+        sender: Arc<ClientConnectionSender>,
+        request_id: RequestId,
+        query_set_ids: Box<[ws_v2::QuerySetId]>,
+    },
 }
 
 impl ViewCommand {
@@ -924,7 +946,8 @@ impl ViewCommand {
             Self::AddSingleSubscription { _timer, .. }
             | Self::AddMultiSubscription { _timer, .. }
             | Self::AddLegacySubscription { _timer, .. }
-            | Self::AddSubscriptionV2 { _timer, .. } => ViewCommandMetric {
+            | Self::AddSubscriptionV2 { _timer, .. }
+            | Self::AddBatchSubscription { _timer, .. } => ViewCommandMetric {
                 workload: WorkloadType::Subscribe,
                 timer: *_timer,
             },
@@ -998,6 +1021,11 @@ impl ViewCommand {
                 request_id: Some(request.request_id),
                 query_set_id: request.query_set_id,
             },
+            Self::AddBatchSubscription { sender, request, .. } => ViewCommandErrorTarget::Batch {
+                sender: sender.clone(),
+                request_id: request.request_id,
+                query_set_ids: request.sets.iter().map(|set| set.query_set_id).collect(),
+            },
         }
     }
 }
@@ -1025,6 +1053,16 @@ impl ViewCommandErrorTarget {
                 sender.clone(),
                 *request_id,
                 *query_set_id,
+                err.to_string().into(),
+            ),
+            Self::Batch {
+                sender,
+                request_id,
+                query_set_ids,
+            } => subscriptions.send_batch_subscription_error(
+                sender.clone(),
+                *request_id,
+                query_set_ids,
                 err.to_string().into(),
             ),
         };
@@ -2504,6 +2542,21 @@ impl ModuleHost {
     }
 
     call_view_command_method! {
+        pub async fn call_view_add_batch_subscription(
+            &self,
+            sender: Arc<ClientConnectionSender>,
+            auth: AuthCtx,
+            request: ws_v2::SubscribeBatch,
+            timer: Instant,
+        ) -> "call_view_add_batch_subscription" => AddBatchSubscription {
+            sender,
+            auth,
+            request,
+            _timer: timer,
+        }
+    }
+
+    call_view_command_method! {
         pub async fn call_view_remove_single_subscription(
             &self,
             sender: Arc<ClientConnectionSender>,
@@ -3181,12 +3234,20 @@ impl ModuleHost {
     }
 
     pub async fn init_database(&self, program: Program) -> Result<InitDatabaseResult, InitDatabaseError> {
+        self.init_database_with_environment(program, Default::default()).await
+    }
+
+    pub async fn init_database_with_environment(
+        &self,
+        program: Program,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> Result<InitDatabaseResult, InitDatabaseError> {
         call_instance!(
             self,
             "<init_database>",
-            program,
-            |p, inst| inst.init_database(p),
-            |p, inst| inst.init_database(p).await,
+            (program, environment),
+            |(program, environment), inst| inst.init_database(program, environment),
+            |(program, environment), inst| inst.init_database(program, environment).await,
         )?
         .map_err(InitDatabaseError::Other)
     }
@@ -3197,12 +3258,23 @@ impl ModuleHost {
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        self.update_database_with_environment(program, old_module_info, policy, Default::default())
+            .await
+    }
+
+    pub async fn update_database_with_environment(
+        &self,
+        program: Program,
+        old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> Result<UpdateDatabaseResult, anyhow::Error> {
         call_instance!(
             self,
             "<update_database>",
-            (program, old_module_info, policy),
-            |(a, b, c), inst| inst.update_database(a, b, c),
-            |(a, b, c), inst| inst.update_database(a, b, c).await,
+            (program, old_module_info, policy, environment),
+            |(a, b, c, d), inst| inst.update_database(a, b, c, d),
+            |(a, b, c, d), inst| inst.update_database(a, b, c, d).await,
         )?
     }
 

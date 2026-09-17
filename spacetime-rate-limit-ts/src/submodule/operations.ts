@@ -179,7 +179,7 @@ export const adminRateLimitBuckets = spacetimedb.view(
   }
 );
 
-export const rate_limit_sweep = spacetimedb.reducer(
+export const rateLimitSweep = spacetimedb.reducer(
   { onSchedule: rateLimitSweepTick },
   { arg: rateLimitSweepTick.rowType },
   (ctx, _args) => {

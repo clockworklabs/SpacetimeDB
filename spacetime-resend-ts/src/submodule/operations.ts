@@ -171,7 +171,7 @@ export type SendEmailArgs = {
   idempotencyKey?: string | undefined;
 };
 
-export function sendEmail(ctx: ProcedureModuleCtx, args: SendEmailArgs) {
+export function sendEmailRequest(ctx: ProcedureModuleCtx, args: SendEmailArgs) {
   try {
     validateEmailInput(args);
   } catch (error) {
@@ -246,17 +246,17 @@ const sendEmailArgs = {
   idempotencyKey: t.option(t.string()),
 };
 
-export const send_email = spacetimedb.procedure(
+export const sendEmail = spacetimedb.procedure(
   sendEmailArgs,
   sendEmailResult,
   (ctx, args) => {
     const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
     denyIfNotAdmin(verdict);
-    return sendEmail(ctx, args);
+    return sendEmailRequest(ctx, args);
   }
 );
 
-export const cancel_email = spacetimedb.procedure(
+export const cancelEmail = spacetimedb.procedure(
   { resendId: t.string() },
   t.unit(),
   (ctx, args) => {
@@ -280,18 +280,13 @@ export const cancel_email = spacetimedb.procedure(
         status: EmailStatus.Cancelled,
         updatedAt: ctx.timestamp,
       };
-      if (tx.db.resendEmail.resendId.update) {
-        tx.db.resendEmail.resendId.update(updated);
-      } else {
-        tx.db.resendEmail.delete(existing);
-        tx.db.resendEmail.insert(updated);
-      }
+      tx.db.resendEmail.resendId.update(updated);
     });
     return {};
   }
 );
 
-export const get_email = spacetimedb.procedure(
+export const getEmail = spacetimedb.procedure(
   { resendId: t.string() },
   t.option(resendEmailTable.rowType),
   (ctx, { resendId }) => {
@@ -302,7 +297,7 @@ export const get_email = spacetimedb.procedure(
   }
 );
 
-export const list_emails_by_user_id = spacetimedb.procedure(
+export const listEmailsByUserId = spacetimedb.procedure(
   { userId: t.string() },
   t.array(resendEmailTable.rowType),
   (ctx, { userId }) => {
@@ -313,7 +308,7 @@ export const list_emails_by_user_id = spacetimedb.procedure(
   }
 );
 
-export const list_emails_by_org_id = spacetimedb.procedure(
+export const listEmailsByOrgId = spacetimedb.procedure(
   { orgId: t.string() },
   t.array(resendEmailTable.rowType),
   (ctx, { orgId }) => {
@@ -322,7 +317,7 @@ export const list_emails_by_org_id = spacetimedb.procedure(
   }
 );
 
-export const list_emails_by_status = spacetimedb.procedure(
+export const listEmailsByStatus = spacetimedb.procedure(
   { status: emailStatus },
   t.array(resendEmailTable.rowType),
   (ctx, { status }) => {
@@ -333,7 +328,7 @@ export const list_emails_by_status = spacetimedb.procedure(
   }
 );
 
-export const list_delivery_events_for_email = spacetimedb.procedure(
+export const listDeliveryEventsForEmail = spacetimedb.procedure(
   { resendId: t.string() },
   t.array(resendDeliveryEventTable.rowType),
   (ctx, { resendId }) => {
@@ -344,7 +339,7 @@ export const list_delivery_events_for_email = spacetimedb.procedure(
   }
 );
 
-export const resend_api_request = spacetimedb.procedure(
+export const resendApiRequest = spacetimedb.procedure(
   {
     method: t.string(),
     path: t.string(),

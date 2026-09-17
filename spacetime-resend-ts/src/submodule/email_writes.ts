@@ -68,10 +68,5 @@ export function upsertEmail(
     ctx.db.resendEmail.insert(row);
     return;
   }
-  if (ctx.db.resendEmail.resendId.update) {
-    ctx.db.resendEmail.resendId.update(row);
-  } else {
-    ctx.db.resendEmail.delete(existing);
-    ctx.db.resendEmail.insert(row);
-  }
+  ctx.db.resendEmail.resendId.update(row);
 }

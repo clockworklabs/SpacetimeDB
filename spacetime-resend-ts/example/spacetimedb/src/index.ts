@@ -107,7 +107,7 @@ const dispatchSendResult = t.object('DispatchSendResult', {
   message: t.string(),
 });
 
-export const set_dispatch_policy = spacetimedb.procedure(
+export const setDispatchPolicy = spacetimedb.procedure(
   { allowedRecipientsJson: t.string() },
   t.bool(),
   (ctx, args) => {
@@ -132,7 +132,7 @@ export const set_dispatch_policy = spacetimedb.procedure(
 
 // The host policy restricts recipients and applies caller and global quotas before
 // delegating delivery through the private Resend configuration.
-export const send_dispatch = spacetimedb.procedure(
+export const sendDispatch = spacetimedb.procedure(
   {
     to: t.string(),
     subject: t.string(),
@@ -172,7 +172,7 @@ export const send_dispatch = spacetimedb.procedure(
     if (authorization !== 'allowed') fail(authorization);
 
     try {
-      const result = resend.sendEmail(ctx.as.resend, {
+      const result = resend.sendEmailRequest(ctx.as.resend, {
         to: [to],
         subject,
         html: messageHtml(message),
@@ -204,7 +204,7 @@ const dispatchDeleteResult = t.object('DispatchDeleteResult', {
 
 // Remove a single dispatch and any delivery events it collected. This is a demo
 // convenience so the log can be pruned; it writes directly to the submodule tables.
-export const delete_dispatch = spacetimedb.procedure(
+export const deleteDispatch = spacetimedb.procedure(
   { resendId: t.string() },
   dispatchDeleteResult,
   (ctx, args) => {
@@ -225,7 +225,7 @@ export const delete_dispatch = spacetimedb.procedure(
   }
 );
 
-export const clear_dispatches = spacetimedb.procedure(
+export const clearDispatches = spacetimedb.procedure(
   {},
   dispatchDeleteResult,
   ctx => {
@@ -252,11 +252,11 @@ export const clear_dispatches = spacetimedb.procedure(
 // route. The submodule verifies the svix signature in-module (via crypto-ts) and
 // ingests. No Node relay does any of this work.
 const resendWebhookHandler = resend.makeResendWebhookHandler();
-export const resend_webhook = spacetimedb.httpHandler((ctx, req) =>
+export const resendWebhook = spacetimedb.httpHandler((ctx, req) =>
   resendWebhookHandler(ctx.as.resend, req)
 );
 export const router = spacetimedb.httpRouter(
-  new Router().post('/webhook/resend', resend_webhook)
+  new Router().post('/webhook/resend', resendWebhook)
 );
 
 export const init = spacetimedb.init(ctx => {
