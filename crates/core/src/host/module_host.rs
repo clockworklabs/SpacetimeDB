@@ -885,6 +885,12 @@ pub enum ViewCommand {
         request: ws_v2::Subscribe,
         _timer: Instant,
     },
+    AddBatchSubscription {
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: ws_v2::SubscribeBatch,
+        _timer: Instant,
+    },
     RemoveSingleSubscription {
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
@@ -925,6 +931,13 @@ pub(in crate::host) enum ViewCommandErrorTarget {
         request_id: Option<RequestId>,
         query_set_id: ws_v2::QuerySetId,
     },
+    /// A [`ViewCommand::AddBatchSubscription`] which failed as a whole.
+    /// Every set in the batch is reported as failed with the same error.
+    Batch {
+        sender: Arc<ClientConnectionSender>,
+        request_id: RequestId,
+        query_set_ids: Box<[ws_v2::QuerySetId]>,
+    },
 }
 
 impl ViewCommand {
@@ -933,7 +946,8 @@ impl ViewCommand {
             Self::AddSingleSubscription { _timer, .. }
             | Self::AddMultiSubscription { _timer, .. }
             | Self::AddLegacySubscription { _timer, .. }
-            | Self::AddSubscriptionV2 { _timer, .. } => ViewCommandMetric {
+            | Self::AddSubscriptionV2 { _timer, .. }
+            | Self::AddBatchSubscription { _timer, .. } => ViewCommandMetric {
                 workload: WorkloadType::Subscribe,
                 timer: *_timer,
             },
@@ -1007,6 +1021,11 @@ impl ViewCommand {
                 request_id: Some(request.request_id),
                 query_set_id: request.query_set_id,
             },
+            Self::AddBatchSubscription { sender, request, .. } => ViewCommandErrorTarget::Batch {
+                sender: sender.clone(),
+                request_id: request.request_id,
+                query_set_ids: request.sets.iter().map(|set| set.query_set_id).collect(),
+            },
         }
     }
 }
@@ -1034,6 +1053,16 @@ impl ViewCommandErrorTarget {
                 sender.clone(),
                 *request_id,
                 *query_set_id,
+                err.to_string().into(),
+            ),
+            Self::Batch {
+                sender,
+                request_id,
+                query_set_ids,
+            } => subscriptions.send_batch_subscription_error(
+                sender.clone(),
+                *request_id,
+                query_set_ids,
                 err.to_string().into(),
             ),
         };
@@ -2505,6 +2534,21 @@ impl ModuleHost {
             request: ws_v2::Subscribe,
             timer: Instant,
         ) -> "call_view_add_multi_subscription" => AddSubscriptionV2 {
+            sender,
+            auth,
+            request,
+            _timer: timer,
+        }
+    }
+
+    call_view_command_method! {
+        pub async fn call_view_add_batch_subscription(
+            &self,
+            sender: Arc<ClientConnectionSender>,
+            auth: AuthCtx,
+            request: ws_v2::SubscribeBatch,
+            timer: Instant,
+        ) -> "call_view_add_batch_subscription" => AddBatchSubscription {
             sender,
             auth,
             request,
