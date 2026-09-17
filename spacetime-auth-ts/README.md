@@ -7,7 +7,7 @@ profile management, and in-module rate limiting.
 ## Install
 
 ```bash
-npm install @spacetimedb/auth spacetimedb@^2.8.3
+npm install @spacetimedb/auth spacetimedb
 ```
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.
@@ -67,14 +67,14 @@ export const authPasswordSignup = spacetimedb.httpHandler((ctx, req) =>
   auth.passwordSignupHandler(ctx.as.auth, req)
 );
 
-export const link_connection = spacetimedb.reducer(
+export const linkConnection = spacetimedb.reducer(
   auth.linkConnectionParams,
-  (ctx, args) => auth.link_connection(ctx.as.auth, args)
+  (ctx, args) => auth.linkConnection(ctx.as.auth, args)
 );
 
-export const update_profile = spacetimedb.reducer(
+export const updateProfile = spacetimedb.reducer(
   auth.updateProfileParams,
-  (ctx, args) => auth.update_profile(ctx.as.auth, args)
+  (ctx, args) => auth.updateProfile(ctx.as.auth, args)
 );
 
 export const router = spacetimedb.httpRouter(
@@ -175,4 +175,4 @@ schema integration.
 
 ## License
 
-[BUSL-1.1](./LICENSE.txt) - same as SpacetimeDB.
+[Apache-2.0](./LICENSE.txt).

@@ -1,4 +1,9 @@
-import { makeRetryDispatch, type RetryHandler } from './handler';
+import {
+  makeRetryDispatch,
+  retryFailed,
+  type RetryHandler,
+  type RetryResult,
+} from './handler';
 import type { Identity, ScheduleAt, Timestamp } from 'spacetimedb';
 import type { Infer, VariantsObj } from 'spacetimedb/server';
 
@@ -7,6 +12,7 @@ const MAX_ATTEMPTS = 10;
 const MAX_BACKOFF_SECONDS = 3600;
 const MAX_TASK_NAME_LENGTH = 128;
 const MAX_ERROR_LENGTH = 2048;
+const MAX_HISTORY_ROWS = 1000;
 
 export type RetryHandlers = Record<string, RetryHandler>;
 
@@ -94,7 +100,7 @@ export function createRetrySubmodule<const H extends RetryHandlers>(
         iter(): Iterable<RetryTaskRow>;
       };
       retryHistory: {
-        id: { update(row: RetryHistoryRow): void };
+        id: { update(row: RetryHistoryRow): void; delete(id: bigint): boolean };
         insert(row: RetryHistoryRow): RetryHistoryRow;
         iter(): Iterable<RetryHistoryRow>;
       };
@@ -160,7 +166,15 @@ export function createRetrySubmodule<const H extends RetryHandlers>(
 
   function retryHistoryAdmin(ctx: unknown): RetryHistoryRow[] {
     const retryCtx = retryContext(ctx);
-    return isAdmin(ctx) ? takeRows(retryCtx.db.retryHistory.iter()) : [];
+    return isAdmin(ctx)
+      ? recentHistory(retryCtx).slice(0, MAX_HISTORY_ROWS)
+      : [];
+  }
+
+  function recentHistory(ctx: RetryContext): RetryHistoryRow[] {
+    return [...ctx.db.retryHistory.iter()].sort((a, b) =>
+      a.id > b.id ? -1 : a.id < b.id ? 1 : 0
+    );
   }
 
   function retryFire(ctx: unknown, { arg }: { arg: RetryTaskRow }): void {
@@ -175,13 +189,22 @@ export function createRetrySubmodule<const H extends RetryHandlers>(
       error: undefined,
       ranAt: retryCtx.timestamp,
     });
+    for (const row of recentHistory(retryCtx).slice(MAX_HISTORY_ROWS)) {
+      retryCtx.db.retryHistory.id.delete(row.id);
+    }
 
-    const result = dispatchRetry(
-      retryCtx,
-      arg.args as RetryDispatchArg & {
-        tag: keyof H & string;
-      }
-    );
+    let result: RetryResult;
+    try {
+      result = dispatchRetry(
+        retryCtx,
+        arg.args as RetryDispatchArg & { tag: keyof H & string }
+      );
+    } catch (error) {
+      // A caught exception does not roll back the handler's earlier writes.
+      result = retryFailed(
+        error instanceof Error ? error.message : String(error)
+      );
+    }
 
     if (result.ok) {
       retryCtx.db.retryHistory.id.update({

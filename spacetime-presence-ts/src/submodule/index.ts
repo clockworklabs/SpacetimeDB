@@ -159,7 +159,7 @@ export const heartbeat = spacetimedb.procedure(
   }
 );
 
-export const clear_presence = spacetimedb.reducer(
+export const clearPresence = spacetimedb.reducer(
   { scope: t.option(t.string()) },
   (ctx, args) => {
     const scope = sanitizeScope(args.scope);
@@ -169,7 +169,7 @@ export const clear_presence = spacetimedb.reducer(
   }
 );
 
-export const run_sweep = spacetimedb.procedure(
+export const runSweep = spacetimedb.procedure(
   { maxRows: t.option(t.u32()) },
   t.u32(),
   (ctx, args) => {
@@ -192,7 +192,7 @@ export const run_sweep = spacetimedb.procedure(
   }
 );
 
-export const add_presence_admin = spacetimedb.reducer(
+export const addPresenceAdmin = spacetimedb.reducer(
   { identity: t.identity() },
   (ctx, args) => {
     requireAdmin(ctx);
@@ -205,7 +205,7 @@ export const add_presence_admin = spacetimedb.reducer(
   }
 );
 
-export const update_config = spacetimedb.reducer(
+export const updateConfig = spacetimedb.reducer(
   { defaultTtlSeconds: t.u32(), sweepBatch: t.u32() },
   (ctx, args) => {
     requireAdmin(ctx);
@@ -229,7 +229,7 @@ export const presenceEntriesAdmin = spacetimedb.view(
   ctx => (isAdmin(ctx) ? takeRows(ctx.db.presenceEntry.iter()) : [])
 );
 
-export const presence_sweep = spacetimedb.reducer(
+export const presenceSweep = spacetimedb.reducer(
   { onSchedule: presenceSweepTick },
   { arg: presenceSweepTick.rowType },
   (ctx, _args) => {

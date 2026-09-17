@@ -550,7 +550,7 @@ function handleAuthedWorldAction(
   }
 }
 
-export const ensure_world = spacetimedb.procedure(
+export const ensureWorld = spacetimedb.procedure(
   {},
   t.object('EnsureWorldResult', { ownerSubject: t.string(), gridId: t.u64() }),
   ctx =>
@@ -560,7 +560,7 @@ export const ensure_world = spacetimedb.procedure(
     })
 );
 
-export const reset_world = spacetimedb.reducer({}, ctx => {
+export const resetWorld = spacetimedb.reducer({}, ctx => {
   const ownerSubject = senderSubject(ctx);
   deleteWorldTx(ctx, ownerSubject);
   ensureWorldTx(ctx, ownerSubject);
@@ -575,7 +575,7 @@ export const reset_world = spacetimedb.reducer({}, ctx => {
   );
 });
 
-export const clear_world_events = spacetimedb.reducer({}, ctx => {
+export const clearWorldEvents = spacetimedb.reducer({}, ctx => {
   const ownerSubject = senderSubject(ctx);
   for (const row of [...ctx.db.worldEvent.ownerSubject.filter(ownerSubject)]) {
     ctx.db.worldEvent.delete(row);
@@ -621,7 +621,7 @@ export const clear = spacetimedb.reducer(
 // the caller identity to prevent spoofing. Scope is the colony id, so presence is
 // per-colony. cx/cy are fractional tile coordinates.
 
-export const presence_heartbeat = spacetimedb.reducer(
+export const presenceHeartbeat = spacetimedb.reducer(
   {
     scope: t.string(),
     name: t.string(),
@@ -675,14 +675,14 @@ export const presence_heartbeat = spacetimedb.reducer(
   }
 );
 
-export const presence_leave = spacetimedb.reducer(
+export const presenceLeave = spacetimedb.reducer(
   { scope: t.string() },
   (ctx, args) => {
     removePresence(ctx, args.scope.trim(), senderSubject(ctx));
   }
 );
 
-export const colony_sweep = spacetimedb.reducer(
+export const colonySweep = spacetimedb.reducer(
   { onSchedule: colonySweepTick },
   { arg: colonySweepTick.rowType },
   ctx => {
@@ -753,7 +753,7 @@ export const myAccessKeys = spacetimedb.view(
   }
 );
 
-export const create_access_key = spacetimedb.procedure(
+export const createAccessKey = spacetimedb.procedure(
   {
     name: t.string(),
     scopesJson: t.string(),
@@ -764,7 +764,7 @@ export const create_access_key = spacetimedb.procedure(
   apiKeys.apiKeyCreateResult,
   (ctx, args) =>
     ctx.withTx(tx => {
-      const result = apiKeys.createApiKey(tx.as.apiKeys, {
+      const result = apiKeys.createApiKeyInTx(tx.as.apiKeys, {
         ownerSubject: senderSubject(ctx),
         name: args.name,
         scopesJson: args.scopesJson,
@@ -777,7 +777,7 @@ export const create_access_key = spacetimedb.procedure(
     })
 );
 
-export const rotate_access_key = spacetimedb.procedure(
+export const rotateAccessKey = spacetimedb.procedure(
   {
     keyId: t.string(),
     expiresInSeconds: t.option(t.u32()),
@@ -786,7 +786,7 @@ export const rotate_access_key = spacetimedb.procedure(
   apiKeys.apiKeyCreateResult,
   (ctx, args) =>
     ctx.withTx(tx => {
-      const result = apiKeys.rotateApiKey(tx.as.apiKeys, {
+      const result = apiKeys.rotateApiKeyInTx(tx.as.apiKeys, {
         keyId: args.keyId,
         ownerSubject: senderSubject(ctx),
         expiresInSeconds: args.expiresInSeconds,
@@ -797,11 +797,14 @@ export const rotate_access_key = spacetimedb.procedure(
     })
 );
 
-export const revoke_access_key = spacetimedb.reducer(
+export const revokeAccessKey = spacetimedb.reducer(
   { keyId: t.string() },
   (ctx, args) => {
     const ownerSubject = senderSubject(ctx);
-    apiKeys.revokeApiKey(ctx.as.apiKeys, { keyId: args.keyId, ownerSubject });
+    apiKeys.revokeApiKeyInTx(ctx.as.apiKeys, {
+      keyId: args.keyId,
+      ownerSubject,
+    });
     const row = ctx.db.accessKeySummary.keyId.find(args.keyId);
     if (!row || row.ownerSubject !== ownerSubject) return;
     ctx.db.accessKeySummary.keyId.update({

@@ -292,7 +292,7 @@ function recordUsage(
   });
 }
 
-export function createApiKey(ctx: WriteCtx, args: CreateApiKeyArgs) {
+export function createApiKeyInTx(ctx: WriteCtx, args: CreateApiKeyArgs) {
   const ownerSubject = normalizeOwnerSubject(args.ownerSubject);
   const name = normalizeName(args.name);
   const scopesJson = normalizeScopesJson(args.scopesJson);
@@ -448,7 +448,7 @@ function canManageKey(
   return row.ownerSubject === subject || isAdmin(ctx, ctx.sender);
 }
 
-export function revokeApiKey(
+export function revokeApiKeyInTx(
   ctx: WriteCtx,
   args: { keyId: string; ownerSubject?: string | undefined }
 ): void {
@@ -477,7 +477,7 @@ export function revokeApiKey(
   });
 }
 
-export function rotateApiKey(
+export function rotateApiKeyInTx(
   ctx: WriteCtx,
   args: {
     keyId: string;
@@ -522,7 +522,7 @@ export function rotateApiKey(
   return toCreateResult(updated, key);
 }
 
-export const create_api_key = spacetimedb.procedure(
+export const createApiKey = spacetimedb.procedure(
   {
     name: t.string(),
     scopesJson: t.string(),
@@ -533,7 +533,7 @@ export const create_api_key = spacetimedb.procedure(
   apiKeyCreateResult,
   (ctx, args) =>
     ctx.withTx(tx =>
-      createApiKey(tx, {
+      createApiKeyInTx(tx, {
         ownerSubject: senderSubject(ctx.sender),
         name: args.name,
         scopesJson: args.scopesJson,
@@ -544,7 +544,7 @@ export const create_api_key = spacetimedb.procedure(
     )
 );
 
-export const create_api_key_for_subject = spacetimedb.procedure(
+export const createApiKeyForSubject = spacetimedb.procedure(
   {
     ownerSubject: t.string(),
     name: t.string(),
@@ -557,11 +557,11 @@ export const create_api_key_for_subject = spacetimedb.procedure(
   (ctx, args) =>
     ctx.withTx(tx => {
       requireAdmin(tx, ctx.sender);
-      return createApiKey(tx, args);
+      return createApiKeyInTx(tx, args);
     })
 );
 
-export const rotate_api_key = spacetimedb.procedure(
+export const rotateApiKey = spacetimedb.procedure(
   {
     keyId: t.string(),
     expiresInSeconds: t.option(t.u32()),
@@ -570,7 +570,7 @@ export const rotate_api_key = spacetimedb.procedure(
   apiKeyCreateResult,
   (ctx, args) =>
     ctx.withTx(tx =>
-      rotateApiKey(tx, {
+      rotateApiKeyInTx(tx, {
         keyId: args.keyId,
         ownerSubject: senderSubject(ctx.sender),
         expiresInSeconds: args.expiresInSeconds,
@@ -579,25 +579,25 @@ export const rotate_api_key = spacetimedb.procedure(
     )
 );
 
-export const revoke_api_key = spacetimedb.reducer(
+export const revokeApiKey = spacetimedb.reducer(
   { keyId: t.string() },
   (ctx, args) => {
-    revokeApiKey(ctx, {
+    revokeApiKeyInTx(ctx, {
       keyId: args.keyId,
       ownerSubject: senderSubject(ctx.sender),
     });
   }
 );
 
-export const revoke_api_key_for_subject = spacetimedb.reducer(
+export const revokeApiKeyForSubject = spacetimedb.reducer(
   { keyId: t.string(), ownerSubject: t.string() },
   (ctx, args) => {
     requireAdmin(ctx);
-    revokeApiKey(ctx, args);
+    revokeApiKeyInTx(ctx, args);
   }
 );
 
-export const add_admin_identity = spacetimedb.reducer(
+export const addAdminIdentity = spacetimedb.reducer(
   { identity: t.identity() },
   (ctx, args) => {
     requireAdmin(ctx);
@@ -610,7 +610,7 @@ export const add_admin_identity = spacetimedb.reducer(
   }
 );
 
-export const remove_admin_identity = spacetimedb.reducer(
+export const removeAdminIdentity = spacetimedb.reducer(
   { identity: t.identity() },
   (ctx, args) => {
     requireAdmin(ctx);
@@ -623,7 +623,7 @@ export const remove_admin_identity = spacetimedb.reducer(
   }
 );
 
-export const sweep_api_key_usage = spacetimedb.reducer(
+export const sweepApiKeyUsage = spacetimedb.reducer(
   { maxAgeSeconds: t.u32(), maxRows: t.u32() },
   (ctx, args) => {
     requireAdmin(ctx);

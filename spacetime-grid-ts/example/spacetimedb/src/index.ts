@@ -136,7 +136,7 @@ function rng(seed: bigint) {
   };
 }
 
-export const create_match = spacetimedb.procedure(
+export const createMatch = spacetimedb.procedure(
   { vsAi: t.bool() },
   t.object('CreateMatchResult', { matchId: t.u64(), gridId: t.u64() }),
   (ctx, args) => {
@@ -241,7 +241,7 @@ export const create_match = spacetimedb.procedure(
   }
 );
 
-export const join_match = spacetimedb.procedure(
+export const joinMatch = spacetimedb.procedure(
   { matchId: t.u64() },
   t.unit(),
   (ctx, { matchId }) => {
@@ -275,7 +275,7 @@ export const join_match = spacetimedb.procedure(
   }
 );
 
-export const end_turn = spacetimedb.procedure(
+export const endTurn = spacetimedb.procedure(
   { matchId: t.u64() },
   t.unit(),
   (ctx, { matchId }) => {
@@ -392,7 +392,7 @@ function placeStartingUnits(
   }
 }
 
-export const move_unit = spacetimedb.procedure(
+export const moveUnit = spacetimedb.procedure(
   { entityId: t.u64(), toX: t.i32(), toY: t.i32() },
   t.object('MoveUnitResult', {
     // The exact A* path from start to end, including both endpoints. The client
@@ -475,7 +475,7 @@ export const move_unit = spacetimedb.procedure(
   }
 );
 
-export const attack_unit = spacetimedb.procedure(
+export const attackUnit = spacetimedb.procedure(
   { attackerId: t.u64(), targetId: t.u64() },
   t.unit(),
   (ctx, args) => {
@@ -575,7 +575,7 @@ type UnitTypeSnap = {
   hp: number;
 };
 
-export const ai_take_turn = spacetimedb.procedure(
+export const aiTakeTurn = spacetimedb.procedure(
   { matchId: t.u64() },
   t.object('AiTakeTurnResult', {
     // One event per acting unit, in execution order. Each event may have a
@@ -910,7 +910,7 @@ export const ai_take_turn = spacetimedb.procedure(
 // Query helpers exposed as procedures (so the client can preview
 // movement range / paths without subscribing to entity_path).
 
-export const get_cells_in_range = spacetimedb.procedure(
+export const getCellsInRange = spacetimedb.procedure(
   { gridId: t.u64(), originX: t.i32(), originY: t.i32(), maxCost: t.i32() },
   t.object('CellsInRangeResult', {
     cells: t.array(

@@ -178,7 +178,7 @@ export const init = spacetimedb.init(ctx => {
   installAgents(ctx);
 });
 
-export const set_agent_secret = spacetimedb.reducer(
+export const setAgentSecret = spacetimedb.reducer(
   { staleLockThresholdSecs: t.option(t.u32()) },
   (ctx, args) => {
     const staleLockThresholdSecs =
@@ -204,7 +204,7 @@ export const set_agent_secret = spacetimedb.reducer(
   }
 );
 
-export const set_api_key = spacetimedb.reducer(
+export const setApiKey = spacetimedb.reducer(
   { provider: t.string(), key: t.string() },
   (ctx, args) => {
     if (args.provider.length === 0)
@@ -229,7 +229,7 @@ export const set_api_key = spacetimedb.reducer(
   }
 );
 
-export const clear_api_key = spacetimedb.reducer(
+export const clearApiKey = spacetimedb.reducer(
   { provider: t.string() },
   (ctx, { provider }) => {
     const tx = ctx;
@@ -239,7 +239,7 @@ export const clear_api_key = spacetimedb.reducer(
   }
 );
 
-export const set_agent_override = spacetimedb.reducer(
+export const setAgentOverride = spacetimedb.reducer(
   {
     agentName: t.string(),
     provider: t.option(t.string()),
@@ -292,7 +292,7 @@ export const set_agent_override = spacetimedb.reducer(
   }
 );
 
-export const clear_agent_override = spacetimedb.reducer(
+export const clearAgentOverride = spacetimedb.reducer(
   { agentName: t.string() },
   (ctx, { agentName }) => {
     const tx = ctx;
@@ -302,7 +302,7 @@ export const clear_agent_override = spacetimedb.reducer(
   }
 );
 
-export const add_agent_admin_identity = spacetimedb.reducer(
+export const addAgentAdminIdentity = spacetimedb.reducer(
   { identity: t.identity() },
   (ctx, { identity }) => {
     const tx = ctx;
@@ -316,7 +316,7 @@ export const add_agent_admin_identity = spacetimedb.reducer(
   }
 );
 
-export const remove_agent_admin_identity = spacetimedb.reducer(
+export const removeAgentAdminIdentity = spacetimedb.reducer(
   { identity: t.identity() },
   (ctx, { identity }) => {
     const tx = ctx;
@@ -330,7 +330,7 @@ export const remove_agent_admin_identity = spacetimedb.reducer(
   }
 );
 
-export const get_agent_config_status = spacetimedb.procedure(
+export const getAgentConfigStatus = spacetimedb.procedure(
   {},
   t.object('AgentConfigStatus', {
     isConfigured: t.bool(),
@@ -368,7 +368,7 @@ export const get_agent_config_status = spacetimedb.procedure(
     })
 );
 
-export const start_thread = spacetimedb.procedure(
+export const startThread = spacetimedb.procedure(
   {
     agentName: t.string(),
     title: t.option(t.string()),
@@ -400,7 +400,7 @@ export const start_thread = spacetimedb.procedure(
   }
 );
 
-export const update_thread = spacetimedb.reducer(
+export const updateThread = spacetimedb.reducer(
   {
     threadId: t.u64(),
     title: t.option(t.string()),
@@ -433,7 +433,7 @@ export const update_thread = spacetimedb.reducer(
   }
 );
 
-export const delete_thread = spacetimedb.reducer(
+export const deleteThread = spacetimedb.reducer(
   { threadId: t.u64() },
   (ctx, { threadId }) => {
     const owner = callerIdentity(ctx);
@@ -453,7 +453,7 @@ export const delete_thread = spacetimedb.reducer(
 );
 
 // Admin-gated and bypasses ownership, to clear a wedged lock.
-export const clear_thread_lock = spacetimedb.reducer(
+export const clearThreadLock = spacetimedb.reducer(
   { threadId: t.u64() },
   (ctx, { threadId }) => {
     const tx = ctx;
@@ -463,7 +463,7 @@ export const clear_thread_lock = spacetimedb.reducer(
   }
 );
 
-export const request_cancel = spacetimedb.reducer(
+export const requestCancel = spacetimedb.reducer(
   { threadId: t.u64() },
   (ctx, { threadId }) => {
     const owner = callerIdentity(ctx);
@@ -821,7 +821,7 @@ function runAgentForThread(
   }
 }
 
-export const send_message = spacetimedb.procedure(
+export const sendMessage = spacetimedb.procedure(
   { threadId: t.u64(), content: t.string() },
   t.unit(),
   (ctx, args) => {
@@ -872,7 +872,7 @@ export const send_message = spacetimedb.procedure(
   }
 );
 
-export const regenerate_response = spacetimedb.procedure(
+export const regenerateResponse = spacetimedb.procedure(
   { threadId: t.u64() },
   t.unit(),
   (ctx, { threadId }) => {
@@ -914,7 +914,7 @@ export const regenerate_response = spacetimedb.procedure(
   }
 );
 
-export const generate_thread_title = spacetimedb.procedure(
+export const generateThreadTitle = spacetimedb.procedure(
   { threadId: t.u64() },
   t.unit(),
   (ctx, { threadId }) => {
@@ -997,7 +997,7 @@ export const generate_thread_title = spacetimedb.procedure(
   }
 );
 
-export const thread_lock_sweep = spacetimedb.reducer(
+export const threadLockSweep = spacetimedb.reducer(
   { onSchedule: threadLockSweeperTick },
   { arg: threadLockSweeperTick.rowType },
   (ctx, _arg) => {

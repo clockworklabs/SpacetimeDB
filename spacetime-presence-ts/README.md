@@ -5,7 +5,7 @@ Presence primitives for SpacetimeDB modules.
 ## Install
 
 ```bash
-npm install @spacetimedb/presence spacetimedb@^2.8.3
+npm install @spacetimedb/presence spacetimedb
 ```
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.
@@ -75,7 +75,7 @@ export const heartbeat = spacetimedb.procedure(
   }
 );
 
-export const presence_sweep = spacetimedb.reducer(
+export const presenceSweep = spacetimedb.reducer(
   { onSchedule: presenceSweepTick },
   { arg: presenceSweepTick.rowType },
   ctx => {
@@ -156,4 +156,4 @@ pnpm run typecheck
 
 ## License
 
-[BUSL-1.1](./LICENSE.txt) - same as SpacetimeDB.
+[Apache-2.0](./LICENSE.txt).

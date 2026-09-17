@@ -2,7 +2,7 @@
   "name": "@spacetimedb/lobby",
   "description": "Queueing, room assignment, ranking, and match result primitives for SpacetimeDB TypeScript modules.",
   "version": "0.1.0",
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",

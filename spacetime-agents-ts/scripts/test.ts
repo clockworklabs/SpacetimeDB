@@ -34,7 +34,7 @@ import {
 
 type AT = { tag: string; value?: unknown };
 
-import type { AlgebraicType } from 'spacetimedb';
+import { t, type AlgebraicType } from 'spacetimedb';
 import type { TypeBuilder } from 'spacetimedb/server';
 
 const fake = <T = unknown>(at: AT): TypeBuilder<T, AlgebraicType> =>
@@ -271,13 +271,63 @@ process.stdout.write('typeBuilderToJsonSchema tests\n');
         tag: { type: 'string', enum: ['a'] },
         value: { type: 'string' },
       },
-      required: ['tag'],
+      required: ['tag', 'value'],
     }),
     `sum variant shape: {tag, value}`
   );
 }
 
 process.stdout.write('\nagentTool + makeAgentDispatch tests\n');
+
+// A unit variant does not make a tagged union optional.
+{
+  const args = t.object('ActionArgs', {
+    action: t.enum('Action', { stop: t.unit(), say: t.string() }),
+    note: t.option(t.string()),
+  });
+  const tool = agentTool('Select an action', args, (_ctx, { action }) =>
+    action.tag === 'say' ? action.value : action.tag
+  );
+  const { invoke } = makeAgentDispatch({ action: tool });
+  const schema = typeBuilderToJsonSchema(args);
+  assert(eq(schema.required, ['action']), 'only the true option is optional');
+  assert(
+    eq(schema.properties.action, {
+      oneOf: [
+        {
+          type: 'object',
+          properties: { tag: { type: 'string', enum: ['stop'] } },
+          required: ['tag'],
+        },
+        {
+          type: 'object',
+          properties: {
+            tag: { type: 'string', enum: ['say'] },
+            value: { type: 'string' },
+          },
+          required: ['tag', 'value'],
+        },
+      ],
+    }),
+    'schema preserves tags and requires each payload'
+  );
+  for (const [action, expected] of [
+    [{ tag: 'stop' }, 'stop'],
+    [{ tag: 'say', value: 'hello' }, 'hello'],
+  ] as const) {
+    const result = invoke({}, 'action', JSON.stringify({ action, note: 'ok' }));
+    assert(
+      !result.isError && result.result === expected,
+      `dispatch ${action.tag}`
+    );
+  }
+  for (const input of [{}, { action: 'hello' }, { action: { tag: 'say' } }]) {
+    assert(
+      invoke({}, 'action', JSON.stringify(input)).isError,
+      'reject invalid union input'
+    );
+  }
+}
 
 // 10. agentTool retains TypeBuilder algebraicType
 {

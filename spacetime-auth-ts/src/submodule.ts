@@ -1,16 +1,16 @@
 export { default } from './submodule/index';
 export { installAuth } from './submodule/install';
 export {
-  auth_sweep,
-  get_auth_public_key,
-  link_connection,
-  list_my_sessions,
+  authSweep,
+  getAuthPublicKey,
+  linkConnection,
+  listMySessions,
   myAuthUser,
-  revoke_my_session,
-  revoke_session,
-  set_auth_config,
-  unlink_connection,
-  update_profile,
+  revokeMySession,
+  revokeSession,
+  setAuthConfig,
+  unlinkConnection,
+  updateProfile,
   whoami,
 } from './submodule/index';
 
@@ -18,7 +18,6 @@ export {
   setAuthConfigParams,
   getPublicKeyPemParams,
   linkConnectionParams,
-  linkConnection,
   unlinkConnectionParams,
   updateProfileParams,
   revokeSessionParams,

@@ -6,7 +6,7 @@ TypeScript modules.
 ## Install
 
 ```bash
-npm install @spacetimedb/agents spacetimedb@^2.8.3
+npm install @spacetimedb/agents spacetimedb
 ```
 
 `spacetimedb` is a peer dependency. Keep its version aligned with the SDK used
@@ -162,4 +162,4 @@ repository also builds the direct-publish module under `spacetimedb/`. See the
 
 ## License
 
-BUSL-1.1. See [`LICENSE.txt`](./LICENSE.txt).
+Apache-2.0. See [`LICENSE.txt`](./LICENSE.txt).

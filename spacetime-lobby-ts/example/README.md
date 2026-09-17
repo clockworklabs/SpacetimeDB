@@ -17,16 +17,14 @@ maneuvers, combat resolution, and round logs.
 ## Prerequisites
 
 - Node.js 20 or later and pnpm 10.
-- The released SpacetimeDB 2.8 CLI.
+- A SpacetimeDB CLI and server built from this checkout, with the CLI available as `spacetime`.
 - A local SpacetimeDB server registered as `local`.
 - A logged-in CLI identity for publishing the example.
 
-Select the supported CLI release, then keep the local server running in a
-separate terminal:
+This example uses the workspace SDK. Keep the matching local server running in
+a separate terminal:
 
 ```powershell
-spacetime version install 2.8.3
-spacetime version use 2.8.3
 spacetime start
 ```
 
@@ -62,7 +60,7 @@ This workspace tests the submodule source in this repository. Consumer
 applications install the published release:
 
 ```bash
-npm install @spacetimedb/lobby spacetimedb@^2.8.3
+npm install @spacetimedb/lobby spacetimedb
 ```
 
 Follow the package's

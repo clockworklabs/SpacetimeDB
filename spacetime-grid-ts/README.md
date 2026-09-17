@@ -9,7 +9,7 @@ gameplay transaction.
 ## Install
 
 ```bash
-npm install @spacetimedb/grid spacetimedb@^2.8.3
+npm install @spacetimedb/grid spacetimedb
 ```
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.
@@ -230,4 +230,4 @@ submodule schema, procedures, and generated bindings.
 
 ## License
 
-[BUSL-1.1](./LICENSE.txt) - same as SpacetimeDB.
+[Apache-2.0](./LICENSE.txt).

@@ -10,7 +10,7 @@ define parties, backfill, and product-specific match rules.
 ## Install
 
 ```bash
-npm install @spacetimedb/lobby spacetimedb@^2.8.3
+npm install @spacetimedb/lobby spacetimedb
 ```
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.
@@ -42,7 +42,7 @@ Host modules can call submodule helpers with an explicit subject after they have
 validated auth or mapped the SpacetimeDB identity to an application user ID:
 
 ```ts
-lobby.joinQueue(ctx.as.lobby, {
+lobby.joinQueueForSubject(ctx.as.lobby, {
   pool: 'duel',
   subject: userId,
   matchSize: 2,
@@ -74,7 +74,7 @@ conn
 ```
 
 `findDuel` is the example's product-facing wrapper. A host can instead expose
-its own reducer around `lobby.joinQueue(ctx.as.lobby, ...)`.
+its own reducer around `lobby.joinQueueForSubject(ctx.as.lobby, ...)`.
 
 ### Publish Lobby as the database
 
@@ -84,9 +84,9 @@ dedicated to Lobby:
 ```ts
 export { default, init } from '@spacetimedb/lobby';
 export {
-  join_queue,
-  join_ranked_queue,
-  cancel_ticket,
+  joinQueue,
+  joinRankedQueue,
+  cancelTicket,
   myLobbyTickets,
   myLobbyRooms,
   lobbyQueueSummary,
@@ -129,8 +129,8 @@ Views:
 
 Host helper API:
 
-- Queue lifecycle: `joinQueue`, `joinRankedQueue`, and `cancelTicket`.
-- Room lifecycle: `joinRoom`, `leaveRoom`, and `closeRoom`.
+- Queue lifecycle: `joinQueueForSubject`, `joinRankedQueueForSubject`, and `cancelTicketForSubject`.
+- Room lifecycle: `joinRoomForSubject`, `leaveRoomForSubject`, and `closeRoomForSubject`.
 - Ranking: `reportMatchResult`.
 
 Submodule administrator operations include `set_rating`, `expire_tickets`, and
@@ -163,7 +163,7 @@ both players with Elo K=32. The room must be active. Result reporting is a host
 helper and is absent from the generic client-callable API.
 
 Any participant may close a room through `close_room`. Hosts that need stricter
-completion rules should expose their own reducer and call `closeRoom` after
+completion rules should expose their own reducer and call `closeRoomForSubject` after
 validating the game state.
 
 ## Testing
@@ -176,4 +176,4 @@ pnpm run build
 
 ## License
 
-[BUSL-1.1](./LICENSE.txt) - same as SpacetimeDB.
+[Apache-2.0](./LICENSE.txt).

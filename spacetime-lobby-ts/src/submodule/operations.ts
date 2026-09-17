@@ -347,7 +347,10 @@ function attemptMatch(
   return room.roomId;
 }
 
-export function joinQueue(ctx: WriteCtx, args: JoinQueueArgs): JoinQueueResult {
+export function joinQueueForSubject(
+  ctx: WriteCtx,
+  args: JoinQueueArgs
+): JoinQueueResult {
   const config = getConfig(ctx);
   const pool = normalizeName(args.pool, 'pool', MAX_POOL_LENGTH);
   const subject = normalizeName(args.subject, 'subject', MAX_SUBJECT_LENGTH);
@@ -403,7 +406,7 @@ export function joinQueue(ctx: WriteCtx, args: JoinQueueArgs): JoinQueueResult {
   return { ticketId, roomId };
 }
 
-export function joinRankedQueue(
+export function joinRankedQueueForSubject(
   ctx: WriteCtx,
   args: JoinRankedQueueArgs
 ): JoinQueueResult {
@@ -563,7 +566,10 @@ export function reportMatchResult(
   });
 }
 
-export function cancelTicket(ctx: WriteCtx, args: TicketSubjectArgs): void {
+export function cancelTicketForSubject(
+  ctx: WriteCtx,
+  args: TicketSubjectArgs
+): void {
   const ticketId = normalizeName(args.ticketId, 'ticket_id', 200);
   const subject = normalizeName(args.subject, 'subject', MAX_SUBJECT_LENGTH);
   const ticket = ctx.db.lobbyQueueTicket.ticketId.find(ticketId);
@@ -577,7 +583,7 @@ export function cancelTicket(ctx: WriteCtx, args: TicketSubjectArgs): void {
   });
 }
 
-export function joinRoom(ctx: WriteCtx, args: RoomSubjectArgs): void {
+export function joinRoomForSubject(ctx: WriteCtx, args: RoomSubjectArgs): void {
   const subject = normalizeName(args.subject, 'subject', MAX_SUBJECT_LENGTH);
   const room = ctx.db.lobbyRoom.roomId.find(args.roomId);
   if (!room) fail('room_not_found');
@@ -594,7 +600,10 @@ export function joinRoom(ctx: WriteCtx, args: RoomSubjectArgs): void {
   refreshRoomAfterJoin(ctx, args.roomId);
 }
 
-export function leaveRoom(ctx: WriteCtx, args: RoomSubjectArgs): void {
+export function leaveRoomForSubject(
+  ctx: WriteCtx,
+  args: RoomSubjectArgs
+): void {
   const subject = normalizeName(args.subject, 'subject', MAX_SUBJECT_LENGTH);
   const room = ctx.db.lobbyRoom.roomId.find(args.roomId);
   if (!room) fail('room_not_found');
@@ -611,7 +620,10 @@ export function leaveRoom(ctx: WriteCtx, args: RoomSubjectArgs): void {
   markRoomAbandoned(ctx, args.roomId);
 }
 
-export function closeRoom(ctx: WriteCtx, args: RoomSubjectArgs): void {
+export function closeRoomForSubject(
+  ctx: WriteCtx,
+  args: RoomSubjectArgs
+): void {
   const subject = normalizeName(args.subject, 'subject', MAX_SUBJECT_LENGTH);
   const room = ctx.db.lobbyRoom.roomId.find(args.roomId);
   if (!room) fail('room_not_found');
@@ -625,7 +637,7 @@ export function closeRoom(ctx: WriteCtx, args: RoomSubjectArgs): void {
   });
 }
 
-export const join_queue = spacetimedb.reducer(
+export const joinQueue = spacetimedb.reducer(
   {
     pool: t.string(),
     matchSize: t.u32(),
@@ -633,7 +645,7 @@ export const join_queue = spacetimedb.reducer(
     ttlSeconds: t.option(t.u32()),
   },
   (ctx, args) => {
-    joinQueue(ctx, {
+    joinQueueForSubject(ctx, {
       pool: args.pool,
       subject: subjectForSender(ctx),
       matchSize: args.matchSize,
@@ -643,7 +655,7 @@ export const join_queue = spacetimedb.reducer(
   }
 );
 
-export const join_ranked_queue = spacetimedb.reducer(
+export const joinRankedQueue = spacetimedb.reducer(
   {
     pool: t.string(),
     matchSize: t.u32(),
@@ -652,7 +664,7 @@ export const join_ranked_queue = spacetimedb.reducer(
     ratingPool: t.option(t.string()),
   },
   (ctx, args) => {
-    joinRankedQueue(ctx, {
+    joinRankedQueueForSubject(ctx, {
       pool: args.pool,
       subject: subjectForSender(ctx),
       matchSize: args.matchSize,
@@ -663,38 +675,47 @@ export const join_ranked_queue = spacetimedb.reducer(
   }
 );
 
-export const cancel_ticket = spacetimedb.reducer(
+export const cancelTicket = spacetimedb.reducer(
   { ticketId: t.string() },
   (ctx, args) => {
-    cancelTicket(ctx, {
+    cancelTicketForSubject(ctx, {
       ticketId: args.ticketId,
       subject: subjectForSender(ctx),
     });
   }
 );
 
-export const join_room = spacetimedb.reducer(
+export const joinRoom = spacetimedb.reducer(
   { roomId: t.u64() },
   (ctx, args) => {
-    joinRoom(ctx, { roomId: args.roomId, subject: subjectForSender(ctx) });
+    joinRoomForSubject(ctx, {
+      roomId: args.roomId,
+      subject: subjectForSender(ctx),
+    });
   }
 );
 
-export const leave_room = spacetimedb.reducer(
+export const leaveRoom = spacetimedb.reducer(
   { roomId: t.u64() },
   (ctx, args) => {
-    leaveRoom(ctx, { roomId: args.roomId, subject: subjectForSender(ctx) });
+    leaveRoomForSubject(ctx, {
+      roomId: args.roomId,
+      subject: subjectForSender(ctx),
+    });
   }
 );
 
-export const close_room = spacetimedb.reducer(
+export const closeRoom = spacetimedb.reducer(
   { roomId: t.u64() },
   (ctx, args) => {
-    closeRoom(ctx, { roomId: args.roomId, subject: subjectForSender(ctx) });
+    closeRoomForSubject(ctx, {
+      roomId: args.roomId,
+      subject: subjectForSender(ctx),
+    });
   }
 );
 
-export const set_rating = spacetimedb.reducer(
+export const setRating = spacetimedb.reducer(
   {
     pool: t.string(),
     subject: t.string(),
@@ -715,7 +736,7 @@ export const set_rating = spacetimedb.reducer(
   }
 );
 
-export const expire_tickets = spacetimedb.reducer(
+export const expireTickets = spacetimedb.reducer(
   { limit: t.option(t.u32()) },
   (ctx, args) => {
     requireAdmin(ctx);
@@ -725,7 +746,7 @@ export const expire_tickets = spacetimedb.reducer(
   }
 );
 
-export const update_config = spacetimedb.reducer(
+export const updateConfig = spacetimedb.reducer(
   {
     defaultTicketTtlSeconds: t.u32(),
     maxMatchSize: t.u32(),
@@ -750,7 +771,7 @@ export const update_config = spacetimedb.reducer(
   }
 );
 
-export const add_admin_identity = spacetimedb.reducer(
+export const addAdminIdentity = spacetimedb.reducer(
   { identity: t.identity() },
   (ctx, args) => {
     requireAdmin(ctx);
@@ -762,7 +783,7 @@ export const add_admin_identity = spacetimedb.reducer(
   }
 );
 
-export const remove_admin_identity = spacetimedb.reducer(
+export const removeAdminIdentity = spacetimedb.reducer(
   { identity: t.identity() },
   (ctx, args) => {
     requireAdmin(ctx);
@@ -774,7 +795,7 @@ export const remove_admin_identity = spacetimedb.reducer(
   }
 );
 
-export const get_lobby_status = spacetimedb.procedure({}, t.string(), ctx => {
+export const getLobbyStatus = spacetimedb.procedure({}, t.string(), ctx => {
   const status = ctx.withTx(tx => {
     const queuedTickets = countUpTo(
       tx.db.lobbyQueueTicket.byStatus.filter(TicketStatus.Queued),

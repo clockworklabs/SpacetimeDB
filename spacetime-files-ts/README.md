@@ -9,7 +9,7 @@ that streams cached responses through the module's route.
 ## Install
 
 ```bash
-npm install @spacetimedb/files spacetimedb@^2.8.3
+npm install @spacetimedb/files spacetimedb
 ```
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.
@@ -38,7 +38,7 @@ export const init = spacetimedb.init(ctx => {
   files.installFiles(ctx.as.files);
 });
 
-export const upload_file = spacetimedb.procedure(
+export const uploadFile = spacetimedb.procedure(
   files.uploadFileParams,
   t.u64(),
   (ctx, args) => files.uploadFile(ctx.as.files, args, ctx.sender.toHexString())
@@ -180,7 +180,7 @@ import {
   public files.
 
 ```ts
-export const read_file_bytes = spacetimedb.procedure(
+export const readFileBytes = spacetimedb.procedure(
   readFileBytesParams,
   readFileBytesReturn,
   (ctx, args) => readFileBytes(ctx, args, ctx.sender.toHexString())
@@ -254,4 +254,4 @@ registered submodule and generated bindings together.
 
 ## License
 
-[BUSL-1.1](./LICENSE.txt) - same as SpacetimeDB.
+[Apache-2.0](./LICENSE.txt).

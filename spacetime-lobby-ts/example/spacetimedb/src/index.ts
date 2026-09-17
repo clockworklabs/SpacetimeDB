@@ -449,7 +449,10 @@ function completeDuel(
     subject: reporterSubject,
     winnerSubject,
   });
-  lobby.closeRoom(ctx.as.lobby, { roomId: d.roomId, subject: reporterSubject });
+  lobby.closeRoomForSubject(ctx.as.lobby, {
+    roomId: d.roomId,
+    subject: reporterSubject,
+  });
 }
 
 function maybeResolveRound(
@@ -564,7 +567,10 @@ function maybeResolveRound(
       subject: reporterSubject,
       winnerSubject: winner.subject,
     });
-    lobby.closeRoom(ctx.as.lobby, { roomId, subject: reporterSubject });
+    lobby.closeRoomForSubject(ctx.as.lobby, {
+      roomId,
+      subject: reporterSubject,
+    });
   } else {
     ctx.db.duel.roomId.update({ ...d, round, updatedAt: ctx.timestamp });
   }
@@ -577,7 +583,7 @@ function sortedCombatants(ctx: WriteCtx, roomId: bigint) {
   });
 }
 
-export const set_display_name = spacetimedb.reducer(
+export const setDisplayName = spacetimedb.reducer(
   { displayName: t.string() },
   (ctx, args) => {
     const subject = subjectFor(ctx);
@@ -603,7 +609,7 @@ export const set_display_name = spacetimedb.reducer(
   }
 );
 
-export const select_ship = spacetimedb.reducer({ shipClass }, (ctx, args) => {
+export const selectShip = spacetimedb.reducer({ shipClass }, (ctx, args) => {
   const subject = subjectFor(ctx);
   const existing = ensurePilot(ctx, subject);
   ctx.db.pilot.subject.update({
@@ -632,10 +638,10 @@ export const select_ship = spacetimedb.reducer({ shipClass }, (ctx, args) => {
   }
 });
 
-export const find_duel = spacetimedb.reducer({}, ctx => {
+export const findDuel = spacetimedb.reducer({}, ctx => {
   const subject = subjectFor(ctx);
   const p = ensurePilot(ctx, subject);
-  const result = lobby.joinRankedQueue(ctx.as.lobby, {
+  const result = lobby.joinRankedQueueForSubject(ctx.as.lobby, {
     pool: DUEL_POOL,
     subject,
     matchSize: MATCH_SIZE,
@@ -646,7 +652,7 @@ export const find_duel = spacetimedb.reducer({}, ctx => {
   if (result.roomId !== undefined) ensureDuelForRoom(ctx, result.roomId);
 });
 
-export const fallback_to_ai = spacetimedb.reducer({}, ctx => {
+export const fallbackToAi = spacetimedb.reducer({}, ctx => {
   const subject = subjectFor(ctx);
   const p = ensurePilot(ctx, subject);
   const publicTickets = [
@@ -657,13 +663,16 @@ export const fallback_to_ai = spacetimedb.reducer({}, ctx => {
       ticket.status.tag === lobby.TicketStatus.Queued.tag
   );
   for (const ticket of publicTickets) {
-    lobby.cancelTicket(ctx.as.lobby, { ticketId: ticket.ticketId, subject });
+    lobby.cancelTicketForSubject(ctx.as.lobby, {
+      ticketId: ticket.ticketId,
+      subject,
+    });
   }
 
   const aiSubject = aiSubjectFor(subject);
   const aiPilot = ensureAiPilot(ctx, aiSubject);
   const pool = aiPoolFor(subject);
-  lobby.joinRankedQueue(ctx.as.lobby, {
+  lobby.joinRankedQueueForSubject(ctx.as.lobby, {
     pool,
     subject,
     matchSize: MATCH_SIZE,
@@ -674,7 +683,7 @@ export const fallback_to_ai = spacetimedb.reducer({}, ctx => {
     }),
     ttlSeconds: 120,
   });
-  const result = lobby.joinRankedQueue(ctx.as.lobby, {
+  const result = lobby.joinRankedQueueForSubject(ctx.as.lobby, {
     pool,
     subject: aiSubject,
     matchSize: MATCH_SIZE,
@@ -686,8 +695,11 @@ export const fallback_to_ai = spacetimedb.reducer({}, ctx => {
     ttlSeconds: 120,
   });
   if (result.roomId === undefined) fail('ai_match_failed');
-  lobby.joinRoom(ctx.as.lobby, { roomId: result.roomId, subject });
-  lobby.joinRoom(ctx.as.lobby, { roomId: result.roomId, subject: aiSubject });
+  lobby.joinRoomForSubject(ctx.as.lobby, { roomId: result.roomId, subject });
+  lobby.joinRoomForSubject(ctx.as.lobby, {
+    roomId: result.roomId,
+    subject: aiSubject,
+  });
   ensureDuelForRoom(ctx, result.roomId);
   refreshDuelStatus(ctx, result.roomId);
   log(
@@ -698,17 +710,17 @@ export const fallback_to_ai = spacetimedb.reducer({}, ctx => {
   );
 });
 
-export const join_duel_room = spacetimedb.reducer(
+export const joinDuelRoom = spacetimedb.reducer(
   { roomId: t.u64() },
   (ctx, args) => {
     const subject = subjectFor(ctx);
     ensurePilot(ctx, subject);
-    lobby.joinRoom(ctx.as.lobby, { roomId: args.roomId, subject });
+    lobby.joinRoomForSubject(ctx.as.lobby, { roomId: args.roomId, subject });
     refreshDuelStatus(ctx, args.roomId);
   }
 );
 
-export const choose_maneuver = spacetimedb.reducer(
+export const chooseManeuver = spacetimedb.reducer(
   { roomId: t.u64(), slot: maneuverSlot },
   (ctx, args) => {
     const subject = subjectFor(ctx);
@@ -734,7 +746,7 @@ export const choose_maneuver = spacetimedb.reducer(
   }
 );
 
-export const advance_duel = spacetimedb.reducer(
+export const advanceDuel = spacetimedb.reducer(
   { roomId: t.u64() },
   (ctx, args) => {
     const subject = subjectFor(ctx);
@@ -754,7 +766,7 @@ export const advance_duel = spacetimedb.reducer(
   }
 );
 
-export const leave_duel = spacetimedb.reducer(
+export const leaveDuel = spacetimedb.reducer(
   { roomId: t.u64() },
   (ctx, args) => {
     const subject = subjectFor(ctx);
@@ -765,7 +777,7 @@ export const leave_duel = spacetimedb.reducer(
       seat => seat.subject !== subject
     );
     if (!opponent) {
-      lobby.leaveRoom(ctx.as.lobby, { roomId: args.roomId, subject });
+      lobby.leaveRoomForSubject(ctx.as.lobby, { roomId: args.roomId, subject });
       ctx.db.duel.roomId.update({
         ...d,
         status: DuelStatus.Abandoned,
@@ -797,11 +809,11 @@ export const leave_duel = spacetimedb.reducer(
       subject,
       winnerSubject: opponent.subject,
     });
-    lobby.closeRoom(ctx.as.lobby, { roomId: args.roomId, subject });
+    lobby.closeRoomForSubject(ctx.as.lobby, { roomId: args.roomId, subject });
   }
 );
 
-export const queue_again = spacetimedb.reducer(
+export const queueAgain = spacetimedb.reducer(
   { roomId: t.option(t.u64()) },
   (ctx, args) => {
     const subject = subjectFor(ctx);
@@ -815,10 +827,10 @@ export const queue_again = spacetimedb.reducer(
           updatedAt: ctx.timestamp,
         });
       }
-      lobby.closeRoom(ctx.as.lobby, { roomId: args.roomId, subject });
+      lobby.closeRoomForSubject(ctx.as.lobby, { roomId: args.roomId, subject });
     }
     const p = ensurePilot(ctx, subject);
-    lobby.joinRankedQueue(ctx.as.lobby, {
+    lobby.joinRankedQueueForSubject(ctx.as.lobby, {
       pool: DUEL_POOL,
       subject,
       matchSize: MATCH_SIZE,

@@ -65,14 +65,14 @@ export const init = spacetimedb.init(ctx => {
   auth.installAuth(ctx.as.auth);
 });
 
-export const set_auth_config = spacetimedb.reducer(
+export const setAuthConfig = spacetimedb.reducer(
   setAuthConfigParams,
   (ctx, args) => {
-    auth.set_auth_config(ctx.as.auth, args);
+    auth.setAuthConfig(ctx.as.auth, args);
   }
 );
 
-export const get_auth_public_key = spacetimedb.procedure(
+export const getAuthPublicKey = spacetimedb.procedure(
   getPublicKeyPemParams,
   t.object('AuthPubKey', {
     publicKeyPem: t.string(),
@@ -80,42 +80,42 @@ export const get_auth_public_key = spacetimedb.procedure(
     issuerUrl: t.string(),
   }),
   (ctx, args) =>
-    auth.get_auth_public_key(ctx.as.auth, args) as {
+    auth.getAuthPublicKey(ctx.as.auth, args) as {
       publicKeyPem: string;
       keyId: string;
       issuerUrl: string;
     }
 );
 
-export const link_connection = spacetimedb.reducer(
+export const linkConnection = spacetimedb.reducer(
   linkConnectionParams,
   (ctx, args) => {
-    auth.link_connection(ctx.as.auth, args);
+    auth.linkConnection(ctx.as.auth, args);
   }
 );
 
-export const unlink_connection = spacetimedb.reducer(
+export const unlinkConnection = spacetimedb.reducer(
   unlinkConnectionParams,
   (ctx, args) => {
-    auth.unlink_connection(ctx.as.auth, args);
+    auth.unlinkConnection(ctx.as.auth, args);
   }
 );
 
-export const update_profile = spacetimedb.reducer(
+export const updateProfile = spacetimedb.reducer(
   updateProfileParams,
   (ctx, args) => {
-    auth.update_profile(ctx.as.auth, args);
+    auth.updateProfile(ctx.as.auth, args);
   }
 );
 
-export const revoke_session = spacetimedb.reducer(
+export const revokeSession = spacetimedb.reducer(
   revokeSessionParams,
   (ctx, args) => {
-    auth.revoke_session(ctx.as.auth, args);
+    auth.revokeSession(ctx.as.auth, args);
   }
 );
 
-export const list_my_sessions = spacetimedb.procedure(
+export const listMySessions = spacetimedb.procedure(
   listMySessionsParams,
   t.object('MySessions', {
     sessions: t.array(
@@ -130,7 +130,7 @@ export const list_my_sessions = spacetimedb.procedure(
     ),
   }),
   (ctx, args) =>
-    auth.list_my_sessions(ctx.as.auth, args) as {
+    auth.listMySessions(ctx.as.auth, args) as {
       sessions: Array<{
         sessionId: string;
         expiresAt: Timestamp;
@@ -142,10 +142,10 @@ export const list_my_sessions = spacetimedb.procedure(
     }
 );
 
-export const revoke_my_session = spacetimedb.reducer(
+export const revokeMySession = spacetimedb.reducer(
   revokeMySessionParams,
   (ctx, args) => {
-    auth.revoke_my_session(ctx.as.auth, args);
+    auth.revokeMySession(ctx.as.auth, args);
   }
 );
 
@@ -174,7 +174,7 @@ export const myAuthUser = spacetimedb.view(
   }
 );
 
-export const create_note = spacetimedb.reducer(
+export const createNote = spacetimedb.reducer(
   { title: t.string(), body: t.string() },
   (ctx, args) => {
     const userId = getCallerUserId(ctx.as.auth);
@@ -190,7 +190,7 @@ export const create_note = spacetimedb.reducer(
   }
 );
 
-export const delete_note = spacetimedb.reducer(
+export const deleteNote = spacetimedb.reducer(
   { noteId: t.string() },
   (ctx, args) => {
     const userId = getCallerUserId(ctx.as.auth);
@@ -202,7 +202,7 @@ export const delete_note = spacetimedb.reducer(
   }
 );
 
-export const update_note = spacetimedb.reducer(
+export const updateNote = spacetimedb.reducer(
   { noteId: t.string(), title: t.string(), body: t.string() },
   (ctx, args) => {
     const userId = getCallerUserId(ctx.as.auth);

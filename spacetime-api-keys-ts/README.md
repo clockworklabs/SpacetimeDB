@@ -9,7 +9,7 @@ admin-gated views. Host apps own what scopes mean.
 ## Install
 
 ```bash
-npm install @spacetimedb/api-keys spacetimedb@^2.8.3
+npm install @spacetimedb/api-keys spacetimedb
 ```
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.
@@ -80,7 +80,7 @@ Key lifecycle operations:
   equivalent.
 - `sweep_api_key_usage({ maxAgeSeconds, maxRows })` removes a bounded audit
   batch.
-- `createApiKey`, `rotateApiKey`, `revokeApiKey`, and `verifyApiKey` are host
+- `createApiKeyInTx`, `rotateApiKeyInTx`, `revokeApiKeyInTx`, and `verifyApiKey` are host
   helper functions for host applications.
 - `add_admin_identity({ identity })` and `remove_admin_identity({ identity })`
   manage the administrator allowlist.
@@ -195,4 +195,4 @@ admin views.
 
 ## License
 
-[BUSL-1.1](./LICENSE.txt) - same as SpacetimeDB.
+[Apache-2.0](./LICENSE.txt).

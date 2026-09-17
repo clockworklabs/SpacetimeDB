@@ -60,7 +60,8 @@ concurrency:
 jobs:
   validate-release-invoker:
     name: Validate release invoker
-    runs-on: spacetimedb-linux
+    # This only validates workflow inputs and the invoking actor.
+    runs-on: spacetimedb-linux-small
     steps:
       - name: Reject direct public release invocations
         env:
@@ -109,7 +110,8 @@ jobs:
 
   release-crates:
     needs: build-cargo-release
-    runs-on: spacetimedb-linux
+    # This packages and publishes crates with the prebuilt release helper; it does not build the workspace.
+    runs-on: spacetimedb-linux-small
     if: ${{ inputs.release_crates }}
     env:
       CARGO_TERM_COLOR: always
@@ -230,7 +232,8 @@ jobs:
 
   release-cpp:
     needs: build-cargo-release
-    runs-on: spacetimedb-linux
+    # This updates and publishes the generated C++ SDK repository without a core build.
+    runs-on: spacetimedb-linux-small
     if: ${{ inputs.release_cpp }}
     env:
       CARGO_TERM_COLOR: always
@@ -328,7 +331,7 @@ jobs:
           npm --version
 
       - name: Install pnpm
-        run: npm install -g pnpm
+        uses: ./.github/actions/setup-pnpm
 
       - name: Run NPM release (dry-run)
         if: ${{ inputs.dry_run }}
@@ -424,7 +427,8 @@ jobs:
       - release-npm
       - release-docker
       - update-mirror-latest-version
-    runs-on: spacetimedb-linux
+    # This only publishes existing artifacts and dispatches the release announcement.
+    runs-on: spacetimedb-linux-small
     if: >-
       ${{
         always()
@@ -473,5 +477,6 @@ jobs:
             --arg tag "$RELEASE_TAG" \
             --arg url "$url" \
             --arg body "$body" \
-            '{release_tag: $tag, release_url: $url, release_body: $body, dry_run: "false"}' \
+            --arg dry_run "false" \
+            '{release_tag: $tag, release_url: $url, release_body: $body, dry_run: $dry_run}' \
           | gh workflow run tag-release.yml --repo clockworklabs/SpacetimeDB --ref master --json

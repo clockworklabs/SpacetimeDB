@@ -1,5 +1,16 @@
 namespace SpacetimeDB
 {
+    /// <summary>Declares the complete environment schema for this module.</summary>
+    [AttributeUsage(AttributeTargets.Struct)]
+    public sealed class EnvAttribute : Attribute { }
+
+    /// <summary>Restricts one declared string to these exact permitted values.</summary>
+    [AttributeUsage(AttributeTargets.Field)]
+    public sealed class EnvValuesAttribute(params string[] values) : Attribute
+    {
+        public string[] Values { get; } = values;
+    }
+
     namespace Internal
     {
         [Flags]

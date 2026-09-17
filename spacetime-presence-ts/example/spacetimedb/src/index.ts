@@ -140,14 +140,14 @@ export const init = spacetimedb.init(ctx => {
   });
 });
 
-export const set_auth_config = spacetimedb.reducer(
+export const setAuthConfig = spacetimedb.reducer(
   setAuthConfigParams,
   (ctx, args) => {
-    auth.set_auth_config(ctx.as.auth, args);
+    auth.setAuthConfig(ctx.as.auth, args);
   }
 );
 
-export const get_auth_public_key = spacetimedb.procedure(
+export const getAuthPublicKey = spacetimedb.procedure(
   getPublicKeyPemParams,
   t.object('AuthPubKey', {
     publicKeyPem: t.string(),
@@ -155,42 +155,42 @@ export const get_auth_public_key = spacetimedb.procedure(
     issuerUrl: t.string(),
   }),
   (ctx, args) =>
-    auth.get_auth_public_key(ctx.as.auth, args) as {
+    auth.getAuthPublicKey(ctx.as.auth, args) as {
       publicKeyPem: string;
       keyId: string;
       issuerUrl: string;
     }
 );
 
-export const link_connection = spacetimedb.reducer(
+export const linkConnection = spacetimedb.reducer(
   linkConnectionParams,
   (ctx, args) => {
-    auth.link_connection(ctx.as.auth, args);
+    auth.linkConnection(ctx.as.auth, args);
   }
 );
 
-export const unlink_connection = spacetimedb.reducer(
+export const unlinkConnection = spacetimedb.reducer(
   unlinkConnectionParams,
   (ctx, args) => {
-    auth.unlink_connection(ctx.as.auth, args);
+    auth.unlinkConnection(ctx.as.auth, args);
   }
 );
 
-export const update_profile = spacetimedb.reducer(
+export const updateProfile = spacetimedb.reducer(
   updateProfileParams,
   (ctx, args) => {
-    auth.update_profile(ctx.as.auth, args);
+    auth.updateProfile(ctx.as.auth, args);
   }
 );
 
-export const revoke_session = spacetimedb.reducer(
+export const revokeSession = spacetimedb.reducer(
   revokeSessionParams,
   (ctx, args) => {
-    auth.revoke_session(ctx.as.auth, args);
+    auth.revokeSession(ctx.as.auth, args);
   }
 );
 
-export const list_my_sessions = spacetimedb.procedure(
+export const listMySessions = spacetimedb.procedure(
   listMySessionsParams,
   t.object('MySessions', {
     sessions: t.array(
@@ -204,13 +204,13 @@ export const list_my_sessions = spacetimedb.procedure(
       })
     ),
   }),
-  (ctx, args) => auth.list_my_sessions(ctx.as.auth, args)
+  (ctx, args) => auth.listMySessions(ctx.as.auth, args)
 );
 
-export const revoke_my_session = spacetimedb.reducer(
+export const revokeMySession = spacetimedb.reducer(
   revokeMySessionParams,
   (ctx, args) => {
-    auth.revoke_my_session(ctx.as.auth, args);
+    auth.revokeMySession(ctx.as.auth, args);
   }
 );
 
@@ -247,7 +247,7 @@ export const whoami = spacetimedb.procedure(
     })
 );
 
-export const set_display_name = spacetimedb.reducer(
+export const setDisplayName = spacetimedb.reducer(
   { displayName: t.string() },
   (ctx, args) => {
     const userId = requireAuthenticatedUserId(ctx);
@@ -271,7 +271,7 @@ export const set_display_name = spacetimedb.reducer(
   }
 );
 
-export const set_status = spacetimedb.reducer(
+export const setStatus = spacetimedb.reducer(
   { status: chatUserStatus },
   (ctx, args) => {
     const userId = requireAuthenticatedUserId(ctx);
@@ -290,7 +290,7 @@ export const set_status = spacetimedb.reducer(
   }
 );
 
-export const create_server = spacetimedb.reducer(
+export const createServer = spacetimedb.reducer(
   { name: t.string() },
   (ctx, args) => {
     const userId = requireAuthenticatedUserId(ctx);
@@ -327,7 +327,7 @@ export const create_server = spacetimedb.reducer(
   }
 );
 
-export const rename_server = spacetimedb.reducer(
+export const renameServer = spacetimedb.reducer(
   { serverId: t.u64(), name: t.string() },
   (ctx, args) => {
     const userId = requireAuthenticatedUserId(ctx);
@@ -346,7 +346,7 @@ export const rename_server = spacetimedb.reducer(
   }
 );
 
-export const delete_server = spacetimedb.reducer(
+export const deleteServer = spacetimedb.reducer(
   { serverId: t.u64() },
   (ctx, { serverId }) => {
     const userId = requireAuthenticatedUserId(ctx);
@@ -379,7 +379,7 @@ export const delete_server = spacetimedb.reducer(
   }
 );
 
-export const join_server = spacetimedb.reducer(
+export const joinServer = spacetimedb.reducer(
   { serverId: t.u64() },
   (ctx, { serverId }) => {
     const userId = requireAuthenticatedUserId(ctx);
@@ -404,7 +404,7 @@ export const join_server = spacetimedb.reducer(
   }
 );
 
-export const leave_server = spacetimedb.reducer(
+export const leaveServer = spacetimedb.reducer(
   { serverId: t.u64() },
   (ctx, { serverId }) => {
     const userId = requireAuthenticatedUserId(ctx);
@@ -421,7 +421,7 @@ export const leave_server = spacetimedb.reducer(
   }
 );
 
-export const create_room = spacetimedb.reducer(
+export const createRoom = spacetimedb.reducer(
   {
     serverId: t.u64(),
     name: t.string(),
@@ -456,7 +456,7 @@ export const create_room = spacetimedb.reducer(
   }
 );
 
-export const join_room = spacetimedb.reducer(
+export const joinRoom = spacetimedb.reducer(
   { roomId: t.u64() },
   (ctx, { roomId }) => {
     const userId = requireAuthenticatedUserId(ctx);
@@ -483,7 +483,7 @@ export const join_room = spacetimedb.reducer(
   }
 );
 
-export const leave_room = spacetimedb.reducer(
+export const leaveRoom = spacetimedb.reducer(
   { roomId: t.u64() },
   (ctx, { roomId }) => {
     const userId = requireAuthenticatedUserId(ctx);
@@ -495,7 +495,7 @@ export const leave_room = spacetimedb.reducer(
   }
 );
 
-export const rename_room = spacetimedb.reducer(
+export const renameRoom = spacetimedb.reducer(
   { roomId: t.u64(), name: t.string() },
   (ctx, args) => {
     const userId = requireAuthenticatedUserId(ctx);
@@ -513,7 +513,7 @@ export const rename_room = spacetimedb.reducer(
   }
 );
 
-export const set_room_category = spacetimedb.reducer(
+export const setRoomCategory = spacetimedb.reducer(
   { roomId: t.u64(), category: t.option(t.string()) },
   (ctx, args) => {
     const userId = requireAuthenticatedUserId(ctx);
@@ -533,7 +533,7 @@ export const set_room_category = spacetimedb.reducer(
   }
 );
 
-export const set_room_privacy = spacetimedb.reducer(
+export const setRoomPrivacy = spacetimedb.reducer(
   { roomId: t.u64(), isPrivate: t.bool() },
   (ctx, args) => {
     const userId = requireAuthenticatedUserId(ctx);
@@ -550,7 +550,7 @@ export const set_room_privacy = spacetimedb.reducer(
   }
 );
 
-export const delete_room = spacetimedb.reducer(
+export const deleteRoom = spacetimedb.reducer(
   { roomId: t.u64() },
   (ctx, { roomId }) => {
     const userId = requireAuthenticatedUserId(ctx);
@@ -590,7 +590,7 @@ const attachmentFileResult = t.object('AttachmentFileResult', {
   bytes: t.array(t.u8()),
 });
 
-export const get_attachment_file = spacetimedb.procedure(
+export const getAttachmentFile = spacetimedb.procedure(
   { fileId: t.u64() },
   attachmentFileResult,
   (ctx, args) =>
@@ -618,7 +618,7 @@ export const get_attachment_file = spacetimedb.procedure(
     })
 );
 
-export const send_message = spacetimedb.reducer(
+export const sendMessage = spacetimedb.reducer(
   {
     roomId: t.u64(),
     content: t.string(),
@@ -728,7 +728,7 @@ export const send_message = spacetimedb.reducer(
   }
 );
 
-export const edit_message = spacetimedb.reducer(
+export const editMessage = spacetimedb.reducer(
   { messageId: t.u64(), content: t.string() },
   (ctx, args) => {
     const userId = requireAuthenticatedUserId(ctx);
@@ -755,7 +755,7 @@ export const edit_message = spacetimedb.reducer(
   }
 );
 
-export const delete_message = spacetimedb.reducer(
+export const deleteMessage = spacetimedb.reducer(
   { messageId: t.u64() },
   (ctx, args) => {
     const userId = requireAuthenticatedUserId(ctx);
@@ -780,7 +780,7 @@ export const delete_message = spacetimedb.reducer(
   }
 );
 
-export const send_thread_message = spacetimedb.reducer(
+export const sendThreadMessage = spacetimedb.reducer(
   { rootMessageId: t.u64(), content: t.string() },
   (ctx, args) => {
     const userId = requireAuthenticatedUserId(ctx);
@@ -831,7 +831,7 @@ export const send_thread_message = spacetimedb.reducer(
   }
 );
 
-export const edit_thread_message = spacetimedb.reducer(
+export const editThreadMessage = spacetimedb.reducer(
   { threadMessageId: t.u64(), content: t.string() },
   (ctx, args) => {
     const userId = requireAuthenticatedUserId(ctx);
@@ -856,7 +856,7 @@ export const edit_thread_message = spacetimedb.reducer(
   }
 );
 
-export const delete_thread_message = spacetimedb.reducer(
+export const deleteThreadMessage = spacetimedb.reducer(
   { threadMessageId: t.u64() },
   (ctx, args) => {
     const userId = requireAuthenticatedUserId(ctx);
@@ -895,7 +895,7 @@ export const delete_thread_message = spacetimedb.reducer(
   }
 );
 
-export const start_typing = spacetimedb.reducer(
+export const startTyping = spacetimedb.reducer(
   { roomId: t.u64() },
   (ctx, { roomId }) => {
     const userId = requireAuthenticatedUserId(ctx);
@@ -924,7 +924,7 @@ export const start_typing = spacetimedb.reducer(
   }
 );
 
-export const stop_typing = spacetimedb.reducer(
+export const stopTyping = spacetimedb.reducer(
   { roomId: t.u64() },
   (ctx, { roomId }) => {
     requireAuthenticatedUserId(ctx);
@@ -933,7 +933,7 @@ export const stop_typing = spacetimedb.reducer(
   }
 );
 
-export const mark_room_read = spacetimedb.reducer(
+export const markRoomRead = spacetimedb.reducer(
   { roomId: t.u64() },
   (ctx, { roomId }) => {
     const userId = requireAuthenticatedUserId(ctx);
@@ -953,7 +953,7 @@ export const mark_room_read = spacetimedb.reducer(
   }
 );
 
-export const toggle_reaction = spacetimedb.reducer(
+export const toggleReaction = spacetimedb.reducer(
   { messageId: t.u64(), emoji: t.string() },
   (ctx, args) => {
     const userId = requireAuthenticatedUserId(ctx);
@@ -988,7 +988,7 @@ export const toggle_reaction = spacetimedb.reducer(
   }
 );
 
-export const pin_message = spacetimedb.reducer(
+export const pinMessage = spacetimedb.reducer(
   { messageId: t.u64() },
   (ctx, args) => {
     const userId = requireAuthenticatedUserId(ctx);
@@ -1005,7 +1005,7 @@ export const pin_message = spacetimedb.reducer(
   }
 );
 
-export const unpin_message = spacetimedb.reducer(
+export const unpinMessage = spacetimedb.reducer(
   { messageId: t.u64() },
   (ctx, args) => {
     const userId = requireAuthenticatedUserId(ctx);
@@ -1024,7 +1024,7 @@ export const unpin_message = spacetimedb.reducer(
 
 const SEARCH_MAX_RESULTS = 50;
 const SEARCH_QUERY_MAX = 200;
-export const search_messages = spacetimedb.procedure(
+export const searchMessages = spacetimedb.procedure(
   { roomId: t.u64(), query: t.string() },
   t.array(message.rowType),
   (ctx, args) => {
@@ -1046,7 +1046,7 @@ export const search_messages = spacetimedb.procedure(
   }
 );
 
-export const chat_sweep = spacetimedb.reducer(
+export const chatSweep = spacetimedb.reducer(
   { onSchedule: chatSweepTick },
   { arg: chatSweepTick.rowType },
   ctx => {
