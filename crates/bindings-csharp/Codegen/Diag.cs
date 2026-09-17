@@ -389,7 +389,7 @@ internal static class ErrorDescriptor
         new(
             group,
             "Mounted dependency declares lifecycle reducers",
-            ctx => $"Dependency '{ctx.assembly}' mounted in namespace '{ctx.name}' declares lifecycle reducers: {ctx.reducers}. Lifecycle reducers are only supported in the root scope; remove them or leave the dependency unmounted.",
+            ctx => $"Dependency '{ctx.assembly}' mounted in namespace '{ctx.name}' declares lifecycle reducers: {ctx.reducers}. Lifecycle reducers are only supported in the root scope; remove them or omit the dependency's namespace declaration so it registers automatically in public.",
             _ => Location.None
         );
 }
