@@ -436,6 +436,81 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  spacetime-api-keys-ts:
+    dependencies:
+      '@spacetimedb/crypto':
+        specifier: workspace:^
+        version: link:../spacetime-crypto-ts
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      eslint:
+        specifier: ^9.17.0
+        version: 9.33.0(jiti@2.6.1)
+      prettier:
+        specifier: ^3.3.3
+        version: 3.6.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../crates/bindings-typescript
+      tsx:
+        specifier: ^4.21.0
+        version: 4.23.12
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  spacetime-api-keys-ts/example:
+    dependencies:
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
+      express:
+        specifier: ^4.21.2
+        version: 4.21.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../crates/bindings-typescript
+    devDependencies:
+      '@types/express':
+        specifier: ^4.17.21
+        version: 4.17.23
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.2
+      tsx:
+        specifier: ^4.21.0
+        version: 4.23.12
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  spacetime-api-keys-ts/example/spacetimedb:
+    dependencies:
+      '@spacetimedb/api-keys':
+        specifier: workspace:*
+        version: link:../..
+      '@spacetimedb/grid':
+        specifier: workspace:*
+        version: link:../../../spacetime-grid-ts
+      '@spacetimedb/presence':
+        specifier: workspace:*
+        version: link:../../../spacetime-presence-ts
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../../crates/bindings-typescript
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   spacetime-auth-ts:
     dependencies:
       '@noble/curves':
@@ -710,6 +785,238 @@ importers:
       spacetimedb:
         specifier: workspace:*
         version: link:../../../crates/bindings-typescript
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  spacetime-grid-ts:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      eslint:
+        specifier: ^9.17.0
+        version: 9.33.0(jiti@2.6.1)
+      prettier:
+        specifier: ^3.3.3
+        version: 3.6.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../crates/bindings-typescript
+      tsx:
+        specifier: ^4.21.0
+        version: 4.23.12
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  spacetime-grid-ts/example:
+    dependencies:
+      '@spacetimedb/submodule-shared':
+        specifier: workspace:*
+        version: link:../../spacetime-submodule-shared-ts
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
+      express:
+        specifier: ^4.21.2
+        version: 4.21.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../crates/bindings-typescript
+    devDependencies:
+      '@types/express':
+        specifier: ^4.17.21
+        version: 4.17.23
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.2
+      tsx:
+        specifier: ^4.21.0
+        version: 4.23.12
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  spacetime-grid-ts/example/spacetimedb:
+    dependencies:
+      '@spacetimedb/auth':
+        specifier: workspace:*
+        version: link:../../../spacetime-auth-ts
+      '@spacetimedb/grid':
+        specifier: workspace:*
+        version: link:../..
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../../crates/bindings-typescript
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  spacetime-lobby-ts:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      eslint:
+        specifier: ^9.17.0
+        version: 9.33.0(jiti@2.6.1)
+      prettier:
+        specifier: ^3.3.3
+        version: 3.6.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../crates/bindings-typescript
+      tsx:
+        specifier: ^4.21.0
+        version: 4.23.12
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  spacetime-lobby-ts/example:
+    dependencies:
+      '@spacetimedb/submodule-shared':
+        specifier: workspace:*
+        version: link:../../spacetime-submodule-shared-ts
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
+      express:
+        specifier: ^4.21.2
+        version: 4.21.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../crates/bindings-typescript
+    devDependencies:
+      '@types/express':
+        specifier: ^4.17.21
+        version: 4.17.23
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.2
+      tsx:
+        specifier: ^4.21.0
+        version: 4.23.12
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  spacetime-lobby-ts/example/spacetimedb:
+    dependencies:
+      '@spacetimedb/lobby':
+        specifier: workspace:*
+        version: link:../..
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../../crates/bindings-typescript
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  spacetime-presence-ts:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      eslint:
+        specifier: ^9.17.0
+        version: 9.33.0(jiti@2.6.1)
+      prettier:
+        specifier: ^3.3.3
+        version: 3.6.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../crates/bindings-typescript
+      tsx:
+        specifier: ^4.21.0
+        version: 4.23.12
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  spacetime-presence-ts/example:
+    dependencies:
+      '@spacetimedb/submodule-shared':
+        specifier: workspace:*
+        version: link:../../spacetime-submodule-shared-ts
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
+      express:
+        specifier: ^4.21.2
+        version: 4.21.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../crates/bindings-typescript
+    devDependencies:
+      '@types/express':
+        specifier: ^4.17.21
+        version: 4.17.23
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.2
+      tsx:
+        specifier: ^4.21.0
+        version: 4.23.12
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  spacetime-presence-ts/example/spacetimedb:
+    dependencies:
+      '@spacetimedb/auth':
+        specifier: workspace:*
+        version: link:../../../spacetime-auth-ts
+      '@spacetimedb/files':
+        specifier: workspace:*
+        version: link:../../../spacetime-files-ts
+      '@spacetimedb/presence':
+        specifier: workspace:*
+        version: link:../..
+      '@spacetimedb/rate-limit':
+        specifier: workspace:*
+        version: link:../../../spacetime-rate-limit-ts
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../../crates/bindings-typescript
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  spacetime-presence-ts/spacetimedb:
+    dependencies:
+      '@spacetimedb/presence':
+        specifier: workspace:*
+        version: link:..
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../crates/bindings-typescript
     devDependencies:
       '@types/node':
         specifier: ^22.10.2

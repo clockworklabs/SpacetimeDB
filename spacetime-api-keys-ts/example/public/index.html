@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="A collaborative SpacetimeDB example for issuing, sharing, scoping, and revoking API keys."
+    />
+    <link rel="icon" href="data:," />
+    <title>Colony</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="toast" class="toast"></div>
+
+    <div id="gridViewport">
+      <div id="gridStage" class="grid-stage">
+        <div id="worldGrid" class="world-grid"></div>
+        <div id="cursorLayer"></div>
+      </div>
+    </div>
+
+    <!-- top-left: title + role banner -->
+    <div class="hud hud-tl">
+      <div class="title-tag glass">
+        <svg
+          class="mark"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M3 20h18" />
+          <path d="M5 20a7 7 0 0 1 14 0z" />
+          <path d="M9 20a3 3 0 0 1 6 0" />
+          <path d="M12 6V9" />
+        </svg>
+        <h1>Colony</h1>
+      </div>
+      <div id="roleBanner" class="role-banner glass" hidden></div>
+    </div>
+
+    <!-- top-right: roster + share + log -->
+    <div class="hud hud-tr">
+      <span id="connChip" class="chip" hidden
+        ><span class="dot"></span>connecting</span
+      >
+      <button id="rosterBtn" class="icon-btn glass" type="button">
+        <svg
+          viewBox="0 0 24 24"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="9" cy="8" r="3" />
+          <path d="M4 19a5 5 0 0 1 10 0" />
+          <path d="M16 6a3 3 0 0 1 0 6M20 19a5 5 0 0 0-4-4.9" />
+        </svg>
+        <span id="rosterCount" class="count">1</span>
+      </button>
+      <button id="joinBtn" class="icon-btn glass" type="button">
+        <svg
+          viewBox="0 0 24 24"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M14 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+          <path d="M9 16l4-4-4-4M13 12H3" />
+        </svg>
+        Join
+      </button>
+      <button id="shareBtn" class="icon-btn glass" type="button" hidden>
+        <svg
+          viewBox="0 0 24 24"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="6" cy="12" r="2.5" />
+          <circle cx="18" cy="6" r="2.5" />
+          <circle cx="18" cy="18" r="2.5" />
+          <path d="M8.2 10.8l7.6-3.6M8.2 13.2l7.6 3.6" />
+        </svg>
+        Share
+      </button>
+      <button id="logBtn" class="icon-btn glass" type="button">
+        <svg
+          viewBox="0 0 24 24"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+        >
+          <path d="M4 6h16M4 12h16M4 18h10" />
+        </svg>
+        Log
+      </button>
+    </div>
+
+    <!-- bottom-left: zoom -->
+    <div class="hud hud-bl view-controls glass">
+      <button id="zoomOut" type="button" aria-label="Zoom out">−</button>
+      <span id="zoomLabel" class="zoom-label">100%</span>
+      <button id="zoomIn" type="button" aria-label="Zoom in">+</button>
+      <button id="resetView" type="button" class="fit">Fit</button>
+    </div>
+
+    <!-- bottom-center: build tools -->
+    <div class="hud hud-bottom">
+      <div id="toolbar" class="toolbar glass"></div>
+    </div>
+
+    <!-- share panel (owner only) -->
+    <aside id="sharePanel" class="popover glass" hidden>
+      <div class="pop-head">
+        <span class="eyebrow">Share access</span>
+        <h2>Create a share key</h2>
+        <p class="sub">
+          A key grants scoped access to your colony. Hand out the link. Anyone
+          with it can do exactly what the key allows, and nothing else.
+        </p>
+      </div>
+      <div id="roleGrid" class="role-grid"></div>
+      <input
+        id="keyNameInput"
+        aria-label="Key label"
+        placeholder="Label (optional), e.g. Ava"
+      />
+      <button
+        id="createKeyBtn"
+        class="primary"
+        type="button"
+        style="height: 38px"
+      >
+        Create share link
+      </button>
+      <div id="linkBox" class="link-box" hidden></div>
+      <div>
+        <span class="eyebrow">Your keys</span>
+        <div id="keyList" class="key-list" style="margin-top: 8px"></div>
+      </div>
+    </aside>
+
+    <!-- roster panel -->
+    <aside id="rosterPanel" class="popover glass" hidden>
+      <div class="pop-head">
+        <span class="eyebrow">You</span>
+      </div>
+      <div class="you-editor">
+        <input
+          type="color"
+          id="myColorInput"
+          aria-label="Your cursor color"
+          title="Your cursor color"
+        />
+        <input
+          id="myNameInput"
+          aria-label="Your name"
+          placeholder="Your name"
+          maxlength="24"
+        />
+      </div>
+      <div class="pop-head" style="margin-top: 4px">
+        <span class="eyebrow">In this colony</span>
+        <h2>Who's here</h2>
+      </div>
+      <div id="roster" class="roster"></div>
+    </aside>
+
+    <!-- join panel -->
+    <aside id="joinPanel" class="popover glass" hidden>
+      <div class="pop-head">
+        <span class="eyebrow">Join a colony</span>
+        <h2>Open a share link</h2>
+        <p class="sub">
+          Paste a share link (or key) someone sent you to open their colony with
+          the access it grants.
+        </p>
+      </div>
+      <input
+        id="joinInput"
+        aria-label="Share link or key"
+        placeholder="Paste a share link or key"
+      />
+      <button
+        id="joinSubmit"
+        class="primary"
+        type="button"
+        style="height: 38px"
+      >
+        Join colony
+      </button>
+    </aside>
+
+    <!-- log drawer -->
+    <aside id="logDrawer" class="drawer glass" hidden>
+      <div class="pop-head">
+        <span class="eyebrow">Colony log</span>
+        <h2>Recent activity</h2>
+      </div>
+      <div id="eventFeed" class="feed"></div>
+      <div id="drawerFoot" class="drawer-foot">
+        <button id="resetWorld" type="button">Reset colony</button>
+        <button id="clearEvents" type="button">Clear log</button>
+      </div>
+    </aside>
+
+    <!-- access removed (holder) -->
+    <div id="accessOverlay" class="overlay">
+      <div class="card glass">
+        <h2 id="overlayTitle">Access removed</h2>
+        <p class="sub" id="overlayText">
+          The owner revoked this share link. Colony access is unavailable.
+        </p>
+      </div>
+    </div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
