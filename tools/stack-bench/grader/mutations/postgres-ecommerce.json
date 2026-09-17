@@ -2535,6 +2535,36 @@
           "replace": "  const where = !account || account.isAdmin || account.isStaff ? \"TRUE\" : \"sc.account_id = $1\";\n  const values = !account || account.isAdmin || account.isStaff ? [] : [account.id];"
         }
       ]
+    },
+    {
+      "id": "checkout-crash-integrity",
+      "scenario": "tracks/ecommerce/scenarios/progression-checkout-crash.json",
+      "targets": [
+        "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+      ],
+      "desc": "A lifecycle callback changes a prepared or cleared cart to quantity two, leaving neither a legal rollback nor a complete checkout.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  await initializeProgressionSchema(pool);",
+          "replace": "  await initializeProgressionSchema(pool);\n  await pool.query(`INSERT INTO cart_item (cart_id, item_id, quantity) SELECT c.id, MIN(oi.item_id), 2 FROM cart c JOIN orders o ON o.account_id=c.account_id JOIN order_item oi ON oi.order_id=o.id GROUP BY c.id ON CONFLICT (cart_id,item_id) DO UPDATE SET quantity=2`);"
+        }
+      ]
+    },
+    {
+      "id": "checkout-crash-durability",
+      "scenario": "tracks/ecommerce/scenarios/progression-checkout-crash.json",
+      "targets": [
+        "ecommerce.spec.state-durability.checkout-crash-durability.910b"
+      ],
+      "desc": "A lifecycle callback corrupts earlier order totals. The unchanged prepared snapshots and acknowledged baseline must expose the damage.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  await initializeProgressionSchema(pool);",
+          "replace": "  await initializeProgressionSchema(pool);\n  await pool.query('UPDATE orders SET total=0');"
+        }
+      ]
     }
   ]
 }

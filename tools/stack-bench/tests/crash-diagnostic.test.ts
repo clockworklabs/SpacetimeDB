@@ -208,7 +208,8 @@ test('crash action retains partial fault evidence and distinguishes recovered st
     const waiting = new Promise<void>(resolve => { release = resolve; });
     const result = await executeAction(ACTION_REGISTRY, 'crashCheckout', {
       do: 'crashCheckout', actor: 'buyer', before: 'before', prepared: 'prepared', quantity: 1,
-      ...(record ? { as: 'captured-crash' } : {}),
+      ...(record ? { as: 'captured-crash',
+        ...(mode !== 'disconnected-database' ? { reuseCombinedFrom: 'database' } : {}) } : {}),
       requests: 1, offsetMs: 0, target: mode === 'disconnected-database' ? 'database' : 'application',
     }, { signal: cancellation.signal, onAbort: async () => {}, capabilities: {
       actors: { get: () => ({ name: 'buyer', writes: [{ headers: { authorization: 'Bearer private-token' } }] }) },
@@ -226,7 +227,7 @@ test('crash action retains partial fault evidence and distinguishes recovered st
           return { ok: true, status: 200, text: async () => '' };
         } },
       'browser-observation': { recorded },
-      'process-crash': { prepare: async () => ({ spacetime: null,
+      'process-crash': { combinedBoundary: false, prepare: async () => ({ spacetime: null,
         close: async () => {},
         crash: async () => {
           const now = Date.now();
@@ -302,5 +303,29 @@ test('crash verdict without a measured observation remains inconclusive', async 
       do: 'expectCrashCheckout', from: 'missing', verdict,
     }, { capabilities: { 'browser-observation': { recorded: new Map() } } });
     assert.equal(result.status, 'inconclusive');
+  }
+});
+
+test('combined application boundary reuses only a measured database crash and retains its failures', async () => {
+  for (const prior of [undefined, { receipt: { backend: 'postgres', target: 'database' }, verdicts: { atomicity: [], durability: [] } },
+    { receipt: { backend: 'spacetime', target: 'database' }, verdicts: {
+      atomicity: [{ control: 'partial order', observed: 0, expected: 1 }], durability: [] } }]) {
+    const recorded = new Map<string, unknown>([['database', prior]]);
+    const result = await executeAction(ACTION_REGISTRY, 'crashCheckout', {
+      do: 'crashCheckout', actor: 'buyer', before: 'before', prepared: 'prepared', quantity: 1,
+      requests: 16, offsetMs: 0, target: 'application', as: 'application', reuseCombinedFrom: 'database',
+    }, { capabilities: { actors: {}, 'named-actions': {}, 'database-read': {}, 'browser-observation': { recorded },
+      'process-crash': { combinedBoundary: true, prepare: () => assert.fail('must not crash the same process twice') } } });
+    if (prior?.receipt.backend === 'spacetime') {
+      assert.equal(result.status, 'passed');
+      assert.equal(recorded.get('application'), prior);
+      const check = await executeAction(ACTION_REGISTRY, 'expectCrashCheckout', {
+        do: 'expectCrashCheckout', from: 'application', verdict: 'atomicity',
+      }, { capabilities: { 'browser-observation': { recorded } } });
+      assert.equal(check.status, 'failed');
+    } else {
+      assert.equal(result.status, 'inconclusive');
+      assert.equal(recorded.get('application'), undefined);
+    }
   }
 });

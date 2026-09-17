@@ -577,7 +577,8 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
       expand: (value: string) => String(expand(value, ctx)),
     }),
     'named-actions': namedActions,
-    'process-crash': Object.freeze({ prepare: (target: 'application' | 'database') => {
+    'process-crash': Object.freeze({ combinedBoundary: !ctx.nullControl && ctx.restartSpec?.backend === 'spacetime',
+      prepare: (target: 'application' | 'database') => {
       if (!ctx.restartSpec || ctx.nullControl) throw new Error('process crash requires an owned grading runtime');
       return prepareRuntimeCrash(ctx.restartSpec, target);
     } }),

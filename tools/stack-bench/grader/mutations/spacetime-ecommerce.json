@@ -2624,6 +2624,36 @@
           "replace": ".filter(row => !actor || isGuestTicketCreator(sender, row.creatorIdentity.toHexString(), row.accountId) ||"
         }
       ]
+    },
+    {
+      "id": "checkout-crash-integrity",
+      "scenario": "tracks/ecommerce/scenarios/progression-checkout-crash.json",
+      "targets": [
+        "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+      ],
+      "desc": "A lifecycle callback changes a prepared or cleared cart to quantity two, leaving neither a legal rollback nor a complete checkout.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "export const onDisconnect = spacetimedb.clientDisconnected((_ctx) => {});",
+          "replace": "export const onDisconnect = spacetimedb.clientDisconnected((ctx) => { for (const row of ctx.db.cartItem.iter()) if ([...ctx.db.customerOrder.iter()].some(order => order.accountId === row.accountId)) ctx.db.cartItem.id.update({ ...row, quantity: 2 }); });"
+        }
+      ]
+    },
+    {
+      "id": "checkout-crash-durability",
+      "scenario": "tracks/ecommerce/scenarios/progression-checkout-crash.json",
+      "targets": [
+        "ecommerce.spec.state-durability.checkout-crash-durability.910b"
+      ],
+      "desc": "A lifecycle callback corrupts earlier order totals. The unchanged prepared snapshots and acknowledged baseline must expose the damage.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "export const onDisconnect = spacetimedb.clientDisconnected((_ctx) => {});",
+          "replace": "export const onDisconnect = spacetimedb.clientDisconnected((ctx) => { for (const order of ctx.db.customerOrder.iter()) if ([...ctx.db.cartItem.iter()].some(row => row.accountId === order.accountId)) ctx.db.customerOrder.id.update({ ...order, total: 0 }); });"
+        }
+      ]
     }
   ]
 }

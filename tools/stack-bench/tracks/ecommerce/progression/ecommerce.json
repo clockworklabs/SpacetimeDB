@@ -132,7 +132,9 @@
         "ecommerce.feature.checkout#checkout",
         "ecommerce.spec.concurrency-safety#duplicate-checkout",
         "ecommerce.spec.state-durability#account-state-reload",
-        "ecommerce.spec.state-durability#account-state-reconnect"
+        "ecommerce.spec.state-durability#account-state-reconnect",
+        "ecommerce.spec.state-durability#checkout-crash-integrity",
+        "ecommerce.spec.state-durability#checkout-crash-durability"
       ],
       "dependencies": [
         {

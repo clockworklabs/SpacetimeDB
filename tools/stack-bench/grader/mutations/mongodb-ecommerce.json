@@ -2517,6 +2517,36 @@
           "replace": "const ticketFilter = isStaff ? {} : user ? { userId: user._id } : {};"
         }
       ]
+    },
+    {
+      "id": "checkout-crash-integrity",
+      "scenario": "tracks/ecommerce/scenarios/progression-checkout-crash.json",
+      "targets": [
+        "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+      ],
+      "desc": "A lifecycle callback changes a prepared or cleared cart to quantity two, leaving neither a legal rollback nor a complete checkout.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  await initializeOrderData(mongoose.connection);",
+          "replace": "  await initializeOrderData(mongoose.connection);\n  for (const cart of await Cart.find()) { const order = await Order.findOne({ userId: cart.userId }); if (order?.items[0]) await Cart.updateOne({ _id: cart._id }, { $set: { items: [{ itemId: order.items[0].itemId, quantity: 2 }] } }); }"
+        }
+      ]
+    },
+    {
+      "id": "checkout-crash-durability",
+      "scenario": "tracks/ecommerce/scenarios/progression-checkout-crash.json",
+      "targets": [
+        "ecommerce.spec.state-durability.checkout-crash-durability.910b"
+      ],
+      "desc": "A lifecycle callback corrupts earlier order totals. The unchanged prepared snapshots and acknowledged baseline must expose the damage.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  await initializeOrderData(mongoose.connection);",
+          "replace": "  await initializeOrderData(mongoose.connection);\n  await Order.updateMany({}, { $set: { total: 0 } });"
+        }
+      ]
     }
   ]
 }

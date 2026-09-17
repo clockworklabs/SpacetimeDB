@@ -101,10 +101,12 @@ export async function drainApplicationDatabase(lease: BackendLease, deadlineMs: 
 export async function recoverRuntimeCrash(spec: RuntimeControlSpec, target: CrashTarget): Promise<DatabaseDrainReceipt | null> {
   const { lease } = leaseFromEnv(process.env, { backend: spec.backend, active: true });
   requireAttemptNetwork(lease);
-  const signal = AbortSignal.timeout(target === 'application' ? 80_000 : 45_000);
+  const signal = AbortSignal.timeout(target === 'application' ? 110_000 : 45_000);
   if (target === 'application') {
     let drain: DatabaseDrainReceipt | undefined, failure: Error | undefined;
-    try { drain = await drainApplicationDatabase(lease, Date.now() + 70_000, signal); }
+    // MongoDB's default 60-second transaction lifetime is enforced by a
+    // 30-second sweep. Allow both intervals before declaring work unsettled.
+    try { drain = await drainApplicationDatabase(lease, Date.now() + 100_000, signal); }
     catch (error) { failure = error instanceof Error ? error : new Error('database drain failed'); }
     if (signal.aborted) throw failure ?? Object.assign(new Error('crash recovery interrupted'), { databaseDrain: drain ?? null });
     // Restore service even after an observer error. Otherwise later checks

@@ -15,12 +15,12 @@ import type { SpacetimeTarget } from '../stacks/stack-grading-operations.js';
 interface Input {
   actor: string; before: string; prepared: string; quantity: number;
   requests: 1 | 16; offsetMs: 0 | 5 | 20; target: CrashTarget;
-  namedAction?: NamedAction; as?: string;
+  namedAction?: NamedAction; as?: string; reuseCombinedFrom?: string;
 }
 interface Capabilities extends ActorCapabilities {
   'named-actions': NamedActionsCapability;
   'database-read': ReturnType<typeof createDatabaseReadCapability>;
-  'process-crash': { prepare(target: CrashTarget): Promise<PreparedRuntimeCrash> };
+  'process-crash': { combinedBoundary?: boolean; prepare(target: CrashTarget): Promise<PreparedRuntimeCrash> };
   'browser-observation': { recorded: { get(key: string): unknown; set(key: string, value: unknown): void } };
 }
 
@@ -94,7 +94,20 @@ export const confirmCheckout = actionImplementation(async ({ input, capabilities
 export const crashCheckout = actionImplementation(async ({ input, capabilities, signal }: {
   input: Input; capabilities: Capabilities; signal: AbortSignal;
 }) => {
+  if (input.reuseCombinedFrom && (input.target !== 'application' || !input.as || input.as === input.reuseCombinedFrom)) {
+    throw new Error('combined crash reuse requires a separate application capture name');
+  }
   if (input.as) capabilities['browser-observation'].recorded.set(input.as, undefined);
+  if (input.reuseCombinedFrom && capabilities['process-crash'].combinedBoundary) {
+    const previous = capabilities['browser-observation'].recorded.get(input.reuseCombinedFrom) as
+      { receipt?: ProcessCrashReceipt; verdicts?: { atomicity: unknown[]; durability: unknown[] } } | undefined;
+    if (previous?.receipt?.backend !== 'spacetime' || previous.receipt.target !== 'database'
+      || !Array.isArray(previous.verdicts?.atomicity) || !Array.isArray(previous.verdicts?.durability)) {
+      inconclusive('assertion-without-action', { action: 'crashCheckout' });
+    }
+    capabilities['browser-observation'].recorded.set(input.as!, previous);
+    return { sharedBoundaryWith: input.reuseCombinedFrom, receipt: previous.receipt };
+  }
   const named = capabilities['named-actions'], database = capabilities['database-read'];
   const before = database.checkoutSnapshots.get(input.before), prepared = database.checkoutSnapshots.get(input.prepared);
   if (!before || !prepared || !prepared.recordedAtMs) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
@@ -139,7 +152,7 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
       try {
         signal.throwIfAborted();
         databaseDrain = await runtime.recover(AbortSignal.any([signal,
-          AbortSignal.timeout(input.target === 'application' ? 80_000 : 45_000)]));
+          AbortSignal.timeout(input.target === 'application' ? 110_000 : 45_000)]));
         recoveredAtMs = named.now();
       }
       catch (error) {

@@ -7,9 +7,9 @@
   "recipe": {
     "path": "../recipes/progression-catalog.json",
     "id": "ecommerce.progression-catalog",
-    "meaningSha256": "042c8aafb8bb83bf1c8644ea4069ba5e6e2759288f11713ef8218b3c538cf05f",
-    "executionSha256": "6f05de2d99c23cd41db879690945f406e3c9113c529c47e88059559d3db312df",
-    "contentSha256": "a24238b738236a638e378d539c279c2ec083d48ac54c406dcc3808cc69e1b552"
+    "meaningSha256": "1d99689e149af37edf3f395ba36044ca5d35f0e69d92be90303a58104db8b19f",
+    "executionSha256": "c9d84555e5722857a3c698da3e67e46f03c7cfc7cd50fb643ccd1571403bb9ec",
+    "contentSha256": "add0647be965132c0b9702c5db3ba8265a01b0edc8ca5d820cc152e4ceeb5a89"
   },
   "fixture": {
     "id": "ecommerce.operations",
@@ -39,19 +39,19 @@
     {
       "backend": "mongodb",
       "path": "grader/mutations/mongodb-ecommerce.json",
-      "sha256": "f744a6113ef19f5bb73ce2da23e9403008f2ada10893f7c3acdc27585d3d9937",
+      "sha256": "a84e4d7d63d58ec9e1da167f7f96d80eb55af3b08a9d090543895437d6a9cf1c",
       "referenceId": "ecommerce-reference-mongodb"
     },
     {
       "backend": "postgres",
       "path": "grader/mutations/postgres-ecommerce.json",
-      "sha256": "21fdaeadc766a18c82a5a0fc6bbe819e3fd94e3a79d11831072de2c79ac6671e",
+      "sha256": "9cb8fa5b0f6ac8c59725474d85ef6e64d6355625f905d8762010a98e2d45b39e",
       "referenceId": "ecommerce-reference-postgres"
     },
     {
       "backend": "spacetime",
       "path": "grader/mutations/spacetime-ecommerce.json",
-      "sha256": "5934a0c1b57293a1b61eee977110fba501e3a68a29b02e3b9585acf0ecd8813e",
+      "sha256": "61edb7ec5ad5059a094e9d8718ede1a29e712ed479977ded513595738ee0ea03",
       "referenceId": "ecommerce-reference-spacetime"
     }
   ],
@@ -70,7 +70,9 @@
       "ecommerce.feature.split-tender-refunds.return-refund-interaction.757b",
       "ecommerce.returns-pricing.cancellation-and-return.3f",
       "ecommerce.spec.search-ordering.search-ordering.402b",
-      "ecommerce.spec.state-durability.recommendation-feedback-restart.504c"
+      "ecommerce.spec.state-durability.recommendation-feedback-restart.504c",
+      "ecommerce.spec.state-durability.checkout-crash-integrity.910a",
+      "ecommerce.spec.state-durability.checkout-crash-durability.910b"
     ],
     "runner": {
       "schemaVersion": 1,

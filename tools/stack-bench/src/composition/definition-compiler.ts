@@ -154,7 +154,7 @@ export const ACTION_DEFINITIONS = Object.freeze({
   crashCheckout: fields({ actor: nonEmptyString, before: nonEmptyString, prepared: nonEmptyString,
     quantity: positiveInteger, requests: value => value === 1 || value === 16,
     offsetMs: value => value === 0 || value === 5 || value === 20,
-    target: value => value === 'application' || value === 'database' }, { namedAction: object, as: nonEmptyString }),
+    target: value => value === 'application' || value === 'database' }, { namedAction: object, as: nonEmptyString, reuseCombinedFrom: nonEmptyString }),
   expectCrashCheckout: fields({ from: nonEmptyString, verdict: value => value === 'atomicity' || value === 'durability' }),
   confirmCheckout: fields({ actor: nonEmptyString }, { namedAction: object }),
   dbRecordStock: fields({ item: nonEmptyString, as: nonEmptyString }, { warehouse: nonEmptyString }),

@@ -9,7 +9,9 @@
   "conflictsWith": [],
   "capabilities": [
     "browser",
-    "backend-lifecycle"
+    "backend-lifecycle",
+    "database-read",
+    "process-crash"
   ],
   "evidence": [
     "browser-observation",
@@ -17,7 +19,7 @@
   ],
   "budget": {
     "status": "bounded",
-    "maxRuntimeMs": 408000
+    "maxRuntimeMs": 768000
   },
   "task": {
     "requirements": [
@@ -59,6 +61,18 @@
         ],
         "requiresFeatures": [
           "ecommerce.progression.recommendation-feedback"
+        ]
+      },
+      {
+        "id": "ecommerce.spec.state-durability.checkout-crash",
+        "path": "prompts/modular/checkout-recovery-specification.md",
+        "order": 1120,
+        "modes": [
+          "fresh",
+          "upgrade"
+        ],
+        "requiresFeatures": [
+          "ecommerce.feature.checkout"
         ]
       }
     ],
@@ -212,6 +226,38 @@
       "observations": [
         "requested",
         "unmentioned"
+      ]
+    },
+    {
+      "id": "checkout-crash-integrity",
+      "source": "scenarios/progression-checkout-crash.json",
+      "feature": 910,
+      "criteria": [
+        "910a"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.feature.checkout"
+      ]
+    },
+    {
+      "id": "checkout-crash-durability",
+      "source": "scenarios/progression-checkout-crash.json",
+      "feature": 910,
+      "criteria": [
+        "910b"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.feature.checkout"
       ]
     }
   ]

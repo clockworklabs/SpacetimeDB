@@ -178,7 +178,8 @@ function promptFor(track: Track, level: string): string | null {
 }
 
 function referencedActors(step: CompiledStep): string[] {
-  return [step.from, step.fromActor].filter((actor): actor is string => actor !== undefined);
+  return [step.do === 'expectCrashCheckout' ? undefined : step.from, step.fromActor]
+    .filter((actor): actor is string => actor !== undefined);
 }
 
 export function referencedInterfaceValues(value: unknown, key: 'testid' | 'attribute'): string[] {
