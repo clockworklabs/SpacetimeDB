@@ -24,15 +24,11 @@ This is a local development example. Its scheduling reducers accept any connecte
 
 - Node.js 20 or later
 - pnpm 10
-- SpacetimeDB CLI 2.8.3 with `spacetime:sys@2.0` volatile procedure support
+- A SpacetimeDB CLI and server built from this checkout, with the CLI available as `spacetime`
 - A local SpacetimeDB server
 
-Select the supported CLI release:
-
-```powershell
-spacetime version install 2.8.3
-spacetime version use 2.8.3
-```
+This example uses the workspace SDK. The CLI and server must support the same
+host APIs as that SDK.
 
 ## Quick start
 
