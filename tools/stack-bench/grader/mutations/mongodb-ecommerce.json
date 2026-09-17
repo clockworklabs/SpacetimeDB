@@ -511,6 +511,21 @@
       ]
     },
     {
+      "id": "cancellation-accounting-loses-stock-restoration",
+      "scenario": "tracks/ecommerce/scenarios/02-invariants.json",
+      "targets": [
+        "ecommerce.returns-pricing.refund-accounting.203a"
+      ],
+      "desc": "Cancellation removes revenue and changes order status, but loses the original warehouse stock restoration. The native refund-accounting assertion must detect this.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "          {item_id:line.itemId,warehouse_id:allocation.warehouseId}, {$inc:{quantity:allocation.quantity}}, {session});",
+          "replace": "          {item_id:line.itemId,warehouse_id:allocation.warehouseId}, {$inc:{quantity:0}}, {session});"
+        }
+      ]
+    },
+    {
       "id": "cancel-does-not-restore-stock-fresh-client",
       "scenario": "tracks/ecommerce/scenarios/02-self-contained.json",
       "targets": [

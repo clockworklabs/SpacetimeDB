@@ -302,14 +302,15 @@ test('cancellation restores each allocation once and preserves other orders and 
     assert(cancellationDifferences(before, value).length > 0, name);
   }
   assert(cancellationDifferences(before, before).length > 0, 'reject all');
-  assert.throws(() => cancellationDifferences(states().before, after), /one pending/);
+  assert(cancellationDifferences(states().before, after).length, 'a missing purchased order is a failed application precondition');
 });
 
 test('cancellation action retains mismatches and cannot pass absent or unreadable evidence', async () => {
-  for (const mode of ['valid', 'mismatch', 'missing', 'reader-error', 'schema-change']) {
+  for (const mode of ['valid', 'mismatch', 'missing-order', 'missing', 'reader-error', 'schema-change']) {
     const before = states().after;
     const after = structuredClone(before);
     after.orders[0]!.status = 'cancelled'; after.stock[0]!.quantity++;
+    if (mode === 'missing-order') before.orders = [];
     const checkoutSnapshots = new Map(mode === 'missing' ? [] : [['before', {
       state: before, account: 'a', item: 'i', schemaSha256: { schema: 'verified' },
     }]]);
@@ -323,7 +324,7 @@ test('cancellation action retains mismatches and cannot pass absent or unreadabl
           schemaSha256: { schema: mode === 'schema-change' ? 'changed' : 'verified' } };
       },
     } } });
-    assert.equal(result.status, mode === 'valid' ? 'passed' : mode === 'mismatch' ? 'failed'
+    assert.equal(result.status, mode === 'valid' ? 'passed' : ['mismatch', 'missing-order'].includes(mode) ? 'failed'
       : mode === 'missing' ? 'inconclusive' : 'harness_failure', mode);
     if (mode === 'mismatch') assert(result.observation);
   }

@@ -526,7 +526,8 @@
       "name": "The books still balance once money can flow backwards",
       "actors": [
         "admin",
-        "customer"
+        "customer",
+        "customer2"
       ],
       "setup": [
         {
@@ -541,6 +542,7 @@
           "actor": "customer",
           "name": "books"
         },
+        { "do": "signIn", "actor": "customer2", "name": "books" },
         {
           "do": "click",
           "actor": "admin",
@@ -551,7 +553,7 @@
         {
           "id": "203a",
           "category": "production",
-          "desc": "revenue rises by what was bought and falls by what was cancelled",
+          "desc": "concurrent cancellation restores original stock and the booked amount once, while revenue returns to its prior value",
           "points": 3,
           "steps": [
             {"do":"recordNumber","actor":"admin","testid":"admin-revenue","as":"rev-start"},
@@ -564,15 +566,19 @@
             {"do":"expectNumber","actor":"admin","testid":"admin-revenue","relativeTo":"rev-start","plus":42,"within":10000},
             {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {"do":"click","actor":"customer","testid":"orders-toggle","unlessVisible":"order-item"},
-            {"do":"click","actor":"customer","testid":"cancel-order","in":{"testid":"order-item","contains":"Desk Lamp"}},
-            {"do":"wait","actor":"customer","ms":2500},
+            {"do":"expect","actor":"customer","testid":"order-status","in":{"testid":"order-item","contains":"Desk Lamp"},"value":"pending","ignoreCase":true,"within":10000},
+            {"do":"dbRecordCheckout","account":"{user:books}","item":"Desk Lamp","as":"cancel-before","storage":{"kind":"order-data","cart":false,"warehouses":true}},
+            {"do":"callConcurrently","actors":["customer","customer2"],"from":"customer","action":"cancel","namedAction":{"id":"cancel","path":"/api/orders/:id/cancel","reducer":"cancel_order","args":[0],"params":[{"name":"orderId","in":"path","placeholder":":id","wireType":"u64"}]},"requests":4,"input":{"testid":"order-item","contains":"Desk Lamp","attribute":"data-cancel-input"},"settleMs":3000},
+            {"do":"expectCallOutcomes"},
+            {"do":"dbExpectCancellation","before":"cancel-before"},
             {"do":"reload","actor":"admin","settleMs":1000},
             {"do":"ensureSignedIn","actor":"admin","name":"admin","readyTestid":"current-user","password":"stackbench-admin-2026","exact":true},
             {"do":"click","actor":"admin","testid":"overlay-close","ifAvailable":true,"within":1000},
             {"do":"click","actor":"admin","testid":"admin-link","unlessVisible":"admin-revenue"},
             {"do":"expectNumber","actor":"admin","testid":"admin-revenue","relativeTo":"rev-start","plus":0,"within":10000}
           ],
-          "statedBy": "revenue always equals the sum of orders that are still standing"
+          "statedBy": "revenue always equals the sum of orders that are still standing",
+          "note": "Draft: native order, refund and original warehouse allocation evidence supplements the retained revenue assertions. Four calls from two sessions of the owner must cancel once; a repeated call may deliberately refuse or succeed without extra effects. Qualification pending."
         },
         {
           "id": "203b",

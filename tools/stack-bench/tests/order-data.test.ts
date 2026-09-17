@@ -17,7 +17,7 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { loadTrack } from '../src/composition/tracks.js';
 import { requireRecipeRelease } from '../src/composition/recipe-release.js';
-import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.js';
+import { createBoundRecipeTaskRequest, selectScenarioChecks } from '../src/composition/recipe-selection.js';
 
 const fullStorage = { kind: 'order-data' as const, cart: true, warehouses: true };
 
@@ -96,6 +96,54 @@ test('order read scope requires selected data and never infers features from mis
   }
 });
 
+test('purchase and cancellation scoring uses disclosed native interfaces without adding carts or fulfilment', () => {
+  const binding = requireRecipeRelease(loadTrack('ecommerce'), 3, 'ecommerce.progression-catalog');
+  const request = createBoundRecipeTaskRequest(binding, {
+    featureIds: ['ecommerce.l2.order-cancellation-features'], taskMode: 'fresh',
+    expectedSpecifications: ['ecommerce.progression.cancellation-accounting-specifications'],
+  });
+  assert.match(request.task.contractText, /data-cancel-input/);
+  assert.match(request.task.contractText, /order_allocation\(order_line_id, warehouse_id, quantity\)/);
+  assert(!request.selection.features?.includes('ecommerce.feature.cart'));
+  assert(!request.selection.features?.includes('ecommerce.progression.fulfilment-queue'));
+  const read = (file: string) => {
+    const path = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios', file);
+    return compileScenarioDefinition(JSON.parse(readFileSync(path, 'utf8')), { source: path });
+  };
+  const purchases = read('01-last-unit.json').features[0]!;
+  assert.deepEqual(purchases.criteria.map(row => row.id), ['201a', '201c', '201b'],
+    'extra progress purchases must follow the first-race revenue assertion');
+  const progress = purchases.criteria.find(row => row.id === '201b')!;
+  assert.deepEqual(progress.steps.filter(step => step.do === 'dbExpectPurchases').map(step => step.purchases), [3, 4]);
+  const cancellation = read('02-invariants.json').features.find(row => row.id === 203)!;
+  const cancel = cancellation.criteria.find(row => row.id === '203a')!;
+  assert(cancel.steps.some(step => step.do === 'callConcurrently' && step.action === 'cancel' && step.requests === 4));
+  assert(cancel.steps.some(step => step.do === 'dbExpectCancellation'));
+  for (const [steps, action, parameter] of [[progress.steps, 'buy', 'itemId'], [cancel.steps, 'cancel', 'orderId']] as const) {
+    const call = steps.find(step => step.do === 'callConcurrently')!;
+    assert.deepEqual(call.namedAction, {
+      id: action, path: action === 'buy' ? '/api/items/:id/buy' : '/api/orders/:id/cancel',
+      reducer: action === 'buy' ? 'buy_now' : 'cancel_order', args: [0],
+      params: [{ name: parameter, in: 'path', placeholder: ':id', wireType: 'u64' }],
+    }, 'declared live identifiers must replace the placeholder action defaults');
+  }
+  for (const step of [...purchases.setup, ...progress.steps, ...cancel.steps].filter(step => step.do === 'dbRecordCheckout')) {
+    assert.deepEqual(step.storage, { kind: 'order-data', cart: false, warehouses: true });
+  }
+  for (const backend of ['postgres', 'mongodb', 'spacetime']) {
+    const manifest = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, 'grader/mutations', `${backend}-ecommerce.json`), 'utf8'));
+    const mutant = manifest.mutations.find((row: { id: string }) => row.id === 'cancellation-accounting-loses-stock-restoration');
+    assert(mutant);
+    const source = join(STACK_BENCH_ROOT, mutant.scenario);
+    const scenario = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source });
+    const selected = selectScenarioChecks(scenario, { checks: binding.release.checkCatalog }, mutant.targets);
+    assert.deepEqual(selected.features.flatMap(feature => feature.criteria.map(row => row.id)), ['203a'],
+      'the mutation baseline must contain every targeted check in its own scenario');
+    const code = readFileSync(join(STACK_BENCH_ROOT, 'reference-apps/ecommerce', backend, mutant.file), 'utf8').replaceAll('\r\n', '\n');
+    for (const edit of mutant.edits) assert.equal(code.split(edit.find).length, 2, 'defect edit must have one exact source match');
+  }
+});
+
 test('order data preserves empty state, orphan effects and exact identifiers without a reference source', () => {
   const raw = data();
   const read = () => readOrderDataSnapshot(raw, 'buyer', 'Keyboard', fullStorage);
@@ -159,12 +207,13 @@ test('order data preserves infrastructure failures instead of blaming the app', 
 });
 
 test('order-only purchase and cancellation reject no-op, wrong allocation and wrong refund effects', () => {
-  const raw = data(), before = readOrderDataSnapshot(raw, 'buyer', 'Keyboard', fullStorage).state;
+  const storage = { kind: 'order-data' as const, cart: false, warehouses: true };
+  const raw = data(), before = readOrderDataSnapshot(raw, 'buyer', 'Keyboard', storage).state;
   raw.stock[0]!.quantity = 9;
   raw.order_header.push({ id: '4', account_id: '1', total: 19.99, refunded: 0, status: 'pending' });
   raw.order_line.push({ id: '5', order_id: '4', item_id: '2', quantity: 1, unit_price: 19.99 });
   raw.order_allocation.push({ order_line_id: '5', warehouse_id: '3', quantity: 1 });
-  const after = readOrderDataSnapshot(raw, 'buyer', 'Keyboard', fullStorage).state;
+  const after = readOrderDataSnapshot(raw, 'buyer', 'Keyboard', storage).state;
   assert.deepEqual(orderPurchaseDifferences(before, after, new Map([['1', 1]]), new Map()), []);
   raw.warehouse = [];
   assert.throws(() => readOrderDataSnapshot(raw, 'buyer', 'Keyboard', fullStorage), /warehouse link is missing/);
@@ -173,8 +222,15 @@ test('order-only purchase and cancellation reject no-op, wrong allocation and wr
   raw.order_header[0]!.status = 'cancelled';
   raw.order_header[0]!.refunded = 19.99;
   raw.stock[0]!.quantity = 10;
-  const cancelled = readOrderDataSnapshot(raw, 'buyer', 'Keyboard', fullStorage).state;
+  const cancelled = readOrderDataSnapshot(raw, 'buyer', 'Keyboard', storage).state;
   assert.deepEqual(orderCancellationDifferences(after, cancelled), []);
+  for (const defect of ['missing-order', 'missing-lines', 'missing-allocation']) {
+    const broken = structuredClone(after);
+    if (defect === 'missing-order') broken.orders = [];
+    if (defect === 'missing-lines') broken.orders[0]!.lines = [];
+    if (defect === 'missing-allocation') broken.orders[0]!.lines[0]!.allocations = [];
+    assert(orderCancellationDifferences(broken, cancelled).length, `${defect} is an app failure, not a harness exception`);
+  }
   assert(orderCancellationDifferences(after, after).length);
   cancelled.orders[0]!.refundedMinor = 0;
   assert(orderCancellationDifferences(after, cancelled).some(row => row.control === 'cancellation orders'));

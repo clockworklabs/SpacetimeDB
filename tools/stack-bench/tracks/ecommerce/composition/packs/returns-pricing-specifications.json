@@ -8,8 +8,8 @@
   "description": "Revenue remains exact through cancellations, returns, and later price changes.",
   "requiresPacks": [],
   "conflictsWith": [],
-  "capabilities": ["browser"],
-  "evidence": ["browser-observation"],
+  "capabilities": ["browser", "concurrent-actors", "direct-server-call"],
+  "evidence": ["browser-observation", "concurrent-outcome", "database-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 66000 },
   "task": {
     "requirements": [

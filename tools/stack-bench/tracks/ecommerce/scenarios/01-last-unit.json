@@ -33,6 +33,12 @@
         { "do": "signUp", "actor": "d", "name": "c4" },
         { "do": "signUp", "actor": "e", "name": "c5" },
         { "do": "signUp", "actor": "f", "name": "c6" },
+        { "do": "dbRecordCheckout", "account": "{user:c1}", "item": "Air Purifier", "as": "buy-a", "storage": { "kind": "order-data", "cart": false, "warehouses": true } },
+        { "do": "dbRecordCheckout", "account": "{user:c2}", "item": "Air Purifier", "as": "buy-b", "storage": { "kind": "order-data", "cart": false, "warehouses": true } },
+        { "do": "dbRecordCheckout", "account": "{user:c3}", "item": "Air Purifier", "as": "buy-c", "storage": { "kind": "order-data", "cart": false, "warehouses": true } },
+        { "do": "dbRecordCheckout", "account": "{user:c4}", "item": "Air Purifier", "as": "buy-d", "storage": { "kind": "order-data", "cart": false, "warehouses": true } },
+        { "do": "dbRecordCheckout", "account": "{user:c5}", "item": "Air Purifier", "as": "buy-e", "storage": { "kind": "order-data", "cart": false, "warehouses": true } },
+        { "do": "dbRecordCheckout", "account": "{user:c6}", "item": "Air Purifier", "as": "buy-f", "storage": { "kind": "order-data", "cart": false, "warehouses": true } },
         {
           "do": "callConcurrently",
           "action": "buy",
@@ -71,11 +77,26 @@
           "statedBy": "stock may never go negative, and two customers must never both get the last unit"
         },
         {
-          "id": "201b",
+          "id": "201c",
           "category": "production",
-          "desc": "exactly three of the six customers have an order, and no customer has more than one order",
+          "desc": "revenue increases by exactly three sales, not six",
           "points": 1,
           "steps": [
+            {"do":"reload","actor":"admin","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"admin","name":"admin","readyTestid":"current-user","password":"stackbench-admin-2026","exact":true},
+            {"do":"click","actor":"admin","testid":"overlay-close","ifAvailable":true,"within":1000},
+            {"do":"click","actor":"admin","testid":"admin-link","unlessVisible":"admin-revenue"},
+            {"do":"expectNumber","actor":"admin","testid":"admin-revenue","relativeTo":"revenue-before-last-unit","plus":567,"within":10000}
+          ],
+          "statedBy": "stock must never leave a warehouse without a corresponding order"
+        },
+        {
+          "id": "201b",
+          "category": "production",
+          "desc": "the last three units create complete orders for the successful buyers, and all four affordable purchases succeed when stock is sufficient",
+          "points": 1,
+          "steps": [
+            { "do": "dbExpectPurchases", "before": { "a": "buy-a", "b": "buy-b", "c": "buy-c", "d": "buy-d", "e": "buy-e", "f": "buy-f" }, "purchases": 3 },
             {"do":"click","actor":"a","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "a", "testid": "orders-toggle", "unlessVisible": "order-item" },
             {"do":"click","actor":"b","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
@@ -95,24 +116,20 @@
               "contains": "Air Purifier",
               "equals": 3,
               "maxEach": 1
-            }
+            },
+            { "do": "dbSetStock", "item": "Air Purifier", "warehouse": "East", "quantity": 2, "settleMs": 250 },
+            { "do": "dbSetStock", "item": "Air Purifier", "warehouse": "West", "quantity": 2, "settleMs": 250 },
+            { "do": "reload", "actor": "a", "settleMs": 1000 },
+            { "do": "ensureSignedIn", "actor": "a", "name": "c1", "readyTestid": "current-user" },
+            { "do": "click", "actor": "a", "testid": "catalog-link", "ifAvailable": true },
+            { "do": "dbRecordCheckout", "account": "{user:c1}", "item": "Air Purifier", "as": "ample-a", "storage": { "kind": "order-data", "cart": false, "warehouses": true } },
+            { "do": "dbRecordCheckout", "account": "{user:c2}", "item": "Air Purifier", "as": "ample-b", "storage": { "kind": "order-data", "cart": false, "warehouses": true } },
+            { "do": "callConcurrently", "actors": ["a", "b"], "from": "a", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "requests": 4, "input": { "testid": "item-card", "contains": "Air Purifier", "attribute": "data-buy-input" }, "settleMs": 3000 },
+            { "do": "expectCallOutcomes" },
+            { "do": "dbExpectPurchases", "before": { "a": "ample-a", "b": "ample-b" }, "purchases": 4 }
           ],
-          "provenBy": "Qualified L1 mutation evidence already catches this exact assertion on MongoDB, PostgreSQL, and SpacetimeDB. The candidate reruns that gate against this focused suite before promotion.",
+          "provenBy": "Draft: native order reconciliation and the sufficient-stock progress case require matching reference and defect controls. This criterion runs after the revenue assertion so its extra purchases cannot alter that assertion's baseline.",
           "statedBy": "two customers must never both get the last unit"
-        },
-        {
-          "id": "201c",
-          "category": "production",
-          "desc": "revenue increases by exactly three sales, not six",
-          "points": 1,
-          "steps": [
-            {"do":"reload","actor":"admin","settleMs":1000},
-            {"do":"ensureSignedIn","actor":"admin","name":"admin","readyTestid":"current-user","password":"stackbench-admin-2026","exact":true},
-            {"do":"click","actor":"admin","testid":"overlay-close","ifAvailable":true,"within":1000},
-            {"do":"click","actor":"admin","testid":"admin-link","unlessVisible":"admin-revenue"},
-            {"do":"expectNumber","actor":"admin","testid":"admin-revenue","relativeTo":"revenue-before-last-unit","plus":567,"within":10000}
-          ],
-          "statedBy": "stock must never leave a warehouse without a corresponding order"
         }
       ]
     }

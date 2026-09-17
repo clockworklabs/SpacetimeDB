@@ -289,7 +289,7 @@ function compareCancellation(before: CheckoutState, after: CheckoutState, refund
       || !line.allocations.length || line.allocations.some(row => row.quantity <= 0
         || !before.stock.some(stock => stock.warehouseId === row.warehouseId))
       || line.allocations.reduce((sum, row) => integer.parse(sum + row.quantity), 0) !== line.quantity)) {
-    throw new Error('cancellation diagnostic requires one pending single-product order with verified allocations');
+    return [{ control: 'cancellation requires one pending single-product order with complete allocations', observed: 0, expected: 1 }];
   }
   const expected = structuredClone(before);
   const cancelled = expected.orders.find(row => row.id === order.id)!;

@@ -5079,13 +5079,15 @@
           {
             "actors": [
               "admin",
-              "customer"
+              "customer",
+              "customer2"
             ],
             "criteria": [
               {
                 "category": "production",
-                "desc": "revenue rises by what was bought and falls by what was cancelled",
+                "desc": "concurrent cancellation restores original stock and the booked amount once, while revenue returns to its prior value",
                 "id": "203a",
+                "note": "Draft: native order, refund and original warehouse allocation evidence supplements the retained revenue assertions. Four calls from two sessions of the owner must cancel once; a repeated call may deliberately refuse or succeed without extra effects. Qualification pending.",
                 "points": 3,
                 "statedBy": "revenue always equals the sum of orders that are still standing",
                 "steps": [
@@ -5159,17 +5161,65 @@
                   },
                   {
                     "actor": "customer",
-                    "do": "click",
+                    "do": "expect",
+                    "ignoreCase": true,
                     "in": {
                       "contains": "Desk Lamp",
                       "testid": "order-item"
                     },
-                    "testid": "cancel-order"
+                    "testid": "order-status",
+                    "value": "pending",
+                    "within": 10000
                   },
                   {
-                    "actor": "customer",
-                    "do": "wait",
-                    "ms": 2500
+                    "account": "{user:books}",
+                    "as": "cancel-before",
+                    "do": "dbRecordCheckout",
+                    "item": "Desk Lamp",
+                    "storage": {
+                      "cart": false,
+                      "kind": "order-data",
+                      "warehouses": true
+                    }
+                  },
+                  {
+                    "action": "cancel",
+                    "actors": [
+                      "customer",
+                      "customer2"
+                    ],
+                    "do": "callConcurrently",
+                    "from": "customer",
+                    "input": {
+                      "attribute": "data-cancel-input",
+                      "contains": "Desk Lamp",
+                      "testid": "order-item"
+                    },
+                    "namedAction": {
+                      "args": [
+                        0
+                      ],
+                      "id": "cancel",
+                      "params": [
+                        {
+                          "in": "path",
+                          "name": "orderId",
+                          "placeholder": ":id",
+                          "wireType": "u64"
+                        }
+                      ],
+                      "path": "/api/orders/:id/cancel",
+                      "reducer": "cancel_order"
+                    },
+                    "requests": 4,
+                    "settleMs": 3000
+                  },
+                  {
+                    "do": "expectCallOutcomes"
+                  },
+                  {
+                    "before": "cancel-before",
+                    "do": "dbExpectCancellation"
                   },
                   {
                     "actor": "admin",
@@ -5405,6 +5455,11 @@
               {
                 "actor": "customer",
                 "do": "signUp",
+                "name": "books"
+              },
+              {
+                "actor": "customer2",
+                "do": "signIn",
                 "name": "books"
               },
               {
