@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A SpacetimeDB storefront example with Stripe customers, checkout, subscriptions, and verified webhooks."
+    />
+    <title>SpacetimeDB Premium Store</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topnav">
+        <div class="brand">
+          <a
+            href="https://spacetimedb.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            style="display: inline-flex"
+            ><img
+              class="brand-wordmark"
+              src="/assets/brand.svg"
+              alt="SpacetimeDB"
+          /></a>
+          <span class="brand-sub">Premium Store Test App</span>
+        </div>
+        <div class="topnav-actions">
+          <button id="btnCart" class="cart-button">Cart (0)</button>
+          <button id="btnSettings" class="icon-button" aria-label="Settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M19.14 12.94a7.5 7.5 0 0 0 .05-.94 7.5 7.5 0 0 0-.05-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.2 7.2 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.2 7.2 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 8.84a.5.5 0 0 0 .12.64l2.03 1.58a7.5 7.5 0 0 0-.05.94 7.5 7.5 0 0 0 .05.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.39 1.05.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.58-.23 1.13-.55 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"
+              />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <section class="layout">
+        <div class="panel">
+          <h1>Storefront</h1>
+          <p class="panel-sub">
+            Browse products and add them to cart. Open cart to checkout.
+          </p>
+          <div id="catalogGrid" class="catalog-grid">
+            <div class="loading-card">Loading catalog from SpacetimeDB...</div>
+          </div>
+        </div>
+      </section>
+
+      <div
+        id="checkoutBanner"
+        class="checkout-banner"
+        role="status"
+        aria-live="polite"
+        hidden
+      >
+        <span class="checkout-banner-dot" aria-hidden="true"></span>
+        <span class="checkout-banner-text" id="checkoutBannerText"></span>
+        <button
+          class="checkout-banner-close"
+          id="checkoutBannerClose"
+          aria-label="Dismiss"
+        >
+          ×
+        </button>
+      </div>
+    </main>
+
+    <div id="cartBackdrop" class="cart-backdrop" hidden></div>
+    <aside id="cartPopout" class="cart-popout" hidden>
+      <div class="cart-header">
+        <div class="cart-title">Cart</div>
+        <button id="btnCartClose" class="btn secondary dev-tools-close">
+          Close
+        </button>
+      </div>
+      <div class="cart-body">
+        <div id="cartList" class="cart-list">
+          <div class="cart-empty">
+            <div class="cart-empty-title">Your cart is empty</div>
+            <div class="cart-empty-copy">
+              Add items from the storefront to start checkout.
+            </div>
+          </div>
+        </div>
+
+        <div class="cart-footer">
+          <div id="cartSummary" class="cart-summary">
+            <span>Subtotal: $0.00</span>
+            <span>Recurring: $0.00/mo</span>
+          </div>
+          <div class="shop-actions">
+            <button id="btnContinueShopping" class="btn ghost">
+              Continue shopping
+            </button>
+            <button id="btnCheckoutCart" class="btn primary" disabled>
+              Checkout with Stripe
+            </button>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Error toast. -->
+    <div id="errorLine"></div>
+
+    <div id="devToolsBackdrop" class="dev-tools-backdrop" hidden></div>
+    <aside id="devToolsPopout" class="dev-tools-popout" hidden>
+      <div class="dev-tools-header">
+        <div class="dev-tools-title">Buyer Tools</div>
+        <button id="btnDevToolsClose" class="btn secondary dev-tools-close">
+          Close
+        </button>
+      </div>
+      <div class="dev-tools-body">
+        <div class="dev-tools">
+          <div class="form-grid">
+            <div class="form-row">
+              <label for="email">Email</label>
+              <input id="email" placeholder="pilot@spacetime.dev" />
+            </div>
+            <div class="form-row">
+              <label for="name">Display Name (optional)</label>
+              <input id="name" placeholder="Orbital Pilot" />
+            </div>
+            <div class="form-row full">
+              <label for="userId">App User ID</label>
+              <input id="userId" />
+            </div>
+            <div class="form-row">
+              <label for="customerId">Stripe Customer ID (optional)</label>
+              <input id="customerId" placeholder="cus_..." />
+            </div>
+            <div class="form-row">
+              <label>&nbsp;</label>
+              <button id="btnCustomer" class="btn ghost">
+                Get / Create Customer
+              </button>
+            </div>
+            <div class="form-row full">
+              <label for="log">Raw output</label>
+              <textarea id="log" readonly></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <script src="./ui.js"></script>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
