@@ -10,6 +10,11 @@ fn compiled_module() -> &'static ModuleDef {
         .get_or_init(|| CompiledModule::compile("module-test", CompilationMode::Debug).extract_schema_blocking())
 }
 
+fn compiled_typescript_module() -> &'static ModuleDef {
+    static MODULE: OnceLock<ModuleDef> = OnceLock::new();
+    MODULE.get_or_init(|| CompiledModule::compile("module-test-ts", CompilationMode::Debug).extract_schema_blocking())
+}
+
 macro_rules! declare_tests {
     ($($name:ident => $lang:expr,)*) => ($(
         #[test]
@@ -68,8 +73,8 @@ fn test_typescript_table_handles_are_camel_case() {
 /// submodule, so this checks the TypeScript output of one that does.
 #[test]
 fn submodule_reducer_wire_name_is_qualified_once() {
-    let module = CompiledModule::compile("module-test-ts", CompilationMode::Debug).extract_schema_blocking();
-    let code = generate(&module, &TypeScript, &CodegenOptions::default())
+    let module = compiled_typescript_module();
+    let code = generate(module, &TypeScript, &CodegenOptions::default())
         .into_iter()
         .map(|f| f.code)
         .collect::<Vec<_>>()
@@ -84,5 +89,216 @@ fn submodule_reducer_wire_name_is_qualified_once() {
     assert!(
         !code.contains("lib.lib."),
         "namespace was applied twice somewhere in the generated bindings"
+    );
+}
+
+fn namespace_module() -> ModuleDef {
+    use spacetimedb_lib::db::raw_def::v10::{
+        RawModuleDefV10, RawModuleDefV10Builder, RawModuleDefV10Section, RawSubmoduleV10,
+    };
+    use spacetimedb_lib::db::raw_def::v9::TableAccess;
+    use spacetimedb_lib::sats::{AlgebraicType, ProductType};
+
+    fn scope(value_type: AlgebraicType) -> RawModuleDefV10 {
+        let mut builder = RawModuleDefV10Builder::new();
+        let row = builder
+            .build_table_with_new_type(
+                "User",
+                ProductType::from([("id", AlgebraicType::U64), ("value", value_type)]),
+                true,
+            )
+            .with_primary_key(0)
+            .with_unique_constraint(spacetimedb_primitives::ColId(0))
+            .with_index(
+                spacetimedb_lib::db::raw_def::v9::btree(spacetimedb_primitives::ColId(0)),
+                "user_id",
+                "Id",
+            )
+            .finish();
+        builder
+            .build_table_with_new_type("Secret", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .with_access(TableAccess::Private)
+            .finish();
+        builder
+            .build_table_with_new_type("Notice", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .with_event(true)
+            .finish();
+        builder.add_reducer("Login", ProductType::from([("user", AlgebraicType::Ref(row))]));
+        builder.add_procedure(
+            "GetUser",
+            ProductType::from([] as [(&str, AlgebraicType); 0]),
+            AlgebraicType::Ref(row),
+        );
+        builder.add_view(
+            "Users",
+            0,
+            true,
+            true,
+            ProductType::from([] as [(&str, AlgebraicType); 0]),
+            AlgebraicType::array(AlgebraicType::Ref(row)),
+        );
+        let payload = builder.add_algebraic_type(
+            [],
+            "Payload",
+            AlgebraicType::Product(ProductType::from([("value", AlgebraicType::String)])),
+            true,
+        );
+        builder.add_procedure(
+            "GetPayload",
+            ProductType::from([] as [(&str, AlgebraicType); 0]),
+            AlgebraicType::Ref(payload),
+        );
+        builder.finish()
+    }
+
+    let mut root = scope(AlgebraicType::Bool);
+    let mut auth = scope(AlgebraicType::U32);
+    auth.sections
+        .push(RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+            namespace: "nested".into(),
+            module: scope(AlgebraicType::I64),
+        }]));
+    root.sections.push(RawModuleDefV10Section::Submodules(vec![
+        RawSubmoduleV10 {
+            namespace: "MyAuth".into(),
+            module: auth,
+        },
+        RawSubmoduleV10 {
+            namespace: "class".into(),
+            module: scope(AlgebraicType::String),
+        },
+        RawSubmoduleV10 {
+            namespace: "Empty".into(),
+            module: RawModuleDefV10::default(),
+        },
+    ]));
+    root.try_into().expect("namespace fixture should validate")
+}
+
+#[test]
+fn csharp_namespaces_compile_and_run() {
+    let module = namespace_module();
+    let files = generate(
+        &module,
+        &Csharp {
+            namespace: "Game.Bindings",
+        },
+        &CodegenOptions::default(),
+    );
+    let unique_names: std::collections::HashSet<_> = files.iter().map(|file| &file.filename).collect();
+    assert_eq!(unique_names.len(), files.len(), "generated filenames must be unique");
+    assert!(!files.iter().any(|file| file.filename.ends_with("Tables/Secret.g.cs")));
+    let auth_reducer = files
+        .iter()
+        .find(|file| file.filename == "MyAuth/Reducers/Login.g.cs")
+        .unwrap();
+    assert!(auth_reducer.code.contains("\"MyAuth.login\""));
+    assert!(!auth_reducer.code.contains("MyAuth.MyAuth."));
+
+    compile_csharp_client(files, include_str!("csharp-namespaces/Program.cs"));
+}
+
+#[test]
+fn csharp_client_for_typescript_submodule_compiles_and_runs() {
+    let typescript = compiled_typescript_module();
+    compile_csharp_client(
+        generate(
+            typescript,
+            &Csharp {
+                namespace: "SpacetimeDB",
+            },
+            &CodegenOptions::default(),
+        ),
+        r#"class Program { static void Main() {
+            var conn = new SpacetimeDB.DbConnection();
+            try {
+                if (conn.Db.lib.LibData.RemoteTableName != "lib.libData") throw new System.Exception(conn.Db.lib.LibData.RemoteTableName);
+                if (((SpacetimeDB.IReducerArgs)new SpacetimeDB.lib.Reducer.LibInsert("value")).ReducerName != "lib.lib_insert") throw new System.Exception("wrong reducer name");
+            } finally { conn.Disconnect(); }
+        } }"#,
+    );
+}
+
+fn compile_csharp_client(files: Vec<spacetimedb_codegen::OutputFile>, program: &str) {
+    // Project references share the SDK's MSBuild intermediate directory.
+    static COMPILE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = COMPILE.lock().unwrap_or_else(|poison| poison.into_inner());
+    let project = tempfile::tempdir().unwrap();
+    for file in files {
+        let path = project.path().join(file.filename);
+        fs_err::create_dir_all(path.parent().unwrap()).unwrap();
+        fs_err::write(path, file.code).unwrap();
+    }
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap();
+    // Use the local runtime, never a published package or an old NuGet cache entry.
+    let config = project.path().join("NuGet.Config");
+    fs_err::write(
+        &config,
+        format!(
+            r#"<configuration>
+  <packageSources>
+    <clear />
+    <add key="local" value="{}/crates/bindings-csharp/BSATN.Runtime/bin/Release" />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+  <packageSourceMapping>
+    <packageSource key="local"><package pattern="SpacetimeDB.BSATN.Runtime" /></packageSource>
+    <packageSource key="nuget.org"><package pattern="*" /></packageSource>
+  </packageSourceMapping>
+</configuration>"#,
+            repo.display()
+        ),
+    )
+    .unwrap();
+    static PACKED: OnceLock<()> = OnceLock::new();
+    PACKED.get_or_init(|| {
+        let result = std::process::Command::new("dotnet")
+            .arg("pack")
+            .arg(repo.join("crates/bindings-csharp/BSATN.Runtime"))
+            .args(["-c", "Release"])
+            .arg(format!("-p:RestoreConfigFile={}", config.display()))
+            .output()
+            .expect("dotnet SDK is required for generated C# compilation");
+        assert!(
+            result.status.success(),
+            "local BSATN pack failed:\n{}\n{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+    });
+    fs_err::write(project.path().join("Program.cs"), program).unwrap();
+    fs_err::write(
+        project.path().join("client.csproj"),
+        format!(
+            r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>9</LangVersion>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <AssemblyName>SpacetimeDB.Tests</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="{}/sdks/csharp/SpacetimeDB.ClientSDK.csproj" /></ItemGroup>
+</Project>"#,
+            repo.display()
+        ),
+    )
+    .unwrap();
+    let result = std::process::Command::new("dotnet")
+        .args(["run", "--project"])
+        .arg(project.path().join("client.csproj"))
+        .arg("-p:TreatWarningsAsErrors=true")
+        .arg(format!("-p:RestorePackagesPath={}/packages", project.path().display()))
+        .arg(format!("-p:RestoreConfigFile={}", config.display()))
+        .output()
+        .expect("dotnet SDK is required for generated C# compilation");
+    assert!(
+        result.status.success(),
+        "generated client failed:\n{}\n{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
     );
 }
