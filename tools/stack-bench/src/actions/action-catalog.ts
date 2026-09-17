@@ -10,6 +10,8 @@ import { ACTION_DEFINITIONS, ACTION_IDS,
 import type { ActionId } from '../composition/definition-compiler.js';
 
 const ACTION_CATEGORY = {
+  armScriptCanary: 'browser-observation',
+  expectNoScriptExecution: 'browser-observation',
   callAction: 'transport',
   callConcurrently: 'concurrency',
   confirmCheckout: 'transport',

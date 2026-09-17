@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { errors } from 'playwright';
+import { chromium, errors } from 'playwright';
 
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { executeAction } from '../src/actions/action-contract.js';
@@ -59,6 +59,29 @@ test('the extracted executor registry is exact and every migrated action has bou
     assert(plugin.timeoutMs > 0, id);
     assert(plugin.capabilities.includes('actors') || plugin.capabilities.includes('browser-observation'), id);
   }
+});
+
+test('script canary detects execution after DOM removal and rejects missing observers', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    const provided = services({ page });
+    assert.equal((await run({ do: 'expectNoScriptExecution', actor: 'a' }, provided)).status, 'inconclusive');
+    assert.equal((await run({ do: 'armScriptCanary', actor: 'a' }, provided)).status, 'passed');
+    const payload = '<img src="data:,bad-image" onerror="window.__stackBenchScriptCanary().then(() => console.log(\'canary-delivered\'))">';
+    await page.setContent('<main></main>');
+    await page.locator('main').evaluate((element, text) => { element.textContent = text; }, payload);
+    assert.equal((await run({ do: 'expectNoScriptExecution', actor: 'a' }, provided)).status, 'passed');
+    const delivered = page.waitForEvent('console', { predicate: message => message.text() === 'canary-delivered', timeout: 5000 });
+    await page.setContent(payload);
+    await delivered;
+    await page.setContent('<main>replacement document</main>');
+    assert.equal((await run({ do: 'expectNoScriptExecution', actor: 'a' }, provided)).status, 'failed');
+    await page.evaluate(() => {
+      delete (globalThis as unknown as { __stackBenchScriptCanary?: unknown }).__stackBenchScriptCanary;
+    });
+    assert.equal((await run({ do: 'expectNoScriptExecution', actor: 'a' }, provided)).status, 'inconclusive');
+  } finally { await browser.close(); }
 });
 
 test('UI failures retain bounded observations but exclude passwords and unproven missing choices', async () => {

@@ -196,6 +196,8 @@ export const ACTION_DEFINITIONS = Object.freeze({
   expectElementCount: fields({ ...actor, testid: nonEmptyString },
     { equals: nonNegativeInteger, relativeTo: nonEmptyString, plus: integer,
       contains: string, ...locator, ...within }),
+  armScriptCanary: fields(actor),
+  expectNoScriptExecution: fields(actor),
   expectForgeryRejected: fields(actor),
   expectNotReceived: fields({ ...actor, contains: string }, within),
   expectNumber: fields({ ...actor, testid: nonEmptyString },

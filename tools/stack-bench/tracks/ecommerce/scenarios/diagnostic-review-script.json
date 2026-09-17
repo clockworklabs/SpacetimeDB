@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 3,
+  "name": "Stored review script diagnostic",
+  "note": "Draft zero-point diagnostic, not selected by campaigns. Uses the declared real review write and a grader-owned browser binding. A separate eligible buyer must successfully store benign content and fresh readers must display it, preventing reject-all or blank-renderer false passes. The attack may be deliberately rejected or safely rendered. HTTP 5xx/unknown outcomes cannot pass. Observe one second after rendering; not comprehensive XSS coverage. Missing observer is unmeasured. Three-stack reference, unsafe-rendering and reject-all qualification is required before scoring.",
+  "features": [{
+    "id": 9180,
+    "name": "Stored review content",
+    "actors": ["owner","writer","reader"],
+    "setup": [
+      {"do":"signUp","actor":"owner","name":"script-review-owner"},
+      {"do":"signUp","actor":"reader","name":"script-review-reader"},
+      {"do":"signUp","actor":"writer","name":"script-review-writer"},
+      {"do":"callAction","actor":"owner","action":"buy","namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"}},
+      {"do":"expectActionOutcome","actor":"owner","outcome":"accepted"},
+      {"do":"callAction","actor":"writer","action":"buy","namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"}},
+      {"do":"expectActionOutcome","actor":"writer","outcome":"accepted"},
+      {"do":"armScriptCanary","actor":"owner"}
+    ],
+    "criteria": [{
+      "id": "9180a", "category": "production", "points": 0,
+      "desc": "review input is rejected or displayed without executing script in another customer session",
+      "steps": [
+        {"do":"callAction","actor":"owner","action":"submitReview","namedAction":{"id":"submitReview","path":"/api/items/:id/reviews","method":"POST","reducer":"submit_review","args":[0,5,"Benign stored review"],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"},{"name":"rating","in":"body"},{"name":"comment","in":"body"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"settleMs":0},
+        {"do":"expectActionOutcome","actor":"owner","outcome":"accepted"},
+        {"do":"callAction","actor":"writer","action":"submitReview","namedAction":{"id":"submitReview","path":"/api/items/:id/reviews","method":"POST","reducer":"submit_review","args":[0,5,"Stored review marker <img src=\"data:,bad-image\" onerror=\"window.__stackBenchScriptCanary()\">"],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"},{"name":"rating","in":"body"},{"name":"comment","in":"body"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"settleMs":0},
+        {"do":"expectActionOutcome","actor":"writer","outcome":"completed","routeProvenBy":"owner"},
+        {"do":"openItem","actor":"owner","item":"Keyboard"},
+        {"do":"expect","actor":"owner","testid":"review-item","contains":"Benign stored review","within":10000},
+        {"do":"wait","actor":"owner","ms":1000},
+        {"do":"expectNoScriptExecution","actor":"owner"},
+        {"do":"freshClient","actor":"reader"},
+        {"do":"signIn","actor":"reader-fresh","name":"script-review-reader"},
+        {"do":"armScriptCanary","actor":"reader-fresh"},
+        {"do":"openItem","actor":"reader-fresh","item":"Keyboard"},
+        {"do":"expect","actor":"reader-fresh","testid":"review-item","contains":"Benign stored review","within":10000},
+        {"do":"wait","actor":"reader-fresh","ms":1000},
+        {"do":"expectNoScriptExecution","actor":"reader-fresh"}
+      ]
+    }]
+  }]
+}

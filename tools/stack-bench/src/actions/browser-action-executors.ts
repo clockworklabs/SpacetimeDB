@@ -831,7 +831,57 @@ function contractBrowserAction<Input, Result>(
   return actionImplementation(bounded);
 }
 
+interface ScriptCanaryArguments {
+  readonly input: { readonly actor: string };
+  readonly capabilities: {
+    readonly actors: { get(name: string): { readonly page: {
+      exposeFunction(name: string, callback: (probe?: boolean) => string): Promise<void>;
+      evaluate<Result>(callback: () => Result): Promise<Result>;
+    } } | undefined };
+    readonly 'browser-observation': BrowserCapability;
+  };
+}
+
+// Execution is recorded outside the document so DOM replacement cannot erase it.
+async function scriptCanaryProbe({ input, capabilities }: ScriptCanaryArguments): Promise<void> {
+  const actor = actorFor(capabilities, input.actor);
+  const reply = await actor.page.evaluate(() => {
+    const page = globalThis as unknown as {
+      __stackBenchScriptCanary?: (probe: boolean) => Promise<string>;
+    };
+    return page.__stackBenchScriptCanary?.(true);
+  });
+  if (reply !== 'ready') inconclusive('invalid-input', { detail: 'script execution observer is unavailable' });
+}
+
+async function armScriptCanary(args: ScriptCanaryArguments): Promise<void> {
+  const { input, capabilities } = args;
+  const actor = actorFor(capabilities, input.actor);
+  const recorded = capabilities['browser-observation'].recorded;
+  const key = `script-canary:${input.actor}`;
+  if (recorded.get(key) !== undefined) throw new Error('script execution observer is already armed');
+  await actor.page.exposeFunction('__stackBenchScriptCanary', (probe?: boolean) => {
+    if (probe !== true) recorded.set(key, (recorded.get(key) ?? 0) + 1);
+    return 'ready';
+  });
+  recorded.set(key, 0);
+  await scriptCanaryProbe(args);
+}
+
+async function expectNoScriptExecution(args: ScriptCanaryArguments): Promise<unknown> {
+  const { input, capabilities } = args;
+  const key = `script-canary:${input.actor}`;
+  const recorded = capabilities['browser-observation'].recorded;
+  if (recorded.get(key) === undefined) inconclusive('invalid-input', { detail: 'script execution observer was not armed' });
+  await scriptCanaryProbe(args);
+  const observation = { actor: input.actor, executions: recorded.get(key)! };
+  if (observation.executions > 0) throw new ActionApplicationFailure('stored content executed script', { observation });
+  return observation;
+}
+
 export const BROWSER_ACTION_IMPLEMENTATIONS = Object.freeze({
+  armScriptCanary: actionImplementation(armScriptCanary),
+  expectNoScriptExecution: actionImplementation(expectNoScriptExecution),
   clearInput: contractBrowserAction(clearInput),
   click: contractBrowserAction(click),
   expect: contractBrowserAction(expect),
