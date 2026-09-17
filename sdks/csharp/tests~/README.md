@@ -18,3 +18,13 @@ $ ( cd "${SPACETIMEDB_REPO_PATH}"/crates/bindings-csharp/BSATN.Runtime && dotnet
 $ dotnet nuget locals all --clear
 $ dotnet test
 ```
+
+# Reconnect coverage
+
+`ReconnectTests` uses the existing xUnit framework, serialized BSATN messages, a fake transport, and a controllable retry clock. Run it with:
+
+```sh
+dotnet test --filter FullyQualifiedName~ReconnectTests
+```
+
+For live server coverage, including a fault-injection proxy and short-lived JWT rotation, use the [reconnect test application](../examples~/reconnect/README.md).
