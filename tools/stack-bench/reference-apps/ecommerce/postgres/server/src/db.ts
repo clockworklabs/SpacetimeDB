@@ -13,6 +13,10 @@ if (!connectionString) throw new Error("DATABASE_URL is required");
 export const pool = new Pool({
   connectionString,
 });
+pool.on("error", error => console.error("idle database connection failed", error));
+pool.on("connect", client => {
+  client.on("error", error => console.error("database connection failed", error));
+});
 
 export const db = drizzle(pool, { schema });
 

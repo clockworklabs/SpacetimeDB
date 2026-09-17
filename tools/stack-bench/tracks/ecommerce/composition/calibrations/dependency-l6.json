@@ -26,7 +26,7 @@
       {
         "backend": "postgres",
         "id": "ecommerce-reference-postgres",
-        "sourceSha256": "cbf1d5b6433a0e2ecd19a52ec5dc90d32f167013b70b71d5e1cd3a9b53b6c537"
+        "sourceSha256": "f3906fa01050f00a0ed76c69c256a6b0013bbf72eb72c03aa92d79e47b71c2b8"
       },
       {
         "backend": "spacetime",
@@ -45,7 +45,7 @@
     {
       "backend": "postgres",
       "path": "grader/mutations/postgres-ecommerce.json",
-      "sha256": "62c3fca8e0defb2f4cb4be5e4992d924e5fc9cbeb267a7801ae69473b80e2794",
+      "sha256": "21fdaeadc766a18c82a5a0fc6bbe819e3fd94e3a79d11831072de2c79ac6671e",
       "referenceId": "ecommerce-reference-postgres"
     },
     {

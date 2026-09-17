@@ -64,11 +64,11 @@ async function loadAccountFromToken(token: string | undefined): Promise<AccountI
   return rows[0];
 }
 
-app.use(async (req: Request, _res: Response, next: NextFunction) => {
+app.use(asyncHandler(async (req: Request, _res: Response, next: NextFunction) => {
   const token = req.cookies?.sid as string | undefined;
   req.account = await loadAccountFromToken(token);
   next();
-});
+}));
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.account) return res.status(401).json({ error: "sign in required" });
@@ -87,9 +87,9 @@ function requireStaff(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-function asyncHandler(fn: (req: Request, res: Response) => Promise<void>) {
+function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => Promise<void>) {
   return (req: Request, res: Response, next: NextFunction) => {
-    fn(req, res).catch(next);
+    fn(req, res, next).catch(next);
   };
 }
 
@@ -996,20 +996,20 @@ io = new SocketIOServer(httpServer, {
 attachProgressionSocket(io);
 
 io.on("connection", async (socket) => {
-  const cookieHeader = socket.request.headers.cookie;
-  const cookies = cookieHeader ? parseCookie(cookieHeader) : {};
-  const token = cookies["sid"];
-  const acc = await loadAccountFromToken(token);
-
-  if (acc) {
-    socket.join(`account:${acc.id}`);
-    if (acc.isAdmin) socket.join("admin");
-    if (acc.isAdmin || acc.isStaff) socket.join("fulfilment");
-  } else {
-    socket.join("visitors");
-  }
-
   try {
+    const cookieHeader = socket.request.headers.cookie;
+    const cookies = cookieHeader ? parseCookie(cookieHeader) : {};
+    const token = cookies["sid"];
+    const acc = await loadAccountFromToken(token);
+
+    if (acc) {
+      socket.join(`account:${acc.id}`);
+      if (acc.isAdmin) socket.join("admin");
+      if (acc.isAdmin || acc.isStaff) socket.join("fulfilment");
+    } else {
+      socket.join("visitors");
+    }
+
     await syncProgressionSocket(socket, acc);
     const catalog = await buildCatalog();
     socket.emit("items:update", { items: catalog });
