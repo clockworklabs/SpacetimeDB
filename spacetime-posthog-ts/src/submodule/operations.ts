@@ -13,7 +13,12 @@ import {
   type WriteCtx,
 } from './schema';
 import { loadConfigOrThrowFromProcedure } from './config';
-import { isOkStatus, posthogFetch, type PostHogHttpResult } from './http';
+import {
+  featureFlagValue,
+  posthogFetch,
+  truncateForLog,
+  type PostHogHttpResult,
+} from './http';
 import { isAdmin, requireAdmin } from './auth';
 import { parseJsonObject, throwSenderError } from './validation';
 import {
@@ -120,7 +125,7 @@ function outboxIdFor(
   return `evt:${ctx.newUuidV7().toString()}`;
 }
 
-export function enqueueEvent(ctx: WriteCtx, args: EnqueueEventArgs) {
+export function enqueueEventInTx(ctx: WriteCtx, args: EnqueueEventArgs) {
   validateEventInput(args);
   if ((args.idempotencyKey?.length ?? 0) > MAX_IDEMPOTENCY_KEY_LENGTH) {
     throwSenderError('posthog.idempotency_key_too_long');
@@ -222,6 +227,7 @@ function logDelivery(
   event: CaptureEventArgs,
   result: PostHogHttpResult
 ) {
+  const responseBody = truncateForLog(result.responseBody);
   ctx.db.posthogDeliveryLog.insert({
     deliveryId: 0n,
     source,
@@ -230,15 +236,15 @@ function logDelivery(
     event: event.event,
     ok: result.ok,
     statusCode: result.statusCode,
-    responseBody: result.responseBody,
-    errorMessage: result.ok ? undefined : result.responseBody,
+    responseBody,
+    errorMessage: result.ok ? undefined : responseBody,
     attemptedAt: ctx.timestamp,
     attemptedAtOrder: -ctx.timestamp.microsSinceUnixEpoch,
   });
   updateDeliveryStats(ctx, result.ok ? { delivered: 1n } : { failed: 1n });
 }
 
-export function captureNow(
+export function captureEvent(
   ctx: ProcedureModuleCtx,
   args: CaptureEventArgs
 ): PostHogHttpResult {
@@ -287,7 +293,7 @@ function claimQueuedRows(ctx: WriteCtx, limit: number) {
   return { claimId, rows: claimed };
 }
 
-export function flushOutbox(
+export function deliverOutbox(
   ctx: ProcedureModuleCtx,
   args: { limit?: number | undefined }
 ) {
@@ -353,7 +359,7 @@ export function flushOutbox(
   });
 }
 
-export const enqueue_event = spacetimedb.reducer(
+export const enqueueEvent = spacetimedb.reducer(
   {
     distinctId: t.string(),
     event: t.string(),
@@ -362,11 +368,11 @@ export const enqueue_event = spacetimedb.reducer(
   },
   (ctx, args) => {
     requireAdmin(ctx, ctx.sender);
-    enqueueEvent(ctx, args);
+    enqueueEventInTx(ctx, args);
   }
 );
 
-export const capture_now = spacetimedb.procedure(
+export const captureNow = spacetimedb.procedure(
   {
     distinctId: t.string(),
     event: t.string(),
@@ -375,17 +381,17 @@ export const capture_now = spacetimedb.procedure(
   t.string(),
   (ctx, args) => {
     ctx.withTx(tx => requireAdmin(tx, ctx.sender));
-    return JSON.stringify(captureNow(ctx, args));
+    return JSON.stringify(captureEvent(ctx, args));
   }
 );
 
-export const flush_outbox = spacetimedb.procedure(
+export const flushOutbox = spacetimedb.procedure(
   { limit: t.u32() },
   t.string(),
-  (ctx, args) => JSON.stringify(flushOutbox(ctx, { limit: args.limit }))
+  (ctx, args) => JSON.stringify(deliverOutbox(ctx, { limit: args.limit }))
 );
 
-export const get_feature_flag = spacetimedb.procedure(
+export const getFeatureFlag = spacetimedb.procedure(
   {
     key: t.string(),
     distinctId: t.string(),
@@ -424,23 +430,9 @@ export const get_feature_flag = spacetimedb.procedure(
       body.person_properties = personProperties;
     if (groups !== undefined) body.groups = groups;
     const result = posthogFetch(ctx, cfg, '/flags?v=2', body);
-    let valueJson: string | undefined;
-    if (isOkStatus(result.statusCode)) {
-      try {
-        const parsed = JSON.parse(result.responseBody) as Record<
-          string,
-          unknown
-        >;
-        const flags = parsed.featureFlags;
-        if (flags && typeof flags === 'object' && args.key in flags) {
-          valueJson = JSON.stringify(
-            (flags as Record<string, unknown>)[args.key]
-          );
-        }
-      } catch {
-        valueJson = undefined;
-      }
-    }
+    const valueJson = result.ok
+      ? JSON.stringify(featureFlagValue(result.responseBody, args.key))
+      : undefined;
     ctx.withTx(tx => {
       logDelivery(
         tx,

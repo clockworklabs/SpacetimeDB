@@ -29,7 +29,7 @@ export function loadConfigOrThrowFromProcedure(
   return ctx.withTx(tx => loadConfigOrThrow(tx));
 }
 
-export const set_posthog_config = spacetimedb.procedure(
+export const setPosthogConfig = spacetimedb.procedure(
   {
     host: t.string(),
     projectApiKey: t.string(),
@@ -58,7 +58,7 @@ export const set_posthog_config = spacetimedb.procedure(
   }
 );
 
-export const get_posthog_config_status = spacetimedb.procedure(
+export const getPosthogConfigStatus = spacetimedb.procedure(
   {},
   t.string(),
   ctx =>

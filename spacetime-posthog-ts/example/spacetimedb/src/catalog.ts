@@ -21,7 +21,7 @@ function parseArray<T>(json: string, field: string): T[] {
   return parsed as T[];
 }
 
-export const sync_catalog = spacetimedb.reducer(
+export const syncCatalog = spacetimedb.reducer(
   { productsJson: t.string(), scenariosJson: t.string() },
   (ctx, args) => {
     const products = parseArray<ProductInput & { variants?: VariantInput[] }>(

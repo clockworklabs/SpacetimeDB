@@ -126,7 +126,7 @@ function enqueueCafeEvent(
   event: string,
   props: Record<string, unknown>
 ): void {
-  posthog.enqueueEvent(ctx.as.posthog, {
+  posthog.enqueueEventInTx(ctx.as.posthog, {
     distinctId,
     event,
     propertiesJson: JSON.stringify({
@@ -189,7 +189,7 @@ function trimRecent(ctx: WriteCtx, owner: string): void {
 }
 
 // Seed this caller's per-session catalog + config/metrics. Idempotent.
-export const init_session = spacetimedb.reducer({}, ctx => {
+export const initSession = spacetimedb.reducer({}, ctx => {
   const owner = ctx.sender.toHexString();
   const alreadySeeded = [...ctx.db.product.byOwner.filter(owner)].length > 0;
   if (!alreadySeeded) {
@@ -232,7 +232,7 @@ export const init_session = spacetimedb.reducer({}, ctx => {
   ensureEconomy(ctx, owner);
 });
 
-export const reset_simulation = spacetimedb.reducer(
+export const resetSimulation = spacetimedb.reducer(
   { scenarioId: t.string() },
   (ctx, args) => {
     const owner = ctx.sender.toHexString();
@@ -286,7 +286,7 @@ export const reset_simulation = spacetimedb.reducer(
   }
 );
 
-export const select_scenario = spacetimedb.reducer(
+export const selectScenario = spacetimedb.reducer(
   { scenarioId: t.string() },
   (ctx, args) => {
     const owner = ctx.sender.toHexString();
@@ -309,7 +309,7 @@ export const select_scenario = spacetimedb.reducer(
   }
 );
 
-export const set_product_active = spacetimedb.reducer(
+export const setProductActive = spacetimedb.reducer(
   { productId: t.string(), active: t.bool() },
   (ctx, args) => {
     const owner = ctx.sender.toHexString();
@@ -338,7 +338,7 @@ export const set_product_active = spacetimedb.reducer(
   }
 );
 
-export const set_variant_active = spacetimedb.reducer(
+export const setVariantActive = spacetimedb.reducer(
   { variantId: t.string(), active: t.bool() },
   (ctx, args) => {
     const owner = ctx.sender.toHexString();
@@ -361,7 +361,7 @@ export const set_variant_active = spacetimedb.reducer(
   }
 );
 
-export const set_variant_price = spacetimedb.reducer(
+export const setVariantPrice = spacetimedb.reducer(
   { variantId: t.string(), priceCents: t.u32() },
   (ctx, args) => {
     const owner = ctx.sender.toHexString();
@@ -394,7 +394,7 @@ export const set_variant_price = spacetimedb.reducer(
   }
 );
 
-export const set_variant_discount = spacetimedb.reducer(
+export const setVariantDiscount = spacetimedb.reducer(
   { variantId: t.string(), discountBps: t.u32() },
   (ctx, args) => {
     const owner = ctx.sender.toHexString();
@@ -426,7 +426,7 @@ export const set_variant_discount = spacetimedb.reducer(
   }
 );
 
-export const set_featured_variant = spacetimedb.reducer(
+export const setFeaturedVariant = spacetimedb.reducer(
   { variantId: t.string() },
   (ctx, args) => {
     const owner = ctx.sender.toHexString();
@@ -455,7 +455,7 @@ export const set_featured_variant = spacetimedb.reducer(
   }
 );
 
-export const set_experiment_variant = spacetimedb.reducer(
+export const setExperimentVariant = spacetimedb.reducer(
   { key: t.string(), variant: t.option(t.string()) },
   (ctx, args) => {
     const owner = ctx.sender.toHexString();
@@ -476,7 +476,7 @@ export const set_experiment_variant = spacetimedb.reducer(
   }
 );
 
-export const buy_supply = spacetimedb.reducer(
+export const buySupply = spacetimedb.reducer(
   { kind: t.string(), units: t.u32() },
   (ctx, args) => {
     const owner = ctx.sender.toHexString();
@@ -520,7 +520,7 @@ export const buy_supply = spacetimedb.reducer(
   }
 );
 
-export const buy_upgrade = spacetimedb.reducer(
+export const buyUpgrade = spacetimedb.reducer(
   { kind: t.string() },
   (ctx, args) => {
     const owner = ctx.sender.toHexString();
@@ -574,7 +574,7 @@ export const buy_upgrade = spacetimedb.reducer(
   }
 );
 
-export const simulate_tick = spacetimedb.reducer(
+export const simulateTick = spacetimedb.reducer(
   { ticks: t.u32(), seed: t.string() },
   (ctx, args) => {
     const owner = ctx.sender.toHexString();

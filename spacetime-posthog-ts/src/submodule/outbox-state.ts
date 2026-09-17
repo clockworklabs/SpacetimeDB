@@ -1,3 +1,5 @@
+import { truncateForLog } from './http';
+
 export const MAX_DELIVERY_ATTEMPTS = 5;
 const INITIAL_RETRY_DELAY_MICROS = 1_000_000n;
 const MAX_RETRY_DELAY_MICROS = 5n * 60n * 1_000_000n;
@@ -78,7 +80,7 @@ export function settleOutboxClaim<T extends OutboxRow>(
       claimExpiresAtMicros: 0n,
       nextAttemptAt: terminal ? timestamp : retryAt,
       lastStatusCode: result.statusCode,
-      lastError: result.ok ? undefined : result.responseBody,
+      lastError: result.ok ? undefined : truncateForLog(result.responseBody),
       updatedAt: timestamp,
       deliveredAt: result.ok ? timestamp : undefined,
     },

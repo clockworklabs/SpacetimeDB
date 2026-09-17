@@ -9,7 +9,7 @@ admin-scoped delivery state. Procedures call PostHog through `ctx.http.fetch`.
 ## Install
 
 ```bash
-npm install @spacetimedb/posthog spacetimedb@^2.8.3
+npm install @spacetimedb/posthog spacetimedb
 ```
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.
@@ -42,7 +42,7 @@ export const complete_order = spacetimedb.reducer(
   { orderId: t.string(), totalCents: t.u64() },
   (ctx, args) => {
     // Apply the application's order mutation in this reducer transaction.
-    posthog.enqueueEvent(ctx.as.posthog, {
+    posthog.enqueueEventInTx(ctx.as.posthog, {
       distinctId: ctx.sender.toHexString(),
       event: 'order_completed',
       propertiesJson: JSON.stringify({
@@ -105,7 +105,7 @@ The submodule stores operational state in private tables and exposes admin-gated
   delivery state, and returns a JSON result string.
 - `get_feature_flag({ key, distinctId, personPropertiesJson, groupsJson })` calls
   PostHog `/flags?v=2` and returns a JSON result string with the requested flag
-  value when present.
+  value when present: a boolean or the multivariate flag's variant string.
 
 **Maintenance**
 
@@ -126,9 +126,9 @@ flag name from authorized application state.
 
 - `enqueue_event({ distinctId, event, propertiesJson, idempotencyKey })` writes a
   durable event intent inside a reducer transaction. The submodule reducer is
-  admin-only; host reducers should call `enqueueEvent` after authorization.
+  admin-only; host reducers should call `enqueueEventInTx` after authorization.
 
-For host modules, import `@spacetimedb/posthog/submodule` and call `enqueueEvent(ctx.as.posthog, ...)` from reducers or `captureNow(ctx.as.posthog, ...)` / `flushOutbox(ctx.as.posthog, ...)` from procedures.
+For host modules, import `@spacetimedb/posthog/submodule` and call `enqueueEventInTx(ctx.as.posthog, ...)` from reducers or `captureEvent(ctx.as.posthog, ...)` / `deliverOutbox(ctx.as.posthog, ...)` from procedures.
 
 The client calls the business operation. Analytics remain a server-side
 concern:
@@ -138,7 +138,7 @@ await conn.reducers.completeOrder({ orderId, totalCents });
 ```
 
 An operator-owned procedure or scheduled workflow should call
-`posthog.flushOutbox(ctx.as.posthog, { limit })`. Keep provider credentials and
+`posthog.deliverOutbox(ctx.as.posthog, { limit })`. Keep provider credentials and
 generic event names inside the module.
 
 Package entrypoints:
@@ -168,4 +168,4 @@ The example app in `example/` mounts the submodule under the `posthog` namespace
 
 ## License
 
-[BUSL-1.1](./LICENSE.txt) - same as SpacetimeDB.
+[Apache-2.0](./LICENSE.txt).

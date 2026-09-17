@@ -23,7 +23,7 @@ export function requireAdmin(ctx: WriteCtx, sender: Sender): void {
   if (!isAdmin(ctx, sender)) throwSenderError('posthog.not_authorized');
 }
 
-export const add_admin_identity = spacetimedb.procedure(
+export const addAdminIdentity = spacetimedb.procedure(
   { identity: t.identity() },
   t.unit(),
   (ctx: ProcedureModuleCtx, { identity }) => {
@@ -40,7 +40,7 @@ export const add_admin_identity = spacetimedb.procedure(
   }
 );
 
-export const remove_admin_identity = spacetimedb.procedure(
+export const removeAdminIdentity = spacetimedb.procedure(
   { identity: t.identity() },
   t.unit(),
   (ctx: ProcedureModuleCtx, { identity }) => {

@@ -3,6 +3,8 @@ import {
   isOkStatus,
   toStatusCode,
   truncateForLog,
+  featureFlagValue,
+  posthogFetch,
 } from '../src/submodule/http.ts';
 import {
   MAX_DELIVERY_ATTEMPTS,
@@ -19,6 +21,39 @@ assert.equal(isOkStatus(300), false);
 assert.equal(toStatusCode(65535), 65535);
 assert.equal(toStatusCode(65536), 0);
 assert.equal(truncateForLog('x'.repeat(3000)).length, 2051);
+
+const flagBody = JSON.stringify({
+  flags: {
+    enabled: { enabled: true },
+    disabled: { enabled: false },
+    experiment: { enabled: true, variant: 'control' },
+    invalid: { enabled: 'true' },
+  },
+  requestId: 'x'.repeat(3000),
+});
+const flagResult = posthogFetch(
+  {
+    http: { fetch: () => ({ status: 200, text: () => flagBody }) },
+  } as unknown as Parameters<typeof posthogFetch>[0],
+  { host: 'https://us.i.posthog.com', projectApiKey: 'test' },
+  '/flags?v=2',
+  {}
+);
+assert.equal(
+  flagResult.responseBody,
+  flagBody,
+  'parse complete responses before trimming logs'
+);
+assert.equal(featureFlagValue(flagResult.responseBody, 'enabled'), true);
+assert.equal(featureFlagValue(flagResult.responseBody, 'disabled'), false);
+assert.equal(
+  featureFlagValue(flagResult.responseBody, 'experiment'),
+  'control'
+);
+for (const key of ['invalid', 'missing', 'toString']) {
+  assert.equal(featureFlagValue(flagBody, key), undefined);
+}
+assert.equal(featureFlagValue('not json', 'enabled'), undefined);
 
 const timestamp = { microsSinceUnixEpoch: 10_000_000n };
 const queued = {
@@ -77,6 +112,19 @@ assert.equal(exhausted.row.attempts, MAX_DELIVERY_ATTEMPTS);
 assert.equal(exhausted.terminal, true);
 assert.equal(exhausted.row.status.tag, 'Failed');
 assert.equal(exhausted.row.lastError, 'unavailable');
+assert.equal(
+  settleOutboxClaim(
+    claimed,
+    {
+      ok: false,
+      statusCode: 503,
+      responseBody: 'x'.repeat(3000),
+    },
+    timestamp,
+    timestamp
+  ).row.lastError,
+  truncateForLog('x'.repeat(3000))
+);
 
 const delivered = settleOutboxClaim(
   claimed,

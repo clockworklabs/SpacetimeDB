@@ -68,4 +68,4 @@ Tests use published vendor vectors and local fixtures; no network is required.
 
 ## License
 
-BUSL-1.1. See [`LICENSE.txt`](./LICENSE.txt).
+Apache-2.0. See [`LICENSE.txt`](./LICENSE.txt).

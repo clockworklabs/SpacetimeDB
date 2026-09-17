@@ -20,11 +20,11 @@ export { default } from './schema';
 
 import { newestFirst } from './recent';
 
-export const flush_analytics = spacetimedb.procedure(
+export const flushAnalytics = spacetimedb.procedure(
   { limit: t.u32() },
   t.string(),
   (ctx, args) =>
-    JSON.stringify(posthog.flushOutbox(ctx.as.posthog, { limit: args.limit }))
+    JSON.stringify(posthog.deliverOutbox(ctx.as.posthog, { limit: args.limit }))
 );
 
 export const cafeProducts = spacetimedb.view(
