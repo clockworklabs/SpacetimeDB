@@ -107,7 +107,7 @@ fn container_only_changes_and_old_retries_preserve_the_current_module() {
         fence(&module, &first);
         // Even the first in-progress container publication fences the legacy
         // raw API, including a byte-identical module update.
-        assert!(host.update(database.clone(), HostType::Wasm, bytes.to_vec().into(), MigrationPolicy::Compatible).await.is_err());
+        assert!(host.update(database.clone(), HostType::Wasm, bytes.to_vec().into(), MigrationPolicy::Compatible, Default::default(), None).await.is_err());
         // The rejected updater must restore the old host in its controller.
         assert_eq!(host.module().await.unwrap().info.module_hash, hash_bytes(&bytes));
         let result = host.update_with_deployment(database.clone(), HostType::Wasm, bytes.to_vec().into(), MigrationPolicy::Compatible, first.clone()).await.unwrap();
