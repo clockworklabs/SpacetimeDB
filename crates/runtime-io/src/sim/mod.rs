@@ -1,0 +1,473 @@
+use alloc::{boxed::Box, rc::Rc, sync::Arc};
+use core::{result::Result, task::Waker};
+
+use crate::{
+    sim::{
+        completion::{CompletionState, PendingCompletions},
+        executor::Cqe,
+    },
+    AlignedBytes, ErasedBox, ErrorWith, ReadWriteResult, SpacetimeIO, Statx,
+};
+
+mod completion;
+pub use completion::Completion;
+use completion::CompletionHandle;
+
+mod executor;
+use executor::{Executor, Sqe};
+
+mod faults;
+pub use faults::{FaultInjector, FifoAll, FifoOne, IndexSelector, TaskSelector};
+
+mod fs;
+pub use fs::File;
+
+pub use crate::{
+    sim::executor::{LinkKind, Options},
+    SECTOR_SIZE,
+};
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("failed to write expected number of bytes")]
+    ShortWrite { expected: usize, written: usize },
+    #[error("unexpected eof")]
+    UnexpectedEof { expected: usize, read: usize },
+    #[error(transparent)]
+    Fs(fs::Error),
+    /// Injected by the I/O driver.
+    #[error("operation cancelled")]
+    Cancelled,
+    #[error("submission queue overflow")]
+    SubmissionQueueOverflow,
+    #[error("too many pending completion futures")]
+    TooManyCompletions,
+}
+
+impl From<fs::Error> for Error {
+    fn from(e: fs::Error) -> Self {
+        Self::Fs(e)
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct SimulatorIO {
+    inner: Rc<SimulatorInner>,
+}
+
+impl SimulatorIO {
+    pub fn with_options(options: Options) -> Self {
+        Self {
+            inner: Rc::new(SimulatorInner::with_options(options)),
+        }
+    }
+
+    pub fn tick(&self, task_selector: &impl TaskSelector, faults: &mut impl FaultInjector<usize>) -> bool {
+        let mut executor = self.inner.executor.lock();
+
+        let mut progress = executor.tick(task_selector, faults);
+        executor.completed().for_each(|cqe| {
+            self.process_cqe(cqe);
+            progress |= true;
+        });
+
+        progress
+    }
+
+    fn process_cqe(&self, cqe: Cqe<usize>) {
+        let key = cqe.user_data().expect("user data must be set");
+        let maybe_waker = (|| -> Option<Waker> {
+            let mut pending = self.inner.pending.lock();
+            // If the handle is no longer present in `pending`, the
+            // completion future was dropped.
+            let handle = pending.get_mut(key)?;
+            cqe.complete(handle)
+        })();
+        if let Some(waker) = maybe_waker {
+            waker.wake();
+        }
+    }
+
+    /// Simulate a power loss event.
+    ///
+    /// All submitted and executing operations are cancelled, and files reset to
+    /// their durable state.
+    ///
+    /// The caller must uphold that no pending [Completion] futures are live (as
+    /// would happen during an actual power loss event). Polling a [Completion]
+    /// future after calling this method will panic.
+    pub fn power_loss(&self) {
+        self.inner.executor.lock().power_loss();
+        self.inner.pending.lock().clear();
+    }
+
+    /// Simulate a restart event, i.e. process crash.
+    ///
+    /// Unlike [Self::power_loss], this will drive the currently executing
+    /// operations to completion, subject to fault injection.
+    ///
+    /// Submissions that were not yet scheduled are dropped. The file state
+    /// remains unchanged.
+    ///
+    /// Pending [Completion]s will resolve to [Error::Cancelled].
+    ///
+    /// Note that the simulator owns the storage for [Completion]s until they
+    /// are either dropped or completed. So they count toward the completion
+    /// queue capacity. To simulate an actual process crash, the caller should
+    /// prefer to drop pending [Completion]s.
+    pub fn restart(&self, faults: &mut impl FaultInjector<usize>) {
+        self.inner.executor.lock().restart(faults, |cqe| self.process_cqe(cqe))
+    }
+
+    fn submit<T, U>(
+        &self,
+        sqe: Sqe<usize>,
+        completion: impl FnOnce(Arc<spin::Mutex<PendingCompletions>>, usize) -> Completion<Result<U, Error>>,
+        completion_handle: impl FnOnce(CompletionState<Result<T, Error>>) -> CompletionHandle,
+    ) -> Completion<Result<U, Error>> {
+        let mut executor = self.inner.executor.lock();
+        let mut pending = self.inner.pending.lock();
+        match pending.vacant_entry() {
+            Some(pending_entry) => match executor.submit([sqe.attach(pending_entry.key())]) {
+                Err(_sqe) => Completion::ready(Err(Error::SubmissionQueueOverflow)),
+                Ok(()) => {
+                    let key = pending_entry.key();
+                    pending_entry.insert(completion_handle(CompletionState::Pending(None)));
+
+                    completion(self.inner.pending.clone(), key)
+                }
+            },
+            None => Completion::ready(Err(Error::TooManyCompletions)),
+        }
+    }
+
+    fn submit_with<B: AlignedBytes + Send + 'static>(
+        &self,
+        sqe: Sqe<usize>,
+        completion: impl FnOnce(Arc<spin::Mutex<PendingCompletions>>, usize) -> Completion<ReadWriteResult<B, Error>>,
+        completion_handle: impl FnOnce(CompletionState<Result<ErasedBox, ErrorWith<Error, ErasedBox>>>) -> CompletionHandle,
+    ) -> Completion<ReadWriteResult<B, Error>> {
+        let mut executor = self.inner.executor.lock();
+        let mut pending = self.inner.pending.lock();
+
+        let reify = |sqe: Sqe<usize>| {
+            sqe.into_buf()
+                .map(|erased| erased.into_aligned())
+                .expect("sqe must have been buffer-carrying")
+        };
+
+        match pending.vacant_entry() {
+            Some(pending_entry) => match executor.submit([sqe.attach(pending_entry.key())]) {
+                Err(mut sqe) => Completion::ready(Err(ErrorWith {
+                    error: Error::SubmissionQueueOverflow,
+                    with: reify(
+                        sqe.next()
+                            .expect("submitted one sqe therefore one must be returned on overflow"),
+                    ),
+                })),
+                Ok(()) => {
+                    let key = pending_entry.key();
+                    pending_entry.insert(completion_handle(CompletionState::Pending(None)));
+
+                    completion(self.inner.pending.clone(), key)
+                }
+            },
+            None => Completion::ready(Err(ErrorWith {
+                error: Error::TooManyCompletions,
+                with: reify(sqe),
+            })),
+        }
+    }
+}
+
+struct SimulatorInner {
+    executor: spin::Mutex<Executor<usize>>,
+    pending: Arc<spin::Mutex<PendingCompletions>>,
+}
+
+impl SimulatorInner {
+    fn with_options(options: Options) -> Self {
+        let pending = PendingCompletions::with_capacity(options.cq_capacity());
+        let executor = Executor::new(options);
+        Self {
+            pending: Arc::new(spin::Mutex::new(pending)),
+            executor: spin::Mutex::new(executor),
+        }
+    }
+}
+
+impl Default for SimulatorInner {
+    fn default() -> Self {
+        Self::with_options(<_>::default())
+    }
+}
+
+impl SpacetimeIO for SimulatorIO {
+    type Fd = fs::File;
+    type Error = Error;
+    type Completion<T> = Completion<T>;
+
+    fn open_file(&self, path: Box<str>) -> Self::Completion<Result<Self::Fd, Self::Error>> {
+        self.submit(Sqe::open(path), Completion::open, CompletionHandle::Open)
+    }
+
+    fn create_file(&self, path: Box<str>) -> Self::Completion<Result<Self::Fd, Self::Error>> {
+        self.submit(Sqe::create(path), Completion::create, CompletionHandle::Create)
+    }
+
+    fn write_all_at<B: AlignedBytes + Send + 'static>(
+        &self,
+        fd: Self::Fd,
+        buf: Box<B>,
+        offset: u64,
+    ) -> Self::Completion<Result<Box<B>, ErrorWith<Self::Error, Box<B>>>> {
+        self.submit_with(
+            Sqe::write(fd, ErasedBox::from_aligned(buf), offset),
+            Completion::write,
+            CompletionHandle::Write,
+        )
+    }
+
+    fn read_exact_at<B: AlignedBytes + Send + 'static>(
+        &self,
+        fd: Self::Fd,
+        buf: Box<B>,
+        offset: u64,
+    ) -> Self::Completion<Result<Box<B>, ErrorWith<Self::Error, Box<B>>>> {
+        self.submit_with(
+            Sqe::read(fd, ErasedBox::from_aligned(buf), offset),
+            Completion::read,
+            CompletionHandle::Read,
+        )
+    }
+
+    fn fsync(&self, fd: Self::Fd) -> Self::Completion<Result<(), Self::Error>> {
+        self.submit(Sqe::fsync(fd), Completion::fsync, CompletionHandle::Fsync)
+    }
+
+    fn fdatasync(&self, fd: Self::Fd) -> Self::Completion<Result<(), Self::Error>> {
+        self.submit(Sqe::fdatasync(fd), Completion::fdatasync, CompletionHandle::Fdatasync)
+    }
+
+    fn reserve(&self, fd: Self::Fd, total_size: u64) -> Self::Completion<Result<(), Self::Error>> {
+        self.submit(
+            Sqe::fallocate(fd, total_size),
+            Completion::fallocate,
+            CompletionHandle::Fallocate,
+        )
+    }
+
+    fn statx(&self, fd: Self::Fd) -> Self::Completion<Result<Statx, Self::Error>> {
+        self.submit(Sqe::stat(fd), Completion::stat, CompletionHandle::Stat)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::num::NonZeroUsize;
+
+    use spacetimedb_runtime_core::sim::Rng;
+
+    use super::*;
+    use crate::{sim::faults::TaskSelection, SECTOR_SIZE64};
+
+    struct RandomTaskSelector<'a> {
+        rng: &'a Rng,
+    }
+
+    impl TaskSelector for RandomTaskSelector<'_> {
+        type IndexSelector<'a>
+            = &'a Rng
+        where
+            Self: 'a;
+
+        fn select_tasks(&self, task_count: NonZeroUsize) -> TaskSelection<Self::IndexSelector<'_>> {
+            let count = NonZeroUsize::new(self.rng.index(task_count.get())).unwrap_or(NonZeroUsize::MIN);
+            if self.rng.sample_probability(0.5) {
+                TaskSelection::Fifo { count }
+            } else {
+                TaskSelection::Any {
+                    count,
+                    select: self.rng,
+                }
+            }
+        }
+    }
+
+    impl IndexSelector for &Rng {
+        fn select_index(&mut self, range_upper: NonZeroUsize) -> usize {
+            self.index(range_upper.get())
+        }
+    }
+
+    struct Runtime {
+        rt: tokio::runtime::LocalRuntime,
+        io: SimulatorIO,
+        rng: Rng,
+    }
+
+    impl Runtime {
+        fn new() -> Self {
+            Self {
+                rt: tokio::runtime::Builder::new_current_thread()
+                    .build_local(<_>::default())
+                    .unwrap(),
+                io: SimulatorIO::default(),
+                rng: Rng::new(0),
+            }
+        }
+
+        fn run<T: 'static>(&self, f: impl FnOnce(&SimulatorIO) -> Completion<T>) -> T {
+            let fut = self.rt.spawn_local(f(&self.io));
+            while self.io.tick(&RandomTaskSelector { rng: &self.rng }, &mut ()) {}
+            self.rt.block_on(fut).unwrap()
+        }
+
+        fn power_loss(&self) {
+            self.io.power_loss();
+        }
+    }
+
+    #[test]
+    fn create_file() {
+        let rt = Runtime::new();
+        rt.run(|io| io.create_file("/data/test".into())).unwrap();
+    }
+
+    #[derive(Debug)]
+    #[repr(C, align(4096))]
+    struct Buf<const N: usize>([u8; N]);
+
+    impl<const N: usize> Buf<N> {
+        fn clear(&mut self) {
+            self.0.fill(0);
+        }
+    }
+
+    impl<const N: usize> AlignedBytes for Buf<N> {
+        fn as_bytes(&self) -> &[u8] {
+            &self.0
+        }
+
+        fn as_bytes_mut(&mut self) -> &mut [u8] {
+            &mut self.0
+        }
+
+        fn from_bytes(b: &[u8]) -> Self {
+            assert_eq!(b.len(), N);
+            let mut buf = [0; N];
+            buf.copy_from_slice(b);
+            Self(buf)
+        }
+    }
+
+    #[test]
+    fn write_read_roundtrip() {
+        let rt = Runtime::new();
+
+        let fd = rt.run(|io| io.create_file("/data/test".into())).unwrap();
+        let buf = Box::new(Buf([22; 2 * SECTOR_SIZE]));
+        let mut buf = rt
+            .run(|io| io.write_all_at(fd.clone(), buf, 0))
+            .map_err(ErrorWith::into_err)
+            .unwrap();
+        buf.clear();
+        let buf = rt.run(|io| io.read_exact_at(fd, buf, 0)).unwrap();
+
+        assert_eq!(buf.0, [22; 2 * SECTOR_SIZE]);
+    }
+
+    #[test]
+    fn write_read_at_offset() {
+        let rt = Runtime::new();
+
+        let fd = rt.run(|io| io.create_file("/data/test".into())).unwrap();
+        let buf: Box<Buf<SECTOR_SIZE>> = {
+            let mut buf = Box::new(Buf([0; SECTOR_SIZE]));
+            for i in 0usize..2 {
+                buf.0.fill((i + 1) as u8 * 2);
+                let offset = (i * SECTOR_SIZE) as u64;
+                buf = rt
+                    .run(|io| io.write_all_at(fd.clone(), buf, offset))
+                    .map_err(ErrorWith::into_err)
+                    .unwrap();
+            }
+
+            buf.clear();
+            buf
+        };
+        let buf = rt.run(|io| io.read_exact_at(fd, buf, SECTOR_SIZE64)).unwrap();
+
+        assert_eq!(buf.0, [4; SECTOR_SIZE]);
+    }
+
+    #[test]
+    fn preallocate() {
+        let rt = Runtime::new();
+
+        let fd = rt.run(|io| io.create_file("/data/test".into())).unwrap();
+        rt.run(|io| io.reserve(fd.clone(), 2 * SECTOR_SIZE64)).unwrap();
+
+        // Check that reserved space reads as zeroes.
+        let buf = rt
+            .run(|io| io.read_exact_at(fd.clone(), Box::new(Buf([1; 2 * SECTOR_SIZE])), 0))
+            .unwrap();
+        assert_eq!(buf.0, [0; 2 * SECTOR_SIZE]);
+
+        // The length is reported as the preallocated length.
+        let stat = rt.run(|io| io.statx(fd.clone())).unwrap();
+        assert_eq!(stat.size, 2 * SECTOR_SIZE64);
+
+        // Overwriting the second sector works.
+        let buf = rt
+            .run(|io| io.write_all_at(fd.clone(), Box::new(Buf([42; SECTOR_SIZE])), SECTOR_SIZE64))
+            .unwrap();
+        let buf = rt.run(|io| io.read_exact_at(fd.clone(), buf, SECTOR_SIZE64)).unwrap();
+        assert_eq!(buf.0, [42; SECTOR_SIZE]);
+        // The first sector still reads as zeroes.
+        let buf = rt.run(|io| io.read_exact_at(fd, buf, 0)).unwrap();
+        assert_eq!(buf.0, [0; SECTOR_SIZE]);
+    }
+
+    #[test]
+    fn open_succeeds_after_create() {
+        let rt = Runtime::new();
+
+        matches!(
+            rt.run(|io| io.open_file("/data/test".into())),
+            Err(Error::Fs(fs::Error::FileNotFound))
+        );
+        rt.run(|io| io.create_file("/data/test".into())).unwrap();
+        assert!(rt.run(|io| io.open_file("/data/test".into())).is_ok());
+    }
+
+    #[test]
+    fn unsynced_data_is_lost_after_power_loss() {
+        let rt = Runtime::new();
+
+        let fd = rt.run(|io| io.create_file("/data/test".into())).unwrap();
+        let mut buf = rt
+            .run(|io| io.write_all_at(fd.clone(), Box::new(Buf([1; SECTOR_SIZE])), 0))
+            .map_err(ErrorWith::into_err)
+            .unwrap();
+        buf.clear();
+
+        rt.run(|io| io.fdatasync(fd.clone())).unwrap();
+
+        let mut buf = rt
+            .run(|io| io.write_all_at(fd.clone(), Box::new(Buf([2; SECTOR_SIZE])), SECTOR_SIZE64))
+            .map_err(ErrorWith::into_err)
+            .unwrap();
+        buf.clear();
+
+        rt.power_loss();
+
+        let buf = rt.run(|io| io.read_exact_at(fd.clone(), buf, 0)).unwrap();
+        assert_eq!(buf.0, [1; SECTOR_SIZE]);
+        matches!(
+            rt.run(|io| io.read_exact_at(fd.clone(), buf, SECTOR_SIZE as u64))
+                .map_err(ErrorWith::into_err),
+            Err(Error::UnexpectedEof { .. })
+        );
+    }
+}
