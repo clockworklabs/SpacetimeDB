@@ -48,6 +48,18 @@ public static partial class Functions
     public static ulong CountUsers(ProcedureContext ctx) =>
         ctx.WithTx(tx => tx.Db.User.Count + tx.Db.MyAuth.User.Count + tx.Db.@class.User.Count);
 
+    [Procedure]
+    public static uint WriteAcrossNamespaces(ProcedureContext ctx, uint id, bool fail) =>
+        ctx.WithTx(tx =>
+        {
+            tx.Db.User.Insert(new User { Id = id });
+            AuthLib.Functions.Insert(tx, id);
+            tx.Db.@class.User.Insert(new AuditLib.User { Id = id, Message = "procedure" });
+            if (fail)
+                throw new Exception("cross-namespace procedure rollback");
+            return tx.Db.MyAuth.User.Id.Find(id)!.Value.Score;
+        });
+
     [View(Accessor = "Users", Public = true)]
     public static User? Users(ViewContext ctx) => ctx.Db.User.Id.Find(2);
 

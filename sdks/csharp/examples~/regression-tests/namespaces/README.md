@@ -29,6 +29,9 @@ Coverage:
 - Typed subscriptions, filtered queries, both semijoin directions, and overlapping
   subscriptions without duplicate rows or premature cache removal.
 - Cross-library helper writes and callbacks observing the complete transaction.
+- A procedure transaction writing root and both namespace tables, including a
+  library-local transaction helper. Checks commit, rollback after an exception,
+  atomic subscription callbacks, and persisted results through one-off queries.
 - Same-named reducers/procedures in different namespaces, procedure success/error
   callbacks, and child reducer failures forwarded to the root connection.
 - Insert/update/delete callbacks, unique/B-tree indexes, and reducer rollback.
