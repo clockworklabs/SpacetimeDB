@@ -47,11 +47,12 @@ import {
   isGuestTicketCreator,
   planStockAllocation,
 } from './progression-policy';
-import { providerUsername } from './auth-policy';
+import { getAccountId, hashPassword } from './auth';
 import { createSubscription, changeSubscription, processSubscriptions } from './subscriptions';
 
 export { default } from './schema';
 export * from './order-data';
+export { signUp, signIn, signOut } from './auth';
 
 type S = InferSchema<typeof spacetimedb>;
 type Ctx = ReducerCtx<S>;
@@ -60,13 +61,7 @@ type VCtx = ViewCtx<S>;
 // --- helpers ---
 
 
-function getAccountId(ctx: Ctx | VCtx): bigint | null {
-  const s = ctx.db.session.identity.find(ctx.sender);
-  return s ? s.accountId : null;
-}
-
 function requireAccount(ctx: Ctx) {
-  requireProvider(ctx);
   const accountId = getAccountId(ctx);
   if (accountId === null) throw new SenderError('You must be signed in.');
   const acc = ctx.db.account.id.find(accountId);
@@ -389,6 +384,8 @@ export const init = spacetimedb.init((ctx) => {
     ctx.db.account.insert({
       id: 0n,
       username: 'admin',
+      passwordSalt: 'fixture-admin',
+      passwordHash: hashPassword('stackbench-admin-2026', 'fixture-admin'),
       isAdmin: true,
       isStaff: false,
     });
@@ -398,6 +395,8 @@ export const init = spacetimedb.init((ctx) => {
     const staffAccount = ctx.db.account.insert({
       id: 0n,
       username: 'staff',
+      passwordSalt: 'fixture-staff',
+      passwordHash: hashPassword('stackbench-staff-2026', 'fixture-staff'),
       isAdmin: false,
       isStaff: true,
     });
@@ -408,6 +407,8 @@ export const init = spacetimedb.init((ctx) => {
     ctx.db.account.insert({
       id: 0n,
       username: 'customer',
+      passwordSalt: 'fixture-customer',
+      passwordHash: hashPassword('stackbench-customer-2026', 'fixture-customer'),
       isAdmin: false,
       isStaff: false,
     });
@@ -421,44 +422,6 @@ export const init = spacetimedb.init((ctx) => {
   }
 });
 
-function requireProvider(ctx: Ctx): string {
-  const jwt = ctx.senderAuth.jwt;
-  if (!jwt) throw new SenderError('You must be signed in.');
-  try {
-    return providerUsername(jwt);
-  } catch (error) {
-    throw new SenderError(error instanceof Error ? error.message : 'Invalid login.');
-  }
-}
-
-export const onConnect = spacetimedb.clientConnected(ctx => {
-  const jwt = ctx.senderAuth.jwt;
-  // Anonymous storefront reads remain available. Protected writes require the provider.
-  if (!jwt || jwt.issuer === 'localhost') return;
-  const username = requireProvider(ctx);
-  const binding = ctx.db.session.identity.find(ctx.sender);
-  if (binding) {
-    if (ctx.db.account.id.find(binding.accountId)?.username !== username) {
-      throw new SenderError('Account identity does not match.');
-    }
-    return;
-  }
-  let acc = ctx.db.account.username.find(username);
-  if (acc) {
-    // Only provisioned provider identities may claim the reserved seed accounts.
-    // providerUsername verifies their role, not just their display name.
-    if (!['admin', 'staff', 'customer'].includes(username) || ctx.db.session.accountId.find(acc.id)) {
-      throw new SenderError('Username already bound.');
-    }
-  } else {
-    acc = ctx.db.account.insert({ id: 0n, username, isAdmin: false, isStaff: false });
-  }
-  ctx.db.session.insert({ identity: ctx.sender, accountId: acc.id });
-});
-
-// The identity/account binding survives disconnect and logout. Tokens, not this
-// mapping, authenticate requests; deleting it would sign out unrelated browsers.
-export const onDisconnect = spacetimedb.clientDisconnected((_ctx) => {});
 // --- views ---
 
 export const currentUser = spacetimedb.view(
@@ -1189,6 +1152,9 @@ export const processMaintenanceTick = spacetimedb.reducer(
   { onSchedule: maintenanceTick },
   { tick: maintenanceTick.rowType },
   (ctx) => {
+    for (const binding of ctx.db.session.iter()) {
+      if (binding.expiresMicros <= nowMicros(ctx)) ctx.db.session.identity.delete(binding.identity);
+    }
     processMaintenance(ctx);
     processSubscriptions(ctx, (accountId, itemId, quantity, price) => createPaidOrder(ctx, accountId, itemId, quantity, price));
     ctx.db.maintenanceTick.insert({

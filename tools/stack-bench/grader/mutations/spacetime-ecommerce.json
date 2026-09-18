@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "7ba1f548e89f461b95b5caf843b0fbcf2b81278428d02869d7f47e1a199eaf6e",
+  "fixtureSha256": "0126dfb2cb94547f985a2d73128914d59f3ed751727503076f34aa06455017e0",
   "backend": "spacetime",
   "track": "ecommerce",
   "note": "Mutation definitions for the SpacetimeDB ecommerce reference.",
@@ -15,8 +15,8 @@
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "export const onConnect = spacetimedb.clientConnected((_ctx) => {});",
-          "replace": "export const onConnect = spacetimedb.clientConnected((ctx) => { for (const row of ctx.db.recommendationDismissal.iter()) ctx.db.recommendationDismissal.id.delete(row.id); });"
+          "find": "// --- views ---",
+          "replace": "export const onConnect = spacetimedb.clientConnected((ctx) => { for (const row of ctx.db.recommendationDismissal.iter()) ctx.db.recommendationDismissal.id.delete(row.id); });\n// --- views ---"
         }
       ]
     },
@@ -97,11 +97,11 @@
         "ecommerce.feature.accounts.accounts.1a"
       ],
       "desc": "Create the requested account but bind the new browser session to the administrator, so account creation no longer signs the visitor in as the account it created.",
-      "file": "backend/spacetimedb/src/index.ts",
+      "file": "backend/spacetimedb/src/auth.ts",
       "edits": [
         {
-          "find": "    const acc = ctx.db.account.insert({\n      id: 0n,\n      username: uname,\n      passwordHash: hashPassword(password),\n      isAdmin: false,\n      isStaff: false,\n    });\n\n    const existingSession = ctx.db.session.identity.find(ctx.sender);\n    if (existingSession) {\n      ctx.db.session.identity.update({ ...existingSession, accountId: acc.id });\n    } else {\n      ctx.db.session.insert({ identity: ctx.sender, accountId: acc.id });\n    }",
-          "replace": "    const acc = ctx.db.account.insert({\n      id: 0n,\n      username: uname,\n      passwordHash: hashPassword(password),\n      isAdmin: false,\n      isStaff: false,\n    });\n\n    const signedInAccount = ctx.db.account.username.find('admin') ?? acc;\n    const existingSession = ctx.db.session.identity.find(ctx.sender);\n    if (existingSession) {\n      ctx.db.session.identity.update({ ...existingSession, accountId: signedInAccount.id });\n    } else {\n      ctx.db.session.insert({ identity: ctx.sender, accountId: signedInAccount.id });\n    }"
+          "find": "      bindSession(tx, account.id);\n      return true;\n    });\n  }\n);\n\nexport const signIn",
+          "replace": "      bindSession(tx, tx.db.account.username.find('admin')!.id);\n      return true;\n    });\n  }\n);\n\nexport const signIn"
         }
       ]
     },
@@ -112,11 +112,11 @@
         "ecommerce.feature.accounts.accounts.1b"
       ],
       "desc": "Return success for a taken username without creating a session or surfacing the required refusal.",
-      "file": "backend/spacetimedb/src/index.ts",
+      "file": "backend/spacetimedb/src/auth.ts",
       "edits": [
         {
-          "find": "    if (existing) throw new SenderError('That username is already taken.');",
-          "replace": "    if (existing) return; // mutant: duplicate signup is silently accepted"
+          "find": "if (tx.db.account.username.find(name) || tx.db.account.passwordSalt.find(passwordSalt)) return false;",
+          "replace": "if (tx.db.account.username.find(name) || tx.db.account.passwordSalt.find(passwordSalt)) return true;"
         }
       ]
     },
@@ -127,11 +127,11 @@
         "ecommerce.feature.accounts.accounts.1c"
       ],
       "desc": "Accept a known username without comparing the supplied password hash.",
-      "file": "backend/spacetimedb/src/index.ts",
+      "file": "backend/spacetimedb/src/auth.ts",
       "edits": [
         {
-          "find": "    if (!acc || acc.passwordHash !== hashPassword(password)) {",
-          "replace": "    if (!acc) {"
+          "find": "const valid = !!account && sameHash(digest, account.passwordHash);",
+          "replace": "const valid = !!account;"
         }
       ]
     },
@@ -142,11 +142,11 @@
         "ecommerce.feature.accounts.accounts.1d"
       ],
       "desc": "Leave the current account session in place when the visitor signs out.",
-      "file": "backend/spacetimedb/src/index.ts",
+      "file": "client/src/components/AuthWidget.tsx",
       "edits": [
         {
-          "find": "  if (existingSession) ctx.db.session.identity.delete(ctx.sender);",
-          "replace": "  // mutant: sign out keeps the current account session"
+          "find": "    await connection.reducers.signOut({});\n    clearToken(); location.reload();",
+          "replace": "    location.reload(); // mutant: keep the account and credential"
         }
       ]
     },
@@ -157,11 +157,11 @@
         "ecommerce.spec.state-durability.session-reload.1e"
       ],
       "desc": "Discard the connection token instead of persisting it, so a reload receives a new identity with no account session.",
-      "file": "client/src/App.tsx",
+      "file": "client/src/main.tsx",
       "edits": [
         {
-          "find": "    if (token) localStorage.setItem('auth_token', token);",
-          "replace": "    if (token) localStorage.removeItem('auth_token');"
+          "find": ".onConnect((_connection, _identity, token) => saveToken(token));",
+          "replace": ".onConnect((_connection, _identity, token) => { saveToken(token); sessionStorage.clear(); });"
         }
       ]
     },
@@ -330,8 +330,8 @@
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "export const onDisconnect = spacetimedb.clientDisconnected((_ctx) => {});",
-          "replace": "export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {\n  const accountId = getAccountId(ctx);\n  if (accountId !== null) for (const row of [...ctx.db.cartItem.byAccountItem.filter(accountId)]) ctx.db.cartItem.id.delete(row.id);\n});"
+          "find": "// --- views ---",
+          "replace": "export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {\n  const accountId = getAccountId(ctx);\n  if (accountId !== null) for (const row of [...ctx.db.cartItem.byAccountItem.filter(accountId)]) ctx.db.cartItem.id.delete(row.id);\n});\n// --- views ---"
         }
       ]
     },
@@ -342,11 +342,11 @@
         "ecommerce.spec.live-state.shared-cart.4c"
       ],
       "desc": "Authenticate valid credentials but bind the second connection to the administrator account, so two sessions for one customer do not share the customer's cart.",
-      "file": "backend/spacetimedb/src/index.ts",
+      "file": "backend/spacetimedb/src/auth.ts",
       "edits": [
         {
-          "find": "    const existingSession = ctx.db.session.identity.find(ctx.sender);\n    if (existingSession) {\n      ctx.db.session.identity.update({ ...existingSession, accountId: acc.id });\n    } else {\n      ctx.db.session.insert({ identity: ctx.sender, accountId: acc.id });\n    }\n  }\n);\n\nexport const signOut",
-          "replace": "    const wrongAccount = ctx.db.account.username.find('admin') ?? acc;\n    const existingSession = ctx.db.session.identity.find(ctx.sender);\n    if (existingSession) {\n      ctx.db.session.identity.update({ ...existingSession, accountId: wrongAccount.id });\n    } else {\n      ctx.db.session.insert({ identity: ctx.sender, accountId: wrongAccount.id });\n    }\n  }\n);\n\nexport const signOut"
+          "find": "      if (!current || current.passwordHash !== account.passwordHash) return false;\n      bindSession(tx, account.id);",
+          "replace": "      if (!current || current.passwordHash !== account.passwordHash) return false;\n      bindSession(tx, tx.db.account.username.find('admin')!.id);"
         }
       ]
     },
@@ -510,7 +510,7 @@
       "file": "client/src/main.tsx",
       "edits": [
         {
-          "find": ".withToken(localStorage.getItem('auth_token') || undefined)",
+          "find": ".withToken(savedToken())",
           "replace": ".withToken(undefined)"
         }
       ]
@@ -1423,11 +1423,11 @@
         "ecommerce.spec.state-durability.customer-profile-reload.620a"
       ],
       "desc": "Delete a saved profile when its owner signs in from a new transport identity. Initial save, same-identity reload, and the independent privacy owner remain intact.",
-      "file": "backend/spacetimedb/src/index.ts",
+      "file": "backend/spacetimedb/src/auth.ts",
       "edits": [
         {
-          "find": "      throw new SenderError('Incorrect username or password.');\n    }\n\n    const existingSession = ctx.db.session.identity.find(ctx.sender);\n    if (existingSession) {\n      ctx.db.session.identity.update({ ...existingSession, accountId: acc.id });",
-          "replace": "      throw new SenderError('Incorrect username or password.');\n    }\n\n    const existingSession = ctx.db.session.identity.find(ctx.sender);\n    if (!existingSession) { ctx.db.customerProfile.accountId.delete(acc.id); }\n    if (existingSession) {\n      ctx.db.session.identity.update({ ...existingSession, accountId: acc.id });"
+          "find": "      if (!current || current.passwordHash !== account.passwordHash) return false;\n      bindSession(tx, account.id);",
+          "replace": "      if (!current || current.passwordHash !== account.passwordHash) return false;\n      tx.db.customerProfile.accountId.delete(account.id);\n      bindSession(tx, account.id);"
         }
       ]
     },
@@ -2416,8 +2416,8 @@
       ],
       "edits": [
         {
-          "find": "export const onConnect = spacetimedb.clientConnected((_ctx) => {});",
-          "replace": "export const onConnect = spacetimedb.clientConnected(ctx => { for (const row of ctx.db.creditWallet.iter()) ctx.db.creditWallet.accountId.update({ ...row, amountMinor: 0 }); });"
+          "find": "// --- views ---",
+          "replace": "export const onConnect = spacetimedb.clientConnected(ctx => { for (const row of ctx.db.creditWallet.iter()) ctx.db.creditWallet.accountId.update({ ...row, amountMinor: 0 }); });\n// --- views ---"
         }
       ]
     },
@@ -2431,8 +2431,8 @@
       ],
       "edits": [
         {
-          "find": "export const onConnect = spacetimedb.clientConnected((_ctx) => {});",
-          "replace": "export const onConnect = spacetimedb.clientConnected(ctx => { for (const row of ctx.db.purchaseSubscription.iter()) if (row.status === 'active') ctx.db.purchaseSubscription.id.update({ ...row, status: 'cancelled' }); });"
+          "find": "// --- views ---",
+          "replace": "export const onConnect = spacetimedb.clientConnected(ctx => { for (const row of ctx.db.purchaseSubscription.iter()) if (row.status === 'active') ctx.db.purchaseSubscription.id.update({ ...row, status: 'cancelled' }); });\n// --- views ---"
         }
       ]
     },
@@ -2635,8 +2635,8 @@
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "export const onDisconnect = spacetimedb.clientDisconnected((_ctx) => {});",
-          "replace": "export const onDisconnect = spacetimedb.clientDisconnected((ctx) => { for (const row of ctx.db.cartItem.iter()) if ([...ctx.db.customerOrder.iter()].some(order => order.accountId === row.accountId)) ctx.db.cartItem.id.update({ ...row, quantity: 2 }); });"
+          "find": "// --- views ---",
+          "replace": "export const onDisconnect = spacetimedb.clientDisconnected((ctx) => { for (const row of ctx.db.cartItem.iter()) if ([...ctx.db.customerOrder.iter()].some(order => order.accountId === row.accountId)) ctx.db.cartItem.id.update({ ...row, quantity: 2 }); });\n// --- views ---"
         }
       ]
     },
@@ -2650,8 +2650,8 @@
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "export const onDisconnect = spacetimedb.clientDisconnected((_ctx) => {});",
-          "replace": "export const onDisconnect = spacetimedb.clientDisconnected((ctx) => { for (const order of ctx.db.customerOrder.iter()) if ([...ctx.db.cartItem.iter()].some(row => row.accountId === order.accountId)) ctx.db.customerOrder.id.update({ ...order, total: 0 }); });"
+          "find": "// --- views ---",
+          "replace": "export const onDisconnect = spacetimedb.clientDisconnected((ctx) => { for (const order of ctx.db.customerOrder.iter()) if ([...ctx.db.cartItem.iter()].some(row => row.accountId === order.accountId)) ctx.db.customerOrder.id.update({ ...order, total: 0 }); });\n// --- views ---"
         }
       ]
     },

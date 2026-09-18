@@ -1,41 +1,37 @@
-import { UserManager, WebStorageStateStore } from 'oidc-client-ts';
-import { OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_REDIRECT_URI } from './config';
+import { MODULE_NAME, SPACETIMEDB_URI } from './config';
 
-export const auth = new UserManager({
-  authority: OIDC_ISSUER,
-  client_id: OIDC_CLIENT_ID,
-  redirect_uri: OIDC_REDIRECT_URI,
-  post_logout_redirect_uri: OIDC_REDIRECT_URI,
-  response_type: 'code',
-  scope: 'openid profile',
-  automaticSilentRenew: true,
-  userStore: new WebStorageStateStore({ store: window.sessionStorage }),
-});
+const TOKEN_KEY = `${MODULE_NAME}-identity`;
+const ERROR_KEY = `${MODULE_NAME}-auth-error`;
+const base = SPACETIMEDB_URI.replace(/^ws/, 'http');
+export const savedToken = () => sessionStorage.getItem(TOKEN_KEY) ?? undefined;
+export const saveToken = (token: string) => sessionStorage.setItem(TOKEN_KEY, token);
+(window as Window & { getSessionToken?: () => string | null }).getSessionToken = () => savedToken() ?? null;
 
-let token: string | undefined;
-(window as Window & { getSessionToken?: () => string | null }).getSessionToken = () => token ?? null;
-auth.events.addUserLoaded(user => { token = user.expired ? undefined : user.id_token; });
-auth.events.addUserUnloaded(() => { token = undefined; });
-auth.events.addAccessTokenExpired(() => { void auth.removeUser(); });
+export const readAuthError = () => sessionStorage.getItem(ERROR_KEY);
 
-export async function initializeAuth(): Promise<string | undefined> {
-  const query = new URLSearchParams(location.search);
-  if (query.has('state') && (query.has('code') || query.has('error'))) {
-    try {
-      await auth.signinRedirectCallback();
-    } finally {
-      history.replaceState(null, '', new URL(OIDC_REDIRECT_URI).pathname);
+export async function authenticate(mode: 'signup' | 'signin', name: string, password: string): Promise<void> {
+  sessionStorage.removeItem(ERROR_KEY);
+  // Rotate the native credential before authentication: never upgrade a guest token.
+  const identityResponse = await fetch(`${base}/v1/identity`, { method: 'POST' });
+  if (!identityResponse.ok) throw new Error('Could not start login.');
+  const identity = await identityResponse.json();
+  if (typeof identity.token !== 'string' || !identity.token) throw new Error('Invalid identity response.');
+  saveToken(identity.token);
+  try {
+    const salt = Array.from(crypto.getRandomValues(new Uint8Array(32)), byte => byte.toString(16).padStart(2, '0')).join('');
+    const response = await fetch(`${base}/v1/database/${encodeURIComponent(MODULE_NAME)}/call/${mode === 'signup' ? 'sign_up' : 'sign_in'}`, {
+      method: 'POST', headers: { 'content-type': 'application/json', Authorization: `Bearer ${identity.token}` },
+      body: JSON.stringify(mode === 'signup' ? [name, password, salt] : [name, password]),
+    });
+    if (!response.ok || await response.json() !== true) {
+      throw new Error(mode === 'signup' ? 'Could not create this account.' : 'Invalid username or password.');
     }
+  } catch (error) {
+    sessionStorage.setItem(ERROR_KEY, error instanceof Error ? error.message : 'Login failed.');
   }
-  const user = await auth.getUser();
-  token = user && !user.expired ? user.id_token : undefined;
-  return token;
+  // Reconnect with the submitted credential even after failure. The server account
+  // view and protected writes decide whether it has any application permissions.
+  location.reload();
 }
 
-export async function logout(): Promise<void> {
-  const user = await auth.getUser();
-  await auth.removeUser();
-  // Logout removes this browser's credential and ends its provider session.
-  // It does not promise immediate revocation of previously issued bearer tokens.
-  await auth.signoutRedirect({ id_token_hint: user?.id_token });
-}
+export function clearToken(): void { sessionStorage.removeItem(TOKEN_KEY); }

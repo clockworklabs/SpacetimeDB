@@ -4,6 +4,7 @@
   "type": "module",
   "private": true,
   "dependencies": {
+    "@noble/hashes": "2.0.1",
     "spacetimedb": "file:/deps/spacetimedb.tgz"
   },
   "devDependencies": {
