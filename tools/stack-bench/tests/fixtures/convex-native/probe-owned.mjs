@@ -51,12 +51,25 @@ try {
     }
     savePrivate({ token: tokens.token, adminKey: key, user: current, before: (await state()).tables });
     evidence.observations.push('positive scheduled effect');
-  } else if (phase === 'warm') {
+  } else if (phase === 'isolation') {
+    const saved = readSaved();
+    const foreign = JSON.parse(readFileSync('foreign-private.json'));
+    const denied = new ConvexHttpClient(url); denied.setAuth(foreign.token);
+    const item = saved.before.items.find(row => row.name === 'Widget');
+    await assert.rejects(denied.mutation('accountShop:purchase', { itemId: item._id, quantity: 1 }));
+    await assert.rejects(snapshot(url, foreign.adminKey));
+    assert(isDeepStrictEqual((await state()).tables, saved.before), 'Foreign credentials must have no stored effect');
+    assert.deepEqual(await currentOverWebSocket(saved.token), saved.user);
+    evidence.observations = ['other deployment JWT/admin key refused', 'exact own data unchanged', 'own original JWT works'];
+  } else if (phase === 'warm' || phase === 'retained') {
     const saved = readSaved();
     assert(isDeepStrictEqual((await state()).tables, saved.before), 'Warm restart must retain exact stored rows');
     assert.deepEqual(await currentOverWebSocket(saved.token), saved.user);
-    assert((await signIn('signIn')).tokens.token, 'Password account must remain usable');
-    evidence.observations = ['exact data/accounts/sessions retained', 'original JWT still works over WebSocket', 'password login retained'];
+    evidence.observations = ['exact data/accounts/sessions retained', 'original JWT still works over WebSocket'];
+    if (phase === 'warm') {
+      assert((await signIn('signIn')).tokens.token, 'Password account must remain usable');
+      evidence.observations.push('password login retained');
+    }
   } else if (phase === 'prepare-reset') {
     const saved = readSaved();
     const scheduled = await admin.mutation('shop:scheduleMarker', { value: 'owned-must-not-survive-reset', delayMillis: 30000 });

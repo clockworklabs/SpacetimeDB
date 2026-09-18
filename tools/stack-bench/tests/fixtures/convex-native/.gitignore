@@ -5,6 +5,7 @@ probe-evidence.json
 auth-evidence.json
 lifecycle-*.json
 owned-private.json
+foreign-private.json
 owned-probe.json
 restart-evidence.json
 convex/auth.config.js

@@ -145,15 +145,27 @@ through normal lease, namespace, firewall, browser-container and teardown owners
 It is opt-in with `STACK_BENCH_CONVEX_OWNED_TEST=1` inside the Linux controller.
 Mount this fixture at `STACK_BENCH_CONVEX_FIXTURE`, an evidence directory at
 `STACK_BENCH_CONVEX_EVIDENCE_DIR`, and the normal shared resource-lock directory.
-The test claims ports 14309/14310/14311 before creating resources. These explicit
-test ports do not define the future campaign allocation.
+The test claims ports 14309/14310/14311 and uses 14312/14313/14314 for one
+overlapping attempt at a time. These explicit test ports do not define the
+future campaign allocation.
 The trusted controller deploys this fixture. Only the native client probe runs
 inside the restricted browser container; its read-only/noexec policy is retained.
 This does not yet test generated-app deployment from a coding container.
 
 `probe-owned.mjs` tests real password signup, signed native HTTP and WebSocket
-calls, a purchase, and anonymous refusal without stored effects. The integration
-test also checks the published API and HTTP-action JWKS endpoint, wrong lease
-token refusal, and removal of the owned anonymous data volume. It exports no
-admin key or session token. This slice does not qualify Chromium UI behavior,
-warm restart, reset, crash tests, or full Convex support. Convex stays unregistered.
+calls, a purchase, and anonymous refusal without stored effects. Warm restart
+must retain stored rows and the original token. Full reset must reject old
+credentials and remove pending scheduled work before fresh signup and purchase.
+The integration test checks two live attempts for separate accounts/data,
+cross-deployment credential refusal, and blocked cross-attempt network access.
+It also checks cleanup after a real port-binding failure and a startup-process
+interruption after the durable container record. Each cleanup must preserve
+the surviving app's stored rows and original session.
+
+The test checks the published API and HTTP-action JWKS endpoint, wrong lease
+token refusal, stale process-record refusal, released locks and removed owned
+volumes. A retained-state negative control must fail the reset observer. Public
+receipts contain no admin key or session token. This slice does not qualify
+Chromium UI behavior, component state, full campaign cancellation, controller
+death recovery, mid-operation crash checks, or full Convex support. Convex stays
+unregistered.
