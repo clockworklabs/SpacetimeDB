@@ -9,7 +9,10 @@ import type { MutationDefinition } from '../evidence/mutation-analysis.js';
 import { sha256 } from '../evidence/provenance.js';
 import { loadReferenceRegistry, validateReferenceRegistry } from '../references/reference-fixtures.js';
 import { readArtifact } from '../evidence/artifacts.js';
-import { executionPlanForRelease } from './recipe-release.js';
+import { buildRecipeQualificationDocuments, executionPlanForRelease } from './recipe-release.js';
+import { assertQualificationSliceCoverage, unchangedQualificationChecks,
+  validateQualificationDocuments } from './qualification-slices.js';
+import type { QualificationDocuments } from './qualification-slices.js';
 import { missingRunnerObservation, runnerEnvironmentIdentity } from '../runtime/runner-environment.js';
 import { qualificationScopeIdentity, validateQualificationScopeIdentity } from './qualification-scope.js';
 import type { RecipeCheck, RecipeExecution, RecipeRelease } from './recipe-release.js';
@@ -49,6 +52,7 @@ export interface CalibrationEvidence {
   repetition: number;
   path: string;
   sha256: string;
+  slice?: { checks: string[]; snapshot: { path: string; sha256: string } };
 }
 
 export interface CalibrationControl {
@@ -95,8 +99,8 @@ export interface CalibrationDefinition {
     evidence: Array<{ path: string; sha256: string }>;
   }>;
   qualificationReuse?: {
-    sourceRecipe: { id: string; contentSha256: string; executionSha256: string };
-    sourceCalibration: { id: string; contentSha256: string };
+    sourceRecipe?: { id: string; contentSha256: string; executionSha256: string };
+    sourceCalibration?: { id: string; contentSha256: string };
     rationale: string;
     evidence: Array<{ path: string; sha256: string }>;
     scopes: Array<{
@@ -138,6 +142,7 @@ export interface CalibrationContext {
   references: CalibrationReference[];
   execution: RecipeExecution[];
   stackBenchRoot: string;
+  qualificationDocuments?: QualificationDocuments;
 }
 
 export interface CalibrationIdentity {
@@ -229,7 +234,7 @@ const QUALIFICATION_FIELDS = new Set([
 ]);
 const FEATURE_CATALOG_FIELDS = new Set(['path', 'id', 'contentSha256']);
 const RUNNER_FIELDS = new Set(['schemaVersion', 'mode', 'platform', 'architecture']);
-const EVIDENCE_FIELDS = new Set(['kind', 'stack', 'repetition', 'path', 'sha256']);
+const EVIDENCE_FIELDS = new Set(['kind', 'stack', 'repetition', 'path', 'sha256', 'slice']);
 const EQUIVALENCE_EVIDENCE_FIELDS = new Set(['path', 'sha256']);
 const EQUIVALENCE_FIELDS = new Set([
   'fromExecutionSha256', 'toExecutionSha256', 'rationale', 'evidence',
@@ -406,6 +411,15 @@ export function compileCalibrationDefinition(input: unknown,
     } else string(entry.stack, `${at}.stack`);
     string(entry.path, `${at}.path`);
     exactHash(entry.sha256, `${at}.sha256`);
+    if (entry.slice !== undefined) {
+      strictObject(entry.slice, `${at}.slice`, new Set(['checks', 'snapshot']));
+      const keys = array(entry.slice.checks, `${at}.slice.checks`, { nonEmpty: true });
+      keys.forEach(key => string(key, `${at}.slice.checks`));
+      if (new Set(keys).size !== keys.length) fail(`${at}.slice.checks`, 'duplicates checks');
+      strictObject(entry.slice.snapshot, `${at}.slice.snapshot`, EQUIVALENCE_EVIDENCE_FIELDS);
+      string(entry.slice.snapshot.path, `${at}.slice.snapshot.path`);
+      exactHash(entry.slice.snapshot.sha256, `${at}.slice.snapshot.sha256`);
+    }
   });
 
   const equivalenceDecisions = array(value.equivalenceDecisions ?? [],
@@ -430,16 +444,20 @@ export function compileCalibrationDefinition(input: unknown,
     const reuse = value.qualificationReuse;
     const at = `${source}.qualificationReuse`;
     strictObject(reuse, at, QUALIFICATION_REUSE_FIELDS);
-    const sourceRecipe = reuse.sourceRecipe;
-    strictObject(sourceRecipe, `${at}.sourceRecipe`, QUALIFICATION_REUSE_RECIPE_FIELDS);
-    exactId(sourceRecipe.id, `${at}.sourceRecipe.id`);
-    exactHash(sourceRecipe.contentSha256, `${at}.sourceRecipe.contentSha256`);
-    exactHash(sourceRecipe.executionSha256, `${at}.sourceRecipe.executionSha256`);
-    const sourceCalibration = reuse.sourceCalibration;
-    strictObject(sourceCalibration, `${at}.sourceCalibration`,
-      QUALIFICATION_REUSE_CALIBRATION_FIELDS);
-    exactId(sourceCalibration.id, `${at}.sourceCalibration.id`);
-    exactHash(sourceCalibration.contentSha256, `${at}.sourceCalibration.contentSha256`);
+    if (reuse.sourceRecipe !== undefined || reuse.sourceCalibration !== undefined) {
+      const sourceRecipe = reuse.sourceRecipe;
+      strictObject(sourceRecipe, `${at}.sourceRecipe`, QUALIFICATION_REUSE_RECIPE_FIELDS);
+      exactId(sourceRecipe.id, `${at}.sourceRecipe.id`);
+      exactHash(sourceRecipe.contentSha256, `${at}.sourceRecipe.contentSha256`);
+      exactHash(sourceRecipe.executionSha256, `${at}.sourceRecipe.executionSha256`);
+      const sourceCalibration = reuse.sourceCalibration;
+      strictObject(sourceCalibration, `${at}.sourceCalibration`,
+        QUALIFICATION_REUSE_CALIBRATION_FIELDS);
+      exactId(sourceCalibration.id, `${at}.sourceCalibration.id`);
+      exactHash(sourceCalibration.contentSha256, `${at}.sourceCalibration.contentSha256`);
+    } else if (!evidence.length || evidence.some(entry => !isObject(entry) || !entry.slice)) {
+      fail(at, 'source identities are required for unsliced evidence');
+    }
     string(reuse.rationale, `${at}.rationale`);
     const reuseEvidence = array(reuse.evidence, `${at}.evidence`, { nonEmpty: true });
     reuseEvidence.forEach((entry: unknown, index: number) => {
@@ -464,7 +482,7 @@ export function compileCalibrationDefinition(input: unknown,
       if (scope.fromExecutableSha256 === scope.toExecutableSha256) {
         fail(scopeAt, 'must compare different executable hashes');
       }
-      const key = `${scope.kind}:${scope.stack ?? ''}`;
+      const key = `${scope.kind}:${scope.stack ?? ''}:${scope.fromExecutableSha256}`;
       if (scopeKeys.has(key)) fail(scopeAt, `duplicates ${key}`);
       scopeKeys.add(key);
     });
@@ -553,9 +571,9 @@ function qualificationEvidenceOrigin(artifact: UnknownRecord,
     && evidenceIdentityMatches(read(identities, 'calibration'), qualificationIdentity);
   if (current) return 'current';
   const reuse = calibration.qualificationReuse;
-  const sourceRecipe = reuse && { id: reuse.sourceRecipe.id,
+  const sourceRecipe = reuse?.sourceRecipe && { id: reuse.sourceRecipe.id,
     contentSha256: reuse.sourceRecipe.contentSha256 };
-  if (reuse && evidenceIdentityMatches(read(identities, 'recipe'), sourceRecipe)
+  if (reuse?.sourceRecipe && reuse.sourceCalibration && evidenceIdentityMatches(read(identities, 'recipe'), sourceRecipe)
     && evidenceIdentityMatches(read(identities, 'calibration'), reuse.sourceCalibration)) {
     return 'reused';
   }
@@ -563,8 +581,8 @@ function qualificationEvidenceOrigin(artifact: UnknownRecord,
 }
 
 type ReuseDecision = {
-  sourceRecipe: { id: string; contentSha256: string; executionSha256: string };
-  sourceCalibration: { id: string; contentSha256: string };
+  sourceRecipe?: { id: string; contentSha256: string; executionSha256: string };
+  sourceCalibration?: { id: string; contentSha256: string };
   scopes: Array<{ kind: string; stack?: string;
     fromExecutableSha256: string; toExecutableSha256: string }>;
 };
@@ -587,9 +605,10 @@ export function canReuseQualificationScope({ actual, expected, artifact, calibra
   entry: { kind: string; stack?: string };
 }): boolean {
   const reuse = calibration?.qualificationReuse;
-  if (!reuse) return false;
+  if (!reuse?.sourceRecipe || !reuse.sourceCalibration) return false;
   const decision = reuse.scopes.find(scope => scope.kind === entry.kind
-    && (scope.stack ?? null) === (entry.stack ?? null));
+    && (scope.stack ?? null) === (entry.stack ?? null)
+    && scope.fromExecutableSha256 === actual.executableSha256);
   if (!decision) return false;
   const sourceScopeRecipe = { id: reuse.sourceRecipe.id,
     contentSha256: reuse.sourceRecipe.contentSha256 };
@@ -652,8 +671,8 @@ export function hasExactSelectedPackRuntime(
 export function validateQualificationEvidenceArtifact(artifact: unknown,
   entry: CalibrationEvidence,
   { calibration, qualificationIdentity, release, references, execution, stackBenchRoot,
-    enforceQualificationScope = true }: CalibrationContext
-    & { enforceQualificationScope?: boolean }): void {
+    enforceQualificationScope = true, allowTargeted = false }: CalibrationContext
+    & { enforceQualificationScope?: boolean; allowTargeted?: boolean }): void {
   const at = `evidence.${entry.kind}:${entry.stack ?? ''}:${entry.repetition}`;
   if (!isObject(artifact)) evidenceFailure(at, 'is not an artifact');
   qualificationEvidenceOrigin(artifact, calibration, qualificationIdentity, release, at);
@@ -736,7 +755,7 @@ export function validateQualificationEvidenceArtifact(artifact: unknown,
     evidenceFailure(at, 'has wrong stack adapter');
   }
   const payload = artifact.payload;
-  if (read(payload, 'diagnostic') === true || read(payload, 'timingOnly') === true) {
+  if ((!allowTargeted && read(payload, 'diagnostic') === true) || read(payload, 'timingOnly') === true) {
     evidenceFailure(at, 'is targeted diagnostic evidence, not qualification evidence');
   }
   if (calibration.qualification.checks !== undefined) {
@@ -839,6 +858,118 @@ function validateCurrentQualificationScope(artifact: UnknownRecord, entry: Calib
   }
 }
 
+export function validateQualificationSlice(artifact: UnknownRecord, entry: CalibrationEvidence,
+  context: CalibrationContext): void {
+  const { calibration, release, stackBenchRoot } = context;
+  const slice = entry.slice!;
+  const at = `evidence.${entry.kind}:${entry.stack ?? ''}:${entry.repetition}`;
+  const [snapshotRef] = verifyEvidence([slice.snapshot], stackBenchRoot, `${at}.snapshot`);
+  const snapshot = readDefinitionJson(resolve(stackBenchRoot, snapshotRef!.path), 'qualification snapshot');
+  strictObject(snapshot, `${at}.snapshot`, new Set(['documents', 'calibration', 'mutations']));
+  const source = validateQualificationDocuments(snapshot.documents);
+  if (!isObject(snapshot.calibration)) evidenceFailure(at, 'has no source calibration');
+  const sourceCalibration = snapshot.calibration as unknown as CalibrationPlan;
+  const sourceIdentity = calibrationQualificationIdentity(sourceCalibration);
+  if (sourceCalibration.recipe.id !== source.release.id
+    || sourceCalibration.recipe.contentSha256 !== source.release.contentSha256
+    || sourceCalibration.recipe.executionSha256 !== source.release.executionSha256
+    || sourceCalibration.recipe.meaningSha256 !== source.release.meaningSha256
+    || source.release.id !== release.id || sourceCalibration.selection.alias !== calibration.selection.alias) {
+    evidenceFailure(at, 'source calibration does not bind the saved recipe');
+  }
+  // Do not reuse a different reference, runner, repetition policy, feature
+  // selection, or zero-point policy merely because its checks have the same IDs.
+  for (const field of ['fixture', 'references', 'nullControl', 'controls'] as const) {
+    if (canonicalDefinitionJson(sourceCalibration[field]) !== canonicalDefinitionJson(calibration[field])) {
+      evidenceFailure(at, `source ${field} differs`);
+    }
+  }
+  const { evidence: _oldEvidence, buildImage: _oldImage, ...oldPolicy } = sourceCalibration.qualification;
+  const { evidence: _newEvidence, buildImage: _newImage, ...newPolicy } = calibration.qualification;
+  if (canonicalDefinitionJson(oldPolicy) !== canonicalDefinitionJson(newPolicy)) {
+    evidenceFailure(at, 'source qualification policy differs');
+  }
+  const trackRoot = resolve(stackBenchRoot, 'tracks', release.track);
+  const current = context.qualificationDocuments ?? validateQualificationDocuments(buildRecipeQualificationDocuments(
+    resolve(trackRoot, calibration.recipe.path), { trackRoot }));
+  const unchanged = unchangedQualificationChecks(source, current);
+  if (slice.checks.some(key => !unchanged.has(key))) evidenceFailure(at,
+    'claims a changed check, setup, or shared dependency');
+
+  const sourceKeys = entry.kind === 'null'
+    ? (read(artifact, 'payload', 'criteria') as unknown[] | undefined)?.map(result =>
+      source.release.checkCatalog.find(check => check.source === read(result, 'scenario')
+        && check.featureId === read(result, 'feature') && check.criterionId === read(result, 'criterion'))?.stableKey)
+    : read(artifact, 'payload', 'qualifiedCheckKeys');
+  if (!Array.isArray(sourceKeys) || sourceKeys.length === 0
+    || sourceKeys.some(key => typeof key !== 'string') || new Set(sourceKeys).size !== sourceKeys.length
+    || slice.checks.some(key => !sourceKeys.includes(key))) {
+    evidenceFailure(at, 'slice is not contained in the measured selection');
+  }
+  const sourceSelection = calibrationQualificationRelease(
+    { qualification: { checks: sourceKeys as string[] } }, source.release,
+    // This first reuse path supports independent dependency scenarios only.
+    // Sequential inherited-stage evidence needs its original ownership plan.
+    [...new Set(source.release.checkCatalog.map(check => check.executionId))]
+      .map(id => ({ id, ownership: { kind: 'current' as const } })));
+  if (source.release.sequence !== null || current.release.sequence !== null) {
+    evidenceFailure(at, 'sliced qualification requires independent dependency scenarios');
+  }
+  const manifests = snapshot.mutations;
+  if (!isObject(manifests)) evidenceFailure(at, 'snapshot has no mutation inputs');
+  const subset = (manifest: unknown, keys: string[]): UnknownRecord => {
+    if (!isObject(manifest) || !Array.isArray(manifest.mutations)) evidenceFailure(at, 'invalid mutation inputs');
+    const selected = manifest.mutations.filter(value => {
+      const targets = mutationTargetKeys(value as MutationDefinition);
+      const included = targets.filter(key => keys.includes(key));
+      if (included.length && included.length !== targets.length) evidenceFailure(at, 'mutation spans slice boundary');
+      return included.length > 0;
+    });
+    return { ...manifest, mutations: selected };
+  };
+  const measuredKind = read(artifact, 'payload', 'mutationControl') === true ? 'mutation' : entry.kind;
+  let selectedMutation: CalibrationMutation | null = null;
+  if (measuredKind === 'mutation') {
+    const oldManifest = manifests[entry.stack!];
+    const oldMutation = sourceCalibration.mutations.find(item => item.backend === entry.stack);
+    const newMutation = calibration.mutations.find(item => item.backend === entry.stack);
+    if (!oldMutation || !newMutation) evidenceFailure(at, 'missing stack mutation definition');
+    if (mutationExecutionSha256(subset(oldManifest, sourceCalibration.qualification.checks!))
+      !== oldMutation.executionSha256) evidenceFailure(at, 'mutation snapshot differs from source calibration');
+    const currentManifest = readDefinitionJson(resolve(stackBenchRoot, newMutation.path), 'mutations');
+    if (mutationExecutionSha256(subset(oldManifest, slice.checks))
+      !== mutationExecutionSha256(subset(currentManifest, slice.checks))) {
+      evidenceFailure(at, 'slice mutation controls changed');
+    }
+    const selected = subset(oldManifest, sourceKeys as string[]);
+    selectedMutation = { ...oldMutation, executionSha256: mutationExecutionSha256(selected) };
+    const count = (selected.mutations as unknown[]).length;
+    const runs = read(artifact, 'payload', 'runs');
+    if (!Array.isArray(runs) || runs.some(run => read(run, 'mutations', 'total') !== count)) {
+      evidenceFailure(at, 'mutation evidence has incomplete control coverage');
+    }
+  }
+  validateQualificationEvidenceArtifact(artifact, { ...entry, kind: measuredKind }, {
+    ...context, calibration: sourceCalibration, qualificationIdentity: sourceIdentity,
+    ...sourceSelection, enforceQualificationScope: false, allowTargeted: true,
+  });
+  const actual = validateQualificationScopeIdentity(read(artifact, 'payload', 'qualificationScope'));
+  const expected = qualificationScopeIdentity({ kind: measuredKind, release: sourceSelection.release,
+    stack: entry.stack ?? null, reference: entry.kind === 'null' ? null
+      : context.references.find(reference => reference.backend === entry.stack),
+    mutation: selectedMutation, stackBenchRoot });
+  const { sha256: _actualSha, executableSha256: actualExecutable, ...actualInputs } = actual;
+  const { sha256: _expectedSha, executableSha256: expectedExecutable, ...expectedInputs } = expected;
+  if (canonicalDefinitionJson(actualInputs) !== canonicalDefinitionJson(expectedInputs)) {
+    evidenceFailure(at, 'source scoped inputs do not match its snapshot');
+  }
+  if (actualExecutable !== expectedExecutable && !calibration.qualificationReuse?.scopes.some(scope =>
+    scope.kind === measuredKind && scope.stack === entry.stack
+      && scope.fromExecutableSha256 === actualExecutable && scope.toExecutableSha256 === expectedExecutable)) {
+    evidenceFailure(at, 'executable changed without a reviewed equivalence decision');
+  }
+}
+
 function verifyQualificationEvidence(entries: CalibrationEvidence[], stackBenchRoot: string,
   at: string, context: Omit<CalibrationContext, 'stackBenchRoot'>):
   { entries: CalibrationEvidence[]; staleness: QualificationStaleness[]; buildImage?: string } {
@@ -847,6 +978,10 @@ function verifyQualificationEvidence(entries: CalibrationEvidence[], stackBenchR
   const images = new Set<string>();
   const runners = new Set();
   const staleness: QualificationStaleness[] = [];
+  const trackRoot = resolve(stackBenchRoot, 'tracks', context.release.track);
+  const qualificationDocuments = entries.some(entry => entry.slice)
+    ? validateQualificationDocuments(buildRecipeQualificationDocuments(
+      resolve(trackRoot, context.calibration.recipe.path), { trackRoot })) : undefined;
   normalized.forEach((entry, index) => {
     let artifact = artifacts.get(entry.path);
     if (!artifact) {
@@ -857,15 +992,19 @@ function verifyQualificationEvidence(entries: CalibrationEvidence[], stackBenchR
       }
       artifacts.set(entry.path, artifact);
     }
-    validateQualificationEvidenceArtifact(artifact, entry,
-      { ...context, stackBenchRoot, enforceQualificationScope: false });
-    try {
-      validateCurrentQualificationScope(artifact, entry,
-        { ...context, stackBenchRoot }, `${at}[${index}]`);
-    } catch (error) {
-      if (!(error instanceof QualificationEvidenceStaleError)) throw error;
-      staleness.push({ kind: entry.kind, stack: entry.stack ?? null,
-        repetition: entry.repetition, path: entry.path, reason: error.reason });
+    if (entry.slice) {
+      validateQualificationSlice(artifact, entry, { ...context, stackBenchRoot, qualificationDocuments });
+    } else {
+      validateQualificationEvidenceArtifact(artifact, entry,
+        { ...context, stackBenchRoot, enforceQualificationScope: false });
+      try {
+        validateCurrentQualificationScope(artifact, entry,
+          { ...context, stackBenchRoot }, `${at}[${index}]`);
+      } catch (error) {
+        if (!(error instanceof QualificationEvidenceStaleError)) throw error;
+        staleness.push({ kind: entry.kind, stack: entry.stack ?? null,
+          repetition: entry.repetition, path: entry.path, reason: error.reason });
+      }
     }
     if (context.calibration.qualification.runner !== undefined) {
       runners.add(canonicalDefinitionJson(runnerEnvironmentIdentity(read(artifact, 'payload', 'runner'))));
@@ -1118,7 +1257,7 @@ export function compileCalibrationFile(calibrationPath: string,
 
   let qualificationReuse = calibration.qualificationReuse;
   if (qualificationReuse) {
-    if (qualificationReuse.sourceRecipe.executionSha256 !== calibration.recipe.executionSha256) {
+    if (qualificationReuse.sourceRecipe && qualificationReuse.sourceRecipe.executionSha256 !== calibration.recipe.executionSha256) {
       fail(`${source}.qualificationReuse.sourceRecipe.executionSha256`,
         'must match the current recipe execution identity');
     }
@@ -1144,6 +1283,7 @@ export function compileCalibrationFile(calibrationPath: string,
         `${source}.qualificationReuse.evidence`) };
   }
   const calibrated = { ...calibration, qualificationReuse,
+    recipe: { ...calibration.recipe, path: recipeRef.relative },
     references: { ...calibration.references, entries: references },
     mutations } as Validated<CalibrationDefinition>;
   const qualificationIdentity = calibrationQualificationIdentity(calibrated);
@@ -1196,7 +1336,11 @@ export function compileCalibrationFile(calibrationPath: string,
     expectedEvidence.push(`null::${repetition}`);
   }
   const actualEvidence = evidence.map(entry => `${entry.kind}:${entry.stack ?? ''}:${entry.repetition}`);
-  if (actualEvidence.length > 0 && (new Set(actualEvidence).size !== actualEvidence.length
+  if (evidence.some(entry => entry.slice)) {
+    if (evidence.some(entry => !entry.slice)) fail(`${source}.qualification.evidence`, 'cannot mix sliced and unsliced entries');
+    assertQualificationSliceCoverage(evidence.map(entry => ({ ...entry, checks: entry.slice!.checks })),
+      expectedEvidence, qualificationRelease.checkCatalog);
+  } else if (actualEvidence.length > 0 && (new Set(actualEvidence).size !== actualEvidence.length
     || canonicalDefinitionJson([...actualEvidence].sort()) !== canonicalDefinitionJson(expectedEvidence.sort()))) {
     fail(`${source}.qualification.evidence`, 'must contain exactly the declared reference, mutation, and null repetitions');
   }

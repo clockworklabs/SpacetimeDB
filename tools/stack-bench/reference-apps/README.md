@@ -74,6 +74,27 @@ During development, select only affected defects with `--mutation-id <id>`.
 Targeted output is diagnostic evidence. Use `--full-mutations` only when the
 complete defect set is required.
 
+Targeted evidence can qualify a defined slice of an unchanged check population.
+Each calibration evidence entry then declares `slice.checks` and a hash-pinned
+`slice.snapshot` path. Qualifiers save the recipe hash inputs, calibration and
+mutation inputs beside their output as `<artifact>.inputs.json`. Preserve these
+files with the original artifacts. Reconstructed older inputs must reproduce
+the identities in the original evidence; a list of unchanged check IDs is not proof.
+
+The compiler verifies scenario setup, shared inputs, pack budgets, references,
+runner, repetition policy and applicable defect definitions. Every required
+check must have exactly one reference, mutation and null coverage entry per
+required stack/repetition. It rejects missing or overlapping coverage. A targeted
+mutation gate may also supply its verified clean baseline for reference coverage.
+It retains the artifact's original identities and diagnostic label.
+
+This reuse path supports independently reset dependency scenarios with the same
+qualification policy and population. Sequential inherited-stage evidence is not
+supported. Changed executable hashes require a reviewed `qualificationReuse`
+decision with retained supporting evidence. An unchanged commit label alone is
+not sufficient. If any required input or coverage is missing, keep the candidate
+unqualified and run only the missing scope; do not substitute a successful summary.
+
 For full mutation qualification, use the same scope, add
 `--mutations --full-mutations`, set `--repetitions` to `mutationRepetitions`, and
 choose a new output path. The runner can emit a companion clean-reference artifact
@@ -89,6 +110,9 @@ The matching dependency L3 empty-app control is:
 node dist/commands/null-control.js --track ecommerce --level 3 \
   --recipe ecommerce.progression-catalog --out <new-null-artifact.json>
 ```
+
+Add repeated `--selected-check <stable-key>` options to run only the affected
+null controls. The keys must belong to the calibration's selected checks.
 
 A scored check must fail conclusively on the empty app. Zero awarded points alone
 are insufficient if the result is a harness failure or inconclusive. Check the

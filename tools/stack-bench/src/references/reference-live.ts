@@ -20,6 +20,7 @@ import { runBounded } from '../runtime/bounded-process.js';
 import { calibrationQualificationIdentity, mutationExecutionSha256,
   resolveCalibrationForRelease } from '../composition/calibration-compiler.js';
 import { qualificationScopeIdentity } from '../composition/qualification-scope.js';
+import { writeQualificationSnapshot } from '../composition/qualification-slices.js';
 import { resolveRecipeRelease } from '../composition/recipe-release.js';
 import { isModularRecipeRelease } from '../composition/recipe-selection.js';
 import { isDeclaredLevel, listTracks, loadTrack } from '../composition/tracks.js';
@@ -1056,6 +1057,8 @@ async function main(): Promise<void> {
   finalizeQualificationArtifact(artifact,
     { referenceMutationOnly: Boolean(args.referenceMutationOnly) });
   writeRunJson(paths.artifactPath, artifact);
+  writeQualificationSnapshot(`${paths.artifactPath}.inputs.json`, context.binding.recipePath,
+    context.calibration, ROOT);
   if (companion) {
     finalizeQualificationArtifact(companion);
     writeRunJson(String(companionPath), companion);

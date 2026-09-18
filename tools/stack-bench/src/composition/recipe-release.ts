@@ -358,6 +358,14 @@ export function recipeReleaseIdentity(release: RecipeRelease): RecipeReleaseIden
 export function buildRecipeRelease(recipePath: string, {
   trackRoot,
 }: { trackRoot?: string } = {}): RecipeRelease {
+  return buildRecipeQualificationDocuments(recipePath, { trackRoot }).release;
+}
+
+// Retain the exact hash inputs, so evidence reuse can compare setup and shared
+// inputs without trusting a hand-authored list of supposedly unchanged checks.
+export function buildRecipeQualificationDocuments(recipePath: string, {
+  trackRoot,
+}: { trackRoot?: string } = {}) {
   const absoluteRecipe = realpathSync(resolve(recipePath));
   const root = realpathSync(resolve(trackRoot ?? dirname(dirname(dirname(absoluteRecipe)))));
   const plan = compileRecipeFile(absoluteRecipe, { trackRoot: root });
@@ -365,7 +373,7 @@ export function buildRecipeRelease(recipePath: string, {
 }
 
 function buildCompiledRecipeRelease(absoluteRecipe: string, root: string,
-  plan: CompiledRecipePlan): RecipeRelease {
+  plan: CompiledRecipePlan) {
   const rawRecipe = readDefinitionJson(absoluteRecipe, 'recipe');
   const trackManifestPath = join(root, TRACK_MANIFEST_FILE);
   const trackManifest = compileTrackManifest(
@@ -568,7 +576,7 @@ function buildCompiledRecipeRelease(absoluteRecipe: string, root: string,
     })),
   });
   assertRecipeRelease(release);
-  return release;
+  return { release, meaning: meaningDocument, execution: executionDocument };
 }
 
 function sequentialBasePlan(plan: CompiledRecipePlan, track: { dir: string }, level: number): CompiledRecipePlan {
@@ -741,7 +749,7 @@ export function resolveRecipeRelease(track: Track, level: number,
   if (plan.recipe.sequence?.level && plan.recipe.sequence.level > 1) {
     assertSequentialBase(plan, catalog, track, level);
   }
-  const release = buildCompiledRecipeRelease(realpathSync(recipePath), realpathSync(track.dir), plan);
+  const { release } = buildCompiledRecipeRelease(realpathSync(recipePath), realpathSync(track.dir), plan);
   if (exact?.contentSha256 && release.contentSha256 !== exact.contentSha256) {
     throw new Error(`${exact.id} content changed: expected ${exact.contentSha256}, resolved ${release.contentSha256}`);
   }

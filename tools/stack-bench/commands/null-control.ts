@@ -16,6 +16,7 @@ import { readArtifactPayload, writeRunJson } from '../src/evidence/artifacts.js'
 import { calibrationQualificationIdentity, calibrationQualificationRelease,
   resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
 import { qualificationScopeIdentity } from '../src/composition/qualification-scope.js';
+import { writeQualificationSnapshot } from '../src/composition/qualification-slices.js';
 import { analyseNullReports } from '../src/evidence/null-control-analysis.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { resolveRecipeSelection } from '../src/composition/recipe-selection.js';
@@ -36,17 +37,20 @@ interface NullControlArgs {
   out?: string;
   audit: boolean;
   parentAttemptId?: string;
+  selectedChecks: string[];
 }
 
 export function parseNullControlArgs(argv: string[]): NullControlArgs {
   const { values } = parseNodeArgs({ args: argv.slice(2), options: {
     track: { type: 'string' }, level: { type: 'string' }, recipe: { type: 'string' },
     out: { type: 'string' }, audit: { type: 'boolean' }, 'parent-attempt-id': { type: 'string' },
+    'selected-check': { type: 'string', multiple: true },
   } });
   const args: NullControlArgs = {
     tracks: values.track?.split(',').filter(Boolean) ?? listTracks(),
     level: values.level === undefined ? null : Number(values.level), audit: values.audit ?? false,
     recipe: values.recipe, out: values.out, parentAttemptId: values['parent-attempt-id'],
+    selectedChecks: values['selected-check'] ?? [],
   };
   if (args.level !== null && (!Number.isInteger(args.level) || args.level < 1)) {
     throw new Error('--level must be a positive integer');
@@ -55,6 +59,7 @@ export function parseNullControlArgs(argv: string[]): NullControlArgs {
     throw new Error('--level requires exactly one --track');
   }
   if (args.recipe && args.level === null) throw new Error('--recipe requires --level');
+  if (args.selectedChecks.length && args.level === null) throw new Error('--selected-check requires --level');
   return args;
 }
 
@@ -128,8 +133,14 @@ export function selectNullQualificationBinding(binding: RecipeBinding, calibrati
   return { ...binding, release: selected.release, execution: selected.execution };
 }
 
-export function createNullQualification(binding: RecipeBinding, calibration: CalibrationPlan) {
-  const selectedBinding = selectNullQualificationBinding(binding, calibration);
+export function createNullQualification(binding: RecipeBinding, calibration: CalibrationPlan,
+  selectedChecks: string[] = []) {
+  let selectedBinding = selectNullQualificationBinding(binding, calibration);
+  if (selectedChecks.length) {
+    const selected = calibrationQualificationRelease({ qualification: { checks: selectedChecks } },
+      selectedBinding.release, selectedBinding.execution);
+    selectedBinding = { ...selectedBinding, ...selected };
+  }
   const selection = resolveRecipeSelection(selectedBinding.release, {
     checkKeys: selectedBinding.release.checkCatalog.map(check => check.stableKey),
   });
@@ -189,7 +200,7 @@ async function main() {
         const calibration = resolveCalibrationForRelease(binding.release,
           { trackRoot: track.dir, stackBenchRoot: ROOT, alias: `L${args.level}` });
         if (!calibration) throw new Error(`${trackName} L${args.level} has no calibration`);
-        qualification = createNullQualification(binding, calibration);
+        qualification = createNullQualification(binding, calibration, args.selectedChecks);
         binding = qualification.binding;
       }
       const selectedSuites = nullControlSuites(track, args.level, binding);
@@ -242,6 +253,8 @@ async function main() {
     };
     const outputPath = resolve(args.out ?? join(ROOT, 'results', `${artifact.id}.json`));
     writeRunJson(outputPath, artifact);
+    if (qualification) writeQualificationSnapshot(`${outputPath}.inputs.json`,
+      qualification.binding.recipePath, qualification.calibration, ROOT);
     console.log(JSON.stringify({
       id: artifact.id,
       kind: artifact.kind,

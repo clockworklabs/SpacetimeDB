@@ -228,7 +228,7 @@ export function qualificationReadiness(trackName: string, level: number, recipe:
     requiredEvidence,
     defectChecks,
     artifactPaths,
-    commands: [
+    commands: qualificationBlockers.length === 0 ? [] : [
       ...stacks.flatMap(stack => [
         ...(!combinedReferenceEvidence ? [
           `qualify-reference --backend ${stack} --track ${trackName} --level ${qualificationLevel}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.referenceRepetitions} --out ${artifactPaths.references[stack]}`,

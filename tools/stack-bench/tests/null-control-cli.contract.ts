@@ -3,7 +3,9 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
-import { nullControlSuites, parseNullControlArgs } from '../commands/null-control.js';
+import { createNullQualification, nullControlSuites, parseNullControlArgs } from '../commands/null-control.js';
+import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { requireRecipeRelease as resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import type { RecipeCheck } from '../src/composition/recipe-release.js';
 import { selectScenarioChecks } from '../src/composition/recipe-selection.js';
@@ -40,6 +42,21 @@ test('null qualification can select one exact track and level', () => {
   const track = loadTrack('ecommerce');
   assert.deepEqual(nullControlSuites(track, 2).map(suite => suite.level), [2, 2, 2, 2, 2]);
   assert.throws(() => nullControlSuites(track, 4), /not declared/);
+});
+
+test('targeted null selection keeps only calibrated checks and their execution', () => {
+  const track = loadTrack('ecommerce');
+  const binding = resolveRecipeRelease(track, 1, 'ecommerce.sequential-l1');
+  const calibration = resolveCalibrationForRelease(binding.release,
+    { trackRoot: track.dir, stackBenchRoot: STACK_BENCH_ROOT, alias: 'L1' })!;
+  const key = binding.release.checkCatalog[0]!.stableKey;
+  const args = parseNullControlArgs(['node', 'null-control.js', '--track', 'ecommerce',
+    '--level', '1', '--selected-check', key]);
+  const selected = createNullQualification(binding, calibration, args.selectedChecks);
+  assert.deepEqual(selected.binding.release.checkCatalog.map(check => check.stableKey), [key]);
+  assert.equal(selected.binding.execution.length, 1);
+  assert.throws(() => createNullQualification(binding, calibration, ['unknown']), /unknown checks/);
+  assert.throws(() => parseNullControlArgs(['node', 'null-control.js', '--selected-check', key]), /requires --level/);
 });
 
 test('recipe-bound null qualification grades the exact modular execution and checks', () => {

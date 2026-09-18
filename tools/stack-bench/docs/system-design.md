@@ -92,7 +92,9 @@ state, not an accepted final explanation.
 - Compile and inspect before any model call.
 - Run focused source checks after a change. Run the integrated source gate once
   for the final source identity.
-- Reuse qualification evidence only when all bound hashes match.
+- Reuse qualification evidence only when its bound inputs match, or a validated
+  evidence slice proves unchanged scope and a reviewed executable equivalence
+  decision covers any runtime hash change. Preserve the original artifacts.
 - Do not repeat reference, mutation, or null work for unchanged scope.
 - Stop new paid attempts after a harness, provider, host, or operator failure.
 - Retry only when the frozen attempt policy permits it. Extra repair grants
