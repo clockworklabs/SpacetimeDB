@@ -87,8 +87,21 @@ async fn call(
     reducer: &str,
     args: ProductValue,
 ) -> anyhow::Result<()> {
+    let args = if reducer == "private_only" {
+        // The fixture uses an existing private scheduled reducer, without new visibility syntax.
+        FunctionArgs::Bsatn(
+            bsatn::to_vec(&((
+                0u64,
+                spacetimedb_lib::ScheduleAt::Time(spacetimedb_lib::Timestamp::UNIX_EPOCH),
+            ),))
+            .unwrap()
+            .into(),
+        )
+    } else {
+        arguments(args)
+    };
     module
-        .call_reducer(caller, connection, None, None, None, reducer, arguments(args))
+        .call_reducer(caller, connection, None, None, None, reducer, args)
         .await?
         .outcome
         .into_result()

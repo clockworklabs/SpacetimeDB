@@ -137,7 +137,7 @@ fn container_only_changes_and_old_retries_preserve_the_current_module() {
             assert_eq!(current_deployment(tx).unwrap().unwrap().0, newest);
             assert_eq!(tx.table_row_count(ST_DEPLOYMENT_OPERATION_ID), Some(3));
         });
-        current.call_reducer(Identity::ZERO, None, None, None, None, "private_only", FunctionArgs::Nullary).await.unwrap().outcome.into_result().unwrap();
+        current.call_reducer(Identity::ZERO, None, None, None, None, "private_only", FunctionArgs::Bsatn(spacetimedb_lib::bsatn::to_vec(&((0u64, spacetimedb_lib::ScheduleAt::Time(spacetimedb_lib::Timestamp::UNIX_EPOCH)),)).unwrap().into())).await.unwrap().outcome.into_result().unwrap();
 
         // A stale CAS and a forged association between bytes and declaration
         // cannot change either component, and rejection leaves service usable.

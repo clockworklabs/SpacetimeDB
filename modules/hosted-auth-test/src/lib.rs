@@ -55,13 +55,22 @@ pub fn inspect_context(
     }
 }
 
-#[spacetimedb::reducer(internal)]
+#[spacetimedb::reducer]
 pub fn internal_only(ctx: &ReducerContext) {
     assert!(ctx.sender_auth().is_internal());
 }
 
-#[spacetimedb::reducer(private)]
-pub fn private_only(_ctx: &ReducerContext) {}
+// Scheduled reducers already have private visibility in the existing V10 ABI.
+// This table is never populated; calls below exercise admission directly.
+#[spacetimedb::table(accessor = private_jobs, scheduled(private_only))]
+pub struct PrivateJob {
+    #[primary_key]
+    id: u64,
+    scheduled_at: spacetimedb::ScheduleAt,
+}
+
+#[spacetimedb::reducer]
+pub fn private_only(_ctx: &ReducerContext, _job: PrivateJob) {}
 
 #[spacetimedb::reducer]
 pub fn inspect_observation(
