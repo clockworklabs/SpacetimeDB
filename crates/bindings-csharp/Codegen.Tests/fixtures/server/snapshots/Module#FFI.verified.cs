@@ -2348,7 +2348,7 @@ static class ModuleRegistration
             new(
                 SourceName: nameof(Init),
                 Params: [],
-                Visibility: SpacetimeDB.Internal.FunctionVisibility.Internal,
+                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
                 OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
                 ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
             );

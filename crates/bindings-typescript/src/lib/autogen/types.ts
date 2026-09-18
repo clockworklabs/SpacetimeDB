@@ -76,8 +76,6 @@ export type ExplicitNames = __Infer<typeof ExplicitNames>;
 export const FunctionVisibility = __t.enum('FunctionVisibility', {
   Private: __t.unit(),
   ClientCallable: __t.unit(),
-  Internal: __t.unit(),
-  ExplicitClientCallable: __t.unit(),
 });
 export type FunctionVisibility = __Infer<typeof FunctionVisibility>;
 

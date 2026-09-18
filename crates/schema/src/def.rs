@@ -1180,15 +1180,7 @@ impl From<ModuleDef> for RawModuleDefV10 {
                     RawIdentifier::from(rd.accessor_name.clone()),
                     RawIdentifier::from(rd.name.local().clone()),
                 );
-                let public_scheduled = rd.visibility.is_client_callable()
-                    && schedules
-                        .iter()
-                        .any(|schedule| schedule.function_name == RawIdentifier::from(rd.name.clone()));
-                let mut raw: RawReducerDefV10 = rd.into();
-                if public_scheduled {
-                    raw.visibility = RawFunctionVisibility::ExplicitClientCallable;
-                }
-                raw
+                rd.into()
             })
             .collect();
         if !raw_reducers.is_empty() {
@@ -1203,15 +1195,7 @@ impl From<ModuleDef> for RawModuleDefV10 {
                     RawIdentifier::from(pd.accessor_name.clone()),
                     RawIdentifier::from(pd.name.clone()),
                 );
-                let public_scheduled = pd.visibility.is_client_callable()
-                    && schedules
-                        .iter()
-                        .any(|schedule| schedule.function_name == RawIdentifier::from(pd.name.clone()));
-                let mut raw: RawProcedureDefV10 = pd.into();
-                if public_scheduled {
-                    raw.visibility = RawFunctionVisibility::ExplicitClientCallable;
-                }
-                raw
+                pd.into()
             })
             .collect();
         if !raw_procedures.is_empty() {
@@ -2372,9 +2356,6 @@ pub enum FunctionVisibility {
 
     /// Callable from client code.
     ClientCallable,
-
-    /// Callable only by a host-verified internal invocation.
-    Internal,
 }
 
 impl fmt::Display for FunctionVisibility {
@@ -2382,7 +2363,6 @@ impl fmt::Display for FunctionVisibility {
         f.write_str(match self {
             Self::Private => "Private",
             Self::ClientCallable => "Public",
-            Self::Internal => "Internal",
         })
     }
 }
@@ -2391,13 +2371,9 @@ impl FunctionVisibility {
     pub fn is_client_callable(&self) -> bool {
         matches!(self, Self::ClientCallable)
     }
-    pub fn is_internal(&self) -> bool {
-        matches!(self, Self::Internal)
-    }
     /// Lifecycle event dispatch is a separate restriction from this predicate.
     pub fn allows_invocation(&self, is_internal: bool, is_authorized_private_caller: bool) -> bool {
         match self {
-            Self::Internal => is_internal,
             Self::Private => is_internal || is_authorized_private_caller,
             Self::ClientCallable => true,
         }
@@ -2412,10 +2388,7 @@ impl From<RawFunctionVisibility> for FunctionVisibility {
     fn from(val: RawFunctionVisibility) -> Self {
         match val {
             RawFunctionVisibility::Private => FunctionVisibility::Private,
-            RawFunctionVisibility::ClientCallable | RawFunctionVisibility::ExplicitClientCallable => {
-                FunctionVisibility::ClientCallable
-            }
-            RawFunctionVisibility::Internal => FunctionVisibility::Internal,
+            RawFunctionVisibility::ClientCallable => FunctionVisibility::ClientCallable,
         }
     }
 }
@@ -2431,7 +2404,6 @@ impl From<FunctionVisibility> for RawFunctionVisibility {
         match val {
             FunctionVisibility::Private => Self::Private,
             FunctionVisibility::ClientCallable => Self::ClientCallable,
-            FunctionVisibility::Internal => Self::Internal,
         }
     }
 }
