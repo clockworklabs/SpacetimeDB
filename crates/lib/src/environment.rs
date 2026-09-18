@@ -10,7 +10,7 @@ pub const MAX_ENV_UNION_ENTRIES: usize = 256;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EnvironmentValidationError {
     InvalidKey,
-    ValueTooLarge,
+    InvalidValue,
     TooManyVariables,
 }
 
@@ -18,7 +18,7 @@ impl std::fmt::Display for EnvironmentValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             Self::InvalidKey => "invalid POSIX environment variable name (maximum 256 bytes)",
-            Self::ValueTooLarge => "environment value exceeds 8192 UTF-8 bytes",
+            Self::InvalidValue => "invalid environment value (maximum 8192 bytes)",
             Self::TooManyVariables => "environment store exceeds 256 variables",
         })
     }
@@ -40,8 +40,8 @@ pub fn validate_key(key: &str) -> Result<(), EnvironmentValidationError> {
 
 /// NUL is representable in the database. Container launch separately rejects it.
 pub fn validate_value(value: &str) -> Result<(), EnvironmentValidationError> {
-    if value.len() > MAX_ENV_VALUE_BYTES {
-        return Err(EnvironmentValidationError::ValueTooLarge);
+    if value.len() > MAX_ENV_VALUE_BYTES || value.contains('\0') {
+        return Err(EnvironmentValidationError::InvalidValue);
     }
     Ok(())
 }
