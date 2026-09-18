@@ -20,6 +20,29 @@ public partial struct AuthSummary
 
 public static partial class Functions
 {
+#pragma warning disable STDB_UNSTABLE
+    [ClientVisibilityFilter]
+    public static readonly Filter ProtectedRows = new Filter.Sql(
+        "SELECT * FROM \"MyAuth\".protected_row WHERE owner = :sender"
+    );
+#pragma warning restore STDB_UNSTABLE
+
+    // Test setup deliberately permits writing for either client; RLS restricts reads, not reducers.
+    [Reducer]
+    public static void WriteProtectedRow(ReducerContext ctx, uint id, Identity owner, uint value)
+    {
+        var row = new AuthLib.ProtectedRow
+        {
+            Id = id,
+            Owner = owner,
+            Value = value,
+        };
+        if (ctx.Db.MyAuth.ProtectedRow.Id.Find(id) is null)
+            ctx.Db.MyAuth.ProtectedRow.Insert(row);
+        else
+            ctx.Db.MyAuth.ProtectedRow.Id.Update(row);
+    }
+
     [Reducer]
     public static void Exercise(ReducerContext ctx)
     {

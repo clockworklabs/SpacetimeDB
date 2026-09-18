@@ -6,6 +6,15 @@ namespace AuthLib;
 
 public class Marker { }
 
+[Table(Accessor = "ProtectedRow", Public = true)]
+public partial struct ProtectedRow
+{
+    [PrimaryKey]
+    public uint Id;
+    public Identity Owner;
+    public uint Value;
+}
+
 [Table(Accessor = "User", Name = "auth_users", Public = true)]
 [SpacetimeDB.Index.BTree(Accessor = "ByScore", Columns = [nameof(Score)])]
 public partial struct User
