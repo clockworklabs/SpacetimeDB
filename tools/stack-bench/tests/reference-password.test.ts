@@ -3,9 +3,46 @@ import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
-import { promisify } from 'node:util';
+import { format, promisify } from 'node:util';
 import ts from 'typescript';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
+
+test('reference request error handlers do not log credentials in parser or database errors', () => {
+  for (const stack of ['postgres', 'mongodb']) {
+    const source = readFileSync(join(STACK_BENCH_ROOT,
+      `reference-apps/ecommerce/${stack}/server/src/index.ts`), 'utf8');
+    const file = ts.createSourceFile('index.ts', source, ts.ScriptTarget.Latest, true);
+    const handlers: ts.ArrowFunction[] = [];
+    const visit = (node: ts.Node): void => {
+      if (ts.isCallExpression(node) && node.expression.getText(file) === 'app.use') {
+        const handler = node.arguments[0];
+        if (handler && ts.isArrowFunction(handler) && handler.parameters.length === 4) handlers.push(handler);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(file);
+    assert.equal(handlers.length, 1, 'Exercise the actual global request error handler');
+    const code = ts.transpileModule(`const handler = ${handlers[0]!.getText(file)};`, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    const logs: string[] = [];
+    const handler = new Function('console', `${code}; return handler;`)({
+      error: (...args: unknown[]) => logs.push(format(...args)),
+    });
+    const marker = 'synthetic-private-password';
+    for (const error of [Object.assign(new SyntaxError(marker), { body: marker, type: 'entity.parse.failed' }),
+      Object.assign(new Error(marker), { detail: marker, query: marker, parameters: [marker] })]) {
+      let status = 0;
+      let body: unknown;
+      const response = { status(value: number) { status = value; return this; }, json(value: unknown) { body = value; } };
+      handler(error, {}, response, () => assert.fail('Error must be handled'));
+      assert.equal(status, 500);
+      assert(!JSON.stringify(body).includes(marker));
+    }
+    assert.equal(logs.length, 2, 'Failures remain visible in the log');
+    assert(logs.every(line => !line.includes(marker)), 'Never log the raw error or its nested fields');
+  }
+});
 
 test('reference password helpers preserve full UTF-8 passwords with bounded asynchronous scrypt', async t => {
   for (const stack of ['postgres', 'mongodb']) {

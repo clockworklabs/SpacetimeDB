@@ -982,8 +982,9 @@ app.get(/^\/(?!api(?:\/|$)).*/, (_req, res) => res.sendFile(join(clientDist, "in
 
 // ---------- error handler ----------
 
-app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-  console.error(err);
+app.use((_err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  // Parser and database errors can contain credentials or the complete request body.
+  console.error("Unhandled request failure");
   res.status(500).json({ error: "internal server error" });
 });
 

@@ -949,8 +949,9 @@ const clientDist = join(fileURLToPath(new URL(".", import.meta.url)), "../../cli
 app.use(express.static(clientDist));
 app.get(/^\/(?!api(?:\/|$)).*/, (_req, res) => res.sendFile(join(clientDist, "index.html")));
 
-app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error(err);
+app.use((_err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  // Parser and database errors can contain credentials or the complete request body.
+  console.error("Unhandled request failure");
   res.status(500).json({ error: "Internal server error" });
 });
 
