@@ -16,11 +16,14 @@ use completion::CompletionHandle;
 mod executor;
 use executor::{Executor, Sqe};
 
+mod faults;
+pub use faults::{FaultInjector, FifoAll, FifoOne, IndexSelector, TaskSelector};
+
 mod fs;
 pub use fs::File;
 
 pub use crate::{
-    sim::executor::{FaultInjector, LinkKind, Options, TaskSelector},
+    sim::executor::{LinkKind, Options},
     SECTOR_SIZE,
 };
 
@@ -261,15 +264,39 @@ impl SpacetimeIO for SimulatorIO {
 
 #[cfg(test)]
 mod tests {
+    use core::num::NonZeroUsize;
+
     use spacetimedb_runtime_core::sim::Rng;
 
-    use crate::SECTOR_SIZE64;
-
     use super::*;
+    use crate::{sim::faults::TaskSelection, SECTOR_SIZE64};
 
-    impl TaskSelector for Rng {
-        fn select_tasks(&self, task_count: usize) -> impl IntoIterator<Item = usize> {
-            (task_count > 0).then(|| self.index(task_count))
+    struct RandomTaskSelector<'a> {
+        rng: &'a Rng,
+    }
+
+    impl TaskSelector for RandomTaskSelector<'_> {
+        type IndexSelector<'a>
+            = &'a Rng
+        where
+            Self: 'a;
+
+        fn select_tasks(&self, task_count: NonZeroUsize) -> TaskSelection<Self::IndexSelector<'_>> {
+            let count = NonZeroUsize::new(self.rng.index(task_count.get())).unwrap_or(NonZeroUsize::MIN);
+            if self.rng.sample_probability(0.5) {
+                TaskSelection::Fifo { count }
+            } else {
+                TaskSelection::Any {
+                    count,
+                    select: self.rng,
+                }
+            }
+        }
+    }
+
+    impl IndexSelector for &Rng {
+        fn select_index(&mut self, range_upper: NonZeroUsize) -> usize {
+            self.index(range_upper.get())
         }
     }
 
@@ -292,7 +319,7 @@ mod tests {
 
         fn run<T: 'static>(&self, f: impl FnOnce(&SimulatorIO) -> Completion<T>) -> T {
             let fut = self.rt.spawn_local(f(&self.io));
-            while self.io.tick(&self.rng, &mut ()) {}
+            while self.io.tick(&RandomTaskSelector { rng: &self.rng }, &mut ()) {}
             self.rt.block_on(fut).unwrap()
         }
 

@@ -1,4 +1,4 @@
-use alloc::{collections::VecDeque, vec::Vec};
+use alloc::collections::VecDeque;
 use core::{
     iter::{Map, Scan},
     num::NonZeroUsize,
@@ -9,26 +9,18 @@ use core::{
 use slab::Slab;
 
 use crate::{
-    sim::{completion::CompletionHandle, fs, Error},
+    sim::{
+        completion::CompletionHandle,
+        faults::{EitherOrBoth, IndexSelector, TaskSelection, TaskSelector},
+        fs::{self, Datasync},
+        Error, FaultInjector,
+    },
     ErasedBox, ErrorWith, Statx, SECTOR_SIZE, SECTOR_SIZE64,
 };
-
-pub use crate::sim::fs::Datasync;
 
 mod sqe;
 use sqe::SqeInner;
 pub use sqe::{LinkKind, Sqe, SqeId};
-
-pub trait TaskSelector {
-    /// Deterministically select zero or more tasks to advance.
-    ///
-    /// `task_count` is the number of currently outstanding tasks. The returned
-    /// iterator must return indexes in the range `0..task_count` and not yield
-    /// duplicate elements.
-    ///
-    /// Called once per [Executor::tick].
-    fn select_tasks(&self, task_count: usize) -> impl IntoIterator<Item = usize>;
-}
 
 // TODO: There is no difference between fsync and fdatasync until we extend
 // [Statx] with additional fields.
@@ -287,111 +279,6 @@ impl Executing {
     }
 }
 
-pub enum Fault<T> {
-    /// Drop the operation entirely.
-    ///
-    /// Note that this is not generally possible in `io-uring`: an SQE always
-    /// yields a CQE, even if it was cancelled or returned an error. It may be
-    /// useful occasionally to construct "byzantine" failures.
-    Skip,
-    /// Put the operation back onto the queue for later execution.
-    Delay(T),
-    /// Execute a visible effect.
-    Visible(Effect<T>),
-}
-
-impl<T> Fault<T> {
-    fn exec_visible(self, f: impl FnOnce(EitherOrBoth<T, Error>)) -> Option<T> {
-        match self {
-            Fault::Skip => None,
-            Fault::Delay(effect) => Some(effect),
-            Fault::Visible(visible) => {
-                visible.exec(f);
-                None
-            }
-        }
-    }
-}
-
-pub enum Effect<T> {
-    /// Run the operation as normal.
-    Run(T),
-    /// Run the effect, but report an injected error.
-    RunThenError { effect: T, error: Error },
-    /// Skip the effect, but report an injected error.
-    SkipThenError { error: Error },
-}
-
-impl<T> Effect<T> {
-    fn exec(self, f: impl FnOnce(EitherOrBoth<T, Error>)) {
-        use EitherOrBoth::*;
-        match self {
-            Effect::Run(effect) => f(Left(effect)),
-            Effect::RunThenError { effect, error } => f(Both(effect, error)),
-            Effect::SkipThenError { error } => f(Right(error)),
-        }
-    }
-}
-
-enum EitherOrBoth<T, U> {
-    Left(T),
-    Right(U),
-    Both(T, U),
-}
-
-impl<T, U> EitherOrBoth<T, U> {
-    fn traverse<V>(self, f: impl FnOnce(T) -> V, g: impl FnOnce(U) -> V) -> V {
-        match self {
-            Self::Left(t) => f(t),
-            Self::Right(u) => g(u),
-            Self::Both(t, u) => {
-                f(t);
-                g(u)
-            }
-        }
-    }
-}
-
-pub trait FaultInjector<UserData> {
-    fn inject_write_sector_fault(&mut self, _: &InFlight<UserData>, op: WriteSector) -> Fault<WriteSector> {
-        Fault::Visible(Effect::Run(op))
-    }
-
-    fn inject_read_sector_fault(&mut self, _: &InFlight<UserData>, op: ReadSector) -> Fault<ReadSector> {
-        Fault::Visible(Effect::Run(op))
-    }
-
-    fn inject_open_fault(&mut self, _: &InFlight<UserData>) -> Fault<()> {
-        Fault::Visible(Effect::Run(()))
-    }
-
-    fn inject_create_fault(&mut self, _: &InFlight<UserData>) -> Fault<()> {
-        Fault::Visible(Effect::Run(()))
-    }
-
-    fn inject_stat_fault(&mut self, _: &InFlight<UserData>) -> Fault<()> {
-        Fault::Visible(Effect::Run(()))
-    }
-
-    fn inject_fallocate_fault(&mut self, _: &InFlight<UserData>) -> Fault<()> {
-        Fault::Visible(Effect::Run(()))
-    }
-
-    fn inject_fsync_fault(&mut self, _: &InFlight<UserData>, op: FsyncEffect) -> Fault<FsyncEffect> {
-        Fault::Visible(Effect::Run(op))
-    }
-
-    fn inject_fdatasync_fault(&mut self, _: &InFlight<UserData>, op: Datasync) -> Fault<Datasync> {
-        Fault::Visible(Effect::Run(op))
-    }
-
-    fn inject_noop_fault(&mut self, _: &InFlight<UserData>) -> Fault<()> {
-        Fault::Visible(Effect::Run(()))
-    }
-}
-
-impl<UserData> FaultInjector<UserData> for () {}
-
 /// Completion queue overflow policy.
 ///
 /// Note that we do **not** model `IORING_FEAT_NODROP`, because we never want
@@ -470,9 +357,7 @@ pub struct Executor<UserData> {
     completions: VecDeque<Cqe<UserData>>,
 
     in_flight: Slab<InFlight<UserData>>,
-    executing: Vec<Executing>,
-    // Scratch space for task selector
-    select_executing: Vec<usize>,
+    executing: VecDeque<Executing>,
 
     fs: fs::Filesystem,
 
@@ -489,8 +374,7 @@ impl<UserData> Executor<UserData> {
             submissions: VecDeque::with_capacity(sq_capacity),
             completions: VecDeque::with_capacity(cq_capacity),
             in_flight: Slab::with_capacity(2 * sq_capacity),
-            executing: Vec::with_capacity(options.max_concurrency()),
-            select_executing: Vec::with_capacity(options.max_concurrency()),
+            executing: VecDeque::with_capacity(options.max_concurrency()),
             fs: fs::Filesystem::new(fs_capacity),
             cq_overflow: options.cq_overflow,
             cq_dropped: 0,
@@ -531,7 +415,7 @@ impl<UserData> Executor<UserData> {
         self.cq_dropped = 0;
 
         self.completed().for_each(&mut complete);
-        while let Some(op) = self.executing.pop() {
+        while let Some(op) = self.executing.pop_front() {
             if let Some(in_flight) = self.in_flight.get(op.sqe.key())
                 && !in_flight.is_active()
             {
@@ -673,7 +557,7 @@ impl<UserData> Executor<UserData> {
                 continue;
             };
             if let Some(op) = pending.next() {
-                self.executing.push(Executing {
+                self.executing.push_back(Executing {
                     sqe: SqeId(sqe_id),
                     inner: op,
                 });
@@ -687,25 +571,41 @@ impl<UserData> Executor<UserData> {
     fn execute(&mut self, task_selector: &impl TaskSelector, faults: &mut impl FaultInjector<UserData>) -> bool {
         let mut progress = false;
 
-        self.select_executing.clear();
-        self.select_executing.extend(
-            task_selector
-                .select_tasks(self.executing.len())
-                .into_iter()
-                .take(self.executing.len()),
-        );
-        self.select_executing.sort_unstable_by(|a, b| b.cmp(a));
-
-        let mut prev = None;
-        for i in 0..self.select_executing.len() {
-            let index = self.select_executing[i];
-            assert_ne!(prev, Some(index), "duplicate task selected");
-            prev = Some(index);
-            let op = self.executing.swap_remove(index);
-            if let Some(delay) = self.execute_op(op, faults) {
-                self.executing.push(delay);
+        let mut run = |this: &mut Executor<UserData>, op| {
+            if let Some(delay) = this.execute_op(op, faults) {
+                this.executing.push_back(delay);
             }
             progress |= true;
+        };
+
+        let Some(remaining) = NonZeroUsize::new(self.executing.len()) else {
+            return progress;
+        };
+        match task_selector.select_tasks(remaining) {
+            TaskSelection::Fifo { count } => {
+                let mut count = count.get();
+                while count > 0 {
+                    let Some(op) = self.executing.pop_front() else {
+                        break;
+                    };
+                    run(self, op);
+                    count -= 1;
+                }
+            }
+            TaskSelection::Any { count, mut select } => {
+                let mut count = count.get();
+                while count > 0 {
+                    let Some(op) = (|| -> Option<Executing> {
+                        let remaining = NonZeroUsize::new(self.executing.len())?;
+                        let index = select.select_index(remaining);
+                        self.executing.swap_remove_front(index)
+                    })() else {
+                        break;
+                    };
+                    run(self, op);
+                    count -= 1;
+                }
+            }
         }
 
         progress
