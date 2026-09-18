@@ -21,12 +21,13 @@ describe('chat module unit tests', () => {
 
     test.withReducerTx(testAuth('alice', 1n), ctx => {
       alice = ctx.sender;
-      moduleExports.onConnect(ctx);
+      moduleExports.onConnect(ctx, {});
       moduleExports.set_name(ctx, { name: 'Alice' });
       moduleExports.send_message(ctx, { text: 'hello' });
     });
 
     expect(alice).toBeDefined();
+    if (!alice) throw new Error('expected Alice to be initialized');
     const user = test.db.user.identity.find(alice);
     expect(user?.identity.toHexString()).toBe(alice.toHexString());
     expect(user?.name).toBe('Alice');
@@ -43,11 +44,12 @@ describe('chat module unit tests', () => {
 
     ctx.withTx(tx => {
       alice = tx.sender;
-      moduleExports.onConnect(tx);
+      moduleExports.onConnect(tx, {});
       moduleExports.set_name(tx, { name: 'Alice' });
     });
 
     expect(alice).toBeDefined();
+    if (!alice) throw new Error('expected Alice to be initialized');
     expect(test.db.user.identity.find(alice)?.name).toBe('Alice');
   });
 
@@ -57,16 +59,16 @@ describe('chat module unit tests', () => {
     const bobAuth = testAuth('bob', 2n);
 
     test.withReducerTx(aliceAuth, ctx => {
-      moduleExports.onConnect(ctx);
+      moduleExports.onConnect(ctx, {});
       moduleExports.send_message(ctx, { text: 'hello from alice' });
     });
     test.withReducerTx(bobAuth, ctx => {
-      moduleExports.onConnect(ctx);
+      moduleExports.onConnect(ctx, {});
       moduleExports.send_message(ctx, { text: 'hello from bob' });
     });
 
     const viewCtx = test.viewContext(aliceAuth);
-    const aliceMessages = test.runQuery(
+    const aliceMessages = test.runQuery<{ text: string }>(
       viewCtx.from.message.where(message => message.text.eq('hello from alice'))
     );
 
