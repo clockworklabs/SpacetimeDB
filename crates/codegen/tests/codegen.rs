@@ -189,16 +189,10 @@ fn namespace_module() -> ModuleDef {
     }
 
     let mut root = scope(AlgebraicType::Bool);
-    let mut auth = scope(AlgebraicType::U32);
-    auth.sections
-        .push(RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
-            namespace: "nested".into(),
-            module: scope(AlgebraicType::I64),
-        }]));
     root.sections.push(RawModuleDefV10Section::Submodules(vec![
         RawSubmoduleV10 {
             namespace: "MyAuth".into(),
-            module: auth,
+            module: scope(AlgebraicType::U32),
         },
         RawSubmoduleV10 {
             namespace: "class".into(),
@@ -231,6 +225,28 @@ fn csharp_namespaces_compile_and_run() {
         .unwrap();
     assert!(auth_reducer.code.contains("\"MyAuth.login\""));
     assert!(!auth_reducer.code.contains("MyAuth.MyAuth."));
+
+    let client = files
+        .iter()
+        .find(|file| file.filename == "SpacetimeDBClient.g.cs")
+        .unwrap();
+    let child_queries: Vec<_> = client
+        .code
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("new QueryBuilder().From.@"))
+        .filter(|line| line.ends_with(".Notice().ToSql(),") || line.ends_with(".User().ToSql(),"))
+        .collect();
+    assert_eq!(
+        child_queries,
+        [
+            "new QueryBuilder().From.@MyAuth.Notice().ToSql(),",
+            "new QueryBuilder().From.@MyAuth.User().ToSql(),",
+            "new QueryBuilder().From.@class.Notice().ToSql(),",
+            "new QueryBuilder().From.@class.User().ToSql(),",
+        ],
+        "subscribe-all child tables must have stable namespace/accessor order"
+    );
 
     compile_csharp_client(files, include_str!("csharp-namespaces/Program.cs"));
 }

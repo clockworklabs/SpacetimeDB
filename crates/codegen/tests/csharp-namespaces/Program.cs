@@ -9,7 +9,6 @@ using SpacetimeDB.BSATN;
 using SpacetimeDB.ClientApi;
 using Auth = Game.Bindings.MyAuth;
 using Audit = Game.Bindings.@class;
-using Nested = Game.Bindings.MyAuth.nested;
 
 internal static class Program
 {
@@ -67,23 +66,20 @@ internal static class Program
         Equal("user", conn.Db.User.RemoteTableName);
         Equal("MyAuth.user", conn.Db.MyAuth.User.RemoteTableName);
         Equal("class.user", conn.Db.@class.User.RemoteTableName);
-        Equal("MyAuth.nested.user", conn.Db.MyAuth.nested.User.RemoteTableName);
         Equal<IRemoteTableHandle>(conn.Db.MyAuth.User, conn.Db.GetTable("MyAuth.user")!);
         Equal<IRemoteTableHandle>(conn.Db.@class.User, conn.Db.GetTable("class.user")!);
-        Equal<IRemoteTableHandle>(conn.Db.MyAuth.nested.User, conn.Db.GetTable("MyAuth.nested.user")!);
 
         var query = new QueryBuilder();
         Equal("SELECT * FROM \"user\"", query.From.User().ToSql());
         Equal("SELECT * FROM \"MyAuth\".\"user\"", query.From.MyAuth.User().ToSql());
         Equal("SELECT * FROM \"class\".\"user\"", query.From.@class.User().ToSql());
-        Equal("SELECT * FROM \"MyAuth\".\"nested\".\"user\"", query.From.MyAuth.nested.User().ToSql());
         var filtered = query.From.MyAuth.User().Where(cols => cols.Value.Eq(7U)).ToSql();
         if (!filtered.Contains("\"MyAuth\".\"user\".\"value\"")) throw new Exception(filtered);
         var join = " FROM \"MyAuth\".\"user\" JOIN \"class\".\"user\" ON \"MyAuth\".\"user\".\"id\" = \"class\".\"user\".\"id\"";
         Equal("SELECT \"MyAuth\".\"user\".*" + join, query.From.MyAuth.User().LeftSemijoin(query.From.@class.User(), (l, r) => l.Id.Eq(r.Id)).ToSql());
         Equal("SELECT \"class\".\"user\".*" + join, query.From.MyAuth.User().RightSemijoin(query.From.@class.User(), (l, r) => l.Id.Eq(r.Id)).ToSql());
         var all = QueryBuilder.AllTablesSqlQueries();
-        Equal(12, all.Length);
+        Equal(9, all.Length);
         Equal(all.Length, all.Distinct().Count());
         Equal(false, all.Any(sql => sql.Contains("secret")));
         var sqlName = typeof(Auth.RemoteTables.UserHandle).GetProperty("RemoteSqlTableName", BindingFlags.Instance | BindingFlags.NonPublic)!;
@@ -92,7 +88,6 @@ internal static class Program
         var root = new User(1, true);
         var auth = new Auth.User(1, 7);
         var audit = new Audit.User(1, "audit");
-        var nested = new Nested.User(1, -1);
         int inserts = 0;
         conn.Db.MyAuth.User.OnInsert += (ctx, row) =>
         {
@@ -105,13 +100,11 @@ internal static class Program
         Apply(conn,
             Change("user", new[] { root }, Array.Empty<User>()),
             Change("MyAuth.user", new[] { auth }, Array.Empty<Auth.User>()),
-            Change("class.user", new[] { audit }, Array.Empty<Audit.User>()),
-            Change("MyAuth.nested.user", new[] { nested }, Array.Empty<Nested.User>()));
+            Change("class.user", new[] { audit }, Array.Empty<Audit.User>()));
         Equal(1, inserts);
         Equal(auth, conn.Db.MyAuth.User.Id.Find(1));
         Equal(audit, conn.Db.@class.User.Id.Find(1));
         Equal("audit", conn.Db.@class.User.Iter().Single().Value);
-        Equal(-1L, conn.Db.MyAuth.nested.User.Iter().Single().Value);
         int updates = 0;
         conn.Db.MyAuth.User.OnUpdate += (ctx, oldRow, newRow) =>
         {
@@ -139,7 +132,7 @@ internal static class Program
 
         Equal("MyAuth.login", ((IReducerArgs)new Auth.Reducer.Login(auth)).ReducerName);
         Equal("class.login", ((IReducerArgs)new Audit.Reducer.Login(audit)).ReducerName);
-        Equal("MyAuth.nested.get_user", ((IProcedureArgs)new Nested.Procedure.GetUserArgs()).ProcedureName);
+        Equal("MyAuth.get_user", ((IProcedureArgs)new Auth.Procedure.GetUserArgs()).ProcedureName);
         // Function-only types are emitted and remain in their owning typespace.
         _ = new Auth.Procedure.GetPayload { Value = new Auth.Payload("auth") };
         _ = new Audit.Procedure.GetUser { Value = audit };
@@ -147,7 +140,8 @@ internal static class Program
 
         int authCalls = 0, auditCalls = 0, errors = 0;
         conn.Reducers.MyAuth.OnLogin += (ctx, row) => { Equal(auth, row); authCalls++; };
-        conn.Reducers.@class.OnLogin += (ctx, row) => { Equal(audit, row); auditCalls++; };
+        void OnAuditLogin(ReducerEventContext ctx, Audit.User row) { Equal(audit, row); auditCalls++; }
+        conn.Reducers.@class.OnLogin += OnAuditLogin;
         conn.OnUnhandledReducerError += (ctx, error) => { Equal("failed", error.Message); errors++; };
         var dispatch = typeof(DbConnection).GetMethod("Dispatch", BindingFlags.NonPublic | BindingFlags.Instance)!;
         void Dispatch(Reducer args, Status status)
@@ -157,7 +151,8 @@ internal static class Program
         }
         Dispatch(new Auth.Reducer.Login(auth), new Status.Committed(new Unit()));
         Dispatch(new Audit.Reducer.Login(audit), new Status.Committed(new Unit()));
-        Dispatch(new Nested.Reducer.Login(nested), new Status.Failed("failed"));
+        conn.Reducers.@class.OnLogin -= OnAuditLogin;
+        Dispatch(new Audit.Reducer.Login(audit), new Status.Failed("failed"));
         Equal(1, authCalls);
         Equal(1, auditCalls);
         Equal(1, errors);

@@ -61,6 +61,8 @@ internal static class Program
                 conn.Db.User.Count == 0
                     && conn.Db.MyAuth.User.Count == 0
                     && conn.Db.@class.User.Count == 0
+                    && conn.Db.MyAuth.ScheduleResult.Count == 0
+                    && conn.Db.@class.ScheduleResult.Count == 0
                     && conn.Db.ExtraRow.Count == 0,
                 "Unsubscribe must clear every namespace's table cache"
             );
@@ -111,7 +113,10 @@ internal static class Program
             EmptyCache();
 
             conn.Reducers.Extra();
-            Wait(() => conn.Db.ExtraRow.Count == 1, "dependency automatically registered in public");
+            Wait(
+                () => conn.Db.ExtraRow.Count == 1,
+                "dependency automatically registered in public"
+            );
             var exerciseDone = false;
             var atomicInsert = false;
             conn.Db.User.OnInsert += (ctx, row) =>
@@ -338,6 +343,115 @@ internal static class Program
                 "Subscribe-all omitted child tables or views"
             );
             Require(notices == 1, "Event rows must not be replayed as persistent rows");
+
+            foreach (var reducers in new object[] { conn.Reducers.MyAuth, conn.Reducers.@class })
+            {
+                Require(
+                    reducers.GetType().GetMethod("ReducerTick") == null
+                        && reducers.GetType().GetMethod("RunReducerJob") == null,
+                    "Scheduled reducers must not have client call methods"
+                );
+            }
+            foreach (
+                var procedureCalls in new object[]
+                {
+                    conn.Procedures.MyAuth,
+                    conn.Procedures.@class,
+                }
+            )
+            {
+                Require(
+                    procedureCalls.GetType().GetMethod("ProcedureTick") == null
+                        && procedureCalls.GetType().GetMethod("RunProcedureJob") == null,
+                    "Scheduled procedures must not have client call methods"
+                );
+            }
+
+            conn.Reducers.MyAuth.StartSchedules();
+            Wait(
+                () =>
+                    conn.Db.MyAuth.ScheduleResult.Count == 5
+                    && conn.Db.MyAuth.ScheduleResult.JobId.Find(5)?.Executions >= 2,
+                "Auth one-shot, immediate, and repeating schedules"
+            );
+            Require(
+                conn.Db.@class.ScheduleResult.Count == 0,
+                "Auth schedules must not execute Audit functions or write Audit tables"
+            );
+            conn.Reducers.@class.StartSchedules();
+            Wait(
+                () =>
+                    conn.Db.@class.ScheduleResult.Count == 5
+                    && conn.Db.@class.ScheduleResult.JobId.Find(5)?.Executions >= 2,
+                "Audit one-shot, immediate, and repeating schedules"
+            );
+            conn.Reducers.MyAuth.CancelSchedules();
+            conn.Reducers.@class.CancelSchedules();
+            Wait(
+                () =>
+                    conn.Db.MyAuth.ScheduleResult.JobId.Find(7) != null
+                    && conn.Db.@class.ScheduleResult.JobId.Find(7) != null,
+                "Post-cancellation scheduled jobs"
+            );
+
+            void CheckSchedules(
+                (uint JobId, uint Payload, string Kind, uint Executions, ulong ScheduledId)[] rows,
+                uint payloadBase
+            )
+            {
+                Require(
+                    rows.Length == 7,
+                    "Each namespace must have exactly seven schedule results"
+                );
+                foreach (var row in rows)
+                {
+                    Require(row.Payload == payloadBase + row.JobId, "Scheduled argument payload");
+                    var kind =
+                        row.JobId == 6 ? "cancel"
+                        : row.JobId == 2 || row.JobId == 4 ? "procedure"
+                        : "reducer";
+                    Require(row.Kind == kind, "Scheduled function dispatch category");
+                    Require(
+                        row.JobId == 5 || row.JobId == 6
+                            ? row.Executions >= 2
+                            : row.Executions == 1,
+                        "One-shot jobs must run once; repeating jobs must run at least twice"
+                    );
+                    Require(
+                        row.JobId == 3 || row.JobId == 4 || row.JobId == 6
+                            ? row.ScheduledId == 0
+                            : row.ScheduledId > 0,
+                        "Table-backed schedules must receive their generated primary key"
+                    );
+                }
+                Require(
+                    rows.Single(row => row.JobId == 5).Executions
+                        == rows.Single(row => row.JobId == 6).Executions,
+                    "Deleting a repeating schedule must stop further executions"
+                );
+            }
+            CheckSchedules(
+                conn.Db.MyAuth.ScheduleResult.Iter()
+                    .Select(row =>
+                        (row.JobId, row.Payload, row.Kind, row.Executions, row.ScheduledId)
+                    )
+                    .ToArray(),
+                1000
+            );
+            CheckSchedules(
+                conn.Db.@class.ScheduleResult.Iter()
+                    .Select(row =>
+                        (row.JobId, row.Payload, row.Kind, row.Executions, row.ScheduledId)
+                    )
+                    .ToArray(),
+                2000
+            );
+            Require(
+                conn.Db.User.Count == 1
+                    && conn.Db.MyAuth.User.Count == 1
+                    && conn.Db.@class.User.Count == 2,
+                "Schedules must leave unrelated tables unchanged"
+            );
             Unsubscribe(all);
             EmptyCache();
             Console.WriteLine("Namespace integration passed");
