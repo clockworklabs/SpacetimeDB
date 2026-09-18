@@ -1,4 +1,4 @@
-use super::{delete_table::DeleteTable, sequence::Sequence};
+use super::delete_table::DeleteTable;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId};
@@ -149,8 +149,8 @@ pub enum PendingSchemaChange {
     /// The constraint with [`ConstraintId`] was added to the table with [`TableId`].
     /// If indices were made unique, their [`IndexId`]s and the taken [`PointerMap`] are stored.
     ConstraintAdded(TableId, ConstraintId, Vec<IndexId>, Option<PointerMap>),
-    /// The [`Sequence`] with [`SequenceSchema`] was added to the table with [`TableId`].
-    SequenceRemoved(TableId, Sequence, SequenceSchema),
+    /// The sequence with [`SequenceSchema`] was added to the table with [`TableId`].
+    SequenceRemoved(TableId, SequenceSchema),
     /// The sequence with [`SequenceId`] was added to the table with [`TableId`].
     SequenceAdded(TableId, SequenceId),
 }
@@ -178,9 +178,7 @@ impl MemoryUsage for PendingSchemaChange {
             Self::ConstraintAdded(table_id, constraint_id, index_ids, pointer_map) => {
                 table_id.heap_usage() + constraint_id.heap_usage() + index_ids.heap_usage() + pointer_map.heap_usage()
             }
-            Self::SequenceRemoved(table_id, sequence, sequence_schema) => {
-                table_id.heap_usage() + sequence.heap_usage() + sequence_schema.heap_usage()
-            }
+            Self::SequenceRemoved(table_id, sequence_schema) => table_id.heap_usage() + sequence_schema.heap_usage(),
             Self::SequenceAdded(table_id, sequence_id) => table_id.heap_usage() + sequence_id.heap_usage(),
             Self::TableAlterAccessorName(table_id, alias) => {
                 table_id.heap_usage() + alias.as_ref().map(|a| a.as_ref().len()).unwrap_or(0)
