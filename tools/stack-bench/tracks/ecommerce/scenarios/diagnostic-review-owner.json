@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 3,
+  "name": "Review owner claim",
+  "note": "Unscored diagnostic for a nonbuyer claiming the username of a buyer. The normal nonbuyer call and a call with an extra username must both be refused without changing the buyer's review. HTTP sends username in the body; the native reducer receives an extra positional argument. Native argument rejection is a valid defense, not evidence that an application ownership branch ran. This does not cover arbitrary account-ID fields or other identity formats.",
+  "features": [{
+    "id": 9181,
+    "name": "Review owner claim",
+    "actors": ["owner", "stranger"],
+    "setup": [
+      {"do":"signUp","actor":"owner","name":"claim-review-owner","exact":true},
+      {"do":"signUp","actor":"stranger","name":"claim-review-stranger","exact":true},
+      {"do":"callAction","actor":"owner","action":"buy","namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"settleMs":0},
+      {"do":"expectActionOutcome","actor":"owner","outcome":"accepted"}
+    ],
+    "criteria": [{
+      "id":"9181a", "category":"production", "points":0,
+      "desc":"a nonbuyer cannot submit or replace a review by claiming a buyer's username",
+      "statedBy":"Only a customer who bought an item can review it.",
+      "steps":[
+        {"do":"callAction","actor":"owner","action":"submitReview","namedAction":{"id":"submitReview","path":"/api/items/:id/reviews","method":"POST","reducer":"submit_review","args":[0,5,"Original buyer review"],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"},{"name":"rating","in":"body"},{"name":"comment","in":"body"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"settleMs":0},
+        {"do":"expectActionOutcome","actor":"owner","outcome":"accepted"},
+        {"do":"callAction","actor":"stranger","action":"submitReview","namedAction":{"id":"submitReview","path":"/api/items/:id/reviews","method":"POST","reducer":"submit_review","args":[0,5,"Nonbuyer review"],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"},{"name":"rating","in":"body"},{"name":"comment","in":"body"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"settleMs":0},
+        {"do":"expectActionOutcome","actor":"stranger","outcome":"application-refused","routeProvenBy":"owner"},
+        {"do":"callAction","actor":"stranger","action":"submitReview","namedAction":{"id":"submitReview","path":"/api/items/:id/reviews","method":"POST","reducer":"submit_review","args":[0,5,"Forged buyer review","claim-review-owner"],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"},{"name":"rating","in":"body"},{"name":"comment","in":"body"},{"name":"username","in":"body"}]},"input":{"testid":"item-card","contains":"Keyboard","attribute":"data-buy-input"},"settleMs":0},
+        {"do":"expectActionOutcome","actor":"stranger","outcome":"application-refused","routeProvenBy":"owner"},
+        {"do":"freshClient","actor":"owner"},
+        {"do":"signIn","actor":"owner-fresh","name":"claim-review-owner","exact":true},
+        {"do":"openItem","actor":"owner-fresh","item":"Keyboard"},
+        {"do":"expect","actor":"owner-fresh","testid":"review-item","contains":"Original buyer review","within":10000},
+        {"do":"expect","actor":"owner-fresh","testid":"review-item","contains":"Nonbuyer review","absent":true,"within":3000},
+        {"do":"expect","actor":"owner-fresh","testid":"review-item","contains":"Forged buyer review","absent":true,"within":3000}
+      ]
+    }]
+  }]
+}
