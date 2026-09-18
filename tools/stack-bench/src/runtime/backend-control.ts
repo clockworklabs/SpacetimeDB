@@ -1,4 +1,5 @@
 import { leaseFromEnv } from './backend-lease.js';
+import { authenticationEnvironment } from './authentication-service.js';
 import { leasedDatabaseEnvironment } from '../stacks/stack-adapter-common.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { controlHostedAppServer, startAttemptDatabaseProcess }
@@ -237,6 +238,7 @@ export async function controlAppServer(
       lease,
     }),
     ...adapter.lifecycle.applicationEnvironment?.(lease),
+    ...authenticationEnvironment(lease),
     APP_WARM_START: '1',
     VITE_PORT: String(spec.port),
   };

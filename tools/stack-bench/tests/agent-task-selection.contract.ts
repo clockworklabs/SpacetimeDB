@@ -200,7 +200,8 @@ test('selected pack prompts contain only their own framework-neutral named actio
       '--guidance-document-json', JSON.stringify(document),
       '--skills-json', JSON.stringify(skills.ids),
     ]);
-    assert.match(prompt, /POST \/api\/auth\/signup/);
+    assert.match(prompt, /application's real authentication path/);
+    assert.doesNotMatch(prompt, /POST \/api\/auth\/(?:signup|signin)/);
     assert.doesNotMatch(prompt, /\bExpress\b|socket\.io|Drizzle|Prisma/i);
     assert.doesNotMatch(identity.task.requirementText,
       /POST \/api\/checkout|POST \/api\/admin\/restock/);
@@ -208,7 +209,7 @@ test('selected pack prompts contain only their own framework-neutral named actio
   const cart = createBoundRecipeTaskRequest(candidate,
       { featureIds: ['ecommerce.feature.cart-checkout'] });
     assert.match(cart.task.contractText, /POST \/api\/checkout/);
-    assert.match(cart.task.contractText, /POST \/api\/auth\/signin/);
+    assert.match(cart.task.contractText, /application's real authentication path/);
     assert.doesNotMatch(cart.task.contractText, /POST \/api\/admin\/restock/);
   } finally { rmSync(app, { recursive: true, force: true }); }
 });

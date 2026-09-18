@@ -10,7 +10,8 @@ import { isModularRecipeTaskRequest } from '../src/composition/recipe-selection.
 import { requireRecipeRelease as resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { attachRegressionScope, childFailureDetail, clearPreviousGradeOutputs, findMutationBackups, selectObservationScope,
   applicationFailureTotals, checkDatabaseProvenance, codeMetrics, resetFailureOutcome, suitesForRecipe,
-  checkRuntimeDatabaseProvenance, databaseProvenanceFailure, writeApplicationDatabaseMarker,
+  checkRuntimeDatabaseProvenance, databaseProvenanceFailure,
+  verifyApplicationDatabaseMarker,
   contractLintArgv, databaseLeaseForGrading, databaseNameForGrading, runGraderChild,
   verifyApplicationProbe, waitForApplicationProbe, closeSuiteBrowser, preserveStartFailure }
   from '../commands/run-suite.js';
@@ -47,8 +48,6 @@ test('browser shutdown failure replaces a previously written app outcome before 
   await closeSuiteBrowser({ close: async () => {} }, bundle,
     () => assert.fail('successful cleanup must not replace evidence'));
 });
-
-type JsonRecord = Record<string, unknown>;
 
 function sequentialL2Track() {
   const temp = mkdtempSync(join(tmpdir(), 'stack-bench-sequential-l2-'));
@@ -253,28 +252,23 @@ test('database provenance parses the port instead of accepting a matching substr
   }
 });
 
-test('runtime database marker uses the declared application action', async () => {
+test('provider or in-memory signup cannot substitute for independently observed database state', async () => {
   const track = loadTrack('ecommerce');
-  const requests: Array<{ url: string; body: JsonRecord }> = [];
-  const written = await writeApplicationDatabaseMarker(
-    { backend: 'postgres', url: 'http://shop.test' }, track, track.databaseProvenance,
-    async (url, init) => {
-      requests.push({ url, body: JSON.parse(init.body) as JsonRecord });
-      return { ok: true, status: 201 };
-    });
-  assert(written.ok);
-  const request = requests[0];
-  assert(request);
-  assert.equal(request.url, 'http://shop.test/api/auth/signup');
-  assert.equal(request.body.password, 'stack-bench-provenance-password');
-  assert.equal(request.body.username, written.marker);
-  assert.match(written.marker, /^sb[a-f0-9]{16}$/);
-
-  const refused = await writeApplicationDatabaseMarker(
-    { backend: 'postgres', url: 'http://shop.test' }, track, track.databaseProvenance,
-    async () => ({ ok: false, status: 422 }));
-  assert.deepEqual(refused, { ok: false, marker: null,
-    reason: 'application provenance action returned HTTP 422' });
+  assert.deepEqual(track.databaseProvenance, { browserAction: 'signUp' });
+  for (const databaseHasMarker of [false, true]) {
+    let observed: string | null = null;
+    const result = await verifyApplicationDatabaseMarker(
+      { backend: 'spacetime', url: 'http://shop.test' }, track.databaseProvenance, {
+        write: async () => ({ ok: true, marker: 'sb0123456789abcdef' }),
+        read: (_args, marker) => {
+          observed = marker ?? null;
+          return { ok: databaseHasMarker, verified: true, reason: databaseHasMarker ? 'marker present' : 'marker absent' };
+        },
+      });
+    assert.equal(observed, 'sb0123456789abcdef');
+    assert.equal(result.write.ok, true);
+    assert.equal(result.runtime?.ok, databaseHasMarker);
+  }
 });
 
 test('runtime database proof reports command failures as harness failures', () => {

@@ -47,6 +47,7 @@ import {
   isGuestTicketCreator,
   planStockAllocation,
 } from './progression-policy';
+import { providerUsername } from './auth-policy';
 import { createSubscription, changeSubscription, processSubscriptions } from './subscriptions';
 
 export { default } from './schema';
@@ -58,19 +59,6 @@ type VCtx = ViewCtx<S>;
 
 // --- helpers ---
 
-function hashPassword(password: string): string {
-  const salted = 'stackbench-ecom-salt::' + password;
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < salted.length; i++) {
-    hash ^= salted.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  let hash2 = 0x1505;
-  for (let i = 0; i < salted.length; i++) {
-    hash2 = (Math.imul(hash2, 33) ^ salted.charCodeAt(i)) >>> 0;
-  }
-  return (hash >>> 0).toString(16).padStart(8, '0') + hash2.toString(16).padStart(8, '0');
-}
 
 function getAccountId(ctx: Ctx | VCtx): bigint | null {
   const s = ctx.db.session.identity.find(ctx.sender);
@@ -78,6 +66,7 @@ function getAccountId(ctx: Ctx | VCtx): bigint | null {
 }
 
 function requireAccount(ctx: Ctx) {
+  requireProvider(ctx);
   const accountId = getAccountId(ctx);
   if (accountId === null) throw new SenderError('You must be signed in.');
   const acc = ctx.db.account.id.find(accountId);
@@ -400,7 +389,6 @@ export const init = spacetimedb.init((ctx) => {
     ctx.db.account.insert({
       id: 0n,
       username: 'admin',
-      passwordHash: hashPassword('stackbench-admin-2026'),
       isAdmin: true,
       isStaff: false,
     });
@@ -410,7 +398,6 @@ export const init = spacetimedb.init((ctx) => {
     const staffAccount = ctx.db.account.insert({
       id: 0n,
       username: 'staff',
-      passwordHash: hashPassword('stackbench-staff-2026'),
       isAdmin: false,
       isStaff: true,
     });
@@ -421,7 +408,6 @@ export const init = spacetimedb.init((ctx) => {
     ctx.db.account.insert({
       id: 0n,
       username: 'customer',
-      passwordHash: hashPassword('stackbench-customer-2026'),
       isAdmin: false,
       isStaff: false,
     });
@@ -435,60 +421,44 @@ export const init = spacetimedb.init((ctx) => {
   }
 });
 
-export const onConnect = spacetimedb.clientConnected((_ctx) => {});
-
-export const onDisconnect = spacetimedb.clientDisconnected((_ctx) => {});
-
-// --- auth ---
-
-export const signUp = spacetimedb.reducer(
-  { username: t.string(), password: t.string() },
-  (ctx, { username, password }) => {
-    const uname = username.trim();
-    if (uname.length === 0) throw new SenderError('Username is required.');
-    if (password.length === 0) throw new SenderError('Password is required.');
-    const existing = ctx.db.account.username.find(uname);
-    if (existing) throw new SenderError('That username is already taken.');
-
-    const acc = ctx.db.account.insert({
-      id: 0n,
-      username: uname,
-      passwordHash: hashPassword(password),
-      isAdmin: false,
-      isStaff: false,
-    });
-
-    const existingSession = ctx.db.session.identity.find(ctx.sender);
-    if (existingSession) {
-      ctx.db.session.identity.update({ ...existingSession, accountId: acc.id });
-    } else {
-      ctx.db.session.insert({ identity: ctx.sender, accountId: acc.id });
-    }
+function requireProvider(ctx: Ctx): string {
+  const jwt = ctx.senderAuth.jwt;
+  if (!jwt) throw new SenderError('You must be signed in.');
+  try {
+    return providerUsername(jwt);
+  } catch (error) {
+    throw new SenderError(error instanceof Error ? error.message : 'Invalid login.');
   }
-);
+}
 
-export const signIn = spacetimedb.reducer(
-  { username: t.string(), password: t.string() },
-  (ctx, { username, password }) => {
-    const acc = ctx.db.account.username.find(username.trim());
-    if (!acc || acc.passwordHash !== hashPassword(password)) {
-      throw new SenderError('Incorrect username or password.');
+export const onConnect = spacetimedb.clientConnected(ctx => {
+  const jwt = ctx.senderAuth.jwt;
+  // Anonymous storefront reads remain available. Protected writes require the provider.
+  if (!jwt || jwt.issuer === 'localhost') return;
+  const username = requireProvider(ctx);
+  const binding = ctx.db.session.identity.find(ctx.sender);
+  if (binding) {
+    if (ctx.db.account.id.find(binding.accountId)?.username !== username) {
+      throw new SenderError('Account identity does not match.');
     }
-
-    const existingSession = ctx.db.session.identity.find(ctx.sender);
-    if (existingSession) {
-      ctx.db.session.identity.update({ ...existingSession, accountId: acc.id });
-    } else {
-      ctx.db.session.insert({ identity: ctx.sender, accountId: acc.id });
-    }
+    return;
   }
-);
-
-export const signOut = spacetimedb.reducer((ctx) => {
-  const existingSession = ctx.db.session.identity.find(ctx.sender);
-  if (existingSession) ctx.db.session.identity.delete(ctx.sender);
+  let acc = ctx.db.account.username.find(username);
+  if (acc) {
+    // Only provisioned provider identities may claim the reserved seed accounts.
+    // providerUsername verifies their role, not just their display name.
+    if (!['admin', 'staff', 'customer'].includes(username) || ctx.db.session.accountId.find(acc.id)) {
+      throw new SenderError('Username already bound.');
+    }
+  } else {
+    acc = ctx.db.account.insert({ id: 0n, username, isAdmin: false, isStaff: false });
+  }
+  ctx.db.session.insert({ identity: ctx.sender, accountId: acc.id });
 });
 
+// The identity/account binding survives disconnect and logout. Tokens, not this
+// mapping, authenticate requests; deleting it would sign out unrelated browsers.
+export const onDisconnect = spacetimedb.clientDisconnected((_ctx) => {});
 // --- views ---
 
 export const currentUser = spacetimedb.view(

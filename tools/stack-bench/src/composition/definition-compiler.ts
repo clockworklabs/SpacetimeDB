@@ -85,7 +85,7 @@ export interface CompiledTrackManifest extends Record<string, unknown> {
   portOffset?: number;
   restartProbe?: string;
   reseedOnReset?: boolean;
-  databaseProvenance?: { action: string; markerParameter: string; body: Record<string, string> };
+  databaseProvenance?: { browserAction: 'signUp' };
   actions?: unknown[];
 }
 
@@ -226,7 +226,7 @@ export const ACTION_DEFINITIONS = Object.freeze({
   race: fields({ branches: anyArray, settleMs: nonNegativeNumber }),
   recordNumber: fields({ ...actor, testid: nonEmptyString, as: nonEmptyString },
     { count: boolean, ...locator, ...within }),
-  reload: fields({ ...actor, settleMs: number }),
+  reload: fields({ ...actor, settleMs: number }, { application: boolean }),
   replayAs: fields({ ...actor, from: nonEmptyString, match: string },
     { swap: object, namedAction: object, namedTarget: object, ...settle }),
   replayConcurrently: fields({ ...actors, settleMs: nonNegativeNumber },
@@ -433,8 +433,8 @@ function validateStep(step: unknown, at: string): asserts step is CompiledStep {
     if (step.input === undefined && !namedAction) {
       fail(`${at}.input`, 'may be omitted only for an inline action with no parameters or arguments');
     }
-    if (step.authentication !== undefined && !oneOf(step.authentication, ['actor', 'none'])) {
-      fail(`${at}.authentication`, 'must be "actor" or "none"');
+    if (step.authentication !== undefined && !oneOf(step.authentication, ['actor', 'none', 'optional'])) {
+      fail(`${at}.authentication`, 'must be "actor", "optional", or "none"');
     }
   }
   if (step.do === 'replayAs' && step.namedTarget && !step.namedAction) {
@@ -627,7 +627,6 @@ const TRACK_FIELDS = new Set([
 ]);
 const SUITE_FIELDS = new Set(['id', 'inherit', 'spec']);
 const NAMED_ACTION_FIELDS = new Set(['args', 'id', 'params', 'path', 'reducer']);
-const DATABASE_PROVENANCE_FIELDS = new Set(['action', 'body', 'markerParameter']);
 export function compileTrackManifest(input: unknown,
   { source = '<track>' }: { source?: string } = {}): CompiledTrackManifest {
   const manifest = structuredClone(input);
@@ -649,21 +648,9 @@ export function compileTrackManifest(input: unknown,
     fail(`${source}.reseedOnReset`, 'must be boolean');
   }
   if (manifest.databaseProvenance !== undefined) {
-    strictObject(manifest.databaseProvenance, `${source}.databaseProvenance`,
-      DATABASE_PROVENANCE_FIELDS);
-    for (const field of ['action', 'markerParameter']) {
-      if (!nonEmptyString(manifest.databaseProvenance[field])) {
-        fail(`${source}.databaseProvenance.${field}`, 'must be a non-empty string');
-      }
-    }
-    if (!object(manifest.databaseProvenance.body)
-      || Object.keys(manifest.databaseProvenance.body).length === 0) {
-      fail(`${source}.databaseProvenance.body`, 'must be a non-empty object');
-    }
-    for (const [field, value] of Object.entries(manifest.databaseProvenance.body)) {
-      if (!nonEmptyString(field) || typeof value !== 'string') {
-        fail(`${source}.databaseProvenance.body.${field}`, 'must be a string');
-      }
+    strictObject(manifest.databaseProvenance, `${source}.databaseProvenance`, new Set(['browserAction']));
+    if (manifest.databaseProvenance.browserAction !== 'signUp') {
+      fail(`${source}.databaseProvenance.browserAction`, 'must be signUp');
     }
   }
   if (!object(manifest.suites) || Object.keys(manifest.suites).length === 0) {
@@ -715,20 +702,6 @@ export function compileTrackManifest(input: unknown,
       if (ids.has(actionId)) fail(`${at}.id`, `duplicate named action ${actionId}`);
       ids.add(actionId);
     });
-  }
-  const provenance = manifest.databaseProvenance;
-  if (object(provenance)) {
-    const actionName = provenance.action;
-    const action = manifest.actions?.find(candidate =>
-      object(candidate) && candidate.id === actionName);
-    if (!object(action)) {
-      fail(`${source}.databaseProvenance.action`, 'must name one declared action');
-    }
-    if (!object(provenance.body)
-      || !Object.hasOwn(provenance.body, String(provenance.markerParameter))) {
-      fail(`${source}.databaseProvenance.markerParameter`,
-        'must name one field in the provenance body');
-    }
   }
   manifest.schemaVersion = DEFINITION_SCHEMA_VERSION;
   return manifest as CompiledTrackManifest;

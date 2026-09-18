@@ -83,7 +83,7 @@ const DOCKER: DockerTeardownOperations = {
 
 export function stopLeasedContainer(leasePath: string, leaseToken: string,
   docker: DockerTeardownOperations = DOCKER,
-  key: 'buildContainer' | 'browserContainer' | 'brokerContainer' | 'smokeContainer' | 'container' = 'buildContainer'): boolean {
+  key: 'buildContainer' | 'browserContainer' | 'brokerContainer' | 'smokeContainer' | 'authenticationContainer' | 'container' = 'buildContainer'): boolean {
   const lease = readBackendLease(leasePath, { token: leaseToken });
   const container = lease.resources[key];
   if (!container) return true;
@@ -146,7 +146,7 @@ export function stopLeasedContainer(leasePath: string, leaseToken: string,
 function removeAttemptNetwork(leasePath: string, leaseToken: string): boolean {
   const lease = readBackendLease(leasePath, { token: leaseToken });
   // Creation authority covers death between Docker create and recording its ID.
-  const order: BackendCreationKind[] = ['broker', 'browser', 'smoke', 'build', 'firewall', 'backend', 'network'];
+  const order: BackendCreationKind[] = ['broker', 'browser', 'smoke', 'authentication', 'build', 'firewall', 'backend', 'network'];
   for (const kind of order) {
     const intent = lease.resources.creationIntents?.[kind];
     if (!intent) continue;
@@ -178,7 +178,7 @@ export function releaseBackendLease(
   let lease = readBackendLease(leasePath, { token: leaseToken });
   if (lease.state === 'released') return true;
   let released = true;
-  for (const key of ['brokerContainer', 'browserContainer', 'smokeContainer', 'buildContainer'] as const) {
+  for (const key of ['brokerContainer', 'browserContainer', 'smokeContainer', 'authenticationContainer', 'buildContainer'] as const) {
     released = stopLeasedContainer(leasePath, leaseToken, DOCKER, key) && released;
   }
   if (lease.resources.network && !retainBackend && released) {

@@ -61,7 +61,7 @@ export interface BackendLeaseNetwork {
   firewallInstalledAt: string | null;
 }
 
-export type BackendCreationKind = 'network' | 'backend' | 'build' | 'browser' | 'broker' | 'firewall' | 'smoke';
+export type BackendCreationKind = 'network' | 'backend' | 'build' | 'browser' | 'broker' | 'firewall' | 'smoke' | 'authentication';
 export type BackendCreationIntent = { name: string; creationToken: string };
 
 export interface BackendLeaseResource {
@@ -72,6 +72,7 @@ export interface BackendLeaseResource {
   container: BackendLeaseContainer | null;
   buildContainer: BackendLeaseContainer | null;
   browserContainer?: BackendLeaseContainer;
+  authenticationContainer?: BackendLeaseContainer;
   brokerContainer?: BackendLeaseContainer;
   smokeContainer?: BackendLeaseContainer;
   network?: BackendLeaseNetwork;
@@ -299,7 +300,7 @@ export function validateBackendLease(
   if (resources.lockIntent !== undefined && !Array.isArray(resources.lockIntent)) {
     fail('lockIntent must be an array');
   }
-  for (const key of ['browserContainer', 'brokerContainer', 'smokeContainer']) {
+  for (const key of ['browserContainer', 'brokerContainer', 'smokeContainer', 'authenticationContainer']) {
     const container = resources[key];
     if (container === undefined) continue;
     if (!isRecord(container) || container.owned !== true
@@ -313,7 +314,7 @@ export function validateBackendLease(
   if (resources.creationIntents !== undefined) {
     if (!isRecord(resources.creationIntents)) fail('creationIntents must be an object');
     for (const [kind, intent] of Object.entries(resources.creationIntents)) {
-      if (!['network', 'backend', 'build', 'browser', 'broker', 'firewall', 'smoke'].includes(kind)
+      if (!['network', 'backend', 'build', 'browser', 'broker', 'firewall', 'smoke', 'authentication'].includes(kind)
         || !isRecord(intent) || Object.keys(intent).some(key => !['name', 'creationToken'].includes(key))
         || typeof intent.name !== 'string' || !/^[a-z0-9][a-z0-9_.-]{0,127}$/.test(intent.name)
         || typeof intent.creationToken !== 'string' || !/^[a-f0-9]{32,64}$/.test(intent.creationToken)) {
@@ -344,7 +345,7 @@ export function validateBackendLease(
       if (!isRecord(resources.container) || resources.container.id !== network.namespaceContainerId) {
         fail('network namespace must belong to the leased backend container');
       }
-      for (const key of ['buildContainer', 'browserContainer', 'brokerContainer', 'smokeContainer']) {
+      for (const key of ['buildContainer', 'browserContainer', 'brokerContainer', 'smokeContainer', 'authenticationContainer']) {
         const container = resources[key];
         if (isRecord(container) && container.networkMode !== `container:${network.namespaceContainerId}`) {
           fail(`${key} is outside the leased network namespace`);
@@ -517,6 +518,7 @@ export function acquireResourceLock(input: {
 
 export function acquireResourceLocks(input: {
   root: string; keys: string[]; lease: BackendLease; capacity?: number | null;
+  authenticationProvider?: 'keycloak';
 }): BackendResourceLock[] {
   if (!Array.isArray(input.keys) || input.keys.length === 0) {
     fail('resource lock keys must be a non-empty array');
@@ -527,6 +529,7 @@ export function acquireResourceLocks(input: {
 /** Persist intended keys and private identity before any claim can survive a crash. */
 export function claimBackendResources(path: string, lease: BackendLease, input: {
   root: string; keys: string[]; capacity?: number | null;
+  authenticationProvider?: 'keycloak';
 }): BackendLease {
   if (!input.keys.length) {
     writeBackendLease(path, lease);

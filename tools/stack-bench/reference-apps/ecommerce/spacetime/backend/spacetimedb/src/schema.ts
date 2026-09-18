@@ -43,7 +43,6 @@ export const account = table(
   {
     id: t.u64().primaryKey().autoInc(),
     username: t.string().unique(),
-    passwordHash: t.string(),
     isAdmin: t.bool(),
     isStaff: t.bool().default(false),
   }
@@ -53,7 +52,7 @@ export const session = table(
   { name: 'session' },
   {
     identity: t.identity().primaryKey(),
-    accountId: t.u64(),
+    accountId: t.u64().unique(),
   }
 );
 

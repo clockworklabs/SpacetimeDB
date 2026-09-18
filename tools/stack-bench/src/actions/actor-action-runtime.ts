@@ -26,6 +26,7 @@ export interface BrowserResponse {
 }
 
 export interface BrowserPage {
+  url(): string;
   readonly request: {
     fetch(url: string, options: UnknownRecord): Promise<BrowserResponse>;
   };
@@ -76,7 +77,7 @@ export interface ActionCall {
 
 export interface Actor {
   readonly context: {
-    cookies(): Promise<readonly { readonly name: string; readonly value: string }[]>;
+    cookies(urls?: string | string[]): Promise<readonly { readonly name: string; readonly value: string }[]>;
   };
   readonly lastWrite?: CapturedWrite;
   readonly lastWsWrite?: { readonly event: string; readonly body: UnknownRecord };
@@ -93,6 +94,7 @@ export interface Actor {
 }
 
 export interface BrowserCapability {
+  readonly authentication?: { readonly provider: 'keycloak'; readonly issuer: string };
   readonly defaultWithin: number;
   roomName(value: string): string;
   scopedUser(value: string): string;

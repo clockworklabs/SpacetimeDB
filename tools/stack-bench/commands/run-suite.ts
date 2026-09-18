@@ -13,7 +13,13 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { parseArgs as parseNodeArgs, promisify } from 'node:util';
 import { chromium } from 'playwright';
 import { attemptBrowserLaunchOptions } from '../container/browser-pipe.js';
-import type { BrowserServer } from 'playwright';
+import type { Browser, BrowserServer } from 'playwright';
+import { Actor } from '../grader/grade.js';
+import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
+import { ActionApplicationFailure, executeAction } from '../src/actions/action-contract.js';
+import { runApplicationNavigation } from '../src/actions/browser-navigation.js';
+import { stableElementSelector } from '../src/actions/element-selector.js';
+import { authenticationBrowserConfiguration, resetAuthenticationService } from '../src/runtime/authentication-service.js';
 import { dbName, loadTrack, suitesFor, DEFAULT_TRACK } from '../src/composition/tracks.js';
 import { controlAppServer, parseRuntimeControlSpec }
   from '../src/runtime/backend-control.js';
@@ -116,8 +122,6 @@ type ProbeResponse = { ok: boolean; status: number };
 type ApplicationFetch = (url: string, init: { signal: AbortSignal }) => Promise<ProbeResponse>;
 type DatabaseProvenanceDefinition = Track['databaseProvenance'];
 type DatabaseNameLease = { resources: { database?: string | null } };
-type ProvenanceFetch = (url: string, init: { method: string; headers: Record<string, string>;
-  body: string; signal: AbortSignal }) => Promise<{ ok: boolean; status: number }>;
 type ProvenanceWrite = { ok: true; marker: string } | { ok: false; marker: null; reason: string };
 type ApplicationFailureSelection = { checks: Array<{ executionId: string; points?: number }> };
 type ContractLintArguments = Pick<RunArguments,
@@ -476,41 +480,60 @@ export function checkDatabaseProvenance(args: Pick<RunArguments, 'app' | 'backen
 }
 
 export async function writeApplicationDatabaseMarker(
-  args: Pick<RunArguments, 'backend' | 'url'>,
-  track: Pick<Track, 'actions'>,
+  args: Pick<RunArguments, 'url' | 'browserWsEndpoint'>,
   definition: DatabaseProvenanceDefinition,
-  fetchImpl: ProvenanceFetch = fetch,
+  { browser: suppliedBrowser }: { browser?: Browser } = {},
 ): Promise<ProvenanceWrite> {
   if (!definition) throw new Error('track does not define runtime database provenance');
-  const action = track.actions.find(candidate => candidate.id === definition.action);
-  if (!action) throw new Error(`database provenance action is not declared: ${definition.action}`);
   const marker = `sb${randomUUID().replaceAll('-', '').slice(0, 16)}`;
-  const body = { ...definition.body, [definition.markerParameter]: marker };
-  const adapter = STACK_ADAPTER_REGISTRY.get(args.backend);
-  const request = adapter.namedAction.request({ action,
-    input: { values: body },
-    url: args.url,
-    spacetime: args.backend === 'spacetime' ? adapter.grading.context() : null });
-  if (!request.url) throw new Error('database provenance action has no URL');
+  const browser = suppliedBrowser ?? (args.browserWsEndpoint
+    ? await chromium.connect(args.browserWsEndpoint)
+    : await chromium.launch({ headless: true, ...attemptBrowserLaunchOptions() }));
   try {
-    const response = await fetchImpl(request.url, {
-      method: request.method,
-      headers: { 'Content-Type': 'application/json' },
-      body: request.body,
-      signal: AbortSignal.timeout(15_000),
-    });
-    return response.ok ? { ok: true, marker }
-      : { ok: false, marker: null,
-          reason: `application provenance action returned HTTP ${response.status}` };
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      page.setDefaultTimeout(8000);
+      const authentication = authenticationBrowserConfiguration();
+      const actor = new Actor('database-provenance', page, context, authentication);
+      await actor.ready;
+      await runApplicationNavigation(() => page.goto(args.url, { waitUntil: 'domcontentloaded', timeout: 20000 }));
+      const evidence = await executeAction(ACTION_REGISTRY, definition.browserAction,
+        { do: definition.browserAction, actor: actor.name, name: marker, exact: true }, {
+          capabilities: {
+            actors: new Map([[actor.name, actor]]),
+            'browser-interaction': { authentication, defaultWithin: 8000,
+              roomName: (name: string) => name, scopedUser: (name: string) => name,
+              testId: stableElementSelector,
+              sleep: (ms: number, signal: AbortSignal) => sleep(ms, undefined, { signal }),
+            },
+          },
+          onAbort: () => context.close(),
+        });
+      if (evidence.status === 'passed') return { ok: true, marker };
+      if (evidence.status === 'failed') return { ok: false, marker: null,
+        reason: evidence.summary ?? 'application signup failed during database provenance' };
+      throw new Error(`database provenance signup ${evidence.status}: ${evidence.summary}`);
+    } finally { await context.close(); }
   } catch (error) {
-    return { ok: false, marker: null,
-      reason: `application provenance action failed: ${error instanceof Error ? error.message : String(error)}` };
-  }
+    if (error instanceof ActionApplicationFailure) return { ok: false, marker: null, reason: error.message };
+    throw error;
+  } finally { if (!suppliedBrowser) await browser.close(); }
 }
 
 export function databaseProvenanceFailure(error: unknown): { kind: string; phase: string; reason: string } {
   return { kind: 'harness_failure', phase: 'database-provenance',
     reason: `runtime database provenance failed: ${error instanceof Error ? error.message : String(error)}` };
+}
+
+// A successful browser/provider flow is not evidence of an application database write.
+export async function verifyApplicationDatabaseMarker(
+  args: Pick<RunArguments, 'backend' | 'url' | 'browserWsEndpoint' | 'databaseLease'>,
+  definition: DatabaseProvenanceDefinition,
+  { write = writeApplicationDatabaseMarker, read = checkRuntimeDatabaseProvenance } = {},
+): Promise<{ write: ProvenanceWrite; runtime: RuntimeProvenance | null }> {
+  const result = await write(args, definition);
+  return { write: result, runtime: result.ok ? read(args, result.marker) : null };
 }
 
 export function checkRuntimeDatabaseProvenance(args: Pick<RunArguments, 'backend' | 'databaseLease'>,
@@ -949,6 +972,14 @@ async function main() {
     lastResetFailure = reset.detail;
     lastResetOutcome = reset.outcome ?? { kind: 'harness_failure', phase: 'database-reset' };
     if (!reset.ok) return false;
+    try {
+      if (args.databaseLease) await measure('identity-reset', () =>
+        resetAuthenticationService(args.databaseLease!, args.credentialAliases));
+    } catch (error) {
+      lastResetFailure = error instanceof Error ? error.message : String(error);
+      lastResetOutcome = { kind: 'harness_failure', phase: 'identity-reset' };
+      return false;
+    }
     // Do not grade until the reset application is reachable.
     const waitUntilReady = async () => {
       const ready = await measure('readiness', () => waitForApplicationProbe(args.url));
@@ -1040,9 +1071,9 @@ async function main() {
       proofError = new Error(`${args.track} does not define a runtime database provenance check`);
     } else if (requiresRuntimeProof && proof) {
       try {
-        const write = await writeApplicationDatabaseMarker(args, track, proof);
-        if (write.ok) runtime = checkRuntimeDatabaseProvenance(args, write.marker);
-        else actionFailure = write.reason;
+        const result = await verifyApplicationDatabaseMarker(args, proof);
+        if (!result.write.ok) actionFailure = result.write.reason;
+        else if (result.runtime) runtime = result.runtime;
       } catch (error) {
         proofError = error;
       }

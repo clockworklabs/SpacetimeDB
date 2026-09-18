@@ -1213,6 +1213,7 @@ async function main() {
       ...(args.featureCatalog ? { featureCatalog: args.featureCatalog } : {}),
       ...(args.runMode ? { mode: args.runMode } : {}),
       agentSkills: args.skills ?? null,
+      authenticationProvider: args.condition?.authenticationProvider,
       packIds: args.packIds, checkKeys: args.checkKeys, smoke,
       ...(process.env.STACK_BENCH_SUPERVISOR_STATE
         ? { supervisorState: process.env.STACK_BENCH_SUPERVISOR_STATE } : {}),
@@ -1305,7 +1306,8 @@ async function main() {
         throw new Error('campaign worker requires private resource delegation');
       }
     } else {
-      await claimBackendResourcesWhenAvailable(leasePath, initialLease, { ...lockScope, keys: lockKeys });
+      await claimBackendResourcesWhenAvailable(leasePath, initialLease, { ...lockScope, keys: lockKeys,
+        authenticationProvider: args.condition?.authenticationProvider });
     }
     const supervisorState = process.env.STACK_BENCH_SUPERVISOR_STATE
       ?? (process.env.STACK_BENCH_SUPERVISOR_DIR
@@ -1414,6 +1416,8 @@ async function main() {
       leasePath, leaseToken: initialLease.ownershipToken, lease: initialLease,
       ports: assignedPorts,
       ...stackRuntime.lifecycle,
+      authenticationProvider: args.condition?.authenticationProvider,
+      credentialAliases: args.condition?.guidance.credentialAliases,
     });
     performPreflight(true);
   } catch (error) {

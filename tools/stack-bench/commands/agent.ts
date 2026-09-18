@@ -22,6 +22,7 @@ import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../
 import { agentVisibleContractText, assertAgentVisibleText }
   from '../src/composition/agent-visible-contract.js';
 import { DEFAULT_SPACETIME_SERVER_URI, leaseFromEnv } from '../src/runtime/backend-lease.js';
+import { authenticationEnvironment } from '../src/runtime/authentication-service.js';
 import { CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_BUG_REPORT_FILE,
   CODING_CONTAINER_RELEASE_DEPS_ROOT, CODING_CONTAINER_SPACETIME_CLI,
   CODING_CONTAINER_SPACETIME_PACKAGE }
@@ -58,6 +59,7 @@ const DEFAULT_CODING_INTERRUPTION_RETRIES = 2;
 
 type UnknownRecord = Record<string, unknown>;
 interface PromptMaterials {
+  authentication?: { issuer: string; clientId: string; redirectUri: string };
   skillsText?: string;
   requirementText?: string;
   contractText?: string;
@@ -632,6 +634,18 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
       applicationInterface),
   ];
   const skills = materials.skillsText ?? readAgentSkillDocuments(ROOT, args.skills ?? []);
+  if (materials.authentication) {
+    common.push('', '## Available identity service', '',
+      'A local Keycloak identity service is available. You may use it or implement local authentication.',
+      `OIDC issuer: ${materials.authentication.issuer}`,
+      `Public client ID: ${materials.authentication.clientId}`,
+      `Redirect URI: ${materials.authentication.redirectUri}`,
+      'Use Authorization Code with PKCE. The public client has no client secret.',
+      'The provider includes the supplied admin, staff, and customer accounts with their supplied credentials.',
+      'Their ID-token realm_access.roles values are app-admin, app-staff, and app-customer, respectively.',
+      'Ordinary registrations receive none of these roles.',
+      'Your application remains responsible for account binding, sessions, and application permissions.');
+  }
   if (skills) common.push('', '## Selected API reference', '', skills);
 
   if (args.mode === 'resume') {
@@ -773,11 +787,18 @@ async function main() {
     warehouses: recipeBinding.plan.fixture.warehouses,
     items: recipeBinding.plan.fixture.items,
   }, null, 2) : undefined;
+  const authEnvironment = process.env.STACK_BENCH_LEASE || process.env.STACK_BENCH_LEASE_TOKEN
+    ? authenticationEnvironment(leaseFromEnv(process.env, { backend: args.backend, active: true }).lease) : {};
+  const authentication = authEnvironment.OIDC_ISSUER ? {
+    issuer: authEnvironment.OIDC_ISSUER,
+    clientId: authEnvironment.OIDC_CLIENT_ID!,
+    redirectUri: authEnvironment.OIDC_REDIRECT_URI!,
+  } : undefined;
 
   // Print the exact prompt without starting a session or changing the app.
   if (args.printPrompt) {
     process.stdout.write(buildPrompt(args, p, track,
-      { skillsText, requirementText, contractText, startingCatalog }));
+      { skillsText, requirementText, contractText, startingCatalog, authentication }));
     return;
   }
   if (args.mode === 'build') {
@@ -792,7 +813,7 @@ async function main() {
   writeFileSync(resolve(args.app, '..', '.stack-bench-backend'), args.backend);
 
   const prompt = buildPrompt(args, p, track,
-    { skillsText, requirementText, contractText, startingCatalog });
+    { skillsText, requirementText, contractText, startingCatalog, authentication });
   const bugReportPath = join(args.app, CODING_CONTAINER_BUG_REPORT_FILE);
   const bugReportText = args.mode === 'fix' && existsSync(bugReportPath)
     ? readFileSync(bugReportPath, 'utf8') : null;

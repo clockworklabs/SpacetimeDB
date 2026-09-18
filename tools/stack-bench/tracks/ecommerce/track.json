@@ -8,12 +8,7 @@
   "restartProbe": "/api/items",
   "reseedOnReset": true,
   "databaseProvenance": {
-    "action": "signUp",
-    "markerParameter": "username",
-    "body": {
-      "username": "",
-      "password": "stack-bench-provenance-password"
-    }
+    "browserAction": "signUp"
   },
   "suites": {
     "1": [

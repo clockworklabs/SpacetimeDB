@@ -17,7 +17,6 @@ import type {
 import { browserApplicationBoundary } from './browser-action-executors.js';
 import {
   browserCredentials,
-  capturedCredentials,
   namedActionRequest,
 } from './named-action-runtime.js';
 import type {
@@ -28,7 +27,7 @@ import type {
 interface CallActionInput {
   readonly action: string;
   readonly actor: string;
-  readonly authentication?: 'actor' | 'none';
+  readonly authentication?: 'actor' | 'none' | 'optional';
   readonly from?: string;
   readonly input?: {
     readonly attribute: string;
@@ -140,14 +139,14 @@ async function callAction({ input, capabilities, signal }: NamedTransportArgumen
     ? await readActionValues(capabilities, source, action, { action: input.action, input: input.input }, transport.defaultWithin)
     : {};
 
-  let credentials: HeaderRecord = {};
-  if ((input.authentication ?? 'actor') === 'actor') {
-    const actorCredentials = capturedCredentials(caller) ?? await browserCredentials(caller);
-    if (!actorCredentials) inconclusive('no-session', { actor: caller.name, action: input.action });
-    credentials = actorCredentials;
-  }
   const request = namedActionRequest(named, action, { values: actionValues });
   if (!request?.url) inconclusive('unresolved-action', { action: input.action });
+  let credentials: HeaderRecord = {};
+  if (input.authentication !== 'none') {
+    const actorCredentials = await browserCredentials(caller, request.url, input.authentication === 'optional');
+    if (!actorCredentials && input.authentication !== 'optional') inconclusive('no-session', { actor: caller.name, action: input.action });
+    credentials = actorCredentials ?? {};
+  }
   const response = await named.fetch(request.url, {
     method: request.method ?? 'POST',
     headers: { 'Content-Type': 'application/json', ...credentials },
@@ -239,18 +238,18 @@ async function callConcurrently({ input, capabilities, signal }: NamedArguments<
   for (const group of [input, ...(input.alongside ?? [])]) {
     const action = group.namedAction ?? named.resolve(group.action);
     if (!action) inconclusive('unknown-action', { action: group.action });
-    const actors: Array<{ name: string; credentials: HeaderRecord }> = [];
-    for (const name of group.actors) {
-      const actor = actorFor(capabilities, name);
-      const credentials = capturedCredentials(actor) ?? await browserCredentials(actor);
-      if (!credentials) inconclusive('no-session', { actor: name, action: group.action });
-      actors.push({ name, credentials });
-    }
     const values = group.input ? await readActionValues(
       capabilities, actorFor(capabilities, group.from ?? group.actors[0]!), action,
       { action: group.action, input: group.input }, group.requestTimeoutMs ?? 30000) : undefined;
     const request = namedActionRequest(named, action, values === undefined ? group : { values });
     if (!request?.url) inconclusive('unresolved-action', { action: group.action });
+    const actors: Array<{ name: string; credentials: HeaderRecord }> = [];
+    for (const name of group.actors) {
+      const actor = actorFor(capabilities, name);
+      const credentials = await browserCredentials(actor, request.url);
+      if (!credentials) inconclusive('no-session', { actor: name, action: group.action });
+      actors.push({ name, credentials });
+    }
     for (let index = 0; index < (group.requests ?? actors.length); index++) {
       prepared.push({ ...actors[index % actors.length]!, action: group.action, values: values ?? {}, request,
         delayMs: group.delayMs ?? 0, timeoutMs: group.requestTimeoutMs ?? 30000 });

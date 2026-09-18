@@ -12,7 +12,8 @@ import { ARTIFACT_FILE, emptyArtifactIdentities, readArtifact, readArtifactPaylo
 import { hashDirectory } from '../evidence/provenance.js';
 import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtureSource,
   validateReferenceRegistry } from './reference-fixtures.js';
-import { resolveReferenceSelection } from './reference-selection.js';
+import { resolveReferenceSelection, parseReferenceCondition, assertReferenceAuthentication } from './reference-selection.js';
+import type { ConditionReference } from '../campaigns/condition-compiler.js';
 import { auditMutationWorkerRun, auditReferenceRun }
   from './reference-qualification-audit.js';
 import { rescueSupervisedLease } from '../runtime/recovery.js';
@@ -51,6 +52,7 @@ import type { ProgressionRecipeSelections }
 
 // The flags a qualification run is launched with.
 export interface ReferenceQualificationArgs {
+  condition?: ConditionReference;
   backend?: string;
   track: string;
   level: number;
@@ -187,6 +189,7 @@ export function parseReferenceQualificationArgs(argv: readonly string[]):
   ReferenceQualificationArgs {
   const { values } = parseNodeArgs({ args: [...argv.slice(2)], options: {
     backend: { type: 'string' }, track: { type: 'string' }, level: { type: 'string' },
+    'condition-json': { type: 'string' },
     recipe: { type: 'string' }, 'feature-catalog': { type: 'string' },
     repetitions: { type: 'string' }, 'run-index': { type: 'string' },
     'spacetime-port': { type: 'string' }, 'timeout-minutes': { type: 'string' },
@@ -202,6 +205,7 @@ export function parseReferenceQualificationArgs(argv: readonly string[]):
   const number = (value: string | undefined, fallback: number | null): number | null =>
     value === undefined ? fallback : Number(value);
   const args: ReferenceQualificationArgs = {
+    condition: parseReferenceCondition(values['condition-json']),
     backend: values.backend, track: values.track ?? 'ecommerce',
     level: number(values.level, 1) as number, recipe: values.recipe,
     featureCatalog: values['feature-catalog'], repetitions: number(values.repetitions, 2) as number,
@@ -948,6 +952,7 @@ async function main(): Promise<void> {
     { ...args, backend: args.backend, track: args.track, level: args.level });
   const fixture = selection.fixture;
   const inspection = inspectImportedReference(fixture);
+  assertReferenceAuthentication(fixture.id, inspection.requiredEnvironment ?? [], args.condition, true);
   if (!inspection.ok) throw new Error(`${fixture.id} import is invalid:\n${inspection.failures.join('\n')}`);
   const context = referenceQualificationContext(fixture, selection.recipe,
     { level: args.level, featureCatalog: args.featureCatalog });

@@ -11,6 +11,8 @@ import { parseArgs as parseNodeArgs } from 'node:util';
 import { loadTrack, DEFAULT_TRACK } from '../src/composition/tracks.js';
 import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { stableElementSelector } from '../src/actions/element-selector.js';
+import { authenticationBrowserConfiguration } from '../src/runtime/authentication-service.js';
+import type { BrowserCapability } from '../src/actions/actor-action-runtime.js';
 
 const CHECK_TIMEOUT = 5000;
 
@@ -43,6 +45,7 @@ export interface LintArgs {
 }
 
 export interface LintWalkContext {
+  authentication?: BrowserCapability['authentication'];
   page: Page;
   args: LintArgs;
   hooks: LintHook[];
@@ -186,7 +189,8 @@ async function run() {
       const { walk } = await import(pathToFileURL(track.walk).href) as {
         walk(context: LintWalkContext): Promise<void>;
       };
-      await walk({ page, args, hooks, byStage, blocked, checkHook, results, uniq, tid, CHECK_TIMEOUT });
+      await walk({ page, args, hooks, byStage, blocked, checkHook, results, uniq, tid, CHECK_TIMEOUT,
+        authentication: authenticationBrowserConfiguration() });
       // Every lintable hook must record explicit evidence.
       completeUnvisitedHooks(hooks, results);
     } catch (err: unknown) {

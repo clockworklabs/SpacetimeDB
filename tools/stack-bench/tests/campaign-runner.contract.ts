@@ -283,6 +283,9 @@ test('campaign validation accepts only an explicit pass-before-next-level applic
   levels: [{ level: 1, selection: plannedSelection(attempt, 1) }],
   outcome: { kind: 'harness_failure', reason: 'provider-session-error' } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
+  assert.throws(() => validateCampaignRun(plan, attempt, { ...run,
+    condition: { ...attempt.condition, authenticationProvider: 'keycloak' } },
+  { buildImage: 'test-build-image' }), /does not match.*condition/);
   for (const changedSettings of [{ providerRoute: 'other' }, { maxOutputTokens: 1 }]) {
     assert.throws(() => validateCampaignRun(plan, attempt, { ...run, ...changedSettings },
       { buildImage: 'test-build-image' }), /does not match.*(?:providerRoute|maxOutputTokens)/);

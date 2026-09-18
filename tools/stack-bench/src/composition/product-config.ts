@@ -34,6 +34,18 @@ export const ATTEMPT_CONTAINER_LIMIT_TOTALS = Object.freeze({
     + BROKER_CONTAINER_RESOURCE_LIMITS.memoryBytes,
 });
 
+// The optional login service uses the same enforced limits as a database sidecar.
+// Include it even if the generated app chooses not to use it: availability starts it.
+export function attemptContainerLimitTotals(authenticationProvider?: 'keycloak') {
+  if (authenticationProvider !== undefined && authenticationProvider !== 'keycloak') {
+    throw new Error('unsupported authentication provider');
+  }
+  return authenticationProvider ? {
+    cpuCount: ATTEMPT_CONTAINER_LIMIT_TOTALS.cpuCount + SIDECAR_CONTAINER_RESOURCE_LIMITS.cpuCount,
+    memoryBytes: ATTEMPT_CONTAINER_LIMIT_TOTALS.memoryBytes + SIDECAR_CONTAINER_RESOURCE_LIMITS.memoryBytes,
+  } : ATTEMPT_CONTAINER_LIMIT_TOTALS;
+}
+
 export const BUILD_OUTBOUND_DESTINATIONS = Object.freeze([
   'https://registry.npmjs.org',
 ]);

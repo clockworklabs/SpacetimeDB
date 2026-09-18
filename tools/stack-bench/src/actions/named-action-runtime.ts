@@ -86,28 +86,34 @@ export function namedActionRequest(named: NamedActionsCapability, action: NamedA
   }
 }
 
-export function capturedCredentials(actor: Actor): HeaderRecord | null {
-  const authHeader = /^(authorization|cookie|x-auth-token|x-session|x-token|x-user)$/i;
+const AUTH_HEADER = /^(authorization|x-auth-token|x-session|x-token|x-user)$/i;
+export const REQUEST_CONTEXT_HEADER = /^(authorization|cookie|x-auth-token|x-session|x-token|x-user|x-csrf-token|x-xsrf-token|csrf-token|origin|referer)$/i;
+
+function capturedCredentials(actor: Actor, targetUrl: string): HeaderRecord {
+  const target = new URL(targetUrl);
   for (const write of [...(actor.writes ?? [])].reverse()) {
+    if (new URL(write.url).origin !== target.origin) continue;
     const headers = Object.entries(write.headers ?? {})
-      .filter(([key, value]) => authHeader.test(key) && value)
+      // Cookies come from the current browser jar, with domain/path matching.
+      .filter(([key, value]) => key.toLowerCase() !== 'cookie' && REQUEST_CONTEXT_HEADER.test(key) && value)
       .map(([key, value]) => [key.toLowerCase(), value]);
     if (headers.length) return Object.fromEntries(headers);
   }
-  return null;
+  return {};
 }
 
-export async function browserCredentials(actor: Actor): Promise<HeaderRecord | null> {
-  const headers: HeaderRecord = {};
-  const cookies = await actor.context.cookies();
+export async function browserCredentials(actor: Actor, targetUrl: string, allowAnonymous = false): Promise<HeaderRecord | null> {
+  const headers = capturedCredentials(actor, targetUrl);
+  const cookies = await actor.context.cookies(targetUrl);
   if (cookies.length) headers.Cookie = cookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
+  if (Object.keys(headers).some(key => AUTH_HEADER.test(key))) return headers;
   const tokens = await actor.page.evaluate(() => {
     try {
       const getToken = typeof window === 'undefined' ? undefined : window.getSessionToken;
       if (getToken !== undefined) {
         if (typeof getToken !== 'function') return { unavailable: 'getSessionToken is not a function' };
         const token = getToken.call(window);
-        if (token === null) return { unavailable: 'getSessionToken returned no active session token' };
+        if (token === null) return { signedOut: true };
         return typeof token === 'string' && token.trim() && !/[\r\n]/.test(token) ? [token]
           : { unavailable: 'getSessionToken did not return a nonempty, valid bearer token or null' };
       }
@@ -137,11 +143,20 @@ export async function browserCredentials(actor: Actor): Promise<HeaderRecord | n
     }
     return [...found];
   });
+  if (tokens && !Array.isArray(tokens) && 'signedOut' in tokens) {
+    if (!cookies.length && !allowAnonymous) {
+      inconclusive('replay-unavailable', { actor: actor.name, detail: 'getSessionToken returned no active session token' });
+    }
+    return cookies.length || allowAnonymous ? headers : null;
+  }
   if (tokens && !Array.isArray(tokens) && !cookies.length) {
     inconclusive('replay-unavailable', { actor: actor.name, detail: tokens.unavailable });
   }
+  if (allowAnonymous && Array.isArray(tokens) && tokens.length > 1 && !cookies.length) {
+    inconclusive('replay-unavailable', { actor: actor.name, detail: 'multiple session tokens without an unambiguous credential hook' });
+  }
   if (Array.isArray(tokens) && tokens.length === 1) headers.Authorization = `Bearer ${tokens[0]}`;
-  return Object.keys(headers).length ? headers : null;
+  return allowAnonymous || cookies.length || Object.keys(headers).some(key => AUTH_HEADER.test(key)) ? headers : null;
 }
 
 type NamedFetch = NamedActionsCapability['fetch'];

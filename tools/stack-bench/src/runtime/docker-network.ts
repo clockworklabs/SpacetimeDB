@@ -136,7 +136,7 @@ export function createAttemptNetwork(leasePath: string, lease: BackendLease,
   });
 }
 
-export function createAttemptContainer(leasePath: string, lease: BackendLease, kind: 'backend' | 'browser',
+export function createAttemptContainer(leasePath: string, lease: BackendLease, kind: 'backend' | 'browser' | 'authentication',
   image: string, networkMode: string, args: string[], docker: typeof attemptDocker = attemptDocker): BackendLeaseContainer {
   const limits = kind === 'browser' ? BROWSER_CONTAINER_RESOURCE_LIMITS : SIDECAR_CONTAINER_RESOURCE_LIMITS;
   const intent = recordAttemptCreation(leasePath, lease, kind);
@@ -153,7 +153,8 @@ export function createAttemptContainer(leasePath: string, lease: BackendLease, k
     if (kind === 'backend') {
       next.resources.container = container;
       next.resources.network!.namespaceContainerId = id;
-    } else next.resources.browserContainer = container;
+    } else if (kind === 'authentication') next.resources.authenticationContainer = container;
+    else next.resources.browserContainer = container;
     return next;
   });
   try { docker(['start', id]); }

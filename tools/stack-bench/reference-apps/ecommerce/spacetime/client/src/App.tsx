@@ -23,12 +23,10 @@ function microsToDate(micros: bigint): Date {
 }
 
 export default function App() {
-  const { isActive, token, getConnection } = useSpacetimeDB();
+  const { isActive, getConnection } = useSpacetimeDB();
   const conn = getConnection() as DbConnection | null;
 
-  useEffect(() => {
-    if (token) localStorage.setItem('auth_token', token);
-  }, [token]);
+
 
   const [items] = useTable(tables.item);
   const [bundleDefinitions] = useTable(tables.bundleDefinition);
@@ -257,23 +255,6 @@ export default function App() {
     await conn.reducers.requestStockAlert({ itemId });
   };
 
-  const handleSignUp = async (username: string, password: string) => {
-    await conn?.reducers.signUp({ username, password });
-  };
-
-  const handleSignIn = async (username: string, password: string) => {
-    await conn?.reducers.signIn({ username, password });
-  };
-
-  const handleSignOut = async () => {
-    setActivePanel(null);
-    try {
-      await conn?.reducers.signOut({});
-    } catch {
-      // ignore
-    }
-  };
-
   const handleChangeQuantity = async (itemId: bigint, quantity: number) => {
     await conn?.reducers.updateCartQuantity({ itemId, quantity });
   };
@@ -429,9 +410,6 @@ export default function App() {
           </button>
           <AuthWidget
             currentUsername={currentUser?.username ?? null}
-            onSignUp={handleSignUp}
-            onSignIn={handleSignIn}
-            onSignOut={handleSignOut}
           />
         </div>
       </header>

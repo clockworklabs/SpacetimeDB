@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { cpus, loadavg } from 'node:os';
 import { processIdentity } from './platform.js';
-import { ATTEMPT_CONTAINER_LIMIT_TOTALS } from '../composition/product-config.js';
+import { ATTEMPT_CONTAINER_LIMIT_TOTALS, attemptContainerLimitTotals } from '../composition/product-config.js';
 import type { BackendLease, BackendResourceLock } from './backend-lease.js';
 
 export interface ResourceLockTransaction {
@@ -15,35 +15,42 @@ export interface ResourceLockTransaction {
   lease: BackendLease;
   keys: string[];
   capacity?: number | null;
+  authenticationProvider?: 'keycloak';
 }
 
 const hash = (value: string): string => createHash('sha256').update(value).digest('hex');
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 
-function addSlot(slots: Set<string>, key: unknown, owner: unknown): void {
+function slotIdentity(key: unknown, owner: unknown): string | null {
   const slot = typeof key === 'string' ? /^slot:([^:]+):[^:]+:run(\d+)$/.exec(key) : null;
-  if (slot) slots.add(`${owner}:${slot[1]}:${slot[2]}`);
+  return slot ? `${owner}:${slot[1]}:${slot[2]}` : null;
+}
+
+function addSlot(slots: Set<string>, key: unknown, owner: unknown): void {
+  const slot = slotIdentity(key, owner);
+  if (slot) slots.add(slot);
 }
 
 export function hostResourceWaitReason(total: number, available: number, cpuCount: number, load: number,
-  startingAttempts = 1): string | null {
+  startingAttempts = 1, startingMemoryBytes = startingAttempts * ATTEMPT_CONTAINER_LIMIT_TOTALS.memoryBytes): string | null {
   if (![total, available, cpuCount, load].every(Number.isFinite)
     || total <= 0 || available < 0 || available > total || cpuCount <= 0 || load < 0
-    || !Number.isSafeInteger(startingAttempts) || startingAttempts < 1) {
+    || !Number.isSafeInteger(startingAttempts) || startingAttempts < 1
+    || !Number.isSafeInteger(startingMemoryBytes) || startingMemoryBytes <= 0) {
     throw new Error('cannot read valid host resource pressure');
   }
   const required = Math.max(2 * 1024 ** 3, total * 0.1)
-    + startingAttempts * ATTEMPT_CONTAINER_LIMIT_TOTALS.memoryBytes;
+    + startingMemoryBytes;
   if (available < required) return `host capacity unavailable: ${(available / 1024 ** 3).toFixed(1)} GiB available; ${(required / 1024 ** 3).toFixed(1)} GiB required before another attempt`;
   if (load >= cpuCount) return `host capacity unavailable: CPU load ${load.toFixed(1)} on ${cpuCount} CPUs`;
   return null;
 }
 
-function readHostResourceWaitReason(startingAttempts: number): string | null {
+function readHostResourceWaitReason(startingAttempts: number, startingMemoryBytes: number): string | null {
   const mem = readFileSync('/proc/meminfo', 'utf8');
   return hostResourceWaitReason(Number(mem.match(/^MemTotal:\s+(\d+)/m)?.[1]) * 1024,
-    Number(mem.match(/^MemAvailable:\s+(\d+)/m)?.[1]) * 1024, cpus().length, loadavg()[0]!, startingAttempts);
+    Number(mem.match(/^MemAvailable:\s+(\d+)/m)?.[1]) * 1024, cpus().length, loadavg()[0]!, startingAttempts, startingMemoryBytes);
 }
 
 export function resourceLockDescriptors(root: string, keys: string[]): BackendResourceLock[] {
@@ -62,9 +69,10 @@ function syncDirectory(root: string): void {
 // This function has no locking of its own. Production callers must use flock.
 // Keeping the transaction separate lets source tests exercise records on Windows.
 export function resourceLockTransaction(input: ResourceLockTransaction,
-  readPressure: (startingAttempts: number) => string | null = readHostResourceWaitReason,
+  readPressure: (startingAttempts: number, startingMemoryBytes: number) => string | null = readHostResourceWaitReason,
   now = Date.now()): BackendResourceLock[] {
   const { operation, root, lease, keys } = input;
+  const envelope = attemptContainerLimitTotals(input.authenticationProvider);
   const locks = resourceLockDescriptors(root, keys);
   const owned = (record: Record<string, unknown>): boolean => record.runId === lease.runId
     && record.ownerPid === lease.ownerPid
@@ -103,7 +111,13 @@ export function resourceLockTransaction(input: ResourceLockTransaction,
       }
       continue;
     }
-    if (!record || owned(record)) continue;
+    if (!record) continue;
+    if (owned(record)) {
+      if (lock.key.startsWith('slot:') && record.authenticationProvider !== input.authenticationProvider) {
+        throw new Error('existing resource claim has a different authentication provider');
+      }
+      continue;
+    }
     const identity = processIdentity(record.ownerPid as number);
     if (identity && (record.ownerStartMarker === null
       || record.ownerStartMarker === identity.startMarker)) {
@@ -115,7 +129,11 @@ export function resourceLockTransaction(input: ResourceLockTransaction,
   const acquired: BackendResourceLock[] = [];
   if (operation === 'acquire' && input.capacity === null
     && locks.some((lock, index) => lock.key.startsWith('slot:') && !existing[index])) {
-    const starting = new Set<string>();
+    const starting = new Map<string, number>();
+    const reserve = (key: unknown, owner: unknown, memoryBytes: number) => {
+      const slot = slotIdentity(key, owner);
+      if (slot) starting.set(slot, Math.max(starting.get(slot) ?? 0, memoryBytes));
+    };
     // ponytail: reserve the full attempt envelope for the first minute of each launch.
     // After that use measured pressure; phase reservations are needed for guarantees against later spikes.
     for (const name of readdirSync(root).filter(name => name.endsWith('.lock.json'))) {
@@ -123,10 +141,19 @@ export function resourceLockTransaction(input: ResourceLockTransaction,
       if (!object(record) || typeof record.key !== 'string'
         || typeof record.ownershipMarkerSha256 !== 'string' || typeof record.acquiredAt !== 'string'
         || !Number.isFinite(Date.parse(record.acquiredAt))) throw new Error('unreadable host resource claim');
-      if (now - Date.parse(record.acquiredAt) < 60_000) addSlot(starting, record.key, record.ownershipMarkerSha256);
+      if (record.authenticationProvider !== undefined && record.authenticationProvider !== 'keycloak') {
+        throw new Error('unreadable host resource claim authentication provider');
+      }
+      const memoryBytes = record.startupMemoryBytes
+        ?? attemptContainerLimitTotals(record.authenticationProvider).memoryBytes;
+      if (typeof memoryBytes !== 'number' || !Number.isSafeInteger(memoryBytes) || memoryBytes <= 0) {
+        throw new Error('unreadable host resource claim startup memory');
+      }
+      if (now - Date.parse(record.acquiredAt) < 60_000) reserve(record.key, record.ownershipMarkerSha256,
+        memoryBytes);
     }
-    for (const key of keys) addSlot(starting, key, hash(lease.ownershipToken));
-    const reason = readPressure(starting.size);
+    for (const key of keys) reserve(key, hash(lease.ownershipToken), envelope.memoryBytes);
+    const reason = readPressure(starting.size, [...starting.values()].reduce((sum, value) => sum + value, 0));
     if (reason) throw new Error(reason);
   }
   try {
@@ -142,7 +169,9 @@ export function resourceLockTransaction(input: ResourceLockTransaction,
           writeFileSync(fd, `${JSON.stringify({ version: 1, key: lock.key,
             runId: lease.runId, ownerPid: lease.ownerPid,
             ownerStartMarker: processIdentity(lease.ownerPid)?.startMarker ?? null,
-            ownershipMarkerSha256: hash(lease.ownershipToken), acquiredAt })}\n`);
+            ownershipMarkerSha256: hash(lease.ownershipToken), acquiredAt,
+            startupMemoryBytes: envelope.memoryBytes,
+            ...(input.authenticationProvider ? { authenticationProvider: input.authenticationProvider } : {}) })}\n`);
           fsyncSync(fd);
         } finally { closeSync(fd); }
         try { linkSync(temporary, lock.path); }

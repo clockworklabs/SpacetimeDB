@@ -42,6 +42,7 @@ interface EffectiveSource {
 }
 
 interface ImportedInspection {
+  requiredEnvironment?: string[];
   id: string;
   available: boolean;
   ok: boolean;
@@ -266,6 +267,8 @@ export function inspectImportedReference(fixture: ReferenceFixture,
     }
   }
   return { id: fixture.id, available: true, ok: failures.length === 0,
+    requiredEnvironment: record(metadata) && Array.isArray(metadata.requiredEnvironment)
+      ? metadata.requiredEnvironment.filter((value): value is string => typeof value === 'string') : [],
     sourceSha256: sourceHash.sha256, sourceFiles: sourceHash.files.length, failures };
 }
 

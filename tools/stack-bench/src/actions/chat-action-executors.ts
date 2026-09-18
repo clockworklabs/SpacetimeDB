@@ -8,6 +8,7 @@ import {
 } from './actor-action-runtime.js';
 import type { ActorActionArguments, BrowserActorCapabilities } from './actor-action-runtime.js';
 import { browserApplicationBoundary } from './browser-action-executors.js';
+import { authenticateWithKeycloak, usesKeycloakLogin } from './keycloak-browser.js';
 
 type ChatArguments<Input extends { readonly actor: string }> =
   ActorActionArguments<Input, BrowserActorCapabilities>;
@@ -45,6 +46,11 @@ async function signUp({ input, capabilities, signal }: ChatArguments<AccountInpu
   const browser = browserFor(capabilities);
   const user = input.exact ? input.name : browser.scopedUser(input.name);
   const password = input.password ?? `pw-${user}`;
+  if (await usesKeycloakLogin(actor.page, browser, 'signup')) {
+    await authenticateWithKeycloak({ ...input, page: actor.page, browser, mode: 'signup', user, password, signal });
+    return input.expectFailure ? { user, authenticationPath: 'keycloak', expectedFailure: true }
+      : { user, authenticationPath: 'keycloak', signedUp: true };
+  }
   const username = actor.page.locator(browser.testId('signup-username')).first();
   if (!(await username.isVisible())) {
     const toggle = actor.loc('signup-toggle');
@@ -70,11 +76,11 @@ async function signUp({ input, capabilities, signal }: ChatArguments<AccountInpu
   await actor.page.locator(browser.testId('signup-submit')).first().click();
   if (input.expectFailure) {
     await browser.sleep(input.settleMs ?? 2000, signal);
-    return { user, expectedFailure: true };
+    return { user, authenticationPath: 'local-form', expectedFailure: true };
   }
   await actor.page.locator(browser.testId('current-user')).first()
     .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
-  return { user, signedUp: true };
+  return { user, authenticationPath: 'local-form', signedUp: true };
 }
 
 async function signIn({ input, capabilities, signal }: ChatArguments<AccountInput>, acceptRestoredSession = false) {
@@ -91,6 +97,11 @@ async function signIn({ input, capabilities, signal }: ChatArguments<AccountInpu
     return true;
   };
   if (await restoredSession()) return { user, signedIn: false };
+  if (await usesKeycloakLogin(actor.page, browser, 'signin')) {
+    await authenticateWithKeycloak({ ...input, page: actor.page, browser, mode: 'signin', user, password, signal });
+    return input.expectFailure ? { user, authenticationPath: 'keycloak', expectedFailure: true }
+      : { user, authenticationPath: 'keycloak', signedIn: true };
+  }
   const username = actor.page.locator(browser.testId('signin-username')).first();
   const toggle = actor.loc('signin-toggle');
   try {
@@ -120,11 +131,11 @@ async function signIn({ input, capabilities, signal }: ChatArguments<AccountInpu
   }
   if (input.expectFailure) {
     await browser.sleep(input.settleMs ?? 2000, signal);
-    return { user, expectedFailure: true };
+    return { user, authenticationPath: 'local-form', expectedFailure: true };
   }
   await actor.page.locator(browser.testId('current-user')).first()
     .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
-  return { user, signedIn: true };
+  return { user, authenticationPath: 'local-form', signedIn: true };
 }
 
 async function createRoom({ input, capabilities }: ChatArguments<RoomInput>) {

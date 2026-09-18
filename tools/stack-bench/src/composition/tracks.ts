@@ -17,11 +17,7 @@ export interface TrackSuite {
   fromLevel?: number;
 }
 
-export interface TrackDatabaseProvenance {
-  action: string;
-  markerParameter: string;
-  body: Record<string, string>;
-}
+export type TrackDatabaseProvenance = { browserAction: 'signUp' };
 
 export interface NamedActionParameter {
   name: string;

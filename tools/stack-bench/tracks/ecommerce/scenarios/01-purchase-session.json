@@ -3,14 +3,16 @@
   "track": "ecommerce",
   "level": 1,
   "name": "Purchase requires an account",
-  "note": "Draft: setup attribution requires matching reference and mutation qualification. Refusal checks first prove the same valid route and input with an authorized actor. A failed positive control leaves authorization unmeasured; a malformed endpoint cannot earn credit by returning an error.",
+  "note": "Draft: setup attribution requires matching reference and mutation qualification. Refusal checks first prove the same valid route and input with an authorized actor. A failed positive control leaves authorization unmeasured; a malformed endpoint cannot earn credit by returning an error. Rejected account attempts return to the application in the same page before probing the proven purchase route with their actual credentials. Provider errors alone cannot earn a pass.",
   "features": [
     {
       "id": 101,
       "name": "Purchase requires an account",
       "actors": [
         "buyer",
-        "guest"
+        "guest",
+        "wrong-password",
+        "duplicate"
       ],
       "setup": [
         {
@@ -66,7 +68,7 @@
         {
           "id": "101a",
           "category": "production",
-          "desc": "a valid direct purchase works for the buyer but is refused without a session",
+          "desc": "a valid direct purchase works for the buyer but is refused without a session and after rejected login or registration",
           "points": 2,
           "steps": [
             {
@@ -101,6 +103,140 @@
             {
               "do": "expectActionOutcome",
               "actor": "guest",
+              "outcome": "refused",
+              "routeProvenBy": "buyer"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "speaker-before-control",
+              "plus": -1
+            },
+            {
+              "do": "signIn",
+              "actor": "wrong-password",
+              "name": "kim",
+              "password": "not-kims-password",
+              "expectFailure": true
+            },
+            {
+              "do": "expect",
+              "actor": "wrong-password",
+              "testid": "auth-error",
+              "within": 6000
+            },
+            {
+              "do": "reload",
+              "actor": "wrong-password",
+              "application": true,
+              "settleMs": 1000
+            },
+            {
+              "do": "expect",
+              "actor": "wrong-password",
+              "testid": "current-user",
+              "absent": true,
+              "within": 1000
+            },
+            {
+              "do": "callAction",
+              "actor": "wrong-password",
+              "from": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker",
+                "attribute": "data-buy-input"
+              },
+              "authentication": "optional",
+              "settleMs": 2000
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "wrong-password",
+              "outcome": "refused",
+              "routeProvenBy": "buyer"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "speaker-before-control",
+              "plus": -1
+            },
+            {
+              "do": "signUp",
+              "actor": "duplicate",
+              "name": "kim",
+              "password": "not-kims-password",
+              "expectFailure": true
+            },
+            {
+              "do": "expect",
+              "actor": "duplicate",
+              "testid": "auth-error",
+              "within": 6000
+            },
+            {
+              "do": "reload",
+              "actor": "duplicate",
+              "application": true,
+              "settleMs": 1000
+            },
+            {
+              "do": "expect",
+              "actor": "duplicate",
+              "testid": "current-user",
+              "absent": true,
+              "within": 1000
+            },
+            {
+              "do": "callAction",
+              "actor": "duplicate",
+              "from": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker",
+                "attribute": "data-buy-input"
+              },
+              "authentication": "optional",
+              "settleMs": 2000
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "duplicate",
               "outcome": "refused",
               "routeProvenBy": "buyer"
             },

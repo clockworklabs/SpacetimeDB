@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { actionImplementation, ActionApplicationFailure, ActionHarnessFailure, ActionInconclusive } from './action-contract.js';
 import { actorFor, inconclusive } from './actor-action-runtime.js';
 import type { ActorCapabilities } from './actor-action-runtime.js';
-import { browserCredentials, capturedCredentials, namedActionRequest } from './named-action-runtime.js';
+import { browserCredentials, namedActionRequest } from './named-action-runtime.js';
 import type { NamedAction, NamedActionsCapability } from './named-action-runtime.js';
 import type { createDatabaseReadCapability } from './runtime-action-executors.js';
 import { checkoutDifferences, orderCheckoutDifferences, checkoutCrashDifferences } from '../stacks/checkout-state.js';
@@ -30,12 +30,12 @@ async function checkoutCaller(input: { actor: string; namedAction?: NamedAction 
   spacetime: SpacetimeTarget | null | undefined) {
   const named = capabilities['named-actions'];
   const actor = actorFor(capabilities, input.actor);
-  const credentials = capturedCredentials(actor) ?? await browserCredentials(actor);
-  if (!credentials) inconclusive('no-session', { actor: input.actor, action: 'checkout' });
   const action = input.namedAction ?? named.resolve('checkout');
   if (!action) inconclusive('unknown-action', { action: 'checkout' });
   const request = namedActionRequest(named, action, {});
   if (!request?.url) inconclusive('unresolved-action', { action: 'checkout' });
+  const credentials = await browserCredentials(actor, request.url);
+  if (!credentials) inconclusive('no-session', { actor: input.actor, action: 'checkout' });
   let connection: Awaited<ReturnType<typeof openCrashReducerConnection>> | undefined;
   if (spacetime) {
     const authorization = Object.entries(credentials).find(([key]) => key.toLowerCase() === 'authorization')?.[1];

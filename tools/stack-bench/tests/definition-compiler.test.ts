@@ -189,7 +189,7 @@ test('extracted action inputs expose their runtime options without allowing scri
     actor: 'a', outcome: 'refused', routeProvenBy: 'owner' })));
   assert.throws(() => compileScenarioDefinition(scenario({ do: 'callAction', actor: 'a',
     action: 'buy', input: { testid: 'item-card', attribute: 'data-buy-input' },
-    authentication: 'guest' })), /authentication: must be "actor" or "none"/);
+    authentication: 'guest' })), /authentication: must be "actor", "optional", or "none"/);
   const namedReplay = { do: 'replayAs', actor: 'a', from: 'staff', match: 'ship',
     namedAction: { id: 'ship', path: '/api/fulfilment/ship', reducer: 'ship_order', args: [0],
       params: [{ name: 'orderId', in: 'body', wireType: 'u64' }] },
@@ -250,17 +250,14 @@ test('track manifests reject unknown fields and malformed named actions', () => 
   assert.throws(() => compileTrackManifest({ ...base, actions: [{ id: 'buy', path: '/api/buy',
     reducer: 'buy', args: [0], params: [{ name: 'itemId', in: 'path', placeholder: ':id' }] }] }),
   /placeholder: does not appear in path/);
-  const signUp = { id: 'signUp', path: '/api/auth/signup', reducer: 'sign_up', args: ['', ''] };
-  const provenance = { action: 'signUp', markerParameter: 'username',
-    body: { username: '', password: 'password' } };
+  for (const browserAction of [undefined, 'signIn', 'missing']) {
+    assert.throws(() => compileTrackManifest({ ...base, databaseProvenance: { browserAction } }),
+      /browserAction: must be signUp/);
+  }
   assert.throws(() => compileTrackManifest({ ...base,
-    databaseProvenance: { ...provenance, action: 'missing' }, actions: [signUp] }),
-  /action: must name one declared action/);
-  assert.throws(() => compileTrackManifest({ ...base,
-    databaseProvenance: { ...provenance, markerParameter: 'missing' }, actions: [signUp] }),
-  /markerParameter: must name one field/);
+    databaseProvenance: { browserAction: 'signUp', action: 'signUp' } }), /action: unknown field/);
   assert.doesNotThrow(() => compileTrackManifest({ ...base,
-    databaseProvenance: provenance, actions: [signUp] }));
+    databaseProvenance: { browserAction: 'signUp' } }));
   assert.doesNotThrow(() => compileTrackManifest({ ...base, reseedOnReset: true }));
 });
 

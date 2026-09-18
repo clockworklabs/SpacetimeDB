@@ -54,7 +54,14 @@ function services(
   actors: ReadonlyMap<string, unknown>,
   overrides: ServiceOverrides = {},
 ): ProvidedServices {
-  for (const value of actors.values()) record(value).record ??= () => {};
+  for (const value of actors.values()) {
+    const actor = record(value);
+    actor.record ??= () => {};
+    actor.context ??= { cookies: async () => [] };
+    for (const write of (actor.writes ?? []) as UnknownRecord[]) {
+      write.url ??= `${overrides.backend === 'spacetime' ? overrides.spacetime?.uri : 'http://app.test'}/api/session`;
+    }
+  }
   const verification: Verification[] = [];
   let calls: Calls = null;
   const sleep = overrides.sleep
@@ -137,6 +144,30 @@ test('a parameterless action needs no DOM input; parameterized actions still do'
   assert.equal((await run({ ...input, namedAction: { ...input.namedAction, args: [1] } }, provided)).status,
     'harness_failure');
   assert.equal(calls, 1);
+});
+
+test('optional actor credentials preserve illicit sessions without excusing broken credential hooks', async () => {
+  const input = { do: 'callAction', actor: 'guest', action: 'checkout', authentication: 'optional', settleMs: 0,
+    namedAction: { id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] } };
+  for (const observed of [{ signedOut: true }, ['illicit-session'], ['one-token', 'another-token'], { unavailable: 'credential hook failed' }]) {
+    let calls = 0;
+    const actor = { name: 'guest', writes: [{ url: 'http://app.test/api/checkout', headers: { 'x-csrf-token': 'caller-csrf' } }],
+      record() {}, context: { cookies: async () => [] },
+      page: { evaluate: async () => observed } };
+    const provided = services(new Map([['guest', actor]]), {
+      fetchImpl: async (_url, options) => {
+        calls++;
+        assert.equal((options.headers as Record<string, string>)['x-csrf-token'], 'caller-csrf');
+        assert.equal((options.headers as Record<string, string>).Authorization,
+          Array.isArray(observed) ? 'Bearer illicit-session' : undefined);
+        return namedResponse(401, false);
+      },
+    });
+    const result = await run(input, provided);
+    const broken = Array.isArray(observed) ? observed.length > 1 : 'unavailable' in observed;
+    assert.equal(result.status, broken ? 'inconclusive' : 'passed', JSON.stringify(result));
+    assert.equal(calls, broken ? 0 : 1);
+  }
 });
 
 test('shipping accounting waits for the staff response before reading accounting', async () => {
@@ -848,6 +879,84 @@ test('named calls preserve actor credentials, result state, and application asse
   const mismatch = await run({ do: 'expectCallOutcomes', accepted: 1 }, provided);
   assert.equal(mismatch.status, 'failed');
   assert.match(mismatch.summary ?? '', /calls were accepted, expected 1/);
+});
+
+test('named calls scope browser cookies and captured request context to the action destination', async () => {
+  const seen: CapturedRequest[] = [];
+  const scoped: string[] = [];
+  const actor = (name: string) => ({
+    name,
+    writes: [
+      { url: 'http://app.test/api/cart', method: 'POST', body: {},
+        headers: { cookie: 'stale=must-not-replay', 'x-csrf-token': `${name}-csrf`,
+          origin: 'http://app.test', referer: 'http://app.test/cart' } },
+      { url: 'http://provider.test/token', method: 'POST', body: {},
+        headers: { authorization: 'Bearer provider-private', cookie: 'provider=private',
+          'x-csrf-token': 'provider-private', origin: 'http://provider.test' } },
+    ],
+    context: { cookies: async (url: string) => {
+      scoped.push(url);
+      assert.equal(url, 'http://app.test/api/checkout');
+      // The browser owns cookie domain/path/secure matching; an unscoped read
+      // would also expose provider and /account-only cookies.
+      return [{ name: 'sid', value: name }];
+    } },
+    page: { evaluate: async () => null },
+  });
+  const provided = services(new Map([['a', actor('a')], ['b', actor('b')]]), {
+    fetchImpl: async (url, options) => {
+      seen.push({ url, options: options as unknown as UnknownRecord });
+      const headers = record(options.headers);
+      const user = String(headers.Cookie).slice(4);
+      const valid = headers.origin === 'http://app.test'
+        && headers['x-csrf-token'] === `${user}-csrf` && !headers.authorization;
+      return namedResponse(valid ? 200 : 403, valid);
+    },
+  });
+  for (const step of [
+    { do: 'callAction', actor: 'a', action: 'checkout', settleMs: 0,
+      namedAction: { id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] } },
+    { do: 'expectActionOutcome', actor: 'a', outcome: 'accepted' },
+    { do: 'callConcurrently', actors: ['a', 'b'], action: 'checkout', settleMs: 0 },
+    { do: 'expectCallOutcomes', accepted: 2 },
+  ]) {
+    const result = await run(step, provided);
+    assert.equal(result.status, 'passed', JSON.stringify(result));
+  }
+  assert.equal(scoped.length, 3);
+  assert.equal(seen.length, 3);
+  assert(!JSON.stringify(seen).includes('provider-private'));
+  assert(!JSON.stringify(seen).includes('stale=must-not-replay'));
+});
+
+test('cross-account replay uses caller CSRF context and cannot credit missing caller context', async () => {
+  for (const callerContext of [true, false]) {
+    let requests = 0;
+    const owner = { name: 'owner', received: [], writes: [{
+      url: 'http://app.test/api/orders/1/cancel', method: 'POST', body: {},
+      headers: { cookie: 'sid=owner', 'x-csrf-token': 'owner-csrf', origin: 'http://app.test' },
+    }] };
+    const other = { name: 'other', received: [], writes: callerContext ? [{
+      url: 'http://app.test/api/cart', method: 'POST', body: {},
+      headers: { cookie: 'sid=other', 'x-csrf-token': 'other-csrf', origin: 'http://app.test' },
+    }] : [], context: { cookies: async (url: string) => {
+      assert.equal(url, 'http://app.test/api/orders/1/cancel');
+      return [{ name: 'sid', value: 'other' }];
+    } }, page: { evaluate: async () => null, request: { fetch: async (_url: string, options: UnknownRecord) => {
+      requests++;
+      const headers = record(options.headers);
+      assert.equal(headers.cookie, 'sid=other');
+      assert.equal(headers['x-csrf-token'], 'other-csrf');
+      assert.equal(headers.origin, 'http://app.test');
+      // A valid caller request reaches the ownership check and is refused.
+      return { status: () => 403, ok: () => false };
+    } } } };
+    const provided = services(new Map<string, unknown>([['owner', owner], ['other', other]]));
+    const result = await run({ do: 'replayAs', actor: 'other', from: 'owner', match: 'cancel', settleMs: 0 }, provided);
+    assert.equal(result.status, callerContext ? 'passed' : 'inconclusive', JSON.stringify(result));
+    assert.equal(requests, callerContext ? 1 : 0);
+    if (callerContext) assert.equal((await run({ do: 'expectReplayRejected', actor: 'other' }, provided)).status, 'passed');
+  }
 });
 
 test('concurrent calls classify every result before counting accepted requests', async () => {

@@ -101,10 +101,12 @@ export async function controlSpacetime({ lease, signal = null }: {
   }
 }
 
-export function activateSpacetime({ leasePath, leaseToken, lease, cli, ports }: {
-  leasePath: string; leaseToken: string; lease: BackendLease; cli?: string; ports: StackRunPorts;
+export function activateSpacetime({ leasePath, leaseToken, lease, cli, ports, authenticationProvider, credentialAliases }: {
+  leasePath: string; leaseToken: string; lease: BackendLease; cli?: string; ports: StackRunPorts; authenticationProvider?: 'keycloak';
+  credentialAliases?: Readonly<Record<string, string>>;
 }): void {
-  if (process.env.STACK_BENCH_APPLIANCE === '1') return activateAttemptBackend({ leasePath, lease, ports });
+  if (process.env.STACK_BENCH_APPLIANCE === '1') return activateAttemptBackend({ leasePath, lease, ports, authenticationProvider, credentialAliases });
+  if (authenticationProvider) throw new Error('A supplied identity provider requires an isolated appliance attempt');
   const url = leaseUrl(lease.resources.serverUri);
   const port = Number(url.port);
   const ping = `${lease.resources.serverUri}/v1/ping`;

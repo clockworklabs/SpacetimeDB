@@ -227,6 +227,11 @@ test('appliance pool caps warn without replacing the single-worker startup basel
     assert.match(requiredCheck(report, 'docker.capacity').summary, /9-worker.*36 CPUs.*83\.3 GiB/);
     assert.equal(requiredCheck(report, 'storage.results').status, 'pass');
 
+    const withLoginService = runPreflight({ ...selected, authenticationProvider: 'keycloak' }, dependencies);
+    assert.equal(withLoginService.request.authenticationProvider, 'keycloak');
+    assert.match(requiredCheck(withLoginService, 'docker.capacity').summary, /9-worker.*45 CPUs.*92\.3 GiB/);
+    assert.match(requiredCheck(withLoginService, 'docker.capacity').summary, /not a measured minimum/);
+
     allocation = { NCPU: 3, MemTotal: 7 * 1024 ** 3 };
     const insufficient = runPreflight(selected, dependencies);
     assert.equal(requiredCheck(insufficient, 'docker.cpu').status, 'fail');

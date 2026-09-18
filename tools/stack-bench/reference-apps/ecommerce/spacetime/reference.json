@@ -6,5 +6,5 @@
   "moduleDirectory": "backend/spacetimedb",
   "bindingsDirectory": "client/src/module_bindings",
   "client": { "directory": "client", "script": "dev", "port": 6473 },
-  "requiredEnvironment": ["VITE_MODULE_NAME", "VITE_SPACETIMEDB_URI", "VITE_PORT"]
+  "requiredEnvironment": ["VITE_MODULE_NAME", "VITE_SPACETIMEDB_URI", "VITE_PORT", "OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_REDIRECT_URI"]
 }

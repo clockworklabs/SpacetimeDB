@@ -14,7 +14,7 @@ import { resolveDefaultGuidanceForStack } from '../campaigns/condition-compiler.
 import type { RequestedScope } from '../campaigns/condition-compiler.js';
 import { isExactImageReference, isImageId, parseImageId } from './container-image.js';
 import { runContainerSmoke } from './container-smoke.js';
-import { ATTEMPT_CONTAINER_LIMIT_TOTALS, BUILD_OUTBOUND_DESTINATIONS,
+import { attemptContainerLimitTotals, BUILD_OUTBOUND_DESTINATIONS,
   PREFLIGHT_RESOURCE_FLOORS } from '../composition/product-config.js';
 import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
 import { resolveRecipeRelease } from '../composition/recipe-release.js';
@@ -51,6 +51,7 @@ export interface PreflightRequest {
   levelList: number[];
   runIndex: number;
   parallelism?: number;
+  authenticationProvider?: 'keycloak';
   agentAdapter: string;
   providerRoute?: string;
   maxOutputTokens?: number;
@@ -520,8 +521,9 @@ export function runPreflight(
     add('docker.memory', enoughMemory ? 'pass' : 'fail',
       `${bytes(info.MemTotal)} total memory allocation reported by Docker`,
       enoughMemory ? null : `Allocate at least ${bytes(resourceFloors.memoryBytes)} to Docker.`);
-    const poolCpu = parallelism * ATTEMPT_CONTAINER_LIMIT_TOTALS.cpuCount;
-    const poolMemory = parallelism * ATTEMPT_CONTAINER_LIMIT_TOTALS.memoryBytes;
+    const envelope = attemptContainerLimitTotals(request.authenticationProvider);
+    const poolCpu = parallelism * envelope.cpuCount;
+    const poolMemory = parallelism * envelope.memoryBytes;
     const withinAllocation = poolCpu <= info.NCPU && poolMemory <= info.MemTotal;
     add('docker.capacity', withinAllocation ? 'pass' : 'warn',
       `${parallelism}-worker container caps: ${poolCpu} CPUs and ${bytes(poolMemory)} RAM. `
@@ -762,6 +764,7 @@ export function runPreflight(
     generatedAt: new Date(startedAt).toISOString(),
     request: { backends: request.backends, track: request.track, levels: request.levelList,
       runIndex: request.runIndex, parallelism: request.parallelism ?? 1,
+      ...(request.authenticationProvider ? { authenticationProvider: request.authenticationProvider } : {}),
       agentAdapter: request.agentAdapter,
       ...(request.providerRoute ? { providerRoute: request.providerRoute } : {}),
       ...(request.maxOutputTokens ? { maxOutputTokens: request.maxOutputTokens } : {}), guidance: request.guidance, packs: request.packIds,

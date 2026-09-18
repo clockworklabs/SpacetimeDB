@@ -26,6 +26,9 @@ import { inspectImportedReference, loadReferenceRegistry,
   prepareReferenceFixtureSource, REFERENCE_METADATA_FILE, referenceMetadataIssues,
   validateReferenceRegistry } from './reference-fixtures.js';
 import { referenceInstallSteps } from './reference-install.js';
+import { parseReferenceCondition, assertReferenceAuthentication } from './reference-selection.js';
+import type { ConditionReference } from '../campaigns/condition-compiler.js';
+import { resolveGuidanceProfile } from '../campaigns/condition-compiler.js';
 
 import { STACK_BENCH_ROOT as ROOT, compiledEntrypoint } from '../package-root.js';
 const RUN_BUILD = compiledEntrypoint('container', 'run-build.js');
@@ -73,13 +76,15 @@ const errorDetail = (error: unknown): string =>
   redactCredentials(error instanceof Error ? error.stack ?? error.message : String(error));
 
 
-function parseArgs(argv: readonly string[]): {
-  backend: string | null; fixture: string | null; out: string | null;
+export function parseReferenceBuildArgs(argv: readonly string[]): {
+  backend: string | null; fixture: string | null; out: string | null; condition?: ConditionReference;
 } {
   const { values } = parseNodeArgs({ args: [...argv.slice(2)], options: {
     backend: { type: 'string' }, fixture: { type: 'string' }, out: { type: 'string' },
+    'condition-json': { type: 'string' },
   } });
   const args = { backend: values.backend ?? null, fixture: values.fixture ?? null,
+    condition: parseReferenceCondition(values['condition-json']),
     out: values.out === undefined ? null : resolve(values.out) };
   if (args.backend && !STACK_ADAPTER_REGISTRY.ids.includes(args.backend)) {
     throw new Error(`unknown backend ${args.backend}`);
@@ -130,7 +135,8 @@ function buildCommands(metadata: ReferenceMetadataForBuild, container: string,
     'npm', ['run', 'build'], commands);
 }
 
-async function qualify(fixture: ReferenceFixture, imageIdentity: ImageIdentity): Promise<FixtureBuild> {
+async function qualify(fixture: ReferenceFixture, imageIdentity: ImageIdentity,
+  condition?: ConditionReference): Promise<FixtureBuild> {
   const started = Date.now();
   const runtimeRoot = process.env.STACK_BENCH_RUNTIME_DIR;
   if (process.env.STACK_BENCH_APPLIANCE === '1' && !runtimeRoot) {
@@ -170,9 +176,13 @@ async function qualify(fixture: ReferenceFixture, imageIdentity: ImageIdentity):
       track: fixture.track, runIndex: 0,
       ...preparedResources });
     await claimBackendResourcesWhenAvailable(leasePath, lease, { ...resourceLockScope(),
+      authenticationProvider: condition?.authenticationProvider,
       keys: backendResourceLockKeys(lease, ports, lockKeys) });
     adapter.lifecycle.activate({ leasePath, leaseToken: lease.ownershipToken, lease,
       ports,
+      authenticationProvider: condition?.authenticationProvider,
+      credentialAliases: condition
+        ? resolveGuidanceProfile(condition.guidanceProfile, [fixture.backend]).credentialAliases : undefined,
       ...runtime.lifecycle });
     const prepared = execFileSync(process.execPath,
       [RUN_BUILD, '--app', app, '--backend', fixture.backend, '--image', IMAGE, '--prepare-only'],
@@ -231,7 +241,7 @@ async function qualify(fixture: ReferenceFixture, imageIdentity: ImageIdentity):
 }
 
 async function main(): Promise<void> {
-  const args = parseArgs(process.argv);
+  const args = parseReferenceBuildArgs(process.argv);
   const registry = loadReferenceRegistry();
   const validation = validateReferenceRegistry(registry);
   if (!validation.ok) throw new Error(`reference registry is invalid:\n${validation.issues.join('\n')}`);
@@ -240,18 +250,19 @@ async function main(): Promise<void> {
   if (!fixtures.length) throw new Error('no imported fixtures matched');
   for (const fixture of fixtures) {
     const inspection = inspectImportedReference(fixture);
+    assertReferenceAuthentication(fixture.id, inspection.requiredEnvironment ?? [], args.condition);
     if (!inspection.ok) throw new Error(`${fixture.id} import is invalid:\n${inspection.failures.join('\n')}`);
   }
   const imageIdentity = resolveContainerImage(IMAGE);
   const id = `reference-build-${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}-${process.pid}`;
   const artifact: {
     id: string; kind: string; startedAt: string; isolation: string;
-    image: ImageIdentity; fixtures: FixtureBuild[]; completedAt?: string; ok?: boolean;
+    image: ImageIdentity; fixtures: FixtureBuild[]; completedAt?: string; ok?: boolean; condition: ConditionReference | null;
   } = { id, kind: 'reference_build', startedAt: new Date().toISOString(),
-    isolation: 'docker', image: imageIdentity, fixtures: [] };
+    isolation: 'docker', image: imageIdentity, fixtures: [], condition: args.condition ?? null };
   for (const fixture of fixtures) {
     console.log(`building ${fixture.id} in ${imageIdentity.id}`);
-    artifact.fixtures.push(await qualify(fixture, imageIdentity));
+    artifact.fixtures.push(await qualify(fixture, imageIdentity, args.condition));
   }
   artifact.completedAt = new Date().toISOString();
   artifact.ok = artifact.fixtures.every(fixture => fixture.ok);

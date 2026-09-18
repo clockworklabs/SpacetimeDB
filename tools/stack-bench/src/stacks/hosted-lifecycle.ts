@@ -16,6 +16,7 @@ import { DATABASE_IMAGES } from './database-containers.js';
 import { createAttemptBrowser, createAttemptContainer, createAttemptNetwork, installAttemptFirewall,
   attemptControllerImage, attemptDocker } from '../runtime/docker-network.js';
 import { attemptDatabaseIdentity } from './hosted-database-identity.js';
+import { startAuthenticationService } from '../runtime/authentication-service.js';
 import { sleepSync } from '../runtime/platform.js';
 
 interface HostedApplicationControlInput {
@@ -263,12 +264,14 @@ export async function controlHostedAppServer({ adapterId: stack, lease, app, por
   { encoding: 'utf8', stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
 }
 
-export function activateHosted({ leasePath, leaseToken, lease, ports }: {
-  leasePath: string; leaseToken: string; lease: BackendLease; ports: StackRunPorts;
+export function activateHosted({ leasePath, leaseToken, lease, ports, authenticationProvider, credentialAliases }: {
+  leasePath: string; leaseToken: string; lease: BackendLease; ports: StackRunPorts; authenticationProvider?: 'keycloak';
+  credentialAliases?: Readonly<Record<string, string>>;
 }): void {
   if (process.env.STACK_BENCH_APPLIANCE === '1' && lease.backend !== 'stub') {
-    return activateAttemptBackend({ leasePath, lease, ports });
+    return activateAttemptBackend({ leasePath, lease, ports, authenticationProvider, credentialAliases });
   }
+  if (authenticationProvider) throw new Error('A supplied identity provider requires an isolated appliance attempt');
   updateBackendLease(leasePath,
     { token: leaseToken, backend: lease.backend, runId: lease.runId }, next => {
       next.state = 'active';
@@ -305,8 +308,9 @@ export function startAttemptDatabaseProcess(lease: BackendLease): void {
     'sh', '/usr/local/bin/docker-entrypoint.sh', ...launch]);
 }
 
-export function activateAttemptBackend({ leasePath, lease, ports }: {
-  leasePath: string; lease: BackendLease; ports: StackRunPorts;
+export function activateAttemptBackend({ leasePath, lease, ports, authenticationProvider, credentialAliases }: {
+  leasePath: string; lease: BackendLease; ports: StackRunPorts; authenticationProvider?: 'keycloak';
+  credentialAliases?: Readonly<Record<string, string>>;
 }): void {
   if (process.platform !== 'linux') throw new Error('attempt activation requires the Linux Docker controller');
   const stdbPort = lease.backend === 'spacetime' ? Number(new URL(lease.resources.serverUri!).port) : null;
@@ -361,5 +365,6 @@ export function activateAttemptBackend({ leasePath, lease, ports }: {
       `db.getSiblingDB(${JSON.stringify(lease.resources.database)}).createUser({user:'appuser',pwd:${JSON.stringify(credentials.password)},roles:[{role:'readWrite',db:${JSON.stringify(lease.resources.database)}}]})`]);
   }
   createAttemptBrowser(leasePath, current);
+  startAuthenticationService(leasePath, readBackendLease(leasePath, {token: lease.ownershipToken}), authenticationProvider, credentialAliases);
   updateBackendLease(leasePath, { token: lease.ownershipToken }, next => { next.state = 'active'; return next; });
 }

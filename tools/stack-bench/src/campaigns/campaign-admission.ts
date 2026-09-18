@@ -70,6 +70,7 @@ export interface CampaignAdmissionPreflightRequest extends UnknownRecord {
   levelList: number[];
   runIndex: number;
   parallelism: number;
+  authenticationProvider?: 'keycloak';
   agentAdapter: string;
   providerRoute?: string;
   maxOutputTokens?: number;
@@ -194,6 +195,10 @@ export function validateCampaignAdmission(
     && agent.maxOutputTokens === attempt.maxOutputTokens) : plan.agents;
   const selections = admissionSelections(selectedAgents);
   const workerCount = attempt ? 1 : plan.summary.parallelism;
+  const admissionConditions = attempt ? [attempt.condition] : plan.conditions;
+  const authenticationProvider = Array.isArray(admissionConditions)
+    && admissionConditions.some(condition => object(condition) && condition.authenticationProvider === 'keycloak')
+    ? 'keycloak' : undefined;
   const runIndices = [...new Set(admission.reports.map(report => report.request.runIndex))]
     .sort((a, b) => a - b);
   if (runIndices.length !== workerCount
@@ -223,6 +228,7 @@ export function validateCampaignAdmission(
         || canonicalDefinitionJson(request.levels) !== canonicalDefinitionJson(plan.definition.levels)
         || request.runIndex !== runIndex
         || request.parallelism !== plan.summary.parallelism
+        || request.authenticationProvider !== authenticationProvider
         || canonicalDefinitionJson(request.packs)
           !== canonicalDefinitionJson(plan.definition.selection.packs ?? [])
         || canonicalDefinitionJson(request.checks)
@@ -297,7 +303,10 @@ async function reserveRunIndices(plan: CompiledCampaignPlan, directory: string, 
       track: plan.definition.track, runIndex: selected[0]! }),
       campaign: { sha256: plan.contentSha256, admissionId: id, runIndices: selected } };
     try {
-      claimBackendResources(path, lease, { ...scope, keys, capacity });
+      // A worker can run any condition in this plan. Reserve the largest declared envelope.
+      claimBackendResources(path, lease, { ...scope, keys, capacity,
+        ...(plan.conditions.some(condition => condition.authenticationProvider === 'keycloak')
+          ? { authenticationProvider: 'keycloak' as const } : {}) });
       return { runIndices: selected, reservation: { path, token: lease.ownershipToken } };
     } catch (error) {
       // Do not overwrite private intent until every possible claim is released.
@@ -488,7 +497,8 @@ function hasNoStackResources(stack: CompiledCampaignPlan['stacks'][number]): boo
 }
 
 export function campaignUsesNoExternalResources(plan: CompiledCampaignPlan): boolean {
-  return plan.stacks.every(hasNoStackResources)
+  return plan.conditions.every(condition => condition.authenticationProvider === undefined)
+    && plan.stacks.every(hasNoStackResources)
     && plan.agents.every(agent => {
       const adapter = AGENT_ADAPTER_REGISTRY.get(agent.adapter);
       return adapter ? hasNoAgentResources(adapter) : false;
@@ -506,6 +516,7 @@ function resourceFreeAdmissionReport(request: CampaignAdmissionPreflightRequest,
       levels: request.levelList,
       runIndex: request.runIndex,
       parallelism: request.parallelism,
+      ...(request.authenticationProvider ? { authenticationProvider: request.authenticationProvider } : {}),
       agentAdapter: request.agentAdapter,
       ...(request.providerRoute ? { providerRoute: request.providerRoute } : {}),
       ...(request.maxOutputTokens ? { maxOutputTokens: request.maxOutputTokens } : {}),
@@ -573,6 +584,8 @@ export async function runCampaignAdmission(plan: CompiledCampaignPlan, directory
         levelList: plan.definition.levels,
         runIndex,
         parallelism: plan.summary.parallelism,
+        ...(scoped.conditions.some(condition => condition.authenticationProvider === 'keycloak')
+          ? { authenticationProvider: 'keycloak' as const } : {}),
         agentAdapter: adapter,
         ...(providerRoute ? { providerRoute } : {}),
         ...(maxOutputTokens ? { maxOutputTokens } : {}),

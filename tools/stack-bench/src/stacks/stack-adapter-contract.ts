@@ -36,6 +36,8 @@ export interface StackLifecycleInput {
 }
 
 interface StackActivationInput {
+  authenticationProvider?: 'keycloak';
+  credentialAliases?: Readonly<Record<string, string>>;
   ports: StackRunPorts;
   leasePath: string;
   leaseToken: string;

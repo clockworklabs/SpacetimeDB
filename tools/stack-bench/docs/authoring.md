@@ -50,6 +50,13 @@ Add a mutant that exposes the other customer's note while keeping sign-up and sa
 - **Reload persistence:** save data, reload, and observe it. Signing in again can isolate data
   retention from session behavior. Browser storage survives reloads, so this alone does not
   establish server persistence.
+- **Hosted login refusal:** observe the provider's actual error, then use `reload` with
+  `application: true` to return to the trusted app URL in the same page. This preserves
+  app session storage. Check the app's signed-out state there. Once a protected operation
+  exists, probe it with `callAction` and `authentication: "optional"`: this sends any real
+  actor credentials, but permits a signed-out actor with none. Using `"none"` would discard
+  an illicit session and could hide an app that grants access despite provider refusal.
+  Prove the same operation works for an authorized actor and verify no unauthorized effect.
 - **Server persistence:** use an independent client without copied application storage, or
   suitable server evidence. Surviving a backend restart is a separate claim.
 - **Restart survival:** first prove the saved state or ordinary scheduled operation works.

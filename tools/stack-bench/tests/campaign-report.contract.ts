@@ -699,7 +699,7 @@ test('HTML escapes caller-controlled labels and reports exact scope', () => {
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /&lt;script&gt;/);
   assert.match(html, /Study condition/);
-  assert.match(html, /<td>prescribed<\/td>/);
+  assert.match(html, /<td>prescribed<br><small>Login service: not supplied/);
   const malformedScope = structuredClone(report);
   (malformedScope.scope as typeof malformedScope.scope & { surprise: boolean }).surprise = true;
   const { contentSha256: _old, ...body } = malformedScope;

@@ -62,6 +62,16 @@ draft until matching reference and defect-control qualification is complete.
 
 ## Run modes
 
+The current ecommerce authentication changes are **draft**. The optional
+`authenticationProvider: "keycloak"` study condition supplies a local identity
+service; omitting it keeps the service off. Browser grading still requires a real
+application session and an independently observed application-database write.
+The updated SpacetimeDB reference needs an explicit provider condition. Its
+provider-enabled qualification is blocked until evidence validation binds that
+condition. Username case preservation, host-browser login, and per-attempt
+credential-storage reporting remain open. Existing qualification receipts do not
+qualify these changed account paths.
+
 - **Sequential:** complete each selected level before starting the next. Earlier
   checks run again to catch regressions.
 - **Dependency:** each feature opens after its required parents pass. One branch

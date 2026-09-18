@@ -21,7 +21,7 @@ import { CHAT_ACTION_IMPLEMENTATIONS } from './chat-action-executors.js';
 import { NAMED_ACTION_IMPLEMENTATIONS } from './named-action-executors.js';
 import {
   browserCredentials,
-  capturedCredentials,
+  REQUEST_CONTEXT_HEADER,
   namedActionRequest,
 } from './named-action-runtime.js';
 import type { NamedAction, NamedActionsCapability } from './named-action-runtime.js';
@@ -73,7 +73,6 @@ type ReplayArguments = ActorActionArguments<ReplayInput, ReplayCapabilities>;
 const IDENTITY_FIELD = /^(user_?id|sender_?id|author_?id|from_?user|identity)$/i;
 const CONTENT_FIELD = /^(content|text|message|body|msg)$/i;
 const ROOM_FIELD = /^(room_?id|channel_?id|conversation_?id)$/i;
-const AUTH_HEADER = /^(authorization|cookie|x-auth-token|x-session|x-token|x-user)$/i;
 const ID_FIELD = /^(?:_?id|[A-Za-z][A-Za-z0-9_]*_?id)$/i;
 const ID_KEY = /"(_?id|[A-Za-z][A-Za-z0-9_]*_?id)"\s*:\s*"?([A-Za-z0-9_-]{1,64})"?/gi;
 
@@ -331,15 +330,15 @@ async function replayAs({ input, capabilities, signal }: ReplayArguments) {
         }
         args[index] = String(args[index]).replaceAll(find, replacement);
       }
-      const mine = capturedCredentials(actor) ?? await browserCredentials(actor);
-      if (!mine) {
-        replayUnavailable(actor,
-          `no credentials found for ${actor.name} — an anonymous replay only shows that unauthenticated requests are refused`);
-      }
       const request = namedActionRequest(named, action, { ...input, args });
       if (!request?.url) {
         replayUnavailable(actor,
           `could not resolve where to send named action "${action.id}" for this backend`);
+      }
+      const mine = await browserCredentials(actor, request.url);
+      if (!mine) {
+        replayUnavailable(actor,
+          `no credentials found for ${actor.name} — an anonymous replay only shows that unauthenticated requests are refused`);
       }
       const response = await named.fetch(request.url, {
         method: request.method ?? 'POST',
@@ -357,18 +356,6 @@ async function replayAs({ input, capabilities, signal }: ReplayArguments) {
     replayUnavailable(actor, source.lastWsWrite
       ? `${input.from} writes over WebSocket ("${source.lastWsWrite.event}") — identity comes from the connection, replay not attempted`
       : `no HTTP write from ${input.from} matching "${input.match}"`);
-  }
-  const mine = capturedCredentials(actor) ?? await browserCredentials(actor);
-  if (!mine) {
-    replayUnavailable(actor,
-      `no credentials found for ${actor.name} — an anonymous replay only shows that unauthenticated requests are refused`);
-  }
-  const credentials = { ...mine };
-  for (const key of Object.keys(write.headers)) {
-    if (AUTH_HEADER.test(key)
-      && !Object.keys(credentials).some(candidate => candidate.toLowerCase() === key.toLowerCase())) {
-      credentials[key] = '';
-    }
   }
   let url = write.url;
   let data = write.body === null ? undefined : JSON.stringify(write.body);
@@ -400,6 +387,24 @@ async function replayAs({ input, capabilities, signal }: ReplayArguments) {
     }
     url = swapToken(url, fromToken, toToken);
     if (data) data = swapToken(data, fromToken, toToken);
+  }
+  if (new URL(url).origin !== new URL(write.url).origin) {
+    replayUnavailable(actor, 'retargeting a replay cannot change its origin');
+  }
+  const mine = await browserCredentials(actor, url);
+  if (!mine) {
+    replayUnavailable(actor,
+      `no credentials found for ${actor.name} — an anonymous replay only shows that unauthenticated requests are refused`);
+  }
+  const credentials = { ...mine };
+  for (const key of Object.keys(write.headers)) {
+    if (REQUEST_CONTEXT_HEADER.test(key)
+      && !Object.keys(credentials).some(candidate => candidate.toLowerCase() === key.toLowerCase())) {
+      if (/csrf|xsrf/i.test(key)) {
+        replayUnavailable(actor, `no caller ${key} context; a CSRF rejection would not establish authorization`);
+      }
+      credentials[key] = '';
+    }
   }
   const response = await actor.page.request.fetch(url, {
     method: write.method,

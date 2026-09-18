@@ -46,6 +46,7 @@ interface Page {
   readonly keyboard: { press(key: string): Promise<void> };
   locator(selector: string, options?: unknown): Locator;
   reload(options?: unknown): Promise<unknown>;
+  goto(url: string, options?: unknown): Promise<unknown>;
 }
 
 interface LocatorScope {
@@ -63,6 +64,7 @@ interface BrowserActor {
 }
 
 interface BrowserCapability {
+  readonly applicationUrl?: string;
   readonly defaultWithin: number;
   readonly recorded: {
     get(key: string): number | undefined;
@@ -331,12 +333,16 @@ async function pressKey({ input, capabilities, signal }:
 }
 
 async function reload({ input, capabilities, signal }:
-    BrowserArguments<{ actor: string; settleMs?: number }>) {
+    BrowserArguments<{ actor: string; settleMs?: number; application?: boolean }>) {
   const actor = actorFor(capabilities, input.actor);
   const browser = interaction(capabilities);
-  await runApplicationNavigation(() => actor.page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 }));
+  // Returning from hosted login must preserve this page's sessionStorage as well as cookies.
+  if (input.application && !browser.applicationUrl) throw new Error('Application return requires the trusted application URL');
+  await runApplicationNavigation(() => input.application
+    ? actor.page.goto(browser.applicationUrl!, { waitUntil: 'domcontentloaded', timeout: 20000 })
+    : actor.page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 }));
   await browser.sleep(input.settleMs ?? 2500, signal);
-  return { reloaded: true };
+  return { reloaded: true, ...(input.application ? { application: true } : {}) };
 }
 
 async function typeInto({ input, capabilities }:

@@ -264,7 +264,8 @@
         {
           "do": "click",
           "actor": "c",
-          "testid": "cart-toggle"
+          "testid": "cart-toggle",
+          "unlessVisible": "cart-total"
         },
         {
           "do": "click",

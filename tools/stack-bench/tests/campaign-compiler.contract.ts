@@ -10,7 +10,9 @@ import { campaignIdentity, compileCampaignFile, validateCampaignDefinition,
 import { attemptArgv } from '../src/campaigns/campaign-runner.js';
 import { writeArtifact } from '../src/evidence/artifacts.js';
 import { parseBenchArguments } from '../commands/bench-arguments.js';
-import { campaignComparisonKey } from '../src/campaigns/campaign-report.js';
+import { buildCampaignReport, campaignComparisonKey, campaignReportCsv, renderCampaignHtml }
+  from '../src/campaigns/campaign-report.js';
+import { createCampaignState } from '../src/campaigns/campaign-scheduler.js';
 
 const APPLIANCE = resolve(STACK_BENCH_ROOT, 'appliance');
 
@@ -52,6 +54,39 @@ test('campaign effort is retained per attempt and changes campaign identity', ()
     agents: agents.map(agent => ({ ...agent, effort: 'invalid' })) }), /effort/);
 });
 
+test('provider availability is equal across stacks and survives compiled attempt execution and reporting', () => {
+  const value = manifest('campaign.example.json');
+  const legacy = compile(value);
+  const enabled = compile({ ...value, conditions: (value.conditions as object[])
+    .map(condition => ({ ...condition, authenticationProvider: 'keycloak' })) });
+  assert.notEqual(enabled.contentSha256, legacy.contentSha256);
+  assert.deepEqual(enabled.bindings, legacy.bindings, 'availability does not add or remove checks');
+  assert.deepEqual(validateCompiledCampaignPlan(enabled), enabled);
+  const directory = mkdtempSync(join(tmpdir(), 'stack-bench-auth-condition-'));
+  try {
+    const path = join(directory, 'plan.json');
+    for (const plan of [legacy, enabled]) {
+      const provider = plan === enabled ? 'keycloak' : undefined;
+      writeArtifact(path, { kind: 'campaign_plan', id: plan.id, payload: plan });
+      for (const stack of plan.stacks) {
+        const attempt = plan.attempts.find(item => item.stack === stack.id)!;
+        assert.equal(attempt.condition.authenticationProvider, provider);
+        const argv = attemptArgv(plan, attempt, join(directory, 'out'), 0, path);
+        assert.equal(parseBenchArguments(['node', ...argv]).condition?.authenticationProvider, provider);
+      }
+      const report = buildCampaignReport(plan, createCampaignState(plan), () => { throw new Error('pending'); });
+      assert(report.conditions.every(row => row.condition.authenticationProvider === provider));
+      assert.match(renderCampaignHtml(report), provider ? /Keycloak available; app use is not implied/ : /Login service: not supplied/);
+      const csv = campaignReportCsv(report)['attempts.csv']!;
+      assert.match(csv, /authenticationProviderAvailable/);
+      assert(csv.trimEnd().split('\r\n').slice(1).every(line => line.endsWith(`"${provider ?? 'none'}"`)));
+    }
+    const rewritten = structuredClone(enabled);
+    delete rewritten.attempts[0]!.condition.authenticationProvider;
+    assert.throws(() => validateCompiledCampaignPlan(rewritten), /match|identity/);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('campaign repetitions use checked expansion rather than a hundred-run policy', () => {
   const value = manifest('campaign.example.json');
   const expanded = compile({ ...value, repetitions: 101 });
@@ -82,12 +117,9 @@ test('dependency campaigns bind a graph and feature catalog by stable ID and con
   assert.match(plan.featureCatalog.identity.contentSha256, /^[a-f0-9]{64}$/);
   assert.match(plan.dependencyPolicy.identity.contentSha256, /^[a-f0-9]{64}$/);
   assert.equal(plan.featureCatalog.identity.id, 'ecommerce.questlines');
-  assert.equal(plan.bindings.find(binding => binding.level === 1)?.calibration?.id,
-    'ecommerce.dependency-l3-calibration');
-  assert.equal(plan.bindings.find(binding => binding.level === 2)?.calibration?.id,
-    'ecommerce.dependency-l3-calibration');
-  assert.equal(plan.bindings.find(binding => binding.level === 3)?.calibration?.id,
-    'ecommerce.dependency-l3-calibration');
+  assert.deepEqual(plan.bindings.map(binding => binding.level), [1, 2, 3, 4, 5, 6]);
+  assert(plan.bindings.every(binding => binding.calibration === null),
+    'the draft pilot has no selected calibration; do not infer one from earlier cohorts');
   assert(plan.attempts.every(attempt => attempt.featureCatalog?.contentSha256
     === plan.featureCatalog?.identity.contentSha256));
   assert(plan.attempts.every(attempt => attempt.dependencyPolicy?.contentSha256

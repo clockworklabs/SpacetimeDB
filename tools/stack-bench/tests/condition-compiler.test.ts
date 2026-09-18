@@ -52,6 +52,22 @@ test('production framing is explicit and does not change legacy or grading scope
   assert.throws(() => validateConditionReference({ ...prescribed, productionQuality: 'true' }), /must be a boolean/);
 });
 
+test('supplied authentication is opt-in, identity-bound, and does not change scored scope or guidance', () => {
+  const stacks = ['postgres', 'mongodb', 'spacetime'];
+  const legacy = resolveStudyConditions([prescribed], stacks, { requested })[0];
+  const enabled = resolveStudyConditions([{ ...prescribed, authenticationProvider: 'keycloak' }], stacks, { requested })[0];
+  assert.equal(Object.hasOwn(legacy, 'authenticationProvider'), false);
+  assert.deepEqual(resolveStudyConditions([prescribed], stacks, { requested })[0], legacy);
+  assert.equal(enabled.authenticationProvider, 'keycloak');
+  assert.notEqual(enabled.contentSha256, legacy.contentSha256);
+  assert.deepEqual(enabled.requested, legacy.requested);
+  assert.deepEqual(enabled.guidance, legacy.guidance);
+  for (const value of [true, null, 'none', 'auth0', { spacetime: 'keycloak' }]) {
+    assert.throws(() => validateConditionReference({ ...prescribed, authenticationProvider: value }),
+      /authenticationProvider/);
+  }
+});
+
 test('dev workflow is opt-in and changes only the SpacetimeDB skill identity', () => {
   const stacks = ['spacetime', 'mongodb', 'postgres'];
   const neutral = resolveGuidanceProfile('neutral', stacks);
