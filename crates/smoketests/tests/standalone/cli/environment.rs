@@ -1,7 +1,7 @@
 //! Publish-only environment configuration through the real CLI and local server.
 use serde_json::{json, Value};
 use spacetimedb_guard::ensure_binaries_built;
-use spacetimedb_smoketests::{modules, random_string, Smoketest};
+use spacetimedb_smoketests::{modules, random_string, require_local_server, Smoketest};
 use std::{
     fs,
     io::{Read as _, Seek as _},
@@ -27,23 +27,11 @@ struct EnvironmentFixture {
 
 impl EnvironmentFixture {
     fn new() -> Self {
-        // Private CI supplies remote cluster settings to the same test binary.
-        // This fixture must still create its own server and fresh credentials,
-        // without changing those settings for other tests in the process.
-        let remote_settings = [
-            "SPACETIME_REMOTE_SERVER",
-            "SPACETIME_USE_AUTH_HOST",
-            "SPACETIME_SMOKETEST_BASE_CONFIG_PATH",
-        ];
-        let inherited = remote_settings.map(std::env::var_os);
         let test = Smoketest::builder()
-            .isolated_local_server()
             .precompiled_module("environment-publish")
             .autopublish(false)
             .build();
-        assert_eq!(remote_settings.map(std::env::var_os), inherited);
         assert!(test.guard.is_some());
-        assert!(!test.config_path.exists(), "local fixture copied inherited credentials");
         let address = test
             .server_url
             .strip_prefix("http://")
@@ -309,6 +297,7 @@ fn bounded_output(mut command: Command) -> Output {
 
 #[test]
 fn cli_environment_layers_shell_and_exact_precompiled_declarations() {
+    require_local_server!();
     let f = EnvironmentFixture::new();
     f.write(
         "spacetime.json",
@@ -375,6 +364,7 @@ fn cli_environment_layers_shell_and_exact_precompiled_declarations() {
 
 #[test]
 fn cli_environment_replacement_rejection_and_read_only_commands() {
+    require_local_server!();
     let f = EnvironmentFixture::new();
     f.config(Some(
         json!({"SMOKE_REQUIRED":"initial-sentinel","SMOKE_MODE":"ready","SMOKE_OPTIONAL":"remove-me"}),
@@ -448,6 +438,7 @@ fn cli_environment_replacement_rejection_and_read_only_commands() {
 
 #[test]
 fn cli_environment_initial_rejection_clear_and_omitted_payload() {
+    require_local_server!();
     let mut f = EnvironmentFixture::new();
     f.config(None);
     assert!(!f.publish(&[], &[]).status.success());
@@ -471,6 +462,7 @@ fn cli_environment_initial_rejection_clear_and_omitted_payload() {
 
 #[test]
 fn cli_environment_preservation_and_environment_only_updates() {
+    require_local_server!();
     let f = EnvironmentFixture::new();
     f.config(Some(
         json!({"SMOKE_REQUIRED":"persisted-required", "SMOKE_MODE":"ready", "SMOKE_OPTIONAL":"keep-optional"}),
@@ -552,6 +544,7 @@ fn cli_environment_preservation_and_environment_only_updates() {
 
 #[test]
 fn cli_environment_preloaded_values_are_checked_when_declared() {
+    require_local_server!();
     let mut f = EnvironmentFixture::new();
     let declared_module = f.wasm.clone();
     f.wasm = modules::precompiled_module("noop");

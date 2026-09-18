@@ -51,23 +51,6 @@ export const CaseConversionPolicy = __t.enum('CaseConversionPolicy', {
 });
 export type CaseConversionPolicy = __Infer<typeof CaseConversionPolicy>;
 
-// The tagged union or sum type for the algebraic type `EnvironmentConstraint`.
-export const EnvironmentConstraint = __t.enum('EnvironmentConstraint', {
-  AnyString: __t.unit(),
-  Literal: __t.string(),
-  OneOf: __t.array(__t.string()),
-});
-export type EnvironmentConstraint = __Infer<typeof EnvironmentConstraint>;
-
-export const EnvironmentDeclaration = __t.object('EnvironmentDeclaration', {
-  name: __t.string(),
-  get constraint() {
-    return EnvironmentConstraint;
-  },
-  optional: __t.bool(),
-});
-export type EnvironmentDeclaration = __Infer<typeof EnvironmentDeclaration>;
-
 // The tagged union or sum type for the algebraic type `ExplicitNameEntry`.
 export const ExplicitNameEntry = __t.enum('ExplicitNameEntry', {
   get Table() {
@@ -418,6 +401,32 @@ export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
   Capabilities: __t.array(__t.string()),
 });
 export type RawModuleDefV10Section = __Infer<typeof RawModuleDefV10Section>;
+
+export const EnvVarType = __t.enum('EnvVarType', {
+  get String() {
+    return __t.unit();
+  },
+  get StringLiteral() {
+    return __t.string();
+  },
+  get Union() {
+    return __t.array(__t.string());
+  },
+});
+export type EnvVarType = __Infer<typeof EnvVarType>;
+
+export const EnvironmentDeclaration = __t.object('EnvironmentDeclaration', {
+  get name() {
+    return __t.string();
+  },
+  get ty() {
+    return EnvVarType;
+  },
+  get optional() {
+    return __t.bool();
+  },
+});
+export type EnvironmentDeclaration = __Infer<typeof EnvironmentDeclaration>;
 
 export const RawModuleDefV8 = __t.object('RawModuleDefV8', {
   get typespace() {

@@ -940,7 +940,7 @@ pub fn register_case_conversion_policy(policy: CaseConversionPolicy) {
 pub trait EnvironmentValue: Sized {
     const OPTIONAL: bool;
 
-    fn constraint() -> spacetimedb_lib::environment::EnvironmentConstraint;
+    fn constraint() -> spacetimedb_lib::environment::EnvVarType;
 
     /// Decode a checked host result. Errors must identify only the key, never its value.
     fn from_environment(value: Option<String>, key: &str) -> Self;
@@ -958,8 +958,8 @@ pub trait RequiredEnvironmentValue: EnvironmentValue {}
 impl EnvironmentValue for String {
     const OPTIONAL: bool = false;
 
-    fn constraint() -> spacetimedb_lib::environment::EnvironmentConstraint {
-        spacetimedb_lib::environment::EnvironmentConstraint::AnyString
+    fn constraint() -> spacetimedb_lib::environment::EnvVarType {
+        spacetimedb_lib::environment::EnvVarType::String
     }
 
     fn from_environment(value: Option<String>, key: &str) -> Self {
@@ -972,7 +972,7 @@ impl RequiredEnvironmentValue for String {}
 impl<T: RequiredEnvironmentValue> EnvironmentValue for Option<T> {
     const OPTIONAL: bool = true;
 
-    fn constraint() -> spacetimedb_lib::environment::EnvironmentConstraint {
+    fn constraint() -> spacetimedb_lib::environment::EnvVarType {
         T::constraint()
     }
 
@@ -995,8 +995,8 @@ mod string_environment_value_sealed {
 )]
 pub trait StringEnvironmentValue: EnvironmentValue + string_environment_value_sealed::Sealed {
     fn with_constraint(
-        constraint: spacetimedb_lib::environment::EnvironmentConstraint,
-    ) -> spacetimedb_lib::environment::EnvironmentConstraint {
+        constraint: spacetimedb_lib::environment::EnvVarType,
+    ) -> spacetimedb_lib::environment::EnvVarType {
         constraint
     }
 }

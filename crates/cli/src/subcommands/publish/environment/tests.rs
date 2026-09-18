@@ -1,27 +1,27 @@
 use super::*;
-use spacetimedb_lib::environment::{EnvironmentConstraint as Constraint, EnvironmentDeclaration as Declaration};
+use spacetimedb_lib::environment::{EnvVarType, EnvironmentDeclaration as Declaration};
 use std::{path::PathBuf, time::Duration};
 
 fn schema() -> EnvironmentSchema {
     EnvironmentSchema::new(vec![
         Declaration {
             name: "A".into(),
-            constraint: Constraint::AnyString,
+            ty: EnvVarType::String,
             optional: false,
         },
         Declaration {
             name: "B".into(),
-            constraint: Constraint::OneOf(vec!["true".into(), "false".into()]),
+            ty: EnvVarType::Union(vec!["true".into(), "false".into()]),
             optional: false,
         },
         Declaration {
             name: "C".into(),
-            constraint: Constraint::AnyString,
+            ty: EnvVarType::String,
             optional: false,
         },
         Declaration {
             name: "OPTIONAL".into(),
-            constraint: Constraint::AnyString,
+            ty: EnvVarType::String,
             optional: true,
         },
     ])
@@ -131,7 +131,7 @@ fn number_boolean_and_empty_string_conversion_has_no_float_rounding() {
         ["NUMBER", "BOOL", "EMPTY"]
             .map(|name| Declaration {
                 name: name.into(),
-                constraint: Constraint::AnyString,
+                ty: EnvVarType::String,
                 optional: false,
             })
             .to_vec(),
@@ -171,8 +171,8 @@ async fn actual_precompiled_declarations_are_inspected_without_server_or_values(
     assert!(inspected.environment_declared());
     assert!(!schema.get("REQUIRED").unwrap().optional);
     assert_eq!(
-        schema.get("MODE").unwrap().constraint,
-        Constraint::OneOf(vec!["other".into(), "ready".into()])
+        schema.get("MODE").unwrap().ty,
+        EnvVarType::Union(vec!["other".into(), "ready".into()])
     );
     let config = serde_json::json!({"REQUIRED":"generated-local-inspection-sentinel","MODE":"ready"});
     let resolved = resolve(schema, Some(&config), |_| None).unwrap();

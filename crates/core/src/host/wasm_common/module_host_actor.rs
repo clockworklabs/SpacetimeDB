@@ -1305,6 +1305,18 @@ impl InstanceCommon {
                 Ok((metrics, trapped)) => (Ok(metrics), trapped),
                 Err(err) => (Err(err), false),
             },
+            ViewCommand::AddBatchSubscription {
+                sender,
+                auth,
+                request,
+                _timer: timer,
+            } => match info
+                .subscriptions
+                .add_batch_subscription_with_instance(&mut inst, sender, auth, request, timer, None)
+            {
+                Ok((metrics, trapped)) => (Ok(metrics), trapped),
+                Err(err) => (Err(err), false),
+            },
             ViewCommand::RemoveSingleSubscription {
                 sender,
                 auth,
@@ -2153,7 +2165,7 @@ mod tests {
             v10::{RawModuleDefV10Builder, RawModuleDefV10Section},
             v9::TableAccess,
         };
-        use spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration};
+        use spacetimedb_lib::environment::{EnvVarType, EnvironmentDeclaration};
         use spacetimedb_lib::identity::AuthCtx;
         use spacetimedb_schema::auto_migrate::ponder_migrate;
         use std::collections::BTreeMap;
@@ -2188,7 +2200,7 @@ mod tests {
             raw.sections
                 .push(RawModuleDefV10Section::Environment(vec![EnvironmentDeclaration {
                     name: "TOKEN".into(),
-                    constraint: EnvironmentConstraint::AnyString,
+                    ty: EnvVarType::String,
                     optional: false,
                 }]));
             raw.try_into().expect("valid ENV view module")
@@ -2258,7 +2270,7 @@ mod tests {
     fn module_sql_views_cannot_read_environment_directly_or_through_a_join() -> anyhow::Result<()> {
         use super::run_query_for_view;
         use crate::db::environment;
-        use spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration, EnvironmentSchema};
+        use spacetimedb_lib::environment::{EnvVarType, EnvironmentDeclaration, EnvironmentSchema};
         use spacetimedb_primitives::ViewId;
         use spacetimedb_sats::product;
         use std::collections::BTreeMap;
@@ -2273,7 +2285,7 @@ mod tests {
         tx.insert_via_serialize_bsatn(visible, &product!("TOKEN", "ordinary-value"))?;
         let schema = EnvironmentSchema::new(vec![EnvironmentDeclaration {
             name: "TOKEN".into(),
-            constraint: EnvironmentConstraint::AnyString,
+            ty: EnvVarType::String,
             optional: false,
         }])?;
         environment::replace(

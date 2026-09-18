@@ -94,18 +94,18 @@ mod tests {
     use super::*;
     use crate::db::relational_db::tests_utils::TestDB;
     use spacetimedb_datastore::execution_context::Workload;
-    use spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration};
+    use spacetimedb_lib::environment::{EnvVarType, EnvironmentDeclaration};
 
     fn schema() -> EnvironmentSchema {
         EnvironmentSchema::new(vec![
             EnvironmentDeclaration {
                 name: "REQUIRED".into(),
-                constraint: EnvironmentConstraint::AnyString,
+                ty: EnvVarType::String,
                 optional: false,
             },
             EnvironmentDeclaration {
                 name: "OPTIONAL".into(),
-                constraint: EnvironmentConstraint::AnyString,
+                ty: EnvVarType::String,
                 optional: true,
             },
         ])

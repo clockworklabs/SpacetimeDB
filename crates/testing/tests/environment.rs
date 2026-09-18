@@ -240,6 +240,16 @@ fn exercise_fixture(name: &str) {
                 let module = publish(&handle, &values).await;
                 assert_eq!(sql(&module, view).await, vec![product![Some(value.to_string())]]);
                 expect_view_update(&mut handle).await;
+                assert!(matches!(
+                    handle.republish_environment(values.clone()).await.unwrap(),
+                    spacetimedb::host::UpdateDatabaseResult::NoUpdateNeeded
+                ));
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(100), handle.recv_message())
+                        .await
+                        .is_err(),
+                    "unchanged publication must not broadcast a view update"
+                );
             }
             let mut invalid = values.clone();
             invalid.insert("WATCHED".into(), "fail-view".into());

@@ -195,30 +195,13 @@ impl Host {
         Ok(json)
     }
 
-    pub async fn update(
+    pub async fn environment_metadata(
         &self,
-        database: Database,
-        host_type: HostType,
-        program_bytes: Box<[u8]>,
-        policy: MigrationPolicy,
-    ) -> anyhow::Result<UpdateDatabaseResult> {
-        self.host_controller
-            .update_module_host(database, host_type, self.replica_id, program_bytes, policy)
-            .await
+    ) -> anyhow::Result<spacetimedb_client_api_messages::publish::EnvironmentMetadata> {
+        self.host_controller.environment_metadata(self.replica_id).await
     }
 
-    pub async fn with_publication_lock<T, F, Fut>(&self, operation: F) -> anyhow::Result<T>
-    where
-        T: Send + 'static,
-        F: FnOnce(ModuleHost) -> Fut + Send + 'static,
-        Fut: std::future::Future<Output = anyhow::Result<T>> + Send + 'static,
-    {
-        self.host_controller
-            .with_publication_lock(self.replica_id, operation)
-            .await
-    }
-
-    pub async fn update_with_environment_options(
+    pub async fn update(
         &self,
         database: Database,
         host_type: HostType,
@@ -228,7 +211,7 @@ impl Host {
         expected_module_version: Option<spacetimedb_lib::Hash>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         self.host_controller
-            .update_module_host_with_environment_options(
+            .update_module_host(
                 database,
                 host_type,
                 self.replica_id,
@@ -236,26 +219,6 @@ impl Host {
                 policy,
                 environment,
                 expected_module_version,
-            )
-            .await
-    }
-
-    pub async fn update_with_environment(
-        &self,
-        database: Database,
-        host_type: HostType,
-        program_bytes: Box<[u8]>,
-        policy: MigrationPolicy,
-        environment: std::collections::BTreeMap<String, String>,
-    ) -> anyhow::Result<UpdateDatabaseResult> {
-        self.host_controller
-            .update_module_host_with_environment(
-                database,
-                host_type,
-                self.replica_id,
-                program_bytes,
-                policy,
-                environment,
             )
             .await
     }

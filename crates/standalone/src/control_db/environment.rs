@@ -1,4 +1,4 @@
-//! Private bootstrap inputs, separate from the historical public Database encoding.
+//! Private initialization inputs, separate from the historical public Database encoding.
 //!
 //! Creation and reset atomically persist both database indexes, the generation
 //! and initial-program binding, the complete ENV input, and the nominated leader.
@@ -7,35 +7,42 @@
 //!
 //! Reading the input rechecks the persisted owner, program, and generation in
 //! the same transaction. A legacy generation with neither metadata nor input has
-//! an empty environment; missing input for a recorded generation is an error.
+//! an empty environment; missing input for an active generation is an error.
+//! A reset performed by a pre-ENV server replaces the replica without updating
+//! these trees. Records belonging to that removed replica are ignored.
 //!
 //! The host reads this input only before the database's first initialization.
 //! Reopening an initialized database uses its committed program and `st_env`,
-//! including later module updates. Reset replaces the bootstrap input, and
-//! database deletion removes it atomically with both indexes and the binding.
+//! including later module updates. The initial input is no longer needed once
+//! initialization is durable, but is currently retained until reset replaces it
+//! or database deletion removes it atomically with both indexes and the binding.
 use super::*;
 use spacetimedb_client_api_messages::publish::PublishRequest;
 use spacetimedb_lib::Hash;
 use std::collections::BTreeMap;
 
+// Keep the existing tree name for on-disk compatibility.
 const METADATA_TREE: &str = "database_bootstrap";
 const VALUES_TREE: &str = "initial_environment";
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Bootstrap {
+struct InitializationMetadata {
     version: u8,
     database_id: u64,
     identity: Identity,
     program: Hash,
     generation: u64,
+    // Earlier ENV development builds did not record the replica ID.
+    #[serde(default)]
+    replica_id: Option<u64>,
 }
 
 fn invalid() -> Error {
-    Error::Other(anyhow::anyhow!("invalid private bootstrap record"))
+    Error::Other(anyhow::anyhow!("invalid private initialization record"))
 }
 
-impl Bootstrap {
+impl InitializationMetadata {
     fn decode(bytes: &[u8], database: &Database) -> Result<Self> {
         if bytes.len() > 1024 {
             return Err(invalid());
@@ -44,31 +51,47 @@ impl Bootstrap {
         if value.version != 1
             || value.database_id != database.id
             || value.identity != database.database_identity
-            || value.program != database.initial_program
             || value.generation == 0
         {
             return Err(invalid());
         }
         Ok(value)
     }
+
+    fn current_generation(&self, database: &Database, replica_exists: bool) -> Result<u64> {
+        // A pre-ENV server leaves these records behind when resetting a database,
+        // but replaces its replica. Never reuse that replica's initial values.
+        if !replica_exists {
+            return Ok(0);
+        }
+        if self.program != database.initial_program {
+            return Err(invalid());
+        }
+        Ok(self.generation)
+    }
 }
 
 impl ControlDb {
-    pub(super) fn decode_database(&self, bytes: &[u8]) -> Result<Database> {
-        let mut database: Database = compat::Database::from_slice(bytes)?.into();
+    pub(crate) fn with_initialization_generation(&self, mut database: Database) -> Result<Database> {
         if let Some(bytes) = self.db.open_tree(METADATA_TREE)?.get(database.id.to_be_bytes())? {
-            database.bootstrap_generation = Bootstrap::decode(&bytes, &database)?.generation;
+            let binding = InitializationMetadata::decode(&bytes, &database)?;
+            let replica_exists = match binding.replica_id {
+                Some(id) => self.db.open_tree("replica")?.contains_key(id.to_be_bytes())?,
+                None => true,
+            };
+            database.bootstrap_generation = binding.current_generation(&database, replica_exists)?;
         }
         Ok(database)
     }
 
     /// Recheck the exact persisted generation and program before releasing any values.
-    pub(crate) fn initial_environment(&self, database: &Database) -> Result<BTreeMap<String, String>> {
+    pub(crate) fn initial_environment(&self, database: &Database, replica_id: u64) -> Result<BTreeMap<String, String>> {
         let databases = self.db.open_tree("database_by_identity")?;
         let metadata = self.db.open_tree(METADATA_TREE)?;
         let values = self.db.open_tree(VALUES_TREE)?;
-        let result: TransactionResult<Option<sled::IVec>, Error> =
-            (&databases, &metadata, &values).transaction(|(databases, metadata, values)| {
+        let replicas = self.db.open_tree("replica")?;
+        let result: TransactionResult<Option<sled::IVec>, Error> = (&databases, &metadata, &values, &replicas)
+            .transaction(|(databases, metadata, values, replicas)| {
                 let persisted = databases
                     .get(database.database_identity.to_be_byte_array())?
                     .ok_or_else(|| {
@@ -85,10 +108,30 @@ impl ControlDb {
                 }
                 match metadata.get(database.id.to_be_bytes())? {
                     Some(bytes) => {
-                        let binding =
-                            Bootstrap::decode(&bytes, &stored).map_err(ConflictableTransactionError::Abort)?;
-                        if binding.generation != database.bootstrap_generation {
+                        // A reset can replace the selected replica before launch.
+                        // Check its nomination in the same snapshot as the generation and values.
+                        let replica = replicas
+                            .get(replica_id.to_be_bytes())?
+                            .ok_or_else(|| ConflictableTransactionError::Abort(invalid()))?;
+                        let replica: Replica =
+                            bsatn::from_slice(&replica).map_err(|_| ConflictableTransactionError::Abort(invalid()))?;
+                        if replica.database_id != database.id {
                             return transaction::abort(invalid());
+                        }
+                        let binding = InitializationMetadata::decode(&bytes, &stored)
+                            .map_err(ConflictableTransactionError::Abort)?;
+                        let replica_exists = match binding.replica_id {
+                            Some(id) => replicas.get(id.to_be_bytes())?.is_some(),
+                            None => true,
+                        };
+                        let generation = binding
+                            .current_generation(&stored, replica_exists)
+                            .map_err(ConflictableTransactionError::Abort)?;
+                        if generation != database.bootstrap_generation {
+                            return transaction::abort(invalid());
+                        }
+                        if generation == 0 {
+                            return Ok(None);
                         }
                         let bytes = values
                             .get(database.id.to_be_bytes())?
@@ -117,10 +160,14 @@ impl ControlDb {
         }
     }
 
-    /// Install the desired initial database, its complete private input and a
-    /// durable leader nomination together. Cancellation before host launch can
-    /// therefore recover through the ordinary leader lookup.
-    pub(crate) fn install_database_with_environment(
+    /// Atomically write the database record, initial environment, and new replica.
+    /// Remove any supplied previous replica records in the same transaction.
+    ///
+    /// With `expected = None`, require that the database does not exist.
+    /// With `expected = Some(previous)`, require that it still matches `previous`.
+    ///
+    /// Does not start or stop replicas.
+    pub(crate) fn upsert_database_with_environment(
         &self,
         mut database: Database,
         expected: Option<&Database>,
@@ -146,12 +193,13 @@ impl ControlDb {
         }
         .encode()
         .map_err(|_| invalid())?;
-        let binding = Bootstrap {
+        let binding = InitializationMetadata {
             version: 1,
             database_id: database.id,
             identity: database.database_identity,
             program: database.initial_program,
             generation: database.bootstrap_generation,
+            replica_id: Some(replica.id),
         };
         let binding = serde_json::to_vec(&binding).map_err(|_| invalid())?;
         let encoded = compat::Database::from(database.clone()).to_vec()?;
@@ -178,9 +226,15 @@ impl ControlDb {
                         }
                         let generation = match metadata.get(stored.id.to_be_bytes())? {
                             Some(bytes) => {
-                                Bootstrap::decode(&bytes, &stored)
+                                let binding = InitializationMetadata::decode(&bytes, &stored)
+                                    .map_err(ConflictableTransactionError::Abort)?;
+                                let replica_exists = match binding.replica_id {
+                                    Some(id) => replicas.get(id.to_be_bytes())?.is_some(),
+                                    None => true,
+                                };
+                                binding
+                                    .current_generation(&stored, replica_exists)
                                     .map_err(ConflictableTransactionError::Abort)?
-                                    .generation
                             }
                             None => 0,
                         };
@@ -246,12 +300,15 @@ fn transaction_error(error: TransactionError<Error>) -> Error {
 
 #[async_trait::async_trait]
 impl spacetimedb::host::InitialEnvironmentSource for ControlDb {
-    async fn load(&self, database: &Database) -> anyhow::Result<BTreeMap<String, String>> {
+    async fn load(&self, database: &Database, replica_id: u64) -> anyhow::Result<BTreeMap<String, String>> {
         let source = self.clone();
         let database = database.clone();
-        spacetimedb::util::asyncify(move || source.initial_environment(&database))
-            .await
-            .map_err(Into::into)
+        spacetimedb::util::asyncify(move || {
+            let database = source.with_initialization_generation(database)?;
+            source.initial_environment(&database, replica_id)
+        })
+        .await
+        .map_err(Into::into)
     }
 }
 
@@ -272,11 +329,11 @@ mod tests {
     }
 
     #[test]
-    fn bootstrap_is_durable_atomic_generation_bound_and_deleted_with_database() -> anyhow::Result<()> {
+    fn initialization_is_durable_atomic_generation_bound_and_deleted_with_database() -> anyhow::Result<()> {
         let temp = tempfile::tempdir()?;
         let (original, original_replica) = {
             let control = ControlDb::at(temp.path())?;
-            control.install_database_with_environment(
+            control.upsert_database_with_environment(
                 database(),
                 None,
                 BTreeMap::from([("VALUE".into(), "first".into())]),
@@ -284,33 +341,63 @@ mod tests {
             )?
         };
         let control = ControlDb::at(temp.path())?;
-        let loaded = control.get_database_by_id(original.id)?.unwrap();
+        let loaded = control.with_initialization_generation(control.get_database_by_id(original.id)?.unwrap())?;
         assert_eq!(loaded.bootstrap_generation, 1);
-        assert_eq!(control.initial_environment(&loaded)?["VALUE"], "first");
+        assert_eq!(
+            control.initial_environment(&loaded, original_replica.id)?["VALUE"],
+            "first"
+        );
         assert_eq!(
             control.get_leader_replica_by_database(loaded.id).unwrap().id,
             original_replica.id
         );
-        let (replaced, new_replica) = control.install_database_with_environment(
+        let (replaced, new_replica) = control.upsert_database_with_environment(
             loaded.clone(),
             Some(&loaded),
             BTreeMap::new(),
-            &[original_replica],
+            std::slice::from_ref(&original_replica),
         )?;
         assert_eq!(replaced.bootstrap_generation, 2);
-        assert!(control.initial_environment(&original).is_err());
-        assert!(control.initial_environment(&replaced)?.is_empty());
+        assert!(control.initial_environment(&original, original_replica.id).is_err());
+        assert!(control.initial_environment(&replaced, new_replica.id)?.is_empty());
+        // A lookup can select the old replica, then read the new generation after reset.
+        assert!(control.initial_environment(&replaced, original_replica.id).is_err());
         assert_eq!(control.get_replicas_by_database(loaded.id)?.len(), 1);
         assert_eq!(
             control.get_leader_replica_by_database(loaded.id).unwrap().id,
             new_replica.id
         );
         assert!(control
-            .install_database_with_environment(loaded.clone(), Some(&loaded), BTreeMap::new(), &[])
+            .upsert_database_with_environment(loaded.clone(), Some(&loaded), BTreeMap::new(), &[])
             .is_err());
-        assert_eq!(control.get_database_by_id(loaded.id)?.unwrap().bootstrap_generation, 2);
+        assert_eq!(
+            control
+                .with_initialization_generation(control.get_database_by_id(loaded.id)?.unwrap())?
+                .bootstrap_generation,
+            2
+        );
         control.delete_database(loaded.id)?;
-        assert!(control.initial_environment(&replaced).is_err());
+        assert!(control.initial_environment(&replaced, new_replica.id).is_err());
+        assert!(control.db.open_tree(VALUES_TREE)?.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn corrupt_initialization_does_not_prevent_listing_or_deletion() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let control = ControlDb::at(temp.path())?;
+        let (database, replica) = control.upsert_database_with_environment(database(), None, BTreeMap::new(), &[])?;
+        control
+            .db
+            .open_tree(METADATA_TREE)?
+            .insert(database.id.to_be_bytes(), b"corrupt")?;
+        assert!(control.get_database_by_id(database.id)?.is_some());
+        assert!(control.get_database_by_identity(&database.database_identity)?.is_some());
+        assert_eq!(control.get_databases()?.len(), 1);
+        assert!(control.initial_environment(&database, replica.id).is_err());
+        control.delete_database(database.id)?;
+        assert!(control.get_databases()?.is_empty());
+        assert!(control.db.open_tree(METADATA_TREE)?.is_empty());
         assert!(control.db.open_tree(VALUES_TREE)?.is_empty());
         Ok(())
     }
@@ -321,11 +408,93 @@ mod tests {
         let control = ControlDb::at(temp.path())?;
         let id = control.insert_database(database())?;
         let legacy = control.get_database_by_id(id)?.unwrap();
-        assert!(control.initial_environment(&legacy)?.is_empty());
-        let (new, _) =
-            control.install_database_with_environment(legacy.clone(), Some(&legacy), BTreeMap::new(), &[])?;
+        assert!(control.initial_environment(&legacy, 0)?.is_empty());
+        let (new, replica) =
+            control.upsert_database_with_environment(legacy.clone(), Some(&legacy), BTreeMap::new(), &[])?;
         control.db.open_tree(VALUES_TREE)?.remove(new.id.to_be_bytes())?;
-        assert!(control.initial_environment(&new).is_err());
+        assert!(control.initial_environment(&new, replica.id).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn legacy_reset_round_trip_does_not_reuse_initial_environment_values() -> anyhow::Result<()> {
+        use std::result::Result;
+
+        // Freeze the pre-ENV on-disk database format independently of `compat`.
+        #[derive(spacetimedb_lib::ser::Serialize, spacetimedb_lib::de::Deserialize)]
+        struct LegacyDatabase {
+            id: u64,
+            database_identity: Identity,
+            owner_identity: Identity,
+            host_type: HostType,
+            initial_program: Hash,
+        }
+
+        for changed_program in [false, true] {
+            for values in [BTreeMap::new(), BTreeMap::from([("SECRET".into(), "old-value".into())])] {
+                let temp = tempfile::tempdir()?;
+                let (original, old_replica) = {
+                    let control = ControlDb::at(temp.path())?;
+                    control.upsert_database_with_environment(database(), None, values, &[])?
+                };
+                let replacement_id = {
+                    // Reopen using only the old format and old reset operations:
+                    // update both database indexes, remove the old replica, and
+                    // insert a fresh replica. The ENV trees are untouched.
+                    let db = sled::open(temp.path())?;
+                    let identities = db.open_tree("database_by_identity")?;
+                    let identity = original.database_identity.to_be_byte_array();
+                    let mut old: LegacyDatabase = bsatn::from_slice(&identities.get(identity)?.unwrap())?;
+                    if changed_program {
+                        old.initial_program = spacetimedb_lib::hash_bytes(b"replacement module");
+                    }
+                    let bytes = bsatn::to_vec(&old)?;
+                    identities.insert(identity, bytes.clone())?;
+                    db.open_tree("database")?.insert(old.id.to_be_bytes(), bytes)?;
+                    let replicas = db.open_tree("replica")?;
+                    replicas.remove(old_replica.id.to_be_bytes())?;
+                    let id = db.generate_id()?;
+                    let replacement = Replica {
+                        id,
+                        ..old_replica.clone()
+                    };
+                    replicas.insert(id.to_be_bytes(), bsatn::to_vec(&replacement)?)?;
+                    db.flush()?;
+                    id
+                };
+                let control = ControlDb::at(temp.path())?;
+                let loaded =
+                    control.with_initialization_generation(control.get_database_by_id(original.id)?.unwrap())?;
+                assert_eq!(loaded.bootstrap_generation, 0);
+                assert!(control.initial_environment(&loaded, replacement_id)?.is_empty());
+                assert!(control.initial_environment(&loaded, old_replica.id).is_err());
+
+                // A subsequent new-version reset must succeed and use only its
+                // freshly supplied values, even if the old reset never ran init.
+                let previous = control.get_replicas_by_database(loaded.id)?;
+                let (new, replica) = control.upsert_database_with_environment(
+                    loaded.clone(),
+                    Some(&loaded),
+                    BTreeMap::from([("SECRET".into(), "fresh-value".into())]),
+                    &previous,
+                )?;
+                assert_eq!(control.initial_environment(&new, replica.id)?["SECRET"], "fresh-value");
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn active_initialization_still_rejects_a_program_mismatch() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let control = ControlDb::at(temp.path())?;
+        let (database, replica) = control.upsert_database_with_environment(database(), None, BTreeMap::new(), &[])?;
+        let tree = control.db.open_tree(METADATA_TREE)?;
+        let mut binding = InitializationMetadata::decode(&tree.get(database.id.to_be_bytes())?.unwrap(), &database)?;
+        binding.program = spacetimedb_lib::hash_bytes(b"incorrect program");
+        tree.insert(database.id.to_be_bytes(), serde_json::to_vec(&binding)?)?;
+        assert!(control.with_initialization_generation(database.clone()).is_err());
+        assert!(control.initial_environment(&database, replica.id).is_err());
         Ok(())
     }
 }
