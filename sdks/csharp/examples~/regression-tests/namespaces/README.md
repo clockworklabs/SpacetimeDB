@@ -35,6 +35,10 @@ Coverage:
 - Event rows, private-table access rejection, procedural/anonymous/query views.
 - `RemoteQuery` result decoding and no subscription-cache population by one-off queries.
 - Subscribe-all initial rows, no replay of past events, and unsubscribe cache cleanup.
+- Same-named scheduled reducers/procedures in both namespaces, with explicit function
+  and table names and custom scheduled-at columns. Covers one-shot and immediate
+  execution, repeating reducer cancellation, argument payloads, generated keys,
+  namespace isolation, and absence of scheduled functions from client call APIs.
 
 Assertions throw in both Debug and Release. Every asynchronous phase has a timeout.
 The generated bindings are committed and regenerated through the normal CLI path.
