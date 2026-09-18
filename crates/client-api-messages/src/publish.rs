@@ -1,7 +1,7 @@
 //! Atomic publish input. Environment values travel only in the request body.
 use serde::{Deserialize, Deserializer, Serialize};
-use serde_with::{base64::Base64, serde_as};
 use spacetimedb_lib::environment::{validate_key, validate_value, MAX_ENV_VARS};
+use spacetimedb_lib::Hash;
 use std::collections::BTreeMap;
 
 pub const CONTENT_TYPE: &str = "application/vnd.spacetimedb.publish+json";
@@ -11,13 +11,9 @@ pub const MAX_REQUEST_BYTES: usize = 192 * 1024 * 1024;
 
 /// Values deliberately have no Debug representation. Omission is an empty map,
 /// including for a publish of an unchanged module.
-#[serde_as]
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct PublishRequest {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde_as(as = "Option<Base64>")]
-    pub module: Option<Vec<u8>>,
+pub struct EnvironmentPublish {
     #[serde(default, deserialize_with = "deserialize_environment")]
     pub environment: BTreeMap<String, String>,
     #[serde(default)]
@@ -27,6 +23,99 @@ pub struct PublishRequest {
     #[serde(default)]
     pub expected_module_version: Option<String>,
 }
+
+pub struct SpacetimeEnvironment(pub BTreeMap<String, String>);
+
+impl headers::Header for SpacetimeEnvironment {
+    fn name() -> &'static http::HeaderName {
+        static NAME: http::HeaderName = http::HeaderName::from_static("spacetime-environment");
+        &NAME
+    }
+
+    fn decode<'i, I>(values: &mut I) -> Result<Self, headers::Error>
+    where
+        Self: Sized,
+        I: Iterator<Item = &'i http::HeaderValue>,
+    {
+        let mut entries = BTreeMap::new();
+        for value in values {
+            let dict = sfv::Parser::new(value)
+                .with_version(sfv::Version::Rfc9651)
+                .parse::<sfv::Dictionary>()
+                .map_err(|_| headers::Error::invalid())?;
+            for (k, v) in dict {
+                validate_key(k.as_str()).map_err(|_| headers::Error::invalid())?;
+                let v = match v {
+                    sfv::ListEntry::Item(sfv::Item { bare_item, params }) if params.is_empty() => bare_item,
+                    _ => return Err(headers::Error::invalid()),
+                };
+                let v = match v {
+                    sfv::BareItem::String(s) => s.into(),
+                    sfv::BareItem::DisplayString(s) => s,
+                    _ => return Err(headers::Error::invalid()),
+                };
+                validate_value(&v).map_err(|_| headers::Error::invalid())?;
+                entries.insert(k.into(), v);
+            }
+        }
+        Ok(Self(entries))
+    }
+
+    fn encode<E: Extend<http::HeaderValue>>(&self, values: &mut E) {
+        let mut ser = sfv::DictSerializer::new();
+        for (k, v) in &self.0 {
+            let _ = ser.bare_item(k.as_str().try_into().unwrap(), sfv::RefBareItem::DisplayString(v));
+        }
+        if let Some(header) = ser.finish() {
+            values.extend([header.try_into().unwrap()]);
+        }
+    }
+}
+
+// pub struct SpacetimeEnvironmentRemove(Vec<String>);
+
+// impl headers::Header for SpacetimeEnvironmentRemove {
+//     fn name() -> &'static http::HeaderName {
+//         static NAME: http::HeaderName = http::HeaderName::from_static("spacetime-environment-remove");
+//         &NAME
+//     }
+
+//     fn decode<'i, I>(values: &mut I) -> Result<Self, headers::Error>
+//     where
+//         Self: Sized,
+//         I: Iterator<Item = &'i http::HeaderValue>,
+//     {
+//         let mut entries = Vec::new();
+//         for value in values {
+//             let list = sfv::Parser::new(value)
+//                 .with_version(sfv::Version::Rfc9651)
+//                 .parse::<sfv::List>()
+//                 .map_err(|_| headers::Error::invalid())?;
+//             entries.reserve(list.len());
+//             for v in list {
+//                 let tok = match v {
+//                     sfv::ListEntry::Item(sfv::Item {
+//                         bare_item: sfv::BareItem::Token(tok),
+//                         params,
+//                     }) if params.is_empty() => tok,
+//                     _ => return Err(headers::Error::invalid()),
+//                 };
+//                 entries.push(tok.into());
+//             }
+//         }
+//         Ok(Self(entries))
+//     }
+
+//     fn encode<E: Extend<http::HeaderValue>>(&self, values: &mut E) {
+//         let mut ser = sfv::ListSerializer::new();
+//         for v in &self.0 {
+//             let _ = ser.bare_item(sfv::TokenRef::from_str(v).unwrap());
+//         }
+//         if let Some(header) = ser.finish() {
+//             values.extend([header.try_into().unwrap()]);
+//         }
+//     }
+// }
 
 /// Authorized environment metadata. Values never leave the database in this response.
 #[derive(Clone, Serialize, Deserialize)]
@@ -44,7 +133,7 @@ pub enum PublishRequestError {
     TooLarge,
 }
 
-impl PublishRequest {
+impl EnvironmentPublish {
     pub fn decode(body: &[u8]) -> Result<Self, PublishRequestError> {
         if body.len() > MAX_REQUEST_BYTES {
             return Err(PublishRequestError::TooLarge);
@@ -61,12 +150,7 @@ impl PublishRequest {
     }
 
     fn validate(&self) -> Result<(), PublishRequestError> {
-        if self
-            .module
-            .as_ref()
-            .is_some_and(|module| module.len() > MAX_MODULE_BYTES)
-            || self.environment.len() > MAX_ENV_VARS
-        {
+        if self.environment.len() > MAX_ENV_VARS {
             return Err(PublishRequestError::TooLarge);
         }
         spacetimedb_lib::environment::EnvironmentUpdate {
@@ -122,22 +206,17 @@ mod tests {
     use super::*;
     #[test]
     fn roundtrip_and_omission_preserve_complete_string_input() {
-        let request = PublishRequest {
-            module: Some(vec![0, 1, 255]),
+        let request = EnvironmentPublish {
             environment: BTreeMap::from([("EMPTY".into(), "".into()), ("TOKEN".into(), "雪\0false".into())]),
             ..Default::default()
         };
-        let decoded = PublishRequest::decode(&request.encode().unwrap()).unwrap();
-        assert_eq!(decoded.module, request.module);
+        let decoded = EnvironmentPublish::decode(&request.encode().unwrap()).unwrap();
         assert_eq!(decoded.environment, request.environment);
-        assert!(PublishRequest::decode(br#"{"module":""}"#)
-            .unwrap()
-            .environment
-            .is_empty());
+        assert!(EnvironmentPublish::decode(br#"{}"#).unwrap().environment.is_empty());
     }
     #[test]
     fn environment_only_mutation_roundtrips_and_rejects_conflicting_operations() {
-        let request = PublishRequest {
+        let request = EnvironmentPublish {
             environment: BTreeMap::from([("FUTURE".into(), "secret-marker".into())]),
             environment_remove: vec!["OPTIONAL".into()],
             expected_module_version: Some("ab".repeat(32)),
@@ -148,7 +227,7 @@ mod tests {
             .unwrap()
             .get("module")
             .is_none());
-        let decoded = PublishRequest::decode(&bytes).unwrap();
+        let decoded = EnvironmentPublish::decode(&bytes).unwrap();
         assert_eq!(decoded.environment_remove, request.environment_remove);
         assert_eq!(decoded.expected_module_version, request.expected_module_version);
         for body in [
@@ -157,7 +236,7 @@ mod tests {
             r#"{"environment_remove":["KEY","KEY"]}"#,
             r#"{"expected_module_version":"secret-marker"}"#,
         ] {
-            let error = PublishRequest::decode(body.as_bytes()).err().expect("must reject");
+            let error = EnvironmentPublish::decode(body.as_bytes()).err().expect("must reject");
             assert!(!error.to_string().contains("secret-marker"));
         }
     }
@@ -165,14 +244,13 @@ mod tests {
     #[test]
     fn malformed_inputs_and_duplicate_keys_are_rejected_without_values() {
         for body in [
-            r#"{"module":"","environment":{"KEY":true}}"#,
-            r#"{"module":"","environment":{"KEY":null}}"#,
-            r#"{"module":"","environment":{"KEY":"first","KEY":"secret-marker"}}"#,
-            r#"{"module":"","environment":{"KEY":["secret-marker"]}}"#,
-            r#"{"module":"secret-marker"}"#,
-            r#"{"module":"","unknown":"secret-marker"}"#,
+            r#"{"environment":{"KEY":true}}"#,
+            r#"{"environment":{"KEY":null}}"#,
+            r#"{"environment":{"KEY":"first","KEY":"secret-marker"}}"#,
+            r#"{"environment":{"KEY":["secret-marker"]}}"#,
+            r#"{"unknown":"secret-marker"}"#,
         ] {
-            let error = PublishRequest::decode(body.as_bytes()).err().expect("must reject");
+            let error = EnvironmentPublish::decode(body.as_bytes()).err().expect("must reject");
             assert!(!format!("{error:?}: {error}").contains("secret-marker"));
         }
     }

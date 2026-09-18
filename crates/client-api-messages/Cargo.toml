@@ -20,6 +20,9 @@ serde_with.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
 derive_more.workspace = true
+http.workspace = true
+headers.workspace = true
+sfv.workspace = true
 
 [dev-dependencies]
 hex.workspace = true

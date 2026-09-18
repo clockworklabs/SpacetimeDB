@@ -360,6 +360,7 @@ checksum = "edca88bc138befd0323b20752846e6587272d3b03b0343c8ea28a6f819e6e71f"
 dependencies = [
  "async-trait",
  "axum-core",
+ "axum-macros",
  "bytes",
  "futures-util",
  "http",
@@ -429,6 +430,17 @@ dependencies = [
  "tower",
  "tower-layer",
  "tower-service",
+]
+
+[[package]]
+name = "axum-macros"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57d123550fa8d071b7255cb0cc04dc302baa6c8c4a79f55701552684d8399bce"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.107",
 ]
 
 [[package]]
@@ -7648,6 +7660,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sfv"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "890ef0e5532daf21fdaa3dbaf991417187f3a87ab69231fe69be942495746480"
+dependencies = [
+ "base64 0.22.1",
+ "indexmap 2.12.0",
+ "ref-cast",
+]
+
+[[package]]
 name = "sha1"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8113,12 +8136,15 @@ dependencies = [
  "bytestring",
  "derive_more 0.99.20",
  "enum-as-inner",
+ "headers",
  "hex",
+ "http",
  "itertools 0.12.1",
  "proptest",
  "serde",
  "serde_json",
  "serde_with",
+ "sfv",
  "smallvec",
  "spacetimedb-lib",
  "spacetimedb-primitives",
