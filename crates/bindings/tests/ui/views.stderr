@@ -54,36 +54,13 @@ error: Views do not take parameters other than `&ViewContext` or `&AnonymousView
 138 | fn sched_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<PlayerInfo> {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error[E0425]: cannot find type `ScheduledTable` in this scope
-   --> tests/ui/views.rs:138:45
-    |
-138 | fn sched_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<PlayerInfo> {
-    |                                             ^^^^^^^^^^^^^^ not found in this scope
-
-error[E0425]: cannot find type `T` in this scope
-   --> tests/ui/views.rs:196:60
-    |
-196 | fn view_nonexistent_table(ctx: &ViewContext) -> impl Query<T> {
-    |                                                            ^ not found in this scope
-    |
-help: you might be missing a type parameter
-    |
-196 | fn view_nonexistent_table<T>(ctx: &ViewContext) -> impl Query<T> {
-    |                          +++
-
-error[E0425]: cannot find type `T` in this scope
-   --> tests/ui/views.rs:196:60
-    |
-196 | fn view_nonexistent_table(ctx: &ViewContext) -> impl Query<T> {
-    |                                                            ^ not found in this scope
-
-error[E0277]: the trait bound `spacetimedb::rt::ViewKind<ReducerContext>: ViewKindTrait` is not satisfied
+error[E0277]: the trait bound `spacetimedb::rt::ViewKind<ReducerContext>: spacetimedb::rt::ViewKindTrait` is not satisfied
    --> tests/ui/views.rs:101:1
     |
 101 | #[view(accessor = view_def_wrong_context, public)]
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `ViewKindTrait` is not implemented for `spacetimedb::rt::ViewKind<ReducerContext>`
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `spacetimedb::rt::ViewKindTrait` is not implemented for `spacetimedb::rt::ViewKind<ReducerContext>`
     |
-help: the following other types implement trait `ViewKindTrait`
+help: the following other types implement trait `spacetimedb::rt::ViewKindTrait`
    --> src/rt.rs
     |
     | impl ViewKindTrait for ViewKind<ViewContext> {
@@ -97,7 +74,7 @@ error[E0276]: impl has stricter requirements than trait
    --> tests/ui/views.rs:101:1
     |
 101 | #[view(accessor = view_def_wrong_context, public)]
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ impl has extra requirement `spacetimedb::rt::ViewKind<ReducerContext>: ViewKindTrait`
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ impl has extra requirement `spacetimedb::rt::ViewKind<ReducerContext>: spacetimedb::rt::ViewKindTrait`
     |
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -123,8 +100,7 @@ error[E0599]: no method named `insert` found for reference `&test__ViewHandle` i
            candidate #1: `bitflags::traits::Flags`
            candidate #2: `ppv_lite86::types::Vec2`
            candidate #3: `ppv_lite86::types::Vec4`
-           candidate #4: `similar::algorithms::DiffHook`
-           candidate #5: `spacetimedb::Table`
+           candidate #4: `spacetimedb::Table`
 
 error[E0599]: no method named `try_insert` found for reference `&test__ViewHandle` in the current scope
   --> tests/ui/views.rs:31:25
@@ -149,9 +125,8 @@ error[E0599]: no method named `delete` found for reference `&test__ViewHandle` i
    |                         ^^^^^^ method not found in `&test__ViewHandle`
    |
    = help: items from traits can only be used if the trait is implemented and in scope
-   = note: the following traits define an item `delete`, perhaps you need to implement one of them:
-           candidate #1: `similar::algorithms::DiffHook`
-           candidate #2: `spacetimedb::Table`
+   = note: the following trait defines an item `delete`, perhaps you need to implement it:
+           candidate #1: `spacetimedb::Table`
 
 error[E0599]: no method named `delete` found for struct `UniqueColumnReadOnly<Tbl, ColType, Col>` in the current scope
   --> tests/ui/views.rs:45:30
@@ -171,24 +146,24 @@ error[E0599]: no method named `delete` found for struct `RangedIndexReadOnly<Tbl
 59 |     read_only.db.test().x().delete(0u32..);
    |                             ^^^^^^ method not found in `RangedIndexReadOnly<test__TableHandle, (u32,), x>`
 
-error[E0599]: no function or associated item named `register` found for struct `ViewRegistrar<ReducerContext>` in the current scope
+error[E0599]: no associated function or constant named `register` found for struct `spacetimedb::rt::ViewRegistrar<ReducerContext>` in the current scope
    --> tests/ui/views.rs:101:1
     |
 101 | #[view(accessor = view_def_wrong_context, public)]
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `ViewRegistrar<ReducerContext>`
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ associated function or constant not found in `spacetimedb::rt::ViewRegistrar<ReducerContext>`
     |
-    = note: the function or associated item was found for
-            - `ViewRegistrar<AnonymousViewContext>`
-            - `ViewRegistrar<ViewContext>`
+    = note: the associated function or constant was found for
+            - `spacetimedb::rt::ViewRegistrar<AnonymousViewContext>`
+            - `spacetimedb::rt::ViewRegistrar<ViewContext>`
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: The first parameter of a `#[view]` must be `&ViewContext` or `&AnonymousViewContext`
    --> tests/ui/views.rs:102:31
     |
 102 | fn view_def_wrong_context(_: &ReducerContext) -> Vec<Player> {
-    |                               ^^^^^^^^^^^^^^ the trait `ViewContextArg` is not implemented for `ReducerContext`
+    |                               ^^^^^^^^^^^^^^ the trait `spacetimedb::rt::ViewContextArg` is not implemented for `ReducerContext`
     |
-help: the following other types implement trait `ViewContextArg`
+help: the following other types implement trait `spacetimedb::rt::ViewContextArg`
    --> src/rt.rs
     |
     | impl ViewContextArg for ViewContext {}
@@ -196,15 +171,15 @@ help: the following other types implement trait `ViewContextArg`
     | impl ViewContextArg for AnonymousViewContext {}
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `AnonymousViewContext`
 
-error[E0599]: no function or associated item named `invoke` found for struct `ViewDispatcher<ReducerContext>` in the current scope
+error[E0599]: no associated function or constant named `invoke` found for struct `spacetimedb::rt::ViewDispatcher<ReducerContext>` in the current scope
    --> tests/ui/views.rs:101:1
     |
 101 | #[view(accessor = view_def_wrong_context, public)]
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `ViewDispatcher<ReducerContext>`
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ associated function or constant not found in `spacetimedb::rt::ViewDispatcher<ReducerContext>`
     |
-    = note: the function or associated item was found for
-            - `ViewDispatcher<AnonymousViewContext>`
-            - `ViewDispatcher<ViewContext>`
+    = note: the associated function or constant was found for
+            - `spacetimedb::rt::ViewDispatcher<AnonymousViewContext>`
+            - `spacetimedb::rt::ViewDispatcher<ViewContext>`
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: invalid view signature
@@ -219,7 +194,7 @@ error[E0277]: invalid view signature
     = note:     `Fn(&ViewContext, [T1, ...]) -> Vec<Tn> | Option<Tn>`
     = note: where each `Ti` implements `SpacetimeType`.
     = note:
-note: required by a bound in `ViewRegistrar::<ViewContext>::register`
+note: required by a bound in `spacetimedb::rt::ViewRegistrar::<ViewContext>::register`
    --> src/rt.rs
     |
     |     pub fn register<'a, A, I, T, V>(view: V)
@@ -235,12 +210,12 @@ error[E0277]: Views must return `Vec<T>` or `Option<T>` where `T` is a `Spacetim
 124 | fn view_def_wrong_return(_: &ViewContext) -> Player {
     |                                              ^^^^^^ unsatisfied trait bound
     |
-help: the trait `ViewReturn` is not implemented for `Player`
+help: the trait `spacetimedb::rt::ViewReturn` is not implemented for `Player`
    --> tests/ui/views.rs:63:1
     |
  63 | struct Player {
     | ^^^^^^^^^^^^^
-    = help: the following other types implement trait `ViewReturn`:
+    = help: the following other types implement trait `spacetimedb::rt::ViewReturn`:
               FromWhere<T>
               LeftSemiJoin<L>
               Option<T>
@@ -261,7 +236,7 @@ error[E0277]: invalid view signature
     = note:     `Fn(&ViewContext, [T1, ...]) -> Vec<Tn> | Option<Tn>`
     = note: where each `Ti` implements `SpacetimeType`.
     = note:
-note: required by a bound in `ViewDispatcher::<ViewContext>::invoke`
+note: required by a bound in `spacetimedb::rt::ViewDispatcher::<ViewContext>::invoke`
    --> src/rt.rs
     |
     |     pub fn invoke<'a, A, T, V>(view: V, ctx: ViewContext, args: &'a [u8]) -> Vec<u8>
@@ -277,13 +252,13 @@ error[E0277]: invalid anonymous view signature
 131 | #[view(accessor = view_def_returns_not_a_spacetime_type, public)]
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
     |
-    = help: the trait `AnonymousView<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a AnonymousViewContext) -> Option<NotSpacetimeType> {view_def_returns_not_a_spacetime_type}`
+    = help: the trait `spacetimedb::rt::AnonymousView<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a AnonymousViewContext) -> Option<NotSpacetimeType> {view_def_returns_not_a_spacetime_type}`
     = note:
     = note: anonymous view signatures must match:
     = note:     `Fn(&AnonymousViewContext, [T1, ...]) -> Vec<Tn> | Option<Tn>`
     = note: where each `Ti` implements `SpacetimeType`.
     = note:
-note: required by a bound in `ViewRegistrar::<AnonymousViewContext>::register`
+note: required by a bound in `spacetimedb::rt::ViewRegistrar::<AnonymousViewContext>::register`
    --> src/rt.rs
     |
     |     pub fn register<'a, A, I, T, V>(view: V)
@@ -315,7 +290,7 @@ help: the trait `SpacetimeType` is not implemented for `NotSpacetimeType`
               Box<T>
               ColumnAttribute
             and $N others
-    = note: required for `Option<NotSpacetimeType>` to implement `ViewReturn`
+    = note: required for `Option<NotSpacetimeType>` to implement `spacetimedb::rt::ViewReturn`
 
 error[E0277]: the trait bound `NotSpacetimeType: Serialize` is not satisfied
    --> tests/ui/views.rs:132:71
@@ -338,7 +313,7 @@ help: the trait `Serialize` is not implemented for `NotSpacetimeType`
               (T0, T1, T2, T3, T4, T5)
               (T0, T1, T2, T3, T4, T5, T6)
             and $N others
-    = note: required for `Option<NotSpacetimeType>` to implement `ViewReturn`
+    = note: required for `Option<NotSpacetimeType>` to implement `spacetimedb::rt::ViewReturn`
 
 error[E0277]: invalid anonymous view signature
    --> tests/ui/views.rs:131:1
@@ -346,13 +321,13 @@ error[E0277]: invalid anonymous view signature
 131 | #[view(accessor = view_def_returns_not_a_spacetime_type, public)]
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this view signature is not valid
     |
-    = help: the trait `AnonymousView<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a AnonymousViewContext) -> Option<NotSpacetimeType> {view_def_returns_not_a_spacetime_type}`
+    = help: the trait `spacetimedb::rt::AnonymousView<'_, _, _>` is not implemented for fn item `for<'a> fn(&'a AnonymousViewContext) -> Option<NotSpacetimeType> {view_def_returns_not_a_spacetime_type}`
     = note:
     = note: anonymous view signatures must match:
     = note:     `Fn(&AnonymousViewContext, [T1, ...]) -> Vec<Tn> | Option<Tn>`
     = note: where each `Ti` implements `SpacetimeType`.
     = note:
-note: required by a bound in `ViewDispatcher::<AnonymousViewContext>::invoke`
+note: required by a bound in `spacetimedb::rt::ViewDispatcher::<AnonymousViewContext>::invoke`
    --> src/rt.rs
     |
     |     pub fn invoke<'a, A, T, V>(view: V, ctx: AnonymousViewContext, args: &'a [u8]) -> Vec<u8>
@@ -422,8 +397,11 @@ help: the trait `RHS<PlayerInfo, u8>` is not implemented for `u32`
       but trait `RHS<PlayerInfo, u32>` is implemented for it
    --> $WORKSPACE/crates/query-builder/src/expr.rs
     |
+    |         impl<T> RHS<T, $ty> for $ty {
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
     | impl_rhs!(u32, |v: u32| v.to_string());
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    | -------------------------------------- in this macro invocation
     = help: for that trait implementation, expected `u32`, found `u8`
 note: required by a bound in `Col::<T, V>::eq`
    --> $WORKSPACE/crates/query-builder/src/table.rs
@@ -496,7 +474,7 @@ error[E0277]: `&'a NonFilterableViewPrimaryKey` cannot appear as an argument to 
               &ethnum::int::I256
               &ethnum::uint::U256
             and $N others
-    = note: required for `NonFilterableViewPrimaryKey` to implement `ViewPrimaryKeyColumn`
+    = note: required for `NonFilterableViewPrimaryKey` to implement `spacetimedb::ViewPrimaryKeyColumn`
 note: required by a bound in `_::_assert_view_primary_key_column::_assert_view_primary_key_column_type`
    --> tests/ui/views.rs:229:1
     |
