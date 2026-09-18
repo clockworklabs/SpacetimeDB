@@ -23,11 +23,13 @@ namespace SpacetimeDB.Types.@class
     {
         internal RemoteTables(global::SpacetimeDB.Types.DbConnection conn, Action<IRemoteTableHandle> register)
         {
+            register(ScheduleResult = new(conn));
             register(User = new(conn));
         }
     }
     public sealed class From
     {
+        public global::SpacetimeDB.Table<ScheduleResult, ScheduleResultCols, ScheduleResultIxCols> ScheduleResult() => new(new global::SpacetimeDB.SqlTableName(new string[] { "class" }, "schedule_result"), new ScheduleResultCols(new global::SpacetimeDB.SqlTableName(new string[] { "class" }, "schedule_result")), new ScheduleResultIxCols(new global::SpacetimeDB.SqlTableName(new string[] { "class" }, "schedule_result")));
         public global::SpacetimeDB.Table<User, UserCols, UserIxCols> User() => new(new global::SpacetimeDB.SqlTableName(new string[] { "class" }, "user"), new UserCols(new global::SpacetimeDB.SqlTableName(new string[] { "class" }, "user")), new UserIxCols(new global::SpacetimeDB.SqlTableName(new string[] { "class" }, "user")));
     }
 
