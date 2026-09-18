@@ -20,6 +20,9 @@ export default tseslint.config(
       '**/dist/**',
       '**/build/**',
       '**/coverage/**',
+      '**/public/app.js',
+      '**/src/module_bindings/**',
+      '**/ts-codegen/**',
       '**/templates/angular-ts/.angular/**',
     ],
   },
@@ -62,6 +65,7 @@ export default tseslint.config(
           './tsconfig.json',
           './crates/bindings-typescript/tsconfig.json',
           './crates/bindings-typescript/test-app/tsconfig.json',
+          './spacetime-submodule-shared-ts/tsconfig.json',
           './templates/react-ts/tsconfig.json',
           './templates/chat-react-ts/tsconfig.json',
           './templates/money-exchange-react-ts/tsconfig.json',
@@ -116,6 +120,19 @@ export default tseslint.config(
         'error',
         { allowObjectTypes: 'always' },
       ],
+    },
+  },
+  {
+    files: ['spacetime-*-ts/**/example/public/ui.js'],
+    languageOptions: {
+      sourceType: 'script',
+      globals: globals.browser,
+    },
+  },
+  {
+    files: ['spacetime-*-ts/**/*.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'error',
     },
   },
   {

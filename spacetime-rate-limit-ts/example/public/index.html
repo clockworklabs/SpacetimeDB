@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="An interactive SpacetimeDB example demonstrating fixed-window rate limits, expiration, and activity history."
+    />
+    <meta http-equiv="Cache-Control" content="no-store" />
+    <link rel="icon" href="data:," />
+    <title>Powerhouse</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div class="app-title">
+          <a
+            href="https://spacetimedb.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            style="display: inline-flex"
+            ><img class="app-mark" src="/assets/logo.svg" alt="SpacetimeDB"
+          /></a>
+          <div class="app-title-text">
+            <h1>Powerhouse</h1>
+            <span class="app-sub"
+              >Tap the core for energy, buy upgrades, and outproduce the crew.
+              Don't let it overheat.</span
+            >
+          </div>
+        </div>
+      </header>
+
+      <section class="layout">
+        <section class="panel arena">
+          <div class="energy-banner">
+            <svg
+              class="energy-icon"
+              aria-label="Energy"
+              viewBox="11 7 18 26"
+              role="img"
+            >
+              <path
+                class="icon-bolt"
+                d="M22.8 8.8 12.6 22.1h7l-2.3 9.1 10.2-13.4h-7l2.3-9z"
+              ></path>
+            </svg>
+            <strong id="energy">0</strong>
+          </div>
+
+          <div id="reactorWrap" class="reactor-wrap">
+            <button id="tapBtn" class="reactor-button" type="button">
+              <span class="reactor-copy">
+                <b id="reactorLabel">Tap</b>
+                <span id="reactorHint">Generate energy</span>
+              </span>
+            </button>
+            <div id="popLayer" class="pop-layer"></div>
+            <div id="systemDock" class="systems-dock"></div>
+          </div>
+
+          <div>
+            <div class="meter">
+              <div class="meter-head">
+                <span>Core Heat</span>
+                <span
+                  ><span id="heatText">0%</span> ·
+                  <span id="coolText">stable</span></span
+                >
+              </div>
+              <div class="track"><div id="heatFill" class="fill"></div></div>
+            </div>
+            <div class="meter">
+              <div class="meter-head">
+                <span>Tap Charges</span>
+                <span id="tapChargeInfo">8 / 8 · 6s window</span>
+              </div>
+              <div
+                id="tapChargeSegments"
+                class="charge-segments"
+                aria-label="Tap charges"
+              ></div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="side">
+          <section class="panel console-panel">
+            <div class="tabs" role="tablist" aria-label="Reactor console">
+              <button
+                id="shopTab"
+                class="tab"
+                type="button"
+                role="tab"
+                aria-selected="true"
+                aria-controls="shopPane"
+                data-tab="shop"
+              >
+                Shop <span id="shopCount" class="tab-count">0</span>
+              </button>
+              <button
+                id="playersTab"
+                class="tab"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="playersPane"
+                data-tab="players"
+              >
+                Crew <span id="playerCount" class="tab-count">0</span>
+              </button>
+              <button
+                id="activityTab"
+                class="tab"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="activityPane"
+                data-tab="activity"
+              >
+                Activity <span id="activityCount" class="tab-count">0</span>
+              </button>
+            </div>
+            <div class="tab-content">
+              <section
+                id="shopPane"
+                class="tab-pane active"
+                role="tabpanel"
+                aria-labelledby="shopTab"
+                data-pane="shop"
+              >
+                <div id="shopList" class="shop-list"></div>
+              </section>
+              <section
+                id="playersPane"
+                class="tab-pane"
+                role="tabpanel"
+                aria-labelledby="playersTab"
+                data-pane="players"
+              >
+                <div id="playerList" class="player-list"></div>
+              </section>
+              <section
+                id="activityPane"
+                class="tab-pane"
+                role="tabpanel"
+                aria-labelledby="activityTab"
+                data-pane="activity"
+              >
+                <div id="activityList" class="activity-list"></div>
+              </section>
+            </div>
+          </section>
+        </aside>
+      </section>
+
+      <footer class="page-foot">
+        <span class="by">Built on</span>
+        <a
+          href="https://spacetimedb.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          style="display: inline-flex"
+          ><img src="/assets/brand.svg" alt="SpacetimeDB"
+        /></a>
+      </footer>
+    </main>
+
+    <script type="module" src="/app.js?v=reactor-room-1"></script>
+    <script src="./ui.js"></script>
+  </body>
+</html>
