@@ -17,7 +17,8 @@ use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
 use spacetimedb::sql;
 use spacetimedb_client_api_messages::http::{SqlStmtResult, SqlStmtStats};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
-use spacetimedb_lib::{ProductTypeElement, ProductValue};
+use spacetimedb_lib::environment::EnvironmentUpdate;
+use spacetimedb_lib::{Hash, ProductTypeElement, ProductValue};
 use spacetimedb_paths::server::ModuleLogsDir;
 use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
 use thiserror::Error;
@@ -231,11 +232,6 @@ pub struct DatabaseDef {
     pub database_identity: Identity,
     /// The compiled program of the database module.
     pub program_bytes: Bytes,
-    /// Supplied overrides, never persisted in the public Database record.
-    pub environment: std::collections::BTreeMap<String, String>,
-    pub environment_remove: Vec<String>,
-    pub environment_replace: bool,
-    pub expected_module_version: Option<spacetimedb_lib::Hash>,
     /// The desired number of replicas the database shall have.
     ///
     /// If `None`, the edition default is used.
@@ -253,9 +249,6 @@ pub struct DatabaseDef {
 pub struct DatabaseResetDef {
     pub database_identity: Identity,
     pub program_bytes: Option<Bytes>,
-    pub environment: std::collections::BTreeMap<String, String>,
-    pub environment_remove: Vec<String>,
-    pub environment_replace: bool,
     pub num_replicas: Option<NonZeroU8>,
     pub host_type: Option<HostType>,
 }
@@ -328,6 +321,7 @@ pub trait ControlStateWriteAccess: Send + Sync {
         publisher: &Identity,
         spec: DatabaseDef,
         policy: MigrationPolicy,
+        environment: EnvironmentUpdate,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>>;
 
     async fn migrate_plan(&self, spec: DatabaseDef, style: PrettyPrintStyle) -> anyhow::Result<MigratePlanResult>;
@@ -373,6 +367,13 @@ pub trait ControlStateWriteAccess: Send + Sync {
         caller_identity: &Identity,
         database_identity: &Identity,
         locked: bool,
+    ) -> anyhow::Result<()>;
+
+    async fn update_environment(
+        &self,
+        publisher: &Identity,
+        environment: EnvironmentUpdate,
+        expected_module_version: Hash,
     ) -> anyhow::Result<()>;
 }
 
@@ -442,8 +443,9 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         identity: &Identity,
         spec: DatabaseDef,
         policy: MigrationPolicy,
+        environment: EnvironmentUpdate,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
-        (**self).publish_database(identity, spec, policy).await
+        (**self).publish_database(identity, spec, policy, environment).await
     }
 
     async fn migrate_plan(&self, spec: DatabaseDef, style: PrettyPrintStyle) -> anyhow::Result<MigratePlanResult> {
@@ -497,6 +499,17 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
     ) -> anyhow::Result<()> {
         (**self)
             .set_database_lock(caller_identity, database_identity, locked)
+            .await
+    }
+
+    async fn update_environment(
+        &self,
+        publisher: &Identity,
+        environment: EnvironmentUpdate,
+        expected_module_version: Hash,
+    ) -> anyhow::Result<()> {
+        (**self)
+            .update_environment(publisher, environment, expected_module_version)
             .await
     }
 }

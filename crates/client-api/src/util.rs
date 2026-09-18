@@ -9,8 +9,10 @@ use std::net::IpAddr;
 use std::ops::{Deref, DerefMut};
 
 use axum::body::Bytes;
-use axum::extract::{FromRequest, Request};
+use axum::extract::{FromRequest, FromRequestParts, Request};
 use axum::response::IntoResponse;
+use axum_extra::typed_header::TypedHeaderRejection;
+use axum_extra::TypedHeader;
 use bytestring::ByteString;
 use futures::TryStreamExt;
 use http::{HeaderName, HeaderValue, StatusCode};
@@ -295,6 +297,21 @@ impl<S> FromRequest<S> for EmptyBody {
             return Err((StatusCode::BAD_REQUEST, "body must be empty").into_response());
         }
         Ok(Self)
+    }
+}
+
+pub struct OptionalHeader<T>(pub Option<T>);
+
+#[async_trait::async_trait]
+impl<T: headers::Header, S: Send + Sync> FromRequestParts<S> for OptionalHeader<T> {
+    type Rejection = TypedHeaderRejection;
+
+    async fn from_request_parts(parts: &mut http::request::Parts, state: &S) -> Result<Self, Self::Rejection> {
+        match TypedHeader::<T>::from_request_parts(parts, state).await {
+            Ok(TypedHeader(x)) => Ok(Self(Some(x))),
+            Err(e) if e.is_missing() => Ok(Self(None)),
+            Err(e) => Err(e),
+        }
     }
 }
 

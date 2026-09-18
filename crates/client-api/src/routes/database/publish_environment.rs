@@ -1,15 +1,20 @@
 //! Bounded publish extraction. Neither errors nor Debug output retain configuration values.
 use axum::body::{to_bytes, Bytes};
-use axum::extract::{FromRequest, Request};
+use axum::extract::{FromRequest, FromRequestParts, Request};
 use axum::response::{IntoResponse, Response};
+use axum_extra::TypedHeader;
 use http::{header, StatusCode};
-use spacetimedb_client_api_messages::publish::{PublishRequest, CONTENT_TYPE, MAX_MODULE_BYTES, MAX_REQUEST_BYTES};
+use spacetimedb_client_api_messages::publish::{
+    SpacetimeEnvironment, SpacetimeEnvironmentRemove, CONTENT_TYPE, MAX_MODULE_BYTES, MAX_REQUEST_BYTES,
+};
 use std::collections::BTreeMap;
 
-pub struct PublishBody {
-    pub program_bytes: Option<Bytes>,
-    pub environment: BTreeMap<String, String>,
-    pub environment_remove: Vec<String>,
+#[derive(FromRequestParts)]
+pub struct PublishOptions {
+    #[from_request(via(TypedHeader))]
+    pub environment: SpacetimeEnvironment,
+    #[from_request(via(TypedHeader))]
+    pub environment_remove: SpacetimeEnvironmentRemove,
     pub environment_replace: bool,
     pub expected_module_version: Option<spacetimedb_lib::Hash>,
     pub environment_only: bool,

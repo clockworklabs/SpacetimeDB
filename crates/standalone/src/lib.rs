@@ -30,6 +30,7 @@ use spacetimedb_client_api_messages::name::{
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::traits::Program;
+use spacetimedb_lib::environment::EnvironmentUpdate;
 use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
 use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
@@ -277,14 +278,11 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         publisher: &Identity,
         spec: spacetimedb_client_api::DatabaseDef,
         policy: MigrationPolicy,
+        environment: EnvironmentUpdate,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
         let existing_db = self.control_db.get_database_by_identity(&spec.database_identity)?;
 
-        let update = spacetimedb_lib::environment::EnvironmentUpdate {
-            values: spec.environment,
-            remove: spec.environment_remove,
-            replace: spec.environment_replace,
-        };
+        let update = spec.environment;
         update.validate()?;
         // standalone does not support replication.
         let num_replicas = 1;
