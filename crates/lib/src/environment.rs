@@ -64,14 +64,20 @@ mod tests {
     }
 }
 
-/// Host-validated string constraints. Values remain strings in every module SDK.
+/// Host-validated types for environment values, which are stored as strings.
+// TODO: Consider representing these types with a subset of SATS if
+// AlgebraicType gains StringLiteral(String) and Union(Vec<AlgebraicType>).
+// For example, Union([StringLiteral("development"), StringLiteral("production")])
+// would accept either string directly, without the runtime tag used by SATS Sum.
+// Changing this union payload to recursive types requires ABI compatibility handling.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, crate::SpacetimeType)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[sats(crate = crate)]
-pub enum EnvironmentConstraint {
-    AnyString,
-    Literal(String),
-    OneOf(Vec<String>),
+pub enum EnvVarType {
+    String,
+    StringLiteral(String),
+    /// An untagged union of string literals, stored as their literal values.
+    Union(Vec<String>),
 }
 
 /// Declaration metadata, never an environment value supplied during publishing.
@@ -80,7 +86,7 @@ pub enum EnvironmentConstraint {
 #[sats(crate = crate)]
 pub struct EnvironmentDeclaration {
     pub name: String,
-    pub constraint: EnvironmentConstraint,
+    pub ty: EnvVarType,
     pub optional: bool,
 }
 
@@ -163,10 +169,10 @@ impl EnvironmentSchema {
             if bytes > MAX_ENV_SCHEMA_BYTES {
                 return Err(error(Kind::SchemaTooLarge));
             }
-            let literals = match &declaration.constraint {
-                EnvironmentConstraint::AnyString => &[][..],
-                EnvironmentConstraint::Literal(value) => std::slice::from_ref(value),
-                EnvironmentConstraint::OneOf(values) => {
+            let literals = match &declaration.ty {
+                EnvVarType::String => &[][..],
+                EnvVarType::StringLiteral(value) => std::slice::from_ref(value),
+                EnvVarType::Union(values) => {
                     if values.is_empty() {
                         return Err(error(Kind::EmptyUnion));
                     }
@@ -191,7 +197,10 @@ impl EnvironmentSchema {
         Self::validate_metadata(&declarations)?;
         let mut schema = Self::default();
         for mut declaration in declarations {
-            if let EnvironmentConstraint::OneOf(values) = &mut declaration.constraint {
+            if let EnvVarType::Union(values) = &mut declaration.ty {
+                // Literal alternatives form a set, not positional enum variants.
+                // Sorting makes declaration order irrelevant and enables binary_search.
+                // Equal strings are indistinguishable and deduplicated, so stability is unnecessary.
                 values.sort_unstable();
                 values.dedup();
             }
@@ -261,10 +270,10 @@ impl EnvironmentSchema {
             };
             validate_value(value).map_err(|_| error(Kind::ValueTooLarge))?;
             let Some(declaration) = self.get(name) else { continue };
-            let matches = match &declaration.constraint {
-                EnvironmentConstraint::AnyString => true,
-                EnvironmentConstraint::Literal(expected) => value == expected,
-                EnvironmentConstraint::OneOf(allowed) => allowed.binary_search(value).is_ok(),
+            let matches = match &declaration.ty {
+                EnvVarType::String => true,
+                EnvVarType::StringLiteral(expected) => value == expected,
+                EnvVarType::Union(allowed) => allowed.binary_search(value).is_ok(),
             };
             if !matches {
                 return Err(error(Kind::ConstraintMismatch));
@@ -365,10 +374,10 @@ mod schema_tests {
     use super::*;
     use std::collections::BTreeMap;
 
-    fn declaration(name: &str, constraint: EnvironmentConstraint, optional: bool) -> EnvironmentDeclaration {
+    fn declaration(name: &str, ty: EnvVarType, optional: bool) -> EnvironmentDeclaration {
         EnvironmentDeclaration {
             name: name.into(),
-            constraint,
+            ty,
             optional,
         }
     }
@@ -376,13 +385,13 @@ mod schema_tests {
     #[test]
     fn complete_inputs_preserve_optional_empty_and_exact_string_constraints() {
         let schema = EnvironmentSchema::new(vec![
-            declaration("REQUIRED", EnvironmentConstraint::AnyString, false),
+            declaration("REQUIRED", EnvVarType::String, false),
             declaration(
                 "MODE",
-                EnvironmentConstraint::OneOf(vec!["false".into(), "true".into(), "false".into()]),
+                EnvVarType::Union(vec!["false".into(), "true".into(), "false".into()]),
                 false,
             ),
-            declaration("OPTIONAL", EnvironmentConstraint::Literal("".into()), true),
+            declaration("OPTIONAL", EnvVarType::StringLiteral("".into()), true),
         ])
         .unwrap();
         let mut values = BTreeMap::from([("REQUIRED".into(), "\0雪".into()), ("MODE".into(), "false".into())]);
@@ -410,7 +419,7 @@ mod schema_tests {
         let old = BTreeMap::from([("REQUIRED".into(), "ready".into()), ("UNUSED".into(), "secret".into())]);
         let schema = EnvironmentSchema::new(vec![declaration(
             "REQUIRED",
-            EnvironmentConstraint::Literal("ready".into()),
+            EnvVarType::StringLiteral("ready".into()),
             false,
         )])
         .unwrap();
@@ -438,7 +447,7 @@ mod schema_tests {
         assert!(!replace.contains_key("UNUSED"));
         let newly_declared = EnvironmentSchema::new(vec![declaration(
             "UNUSED",
-            EnvironmentConstraint::Literal("other".into()),
+            EnvVarType::StringLiteral("other".into()),
             false,
         )])
         .unwrap();
@@ -487,7 +496,7 @@ mod schema_tests {
 
     #[test]
     fn declaration_limits_count_absent_optionals_and_reject_invalid_metadata() {
-        let optional = declaration("A", EnvironmentConstraint::AnyString, true);
+        let optional = declaration("A", EnvVarType::String, true);
         assert_eq!(
             EnvironmentSchema::new(vec![optional.clone(), optional])
                 .unwrap_err()
@@ -497,7 +506,7 @@ mod schema_tests {
         assert_eq!(
             EnvironmentSchema::new(
                 (0..=MAX_ENV_VARS)
-                    .map(|i| declaration(&format!("K{i}"), EnvironmentConstraint::AnyString, true))
+                    .map(|i| declaration(&format!("K{i}"), EnvVarType::String, true))
                     .collect()
             )
             .unwrap_err()
@@ -505,19 +514,11 @@ mod schema_tests {
             EnvironmentSchemaErrorKind::TooManyDeclarations
         );
         for (name, constraint, expected) in [
-            (
-                "A-B",
-                EnvironmentConstraint::AnyString,
-                EnvironmentSchemaErrorKind::InvalidName,
-            ),
+            ("A-B", EnvVarType::String, EnvironmentSchemaErrorKind::InvalidName),
+            ("A", EnvVarType::Union(vec![]), EnvironmentSchemaErrorKind::EmptyUnion),
             (
                 "A",
-                EnvironmentConstraint::OneOf(vec![]),
-                EnvironmentSchemaErrorKind::EmptyUnion,
-            ),
-            (
-                "A",
-                EnvironmentConstraint::Literal("x".repeat(MAX_ENV_VALUE_BYTES + 1)),
+                EnvVarType::StringLiteral("x".repeat(MAX_ENV_VALUE_BYTES + 1)),
                 EnvironmentSchemaErrorKind::LiteralTooLarge,
             ),
         ] {
@@ -537,20 +538,19 @@ mod schema_tests {
     #[test]
     fn raw_metadata_is_bounded_before_copying_or_formatting_untrusted_keys() {
         let invalid = format!("private-marker\n{}", "x".repeat(100_000));
-        let error =
-            EnvironmentSchema::new(vec![declaration(&invalid, EnvironmentConstraint::AnyString, true)]).unwrap_err();
+        let error = EnvironmentSchema::new(vec![declaration(&invalid, EnvVarType::String, true)]).unwrap_err();
         assert_eq!(error.key, None);
         assert!(!format!("{error:?}: {error}").contains("private-marker"));
         let error = EnvironmentSchema::new(vec![declaration(
             "A",
-            EnvironmentConstraint::OneOf(vec!["".into(); MAX_ENV_UNION_ENTRIES + 1]),
+            EnvVarType::Union(vec!["".into(); MAX_ENV_UNION_ENTRIES + 1]),
             true,
         )])
         .unwrap_err();
         assert_eq!(error.kind, EnvironmentSchemaErrorKind::TooManyUnionEntries);
         let error = EnvironmentSchema::new(vec![declaration(
             "A",
-            EnvironmentConstraint::OneOf(vec!["x".repeat(MAX_ENV_VALUE_BYTES); MAX_ENV_UNION_ENTRIES]),
+            EnvVarType::Union(vec!["x".repeat(MAX_ENV_VALUE_BYTES); MAX_ENV_UNION_ENTRIES]),
             true,
         )])
         .unwrap_err();

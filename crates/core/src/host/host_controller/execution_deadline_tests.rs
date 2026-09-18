@@ -319,6 +319,8 @@ async fn execution_deadline_bounds_startup_description_and_failed_update() {
                 database.id,
                 bad.bytes,
                 MigrationPolicy::Compatible,
+                Default::default(),
+                None,
             )
         )
         .await
@@ -337,6 +339,8 @@ async fn execution_deadline_bounds_startup_description_and_failed_update() {
             database.id,
             newer.bytes.clone(),
             MigrationPolicy::Compatible,
+            Default::default(),
+            None,
         )
         .await
         .unwrap();

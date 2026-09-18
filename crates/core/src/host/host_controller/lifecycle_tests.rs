@@ -370,6 +370,8 @@ async fn lifecycle_stale_panic_callback_does_not_unregister_updated_or_reopened_
             database.id,
             newer.into(),
             MigrationPolicy::Compatible,
+            Default::default(),
+            None,
         )
         .await
         .unwrap();

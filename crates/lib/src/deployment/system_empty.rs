@@ -6,7 +6,7 @@
 
 use crate::db::raw_def::v10::{RawModuleDefV10, RawModuleDefV10Section};
 use crate::environment::{
-    EnvironmentConstraint, EnvironmentDeclaration, EnvironmentSchema, MAX_ENV_KEY_BYTES, MAX_ENV_SCHEMA_BYTES,
+    EnvVarType, EnvironmentDeclaration, EnvironmentSchema, MAX_ENV_KEY_BYTES, MAX_ENV_SCHEMA_BYTES,
     MAX_ENV_UNION_ENTRIES, MAX_ENV_VALUE_BYTES, MAX_ENV_VARS,
 };
 use crate::{bsatn, hash_bytes, Hash, RawModuleDef, SpacetimeType};
@@ -161,15 +161,15 @@ fn read_environment(bytes: &[u8]) -> ModuleResult<EnvironmentSchema> {
     for _ in 0..count {
         let name = metadata.string(MAX_ENV_KEY_BYTES, &mut string_bytes)?;
         let constraint = match metadata.byte()? {
-            0 => EnvironmentConstraint::AnyString,
-            1 => EnvironmentConstraint::Literal(metadata.string(MAX_ENV_VALUE_BYTES, &mut string_bytes)?),
+            0 => EnvVarType::String,
+            1 => EnvVarType::StringLiteral(metadata.string(MAX_ENV_VALUE_BYTES, &mut string_bytes)?),
             2 => {
                 let count = metadata.count(MAX_ENV_UNION_ENTRIES)?;
                 let mut values = Vec::with_capacity(count);
                 for _ in 0..count {
                     values.push(metadata.string(MAX_ENV_VALUE_BYTES, &mut string_bytes)?);
                 }
-                EnvironmentConstraint::OneOf(values)
+                EnvVarType::Union(values)
             }
             _ => return Err(InvalidSystemModule),
         };
@@ -180,7 +180,7 @@ fn read_environment(bytes: &[u8]) -> ModuleResult<EnvironmentSchema> {
         };
         declarations.push(EnvironmentDeclaration {
             name,
-            constraint,
+            ty: constraint,
             optional,
         });
     }

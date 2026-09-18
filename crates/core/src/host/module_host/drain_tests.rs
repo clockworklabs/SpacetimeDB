@@ -168,7 +168,7 @@ async fn operation_drain_wasm_procedure_owns_external_wait_and_late_commit() {
     let schema = spacetimedb_lib::environment::EnvironmentSchema::new(vec![
         spacetimedb_lib::environment::EnvironmentDeclaration {
             name: "AFTER_IO".into(),
-            constraint: spacetimedb_lib::environment::EnvironmentConstraint::AnyString,
+            ty: spacetimedb_lib::environment::EnvVarType::String,
             optional: true,
         },
     ])

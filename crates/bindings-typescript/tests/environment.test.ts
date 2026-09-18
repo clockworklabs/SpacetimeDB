@@ -24,23 +24,23 @@ const declarations = {
 describe('declared database environment', () => {
   it('emits canonical constraint metadata and an explicit empty section', () => {
     expect(environmentDeclarations(declarations)).toEqual([
-      { name: 'FOOBAR', constraint: { tag: 'AnyString' }, optional: false },
+      { name: 'FOOBAR', ty: { tag: 'String' }, optional: false },
       {
         name: 'ENABLE_EMAIL',
-        constraint: { tag: 'OneOf', value: ['true', 'false'] },
+        ty: { tag: 'Union', value: ['true', 'false'] },
         optional: false,
       },
       {
         name: 'LOG_LEVEL',
-        constraint: { tag: 'OneOf', value: ['debug', 'info', 'error'] },
+        ty: { tag: 'Union', value: ['debug', 'info', 'error'] },
         optional: true,
       },
       {
         name: 'DEPLOYMENT_KIND',
-        constraint: { tag: 'Literal', value: 'production' },
+        ty: { tag: 'StringLiteral', value: 'production' },
         optional: false,
       },
-      { name: 'get', constraint: { tag: 'AnyString' }, optional: true },
+      { name: 'get', ty: { tag: 'String' }, optional: true },
     ]);
     const defined = schema({}, { env: declarations });
     const moduleDef = defined.buildRawModuleDefV10({});

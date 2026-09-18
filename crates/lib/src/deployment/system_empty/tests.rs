@@ -1,9 +1,9 @@
 use super::*;
 
-fn declaration(name: &str, constraint: EnvironmentConstraint, optional: bool) -> EnvironmentDeclaration {
+fn declaration(name: &str, ty: EnvVarType, optional: bool) -> EnvironmentDeclaration {
     EnvironmentDeclaration {
         name: name.into(),
-        constraint,
+        ty,
         optional,
     }
 }
@@ -11,21 +11,17 @@ fn declaration(name: &str, constraint: EnvironmentConstraint, optional: bool) ->
 #[test]
 fn equivalent_normalized_schemas_select_the_same_program() {
     let first = EnvironmentSchema::new(vec![
-        declaration("TOKEN", EnvironmentConstraint::AnyString, true),
-        declaration(
-            "MODE",
-            EnvironmentConstraint::OneOf(vec!["blue".into(), "green".into()]),
-            false,
-        ),
+        declaration("TOKEN", EnvVarType::String, true),
+        declaration("MODE", EnvVarType::Union(vec!["blue".into(), "green".into()]), false),
     ])
     .unwrap();
     let second = EnvironmentSchema::new(vec![
         declaration(
             "MODE",
-            EnvironmentConstraint::OneOf(vec!["green".into(), "blue".into(), "blue".into()]),
+            EnvVarType::Union(vec!["green".into(), "blue".into(), "blue".into()]),
             false,
         ),
-        declaration("TOKEN", EnvironmentConstraint::AnyString, true),
+        declaration("TOKEN", EnvVarType::String, true),
     ])
     .unwrap();
     let generated = generate(&first).unwrap();
@@ -33,7 +29,7 @@ fn equivalent_normalized_schemas_select_the_same_program() {
     assert_eq!(generated.bytes, same.bytes);
     assert_eq!(generated.descriptor, same.descriptor);
     assert_eq!(verify(&generated.descriptor, &generated.bytes).unwrap(), first);
-    let required = EnvironmentSchema::new(vec![declaration("TOKEN", EnvironmentConstraint::AnyString, false)]).unwrap();
+    let required = EnvironmentSchema::new(vec![declaration("TOKEN", EnvVarType::String, false)]).unwrap();
     assert_ne!(
         generated.descriptor.program_hash,
         generate(&required).unwrap().descriptor.program_hash
@@ -69,7 +65,7 @@ fn large_declarations_grow_fixed_memory_and_remain_bounded() {
             .map(|n| {
                 declaration(
                     &format!("K{n}"),
-                    EnvironmentConstraint::Literal("x".repeat(MAX_ENV_VALUE_BYTES)),
+                    EnvVarType::StringLiteral("x".repeat(MAX_ENV_VALUE_BYTES)),
                     false,
                 )
             })

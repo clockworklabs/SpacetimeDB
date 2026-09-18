@@ -802,7 +802,6 @@ pub struct SmoketestBuilder {
     autopublish: bool,
     pg_port: Option<u16>,
     server_url_override: Option<String>,
-    isolated_local_server: bool,
     cli_path: Option<PathBuf>,
 }
 
@@ -829,21 +828,12 @@ impl SmoketestBuilder {
             autopublish: true,
             pg_port: None,
             server_url_override: None,
-            isolated_local_server: false,
             cli_path: None,
         }
     }
 
     pub fn server_url(mut self, url: &str) -> Self {
         self.server_url_override = Some(url.to_string());
-        self
-    }
-
-    /// Start an owned local server with a fresh CLI configuration, even in a
-    /// remote test job. Do not copy the remote job's login or base configuration.
-    /// This cannot be combined with an explicit server URL.
-    pub fn isolated_local_server(mut self) -> Self {
-        self.isolated_local_server = true;
         self
     }
 
@@ -933,15 +923,6 @@ impl SmoketestBuilder {
     /// Panics if the CLI/standalone binaries haven't been built or are stale.
     /// Run `cargo smoketest prepare` to build binaries before running tests.
     pub fn build(self) -> Smoketest {
-        assert!(
-            !self.isolated_local_server || self.server_url_override.is_none(),
-            "isolated_local_server cannot use an explicit remote server URL"
-        );
-        let inherited_remote = if self.isolated_local_server {
-            None
-        } else {
-            remote_server_url()
-        };
         // Check binaries first - this will panic with a helpful message if missing/stale
         if self.cli_path.is_none() {
             let _ = ensure_binaries_built();
@@ -955,7 +936,7 @@ impl SmoketestBuilder {
 
         // Check if we're running against a remote server
         let (guard, server_url, data_dir_fixture) = if let Some(fixture) = self.data_dir_fixture.as_ref() {
-            if self.server_url_override.is_some() || inherited_remote.is_some() {
+            if self.server_url_override.is_some() || remote_server_url().is_some() {
                 panic!("data_dir_fixture requires a local server managed by the smoketest harness");
             }
 
@@ -982,7 +963,7 @@ impl SmoketestBuilder {
         } else if let Some(url) = self.server_url_override {
             eprintln!("[REMOTE] Using explicit server URL: {}", url);
             (None, url, None)
-        } else if let Some(remote_url) = inherited_remote {
+        } else if let Some(remote_url) = remote_server_url() {
             eprintln!("[REMOTE] Using remote server: {}", remote_url);
             (None, remote_url, None)
         } else {
@@ -1017,9 +998,7 @@ impl SmoketestBuilder {
         let module_name = format!("smoketest_module_{}", random_string());
 
         let config_path = project_dir.path().join("config.toml");
-        if !self.isolated_local_server
-            && let Ok(base_config_path) = std::env::var("SPACETIME_SMOKETEST_BASE_CONFIG_PATH")
-        {
+        if let Ok(base_config_path) = std::env::var("SPACETIME_SMOKETEST_BASE_CONFIG_PATH") {
             fs::copy(&base_config_path, &config_path)
                 .unwrap_or_else(|err| panic!("failed to copy base smoketest config from {base_config_path}: {err:#}"));
         }

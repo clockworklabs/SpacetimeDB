@@ -640,7 +640,7 @@ fn container_fence_installation_serializes_with_admitted_transactions() {
 #[test]
 fn same_revision_environment_publications_compare_the_last_committed_operation() {
     use crate::db::environment;
-    use spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration, EnvironmentSchema};
+    use spacetimedb_lib::environment::{EnvVarType, EnvironmentDeclaration, EnvironmentSchema};
     use std::collections::BTreeMap;
     use std::sync::{Arc, Barrier};
 
@@ -649,7 +649,7 @@ fn same_revision_environment_publications_compare_the_last_committed_operation()
     let first = request(1, None);
     let schema = EnvironmentSchema::new(vec![EnvironmentDeclaration {
         name: "TOKEN".into(),
-        constraint: EnvironmentConstraint::AnyString,
+        ty: EnvVarType::String,
         optional: false,
     }])
     .unwrap();

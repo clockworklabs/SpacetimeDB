@@ -1,7 +1,7 @@
 use super::*;
 use crate::container::publish::tests::{database, publisher, Fixture};
 use serde_json::json;
-use spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration, EnvironmentSchema};
+use spacetimedb_lib::environment::{EnvVarType, EnvironmentDeclaration, EnvironmentSchema};
 use std::collections::{BTreeMap, HashMap};
 
 const KEY: &str = "STDB_MANAGED_FIXTURE_REQUIRED";
@@ -10,7 +10,7 @@ fn declared_module() -> deployment::system_empty::GeneratedModule {
     deployment::system_empty::generate(
         &EnvironmentSchema::new(vec![EnvironmentDeclaration {
             name: KEY.into(),
-            constraint: EnvironmentConstraint::OneOf(vec!["first-secret".into(), "second-secret".into()]),
+            ty: EnvVarType::Union(vec!["first-secret".into(), "second-secret".into()]),
             optional: false,
         }])
         .unwrap(),

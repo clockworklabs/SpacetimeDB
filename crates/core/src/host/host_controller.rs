@@ -122,10 +122,16 @@ pub struct EnvironmentVersionConflict;
 
 /// Private complete configuration for a not-yet-initialized database generation.
 /// Implementations must verify the exact persisted database identity, program and
-/// bootstrap generation. This source is never consulted during ordinary reopen.
+/// initialization generation. A source resolving the generation at load time must
+/// also check the replica nomination in that snapshot. This source is never
+/// consulted during ordinary reopen.
 #[async_trait]
 pub trait InitialEnvironmentSource: Send + Sync {
-    async fn load(&self, database: &Database) -> anyhow::Result<std::collections::BTreeMap<String, String>>;
+    async fn load(
+        &self,
+        database: &Database,
+        replica_id: u64,
+    ) -> anyhow::Result<std::collections::BTreeMap<String, String>>;
 }
 
 /// A launched module host plus any pending controldb program-bootstrap completion work.
@@ -406,7 +412,7 @@ impl HostController {
         }
     }
 
-    /// Install the private bootstrap input source before this controller is shared.
+    /// Install the initial environment source before this controller is shared.
     pub fn with_initial_environment_source(mut self, source: Arc<dyn InitialEnvironmentSource>) -> Self {
         self.initial_environment_source = Some(source);
         self
@@ -608,26 +614,6 @@ impl HostController {
     /// If the host was running, and the update fails, the previous version of
     /// the host keeps running.
     #[tracing::instrument(level = "trace", skip_all, err)]
-    pub async fn update_module_host(
-        &self,
-        database: Database,
-        host_type: HostType,
-        replica_id: u64,
-        program_bytes: Box<[u8]>,
-        policy: MigrationPolicy,
-    ) -> anyhow::Result<UpdateDatabaseResult> {
-        self.update_module_host_with_environment_and_deployment(
-            database,
-            host_type,
-            replica_id,
-            program_bytes,
-            policy,
-            Default::default(),
-            None,
-        )
-        .await
-    }
-
     /// Merge supplied environment values with the module. No deployment action
     /// is implied by this entry point.
     #[tracing::instrument(level = "trace", skip_all, err)]
@@ -705,7 +691,7 @@ impl HostController {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn update_module_host_with_environment_options(
+    pub async fn update_module_host(
         &self,
         database: Database,
         host_type: HostType,
@@ -797,6 +783,13 @@ impl HostController {
                     return Err(EnvironmentVersionConflict.into());
                 }
                 if environment_only || program.hash == module.info.module_hash {
+                    let previous = host
+                        .replica_ctx
+                        .relational_db()
+                        .with_read_only(Workload::Internal, |tx| crate::db::environment::snapshot(tx))?;
+                    if deployment.is_none() && environment.resulting_values(&previous)? == previous {
+                        return Ok(UpdateDatabaseResult::NoUpdateNeeded);
+                    }
                     let program = module
                         .relational_db()
                         .program()?
@@ -942,24 +935,24 @@ impl HostController {
             .ok_or(NoSuchModule)
     }
 
-    /// Run a publication operation while retaining the controller write lock.
-    /// Cancellation of the caller cannot release the lock before the operation finishes.
-    pub async fn with_publication_lock<T, F, Fut>(&self, replica_id: u64, operation: F) -> anyhow::Result<T>
-    where
-        T: Send + 'static,
-        F: FnOnce(ModuleHost) -> Fut + Send + 'static,
-        Fut: std::future::Future<Output = anyhow::Result<T>> + Send + 'static,
-    {
+    /// Read environment metadata while preventing module replacement or shutdown.
+    pub async fn environment_metadata(
+        &self,
+        replica_id: u64,
+    ) -> anyhow::Result<spacetimedb_client_api_messages::publish::EnvironmentMetadata> {
         let guard = self
-            .acquire_write_lock(replica_id)
+            .acquire_read_lock(replica_id)
             .await
-            .map_err(|_| anyhow::anyhow!("unable to lock database for publication"))?;
+            .map_err(|_| anyhow::anyhow!("unable to lock database for environment metadata"))?;
         let module = guard.as_ref().ok_or(NoSuchModule)?.module.borrow().clone();
-        tokio::spawn(async move {
-            let _guard = guard;
-            operation(module).await
+        let stored_keys = module.relational_db().with_read_only(Workload::Internal, |tx| {
+            crate::db::environment::snapshot(tx).map(|values| values.into_keys().collect())
+        })?;
+        Ok(spacetimedb_client_api_messages::publish::EnvironmentMetadata {
+            module_version: module.info.module_hash.to_string(),
+            declarations: module.info.module_def.environment().declarations().cloned().collect(),
+            stored_keys,
         })
-        .await?
     }
 
     /// Subscribe to updates of the [`ModuleHost`] identified by `replica_id`,
@@ -1394,7 +1387,7 @@ impl Host {
 
             let initial_environment = if program_needs_init {
                 match &host_controller.initial_environment_source {
-                    Some(source) => source.load(&database).await?,
+                    Some(source) => source.load(&database, replica_id).await?,
                     None => Default::default(),
                 }
             } else {
@@ -1762,10 +1755,7 @@ impl Host {
                 activation?;
                 self.scheduler = scheduler;
             }
-            _ => {
-                drop(scheduler_starter);
-                module.exit().await;
-            }
+            _ => {}
         }
 
         Ok(update_result)

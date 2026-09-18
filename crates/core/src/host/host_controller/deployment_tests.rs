@@ -223,7 +223,11 @@ struct DeclaredInitialEnvironment {
 
 #[async_trait]
 impl InitialEnvironmentSource for DeclaredInitialEnvironment {
-    async fn load(&self, database: &Database) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
+    async fn load(
+        &self,
+        database: &Database,
+        _replica_id: u64,
+    ) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
         anyhow::ensure!(
             database.id == self.database.id
                 && database.database_identity == self.database.database_identity
@@ -239,30 +243,28 @@ impl InitialEnvironmentSource for DeclaredInitialEnvironment {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn declared_builtin_merges_environment_atomically_and_reopens() {
-    use spacetimedb_lib::environment::{
-        EnvironmentConstraint, EnvironmentDeclaration, EnvironmentSchema, EnvironmentUpdate,
-    };
+    use spacetimedb_lib::environment::{EnvVarType, EnvironmentDeclaration, EnvironmentSchema, EnvironmentUpdate};
     use std::collections::BTreeMap;
 
     let schema = EnvironmentSchema::new(vec![
         EnvironmentDeclaration {
             name: "REQUIRED".into(),
-            constraint: EnvironmentConstraint::AnyString,
+            ty: EnvVarType::String,
             optional: false,
         },
         EnvironmentDeclaration {
             name: "MODE".into(),
-            constraint: EnvironmentConstraint::OneOf(vec!["ready".into(), "paused".into()]),
+            ty: EnvVarType::Union(vec!["ready".into(), "paused".into()]),
             optional: false,
         },
         EnvironmentDeclaration {
             name: "FIXED".into(),
-            constraint: EnvironmentConstraint::Literal("constant".into()),
+            ty: EnvVarType::StringLiteral("constant".into()),
             optional: false,
         },
         EnvironmentDeclaration {
             name: "OPTIONAL".into(),
-            constraint: EnvironmentConstraint::AnyString,
+            ty: EnvVarType::String,
             optional: true,
         },
     ])

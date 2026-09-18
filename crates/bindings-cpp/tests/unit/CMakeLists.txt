@@ -11,6 +11,7 @@ endif()
 add_executable(bindings_cpp_unit_tests
     main.cpp
     http_unit_tests.cpp
+    environment_unit_tests.cpp
     hosted_auth_unit_tests.cpp
     function_visibility_unit_tests.cpp
 )

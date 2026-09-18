@@ -1,6 +1,4 @@
 mod control_db;
-#[cfg(test)]
-mod environment_tests;
 pub mod subcommands;
 pub mod util;
 pub mod version;
@@ -36,8 +34,7 @@ use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
 use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
 use spacetimedb_table::page_pool::PagePool;
-use std::sync::{Arc, Weak};
-#[cfg(test)]
+use std::sync::Arc;
 use std::time::Duration;
 
 pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL};
@@ -54,8 +51,6 @@ pub struct StandaloneOptions {
 
 pub struct StandaloneEnv {
     control_db: ControlDb,
-    publication_lock: Arc<tokio::sync::RwLock<()>>,
-    weak_self: Weak<Self>,
     program_store: Arc<DiskStorage>,
     host_controller: HostController,
     client_actor_index: ClientActorIndex,
@@ -108,10 +103,8 @@ impl StandaloneEnv {
         metrics_registry.register(Box::new(&*DB_METRICS)).unwrap();
         metrics_registry.register(Box::new(&*DATA_SIZE_METRICS)).unwrap();
 
-        Ok(Arc::new_cyclic(|weak_self| Self {
+        Ok(Arc::new(Self {
             control_db,
-            publication_lock: Arc::new(tokio::sync::RwLock::new(())),
-            weak_self: weak_self.clone(),
             program_store,
             host_controller,
             client_actor_index,
@@ -184,14 +177,20 @@ impl NodeDelegate for StandaloneEnv {
     }
 
     async fn leader(&self, database_id: u64) -> Result<Host, Self::GetLeaderHostError> {
-        let guard = self.publication_lock.clone().read_owned().await;
-        let owner = self.weak_self.upgrade().expect("standalone owner exists during lookup");
-        tokio::spawn(async move {
-            let _guard = guard;
-            owner.leader_with_publication_lock_held(database_id).await
-        })
-        .await
-        .map_err(|error| GetLeaderHostError::LaunchError { source: error.into() })?
+        let Some(leader) = self.control_db.get_leader_replica_by_database(database_id) else {
+            return Err(GetLeaderHostError::NoSuchReplica);
+        };
+
+        let Some(database) = self.control_db.get_database_by_id(database_id)? else {
+            return Err(GetLeaderHostError::NoSuchDatabase);
+        };
+
+        self.host_controller
+            .get_or_launch_module_host(database, leader.id)
+            .await
+            .map_err(|source| GetLeaderHostError::LaunchError { source })?;
+
+        Ok(Host::new(leader.id, self.host_controller.clone()))
     }
 
     fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir {
@@ -279,157 +278,6 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         spec: spacetimedb_client_api::DatabaseDef,
         policy: MigrationPolicy,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
-        let publisher = *publisher;
-        self.own_publication(move |owner| async move { owner.publish_database_owned(&publisher, spec, policy).await })
-            .await
-    }
-
-    async fn migrate_plan(
-        &self,
-        spec: spacetimedb_client_api::DatabaseDef,
-        style: PrettyPrintStyle,
-    ) -> anyhow::Result<MigratePlanResult> {
-        let existing_db = self.control_db.get_database_by_identity(&spec.database_identity)?;
-
-        match existing_db {
-            Some(db) => {
-                let host = self.leader(db.id).await?;
-                self.host_controller
-                    .migrate_plan(
-                        db,
-                        spec.host_type,
-                        host.replica_id,
-                        spec.program_bytes.to_vec().into(),
-                        style,
-                    )
-                    .await
-            }
-            None => anyhow::bail!(
-                "Database `{}` does not exist",
-                spec.database_identity.to_abbreviated_hex()
-            ),
-        }
-    }
-
-    async fn delete_database(&self, _caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {
-        let caller_identity = *_caller_identity;
-        let database_identity = *database_identity;
-        self.own_publication(move |owner| async move {
-            owner.delete_database_owned(&caller_identity, &database_identity).await
-        })
-        .await
-    }
-
-    async fn reset_database(&self, _caller_identity: &Identity, spec: DatabaseResetDef) -> anyhow::Result<()> {
-        let caller_identity = *_caller_identity;
-        self.own_publication(move |owner| async move { owner.reset_database_owned(&caller_identity, spec).await })
-            .await
-    }
-
-    async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
-        let balance = self
-            .control_db
-            .get_energy_balance(identity)?
-            .unwrap_or(EnergyBalance::ZERO);
-
-        let balance = balance.saturating_add_energy(amount);
-
-        self.control_db.set_energy_balance(*identity, balance)?;
-        Ok(())
-    }
-    async fn withdraw_energy(&self, _identity: &Identity, _amount: EnergyQuanta) -> anyhow::Result<()> {
-        // The energy balance code is obsolete.
-        Ok(())
-    }
-
-    async fn register_tld(&self, identity: &Identity, tld: Tld) -> anyhow::Result<RegisterTldResult> {
-        Ok(self.control_db.spacetime_register_tld(tld, *identity)?)
-    }
-
-    async fn create_dns_record(
-        &self,
-        owner_identity: &Identity,
-        domain: &DomainName,
-        database_identity: &Identity,
-    ) -> anyhow::Result<InsertDomainResult> {
-        Ok(self
-            .control_db
-            .spacetime_insert_domain(database_identity, domain.clone(), *owner_identity, true)?)
-    }
-
-    async fn replace_dns_records(
-        &self,
-        database_identity: &Identity,
-        owner_identity: &Identity,
-        domain_names: &[DomainName],
-    ) -> anyhow::Result<SetDomainsResult> {
-        Ok(self
-            .control_db
-            .spacetime_replace_domains(database_identity, owner_identity, domain_names)?)
-    }
-
-    async fn set_database_lock(
-        &self,
-        _caller_identity: &Identity,
-        database_identity: &Identity,
-        locked: bool,
-    ) -> anyhow::Result<()> {
-        let Some(_database) = self.control_db.get_database_by_identity(database_identity)? else {
-            anyhow::bail!("Database not found: {}", database_identity.to_abbreviated_hex());
-        };
-        self.control_db.set_database_lock(database_identity, locked)?;
-        Ok(())
-    }
-}
-
-impl StandaloneEnv {
-    /// Admission and completion are owned together. Losing an HTTP waiter cannot
-    /// release the reset fence while HostController still owns accepted work.
-    async fn own_publication<T, F, Fut>(&self, operation: F) -> anyhow::Result<T>
-    where
-        T: Send + 'static,
-        F: FnOnce(Arc<Self>) -> Fut + Send + 'static,
-        Fut: std::future::Future<Output = anyhow::Result<T>> + Send + 'static,
-    {
-        let guard = self.publication_lock.clone().write_owned().await;
-        let owner = self
-            .weak_self
-            .upgrade()
-            .expect("standalone owner exists during publication");
-        tokio::spawn(async move {
-            let _guard = guard;
-            operation(owner).await
-        })
-        .await?
-    }
-
-    /// Look up or start the current leader while the caller holds the publication
-    /// lock. Retain the read or write guard through this future's completion.
-    /// Ordinary lookup holds a read guard; publication and reset hold a write
-    /// guard, so calling `leader()` here would acquire the lock again and deadlock.
-    async fn leader_with_publication_lock_held(&self, database_id: u64) -> Result<Host, GetLeaderHostError> {
-        let Some(leader) = self.control_db.get_leader_replica_by_database(database_id) else {
-            return Err(GetLeaderHostError::NoSuchReplica);
-        };
-
-        let Some(database) = self.control_db.get_database_by_id(database_id)? else {
-            return Err(GetLeaderHostError::NoSuchDatabase);
-        };
-
-        self.host_controller
-            .get_or_launch_module_host(database, leader.id)
-            .await
-            .map_err(|source| GetLeaderHostError::LaunchError { source })?;
-
-        Ok(Host::new(leader.id, self.host_controller.clone()))
-    }
-
-    async fn publish_database_owned(
-        &self,
-        publisher: &Identity,
-        spec: spacetimedb_client_api::DatabaseDef,
-        policy: MigrationPolicy,
-    ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
         let existing_db = self.control_db.get_database_by_identity(&spec.database_identity)?;
 
         let update = spacetimedb_lib::environment::EnvironmentUpdate {
@@ -474,7 +322,7 @@ impl StandaloneEnv {
 
                 let (database, replica) =
                     self.control_db
-                        .install_database_with_environment(database, None, environment, &[])?;
+                        .upsert_database_with_environment(database, None, environment, &[])?;
                 // The leader nomination and input are durable already. If this
                 // waiter is cancelled, ordinary lookup resumes the same input.
                 self.on_insert_replica(&replica).await?;
@@ -492,9 +340,9 @@ impl StandaloneEnv {
                 let database_id = database.id;
                 let database_identity = database.database_identity;
 
-                let leader = self.leader_with_publication_lock_held(database_id).await?;
+                let leader = self.leader(database_id).await?;
                 let update_result = leader
-                    .update_with_environment_options(
+                    .update(
                         database,
                         spec.host_type,
                         spec.program_bytes.to_vec().into(),
@@ -551,11 +399,34 @@ impl StandaloneEnv {
         }
     }
 
-    async fn delete_database_owned(
+    async fn migrate_plan(
         &self,
-        caller_identity: &Identity,
-        database_identity: &Identity,
-    ) -> anyhow::Result<()> {
+        spec: spacetimedb_client_api::DatabaseDef,
+        style: PrettyPrintStyle,
+    ) -> anyhow::Result<MigratePlanResult> {
+        let existing_db = self.control_db.get_database_by_identity(&spec.database_identity)?;
+
+        match existing_db {
+            Some(db) => {
+                let host = self.leader(db.id).await?;
+                self.host_controller
+                    .migrate_plan(
+                        db,
+                        spec.host_type,
+                        host.replica_id,
+                        spec.program_bytes.to_vec().into(),
+                        style,
+                    )
+                    .await
+            }
+            None => anyhow::bail!(
+                "Database `{}` does not exist",
+                spec.database_identity.to_abbreviated_hex()
+            ),
+        }
+    }
+
+    async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {
         let Some(database) = self.control_db.get_database_by_identity(database_identity)? else {
             return Ok(());
         };
@@ -572,7 +443,7 @@ impl StandaloneEnv {
         Ok(())
     }
 
-    async fn reset_database_owned(&self, caller_identity: &Identity, spec: DatabaseResetDef) -> anyhow::Result<()> {
+    async fn reset_database(&self, caller_identity: &Identity, spec: DatabaseResetDef) -> anyhow::Result<()> {
         let previous = self
             .control_db
             .get_database_by_identity(&spec.database_identity)?
@@ -581,6 +452,7 @@ impl StandaloneEnv {
             previous.owner_identity == *caller_identity,
             "database ownership changed before reset"
         );
+        let previous = self.control_db.with_initialization_generation(previous)?;
         let environment = spacetimedb_lib::environment::EnvironmentUpdate {
             values: spec.environment,
             remove: spec.environment_remove,
@@ -595,12 +467,8 @@ impl StandaloneEnv {
             }
             None => {
                 // A reset without an artifact retains the currently committed
-                // module, not the original bootstrap program or its old values.
-                let module = self
-                    .leader_with_publication_lock_held(database.id)
-                    .await?
-                    .module()
-                    .await?;
+                // module, not the initial program or its old environment values.
+                let module = self.leader(database.id).await?.module().await?;
                 module
                     .relational_db()
                     .program()?
@@ -615,18 +483,71 @@ impl StandaloneEnv {
         let stored = self.program_store.put(&program.bytes).await?;
         anyhow::ensure!(stored == program.hash, "stored reset program changed");
         let previous_replicas = self.control_db.get_replicas_by_database(database.id)?;
-        // Keep old nominations until all requested closes succeed. The owned
-        // publication guard excludes leader admission across close and commit.
         for replica in &previous_replicas {
             self.on_delete_replica(replica.id).await?;
         }
-        let (_, replica) = self.control_db.install_database_with_environment(
+        let (_, replica) = self.control_db.upsert_database_with_environment(
             database,
             Some(&previous),
             environment,
             &previous_replicas,
         )?;
         self.on_insert_replica(&replica).await?;
+        Ok(())
+    }
+
+    async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
+        let balance = self
+            .control_db
+            .get_energy_balance(identity)?
+            .unwrap_or(EnergyBalance::ZERO);
+
+        let balance = balance.saturating_add_energy(amount);
+
+        self.control_db.set_energy_balance(*identity, balance)?;
+        Ok(())
+    }
+    async fn withdraw_energy(&self, _identity: &Identity, _amount: EnergyQuanta) -> anyhow::Result<()> {
+        // The energy balance code is obsolete.
+        Ok(())
+    }
+
+    async fn register_tld(&self, identity: &Identity, tld: Tld) -> anyhow::Result<RegisterTldResult> {
+        Ok(self.control_db.spacetime_register_tld(tld, *identity)?)
+    }
+
+    async fn create_dns_record(
+        &self,
+        owner_identity: &Identity,
+        domain: &DomainName,
+        database_identity: &Identity,
+    ) -> anyhow::Result<InsertDomainResult> {
+        Ok(self
+            .control_db
+            .spacetime_insert_domain(database_identity, domain.clone(), *owner_identity, true)?)
+    }
+
+    async fn replace_dns_records(
+        &self,
+        database_identity: &Identity,
+        owner_identity: &Identity,
+        domain_names: &[DomainName],
+    ) -> anyhow::Result<SetDomainsResult> {
+        Ok(self
+            .control_db
+            .spacetime_replace_domains(database_identity, owner_identity, domain_names)?)
+    }
+
+    async fn set_database_lock(
+        &self,
+        _caller_identity: &Identity,
+        database_identity: &Identity,
+        locked: bool,
+    ) -> anyhow::Result<()> {
+        let Some(_database) = self.control_db.get_database_by_identity(database_identity)? else {
+            anyhow::bail!("Database not found: {}", database_identity.to_abbreviated_hex());
+        };
+        self.control_db.set_database_lock(database_identity, locked)?;
         Ok(())
     }
 }
@@ -697,14 +618,12 @@ impl StandaloneEnv {
 
     async fn on_insert_replica(&self, instance: &Replica) -> Result<(), anyhow::Error> {
         if instance.leader {
-            self.leader_with_publication_lock_held(instance.database_id)
-                .await
-                .with_context(|| {
-                    format!(
-                        "failed to start leader for database {}, replica {}",
-                        instance.database_id, instance.id
-                    )
-                })?;
+            self.leader(instance.database_id).await.with_context(|| {
+                format!(
+                    "failed to start leader for database {}, replica {}",
+                    instance.database_id, instance.id
+                )
+            })?;
         }
 
         Ok(())
@@ -715,7 +634,9 @@ impl StandaloneEnv {
         // replicas which have been deleted. This will just drop
         // them from memory, but will not remove them from disk.  We need
         // some kind of database lifecycle manager long term.
-        self.host_controller.exit_module_host_and_join(replica_id).await?;
+        self.host_controller
+            .exit_module_host(replica_id, Duration::from_secs(30))
+            .await?;
 
         Ok(())
     }
@@ -797,76 +718,6 @@ mod tests {
                 .is_err()
         );
 
-        Ok(())
-    }
-    #[tokio::test]
-    async fn cancelled_publication_waiter_keeps_mutations_and_leader_admission_fenced() -> Result<()> {
-        let tempdir = TempDir::new()?;
-        // Use one subdir for keys and another for the data dir.
-        let keys = tempdir.path().join("keys");
-        let root = tempdir.path().join("data");
-        let data_dir = Arc::new(ServerDataDir::from_path_unchecked(root));
-
-        fs::create_dir(&keys)?;
-        data_dir.create()?;
-
-        let pub_key = PubKeyPath(keys.join("public"));
-        let priv_key = PrivKeyPath(keys.join("private"));
-        let ca = CertificateAuthority {
-            jwt_pub_key_path: pub_key,
-            jwt_priv_key_path: priv_key,
-        };
-
-        // Create the keys.
-        ca.get_or_create_keys()?;
-        let config = StandaloneOptions {
-            db_config: db::Config {
-                storage: Storage::Memory,
-                page_pool_max_size: None,
-            },
-            durability: DurabilityConfig::default(),
-            websocket: WebSocketOptions::default(),
-            module_http: ModuleHttpConfig::default(),
-            wasm: WasmConfig::default(),
-            v8: V8Config::default(),
-        };
-
-        let env = StandaloneEnv::init(config, &ca, data_dir.clone(), JobCores::without_pinned_cores()).await?;
-
-        let (started, started_rx) = tokio::sync::oneshot::channel();
-        let (release, release_rx) = tokio::sync::oneshot::channel();
-        let owner = env.clone();
-        let waiter = tokio::spawn(async move {
-            owner
-                .own_publication(move |_owner| async move {
-                    let _ = started.send(());
-                    release_rx.await?;
-                    Ok(())
-                })
-                .await
-        });
-        started_rx.await?;
-        waiter.abort();
-        assert!(waiter.await.unwrap_err().is_cancelled());
-
-        // Both a later mutation and ordinary leader lookup must stay behind the
-        // accepted operation even after its request future has disappeared.
-        let next_owner = env.clone();
-        let mut next = tokio::spawn(async move { next_owner.own_publication(|_| async { Ok(()) }).await });
-        assert!(tokio::time::timeout(Duration::from_millis(30), &mut next)
-            .await
-            .is_err());
-        let read_owner = env.clone();
-        let mut reader = tokio::spawn(async move { read_owner.leader(u64::MAX).await });
-        assert!(tokio::time::timeout(Duration::from_millis(30), &mut reader)
-            .await
-            .is_err());
-        release.send(()).unwrap();
-        tokio::time::timeout(Duration::from_secs(5), next).await???;
-        assert!(matches!(
-            tokio::time::timeout(Duration::from_secs(5), reader).await??,
-            Err(GetLeaderHostError::NoSuchReplica)
-        ));
         Ok(())
     }
 }

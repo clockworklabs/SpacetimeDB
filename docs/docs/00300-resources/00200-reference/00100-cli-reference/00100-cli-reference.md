@@ -96,7 +96,7 @@ Create and update a SpacetimeDB database
 
 **Usage:** `spacetime publish [OPTIONS] [name|identity]`
 
-Publishing preserves unspecified environment values. Put an env map in spacetime.json; explicit undeclared keys are allowed, and declared shell variables override config values (including empty strings). The CLI displays supplied keys and sources, never values. --env-only updates an existing database without a module. --unset-env explicitly deletes a value; required values cannot be removed. --replace-env replaces all stored values with the supplied set, including deleting unspecified undeclared keys, and cannot be combined with --unset-env. The host validates the resulting environment atomically. --env selects config file layers.
+Publishing preserves unspecified environment values. Put an env map in spacetime.json in order to specify variables in config. Explicit keys which are not declared in the module are allowed. Declared shell variables override config values (including empty strings). The CLI displays supplied keys and sources. --env-only updates an existing database's environment without publishing the module. --unset-env explicitly removes a previously published environment variable, unless the variable is declared required by the currently published module. --replace-env replaces all stored values with the supplied set, including deleting unspecified undeclared keys, and cannot be combined with --unset-env. The host validates the resulting environment atomically against the declared module. --env selects which config file to use.
 
 ###### **Arguments:**
 

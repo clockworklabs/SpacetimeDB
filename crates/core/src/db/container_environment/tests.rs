@@ -7,7 +7,7 @@ use crate::host::container_environment as host;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_lib::container::*;
 use spacetimedb_lib::deployment::{DeploymentSpec, DeploymentSpecV1, ModuleComponent};
-use spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration, EnvironmentSchema};
+use spacetimedb_lib::environment::{EnvVarType, EnvironmentDeclaration, EnvironmentSchema};
 use spacetimedb_lib::{hash_bytes, Identity, Timestamp};
 use std::sync::{Arc, Barrier};
 
@@ -20,7 +20,7 @@ fn environment_schema(keys: &[String]) -> EnvironmentSchema {
         keys.iter()
             .map(|name| EnvironmentDeclaration {
                 name: name.clone(),
-                constraint: EnvironmentConstraint::AnyString,
+                ty: EnvVarType::String,
                 optional: true,
             })
             .collect(),
@@ -608,7 +608,7 @@ fn publication_checks_only_declared_selected_values_in_the_final_store() {
         assert!(matches!(validate_publication_values(&spec, &schema, &values), Err(EnvironmentSnapshotError::InvalidEnvironment)));
         values.remove("A");
         validate_publication_values(&spec, &schema, &values).unwrap();
-        let required = EnvironmentSchema::new(vec![EnvironmentDeclaration { name: "A".into(), constraint: EnvironmentConstraint::AnyString, optional: false }]).unwrap();
+        let required = EnvironmentSchema::new(vec![EnvironmentDeclaration { name: "A".into(), ty: EnvVarType::String, optional: false }]).unwrap();
         assert!(matches!(validate_publication_values(&spec, &required, &values), Err(EnvironmentSnapshotError::MissingKeys(keys)) if keys == ["A"]));
     });
 }

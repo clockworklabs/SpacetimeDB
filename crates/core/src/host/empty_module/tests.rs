@@ -24,12 +24,12 @@ fn recognition_requires_exact_version_kind_hash_and_bytes() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn actual_wasm_host_reads_empty_and_large_declared_environment_schemas() {
-    use spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration};
+    use spacetimedb_lib::environment::{EnvVarType, EnvironmentDeclaration};
     let declared = EnvironmentSchema::new(
         (0..16)
             .map(|index| EnvironmentDeclaration {
                 name: format!("KEY_{index}"),
-                constraint: EnvironmentConstraint::Literal("x".repeat(8192)),
+                ty: EnvVarType::StringLiteral("x".repeat(8192)),
                 optional: true,
             })
             .collect(),

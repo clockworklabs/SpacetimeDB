@@ -13,7 +13,7 @@ use spacetimedb_datastore::system_tables::StContainerFenceRow;
 use spacetimedb_durability::{Close, Durability, DurableOffset, PreparedTx};
 use spacetimedb_lib::container::*;
 use spacetimedb_lib::deployment::{DeploymentSpec, DeploymentSpecV1, ModuleComponent};
-use spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration, EnvironmentSchema};
+use spacetimedb_lib::environment::{EnvVarType, EnvironmentDeclaration, EnvironmentSchema};
 use spacetimedb_lib::{hash_bytes, Timestamp, Uuid};
 use std::time::Duration;
 
@@ -26,7 +26,7 @@ fn environment_schema(keys: &[String]) -> EnvironmentSchema {
         keys.iter()
             .map(|name| EnvironmentDeclaration {
                 name: name.clone(),
-                constraint: EnvironmentConstraint::AnyString,
+                ty: EnvVarType::String,
                 optional: true,
             })
             .collect(),

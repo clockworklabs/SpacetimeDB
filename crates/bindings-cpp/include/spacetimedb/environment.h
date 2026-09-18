@@ -56,7 +56,7 @@ T read_environment(std::string_view key) {
 template<typename T>
 EnvironmentDeclaration declare_environment(std::string name) {
     static_assert(environment_string<T>, "Environment declarations require string or optional<string>");
-    EnvironmentConstraint constraint;
+    EnvVarType constraint;
     constraint.set<0>(std::monostate{});
     return {std::move(name), std::move(constraint), std::is_same_v<T, std::optional<std::string>>};
 }
@@ -82,8 +82,8 @@ EnvironmentDeclaration declare_environment(std::string name, std::initializer_li
         if (value.size() > 8192 || !unique.insert(value).second) LOG_PANIC("invalid environment literal union");
         values.push_back(value);
     }
-    if (values.size() == 1) declaration.constraint.template set<1>(std::move(values.front()));
-    else declaration.constraint.template set<2>(std::move(values));
+    if (values.size() == 1) declaration.ty.template set<1>(std::move(values.front()));
+    else declaration.ty.template set<2>(std::move(values));
     return declaration;
 }
 

@@ -5,7 +5,7 @@ use spacetimedb_lib::container::{
     ContainerMode, ContainerMount, ContainerPort, ContainerResources, ContainerSpec, ContainerSpecLimits,
     ImagePlatform, OciDigest, RestartPolicy,
 };
-use spacetimedb_lib::environment::{EnvironmentConstraint, EnvironmentDeclaration, EnvironmentSchema, MAX_ENV_VARS};
+use spacetimedb_lib::environment::{EnvVarType, EnvironmentDeclaration, EnvironmentSchema, MAX_ENV_VARS};
 use spacetimedb_oci::ContainerConfig as ImageConfig;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -117,10 +117,10 @@ impl ContainerConfig {
             .map(|(name, declaration)| EnvironmentDeclaration {
                 name: name.clone(),
                 optional: declaration.optional,
-                constraint: match declaration.values.as_deref() {
-                    None => EnvironmentConstraint::AnyString,
-                    Some([literal]) => EnvironmentConstraint::Literal(literal.clone()),
-                    Some(values) => EnvironmentConstraint::OneOf(values.to_vec()),
+                ty: match declaration.values.as_deref() {
+                    None => EnvVarType::String,
+                    Some([literal]) => EnvVarType::StringLiteral(literal.clone()),
+                    Some(values) => EnvVarType::Union(values.to_vec()),
                 },
             })
             .collect();

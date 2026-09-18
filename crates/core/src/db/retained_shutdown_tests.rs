@@ -31,7 +31,7 @@ fn operation_drain_retained_sql_and_subscription_handles_reject_after_writer_clo
         let schema = spacetimedb_lib::environment::EnvironmentSchema::new(vec![
             spacetimedb_lib::environment::EnvironmentDeclaration {
                 name: "LATE".into(),
-                constraint: spacetimedb_lib::environment::EnvironmentConstraint::AnyString,
+                ty: spacetimedb_lib::environment::EnvVarType::String,
                 optional: true,
             },
         ])

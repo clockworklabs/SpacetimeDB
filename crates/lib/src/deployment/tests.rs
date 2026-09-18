@@ -38,11 +38,11 @@ fn component_actions_preserve_or_explicitly_remove_the_module() {
 
 #[test]
 fn declared_platform_schema_changes_revision_and_keep_retains_its_program() {
-    use crate::environment::{EnvironmentConstraint, EnvironmentDeclaration, EnvironmentSchema};
+    use crate::environment::{EnvVarType, EnvironmentDeclaration, EnvironmentSchema};
     let initial = request(ModuleAction::Keep).resolve(None, &Default::default()).unwrap();
     let schema = EnvironmentSchema::new(vec![EnvironmentDeclaration {
         name: "TOKEN".into(),
-        constraint: EnvironmentConstraint::AnyString,
+        ty: EnvVarType::String,
         optional: false,
     }])
     .unwrap();
