@@ -55,7 +55,7 @@ partial struct FormerlyForbiddenFieldNames
                     {
                         new("Read", ReadRW.GetAlgebraicType(registrar)),
                         new("Write", WriteRW.GetAlgebraicType(registrar)),
-                        new("GetAlgebraicType", GetAlgebraicTypeRW.GetAlgebraicType(registrar))
+                        new("GetAlgebraicType", GetAlgebraicTypeRW.GetAlgebraicType(registrar)),
                     }
                 )
             );

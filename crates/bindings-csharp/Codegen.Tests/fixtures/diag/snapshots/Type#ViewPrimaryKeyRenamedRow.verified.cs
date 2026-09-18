@@ -47,7 +47,7 @@ partial struct ViewPrimaryKeyRenamedRow
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new("RenamedIdentity", RenamedIdentityRW.GetAlgebraicType(registrar))
+                        new("RenamedIdentity", RenamedIdentityRW.GetAlgebraicType(registrar)),
                     }
                 )
             );
