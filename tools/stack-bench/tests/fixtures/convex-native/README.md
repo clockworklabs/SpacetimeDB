@@ -169,3 +169,23 @@ receipts contain no admin key or session token. This slice does not qualify
 Chromium UI behavior, component state, full campaign cancellation, controller
 death recovery, mid-operation crash checks, or full Convex support. Convex stays
 unregistered.
+
+## Coding-container deployment proof
+
+`tests/convex-coding-deploy.integration.ts` deploys the same pinned app through
+the normal coding-container preparation, isolation, workspace and teardown
+owners. A trusted programmatic preparation plan permits this unregistered stack;
+it cannot start a paid session and adds no CLI override or registry entry.
+
+The test requires the normal daemon-visible `STACK_BENCH_WORK_DIR` and a pinned
+`STACK_BENCH_BUILD_IMAGE`. Only app source and setup files enter `/app`. Install,
+local auth setup and native deployment run as developer UID 10001 with the owned
+backend's admin key. The coding container receives no grader, probe, reader,
+Docker socket, provider credential or lease token. Native browser calls and an
+independent stored-state reader then test the deployed app. Submitted and
+deployed app hashes must match; generated auth configuration is checked
+separately. Reuse must keep the same coding-container identity, and cleanup must
+record workspace handback before removing the container and workspace.
+
+This is a model-free fixture deployment proof. It does not qualify paid-agent
+execution, native grader integration, campaign allocation or full Convex support.
