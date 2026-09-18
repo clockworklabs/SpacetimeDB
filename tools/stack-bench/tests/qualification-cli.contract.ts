@@ -112,7 +112,7 @@ test('pending modular L2 resolves only the current exact recipe', () => {
   assert.equal(qualificationReadiness('ecommerce', 2).scope.recipe.id, 'ecommerce.sequential-l2');
 });
 
-test('cumulative L3 qualification reuses its registered coverage at earlier depths', () => {
+test('draft cumulative L3 qualification shares its pending scope at earlier depths', () => {
   const l1 = qualificationReadiness('ecommerce', 1, 'ecommerce.progression-catalog');
   const l2 = qualificationReadiness('ecommerce', 2, 'ecommerce.progression-catalog');
   const l3 = qualificationReadiness('ecommerce', 3, 'ecommerce.progression-catalog');
@@ -120,8 +120,8 @@ test('cumulative L3 qualification reuses its registered coverage at earlier dept
   assert.equal(l3.scope.calibration.id, 'ecommerce.dependency-l3-calibration');
   assert.notDeepEqual(l2.requiredEvidence, []);
   for (const status of [l1, l2, l3]) {
-    assert.equal(status.qualification.ready, true);
-    assert.deepEqual(status.commands, [], 'qualified evidence must not recommend another full run');
+    assert.equal(status.qualification.ready, false);
+    assert(status.commands.length > 0, 'the draft must show its missing evidence');
     assert.deepEqual(status.scope.calibration, l3.scope.calibration);
     assert.deepEqual(status.defectChecks, l3.defectChecks);
     assert.deepEqual(status.artifactPaths, l3.artifactPaths);

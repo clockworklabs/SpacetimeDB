@@ -7,8 +7,9 @@ import { assertQualificationSliceCoverage, unchangedQualificationChecks,
   validateQualificationDocuments } from '../src/composition/qualification-slices.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { calibrationQualificationIdentity, calibrationQualificationRelease, compileCalibrationDefinition,
-  compileCalibrationFile, validateQualificationSlice } from '../src/composition/calibration-compiler.js';
-import { executionPlanForRelease } from '../src/composition/recipe-release.js';
+  validateQualificationSlice } from '../src/composition/calibration-compiler.js';
+import type { CalibrationEvidence, CalibrationPlan } from '../src/composition/calibration-compiler.js';
+import { qualificationScopeIdentity } from '../src/composition/qualification-scope.js';
 
 const root = join(STACK_BENCH_ROOT, 'tracks/ecommerce');
 const documents = validateQualificationDocuments(buildRecipeQualificationDocuments(
@@ -72,19 +73,31 @@ test('slices require each check exactly once in every required evidence populati
   assert.throws(() => assertQualificationSliceCoverage([{ ...first, repetition: 2 }], required, checks), /unexpected/);
 });
 
-test('registered slices validate real artifacts and reject incomplete or mismatched evidence', () => {
+test('saved slices validate real artifacts and reject incomplete or mismatched evidence', () => {
   const path = join(root, 'composition/calibrations/dependency-l3.json');
-  const plan = compileCalibrationFile(path, { trackRoot: root, stackBenchRoot: STACK_BENCH_ROOT,
-    release: documents.release });
-  assert.deepEqual(plan.qualificationStaleness, []);
-  const selected = calibrationQualificationRelease(plan, documents.release,
-    executionPlanForRelease(join(root, plan.recipe.path), { trackRoot: root, level: 3 }));
-  const context = { calibration: plan, qualificationIdentity: calibrationQualificationIdentity(plan),
-    ...selected, stackBenchRoot: STACK_BENCH_ROOT, references: plan.references.entries };
-  const entry = plan.qualification.evidence.find(item => item.kind === 'mutation'
-    && item.stack === 'postgres' && item.slice?.checks.length === 1)!;
-  assert(entry);
+  const entry: CalibrationEvidence = { kind: 'mutation', stack: 'postgres', repetition: 1,
+    path: 'qualification-evidence/ecommerce-l3-e804c1302/postgres-targeted.json',
+    sha256: 'efc4a7f4df5f664fca9457c5746508f53db02b52f51a9ad5281c337a44c29bed',
+    slice: { checks: ['ecommerce.progression.review-access-specifications.review-eligibility-direct.618a'],
+      snapshot: { path: 'qualification-evidence/ecommerce-l3-e804c1302/current-inputs.json',
+        sha256: '85f21bfeb1160f3889cb10bd3c3819a12dba46428d82e055e25af268f82b3f45' } } };
+  const saved = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, entry.slice!.snapshot.path), 'utf8'));
+  const savedDocuments = validateQualificationDocuments(saved.documents);
+  const plan: CalibrationPlan = saved.calibration;
   const artifact = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, entry.path), 'utf8'));
+  const executable = qualificationScopeIdentity({ kind: 'mutation', release: savedDocuments.release,
+    stack: 'postgres', reference: plan.references.entries.find(item => item.backend === 'postgres'),
+    mutation: plan.mutations.find(item => item.backend === 'postgres'), stackBenchRoot: STACK_BENCH_ROOT });
+  // Simulate an explicit review only inside this test. This does not qualify the current release.
+  plan.qualificationReuse = { rationale: 'test-only executable equivalence', evidence: [], scopes: [{
+    kind: 'mutation', stack: 'postgres',
+    fromExecutableSha256: artifact.payload.qualificationScope.executableSha256,
+    toExecutableSha256: executable.executableSha256,
+  }] };
+  const selected = calibrationQualificationRelease(plan, savedDocuments.release, []);
+  const context = { calibration: plan, qualificationIdentity: calibrationQualificationIdentity(plan),
+    ...selected, stackBenchRoot: STACK_BENCH_ROOT, references: plan.references.entries,
+    qualificationDocuments: savedDocuments };
   assert.doesNotThrow(() => validateQualificationSlice(artifact, entry, context));
   for (const change of [
     (a: typeof artifact) => { a.payload.runs[0].mutations.total -= 1; },
@@ -104,15 +117,26 @@ test('registered slices validate real artifacts and reject incomplete or mismatc
   assert.throws(() => validateQualificationSlice(artifact, staleSnapshot, context), /stale digest/);
   assert.throws(() => validateQualificationSlice(artifact, entry,
     { ...context, calibration: { ...plan, qualificationReuse: undefined } }), /executable changed/);
+  const wrongEquivalence = structuredClone(plan);
+  wrongEquivalence.qualificationReuse!.scopes[0]!.toExecutableSha256 = 'f'.repeat(64);
+  assert.throws(() => validateQualificationSlice(artifact, entry,
+    { ...context, calibration: wrongEquivalence }), /executable changed/);
+  const changedReference = structuredClone(plan);
+  changedReference.references.entries[0]!.sourceSha256 = 'f'.repeat(64);
+  assert.throws(() => validateQualificationSlice(artifact, entry,
+    { ...context, calibration: changedReference }), /source references differs/);
 
-  const previous = plan.qualification.evidence.find(item => item.kind === 'reference'
-    && item.stack === 'postgres' && item.slice!.checks.length > 1)!;
-  const stale = structuredClone(previous);
-  stale.slice!.checks = entry.slice!.checks;
-  const previousArtifact = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, previous.path), 'utf8'));
+  const stale: CalibrationEvidence = { ...entry, kind: 'reference',
+    path: 'qualification-evidence/ecommerce-l3-7cd96d01b/postgres-reference.json',
+    sha256: 'baaba1487f36fa51907c8ff4fc866997fc2625097e7fe333b3d2250801ed9baf',
+    slice: { checks: entry.slice!.checks,
+      snapshot: { path: 'qualification-evidence/ecommerce-l3-e804c1302/previous-inputs.json',
+        sha256: 'ef95150fbc546ecbdc6a6e3c7a2ee0b4945dce127b9ad43fac3fc0971f3f01a5' } } };
+  const previousArtifact = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, stale.path), 'utf8'));
   assert.throws(() => validateQualificationSlice(previousArtifact, stale, context), /changed check/);
 
   const manifest = JSON.parse(readFileSync(path, 'utf8'));
+  manifest.qualification.evidence = [structuredClone(entry)];
   manifest.qualification.evidence[0].slice.checks = [];
   assert.throws(() => compileCalibrationDefinition(manifest), /non-empty/);
   manifest.qualification.evidence[0].slice.checks = ['duplicate', 'duplicate'];
