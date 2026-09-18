@@ -12,20 +12,16 @@ fn program() -> Program {
     let mut schema = RawModuleDefV10Builder::new();
     schema.add_lifecycle_reducer(Lifecycle::Init, "init", ProductType::unit());
     schema.add_reducer("external", ProductType::unit());
-    schema.add_reducer("private", ProductType::unit());
+    schema.add_reducer_with_visibility("internal", ProductType::unit(), Some(FunctionVisibility::Internal));
+    schema.add_reducer_with_visibility("private", ProductType::unit(), Some(FunctionVisibility::Private));
     schema.add_procedure("external_procedure", ProductType::unit(), AlgebraicType::U8);
-    schema.add_procedure("system_procedure", ProductType::unit(), AlgebraicType::U8);
-    let mut schema = schema.finish();
-    for section in &mut schema.sections {
-        if let spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Section::Reducers(reducers) = section {
-            reducers
-                .iter_mut()
-                .find(|r| &*r.source_name == "private")
-                .unwrap()
-                .visibility = FunctionVisibility::Private;
-        }
-    }
-    let schema = spacetimedb_lib::bsatn::to_vec(&spacetimedb_lib::RawModuleDef::V10(schema)).unwrap();
+    schema.add_procedure_with_visibility(
+        "internal_procedure",
+        ProductType::unit(),
+        AlgebraicType::U8,
+        Some(FunctionVisibility::Internal),
+    );
+    let schema = spacetimedb_lib::bsatn::to_vec(&spacetimedb_lib::RawModuleDef::V10(schema.finish())).unwrap();
     Program::from_bytes(
         ModuleKind::JS,
         format!(
@@ -51,7 +47,7 @@ fn program() -> Program {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn invocation_flags_are_host_owned_and_lifecycle_calls_remain_restricted() {
+async fn invocation_flags_are_host_owned_and_internal_visibility_is_enforced() {
     let directory = tempfile::tempdir().unwrap();
     let data = Arc::new(ServerDataDir::from_path_unchecked(directory.path().to_owned()));
     let program = program();
@@ -95,7 +91,7 @@ async fn invocation_flags_are_host_owned_and_lifecycle_calls_remain_restricted()
             .outcome
             .into_result()
             .unwrap();
-        for name in ["init"] {
+        for name in ["internal", "init"] {
             assert!(module
                 .call_reducer(sender, None, None, None, None, name, FunctionArgs::Nullary)
                 .await
@@ -105,6 +101,11 @@ async fn invocation_flags_are_host_owned_and_lifecycle_calls_remain_restricted()
             .call_procedure(sender, None, None, "external_procedure", FunctionArgs::Nullary)
             .await;
         assert_eq!(result.result.unwrap().return_val, AlgebraicValue::U8(0));
+        assert!(module
+            .call_procedure(sender, None, None, "internal_procedure", FunctionArgs::Nullary)
+            .await
+            .result
+            .is_err());
         assert_eq!(
             module
                 .call_reducer(sender, None, None, None, None, "private", FunctionArgs::Nullary)
@@ -117,7 +118,7 @@ async fn invocation_flags_are_host_owned_and_lifecycle_calls_remain_restricted()
     // observes zero again even if the procedure instance is reused.
     let result = module
         .call_procedure_with_params(
-            "system_procedure",
+            "internal_procedure",
             CallProcedureParams::from_system(
                 Timestamp::now(),
                 database.database_identity,

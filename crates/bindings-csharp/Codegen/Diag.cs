@@ -361,4 +361,13 @@ internal static class ErrorDescriptor
                 $"View '{ctx.method.Identifier}' declares primary key '{ctx.primaryKey}', but its type '{ctx.type}' is not supported for view primary keys.",
             ctx => ctx.primaryKeySyntax
         );
+
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> InvalidFunctionVisibility =
+        new(
+            group,
+            "Invalid function visibility",
+            _ =>
+                $"Visibility must be Default, Public, Private, or Internal. Lifecycle reducers only permit Default or Internal.",
+            method => method.Identifier
+        );
 }

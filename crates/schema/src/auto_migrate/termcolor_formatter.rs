@@ -157,6 +157,15 @@ impl TermColorFormatter {
 }
 
 impl MigrationFormatter for TermColorFormatter {
+    fn format_function_visibility(
+        &mut self,
+        name: &str,
+        old: &crate::def::FunctionVisibility,
+        new: &crate::def::FunctionVisibility,
+    ) -> io::Result<()> {
+        self.write_bullet(&format!("Function {name} visibility: {old} -> {new}"))
+    }
+
     fn format_header(&mut self) -> io::Result<()> {
         let line = "━".repeat(60);
         self.write_line(&line)?;

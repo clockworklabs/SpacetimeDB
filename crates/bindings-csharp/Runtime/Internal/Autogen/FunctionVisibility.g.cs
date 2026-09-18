@@ -12,5 +12,7 @@ namespace SpacetimeDB.Internal
     {
         Private,
         ClientCallable,
+        Internal,
+        ExplicitClientCallable,
     }
 }
