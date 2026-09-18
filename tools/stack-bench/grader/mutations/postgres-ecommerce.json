@@ -2595,6 +2595,55 @@
           "replace": "const { rating, comment } = req.body ?? {};\n    if (String(comment).length > 0) { res.status(400).json({ error: \"Review rejected\" }); return; }"
         }
       ]
+    },
+    {
+      "id": "review-owner-trust-username",
+      "scenario": "tracks/ecommerce/scenarios/progression-review-access.json",
+      "targets": [
+        "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a"
+      ],
+      "desc": "Trust the submitted buyer username instead of the authenticated caller.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "\"/api/items/:id/reviews\",\n  requireAuth,\n  asyncHandler(async (req, res) => {\n    const itemId = Number(req.params.id);\n    const accountId = req.account!.id;",
+          "replace": "\"/api/items/:id/reviews\",\n  requireAuth,\n  asyncHandler(async (req, res) => {\n    const itemId = Number(req.params.id);\n    const accountId = req.body?.username ? (await pool.query(\"SELECT id FROM account WHERE username = $1\", [req.body.username])).rows[0]?.id : req.account!.id;"
+        }
+      ]
+    },
+    {
+      "id": "review-owner-deny-after-write",
+      "scenario": "tracks/ecommerce/scenarios/progression-review-access.json",
+      "targets": [
+        "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a"
+      ],
+      "desc": "Replace the buyer review under a forged username, then return a refusal.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "\"/api/items/:id/reviews\",\n  requireAuth,\n  asyncHandler(async (req, res) => {\n    const itemId = Number(req.params.id);\n    const accountId = req.account!.id;",
+          "replace": "\"/api/items/:id/reviews\",\n  requireAuth,\n  asyncHandler(async (req, res) => {\n    const itemId = Number(req.params.id);\n    const accountId = req.body?.username ? (await pool.query(\"SELECT id FROM account WHERE username = $1\", [req.body.username])).rows[0]?.id : req.account!.id;"
+        },
+        {
+          "find": "const { reviews, average } = await buildItemReviews(itemId);\n    io.emit(\"review:update\", { itemId, reviews, average });",
+          "replace": "if (req.body?.username) { res.status(403).json({ error: \"Refused after write\" }); return; }\n    const { reviews, average } = await buildItemReviews(itemId);\n    io.emit(\"review:update\", { itemId, reviews, average });"
+        }
+      ]
+    },
+    {
+      "id": "review-owner-reject-all",
+      "scenario": "tracks/ecommerce/scenarios/progression-review-access.json",
+      "targets": [
+        "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a"
+      ],
+      "desc": "Reject the legitimate buyer review as well as unauthorized reviews.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "const { rating, comment } = req.body ?? {};",
+          "replace": "const { rating, comment } = req.body ?? {};\n    if (String(comment).length > 0) { res.status(403).json({ error: \"Reject all reviews\" }); return; }"
+        }
+      ]
     }
   ]
 }

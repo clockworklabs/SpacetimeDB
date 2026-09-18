@@ -9,7 +9,7 @@ import { createNamedActionsCapability } from '../src/actions/named-action-runtim
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
-test('review owner diagnostic sends the claimed username with the nonbuyer credentials', async t => {
+test('review eligibility sends the claimed username with the nonbuyer credentials', async t => {
   const browser = await chromium.launch({ headless: true });
   t.after(() => browser.close());
   const page = await browser.newPage();
@@ -20,7 +20,7 @@ test('review owner diagnostic sends the claimed username with the nonbuyer crede
     loc: () => page.locator('[data-role="item-card"]'),
   }]));
   const scenario = compileScenarioDefinition(JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
-    'tracks/ecommerce/scenarios/diagnostic-review-owner.json'), 'utf8')));
+    'tracks/ecommerce/scenarios/progression-review-access.json'), 'utf8')));
   const steps = scenario.features[0]!.criteria[0]!.steps;
   const calls = steps.filter(step => step.do === 'callAction');
   assert.equal(calls.length, 3);

@@ -194,8 +194,11 @@ test('progression review eligibility proves the route and reads back persisted r
   const refused = steps.find(step => step.do === 'expectActionOutcome' && step.actor === 'stranger')!;
   assert.equal(refused.outcome, 'application-refused');
   assert.equal(refused.routeProvenBy, 'owner');
-  assert(steps.some(step => step.do === 'freshClient' && step.actor === 'stranger'));
-  assert(steps.some(step => step.actor === 'stranger-fresh' && step.contains === 'never bought this' && step.absent === true));
+  assert(steps.some(step => step.do === 'freshClient' && step.actor === 'owner'));
+  assert(steps.some(step => step.actor === 'owner-fresh' && step.contains === 'Original buyer review' && !step.absent));
+  for (const contains of ['Nonbuyer review', 'Forged buyer review']) {
+    assert(steps.some(step => step.actor === 'owner-fresh' && step.contains === contains && step.absent === true));
+  }
 });
 
 

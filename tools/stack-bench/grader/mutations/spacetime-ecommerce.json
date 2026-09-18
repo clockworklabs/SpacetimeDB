@@ -2684,6 +2684,21 @@
           "replace": "(ctx, { itemId, rating, comment }) => {\n    if (comment.length > 0) throw new SenderError(\"Review rejected\");"
         }
       ]
+    },
+    {
+      "id": "review-owner-reject-all",
+      "scenario": "tracks/ecommerce/scenarios/progression-review-access.json",
+      "targets": [
+        "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a"
+      ],
+      "desc": "Reject the legitimate buyer review as well as unauthorized reviews.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "(ctx, { itemId, rating, comment }) => {",
+          "replace": "(ctx, { itemId, rating, comment }) => {\n    if (comment.length > 0) throw new SenderError(\"Reject all reviews\");"
+        }
+      ]
     }
   ]
 }

@@ -2577,6 +2577,55 @@
           "replace": "const { rating, comment } = req.body || {};\n    if (String(comment).length > 0) { res.status(400).json({ error: \"Review rejected\" }); return; }"
         }
       ]
+    },
+    {
+      "id": "review-owner-trust-username",
+      "scenario": "tracks/ecommerce/scenarios/progression-review-access.json",
+      "targets": [
+        "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a"
+      ],
+      "desc": "Trust the submitted buyer username instead of the authenticated caller.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "const user = (req as any).user;\n  const hasPurchased = await Order.exists",
+          "replace": "const user = req.body?.username ? await User.findOne({ username: req.body.username }) : (req as any).user;\n  const hasPurchased = await Order.exists"
+        }
+      ]
+    },
+    {
+      "id": "review-owner-deny-after-write",
+      "scenario": "tracks/ecommerce/scenarios/progression-review-access.json",
+      "targets": [
+        "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a"
+      ],
+      "desc": "Replace the buyer review under a forged username, then return a refusal.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "const user = (req as any).user;\n  const hasPurchased = await Order.exists",
+          "replace": "const user = req.body?.username ? await User.findOne({ username: req.body.username }) : (req as any).user;\n  const hasPurchased = await Order.exists"
+        },
+        {
+          "find": "await broadcastReviews(String(itemId));",
+          "replace": "if (req.body?.username) return res.status(403).json({ error: \"Refused after write\" });\n  await broadcastReviews(String(itemId));"
+        }
+      ]
+    },
+    {
+      "id": "review-owner-reject-all",
+      "scenario": "tracks/ecommerce/scenarios/progression-review-access.json",
+      "targets": [
+        "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a"
+      ],
+      "desc": "Reject the legitimate buyer review as well as unauthorized reviews.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "const { rating, comment } = req.body || {};",
+          "replace": "const { rating, comment } = req.body || {};\n    if (String(comment).length > 0) { res.status(403).json({ error: \"Reject all reviews\" }); return; }"
+        }
+      ]
     }
   ]
 }
