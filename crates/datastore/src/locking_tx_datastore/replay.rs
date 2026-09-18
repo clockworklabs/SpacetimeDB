@@ -570,7 +570,7 @@ impl<'cs> ReplayCommittedState<'cs> {
             })
             .collect::<Vec<_>>();
 
-        let (st_sequence, blob_store, ..) = self
+        let (st_sequence, blob_store, _index_map, page_pool) = self
             .get_table_and_blob_store_mut(ST_SEQUENCE_ID)
             .expect("`st_sequence` should exist");
 
@@ -602,7 +602,7 @@ impl<'cs> ReplayCommittedState<'cs> {
                     prev_row_pointer
                 };
 
-                st_sequence.delete(blob_store, row_pointer_to_delete, |_| ())
+                st_sequence.delete(page_pool, blob_store, row_pointer_to_delete, |_| ())
                     .expect("Duplicated `st_sequence` row at `row_pointer_to_delete` should be present in `st_sequence` during fixup");
             }
         }
@@ -646,13 +646,13 @@ impl<'cs> ReplayCommittedState<'cs> {
             .map(|row_ref| row_ref.pointer())
             .collect();
 
-        let (st_event_table, blob_store, ..) = self
+        let (st_event_table, blob_store, _index_map, page_pool) = self
             .get_table_and_blob_store_mut(ST_EVENT_TABLE_ID)
             .expect("`st_event_table` was found above");
 
         for ptr in orphaned_rows {
             st_event_table
-                .delete(blob_store, ptr, |_| ())
+                .delete(page_pool, blob_store, ptr, |_| ())
                 .expect("Orphaned `st_event_table` row at `ptr` should be present in `st_event_table` during fixup");
         }
     }
@@ -1039,12 +1039,12 @@ impl<'cs> ReplayCommittedState<'cs> {
         }
 
         // Get the table for mutation.
-        let (table, blob_store, ..) = self.get_table_and_blob_store_mut(table_id)?;
+        let (table, blob_store, _index_map, page_pool) = self.get_table_and_blob_store_mut(table_id)?;
 
         // We do not need to consider a truncation of `st_table` itself,
         // as if that happens, the database is bricked.
 
-        table.clear(blob_store);
+        table.clear(page_pool, blob_store);
 
         Ok(())
     }

@@ -300,7 +300,7 @@ fn table_insert_one_row(c: &mut Criterion) {
         let mut ctx = (table, NullBlobStore);
         let ptr = ctx.0.insert(&pool, &mut ctx.1, &val).unwrap().1.pointer();
         let pre = |_, (table, bs): &mut (Table, NullBlobStore)| {
-            table.delete(bs, ptr, |_| ()).unwrap();
+            table.delete(&pool, bs, ptr, |_| ()).unwrap();
         };
         group.bench_function(name, |b| {
             iter_time_with(b, &mut ctx, pre, |_, _, (table, bs)| {
@@ -353,8 +353,8 @@ fn table_delete_one_row(c: &mut Criterion) {
         };
 
         group.bench_function(name, |b| {
-            iter_time_with(b, &mut ctx, insert, |row, _, (table, bs, _)| {
-                table.delete(bs, row, |_| ())
+            iter_time_with(b, &mut ctx, insert, |row, _, (table, bs, pool)| {
+                table.delete(pool, bs, row, |_| ())
             });
         });
     }
@@ -555,13 +555,13 @@ fn insert_num_same<R: IndexedRow>(
         .flatten()
 }
 
-fn clear_all_same<R: IndexedRow>(tbl: &mut Table, index_id: IndexId, val_same: u64) {
+fn clear_all_same<R: IndexedRow>(pool: &PagePool, tbl: &mut Table, index_id: IndexId, val_same: u64) {
     let index = tbl.get_index_by_id(index_id).unwrap();
     let key = R::column_value_from_u64(val_same);
     let key = index.key_from_algebraic_value(&key);
     let ptrs = index.seek_point(&key).collect::<Vec<_>>();
     for ptr in ptrs {
-        tbl.delete(&mut NullBlobStore, ptr, |_| ()).unwrap();
+        tbl.delete(pool, &mut NullBlobStore, ptr, |_| ()).unwrap();
     }
 }
 
@@ -615,7 +615,7 @@ fn index_insert(c: &mut Criterion) {
             &num_rows,
             |b, &num_rows| {
                 let pre = |_, (tbl, _, pool): &mut (Table, NullBlobStore, PagePool)| {
-                    clear_all_same::<R>(tbl, index_id, num_rows);
+                    clear_all_same::<R>(pool, tbl, index_id, num_rows);
                     insert_num_same(pool, tbl, || make_row(num_rows), num_same - 1);
                     make_row(num_rows).to_product()
                 };
@@ -738,11 +738,11 @@ fn index_delete(c: &mut Criterion) {
             &num_rows,
             |b, &num_rows| {
                 let pre = |_, tbl: &mut Table| {
-                    clear_all_same::<R>(tbl, index_id, num_rows);
+                    clear_all_same::<R>(&pool, tbl, index_id, num_rows);
                     insert_num_same(&pool, tbl, || make_row(num_rows), num_same).unwrap()
                 };
                 iter_time_with(b, &mut tbl, pre, |ptr, _, tbl| {
-                    tbl.delete(&mut NullBlobStore, ptr, |_| ())
+                    tbl.delete(&pool, &mut NullBlobStore, ptr, |_| ())
                 });
             },
         );
