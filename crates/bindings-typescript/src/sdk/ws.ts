@@ -49,6 +49,16 @@ export interface WebSocketAdapter {
   set onerror(handler: (msg: ErrorEvent) => void);
 }
 
+export class WebSocketTokenError extends Error {
+  constructor(
+    readonly status: number,
+    statusText: string
+  ) {
+    super(`Failed to verify token: ${status} ${statusText}`);
+    this.name = 'WebSocketTokenError';
+  }
+}
+
 export interface WebSocketArgs {
   url: URL;
   wsProtocol: string[];
@@ -57,6 +67,10 @@ export interface WebSocketArgs {
   compression: 'gzip' | 'brotli' | 'none';
   lightMode: boolean;
   confirmedReads?: boolean;
+  /** Hex-encoded id for this socket. */
+  connectionId?: string;
+  /** Stable session id, sent only when automatic reconnection is enabled. */
+  sessionId?: string;
 }
 export type WebSocketFactory = (
   args: WebSocketArgs
@@ -74,6 +88,8 @@ export async function openWebSocket({
   compression,
   lightMode,
   confirmedReads,
+  connectionId,
+  sessionId,
 }: WebSocketArgs): Promise<WebSocket> {
   const headers = new Headers();
 
@@ -92,7 +108,7 @@ export async function openWebSocket({
       const { token } = await response.json();
       temporaryAuthToken = token;
     } else {
-      throw new Error(`Failed to verify token: ${response.statusText}`);
+      throw new WebSocketTokenError(response.status, response.statusText);
     }
   }
 
@@ -109,6 +125,14 @@ export async function openWebSocket({
   }
   if (confirmedReads !== undefined) {
     databaseUrl.searchParams.set('confirmed', confirmedReads.toString());
+  }
+  // Note that `url`'s own query parameters are not carried over by the `URL`
+  // constructor above, so these must be set here.
+  if (connectionId) {
+    databaseUrl.searchParams.set('connection_id', connectionId);
+  }
+  if (sessionId) {
+    databaseUrl.searchParams.set('session_id', sessionId);
   }
 
   const ws = new WS(databaseUrl.toString(), wsProtocol);

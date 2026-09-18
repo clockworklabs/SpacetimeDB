@@ -6,6 +6,13 @@ import {
   ConnectionManager,
 } from '../src/sdk/connection_manager.ts';
 
+// Reconnection after a mid-session drop lives in the SDK: the manager forces
+// `withAutomaticReconnect()` on every builder, and a `nextReconnectAttempt`
+// on a disconnect/connect-error report means the SDK is retrying inside the
+// same connection object, so the manager must leave it alone. The manager
+// rebuilds only when the SDK reports it will not retry (no attempt number):
+// a failed initial connection, or another terminal failure.
+
 type ErrorContextInterface = {
   isActive: boolean;
 };
@@ -26,10 +33,20 @@ class MockConnection {
 
   #onConnectCallbacks = new Set<(conn: MockConnection) => void>();
   #onDisconnectCallbacks = new Set<
-    (ctx: ErrorContextInterface, error?: Error) => void
+    (
+      ctx: ErrorContextInterface,
+      error?: Error,
+      nextReconnectAttempt?: number,
+      nextReconnectDelayMs?: number
+    ) => void
   >();
   #onConnectErrorCallbacks = new Set<
-    (ctx: ErrorContextInterface, error: Error) => void
+    (
+      ctx: ErrorContextInterface,
+      error: Error,
+      nextReconnectAttempt?: number,
+      nextReconnectDelayMs?: number
+    ) => void
   >();
 
   disconnect(): void {
@@ -40,7 +57,7 @@ class MockConnection {
     this.disconnected = true;
     this.isActive = false;
     for (const cb of this.#onDisconnectCallbacks) {
-      cb(this as unknown as ErrorContextInterface);
+      cb(this);
     }
   }
 
@@ -87,17 +104,29 @@ class MockConnection {
     }
   }
 
-  simulateDisconnect(error?: Error): void {
+  /**
+   * Passing `nextReconnectAttempt` emulates the SDK announcing it will retry
+   * internally; omitting it emulates a terminal report.
+   */
+  simulateDisconnect(
+    error?: Error,
+    nextReconnectAttempt?: number,
+    nextReconnectDelayMs?: number
+  ): void {
     this.isActive = false;
     for (const cb of this.#onDisconnectCallbacks) {
-      cb(this as unknown as ErrorContextInterface, error);
+      cb(this, error, nextReconnectAttempt, nextReconnectDelayMs);
     }
   }
 
-  simulateConnectError(error: Error): void {
+  simulateConnectError(
+    error: Error,
+    nextReconnectAttempt?: number,
+    nextReconnectDelayMs?: number
+  ): void {
     this.isActive = false;
     for (const cb of this.#onConnectErrorCallbacks) {
-      cb(this as unknown as ErrorContextInterface, error);
+      cb(this, error, nextReconnectAttempt, nextReconnectDelayMs);
     }
   }
 
@@ -106,13 +135,23 @@ class MockConnection {
   }
 
   registerOnDisconnect(
-    cb: (ctx: ErrorContextInterface, error?: Error) => void
+    cb: (
+      ctx: ErrorContextInterface,
+      error?: Error,
+      nextReconnectAttempt?: number,
+      nextReconnectDelayMs?: number
+    ) => void
   ): void {
     this.#onDisconnectCallbacks.add(cb);
   }
 
   registerOnConnectError(
-    cb: (ctx: ErrorContextInterface, error: Error) => void
+    cb: (
+      ctx: ErrorContextInterface,
+      error: Error,
+      nextReconnectAttempt?: number,
+      nextReconnectDelayMs?: number
+    ) => void
   ): void {
     this.#onConnectErrorCallbacks.add(cb);
   }
@@ -125,6 +164,7 @@ class MockBuilder {
   token: string | undefined;
   /** Every token this builder was asked to carry, oldest first. */
   tokenHistory: (string | undefined)[] = [];
+  automaticReconnect = false;
 
   constructor(token?: string) {
     this.token = token;
@@ -141,6 +181,11 @@ class MockBuilder {
   withToken(token?: string): MockBuilder {
     this.token = token;
     this.tokenHistory.push(token);
+    return this;
+  }
+
+  withAutomaticReconnect(): MockBuilder {
+    this.automaticReconnect = true;
     return this;
   }
 
@@ -205,7 +250,7 @@ function retainMock(key: string, builder: MockBuilder): MockConnection {
   ) as unknown as MockConnection;
 }
 
-describe('ConnectionManager retained reconnect behavior', () => {
+describe('ConnectionManager forces SDK automatic reconnection', () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -215,7 +260,134 @@ describe('ConnectionManager retained reconnect behavior', () => {
     vi.useRealTimers();
   });
 
-  test('rebuilds a retained connection after disconnect', () => {
+  test('retain enables automatic reconnection on the builder', () => {
+    const key = nextKey();
+    const builder = new MockBuilder();
+    expect(builder.automaticReconnect).toBe(false);
+
+    retainMock(key, builder);
+
+    expect(builder.automaticReconnect).toBe(true);
+
+    ConnectionManager.release(key);
+  });
+
+  test('rebuild enables automatic reconnection on the replacement builder', () => {
+    const key = nextKey();
+    retainMock(key, new MockBuilder());
+
+    const replacement = new MockBuilder();
+    ConnectionManager.rebuild(key, replacement as any);
+
+    expect(replacement.automaticReconnect).toBe(true);
+
+    ConnectionManager.release(key);
+  });
+});
+
+describe('ConnectionManager during SDK-managed reconnection', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+  });
+
+  test('a drop the SDK will retry does not rebuild the connection', () => {
+    const key = nextKey();
+    const builder = new MockBuilder();
+    const error = new Error('connection lost');
+
+    const first = retainMock(key, builder);
+    first.simulateConnect();
+
+    first.simulateDisconnect(error, 1, 1000);
+
+    // The connection object stays managed and untouched: the SDK reconnects
+    // inside it.
+    expect(ConnectionManager.getConnection(key)).toBe(first);
+    expect(ConnectionManager.getSnapshot(key)?.isActive).toBe(false);
+    expect(ConnectionManager.getSnapshot(key)?.connectionError).toBe(error);
+
+    vi.advanceTimersByTime(CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS);
+    expect(builder.buildCount).toBe(1);
+
+    ConnectionManager.release(key);
+  });
+
+  test('failed attempts the SDK will retry do not rebuild the connection', () => {
+    const key = nextKey();
+    const builder = new MockBuilder();
+
+    const first = retainMock(key, builder);
+    first.simulateConnect();
+    first.simulateDisconnect(new Error('connection lost'), 1, 1000);
+
+    const attemptError = new Error('still down');
+    first.simulateConnectError(attemptError, 2, 2000);
+
+    expect(ConnectionManager.getConnection(key)).toBe(first);
+    expect(ConnectionManager.getSnapshot(key)?.connectionError).toBe(
+      attemptError
+    );
+
+    vi.advanceTimersByTime(CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS);
+    expect(builder.buildCount).toBe(1);
+
+    ConnectionManager.release(key);
+  });
+
+  test('manager callbacks stay attached while the SDK retries', () => {
+    const key = nextKey();
+    const builder = new MockBuilder();
+
+    const first = retainMock(key, builder);
+    first.simulateConnect();
+    first.simulateDisconnect(new Error('connection lost'), 1, 1000);
+
+    expect(first.callbackCounts()).toEqual({
+      connect: 1,
+      disconnect: 1,
+      connectError: 1,
+    });
+
+    ConnectionManager.release(key);
+  });
+
+  test('a successful SDK reconnect restores the state snapshot', () => {
+    const key = nextKey();
+    const builder = new MockBuilder();
+
+    const first = retainMock(key, builder);
+    first.simulateConnect('session-token');
+    first.simulateDisconnect(new Error('connection lost'), 1, 1000);
+    expect(ConnectionManager.getSnapshot(key)?.isActive).toBe(false);
+
+    // The SDK reconnects inside the same object and fires onConnect again.
+    first.simulateConnect('session-token');
+
+    expect(ConnectionManager.getSnapshot(key)?.isActive).toBe(true);
+    expect(ConnectionManager.getSnapshot(key)?.connectionError).toBeUndefined();
+    expect(ConnectionManager.getConnection(key)).toBe(first);
+    expect(builder.buildCount).toBe(1);
+
+    ConnectionManager.release(key);
+  });
+});
+
+describe('ConnectionManager rebuild on terminal failures', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+  });
+
+  test('rebuilds a retained connection after a terminal disconnect', () => {
     const key = nextKey();
     const builder = new MockBuilder();
 
@@ -242,9 +414,11 @@ describe('ConnectionManager retained reconnect behavior', () => {
     ConnectionManager.release(key);
   });
 
-  test('rebuilds a retained connection after connectError', () => {
+  test('rebuilds a retained connection after a terminal connectError', () => {
     const key = nextKey();
     const builder = new MockBuilder();
+    // A failed *initial* connection is the SDK's main terminal case: it
+    // reports it through onConnectError with no next attempt.
     const error = new Error('network unavailable');
 
     const first = retainMock(key, builder);
@@ -263,7 +437,7 @@ describe('ConnectionManager retained reconnect behavior', () => {
     ConnectionManager.release(key);
   });
 
-  test('same-key retain after disconnect returns a fresh connection immediately', () => {
+  test('same-key retain after a terminal failure returns a fresh connection immediately', () => {
     const key = nextKey();
     const builder = new MockBuilder();
 
@@ -283,7 +457,7 @@ describe('ConnectionManager retained reconnect behavior', () => {
     ConnectionManager.release(key);
   });
 
-  test('reconnect uses callbacks from a replacement same-key builder', () => {
+  test('rebuild uses callbacks from a replacement same-key builder', () => {
     const key = nextKey();
     const firstBuilder = new MockBuilder();
     const secondBuilder = new MockBuilder();
@@ -315,7 +489,7 @@ describe('ConnectionManager retained reconnect behavior', () => {
     ConnectionManager.release(key);
   });
 
-  test('disconnect removes manager callbacks from the old connection before pending reconnect', () => {
+  test('a terminal failure removes manager callbacks from the old connection', () => {
     const key = nextKey();
     const builder = new MockBuilder();
 
@@ -337,7 +511,7 @@ describe('ConnectionManager retained reconnect behavior', () => {
     ConnectionManager.release(key);
   });
 
-  test('release cancels a pending reconnect', () => {
+  test('release cancels a pending rebuild', () => {
     const key = nextKey();
     const builder = new MockBuilder();
 
@@ -351,7 +525,7 @@ describe('ConnectionManager retained reconnect behavior', () => {
     expect(ConnectionManager.getConnection(key)).toBeNull();
   });
 
-  test('manual disconnect does not trigger a reconnect', () => {
+  test('manual disconnect does not trigger a rebuild', () => {
     const key = nextKey();
     const builder = new MockBuilder();
 
@@ -387,14 +561,14 @@ describe('ConnectionManager retained reconnect behavior', () => {
     ConnectionManager.release(key);
   });
 
-  test('reconnect delay backs off exponentially across consecutive failures', () => {
+  test('rebuild delay backs off exponentially across consecutive failures', () => {
     const key = nextKey();
     const builder = new MockBuilder();
 
     const first = retainMock(key, builder);
-    first.simulateDisconnect();
+    first.simulateConnectError(new Error('server unreachable'));
 
-    // First reconnect fires after the base delay.
+    // First rebuild fires after the base delay.
     vi.advanceTimersByTime(connectionManagerReconnectDelayMs(0));
     expect(builder.buildCount).toBe(2);
 
@@ -415,12 +589,12 @@ describe('ConnectionManager retained reconnect behavior', () => {
     ConnectionManager.release(key);
   });
 
-  test('successful connect resets the reconnect backoff', () => {
+  test('successful connect resets the rebuild backoff', () => {
     const key = nextKey();
     const builder = new MockBuilder();
 
     const first = retainMock(key, builder);
-    first.simulateDisconnect();
+    first.simulateConnectError(new Error('server unreachable'));
     vi.advanceTimersByTime(connectionManagerReconnectDelayMs(0));
 
     builder.connections[1].simulateConnectError(new Error('still down'));
@@ -437,7 +611,7 @@ describe('ConnectionManager retained reconnect behavior', () => {
     ConnectionManager.release(key);
   });
 
-  test('reconnect delay is capped at the maximum delay', () => {
+  test('rebuild delay is capped at the maximum delay', () => {
     expect(connectionManagerReconnectDelayMs(0)).toBeLessThan(
       CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS
     );
@@ -532,18 +706,19 @@ describe('ConnectionManager.rebuild', () => {
     ConnectionManager.release(key);
   });
 
-  test('cancels a pending auto-reconnect and resets the backoff', () => {
+  test('cancels a pending terminal-failure rebuild and resets the backoff', () => {
     const key = nextKey();
     const builder = new MockBuilder();
 
     const first = retainMock(key, builder);
-    // Two consecutive failures so the backoff has advanced past the base delay.
-    first.simulateDisconnect();
+    // Two consecutive terminal failures so the backoff has advanced past the
+    // base delay.
+    first.simulateConnectError(new Error('server unreachable'));
     vi.advanceTimersByTime(connectionManagerReconnectDelayMs(0));
     builder.connections[1].simulateConnectError(new Error('still down'));
     expect(builder.buildCount).toBe(2);
 
-    // rebuild() takes over: the scheduled reconnect must not also fire.
+    // rebuild() takes over: the scheduled rebuild must not also fire.
     const replacement = new MockBuilder();
     ConnectionManager.rebuild(key, replacement as any);
     expect(replacement.buildCount).toBe(1);
@@ -553,7 +728,8 @@ describe('ConnectionManager.rebuild', () => {
     expect(builder.buildCount).toBe(2);
     expect(replacement.buildCount).toBe(1);
 
-    // ...and the backoff was reset: a fresh drop reconnects after the base delay.
+    // ...and the backoff was reset: a fresh terminal failure rebuilds after
+    // the base delay.
     replacement.connections[0].simulateConnect();
     replacement.connections[0].simulateDisconnect();
     vi.advanceTimersByTime(connectionManagerReconnectDelayMs(0));
@@ -575,6 +751,9 @@ describe('ConnectionManager.rebuild', () => {
     const failingBuilder = {
       build() {
         throw buildError;
+      },
+      withAutomaticReconnect() {
+        return this;
       },
       onConnect() {
         return this;
@@ -629,7 +808,7 @@ describe('ConnectionManager session continuity across rebuilds', () => {
     vi.useRealTimers();
   });
 
-  test('auto-reconnect reuses the token issued after the builder was built', () => {
+  test('a terminal-failure rebuild reuses the token issued after the builder was built', () => {
     const key = nextKey();
     // A first-time visitor: nothing in storage, so the builder carries no token.
     const builder = new MockBuilder();
@@ -642,8 +821,9 @@ describe('ConnectionManager session continuity across rebuilds', () => {
     first.simulateConnect('session-token');
     expect(ConnectionManager.getSnapshot(key)?.token).toBe('session-token');
 
-    // The socket drops and the manager auto-reconnects from the retained
-    // builder — which still holds the empty token it was constructed with.
+    // The connection ends terminally and the manager rebuilds from the
+    // retained builder — which still holds the empty token it was constructed
+    // with.
     first.simulateDisconnect();
     vi.advanceTimersByTime(connectionManagerReconnectDelayMs(0));
 
@@ -654,7 +834,7 @@ describe('ConnectionManager session continuity across rebuilds', () => {
     expect(second.token).toBe('session-token');
   });
 
-  test('resumed session survives repeated reconnects', () => {
+  test('resumed session survives repeated rebuilds', () => {
     const key = nextKey();
     const builder = new MockBuilder();
 
@@ -708,7 +888,7 @@ describe('ConnectionManager session continuity across rebuilds', () => {
     ConnectionManager.release(key);
   });
 
-  test('retain after a drop resumes the session rather than the stale builder', () => {
+  test('retain after a terminal failure resumes the session rather than the stale builder', () => {
     const key = nextKey();
     const builder = new MockBuilder();
 
@@ -716,7 +896,7 @@ describe('ConnectionManager session continuity across rebuilds', () => {
     first.simulateConnect('session-token');
     first.simulateDisconnect();
 
-    // A provider remount rebuilds through retain(), not the reconnect timer.
+    // A provider remount rebuilds through retain(), not the rebuild timer.
     const second = retainMock(key, builder);
     expect(second.token).toBe('session-token');
 
@@ -745,15 +925,16 @@ describe('ConnectionManager session continuity across rebuilds', () => {
     ConnectionManager.release(key);
   });
 
-  test('auto-reconnect with a replacement builder keeps the session identity', () => {
+  test('a terminal-failure rebuild with a replacement builder keeps the session identity', () => {
     const key = nextKey();
     const anonymous = new MockBuilder();
 
     const first = retainMock(key, anonymous);
     first.simulateConnect('anonymous-token');
 
-    // Swap the builder while the connection is live, then drop: the reconnect
-    // uses the replacement's callbacks but must not adopt its token.
+    // Swap the builder while the connection is live, then end it terminally:
+    // the rebuild uses the replacement's callbacks but must not adopt its
+    // token.
     ConnectionManager.release(key);
     const signedIn = new MockBuilder('signed-in-token');
     retainMock(key, signedIn);
@@ -787,7 +968,7 @@ describe('ConnectionManager session continuity across rebuilds', () => {
     ConnectionManager.release(key);
   });
 
-  test('auto-reconnect after rebuild() keeps the new identity', () => {
+  test('a terminal-failure rebuild after rebuild() keeps the new identity', () => {
     const key = nextKey();
     const anonymous = new MockBuilder();
 
@@ -799,8 +980,8 @@ describe('ConnectionManager session continuity across rebuilds', () => {
       signedIn as any
     ) as unknown as MockConnection;
 
-    // Drop *before* the new connection completes its handshake: the manager
-    // must not fall back to the identity rebuild() just replaced.
+    // Fail terminally *before* the new connection completes its handshake:
+    // the manager must not fall back to the identity rebuild() just replaced.
     second.simulateDisconnect();
     vi.advanceTimersByTime(connectionManagerReconnectDelayMs(0));
 
