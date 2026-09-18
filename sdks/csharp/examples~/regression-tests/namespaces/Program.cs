@@ -452,6 +452,80 @@ internal static class Program
                     && conn.Db.@class.User.Count == 2,
                 "Schedules must leave unrelated tables unchanged"
             );
+
+            var transactionInserts = 0;
+            void CheckTransactionInsert(EventContext ctx, uint id)
+            {
+                if (id < 20)
+                    return;
+                Require(id == 20, "A rolled-back procedure emitted an insert");
+                Require(
+                    ctx.Db.User.Id.Find(id) != null
+                        && ctx.Db.MyAuth.User.Id.Find(id)?.Score == 42
+                        && ctx.Db.@class.User.Id.Find(id)?.Message == "procedure",
+                    "Every insert callback must see the whole procedure transaction"
+                );
+                transactionInserts++;
+            }
+            conn.Db.User.OnInsert += (ctx, row) => CheckTransactionInsert(ctx, row.Id);
+            conn.Db.MyAuth.User.OnInsert += (ctx, row) => CheckTransactionInsert(ctx, row.Id);
+            conn.Db.@class.User.OnInsert += (ctx, row) => CheckTransactionInsert(ctx, row.Id);
+
+            var transactionCommitted = false;
+            conn.Procedures.WriteAcrossNamespaces(
+                20,
+                false,
+                (_, result) =>
+                {
+                    Require(result.IsSuccess && result.Value == 42, "Procedure transaction commit");
+                    transactionCommitted = true;
+                }
+            );
+            Wait(
+                () => transactionCommitted && transactionInserts == 3,
+                "Committed cross-namespace procedure transaction"
+            );
+            var transactionFailed = false;
+            conn.Procedures.WriteAcrossNamespaces(
+                21,
+                true,
+                (_, result) =>
+                {
+                    Require(
+                        !result.IsSuccess && result.Error != null,
+                        "Procedure transaction must report failure"
+                    );
+                    transactionFailed = true;
+                }
+            );
+            Wait(() => transactionFailed, "Failed cross-namespace procedure transaction");
+
+            // Query the host as well as the cache: no subscription update alone does not prove rollback.
+            var rootWrites = conn.Db.User.RemoteQuery("WHERE id >= 20");
+            var authWrites = conn.Db.MyAuth.User.RemoteQuery("WHERE id >= 20");
+            var auditWrites = conn.Db.@class.User.RemoteQuery("WHERE id >= 20");
+            Wait(
+                () => rootWrites.IsCompleted && authWrites.IsCompleted && auditWrites.IsCompleted,
+                "Procedure transaction persistence"
+            );
+            Require(rootWrites.GetAwaiter().GetResult().Single().Id == 20, "Root write rollback");
+            var authWrite = authWrites.GetAwaiter().GetResult().Single();
+            var auditWrite = auditWrites.GetAwaiter().GetResult().Single();
+            Require(authWrite.Id == 20 && authWrite.Score == 42, "Auth write rollback");
+            Require(
+                auditWrite.Id == 20 && auditWrite.Message == "procedure",
+                "Audit write rollback"
+            );
+            Require(
+                transactionInserts == 3
+                    && conn.Db.User.Count == 2
+                    && conn.Db.MyAuth.User.Count == 2
+                    && conn.Db.@class.User.Count == 3
+                    && conn.Db.User.Id.Find(21) == null
+                    && conn.Db.MyAuth.User.Id.Find(21) == null
+                    && conn.Db.@class.User.Id.Find(21) == null,
+                "Failed procedure must leave all three subscription caches unchanged"
+            );
             Unsubscribe(all);
             EmptyCache();
             Console.WriteLine("Namespace integration passed");
