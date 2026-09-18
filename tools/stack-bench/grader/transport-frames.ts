@@ -85,4 +85,8 @@ export async function captureResponses(page: Page, received: ReceivedTransport):
     }
   });
   await session.send('Network.enable');
+  // Keep response bodies available when the app reloads immediately after reading them.
+  await session.send('Network.configureDurableMessages', {
+    maxTotalBufferSize: MAX_RECEIVED_BYTES, maxResourceBufferSize: MAX_RECEIVED_BYTES,
+  });
 }

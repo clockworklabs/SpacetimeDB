@@ -65,12 +65,21 @@ test('transport absence cannot pass after truncation, eviction, or an unreadable
 });
 
 test('capture failures identify body reads, declared body caps, and unsupported streams without payloads', async () => {
-  const session = Object.assign(new EventEmitter(), { send: async () => {} });
+  const commands: unknown[] = [];
+  const session = Object.assign(new EventEmitter(), {
+    send: async (method: string, params?: unknown) => { commands.push({ method, params }); },
+  });
   const page = Object.assign(new EventEmitter(), {
     context: () => ({ newCDPSession: async () => session }),
   });
   const received = new ReceivedTransport();
   await captureResponses(page as unknown as Page, received);
+  assert.deepEqual(commands, [
+    { method: 'Network.enable', params: undefined },
+    { method: 'Network.configureDurableMessages', params: {
+      maxTotalBufferSize: 8 * 1024 * 1024, maxResourceBufferSize: 8 * 1024 * 1024,
+    } },
+  ]);
   page.emit('response', {
     headers: () => ({ 'content-type': 'application/json' }),
     text: async () => { throw new Error('private-token-and-body'); },
