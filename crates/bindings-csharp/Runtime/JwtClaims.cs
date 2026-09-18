@@ -16,8 +16,8 @@ public sealed class JwtClaims
     /// <summary>
     /// Create a JwtClaims from a raw JWT payload (JSON claims) and its associated Identity.
     ///
-    /// This only takes an Identity because the Blake3 hash package on nuget wraps rust code.
-    /// We should not expose this constructor publicly, but it is needed for AuthCtx.
+    /// Identity is the verified sender provided by the host. Claims cannot
+    /// override it, including for hosted database credentials.
     /// </summary>
     internal JwtClaims(string jwt, Identity identity)
     {

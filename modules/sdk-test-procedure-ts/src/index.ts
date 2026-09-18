@@ -97,7 +97,7 @@ export const read_my_schema = spacetimedb.procedure(
     const module_identity = ctx.databaseIdentity;
     const base_url = server_url.replace(/\/+$/, '');
     const response = ctx.http.fetch(
-      `${base_url}/v1/database/${module_identity}/schema?version=9`
+      `${base_url}/v1/database/${module_identity}/schema?version=10`
     );
     return response.text();
   }

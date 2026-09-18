@@ -9,7 +9,7 @@ use spacetimedb::auth::identity::ConnectionAuthCtx;
 use spacetimedb::host::{FunctionArgs, ReducerOutcome};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::Database;
-use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
+use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
 use spacetimedb_lib::sats;
 
 use super::database::{
@@ -350,7 +350,7 @@ where
     let database = target.resolve(ctx, addressed).await?;
     let leader = find_database_leader(ctx, &database).await?;
     let module = leader.wait_for_module(MODULE_WAIT_TIMEOUT).await.map_err(log_and_500)?;
-    let raw = RawModuleDefV9::from(module.info.module_def.as_ref().clone());
+    let raw = RawModuleDefV10::from(module.info.module_def.as_ref().clone());
     let json = serde_json::to_string(&sats::serde::SerdeWrapper(raw)).map_err(log_and_500)?;
     Ok(json)
 }

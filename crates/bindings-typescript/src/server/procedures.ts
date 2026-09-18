@@ -10,7 +10,7 @@ import BinaryReader from '../lib/binary_reader';
 import BinaryWriter from '../lib/binary_writer';
 import type { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
-import type { ParamsObj, ReducerCtx } from '../lib/reducers';
+import type { AuthCtx, ParamsObj, ReducerCtx } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
 import type { ScheduleTableForParams } from '../lib/table_schema';
 import { Timestamp } from '../lib/timestamp';
@@ -28,6 +28,7 @@ import { makeRandom, type Random } from './rng';
 import {
   assignTxAliasViews,
   buildProcedureAliasCtxMap,
+  AuthCtxImpl,
   callUserFunction,
   ReducerCtxImpl,
   runWithTx,
@@ -116,6 +117,7 @@ export interface ProcedureCtx<S extends UntypedSchemaDef> {
   readonly identity: Identity;
   readonly timestamp: Timestamp;
   readonly connectionId: ConnectionId | null;
+  readonly senderAuth: AuthCtx;
   readonly http: HttpClient;
   readonly random: Random;
   readonly as: ProcedureAliasViews<S>;
@@ -127,12 +129,6 @@ export interface ProcedureCtx<S extends UntypedSchemaDef> {
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface TransactionCtx<S extends UntypedSchemaDef>
   extends ReducerCtx<S> {}
-
-type ITransactionCtx<S extends UntypedSchemaDef> = TransactionCtx<S>;
-
-const TransactionCtxImpl = class TransactionCtx<S extends UntypedSchemaDef>
-  extends ReducerCtxImpl<S>
-  implements ITransactionCtx<S> {};
 
 function registerProcedure<
   S extends UntypedSchemaDef,
@@ -232,6 +228,7 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   #dispatches: SubmoduleDispatchInfo[];
   #parentPrefix: string;
   #asViews: object | undefined;
+  readonly senderAuth: AuthCtx;
 
   constructor(
     readonly sender: Identity,
@@ -244,6 +241,11 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
     this.#dbView = dbView;
     this.#dispatches = dispatches;
     this.#parentPrefix = parentPrefix;
+    this.senderAuth = AuthCtxImpl.fromSystemTables(
+      connectionId,
+      sender,
+      sys.get_call_auth_flags()
+    );
   }
 
   get databaseIdentity() {
@@ -274,11 +276,13 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
     const dispatches = this.#dispatches;
     const parentPrefix = this.#parentPrefix;
     return runWithTx(timestamp => {
-      const tx = new TransactionCtxImpl(
+      const tx = new ReducerCtxImpl(
         this.sender,
         timestamp,
         this.connectionId,
-        this.#dbView()
+        this.#dbView(),
+        {},
+        this.senderAuth
       );
       assignTxAliasViews(tx, dispatches, parentPrefix);
       return tx as unknown as TransactionCtx<S>;

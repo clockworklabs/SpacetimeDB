@@ -1066,6 +1066,9 @@ extern "C" fn __describe_module__(description: BytesSink) {
         describer(&mut module)
     }
 
+    // These bindings capture host flags and preserve the verified sender in JWT claims.
+    module.inner.add_capability("hosted_auth_v1");
+
     // Serialize the module to bsatn.
     module.inner.ensure_environment();
     let module_def = module.inner.finish();

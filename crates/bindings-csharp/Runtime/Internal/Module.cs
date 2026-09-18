@@ -167,6 +167,7 @@ partial class RawModuleDefV10
         {
             new RawModuleDefV10Section.Typespace(typespace),
             new RawModuleDefV10Section.Environment(environment),
+            new RawModuleDefV10Section.Capabilities(["hosted_auth_v1"]),
         };
 
         if (typeDefs.Count > 0)

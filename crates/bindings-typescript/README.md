@@ -18,6 +18,10 @@ You can use the package in the browser, using a bundler like vite/parcel/rsbuild
 
 ### Usage
 
+#### Module invocation authentication
+
+`ctx.senderAuth.isInternal` captures host-verified invocation authority independently of connection and JWT presence. `ctx.senderAuth.jwt.identity` is the verified sender. Procedure transactions preserve authentication. Newly compiled modules advertise `hosted_auth_v1` and require a compatible host. Function visibility and scheduled defaults are unchanged.
+
 In order to connect to a database you have to generate module bindings for your database.
 
 ```ts

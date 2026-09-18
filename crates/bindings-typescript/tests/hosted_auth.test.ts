@@ -1,0 +1,143 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const host = vi.hoisted(() => ({
+  flags: 0,
+  payload: '',
+  jwtReads: 0,
+  flagReads: 0,
+}));
+vi.mock('spacetime:sys@2.0', () => ({
+  moduleHooks: Symbol('moduleHooks'),
+  identity: () => 1n,
+  row_iter_bsatn_close: () => {},
+  procedure_start_mut_tx: () => 0n,
+  procedure_commit_mut_tx: () => {},
+  procedure_abort_mut_tx: () => {},
+  get_jwt_payload: () => {
+    host.jwtReads++;
+    return new TextEncoder().encode(host.payload);
+  },
+}));
+vi.mock('spacetime:sys@2.3', () => ({
+  get_call_auth_flags: () => {
+    host.flagReads++;
+    return host.flags;
+  },
+}));
+
+import { ReducerCtxImpl } from '../src/server/runtime';
+import { ConnectionId } from '../src/lib/connection_id';
+import { Identity } from '../src/lib/identity';
+import { Timestamp } from '../src/lib/timestamp';
+import { schema, exportContext, registerExport } from '../src/server/schema';
+import { callProcedure } from '../src/server/procedures';
+import { t } from '../src/lib/type_builders';
+
+beforeEach(() => {
+  Object.assign(host, { flags: 0, payload: '', jwtReads: 0, flagReads: 0 });
+});
+
+describe('verified invocation authentication', () => {
+  it.each([0, 1])(
+    'preserves flag %s for calls without a connection or JWT',
+    flags => {
+      host.flags = flags;
+      const ctx = new ReducerCtxImpl(
+        new Identity(1n),
+        Timestamp.UNIX_EPOCH,
+        null,
+        {}
+      );
+      host.flags = flags ^ 1;
+      expect(host.flagReads).toBe(1);
+      expect(ctx.senderAuth.isInternal).toBe(Boolean(flags));
+      expect(ctx.senderAuth.hasJWT).toBe(false);
+      expect(ctx.senderAuth.jwt).toBeNull();
+      expect(host.jwtReads).toBe(0);
+    }
+  );
+
+  it('retains an internal connection and JWT independently, using the verified sender Identity', () => {
+    host.flags = 1;
+    host.payload = JSON.stringify({
+      iss: 'unrelated-issuer',
+      sub: 'unrelated-subject',
+      identity: 'untrusted-claim',
+    });
+    const sender = new Identity(123n);
+    const connection = new ConnectionId(7n);
+    const ctx = new ReducerCtxImpl(
+      sender,
+      Timestamp.UNIX_EPOCH,
+      connection,
+      {}
+    );
+    host.flags = 0;
+    expect(ctx.connectionId).toBe(connection);
+    expect(ctx.senderAuth.isInternal).toBe(true);
+    expect(host.jwtReads).toBe(0);
+    expect(ctx.senderAuth.hasJWT).toBe(true);
+    expect(ctx.senderAuth.jwt?.identity).toBe(sender);
+    expect(ctx.senderAuth.jwt?.subject).toBe('unrelated-subject');
+    expect(host.jwtReads).toBe(1);
+  });
+
+  it('refreshes captured flags and sender when a cached reducer context is reused', () => {
+    host.flags = 1;
+    const ctx = new ReducerCtxImpl(
+      new Identity(1n),
+      Timestamp.UNIX_EPOCH,
+      null,
+      {}
+    );
+    const firstAuth = ctx.senderAuth;
+    host.flags = 0;
+    ReducerCtxImpl.reset(
+      ctx,
+      new Identity(2n),
+      Timestamp.UNIX_EPOCH,
+      new ConnectionId(8n)
+    );
+    host.flags = 1;
+    expect(firstAuth.isInternal).toBe(true);
+    expect(ctx.senderAuth.isInternal).toBe(false);
+    expect(ctx.senderAuth.hasJWT).toBe(false);
+  });
+
+  it('preserves procedure auth inside a transaction after the host flags change', () => {
+    host.flags = 1;
+    const module = schema({});
+    const proc = module.procedure(t.unit(), ctx => {
+      host.flags = 0;
+      ctx.withTx(tx => {
+        expect(tx.senderAuth).toBe(ctx.senderAuth);
+        expect(tx.senderAuth.isInternal).toBe(true);
+        expect(tx.connectionId).toBe(ctx.connectionId);
+      });
+      return {};
+    });
+    const inner = proc[exportContext]!;
+    proc[registerExport](inner, 'procedure_auth');
+    callProcedure(
+      inner.procedures,
+      0,
+      new Identity(9n),
+      new ConnectionId(8n),
+      Timestamp.UNIX_EPOCH,
+      new Uint8Array(),
+      () => ({})
+    );
+    expect(host.flagReads).toBe(1);
+  });
+});
+
+describe('hosted authentication capability', () => {
+  it('advertises the updated bindings without changing function visibility', () => {
+    const module = schema({});
+    const run = module.reducer(() => {});
+    const inner = run[exportContext]!;
+    run[registerExport](inner, 'run');
+    expect(inner.moduleDef.capabilities).toContain('hosted_auth_v1');
+    expect(inner.moduleDef.reducers[0].visibility.tag).toBe('ClientCallable');
+  });
+});

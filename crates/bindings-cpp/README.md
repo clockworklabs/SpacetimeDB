@@ -2,6 +2,10 @@
 
 The SpacetimeDB C++ Module Library provides a modern C++20 API for building SpacetimeDB modules that run inside the database as WebAssembly.
 
+## Invocation authentication
+
+`ctx.sender_auth().is_internal()` captures host-verified invocation authority. JWT identity is the verified sender supplied by the host. Procedures preserve authentication in `with_tx` and `try_with_tx`. Internal authority is independent of connection and JWT presence. Newly compiled modules advertise `hosted_auth_v1` and require a compatible host. Function visibility and scheduled defaults are unchanged.
+
 ## Current State
 
 This library provides a production-ready C++ bindings for SpacetimeDB with complete type system support:

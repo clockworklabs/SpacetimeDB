@@ -249,6 +249,9 @@ RawModuleDefV10 V10Builder::BuildModuleDef() const {
     RawModuleDefV10Section section_typespace;
     section_typespace.set<0>(typespace_);
     v10_module.sections.push_back(section_typespace);
+    RawModuleDefV10Section capabilities;
+    capabilities.set<16>(std::vector<std::string>{"hosted_auth_v1"});
+    v10_module.sections.push_back(std::move(capabilities));
 
     if (!types.empty()) {
         RawModuleDefV10Section section_types;

@@ -21,6 +21,10 @@ The [`Codegen`](./Codegen/) and [`Runtime`](./Runtime/) libraries are used:
 They provide all of the functionality needed to write SpacetimeDB modules in C#. See their READMEs for more information.
 
 
+### Invocation authentication
+
+`ctx.SenderAuth.IsInternal` captures host-verified invocation authority. JWT identity is the verified sender supplied by the host. Internal authority is independent of connection and JWT presence. Newly compiled modules advertise `hosted_auth_v1` and require a compatible host. Function visibility and scheduled defaults are unchanged.
+
 ### Declared environment
 
 A module may declare one `[SpacetimeDB.Env]` struct. `string` is required and

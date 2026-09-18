@@ -151,7 +151,7 @@ SPACETIMEDB_PROCEDURE(std::string, read_my_schema, ProcedureContext ctx, std::st
     LOG_INFO("read_my_schema using identity: " + identity_hex);
     
     // Make HTTP GET request to the schema endpoint (matches Rust)
-    std::string url = server_url + "/v1/database/" + identity_hex + "/schema?version=9";
+    std::string url = server_url + "/v1/database/" + identity_hex + "/schema?version=10";
     auto result = ctx.http.get(url);
     
     if (!result.is_ok()) {
