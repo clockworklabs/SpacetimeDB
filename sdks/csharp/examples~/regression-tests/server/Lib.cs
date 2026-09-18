@@ -172,6 +172,22 @@ public static partial class Module
         public string? Name;
     }
 
+    [SpacetimeDB.Table(Accessor = "nullable_unique_lookup", Public = true)]
+    public partial struct NullableUniqueLookup
+    {
+        [SpacetimeDB.PrimaryKey]
+        public uint Id;
+
+        [SpacetimeDB.Unique]
+        public uint? OptionalNumber;
+
+        [SpacetimeDB.Unique]
+        public string? OptionalString;
+
+        [SpacetimeDB.Unique]
+        public Uuid? OptionalUuid;
+    }
+
     [SpacetimeDB.Table(Accessor = "view_pk_player", Public = true)]
     public partial struct ViewPkPlayer
     {
@@ -596,6 +612,56 @@ public static partial class Module
     public static void InsertNullStringIntoNullable(ReducerContext ctx)
     {
         ctx.Db.null_string_nullable.Insert(new NullStringNullable { Name = null });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void InsertNullableUniqueLookupRows(ReducerContext ctx)
+    {
+        ctx.Db.nullable_unique_lookup.Insert(
+            new NullableUniqueLookup
+            {
+                Id = 1,
+                OptionalNumber = null,
+                OptionalString = "alpha",
+                OptionalUuid = Uuid.NIL,
+            }
+        );
+        ctx.Db.nullable_unique_lookup.Insert(
+            new NullableUniqueLookup
+            {
+                Id = 2,
+                OptionalNumber = 7,
+                OptionalString = null,
+                OptionalUuid = Uuid.MAX,
+            }
+        );
+        ctx.Db.nullable_unique_lookup.Insert(
+            new NullableUniqueLookup
+            {
+                Id = 3,
+                OptionalNumber = 8,
+                OptionalString = "beta",
+                OptionalUuid = null,
+            }
+        );
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void DeleteNullableUniqueLookupByNumber(ReducerContext ctx, uint? optionalNumber)
+    {
+        ctx.Db.nullable_unique_lookup.OptionalNumber.Delete(optionalNumber);
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void DeleteNullableUniqueLookupByString(ReducerContext ctx, string? optionalString)
+    {
+        ctx.Db.nullable_unique_lookup.OptionalString.Delete(optionalString);
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void DeleteNullableUniqueLookupByUuid(ReducerContext ctx, Uuid? optionalUuid)
+    {
+        ctx.Db.nullable_unique_lookup.OptionalUuid.Delete(optionalUuid);
     }
 
     [SpacetimeDB.Reducer]

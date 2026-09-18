@@ -181,6 +181,18 @@ fn unreal_insert_option_none() {
 
 #[test]
 #[serial(Group3)]
+fn unreal_delete_option_some() {
+    make_test("DeleteOptionSomeTest").run();
+}
+
+#[test]
+#[serial(Group3)]
+fn unreal_delete_option_none() {
+    make_test("DeleteOptionNoneTest").run();
+}
+
+#[test]
+#[serial(Group3)]
 fn unreal_insert_struct() {
     make_test("InsertStructTest").run();
 }

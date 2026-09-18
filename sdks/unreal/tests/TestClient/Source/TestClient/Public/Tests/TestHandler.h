@@ -105,6 +105,44 @@ public:
 	UFUNCTION() void OnDeleteUniqueString(const FEventContext& Context, const FUniqueStringType& Value);
 };
 
+/** Handler used for delete-option tests. */
+UCLASS()
+class UDeleteOptionHandler : public UTestHandler
+{
+	GENERATED_BODY()
+public:
+	bool bUseSome = false;
+
+	UFUNCTION() void OnInsertUniqueOptionU8(const FEventContext& Context, const FUniqueOptionU8Type& Value);
+	UFUNCTION() void OnDeleteUniqueOptionU8(const FEventContext& Context, const FUniqueOptionU8Type& Value);
+	UFUNCTION() void OnInsertUniqueOptionU16(const FEventContext& Context, const FUniqueOptionU16Type& Value);
+	UFUNCTION() void OnDeleteUniqueOptionU16(const FEventContext& Context, const FUniqueOptionU16Type& Value);
+	UFUNCTION() void OnInsertUniqueOptionU32(const FEventContext& Context, const FUniqueOptionU32Type& Value);
+	UFUNCTION() void OnDeleteUniqueOptionU32(const FEventContext& Context, const FUniqueOptionU32Type& Value);
+	UFUNCTION() void OnInsertUniqueOptionU64(const FEventContext& Context, const FUniqueOptionU64Type& Value);
+	UFUNCTION() void OnDeleteUniqueOptionU64(const FEventContext& Context, const FUniqueOptionU64Type& Value);
+	UFUNCTION() void OnInsertUniqueOptionU128(const FEventContext& Context, const FUniqueOptionU128Type& Value);
+	UFUNCTION() void OnDeleteUniqueOptionU128(const FEventContext& Context, const FUniqueOptionU128Type& Value);
+	UFUNCTION() void OnInsertUniqueOptionU256(const FEventContext& Context, const FUniqueOptionU256Type& Value);
+	UFUNCTION() void OnDeleteUniqueOptionU256(const FEventContext& Context, const FUniqueOptionU256Type& Value);
+	UFUNCTION() void OnInsertUniqueOptionI8(const FEventContext& Context, const FUniqueOptionI8Type& Value);
+	UFUNCTION() void OnDeleteUniqueOptionI8(const FEventContext& Context, const FUniqueOptionI8Type& Value);
+	UFUNCTION() void OnInsertUniqueOptionI16(const FEventContext& Context, const FUniqueOptionI16Type& Value);
+	UFUNCTION() void OnDeleteUniqueOptionI16(const FEventContext& Context, const FUniqueOptionI16Type& Value);
+	UFUNCTION() void OnInsertUniqueOptionI32(const FEventContext& Context, const FUniqueOptionI32Type& Value);
+	UFUNCTION() void OnDeleteUniqueOptionI32(const FEventContext& Context, const FUniqueOptionI32Type& Value);
+	UFUNCTION() void OnInsertUniqueOptionI64(const FEventContext& Context, const FUniqueOptionI64Type& Value);
+	UFUNCTION() void OnDeleteUniqueOptionI64(const FEventContext& Context, const FUniqueOptionI64Type& Value);
+	UFUNCTION() void OnInsertUniqueOptionI128(const FEventContext& Context, const FUniqueOptionI128Type& Value);
+	UFUNCTION() void OnDeleteUniqueOptionI128(const FEventContext& Context, const FUniqueOptionI128Type& Value);
+	UFUNCTION() void OnInsertUniqueOptionI256(const FEventContext& Context, const FUniqueOptionI256Type& Value);
+	UFUNCTION() void OnDeleteUniqueOptionI256(const FEventContext& Context, const FUniqueOptionI256Type& Value);
+	UFUNCTION() void OnInsertUniqueOptionBool(const FEventContext& Context, const FUniqueOptionBoolType& Value);
+	UFUNCTION() void OnDeleteUniqueOptionBool(const FEventContext& Context, const FUniqueOptionBoolType& Value);
+	UFUNCTION() void OnInsertUniqueOptionString(const FEventContext& Context, const FUniqueOptionStringType& Value);
+	UFUNCTION() void OnDeleteUniqueOptionString(const FEventContext& Context, const FUniqueOptionStringType& Value);
+};
+
 /** Handler used for update-primitive tests. */
 UCLASS()
 class UUpdatePrimitiveHandler : public UTestHandler
