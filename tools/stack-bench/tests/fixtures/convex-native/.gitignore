@@ -1,0 +1,7 @@
+node_modules/
+.env.local
+identities.json
+probe-evidence.json
+restart-evidence.json
+convex/auth.config.js
+convex/_generated/
