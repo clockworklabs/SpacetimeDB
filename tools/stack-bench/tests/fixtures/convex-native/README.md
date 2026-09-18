@@ -1,7 +1,7 @@
 # Convex native integration slice
 
 This model-free fixture tests the native protocol before Convex becomes a
-selectable stack. It is not an ecommerce reference, password-auth implementation,
+selectable stack. It is not an ecommerce reference, qualified account implementation,
 qualification receipt, or paid campaign. Do not supply it to a coding agent.
 
 Runtime pin: `ghcr.io/get-convex/convex-backend@sha256:afbf4292df387c8f031a68d00048551cf1640ddf0013c51ac704a89d7e73e743`
@@ -59,3 +59,43 @@ does not preserve reachability when that container is restarted. This fixture
 does not qualify firewall isolation, host-browser routing, actual UI capture,
 full auth, order-interface mapping, crash controls, or concurrent snapshot updates.
 Remove only owned containers/volumes and local dependency installs after the probe.
+
+## Local account candidate
+
+On a separate fresh deployment, run `node prepare-auth.mjs`, deploy with the same
+CLI command, then run `node probe-auth.mjs` instead of the signed-identity probe.
+The lockfile pins Convex Auth `0.0.95` and Auth Core `0.41.1`. Preparation supplies
+local JWT keys to the owned deployment and uses its own HTTP endpoint for JWKS.
+There is no external identity service. The browser probe uses the controller's
+Playwright installation; set `PLAYWRIGHT_MODULE` to its module file if elsewhere.
+
+The candidate uses the documented ConvexCredentials provider and public
+createAccount/retrieveAccount helpers. The account key is the exact username;
+no email address is required. Existing username/password bounds are preserved.
+This is fixture configuration, not new agent guidance.
+The protected purchase reads the actual issued identity and live session record.
+The small browser client covers signup/login, a native WebSocket purchase, reload,
+the real session-token hook, signout and refused calls with independent state checks.
+It does not implement refresh-token rotation or production UI.
+
+The unmodified pinned Password provider issues a session for a
+duplicate signup when its supplied password matches the existing account. Check
+1c requires a taken username to be refused. The candidate passes a fresh,
+server-generated registration nonce through the supported custom user profile.
+The atomic createAccount result must contain that nonce before the provider can
+return a user ID and issue a session. An existing user retains its original nonce,
+so a duplicate cannot sign in. There is no existence precheck or vendor patch.
+Login retains retrieveAccount and the same pinned Scrypt implementation as the
+library Password provider. The probe tests 36 concurrent signups across six
+same/different-password races, each with one account, user and initial session.
+Removing the nonce guard makes the control fail with six winners.
+Convex Auth and the deprecated Lucia dependency still need an explicit
+maintenance decision before promotion. This bounded probe is not qualification.
+
+Sources: [Password configuration](https://labs.convex.dev/auth/config/passwords),
+[manual setup](https://labs.convex.dev/auth/setup/manual),
+[Credentials provider](https://labs.convex.dev/auth/api_reference/providers/ConvexCredentials),
+[public account helpers](https://labs.convex.dev/auth/api_reference/server), and
+[custom user schema](https://labs.convex.dev/auth/setup/schema). The exact duplicate
+behavior was checked in the installed package's
+`src/server/implementation/mutations/createAccountFromCredentials.ts` and live.

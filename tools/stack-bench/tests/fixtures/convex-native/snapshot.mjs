@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 
 // Fixture reader through the public Data Sync API, never generated app code.
 // Retain raw pages because native timestamp numbers exceed JS integer precision.
-export async function snapshot(url, adminKey) {
+export async function snapshot(url, adminKey, tableNames = ['items', 'orders']) {
   const selection = { _other: 'excluded', '': { _other: 'excluded',
-    items: { _other: 'included' }, orders: { _other: 'included' } } };
+    ...Object.fromEntries(tableNames.map(name => [name, { _other: 'included' }])) } };
   const tables = new Map(); const pages = []; let cursor;
   for (let page = 0; page < 30; page++) {
     const response = await fetch(`${url}/api/v1/data/sync`, { method: 'POST',
@@ -27,7 +27,7 @@ export async function snapshot(url, adminKey) {
     if (result.status.type === 'upToDate') {
       const snapshotTs = /"snapshotTs"\s*:\s*(\d+)/.exec(raw)?.[1];
       assert(snapshotTs, 'Require exact snapshot timestamp');
-      assert(tables.has('items') && tables.has('orders'), 'Snapshot must include both tables');
+      assert(tableNames.every(name => tables.has(name)), 'Snapshot must include every requested table');
       return { snapshotTs, pages, tables: Object.fromEntries([...tables].map(([key, rows]) =>
         [key, [...rows.values()].sort((a, b) => a._id.localeCompare(b._id))])) };
     }

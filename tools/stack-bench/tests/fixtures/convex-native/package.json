@@ -1,1 +1,1 @@
-{"name":"stackbench-convex-c0","private":true,"type":"module","dependencies":{"convex":"1.46.0"}}
+{"name":"stackbench-convex-c0","private":true,"type":"module","dependencies":{"@auth/core":"0.41.1","@convex-dev/auth":"0.0.95","convex":"1.46.0","lucia":"3.2.2"}}
