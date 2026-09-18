@@ -32,7 +32,3 @@ export async function verifyPassword(password: string, stored: string): Promise<
   const candidate = await derivePassword(password, match[1]);
   return crypto.timingSafeEqual(candidate, Buffer.from(match[2], "hex"));
 }
-
-export function newToken(): string {
-  return crypto.randomBytes(32).toString("hex");
-}

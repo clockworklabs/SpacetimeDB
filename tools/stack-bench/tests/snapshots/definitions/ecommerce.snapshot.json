@@ -132,12 +132,7 @@
       }
     ],
     "databaseProvenance": {
-      "action": "signUp",
-      "body": {
-        "password": "stack-bench-provenance-password",
-        "username": ""
-      },
-      "markerParameter": "username"
+      "browserAction": "signUp"
     },
     "plannedThrough": 6,
     "portOffset": 300,
@@ -819,7 +814,10 @@
           {
             "actors": [
               "shopper",
-              "impostor"
+              "impostor",
+              "password-owner",
+              "password-returning",
+              "password-impostor"
             ],
             "criteria": [
               {
@@ -857,6 +855,12 @@
                     "within": 6000
                   },
                   {
+                    "actor": "impostor",
+                    "application": true,
+                    "do": "reload",
+                    "settleMs": 1000
+                  },
+                  {
                     "absent": true,
                     "actor": "impostor",
                     "do": "expect",
@@ -865,27 +869,59 @@
                 ]
               },
               {
-                "desc": "a wrong password is refused",
+                "desc": "the complete accepted password is required to sign in",
                 "id": "1c",
                 "points": 1,
                 "statedBy": "signing in with a wrong password fails with a visible error",
                 "steps": [
                   {
-                    "actor": "impostor",
-                    "do": "signIn",
-                    "expectFailure": true,
-                    "name": "ann",
-                    "password": "wrong-pw"
+                    "actor": "password-owner",
+                    "do": "signUp",
+                    "name": "password-boundary",
+                    "password": "界界界界界界界界界界界界界界界界界界界界界界界界-A"
                   },
                   {
-                    "actor": "impostor",
+                    "actor": "password-owner",
+                    "contains": "password-boundary",
+                    "do": "expect",
+                    "testid": "current-user",
+                    "within": 6000
+                  },
+                  {
+                    "actor": "password-returning",
+                    "do": "signIn",
+                    "name": "password-boundary",
+                    "password": "界界界界界界界界界界界界界界界界界界界界界界界界-A"
+                  },
+                  {
+                    "actor": "password-returning",
+                    "contains": "password-boundary",
+                    "do": "expect",
+                    "testid": "current-user",
+                    "within": 6000
+                  },
+                  {
+                    "actor": "password-impostor",
+                    "do": "signIn",
+                    "expectFailure": true,
+                    "name": "password-boundary",
+                    "password": "界界界界界界界界界界界界界界界界界界界界界界界界-B"
+                  },
+                  {
+                    "actor": "password-impostor",
                     "do": "expect",
                     "testid": "auth-error",
                     "within": 6000
                   },
                   {
+                    "actor": "password-impostor",
+                    "application": true,
+                    "do": "reload",
+                    "settleMs": 1000
+                  },
+                  {
                     "absent": true,
-                    "actor": "impostor",
+                    "actor": "password-impostor",
                     "do": "expect",
                     "testid": "current-user"
                   }
@@ -910,8 +946,8 @@
                   },
                   {
                     "actor": "shopper",
-                    "do": "expect",
-                    "testid": "signup-username",
+                    "do": "waitUntilAbsent",
+                    "testid": "current-user",
                     "within": 6000
                   },
                   {

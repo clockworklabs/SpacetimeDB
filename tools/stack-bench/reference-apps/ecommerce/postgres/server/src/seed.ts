@@ -50,7 +50,7 @@ export async function seed() {
   if (existingAdmin.length === 0) {
     await db.insert(account).values({
       username: "admin",
-      passwordHash: hashPassword("stackbench-admin-2026"),
+      passwordHash: await hashPassword("stackbench-admin-2026"),
       isAdmin: true,
     });
     console.log("Seeded admin account");
@@ -60,7 +60,7 @@ export async function seed() {
   if (existingStaff.length === 0) {
     await db.insert(account).values({
       username: "staff",
-      passwordHash: hashPassword("stackbench-staff-2026"),
+      passwordHash: await hashPassword("stackbench-staff-2026"),
       isAdmin: false,
       isStaff: true,
     });
@@ -71,7 +71,7 @@ export async function seed() {
   if (existingCustomer.length === 0) {
     await db.insert(account).values({
       username: "customer",
-      passwordHash: hashPassword("stackbench-customer-2026"),
+      passwordHash: await hashPassword("stackbench-customer-2026"),
       isAdmin: false,
       isStaff: false,
     });

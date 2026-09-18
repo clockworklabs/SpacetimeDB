@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "f3906fa01050f00a0ed76c69c256a6b0013bbf72eb72c03aa92d79e47b71c2b8",
+  "fixtureSha256": "4e11bd6d6172f9a3a29af6724e1fc6a19494c57f0c49b28687da953fe1d4dee3",
   "backend": "postgres",
   "track": "ecommerce",
   "note": "Mutation definitions for the PostgreSQL ecommerce reference.",
@@ -96,17 +96,17 @@
       ]
     },
     {
-      "id": "password-verification-is-inverted",
+      "id": "signin-skips-password-verification",
       "scenario": "tracks/ecommerce/scenarios/01-account-password.json",
       "targets": [
         "ecommerce.feature.accounts.accounts.1c"
       ],
-      "desc": "Accept a wrong password instead of enforcing password verification.",
+      "desc": "Accept an existing account regardless of its password; valid login remains possible.",
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "    if (rows.length === 0 || !verifyPassword(password, rows[0].passwordHash)) {",
-          "replace": "    if (rows.length === 0 || verifyPassword(password, rows[0].passwordHash)) {"
+          "find": "    if (rows.length === 0 || !(await verifyPassword(password, rows[0].passwordHash))) {",
+          "replace": "    if (rows.length === 0) {"
         }
       ]
     },
@@ -2642,6 +2642,36 @@
         {
           "find": "const { rating, comment } = req.body ?? {};",
           "replace": "const { rating, comment } = req.body ?? {};\n    if (String(comment).length > 0) { res.status(403).json({ error: \"Reject all reviews\" }); return; }"
+        }
+      ]
+    },
+    {
+      "id": "password-verification-truncates-utf8",
+      "scenario": "tracks/ecommerce/scenarios/01-account-password.json",
+      "targets": [
+        "ecommerce.feature.accounts.accounts.1c"
+      ],
+      "desc": "Hash and verify only the first 72 UTF-8 bytes, accepting a different password suffix.",
+      "file": "server/src/auth.ts",
+      "edits": [
+        {
+          "find": "scrypt(password, salt, 64,",
+          "replace": "scrypt(Buffer.from(password).subarray(0, 72), salt, 64,"
+        }
+      ]
+    },
+    {
+      "id": "password-verification-rejects-every-login",
+      "scenario": "tracks/ecommerce/scenarios/01-account-password.json",
+      "targets": [
+        "ecommerce.feature.accounts.accounts.1c"
+      ],
+      "desc": "Refuse even a correct password; refusal alone must not earn credit.",
+      "file": "server/src/auth.ts",
+      "edits": [
+        {
+          "find": "return crypto.timingSafeEqual",
+          "replace": "return false && crypto.timingSafeEqual"
         }
       ]
     }

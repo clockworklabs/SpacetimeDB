@@ -2699,6 +2699,36 @@
           "replace": "(ctx, { itemId, rating, comment }) => {\n    if (comment.length > 0) throw new SenderError(\"Reject all reviews\");"
         }
       ]
+    },
+    {
+      "id": "password-verification-truncates-utf8",
+      "scenario": "tracks/ecommerce/scenarios/01-account-password.json",
+      "targets": [
+        "ecommerce.feature.accounts.accounts.1c"
+      ],
+      "desc": "Hash and verify only the first 72 UTF-8 bytes, accepting a different password suffix.",
+      "file": "backend/spacetimedb/src/auth.ts",
+      "edits": [
+        {
+          "find": "scrypt(password, salt, {",
+          "replace": "scrypt(new TextEncoder().encode(password).slice(0, 72), salt, {"
+        }
+      ]
+    },
+    {
+      "id": "password-verification-rejects-every-login",
+      "scenario": "tracks/ecommerce/scenarios/01-account-password.json",
+      "targets": [
+        "ecommerce.feature.accounts.accounts.1c"
+      ],
+      "desc": "Refuse even a correct password; refusal alone must not earn credit.",
+      "file": "backend/spacetimedb/src/auth.ts",
+      "edits": [
+        {
+          "find": "const valid = !!account && sameHash(digest, account.passwordHash);",
+          "replace": "const valid = !!account && sameHash(digest, account.passwordHash) && false;"
+        }
+      ]
     }
   ]
 }

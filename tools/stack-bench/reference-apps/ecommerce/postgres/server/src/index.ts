@@ -14,7 +14,7 @@ import { sql, eq, and } from "drizzle-orm";
 import { db, pool, initializeCoreSchema } from "./db.js";
 import { initializeOrderData } from "./order-data.js";
 import { item, warehouse, stock, account, session, cart, cartItem, orders, orderItem, review } from "./schema.js";
-import { hashPassword, verifyPassword, newToken } from "./auth.js";
+import { hashPassword, verifyPassword, newToken, validCredentials } from "./auth.js";
 import { seed } from "./seed.js";
 import {
   attachProgressionSocket,
@@ -383,7 +383,7 @@ app.post(
   "/api/auth/signup",
   asyncHandler(async (req, res) => {
     const { username, password } = req.body ?? {};
-    if (typeof username !== "string" || typeof password !== "string" || !username.trim() || !password) {
+    if (!validCredentials(username, password)) {
       res.status(400).json({ error: "username and password are required" });
       return;
     }
@@ -392,7 +392,7 @@ app.post(
       res.status(409).json({ error: "username already taken" });
       return;
     }
-    const passwordHash = hashPassword(password);
+    const passwordHash = await hashPassword(password);
     const [created] = await db
       .insert(account)
       .values({ username, passwordHash, isAdmin: false, isStaff: false })
@@ -409,12 +409,12 @@ app.post(
   "/api/auth/signin",
   asyncHandler(async (req, res) => {
     const { username, password } = req.body ?? {};
-    if (typeof username !== "string" || typeof password !== "string") {
+    if (!validCredentials(username, password)) {
       res.status(400).json({ error: "username and password are required" });
       return;
     }
     const rows = await db.select().from(account).where(eq(account.username, username)).limit(1);
-    if (rows.length === 0 || !verifyPassword(password, rows[0].passwordHash)) {
+    if (rows.length === 0 || !(await verifyPassword(password, rows[0].passwordHash))) {
       res.status(401).json({ error: "invalid username or password" });
       return;
     }

@@ -27,7 +27,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/mongodb",
-        "sourceSha256": "0d21bbc4b2768f4077a81d676f0d4c87a65067dda8f2c5ffeb2fa9208381dc7e"
+        "sourceSha256": "427900a39e1166cb896301bcd0374da068d48f3491231349b77f282ce81031fe"
       },
       "mutationManifests": [
         "grader/mutations/mongodb-ecommerce.json"
@@ -59,7 +59,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/postgres",
-        "sourceSha256": "f3906fa01050f00a0ed76c69c256a6b0013bbf72eb72c03aa92d79e47b71c2b8"
+        "sourceSha256": "4e11bd6d6172f9a3a29af6724e1fc6a19494c57f0c49b28687da953fe1d4dee3"
       },
       "mutationManifests": [
         "grader/mutations/postgres-ecommerce.json"

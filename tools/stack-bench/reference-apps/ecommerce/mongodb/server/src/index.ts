@@ -7,7 +7,7 @@ import http from "http";
 import { Server as SocketIOServer } from "socket.io";
 import mongoose, { Types } from "mongoose";
 import { initializeOrderData } from "./order-data.js";
-import bcrypt from "bcryptjs";
+import { hashPassword, verifyPassword, validCredentials } from "./auth.js";
 import jwt from "jsonwebtoken";
 import { Item, Warehouse, Stock, User, Cart, Order, Review } from "./models.js";
 import { Dismissal, Payment, Promotion } from "./progression-models.js";
@@ -98,7 +98,7 @@ async function seed() {
   const admin = await User.findOne({ username: "admin" });
   if (!admin) {
     console.log("Seeding admin account...");
-    const passwordHash = await bcrypt.hash("stackbench-admin-2026", 10);
+    const passwordHash = await hashPassword("stackbench-admin-2026");
     const adminUser = await User.create({ username: "admin", passwordHash, isAdmin: true });
     await Cart.create({ userId: adminUser._id, items: [] });
   }
@@ -106,14 +106,14 @@ async function seed() {
   const staff = await User.findOne({ username: "staff" });
   if (!staff) {
     console.log("Seeding staff account...");
-    const passwordHash = await bcrypt.hash("stackbench-staff-2026", 10);
+    const passwordHash = await hashPassword("stackbench-staff-2026");
     const staffUser = await User.create({ username: "staff", passwordHash, isStaff: true });
     await Cart.create({ userId: staffUser._id, items: [] });
   }
 
   const customer = await User.findOne({ username: "customer" });
   if (!customer) {
-    const passwordHash = await bcrypt.hash("stackbench-customer-2026", 10);
+    const passwordHash = await hashPassword("stackbench-customer-2026");
     const customerUser = await User.create({ username: "customer", passwordHash });
     await Cart.create({ userId: customerUser._id, items: [] });
   }
@@ -498,12 +498,12 @@ function publicUser(user: any) {
 
 app.post("/api/auth/signup", async (req, res) => {
   const { username, password } = req.body || {};
-  if (typeof username !== "string" || typeof password !== "string" || !username.trim() || !password) {
+  if (!validCredentials(username, password)) {
     return res.status(400).json({ error: "Username and password are required" });
   }
   const existing = await User.findOne({ username: username.trim() });
   if (existing) return res.status(409).json({ error: "Username is already taken" });
-  const passwordHash = await bcrypt.hash(password, 10);
+  const passwordHash = await hashPassword(password);
   try {
     const user = await User.create({ username: username.trim(), passwordHash, isAdmin: false });
     await Cart.create({ userId: user._id, items: [] });
@@ -517,12 +517,12 @@ app.post("/api/auth/signup", async (req, res) => {
 
 app.post("/api/auth/signin", async (req, res) => {
   const { username, password } = req.body || {};
-  if (typeof username !== "string" || typeof password !== "string") {
+  if (!validCredentials(username, password)) {
     return res.status(400).json({ error: "Username and password are required" });
   }
   const user = await User.findOne({ username: username.trim() });
   if (!user) return res.status(401).json({ error: "Invalid username or password" });
-  const valid = await bcrypt.compare(password, user.passwordHash);
+  const valid = await verifyPassword(password, user.passwordHash);
   if (!valid) return res.status(401).json({ error: "Invalid username or password" });
   const token = signToken(user._id.toString());
   res.json({ token, user: publicUser(user) });
