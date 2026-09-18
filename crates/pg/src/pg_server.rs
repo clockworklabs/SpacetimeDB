@@ -157,6 +157,7 @@ where
         let params = self.cached.lock().await.clone().unwrap();
         let name_or_identity = database::NameOrIdentity::Name(DatabaseName(params.database.clone()));
         let database_identity = response(name_or_identity.resolve(&self.ctx).await, &params.database).await?;
+        #[expect(clippy::result_large_err)]
         let database = response(
             self.ctx
                 .get_database_by_identity(&database_identity)
