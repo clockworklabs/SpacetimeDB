@@ -586,6 +586,7 @@ pub async fn exec_with_options(config: &mut Config, options: &InitOptions) -> an
         &template_config,
         &template_config.project_path,
         is_server_only,
+        &local_database_name,
         dotnet_major,
     )
     .await?;
@@ -646,7 +647,7 @@ pub async fn exec_with_options(config: &mut Config, options: &InitOptions) -> an
     }
 
     if !options.skip_next_steps {
-        print_next_steps(&template_config, &project_path)?;
+        print_next_steps(&template_config, &local_database_name, &project_path)?;
     }
 
     Ok(project_path)
@@ -1303,10 +1304,9 @@ fn get_spacetimedb_csharp_clientsdk_version() -> String {
 
 /// Writes a `.env.local` file that includes all common
 /// frontend environment variable variants for SpacetimeDB.
-fn write_typescript_client_env_file(client_dir: &Path, module_name: &str, use_local: bool) -> anyhow::Result<()> {
+fn write_typescript_client_env_file(client_dir: &Path, db_name: &str, use_local: bool) -> anyhow::Result<()> {
     let env_path = client_dir.join(".env.local");
 
-    let db_name = module_name;
     let host = if use_local {
         "ws://localhost:3000"
     } else {
@@ -1352,12 +1352,13 @@ pub async fn init_from_template(
     config: &TemplateConfig,
     project_path: &Path,
     is_server_only: bool,
+    database_name: &str,
     dotnet_major: Option<u8>,
 ) -> anyhow::Result<()> {
     println!("{}", "Initializing project from template...".cyan());
 
     match config.template_type {
-        TemplateType::Builtin => init_builtin(config, project_path, is_server_only, dotnet_major)?,
+        TemplateType::Builtin => init_builtin(config, project_path, is_server_only, database_name, dotnet_major)?,
         TemplateType::GitHub => init_github_template(config, project_path, is_server_only)?,
         TemplateType::Empty => init_empty(config, project_path, dotnet_major)?,
     }
@@ -1374,6 +1375,7 @@ fn init_builtin(
     config: &TemplateConfig,
     project_path: &Path,
     is_server_only: bool,
+    database_name: &str,
     dotnet_major: Option<u8>,
 ) -> anyhow::Result<()> {
     let template_def = config
@@ -1399,7 +1401,7 @@ fn init_builtin(
         match config.client_lang {
             Some(ClientLanguage::TypeScript) => {
                 update_package_json(project_path, &config.project_name)?;
-                write_typescript_client_env_file(project_path, &config.project_name, config.use_local)?;
+                write_typescript_client_env_file(project_path, database_name, config.use_local)?;
                 println!(
                     "{}",
                     "Note: Run 'npm install' in the project directory to install dependencies".yellow()
@@ -1533,7 +1535,7 @@ fn init_empty_cpp_server(server_dir: &Path, _project_name: &str) -> anyhow::Resu
     init_cpp_project(server_dir)
 }
 
-fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Result<()> {
+fn print_next_steps(config: &TemplateConfig, database_name: &str, _project_path: &Path) -> anyhow::Result<()> {
     println!();
     println!("{}", "Next steps:".bold());
 
@@ -1551,7 +1553,7 @@ fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Re
             println!(
                 "  spacetime publish --module-path spacetimedb {}{}",
                 if config.use_local { "--server local " } else { "" },
-                config.project_name
+                database_name
             );
             println!("  spacetime generate --lang rust --out-dir src/module_bindings --module-path spacetimedb");
             println!("  cargo run");
@@ -1561,7 +1563,7 @@ fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Re
             println!(
                 "  spacetime publish --module-path spacetimedb {}{}",
                 if config.use_local { "--server local " } else { "" },
-                config.project_name
+                database_name
             );
             println!("  spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb");
             println!("  npm run dev");
@@ -1570,7 +1572,7 @@ fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Re
             println!(
                 "  spacetime publish --module-path spacetimedb {}{}",
                 if config.use_local { "--server local " } else { "" },
-                config.project_name
+                database_name
             );
             println!("  spacetime generate --lang csharp --out-dir module_bindings --module-path spacetimedb");
         }
@@ -1580,7 +1582,7 @@ fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Re
                 println!(
                     "  spacetime publish --module-path spacetimedb {}{}",
                     if config.use_local { "--server local " } else { "" },
-                    config.project_name
+                    database_name
                 );
                 println!(
                     "  spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb"
@@ -1593,7 +1595,7 @@ fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Re
                 println!(
                     "  spacetime publish --module-path spacetimedb {}{}",
                     if config.use_local { "--server local " } else { "" },
-                    config.project_name
+                    database_name
                 );
                 println!("  spacetime generate --lang rust --out-dir src/module_bindings --module-path spacetimedb");
             }
@@ -2670,5 +2672,39 @@ bytes.workspace = true
 
         let db = get_local_database_name(&options, "my-project", false).unwrap();
         assert_eq!(db, "my-explicit-db");
+    }
+
+    #[test]
+    fn test_init_builtin_typescript_client_env_uses_database_name() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let project_path = temp.path();
+
+        let templates: TemplatesList = serde_json::from_str(embedded::get_templates_json()).unwrap();
+        let config = create_template_config_from_template_str(
+            "my-app".to_string(),
+            project_path.to_path_buf(),
+            "react-ts",
+            &templates.templates,
+        )
+        .unwrap();
+
+        init_builtin(&config, project_path, false, "my-app-abc12", None).unwrap();
+
+        let env = std::fs::read_to_string(project_path.join(".env.local")).unwrap();
+        let db_names: Vec<&str> = env
+            .lines()
+            .filter_map(|line| line.split_once('='))
+            .filter(|(key, _)| key.ends_with("SPACETIMEDB_DB_NAME"))
+            .map(|(_, value)| value)
+            .collect();
+
+        assert!(
+            !db_names.is_empty(),
+            ".env.local should contain DB_NAME entries:\n{env}"
+        );
+        assert!(
+            db_names.iter().all(|name| *name == "my-app-abc12"),
+            "every DB_NAME should be the database name, not the project name:\n{env}"
+        );
     }
 }
