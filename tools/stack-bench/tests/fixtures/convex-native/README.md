@@ -99,3 +99,41 @@ Sources: [Password configuration](https://labs.convex.dev/auth/config/passwords)
 [custom user schema](https://labs.convex.dev/auth/setup/schema). The exact duplicate
 behavior was checked in the installed package's
 `src/server/implementation/mutations/createAccountFromCredentials.ts` and live.
+
+## Namespace, restart and reset probe
+
+Keep one named namespace anchor running. Publish the fixture frontend (3100),
+native API (3210) and HTTP actions (3211) on that anchor, bound to host loopback.
+The backend and fixture helper join `container:<anchor>`; only the backend mounts
+its named data volume. Do not join the helper to the replaceable backend itself.
+For this feasibility probe, Docker-assigned host ports avoid collisions. They
+are not production allocation: the adapter must use Stack Bench's leased windows.
+
+With the local-account fixture deployed, run these phases from its helper:
+
+1. `node probe-lifecycle.mjs prepare`: create a real account and purchase, and
+   observe a scheduled marker execute as a positive control.
+2. Keep `node probe-lifecycle.mjs serve` running in the named helper.
+3. Run `probe-lifecycle-browser.mjs <page-url> HostUser <output.json>` from the
+   host and the same script with `ContainerUser` from the helper. Set
+   `PLAYWRIGHT_MODULE` to each platform's installed module. Host page URL is
+   `http://127.0.0.1:<frontend>/?api=http%3A%2F%2F127.0.0.1%3A<api-port>`;
+   helper URL is `http://127.0.0.1:3100`. Each browser signs up, purchases and reloads.
+4. `capture` records independent rows and IDs. Restart only the backend with its
+   volume and credentials retained, wait for `/version`, then run `warm`.
+5. `schedule-reset` records a pending marker due in 20 seconds. Remove only the
+   owned backend and its complete data volume; start the same image with a fresh
+   volume and deployment credentials. Run `prepare-auth.mjs` and deploy identical
+   fixture source, then run `reset`. It requires empty data/accounts, refuses old
+   credentials and observes no marker past its due time. It then checks fresh
+   initialization and registration. It waits at most 30 seconds.
+
+Keep the anchor ID and published ports unchanged through both operations. The
+reset includes backend storage, not a collection of table-clearing operations.
+Preserve phase receipts and source hashes, but do not export `lifecycle-private.json`
+or the temporary admin environment. The fixture UI has a seed-specific item ID;
+fresh production initialization must restart the app frontend too. This probe
+does not establish crash-mid-operation safety, component cleanup, firewall
+isolation, refresh rotation or full lifecycle integration. The scheduled marker
+uses the documented [scheduler and system-table API](https://docs.convex.dev/scheduling/scheduled-functions).
+Remove the helper, backend, anchor and owned volume after preserving evidence.

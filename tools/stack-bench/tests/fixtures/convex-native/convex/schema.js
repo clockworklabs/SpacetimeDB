@@ -12,4 +12,5 @@ export default defineSchema({
   }).index('email', ['email']).index('phone', ['phone']),
   items: defineTable({ name: v.string(), stock: v.number(), marker: v.string() }),
   orders: defineTable({ itemId: v.id('items'), buyer: v.string(), quantity: v.number() }),
+  markers: defineTable({ value: v.string() }),
 });

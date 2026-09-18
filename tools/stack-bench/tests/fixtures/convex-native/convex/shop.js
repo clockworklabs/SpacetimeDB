@@ -21,3 +21,10 @@ export const purchase = mutationGeneric({ args: { itemId: v.id('items'), quantit
 }});
 export const deliberateError = mutationGeneric({ args: {}, handler: () => { throw new ConvexError('C0 deliberate error'); } });
 export const unhandledError = mutationGeneric({ args: {}, handler: () => { throw new Error('C0 unhandled error'); } });
+export const writeMarker = internalMutationGeneric({ args: { value: v.string() }, handler: async (ctx, { value }) => {
+  await ctx.db.insert('markers', { value });
+}});
+export const scheduleMarker = internalMutationGeneric({ args: { value: v.string(), delayMillis: v.number() }, handler: async (ctx, args) => {
+  const jobId = await ctx.scheduler.runAfter(args.delayMillis, 'shop:writeMarker', { value: args.value });
+  return await ctx.db.system.get(jobId);
+}});
