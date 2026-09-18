@@ -19,7 +19,7 @@ use std::sync::Arc;
 pub fn build_common_module_from_raw(
     mcc: ModuleCreationContext,
     raw_def: RawModuleDef,
-) -> Result<ModuleCommon, ValidationErrors> {
+) -> Result<ModuleCommon, Box<ValidationErrors>> {
     // Perform a bunch of validation on the raw definition.
     let def: ModuleDef = raw_def.try_into()?;
 

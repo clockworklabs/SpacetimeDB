@@ -96,6 +96,7 @@ where
     T: TokenValidator + Send + Sync,
 {
     async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims, TokenValidationError> {
+        reject_reserved_hosted_credentials(token)?;
         let local_key_error = {
             let first_validator = BasicTokenValidator {
                 public_key: self.local_key.clone(),
@@ -144,6 +145,7 @@ lazy_static! {
 #[async_trait]
 impl TokenValidator for DecodingKey {
     async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims, TokenValidationError> {
+        reject_reserved_hosted_credentials(token)?;
         let mut validation = Validation::new(jsonwebtoken::Algorithm::ES256);
         validation.algorithms = match self.family() {
             AlgorithmFamily::Ec => vec![jsonwebtoken::Algorithm::ES256],
@@ -269,11 +271,22 @@ pub struct OidcTokenValidator;
 
 // Get the issuer out of a token without validating the signature.
 fn get_raw_issuer(token: &str) -> Result<Box<str>, TokenValidationError> {
+    reject_reserved_hosted_credentials(token)?;
     // We need the issuer before we know which key to use.
     // This intentionally does not validate the token.
     // Callers must only use it for key discovery and must verify the token afterwards.
     let data = jsonwebtoken::dangerous::insecure_decode::<IncomingClaims>(token)?;
     Ok(data.claims.issuer)
+}
+
+fn reject_reserved_hosted_credentials(token: &str) -> Result<(), TokenValidationError> {
+    if spacetimedb_auth::hosted::has_reserved_platform_token_kind(token)? {
+        return Err(anyhow::anyhow!(
+            "platform container credentials require their dedicated validator and cannot be exchanged"
+        )
+        .into());
+    }
+    Ok(())
 }
 
 #[async_trait]

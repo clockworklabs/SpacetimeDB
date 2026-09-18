@@ -220,6 +220,20 @@ export default defineConfig([
     esbuildOptions: commonEsbuildTweaks(),
   },
 
+  // Explicit Node.js transport, excluded from browser entry points.
+  {
+    entry: { index: 'src/sdk/node/index.ts' },
+    format: ['esm', 'cjs'],
+    target: 'es2022',
+    outDir: 'dist/sdk/node',
+    dts: false,
+    sourcemap: true,
+    clean: true,
+    platform: 'node',
+    external: ['ws'],
+    outExtension,
+  },
+
   // SDK browser ESM: dist/sdk/index.browser.mjs
   {
     entry: { 'index.browser': 'src/sdk/index.ts' },

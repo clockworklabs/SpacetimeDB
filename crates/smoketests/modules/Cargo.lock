@@ -1229,6 +1229,7 @@ dependencies = [
  "spacetimedb-bindings-macro",
  "spacetimedb-primitives",
  "spacetimedb-sats",
+ "thiserror",
 ]
 
 [[package]]

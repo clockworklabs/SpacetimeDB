@@ -1,0 +1,13 @@
+[package]
+name = "hosted-auth-test"
+version = "0.0.0"
+edition.workspace = true
+license-file = "../../LICENSE.txt"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies.spacetimedb]
+workspace = true
+features = ["unstable"]

@@ -333,6 +333,8 @@ impl ScheduledFunctionParams {
 pub(crate) enum CallScheduledFunctionError {
     #[error(transparent)]
     NoSuchModule(#[from] NoSuchModule),
+    #[error("module instance startup failed: {0}")]
+    InstanceStartup(anyhow::Error),
 }
 
 impl SchedulerActor {
@@ -417,6 +419,16 @@ impl SchedulerActor {
             // If the module already exited, leave the `ScheduledFunction` in
             // the database for when the module restarts.
             Err(CallScheduledFunctionError::NoSuchModule(_)) => {}
+            Err(CallScheduledFunctionError::InstanceStartup(error)) => {
+                // No transaction or procedure ran. Keep the schedule available
+                // and retry with a delay, including under shared deadline pressure.
+                log::warn!("scheduled procedure instance startup failed: {error:#}");
+                if let Some(module_host) = self.module_host.upgrade()
+                    && startup_retry_is_needed(module_host.info().relational_db(), &item)
+                {
+                    self.queue.insert(item, Duration::from_secs(1));
+                }
+            }
             Ok(CallScheduledFunctionResult { reschedule: None }) => {
                 // nothing to do
             }
@@ -467,6 +479,26 @@ fn call_scheduled_function(module_host: ModuleHost, item: QueueItem) -> Schedule
         ScheduledFunctionCompletion { item, result }
     }
     .boxed()
+}
+
+/// A cancelled table-backed schedule must not retry forever when every new
+/// procedure instance fails before reaching the normal schedule-row lookup.
+fn startup_retry_is_needed(db: &RelationalDB, item: &QueueItem) -> bool {
+    let QueueItem::Id { id, .. } = item else {
+        return true;
+    };
+    let exists = db.with_read_only(Workload::Internal, |tx| {
+        db.iter_by_col_eq(tx, id.table_id, id.id_column, &id.schedule_id.into())
+            .map(|mut rows| rows.next().is_some())
+    });
+    match exists {
+        Ok(exists) => exists,
+        Err(error) => {
+            // A failed read is not proof that the user cancelled the schedule.
+            log::warn!("could not check scheduled procedure startup retry: {error:#}");
+            true
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -1081,5 +1113,64 @@ mod tests {
     fn next_interval_tick_is_strictly_after_now_on_boundary() {
         let next = next_interval_tick_after(ts(1_000), TimeDuration::from_micros(100), ts(1_300));
         assert_eq!(next, ts(1_400));
+    }
+}
+
+#[cfg(test)]
+mod startup_retry_tests {
+    use super::*;
+    use crate::db::relational_db::tests_utils::{insert, with_auto_commit, TestDB};
+    use spacetimedb_sats::{product, AlgebraicType};
+
+    fn item(table_id: TableId, schedule_id: u64) -> QueueItem {
+        QueueItem::Id {
+            id: ScheduledFunctionId {
+                table_id,
+                schedule_id,
+                id_column: 0.into(),
+                at_column: 0.into(),
+            },
+            function_name: "task".into(),
+            at: Timestamp::now(),
+            row_hash: hash_bytes([]),
+        }
+    }
+
+    #[test]
+    fn execution_deadline_startup_retry_stops_after_schedule_deletion() -> anyhow::Result<()> {
+        let db = TestDB::in_memory()?;
+        let table = db.create_table_for_test("pending", &[("id", AlgebraicType::U64)], &[0.into()])?;
+        with_auto_commit(&db, |tx| {
+            insert(&db, tx, table, &(7u64,))?;
+            insert(&db, tx, table, &(8u64,))?;
+            Ok::<_, anyhow::Error>(())
+        })?;
+
+        let cancelled = item(table, 7);
+        assert!(startup_retry_is_needed(&db, &cancelled));
+        with_auto_commit(&db, |tx| {
+            assert_eq!(db.delete_by_rel(tx, table, [product!(7u64)]), 1);
+            Ok::<_, anyhow::Error>(())
+        })?;
+
+        // An unrelated remaining schedule cannot keep the cancelled ID alive.
+        assert!(!startup_retry_is_needed(&db, &cancelled));
+        assert!(startup_retry_is_needed(&db, &item(table, 8)));
+        Ok(())
+    }
+
+    #[test]
+    fn execution_deadline_startup_retry_preserves_read_errors_and_volatile_calls() -> anyhow::Result<()> {
+        let db = TestDB::in_memory()?;
+        // The point read fails rather than positively observing a missing row.
+        assert!(startup_retry_is_needed(&db, &item(u32::MAX.into(), 7)));
+        assert!(startup_retry_is_needed(
+            &db,
+            &QueueItem::VolatileNonatomicImmediate {
+                function_name: "task".into(),
+                args: FunctionArgs::Nullary,
+            },
+        ));
+        Ok(())
     }
 }

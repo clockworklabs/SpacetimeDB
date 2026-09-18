@@ -488,13 +488,13 @@ error[E0277]: `&'a NonFilterableViewPrimaryKey` cannot appear as an argument to 
     = note: The allowed set of types are limited to integers, bool, strings, `Identity`, `Uuid`, `Timestamp`, `ConnectionId`, `Hash` and no-payload enums which derive `SpacetimeType`,
     = help: the following other types implement trait `FilterableValue`:
               &ConnectionId
+              &ContainerMode
               &FunctionVisibility
               &Lifecycle
+              &PortExposure
+              &PortProtocol
+              &RestartPolicy
               &TableAccess
-              &TableType
-              &bool
-              &ethnum::int::I256
-              &ethnum::uint::U256
             and $N others
     = note: required for `NonFilterableViewPrimaryKey` to implement `ViewPrimaryKeyColumn`
 note: required by a bound in `_::_assert_view_primary_key_column::_assert_view_primary_key_column_type`

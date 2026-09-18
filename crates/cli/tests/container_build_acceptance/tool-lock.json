@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "platform": "darwin-arm64",
+  "tools": {
+    "buildctl": {
+      "version": "0.33.0",
+      "url": "https://github.com/moby/buildkit/releases/download/v0.33.0/buildkit-v0.33.0.darwin-arm64.tar.gz",
+      "sha256": "730ac4ffd6f4a88dc404fc675aeaf4cfee414915036042847f0a60861cc8790c",
+      "member": "bin/buildctl",
+      "source": "https://api.github.com/repos/moby/buildkit/releases/tags/v0.33.0"
+    },
+    "railpack": {
+      "version": "0.35.0",
+      "url": "https://github.com/railwayapp/railpack/releases/download/v0.35.0/railpack-v0.35.0-arm64-apple-darwin.tar.gz",
+      "sha256": "fb4c16d57458eb7868d48ed8a454014ef40716a6c939929d7b7d5986563a0c65",
+      "member": "railpack",
+      "source": "https://api.github.com/repos/railwayapp/railpack/releases/tags/v0.35.0"
+    }
+  },
+  "images": {
+    "buildkit": "moby/buildkit@sha256:6c2fa84a6b61ccd72899dde4239f8d5717f05f9a8ca6f3cad185fb1a95a94de3",
+    "buildkit_arm64": "sha256:e8efce994e456acb94944bcc0530b3188478572914f413d4476568d8b63515c6",
+    "alpine": "alpine@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1",
+    "railpack_frontend": "ghcr.io/railwayapp/railpack-frontend@sha256:bc73534934e7929ab3dc41765fb7e25c8c69d9be98c43ef8792fea51f65317bd"
+  },
+  "image_sources": [
+    "https://registry-1.docker.io/v2/moby/buildkit/manifests/v0.33.0",
+    "https://registry-1.docker.io/v2/library/alpine/manifests/3.22.1",
+    "https://ghcr.io/v2/railwayapp/railpack-frontend/manifests/v0.35.0"
+  ]
+}
