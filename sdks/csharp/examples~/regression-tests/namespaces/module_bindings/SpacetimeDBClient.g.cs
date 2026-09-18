@@ -558,6 +558,7 @@ namespace SpacetimeDB.Types
             new QueryBuilder().From.User().ToSql(),
             new QueryBuilder().From.Users().ToSql(),
             new QueryBuilder().From.@MyAuth.Notice().ToSql(),
+            new QueryBuilder().From.@MyAuth.ProtectedRow().ToSql(),
             new QueryBuilder().From.@MyAuth.ScheduleResult().ToSql(),
             new QueryBuilder().From.@MyAuth.User().ToSql(),
             new QueryBuilder().From.@class.ScheduleResult().ToSql(),
@@ -663,6 +664,7 @@ namespace SpacetimeDB.Types
             return reducer switch
             {
                 Reducer.Exercise args => Reducers.InvokeExercise(eventContext, args),
+                Reducer.WriteProtectedRow args => Reducers.InvokeWriteProtectedRow(eventContext, args),
                 Reducer.Extra args => Reducers.InvokeExtra(eventContext, args),
                 global::SpacetimeDB.Types.@class.Reducer.Add args => Reducers.@class.InvokeAdd(eventContext, args),
                 global::SpacetimeDB.Types.@class.Reducer.CancelSchedules args => Reducers.@class.InvokeCancelSchedules(eventContext, args),

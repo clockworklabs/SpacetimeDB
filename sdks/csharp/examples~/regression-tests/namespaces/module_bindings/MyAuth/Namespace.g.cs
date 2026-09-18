@@ -25,6 +25,7 @@ namespace SpacetimeDB.Types.@MyAuth
         {
             register(AnonymousUsers = new(conn));
             register(Notice = new(conn));
+            register(ProtectedRow = new(conn));
             register(QueryUsers = new(conn));
             register(ScheduleResult = new(conn));
             register(User = new(conn));
@@ -35,6 +36,7 @@ namespace SpacetimeDB.Types.@MyAuth
     {
         public global::SpacetimeDB.Table<User, AnonymousUsersCols, AnonymousUsersIxCols> AnonymousUsers() => new(new global::SpacetimeDB.SqlTableName(new string[] { "MyAuth" }, "anonymous_users"), new AnonymousUsersCols(new global::SpacetimeDB.SqlTableName(new string[] { "MyAuth" }, "anonymous_users")), new AnonymousUsersIxCols(new global::SpacetimeDB.SqlTableName(new string[] { "MyAuth" }, "anonymous_users")));
         public global::SpacetimeDB.Table<Notice, NoticeCols, NoticeIxCols> Notice() => new(new global::SpacetimeDB.SqlTableName(new string[] { "MyAuth" }, "notice"), new NoticeCols(new global::SpacetimeDB.SqlTableName(new string[] { "MyAuth" }, "notice")), new NoticeIxCols(new global::SpacetimeDB.SqlTableName(new string[] { "MyAuth" }, "notice")));
+        public global::SpacetimeDB.Table<ProtectedRow, ProtectedRowCols, ProtectedRowIxCols> ProtectedRow() => new(new global::SpacetimeDB.SqlTableName(new string[] { "MyAuth" }, "protected_row"), new ProtectedRowCols(new global::SpacetimeDB.SqlTableName(new string[] { "MyAuth" }, "protected_row")), new ProtectedRowIxCols(new global::SpacetimeDB.SqlTableName(new string[] { "MyAuth" }, "protected_row")));
         public global::SpacetimeDB.Table<User, QueryUsersCols, QueryUsersIxCols> QueryUsers() => new(new global::SpacetimeDB.SqlTableName(new string[] { "MyAuth" }, "query_users"), new QueryUsersCols(new global::SpacetimeDB.SqlTableName(new string[] { "MyAuth" }, "query_users")), new QueryUsersIxCols(new global::SpacetimeDB.SqlTableName(new string[] { "MyAuth" }, "query_users")));
         public global::SpacetimeDB.Table<ScheduleResult, ScheduleResultCols, ScheduleResultIxCols> ScheduleResult() => new(new global::SpacetimeDB.SqlTableName(new string[] { "MyAuth" }, "schedule_result"), new ScheduleResultCols(new global::SpacetimeDB.SqlTableName(new string[] { "MyAuth" }, "schedule_result")), new ScheduleResultIxCols(new global::SpacetimeDB.SqlTableName(new string[] { "MyAuth" }, "schedule_result")));
         public global::SpacetimeDB.Table<User, UserCols, UserIxCols> User() => new(new global::SpacetimeDB.SqlTableName(new string[] { "MyAuth" }, "auth_users"), new UserCols(new global::SpacetimeDB.SqlTableName(new string[] { "MyAuth" }, "auth_users")), new UserIxCols(new global::SpacetimeDB.SqlTableName(new string[] { "MyAuth" }, "auth_users")));
