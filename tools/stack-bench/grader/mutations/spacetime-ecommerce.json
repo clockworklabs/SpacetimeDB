@@ -506,12 +506,12 @@
       "targets": [
         "ecommerce.spec.state-durability.account-state-recovery.105a"
       ],
-      "desc": "Build a reload connection without the durable identity token, losing the account and its data.",
+      "desc": "Discard the saved token after connection, preserving signup but losing access to the account, cart and orders on the next reload.",
       "file": "client/src/main.tsx",
       "edits": [
         {
-          "find": ".withToken(savedToken())",
-          "replace": ".withToken(undefined)"
+          "find": ".onConnect((_connection, _identity, token) => saveToken(token));",
+          "replace": ".onConnect((_connection, _identity, token) => { saveToken(token); sessionStorage.clear(); });"
         }
       ]
     },
