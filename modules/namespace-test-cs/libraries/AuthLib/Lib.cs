@@ -32,6 +32,9 @@ public static partial class Functions
     public static void Insert(ReducerContext ctx, uint id) =>
         ctx.Db.User.Insert(new User { Id = id, Score = 42 });
 
+    public static void Insert(ProcedureTxContext ctx, uint id) =>
+        ctx.Db.User.Insert(new User { Id = id, Score = 42 });
+
     public static ulong Count(ReducerContext ctx) => ctx.Db.User.Count;
 
     public static FromWhere<User, UserCols, UserIxCols> Query(ViewContext ctx) =>
