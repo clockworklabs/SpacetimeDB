@@ -132,7 +132,10 @@ export const INCONCLUSIVE_FINDINGS: Renderers<InconclusiveFindingFields> = {
   'replay-unavailable': f => `could not issue the replay as ${f.actor}`,
   'forgery-unverifiable': f => `could not verify the forgery refusal for ${f.actor}`,
   'not-observed': f => `the expected data could not be observed reaching ${f.actor}`,
-  'transport-incomplete': () => 'transport evidence is incomplete; absence cannot be established',
+  'transport-incomplete': f => 'transport evidence is incomplete; absence cannot be established'
+    + (f.capture ? ` (byte-limit losses: ${f.capture.byteLimit}; body-read failures: ${f.capture.bodyReadFailures};`
+      + ` unsupported streams: ${f.capture.unsupportedStreams}; pending bodies: ${f.capture.pendingBodies};`
+      + ` retained bytes: ${f.capture.retainedBytes})` : ''),
   'nothing-contended': () => 'the requests never contended',
   'observation-window-missed': () => 'the timing observation window was missed',
   'no-backend-control': f => `no control over ${target(f.target)} was supplied`,
@@ -247,7 +250,15 @@ export const findingSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('replay-unavailable'), fields: z.strictObject({ actor: z.string(), detail: z.string().optional() }) }),
   z.strictObject({ kind: z.literal('forgery-unverifiable'), fields: z.strictObject({ actor: z.string(), detail: z.string().optional() }) }),
   z.strictObject({ kind: z.literal('not-observed'), fields: actorSchema }),
-  z.strictObject({ kind: z.literal('transport-incomplete'), fields: z.strictObject({}) }),
+  z.strictObject({ kind: z.literal('transport-incomplete'), fields: z.strictObject({
+    capture: z.strictObject({
+      byteLimit: z.number().int().nonnegative(),
+      bodyReadFailures: z.number().int().nonnegative(),
+      unsupportedStreams: z.number().int().nonnegative(),
+      pendingBodies: z.number().int().nonnegative(),
+      retainedBytes: z.number().int().nonnegative(),
+    }).optional(),
+  }) }),
   z.strictObject({ kind: z.literal('nothing-contended'), fields: detailSchema }),
   z.strictObject({ kind: z.literal('observation-window-missed'), fields: detailSchema }),
   z.strictObject({ kind: z.literal('no-backend-control'), fields: z.strictObject({ target: targetSchema }) }),

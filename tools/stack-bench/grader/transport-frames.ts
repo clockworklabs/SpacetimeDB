@@ -25,29 +25,37 @@ export function transportFrameText(payload: string | Buffer): string {
 export class ReceivedTransport {
   readonly chunks: string[] = [];
   private bytes = 0;
+  private readonly incompleteCounts = { byteLimit: 0, bodyReadFailures: 0, unsupportedStreams: 0 };
   incomplete = false;
   pending = 0;
 
   constructor(private readonly limit = MAX_RECEIVED_BYTES) {}
 
+  markIncomplete(reason: keyof ReceivedTransport['incompleteCounts']): void {
+    this.incomplete = true;
+    this.incompleteCounts[reason]++;
+  }
+
   record(payload: string | Buffer): void {
     const text = transportFrameText(payload);
     if (!text) return;
     if (Buffer.byteLength(text) > this.limit) {
-      this.incomplete = true;
+      this.markIncomplete('byteLimit');
       return;
     }
     this.chunks.push(text);
     this.bytes += Buffer.byteLength(text);
     while (this.bytes > this.limit) {
-      this.incomplete = true;
+      this.markIncomplete('byteLimit');
       this.bytes -= Buffer.byteLength(this.chunks.shift()!);
     }
   }
 
   contains(needle: string, requireComplete = true): boolean {
     if (this.chunks.some(chunk => chunk.includes(needle))) return true;
-    if (requireComplete && (this.incomplete || this.pending)) inconclusive('transport-incomplete', {});
+    if (requireComplete && (this.incomplete || this.pending)) inconclusive('transport-incomplete', {
+      capture: { ...this.incompleteCounts, pendingBodies: this.pending, retainedBytes: this.bytes },
+    });
     return false;
   }
 }
@@ -60,12 +68,12 @@ export async function captureResponses(page: Page, received: ReceivedTransport):
     // Include server-rendered data. JavaScript and CSS bundles are not data responses.
     if (!/(application\/json|application\/[^;]+\+json|application\/x-ndjson|text\/(plain|html))/.test(type)) return;
     if (Number(response.headers()['content-length']) > MAX_RECEIVED_BYTES) {
-      received.incomplete = true;
+      received.markIncomplete('byteLimit');
       return;
     }
     received.pending++;
     try { received.record(await response.text()); }
-    catch { received.incomplete = true; }
+    catch { received.markIncomplete('bodyReadFailures'); }
     finally { received.pending--; }
   });
   const session = await page.context().newCDPSession(page);
@@ -73,7 +81,7 @@ export async function captureResponses(page: Page, received: ReceivedTransport):
   session.on('Network.responseReceived', event => {
     // Fetch streams have no EventSource events. Absence of an unseen body is not a pass.
     if (event.response.mimeType === 'text/event-stream' && event.type !== 'EventSource') {
-      received.incomplete = true;
+      received.markIncomplete('unsupportedStreams');
     }
   });
   await session.send('Network.enable');
