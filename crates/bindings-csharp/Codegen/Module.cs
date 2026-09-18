@@ -1644,6 +1644,11 @@ record ReducerDeclaration
     public Scope.Extensions GenerateSchedule()
     {
         var extensions = new Scope.Extensions(Scope, FullName);
+        var functionName = string.IsNullOrEmpty(CanonicalName)
+            ? $"nameof({Identifier})"
+            : SymbolDisplay.FormatLiteral(CanonicalName!, true);
+        if (declaringAssembly is not null)
+            functionName = $"global::SpacetimeDB.Internal.Module.ResolveName({SymbolDisplay.FormatLiteral(declaringAssembly, true)}, {functionName})";
 
         // Mark the API as unstable. We use name `STDB_UNSTABLE` because:
         // 1. It's a close equivalent of the `unstable` Cargo feature in Rust.
@@ -1662,7 +1667,7 @@ record ReducerDeclaration
                     "\n",
                     Args.Select(a => $"new {a.Type.ToBSATNString()}().Write(writer, {a.Identifier});")
                 )}}
-                SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate({{(declaringAssembly is null ? $"nameof({Identifier})" : $"global::SpacetimeDB.Internal.Module.ResolveName({SymbolDisplay.FormatLiteral(declaringAssembly, true)}, nameof({Identifier}))")}}, stream);
+                SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate({{functionName}}, stream);
             }
             """
         );
@@ -1868,6 +1873,11 @@ record ProcedureDeclaration
     public Scope.Extensions GenerateSchedule()
     {
         var extensions = new Scope.Extensions(Scope, FullName);
+        var functionName = string.IsNullOrEmpty(CanonicalName)
+            ? $"nameof({Identifier})"
+            : SymbolDisplay.FormatLiteral(CanonicalName!, true);
+        if (declaringAssembly is not null)
+            functionName = $"global::SpacetimeDB.Internal.Module.ResolveName({SymbolDisplay.FormatLiteral(declaringAssembly, true)}, {functionName})";
 
         // Mark the API as unstable. We use name `STDB_UNSTABLE` because:
         // 1. It's a close equivalent of the `unstable` Cargo feature in Rust.
@@ -1886,7 +1896,7 @@ record ProcedureDeclaration
                     "\n",
                     Args.Select(a => $"new {a.Type.ToBSATNString()}().Write(writer, {a.Identifier});")
                 )}}
-                SpacetimeDB.Internal.ProcedureExtensions.VolatileNonatomicScheduleImmediate({{(declaringAssembly is null ? $"nameof({Identifier})" : $"global::SpacetimeDB.Internal.Module.ResolveName({SymbolDisplay.FormatLiteral(declaringAssembly, true)}, nameof({Identifier}))")}}, stream);
+                SpacetimeDB.Internal.ProcedureExtensions.VolatileNonatomicScheduleImmediate({{functionName}}, stream);
             }
             """
         );

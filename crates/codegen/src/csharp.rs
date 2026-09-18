@@ -1343,7 +1343,11 @@ impl Lang for CsharpScope<'_> {
                     let method_name = accessor_name.deref().to_case(Case::Pascal);
                     writeln!(output, "new QueryBuilder().From.{method_name}().ToSql(),");
                 }
-                for (path, _, table) in module.all_tables_with_prefix().into_iter().filter(|(path, _, table)| {
+                let mut child_tables = module.all_tables_with_prefix();
+                child_tables.sort_by(|(a_path, _, a), (b_path, _, b)| {
+                    (a_path, &a.accessor_name).cmp(&(b_path, &b.accessor_name))
+                });
+                for (path, _, table) in child_tables.into_iter().filter(|(path, _, table)| {
                     !path.is_empty() && table.table_access == spacetimedb_lib::db::raw_def::v9::TableAccess::Public
                 }) {
                     writeln!(
