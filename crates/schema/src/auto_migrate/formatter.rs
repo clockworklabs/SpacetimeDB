@@ -20,6 +20,9 @@ use thiserror::Error;
 
 pub fn format_plan<F: MigrationFormatter>(f: &mut F, plan: &AutoMigratePlan) -> Result<(), FormattingErrors> {
     f.format_header()?;
+    for (name, old, new) in plan.function_visibility_changes() {
+        f.format_function_visibility(&name, old, new)?;
+    }
 
     for step in &plan.steps {
         format_step(f, step, plan)?;
@@ -180,6 +183,12 @@ pub enum Action {
 /// It allows for different implementations, such as ANSI formatting or plain text formatting.
 pub trait MigrationFormatter {
     fn format_header(&mut self) -> io::Result<()>;
+    fn format_function_visibility(
+        &mut self,
+        name: &str,
+        old: &crate::def::FunctionVisibility,
+        new: &crate::def::FunctionVisibility,
+    ) -> io::Result<()>;
     fn format_add_table(&mut self, table_info: &TableInfo) -> io::Result<()>;
     fn format_remove_table(&mut self, table_name: &NamespacedIdentifier) -> io::Result<()>;
     fn format_view(&mut self, view_info: &ViewInfo, action: Action) -> io::Result<()>;

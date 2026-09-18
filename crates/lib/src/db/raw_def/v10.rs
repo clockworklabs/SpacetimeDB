@@ -338,6 +338,9 @@ pub struct RawReducerDefV10 {
 }
 
 /// The visibility of a function (reducer or procedure).
+///
+/// New variants MUST be appended to preserve existing BSATN tags. Older hosts
+/// reject unknown tags, so new restrictions cannot be silently discarded.
 #[derive(Debug, Copy, Clone, SpacetimeType)]
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
@@ -347,11 +350,31 @@ pub enum FunctionVisibility {
     /// Still callable by the module owner, collaborators,
     /// and internal module code.
     ///
-    /// Enabled for lifecycle reducers and scheduled functions by default.
+    /// The default for scheduled functions. Older lifecycle definitions also use
+    /// this tag; lifecycle assignments always enforce host-event-only invocation.
     Private,
 
-    /// Callable from client code.
+    /// Callable from client code, with the historical contextual defaults.
+    /// Scheduled functions become Private; lifecycle reducers remain host event handlers.
     ClientCallable,
+
+    /// Callable only by a host-verified internal invocation.
+    Internal,
+
+    /// Explicitly callable from client code, including when scheduled.
+    /// This separate tag preserves the meaning of existing ClientCallable definitions.
+    ExplicitClientCallable,
+}
+
+impl FunctionVisibility {
+    /// Encode a source declaration without changing historical contextual defaults.
+    pub fn from_declaration(declared: Option<Self>, default: Self) -> Self {
+        match declared {
+            Some(Self::ClientCallable | Self::ExplicitClientCallable) => Self::ExplicitClientCallable,
+            Some(visibility) => visibility,
+            None => default,
+        }
+    }
 }
 
 /// A schedule definition.
@@ -1120,10 +1143,20 @@ impl RawModuleDefV10Builder {
     /// This is because `SpacetimeType` is not implemented for `ReducerContext`,
     /// so it can never act like an ordinary argument.)
     pub fn add_reducer(&mut self, source_name: impl Into<RawIdentifier>, params: ProductType) {
+        self.add_reducer_with_visibility(source_name, params, None);
+    }
+
+    /// Add a reducer with an optional explicit visibility declaration.
+    pub fn add_reducer_with_visibility(
+        &mut self,
+        source_name: impl Into<RawIdentifier>,
+        params: ProductType,
+        visibility: Option<FunctionVisibility>,
+    ) {
         self.reducers_mut().push(RawReducerDefV10 {
             source_name: source_name.into(),
             params,
-            visibility: FunctionVisibility::ClientCallable,
+            visibility: FunctionVisibility::from_declaration(visibility, FunctionVisibility::ClientCallable),
             ok_return_type: reducer_default_ok_return_type(),
             err_return_type: reducer_default_err_return_type(),
         });
@@ -1145,11 +1178,22 @@ impl RawModuleDefV10Builder {
         params: ProductType,
         return_type: AlgebraicType,
     ) {
+        self.add_procedure_with_visibility(source_name, params, return_type, None);
+    }
+
+    /// Add a procedure with an optional explicit visibility declaration.
+    pub fn add_procedure_with_visibility(
+        &mut self,
+        source_name: impl Into<RawIdentifier>,
+        params: ProductType,
+        return_type: AlgebraicType,
+        visibility: Option<FunctionVisibility>,
+    ) {
         self.procedures_mut().push(RawProcedureDefV10 {
             source_name: source_name.into(),
             params,
             return_type,
-            visibility: FunctionVisibility::ClientCallable,
+            visibility: FunctionVisibility::from_declaration(visibility, FunctionVisibility::ClientCallable),
         })
     }
 
@@ -1194,6 +1238,19 @@ impl RawModuleDefV10Builder {
         function_name: impl Into<RawIdentifier>,
         params: ProductType,
     ) {
+        self.add_lifecycle_reducer_with_visibility(lifecycle_spec, function_name, params, None);
+    }
+
+    /// Add a lifecycle reducer with an optional visibility declaration.
+    /// Source bindings must reject explicit Private or public lifecycle annotations.
+    /// The raw Private tag remains accepted for compatibility with existing modules.
+    pub fn add_lifecycle_reducer_with_visibility(
+        &mut self,
+        lifecycle_spec: Lifecycle,
+        function_name: impl Into<RawIdentifier>,
+        params: ProductType,
+        visibility: Option<FunctionVisibility>,
+    ) {
         let function_name = function_name.into();
         self.lifecycle_reducers_mut().push(RawLifeCycleReducerDefV10 {
             lifecycle_spec,
@@ -1203,7 +1260,7 @@ impl RawModuleDefV10Builder {
         self.reducers_mut().push(RawReducerDefV10 {
             source_name: function_name,
             params,
-            visibility: FunctionVisibility::Private,
+            visibility: FunctionVisibility::from_declaration(visibility, FunctionVisibility::Private),
             ok_return_type: reducer_default_ok_return_type(),
             err_return_type: reducer_default_err_return_type(),
         });
@@ -1598,6 +1655,8 @@ mod compatibility_tests {
         for (visibility, expected) in [
             (FunctionVisibility::Private, 0),
             (FunctionVisibility::ClientCallable, 1),
+            (FunctionVisibility::Internal, 2),
+            (FunctionVisibility::ExplicitClientCallable, 3),
         ] {
             assert_eq!(bsatn::to_vec(&visibility).unwrap(), [expected]);
         }
@@ -1636,7 +1695,26 @@ mod compatibility_tests {
     }
 
     #[test]
-    fn older_hosts_reject_new_capabilities() {
+    fn older_hosts_reject_new_visibility_and_capabilities() {
+        for visibility in [FunctionVisibility::Internal, FunctionVisibility::ExplicitClientCallable] {
+            for procedure in [false, true] {
+                let mut builder = RawModuleDefV10Builder::new();
+                if procedure {
+                    builder.add_procedure_with_visibility(
+                        "run",
+                        ProductType::unit(),
+                        AlgebraicType::unit(),
+                        Some(visibility),
+                    );
+                } else {
+                    builder.add_reducer_with_visibility("run", ProductType::unit(), Some(visibility));
+                }
+                let bytes = bsatn::to_vec(&RawModuleDef::V10(builder.finish())).unwrap();
+                assert_eq!(bytes[0], 2);
+                assert!(bsatn::from_slice::<LegacyModule>(&bytes).is_err());
+                assert!(bsatn::from_slice::<RawModuleDef>(&bytes).is_ok());
+            }
+        }
         let mut builder = RawModuleDefV10Builder::new();
         builder.add_capability("hosted_auth_v1");
         let bytes = bsatn::to_vec(&RawModuleDef::V10(builder.finish())).unwrap();

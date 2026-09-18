@@ -392,7 +392,7 @@ impl ModuleValidatorV9<'_> {
             },
             lifecycle,
             visibility: if lifecycle.is_some() {
-                FunctionVisibility::Private
+                FunctionVisibility::Internal
             } else {
                 FunctionVisibility::ClientCallable
             },
