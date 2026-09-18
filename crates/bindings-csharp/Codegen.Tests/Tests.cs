@@ -302,6 +302,67 @@ public static class GeneratorSnapshotTests
         AssertContextOwnership(compilation);
     }
 
+    [Theory]
+    [InlineData("net8.0")]
+#if NET10_0_OR_GREATER
+    [InlineData("net10.0")]
+#endif
+    public static async Task NamespaceImmediateSchedulesUseExplicitFunctionNames(string framework)
+    {
+        var fixture = await Fixture.Compile("server", framework);
+        var source = """
+            global using System;
+            global using System.IO;
+            global using System.Collections.Generic;
+            global using System.Linq;
+            public static partial class Jobs
+            {
+                [SpacetimeDB.Reducer(Name = "reducer_job")]
+                public static void ReducerTick(SpacetimeDB.ReducerContext ctx, uint payload) { }
+                [SpacetimeDB.Procedure(Name = "procedure_job")]
+                public static void ProcedureTick(SpacetimeDB.ProcedureContext ctx, uint payload) { }
+            }
+            """;
+        var input = CSharpCompilation.Create(
+            "ScheduledLibrary",
+            [CSharpSyntaxTree.ParseText(source, fixture.ParseOptions)],
+            fixture.SampleCompilation.References,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+        );
+        var driver = CSharpGeneratorDriver.Create(
+            [new Type().AsSourceGenerator(), new Module().AsSourceGenerator()],
+            parseOptions: fixture.ParseOptions
+        );
+        driver.RunGeneratorsAndUpdateCompilation(input, out var output, out var diagnostics);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Empty(GetCompilationErrors(output));
+
+        foreach (var (method, wireName) in new[]
+        {
+            ("ReducerTick", "reducer_job"),
+            ("ProcedureTick", "procedure_job"),
+        })
+        {
+            var helper = Assert.Single(output.SyntaxTrees
+                .SelectMany(tree => tree.GetRoot().DescendantNodes())
+                .OfType<MethodDeclarationSyntax>()
+                .Where(node => node.Identifier.ValueText == "VolatileNonatomicScheduleImmediate" + method));
+            var call = Assert.Single(helper.DescendantNodes()
+                .OfType<InvocationExpressionSyntax>()
+                .Where(node => node.Expression.ToString().EndsWith(".VolatileNonatomicScheduleImmediate")));
+            var name = call.ArgumentList.Arguments[0].Expression;
+            if (framework == "net10.0")
+            {
+                var resolve = Assert.IsType<InvocationExpressionSyntax>(name);
+                Assert.Equal("global::SpacetimeDB.Internal.Module.ResolveName", resolve.Expression.ToString());
+                Assert.StartsWith("ScheduledLibrary,", (string)output.GetSemanticModel(resolve.SyntaxTree)
+                    .GetConstantValue(resolve.ArgumentList.Arguments[0].Expression).Value!);
+                name = resolve.ArgumentList.Arguments[1].Expression;
+            }
+            Assert.Equal(wireName, output.GetSemanticModel(name.SyntaxTree).GetConstantValue(name).Value);
+        }
+    }
+
     [Fact]
     public static async Task NamespaceDeclarationsParseAndValidate()
     {
