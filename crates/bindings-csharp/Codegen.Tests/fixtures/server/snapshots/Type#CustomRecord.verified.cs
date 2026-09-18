@@ -62,7 +62,7 @@ partial class CustomRecord : System.IEquatable<CustomRecord>, SpacetimeDB.BSATN.
                     new("IntField", IntFieldRW.GetAlgebraicType(registrar)),
                     new("StringField", StringFieldRW.GetAlgebraicType(registrar)),
                     new("NullableIntField", NullableIntFieldRW.GetAlgebraicType(registrar)),
-                    new("NullableStringField", NullableStringFieldRW.GetAlgebraicType(registrar))
+                    new("NullableStringField", NullableStringFieldRW.GetAlgebraicType(registrar)),
                 }
             ));
 

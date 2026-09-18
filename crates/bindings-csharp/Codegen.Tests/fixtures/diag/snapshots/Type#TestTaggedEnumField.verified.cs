@@ -27,10 +27,9 @@ partial record TestTaggedEnumField : System.IEquatable<TestTaggedEnumField>
             {
                 0 => new X(XRW.Read(reader)),
                 1 => new Y(YRW.Read(reader)),
-                _
-                    => throw new System.InvalidOperationException(
-                        "Invalid tag value, this state should be unreachable."
-                    )
+                _ => throw new System.InvalidOperationException(
+                    "Invalid tag value, this state should be unreachable."
+                ),
             };
         }
 
@@ -57,7 +56,7 @@ partial record TestTaggedEnumField : System.IEquatable<TestTaggedEnumField>
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
                         new("X", XRW.GetAlgebraicType(registrar)),
-                        new("Y", YRW.GetAlgebraicType(registrar))
+                        new("Y", YRW.GetAlgebraicType(registrar)),
                     }
                 )
             );

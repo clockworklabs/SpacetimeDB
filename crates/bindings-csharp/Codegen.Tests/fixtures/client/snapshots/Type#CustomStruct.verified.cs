@@ -50,7 +50,7 @@ partial struct CustomStruct
                 new SpacetimeDB.BSATN.AggregateElement[]
                 {
                     new("IntField", IntFieldRW.GetAlgebraicType(registrar)),
-                    new("StringField", StringFieldRW.GetAlgebraicType(registrar))
+                    new("StringField", StringFieldRW.GetAlgebraicType(registrar)),
                 }
             ));
 
