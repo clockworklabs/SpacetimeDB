@@ -4,6 +4,8 @@ identities.json
 probe-evidence.json
 auth-evidence.json
 lifecycle-*.json
+owned-private.json
+owned-probe.json
 restart-evidence.json
 convex/auth.config.js
 convex/_generated/

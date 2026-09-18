@@ -104,6 +104,22 @@ function spacetimeLease() {
 
 const STACK_LEASES = {
   spacetime: spacetimeLease(),
+  convex: {
+    prepare(input: StackLeasePrepareInput): StackLeasePreparation {
+      return { lease: { serverUri: input.serverUri, database: null, module: null,
+        dataDir: null, container: null }, lockKeys: [] };
+    },
+    validateResources(input: StackLeaseValidationInput): void {
+      const value = resources(input);
+      input.helpers.loopbackHttpUri(value.serverUri);
+      if (value.container !== null) {
+        const owned = container(input);
+        if (owned.owned !== true) throw new Error('Convex requires an owned container');
+        input.helpers.requireString(owned.name, 'container.name');
+        input.helpers.requireString(owned.id, 'container.id');
+      }
+    },
+  },
   postgres: hostedLease('postgres'),
   mongodb: hostedLease('mongodb'),
   stub: {

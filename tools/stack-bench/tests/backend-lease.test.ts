@@ -22,6 +22,7 @@ import {
 } from '../src/runtime/backend-lease.js';
 import { dockerNetworkMissing, handoffBuildWorkspace, releaseBackendLease, stopLeasedContainer } from '../src/runtime/backend-teardown.js';
 import { processIdentity } from '../src/runtime/platform.js';
+import { releaseConvex } from '../src/stacks/backends/convex-lifecycle.js';
 
 async function listen(server: Server): Promise<number> {
   await new Promise<void>((resolve, reject) =>
@@ -155,6 +156,43 @@ test('supervisor teardown releases an owned lease without runtime processes', ()
     const released = readBackendLease(path, { token: lease.ownershipToken });
     assert.equal(released.state, 'released');
     assert(released.releasedAt);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('private Convex lifecycle releases before first creation intent and preserves refusal', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-convex-release-'));
+  const path = join(root, 'lease.json');
+  const lease = createBackendLease({ runId: 'convex-before-start', backend: 'convex',
+    track: 'ecommerce', runIndex: 0, serverUri: 'http://127.0.0.1:14310' });
+  try {
+    writeBackendLease(path, lease);
+    assert.throws(() => releaseConvex(path, 'wrong-token'), /ownership token does not match/);
+    assert.equal(releaseBackendLease(path, lease.ownershipToken, { hostTeardown: () => false }), false);
+    assert.equal(readBackendLease(path).state, 'created');
+    assert.equal(releaseConvex(path, lease.ownershipToken), true);
+    assert.equal(readBackendLease(path).state, 'released');
+    assert.equal(releaseConvex(path, lease.ownershipToken), true);
+    assert.throws(() => createBackendLease({ ...lease, serverUri: 'https://production.example:443' }), /must use http/);
+    assert.throws(() => createBackendLease({ ...lease, serverUri: 'http://localhost' }), /explicit loopback port/);
+    assert.throws(() => createBackendLease({ ...lease, serverUri: 'http://127.0.0.1:14310',
+      container: { name: 'ambient', id: 'ambient' } }), /requires an owned container/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('private host teardown refusal retains resource locks', { skip: process.platform !== 'linux' }, () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-convex-refused-'));
+  const path = join(root, 'lease.json');
+  const lease = createBackendLease({ runId: 'convex-refused', backend: 'convex',
+    track: 'ecommerce', runIndex: 0, serverUri: 'http://127.0.0.1:14310' });
+  try {
+    const lock = acquireResourceLock({ root, key: 'port:14310', lease });
+    lease.resources.locks.push(lock);
+    writeBackendLease(path, lease);
+    assert.equal(releaseBackendLease(path, lease.ownershipToken, { hostTeardown: () => false }), false);
+    assert(existsSync(lock.path));
+    assert.equal(readBackendLease(path).resources.locks[0]?.releasedAt, undefined);
+    assert.equal(releaseConvex(path, lease.ownershipToken), true);
+    assert(!existsSync(lock.path));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

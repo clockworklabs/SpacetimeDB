@@ -173,7 +173,10 @@ function removeAttemptNetwork(leasePath: string, leaseToken: string): boolean {
 export function releaseBackendLease(
   leasePath: string,
   leaseToken: string,
-  { retainBackend = false }: { retainBackend?: boolean } = {},
+  { retainBackend = false, hostTeardown }: {
+    retainBackend?: boolean;
+    hostTeardown?: ReturnType<typeof STACK_ADAPTER_REGISTRY.get>['teardown']['host'];
+  } = {},
 ): boolean {
   let lease = readBackendLease(leasePath, { token: leaseToken });
   if (lease.state === 'released') return true;
@@ -187,7 +190,7 @@ export function releaseBackendLease(
   } else if (!retainBackend && released && lease.resources.creationIntents) {
     released = removeAttemptNetwork(leasePath, leaseToken);
   }
-  released = STACK_ADAPTER_REGISTRY.get(lease.backend).teardown.host({
+  released = (hostTeardown ?? STACK_ADAPTER_REGISTRY.get(lease.backend).teardown.host)({
       leasePath, leaseToken, lease, retainHost: retainBackend,
     }) && released;
   if (!released || retainBackend) return released;

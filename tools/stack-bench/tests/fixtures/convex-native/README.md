@@ -137,3 +137,23 @@ does not establish crash-mid-operation safety, component cleanup, firewall
 isolation, refresh rotation or full lifecycle integration. The scheduled marker
 uses the documented [scheduler and system-table API](https://docs.convex.dev/scheduling/scheduled-functions).
 Remove the helper, backend, anchor and owned volume after preserving evidence.
+
+## Owned lifecycle integration
+
+`tests/convex-owned-lifecycle.integration.ts` calls the private Convex lifecycle
+through normal lease, namespace, firewall, browser-container and teardown owners.
+It is opt-in with `STACK_BENCH_CONVEX_OWNED_TEST=1` inside the Linux controller.
+Mount this fixture at `STACK_BENCH_CONVEX_FIXTURE`, an evidence directory at
+`STACK_BENCH_CONVEX_EVIDENCE_DIR`, and the normal shared resource-lock directory.
+The test claims ports 14309/14310/14311 before creating resources. These explicit
+test ports do not define the future campaign allocation.
+The trusted controller deploys this fixture. Only the native client probe runs
+inside the restricted browser container; its read-only/noexec policy is retained.
+This does not yet test generated-app deployment from a coding container.
+
+`probe-owned.mjs` tests real password signup, signed native HTTP and WebSocket
+calls, a purchase, and anonymous refusal without stored effects. The integration
+test also checks the published API and HTTP-action JWKS endpoint, wrong lease
+token refusal, and removal of the owned anonymous data volume. It exports no
+admin key or session token. This slice does not qualify Chromium UI behavior,
+warm restart, reset, crash tests, or full Convex support. Convex stays unregistered.
