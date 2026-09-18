@@ -14,14 +14,6 @@ pub fn external(ctx: &ReducerContext) {
     assert!(!ctx.sender_auth().has_jwt());
 }
 
-#[spacetimedb::reducer(internal)]
-pub fn internal(ctx: &ReducerContext) {
-    assert!(ctx.sender_auth().is_internal());
-}
-
-#[spacetimedb::reducer(private)]
-pub fn private(_ctx: &ReducerContext) {}
-
 #[spacetimedb::procedure]
 pub fn external_procedure(ctx: &mut ProcedureContext) -> bool {
     assert!(!ctx.sender_auth().is_internal());
@@ -32,12 +24,6 @@ pub fn external_procedure(ctx: &mut ProcedureContext) -> bool {
         assert_eq!(tx.sender(), sender);
         assert_eq!(tx.connection_id(), connection);
     });
-    true
-}
-
-#[spacetimedb::procedure(internal)]
-pub fn internal_procedure(ctx: &mut ProcedureContext) -> bool {
-    assert!(ctx.sender_auth().is_internal());
     true
 }
 
@@ -63,7 +49,7 @@ pub fn schedule(ctx: &ReducerContext) {
     });
 }
 
-#[spacetimedb::reducer(internal)]
+#[spacetimedb::reducer]
 pub fn scheduled(ctx: &ReducerContext, job: Job) {
     assert!(ctx.sender_auth().is_internal());
     assert_eq!(ctx.sender(), ctx.database_identity());

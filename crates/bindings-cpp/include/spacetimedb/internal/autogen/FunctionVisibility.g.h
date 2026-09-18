@@ -18,7 +18,5 @@ namespace SpacetimeDB::Internal {
 enum class FunctionVisibility : uint8_t {
     Private = 0,
     ClientCallable = 1,
-    Internal = 2,
-    ExplicitClientCallable = 3,
 };
 } // namespace SpacetimeDB::Internal

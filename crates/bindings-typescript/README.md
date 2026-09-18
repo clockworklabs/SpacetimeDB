@@ -18,25 +18,9 @@ You can use the package in the browser, using a bundler like vite/parcel/rsbuild
 
 ### Usage
 
-#### Module function visibility and invocation authentication
+#### Module invocation authentication
 
-Reducer and procedure options accept `visibility: 'public'`, `'private'`, or
-`'internal'`. For example, `spacetime.reducer({ visibility: 'internal' }, ctx => {})`
-declares an internal reducer. Omission means public for ordinary functions and
-private for scheduled functions. An explicit choice is preserved when the
-function is scheduled. Lifecycle reducers permit only omission or `'internal'`
-and can only run for their host lifecycle event.
-
-Internal functions require verified internal authority. Private functions also
-admit the owner, and public functions admit any client. `ctx.senderAuth.isInternal`
-captures the host's invocation authority independently of connection and JWT
-presence, so an internal call can have a JWT. `ctx.senderAuth.jwt.identity` is the
-verified sender supplied by the host. Procedure transactions preserve this
-authentication. Newly compiled modules retain schema V10 and advertise
-`hosted_auth_v1`. The extended visibility values and capability section require
-a compatible host; older V10 definitions retain their existing defaults.
-
-#### Client SDK
+`ctx.senderAuth.isInternal` captures host-verified invocation authority independently of connection and JWT presence. `ctx.senderAuth.jwt.identity` is the verified sender. Procedure transactions preserve authentication. Newly compiled modules advertise `hosted_auth_v1` and require a compatible host. Function visibility and scheduled defaults are unchanged.
 
 In order to connect to a database you have to generate module bindings for your database.
 

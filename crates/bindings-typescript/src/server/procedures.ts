@@ -5,7 +5,7 @@ import {
   type Deserializer,
   type Serializer,
 } from '../lib/algebraic_type';
-import { rawVisibility, type FunctionVisibility } from './function_visibility';
+import { FunctionVisibility } from '../lib/autogen/types';
 import BinaryReader from '../lib/binary_reader';
 import BinaryWriter from '../lib/binary_writer';
 import type { ConnectionId } from '../lib/connection_id';
@@ -59,19 +59,21 @@ export function makeProcedureExport<
   ret: Ret,
   fn: ProcedureFn<S, Params, Ret>
 ): ProcedureExport<S, Params, Ret> {
+  const name = opts?.name;
+
   const procedureExport: ProcedureExport<S, Params, Ret> = (...args) =>
     fn(...args);
   procedureExport[exportContext] = ctx;
   procedureExport[registerExport] = (ctx, exportName) => {
-    registerProcedure(ctx, exportName, params, ret, fn, opts);
+    registerProcedure(ctx, name ?? exportName, params, ret, fn);
     ctx.functionExports.set(
       procedureExport as ProcedureExport<any, any, any>,
-      exportName
+      name ?? exportName
     );
     if (opts?.onSchedule !== undefined) {
       ctx.pendingSchedules.push({
         table: opts.onSchedule,
-        functionName: opts.name ?? exportName,
+        functionName: name ?? exportName,
       });
     }
   };
@@ -89,9 +91,7 @@ export interface ProcedureOpts<
   Params extends ParamsObj = ParamsObj,
   Ret extends TypeBuilder<any, any> = TypeBuilder<any, any>,
 > {
-  name?: string;
-  /** Defaults to public, or private when scheduled. */
-  visibility?: FunctionVisibility;
+  name: string;
   onSchedule?: Ret extends ReturnType<typeof t.unit>
     ? ScheduleTableForParams<Params>
     : never;
@@ -157,7 +157,7 @@ function registerProcedure<
     sourceName: exportName,
     params: paramsType,
     returnType,
-    visibility: rawVisibility(opts?.visibility),
+    visibility: FunctionVisibility.ClientCallable,
   });
 
   if (opts?.name != null) {

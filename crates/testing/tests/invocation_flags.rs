@@ -20,7 +20,7 @@ fn wasm_invocation_flags_do_not_infer_authority_from_identity_or_connection_abse
                     .outcome
                     .into_result()
                     .unwrap();
-                for name in ["internal", "init", "scheduled"] {
+                for name in ["init"] {
                     assert!(module
                         .call_reducer(sender, None, None, None, None, name, FunctionArgs::Nullary)
                         .await
@@ -30,18 +30,6 @@ fn wasm_invocation_flags_do_not_infer_authority_from_identity_or_connection_abse
                     .call_procedure(sender, None, None, "external_procedure", FunctionArgs::Nullary)
                     .await;
                 assert_eq!(result.result.unwrap().return_val, AlgebraicValue::Bool(true));
-                assert!(module
-                    .call_procedure(sender, None, None, "internal_procedure", FunctionArgs::Nullary)
-                    .await
-                    .result
-                    .is_err());
-                assert_eq!(
-                    module
-                        .call_reducer(sender, None, None, None, None, "private", FunctionArgs::Nullary)
-                        .await
-                        .is_ok(),
-                    sender == Identity::ZERO,
-                );
             }
             module
                 .call_reducer(
