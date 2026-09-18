@@ -12,7 +12,7 @@ import { ARTIFACT_FILE, emptyArtifactIdentities, readArtifact, readArtifactPaylo
 import { hashDirectory } from '../evidence/provenance.js';
 import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtureSource,
   validateReferenceRegistry } from './reference-fixtures.js';
-import { resolveReferenceSelection, parseReferenceCondition, assertReferenceAuthentication } from './reference-selection.js';
+import { resolveReferenceSelection, parseReferenceCondition } from './reference-selection.js';
 import type { ConditionReference } from '../campaigns/condition-compiler.js';
 import { auditMutationWorkerRun, auditReferenceRun }
   from './reference-qualification-audit.js';
@@ -952,7 +952,6 @@ async function main(): Promise<void> {
     { ...args, backend: args.backend, track: args.track, level: args.level });
   const fixture = selection.fixture;
   const inspection = inspectImportedReference(fixture);
-  assertReferenceAuthentication(fixture.id, inspection.requiredEnvironment ?? [], args.condition, true);
   if (!inspection.ok) throw new Error(`${fixture.id} import is invalid:\n${inspection.failures.join('\n')}`);
   const context = referenceQualificationContext(fixture, selection.recipe,
     { level: args.level, featureCatalog: args.featureCatalog });

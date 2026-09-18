@@ -94,7 +94,6 @@ export interface Actor {
 }
 
 export interface BrowserCapability {
-  readonly authentication?: { readonly provider: 'keycloak'; readonly issuer: string };
   readonly defaultWithin: number;
   roomName(value: string): string;
   scopedUser(value: string): string;

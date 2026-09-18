@@ -1,6 +1,4 @@
 import { dockerHostServiceAddress } from '../runtime/docker-network.js';
-import { authenticationEnvironment } from '../runtime/authentication-service.js';
-import type { BackendLeaseContainer } from '../runtime/backend-lease.js';
 import { containerReachableSpacetimeUri } from '../runtime/spacetime-target.js';
 import { referenceInstallSteps } from '../references/reference-install.js';
 import { POSTGRES_APPLICATION_IDENTITY, attemptDatabaseUrl } from './hosted-database-identity.js';
@@ -61,7 +59,6 @@ type HostedLease = LeasedDatabase;
 
 interface SpacetimeLease {
   resources: { module: string; serverUri: string;
-    authenticationContainer?: BackendLeaseContainer;
     buildContainer?: { networkMode?: string } | null };
 }
 
@@ -183,7 +180,6 @@ export async function deploySpacetimeReference({ args, metadata, lease, containe
     'reference-client', {
     VITE_MODULE_NAME: module, VITE_SPACETIMEDB_URI: serverUri,
     VITE_PORT: String(ports.vite),
-    ...authenticationEnvironment({ ...lease, backend: 'spacetime', track: args.track, runIndex: args.runIndex }),
   }, { networkVisible: true, port: ports.vite });
   await helpers.waitFor(`http://127.0.0.1:${ports.vite}`, 180_000, 'Spacetime client',
     () => helpers.containerLogs(container, 'reference-client'));

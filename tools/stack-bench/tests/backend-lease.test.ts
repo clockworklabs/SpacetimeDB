@@ -22,8 +22,6 @@ import {
 } from '../src/runtime/backend-lease.js';
 import { dockerNetworkMissing, handoffBuildWorkspace, releaseBackendLease, stopLeasedContainer } from '../src/runtime/backend-teardown.js';
 import { processIdentity } from '../src/runtime/platform.js';
-import { authenticationBrowserConfiguration, AUTHENTICATION_ISSUER, startAuthenticationService }
-  from '../src/runtime/authentication-service.js';
 
 async function listen(server: Server): Promise<number> {
   await new Promise<void>((resolve, reject) =>
@@ -47,30 +45,6 @@ function fixture() {
   });
   return { root, path, lease };
 }
-
-test('provider configuration requires an active owned lease and is off by default', () => {
-  const f = fixture();
-  try {
-    assert.equal(authenticationBrowserConfiguration({}), undefined);
-    assert.throws(() => authenticationBrowserConfiguration({ STACK_BENCH_LEASE: f.path }), /TOKEN/);
-    startAuthenticationService(f.path, f.lease); // No lease file or Docker needed when disabled.
-    f.lease.state = 'active';
-    const env = { STACK_BENCH_LEASE: f.path, STACK_BENCH_LEASE_TOKEN: f.lease.ownershipToken };
-    writeBackendLease(f.path, f.lease);
-    assert.equal(authenticationBrowserConfiguration(env), undefined);
-    f.lease.resources.authenticationContainer = { id: 'a'.repeat(64), name: 'provider', owned: true,
-      image: `sha256:${'b'.repeat(64)}`, networkMode: `container:${'c'.repeat(64)}` };
-    writeBackendLease(f.path, f.lease);
-    assert.deepEqual(authenticationBrowserConfiguration(env), { provider: 'keycloak', issuer: AUTHENTICATION_ISSUER });
-    assert.throws(() => authenticationBrowserConfiguration({ ...env, STACK_BENCH_LEASE_TOKEN: 'wrong' }), /token/);
-    f.lease.resources.authenticationContainer.removedAt = new Date().toISOString();
-    writeBackendLease(f.path, f.lease);
-    assert.equal(authenticationBrowserConfiguration(env), undefined);
-    f.lease.state = 'released';
-    writeBackendLease(f.path, f.lease);
-    assert.throws(() => authenticationBrowserConfiguration(env), /not active/);
-  } finally { rmSync(f.root, { recursive: true, force: true }); }
-});
 
 test('run ids include track, backend, index, timestamp, and a nonce', () => {
   const id = newRunId({ track: 'Chat', backend: 'Spacetime', runIndex: 2,

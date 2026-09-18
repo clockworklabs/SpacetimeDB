@@ -25,7 +25,7 @@ import { materializeAcceptedSource } from '../runtime/source-materialization.js'
 import { activateAttemptBackend } from '../stacks/hosted-lifecycle.js';
 import { resetMutationDatabase } from '../../grader/mutation-test.js';
 import { inspectImportedReference, loadReferenceRegistry } from './reference-fixtures.js';
-import { assertReferenceAuthentication, resolveReferenceSelection } from './reference-selection.js';
+import { resolveReferenceSelection } from './reference-selection.js';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const read = (path: string): unknown => JSON.parse(readFileSync(path, 'utf8'));
@@ -124,7 +124,6 @@ export function freezeDiagnosticPlan(input: unknown, base: string): FrozenPlan {
     const fixture = saved ? undefined : resolveReferenceSelection(registry, entry).fixture;
     const inspection = fixture ? inspectImportedReference(fixture) : undefined;
     if (fixture && (!inspection?.ok || !inspection.sourceSha256)) throw new Error(`invalid reference ${fixture.id}`);
-    if (fixture) assertReferenceAuthentication(fixture.id, inspection?.requiredEnvironment ?? []);
     const scenarioText = readFileSync(resolve(base, entry.scenario), 'utf8');
     const scenario = compileScenarioDefinition(JSON.parse(scenarioText), { source: entry.scenario });
     const selected = scenario.features.filter(feature => entry.features.includes(feature.id));

@@ -19,7 +19,6 @@ import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { ActionApplicationFailure, executeAction } from '../src/actions/action-contract.js';
 import { runApplicationNavigation } from '../src/actions/browser-navigation.js';
 import { stableElementSelector } from '../src/actions/element-selector.js';
-import { authenticationBrowserConfiguration, resetAuthenticationService } from '../src/runtime/authentication-service.js';
 import { dbName, loadTrack, suitesFor, DEFAULT_TRACK } from '../src/composition/tracks.js';
 import { controlAppServer, parseRuntimeControlSpec }
   from '../src/runtime/backend-control.js';
@@ -494,15 +493,14 @@ export async function writeApplicationDatabaseMarker(
     try {
       const page = await context.newPage();
       page.setDefaultTimeout(8000);
-      const authentication = authenticationBrowserConfiguration();
-      const actor = new Actor('database-provenance', page, context, authentication);
+      const actor = new Actor('database-provenance', page, context);
       await actor.ready;
       await runApplicationNavigation(() => page.goto(args.url, { waitUntil: 'domcontentloaded', timeout: 20000 }));
       const evidence = await executeAction(ACTION_REGISTRY, definition.browserAction,
         { do: definition.browserAction, actor: actor.name, name: marker, exact: true }, {
           capabilities: {
             actors: new Map([[actor.name, actor]]),
-            'browser-interaction': { authentication, defaultWithin: 8000,
+            'browser-interaction': { defaultWithin: 8000,
               roomName: (name: string) => name, scopedUser: (name: string) => name,
               testId: stableElementSelector,
               sleep: (ms: number, signal: AbortSignal) => sleep(ms, undefined, { signal }),
@@ -972,14 +970,6 @@ async function main() {
     lastResetFailure = reset.detail;
     lastResetOutcome = reset.outcome ?? { kind: 'harness_failure', phase: 'database-reset' };
     if (!reset.ok) return false;
-    try {
-      if (args.databaseLease) await measure('identity-reset', () =>
-        resetAuthenticationService(args.databaseLease!, args.credentialAliases));
-    } catch (error) {
-      lastResetFailure = error instanceof Error ? error.message : String(error);
-      lastResetOutcome = { kind: 'harness_failure', phase: 'identity-reset' };
-      return false;
-    }
     // Do not grade until the reset application is reachable.
     const waitUntilReady = async () => {
       const ready = await measure('readiness', () => waitForApplicationProbe(args.url));

@@ -9,18 +9,6 @@ export function parseReferenceCondition(value: string | undefined): ConditionRef
   return value === undefined ? undefined : validateConditionReference(JSON.parse(value), 'reference condition');
 }
 
-export function assertReferenceAuthentication(
-  fixtureId: string, requiredEnvironment: readonly string[], condition?: ConditionReference,
-  qualification = false,
-): void {
-  if (requiredEnvironment.includes('OIDC_ISSUER') && condition?.authenticationProvider !== 'keycloak') {
-    throw new Error(`${fixtureId} requires an explicitly selected study condition with authenticationProvider: keycloak; supply --condition-json. Provider availability is not enabled by reference metadata.`);
-  }
-  if (qualification && condition?.authenticationProvider) {
-    throw new Error('Provider-enabled reference qualification is blocked: qualification scope, expected evidence validation, and reuse do not yet bind the study condition. Reference builds do not establish qualification.');
-  }
-}
-
 export interface ReferenceSelectionArgs {
   backend: string;
   track: string;

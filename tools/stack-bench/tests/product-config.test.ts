@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ATTEMPT_CONTAINER_LIMIT_TOTALS, attemptContainerLimitTotals, BUILD_CONTAINER_RESOURCE_LIMITS, DEFAULT_BUILD_IMAGE,
+import { ATTEMPT_CONTAINER_LIMIT_TOTALS, BUILD_CONTAINER_RESOURCE_LIMITS, DEFAULT_BUILD_IMAGE,
   PREFLIGHT_RESOURCE_FLOORS } from '../src/composition/product-config.js';
 
 test('product configuration keeps the published build image and container limits', () => {
@@ -24,9 +24,5 @@ test('startup baseline stays separate from per-worker container caps', () => {
   assert.deepEqual(ATTEMPT_CONTAINER_LIMIT_TOTALS, {
     cpuCount: 4,
     memoryBytes: 9.25 * 1024 ** 3,
-  });
-  assert.equal(attemptContainerLimitTotals(), ATTEMPT_CONTAINER_LIMIT_TOTALS);
-  assert.deepEqual(attemptContainerLimitTotals('keycloak'), {
-    cpuCount: 5, memoryBytes: 10.25 * 1024 ** 3,
   });
 });

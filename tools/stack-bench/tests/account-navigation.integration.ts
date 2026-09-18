@@ -7,53 +7,44 @@ import { chromium } from 'playwright';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { executeAction } from '../src/actions/action-contract.js';
 import { stableElementSelector } from '../src/actions/element-selector.js';
-import { keycloakElementSelector } from '../src/actions/keycloak-browser.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { gradeFeature } from '../grader/grade.js';
-import { walk as ecommerceWalk } from '../tracks/ecommerce/walk.js';
-import type { LintHook, LintResult } from '../linter/lint.js';
 import type { Browser } from 'playwright';
 
-test('provider refusal cannot hide an app session that still permits a protected write', async () => {
+test('rejected login cannot hide an app session that still permits a protected write', async () => {
   const browser = await chromium.launch({ headless: true });
-  let appUrl = '', providerUrl = '', bypass = false, writes = 0;
-  const app = createServer((request, response) => {
+  let bypass = false, writes = 0;
+  const app = createServer(async (request, response) => {
     if (request.url === '/api/protected') {
       const accepted = ['Bearer valid-session', 'Bearer bypass-session'].includes(request.headers.authorization ?? '');
       if (accepted) writes++;
       response.writeHead(accepted ? 200 : 401, { 'Content-Type': 'application/json' });
       response.end(JSON.stringify({ accepted })); return;
     }
-    response.writeHead(200, { 'Content-Type': 'text/html' });
-    response.end(`<script>
-      ${request.url === '/callback' ? "sessionStorage.setItem('app-session', 'valid-session');" : ''}
-      window.getSessionToken = () => sessionStorage.getItem('app-session');
-      </script>
-      ${request.url === '/callback' ? '<strong id="current-user">owner</strong>' : ''}
-      <a id="signin-toggle" data-auth-provider="keycloak" href="${providerUrl}/realms/accounts/login"
-        onclick="${bypass ? "sessionStorage.setItem('app-session', 'bypass-session')" : ''}">Sign in</a>`);
-  });
-  const provider = createServer(async (request, response) => {
-    if (request.method === 'POST') {
+    let successful = false, rejected = false;
+    if (request.method === 'POST' && request.url === '/signin') {
       let body = ''; for await (const chunk of request) body += String(chunk);
-      if (new URLSearchParams(body).get('password') === 'correct-password') {
-        response.writeHead(302, { location: `${appUrl}/callback` }); response.end(); return;
-      }
-      response.writeHead(200, { 'Content-Type': 'text/html' });
-      response.end('<span id="input-error-username">Invalid username or password.</span>'); return;
+      successful = new URLSearchParams(body).get('password') === 'correct-password';
+      rejected = !successful;
     }
     response.writeHead(200, { 'Content-Type': 'text/html' });
-    response.end('<form method="post"><input id="username" name="username"><input id="password" name="password"><input id="kc-login" type="submit"></form>');
+    response.end(`<script>
+      ${successful ? "sessionStorage.setItem('app-session', 'valid-session');" : ''}
+      ${rejected && bypass ? "sessionStorage.setItem('app-session', 'bypass-session');" : ''}
+      window.getSessionToken = () => sessionStorage.getItem('app-session');
+      </script>
+      ${successful ? '<strong id="current-user">owner</strong>' : ''}
+      ${rejected ? '<span id="auth-error">Invalid username or password.</span>' : ''}
+      <form method="post" action="/signin"><input id="signin-username" name="username">
+      <input id="signin-password" name="password"><input id="signin-submit" type="submit"></form>`);
   });
   try {
-    await Promise.all([new Promise<void>(resolve => app.listen(0, '127.0.0.1', resolve)),
-      new Promise<void>(resolve => provider.listen(0, '127.0.0.1', resolve))]);
-    appUrl = `http://127.0.0.1:${(app.address() as { port: number }).port}`;
-    providerUrl = `http://127.0.0.1:${(provider.address() as { port: number }).port}`;
+    await new Promise<void>(resolve => app.listen(0, '127.0.0.1', resolve));
+    const appUrl = `http://127.0.0.1:${(app.address() as { port: number }).port}`;
     const call = (actor: string, authentication: string) => ({ do: 'callAction', actor, action: 'protected', authentication,
       namedAction: { id: 'protected', path: '/api/protected', reducer: 'protected', args: [], method: 'POST' }, settleMs: 0 });
-    const feature = compileScenarioDefinition({ schemaVersion: 1, track: 'ecommerce', level: 1, name: 'provider-bypass', features: [{
+    const feature = compileScenarioDefinition({ schemaVersion: 1, track: 'ecommerce', level: 1, name: 'login-bypass', features: [{
       id: 1, name: 'application authentication', actors: ['owner', 'impostor'], setup: [
         { do: 'signIn', actor: 'owner', name: 'owner', exact: true, password: 'correct-password' },
         call('owner', 'actor'), { do: 'expectActionOutcome', actor: 'owner', outcome: 'accepted' },
@@ -70,132 +61,16 @@ test('provider refusal cannot hide an app session that still permits a protected
       bypass = defect; writes = 0;
       const grade = await gradeFeature(browser, feature,
         { url: appUrl, level: 1, headed: false, selectedCheckKeys: [], nullControl: false },
-        { runId: 'provider-bypass', roomName: name => name, url: appUrl, actions: [], spacetime: null,
-          backend: 'postgres', nullControl: false, defaultWithin: 1000,
-          authentication: { provider: 'keycloak', issuer: `${providerUrl}/realms/accounts` } });
+        { runId: 'login-bypass', roomName: name => name, url: appUrl, actions: [], spacetime: null,
+          backend: 'postgres', nullControl: false, defaultWithin: 1000 });
       assert.equal(grade.setupEvidence.status, 'passed', JSON.stringify(grade));
       assert.equal(grade.criteria[0]!.evidence.status, defect ? 'failed' : 'passed', JSON.stringify(grade));
       assert.equal(writes, defect ? 2 : 1, 'protected endpoint must see the actual same-page app credential');
     }
   } finally {
     await browser.close();
-    await Promise.all([new Promise<void>((resolve, reject) => app.close(error => error ? reject(error) : resolve())),
-      new Promise<void>((resolve, reject) => provider.close(error => error ? reject(error) : resolve()))]);
+    await new Promise<void>((resolve, reject) => app.close(error => error ? reject(error) : resolve()));
   }
-});
-
-test('hosted account actions use only the declared realm and preserve real rejection evidence', async () => {
-  const browser = await chromium.launch({ headless: true });
-  const authentication = { provider: 'keycloak' as const, issuer: 'http://identity.test/realms/accounts' };
-  try {
-    for (const flow of ['signin', 'signup', 'shared-signup', 'walk-signup', 'wrong-password', 'wrong-account', 'wrong-origin', 'wrong-realm']) {
-      const context = await browser.newContext();
-      const page = await context.newPage();
-      let submitted = false;
-      const user = flow === 'walk-signup' ? 'lintwalk' : 'Alice-scope';
-      const password = flow === 'walk-signup' ? 'pwlintwalk' : 'pw-Alice-scope';
-      const provider = flow === 'wrong-origin' ? 'http://impostor.test/realms/accounts'
-        : flow === 'wrong-realm' ? 'http://identity.test/realms/accounts-other' : authentication.issuer;
-      const mode = flow.includes('signup') ? 'signUp' : 'signIn';
-      await page.context().route('http://**/*', async route => {
-        const url = new URL(route.request().url());
-        const registration = url.pathname.endsWith('/register');
-        const entry = `${provider}/${flow === 'signup' ? 'register' : 'login'}`;
-        let body: string;
-        if (url.hostname === 'app.test') {
-          body = url.pathname === '/callback' ? `<strong id="current-user">${flow === 'wrong-account' ? 'someone-else' : user}</strong>`
-            : `<a id="${flow === 'signup' ? 'signup' : 'signin'}-toggle" data-auth-provider="keycloak" href="${entry}">Login</a>`;
-        } else if (route.request().method() === 'POST') {
-          submitted = true;
-          const fields = new URLSearchParams(route.request().postData()!);
-          assert.equal(fields.get('username'), user);
-          assert.equal(fields.get('password'), password);
-          if (registration) {
-            assert.equal(fields.get('password-confirm'), password);
-            assert.equal(fields.get('email'), null);
-            assert.equal(fields.get('firstName'), null);
-            assert.equal(fields.get('lastName'), null);
-          }
-          if (flow !== 'wrong-password') {
-            await route.fulfill({ contentType: 'text/html', body: '<script>location.href="http://app.test/callback"</script>' });
-            return;
-          }
-          body = '<span id="input-error-username">Invalid username or password.</span>';
-        } else {
-          body = `<form id="${registration ? 'kc-register-form' : 'kc-form-login'}" method="post">
-            <input id="username" name="username"><input id="password" name="password">
-            ${registration ? '<input id="password-confirm" name="password-confirm">' : ''}
-            <input id="kc-login" type="submit">
-            </form><span id="kc-registration"><a href="${provider}/register">Register</a></span>`;
-        }
-        await route.fulfill({ contentType: 'text/html', body });
-      });
-      await page.goto('http://app.test');
-      if (flow === 'walk-signup') {
-        const hooks: LintHook[] = ['signup-username', 'signup-password', 'signup-submit', 'current-user']
-          .map(id => ({ id, stage: id === 'current-user' ? 'storefront' : 'landing',
-            check: 'visible', element: id, note: '' }));
-        const results: LintResult[] = [];
-        await ecommerceWalk({ page, args: { url: 'http://app.test', track: 'ecommerce', level: 1, json: true, headed: false },
-          hooks, byStage: stage => hooks.filter(hook => hook.stage === stage), blocked: () => {},
-          checkHook: async (target, hook, observations) => {
-            assert.equal(await target.locator(`#${hook.id}`).isVisible(), true);
-            observations.push({ id: hook.id, status: 'PASS' }); return true;
-          }, results, uniq: 'walk', tid: id => `#${id}`, CHECK_TIMEOUT: 1000, authentication });
-        assert.deepEqual(results.map(item => item.status), ['SCENARIO', 'SCENARIO', 'SCENARIO', 'PASS']);
-        assert.equal(submitted, true);
-        assert.equal(await page.locator('#current-user').innerText(), user);
-        await context.close();
-        continue;
-      }
-      const actor = { page, loc: (id: string) => page.locator(keycloakElementSelector(page.url(), id, `#${id}`, authentication)).first() };
-      const result = await executeAction(ACTION_REGISTRY, mode,
-        { do: mode, actor: 'shopper', name: 'Alice', expectFailure: flow === 'wrong-password' }, {
-          capabilities: {
-            actors: { get: () => actor },
-            'browser-interaction': { authentication, defaultWithin: 1000,
-              scopedUser: (name: string) => `${name}-scope`, testId: (id: string) => `#${id}`,
-              sleep: async () => { await page.locator('#input-error-username').waitFor(); } },
-          },
-        });
-      const rejected = ['wrong-origin', 'wrong-realm', 'wrong-account'].includes(flow);
-      assert.equal(result.status, rejected ? 'failed' : 'passed', `${flow}: ${result.summary}`);
-      assert.equal((result.observation as { authenticationPath?: string } | null)?.authenticationPath,
-        flow === 'wrong-origin' || flow === 'wrong-realm' ? undefined : 'keycloak');
-      if (flow === 'wrong-origin' || flow === 'wrong-realm') {
-        assert.equal(submitted, false);
-        assert.equal(await page.locator('#username').inputValue(), '');
-        assert.equal(await page.locator('#password').inputValue(), '');
-      } else if (flow === 'wrong-password') {
-        assert.equal(await actor.loc('auth-error').innerText(), 'Invalid username or password.');
-        assert.equal(await actor.loc('current-user').count(), 0);
-        assert.equal(await page.locator('#auth-error').count(), 0, 'no synthetic app error is created');
-        const feature = compileScenarioDefinition({ schemaVersion: 1, track: 'ecommerce', level: 1,
-          name: 'hosted-rejection', features: [{ id: 1, name: 'rejection', actors: ['shopper'], setup: [], criteria: [
-            { id: 'auth', desc: 'rejected login stays signed out', points: 0, steps: [
-              { do: 'signIn', actor: 'shopper', name: 'Alice-scope', exact: true,
-                password: 'pw-Alice-scope', expectFailure: true },
-              { do: 'expect', actor: 'shopper', testid: 'auth-error', within: 500 },
-              { do: 'reload', actor: 'shopper', application: true, settleMs: 100 },
-              { do: 'expect', actor: 'shopper', testid: 'current-user', absent: true, within: 25 },
-            ] },
-          ] }] }).features[0]!;
-        const routedBrowser = { newContext: async () => page.context() } as unknown as Browser;
-        const grade = await gradeFeature(routedBrowser, feature,
-          { url: 'http://app.test', level: 1, headed: false, selectedCheckKeys: [], nullControl: false },
-          { runId: 'hosted', roomName: name => name, url: 'http://app.test', actions: [], spacetime: null,
-            nullControl: false, authentication });
-        assert.equal(grade.criteria[0]!.evidence.status, 'passed', JSON.stringify(grade));
-      } else if (!rejected) {
-        assert.equal(submitted, true);
-        assert.equal(page.url(), 'http://app.test/callback');
-      }
-      await context.close();
-    }
-    for (const url of ['http://identity.test/realms/accounts-other/login', 'http://impostor.test/realms/accounts/login']) {
-      assert.equal(keycloakElementSelector(url, 'auth-error', '#auth-error', authentication), '#auth-error');
-    }
-  } finally { await browser.close(); }
 });
 
 test('fresh ownership reads catch a server mutation hidden by the old page', async () => {
@@ -885,7 +760,6 @@ test('signup reaches direct and shared-dialog forms but rejects missing hooks an
           capabilities: {
             actors: { get: () => actor },
             'browser-interaction': { defaultWithin: 300, scopedUser: (name: string) => `${name}-scope`,
-              authentication: { provider: 'keycloak', issuer: 'http://identity.test/realms/accounts' },
               testId: (id: string) => `#${id}` },
           },
         });
@@ -933,7 +807,6 @@ test('signin opens a hidden form before the toggle in DOM order and accepts an a
           capabilities: {
             actors: { get: () => actor },
             'browser-interaction': { defaultWithin: 1000, scopedUser: (name: string) => `${name}-scope`,
-              authentication: { provider: 'keycloak', issuer: 'http://identity.test/realms/accounts' },
               testId: (id: string) => `#${id}` },
           },
         });

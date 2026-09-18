@@ -1,8 +1,6 @@
 // This contract walk uses one browser and one customer; scenarios own multi-actor behavior.
 
 import { applyCredentialAliases } from '../../src/composition/credential-aliases.js';
-import { authenticateWithKeycloak, usesKeycloakLogin } from '../../src/actions/keycloak-browser.js';
-import type { BrowserCapability } from '../../src/actions/actor-action-runtime.js';
 import type { Locator } from 'playwright';
 import type { LintHook, LintWalkContext } from '../../linter/lint.js';
 
@@ -17,10 +15,7 @@ const CART_ITEM = 'Headphones';
 const REVIEW_ITEM = 'Air Purifier';
 const SEARCH_ONLY = 'Webcam';
 
-export async function walk({ page, args, byStage, blocked, checkHook, results, uniq, tid, CHECK_TIMEOUT, authentication }: LintWalkContext): Promise<void> {
-  const accountBrowser: BrowserCapability = { authentication, defaultWithin: CHECK_TIMEOUT,
-    roomName: value => value, scopedUser: value => value, testId: tid,
-    sleep: milliseconds => page.waitForTimeout(milliseconds) };
+export async function walk({ page, args, byStage, blocked, checkHook, results, uniq, tid, CHECK_TIMEOUT }: LintWalkContext): Promise<void> {
   const fail = (h: LintHook, detail: string): void => { results.push({ id: h.id, status: 'FAIL', detail }); };
   const pass = (h: LintHook): void => { results.push({ id: h.id, status: 'PASS' }); };
   const click = async (locator: Locator, label: string): Promise<void> => {
@@ -44,27 +39,15 @@ export async function walk({ page, args, byStage, blocked, checkHook, results, u
   // Stage: landing — the storefront and its prices are public, so everything
   // here must resolve before anyone signs in.
   let ok = true;
-  const localAccountInputs = ['signup-username', 'signup-password', 'signup-submit', 'signin-username', 'signin-password', 'signin-submit'];
   const needsAccount = hasStage('storefront', 'item', 'item-after-review', 'cart',
     'after-checkout', 'admin', 'operations', 'fulfilment');
-  const hostedSignup = authentication && (needsAccount || byStage('landing').some(h => localAccountInputs.includes(h.id)))
-    && await usesKeycloakLogin(page, accountBrowser, 'signup');
-  for (const h of byStage('landing')) {
-    if (hostedSignup && localAccountInputs.includes(h.id)) {
-      results.push({ id: h.id, status: 'SCENARIO', detail: 'The declared hosted login form is checked by the account actions.' });
-    } else ok = (await checkHook(page, h, results)) && ok;
-  }
+  for (const h of byStage('landing')) ok = (await checkHook(page, h, results)) && ok;
 
   if (ok && needsAccount) {
     // Use alphanumeric credentials because username character rules are not part of the contract.
-    if (hostedSignup) {
-      await authenticateWithKeycloak({ page, browser: accountBrowser, mode: 'signup', user: `lint${uniq}`,
-        password: `pwlint${uniq}`, signal: new AbortController().signal });
-    } else {
-      await page.locator(tid('signup-username')).first().fill(`lint${uniq}`);
-      await page.locator(tid('signup-password')).first().fill(`pwlint${uniq}`);
-      await click(page.locator(tid('signup-submit')).first(), 'submit sign-up');
-    }
+    await page.locator(tid('signup-username')).first().fill(`lint${uniq}`);
+    await page.locator(tid('signup-password')).first().fill(`pwlint${uniq}`);
+    await click(page.locator(tid('signup-submit')).first(), 'submit sign-up');
   }
 
   // Stage: storefront — signing up turns the buying controls on.
@@ -181,16 +164,11 @@ export async function walk({ page, args, byStage, blocked, checkHook, results, u
     }
     await click(page.locator(tid('signout')).first(), 'sign out');
     await page.waitForTimeout(1000);
-    if (await usesKeycloakLogin(page, accountBrowser, 'signin')) {
-      await authenticateWithKeycloak({ page, browser: accountBrowser, mode: 'signin', user: ADMIN_USER,
-        password: seededAdminPassword(args.credentialAliases), signal: new AbortController().signal });
-    } else {
-      const toggle = page.locator(tid('signin-toggle')).first();
-      if (await toggle.count()) await toggle.click().catch(() => {});
-      await page.locator(tid('signin-username')).first().fill(ADMIN_USER);
-      await page.locator(tid('signin-password')).first().fill(seededAdminPassword(args.credentialAliases));
-      await click(page.locator(tid('signin-submit')).first(), 'submit sign-in');
-    }
+    const toggle = page.locator(tid('signin-toggle')).first();
+    if (await toggle.count()) await toggle.click().catch(() => {});
+    await page.locator(tid('signin-username')).first().fill(ADMIN_USER);
+    await page.locator(tid('signin-password')).first().fill(seededAdminPassword(args.credentialAliases));
+    await click(page.locator(tid('signin-submit')).first(), 'submit sign-in');
     await page.waitForTimeout(1500);
     const link = page.locator(tid('admin-link')).first();
     if (await link.isVisible().catch(() => false)) await link.click();

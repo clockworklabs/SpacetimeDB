@@ -32,29 +32,6 @@ test('production framing is one sentence and never changes restoration prompts',
   }
 });
 
-test('supplied identity service facts are optional and identical across stacks', () => {
-  const track = loadTrack('ecommerce');
-  const authentication = { issuer: 'http://127.0.0.1:9090/realms/stack-bench',
-    clientId: 'storefront', redirectUri: 'http://127.0.0.1:5173/' };
-  let disclosure: string | undefined;
-  for (const backend of ['mongodb', 'postgres', 'spacetime']) {
-    const args = parseAgentArgs(['node', 'agent', '--mode', 'build', '--backend', backend,
-      '--level', '1', '--app', '/app', '--guidance', 'neutral']);
-    const materials = { skillsText: '', requirementText: 'Build the requested store.', contractText: '' };
-    const off = buildPrompt(args, portsFor(track, backend, 0), track, materials);
-    assert(!off.includes('## Available identity service'));
-    const on = buildPrompt(args, portsFor(track, backend, 0), track, { ...materials, authentication });
-    const added = on.slice(on.indexOf('## Available identity service'), on.indexOf('Build the requested store.')).trim();
-    for (const value of Object.values(authentication)) assert(added.includes(value));
-    assert.match(added, /may use it or implement local authentication/);
-    assert.match(added, /ID-token realm_access\.roles values are app-admin, app-staff, and app-customer/);
-    assert.match(added, /Ordinary registrations receive none of these roles/);
-    assert.doesNotMatch(added, /expected failures|scores|payloads|test cases|reference code/i);
-    if (disclosure) assert.equal(added, disclosure); else disclosure = added;
-    assert.equal(on.replace(`\n\n${added}`, ''), off);
-  }
-});
-
 const AGENT = resolve(STACK_BENCH_ROOT, 'dist', 'commands', 'agent.js');
 const STACKS = ['mongodb', 'postgres', 'spacetime'] as const;
 const EVALUATION_LANGUAGE =

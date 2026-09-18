@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { runCampaignAdmission, validateCampaignAdmission, campaignUsesNoExternalResources }
+import { runCampaignAdmission, validateCampaignAdmission }
   from '../src/campaigns/campaign-admission.js';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import type { CampaignAdmissionPreflightRequest }
@@ -135,15 +135,6 @@ test('admission requires a distinct report for each provider route and rejects s
     substituted.reports[0]!.request.providerRoute = 'another-provider';
     assert.throws(() => validateCampaignAdmission(substituted, plan, root), /must contain one/);
 
-    const providerPlan = structuredClone(plan);
-    for (const condition of providerPlan.conditions) condition.authenticationProvider = 'keycloak';
-    const missingProviderEvidence = { ...payload, conditions: providerPlan.conditions };
-    assert.throws(() => validateCampaignAdmission(missingProviderEvidence, providerPlan, root),
-      /does not match the compiled scope/);
-    const providerEvidence = { ...missingProviderEvidence, reports: payload.reports.map(report =>
-      ({ ...report, request: { ...report.request, authenticationProvider: 'keycloak' } })) };
-    assert.deepEqual(validateCampaignAdmission(providerEvidence, providerPlan, root), providerEvidence);
-    assert.equal(campaignUsesNoExternalResources(providerPlan), false);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

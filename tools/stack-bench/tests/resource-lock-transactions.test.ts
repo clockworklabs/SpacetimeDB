@@ -6,40 +6,31 @@ import test from 'node:test';
 import { createBackendLease, publicBackendLease, runnerCapacity, claimBackendResources,
   claimBackendResourcesWhenAvailable, releaseResourceLocks } from '../src/runtime/backend-lease.js';
 import { hostResourceWaitReason, resourceLockDescriptors, resourceLockTransaction } from '../src/runtime/resource-lock-worker.js';
-import { attemptContainerLimitTotals } from '../src/composition/product-config.js';
+import { ATTEMPT_CONTAINER_LIMIT_TOTALS } from '../src/composition/product-config.js';
 
-test('dynamic startup reservation includes optional provider caps once per worker across backends', () => {
-  const root = mkdtempSync(join(tmpdir(), 'host-auth-capacity-'));
+test('dynamic startup reservation counts the memory envelope once per worker across backends', () => {
+  const root = mkdtempSync(join(tmpdir(), 'host-capacity-'));
   const first = createBackendLease({ runId: 'first', backend: 'stub', track: 'loop', runIndex: 0 });
   const next = createBackendLease({ runId: 'next', backend: 'stub', track: 'loop', runIndex: 1 });
   const start = Date.now();
   const keys = ['slot:loop:postgres:run0', 'slot:loop:mongodb:run0', 'slot:loop:spacetime:run0'];
-  const withProvider = attemptContainerLimitTotals('keycloak').memoryBytes;
-  const withoutProvider = attemptContainerLimitTotals().memoryBytes;
+  const memoryBytes = ATTEMPT_CONTAINER_LIMIT_TOTALS.memoryBytes;
   try {
-    const request = { root, lease: first, keys, operation: 'acquire' as const, capacity: null,
-      authenticationProvider: 'keycloak' as const };
+    const request = { root, lease: first, keys, operation: 'acquire' as const, capacity: null };
     const locks = resourceLockTransaction(request, (count, memory) => {
-      assert.equal(count, 1); assert.equal(memory, withProvider); return null;
+      assert.equal(count, 1); assert.equal(memory, memoryBytes); return null;
     }, start);
-    assert.equal(JSON.parse(readFileSync(locks[0]!.path, 'utf8')).authenticationProvider, 'keycloak');
-    assert.equal(JSON.parse(readFileSync(locks[0]!.path, 'utf8')).startupMemoryBytes, withProvider);
-    assert.throws(() => resourceLockTransaction({ ...request, authenticationProvider: undefined }),
-      /different authentication provider/);
+    assert.equal(JSON.parse(readFileSync(locks[0]!.path, 'utf8')).startupMemoryBytes, memoryBytes);
     resourceLockTransaction({ root, lease: next, keys: ['slot:loop:postgres:run1', 'port:5001'],
       operation: 'acquire', capacity: null }, (count, memory) => {
-        assert.equal(count, 2); assert.equal(memory, withProvider + withoutProvider); return null;
+        assert.equal(count, 2); assert.equal(memory, 2 * memoryBytes); return null;
       }, start + 1);
     const later = createBackendLease({ runId: 'later', backend: 'stub', track: 'loop', runIndex: 2 });
     resourceLockTransaction({ root, lease: later, keys: ['slot:loop:postgres:run2'],
       operation: 'acquire', capacity: null }, (count, memory) => {
-        assert.equal(count, 1); assert.equal(memory, withoutProvider); return null;
+        assert.equal(count, 1); assert.equal(memory, memoryBytes); return null;
       }, start + 60_002);
-    // The same host can admit the old envelope and defer the provider envelope.
-    assert.equal(hostResourceWaitReason(32 * 1024 ** 3, 13 * 1024 ** 3, 8, 0), null);
-    assert.match(hostResourceWaitReason(32 * 1024 ** 3, 13 * 1024 ** 3, 8, 0, 1, withProvider)!,
-      /GiB required/);
-    resourceLockTransaction({ ...request, operation: 'release', authenticationProvider: undefined });
+    resourceLockTransaction({ ...request, operation: 'release' });
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

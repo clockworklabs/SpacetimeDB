@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { cpus, loadavg } from 'node:os';
 import { processIdentity } from './platform.js';
-import { ATTEMPT_CONTAINER_LIMIT_TOTALS, attemptContainerLimitTotals } from '../composition/product-config.js';
+import { ATTEMPT_CONTAINER_LIMIT_TOTALS } from '../composition/product-config.js';
 import type { BackendLease, BackendResourceLock } from './backend-lease.js';
 
 export interface ResourceLockTransaction {
@@ -15,7 +15,6 @@ export interface ResourceLockTransaction {
   lease: BackendLease;
   keys: string[];
   capacity?: number | null;
-  authenticationProvider?: 'keycloak';
 }
 
 const hash = (value: string): string => createHash('sha256').update(value).digest('hex');
@@ -72,7 +71,7 @@ export function resourceLockTransaction(input: ResourceLockTransaction,
   readPressure: (startingAttempts: number, startingMemoryBytes: number) => string | null = readHostResourceWaitReason,
   now = Date.now()): BackendResourceLock[] {
   const { operation, root, lease, keys } = input;
-  const envelope = attemptContainerLimitTotals(input.authenticationProvider);
+  const envelope = ATTEMPT_CONTAINER_LIMIT_TOTALS;
   const locks = resourceLockDescriptors(root, keys);
   const owned = (record: Record<string, unknown>): boolean => record.runId === lease.runId
     && record.ownerPid === lease.ownerPid
@@ -112,12 +111,7 @@ export function resourceLockTransaction(input: ResourceLockTransaction,
       continue;
     }
     if (!record) continue;
-    if (owned(record)) {
-      if (lock.key.startsWith('slot:') && record.authenticationProvider !== input.authenticationProvider) {
-        throw new Error('existing resource claim has a different authentication provider');
-      }
-      continue;
-    }
+    if (owned(record)) continue;
     const identity = processIdentity(record.ownerPid as number);
     if (identity && (record.ownerStartMarker === null
       || record.ownerStartMarker === identity.startMarker)) {
@@ -141,11 +135,8 @@ export function resourceLockTransaction(input: ResourceLockTransaction,
       if (!object(record) || typeof record.key !== 'string'
         || typeof record.ownershipMarkerSha256 !== 'string' || typeof record.acquiredAt !== 'string'
         || !Number.isFinite(Date.parse(record.acquiredAt))) throw new Error('unreadable host resource claim');
-      if (record.authenticationProvider !== undefined && record.authenticationProvider !== 'keycloak') {
-        throw new Error('unreadable host resource claim authentication provider');
-      }
       const memoryBytes = record.startupMemoryBytes
-        ?? attemptContainerLimitTotals(record.authenticationProvider).memoryBytes;
+        ?? ATTEMPT_CONTAINER_LIMIT_TOTALS.memoryBytes;
       if (typeof memoryBytes !== 'number' || !Number.isSafeInteger(memoryBytes) || memoryBytes <= 0) {
         throw new Error('unreadable host resource claim startup memory');
       }
@@ -170,8 +161,7 @@ export function resourceLockTransaction(input: ResourceLockTransaction,
             runId: lease.runId, ownerPid: lease.ownerPid,
             ownerStartMarker: processIdentity(lease.ownerPid)?.startMarker ?? null,
             ownershipMarkerSha256: hash(lease.ownershipToken), acquiredAt,
-            startupMemoryBytes: envelope.memoryBytes,
-            ...(input.authenticationProvider ? { authenticationProvider: input.authenticationProvider } : {}) })}\n`);
+            startupMemoryBytes: envelope.memoryBytes })}\n`);
           fsyncSync(fd);
         } finally { closeSync(fd); }
         try { linkSync(temporary, lock.path); }

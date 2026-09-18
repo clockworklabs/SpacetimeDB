@@ -72,8 +72,6 @@ interface ConditionSpecifications {
 export interface ConditionReference {
   id: string;
   productionQuality?: boolean;
-  /** Supplied login service availability, not the application's auth choice. */
-  authenticationProvider?: 'keycloak';
   guidanceProfile: string;
   repairPolicy: string;
   specifications?: ConditionSpecifications;
@@ -116,7 +114,6 @@ export interface RequestedScope { track: string; levels: [RequestedLevel, ...Req
 export interface ResolvedStudyCondition {
   id: string;
   productionQuality?: boolean;
-  authenticationProvider?: 'keycloak';
   contentSha256: string;
   requested: RequestedScope;
   guidance: ResolvedGuidanceProfile;
@@ -308,7 +305,7 @@ export function validateConditionReference(input: unknown, at = 'condition'): Co
   if (!object(input)) fail(at, 'must be an object');
   const value = structuredClone(input) as UnknownRecord;
   const fields = new Set(['id', 'guidanceProfile', 'repairPolicy',
-    'specifications', 'productionQuality', 'authenticationProvider']);
+    'specifications', 'productionQuality']);
   for (const key of Object.keys(value)) if (!fields.has(key)) fail(`${at}.${key}`, 'is unknown');
   for (const key of ['id', 'guidanceProfile', 'repairPolicy']) {
     if (!Object.hasOwn(value, key)) fail(`${at}.${key}`, 'is required');
@@ -316,9 +313,6 @@ export function validateConditionReference(input: unknown, at = 'condition'): Co
   if (typeof value.id !== 'string' || !ID.test(value.id)) fail(`${at}.id`, 'is invalid');
   if (value.productionQuality !== undefined && typeof value.productionQuality !== 'boolean') {
     fail(`${at}.productionQuality`, 'must be a boolean');
-  }
-  if (value.authenticationProvider !== undefined && value.authenticationProvider !== 'keycloak') {
-    fail(`${at}.authenticationProvider`, 'must be keycloak when supplied; omit to disable');
   }
   for (const field of ['guidanceProfile', 'repairPolicy'] as const) {
     const reference = value[field];
@@ -505,7 +499,6 @@ export function resolveStudyConditions(inputs: unknown[], stacks: string[],
     const repair = resolveRepair(catalog, ref.repairPolicy);
     const content = { id: ref.id, requested: requestedScope,
       ...(ref.productionQuality === undefined ? {} : { productionQuality: ref.productionQuality }),
-      ...(ref.authenticationProvider === undefined ? {} : { authenticationProvider: ref.authenticationProvider }),
       guidance, repair };
     return { ...content, contentSha256: sha256(canonicalDefinitionJson(content)) };
   });

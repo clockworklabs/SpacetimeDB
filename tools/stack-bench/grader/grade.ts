@@ -48,9 +48,6 @@ import { controlAppServer, controlBackendRuntime, parseRuntimeControlSpec, prepa
   from '../src/runtime/backend-control.js';
 import type { RuntimeControlSpec } from '../src/runtime/backend-control.js';
 import { leaseFromEnv } from '../src/runtime/backend-lease.js';
-import { authenticationBrowserConfiguration } from '../src/runtime/authentication-service.js';
-import { keycloakElementSelector } from '../src/actions/keycloak-browser.js';
-import type { BrowserCapability } from '../src/actions/actor-action-runtime.js';
 import type { LeasedSpacetimeTarget } from '../src/runtime/spacetime-target.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
@@ -117,7 +114,6 @@ type GradeArgs = {
   browserWsEndpoint?: string;
 };
 type GradeRunContext = {
-  authentication?: BrowserCapability['authentication'];
   savedReader?: { path: string; sha256: string };
   checkoutActivity?: { unsettled: boolean };
   checkoutSnapshots?: ReturnType<typeof createDatabaseReadCapability>['checkoutSnapshots'];
@@ -290,8 +286,7 @@ export class Actor {
   lastWsWrite: ActorWebSocketWrite | null = null;
   annotate = false;
 
-  constructor(name: string, page: Page, context: BrowserContext,
-    readonly authentication?: BrowserCapability['authentication']) {
+  constructor(name: string, page: Page, context: BrowserContext) {
     this.name = name;
     this.context = context;
     this.consoleErrors = [];
@@ -379,7 +374,7 @@ export class Actor {
     const root = scope
       ? this.page.locator(tid(scope.testid), { hasText: scope.contains }).filter({ visible: true }).first()
       : this.page;
-    const selector = keycloakElementSelector(this.page.url(), testid, tid(testid), this.authentication);
+    const selector = tid(testid);
     return (contains
       ? root.locator(selector, { hasText: contains })
       : root.locator(selector)).filter({ visible: true }).first();
@@ -450,7 +445,6 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
   const actorAccess = Object.freeze({ get: (name: string) => actors.get(name) });
   const runtimeValues = Object.freeze({
     applicationUrl: ctx.url,
-    authentication: ctx.authentication,
     defaultWithin,
     expand: (value: unknown) => expand(value, ctx),
     hyphenatedScopedUser: (name: string) => `${name}-${ctx.scope}`,
@@ -483,7 +477,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
         const fresh = await context.newPage();
         entry.page = fresh;
         fresh.setDefaultTimeout(defaultWithin);
-        const observer = new Actor(`${actor.name}-fresh`, fresh, context, ctx.authentication);
+        const observer = new Actor(`${actor.name}-fresh`, fresh, context);
         await observer.ready;
         // storageState omits sessionStorage. Seed the first document only;
         // later reloads must retain the application's own storage changes.
@@ -806,7 +800,7 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
       const page = await runBrowserInfrastructureOperation('page creation', () => context.newPage());
       contexts[contexts.length - 1]!.page = page;
       page.setDefaultTimeout(SETUP_WITHIN);
-      const actor = new Actor(name, page, context, ctx.authentication);
+      const actor = new Actor(name, page, context);
       await actor.ready;
       actor.annotate = Boolean(args.media);
       actors.set(name, actor);
@@ -1056,7 +1050,6 @@ async function main(): Promise<void> {
   const databaseLease = gradeDatabaseLease(args.backend);
 
   const ctx: GradeRunContext = { actionCancellation: { reason: null }, runId, roomName: (base: string) => `${base}-${runId}`,
-    authentication: authenticationBrowserConfiguration(),
     restartSpec: args.restartSpec, url: args.url!,
     backend: args.backend, actions, spacetime, dbName: args.dbName,
     databaseLease,

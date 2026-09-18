@@ -146,7 +146,7 @@ interface CampaignReportCondition {
   key: string;
   stack: string;
   agent: { adapter: string; model: string; providerRoute?: string; maxOutputTokens?: number };
-  condition: { id: string; contentSha256: string; authenticationProvider?: 'keycloak'; requested?: {
+  condition: { id: string; contentSha256: string; requested?: {
     levels?: Array<{ level: number; selection?: RunSelection }> } };
   sample: {
     plannedAttempts: number;
@@ -559,8 +559,6 @@ CampaignReportCondition[] {
       condition: {
         id: attempts[0]!.condition.id,
         contentSha256: attempts[0]!.condition.contentSha256,
-        ...(attempts[0]!.condition.authenticationProvider
-          ? { authenticationProvider: attempts[0]!.condition.authenticationProvider } : {}),
         requested: attempts[0]!.condition.requested,
       },
       sample: { plannedAttempts: attempts.length, completedAttempts: completed.length,
@@ -718,12 +716,11 @@ export function validateCampaignReport(input: unknown): CampaignReport {
     const at = `campaign report.conditions[${index}]`;
     exactFields(row, new Set(['key', 'stack', 'agent', 'condition', 'sample', 'metrics', 'spend',
       'firstBuildObservations']), at);
-    exactFields(row.condition, new Set(['id', 'contentSha256', 'requested', 'authenticationProvider']),
+    exactFields(row.condition, new Set(['id', 'contentSha256', 'requested']),
       `${at}.condition`);
     if (typeof row.stack !== 'string' || !row.stack
       || !row.condition || typeof row.condition !== 'object' || Array.isArray(row.condition)
       || typeof row.condition.id !== 'string' || !row.condition.id
-      || (row.condition.authenticationProvider !== undefined && row.condition.authenticationProvider !== 'keycloak')
       || !/^[a-f0-9]{64}$/.test(row.condition.contentSha256)) {
       throw new Error(`${at}.condition is invalid`);
     }
@@ -1026,8 +1023,7 @@ export function renderCampaignHtml(report: CampaignReport,
       ? 'First-build score' : report.policy.primaryMetric;
   const rows = report.conditions.map(condition => `<tr><td>${escape(condition.stack)}</td>`
     + `<td>${escape(condition.agent.adapter)} / ${escape(condition.agent.model)}${condition.agent.providerRoute ? ` / ${escape(condition.agent.providerRoute)}` : ''}</td>`
-    + `<td>${escape(condition.condition.id)}<br><small>Login service: ${condition.condition.authenticationProvider === 'keycloak'
-      ? 'Keycloak available; app use is not implied' : 'not supplied'}</small></td>`
+    + `<td>${escape(condition.condition.id)}</td>`
     + `<td>${condition.sample.completedAttempts}/${condition.sample.plannedAttempts}</td>`
     + `<td>${condition.sample.invalidExecutions}/${condition.sample.executions}</td>`
     + `<td>${escape(formatMetric(report.policy.primaryMetric,
@@ -1202,8 +1198,7 @@ export function campaignReportCsv(report: CampaignReport): Record<string, string
         'diagnosticFailedChecks', 'diagnosticBlockedChecks', 'diagnosticUnmeasuredChecks', 'checkCompletionRate', 'weightedScoreRate',
         'outcomeCostUsd', 'outcomeCostUpperBoundUsd', 'allExecutionCostStatus', 'allExecutionCostUsd',
         'sumOfAvailableExactCostsAndUpperBoundsUsd', 'unknownExecutions', 'boundedExecutions', 'totalTokens', 'durationMs',
-        'originalTimeLimitMinutes', 'effectiveTimeLimitMinutes', 'consumedExecutionMs', 'timeExtensions', 'providerRoute', 'maxOutputTokens',
-        'authenticationProviderAvailable'],
+        'originalTimeLimitMinutes', 'effectiveTimeLimitMinutes', 'consumedExecutionMs', 'timeExtensions', 'providerRoute', 'maxOutputTokens'],
       ...report.attempts.map(attempt => [report.campaign.id, report.campaign.sha256,
         attempt.condition.id, attempt.condition.contentSha256, attempt.agentAdapter, attempt.levels.join(';'),
         attempt.id, attempt.stack, attempt.model, attempt.repetition,
@@ -1214,8 +1209,7 @@ export function campaignReportCsv(report: CampaignReport): Record<string, string
         attempt.spend.knownCostUsd, attempt.spend.unknownExecutions, attempt.spend.boundedExecutions,
         attempt.metrics?.totalTokens, attempt.metrics?.totalDurationMs,
         attempt.timeBudget?.originalMinutes, attempt.timeBudget?.effectiveMinutes,
-        attempt.timeBudget?.consumedMs, attempt.timeBudget?.extensionCount, attempt.providerRoute, attempt.maxOutputTokens,
-        attempt.condition.authenticationProvider ?? 'none']),
+        attempt.timeBudget?.consumedMs, attempt.timeBudget?.extensionCount, attempt.providerRoute, attempt.maxOutputTokens]),
     ]),
     'executions.csv': csv([
       ['attempt', 'execution', 'stack', 'status', 'outcome', 'recordedStatus', 'recordedOutcome', 'costStatus', 'costUsd',

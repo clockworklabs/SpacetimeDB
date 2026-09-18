@@ -11,16 +11,6 @@ Show the sign-in inputs or `signin-toggle` on the signed-out page.
 While signed in, show `signout` directly or reveal it by clicking `current-user`.
 No other navigation is required to reach sign-out.
 
-When a supplied Keycloak service is available, you may use its hosted login
-instead of local password forms. Put `data-auth-provider="keycloak"` on the
-`signin-toggle` or `signup-toggle` control that opens it. The sign-in page must
-also offer registration when there is no separate sign-up control. The provider's
-visible form and errors replace the local form and error controls below. Keep
-`current-user`, `signout`, and all business controls in the application.
-Registration still requires only a username and password. Do not require email
-or personal names merely to create an account. Preserve the requested display
-name and existing username/password rules.
-
 | Element ID | Observable element |
 |---|---|
 | `signup-username` | sign-up username input |
@@ -49,5 +39,4 @@ do not create a separate identity.
 Account creation and login must use the application's real authentication path.
 The interface does not prescribe password-taking backend function names or routes.
 Keep credentials out of durable application logs. A failed registration or login
-must not give the caller an application session or access to protected operations,
-even when authentication is handled by an external service.
+must not give the caller an application session or access to protected operations.

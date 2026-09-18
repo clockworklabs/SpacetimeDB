@@ -5,37 +5,27 @@ import { join } from 'node:path';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { parseReferenceBuildArgs } from '../src/references/reference-build.js';
 import { parseReferenceQualificationArgs } from '../src/references/reference-live.js';
-import { assertReferenceAuthentication } from '../src/references/reference-selection.js';
 
-const condition = { id: 'provider-reference', guidanceProfile: 'neutral-dev',
-  repairPolicy: 'scored-only', authenticationProvider: 'keycloak' as const };
+const condition = { id: 'local-reference', guidanceProfile: 'neutral-dev', repairPolicy: 'scored-only' };
 
-test('the SpacetimeDB reference can build and qualify without an identity service', () => {
+test('the SpacetimeDB reference uses no supplied identity service', () => {
   const metadata = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
     'reference-apps/ecommerce/spacetime/reference.json'), 'utf8'));
-  assert.doesNotThrow(() => assertReferenceAuthentication('ecommerce-reference-spacetime', metadata.requiredEnvironment, undefined, true));
+  assert(!metadata.requiredEnvironment.some((name: string) => /OIDC|KEYCLOAK/.test(name)));
 });
 
-test('reference builds select the provider only through a validated explicit study condition', () => {
-  assert.equal(parseReferenceBuildArgs(['node', 'reference-build']).condition, undefined);
-  const selected = parseReferenceBuildArgs(['node', 'reference-build', '--backend', 'spacetime',
-    '--condition-json', JSON.stringify(condition)]);
-  assert.deepEqual(selected.condition, condition);
-  assert.throws(() => parseReferenceBuildArgs(['node', 'reference-build', '--condition-json',
-    JSON.stringify({ ...condition, authenticationProvider: 'other' })]), /authenticationProvider/);
-  assert.throws(() => parseReferenceBuildArgs(['node', 'reference-build', '--condition-json',
-    JSON.stringify({ ...condition, implicitProvider: true })]), /unknown/);
+test('reference qualification preserves current conditions and rejects retired provider selection', () => {
+  const parse = parseReferenceQualificationArgs;
+  assert.equal(parse(['node', 'reference', '--backend', 'spacetime']).condition, undefined);
+  assert.deepEqual(parse(['node', 'reference', '--backend', 'spacetime',
+    '--condition-json', JSON.stringify(condition)]).condition, condition);
+  assert.throws(() => parse(['node', 'reference', '--condition-json',
+    JSON.stringify({ ...condition, authenticationProvider: 'keycloak' })]), /authenticationProvider/);
 });
 
-test('provider-dependent references fail early; provider-on qualification stays ineligible', () => {
-  assert.throws(() => assertReferenceAuthentication('oidc-reference', ['OIDC_ISSUER']), /explicitly selected/);
-  assert.doesNotThrow(() => assertReferenceAuthentication('oidc-reference', ['OIDC_ISSUER'], condition));
-  assert.doesNotThrow(() => assertReferenceAuthentication('local-auth-reference', []));
-  const args = parseReferenceQualificationArgs(['node', 'reference-live', '--backend', 'spacetime',
-    '--condition-json', JSON.stringify(condition)]);
-  assert.deepEqual(args.condition, condition);
-  assert.throws(() => assertReferenceAuthentication('oidc-reference', ['OIDC_ISSUER'], args.condition, true),
-    /qualification scope.*do not yet bind the study condition/);
-  assert.throws(() => assertReferenceAuthentication('local-auth-reference', [], condition, true),
-    /qualification is blocked/);
+test('reference builds reject the removed provider condition option', () => {
+  assert.deepEqual(parseReferenceBuildArgs(['node', 'reference', '--backend', 'spacetime']),
+    { backend: 'spacetime', fixture: null, out: null });
+  assert.throws(() => parseReferenceBuildArgs(['node', 'reference', '--condition-json',
+    JSON.stringify(condition)]), /Unknown option.*condition-json/);
 });
