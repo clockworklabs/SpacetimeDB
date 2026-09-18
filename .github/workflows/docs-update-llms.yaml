@@ -14,8 +14,10 @@ on:
 
 jobs:
   update-llms:
-    # This builds documentation assets and updates one generated text file.
-    runs-on: spacetimedb-linux-small
+    # This runs the same memory-intensive Docusaurus build as docs publishing.
+    runs-on: spacetimedb-linux
+    env:
+      NODE_OPTIONS: --max-old-space-size=8192
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
