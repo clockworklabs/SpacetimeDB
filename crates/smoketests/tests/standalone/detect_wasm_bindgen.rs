@@ -1,4 +1,4 @@
-use spacetimedb_smoketests::Smoketest;
+use spacetimedb_smoketests::build_rust_module;
 
 /// Module code that uses wasm_bindgen (should be rejected)
 const MODULE_CODE_WASM_BINDGEN: &str = r#"
@@ -29,13 +29,7 @@ pub fn test(_ctx: &ReducerContext) {
 /// Standalone-only: this validates local CLI build diagnostics without publishing a module.
 #[test]
 fn test_detect_wasm_bindgen() {
-    let test = Smoketest::builder()
-        .module_code(MODULE_CODE_WASM_BINDGEN)
-        .extra_deps(r#"wasm-bindgen = "0.2""#)
-        .autopublish(false)
-        .build();
-
-    let output = test.spacetime_build();
+    let output = build_rust_module(MODULE_CODE_WASM_BINDGEN, r#"wasm-bindgen = "0.2""#);
     assert!(!output.status.success(), "Expected build to fail with wasm_bindgen");
 
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -50,13 +44,7 @@ fn test_detect_wasm_bindgen() {
 /// Standalone-only: this validates local CLI build diagnostics without publishing a module.
 #[test]
 fn test_detect_getrandom() {
-    let test = Smoketest::builder()
-        .module_code(MODULE_CODE_GETRANDOM)
-        .extra_deps(r#"rand = "0.8""#)
-        .autopublish(false)
-        .build();
-
-    let output = test.spacetime_build();
+    let output = build_rust_module(MODULE_CODE_GETRANDOM, r#"rand = "0.8""#);
     assert!(!output.status.success(), "Expected build to fail with getrandom");
 
     let stderr = String::from_utf8_lossy(&output.stderr);
