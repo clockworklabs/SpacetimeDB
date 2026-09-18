@@ -528,6 +528,7 @@ internal static class Program
             );
             Unsubscribe(all);
             EmptyCache();
+            RootRlsTests.Run(host);
             Console.WriteLine("Namespace integration passed");
         }
         finally
