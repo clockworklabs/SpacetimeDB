@@ -503,7 +503,6 @@ namespace SpacetimeDB
 #if !NET10_0_OR_GREATER
     public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
     {
-        public global::SpacetimeDB.ModuleEnvironment Env => default;
         public readonly Identity Sender;
         public readonly ConnectionId? ConnectionId;
         public readonly Random Rng;
@@ -586,7 +585,6 @@ namespace SpacetimeDB
 
     public sealed partial class ProcedureContext : global::SpacetimeDB.ProcedureContextBase
     {
-        public new global::SpacetimeDB.ModuleEnvironment Env => default;
         private readonly Local _db = new();
 
         internal ProcedureContext(
@@ -665,7 +663,6 @@ namespace SpacetimeDB
 
     public sealed partial class HandlerContext : global::SpacetimeDB.HandlerContextBase
     {
-        public new global::SpacetimeDB.ModuleEnvironment Env => default;
         private readonly Local _db = new();
 
         internal HandlerContext(Random random, Timestamp time)
@@ -706,8 +703,6 @@ namespace SpacetimeDB
 
     public sealed class ProcedureTxContext : global::SpacetimeDB.ProcedureTxContextBase
     {
-        public new global::SpacetimeDB.ModuleEnvironment Env => default;
-
         internal ProcedureTxContext(Internal.TxContext inner)
             : base(inner) { }
 
@@ -717,8 +712,6 @@ namespace SpacetimeDB
     [Experimental("STDB_UNSTABLE")]
     public sealed class HandlerTxContext : global::SpacetimeDB.HandlerTxContextBase
     {
-        public new global::SpacetimeDB.ModuleEnvironment Env => default;
-
         internal HandlerTxContext(Internal.TxContext inner)
             : base(inner) { }
 
@@ -727,23 +720,28 @@ namespace SpacetimeDB
 
     public sealed class Local : global::SpacetimeDB.LocalBase
     {
-        internal global::SpacetimeDB.Internal.TableHandles.BTreeMultiColumn BTreeMultiColumn =>
+        internal global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.BTreeMultiColumn BTreeMultiColumn =>
             new();
-        internal global::SpacetimeDB.Internal.TableHandles.BTreeViews BTreeViews => new();
-        public global::SpacetimeDB.Internal.TableHandles.MultiTable1 MultiTable1 => new();
-        public global::SpacetimeDB.Internal.TableHandles.MultiTable2 MultiTable2 => new();
-        public global::SpacetimeDB.Internal.TableHandles.PrivateTable PrivateTable => new();
-        public global::SpacetimeDB.Internal.TableHandles.PublicTable PublicTable => new();
-        internal global::SpacetimeDB.Internal.TableHandles.RegressionMultipleUniqueIndexesHadSameName RegressionMultipleUniqueIndexesHadSameName =>
+        internal global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.BTreeViews BTreeViews =>
             new();
-        public global::SpacetimeDB.Internal.TableHandles.SendMessageTimer SendMessageTimer => new();
+        public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.MultiTable1 MultiTable1 =>
+            new();
+        public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.MultiTable2 MultiTable2 =>
+            new();
+        public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.PrivateTable PrivateTable =>
+            new();
+        public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.PublicTable PublicTable =>
+            new();
+        internal global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.RegressionMultipleUniqueIndexesHadSameName RegressionMultipleUniqueIndexesHadSameName =>
+            new();
+        public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.SendMessageTimer SendMessageTimer =>
+            new();
     }
 
     public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.IViewContext
     {
         public Identity Sender { get; }
 
-        public global::SpacetimeDB.ModuleEnvironment Env => default;
         public QueryBuilder From => default;
 
         internal ViewContext(Identity sender, Internal.LocalReadOnly db)
@@ -757,7 +755,6 @@ namespace SpacetimeDB
         : DbContext<Internal.LocalReadOnly>,
             Internal.IAnonymousViewContext
     {
-        public global::SpacetimeDB.ModuleEnvironment Env => default;
         public QueryBuilder From => default;
 
         internal AnonymousViewContext(Internal.LocalReadOnly db)
@@ -877,36 +874,41 @@ namespace SpacetimeDB.Generated.Assembly_007300650072007600650072002C00200056006
 
         public readonly struct Tables
         {
-            internal global::SpacetimeDB.Internal.TableHandles.BTreeMultiColumn BTreeMultiColumn =>
+            internal global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.BTreeMultiColumn BTreeMultiColumn =>
                 new();
-            internal global::SpacetimeDB.Internal.TableHandles.BTreeViews BTreeViews => new();
-            public global::SpacetimeDB.Internal.TableHandles.MultiTable1 MultiTable1 => new();
-            public global::SpacetimeDB.Internal.TableHandles.MultiTable2 MultiTable2 => new();
-            public global::SpacetimeDB.Internal.TableHandles.PrivateTable PrivateTable => new();
-            public global::SpacetimeDB.Internal.TableHandles.PublicTable PublicTable => new();
-            internal global::SpacetimeDB.Internal.TableHandles.RegressionMultipleUniqueIndexesHadSameName RegressionMultipleUniqueIndexesHadSameName =>
+            internal global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.BTreeViews BTreeViews =>
                 new();
-            public global::SpacetimeDB.Internal.TableHandles.SendMessageTimer SendMessageTimer =>
+            public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.MultiTable1 MultiTable1 =>
+                new();
+            public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.MultiTable2 MultiTable2 =>
+                new();
+            public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.PrivateTable PrivateTable =>
+                new();
+            public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.PublicTable PublicTable =>
+                new();
+            internal global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.RegressionMultipleUniqueIndexesHadSameName RegressionMultipleUniqueIndexesHadSameName =>
+                new();
+            public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.SendMessageTimer SendMessageTimer =>
                 new();
         }
 
         public readonly struct ReadOnlyTables
         {
-            internal global::SpacetimeDB.Internal.ViewHandles.BTreeMultiColumnReadOnly BTreeMultiColumn =>
+            internal global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.BTreeMultiColumnReadOnly BTreeMultiColumn =>
                 new();
-            internal global::SpacetimeDB.Internal.ViewHandles.BTreeViewsReadOnly BTreeViews =>
+            internal global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.BTreeViewsReadOnly BTreeViews =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.MultiTable1ReadOnly MultiTable1 =>
+            public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.MultiTable1ReadOnly MultiTable1 =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.MultiTable2ReadOnly MultiTable2 =>
+            public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.MultiTable2ReadOnly MultiTable2 =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.PrivateTableReadOnly PrivateTable =>
+            public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.PrivateTableReadOnly PrivateTable =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.PublicTableReadOnly PublicTable =>
+            public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.PublicTableReadOnly PublicTable =>
                 new();
-            internal global::SpacetimeDB.Internal.ViewHandles.RegressionMultipleUniqueIndexesHadSameNameReadOnly RegressionMultipleUniqueIndexesHadSameName =>
+            internal global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.RegressionMultipleUniqueIndexesHadSameNameReadOnly RegressionMultipleUniqueIndexesHadSameName =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.SendMessageTimerReadOnly SendMessageTimer =>
+            public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.SendMessageTimerReadOnly SendMessageTimer =>
                 new();
         }
 
@@ -917,16 +919,21 @@ namespace SpacetimeDB.Generated.Assembly_007300650072007600650072002C00200056006
     {
         extension(global::SpacetimeDB.Local db)
         {
-            internal global::SpacetimeDB.Internal.TableHandles.BTreeMultiColumn BTreeMultiColumn =>
+            internal global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.BTreeMultiColumn BTreeMultiColumn =>
                 new();
-            internal global::SpacetimeDB.Internal.TableHandles.BTreeViews BTreeViews => new();
-            public global::SpacetimeDB.Internal.TableHandles.MultiTable1 MultiTable1 => new();
-            public global::SpacetimeDB.Internal.TableHandles.MultiTable2 MultiTable2 => new();
-            public global::SpacetimeDB.Internal.TableHandles.PrivateTable PrivateTable => new();
-            public global::SpacetimeDB.Internal.TableHandles.PublicTable PublicTable => new();
-            internal global::SpacetimeDB.Internal.TableHandles.RegressionMultipleUniqueIndexesHadSameName RegressionMultipleUniqueIndexesHadSameName =>
+            internal global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.BTreeViews BTreeViews =>
                 new();
-            public global::SpacetimeDB.Internal.TableHandles.SendMessageTimer SendMessageTimer =>
+            public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.MultiTable1 MultiTable1 =>
+                new();
+            public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.MultiTable2 MultiTable2 =>
+                new();
+            public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.PrivateTable PrivateTable =>
+                new();
+            public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.PublicTable PublicTable =>
+                new();
+            internal global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.RegressionMultipleUniqueIndexesHadSameName RegressionMultipleUniqueIndexesHadSameName =>
+                new();
+            public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.SendMessageTimer SendMessageTimer =>
                 new();
         }
     }
@@ -935,21 +942,21 @@ namespace SpacetimeDB.Generated.Assembly_007300650072007600650072002C00200056006
     {
         extension(global::SpacetimeDB.Internal.LocalReadOnly db)
         {
-            internal global::SpacetimeDB.Internal.ViewHandles.BTreeMultiColumnReadOnly BTreeMultiColumn =>
+            internal global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.BTreeMultiColumnReadOnly BTreeMultiColumn =>
                 new();
-            internal global::SpacetimeDB.Internal.ViewHandles.BTreeViewsReadOnly BTreeViews =>
+            internal global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.BTreeViewsReadOnly BTreeViews =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.MultiTable1ReadOnly MultiTable1 =>
+            public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.MultiTable1ReadOnly MultiTable1 =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.MultiTable2ReadOnly MultiTable2 =>
+            public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.MultiTable2ReadOnly MultiTable2 =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.PrivateTableReadOnly PrivateTable =>
+            public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.PrivateTableReadOnly PrivateTable =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.PublicTableReadOnly PublicTable =>
+            public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.PublicTableReadOnly PublicTable =>
                 new();
-            internal global::SpacetimeDB.Internal.ViewHandles.RegressionMultipleUniqueIndexesHadSameNameReadOnly RegressionMultipleUniqueIndexesHadSameName =>
+            internal global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.RegressionMultipleUniqueIndexesHadSameNameReadOnly RegressionMultipleUniqueIndexesHadSameName =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.SendMessageTimerReadOnly SendMessageTimer =>
+            public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.SendMessageTimerReadOnly SendMessageTimer =>
                 new();
         }
     }
@@ -1608,11 +1615,17 @@ namespace SpacetimeDB.Generated.Assembly_007300650072007600650072002C00200056006
 }
 #endif
 
-namespace SpacetimeDB.Internal.TableHandles
+namespace SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles
 {
     internal readonly struct BTreeMultiColumn
         : global::SpacetimeDB.Internal.ITableView<BTreeMultiColumn, global::BTreeMultiColumn>
     {
+        public static string LookupName =>
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "BTreeMultiColumn"
+            );
+
         public static global::BTreeMultiColumn ReadGenFields(
             System.IO.BinaryReader reader,
             global::BTreeMultiColumn row
@@ -1685,7 +1698,10 @@ namespace SpacetimeDB.Internal.TableHandles
 
         internal sealed class LocationIndex()
             : SpacetimeDB.Internal.IndexBase<global::BTreeMultiColumn>(
-                "BTreeMultiColumn_X_Y_Z_idx_btree"
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "BTreeMultiColumn_X_Y_Z_idx_btree"
+                )
             )
         {
             public IEnumerable<global::BTreeMultiColumn> Filter(uint X) =>
@@ -1801,6 +1817,12 @@ namespace SpacetimeDB.Internal.TableHandles
     internal readonly struct BTreeViews
         : global::SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>
     {
+        public static string LookupName =>
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "BTreeViews"
+            );
+
         public static global::BTreeViews ReadGenFields(
             System.IO.BinaryReader reader,
             global::BTreeViews row
@@ -1881,7 +1903,12 @@ namespace SpacetimeDB.Internal.TableHandles
             >
         {
             internal IdUniqueIndex()
-                : base("BTreeViews_Id_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "BTreeViews_Id_idx_btree"
+                    )
+                ) { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -1894,7 +1921,12 @@ namespace SpacetimeDB.Internal.TableHandles
         internal IdUniqueIndex Id => new();
 
         internal sealed class LocationIndex()
-            : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("BTreeViews_X_Y_idx_btree")
+            : SpacetimeDB.Internal.IndexBase<global::BTreeViews>(
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "BTreeViews_X_Y_idx_btree"
+                )
+            )
         {
             public IEnumerable<global::BTreeViews> Filter(uint X) =>
                 DoFilter(new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X));
@@ -1954,7 +1986,12 @@ namespace SpacetimeDB.Internal.TableHandles
         internal LocationIndex Location => new();
 
         internal sealed class FactionIndex()
-            : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("BTreeViews_Faction_idx_btree")
+            : SpacetimeDB.Internal.IndexBase<global::BTreeViews>(
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "BTreeViews_Faction_idx_btree"
+                )
+            )
         {
             public IEnumerable<global::BTreeViews> Filter(string Faction) =>
                 DoFilter(
@@ -1993,6 +2030,12 @@ namespace SpacetimeDB.Internal.TableHandles
     public readonly struct MultiTable1
         : global::SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>
     {
+        public static string LookupName =>
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "MultiTable1"
+            );
+
         public static global::MultiTableRow ReadGenFields(
             System.IO.BinaryReader reader,
             global::MultiTableRow row
@@ -2082,7 +2125,12 @@ namespace SpacetimeDB.Internal.TableHandles
             >
         {
             internal FooUniqueIndex()
-                : base("MultiTable1_Foo_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "MultiTable1_Foo_idx_btree"
+                    )
+                ) { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -2095,7 +2143,12 @@ namespace SpacetimeDB.Internal.TableHandles
         public FooUniqueIndex Foo => new();
 
         public sealed class NameIndex()
-            : SpacetimeDB.Internal.IndexBase<global::MultiTableRow>("MultiTable1_Name_idx_btree")
+            : SpacetimeDB.Internal.IndexBase<global::MultiTableRow>(
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "MultiTable1_Name_idx_btree"
+                )
+            )
         {
             public IEnumerable<global::MultiTableRow> Filter(string Name) =>
                 DoFilter(
@@ -2134,6 +2187,12 @@ namespace SpacetimeDB.Internal.TableHandles
     public readonly struct MultiTable2
         : global::SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>
     {
+        public static string LookupName =>
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "MultiTable2"
+            );
+
         public static global::MultiTableRow ReadGenFields(
             System.IO.BinaryReader reader,
             global::MultiTableRow row
@@ -2218,7 +2277,12 @@ namespace SpacetimeDB.Internal.TableHandles
             >
         {
             internal BarUniqueIndex()
-                : base("MultiTable2_Bar_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "MultiTable2_Bar_idx_btree"
+                    )
+                ) { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -2232,6 +2296,12 @@ namespace SpacetimeDB.Internal.TableHandles
     public readonly struct PrivateTable
         : global::SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>
     {
+        public static string LookupName =>
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "PrivateTable"
+            );
+
         public static global::PrivateTable ReadGenFields(
             System.IO.BinaryReader reader,
             global::PrivateTable row
@@ -2288,6 +2358,12 @@ namespace SpacetimeDB.Internal.TableHandles
     public readonly struct PublicTable
         : global::SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>
     {
+        public static string LookupName =>
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "PublicTable"
+            );
+
         public static global::PublicTable ReadGenFields(
             System.IO.BinaryReader reader,
             global::PublicTable row
@@ -2368,7 +2444,12 @@ namespace SpacetimeDB.Internal.TableHandles
             >
         {
             internal IdUniqueIndex()
-                : base("PublicTable_Id_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "PublicTable_Id_idx_btree"
+                    )
+                ) { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -2387,6 +2468,12 @@ namespace SpacetimeDB.Internal.TableHandles
             global::RegressionMultipleUniqueIndexesHadSameName
         >
     {
+        public static string LookupName =>
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "RegressionMultipleUniqueIndexesHadSameName"
+            );
+
         public static global::RegressionMultipleUniqueIndexesHadSameName ReadGenFields(
             System.IO.BinaryReader reader,
             global::RegressionMultipleUniqueIndexesHadSameName row
@@ -2485,7 +2572,12 @@ namespace SpacetimeDB.Internal.TableHandles
             >
         {
             internal Unique1UniqueIndex()
-                : base("RegressionMultipleUniqueIndexesHadSameName_Unique1_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "RegressionMultipleUniqueIndexesHadSameName_Unique1_idx_btree"
+                    )
+                ) { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -2505,7 +2597,12 @@ namespace SpacetimeDB.Internal.TableHandles
             >
         {
             internal Unique2UniqueIndex()
-                : base("RegressionMultipleUniqueIndexesHadSameName_Unique2_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "RegressionMultipleUniqueIndexesHadSameName_Unique2_idx_btree"
+                    )
+                ) { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -2520,6 +2617,12 @@ namespace SpacetimeDB.Internal.TableHandles
     public readonly struct SendMessageTimer
         : global::SpacetimeDB.Internal.ITableView<SendMessageTimer, global::Timers.SendMessageTimer>
     {
+        public static string LookupName =>
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "SendMessageTimer"
+            );
+
         public static global::Timers.SendMessageTimer ReadGenFields(
             System.IO.BinaryReader reader,
             global::Timers.SendMessageTimer row
@@ -2619,7 +2722,12 @@ namespace SpacetimeDB.Internal.TableHandles
             >
         {
             internal ScheduledIdUniqueIndex()
-                : base("SendMessageTimer_ScheduledId_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "SendMessageTimer_ScheduledId_idx_btree"
+                    )
+                ) { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -2770,13 +2878,18 @@ sealed class find_public_table__by_identityViewDispatcher
     }
 }
 
-namespace SpacetimeDB.Internal.ViewHandles
+namespace SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles
 {
     internal sealed class BTreeMultiColumnReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::BTreeMultiColumn>
     {
         internal BTreeMultiColumnReadOnly()
-            : base("BTreeMultiColumn") { }
+            : base(
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "BTreeMultiColumn"
+                )
+            ) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -2790,7 +2903,12 @@ namespace SpacetimeDB.Internal.ViewHandles
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::BTreeMultiColumn>
         {
             internal LocationIndex()
-                : base("BTreeMultiColumn_X_Y_Z_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "BTreeMultiColumn_X_Y_Z_idx_btree"
+                    )
+                ) { }
 
             public IEnumerable<global::BTreeMultiColumn> Filter(uint X) =>
                 DoFilter(
@@ -2864,7 +2982,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::BTreeViews>
     {
         internal BTreeViewsReadOnly()
-            : base("BTreeViews") { }
+            : base(
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "BTreeViews"
+                )
+            ) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -2876,14 +2999,19 @@ namespace SpacetimeDB.Internal.ViewHandles
 
         public sealed class IdIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
-                global::SpacetimeDB.Internal.ViewHandles.BTreeViewsReadOnly,
+                global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.BTreeViewsReadOnly,
                 global::BTreeViews,
                 SpacetimeDB.Identity,
                 SpacetimeDB.Identity.BSATN
             >
         {
             internal IdIndex()
-                : base("BTreeViews_Id_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "BTreeViews_Id_idx_btree"
+                    )
+                ) { }
 
             public global::BTreeViews? Find(SpacetimeDB.Identity key) => FindSingle(key);
         }
@@ -2894,7 +3022,12 @@ namespace SpacetimeDB.Internal.ViewHandles
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::BTreeViews>
         {
             internal LocationIndex()
-                : base("BTreeViews_X_Y_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "BTreeViews_X_Y_idx_btree"
+                    )
+                ) { }
 
             public IEnumerable<global::BTreeViews> Filter(uint X) =>
                 DoFilter(
@@ -2939,7 +3072,12 @@ namespace SpacetimeDB.Internal.ViewHandles
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::BTreeViews>
         {
             internal FactionIndex()
-                : base("BTreeViews_Faction_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "BTreeViews_Faction_idx_btree"
+                    )
+                ) { }
 
             public IEnumerable<global::BTreeViews> Filter(string Faction) =>
                 DoFilter(
@@ -2967,7 +3105,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::MultiTableRow>
     {
         internal MultiTable1ReadOnly()
-            : base("MultiTable1") { }
+            : base(
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "MultiTable1"
+                )
+            ) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -2979,14 +3122,19 @@ namespace SpacetimeDB.Internal.ViewHandles
 
         public sealed class FooIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
-                global::SpacetimeDB.Internal.ViewHandles.MultiTable1ReadOnly,
+                global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.MultiTable1ReadOnly,
                 global::MultiTableRow,
                 uint,
                 SpacetimeDB.BSATN.U32
             >
         {
             internal FooIndex()
-                : base("MultiTable1_Foo_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "MultiTable1_Foo_idx_btree"
+                    )
+                ) { }
 
             public global::MultiTableRow? Find(uint key) => FindSingle(key);
         }
@@ -2997,7 +3145,12 @@ namespace SpacetimeDB.Internal.ViewHandles
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::MultiTableRow>
         {
             internal NameIndex()
-                : base("MultiTable1_Name_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "MultiTable1_Name_idx_btree"
+                    )
+                ) { }
 
             public IEnumerable<global::MultiTableRow> Filter(string Name) =>
                 DoFilter(
@@ -3025,7 +3178,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::MultiTableRow>
     {
         internal MultiTable2ReadOnly()
-            : base("MultiTable2") { }
+            : base(
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "MultiTable2"
+                )
+            ) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -3037,14 +3195,19 @@ namespace SpacetimeDB.Internal.ViewHandles
 
         public sealed class BarIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
-                global::SpacetimeDB.Internal.ViewHandles.MultiTable2ReadOnly,
+                global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.MultiTable2ReadOnly,
                 global::MultiTableRow,
                 uint,
                 SpacetimeDB.BSATN.U32
             >
         {
             internal BarIndex()
-                : base("MultiTable2_Bar_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "MultiTable2_Bar_idx_btree"
+                    )
+                ) { }
 
             public global::MultiTableRow? Find(uint key) => FindSingle(key);
         }
@@ -3056,7 +3219,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::PrivateTable>
     {
         internal PrivateTableReadOnly()
-            : base("PrivateTable") { }
+            : base(
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "PrivateTable"
+                )
+            ) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -3071,7 +3239,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::PublicTable>
     {
         internal PublicTableReadOnly()
-            : base("PublicTable") { }
+            : base(
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "PublicTable"
+                )
+            ) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -3083,14 +3256,19 @@ namespace SpacetimeDB.Internal.ViewHandles
 
         public sealed class IdIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
-                global::SpacetimeDB.Internal.ViewHandles.PublicTableReadOnly,
+                global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.PublicTableReadOnly,
                 global::PublicTable,
                 int,
                 SpacetimeDB.BSATN.I32
             >
         {
             internal IdIndex()
-                : base("PublicTable_Id_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "PublicTable_Id_idx_btree"
+                    )
+                ) { }
 
             public global::PublicTable? Find(int key) => FindSingle(key);
         }
@@ -3102,7 +3280,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::RegressionMultipleUniqueIndexesHadSameName>
     {
         internal RegressionMultipleUniqueIndexesHadSameNameReadOnly()
-            : base("RegressionMultipleUniqueIndexesHadSameName") { }
+            : base(
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "RegressionMultipleUniqueIndexesHadSameName"
+                )
+            ) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -3114,14 +3297,19 @@ namespace SpacetimeDB.Internal.ViewHandles
 
         public sealed class Unique1Index
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
-                global::SpacetimeDB.Internal.ViewHandles.RegressionMultipleUniqueIndexesHadSameNameReadOnly,
+                global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.RegressionMultipleUniqueIndexesHadSameNameReadOnly,
                 global::RegressionMultipleUniqueIndexesHadSameName,
                 uint,
                 SpacetimeDB.BSATN.U32
             >
         {
             internal Unique1Index()
-                : base("RegressionMultipleUniqueIndexesHadSameName_Unique1_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "RegressionMultipleUniqueIndexesHadSameName_Unique1_idx_btree"
+                    )
+                ) { }
 
             public global::RegressionMultipleUniqueIndexesHadSameName? Find(uint key) =>
                 FindSingle(key);
@@ -3131,14 +3319,19 @@ namespace SpacetimeDB.Internal.ViewHandles
 
         public sealed class Unique2Index
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
-                global::SpacetimeDB.Internal.ViewHandles.RegressionMultipleUniqueIndexesHadSameNameReadOnly,
+                global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.RegressionMultipleUniqueIndexesHadSameNameReadOnly,
                 global::RegressionMultipleUniqueIndexesHadSameName,
                 uint,
                 SpacetimeDB.BSATN.U32
             >
         {
             internal Unique2Index()
-                : base("RegressionMultipleUniqueIndexesHadSameName_Unique2_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "RegressionMultipleUniqueIndexesHadSameName_Unique2_idx_btree"
+                    )
+                ) { }
 
             public global::RegressionMultipleUniqueIndexesHadSameName? Find(uint key) =>
                 FindSingle(key);
@@ -3151,7 +3344,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::Timers.SendMessageTimer>
     {
         internal SendMessageTimerReadOnly()
-            : base("SendMessageTimer") { }
+            : base(
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "SendMessageTimer"
+                )
+            ) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -3163,14 +3361,19 @@ namespace SpacetimeDB.Internal.ViewHandles
 
         public sealed class ScheduledIdIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
-                global::SpacetimeDB.Internal.ViewHandles.SendMessageTimerReadOnly,
+                global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.SendMessageTimerReadOnly,
                 global::Timers.SendMessageTimer,
                 ulong,
                 SpacetimeDB.BSATN.U64
             >
         {
             internal ScheduledIdIndex()
-                : base("SendMessageTimer_ScheduledId_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "SendMessageTimer_ScheduledId_idx_btree"
+                    )
+                ) { }
 
             public global::Timers.SendMessageTimer? Find(ulong key) => FindSingle(key);
         }
@@ -3184,16 +3387,21 @@ namespace SpacetimeDB.Internal
 {
     public sealed partial class LocalReadOnly
     {
-        internal global::SpacetimeDB.Internal.ViewHandles.BTreeMultiColumnReadOnly BTreeMultiColumn =>
+        internal global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.BTreeMultiColumnReadOnly BTreeMultiColumn =>
             new();
-        internal global::SpacetimeDB.Internal.ViewHandles.BTreeViewsReadOnly BTreeViews => new();
-        public global::SpacetimeDB.Internal.ViewHandles.MultiTable1ReadOnly MultiTable1 => new();
-        public global::SpacetimeDB.Internal.ViewHandles.MultiTable2ReadOnly MultiTable2 => new();
-        public global::SpacetimeDB.Internal.ViewHandles.PrivateTableReadOnly PrivateTable => new();
-        public global::SpacetimeDB.Internal.ViewHandles.PublicTableReadOnly PublicTable => new();
-        internal global::SpacetimeDB.Internal.ViewHandles.RegressionMultipleUniqueIndexesHadSameNameReadOnly RegressionMultipleUniqueIndexesHadSameName =>
+        internal global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.BTreeViewsReadOnly BTreeViews =>
             new();
-        public global::SpacetimeDB.Internal.ViewHandles.SendMessageTimerReadOnly SendMessageTimer =>
+        public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.MultiTable1ReadOnly MultiTable1 =>
+            new();
+        public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.MultiTable2ReadOnly MultiTable2 =>
+            new();
+        public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.PrivateTableReadOnly PrivateTable =>
+            new();
+        public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.PublicTableReadOnly PublicTable =>
+            new();
+        internal global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.RegressionMultipleUniqueIndexesHadSameNameReadOnly RegressionMultipleUniqueIndexesHadSameName =>
+            new();
+        public global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.SendMessageTimerReadOnly SendMessageTimer =>
             new();
     }
 }
@@ -3432,35 +3640,35 @@ static class ModuleRegistration
 
         builder.RegisterTable<
             global::BTreeMultiColumn,
-            global::SpacetimeDB.Internal.TableHandles.BTreeMultiColumn
+            global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.BTreeMultiColumn
         >();
         builder.RegisterTable<
             global::BTreeViews,
-            global::SpacetimeDB.Internal.TableHandles.BTreeViews
+            global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.BTreeViews
         >();
         builder.RegisterTable<
             global::MultiTableRow,
-            global::SpacetimeDB.Internal.TableHandles.MultiTable1
+            global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.MultiTable1
         >();
         builder.RegisterTable<
             global::MultiTableRow,
-            global::SpacetimeDB.Internal.TableHandles.MultiTable2
+            global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.MultiTable2
         >();
         builder.RegisterTable<
             global::PrivateTable,
-            global::SpacetimeDB.Internal.TableHandles.PrivateTable
+            global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.PrivateTable
         >();
         builder.RegisterTable<
             global::PublicTable,
-            global::SpacetimeDB.Internal.TableHandles.PublicTable
+            global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.PublicTable
         >();
         builder.RegisterTable<
             global::RegressionMultipleUniqueIndexesHadSameName,
-            global::SpacetimeDB.Internal.TableHandles.RegressionMultipleUniqueIndexesHadSameName
+            global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.RegressionMultipleUniqueIndexesHadSameName
         >();
         builder.RegisterTable<
             global::Timers.SendMessageTimer,
-            global::SpacetimeDB.Internal.TableHandles.SendMessageTimer
+            global::SpacetimeDB.Generated.Assembly_007300650072007600650072002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.SendMessageTimer
         >();
 
         builder.RegisterClientVisibilityFilter(global::Module.ALL_PUBLIC_TABLES);

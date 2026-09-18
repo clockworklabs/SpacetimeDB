@@ -659,7 +659,6 @@ namespace SpacetimeDB
 #if !NET10_0_OR_GREATER
     public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
     {
-        public global::SpacetimeDB.ModuleEnvironment Env => default;
         public readonly Identity Sender;
         public readonly ConnectionId? ConnectionId;
         public readonly Random Rng;
@@ -742,7 +741,6 @@ namespace SpacetimeDB
 
     public sealed partial class ProcedureContext : global::SpacetimeDB.ProcedureContextBase
     {
-        public new global::SpacetimeDB.ModuleEnvironment Env => default;
         private readonly Local _db = new();
 
         internal ProcedureContext(
@@ -821,7 +819,6 @@ namespace SpacetimeDB
 
     public sealed partial class HandlerContext : global::SpacetimeDB.HandlerContextBase
     {
-        public new global::SpacetimeDB.ModuleEnvironment Env => default;
         private readonly Local _db = new();
 
         internal HandlerContext(Random random, Timestamp time)
@@ -862,8 +859,6 @@ namespace SpacetimeDB
 
     public sealed class ProcedureTxContext : global::SpacetimeDB.ProcedureTxContextBase
     {
-        public new global::SpacetimeDB.ModuleEnvironment Env => default;
-
         internal ProcedureTxContext(Internal.TxContext inner)
             : base(inner) { }
 
@@ -873,8 +868,6 @@ namespace SpacetimeDB
     [Experimental("STDB_UNSTABLE")]
     public sealed class HandlerTxContext : global::SpacetimeDB.HandlerTxContextBase
     {
-        public new global::SpacetimeDB.ModuleEnvironment Env => default;
-
         internal HandlerTxContext(Internal.TxContext inner)
             : base(inner) { }
 
@@ -883,25 +876,27 @@ namespace SpacetimeDB
 
     public sealed class Local : global::SpacetimeDB.LocalBase
     {
-        public global::SpacetimeDB.Internal.TableHandles.Player Player => new();
-        public global::SpacetimeDB.Internal.TableHandles.TestAutoIncNotInteger TestAutoIncNotInteger =>
+        public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.Player Player =>
             new();
-        public global::SpacetimeDB.Internal.TableHandles.TestDefaultFieldValues TestDefaultFieldValues =>
+        public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestAutoIncNotInteger TestAutoIncNotInteger =>
             new();
-        public global::SpacetimeDB.Internal.TableHandles.TestDuplicateTableName TestDuplicateTableName =>
+        public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestDefaultFieldValues TestDefaultFieldValues =>
             new();
-        public global::SpacetimeDB.Internal.TableHandles.TestIndexIssues TestIndexIssues => new();
-        public global::SpacetimeDB.Internal.TableHandles.TestScheduleWithMissingScheduleAtField TestScheduleWithMissingScheduleAtField =>
+        public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestDuplicateTableName TestDuplicateTableName =>
             new();
-        public global::SpacetimeDB.Internal.TableHandles.TestScheduleWithoutPrimaryKey TestScheduleWithoutPrimaryKey =>
+        public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestIndexIssues TestIndexIssues =>
             new();
-        public global::SpacetimeDB.Internal.TableHandles.TestScheduleWithoutScheduleAt TestScheduleWithoutScheduleAt =>
+        public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestScheduleWithMissingScheduleAtField TestScheduleWithMissingScheduleAtField =>
             new();
-        public global::SpacetimeDB.Internal.TableHandles.TestScheduleWithWrongPrimaryKeyType TestScheduleWithWrongPrimaryKeyType =>
+        public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestScheduleWithoutPrimaryKey TestScheduleWithoutPrimaryKey =>
             new();
-        public global::SpacetimeDB.Internal.TableHandles.TestScheduleWithWrongScheduleAtType TestScheduleWithWrongScheduleAtType =>
+        public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestScheduleWithoutScheduleAt TestScheduleWithoutScheduleAt =>
             new();
-        public global::SpacetimeDB.Internal.TableHandles.TestUniqueNotEquatable TestUniqueNotEquatable =>
+        public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestScheduleWithWrongPrimaryKeyType TestScheduleWithWrongPrimaryKeyType =>
+            new();
+        public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestScheduleWithWrongScheduleAtType TestScheduleWithWrongScheduleAtType =>
+            new();
+        public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestUniqueNotEquatable TestUniqueNotEquatable =>
             new();
     }
 
@@ -909,7 +904,6 @@ namespace SpacetimeDB
     {
         public Identity Sender { get; }
 
-        public global::SpacetimeDB.ModuleEnvironment Env => default;
         public QueryBuilder From => default;
 
         internal ViewContext(Identity sender, Internal.LocalReadOnly db)
@@ -923,7 +917,6 @@ namespace SpacetimeDB
         : DbContext<Internal.LocalReadOnly>,
             Internal.IAnonymousViewContext
     {
-        public global::SpacetimeDB.ModuleEnvironment Env => default;
         public QueryBuilder From => default;
 
         internal AnonymousViewContext(Internal.LocalReadOnly db)
@@ -1044,51 +1037,53 @@ namespace SpacetimeDB.Generated.Assembly_0064006900610067002C0020005600650072007
 
         public readonly struct Tables
         {
-            public global::SpacetimeDB.Internal.TableHandles.Player Player => new();
-            public global::SpacetimeDB.Internal.TableHandles.TestAutoIncNotInteger TestAutoIncNotInteger =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.Player Player =>
                 new();
-            public global::SpacetimeDB.Internal.TableHandles.TestDefaultFieldValues TestDefaultFieldValues =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestAutoIncNotInteger TestAutoIncNotInteger =>
                 new();
-            public global::SpacetimeDB.Internal.TableHandles.TestDuplicateTableName TestDuplicateTableName =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestDefaultFieldValues TestDefaultFieldValues =>
                 new();
-            public global::SpacetimeDB.Internal.TableHandles.TestIndexIssues TestIndexIssues =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestDuplicateTableName TestDuplicateTableName =>
                 new();
-            public global::SpacetimeDB.Internal.TableHandles.TestScheduleWithMissingScheduleAtField TestScheduleWithMissingScheduleAtField =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestIndexIssues TestIndexIssues =>
                 new();
-            public global::SpacetimeDB.Internal.TableHandles.TestScheduleWithoutPrimaryKey TestScheduleWithoutPrimaryKey =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestScheduleWithMissingScheduleAtField TestScheduleWithMissingScheduleAtField =>
                 new();
-            public global::SpacetimeDB.Internal.TableHandles.TestScheduleWithoutScheduleAt TestScheduleWithoutScheduleAt =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestScheduleWithoutPrimaryKey TestScheduleWithoutPrimaryKey =>
                 new();
-            public global::SpacetimeDB.Internal.TableHandles.TestScheduleWithWrongPrimaryKeyType TestScheduleWithWrongPrimaryKeyType =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestScheduleWithoutScheduleAt TestScheduleWithoutScheduleAt =>
                 new();
-            public global::SpacetimeDB.Internal.TableHandles.TestScheduleWithWrongScheduleAtType TestScheduleWithWrongScheduleAtType =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestScheduleWithWrongPrimaryKeyType TestScheduleWithWrongPrimaryKeyType =>
                 new();
-            public global::SpacetimeDB.Internal.TableHandles.TestUniqueNotEquatable TestUniqueNotEquatable =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestScheduleWithWrongScheduleAtType TestScheduleWithWrongScheduleAtType =>
+                new();
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestUniqueNotEquatable TestUniqueNotEquatable =>
                 new();
         }
 
         public readonly struct ReadOnlyTables
         {
-            public global::SpacetimeDB.Internal.ViewHandles.PlayerReadOnly Player => new();
-            public global::SpacetimeDB.Internal.ViewHandles.TestAutoIncNotIntegerReadOnly TestAutoIncNotInteger =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.PlayerReadOnly Player =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.TestDefaultFieldValuesReadOnly TestDefaultFieldValues =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestAutoIncNotIntegerReadOnly TestAutoIncNotInteger =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.TestDuplicateTableNameReadOnly TestDuplicateTableName =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestDefaultFieldValuesReadOnly TestDefaultFieldValues =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.TestIndexIssuesReadOnly TestIndexIssues =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestDuplicateTableNameReadOnly TestDuplicateTableName =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithMissingScheduleAtFieldReadOnly TestScheduleWithMissingScheduleAtField =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestIndexIssuesReadOnly TestIndexIssues =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithoutPrimaryKeyReadOnly TestScheduleWithoutPrimaryKey =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestScheduleWithMissingScheduleAtFieldReadOnly TestScheduleWithMissingScheduleAtField =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithoutScheduleAtReadOnly TestScheduleWithoutScheduleAt =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestScheduleWithoutPrimaryKeyReadOnly TestScheduleWithoutPrimaryKey =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithWrongPrimaryKeyTypeReadOnly TestScheduleWithWrongPrimaryKeyType =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestScheduleWithoutScheduleAtReadOnly TestScheduleWithoutScheduleAt =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithWrongScheduleAtTypeReadOnly TestScheduleWithWrongScheduleAtType =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestScheduleWithWrongPrimaryKeyTypeReadOnly TestScheduleWithWrongPrimaryKeyType =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.TestUniqueNotEquatableReadOnly TestUniqueNotEquatable =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestScheduleWithWrongScheduleAtTypeReadOnly TestScheduleWithWrongScheduleAtType =>
+                new();
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestUniqueNotEquatableReadOnly TestUniqueNotEquatable =>
                 new();
         }
 
@@ -1099,26 +1094,27 @@ namespace SpacetimeDB.Generated.Assembly_0064006900610067002C0020005600650072007
     {
         extension(global::SpacetimeDB.Local db)
         {
-            public global::SpacetimeDB.Internal.TableHandles.Player Player => new();
-            public global::SpacetimeDB.Internal.TableHandles.TestAutoIncNotInteger TestAutoIncNotInteger =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.Player Player =>
                 new();
-            public global::SpacetimeDB.Internal.TableHandles.TestDefaultFieldValues TestDefaultFieldValues =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestAutoIncNotInteger TestAutoIncNotInteger =>
                 new();
-            public global::SpacetimeDB.Internal.TableHandles.TestDuplicateTableName TestDuplicateTableName =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestDefaultFieldValues TestDefaultFieldValues =>
                 new();
-            public global::SpacetimeDB.Internal.TableHandles.TestIndexIssues TestIndexIssues =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestDuplicateTableName TestDuplicateTableName =>
                 new();
-            public global::SpacetimeDB.Internal.TableHandles.TestScheduleWithMissingScheduleAtField TestScheduleWithMissingScheduleAtField =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestIndexIssues TestIndexIssues =>
                 new();
-            public global::SpacetimeDB.Internal.TableHandles.TestScheduleWithoutPrimaryKey TestScheduleWithoutPrimaryKey =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestScheduleWithMissingScheduleAtField TestScheduleWithMissingScheduleAtField =>
                 new();
-            public global::SpacetimeDB.Internal.TableHandles.TestScheduleWithoutScheduleAt TestScheduleWithoutScheduleAt =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestScheduleWithoutPrimaryKey TestScheduleWithoutPrimaryKey =>
                 new();
-            public global::SpacetimeDB.Internal.TableHandles.TestScheduleWithWrongPrimaryKeyType TestScheduleWithWrongPrimaryKeyType =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestScheduleWithoutScheduleAt TestScheduleWithoutScheduleAt =>
                 new();
-            public global::SpacetimeDB.Internal.TableHandles.TestScheduleWithWrongScheduleAtType TestScheduleWithWrongScheduleAtType =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestScheduleWithWrongPrimaryKeyType TestScheduleWithWrongPrimaryKeyType =>
                 new();
-            public global::SpacetimeDB.Internal.TableHandles.TestUniqueNotEquatable TestUniqueNotEquatable =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestScheduleWithWrongScheduleAtType TestScheduleWithWrongScheduleAtType =>
+                new();
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestUniqueNotEquatable TestUniqueNotEquatable =>
                 new();
         }
     }
@@ -1127,26 +1123,27 @@ namespace SpacetimeDB.Generated.Assembly_0064006900610067002C0020005600650072007
     {
         extension(global::SpacetimeDB.Internal.LocalReadOnly db)
         {
-            public global::SpacetimeDB.Internal.ViewHandles.PlayerReadOnly Player => new();
-            public global::SpacetimeDB.Internal.ViewHandles.TestAutoIncNotIntegerReadOnly TestAutoIncNotInteger =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.PlayerReadOnly Player =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.TestDefaultFieldValuesReadOnly TestDefaultFieldValues =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestAutoIncNotIntegerReadOnly TestAutoIncNotInteger =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.TestDuplicateTableNameReadOnly TestDuplicateTableName =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestDefaultFieldValuesReadOnly TestDefaultFieldValues =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.TestIndexIssuesReadOnly TestIndexIssues =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestDuplicateTableNameReadOnly TestDuplicateTableName =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithMissingScheduleAtFieldReadOnly TestScheduleWithMissingScheduleAtField =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestIndexIssuesReadOnly TestIndexIssues =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithoutPrimaryKeyReadOnly TestScheduleWithoutPrimaryKey =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestScheduleWithMissingScheduleAtFieldReadOnly TestScheduleWithMissingScheduleAtField =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithoutScheduleAtReadOnly TestScheduleWithoutScheduleAt =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestScheduleWithoutPrimaryKeyReadOnly TestScheduleWithoutPrimaryKey =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithWrongPrimaryKeyTypeReadOnly TestScheduleWithWrongPrimaryKeyType =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestScheduleWithoutScheduleAtReadOnly TestScheduleWithoutScheduleAt =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithWrongScheduleAtTypeReadOnly TestScheduleWithWrongScheduleAtType =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestScheduleWithWrongPrimaryKeyTypeReadOnly TestScheduleWithWrongPrimaryKeyType =>
                 new();
-            public global::SpacetimeDB.Internal.ViewHandles.TestUniqueNotEquatableReadOnly TestUniqueNotEquatable =>
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestScheduleWithWrongScheduleAtTypeReadOnly TestScheduleWithWrongScheduleAtType =>
+                new();
+            public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestUniqueNotEquatableReadOnly TestUniqueNotEquatable =>
                 new();
         }
     }
@@ -2046,10 +2043,16 @@ namespace SpacetimeDB.Generated.Assembly_0064006900610067002C0020005600650072007
 }
 #endif
 
-namespace SpacetimeDB.Internal.TableHandles
+namespace SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles
 {
     public readonly struct Player : global::SpacetimeDB.Internal.ITableView<Player, global::Player>
     {
+        public static string LookupName =>
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "Player"
+            );
+
         public static global::Player ReadGenFields(
             System.IO.BinaryReader reader,
             global::Player row
@@ -2119,7 +2122,12 @@ namespace SpacetimeDB.Internal.TableHandles
             >
         {
             internal IdentityUniqueIndex()
-                : base("Player_Identity_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "Player_Identity_idx_btree"
+                    )
+                ) { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -2136,6 +2144,12 @@ namespace SpacetimeDB.Internal.TableHandles
             global::TestAutoIncNotInteger
         >
     {
+        public static string LookupName =>
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "TestAutoIncNotInteger"
+            );
+
         public static global::TestAutoIncNotInteger ReadGenFields(
             System.IO.BinaryReader reader,
             global::TestAutoIncNotInteger row
@@ -2241,7 +2255,12 @@ namespace SpacetimeDB.Internal.TableHandles
             >
         {
             internal IdentityFieldUniqueIndex()
-                : base("TestAutoIncNotInteger_IdentityField_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestAutoIncNotInteger_IdentityField_idx_btree"
+                    )
+                ) { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -2258,6 +2277,12 @@ namespace SpacetimeDB.Internal.TableHandles
             global::TestDefaultFieldValues
         >
     {
+        public static string LookupName =>
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "TestDefaultFieldValues"
+            );
+
         public static global::TestDefaultFieldValues ReadGenFields(
             System.IO.BinaryReader reader,
             global::TestDefaultFieldValues row
@@ -2341,6 +2366,12 @@ namespace SpacetimeDB.Internal.TableHandles
             global::TestDuplicateTableName
         >
     {
+        public static string LookupName =>
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "TestDuplicateTableName"
+            );
+
         public static global::TestDuplicateTableName ReadGenFields(
             System.IO.BinaryReader reader,
             global::TestDuplicateTableName row
@@ -2408,6 +2439,12 @@ namespace SpacetimeDB.Internal.TableHandles
     public readonly struct TestIndexIssues
         : global::SpacetimeDB.Internal.ITableView<TestIndexIssues, global::TestIndexIssues>
     {
+        public static string LookupName =>
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "TestIndexIssues"
+            );
+
         public static global::TestIndexIssues ReadGenFields(
             System.IO.BinaryReader reader,
             global::TestIndexIssues row
@@ -2505,28 +2542,40 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public sealed class TestIndexWithoutColumnsIndex()
             : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(
-                "TestIndexIssues__idx_btree"
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestIndexIssues__idx_btree"
+                )
             ) { }
 
         public TestIndexWithoutColumnsIndex TestIndexWithoutColumns => new();
 
         public sealed class TestIndexWithEmptyColumnsIndex()
             : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(
-                "TestIndexIssues__idx_btree"
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestIndexIssues__idx_btree"
+                )
             ) { }
 
         public TestIndexWithEmptyColumnsIndex TestIndexWithEmptyColumns => new();
 
         public sealed class TestUnknownColumnsIndex()
             : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(
-                "TestIndexIssues__idx_btree"
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestIndexIssues__idx_btree"
+                )
             ) { }
 
         public TestUnknownColumnsIndex TestUnknownColumns => new();
 
         public sealed class SelfIndexingColumnIndex()
             : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(
-                "TestIndexIssues_SelfIndexingColumn_idx_btree"
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestIndexIssues_SelfIndexingColumn_idx_btree"
+                )
             )
         {
             public IEnumerable<global::TestIndexIssues> Filter(int SelfIndexingColumn) =>
@@ -2564,7 +2613,10 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public sealed class SecondaryIndexingColumnIndex()
             : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(
-                "TestIndexIssues_SecondaryIndexingColumn_idx_btree"
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestIndexIssues_SecondaryIndexingColumn_idx_btree"
+                )
             )
         {
             public IEnumerable<global::TestIndexIssues> Filter(int SecondaryIndexingColumn) =>
@@ -2602,7 +2654,10 @@ namespace SpacetimeDB.Internal.TableHandles
 
         public sealed class TestUnexpectedColumnsIndex()
             : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(
-                "TestIndexIssues_SelfIndexingColumn_idx_btree"
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestIndexIssues_SelfIndexingColumn_idx_btree"
+                )
             )
         {
             public IEnumerable<global::TestIndexIssues> Filter(int SelfIndexingColumn) =>
@@ -2645,6 +2700,12 @@ namespace SpacetimeDB.Internal.TableHandles
             global::TestScheduleIssues
         >
     {
+        public static string LookupName =>
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "TestScheduleWithMissingScheduleAtField"
+            );
+
         public static global::TestScheduleIssues ReadGenFields(
             System.IO.BinaryReader reader,
             global::TestScheduleIssues row
@@ -2715,6 +2776,12 @@ namespace SpacetimeDB.Internal.TableHandles
             global::TestScheduleIssues
         >
     {
+        public static string LookupName =>
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "TestScheduleWithoutPrimaryKey"
+            );
+
         public static global::TestScheduleIssues ReadGenFields(
             System.IO.BinaryReader reader,
             global::TestScheduleIssues row
@@ -2789,6 +2856,12 @@ namespace SpacetimeDB.Internal.TableHandles
             global::TestScheduleIssues
         >
     {
+        public static string LookupName =>
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "TestScheduleWithoutScheduleAt"
+            );
+
         public static global::TestScheduleIssues ReadGenFields(
             System.IO.BinaryReader reader,
             global::TestScheduleIssues row
@@ -2874,7 +2947,12 @@ namespace SpacetimeDB.Internal.TableHandles
             >
         {
             internal IdCorrectTypeUniqueIndex()
-                : base("TestScheduleWithoutScheduleAt_IdCorrectType_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithoutScheduleAt_IdCorrectType_idx_btree"
+                    )
+                ) { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -2894,6 +2972,12 @@ namespace SpacetimeDB.Internal.TableHandles
             global::TestScheduleIssues
         >
     {
+        public static string LookupName =>
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "TestScheduleWithWrongPrimaryKeyType"
+            );
+
         public static global::TestScheduleIssues ReadGenFields(
             System.IO.BinaryReader reader,
             global::TestScheduleIssues row
@@ -2983,7 +3067,12 @@ namespace SpacetimeDB.Internal.TableHandles
             >
         {
             internal IdWrongTypeUniqueIndex()
-                : base("TestScheduleWithWrongPrimaryKeyType_IdWrongType_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithWrongPrimaryKeyType_IdWrongType_idx_btree"
+                    )
+                ) { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -3003,6 +3092,12 @@ namespace SpacetimeDB.Internal.TableHandles
             global::TestScheduleIssues
         >
     {
+        public static string LookupName =>
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "TestScheduleWithWrongScheduleAtType"
+            );
+
         public static global::TestScheduleIssues ReadGenFields(
             System.IO.BinaryReader reader,
             global::TestScheduleIssues row
@@ -3092,7 +3187,12 @@ namespace SpacetimeDB.Internal.TableHandles
             >
         {
             internal IdCorrectTypeUniqueIndex()
-                : base("TestScheduleWithWrongScheduleAtType_IdCorrectType_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithWrongScheduleAtType_IdCorrectType_idx_btree"
+                    )
+                ) { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -3112,6 +3212,12 @@ namespace SpacetimeDB.Internal.TableHandles
             global::TestUniqueNotEquatable
         >
     {
+        public static string LookupName =>
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "TestUniqueNotEquatable"
+            );
+
         public static global::TestUniqueNotEquatable ReadGenFields(
             System.IO.BinaryReader reader,
             global::TestUniqueNotEquatable row
@@ -3206,7 +3312,12 @@ namespace SpacetimeDB.Internal.TableHandles
             >
         {
             internal PrimaryKeyFieldUniqueIndex()
-                : base("TestUniqueNotEquatable_PrimaryKeyField_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestUniqueNotEquatable_PrimaryKeyField_idx_btree"
+                    )
+                ) { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -3952,13 +4063,18 @@ sealed class view_def_returns_not_a_spacetime_typeViewDispatcher
     }
 }
 
-namespace SpacetimeDB.Internal.ViewHandles
+namespace SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles
 {
     public sealed class PlayerReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::Player>
     {
         internal PlayerReadOnly()
-            : base("Player") { }
+            : base(
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "Player"
+                )
+            ) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -3970,14 +4086,19 @@ namespace SpacetimeDB.Internal.ViewHandles
 
         public sealed class IdentityIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
-                global::SpacetimeDB.Internal.ViewHandles.PlayerReadOnly,
+                global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.PlayerReadOnly,
                 global::Player,
                 SpacetimeDB.Identity,
                 SpacetimeDB.Identity.BSATN
             >
         {
             internal IdentityIndex()
-                : base("Player_Identity_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "Player_Identity_idx_btree"
+                    )
+                ) { }
 
             public global::Player? Find(SpacetimeDB.Identity key) => FindSingle(key);
         }
@@ -3989,7 +4110,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestAutoIncNotInteger>
     {
         internal TestAutoIncNotIntegerReadOnly()
-            : base("TestAutoIncNotInteger") { }
+            : base(
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestAutoIncNotInteger"
+                )
+            ) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -4001,14 +4127,19 @@ namespace SpacetimeDB.Internal.ViewHandles
 
         public sealed class IdentityFieldIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
-                global::SpacetimeDB.Internal.ViewHandles.TestAutoIncNotIntegerReadOnly,
+                global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestAutoIncNotIntegerReadOnly,
                 global::TestAutoIncNotInteger,
                 string,
                 SpacetimeDB.BSATN.String
             >
         {
             internal IdentityFieldIndex()
-                : base("TestAutoIncNotInteger_IdentityField_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestAutoIncNotInteger_IdentityField_idx_btree"
+                    )
+                ) { }
 
             public global::TestAutoIncNotInteger? Find(string key) => FindSingle(key);
         }
@@ -4020,7 +4151,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestDefaultFieldValues>
     {
         internal TestDefaultFieldValuesReadOnly()
-            : base("TestDefaultFieldValues") { }
+            : base(
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestDefaultFieldValues"
+                )
+            ) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -4035,7 +4171,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestDuplicateTableName>
     {
         internal TestDuplicateTableNameReadOnly()
-            : base("TestDuplicateTableName") { }
+            : base(
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestDuplicateTableName"
+                )
+            ) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -4050,7 +4191,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestIndexIssues>
     {
         internal TestIndexIssuesReadOnly()
-            : base("TestIndexIssues") { }
+            : base(
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestIndexIssues"
+                )
+            ) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -4064,7 +4210,12 @@ namespace SpacetimeDB.Internal.ViewHandles
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
         {
             internal TestIndexWithoutColumnsIndex()
-                : base("TestIndexIssues__idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestIndexIssues__idx_btree"
+                    )
+                ) { }
         }
 
         public TestIndexWithoutColumnsIndex TestIndexWithoutColumns => new();
@@ -4073,7 +4224,12 @@ namespace SpacetimeDB.Internal.ViewHandles
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
         {
             internal TestIndexWithEmptyColumnsIndex()
-                : base("TestIndexIssues__idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestIndexIssues__idx_btree"
+                    )
+                ) { }
         }
 
         public TestIndexWithEmptyColumnsIndex TestIndexWithEmptyColumns => new();
@@ -4082,7 +4238,12 @@ namespace SpacetimeDB.Internal.ViewHandles
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
         {
             internal TestUnknownColumnsIndex()
-                : base("TestIndexIssues__idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestIndexIssues__idx_btree"
+                    )
+                ) { }
         }
 
         public TestUnknownColumnsIndex TestUnknownColumns => new();
@@ -4091,7 +4252,12 @@ namespace SpacetimeDB.Internal.ViewHandles
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
         {
             internal SelfIndexingColumnIndex()
-                : base("TestIndexIssues_SelfIndexingColumn_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestIndexIssues_SelfIndexingColumn_idx_btree"
+                    )
+                ) { }
 
             public IEnumerable<global::TestIndexIssues> Filter(int SelfIndexingColumn) =>
                 DoFilter(
@@ -4116,7 +4282,12 @@ namespace SpacetimeDB.Internal.ViewHandles
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
         {
             internal SecondaryIndexingColumnIndex()
-                : base("TestIndexIssues_SecondaryIndexingColumn_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestIndexIssues_SecondaryIndexingColumn_idx_btree"
+                    )
+                ) { }
 
             public IEnumerable<global::TestIndexIssues> Filter(int SecondaryIndexingColumn) =>
                 DoFilter(
@@ -4141,7 +4312,12 @@ namespace SpacetimeDB.Internal.ViewHandles
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
         {
             internal TestUnexpectedColumnsIndex()
-                : base("TestIndexIssues_SelfIndexingColumn_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestIndexIssues_SelfIndexingColumn_idx_btree"
+                    )
+                ) { }
 
             public IEnumerable<global::TestIndexIssues> Filter(int SelfIndexingColumn) =>
                 DoFilter(
@@ -4167,7 +4343,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestScheduleIssues>
     {
         internal TestScheduleWithMissingScheduleAtFieldReadOnly()
-            : base("TestScheduleWithMissingScheduleAtField") { }
+            : base(
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestScheduleWithMissingScheduleAtField"
+                )
+            ) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -4182,7 +4363,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestScheduleIssues>
     {
         internal TestScheduleWithoutPrimaryKeyReadOnly()
-            : base("TestScheduleWithoutPrimaryKey") { }
+            : base(
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestScheduleWithoutPrimaryKey"
+                )
+            ) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -4197,7 +4383,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestScheduleIssues>
     {
         internal TestScheduleWithoutScheduleAtReadOnly()
-            : base("TestScheduleWithoutScheduleAt") { }
+            : base(
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestScheduleWithoutScheduleAt"
+                )
+            ) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -4209,14 +4400,19 @@ namespace SpacetimeDB.Internal.ViewHandles
 
         public sealed class IdCorrectTypeIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
-                global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithoutScheduleAtReadOnly,
+                global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestScheduleWithoutScheduleAtReadOnly,
                 global::TestScheduleIssues,
                 int,
                 SpacetimeDB.BSATN.I32
             >
         {
             internal IdCorrectTypeIndex()
-                : base("TestScheduleWithoutScheduleAt_IdCorrectType_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithoutScheduleAt_IdCorrectType_idx_btree"
+                    )
+                ) { }
 
             public global::TestScheduleIssues? Find(int key) => FindSingle(key);
         }
@@ -4228,7 +4424,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestScheduleIssues>
     {
         internal TestScheduleWithWrongPrimaryKeyTypeReadOnly()
-            : base("TestScheduleWithWrongPrimaryKeyType") { }
+            : base(
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestScheduleWithWrongPrimaryKeyType"
+                )
+            ) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -4240,14 +4441,19 @@ namespace SpacetimeDB.Internal.ViewHandles
 
         public sealed class IdWrongTypeIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
-                global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithWrongPrimaryKeyTypeReadOnly,
+                global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestScheduleWithWrongPrimaryKeyTypeReadOnly,
                 global::TestScheduleIssues,
                 string,
                 SpacetimeDB.BSATN.String
             >
         {
             internal IdWrongTypeIndex()
-                : base("TestScheduleWithWrongPrimaryKeyType_IdWrongType_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithWrongPrimaryKeyType_IdWrongType_idx_btree"
+                    )
+                ) { }
 
             public global::TestScheduleIssues? Find(string key) => FindSingle(key);
         }
@@ -4259,7 +4465,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestScheduleIssues>
     {
         internal TestScheduleWithWrongScheduleAtTypeReadOnly()
-            : base("TestScheduleWithWrongScheduleAtType") { }
+            : base(
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestScheduleWithWrongScheduleAtType"
+                )
+            ) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -4271,14 +4482,19 @@ namespace SpacetimeDB.Internal.ViewHandles
 
         public sealed class IdCorrectTypeIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
-                global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithWrongScheduleAtTypeReadOnly,
+                global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestScheduleWithWrongScheduleAtTypeReadOnly,
                 global::TestScheduleIssues,
                 int,
                 SpacetimeDB.BSATN.I32
             >
         {
             internal IdCorrectTypeIndex()
-                : base("TestScheduleWithWrongScheduleAtType_IdCorrectType_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestScheduleWithWrongScheduleAtType_IdCorrectType_idx_btree"
+                    )
+                ) { }
 
             public global::TestScheduleIssues? Find(int key) => FindSingle(key);
         }
@@ -4290,7 +4506,12 @@ namespace SpacetimeDB.Internal.ViewHandles
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestUniqueNotEquatable>
     {
         internal TestUniqueNotEquatableReadOnly()
-            : base("TestUniqueNotEquatable") { }
+            : base(
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TestUniqueNotEquatable"
+                )
+            ) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -4302,14 +4523,19 @@ namespace SpacetimeDB.Internal.ViewHandles
 
         public sealed class PrimaryKeyFieldIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
-                global::SpacetimeDB.Internal.ViewHandles.TestUniqueNotEquatableReadOnly,
+                global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestUniqueNotEquatableReadOnly,
                 global::TestUniqueNotEquatable,
                 TestEnumWithExplicitValues,
                 SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues>
             >
         {
             internal PrimaryKeyFieldIndex()
-                : base("TestUniqueNotEquatable_PrimaryKeyField_idx_btree") { }
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TestUniqueNotEquatable_PrimaryKeyField_idx_btree"
+                    )
+                ) { }
 
             public global::TestUniqueNotEquatable? Find(TestEnumWithExplicitValues key) =>
                 FindSingle(key);
@@ -4324,26 +4550,27 @@ namespace SpacetimeDB.Internal
 {
     public sealed partial class LocalReadOnly
     {
-        public global::SpacetimeDB.Internal.ViewHandles.PlayerReadOnly Player => new();
-        public global::SpacetimeDB.Internal.ViewHandles.TestAutoIncNotIntegerReadOnly TestAutoIncNotInteger =>
+        public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.PlayerReadOnly Player =>
             new();
-        public global::SpacetimeDB.Internal.ViewHandles.TestDefaultFieldValuesReadOnly TestDefaultFieldValues =>
+        public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestAutoIncNotIntegerReadOnly TestAutoIncNotInteger =>
             new();
-        public global::SpacetimeDB.Internal.ViewHandles.TestDuplicateTableNameReadOnly TestDuplicateTableName =>
+        public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestDefaultFieldValuesReadOnly TestDefaultFieldValues =>
             new();
-        public global::SpacetimeDB.Internal.ViewHandles.TestIndexIssuesReadOnly TestIndexIssues =>
+        public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestDuplicateTableNameReadOnly TestDuplicateTableName =>
             new();
-        public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithMissingScheduleAtFieldReadOnly TestScheduleWithMissingScheduleAtField =>
+        public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestIndexIssuesReadOnly TestIndexIssues =>
             new();
-        public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithoutPrimaryKeyReadOnly TestScheduleWithoutPrimaryKey =>
+        public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestScheduleWithMissingScheduleAtFieldReadOnly TestScheduleWithMissingScheduleAtField =>
             new();
-        public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithoutScheduleAtReadOnly TestScheduleWithoutScheduleAt =>
+        public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestScheduleWithoutPrimaryKeyReadOnly TestScheduleWithoutPrimaryKey =>
             new();
-        public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithWrongPrimaryKeyTypeReadOnly TestScheduleWithWrongPrimaryKeyType =>
+        public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestScheduleWithoutScheduleAtReadOnly TestScheduleWithoutScheduleAt =>
             new();
-        public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithWrongScheduleAtTypeReadOnly TestScheduleWithWrongScheduleAtType =>
+        public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestScheduleWithWrongPrimaryKeyTypeReadOnly TestScheduleWithWrongPrimaryKeyType =>
             new();
-        public global::SpacetimeDB.Internal.ViewHandles.TestUniqueNotEquatableReadOnly TestUniqueNotEquatable =>
+        public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestScheduleWithWrongScheduleAtTypeReadOnly TestScheduleWithWrongScheduleAtType =>
+            new();
+        public global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.ViewHandles.TestUniqueNotEquatableReadOnly TestUniqueNotEquatable =>
             new();
     }
 }
@@ -4644,46 +4871,49 @@ static class ModuleRegistration
             ["renamed_identity"]
         );
 
-        builder.RegisterTable<global::Player, global::SpacetimeDB.Internal.TableHandles.Player>();
+        builder.RegisterTable<
+            global::Player,
+            global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.Player
+        >();
         builder.RegisterTable<
             global::TestAutoIncNotInteger,
-            global::SpacetimeDB.Internal.TableHandles.TestAutoIncNotInteger
+            global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestAutoIncNotInteger
         >();
         builder.RegisterTable<
             global::TestDefaultFieldValues,
-            global::SpacetimeDB.Internal.TableHandles.TestDefaultFieldValues
+            global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestDefaultFieldValues
         >();
         builder.RegisterTable<
             global::TestDuplicateTableName,
-            global::SpacetimeDB.Internal.TableHandles.TestDuplicateTableName
+            global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestDuplicateTableName
         >();
         builder.RegisterTable<
             global::TestIndexIssues,
-            global::SpacetimeDB.Internal.TableHandles.TestIndexIssues
+            global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestIndexIssues
         >();
         builder.RegisterTable<
             global::TestScheduleIssues,
-            global::SpacetimeDB.Internal.TableHandles.TestScheduleWithMissingScheduleAtField
+            global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestScheduleWithMissingScheduleAtField
         >();
         builder.RegisterTable<
             global::TestScheduleIssues,
-            global::SpacetimeDB.Internal.TableHandles.TestScheduleWithoutPrimaryKey
+            global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestScheduleWithoutPrimaryKey
         >();
         builder.RegisterTable<
             global::TestScheduleIssues,
-            global::SpacetimeDB.Internal.TableHandles.TestScheduleWithoutScheduleAt
+            global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestScheduleWithoutScheduleAt
         >();
         builder.RegisterTable<
             global::TestScheduleIssues,
-            global::SpacetimeDB.Internal.TableHandles.TestScheduleWithWrongPrimaryKeyType
+            global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestScheduleWithWrongPrimaryKeyType
         >();
         builder.RegisterTable<
             global::TestScheduleIssues,
-            global::SpacetimeDB.Internal.TableHandles.TestScheduleWithWrongScheduleAtType
+            global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestScheduleWithWrongScheduleAtType
         >();
         builder.RegisterTable<
             global::TestUniqueNotEquatable,
-            global::SpacetimeDB.Internal.TableHandles.TestUniqueNotEquatable
+            global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.TableHandles.TestUniqueNotEquatable
         >();
 
         builder.RegisterClientVisibilityFilter(global::Module.MY_FILTER);
