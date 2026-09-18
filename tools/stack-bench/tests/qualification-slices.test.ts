@@ -122,9 +122,33 @@ test('saved slices validate real artifacts and reject incomplete or mismatched e
   assert.throws(() => validateQualificationSlice(artifact, entry,
     { ...context, calibration: wrongEquivalence }), /executable changed/);
   const changedReference = structuredClone(plan);
-  changedReference.references.entries[0]!.sourceSha256 = 'f'.repeat(64);
+  changedReference.references.entries.find(item => item.backend === 'postgres')!.sourceSha256 = 'f'.repeat(64);
   assert.throws(() => validateQualificationSlice(artifact, entry,
     { ...context, calibration: changedReference }), /source references differs/);
+  const unrelatedReference = structuredClone(plan);
+  unrelatedReference.references.entries.find(item => item.backend === 'spacetime')!.sourceSha256 = 'f'.repeat(64);
+  assert.doesNotThrow(() => validateQualificationSlice(artifact, entry,
+    { ...context, calibration: unrelatedReference, references: unrelatedReference.references.entries }));
+  const removedReference = structuredClone(plan);
+  removedReference.references.entries = removedReference.references.entries.filter(item => item.backend !== 'postgres');
+  assert.throws(() => validateQualificationSlice(artifact, entry,
+    { ...context, calibration: removedReference, references: removedReference.references.entries }), /source references differs/);
+
+  const nullEntry: CalibrationEvidence = { ...entry, kind: 'null', stack: undefined,
+    path: 'qualification-evidence/ecommerce-l3-e804c1302/null-targeted.json',
+    sha256: '8ad52d3b9f0274cae90761a0e46f7184a111852ab511a4e90702c1cd02677b58' };
+  const nullArtifact = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, nullEntry.path), 'utf8'));
+  const nullPlan = structuredClone(plan);
+  const nullScope = qualificationScopeIdentity({ kind: 'null', release: savedDocuments.release,
+    stackBenchRoot: STACK_BENCH_ROOT });
+  nullPlan.qualificationReuse!.scopes = [{ kind: 'null',
+    fromExecutableSha256: nullArtifact.payload.qualificationScope.executableSha256,
+    toExecutableSha256: nullScope.executableSha256 }];
+  for (const reference of nullPlan.references.entries) reference.sourceSha256 = 'f'.repeat(64);
+  const nullContext = { ...context, calibration: nullPlan, references: nullPlan.references.entries };
+  assert.doesNotThrow(() => validateQualificationSlice(nullArtifact, nullEntry, nullContext));
+  nullPlan.fixture.sourceSha256 = 'f'.repeat(64);
+  assert.throws(() => validateQualificationSlice(nullArtifact, nullEntry, nullContext), /source fixture differs/);
 
   const stale: CalibrationEvidence = { ...entry, kind: 'reference',
     path: 'qualification-evidence/ecommerce-l3-7cd96d01b/postgres-reference.json',

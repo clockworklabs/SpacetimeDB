@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { calibrationQualificationIdentity, compileCalibrationDefinition,
+import { calibrationQualificationIdentity, calibrationQualificationRelease, compileCalibrationDefinition,
   compileCalibrationFile, currentLevelPoints, hasExactSelectedPackRuntime,
   resolveCalibrationForRelease, validateQualificationEvidenceArtifact } from '../src/composition/calibration-compiler.js';
 import { createArtifact } from '../src/evidence/artifacts.js';
@@ -13,19 +13,20 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { loadTrack } from '../src/composition/tracks.js';
 
 const TRACK = loadTrack('ecommerce');
-const CALIBRATION = join(TRACK.dir, 'composition', 'calibrations', 'sequential-l1.json');
+const CALIBRATION = join(TRACK.dir, 'composition', 'calibrations', 'dependency-l3.json');
 
 function calibrationSource(): unknown {
   return JSON.parse(readFileSync(CALIBRATION, 'utf8'));
 }
 
 function current() {
-  const release = requireRecipeRelease(TRACK, 1).release;
-  return { release, plan: compileCalibrationFile(CALIBRATION, {
+  const binding = requireRecipeRelease(TRACK, 3, 'ecommerce.progression-catalog');
+  const plan = compileCalibrationFile(CALIBRATION, {
     trackRoot: TRACK.dir,
     stackBenchRoot: STACK_BENCH_ROOT,
-    release,
-  }) };
+    release: binding.release,
+  });
+  return { ...calibrationQualificationRelease(plan, binding.release, binding.execution), plan };
 }
 
 test('qualification runtime must cover the exact selected pack set', () => {
@@ -41,9 +42,9 @@ test('qualification runtime must cover the exact selected pack set', () => {
 
 test('current calibration binds stable authored identities', () => {
   const { release, plan } = current();
-  assert.equal(plan.id, 'ecommerce.sequential-l1-calibration');
+  assert.equal(plan.id, 'ecommerce.dependency-l3-calibration');
   assert.deepEqual(plan.recipe, {
-    path: 'composition/recipes/sequential-l1.json',
+    path: 'composition/recipes/progression-catalog.json',
     id: release.id,
     meaningSha256: release.meaningSha256,
     executionSha256: release.executionSha256,
@@ -79,13 +80,12 @@ test('covered depth metadata preserves the qualification identity', () => {
 });
 
 test('qualification accepts emitted artifact hashes and rejects mismatched identities', () => {
-  const { release, plan } = current();
+  const { release, plan, execution } = current();
   const reference = plan.references.entries[0]!;
   const calibration = { ...plan, qualification: { ...plan.qualification, runner: undefined } };
   const context = { calibration, qualificationIdentity: calibrationQualificationIdentity(plan),
     release, references: plan.references.entries, stackBenchRoot: STACK_BENCH_ROOT,
-    execution: executionPlanForRelease(join(TRACK.dir, 'composition/recipes/sequential-l1.json'),
-      { trackRoot: TRACK.dir, level: 1 }), enforceQualificationScope: false };
+    execution, enforceQualificationScope: false };
   for (const kind of ['reference', 'mutation'] as const) {
     const repetitions = kind === 'reference' ? plan.qualification.referenceRepetitions
       : plan.qualification.mutationRepetitions;
@@ -136,7 +136,7 @@ test('null qualification accepts blocked setup but rejects unmeasured or contrad
       vacuousPasses: { criteria: 0, points: 0 }, oracleGaps: { criteria: 0, points: 0 },
       unscored: { criteria: zero, passed: 0, failed: zero, inconclusive: 0 } },
       criteria: scored.map(check => ({ scenario: check.source, feature: check.featureId,
-        criterion: check.criterionId, track: release.track, level: 1, points: check.points,
+        criterion: check.criterionId, track: release.track, level: 3, points: check.points,
         status: 'expected_fail', evidenceStatus: 'blocked', failureStage: 'setup' })) } });
   const entry = { kind: 'null' as const, repetition: 1, path: 'null.json', sha256: 'a'.repeat(64) };
   const context = { calibration: { ...plan, qualification: { ...plan.qualification, runner: undefined } },
@@ -175,9 +175,10 @@ test('current level points come from the selected recipe', () => {
     join(TRACK.dir, 'composition', 'recipes', 'sequential-l2.json'),
     { trackRoot: TRACK.dir, level: 2 },
   )), release.scoring.points - base.scoring.points);
-  assert.equal(resolveCalibrationForRelease(release, {
+  const currentRelease = requireRecipeRelease(TRACK, 3, 'ecommerce.progression-catalog').release;
+  assert.equal(resolveCalibrationForRelease(currentRelease, {
     trackRoot: TRACK.dir,
     stackBenchRoot: STACK_BENCH_ROOT,
-    alias: 'L2',
-  })?.recipe.id, release.id);
+    alias: 'L3',
+  })?.recipe.id, currentRelease.id);
 });

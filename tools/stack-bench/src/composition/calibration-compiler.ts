@@ -879,10 +879,18 @@ export function validateQualificationSlice(artifact: UnknownRecord, entry: Calib
   }
   // Do not reuse a different reference, runner, repetition policy, feature
   // selection, or zero-point policy merely because its checks have the same IDs.
-  for (const field of ['fixture', 'references', 'nullControl', 'controls'] as const) {
+  for (const field of ['fixture', 'nullControl', 'controls'] as const) {
     if (canonicalDefinitionJson(sourceCalibration[field]) !== canonicalDefinitionJson(calibration[field])) {
       evidenceFailure(at, `source ${field} differs`);
     }
+  }
+  // Each receipt measures one stack; null controls do not run a reference app.
+  const scopedReferences = (plan: Pick<CalibrationDefinition, 'references'>) => ({ ...plan.references,
+    entries: plan.references.entries.filter(reference => entry.kind !== 'null'
+      && reference.backend === entry.stack) });
+  if (canonicalDefinitionJson(scopedReferences(sourceCalibration))
+    !== canonicalDefinitionJson(scopedReferences(calibration))) {
+    evidenceFailure(at, 'source references differs');
   }
   const { evidence: _oldEvidence, buildImage: _oldImage, ...oldPolicy } = sourceCalibration.qualification;
   const { evidence: _newEvidence, buildImage: _newImage, ...newPolicy } = calibration.qualification;
