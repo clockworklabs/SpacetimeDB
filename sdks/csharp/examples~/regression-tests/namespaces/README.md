@@ -36,6 +36,9 @@ Coverage:
   callbacks, and child reducer failures forwarded to the root connection.
 - Insert/update/delete callbacks, unique/B-tree indexes, and reducer rollback.
 - Event rows, private-table access rejection, procedural/anonymous/query views.
+- Root-defined RLS on a public namespaced table: two distinct non-owner clients,
+  typed/raw subscriptions, initial rows, live inserts/updates, ownership transfer,
+  filtered one-off queries, and unsubscribe cleanup. No library-defined RLS rules.
 - `RemoteQuery` result decoding and no subscription-cache population by one-off queries.
 - Subscribe-all initial rows, no replay of past events, and unsubscribe cache cleanup.
 - Same-named scheduled reducers/procedures in both namespaces, with explicit function
