@@ -54,7 +54,7 @@ partial struct MultiTableRow
                 {
                     new("Name", NameRW.GetAlgebraicType(registrar)),
                     new("Foo", FooRW.GetAlgebraicType(registrar)),
-                    new("Bar", BarRW.GetAlgebraicType(registrar))
+                    new("Bar", BarRW.GetAlgebraicType(registrar)),
                 }
             ));
 

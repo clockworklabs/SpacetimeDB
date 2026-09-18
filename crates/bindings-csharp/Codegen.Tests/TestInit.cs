@@ -55,7 +55,7 @@ static class TestInit
                 {
                     var line = lines[lineIdx];
                     // print the source line
-                    comment.AppendLine(line.ToString());
+                    comment.AppendLine(line.ToString().TrimEnd());
                     // print squiggly line highlighting the location
                     if (line.Span.Intersection(loc.SourceSpan) is { } intersection)
                     {

@@ -117,7 +117,7 @@ partial struct TestDefaultFieldValues
                         new("DefaultF32", DefaultF32RW.GetAlgebraicType(registrar)),
                         new("DefaultF64", DefaultF64RW.GetAlgebraicType(registrar)),
                         new("DefaultEnum", DefaultEnumRW.GetAlgebraicType(registrar)),
-                        new("DefaultNull", DefaultNullRW.GetAlgebraicType(registrar))
+                        new("DefaultNull", DefaultNullRW.GetAlgebraicType(registrar)),
                     }
                 )
             );
