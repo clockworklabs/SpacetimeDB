@@ -8,8 +8,8 @@
     "path": "../recipes/progression-catalog.json",
     "id": "ecommerce.progression-catalog",
     "meaningSha256": "565b0671eb74073d094521dc3769b49248307be494c8fdb82d1d8d05e1f0483a",
-    "executionSha256": "c4f37ee04d8f37917176dd21a79c79b226bc3f57d211537f969fb46762a62741",
-    "contentSha256": "2bea5c4212cc1f9bec2c3eca81dbd38dae9b0d1166335d9813ddff359468e367"
+    "executionSha256": "d4bcf63e6a215d8d34dbaebf3c85dedf506a9e0d5a02ca871ec89fa3a5e73b1f",
+    "contentSha256": "2f2d9bb3aa16f7394b89eb00e43d9cc91f96aea4a8cc11c2dee7f6099ce197d5"
   },
   "fixture": {
     "id": "ecommerce.operations",

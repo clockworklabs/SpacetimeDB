@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import test from 'node:test';
 
 import { createArtifact, currentEngineIdentity, recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
-import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
+import { calibrationQualificationIdentity, calibrationQualificationRelease,
+  resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
 import { PACK_RUNTIME_METRIC } from '../src/composition/pack-runtime.js';
 import { parsePackBudgetArgs } from '../commands/pack-budget.js';
 import { loadPackBudgetEvidence, PACK_BUDGET_POLICY, recommendPackBudgets }
@@ -17,10 +18,12 @@ import { requireRecipeRelease as resolveRecipeRelease } from '../src/composition
 import { loadTrack } from '../src/composition/tracks.js';
 
 const track = loadTrack('ecommerce');
-const binding = resolveRecipeRelease(track, 1);
-const resolvedCalibration = resolveCalibrationForRelease(binding.release, { trackRoot: track.dir });
+const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-catalog');
+const resolvedCalibration = resolveCalibrationForRelease(binding.release, { trackRoot: track.dir, alias: 'L3' });
 assert(resolvedCalibration);
 const calibration = structuredClone(resolvedCalibration);
+const selectedChecks = calibrationQualificationRelease(calibration,
+  binding.release, binding.execution).release.checkCatalog;
 calibration.qualification.runner = {
   schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
 };
@@ -30,7 +33,7 @@ const applianceRunner: RunnerObservation = Object.freeze({ ...calibration.qualif
 
 function runtime(stackIndex: number, repetition: number): PackRuntime {
   const counts = new Map<string, number>(binding.plan.packs.map(pack => [pack.id, 0]));
-  for (const check of binding.release.checkCatalog) {
+  for (const check of selectedChecks) {
     if (!check.packId) throw new Error(`check ${check.stableKey} has no pack`);
     counts.set(check.packId, (counts.get(check.packId) ?? 0) + 1);
   }
@@ -88,7 +91,7 @@ test('budget recommendation requires every exact reference repetition and applie
   });
   const original = structuredClone(evidence);
   const result = recommendPackBudgets({ binding, calibration, evidence });
-  const measuredPackCount = new Set(binding.release.checkCatalog.map(check => check.packId)).size;
+  const measuredPackCount = new Set(selectedChecks.map(check => check.packId)).size;
   assert.equal(result.samples.length, measuredPackCount * 3);
   assert.equal(result.recommendations.length, measuredPackCount);
   assert(result.recommendations.every(item => item.sampleCount === 3));
