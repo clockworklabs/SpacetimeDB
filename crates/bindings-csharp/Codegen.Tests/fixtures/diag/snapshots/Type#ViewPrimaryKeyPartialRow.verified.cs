@@ -47,7 +47,7 @@ partial class ViewPrimaryKeyPartialRow
                 _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new("DeclaredIdentity", DeclaredIdentityRW.GetAlgebraicType(registrar))
+                        new("DeclaredIdentity", DeclaredIdentityRW.GetAlgebraicType(registrar)),
                     }
                 )
             );

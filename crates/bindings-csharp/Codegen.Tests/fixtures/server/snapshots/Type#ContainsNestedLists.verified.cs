@@ -110,7 +110,7 @@ partial class ContainsNestedLists
                         new(
                             "StringListListArray",
                             StringListListArrayRW.GetAlgebraicType(registrar)
-                        )
+                        ),
                     }
                 )
             );
