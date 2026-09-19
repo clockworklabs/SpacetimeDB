@@ -53,6 +53,29 @@ test('every draft crash baseline confirms then reconciles checkout before reload
   }
 });
 
+test('scored crash trials clear retained carts before the next stock baseline', () => {
+  const scenario = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+    'tracks/ecommerce/scenarios/progression-checkout-crash.json'), 'utf8'));
+  const steps = scenario.features[0].setup as Array<{
+    do: string; actor?: string; testid?: string; ifAvailable?: boolean;
+    within?: number; equals?: number; in?: { contains: string };
+  }>;
+  const crashes = steps.flatMap((step, index) => step.do === 'crashCheckout' ? [index] : []);
+  assert.equal(crashes.length, 2, 'cleanup must not add crashes');
+  for (const index of crashes) {
+    const nextSnapshot = steps.findIndex((step, i) => i > index && step.do === 'dbRecordCheckout');
+    const cleanup = steps.slice(index + 1, nextSnapshot);
+    const removals = cleanup.filter(step => step.testid === 'cart-remove');
+    assert.deepEqual(removals.map(step => step.in?.contains), ['Keyboard', 'Coffee Grinder']);
+    assert(removals.every(step => step.actor === steps[index]!.actor && step.ifAvailable));
+    assert(cleanup.some(step => step.do === 'expectNumber' && step.testid === 'cart-count'
+      && step.actor === steps[index]!.actor && step.equals === 0));
+  }
+  assert(steps.filter(step => step.do === 'click' && step.ifAvailable)
+    .every(step => step.within !== undefined && step.within <= 1000),
+  'optional navigation must not consume the reservation window');
+});
+
 class Socket extends EventTarget {
   protocol = 'v1.json.spacetimedb';
   readyState: number = WebSocket.OPEN;
