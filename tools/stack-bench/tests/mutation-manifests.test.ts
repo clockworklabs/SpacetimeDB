@@ -43,7 +43,7 @@ test('every mutation manifest binds valid edits to exact scenario criteria', () 
       'schemaVersion', 'fixtureSha256', 'backend', 'track', 'scenario', 'note', 'mutations',
     ]).has(field)), [], `${file} has unknown root fields`);
     assert(typeof manifest.backend === 'string');
-    assert.match(manifest.backend, /^(spacetime|postgres|mongodb)$/);
+    assert.match(manifest.backend, /^(spacetime|postgres|mongodb|convex)$/);
     assert.equal(typeof manifest.track, 'string');
     assert.equal(manifest.level, undefined);
     assert(typeof manifest.fixtureSha256 === 'string');
