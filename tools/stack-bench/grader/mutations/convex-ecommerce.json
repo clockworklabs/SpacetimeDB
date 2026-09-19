@@ -1330,12 +1330,20 @@
       "targets": [
         "ecommerce.spec.live-state.shared-cart.4c"
       ],
-      "desc": "An already-open second session ignores committed cart update events.",
+      "desc": "The cart accepts initial snapshots and updates after a local write, but an idle second session ignores remote cart changes.",
       "file": "client/src/App.tsx",
       "edits": [
         {
+          "find": "  const [cart, setCart] = useState<CartT>({ items: [], total: 0 });",
+          "replace": "  const [cart, setCart] = useState<CartT>({ items: [], total: 0 });\n  const cartSnapshotAccount = useRef<string | null>(null);\n  const cartWrittenHere = useRef(false);"
+        },
+        {
           "find": "    setCart(state.cart);",
-          "replace": "    // Defect: subscribed cart changes are ignored."
+          "replace": "    const cartAccount = state.user?.id ?? \"anonymous\";\n    if (cartSnapshotAccount.current !== cartAccount) cartWrittenHere.current = false;\n    if (cartSnapshotAccount.current !== cartAccount || cartWrittenHere.current) setCart(state.cart);\n    cartSnapshotAccount.current = cartAccount;"
+        },
+        {
+          "find": "      await mutate(\"api:add_to_cart\", { itemId, quantity: 1 });",
+          "replace": "      cartWrittenHere.current = true;\n      await mutate(\"api:add_to_cart\", { itemId, quantity: 1 });"
         }
       ]
     },
@@ -1475,17 +1483,17 @@
       ]
     },
     {
-      "id": "cart-add-uses-another-account-cart",
+      "id": "cart-add-line-lookup-not-owner-scoped",
       "scenario": "tracks/ecommerce/scenarios/01-cart-boundary.json",
       "targets": [
         "ecommerce.spec.access-control.cart-boundary.109a"
       ],
-      "desc": "Cart writes target another customer account instead of the authenticated caller.",
+      "desc": "Cart line lookup ignores account ownership, so a second customer changes the first customer’s item quantity.",
       "file": "convex/shop.js",
       "edits": [
         {
-          "find": "const user = await account(ctx);\n  quantity(amount, !add);",
-          "replace": "const caller = await account(ctx);\n  const user = (await rows(ctx, 'order_account')).find(a => a._id !== caller._id && a.roles.length === 0) || caller;\n  quantity(amount, !add);"
+          "find": "const existing = await ctx.db.query('order_cart').withIndex('line', q => q.eq('account_id', user._id).eq('item_id', itemId)).unique();",
+          "replace": "const existing = (await ctx.db.query('order_cart').collect()).find(row => row.item_id === itemId);"
         }
       ]
     },
@@ -1525,12 +1533,17 @@
       "targets": [
         "ecommerce.spec.access-control.signed-out-purchase.3a"
       ],
-      "desc": "Anonymous native buy defaults to the administrator account and commits a purchase.",
+      "desc": "Expose the purchase control while signed out and accept its anonymous buy as an administrator-owned purchase.",
       "file": "convex/shop.js",
       "edits": [
         {
           "find": "purchase(ctx, await account(ctx), [{ item_id: itemId, quantity: 1 }])",
           "replace": "purchase(ctx, (await account(ctx, false)) || (await rows(ctx, 'order_account')).find(isAdmin), [{ item_id: itemId, quantity: 1 }])"
+        },
+        {
+          "file": "client/src/App.tsx",
+          "find": "const isCustomer = !!currentUser && !currentUser.isAdmin && !currentUser.isStaff;",
+          "replace": "const isCustomer = !currentUser || (!currentUser.isAdmin && !currentUser.isStaff);"
         }
       ]
     },
