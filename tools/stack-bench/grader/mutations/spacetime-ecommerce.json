@@ -2646,12 +2646,12 @@
       "targets": [
         "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
       ],
-      "desc": "A disconnect callback removes second-product stock only for the departing account with a prepared cart and prior order. Other accounts and observer connections do not trigger the defect.",
+      "desc": "A disconnect callback removes second-product stock once after a cart and prior order exist. A private ledger marker prevents repeated damage to later setup. The control tests stock observation after a crash, not the time at which the defect was injected.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
           "find": "// --- views ---",
-          "replace": "export const onDisconnect = spacetimedb.clientDisconnected((ctx) => { const accountId = getAccountId(ctx); if (accountId === null || ![...ctx.db.cartItem.byAccountItem.filter(accountId)].length || ![...ctx.db.customerOrder.iter()].some(order => order.accountId === accountId)) return; const item = [...ctx.db.item.iter()].find(row => row.name === 'Coffee Grinder'); if (!item) return; const row = [...ctx.db.stock.by_item_warehouse.filter(item.id)][0]; if (row) { ctx.db.stock.by_item_warehouse.delete([row.item_id, row.warehouse_id]); ctx.db.stock.insert({ ...row, quantity: row.quantity - 1 }); } });\n// --- views ---"
+          "replace": "export const onDisconnect = spacetimedb.clientDisconnected((ctx) => { if ([...ctx.db.stockLedger.iter()].some(row => row.source === 'stock fault control') || ![...ctx.db.cartItem.iter()].some(row => [...ctx.db.customerOrder.iter()].some(order => order.accountId === row.accountId))) return; const item = [...ctx.db.item.iter()].find(row => row.name === 'Coffee Grinder'); if (!item) return; const row = [...ctx.db.stock.by_item_warehouse.filter(item.id)][0]; if (row) { ctx.db.stock.by_item_warehouse.delete([row.item_id, row.warehouse_id]); ctx.db.stock.insert({ ...row, quantity: row.quantity - 1 }); ctx.db.stockLedger.insert({ id: 0n, itemId: row.item_id, warehouseId: row.warehouse_id, quantity: 1, createdMicros: ctx.timestamp.microsSinceUnixEpoch, source: 'stock fault control' }); } });\n// --- views ---"
         }
       ]
     },
