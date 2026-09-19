@@ -15,6 +15,8 @@ import type { BackendLease } from './backend-lease.js';
 import { assertLeasedContainer, requireLeasedDatabase } from '../stacks/backend-reset-guard.js';
 import { execFileSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
+import { recoverConvex } from '../stacks/backends/convex-lifecycle.js';
+import { loadTrack, portsFor } from '../composition/tracks.js';
 
 export { hostedStopScript } from '../stacks/hosted-lifecycle.js';
 export type { RuntimeControlMode } from '../stacks/stack-adapter-contract.js';
@@ -34,6 +36,7 @@ export interface PreparedRuntimeCrash {
   close(): Promise<void>;
   recover(signal: AbortSignal): Promise<DatabaseDrainReceipt | null>;
   spacetime: { uri: string; mod: string } | null;
+  combinedBoundary?: boolean;
 }
 
 export interface DatabaseDrainReceipt {
@@ -99,7 +102,7 @@ export async function drainApplicationDatabase(lease: BackendLease, deadlineMs: 
 }
 
 export async function recoverRuntimeCrash(spec: RuntimeControlSpec, target: CrashTarget): Promise<DatabaseDrainReceipt | null> {
-  const { lease } = leaseFromEnv(process.env, { backend: spec.backend, active: true });
+  const { path, lease } = leaseFromEnv(process.env, { backend: spec.backend, active: true });
   requireAttemptNetwork(lease);
   const signal = AbortSignal.timeout(target === 'application' ? 110_000 : 45_000);
   if (target === 'application') {
@@ -123,9 +126,13 @@ export async function recoverRuntimeCrash(spec: RuntimeControlSpec, target: Cras
     return drain!;
   }
   if (target !== 'database') throw new Error('unsupported recovery target');
-  startAttemptDatabaseProcess(lease);
+  if (lease.backend === 'convex') {
+    recoverConvex({ leasePath: path, leaseToken: lease.ownershipToken,
+      ports: portsFor(loadTrack(lease.track), 'convex', lease.runIndex), signal });
+  } else startAttemptDatabaseProcess(lease);
   await waitFor(async () => {
     if (lease.backend === 'spacetime') return answers(`${lease.resources.serverUri}/v1/ping`, { requireSuccess: true });
+    if (lease.backend === 'convex') return answers(`${lease.resources.serverUri}/version`, { requireSuccess: true });
     try {
       const id = lease.resources.container!.id;
       if (lease.backend === 'postgres') attemptDocker(['exec', id, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres']);
@@ -152,6 +159,7 @@ export async function prepareRuntimeCrash(spec: RuntimeControlSpec, target: Cras
   const prepared = await prepareProcessCrash(lease, target);
   return {
     ...prepared,
+    combinedBoundary: lease.backend === 'spacetime' || lease.backend === 'convex',
     spacetime: lease.backend === 'spacetime'
       ? { uri: lease.resources.serverUri!, mod: lease.resources.module! } : null,
     async recover(signal) {

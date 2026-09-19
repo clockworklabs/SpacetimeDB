@@ -26,6 +26,7 @@ import { activateAttemptBackend } from '../stacks/hosted-lifecycle.js';
 import { resetMutationDatabase } from '../../grader/mutation-test.js';
 import { inspectImportedReference, loadReferenceRegistry } from './reference-fixtures.js';
 import { resolveReferenceSelection } from './reference-selection.js';
+import { activateConvex } from '../stacks/backends/convex-lifecycle.js';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const read = (path: string): unknown => JSON.parse(readFileSync(path, 'utf8'));
@@ -39,7 +40,7 @@ const message = (error: unknown) => error instanceof Error ? error.message : Str
 const positive = z.number().int().positive().safe();
 const sourceSchema = z.object({ path: z.string().min(1), sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
 const planSchema = z.object({ schemaVersion: z.literal(1), groups: z.array(z.object({
-  backend: z.enum(['postgres', 'mongodb', 'spacetime']), track: z.string().min(1),
+  backend: z.enum(['postgres', 'mongodb', 'spacetime', 'convex']), track: z.string().min(1),
   level: positive, recipe: z.string().min(1), scenario: z.string().min(1),
   features: z.array(positive).nonempty(), repetitions: positive,
   source: sourceSchema.optional(), expectedFailures: z.array(z.string().min(1)).default([]),
@@ -223,7 +224,7 @@ async function claimGroup(group: DiagnosticGroup, directory: string, id: string,
     const serverUri = (index: number) => {
       if (group.saved) return group.saved.serverUri;
       if (18000 + index > 65535) throw new RangeError('database listener exceeds TCP port range');
-      return group.backend === 'spacetime' ? `http://127.0.0.1:${18000 + index}` : null;
+      return group.backend === 'spacetime' || group.backend === 'convex' ? `http://127.0.0.1:${18000 + index}` : null;
     };
     const runIndex = group.saved?.runIndex ?? (await selectRunResources({ track, backends: [group.backend], count: 1,
       serverUri, probePort: probeLoopbackPort, signal })).runIndices[0];
@@ -236,7 +237,8 @@ async function claimGroup(group: DiagnosticGroup, directory: string, id: string,
       const lease = createBackendLease({ runId: id, backend: group.backend, track: group.track, runIndex,
         ...(group.backend === 'spacetime' ? { serverUri: serverUri(runIndex),
           module: group.saved?.module ?? moduleName(track, runIndex), dataDir: join(directory, 'database') }
-          : { database: group.saved?.database ?? dbName(track, runIndex) }) });
+          : group.backend === 'convex' ? { serverUri: serverUri(runIndex) }
+            : { database: group.saved?.database ?? dbName(track, runIndex) }) });
       const keys = backendResourceLockKeys(lease, ports, [`workspace:${join(directory, 'source')}`]);
       try { claimBackendResources(path, lease, { ...scope, keys }); return { lease, path, ports }; }
       catch (error) {
@@ -271,6 +273,7 @@ async function runGroup(plan: FrozenPlan, groupIndex: number, directory: string,
     process.env.STACK_BENCH_LEASE = leasePath;
     process.env.STACK_BENCH_LEASE_TOKEN = lease.ownershipToken;
     if (group.backend === 'spacetime') process.env.STACK_BENCH_STDB_URI = lease.resources.serverUri!;
+    if (group.backend === 'convex') process.env.STACK_BENCH_CONVEX_URI = lease.resources.serverUri!;
     const phase = async (name: string, operation: () => Promise<void>) => {
       const start = Date.now();
       try { await operation(); } finally { audit.phases[name] = Date.now() - start; save(); }
@@ -312,7 +315,8 @@ async function runGroup(plan: FrozenPlan, groupIndex: number, directory: string,
           if (failure) throw failure;
         }
       }
-      activateAttemptBackend({ leasePath, lease, ports });
+      if (group.backend === 'convex') activateConvex({ leasePath, leaseToken: lease.ownershipToken, ports });
+      else activateAttemptBackend({ leasePath, lease, ports });
       if (group.saved) {
         snapshotAppSource(group.saved.source, app);
         writeFileSync(join(directory, '.stack-bench-isolation'), 'container');

@@ -1,3 +1,4 @@
+import type { RefusalKind, ResponseContract } from './named-action-runtime.js';
 import { ActionApplicationFailure, ActionInconclusive } from './action-contract.js';
 import { finding, renderFinding } from './action-findings.js';
 import type { FailedFindingKind, FindingFields, InconclusiveFindingKind } from './action-findings.js';
@@ -23,6 +24,7 @@ export interface Locator {
 export interface BrowserResponse {
   ok(): boolean;
   status(): number;
+  text?(): Promise<string>;
 }
 
 export interface BrowserPage {
@@ -43,6 +45,9 @@ export interface CapturedWrite {
 }
 
 export interface ReplayResult {
+  readonly refusalKind?: RefusalKind;
+  readonly responseContract?: ResponseContract;
+  readonly complete?: boolean;
   readonly accepted?: boolean;
   readonly applicationRejected?: boolean;
   readonly inconclusive?: boolean;
@@ -54,6 +59,8 @@ export interface ReplayResult {
 }
 
 export interface ForgeResult {
+  readonly refusalKind?: RefusalKind;
+  readonly complete?: boolean;
   readonly accepted?: boolean;
   readonly inconclusive?: boolean;
   readonly reason: string;
@@ -62,6 +69,9 @@ export interface ForgeResult {
 }
 
 export interface ActionCall {
+  readonly refusalKind?: RefusalKind;
+  readonly responseContract?: ResponseContract;
+  readonly complete?: boolean;
   readonly accepted: boolean;
   readonly action: string;
   readonly applicationRejected: boolean;

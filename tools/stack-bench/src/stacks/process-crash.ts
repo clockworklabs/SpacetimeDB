@@ -5,6 +5,7 @@ import { CODING_CONTAINER_AGENT } from '../runtime/coding-container-policy.js';
 import { evidenceNowMs } from '../evidence/evidence-timing.js';
 import { requireAttemptNetwork } from '../runtime/docker-network.js';
 import { SPACETIME_PROCESS_RECORD } from './hosted-lifecycle.js';
+import { CONVEX_PROCESS_RECORD } from './backends/convex-lifecycle.js';
 
 const execute = promisify(execFile);
 type Docker = (args: readonly string[]) => Promise<string>;
@@ -26,12 +27,12 @@ export interface ProcessCrashReceipt {
 }
 
 // The container remains alive: it owns the attempt's network namespace. Kill
-// only application-user processes or the recorded SpacetimeDB process group.
+// only application-user processes or the recorded native backend process group.
 // /proc avoids adding process tools to the pinned database images.
-function processCrashScript(recordedGroup: boolean): string {
+function processCrashScript(processRecord: string | null): string {
   return `set -eu
 self=$$; uid=$(id -u); group=""; killed=0
-${recordedGroup ? `read group expected_start < ${SPACETIME_PROCESS_RECORD}
+${processRecord ? `read group expected_start < ${processRecord}
 case "$group:$expected_start" in *[!0-9:]*) exit 4;; esac
 [ "$group" -gt 1 ] && [ "$expected_start" -gt 0 ] || exit 4
 IFS= read -r stat < "/proc/$group/stat"; rest=\${stat##*) }; set -- $rest
@@ -76,10 +77,10 @@ echo 'writers remained after SIGKILL' >&2; exit 4`;
 }
 
 export async function prepareProcessCrash(lease: BackendLease, target: CrashTarget) {
-  if (!['postgres', 'mongodb', 'spacetime'].includes(lease.backend)
+  if (!['postgres', 'mongodb', 'spacetime', 'convex'].includes(lease.backend)
     || !['application', 'database'].includes(target)) throw new Error('unsupported process crash boundary');
-  if (lease.backend === 'spacetime' && target === 'application') {
-    throw new Error('SpacetimeDB application and database share one boundary; use database');
+  if (['spacetime', 'convex'].includes(lease.backend) && target === 'application') {
+    throw new Error(`${lease.backend} application and database share one boundary; use database`);
   }
   requireAttemptNetwork(lease);
   const container = target === 'application' ? lease.resources.buildContainer : lease.resources.container;
@@ -99,7 +100,8 @@ export async function prepareProcessCrash(lease: BackendLease, target: CrashTarg
   let child!: ReturnType<typeof execFile>;
   const completed = new Promise<string>((resolve, reject) => {
     child = execFile('docker', ['exec', '-i', '--user', user, container.id, 'sh', '-c',
-      processCrashScript(lease.backend === 'spacetime')],
+      processCrashScript(lease.backend === 'spacetime' ? SPACETIME_PROCESS_RECORD
+        : lease.backend === 'convex' ? CONVEX_PROCESS_RECORD : null)],
     { encoding: 'utf8', timeout: 60_000, maxBuffer: 1024 * 1024 }, (error, stdout) => {
       failArm(new Error('fault process exited before it was armed'));
       if (error) reject(Object.assign(error, { stdout })); else resolve(stdout);

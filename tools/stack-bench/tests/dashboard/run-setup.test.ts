@@ -110,6 +110,31 @@ test('setup reviews exact dimensions, rejects changes, and dispatches one durabl
   assert.equal(launches.length, 1, 'cancelled work must not restart');
 });
 
+test('the four-stack L1–L3 preset exposes Convex and prepares only supported levels', t => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-convex-setup-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writePlanFixtures(join(root, 'plans'));
+  mkdirSync(join(root, 'run-presets'));
+  const preset = JSON.parse(readFileSync(join(root, 'plans', 'ecommerce-progression-reference.json'), 'utf8'));
+  preset.id = 'ecommerce-progressive-l3';
+  preset.levels = [1, 2, 3];
+  preset.selection.levels = preset.selection.levels.filter((selection: { level: number }) => selection.level <= 3);
+  preset.stacks.push({ id: 'convex', adapterVersion: '1.0.0' });
+  writeFileSync(join(root, 'run-presets', `${preset.id}.json`), JSON.stringify(preset));
+  const catalog = runSetupCatalog(root, {});
+  const request = { ...initialRun(catalog)!, key: 'convex-setup', stacks: ['convex'], maxCostUsd: 12 };
+  assert.equal(request.level, 3);
+  assert.match(runSetupPage(catalog, request, null, '', true), /value="convex" checked>Convex/);
+  const review = prepareRun(root, request, {});
+  assert.deepEqual(review.request.stacks, ['convex']);
+  assert.equal(review.attempts, preset.repetitions);
+  const saved = JSON.parse(readFileSync(review.planFile, 'utf8'));
+  assert.deepEqual(saved.stacks.map((stack: { id: string }) => stack.id), ['convex']);
+  assert.deepEqual(saved.levels, [1, 2, 3]);
+  assert.throws(() => prepareRun(root, { ...request, level: 4 }, {}), /Target level is not in this workload/);
+  assert.equal(existsSync(join(root, 'jobs')), false, 'preparation must not launch work');
+});
+
 test('automatic accounts are explicit in the review and ambiguous accounts require selection', t => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-accounts-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));

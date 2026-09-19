@@ -5,6 +5,7 @@ import { parseArgs as parseNodeArgs } from 'node:util';
 
 import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { loadTrack } from '../src/composition/tracks.js';
+import { probeConvexNamedAction } from '../src/stacks/backends/convex-operations.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 
 interface CheckActionsArgs {
@@ -45,7 +46,9 @@ if (!backend) throw new Error('--backend is required');
 
 // Use non-writing probes declared by the selected track.
 const track = args.track ? loadTrack(args.track) : null;
-const ACTIONS = track?.actions ?? [];
+const browserAccounts = backend === 'convex' ? ['signUp', 'signIn'] : [];
+const ACTIONS = (track?.actions ?? []).filter(action => !browserAccounts.includes(action.id));
+if (browserAccounts.length && !args.quiet) console.log('Account interfaces are checked through browser sign-up/sign-in, not password mutations.');
 if (!ACTIONS.length) {
   if (!args.quiet) console.log(`  no named actions declared for track "${args.track ?? '(none)'}" — nothing to check`);
   if (args.out) {
@@ -66,9 +69,10 @@ const spacetime = adapter.grading.context({ requireBuildContainer: false });
 
 async function probe(action: NamedAction): Promise<Omit<ActionResult, 'id'>> {
   try {
+    if (backend === 'convex') return probeConvexNamedAction(action);
     const request = adapter.namedAction.request(
       { action, input: { args: action.args }, spacetime, url: args.url });
-    if (!request.url) return { ok: false, status: 0, note: 'no --url given for a server-based backend' };
+    if (!request?.url) return { ok: false, status: 0, note: 'no --url given for a server-based backend' };
     const r = await fetch(request.url, {
       method: request.method ?? 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -80,7 +84,7 @@ async function probe(action: NamedAction): Promise<Omit<ActionResult, 'id'>> {
       && ![404, 405, 429].includes(r.status);
     const ok = r.ok || rejectedByApplication || recognizedWithoutRunning;
     return { ok, status: r.status,
-      note: r.status === 404 ? request.missingNote
+      note: r.status === 404 && 'missingNote' in request ? request.missingNote
         : ok ? '' : `action probe returned HTTP ${r.status}` };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

@@ -8,6 +8,7 @@ import test from 'node:test';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
+import { classifyResponseContract } from '../src/actions/named-action-runtime.js';
 import { executeAction } from '../src/actions/action-contract.js';
 import {
   ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS,
@@ -1403,5 +1404,77 @@ test('role revocation uses declared transitions despite earlier captured role wr
     }), ['admin', 'admin', 'staff', 'admin']);
     assert.deepEqual(requests.map(request => record(request.options.headers).authorization
       ?? record(request.options.headers).Authorization), calls.map((step: { actor: string }) => `Bearer ${step.actor}-token`));
+  }
+});
+
+
+test('native envelopes govern single, concurrent and replay outcomes, including body loss', async () => {
+  for (const reply of ['accepted', 'refused', 'schema-refused', 'unhandled', 'malformed', 'body-loss', 'native400']) {
+    const actor = { name: 'buyer', received: [], writes: [], context: { cookies: async () => [] },
+      page: { evaluate: async () => ['real-browser-token'] } };
+    const provided = services(new Map([['buyer', actor]]));
+    const prior = record(provided.capabilities['named-actions']);
+    const status = reply === 'native400' ? 400 : 200;
+    const text = reply === 'accepted' ? '{"status":"success","value":null}'
+      : reply === 'refused' ? '{"status":"error","errorMessage":"refused","errorData":null}'
+      : reply === 'schema-refused' ? JSON.stringify({ status: 'error', errorMessage: '[Request ID: c3c0e4b69f8972e5] Server Error\nArgumentValidationError: extra field' })
+      : reply === 'unhandled' ? '{"status":"error","errorMessage":"missing function"}' : '{}';
+    const native = { ...provided, capabilities: { ...provided.capabilities, 'named-actions': {
+      ...prior,
+      request: () => ({ url: 'http://native.test/api/mutation', method: 'POST', body: '{"path":"api:checkout","args":{}}', responseContract: 'convex-mutation' }),
+      classifyResponse: (request: Parameters<typeof classifyResponseContract>[0], response: Parameters<typeof classifyResponseContract>[1]) =>
+        classifyResponseContract(request, response),
+      fetch: async (_url: string, options: { headers: Record<string, string> }) => {
+        assert.equal(options.headers.Authorization, 'Bearer real-browser-token');
+        return { status, ok: status === 200, text: async () => { if (reply === 'body-loss') throw new Error('lost'); return text; } };
+      },
+    } } };
+    const call = await run({ do: 'callAction', actor: 'buyer', action: 'checkout',
+      namedAction: { id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] }, settleMs: 0 }, native);
+    assert.equal(call.status, 'passed', JSON.stringify({ reply, call }));
+    const outcome = await run({ do: 'expectActionOutcome', actor: 'buyer', outcome: 'completed' }, native);
+    assert.equal(outcome.status, ['accepted', 'refused', 'schema-refused'].includes(reply) ? 'passed'
+      : reply === 'body-loss' ? 'inconclusive' : 'failed', reply);
+    const concurrentCall = await run({ do: 'callConcurrently', action: 'checkout', actors: ['buyer'], requests: 2, settleMs: 0 }, native);
+    assert.equal(concurrentCall.status, 'passed', JSON.stringify({ reply, concurrentCall }));
+    const concurrent = await run({ do: 'expectCallOutcomes' }, native);
+    assert.equal(concurrent.status, outcome.status, JSON.stringify({ reply, concurrent }));
+    await run({ do: 'replayAs', actor: 'buyer', from: 'buyer', match: 'checkout',
+      namedAction: { id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] }, settleMs: 0 }, native);
+    const replay = await run({ do: 'expectReplayCompleted', actor: 'buyer' }, native);
+    assert.equal(replay.status, outcome.status, reply);
+    if (reply === 'schema-refused') {
+      assert.equal((await run({ do: 'expectActionOutcome', actor: 'buyer', outcome: 'refused' }, native)).status, 'failed');
+      assert.equal((await run({ do: 'expectReplayRejected', actor: 'buyer' }, native)).status, 'failed');
+    }
+  }
+});
+
+
+test('native POST queries cannot be forged as writes, and mutation arguments stay inside their envelope', async () => {
+  for (const withMutation of [false, true]) {
+    const query = { url: 'http://native.test/api/query', method: 'POST', headers: {},
+      body: { path: 'api:list', args: { userId: 'buyer' } } };
+    const mutation = { ...query, url: 'http://native.test/api/mutation', body: { path: 'api:write', args: [{ userId: 'buyer', message: 'old' }] } };
+    const sent: unknown[] = [];
+    const actor = { name: 'buyer', writes: withMutation ? [mutation, query] : [query], lastWrite: query,
+      page: { request: { fetch: async (url: string, options: UnknownRecord) => {
+        assert.equal(url, mutation.url); sent.push(JSON.parse(String(options.data)));
+        return { status: () => 200, ok: () => true, text: async () => '{"status":"error","errorMessage":"denied","errorData":null}' };
+      } } } };
+    const victim = { name: 'victim', lastWrite: { ...mutation, body: { path: 'api:write', args: [{ userId: 'victim' }] } } };
+    const provided = services(new Map<string, unknown>([['buyer', actor], ['victim', victim]]));
+    const prior = record(provided.capabilities['named-actions']);
+    const native = { ...provided, capabilities: { ...provided.capabilities, 'named-actions': { ...prior,
+      classifyResponse: (request: Parameters<typeof classifyResponseContract>[0], response: Parameters<typeof classifyResponseContract>[1]) =>
+        classifyResponseContract({ ...request, responseContract: request.url?.endsWith('/query') ? 'convex-query' : 'convex-mutation' }, response),
+    } } };
+    const result = await run({ do: 'forgeWrite', actor: 'buyer', fromActor: 'victim', text: 'new', settleMs: 0 }, native);
+    assert.equal(result.status, 'passed', JSON.stringify(result));
+    assert.equal(sent.length, withMutation ? 1 : 0);
+    if (withMutation) {
+      assert.deepEqual(sent[0], { path: 'api:write', args: [{ userId: 'victim', message: 'new' }] });
+      assert.equal((await run({ do: 'expectForgeryRejected', actor: 'buyer' }, native)).status, 'passed');
+    } else assert.equal((await run({ do: 'expectForgeryRejected', actor: 'buyer' }, native)).status, 'inconclusive');
   }
 });

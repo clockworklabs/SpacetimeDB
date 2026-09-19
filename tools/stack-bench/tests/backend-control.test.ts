@@ -129,21 +129,25 @@ test('clean-source application start uses the private attempt database URL', asy
       process.env.STACK_BENCH_LEASE_TOKEN = lease.ownershipToken;
       const launchReached = new Error('launch captured without starting Docker');
       let launch: readonly string[] | undefined;
+      let launchEnvironment: NodeJS.ProcessEnv | undefined;
       await assert.rejects(controlAppServer({ backend, app: root, port: 65534, probe: '' }, 'start', {
-        exec: (_command, args) => {
+        exec: (_command, args, options) => {
           if (args[0] === 'inspect') return id;
           if (args[0] === 'exec' && args.includes('-d')) {
             launch = args;
+            launchEnvironment = options.env;
             throw launchReached;
           }
           return '';
         },
       }), error => error === launchReached);
       assert(launch);
-      assert(launch.includes(`DATABASE_URL=${attemptDatabaseUrl({ backend, database,
-        ownershipToken: lease.ownershipToken })}`));
-      assert(launch.includes('VITE_PORT=65534'));
-      assert(launch.includes('APP_WARM_START=1'));
+      assert(launch.includes('DATABASE_URL'));
+      assert.equal(launchEnvironment?.DATABASE_URL, attemptDatabaseUrl({ backend, database,
+        ownershipToken: lease.ownershipToken }));
+      assert.equal(launchEnvironment?.VITE_PORT, '65534');
+      assert.equal(launchEnvironment?.APP_WARM_START, '1');
+      assert(!launch.some(value => value.includes('local-app-password')));
     }
   } finally {
     if (priorPath === undefined) delete process.env.STACK_BENCH_LEASE;

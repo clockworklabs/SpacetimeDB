@@ -75,6 +75,13 @@
       "reducer": "buy_now",
       "args": [
         0
+      ],
+      "params": [
+        {
+          "name": "itemId",
+          "in": "body",
+          "wireType": "u64"
+        }
       ]
     },
     {
@@ -84,6 +91,17 @@
       "args": [
         0,
         1
+      ],
+      "params": [
+        {
+          "name": "itemId",
+          "in": "body",
+          "wireType": "u64"
+        },
+        {
+          "name": "quantity",
+          "in": "body"
+        }
       ]
     },
     {
@@ -100,6 +118,22 @@
         0,
         0,
         1
+      ],
+      "params": [
+        {
+          "name": "itemId",
+          "in": "body",
+          "wireType": "u64"
+        },
+        {
+          "name": "warehouseId",
+          "in": "body",
+          "wireType": "u64"
+        },
+        {
+          "name": "quantity",
+          "in": "body"
+        }
       ]
     },
     {

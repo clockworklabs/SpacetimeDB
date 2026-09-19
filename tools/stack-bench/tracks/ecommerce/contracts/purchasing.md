@@ -21,3 +21,7 @@ Use `POST /api/items/:id/buy`, where `:id` is the item identifier.
 <!-- interface:reducer -->
 Use the `buy_now` reducer with the item identifier.
 <!-- /interface -->
+
+<!-- interface:convex -->
+Use the `api:buy_now` mutation with `{ itemId }`.
+<!-- /interface -->

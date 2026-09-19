@@ -11,7 +11,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { backendResourceLockKeys, claimBackendResources, createBackendLease, publicBackendLease,
   readBackendLease, resourceLockScope } from '../src/runtime/backend-lease.js';
 import { attemptDocker, requireAttemptNetwork } from '../src/runtime/docker-network.js';
-import { activateConvex, controlConvex, releaseConvex, CONVEX_PROCESS_RECORD } from '../src/stacks/backends/convex-lifecycle.js';
+import { activateConvex, controlConvex, recoverConvex, releaseConvex, CONVEX_PROCESS_RECORD } from '../src/stacks/backends/convex-lifecycle.js';
+import { prepareProcessCrash } from '../src/stacks/process-crash.js';
 
 // Run inside the Linux controller with its normal lock directory and Docker socket.
 // The fixture and evidence directory are explicit mounts; no paid calls or registry entry.
@@ -75,6 +76,7 @@ test('private Convex owned launch, warm restart, full reset, and exact cleanup',
       return probeEvidence(phase, target);
     };
     evidence.native = probe('initial');
+    evidence.nativeValidation = probe('validation');
     const siblingPorts = { vite: 14312, express: 14314, dbPort: null };
     // Exercise one other attempt at a time. It overlaps the live primary attempt.
     for (const mode of ['overlap', 'failed-start', 'cancel-start'] as const) {
@@ -200,6 +202,17 @@ test('private Convex owned launch, warm restart, full reset, and exact cleanup',
       }
     } finally { writeRecord(`${processRecord}\n`); }
     evidence.resetGuard = 'empty and stale process records refused without stopping the backend';
+    await assert.rejects(prepareProcessCrash(active, 'application'), /share one boundary/);
+    assert.throws(() => recoverConvex({ leasePath: path, leaseToken: lease.ownershipToken, ports }),
+      /Command failed/, 'Crash recovery must refuse a still-live backend');
+    const crash = await prepareProcessCrash(active, 'database');
+    try {
+      evidence.crash = await crash.crash();
+      assert.equal(attemptDocker(['inspect', '--format', '{{.State.Running}}', backend.id]), 'true');
+      await assert.rejects(fetch(`${active.resources.serverUri}/version`, { signal: AbortSignal.timeout(2000) }));
+      recoverConvex({ leasePath: path, leaseToken: lease.ownershipToken, ports });
+      evidence.crashRetained = probe('retained');
+    } finally { await crash.close(); }
     await controlConvex({ leasePath: path, leaseToken: lease.ownershipToken, ports, mode: 'restart' });
     evidence.warm = probe('warm');
     evidence.pending = probe('prepare-reset');

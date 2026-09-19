@@ -6,7 +6,7 @@ const WEB_URL = /\b(?:https?|wss?):\/\/[^\s'"`)]+/gi;
 const WINDOWS_PATH = /\b[A-Za-z]:[\\/][^\s'"`)]*/g;
 const HARNESS_PATH = /\/(?:app|workspace|root|home|tmp|mnt|tools\/stack-bench)(?:\/[^\s'"`):]*)*/g;
 const BEARER_CREDENTIAL = /\b(?:authorization\s*:\s*)?bearer\s+[A-Za-z0-9._~+/-]+=*/gi;
-const NAMED_CREDENTIAL = /["']?(?:anthropic_api_key|claude_code_oauth_token|api[_-]?key|access[_-]?token|auth[_-]?token|oauth[_-]?token|password|secret)["']?\s*[:=]\s*(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}\]]+)/gi;
+const NAMED_CREDENTIAL = /["']?(?:anthropic_api_key|claude_code_oauth_token|convex_self_hosted_admin_key|api[_-]?key|access[_-]?token|auth[_-]?token|oauth[_-]?token|password|secret)["']?\s*[:=]\s*(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}\]]+)/gi;
 const PREFIXED_CREDENTIAL = /\b(?:sk|key)-[A-Za-z0-9_-]{16,}\b/g;
 const URL_CREDENTIAL = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+:[^\s/@]+@/gi;
 const PASSWORD_ARGUMENT = /--password(?:=|\s+)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s]+)/gi;

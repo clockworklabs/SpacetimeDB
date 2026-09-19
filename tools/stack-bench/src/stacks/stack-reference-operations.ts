@@ -11,6 +11,8 @@ import { CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_SPACETIME_CLI }
 import type { StackRunPorts } from './stack-adapter-contract.js';
 import type { Track, TrackDefinition } from '../composition/tracks.js';
 import type { ReferenceInstallMetadata } from '../references/reference-install.js';
+import type { BackendLease } from '../runtime/backend-lease.js';
+import { convexApplicationEnvironment } from './backends/convex-operations.js';
 
 // What deploying a reference application needs from its caller. The reference
 // runner owns the container and the waiting; these operations own the shape of
@@ -53,6 +55,31 @@ export interface SpacetimeReferenceMetadata extends ReferenceInstallMetadata {
   moduleDirectory: string;
   bindingsDirectory: string;
   client: { directory: string };
+}
+
+export interface ConvexReferenceMetadata {
+  installDirectories: string[];
+  client: { directory: string };
+}
+
+export async function deployConvexReference({ metadata, lease, container, ports, helpers }: {
+  args: { backend: string; runIndex: number };
+  metadata: ConvexReferenceMetadata;
+  lease: BackendLease;
+  container: string;
+  ports: StackRunPorts;
+  helpers: HostedReferenceHelpers;
+}): Promise<void> {
+  const environment: Record<string, string> = { ...convexApplicationEnvironment(lease), VITE_PORT: String(ports.vite) };
+  for (const directory of metadata.installDirectories) {
+    helpers.phase(`installing ${directory}`);
+    helpers.docker(container, `${CODING_CONTAINER_APP_ROOT}/${directory}`,
+      'npm', ['ci', '--no-audit', '--no-fund']);
+  }
+  helpers.phase('deploying Convex reference application');
+  helpers.startDetached(container, CODING_CONTAINER_APP_ROOT, 'reference-application', environment, { script: 'start' });
+  await helpers.waitFor(`http://127.0.0.1:${ports.vite}`, 180_000, 'Convex application',
+    () => helpers.containerLogs(container, 'reference-application'));
 }
 
 type HostedLease = LeasedDatabase;

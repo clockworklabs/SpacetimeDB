@@ -892,8 +892,16 @@ export function validateQualificationSlice(artifact: UnknownRecord, entry: Calib
     !== canonicalDefinitionJson(scopedReferences(calibration))) {
     evidenceFailure(at, 'source references differs');
   }
-  const { evidence: _oldEvidence, buildImage: _oldImage, ...oldPolicy } = sourceCalibration.qualification;
-  const { evidence: _newEvidence, buildImage: _newImage, ...newPolicy } = calibration.qualification;
+  const { evidence: _oldEvidence, buildImage: _oldImage, stacks: oldStacks,
+    ...oldPolicy } = sourceCalibration.qualification;
+  const { evidence: _newEvidence, buildImage: _newImage, stacks: newStacks,
+    ...newPolicy } = calibration.qualification;
+  // A receipt measures one stack (or the stack-neutral empty app). Adding another
+  // stack cannot qualify it: complete coverage is still required for each stack.
+  if (entry.kind !== 'null' && (!entry.stack || !oldStacks.includes(entry.stack)
+    || !newStacks.includes(entry.stack))) {
+    evidenceFailure(at, 'measured stack is absent from source or current qualification policy');
+  }
   if (canonicalDefinitionJson(oldPolicy) !== canonicalDefinitionJson(newPolicy)) {
     evidenceFailure(at, 'source qualification policy differs');
   }

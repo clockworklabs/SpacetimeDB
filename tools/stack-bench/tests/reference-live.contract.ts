@@ -16,6 +16,7 @@ import { parseReferenceQualificationArgs,
   referenceQualificationRunner,
   referenceQualificationSelectionArgs,
   referenceQualificationWorkRoot, referenceRunFromMutationBaseline,
+  referenceQualificationEnvironment,
   targetedMutationCheckKeys } from '../src/references/reference-live.js';
 import { auditMutationWorkerRun, auditReferenceRun }
   from '../src/references/reference-qualification-audit.js';
@@ -262,6 +263,45 @@ test('mutation-only worker audit requires Docker, caught defects, and released r
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('reference runs allocate distinct Convex native ports and retain the explicit Spacetime port', () => {
+  const args = { runIndex: 80, spacetimePort: 3390 };
+  const first = referenceQualificationEnvironment('convex', args, { KEEP: 'yes' });
+  const next = referenceQualificationEnvironment('convex', { ...args, runIndex: 81 }, {});
+  assert.equal(first.STACK_BENCH_CONVEX_URI, 'http://127.0.0.1:13290');
+  assert.equal(next.STACK_BENCH_CONVEX_URI, 'http://127.0.0.1:13291');
+  assert.equal(first.KEEP, 'yes');
+  assert.equal(referenceQualificationEnvironment('convex', args,
+    { STACK_BENCH_CONVEX_URI: 'http://localhost:14000' }).STACK_BENCH_CONVEX_URI,
+  'http://localhost:14080');
+  assert.equal(referenceQualificationEnvironment('spacetime', args, {}).STACK_BENCH_STDB_URI,
+    'http://127.0.0.1:3390');
+});
+
+test('parallel Convex preflight reserves the same native ports as its worker environments', () => {
+  const args = parseReferenceQualificationArgs(['node', 'reference-live.js',
+    '--backend', 'convex', '--track', 'ecommerce', '--mutations', '--full-mutations',
+    '--mutation-workers', '2', '--run-index', '80']);
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-convex-preflight-'));
+  const env = { STACK_BENCH_RESOURCE_LOCK_DIR: root,
+    STACK_BENCH_CONVEX_URI: 'http://127.0.0.1:14000' };
+  try {
+    const keys = parallelMutationResourceLockKeys(args, env);
+    assert.deepEqual(keys, ['listener:http://127.0.0.1:14080',
+      'listener:http://127.0.0.1:14081', 'slot:ecommerce:convex:run80',
+      'slot:ecommerce:convex:run81']);
+    for (const runIndex of [80, 81]) {
+      const uri = referenceQualificationEnvironment('convex', { ...args, runIndex }, env)
+        .STACK_BENCH_CONVEX_URI;
+      const key = `listener:${uri}`;
+      const path = join(root, `${createHash('sha256').update(key).digest('hex')}.lock.json`);
+      writeFileSync(path, '{}\n');
+      assert.throws(() => preflightParallelMutationResources(args, env), /already leased/);
+      rmSync(path);
+    }
+    assert.doesNotThrow(() => preflightParallelMutationResources(args, env));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('parallel mutation preflight covers every worker slot and Spacetime listener', () => {
   const args = parseReferenceQualificationArgs(['node', 'reference-live.js',
     '--backend', 'spacetime', '--track', 'ecommerce', '--mutations', '--full-mutations',
@@ -445,13 +485,13 @@ test('progression reference qualification follows the catalog check selection', 
   assert.deepEqual(valuesAfter(argv, '--expect-spec').sort(),
     [...selection.grader.selection.requested.specifications.expected].sort());
   assert.equal(required(valuesAfter(argv, '--task-mode')[0], 'task mode'), 'upgrade');
-  assert.equal(selection.grader.checkKeys.length, 113);
+  assert.equal(selection.grader.checkKeys.length, 114);
   assert.equal(selection.grader.checkKeys.some(key => key.includes('automatic-reorder')), false);
   assert.deepEqual(referenceQualificationSelectionArgs(binding, selection,
     [required(selection.grader.checkKeys[0], 'first check key')]).filter((_value, index, argv) =>
     argv[index - 1] === '--check'), [required(selection.grader.checkKeys[0], 'first check key')]);
   const scoped = referenceQualificationRelease(binding.release, selection.grader.checkKeys);
-  assert.equal(scoped.checkCatalog.length, 113);
+  assert.equal(scoped.checkCatalog.length, 114);
   assert.throws(() => referenceQualificationRelease(binding.release,
     [...selection.grader.checkKeys, 'missing.check']), /unknown checks/);
 });

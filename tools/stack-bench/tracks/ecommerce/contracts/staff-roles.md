@@ -22,4 +22,9 @@ Use the `assign_staff_role` reducer with arguments in this order: `accountId: u6
 `role: string`. Render `data-account-id` as the decimal account identifier without precision loss.
 <!-- /interface -->
 
+<!-- interface:convex -->
+Use `api:assign_staff_role` with `{ accountId, role }`. Render `data-account-id` as
+the native string account identifier.
+<!-- /interface -->
+
 `staff-role-select` offers the roles `staff`, `inventory`, and `admin` as its option values.

@@ -21,4 +21,8 @@ Saving a rule is the named `saveReorderRule` application action.
 `saveReorderRule` is the `save_reorder_rule(itemId, threshold, quantity)` reducer.
 <!-- /interface -->
 
+<!-- interface:convex -->
+`saveReorderRule` is the `api:save_reorder_rule` mutation with `{ itemId, threshold, quantity }`.
+<!-- /interface -->
+
 Use `buy-now` inside an `item-card` to create stock changes that evaluate a reorder rule.

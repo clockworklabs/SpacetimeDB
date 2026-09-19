@@ -11,6 +11,9 @@ import type { StackRunPorts } from '../stack-adapter-contract.js';
 import { stopHostedHost } from '../stack-teardown-operations.js';
 import { hostedRecordedProcessStopScript } from '../hosted-lifecycle.js';
 import { answers, waitFor } from '../lifecycle-readiness.js';
+import { leaseFromEnv } from '../../runtime/backend-lease.js';
+import { loadTrack, portsFor } from '../../composition/tracks.js';
+import type { StackLifecycleInput } from '../stack-adapter-contract.js';
 
 export const CONVEX_BACKEND_IMAGE = 'ghcr.io/get-convex/convex-backend@sha256:afbf4292df387c8f031a68d00048551cf1640ddf0013c51ac704a89d7e73e743';
 export const CONVEX_PROCESS_RECORD = `${CODING_CONTAINER_CONTROL_DIR}/restart-convex.pid`;
@@ -32,7 +35,7 @@ function claimedPorts(lease: BackendLease, ports: StackRunPorts): number[] {
   return endpoints;
 }
 
-function startConvexProcess(lease: BackendLease, sitePort: number): void {
+function startConvexProcess(lease: BackendLease, sitePort: number, timeoutMs = 60_000): void {
   const container = lease.resources.container!;
   const nativePort = Number(new URL(lease.resources.serverUri!).port);
   const instance = `sb-${createHash('sha256').update(lease.runId).digest('hex').slice(0, 20)}`;
@@ -48,7 +51,7 @@ function startConvexProcess(lease: BackendLease, sitePort: number): void {
     + `--convex-origin http://127.0.0.1:${nativePort} --convex-site http://127.0.0.1:${sitePort} `
     + '--local-storage /convex/data/storage --disable-beacon --do-not-require-ssl /convex/data/db.sqlite3'
     + `' > ${CODING_CONTAINER_CONTROL_DIR}/stack-bench-backend.log 2>&1`]);
-  const deadline = Date.now() + 60_000;
+  const deadline = Date.now() + timeoutMs;
   while (true) {
     try {
       attemptDocker(['exec', container.id, 'curl', '--fail', '--silent', '--max-time', '2',
@@ -61,7 +64,6 @@ function startConvexProcess(lease: BackendLease, sitePort: number): void {
   }
 }
 
-// Private lifecycle slice. This module does not make Convex a selectable stack.
 export function activateConvex({ leasePath, leaseToken, ports }: ConvexLifecycleInput): void {
   if (process.platform !== 'linux') throw new Error('Convex activation requires the Linux Docker controller');
   const lease = readBackendLease(leasePath, { token: leaseToken, backend: 'convex' });
@@ -78,6 +80,29 @@ export function activateConvex({ leasePath, leaseToken, ports }: ConvexLifecycle
   startConvexProcess(current, ports.express!);
   createAttemptBrowser(leasePath, current);
   updateBackendLease(leasePath, { token: leaseToken }, next => { next.state = 'active'; return next; });
+}
+
+export function recoverConvex({ leasePath, leaseToken, ports, signal }: ConvexLifecycleInput & {
+  signal?: AbortSignal;
+}): void {
+  signal?.throwIfAborted();
+  const lease = readBackendLease(leasePath, { token: leaseToken, backend: 'convex', active: true });
+  claimedPorts(lease, ports);
+  requireAttemptNetwork(lease);
+  const container = lease.resources.container!;
+  const inspected = JSON.parse(attemptDocker(['inspect', container.name]))[0];
+  if (inspected.Id !== container.id || inspected.Image !== container.image
+    || !['', 'private'].includes(inspected.HostConfig.PidMode)) throw new Error('Convex container identity changed');
+  // A crash must leave a valid record and no live process at that PID. Never
+  // adopt a new process or erase state to make recovery succeed.
+  attemptDocker(['exec', container.id, 'sh', '-ec',
+    `read pid started < ${CONVEX_PROCESS_RECORD}; `
+    + 'case "$pid:$started" in *[!0-9:]*) exit 4;; esac; '
+    + '[ "$pid" -gt 1 ] && [ "$started" -gt 0 ] && [ ! -e /proc/$pid ]']);
+  updateBackendLease(leasePath, { token: leaseToken }, next => { next.state = 'restarting'; return next; });
+  startConvexProcess(lease, ports.express!, 30_000);
+  updateBackendLease(leasePath, { token: leaseToken }, next => { next.state = 'active'; return next; });
+  signal?.throwIfAborted();
 }
 
 export async function controlConvex({ leasePath, leaseToken, ports, mode }: ConvexLifecycleInput & {
@@ -119,4 +144,22 @@ export async function controlConvex({ leasePath, leaseToken, ports, mode }: Conv
 export function releaseConvex(leasePath: string, leaseToken: string): boolean {
   readBackendLease(leasePath, { token: leaseToken, backend: 'convex' });
   return releaseBackendLease(leasePath, leaseToken, { hostTeardown: stopHostedHost });
+}
+
+export async function resetConvex(): Promise<void> {
+  const { path, lease } = leaseFromEnv(process.env, { backend: 'convex', active: true });
+  await controlConvex({ leasePath: path, leaseToken: lease.ownershipToken,
+    ports: portsFor(loadTrack(lease.track), 'convex', lease.runIndex), mode: 'reset' });
+}
+
+export async function controlConvexApplication(input: StackLifecycleInput): Promise<void> {
+  if (input.mode !== 'restart') throw new Error('Convex backend control supports restart only');
+  input.signal?.throwIfAborted();
+  const { path, lease } = leaseFromEnv(process.env, { backend: 'convex', active: true });
+  if (lease.runId !== input.lease.runId || lease.ownershipToken !== input.lease.ownershipToken) {
+    throw new Error('Convex runtime control lease changed');
+  }
+  await controlConvex({ leasePath: path, leaseToken: lease.ownershipToken,
+    ports: portsFor(loadTrack(lease.track), 'convex', lease.runIndex), mode: 'restart' });
+  input.signal?.throwIfAborted();
 }

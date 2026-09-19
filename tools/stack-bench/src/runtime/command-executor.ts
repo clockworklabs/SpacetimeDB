@@ -3,6 +3,7 @@ export interface TextCommandOptions {
   stdio: 'pipe';
   timeout: number;
   input?: string;
+  env?: NodeJS.ProcessEnv;
 }
 
 export type TextCommandExecutor = (

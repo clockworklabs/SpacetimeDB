@@ -23,3 +23,9 @@ the order interface.
 The names and fields above must remain readable by the supplied database credentials
 as features are added. Customer screens and writes must use the same underlying records.
 This does not require making customer data available to unauthenticated app users.
+
+<!-- interface:convex -->
+For Convex, each `id` in this interface is the native document `_id`. Store related
+identifiers as references to those same `_id` values. Keep the table and field names
+above; no additional `id` column or copy of the application data is needed.
+<!-- /interface -->

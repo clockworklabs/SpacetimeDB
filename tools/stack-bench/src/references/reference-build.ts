@@ -114,9 +114,11 @@ function buildCommands(metadata: ReferenceMetadataForBuild, container: string,
   for (const step of referenceInstallSteps(metadata)) {
     run(container, `${CODING_CONTAINER_APP_ROOT}/${step.directory}`, step.command, step.args, commands);
   }
-  if (metadata.kind === 'node-api') {
+  if (metadata.kind === 'node-api' || metadata.kind === 'convex') {
+    if (metadata.kind === 'node-api') {
     run(container, `${CODING_CONTAINER_APP_ROOT}/${metadata.server.directory}`,
       'npm', ['exec', 'tsc', '--', '--noEmit'], commands);
+    }
   run(container, `${CODING_CONTAINER_APP_ROOT}/${metadata.client.directory}`,
     'npm', ['run', 'build'], commands);
     return;

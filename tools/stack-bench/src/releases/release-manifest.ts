@@ -15,7 +15,7 @@ import { formatZodError } from '../zod-error.js';
 
 export const RELEASE_MANIFEST_SCHEMA_VERSION = 2;
 export type ReleaseState = 'candidate' | 'qualified';
-export type ReleaseImageRole = 'controller' | 'build-sandbox' | 'postgres' | 'mongodb' | 'npm-cache';
+export type ReleaseImageRole = 'controller' | 'build-sandbox' | 'postgres' | 'mongodb' | 'convex' | 'npm-cache';
 export type ReleaseFileRole = 'compose' | 'dependency' | 'operator-guide' | 'public-key'
   | 'sbom' | 'secrets-template' | 'support-policy';
 
@@ -80,9 +80,7 @@ interface ContainedFile {
   reason?: string;
 }
 
-const IMAGE_ROLES = new Set<ReleaseImageRole>(['controller', 'build-sandbox', 'postgres', 'mongodb',
-  'npm-cache']);
-const REQUIRED_IMAGE_ROLES = Object.freeze([...IMAGE_ROLES]);
+const REQUIRED_IMAGE_ROLES = Object.freeze(['controller', 'build-sandbox', 'postgres', 'mongodb', 'npm-cache']);
 const REQUIRED_FILE_ROLES = Object.freeze(['compose', 'dependency', 'operator-guide',
   'secrets-template', 'support-policy']);
 const HASH = /^[a-f0-9]{64}$/;
@@ -97,7 +95,7 @@ const hashSchema = z.string().regex(HASH, 'must be a SHA-256');
 const idSchema = z.string().regex(ID, 'is invalid');
 const imageSchema = z.strictObject({
   id: idSchema,
-  role: z.enum(['controller', 'build-sandbox', 'postgres', 'mongodb', 'npm-cache']),
+  role: z.enum(['controller', 'build-sandbox', 'postgres', 'mongodb', 'convex', 'npm-cache']),
   reference: z.string(),
   digest: hashSchema,
   platform: z.literal(STACK_BENCH_RUNNER_PLATFORM),

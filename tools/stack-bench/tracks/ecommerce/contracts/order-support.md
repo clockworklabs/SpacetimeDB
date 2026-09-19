@@ -14,3 +14,7 @@ link action must expose its input in `data-action-input` for the named
 <!-- interface:reducer -->
 `linkSupportOrder` is the `link_support_order(caseId, orderId)` reducer.
 <!-- /interface -->
+
+<!-- interface:convex -->
+`linkSupportOrder` is the `api:link_support_order` mutation with `{ caseId, orderId }`.
+<!-- /interface -->

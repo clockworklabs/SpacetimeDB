@@ -126,6 +126,14 @@ export function emptySetupMetadata(_input?: StackSetupMetadataInput): StackSetup
   return { spacetime: null, spacetimeBindings: null, database: null };
 }
 
+export function convexSetupMetadata({ helpers, env = process.env }:
+  StackSetupMetadataInput): StackSetupMetadata {
+  const { lease } = leaseFromEnv(env, { backend: 'convex', active: true });
+  if (!lease.resources.container) throw new Error('Convex setup requires its owned backend');
+  return { spacetime: null, spacetimeBindings: null,
+    database: helpers.containerImage(lease.resources.container.id) };
+}
+
 export function spacetimeBuildContainerPlan({ repo, env = {} }: {
   repo: string; appDir: string; env?: NodeJS.ProcessEnv;
 }): BuildContainerPlan {

@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolveContainerImage } from '../src/runtime/container-image.js';
 import { DATABASE_IMAGES } from '../src/stacks/database-containers.js';
+import { CONVEX_BACKEND_IMAGE } from '../src/stacks/backends/convex-lifecycle.js';
 
 export const STATE_VOLUME = 'stack-bench-state';
 type Docker = (args: readonly string[]) => string;
@@ -20,7 +21,7 @@ export function prepareStateVolume(env: NodeJS.ProcessEnv = process.env, run: Do
     ?? 'stack-bench-controller:local', inspect).id;
   const build = resolveContainerImage(env.STACK_BENCH_BUILD_IMAGE
     ?? 'stack-bench-build:local', inspect).id;
-  for (const reference of Object.values(DATABASE_IMAGES)) {
+  for (const reference of [...Object.values(DATABASE_IMAGES), CONVEX_BACKEND_IMAGE]) {
     try { resolveContainerImage(reference, inspect); }
     catch {
       run(['pull', '--platform', 'linux/amd64', reference]);
@@ -48,14 +49,16 @@ export function prepareStateVolume(env: NodeJS.ProcessEnv = process.env, run: Do
       + 'const paid=JSON.parse(fs.readFileSync("/opt/stack-bench/appliance/campaign.paid-l1-l3.json","utf8"));'
       + 'for(const [source,id,title] of [["campaign.paid-l1-l3.json","ecommerce-sequential","Ecommerce — sequential levels"],'
       + '["campaign.ecommerce-progression-reference.json","ecommerce-progressive","Ecommerce — progressive features"],'
+      + '["campaign.ecommerce-progression-reference.json","ecommerce-progressive-l3","Ecommerce — four stacks, progressive L1–L3"],'
       + '["campaign.ecommerce-progression-reference.json","ecommerce-single-build","Ecommerce — single build"]]){'
       + 'const target=p.join(root,"results/run-presets",id+".json");if(fs.existsSync(target))continue;'
       + 'const d=JSON.parse(fs.readFileSync(p.join("/opt/stack-bench/appliance",source),"utf8"));'
       + 'd.id=id;d.title=title;d.state="frozen";d.agents=paid.agents;d.pricing=paid.pricing;'
       + 'if(id==="ecommerce-single-build")d.mode.workSelection="all-at-once";'
+      + 'if(id==="ecommerce-progressive-l3"){d.levels=d.levels.filter(n=>n<=3);d.selection.levels=d.selection.levels.filter(s=>s.level<=3);d.stacks.push({id:"convex",adapterVersion:"1.0.0"});}'
       + 'd.runtime.controllerImage=process.argv[2];d.runtime.buildImage=process.argv[3];'
       + 'd.budgets=paid.budgets;d.repair.budget={total:0};d.parallelism=d.stacks.length;'
-      + 'if(id==="ecommerce-progressive"){d.budgets={attemptTimeoutMinutes:240,maxCostUsdPerAttempt:50};d.mode.retainPriorContracts=true;d.mode.unchangedFailureLimit=7;}'
+      + 'if(id==="ecommerce-progressive"||id==="ecommerce-progressive-l3"){d.budgets={attemptTimeoutMinutes:240,maxCostUsdPerAttempt:50};d.mode.retainPriorContracts=true;d.mode.unchangedFailureLimit=7;}'
       + 'd.conditions=["neutral","neutral-no-sdk","neutral-dev","neutral-dev-no-sdk"].map(g=>({...d.conditions[0],id:g,guidanceProfile:g}));'
       + 'fs.writeFileSync(target,JSON.stringify(d,null,2)+"\\n",{flag:"wx",mode:0o600});}',
     root, controller, build]);

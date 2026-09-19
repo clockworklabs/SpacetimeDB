@@ -225,6 +225,20 @@ test('database grading uses the exact database from the authenticated run lease'
     /active database lease has no database name/);
 });
 
+test('Convex grading retains the authenticated native deployment for independent provenance', () => {
+  const lease = databaseLeaseForGrading('convex', {
+    STACK_BENCH_LEASE: 'private/lease.json', STACK_BENCH_LEASE_TOKEN: 'secret-token',
+  }, { readLease: (_path, expected) => {
+    assert.deepEqual(expected, { token: 'secret-token', backend: 'convex', active: true });
+    const native = createBackendLease({ runId: 'grading-convex', backend: 'convex', track: 'ecommerce', runIndex: 0,
+      serverUri: 'http://127.0.0.1:14310' });
+    native.resources.container = { name: 'owned-convex', id: 'a'.repeat(64), owned: true };
+    return native;
+  } });
+  assert.equal(lease?.resources.serverUri, 'http://127.0.0.1:14310');
+  assert.equal(lease?.resources.container?.id, 'a'.repeat(64));
+});
+
 test('SpacetimeDB grading uses the authenticated module lease', () => {
   const lease = databaseLeaseForGrading('spacetime', {
     STACK_BENCH_LEASE: 'private/lease.json',

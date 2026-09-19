@@ -17,3 +17,7 @@ Expose `POST /api/admin/transfer`. The JSON body has `itemId`, `fromWarehouseId`
 Expose `admin_transfer_stock` with arguments in this order: `itemId: u64`,
 `fromWarehouseId: u64`, `toWarehouseId: u64`, `quantity`.
 <!-- /interface -->
+
+<!-- interface:convex -->
+Use `api:admin_transfer_stock` with `{ itemId, fromWarehouseId, toWarehouseId, quantity }`.
+<!-- /interface -->

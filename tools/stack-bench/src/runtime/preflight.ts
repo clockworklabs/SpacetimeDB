@@ -24,6 +24,7 @@ import { resolveProgressionRecipeLevelSelection }
   from '../progression/progression-recipe-selection.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { databaseContainer, isDatabaseContainerBackend, DATABASE_IMAGES } from '../stacks/database-containers.js';
+import { CONVEX_BACKEND_IMAGE } from '../stacks/backends/convex-lifecycle.js';
 import { leaseFromEnv } from './backend-lease.js';
 import { validateSupervisorState } from './recovery.js';
 import { requireAttemptNetwork } from './docker-network.js';
@@ -139,9 +140,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function spacetimeServerUri(value: unknown): string {
+function nativeServerUri(value: unknown): string {
   if (!isRecord(value) || !isRecord(value.lease) || typeof value.lease.serverUri !== 'string') {
-    throw new Error('SpacetimeDB orchestrator config did not provide a server URI');
+    throw new Error('Native stack orchestrator config did not provide a server URI');
   }
   return value.lease.serverUri;
 }
@@ -580,6 +581,15 @@ export function runPreflight(
   }
 
   const composeText = exists(COMPOSE) ? String(dependencies.readCompose?.() ?? readFileSync(COMPOSE, 'utf8')) : '';
+  if (request.backends.includes('convex')) {
+    try {
+      const id = parseImageId(run('docker', ['image', 'inspect', '--format', '{{.Id}}', CONVEX_BACKEND_IMAGE]));
+      add('image.convex', 'pass', `Owned Convex backend image ${id} is available`);
+    } catch {
+      add('image.convex', 'fail', 'Pinned Convex backend image is unavailable',
+        `Run appliance setup again, or docker pull --platform linux/amd64 ${CONVEX_BACKEND_IMAGE}.`);
+    }
+  }
   for (const backend of (track ? request.backends : []).filter(isDatabaseContainerBackend)) {
     if (!track) continue;
     const service = backend;
@@ -665,22 +675,24 @@ export function runPreflight(
     }
   }
 
-  if (request.backends.includes('spacetime')) {
+  for (const backend of request.backends.filter(id => id === 'spacetime' || id === 'convex')) {
     try {
-      const runtime = STACK_ADAPTER_REGISTRY.get('spacetime').orchestrator.config(
+      const runtime = STACK_ADAPTER_REGISTRY.get(backend).orchestrator.config(
         { root: ROOT, env, helpers: { exists } });
-      const port = Number(new URL(spacetimeServerUri(runtime)).port);
-      const availability = smokeLease?.lease.backend === 'spacetime' ? { free: true } : probePort(port);
+      const port = Number(new URL(nativeServerUri(runtime)).port);
+      const availability = smokeLease?.lease.backend === backend ? { free: true } : probePort(port);
       const listeners = availability.free ? [] : inspectPorts(port);
-      add('port.spacetime.host', availability.free ? 'pass' : 'fail', availability.free
+      add(`port.${backend}.host`, availability.free ? 'pass' : 'fail', availability.free
         ? `Dedicated host port ${port} is free`
         : `Dedicated host port ${port} is already in use${listeners.length ? ` by PID(s) ${listeners.join(', ')}` : ''}`,
-      availability.free ? null : 'Stop the listener or choose another loopback STACK_BENCH_STDB_URI port.');
+      availability.free ? null : `Stop the listener or choose another loopback ${backend} server URI port.`);
     } catch (error) {
-      add('port.spacetime.host', 'fail',
-        `Cannot validate the dedicated SpacetimeDB host port: ${errorMessage(error)}`,
-        'Use an explicit, free loopback STACK_BENCH_STDB_URI port.');
+      add(`port.${backend}.host`, 'fail',
+        `Cannot validate the dedicated ${backend} host port: ${errorMessage(error)}`,
+        `Use an explicit, free loopback ${backend} server URI port.`);
     }
+  }
+  if (request.backends.includes('spacetime')) {
     const cli = inspectLinuxCli();
     const expectedCliArch = dockerInfo?.Architecture ?? null;
     const cliReady = cli.ok && (!expectedCliArch || cli.arch === expectedCliArch);

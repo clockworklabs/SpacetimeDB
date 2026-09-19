@@ -22,6 +22,7 @@ export function resetBackend({ backend, app, exec }: BackendResetRequest): unkno
   const { lease } = leaseFromEnv(process.env, { backend, active: true });
   const adapter = STACK_ADAPTER_REGISTRY.get(backend);
   const input = { app, ...(exec ? { exec } : {}) };
+  if (adapter.id === 'convex') return adapter.reset.run();
   if (adapter.id === 'postgres' || adapter.id === 'mongodb') {
     return adapter.reset.run({ ...input, lease: requireLeasedDatabase(lease) });
   }

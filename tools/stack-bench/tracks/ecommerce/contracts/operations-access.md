@@ -29,3 +29,7 @@ Use `POST /api/fulfilment/ship` with `{ "orderId": ... }`.
 <!-- interface:reducer -->
 Use the `ship_order` reducer.
 <!-- /interface -->
+
+<!-- interface:convex -->
+Use `api:ship_order` with `{ orderId }`.
+<!-- /interface -->

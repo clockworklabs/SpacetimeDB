@@ -201,7 +201,7 @@ export async function controlHostedAppServer({ adapterId: stack, lease, app, por
     if (!/^[A-Z][A-Z0-9_]*$/.test(key) || typeof value !== 'string' || /[\r\n\0]/.test(value)) {
       throw new Error(`invalid hosted runtime environment entry ${key}`);
     }
-    return ['-e', `${key}=${value}`];
+    return ['-e', key];
   });
   const log = `${CONTROL_DIR}/restart-${stack}-${Number(port)}-${randomUUID()}.log`;
   exec('docker', ['exec', '-d', '-w', launch.directory === '.' ? CODING_CONTAINER_APP_ROOT
@@ -213,7 +213,7 @@ export async function controlHostedAppServer({ adapterId: stack, lease, app, por
       + `set -- $rest; (umask 077; printf "%s %s\\n" "$$" "${'${20}'}" > ${processRecord}); `
       + `exec /usr/bin/setpriv --reuid=${APP_UID} --regid=${APP_GID} --init-groups `
       + `${launch.command}' > ${log} 2>&1`],
-  { encoding: 'utf8', stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
+  { encoding: 'utf8', stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS, env: { ...process.env, ...environment } });
   exec('docker', ['exec', container.id, 'sh', '-c',
     `attempt=0; while [ ! -s ${processRecord} ] && [ "$attempt" -lt 100 ]; do `
       + 'attempt=$((attempt + 1)); sleep 0.05; done; '

@@ -37,6 +37,7 @@ export function convexFunctionRequest({ deploymentUrl, kind, path, args, token }
 export type ConvexFunctionResponse = { readonly httpStatus: number } & (
   | { readonly kind: 'accepted'; readonly value: unknown }
   | { readonly kind: 'application-error'; readonly message: string; readonly errorData: unknown }
+  | { readonly kind: 'validation-error'; readonly message: string }
   | { readonly kind: 'function-error'; readonly message: string }
   | { readonly kind: 'http-error'; readonly text: string }
   | { readonly kind: 'invalid-response'; readonly message: string }
@@ -64,6 +65,13 @@ export function classifyConvexFunctionResponse(httpStatus: number, text: string)
   }
   if (envelope.status === 'error' && typeof envelope.errorMessage === 'string'
       && !Object.hasOwn(envelope, 'value')) {
+    // The pinned backend emits this prefix before executing a function. A thrown
+    // user exception is prefixed 'Uncaught', not an argument-validation refusal.
+    // https://github.com/get-convex/convex-backend/blob/main/crates/udf/src/validation.rs
+    if (!Object.hasOwn(envelope, 'errorData')
+      && /^\[Request ID: [a-f0-9]{16}\] Server Error\nArgumentValidationError: /.test(envelope.errorMessage)) {
+      return { kind: 'validation-error', httpStatus, message: envelope.errorMessage };
+    }
     // Presence, not truthiness: ConvexError(null/false/0) also has errorData.
     return Object.hasOwn(envelope, 'errorData')
       ? { kind: 'application-error', httpStatus, message: envelope.errorMessage, errorData: envelope.errorData }

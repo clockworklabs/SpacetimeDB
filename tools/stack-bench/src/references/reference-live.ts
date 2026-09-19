@@ -14,6 +14,7 @@ import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtur
   validateReferenceRegistry } from './reference-fixtures.js';
 import { resolveReferenceSelection, parseReferenceCondition } from './reference-selection.js';
 import type { ConditionReference } from '../campaigns/condition-compiler.js';
+import { campaignSlotEnvironment } from '../campaigns/campaign-runtime.js';
 import { auditMutationWorkerRun, auditReferenceRun }
   from './reference-qualification-audit.js';
 import { rescueSupervisedLease } from '../runtime/recovery.js';
@@ -498,6 +499,14 @@ export function targetedMutationCheckKeys(context: {
   return selected;
 }
 
+export function referenceQualificationEnvironment(backend: string,
+  args: Pick<ReferenceQualificationArgs, 'runIndex' | 'spacetimePort'>,
+  env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return { ...campaignSlotEnvironment(env, backend, args.runIndex),
+    ...STACK_ADAPTER_REGISTRY.get(backend).runPolicy.supervisorEnvironment(
+      { spacetimePort: args.spacetimePort }) };
+}
+
 async function runOnce(fixture: ReferenceFixture, args: ReferenceQualificationArgs,
   context: QualificationContext, id: string, repetition: number): Promise<UnknownRecord> {
   const workRoot = referenceQualificationWorkRoot();
@@ -515,11 +524,8 @@ async function runOnce(fixture: ReferenceFixture, args: ReferenceQualificationAr
   let processError = null;
   try {
     prepareReferenceFixtureSource(fixture, app);
-    const adapter = STACK_ADAPTER_REGISTRY.get(fixture.backend);
-    const supervisorEnv = adapter.runPolicy.supervisorEnvironment(
-      { spacetimePort: args.spacetimePort });
-    const env = { ...process.env, STACK_BENCH_SUPERVISOR_STATE: supervisorState,
-      ...supervisorEnv };
+    const env = { ...referenceQualificationEnvironment(fixture.backend, args),
+      STACK_BENCH_SUPERVISOR_STATE: supervisorState };
     const benchArgs = [BENCH, '--backend', fixture.backend, '--track', fixture.track,
       '--levels', String(args.level), '--run-index', String(args.runIndex), '--repairs', '0',
       '--app', app, '--out', output, '--agent-adapter', 'reference-fixture', '--no-media'];
@@ -640,13 +646,17 @@ export function parallelMutationChildArgv(args: ReferenceQualificationArgs,
   return argv;
 }
 
-export function parallelMutationResourceLockKeys(args: ReferenceQualificationArgs): string[] {
+export function parallelMutationResourceLockKeys(args: ReferenceQualificationArgs,
+  env: NodeJS.ProcessEnv = process.env): string[] {
   const slots = mutationWorkerSlots({ workerCount: args.mutationWorkers,
     runIndex: args.runIndex, maxRunIndex: RUN_INDEX_CAP });
   const keys = slots.map(runIndex => `slot:${args.track}:${args.backend}:run${runIndex}`);
   if (args.backend === 'spacetime') {
     keys.push(...slots.map((_, workerIndex) =>
       `listener:http://127.0.0.1:${Number(args.spacetimePort) + workerIndex}`));
+  } else if (args.backend === 'convex') {
+    keys.push(...slots.map(runIndex =>
+      `listener:${campaignSlotEnvironment(env, 'convex', runIndex).STACK_BENCH_CONVEX_URI}`));
   }
   return keys.sort();
 }
@@ -655,7 +665,7 @@ export function preflightParallelMutationResources(args: ReferenceQualificationA
   env: NodeJS.ProcessEnv = process.env): void {
   const occupied = existingResourceLockKeys({
     root: resourceLockScope(env).root,
-    keys: parallelMutationResourceLockKeys(args),
+    keys: parallelMutationResourceLockKeys(args, env),
   });
   if (occupied.length) {
     throw new Error(`parallel mutation resources are already leased: ${occupied.join(', ')}`);

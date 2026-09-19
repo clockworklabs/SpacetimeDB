@@ -11,17 +11,20 @@
   "documents": {
     "mongodb": "backends/minimal/mongodb.md",
     "postgres": "backends/minimal/postgres.md",
-    "spacetime": "backends/minimal/spacetime.md"
+    "spacetime": "backends/minimal/spacetime.md",
+    "convex": "backends/minimal/convex.md"
   },
   "applicationInterfaces": {
     "mongodb": "http",
     "postgres": "http",
-    "spacetime": "reducer"
+    "spacetime": "reducer",
+    "convex": "convex"
   },
   "skills": {
     "mongodb": [],
     "postgres": [],
-    "spacetime": []
+    "spacetime": [],
+    "convex": []
   },
   "credentialAliases": {
     "stackbench-admin-2026": "store-admin-2026",

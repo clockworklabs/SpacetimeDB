@@ -14,4 +14,8 @@ Expose `POST /api/admin/price`.
 Expose the `admin_change_price` reducer.
 <!-- /interface -->
 
+<!-- interface:convex -->
+Use `api:admin_change_price` with `{ itemId, price }`.
+<!-- /interface -->
+
 Use the same action as the visible price control.

@@ -86,8 +86,8 @@ POSIX shell. Docker must be running before `setup` or Compose commands.
 
 `setup` creates the state volume and directories, resolves both local images to
 immutable content IDs, and writes a UTF-8 Compose environment file. It installs
-the pinned PostgreSQL and MongoDB images when they are absent. It also installs
-four prepared plans. It keeps existing plans and model credentials. Keep `operator.env` locally; it is ignored by Git. In Windows
+the pinned PostgreSQL, MongoDB and Convex images when they are absent. It also installs
+the prepared plans, including the four-stack ecommerce L1–L3 plan. It keeps existing plans and model credentials. Keep `operator.env` locally; it is ignored by Git. In Windows
 PowerShell 5, use `| Out-File -Encoding utf8 tools/stack-bench/operator.env` instead
 of `>` so the environment file is not UTF-16.
 

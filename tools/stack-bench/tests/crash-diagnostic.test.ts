@@ -297,6 +297,56 @@ test('crash action retains partial fault evidence and distinguishes recovered st
 });
 
 
+test('combined native crash reconciles lost responses with stored state and rejects a non-native checkout', async () => {
+  for (const mode of ['lost-unchanged', 'lost-partial', 'acknowledged-lost', 'wrong-route']) {
+    const before: CheckoutState = { accountId: 'a', itemId: 'i', priceMinor: 100,
+      stock: [{ warehouseId: 'w', quantity: 10 }], cart: [], reservations: [], orders: [], payments: [], orphanOrderLines: 0 };
+    const prepared = structuredClone(before);
+    prepared.cart.push({ itemId: 'i', quantity: 1 });
+    const after = structuredClone(prepared);
+    if (mode === 'lost-partial') after.stock[0]!.quantity--;
+    const wrap = (state: CheckoutState) => ({ state, schemaSha256: { schema: 'same' },
+      account: 'a', item: 'i', recordedAtMs: Date.now() });
+    let release!: () => void;
+    const stopped = new Promise<void>(resolve => { release = resolve; });
+    let closed = false, calls = 0, reads = 0;
+    const result = await executeAction(ACTION_REGISTRY, 'crashCheckout', {
+      do: 'crashCheckout', actor: 'buyer', before: 'before', prepared: 'prepared', quantity: 1,
+      requests: 1, offsetMs: 0, target: 'database',
+    }, { capabilities: {
+      actors: { get: () => ({ name: 'buyer', context: { cookies: async () => [] },
+        writes: [{ url: 'http://app/api/mutation', headers: { authorization: 'Bearer private-token' } }] }) },
+      'database-read': { checkoutSnapshots: new Map([['before', wrap(before)], ['prepared', wrap(prepared)]]),
+        markCheckoutUnsettled: () => assert.fail('verified combined process kill leaves no original database writer'),
+        getCheckoutState: () => { reads++; return wrap(after); } },
+      'named-actions': { now: Date.now, resolve: () => ({ id: 'checkout' }),
+        request: () => ({ url: 'http://app/api/mutation', method: 'POST',
+          responseContract: mode === 'wrong-route' ? 'convex-action' : 'convex-mutation' }),
+        fetch: async () => {
+          calls++; await stopped;
+          if (mode.startsWith('lost-')) throw new Error('socket closed');
+          return { ok: true, status: 200, text: async () => '{"status":"success","value":null}' };
+        },
+      },
+      'browser-observation': { recorded: new Map() },
+      'process-crash': { combinedBoundary: true, prepare: async () => ({ spacetime: null, combinedBoundary: true,
+        close: async () => { closed = true; },
+        crash: async () => {
+          const now = Date.now();
+          return { backend: 'convex', target: 'database', requestedAtMs: now, completedAtMs: now,
+            clockOffsetBeforeMs: 0, clockOffsetAfterMs: 0, signal: 'SIGKILL', processEvidence: `KILLED 42 123 ${now}\nQUIET\n` };
+        },
+        recover: async () => { release(); return null; },
+      }) },
+    } });
+    assert.equal(result.status, mode === 'wrong-route' ? 'inconclusive' : mode === 'lost-unchanged' ? 'passed' : 'failed', mode);
+    assert.equal(calls, mode === 'wrong-route' ? 0 : 1);
+    assert.equal(reads, mode === 'wrong-route' ? 0 : 1);
+    assert(closed, 'prepared crash must always close');
+    assert(!JSON.stringify(result).includes('private-token'));
+  }
+});
+
 test('crash verdict without a measured observation remains inconclusive', async () => {
   for (const verdict of ['atomicity', 'durability']) {
     const result = await executeAction(ACTION_REGISTRY, 'expectCrashCheckout', {
@@ -306,17 +356,47 @@ test('crash verdict without a measured observation remains inconclusive', async 
   }
 });
 
+test('native checkout requires classified completion and retains the actual HTTP status', async () => {
+  for (const mode of ['committed', 'refused', 'function-error', 'malformed', 'lost-body']) {
+    let unsettled = false;
+    const result = await executeAction(ACTION_REGISTRY, 'confirmCheckout', {
+      do: 'confirmCheckout', actor: 'buyer',
+    }, { capabilities: {
+      actors: { get: () => ({ name: 'buyer', context: { cookies: async () => [] },
+        writes: [{ url: 'http://app/api/mutation', headers: { authorization: 'Bearer private-token' } }] }) },
+      'database-read': { markCheckoutUnsettled: () => { unsettled = true; } },
+      'named-actions': { now: Date.now, resolve: () => ({ id: 'checkout' }),
+        request: () => ({ url: 'http://app/api/mutation', method: 'POST', responseContract: 'convex-mutation' }),
+        fetch: async () => ({ ok: true, status: 200, text: async () => {
+          if (mode === 'lost-body') throw new Error('private body unavailable');
+          return mode === 'committed' ? '{"status":"success","value":null}'
+            : mode === 'refused' ? '{"status":"error","errorMessage":"private refusal","errorData":null}'
+              : mode === 'function-error' ? '{"status":"error","errorMessage":"private failure"}' : '{}';
+        } }),
+      },
+    } });
+    assert.equal(result.status, mode === 'committed' ? 'passed'
+      : mode === 'lost-body' ? 'inconclusive' : 'failed', mode);
+    const receipt = result.observation as { status: number | null; protocol: string; outcome: string };
+    assert.equal(receipt.status, mode === 'lost-body' ? null : 200);
+    assert.equal(receipt.protocol, 'convex-mutation');
+    assert.equal(receipt.outcome, mode === 'committed' ? 'committed' : 'not-confirmed');
+    assert.equal(unsettled, mode !== 'committed');
+    assert(!JSON.stringify(result).includes('private'));
+  }
+});
+
 test('combined application boundary reuses only a measured database crash and retains its failures', async () => {
   for (const prior of [undefined, { receipt: { backend: 'postgres', target: 'database' }, verdicts: { atomicity: [], durability: [] } },
-    { receipt: { backend: 'spacetime', target: 'database' }, verdicts: {
-      atomicity: [{ control: 'partial order', observed: 0, expected: 1 }], durability: [] } }]) {
+    ...['spacetime', 'convex'].map(backend => ({ receipt: { backend, target: 'database' }, verdicts: {
+      atomicity: [{ control: 'partial order', observed: 0, expected: 1 }], durability: [] } }))]) {
     const recorded = new Map<string, unknown>([['database', prior]]);
     const result = await executeAction(ACTION_REGISTRY, 'crashCheckout', {
       do: 'crashCheckout', actor: 'buyer', before: 'before', prepared: 'prepared', quantity: 1,
       requests: 16, offsetMs: 0, target: 'application', as: 'application', reuseCombinedFrom: 'database',
     }, { capabilities: { actors: {}, 'named-actions': {}, 'database-read': {}, 'browser-observation': { recorded },
       'process-crash': { combinedBoundary: true, prepare: () => assert.fail('must not crash the same process twice') } } });
-    if (prior?.receipt.backend === 'spacetime') {
+    if (prior?.receipt.backend === 'spacetime' || prior?.receipt.backend === 'convex') {
       assert.equal(result.status, 'passed');
       assert.equal(recorded.get('application'), prior);
       const check = await executeAction(ACTION_REGISTRY, 'expectCrashCheckout', {

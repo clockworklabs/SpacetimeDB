@@ -23,6 +23,7 @@ import {
   browserCredentials,
   REQUEST_CONTEXT_HEADER,
   namedActionRequest,
+  classifyNamedActionResponse,
 } from './named-action-runtime.js';
 import type { NamedAction, NamedActionsCapability } from './named-action-runtime.js';
 
@@ -60,7 +61,7 @@ interface ReceiveInput extends ActorInput {
   readonly within?: number;
 }
 
-type TransportCapabilities = TransportActorCapabilities;
+type TransportCapabilities = TransportActorCapabilities & { readonly 'named-actions'?: NamedActionsCapability };
 
 interface ReplayCapabilities extends TransportCapabilities {
   readonly 'named-actions': NamedActionsCapability;
@@ -203,7 +204,9 @@ export function replayHeaders(
 async function forgeWrite({ input, capabilities, signal }: TransportArguments<ForgeInput>) {
   const actor = actorFor(capabilities, input.actor);
   const transport = transportFor(capabilities);
-  const write = actor.lastWrite;
+  const write = [...(actor.writes ?? []), ...(actor.lastWrite ? [actor.lastWrite] : [])].reverse()
+    .find(candidate => classifyNamedActionResponse(capabilities['named-actions'] ?? {}, candidate,
+      { status: 0, text: '' }).responseContract !== 'convex-query');
   if (!write) {
     const websocket = actor.lastWsWrite;
     if (websocket) {
@@ -216,7 +219,16 @@ async function forgeWrite({ input, capabilities, signal }: TransportArguments<Fo
     }
     return { attempted: false, classification: 'unverified' };
   }
-  const body = { ...write.body };
+  const envelope = structuredClone(write.body ?? {});
+  const native = classifyNamedActionResponse(capabilities['named-actions'] ?? {}, write,
+    { status: 0, text: '' }).responseContract.startsWith('convex-');
+  const argumentsOf = (body: Record<string, unknown>): Record<string, unknown> | null => {
+    if (!native) return body;
+    const args = Array.isArray(body.args) && body.args.length === 1 ? body.args[0] : body.args;
+    return args && typeof args === 'object' && !Array.isArray(args) ? args as Record<string, unknown> : null;
+  };
+  const body = argumentsOf(envelope);
+  if (!body) inconclusive('forgery-unverifiable', { actor: actor.name, detail: 'native write has no observable argument object' });
   const key = Object.keys(body).find(field => (input.field === 'room' ? ROOM_FIELD : IDENTITY_FIELD).test(field));
   if (!key) {
     actor.forge = { inconclusive: true,
@@ -227,7 +239,8 @@ async function forgeWrite({ input, capabilities, signal }: TransportArguments<Fo
   if (input.fromActor) {
     const victim = actorFor(capabilities, input.fromActor);
     const targetField = input.field === 'room' ? ROOM_FIELD : IDENTITY_FIELD;
-    const victimKey = Object.keys(victim.lastWrite?.body ?? {}).find(field => targetField.test(field));
+    const victimBody = argumentsOf(victim.lastWrite?.body ?? {});
+    const victimKey = Object.keys(victimBody ?? {}).find(field => targetField.test(field));
     if (!victimKey) {
       const wsKey = victim.lastWsWrite && Object.keys(victim.lastWsWrite.body)
         .find(field => targetField.test(field));
@@ -238,23 +251,26 @@ async function forgeWrite({ input, capabilities, signal }: TransportArguments<Fo
       }
       value = victim.lastWsWrite.body[wsKey];
     } else {
-      value = victim.lastWrite?.body?.[victimKey];
+      value = victimBody?.[victimKey];
     }
   }
   body[key] = value;
   const contentKey = Object.keys(body).find(field => CONTENT_FIELD.test(field));
   if (contentKey && input.text) body[contentKey] = input.text;
-  const response = await actor.page.request.fetch(write.url, {
-    method: write.method,
-    headers: replayHeaders(write),
-    data: JSON.stringify(body),
-  });
-  const forgeResult: ForgeResult = {
-    status: response.status(),
-    accepted: response.ok(),
-    tamperedField: key,
-    reason: 'tampered request sent',
-  };
+  let forgeResult: ForgeResult;
+  try {
+    const response = await actor.page.request.fetch(write.url, {
+      method: write.method, headers: replayHeaders(write), data: JSON.stringify(envelope),
+    });
+    const classified = classifyNamedActionResponse(capabilities['named-actions'] ?? {}, write,
+      { status: response.status(), text: response.text ? await response.text() : '' });
+    forgeResult = { ...classified, status: response.status(), accepted: classified.ok,
+      tamperedField: key, reason: 'tampered request sent' };
+  } catch (error) {
+    if (harnessBrowserFailure(error)) throw error;
+    forgeResult = { accepted: false, complete: false, inconclusive: true, tamperedField: key,
+      reason: 'tampered request has no complete response' };
+  }
   actor.forge = forgeResult;
   await transport.sleep(input.settleMs ?? 2000, signal);
   return {
@@ -277,7 +293,9 @@ async function expectForgeryRejected({ input, capabilities }: TransportArguments
   if (forge.accepted) {
     fail('forgery-accepted', { field: forge.tamperedField ?? 'identity', status: forge.status ?? null });
   }
-  if (forge.status !== 401 && forge.status !== 403) {
+  if (forge.complete === false) inconclusive('transport-incomplete', {});
+  if (forge.refusalKind !== 'access' && forge.refusalKind !== 'application'
+    && !(forge.refusalKind === undefined && (forge.status === 401 || forge.status === 403))) {
     fail('forgery-error', { status: forge.status ?? null });
   }
   transport.verification.verified(
@@ -291,8 +309,9 @@ async function replayAs({ input, capabilities, signal }: ReplayArguments) {
   const transport = transportFor(capabilities);
   const needle = transport.expand(input.match).toLowerCase();
   const write = [...source.writes].reverse()
-    .find(candidate => `${candidate.method} ${candidate.url} ${JSON.stringify(candidate.body)}`
-      .toLowerCase().includes(needle));
+    .find(candidate => classifyNamedActionResponse(capabilities['named-actions'] ?? {}, candidate,
+      { status: 0, text: '' }).responseContract !== 'convex-query'
+      && `${candidate.method} ${candidate.url} ${JSON.stringify(candidate.body)}`.toLowerCase().includes(needle));
   if (!write) {
     if (input.namedAction) {
       const named = capabilities['named-actions'];
@@ -340,15 +359,15 @@ async function replayAs({ input, capabilities, signal }: ReplayArguments) {
         replayUnavailable(actor,
           `no credentials found for ${actor.name} — an anonymous replay only shows that unauthenticated requests are refused`);
       }
-      const response = await named.fetch(request.url, {
-        method: request.method ?? 'POST',
-        headers: { 'Content-Type': 'application/json', ...mine },
-        body: request.body,
-        signal,
-      }).catch(error => ({ status: 0, ok: false, error: error.message }));
-      actor.replay = { accepted: response.ok, status: response.status, url: request.url,
-        method: request.method ?? 'POST', namedAction: action.id,
-        applicationRejected: (request.applicationRejectionStatuses ?? []).includes(response.status) };
+      try {
+        const response = await named.fetch(request.url, {
+          method: request.method ?? 'POST', headers: { 'Content-Type': 'application/json', ...mine },
+          body: request.body, signal,
+        });
+        const classified = classifyNamedActionResponse(named, request, { status: response.status, text: await response.text() });
+        actor.replay = { ...classified, accepted: classified.ok, status: response.status, url: request.url,
+          method: request.method ?? 'POST', namedAction: action.id };
+      } catch { actor.replay = { accepted: false, status: 0, complete: false, namedAction: action.id }; }
       await transport.sleep(input.settleMs ?? 2000, signal);
       return { attempted: true, accepted: actor.replay.accepted, status: actor.replay.status,
         namedAction: action.id };
@@ -414,7 +433,11 @@ async function replayAs({ input, capabilities, signal }: ReplayArguments) {
     if (harnessBrowserFailure(error)) throw error;
     return { status: () => 0, ok: () => false, error: error.message };
   });
-  actor.replay = { accepted: response.ok(), status: response.status(), url, method: write.method };
+  try {
+    const classified = classifyNamedActionResponse(capabilities['named-actions'] ?? {}, { url, method: write.method },
+      { status: response.status(), text: 'text' in response && response.text ? await response.text() : '' });
+    actor.replay = { ...classified, accepted: classified.ok, status: response.status(), url, method: write.method };
+  } catch { actor.replay = { accepted: false, status: 0, complete: false, url, method: write.method }; }
   await transport.sleep(input.settleMs ?? 2000, signal);
   return { attempted: true, accepted: actor.replay.accepted, status: actor.replay.status };
 }
@@ -428,12 +451,13 @@ async function expectReplayCompleted({ input, capabilities }: TransportArguments
   if (replay.inconclusive) {
     inconclusive('replay-unavailable', { actor: actor.name, detail: replay.reason ?? '' });
   }
+  if (replay.complete === false) inconclusive('transport-incomplete', {});
   if (input.requireAccepted && !replay.accepted) {
     fail('call-error', { action: replay.namedAction ?? 'replay', actor: actor.name,
       status: replay.status ?? null, required: 'accepted', operation: null });
   }
-  if (!replay.accepted && ![400, 409, 422].includes(replay.status ?? 0)
-    && replay.applicationRejected !== true) {
+  if (!replay.accepted && !(!replay.responseContract?.startsWith('convex-') && [400, 409, 422].includes(replay.status ?? 0))
+    && replay.applicationRejected !== true && replay.refusalKind !== 'validation') {
     fail('call-error', { action: replay.namedAction ?? 'replay', actor: actor.name,
       status: replay.status ?? null, required: 'validation-refused', operation: null });
   }
@@ -450,14 +474,15 @@ async function expectReplayRejected({ input, capabilities }:
     transport.verification.unverified(`${actor.name}: ${replay.reason}`);
     inconclusive('replay-unavailable', { actor: actor.name, detail: replay.reason ?? '' });
   }
+  if (replay.complete === false) inconclusive('transport-incomplete', {});
   const named = replay.namedAction ? { action: replay.namedAction } : {};
   if (replay.accepted) {
     fail('replay-accepted', { actor: actor.name, status: replay.status ?? null, ...named });
   }
   const replayStatus = replay.status;
-  if (replayStatus !== 401 && replayStatus !== 403
-    && !(replayStatus === 404 && input.allowNotFound === true)
-    && replay.applicationRejected !== true) {
+  const httpRefusal = !replay.responseContract?.startsWith('convex-')
+    && (replayStatus === 401 || replayStatus === 403 || (replayStatus === 404 && input.allowNotFound === true));
+  if (!httpRefusal && replay.applicationRejected !== true) {
     fail('replay-error', { status: replay.status ?? null, ...named });
   }
   transport.verification.verified(

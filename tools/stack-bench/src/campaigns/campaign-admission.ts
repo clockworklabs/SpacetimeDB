@@ -287,7 +287,11 @@ async function reserveRunIndices(plan: CompiledCampaignPlan, directory: string, 
   for (let retry = 0; retry <= RUN_INDEX_CAP; retry += 1) {
     const { runIndices: selected, keys } = await selectRunResources({
       track, backends: plan.stacks.map(stack => stack.id), count: plan.summary.parallelism,
-      serverUri: runIndex => campaignSlotEnvironment(env, 'spacetime', runIndex).STACK_BENCH_STDB_URI!,
+      serverUri: (runIndex, backend) => {
+        const slot = campaignSlotEnvironment(env, backend, runIndex);
+        return backend === 'spacetime' ? slot.STACK_BENCH_STDB_URI!
+          : backend === 'convex' ? slot.STACK_BENCH_CONVEX_URI! : null;
+      },
       env, probePort, excludedRunIndices, signal,
     });
     if (selected.length !== plan.summary.parallelism) {
@@ -589,8 +593,8 @@ export async function runCampaignAdmission(plan: CompiledCampaignPlan, directory
         resultsDir: resolve(directory),
       };
       reports.push(resourceFree ? resourceFreeAdmissionReport(request, now) : preflight(request,
-        { env: campaignSlotEnvironment(executionEnv,
-          scoped.stacks.some(stack => stack.id === 'spacetime') ? 'spacetime' : null, runIndex) }));
+        { env: scoped.stacks.reduce((current, stack) =>
+          campaignSlotEnvironment(current, stack.id, runIndex), executionEnv) }));
     }
   }
   await yieldTurn(undefined, { signal });

@@ -8,6 +8,7 @@ import { campaignExecutionEnvironment, campaignSlotEnvironment }
   from '../src/campaigns/campaign-runtime.js';
 import { currentEngineIdentity } from '../src/evidence/artifacts.js';
 import { sha256 } from '../src/evidence/provenance.js';
+import { CONVEX_BACKEND_IMAGE } from '../src/stacks/backends/convex-lifecycle.js';
 
 function frozenRuntime(root: string) {
   const digests = {
@@ -56,6 +57,13 @@ function frozenRuntime(root: string) {
 }
 
 test('parallel SpacetimeDB slots receive distinct dedicated host ports', () => {
+  assert.equal(campaignSlotEnvironment({}, 'convex', 7).STACK_BENCH_CONVEX_URI,
+    'http://127.0.0.1:13217');
+  const combined = campaignSlotEnvironment(campaignSlotEnvironment({}, 'convex', 7), 'spacetime', 7);
+  assert.equal(combined.STACK_BENCH_CONVEX_URI, 'http://127.0.0.1:13217');
+  assert.equal(combined.STACK_BENCH_STDB_URI, 'http://127.0.0.1:3217');
+  assert.throws(() => campaignSlotEnvironment({ STACK_BENCH_CONVEX_URI: 'http://localhost:65535' },
+    'convex', 1), /cannot allocate/);
   assert.throws(() => campaignSlotEnvironment({ STACK_BENCH_STDB_URI: 'http://localhost:5999' },
     'spacetime', 1), /cannot allocate/);
   assert.equal(campaignSlotEnvironment({}, 'spacetime', 0).STACK_BENCH_STDB_URI,
@@ -74,11 +82,11 @@ test('a frozen campaign proves its release and both runtime images before admiss
   try {
     const { path, manifest, runtime } = frozenRuntime(root);
     const plan = { state: 'frozen', identities: { engine: currentEngineIdentity() },
-      definition: { runtime } };
+      definition: { stacks: [{ id: 'postgres' }], runtime } };
     const env = { STACK_BENCH_CONTROLLER_IMAGE: runtime.controllerImage,
       STACK_BENCH_RELEASE_MANIFEST: path };
     assert.equal(campaignExecutionEnvironment(plan, env).STACK_BENCH_IMAGE, runtime.buildImage);
-    const internalPlan = { state: 'frozen', identities: plan.identities, definition: { runtime: {
+    const internalPlan = { state: 'frozen', identities: plan.identities, definition: { stacks: plan.definition.stacks, runtime: {
       ...runtime, releaseManifestSha256: null,
     } } };
     assert.equal(campaignExecutionEnvironment(internalPlan, {
@@ -100,9 +108,36 @@ test('a frozen campaign proves its release and both runtime images before admiss
     writeFileSync(path, wrongContent);
     assert.throws(() => campaignExecutionEnvironment({ state: 'frozen', identities: plan.identities,
       definition: {
+      stacks: plan.definition.stacks,
       runtime: { ...runtime, releaseManifestSha256: sha256(wrongContent) },
     } }, env), /release manifest images do not match/);
     writeFileSync(path, '{}\n');
     assert.throws(() => campaignExecutionEnvironment(plan, env), /release manifest does not match/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a Convex release-backed campaign requires the actual backend pin and its SBOM', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-convex-release-'));
+  try {
+    const { path, manifest, runtime } = frozenRuntime(root);
+    const plan = { state: 'frozen', identities: { engine: currentEngineIdentity() },
+      definition: { stacks: [{ id: 'convex' }], runtime } };
+    const env = { STACK_BENCH_CONTROLLER_IMAGE: runtime.controllerImage, STACK_BENCH_RELEASE_MANIFEST: path };
+    const check = () => {
+      const content = `${JSON.stringify(manifest)}\n`;
+      writeFileSync(path, content);
+      plan.definition.runtime.releaseManifestSha256 = sha256(content);
+      return campaignExecutionEnvironment(plan, env);
+    };
+    assert.throws(check, /pinned Convex backend image/);
+    const image = { id: 'stack-bench-convex', role: 'convex', reference: CONVEX_BACKEND_IMAGE,
+      digest: CONVEX_BACKEND_IMAGE.split('@sha256:')[1]!, platform: 'linux/amd64', sbomPath: 'sbom/convex.spdx.json' };
+    manifest.images.push(image);
+    assert.throws(check, /SBOM is absent/);
+    manifest.files.push({ path: image.sbomPath, role: 'sbom', sha256: 'f'.repeat(64), bytes: 1 });
+    assert.equal(check().STACK_BENCH_IMAGE, runtime.buildImage);
+    image.digest = '1'.repeat(64);
+    image.reference = `ghcr.io/get-convex/convex-backend@sha256:${image.digest}`;
+    assert.throws(check, /pinned Convex backend image/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

@@ -15,3 +15,7 @@ Use `credit-checkout` in the cart. Each `order-item` shows `payment-credit-amoun
 `grantCredit` is `grant_credit(accountId, amountMinor, reference)`.
 `checkoutCredit` is `checkout_credit()`.
 <!-- /interface -->
+
+<!-- interface:convex -->
+Use `api:grant_credit` with `{ accountId, amountMinor, reference }` and `api:checkout_credit` with `{}`.
+<!-- /interface -->

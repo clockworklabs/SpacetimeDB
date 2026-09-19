@@ -1,26 +1,16 @@
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { runBuild } from '../container/run-build.js';
+import test from 'node:test';
 import { workRoot } from '../src/composition/tracks.js';
 import { backendResourceLockKeys, claimBackendResources, createBackendLease, publicBackendLease,
   readBackendLease, resourceLockScope } from '../src/runtime/backend-lease.js';
 import { codingContainerAgentCommand, codingContainerAgentExecOptions } from '../src/runtime/coding-container-policy.js';
 import { attemptDocker, requireAttemptNetwork } from '../src/runtime/docker-network.js';
-import { standardBuildContainerPlan } from '../src/stacks/stack-agent-operations.js';
 import { activateConvex, releaseConvex } from '../src/stacks/backends/convex-lifecycle.js';
-
-test('trusted build plan cannot start a paid session or enable Convex in the CLI', async () => {
-  await assert.rejects(runBuild([], standardBuildContainerPlan()), /requires --prepare-only/);
-  const cli = spawnSync(process.execPath, [fileURLToPath(new URL('../container/run-build.js', import.meta.url)),
-    '--prepare-only', '--app', 'unused', '--backend', 'convex'], { encoding: 'utf8' });
-  assert.equal(cli.status, 2);
-  assert.match(cli.stderr, /unknown stack adapter/i);
-});
 
 test('private Convex fixture deploys as the normal coding user with owned credentials', {
   skip: process.env.STACK_BENCH_CONVEX_OWNED_TEST !== '1', timeout: 180_000,
@@ -39,10 +29,9 @@ test('private Convex fixture deploys as the normal coding user with owned creden
   const lease = createBackendLease({ runId: root.split('/').at(-1)!, backend: 'convex',
     track: 'ecommerce', runIndex: 2, serverUri: 'http://127.0.0.1:14316' });
   const evidence: Record<string, unknown> = { result: 'running', image,
-    note: 'Pinned app source deployed by coding UID 10001; no model call or adapter registration.' };
+    note: 'Pinned app source deployed by coding UID 10001; no model call; registered adapter and normal build owner.' };
   const save = () => writeFileSync(join(evidenceDirectory, 'coding-deploy.json'), JSON.stringify(evidence, null, 2));
-  const buildUrl = new URL('../container/run-build.js', import.meta.url).href;
-  const planUrl = new URL('../src/stacks/stack-agent-operations.js', import.meta.url).href;
+  const buildPath = fileURLToPath(new URL('../container/run-build.js', import.meta.url));
   let active;
   let volumes: string[] = [];
   let failure: unknown;
@@ -64,11 +53,9 @@ test('private Convex fixture deploys as the normal coding user with owned creden
     const sourceHashes = () => Object.fromEntries(sourceFiles.map(name =>
       [name, createHash('sha256').update(readFileSync(join(app, name))).digest('hex')]));
     evidence.submittedSource = sourceHashes();
-    const prepare = () => execFileSync(process.execPath, ['--input-type=module', '-e',
-      `import {runBuild} from ${JSON.stringify(buildUrl)}; import {standardBuildContainerPlan} from ${JSON.stringify(planUrl)}; `
-      + 'await runBuild(JSON.parse(process.env.CONVEX_PREPARE_ARGS),standardBuildContainerPlan());'], {
-      env: { ...process.env, STACK_BENCH_LEASE: leasePath, STACK_BENCH_LEASE_TOKEN: lease.ownershipToken,
-        CONVEX_PREPARE_ARGS: JSON.stringify(['--prepare-only', '--backend', 'convex', '--app', app, '--image', image]) },
+    const prepare = () => execFileSync(process.execPath, [buildPath,
+      '--prepare-only', '--backend', 'convex', '--app', app, '--image', image], {
+      env: { ...process.env, STACK_BENCH_LEASE: leasePath, STACK_BENCH_LEASE_TOKEN: lease.ownershipToken },
       encoding: 'utf8', stdio: 'pipe', timeout: 90_000,
     });
     evidence.prepared = JSON.parse(prepare().trim());

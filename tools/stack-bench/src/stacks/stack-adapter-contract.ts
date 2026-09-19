@@ -6,7 +6,7 @@ import type { GradingCapabilityId } from '../actions/action-contract.js';
 // What the grader can measure on a stack: the runtime capabilities the stack
 // provides and the transport that carries named application actions.
 export interface StackGradingSupport {
-  readonly transport: 'http' | 'reducer';
+  readonly transport: 'http' | 'reducer' | 'convex';
   readonly capabilities: readonly GradingCapabilityId[];
 }
 

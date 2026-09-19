@@ -246,7 +246,7 @@ export async function runGraderChild(argv: string[], output: string, suiteId: st
 
 function gradeLeaseInput(backend: string, env: NodeJS.ProcessEnv): { path: string;
   expected: BackendLeaseExpectation } | null {
-  if (!['mongodb', 'postgres', 'spacetime'].includes(backend)) return null;
+  if (!['mongodb', 'postgres', 'spacetime', 'convex'].includes(backend)) return null;
   const path = String(env.STACK_BENCH_LEASE ?? '').trim();
   const token = String(env.STACK_BENCH_LEASE_TOKEN ?? '').trim();
   if (!path && !token) return null;
@@ -552,6 +552,9 @@ export function checkRuntimeDatabaseProvenance(args: Pick<RunArguments, 'backend
   if (args.backend === 'spacetime') {
     return STACK_ADAPTER_REGISTRY.get('spacetime').database.proveUse(
       { lease: requireLeasedSpacetime(args.databaseLease), marker });
+  }
+  if (args.backend === 'convex') {
+    return STACK_ADAPTER_REGISTRY.get('convex').database.proveUse({ lease: args.databaseLease, marker });
   }
   const lease = requireLeasedDatabase(args.databaseLease);
   return args.backend === 'mongodb'

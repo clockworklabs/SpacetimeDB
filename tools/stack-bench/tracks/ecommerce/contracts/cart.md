@@ -25,5 +25,9 @@ Use the `add_to_cart` reducer with the item identifier.
 Use the `update_cart_quantity` reducer with the item identifier and quantity.
 <!-- /interface -->
 
+<!-- interface:convex -->
+Use `api:add_to_cart` with `{ itemId }` and `api:update_cart_quantity` with `{ itemId, quantity }`.
+<!-- /interface -->
+
 Use `checkout-submit` to check out. Use `orders-toggle` to open order history and `order-item`
 for each order created by checkout.

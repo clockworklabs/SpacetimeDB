@@ -30,7 +30,7 @@ const FULL_GRADING_CAPABILITIES = [
 ];
 
 test('built-in adapters preserve the port grid and lease identity', () => {
-  assert.deepEqual(STACK_ADAPTER_REGISTRY.ids, ['mongodb', 'postgres', 'spacetime', 'stub']);
+  assert.deepEqual(STACK_ADAPTER_REGISTRY.ids, ['convex', 'mongodb', 'postgres', 'spacetime', 'stub']);
   assert.equal(stackAdapterVersion('postgres'), '1.6.0');
   assert.equal(STACK_ADAPTER_REGISTRY.get('mongodb').version, '1.5.0');
   assert.equal(STACK_ADAPTER_REGISTRY.get('spacetime').version, '1.4.0');
@@ -239,7 +239,7 @@ test('every adapter declares what the grader can measure on it', () => {
   const known = new Set<string>(GRADING_CAPABILITY_IDS);
   for (const id of STACK_ADAPTER_REGISTRY.ids) {
     const { grading } = STACK_ADAPTER_REGISTRY.get(id);
-    assert.ok(['http', 'reducer'].includes(grading.transport), `${id} transport`);
+    assert.ok(['http', 'reducer', 'convex'].includes(grading.transport), `${id} transport`);
     assert.ok(grading.capabilities.every(capability => known.has(capability)), `${id} capabilities`);
     assert.equal(new Set(grading.capabilities).size, grading.capabilities.length, `${id} duplicates`);
   }

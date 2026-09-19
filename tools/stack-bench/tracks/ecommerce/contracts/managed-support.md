@@ -17,3 +17,8 @@ The JSON body is `{ "body": "<reply text>" }`.
 Use the `reply_support` reducer with arguments in this order: `ticketId: u64`, `body: string`.
 Render `data-entity-id` as the decimal case identifier without precision loss.
 <!-- /interface -->
+
+<!-- interface:convex -->
+Use `api:reply_support` with `{ ticketId, body }`. Render `data-entity-id` as
+the native string case identifier.
+<!-- /interface -->

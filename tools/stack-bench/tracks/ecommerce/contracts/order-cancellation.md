@@ -15,3 +15,7 @@ Use `POST /api/orders/:id/cancel`.
 <!-- interface:reducer -->
 Use the `cancel_order` reducer.
 <!-- /interface -->
+
+<!-- interface:convex -->
+Use `api:cancel_order` with `{ orderId }`.
+<!-- /interface -->

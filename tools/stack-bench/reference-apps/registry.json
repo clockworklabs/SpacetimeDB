@@ -96,6 +96,32 @@
       "mutationManifests": [
         "grader/mutations/spacetime-ecommerce.json"
       ]
+    },
+    {
+      "id": "ecommerce-reference-convex",
+      "backend": "convex",
+      "track": "ecommerce",
+      "level": 3,
+      "actionLevels": [
+        1,
+        2,
+        3
+      ],
+      "recipes": [
+        "ecommerce.progression-catalog"
+      ],
+      "targetPath": "reference-apps/ecommerce/convex",
+      "origin": {
+        "kind": "authored",
+        "note": "Native Convex ecommerce reference through dependency depth 3; draft until matching qualification passes."
+      },
+      "imported": {
+        "path": "reference-apps/ecommerce/convex",
+        "sourceSha256": "55a4c6d291bd6e4a83ab4330609739f23ecd16affe7aee60805eeb848b46c80c"
+      },
+      "mutationManifests": [
+        "grader/mutations/convex-ecommerce.json"
+      ]
     }
   ]
 }

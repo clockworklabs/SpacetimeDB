@@ -1,0 +1,1657 @@
+{
+  "schemaVersion": 3,
+  "fixtureSha256": "55a4c6d291bd6e4a83ab4330609739f23ecd16affe7aee60805eeb848b46c80c",
+  "backend": "convex",
+  "track": "ecommerce",
+  "note": "Native Convex selected-L3 defect controls. Authored coverage is not qualification; every baseline and mutant requires execution against this exact source hash. Recovery controls use real native reconnect callbacks and writes.",
+  "mutations": [
+    {
+      "id": "signup-does-not-expose-created-account",
+      "scenario": "tracks/ecommerce/scenarios/01-account-create.json",
+      "targets": [
+        "ecommerce.feature.accounts.accounts.1a"
+      ],
+      "desc": "Authenticated account views omit the created username, including native subscription updates.",
+      "file": "convex/accounts.js",
+      "edits": [
+        {
+          "find": "id: a._id, username: a.username, roles: a.roles",
+          "replace": "id: a._id, username: '', roles: a.roles"
+        }
+      ]
+    },
+    {
+      "id": "session-token-not-persisted",
+      "scenario": "tracks/ecommerce/scenarios/01-account-reload.json",
+      "targets": [
+        "ecommerce.spec.state-durability.session-reload.1e"
+      ],
+      "desc": "Fresh sign-in works, but each new document discards the stored access token before initializing native authentication, so reload cannot restore the session.",
+      "file": "client/src/request.ts",
+      "edits": [
+        {
+          "find": "export const TOKEN_KEY = 'convex_shop_token';",
+          "replace": "export const TOKEN_KEY = 'convex_shop_token';\nlocalStorage.removeItem(TOKEN_KEY);"
+        }
+      ]
+    },
+    {
+      "id": "reload-hydrates-an-empty-cart",
+      "scenario": "tracks/ecommerce/scenarios/01-cart.json",
+      "targets": [
+        "ecommerce.spec.state-durability.cart-reload.4b"
+      ],
+      "desc": "Existing-token page loads discard cart hydration from the native subscription; the first signup page and its working cart are unchanged.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "const CATALOG_PAGE_SIZE = 10;",
+          "replace": "const CATALOG_PAGE_SIZE = 10;\nconst discardHydratedCart = Boolean(localStorage.getItem(TOKEN_KEY));"
+        },
+        {
+          "find": "    setCart(state.cart);",
+          "replace": "    setCart(discardHydratedCart ? { items: [], total: 0 } : state.cart);"
+        }
+      ]
+    },
+    {
+      "id": "warehouse-view-omits-one-location",
+      "scenario": "tracks/ecommerce/scenarios/01-warehouse-admin-staff.json",
+      "targets": [
+        "ecommerce.feature.warehouse-admin.warehouse-view.7b"
+      ],
+      "desc": "The admin warehouse projection truncates the final item-location row.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "          {overview.locations.map((loc) => (",
+          "replace": "          {overview.locations.slice(0, -1).map((loc) => ("
+        }
+      ]
+    },
+    {
+      "id": "cart-hydration-loses-account-state",
+      "scenario": "tracks/ecommerce/scenarios/progression-account-state-reload.json",
+      "targets": [
+        "ecommerce.spec.state-durability.account-state-recovery.105a"
+      ],
+      "desc": "Existing-token page loads discard cart hydration from the native subscription; the first signup page and its working cart are unchanged.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "const CATALOG_PAGE_SIZE = 10;",
+          "replace": "const CATALOG_PAGE_SIZE = 10;\nconst discardHydratedCart = Boolean(localStorage.getItem(TOKEN_KEY));"
+        },
+        {
+          "find": "    setCart(state.cart);",
+          "replace": "    setCart(discardHydratedCart ? { items: [], total: 0 } : state.cart);"
+        }
+      ]
+    },
+    {
+      "id": "purchased-review-ui-does-not-submit",
+      "scenario": "tracks/ecommerce/scenarios/01-review-eligibility.json",
+      "targets": [
+        "ecommerce.spec.access-control.review-eligibility.108b"
+      ],
+      "desc": "The review form discards valid customer submissions. Direct authorized and unauthorized review calls retain their normal behavior.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "  const handleReviewSubmit = async (itemId: string, rating: number, comment: string) => {\n    setReviewError(\"\");",
+          "replace": "  const handleReviewSubmit = async (itemId: string, rating: number, comment: string) => {\n    setReviewError(\"Review submission unavailable\");\n    return;"
+        }
+      ]
+    },
+    {
+      "id": "progression-customer-sees-fulfilment-content",
+      "scenario": "tracks/ecommerce/scenarios/02-fulfilment-access.json",
+      "targets": [
+        "ecommerce.spec.access-control.fulfilment-area-boundary.1d"
+      ],
+      "desc": "Expose the protected staff area to signed-in customers, including its navigation and content.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "          {(currentUser?.isStaff || currentUser?.isAdmin) && (\n            <button className=\"btn btn-ghost\" data-role=\"staff-link\"",
+          "replace": "          {currentUser && (\n            <button className=\"btn btn-ghost\" data-role=\"staff-link\""
+        },
+        {
+          "find": "{fulfilmentOpen && (currentUser?.isStaff || currentUser?.isAdmin) && (",
+          "replace": "{fulfilmentOpen && currentUser && ("
+        }
+      ]
+    },
+    {
+      "id": "queue-warehouse-reports-west",
+      "scenario": "tracks/ecommerce/scenarios/02-queue-warehouse.json",
+      "targets": [
+        "ecommerce.operations-access.fulfilment-queue.1b"
+      ],
+      "desc": "The queue renders West for the deterministic Desk Lamp allocation even though the order reserved stock in East.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "{(l.warehouseNames || []).join(\", \") || \"Unknown\"}",
+          "replace": "{\"West\"}"
+        }
+      ]
+    },
+    {
+      "id": "catalog-initial-ranking-is-reversed",
+      "scenario": "tracks/ecommerce/scenarios/01-catalog-ranking.json",
+      "targets": [
+        "ecommerce.feature.catalog.catalog-ranking.2b"
+      ],
+      "desc": "The initial catalog uses reverse alphabetical order.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": ".sort((a, b) => (filtering ? 0 : b.purchaseCount - a.purchaseCount) || a.name.localeCompare(b.name))",
+          "replace": ".sort((a, b) => (filtering ? 0 : b.purchaseCount - a.purchaseCount) || b.name.localeCompare(a.name))"
+        }
+      ]
+    },
+    {
+      "id": "catalog-search-requires-exact-name",
+      "scenario": "tracks/ecommerce/scenarios/01-catalog-search.json",
+      "targets": [
+        "ecommerce.feature.catalog.catalog-search.2d"
+      ],
+      "desc": "Partial catalog search is replaced with exact matching.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "(!q || it.name.toLowerCase().includes(q))",
+          "replace": "(!q || it.name.toLowerCase() === q)"
+        }
+      ]
+    },
+    {
+      "id": "scheduled-restock-countdown-is-fixed",
+      "scenario": "tracks/ecommerce/scenarios/03-scheduled-restocks.json",
+      "targets": [
+        "ecommerce.l3.scheduled-restocks.scheduled-restocks.302a"
+      ],
+      "desc": "The pending restock UI shows a fixed countdown.",
+      "file": "client/src/ProgressionPanel.tsx",
+      "edits": [
+        {
+          "find": "{Math.max(0, Math.ceil((new Date(entry.dueAt).getTime() - now) / 1000))}",
+          "replace": "{90}"
+        }
+      ]
+    },
+    {
+      "id": "catalog-product-name-is-not-published",
+      "scenario": "tracks/ecommerce/scenarios/progression-catalog-management.json",
+      "targets": [
+        "ecommerce.progression.catalog-management.catalog-management.622a",
+        "ecommerce.progression.catalog-management.catalog-management.622b"
+      ],
+      "desc": "The public product card omits the submitted name while retaining its product and variants. Both publication and named variant navigation fail because the latter locates the card by its product name; this does not claim the variants were lost.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "      <div className=\"item-name\" data-role=\"item-name\">\n        {item.name}\n      </div>",
+          "replace": "      <div className=\"item-name\" data-role=\"item-name\">\n        {item.name === \"Travel Mug\" ? \"\" : item.name}\n      </div>"
+        }
+      ]
+    },
+    {
+      "id": "faceted-search-ignores-category",
+      "scenario": "tracks/ecommerce/scenarios/progression-faceted-filters.json",
+      "targets": [
+        "ecommerce.progression.faceted-search.faceted-search.401a"
+      ],
+      "desc": "Faceted search ignores the selected category.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "&& (!categoryFilter || it.category === categoryFilter)",
+          "replace": "&& (!categoryFilter || true)"
+        }
+      ]
+    },
+    {
+      "id": "active-search-uses-purchase-ranking",
+      "scenario": "tracks/ecommerce/scenarios/progression-search-ordering.json",
+      "targets": [
+        "ecommerce.spec.search-ordering.search-ordering.402b"
+      ],
+      "desc": "Keep purchase ranking when search text or filters are active.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "const filtering = Boolean(q || categoryFilter || minimumPrice || maximumPrice || inStockOnly);",
+          "replace": "const filtering = false;"
+        }
+      ]
+    },
+    {
+      "id": "pagination-repeats-first-page",
+      "scenario": "tracks/ecommerce/scenarios/progression-faceted-pagination.json",
+      "targets": [
+        "ecommerce.progression.faceted-search.faceted-search.402a"
+      ],
+      "desc": "Every catalog page repeats the first page.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "const searchResults = filteredItems.slice(searchPage * CATALOG_PAGE_SIZE,\n    searchPage * CATALOG_PAGE_SIZE + CATALOG_PAGE_SIZE);",
+          "replace": "const searchResults = filteredItems.slice(0, CATALOG_PAGE_SIZE);"
+        }
+      ]
+    },
+    {
+      "id": "staff-signin-loses-staff-role",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-access.json",
+      "targets": [
+        "ecommerce.progression.staff-access.staff-access.601a"
+      ],
+      "desc": "Deny administrators entry to staff tools while keeping ordinary staff access working.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "{(currentUser?.isStaff || currentUser?.isAdmin) && (\n            <button className=\"btn btn-ghost\" data-role=\"staff-link\"",
+          "replace": "{(currentUser?.isStaff && !currentUser?.isAdmin) && (\n            <button className=\"btn btn-ghost\" data-role=\"staff-link\""
+        }
+      ]
+    },
+    {
+      "id": "support-history-rows-are-hidden",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-history.json",
+      "targets": [
+        "ecommerce.progression.support-history.support-history.612c",
+        "ecommerce.spec.state-durability.support-history-reload.612a",
+        "ecommerce.spec.access-control.support-history-privacy.612b",
+        "ecommerce.spec.access-control.support-history-logout.612d"
+      ],
+      "desc": "Hide submitted support ticket rows while leaving the submission reference available. History, reload, privacy, and logout require the owner to see the ticket first. This breaks those positive observations; it does not create a privacy leak or remove stored data.",
+      "file": "client/src/ProgressionPanel.tsx",
+      "edits": [
+        {
+          "find": "data-role=\"support-ticket\"",
+          "replace": "data-role=\"support-ticket\" style={{ display: \"none\" }}"
+        }
+      ]
+    },
+    {
+      "id": "profile-summary-frozen-at-open",
+      "scenario": "tracks/ecommerce/scenarios/progression-customer-profile.json",
+      "targets": [
+        "ecommerce.progression.customer-profile.customer-profile.620c"
+      ],
+      "desc": "The profile summary shows the address loaded when the profile card opened, so a freshly saved address is not visible until the page is reloaded.",
+      "file": "client/src/ProgressionPanel.tsx",
+      "edits": [
+        {
+          "find": "      <p data-role=\"profile-address-summary\">{state.profile?.address || \"\"}</p>",
+          "replace": "      <ProfileAddressSummary address={state.profile?.address || \"\"} />"
+        },
+        {
+          "find": "function SupportTicket({ ticket, user, act }: any) {",
+          "replace": "function ProfileAddressSummary({ address }: { address: string }) {\n  const [shown] = useState(address); // mutant: the summary keeps the address loaded when the card opened\n  return <p data-role=\"profile-address-summary\">{shown}</p>;\n}\n\nfunction SupportTicket({ ticket, user, act }: any) {"
+        }
+      ]
+    },
+    {
+      "id": "support-replies-present-at-open-are-hidden",
+      "scenario": "tracks/ecommerce/scenarios/progression-managed-support-shared.json",
+      "targets": [
+        "ecommerce.progression.managed-support.managed-support.613c"
+      ],
+      "desc": "A support case renders only replies that arrive while it is open, so after a reload the replies already exchanged are missing while live replies still appear.",
+      "file": "client/src/ProgressionPanel.tsx",
+      "edits": [
+        {
+          "find": "  const [reply, setReply] = useState(\"\");",
+          "replace": "  const [reply, setReply] = useState(\"\");\n  const [repliesAtOpen] = useState(() => new Set((ticket.replies || []).map((entry: any) => entry.id || entry.createdAt))); // mutant: replies already on the case when it opened are never rendered"
+        },
+        {
+          "find": "    {(ticket.replies || []).map((entry: any) => <div data-role=\"support-reply-item\" key={entry.id || entry.createdAt}>{entry.username}: {entry.body}</div>)}",
+          "replace": "    {(ticket.replies || []).filter((entry: any) => !repliesAtOpen.has(entry.id || entry.createdAt)).map((entry: any) => <div data-role=\"support-reply-item\" key={entry.id || entry.createdAt}>{entry.username}: {entry.body}</div>)}"
+        }
+      ]
+    },
+    {
+      "id": "notification-toggle-frozen-at-open",
+      "scenario": "tracks/ecommerce/scenarios/progression-notification-preferences.json",
+      "targets": [
+        "ecommerce.progression.notification-preferences.notification-preferences.630c"
+      ],
+      "desc": "The order-notification toggle displays the state loaded when the settings card opened, so the saved choice is reported as off until a reload.",
+      "file": "client/src/ProgressionPanel.tsx",
+      "edits": [
+        {
+          "find": "      <button data-role=\"notification-order\" data-state={preference.order ? \"on\" : \"off\"} className=\"btn btn-ghost\"\n        onClick={() => setState((value: any) => ({ ...value, preference: { ...preference, order: !preference.order } }))}>\n        Order notifications {preference.order ? \"on\" : \"off\"}\n      </button>",
+          "replace": "      <OrderNotificationToggle on={preference.order}\n        onToggle={() => setState((value: any) => ({ ...value, preference: { ...preference, order: !preference.order } }))} />"
+        },
+        {
+          "find": "function SupportTicket({ ticket, user, act }: any) {",
+          "replace": "function OrderNotificationToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {\n  const [shown] = useState(on); // mutant: the toggle keeps the state loaded when the card opened\n  return <button data-role=\"notification-order\" data-state={shown ? \"on\" : \"off\"} className=\"btn btn-ghost\" onClick={onToggle}>\n    Order notifications {shown ? \"on\" : \"off\"}\n  </button>;\n}\n\nfunction SupportTicket({ ticket, user, act }: any) {"
+        }
+      ]
+    },
+    {
+      "id": "role-editor-snaps-back-to-stored-role",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
+      "targets": [
+        "ecommerce.progression.staff-roles.staff-roles.621c"
+      ],
+      "desc": "Pressing Save persists the role but resets the dropdown to the role that was stored before the save, so the assignment is not visible until a reload.",
+      "file": "client/src/ProgressionPanel.tsx",
+      "edits": [
+        {
+          "find": "        <button data-role=\"staff-role-save\" onClick={() => act(\"api:assign_staff_role\", {\n          accountId: entry.id, role: roles[entry.username] ?? entry.roles?.[0] ?? \"staff\",\n        })}>Save</button>",
+          "replace": "        <button data-role=\"staff-role-save\" onClick={() => {\n          setRoles(value => ({ ...value, [entry.username]: entry.roles?.[0] ?? \"staff\" })); // mutant: the editor snaps back to the previously stored role\n          return act(\"api:assign_staff_role\", {\n          accountId: entry.id, role: roles[entry.username] ?? entry.roles?.[0] ?? \"staff\",\n        }); }}>Save</button>"
+        }
+      ]
+    },
+    {
+      "id": "review-script-unsafe-render",
+      "scenario": "tracks/ecommerce/scenarios/progression-review-script.json",
+      "targets": [
+        "ecommerce.progression.review-access-specifications.stored-review-script.9180a"
+      ],
+      "desc": "Render stored review text as HTML so it executes in another customer session.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "<div>{r.comment}</div>",
+          "replace": "<div dangerouslySetInnerHTML={{ __html: r.comment }} />"
+        }
+      ]
+    },
+    {
+      "id": "shipping-counts-sale-twice",
+      "scenario": "tracks/ecommerce/scenarios/progression-shipping-accounting.json",
+      "targets": [
+        "ecommerce.inventory-operations.shipping-accounting.202e"
+      ],
+      "desc": "Shipping doubles the authoritative booked order total.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "await ctx.db.patch(orderId, { status: 'shipped' });",
+          "replace": "await ctx.db.patch(orderId, { status: 'shipped', total: order.total * 2 });"
+        }
+      ]
+    },
+    {
+      "id": "checkout-retains-purchased-cart",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
+      "desc": "Checkout does not consume its cart; concurrent calls create duplicate effects.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "for (const line of lines) await ctx.db.delete(line._id);",
+          "replace": "// Defect: the completed cart remains available for another checkout."
+        }
+      ]
+    },
+    {
+      "id": "checkout-rejects-every-request",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
+      "desc": "Reject every checkout, including the positive control; refusal alone is insufficient.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "if (!lines.length) throw new ConvexError('Cart is empty');",
+          "replace": "throw new ConvexError('Checkout rejected');"
+        }
+      ]
+    },
+    {
+      "id": "purchases-do-not-decrement-stock",
+      "scenario": "tracks/ecommerce/scenarios/01-last-unit.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.last-unit.201b"
+      ],
+      "desc": "Order creation preserves available stock, permitting overselling.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "await ctx.db.patch(row._id, { quantity: row.quantity - take });",
+          "replace": "await ctx.db.patch(row._id, { quantity: row.quantity });"
+        }
+      ]
+    },
+    {
+      "id": "purchase-rejects-every-request",
+      "scenario": "tracks/ecommerce/scenarios/01-last-unit.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.last-unit.201a"
+      ],
+      "desc": "Reject every purchase, including available stock; safety without progress must fail.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "const orderId = await ctx.db.insert('order_header',",
+          "replace": "throw new ConvexError('Purchases rejected');\n  const orderId = await ctx.db.insert('order_header',"
+        }
+      ]
+    },
+    {
+      "id": "order-cancel-not-owner-scoped",
+      "scenario": "tracks/ecommerce/scenarios/01-order-ownership.json",
+      "targets": [
+        "ecommerce.spec.access-control.order-ownership.106a"
+      ],
+      "desc": "A customer can cancel another customer order.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "if (!order || order.account_id !== user._id) throw new ConvexError('Order not found');",
+          "replace": "if (!order) throw new ConvexError('Order not found');"
+        }
+      ]
+    },
+    {
+      "id": "profile-read-not-owner-scoped",
+      "scenario": "tracks/ecommerce/scenarios/progression-customer-profile.json",
+      "targets": [
+        "ecommerce.spec.access-control.customer-profile-privacy.620b"
+      ],
+      "desc": "Profile reads expose another account saved address.",
+      "file": "convex/progression.js",
+      "edits": [
+        {
+          "find": "profile: user?.profile || null",
+          "replace": "profile: (await rows(ctx, 'order_account')).find(a => a.profile.address)?.profile || null"
+        }
+      ]
+    },
+    {
+      "id": "support-read-not-owner-scoped",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-history.json",
+      "targets": [
+        "ecommerce.spec.access-control.support-history-privacy.612b",
+        "ecommerce.spec.access-control.support-history-logout.612d"
+      ],
+      "desc": "All customers and signed-out clients receive private support history.",
+      "file": "convex/progression.js",
+      "edits": [
+        {
+          "find": ".filter(t => staff || (user && t.accountId === user._id))",
+          "replace": ".filter(() => true)"
+        }
+      ]
+    },
+    {
+      "id": "support-reply-not-owner-scoped",
+      "scenario": "tracks/ecommerce/scenarios/progression-managed-support-privacy.json",
+      "targets": [
+        "ecommerce.spec.access-control.managed-support-privacy.613b"
+      ],
+      "desc": "A customer can reply to another customer support case.",
+      "file": "convex/progression.js",
+      "edits": [
+        {
+          "find": "if (!ticket || (!isStaff(user) && ticket.accountId !== user._id)) throw new ConvexError('Ticket not found');",
+          "replace": "if (!ticket) throw new ConvexError('Ticket not found');"
+        }
+      ]
+    },
+    {
+      "id": "preference-read-not-owner-scoped",
+      "scenario": "tracks/ecommerce/scenarios/progression-notification-preferences.json",
+      "targets": [
+        "ecommerce.spec.access-control.notification-preferences-privacy.630b"
+      ],
+      "desc": "Notification settings expose another customer saved preference.",
+      "file": "convex/progression.js",
+      "edits": [
+        {
+          "find": "preference: user?.preference || { order: false, stock: false }",
+          "replace": "preference: (await rows(ctx, 'order_account')).find(a => a.preference.order || a.preference.stock)?.preference || { order: false, stock: false }"
+        }
+      ]
+    },
+    {
+      "id": "staff-admin-access-survives-role-removal",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
+      "targets": [
+        "ecommerce.spec.access-control.staff-role-revocation.621d"
+      ],
+      "desc": "Role reassignment retains the previous administrator privilege.",
+      "file": "convex/progression.js",
+      "edits": [
+        {
+          "find": "await ctx.db.patch(accountId, { roles: [role] });",
+          "replace": "await ctx.db.patch(accountId, { roles: [...new Set([...(await ctx.db.get(accountId)).roles, role])] });"
+        }
+      ]
+    },
+    {
+      "id": "review-eligibility-not-enforced",
+      "scenario": "tracks/ecommerce/scenarios/progression-review-access.json",
+      "targets": [
+        "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a"
+      ],
+      "desc": "Native review operation permits an account that never purchased the item.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "if (!purchased) throw new ConvexError('Purchase this item before reviewing');",
+          "replace": "// Defect: non-buyers may submit a review."
+        }
+      ]
+    },
+    {
+      "id": "review-script-reject-all",
+      "scenario": "tracks/ecommerce/scenarios/progression-review-script.json",
+      "targets": [
+        "ecommerce.progression.review-access-specifications.stored-review-script.9180a"
+      ],
+      "desc": "Reject every review, including benign text; rejecting all input is not safe rendering.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "if (!purchased) throw new ConvexError('Purchase this item before reviewing');",
+          "replace": "throw new ConvexError('Reviews rejected');"
+        }
+      ]
+    },
+    {
+      "id": "duplicate-review-accepted",
+      "scenario": "tracks/ecommerce/scenarios/01-review-uniqueness.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.unique-review.6b"
+      ],
+      "desc": "Same purchaser can record multiple reviews for one item.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "if (await ctx.db.query('review').withIndex('author', q => q.eq('itemId', args.itemId).eq('accountId', user._id)).unique()) throw new ConvexError('Already reviewed');",
+          "replace": "// Defect: duplicate author reviews are accepted."
+        }
+      ]
+    },
+    {
+      "id": "external-stock-client-snapshot-open",
+      "scenario": "tracks/ecommerce/scenarios/01-external-live-sync.json",
+      "targets": [
+        "ecommerce.spec.external-data-sync.external-stock.901a"
+      ],
+      "desc": "Keep the first subscribed catalog values instead of accepting later native stock changes.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    setItems(state.items);",
+          "replace": "    setItems(current => current.length ? current : state.items);"
+        }
+      ]
+    },
+    {
+      "id": "external-stock-client-snapshot-restart",
+      "scenario": "tracks/ecommerce/scenarios/01-external-server-restart-sync.json",
+      "targets": [
+        "ecommerce.spec.external-data-sync.external-stock.901c"
+      ],
+      "desc": "Keep the first subscribed catalog values instead of accepting later native stock changes.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    setItems(state.items);",
+          "replace": "    setItems(current => current.length ? current : state.items);"
+        }
+      ]
+    },
+    {
+      "id": "external-stock-client-snapshot-reconnect",
+      "scenario": "tracks/ecommerce/scenarios/01-external-reconnect-sync.json",
+      "targets": [
+        "ecommerce.spec.external-data-sync.external-stock.901d"
+      ],
+      "desc": "Keep the first subscribed catalog values instead of accepting later native stock changes.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    setItems(state.items);",
+          "replace": "    setItems(current => current.length ? current : state.items);"
+        }
+      ]
+    },
+    {
+      "id": "duplicate-signup-reports-success",
+      "scenario": "tracks/ecommerce/scenarios/01-account-duplicate.json",
+      "targets": [
+        "ecommerce.feature.accounts.accounts.1b"
+      ],
+      "desc": "A duplicate username is reported as a successful empty signup response instead of a refusal.",
+      "file": "convex/auth.js",
+      "edits": [
+        {
+          "find": "if (user.registrationNonce !== registrationNonce) throw new ConvexError('Username already exists');",
+          "replace": "// Defect: creating an existing account grants a session."
+        }
+      ]
+    },
+    {
+      "id": "signin-skips-password-verification",
+      "scenario": "tracks/ecommerce/scenarios/01-account-password.json",
+      "targets": [
+        "ecommerce.feature.accounts.accounts.1c"
+      ],
+      "desc": "Signin accepts an existing account without requiring its password to match.",
+      "file": "convex/auth.js",
+      "edits": [
+        {
+          "find": "verifySecret: (password, hash) => new Scrypt().verify(hash, password),",
+          "replace": "verifySecret: async () => true,"
+        }
+      ]
+    },
+    {
+      "id": "signout-keeps-current-account",
+      "scenario": "tracks/ecommerce/scenarios/01-account-signout.json",
+      "targets": [
+        "ecommerce.feature.accounts.accounts.1d"
+      ],
+      "desc": "Signout disconnects the token state but leaves the current account and persisted credential in place.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    await signOut();\n    clearSession();",
+          "replace": "    // Defect: sign-out leaves the authenticated account intact."
+        }
+      ]
+    },
+    {
+      "id": "cart-repeat-does-not-increment",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4a"
+      ],
+      "desc": "An existing cart line remains at its old quantity.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "const next = add ? (existing?.quantity || 0) + amount : amount;",
+          "replace": "const next = add ? amount : amount;"
+        }
+      ]
+    },
+    {
+      "id": "checkout-leaves-cart-claimed",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "desc": "Checkout creates an order without emptying the cart.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "for (const line of lines) await ctx.db.delete(line._id);",
+          "replace": "// Defect: checked-out cart lines survive."
+        }
+      ]
+    },
+    {
+      "id": "catalog-price-is-offset",
+      "scenario": "tracks/ecommerce/scenarios/01-catalog-values.json",
+      "targets": [
+        "ecommerce.feature.catalog.catalog-values.2a"
+      ],
+      "desc": "Public catalog prices are reported one unit too high.",
+      "file": "convex/seed.js",
+      "edits": [
+        {
+          "find": "name: entry.name, price: entry.price,",
+          "replace": "name: entry.name, price: entry.price + 1,"
+        }
+      ]
+    },
+    {
+      "id": "purchase-order-uses-zero-price",
+      "scenario": "tracks/ecommerce/scenarios/progression-purchasing.json",
+      "targets": [
+        "ecommerce.feature.purchasing.purchase-order.3c"
+      ],
+      "desc": "A direct purchase records the item but stores a zero order total instead of the price paid.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "unit_price: item.price, returned: false",
+          "replace": "unit_price: 0, returned: false"
+        }
+      ]
+    },
+    {
+      "id": "review-comment-is-not-persisted",
+      "scenario": "tracks/ecommerce/scenarios/01-review-visibility.json",
+      "targets": [
+        "ecommerce.feature.reviews.reviews.6a"
+      ],
+      "desc": "Review submission persists an empty comment rather than the customer's submitted text.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "await ctx.db.insert('review', { ...args, accountId: user._id });",
+          "replace": "await ctx.db.insert('review', { ...args, comment: '', accountId: user._id });"
+        }
+      ]
+    },
+    {
+      "id": "authorized-restock-does-not-change-stock",
+      "scenario": "tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a"
+      ],
+      "desc": "Accept an administrator restock without changing warehouse stock.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "await ctx.db.patch(stock._id, { quantity: stock.quantity + args.quantity });",
+          "replace": "await ctx.db.patch(stock._id, { quantity: stock.quantity });"
+        }
+      ]
+    },
+    {
+      "id": "purchases-do-not-affect-best-sellers",
+      "scenario": "tracks/ecommerce/scenarios/02-operational-best-sellers.json",
+      "targets": [
+        "ecommerce.inventory-operations.operational-views.5d"
+      ],
+      "desc": "Rank signed-out recommendations without purchase counts.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "recommended: recommendations",
+          "replace": "recommended: [...catalog].sort((a, b) => a.name.localeCompare(b.name)).slice(0, 10)"
+        }
+      ]
+    },
+    {
+      "id": "initial-dashboard-load-omits-low-stock",
+      "scenario": "tracks/ecommerce/scenarios/02-low-stock.json",
+      "targets": [
+        "ecommerce.inventory-operations.operational-views.5e",
+        "ecommerce.spec.live-state.inventory-dashboard.5a"
+      ],
+      "desc": "The dashboard's initial load reports no low-stock items, so an item already at ten units or fewer is missing until stock moves; 5a's opening precondition re-asserts the same listing, so it necessarily regresses with 5e.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "lowStock: catalog.filter(i => i.stock <= 10).sort((a, b) => a.stock - b.stock)",
+          "replace": "lowStock: []"
+        }
+      ]
+    },
+    {
+      "id": "category-totals-skip-the-newest-order",
+      "scenario": "tracks/ecommerce/scenarios/02-operational-category-totals.json",
+      "targets": [
+        "ecommerce.inventory-operations.operational-views.5f"
+      ],
+      "desc": "Category totals leave out the most recent order, so the reloaded dashboard shows a purchase only once a later order pushes it into the aggregate.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "const sold = standing.filter(l => itemById.get(l.item_id)?.category === category);",
+          "replace": "const sold = standing.filter(l => itemById.get(l.item_id)?.category === category).slice(0, -1);"
+        }
+      ]
+    },
+    {
+      "id": "transfer-debits-source-without-crediting-existing-destination",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202a",
+        "ecommerce.inventory-operations.warehouse-transfer.2a",
+        "ecommerce.operations-access.operator-authorization.201a"
+      ],
+      "desc": "A transfer debits the source but credits zero to the destination. This breaks both movement/conservation assertions and the authorized-transfer positive observation inside the authorization check; that last failure is not evidence of an unauthorized transfer.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "await ctx.db.patch(target._id, { quantity: target.quantity + args.quantity });",
+          "replace": "await ctx.db.patch(target._id, { quantity: target.quantity });"
+        }
+      ]
+    },
+    {
+      "id": "cancel-does-not-restore-stock-fresh-client",
+      "scenario": "tracks/ecommerce/scenarios/02-self-contained.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202b",
+        "ecommerce.inventory-operations.stock-conservation.202c"
+      ],
+      "desc": "Cancellation changes order state but skips restoration, so a fresh client reads the persisted shortfall.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "await ctx.db.patch(stock._id, { quantity: stock.quantity + allocation.quantity });",
+          "replace": "await ctx.db.patch(stock._id, { quantity: stock.quantity });"
+        }
+      ]
+    },
+    {
+      "id": "transfer-creates-stock-during-race",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202d"
+      ],
+      "desc": "A transfer creates one extra unit while a purchase runs.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "await ctx.db.patch(target._id, { quantity: target.quantity + args.quantity });",
+          "replace": "await ctx.db.patch(target._id, { quantity: target.quantity + args.quantity + 1 });"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-cancel-scheduled-restock",
+      "scenario": "tracks/ecommerce/scenarios/03-deferred-access.json",
+      "targets": [
+        "ecommerce.l3.deferred-access.scheduled-work-access.317a"
+      ],
+      "desc": "Scheduled-restock cancellation routes omit their staff checks.",
+      "file": "convex/progression.js",
+      "edits": [
+        {
+          "find": "await operator(ctx, true);\n  const restock = await ctx.db.get(restockId)",
+          "replace": "await account(ctx);\n  const restock = await ctx.db.get(restockId)"
+        }
+      ]
+    },
+    {
+      "id": "completed-restock-is-replayed",
+      "scenario": "tracks/ecommerce/scenarios/03-deferred-integrity.json",
+      "targets": [
+        "ecommerce.l3.deferred-integrity.exactly-once.311a"
+      ],
+      "desc": "Completing the deferred work applies its stock effect twice.",
+      "file": "convex/progression.js",
+      "edits": [
+        {
+          "find": "await ctx.db.patch(stock._id, { quantity: stock.quantity + restock.quantity });",
+          "replace": "await ctx.db.patch(stock._id, { quantity: stock.quantity + 2 * restock.quantity });"
+        }
+      ]
+    },
+    {
+      "id": "due-restock-does-not-change-stock",
+      "scenario": "tracks/ecommerce/scenarios/03-scheduled-restock-apply.json",
+      "targets": [
+        "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a"
+      ],
+      "desc": "A due restock is recorded without adding stock.",
+      "file": "convex/progression.js",
+      "edits": [
+        {
+          "find": "await ctx.db.patch(stock._id, { quantity: stock.quantity + restock.quantity });",
+          "replace": "await ctx.db.patch(stock._id, { quantity: stock.quantity });"
+        }
+      ]
+    },
+    {
+      "id": "cancelled-restock-remains-pending",
+      "scenario": "tracks/ecommerce/scenarios/03-scheduled-restock-cancel.json",
+      "targets": [
+        "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a"
+      ],
+      "desc": "Cancelling a restock leaves it pending so it later applies.",
+      "file": "convex/progression.js",
+      "edits": [
+        {
+          "find": "await ctx.scheduler.cancel(restock.scheduledId);\n  await ctx.db.patch(restock._id, { status: 'cancelled' });",
+          "replace": "// Defect: cancellation does not cancel scheduled work."
+        }
+      ]
+    },
+    {
+      "id": "server-time-restock-never-completes",
+      "scenario": "tracks/ecommerce/scenarios/03-server-time.json",
+      "targets": [
+        "ecommerce.l3.server-time.server-time.312a"
+      ],
+      "desc": "Server time never selects a due restock after restart.",
+      "file": "convex/progression.js",
+      "edits": [
+        {
+          "find": "ctx.scheduler.runAfter(args.delaySeconds * 1000,",
+          "replace": "ctx.scheduler.runAfter(86400000,"
+        }
+      ]
+    },
+    {
+      "id": "ship-acknowledges-without-changing-status",
+      "scenario": "tracks/ecommerce/scenarios/02-fulfilment-ship.json",
+      "targets": [
+        "ecommerce.operations-access.fulfilment-queue.1c"
+      ],
+      "desc": "Shipping returns success but writes pending back to the order, leaving both live views unchanged.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "await ctx.db.patch(orderId, { status: 'shipped' });",
+          "replace": "// Defect: shipping acknowledges but leaves the order pending."
+        }
+      ]
+    },
+    {
+      "id": "customer-can-ship-order-direct-1-1",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.operator-authorization.201c"
+      ],
+      "desc": "The shipping route keeps authentication but drops its staff role gate.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "const user = await operator(ctx);",
+          "replace": "const user = await account(ctx);"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-cancel-foreign-order-1-1",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.order-owner.204a"
+      ],
+      "desc": "Cancellation retains authentication and pending-state validation but drops order ownership.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "if (!order || order.account_id !== user._id) throw new ConvexError('Order not found');",
+          "replace": "if (!order) throw new ConvexError('Order not found');"
+        }
+      ]
+    },
+    {
+      "id": "promotion-save-drops-bounded-values",
+      "scenario": "tracks/ecommerce/scenarios/progression-promotion-rules.json",
+      "targets": [
+        "ecommerce.progression.promotion-rules.promotion-rule-values.620a"
+      ],
+      "desc": "Promotion creation drops its bounded discount and limit.",
+      "file": "convex/progression.js",
+      "edits": [
+        {
+          "find": "await ctx.db.insert('promotion', args);",
+          "replace": "await ctx.db.insert('promotion', { ...args, discountPercent: 0, usageLimit: 0 });"
+        }
+      ]
+    },
+    {
+      "id": "stock-alert-delivery-is-suppressed",
+      "scenario": "tracks/ecommerce/scenarios/progression-stock-alert-delivery.json",
+      "targets": [
+        "ecommerce.progression.stock-alerts.stock-alert-delivery.631c"
+      ],
+      "desc": "A request is accepted but restored stock does not deliver its alert.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "await ctx.db.insert('notification', { accountId: alert.accountId, type: 'stock', message: `${item.name} is back in stock` });",
+          "replace": "// Defect: no notification is delivered."
+        }
+      ]
+    },
+    {
+      "id": "support-intake-returns-no-reference",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-intake.json",
+      "targets": [
+        "ecommerce.progression.support-intake.support-intake.610a"
+      ],
+      "desc": "Support intake creates a ticket but omits its reference from the response.",
+      "file": "convex/progression.js",
+      "edits": [
+        {
+          "find": "const reference = `SUP-${id.slice(-10)}`;",
+          "replace": "const reference = '';"
+        }
+      ]
+    },
+    {
+      "id": "support-triage-discards-updates",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-triage.json",
+      "targets": [
+        "ecommerce.progression.support-triage.support-assignment.611a",
+        "ecommerce.progression.support-triage.support-priority.611b",
+        "ecommerce.progression.support-triage.support-status.611c"
+      ],
+      "desc": "Support triage accepts but discards assignment, priority, and status updates.",
+      "file": "convex/progression.js",
+      "edits": [
+        {
+          "find": "await ctx.db.patch(ticketId, change);",
+          "replace": "// Defect: support edits are acknowledged but discarded."
+        }
+      ]
+    },
+    {
+      "id": "cancel-does-not-restore-stock-feature",
+      "scenario": "tracks/ecommerce/scenarios/02-order-cancellation-core.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3a"
+      ],
+      "desc": "Cancellation changes order state but skips restoration of its recorded warehouse allocations.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "await ctx.db.patch(stock._id, { quantity: stock.quantity + allocation.quantity });",
+          "replace": "await ctx.db.patch(stock._id, { quantity: stock.quantity });"
+        }
+      ]
+    },
+    {
+      "id": "cancel-restores-stock-but-keeps-pending-status",
+      "scenario": "tracks/ecommerce/scenarios/02-order-cancellation-history.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3b"
+      ],
+      "desc": "Cancellation restores allocations but writes pending back to order history.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "await ctx.db.patch(orderId, { status: 'cancelled', refunded: order.total });",
+          "replace": "await ctx.db.patch(orderId, { status: 'pending', refunded: order.total });"
+        }
+      ]
+    },
+    {
+      "id": "cancellation-accounting-loses-stock-restoration",
+      "scenario": "tracks/ecommerce/scenarios/02-invariants.json",
+      "targets": [
+        "ecommerce.returns-pricing.refund-accounting.203a"
+      ],
+      "desc": "Cancellation removes revenue and changes order status, but loses the original warehouse stock restoration. The native refund-accounting assertion must detect this.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "await ctx.db.patch(stock._id, { quantity: stock.quantity + allocation.quantity });",
+          "replace": "await ctx.db.patch(stock._id, { quantity: stock.quantity });"
+        }
+      ]
+    },
+    {
+      "id": "negative-cart-quantity-is-accepted",
+      "scenario": "tracks/ecommerce/scenarios/01-cart-boundary.json",
+      "targets": [
+        "ecommerce.spec.access-control.cart-boundary.109b"
+      ],
+      "desc": "Cart quantity updates accept values below one.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "  quantity(amount, !add);",
+          "replace": "  if (amount >= 0) quantity(amount, !add);"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-create-promotion",
+      "scenario": "tracks/ecommerce/scenarios/progression-promotion-rules.json",
+      "targets": [
+        "ecommerce.spec.access-control.promotion-management-boundary.620b"
+      ],
+      "desc": "Promotion creation omits its staff authorization check.",
+      "file": "convex/progression.js",
+      "edits": [
+        {
+          "find": "await operator(ctx);\n  if (!args.code.trim()",
+          "replace": "await account(ctx);\n  if (!args.code.trim()"
+        }
+      ]
+    },
+    {
+      "id": "unpurchased-review-is-accepted",
+      "scenario": "tracks/ecommerce/scenarios/01-review-eligibility.json",
+      "targets": [
+        "ecommerce.spec.access-control.review-eligibility.108a"
+      ],
+      "desc": "The review endpoint bypasses its completed-purchase eligibility check.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "if (!purchased) throw new ConvexError('Purchase this item before reviewing');",
+          "replace": "// Defect: review requires no purchase."
+        }
+      ]
+    },
+    {
+      "id": "customer-signin-gains-staff-role",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-access.json",
+      "targets": [
+        "ecommerce.spec.access-control.staff-area-boundary.601b"
+      ],
+      "desc": "Signin falsely exposes every customer as staff.",
+      "file": "convex/accounts.js",
+      "edits": [
+        {
+          "find": "username: user.name, roles: [],",
+          "replace": "username: user.name, roles: ['staff'],"
+        }
+      ]
+    },
+    {
+      "id": "staff-can-assign-roles",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
+      "targets": [
+        "ecommerce.spec.access-control.staff-role-boundary.621b",
+        "ecommerce.spec.access-control.staff-role-revocation.621d"
+      ],
+      "desc": "Staff can call the role assignment endpoint, including after administrator access is revoked.",
+      "file": "convex/progression.js",
+      "edits": [
+        {
+          "find": "await operator(ctx, true);\n  if (!['staff', 'inventory', 'admin'].includes(role))",
+          "replace": "await operator(ctx);\n  if (!['staff', 'inventory', 'admin'].includes(role))"
+        }
+      ]
+    },
+    {
+      "id": "stock-alerts-are-not-owner-scoped",
+      "scenario": "tracks/ecommerce/scenarios/progression-stock-alerts.json",
+      "targets": [
+        "ecommerce.spec.access-control.stock-alert-privacy.631b"
+      ],
+      "desc": "Notification reads expose alerts from other accounts.",
+      "file": "convex/progression.js",
+      "edits": [
+        {
+          "find": "(await ctx.db.query('notification').withIndex('account', q => q.eq('accountId', user._id)).collect()).map(publicRow)",
+          "replace": "(await rows(ctx, 'notification')).map(publicRow)"
+        }
+      ]
+    },
+    {
+      "id": "staff-can-use-direct-restock",
+      "scenario": "tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "desc": "The direct restock route accepts staff instead of administrators only.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "await operator(ctx, true); quantity(args.quantity);\n    const stock",
+          "replace": "await operator(ctx); quantity(args.quantity);\n    const stock"
+        }
+      ]
+    },
+    {
+      "id": "concurrent-cart-add-does-not-increment",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203a"
+      ],
+      "desc": "Concurrent cart adds leave the line quantity and its reservation list unchanged, so the existing cart remains checkable at checkout.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "const next = add ? (existing?.quantity || 0) + amount : amount;",
+          "replace": "const next = add ? amount : amount;"
+        }
+      ]
+    },
+    {
+      "id": "restock-race-records-wrong-order-total",
+      "scenario": "tracks/ecommerce/scenarios/01-restock-race.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.restock-race.202a"
+      ],
+      "desc": "Purchases preserve stock and visible order counts but record the wrong booked total. Native mixed-race reconciliation must reject them.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "await ctx.db.patch(orderId, { total: total / 100 });",
+          "replace": "await ctx.db.patch(orderId, { total: total / 100 + 1 });"
+        }
+      ]
+    },
+    {
+      "id": "queue-ignores-live-fulfilment-updates",
+      "scenario": "tracks/ecommerce/scenarios/02-fulfilment-live.json",
+      "targets": [
+        "ecommerce.spec.live-state.fulfilment-queue.1a"
+      ],
+      "desc": "The open staff queue ignores live fulfilment events, so a new order appears only after a reload.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    setFulfilmentQueue(state.fulfilment || { orders: [], depth: 0 });",
+          "replace": "    // Defect: the subscribed fulfilment view is ignored."
+        }
+      ]
+    },
+    {
+      "id": "managed-support-live-refresh-keeps-stale-tickets",
+      "scenario": "tracks/ecommerce/scenarios/progression-managed-support-shared.json",
+      "targets": [
+        "ecommerce.spec.live-state.managed-support.613a"
+      ],
+      "desc": "The native subscription keeps the first support ticket snapshot. Saved replies remain visible on initial load, but another open client does not receive updates.",
+      "file": "client/src/ProgressionPanel.tsx",
+      "edits": [
+        {
+          "find": "  useEffect(() => subscribeProgression(next => {\n    setState({ ...next, loadedToken: token });",
+          "replace": "  useEffect(() => subscribeProgression(next => {\n    setState((current: any) => ({ ...next, tickets: current.loadedToken === token ? current.tickets : next.tickets, loadedToken: token }));"
+        }
+      ]
+    },
+    {
+      "id": "open-review-list-ignores-live-update",
+      "scenario": "tracks/ecommerce/scenarios/progression-open-list-live.json",
+      "targets": [
+        "ecommerce.spec.live-state.open-list.902a"
+      ],
+      "desc": "The native detail subscription retains its first review list while other item data stays current. New reviews appear on reload but not in the already-open view.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    setItemDetails(state.details);",
+          "replace": "    setItemDetails(previous => state.details.map((item: ItemDetailT) => ({ ...item, reviews: previous.find(old => old.id === item.id)?.reviews || item.reviews })));"
+        }
+      ]
+    },
+    {
+      "id": "espresso-stock-row-ignores-live-updates",
+      "scenario": "tracks/ecommerce/scenarios/01-buying.json",
+      "targets": [
+        "ecommerce.spec.live-state.purchase-stock.3b"
+      ],
+      "desc": "The live catalogue handler preserves a stale Espresso Machine stock projection while applying all other item updates.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    setItems(state.items);",
+          "replace": "    setItems(current => state.items.map((item: ItemT) => item.name === 'Espresso Machine' ? current.find(previous => previous.id === item.id) || item : item));"
+        }
+      ]
+    },
+    {
+      "id": "purchase-counts-never-affect-ranking",
+      "scenario": "tracks/ecommerce/scenarios/01-core.json",
+      "targets": [
+        "ecommerce.spec.live-state.ranking.2c"
+      ],
+      "desc": "The catalogue ranking ignores recorded purchases and therefore never promotes the bought item.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "purchaseCount: standing.filter(l => l.item_id === i._id).reduce((n, l) => n + l.quantity, 0)",
+          "replace": "purchaseCount: 0"
+        }
+      ]
+    },
+    {
+      "id": "live-review-average-uses-an-extra-divisor",
+      "scenario": "tracks/ecommerce/scenarios/01-review-rating-live.json",
+      "targets": [
+        "ecommerce.spec.live-state.rating.6c"
+      ],
+      "desc": "The live review event divides the rating sum by one more review than actually exists.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "/ itemReviews.length : 0",
+          "replace": "/ (itemReviews.length + 1) : 0"
+        }
+      ]
+    },
+    {
+      "id": "live-admin-updates-keep-stale-category-totals",
+      "scenario": "tracks/ecommerce/scenarios/02-operational-category-totals.json",
+      "targets": [
+        "ecommerce.spec.live-state.sales-dashboard.5b"
+      ],
+      "desc": "Live admin updates keep the category totals loaded at page load, so a purchase does not move units or revenue until a reload.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    setAdminOverview(state.admin);",
+          "replace": "    setAdminOverview(previous => state.admin && previous ? { ...state.admin, categories: previous.categories } : state.admin);"
+        }
+      ]
+    },
+    {
+      "id": "shared-cart-live-events-ignored",
+      "scenario": "tracks/ecommerce/scenarios/01-cart.json",
+      "targets": [
+        "ecommerce.spec.live-state.shared-cart.4c"
+      ],
+      "desc": "An already-open second session ignores committed cart update events.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    setCart(state.cart);",
+          "replace": "    // Defect: subscribed cart changes are ignored."
+        }
+      ]
+    },
+    {
+      "id": "transfer-totals-omit-destination-credit-live",
+      "scenario": "tracks/ecommerce/scenarios/02-transfer-totals.json",
+      "targets": [
+        "ecommerce.spec.live-state.stock-transfers.2b"
+      ],
+      "desc": "A transfer debits the source but adds zero to the destination, so the two live warehouse totals do not move in opposite directions.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "await ctx.db.patch(target._id, { quantity: target.quantity + args.quantity });",
+          "replace": "await ctx.db.patch(target._id, { quantity: target.quantity });"
+        }
+      ]
+    },
+    {
+      "id": "restock-does-not-increase-stock",
+      "scenario": "tracks/ecommerce/scenarios/01-warehouse-stock-live-staff.json",
+      "targets": [
+        "ecommerce.spec.live-state.warehouse-stock.7c"
+      ],
+      "desc": "The restock endpoint accepts a positive quantity but increments authoritative stock by zero.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "await ctx.db.patch(stock._id, { quantity: stock.quantity + args.quantity });",
+          "replace": "await ctx.db.patch(stock._id, { quantity: stock.quantity });"
+        }
+      ]
+    },
+    {
+      "id": "notification-preference-is-not-saved",
+      "scenario": "tracks/ecommerce/scenarios/progression-notification-preferences.json",
+      "targets": [
+        "ecommerce.spec.state-durability.notification-preferences-reload.630a",
+        "ecommerce.progression.notification-preferences.notification-preferences.630c"
+      ],
+      "desc": "Notification preferences are always saved as disabled, so both the saved-choice view and reload show the wrong value.",
+      "file": "convex/progression.js",
+      "edits": [
+        {
+          "find": "await ctx.db.patch((await account(ctx))._id, { preference });",
+          "replace": "await ctx.db.patch((await account(ctx))._id, { preference: { order: false, stock: false } });"
+        }
+      ]
+    },
+    {
+      "id": "role-assignment-drops-role",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
+      "targets": [
+        "ecommerce.spec.state-durability.staff-role-reload.621a"
+      ],
+      "desc": "Inventory role assignments are not saved; staff and administrator role transitions still work.",
+      "file": "convex/progression.js",
+      "edits": [
+        {
+          "find": "await ctx.db.patch(accountId, { roles: [role] });",
+          "replace": "await ctx.db.patch(accountId, { roles: ['staff'] });"
+        }
+      ]
+    },
+    {
+      "id": "revenue-aggregation-ignores-order-totals",
+      "scenario": "tracks/ecommerce/scenarios/progression-books-balance.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.books-balance.107a"
+      ],
+      "desc": "The admin revenue aggregation counts every order as zero regardless of its stored total.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "revenue: money(headers.reduce((n, o) => n + o.total - o.refunded, 0))",
+          "replace": "revenue: 0"
+        }
+      ]
+    },
+    {
+      "id": "purchase-does-not-reduce-warehouse-stock",
+      "scenario": "tracks/ecommerce/scenarios/progression-books-balance.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.books-balance.107b"
+      ],
+      "desc": "Purchases create orders without reducing warehouse stock.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "await ctx.db.patch(row._id, { quantity: row.quantity - take });",
+          "replace": "await ctx.db.patch(row._id, { quantity: row.quantity });"
+        }
+      ]
+    },
+    {
+      "id": "direct-purchase-total-ignores-store-price",
+      "scenario": "tracks/ecommerce/scenarios/01-server-price.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.server-price.104a"
+      ],
+      "desc": "The direct purchase creates one order but records a zero total rather than the store's current price.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "total += Math.round(item.price * 100) * line.quantity;",
+          "replace": "total += 100 * line.quantity;"
+        }
+      ]
+    },
+    {
+      "id": "overdraw-transfer-is-accepted",
+      "scenario": "tracks/ecommerce/scenarios/02-transfer-overdraw.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.stock-transfer-overdraw.2c"
+      ],
+      "desc": "The atomic source debit no longer requires sufficient quantity, so an overdrawn transfer succeeds and moves both warehouse totals.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "if (source.quantity < args.quantity) throw new ConvexError('Not enough stock');",
+          "replace": "// Defect: transfer may debit below zero."
+        }
+      ]
+    },
+    {
+      "id": "recommendations-ignore-pending-purchases",
+      "scenario": "tracks/ecommerce/scenarios/02-operational-recommendations.json",
+      "targets": [
+        "ecommerce.inventory-operations.operational-views.5c"
+      ],
+      "desc": "Never use customer purchases to choose recommended categories.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "const purchasedCategories = new Set(standing.filter(l => ownOrderIds.has(l.order_id)).map(l => itemById.get(l.item_id)?.category));",
+          "replace": "const purchasedCategories = new Set();"
+        }
+      ]
+    },
+    {
+      "id": "cart-add-uses-another-account-cart",
+      "scenario": "tracks/ecommerce/scenarios/01-cart-boundary.json",
+      "targets": [
+        "ecommerce.spec.access-control.cart-boundary.109a"
+      ],
+      "desc": "Cart writes target another customer account instead of the authenticated caller.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "const user = await account(ctx);\n  quantity(amount, !add);",
+          "replace": "const caller = await account(ctx);\n  const user = (await rows(ctx, 'order_account')).find(a => a._id !== caller._id && a.roles.length === 0) || caller;\n  quantity(amount, !add);"
+        }
+      ]
+    },
+    {
+      "id": "direct-purchase-is-attributed-to-another-account",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-attribution.json",
+      "targets": [
+        "ecommerce.spec.access-control.purchase-attribution.102a"
+      ],
+      "desc": "Purchase order is attributed to another account despite the real caller session.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "account_id: user._id, total: 0, refunded: 0, status: 'pending'",
+          "replace": "account_id: (await rows(ctx, 'order_account')).find(a => a._id !== user._id)._id, total: 0, refunded: 0, status: 'pending'"
+        }
+      ]
+    },
+    {
+      "id": "unauthenticated-purchase-defaults-to-admin",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-session.json",
+      "targets": [
+        "ecommerce.spec.access-control.purchase-session.101a"
+      ],
+      "desc": "Anonymous native buy defaults to the administrator account and commits a purchase.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "purchase(ctx, await account(ctx), [{ item_id: itemId, quantity: 1 }])",
+          "replace": "purchase(ctx, (await account(ctx, false)) || (await rows(ctx, 'order_account')).find(isAdmin), [{ item_id: itemId, quantity: 1 }])"
+        }
+      ]
+    },
+    {
+      "id": "signed-out-visitor-purchase-is-accepted",
+      "scenario": "tracks/ecommerce/scenarios/progression-signed-out-purchase.json",
+      "targets": [
+        "ecommerce.spec.access-control.signed-out-purchase.3a"
+      ],
+      "desc": "Anonymous native buy defaults to the administrator account and commits a purchase.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "purchase(ctx, await account(ctx), [{ item_id: itemId, quantity: 1 }])",
+          "replace": "purchase(ctx, (await account(ctx, false)) || (await rows(ctx, 'order_account')).find(isAdmin), [{ item_id: itemId, quantity: 1 }])"
+        }
+      ]
+    },
+    {
+      "id": "staff-can-see-admin-navigation",
+      "scenario": "tracks/ecommerce/scenarios/01-warehouse-admin-staff.json",
+      "targets": [
+        "ecommerce.spec.access-control.warehouse-area-boundary.7a"
+      ],
+      "desc": "Staff are incorrectly treated as administrators in reads, navigation, and writes.",
+      "file": "convex/accounts.js",
+      "edits": [
+        {
+          "find": "export const isAdmin = a => Boolean(a?.roles.includes('admin'));",
+          "replace": "export const isAdmin = a => Boolean(a?.roles.some(role => ['admin', 'staff'].includes(role)));"
+        }
+      ]
+    },
+    {
+      "id": "reconnect-hydration-loses-account-state",
+      "scenario": "tracks/ecommerce/scenarios/progression-account-state-reconnect.json",
+      "targets": [
+        "ecommerce.spec.state-durability.account-state-recovery.105b"
+      ],
+      "desc": "Network loss permanently closes the live client, so the account misses peer cart changes after reconnect.",
+      "file": "client/src/request.ts",
+      "edits": [
+        {
+          "find": "followAuth();\nexport async function signOut()",
+          "replace": "followAuth();\nwindow.addEventListener('offline', () => { live.close(); }, { once: true });\nexport async function signOut()"
+        }
+      ]
+    },
+    {
+      "id": "profile-data-is-lost-on-server-restart",
+      "scenario": "tracks/ecommerce/scenarios/progression-customer-profile.json",
+      "targets": [
+        "ecommerce.spec.state-durability.customer-profile-reload.620a"
+      ],
+      "desc": "Signing in from the fresh recovery browser resets a stored profile; the initial save and token reload remain valid.",
+      "file": "convex/accounts.js",
+      "edits": [
+        {
+          "find": "if (await ctx.db.query('order_account').withIndex('auth_user', q => q.eq('auth_user_id', userId)).unique()) return;",
+          "replace": "const existing = await ctx.db.query('order_account').withIndex('auth_user', q => q.eq('auth_user_id', userId)).unique();\n  if (existing) { await ctx.db.patch(existing._id, { profile: { name: '', address: '' } }); return; }"
+        }
+      ]
+    },
+    {
+      "id": "stock-alert-repeats-while-in-stock",
+      "scenario": "tracks/ecommerce/scenarios/progression-stock-alerts.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a"
+      ],
+      "desc": "One restock delivers two independent notifications for the same pending stock alert.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "await ctx.db.insert('notification', { accountId: alert.accountId, type: 'stock', message: `${item.name} is back in stock` });",
+          "replace": "await ctx.db.insert('notification', { accountId: alert.accountId, type: 'stock', message: `${item.name} is back in stock` });\n    await ctx.db.insert('notification', { accountId: alert.accountId, type: 'stock', message: `${item.name} is back in stock` });"
+        }
+      ]
+    },
+    {
+      "id": "last-unit-allows-negative-stock",
+      "scenario": "tracks/ecommerce/scenarios/01-last-unit.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.last-unit.201a",
+        "ecommerce.spec.concurrency-safety.last-unit.201b",
+        "ecommerce.spec.concurrency-safety.last-unit.201c"
+      ],
+      "desc": "Allocation permits an oversell and debits the first warehouse below zero.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "if (stocks.reduce((sum, row) => sum + row.quantity, 0) < count) throw new ConvexError('Not enough stock');",
+          "replace": "// Defect: insufficient stock is accepted."
+        },
+        {
+          "find": "const take = Math.min(row.quantity, count);",
+          "replace": "const take = count;"
+        }
+      ]
+    },
+    {
+      "id": "scheduled-restock-never-becomes-due-after-restart",
+      "scenario": "tracks/ecommerce/scenarios/03-deferred-durability.json",
+      "targets": [
+        "ecommerce.l3.deferred-durability.restart-survival.311a"
+      ],
+      "desc": "A reconnect handler mistakenly cancels pending deferred work; ordinary scheduling before a reconnect still completes.",
+      "file": "client/src/request.ts",
+      "edits": [
+        {
+          "find": "followAuth();\nexport async function signOut()",
+          "replace": "followAuth();\nlet lastRecoveryConnection = 1;\nlive.subscribeToConnectionState(({ isWebSocketConnected, connectionCount }) => {\n  if (!isWebSocketConnected || connectionCount <= lastRecoveryConnection) return;\n  lastRecoveryConnection = connectionCount;\n  void (async () => {\n    const token = await accessToken();\n    if (!token) return;\n    http.setAuth(token);\n    const current = await http.query(makeFunctionReference<'query'>('progression:state'), {});\n    if (current.user?.isAdmin) for (const task of current.scheduledRestocks) await mutate('api:cancel_scheduled_restock', { restockId: task.id });\n  })().catch(() => undefined);\n});\nexport async function signOut()"
+        }
+      ]
+    },
+    {
+      "id": "checkout-crash-integrity",
+      "scenario": "tracks/ecommerce/scenarios/progression-checkout-crash.json",
+      "targets": [
+        "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+      ],
+      "desc": "A reconnect handler restores a wrong cart quantity through the native write path, producing neither the prepared cart nor a completed checkout.",
+      "file": "client/src/request.ts",
+      "edits": [
+        {
+          "find": "followAuth();\nexport async function signOut()",
+          "replace": "followAuth();\nlet lastRecoveryConnection = 1;\nlive.subscribeToConnectionState(({ isWebSocketConnected, connectionCount }) => {\n  if (!isWebSocketConnected || connectionCount <= lastRecoveryConnection) return;\n  lastRecoveryConnection = connectionCount;\n  void (async () => {\n    const token = await accessToken();\n    if (!token) return;\n    http.setAuth(token);\n    const current = await state();\n    const line = current.cart.items[0] || current.orders[0]?.items[0];\n    if (line) await mutate('api:update_cart_quantity', { itemId: line.itemId, quantity: 2 });\n  })().catch(() => undefined);\n});\nexport async function signOut()"
+        }
+      ]
+    },
+    {
+      "id": "checkout-crash-durability",
+      "scenario": "tracks/ecommerce/scenarios/progression-checkout-crash.json",
+      "targets": [
+        "ecommerce.spec.state-durability.checkout-crash-durability.910b"
+      ],
+      "desc": "A reconnect handler cancels an earlier acknowledged pending order, violating preservation of the baseline purchase.",
+      "file": "client/src/request.ts",
+      "edits": [
+        {
+          "find": "followAuth();\nexport async function signOut()",
+          "replace": "followAuth();\nlet lastRecoveryConnection = 1;\nlive.subscribeToConnectionState(({ isWebSocketConnected, connectionCount }) => {\n  if (!isWebSocketConnected || connectionCount <= lastRecoveryConnection) return;\n  lastRecoveryConnection = connectionCount;\n  void (async () => {\n    const token = await accessToken();\n    if (!token) return;\n    http.setAuth(token);\n    const current = await state();\n    const priorOrder = current.orders.find((order: any) => order.status === 'pending');\n    if (priorOrder) await mutate('api:cancel_order', { orderId: priorOrder.id });\n  })().catch(() => undefined);\n});\nexport async function signOut()"
+        }
+      ]
+    }
+  ]
+}

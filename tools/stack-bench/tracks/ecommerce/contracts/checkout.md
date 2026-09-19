@@ -12,3 +12,7 @@ Use `POST /api/checkout`.
 <!-- interface:reducer -->
 Use the `checkout` reducer.
 <!-- /interface -->
+
+<!-- interface:convex -->
+Use the `api:checkout` mutation with `{}`.
+<!-- /interface -->

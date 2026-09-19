@@ -9,7 +9,7 @@ export async function selectRunResources(input: {
   track: Track;
   backends: readonly string[];
   count: number;
-  serverUri: (runIndex: number) => string | null;
+  serverUri: (runIndex: number, backend: string) => string | null;
   probePort: (port: number | string) => { free: boolean };
   env?: NodeJS.ProcessEnv;
   excludedRunIndices?: readonly number[];
@@ -27,15 +27,15 @@ export async function selectRunResources(input: {
     let candidateKeys: string[];
     let ports: Set<number>;
     try {
-      const uri = serverUri(runIndex);
       ports = new Set(backends.flatMap(backend => {
         const assigned = portsFor(track, backend, runIndex);
-        return [assigned.vite, assigned.express].filter((port): port is number => typeof port === 'number');
+        const uri = serverUri(runIndex, backend);
+        return [assigned.vite, assigned.express, uri ? Number(loopbackHttpUri(uri).port) : null]
+          .filter((port): port is number => typeof port === 'number');
       }));
-      if (backends.includes('spacetime') && uri) ports.add(Number(loopbackHttpUri(uri).port));
       candidateKeys = backends.flatMap(backend => runResourceLockKeys({
         track: track.name, backend, runIndex, ports: portsFor(track, backend, runIndex),
-        serverUri: backend === 'spacetime' ? uri : null,
+        serverUri: serverUri(runIndex, backend),
       }));
     } catch (error) {
       if (error instanceof RangeError) continue;

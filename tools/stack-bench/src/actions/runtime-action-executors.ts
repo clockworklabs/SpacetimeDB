@@ -633,6 +633,7 @@ export function createDatabaseWriteCapability({ backend, spacetime, databaseLeas
       if (adapter.id === 'spacetime') {
         return adapter.databaseWrite.setStock({ item, warehouse, quantity, spacetime: spacetime ?? undefined, exec });
       }
+      if (adapter.id === 'convex') return adapter.databaseWrite.setStock({ item, warehouse, quantity, exec });
       if (!databaseLease) {
         throw Object.assign(new Error('direct database writes require an authenticated backend lease'),
           { classification: 'harness_failure' });
@@ -671,6 +672,7 @@ export function createDatabaseReadCapability({ backend, spacetime, databaseLease
         return read({ ...selection, reader: savedReader, lease: databaseLease });
       }
       try {
+        if (adapter.id === 'convex') return adapter.databaseRead.getCheckoutState(selection);
         if (adapter.id === 'spacetime') return adapter.databaseRead.getCheckoutState({ ...selection, spacetime: spacetime ?? undefined });
         if (!databaseLease) throw new Error('checkout state reads require an authenticated backend lease');
         return adapter.databaseRead.getCheckoutState({ ...selection, lease: databaseLease });
@@ -691,10 +693,11 @@ export function createDatabaseReadCapability({ backend, spacetime, databaseLease
         return inconclusive('unsupported-backend', { backend: backend ?? '<unset>' });
       }
       try {
-        if (adapter.id !== 'spacetime' && !databaseLease) throw Object.assign(
+        if (adapter.id !== 'spacetime' && adapter.id !== 'convex' && !databaseLease) throw Object.assign(
           new Error('direct database reads require an authenticated backend lease'),
           { classification: 'harness_failure' });
-        const value = adapter.id === 'spacetime'
+        const value = adapter.id === 'convex'
+          ? adapter.databaseRead.getStock({ item, warehouse, exec }) : adapter.id === 'spacetime'
           ? adapter.databaseRead.getStock({ item, warehouse, spacetime: spacetime ?? undefined, exec })
           : adapter.databaseRead.getStock({ item, warehouse, lease: databaseLease!, exec });
         if (!Number.isSafeInteger(value.quantity)) {

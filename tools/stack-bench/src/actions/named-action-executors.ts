@@ -18,6 +18,7 @@ import { browserApplicationBoundary } from './browser-action-executors.js';
 import {
   browserCredentials,
   namedActionRequest,
+  classifyNamedActionResponse,
 } from './named-action-runtime.js';
 import type {
   NamedAction,
@@ -147,20 +148,25 @@ async function callAction({ input, capabilities, signal }: NamedTransportArgumen
     if (!actorCredentials && input.authentication !== 'optional') inconclusive('no-session', { actor: caller.name, action: input.action });
     credentials = actorCredentials ?? {};
   }
-  const response = await named.fetch(request.url, {
-    method: request.method ?? 'POST',
-    headers: { 'Content-Type': 'application/json', ...credentials },
-    body: request.body,
-    signal,
-  }).catch(error => ({ status: 0, ok: false, error: error.message }));
-  if ('text' in response) caller.record(await response.text());
+  let status = 0;
+  let classified = classifyNamedActionResponse(named, request, { status, text: '' });
+  try {
+    const response = await named.fetch(request.url, {
+      method: request.method ?? 'POST', headers: { 'Content-Type': 'application/json', ...credentials },
+      body: request.body, signal,
+    });
+    const text = await response.text();
+    status = response.status;
+    caller.record(text);
+    classified = classifyNamedActionResponse(named, request, { status, text });
+  } catch { /* No complete response: never infer rejection from transport loss. */ }
   caller.actionCall = {
     action: input.action,
-    accepted: response.ok,
-    status: response.status,
+    ...classified,
+    accepted: classified.ok,
+    status,
     url: request.url,
     method: request.method ?? 'POST',
-    applicationRejected: (request.applicationRejectionStatuses ?? []).includes(response.status),
     operation: { reducer: action.reducer ?? null, path: action.path ?? null,
       method: action.method ?? 'POST' },
   };
@@ -182,12 +188,14 @@ async function expectActionOutcome({ input, capabilities }: NamedTransportArgume
   const call = actor.actionCall;
   if (!call) inconclusive('assertion-without-action', { action: 'callAction' });
   const status = call.status || null;
+  if (call.complete === false) inconclusive('transport-incomplete', {});
+  const http = !call.responseContract?.startsWith('convex-');
   if (input.outcome === 'completed' || input.outcome === 'application-refused') {
     const proof = input.routeProvenBy === undefined ? null
       : actorFor(capabilities, input.routeProvenBy).actionCall;
-    const deliberateRefusal = [400, 401, 403, 409, 422].includes(call.status)
-      || (call.status === 404 && proof?.accepted === true && proof.action === call.action)
-      || call.applicationRejected === true;
+    const deliberateRefusal = (http && [400, 401, 403, 409, 422].includes(call.status))
+      || (http && call.status === 404 && proof?.accepted === true && proof.action === call.action)
+      || call.applicationRejected === true || call.refusalKind === 'validation';
     if (call.accepted && input.outcome === 'application-refused') {
       fail('call-accepted', { action: call.action, actor: actor.name, status, required: 'refused' });
     }
@@ -204,7 +212,7 @@ async function expectActionOutcome({ input, capabilities }: NamedTransportArgume
     if (call.accepted) {
       fail('call-accepted', { action: call.action, actor: actor.name, status, required: 'validation-refused' });
     }
-    if (![400, 409, 422].includes(call.status) && call.applicationRejected !== true) {
+    if (!(http && [400, 409, 422].includes(call.status)) && call.applicationRejected !== true && call.refusalKind !== 'validation') {
       fail('call-error', { action: call.action, actor: actor.name, status,
         required: 'validation-refused', operation: missingOperation(call) });
     }
@@ -214,9 +222,9 @@ async function expectActionOutcome({ input, capabilities }: NamedTransportArgume
     }
     const routeProof = input.routeProvenBy === undefined ? null
       : actorFor(capabilities, input.routeProvenBy).actionCall;
-    const provenPrivateNotFound = call.status === 404 && routeProof?.accepted === true
+    const provenPrivateNotFound = http && call.status === 404 && routeProof?.accepted === true
       && routeProof.action === call.action;
-    const deliberateRefusal = call.status === 401 || call.status === 403
+    const deliberateRefusal = (http && (call.status === 401 || call.status === 403))
       || provenPrivateNotFound || call.applicationRejected === true;
     if (!deliberateRefusal) {
       fail('call-error', { action: call.action, actor: actor.name, status,
@@ -276,9 +284,9 @@ async function callConcurrently({ input, capabilities, signal }: NamedArguments<
         signal: requestSignal,
       });
       const text = await reply.text();
-      response = { status: reply.status, ok: reply.ok,
-        applicationRejected: (request.applicationRejectionStatuses ?? []).includes(reply.status),
-        text: reply.ok ? '' : text.slice(0, 120), transport: 'response' as const };
+      const classified = classifyNamedActionResponse(named, request, { status: reply.status, text });
+      response = { status: reply.status, ...classified,
+        text: classified.ok ? '' : text.slice(0, 120), transport: 'response' as const };
     } catch {
       response = { status: 0, ok: false,
         text: signal.aborted ? 'request cancelled' : timeout.aborted ? 'request timed out' : 'request transport failed',
@@ -308,12 +316,12 @@ async function callConcurrently({ input, capabilities, signal }: NamedArguments<
 async function expectCallOutcomes({ input, capabilities }: NamedArguments<ConcurrentOutcomeInput>) {
   const result = capabilities['named-actions'].lastCalls.get();
   if (!result) inconclusive('assertion-without-action', { action: 'callConcurrently' });
-  if (result.outcomes.length !== result.fired || result.outcomes.some(outcome => outcome.status === 0)) {
+  if (result.outcomes.length !== result.fired || result.outcomes.some(outcome => outcome.status === 0 || outcome.complete === false)) {
     inconclusive('transport-incomplete', {});
   }
   for (const outcome of result.outcomes) {
-    if (!outcome.ok && ![400, 409, 422].includes(outcome.status)
-      && outcome.applicationRejected !== true) {
+    if (!outcome.ok && !(!outcome.responseContract?.startsWith('convex-') && [400, 409, 422].includes(outcome.status))
+      && outcome.applicationRejected !== true && outcome.refusalKind !== 'validation') {
       fail('call-error', { action: result.action, actor: outcome.name,
         status: outcome.status || null, required: 'validation-refused', operation: null });
     }

@@ -3,6 +3,8 @@ import type { Actor, HeaderRecord } from './actor-action-runtime.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import type { NamedAction } from '../composition/tracks.js';
 import type { SpacetimeTarget } from '../stacks/stack-grading-operations.js';
+import { classifyConvexFunctionResponse } from '../stacks/backends/convex-protocol.js';
+import { leaseFromEnv } from '../runtime/backend-lease.js';
 import { evidenceNowMs } from '../evidence/evidence-timing.js';
 
 interface StorageLike {
@@ -17,7 +19,18 @@ declare const window: { getSessionToken?: () => unknown };
 
 export type { NamedAction } from '../composition/tracks.js';
 
+export type ResponseContract = 'http' | 'spacetime-reducer' | 'convex-mutation' | 'convex-query' | 'convex-action';
+export type RefusalKind = 'access' | 'validation' | 'application' | 'not-found' | null;
+export interface NamedActionResponse {
+  readonly ok: boolean;
+  readonly applicationRejected: boolean;
+  readonly refusalKind: RefusalKind;
+  readonly responseContract: ResponseContract;
+  readonly complete: boolean;
+}
+
 export interface NamedActionRequest {
+  readonly responseContract?: ResponseContract;
   readonly applicationRejectionStatuses?: readonly number[];
   readonly body?: string | null;
   readonly method?: string;
@@ -33,6 +46,9 @@ export interface ConcurrentCallOutcome {
   readonly durationMs?: number;
   readonly transport?: 'response' | 'error' | 'timeout' | 'cancelled';
   readonly applicationRejected?: boolean;
+  readonly refusalKind?: RefusalKind;
+  readonly responseContract?: ResponseContract;
+  readonly complete?: boolean;
   readonly name: string;
   readonly ok: boolean;
   readonly status: number;
@@ -48,6 +64,7 @@ export interface ConcurrentCallResult {
 
 export interface NamedActionsCapability {
   readonly spacetime?: SpacetimeTarget | null;
+  classifyResponse?(request: Omit<NamedActionRequest, 'body'>, response: {status: number; text: string}): NamedActionResponse;
   readonly lastCalls: {
     get(): ConcurrentCallResult | null;
     set(result: ConcurrentCallResult): void;
@@ -66,6 +83,29 @@ export interface NamedActionsCapability {
   request(action: NamedAction, input: unknown): NamedActionRequest | null;
   resolve(id: string): NamedAction | null;
   sleep(milliseconds: number, signal: AbortSignal): Promise<void>;
+}
+
+// Only complete response bodies enter this classifier. Network/body failures remain unknown.
+export function classifyNamedActionResponse(named: Pick<NamedActionsCapability, 'classifyResponse'>,
+  request: Omit<NamedActionRequest, 'body'>, response: { status: number; text: string }): NamedActionResponse {
+  if (named.classifyResponse) return named.classifyResponse(request, response);
+  return classifyResponseContract(request, response);
+}
+
+export function classifyResponseContract(request: Omit<NamedActionRequest, 'body'>,
+  response: { status: number; text: string }): NamedActionResponse {
+  const responseContract = request.responseContract ?? (request.applicationRejectionStatuses ? 'spacetime-reducer' : 'http');
+  if (responseContract.startsWith('convex-')) {
+    const result = classifyConvexFunctionResponse(response.status, response.text);
+    return { ok: result.kind === 'accepted', applicationRejected: result.kind === 'application-error',
+      refusalKind: result.kind === 'application-error' ? 'application' : result.kind === 'validation-error' ? 'validation' : null,
+      responseContract, complete: response.status !== 0 };
+  }
+  const applicationRejected = (request.applicationRejectionStatuses ?? []).includes(response.status);
+  return { ok: response.status >= 200 && response.status < 300, applicationRejected,
+    refusalKind: applicationRejected ? 'application' : [401, 403].includes(response.status) ? 'access'
+      : [400, 409, 422].includes(response.status) ? 'validation' : response.status === 404 ? 'not-found' : null,
+    responseContract, complete: response.status !== 0 };
 }
 
 function errorField(error: unknown, field: string): unknown {
@@ -184,7 +224,20 @@ export function createNamedActionsCapability({
   readonly fetchImpl?: NamedFetch;
   readonly now?: () => number;
 }): NamedActionsCapability {
+  const nativeOrigin = backend === 'convex'
+    ? new URL(leaseFromEnv(process.env, { backend: 'convex', active: true }).lease.resources.serverUri!).origin : null;
   return Object.freeze({
+    classifyResponse(request: Omit<NamedActionRequest, 'body'>, response: { status: number; text: string }) {
+      let responseContract = request.responseContract;
+      if (nativeOrigin && request.url) {
+        const endpoint = new URL(request.url);
+        const kind = /^\/api\/(mutation|query|action)$/.exec(endpoint.pathname)?.[1];
+        if (endpoint.origin === nativeOrigin && kind && (request.method ?? 'POST').toUpperCase() === 'POST') {
+          responseContract = `convex-${kind}` as ResponseContract;
+        }
+      }
+      return classifyResponseContract({ ...request, ...(responseContract ? { responseContract } : {}) }, response);
+    },
     spacetime,
     resolve: (id: string) => (actions ?? []).find(action => action.id === id) ?? null,
     request(action: NamedAction, input: unknown) {

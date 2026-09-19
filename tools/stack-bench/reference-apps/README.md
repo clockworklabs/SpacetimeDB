@@ -95,6 +95,12 @@ decision with retained supporting evidence. An unchanged commit label alone is
 not sufficient. If any required input or coverage is missing, keep the candidate
 unqualified and run only the missing scope; do not substitute a successful summary.
 
+Adding a stack does not invalidate a receipt for an unchanged existing stack or
+the stack-neutral empty app. The measured stack must remain in both policies;
+check selection and repetition counts must stay unchanged. The added stack still
+needs its own complete reference and mutation evidence. Executable changes still
+require the equivalence review above.
+
 For full mutation qualification, use the same scope, add
 `--mutations --full-mutations`, set `--repetitions` to `mutationRepetitions`, and
 choose a new output path. The runner can emit a companion clean-reference artifact

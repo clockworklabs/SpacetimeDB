@@ -121,6 +121,7 @@ const ACTION_CAPABILITY_OVERRIDES: Partial<Record<ActionId, readonly string[]>> 
   confirmCheckout: ['actors', 'named-actions', 'database-read'],
   expectCallOutcomes: ['actors', 'named-actions'],
   replayAs: ['actors', 'named-actions', 'transport-observation'],
+  forgeWrite: ['actors', 'named-actions', 'transport-observation'],
   startAppServer: ['application-lifecycle'],
   stopAppServer: ['application-lifecycle'],
 };

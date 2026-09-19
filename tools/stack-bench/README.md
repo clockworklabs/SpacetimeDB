@@ -60,6 +60,18 @@ restock-race, and scheduled-restock probes use stored state or fresh reads for s
 separate live-update checks keep their live observers. These revised probes remain
 draft until matching reference and defect-control qualification is complete.
 
+## Convex support
+
+Convex support is in qualification for the ecommerce dependency L1–L3 path.
+It uses a pinned, self-hosted backend in each attempt's private network. No cloud
+account is required. Apps use native Convex functions and subscriptions; the grader
+uses the declared native operations and independent database reads.
+
+The controller owns deployment credentials, reset, recovery, and cleanup. A backend
+crash also stops its application functions, so the grader measures that boundary once.
+The reference app and defect controls are not yet fully qualified. Do not use this
+candidate for a verified Convex comparison until matching qualification passes.
+
 ## Run modes
 
 The current ecommerce authentication changes are **draft**. Browser grading

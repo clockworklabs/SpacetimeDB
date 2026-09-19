@@ -11,7 +11,7 @@ export { statusWord };
 const SILENCE_MINUTES = 10;
 
 export const STACK_LABEL: Record<string, string> = { spacetime: 'SpacetimeDB',
-  postgres: 'PostgreSQL', mongodb: 'MongoDB' };
+  postgres: 'PostgreSQL', mongodb: 'MongoDB', convex: 'Convex' };
 export const DASH = '—';
 
 export function esc(value: unknown): string {

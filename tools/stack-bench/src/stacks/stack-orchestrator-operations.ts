@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 
 import { DEFAULT_SPACETIME_SERVER_URI, loopbackHttpUri } from '../runtime/backend-lease.js';
+import { DEFAULT_CONVEX_SERVER_URI } from './backends/convex-identity.js';
 
 interface OrchestratorConfig {
   environment: Record<string, string>;
@@ -27,4 +28,11 @@ export function spacetimeOrchestratorConfig({ root, env, helpers }: {
 
 export function standardOrchestratorConfig(): OrchestratorConfig {
   return { environment: {}, lease: { serverUri: null }, lifecycle: {}, windowsEnvironmentBridge: [] };
+}
+
+export function convexOrchestratorConfig({ env }: { env: NodeJS.ProcessEnv }): OrchestratorConfig {
+  const serverUri = env.STACK_BENCH_CONVEX_URI ?? DEFAULT_CONVEX_SERVER_URI;
+  loopbackHttpUri(serverUri);
+  return { environment: { STACK_BENCH_CONVEX_URI: serverUri }, lease: { serverUri },
+    lifecycle: {}, windowsEnvironmentBridge: ['STACK_BENCH_CONVEX_URI'] };
 }

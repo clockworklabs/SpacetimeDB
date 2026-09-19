@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
+import { agentVisibleContractText } from '../src/composition/agent-visible-contract.js';
 
 const read = (name: string) => compileScenarioDefinition(JSON.parse(readFileSync(
   join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios', name), 'utf8')));
@@ -40,6 +41,23 @@ test('catalog variants and pagination enter the declared observation surface', (
   assert.deepEqual(setup.map(step => [step.do, step.testid, step.text, step.enter]), [
     ['fill', 'minimum-price', '1', undefined], ['click', 'filter-apply', undefined, undefined],
   ]);
+});
+
+test('scheduled-restock identifiers match each native interface and stay opaque in replay', () => {
+  const text = readFileSync(join(STACK_BENCH_ROOT,
+    'tracks/ecommerce/contracts/scheduled-restocks.md'), 'utf8');
+  const convex = agentVisibleContractText(text, {}, 'convex');
+  assert.match(convex, /native `_id` string for `data-entity-id` and `restockId`/);
+  assert.doesNotMatch(convex, /decimal|u64/);
+  for (const kind of ['http', 'reducer'] as const) {
+    const rendered = agentVisibleContractText(text, {}, kind);
+    assert.match(rendered, /`data-entity-id` as a decimal number/);
+    assert.doesNotMatch(rendered, /native `_id`/);
+  }
+  const replay = read('03-deferred-access.json').features[0]!.criteria[0]!.steps
+    .find(step => step.do === 'replayAs')!;
+  assert.deepEqual(replay.namedTarget, { testid: 'pending-restock-item',
+    attribute: 'data-entity-id', valueType: 'string' });
 });
 
 test('restock observations use one pending row and a ledger delta without item-name labels', () => {

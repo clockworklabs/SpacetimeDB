@@ -398,7 +398,7 @@ export function parseAgentArgs(argv: readonly string[]): AgentArgs {
 
 const dbUrl = (backend: string, runIndex: number, dbPort: number | null, track: Track): string | null => {
   const adapter = STACK_ADAPTER_REGISTRY.get(backend);
-  if (adapter.id === 'spacetime' || adapter.id === 'stub') return null;
+  if (adapter.id === 'spacetime' || adapter.id === 'convex' || adapter.id === 'stub') return null;
   if (!dbPort) throw new Error(`${backend} has no assigned database port`);
   if (process.env.STACK_BENCH_APPLIANCE === '1' && process.env.STACK_BENCH_LEASE) {
     const { lease } = leaseFromEnv(process.env, { backend, active: true });
@@ -445,6 +445,13 @@ export function ensureDatabase(backend: string, runIndex: number, dbPort: number
   if (adapter.id === 'spacetime') {
     return adapter.database.prepare({ ...input, lease: requireLeasedSpacetime(lease) });
   }
+  if (adapter.id === 'convex') {
+    if (!lease.resources.serverUri || !lease.resources.container?.owned) {
+      throw new Error('Convex application setup requires its active owned deployment');
+    }
+    // The lifecycle owns the native deployment; start.sh deploys its functions.
+    return;
+  }
   return adapter.database.prepare({ name });
 }
 
@@ -465,7 +472,7 @@ export function readBackendGuidanceDocument(
       || document.path.includes('\\')
       || !/^[a-f0-9]{64}$/.test(document.sha256)
       || !Number.isSafeInteger(document.bytes) || document.bytes < 0
-      || !['http', 'reducer'].includes(document.applicationInterface)) {
+      || !['http', 'reducer', 'convex'].includes(document.applicationInterface)) {
       throw new Error('campaign guidance document identity is invalid');
     }
   }
@@ -605,7 +612,7 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
   const applicationInterface = args.guidanceDocument?.applicationInterface
     ?? resolveDefaultGuidanceForStack(args.guidance, args.backend)
       ?.documents[args.backend]?.applicationInterface;
-  if (applicationInterface !== 'http' && applicationInterface !== 'reducer') {
+  if (applicationInterface !== 'http' && applicationInterface !== 'reducer' && applicationInterface !== 'convex') {
     throw new Error(`stack ${args.backend} has no application interface`);
   }
   const common = [

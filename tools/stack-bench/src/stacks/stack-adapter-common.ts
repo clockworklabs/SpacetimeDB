@@ -10,6 +10,7 @@ const PORT_BASES = Object.freeze({
   spacetime: Object.freeze({ vite: 6173 }),
   postgres: Object.freeze({ vite: 6273, express: 6001, db: 6532 }),
   mongodb: Object.freeze({ vite: 6423, express: 6101, db: 6537 }),
+  convex: Object.freeze({ vite: 6623, express: 6701 }),
   stub: Object.freeze({ vite: 7000 }),
 });
 
@@ -45,6 +46,7 @@ export function defineStackAdapter<const I extends AdapterId, const T extends ob
 
 interface DatabaseEnvironmentAdapter {
   readonly id: string;
+  readonly lifecycle?: Pick<StackLifecycle, 'applicationEnvironment'>;
   readonly ports: { allocations(): StackPortBases };
   readonly agent: {
     connectionUrl(input: { dbPort: number; database: string; hostUrl(url: string): string }): string | null;
@@ -56,7 +58,7 @@ export function leasedDatabaseEnvironment(adapter: DatabaseEnvironmentAdapter, {
   lease?: BackendLease;
 }): Record<string, string> {
   const dbPort = adapter.ports.allocations().db;
-  if (!dbPort || !database) return {};
+  if (!dbPort || !database) return lease ? adapter.lifecycle?.applicationEnvironment?.(lease) ?? {} : {};
   if (lease?.resources.network) return { DATABASE_URL: attemptDatabaseUrl({ backend: adapter.id,
     database, ownershipToken: lease.ownershipToken }) };
   const databaseUrl = adapter.agent.connectionUrl({

@@ -15,3 +15,8 @@ The loaded `subscriptions-panel` has `aria-busy="false"`. Each `subscription-row
 `resumeSubscription` is `resume_subscription(subscriptionId)`.
 `cancelSubscription` is `cancel_subscription(subscriptionId)`.
 <!-- /interface -->
+
+<!-- interface:convex -->
+Use `api:pause_subscription`, `api:resume_subscription`, and `api:cancel_subscription`,
+each with `{ subscriptionId }`.
+<!-- /interface -->

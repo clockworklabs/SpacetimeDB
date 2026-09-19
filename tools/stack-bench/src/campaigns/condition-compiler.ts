@@ -46,7 +46,7 @@ export interface ResolvedGuidanceDocument {
   path: string;
   sha256: string;
   bytes: number;
-  applicationInterface: 'http' | 'reducer';
+  applicationInterface: 'http' | 'reducer' | 'convex';
 }
 export interface ResolvedSkills { ids: string[]; sha256: string; bytes: number }
 export interface ResolvedGuidanceProfile {
@@ -228,8 +228,8 @@ function resolveGuidance(catalog: Catalog, reference: string, stacks: readonly s
     const path = contained(stackBenchRoot, rel, `${reference}.documents.${stack}`);
     const bytes = Buffer.from(normalizePromptText(readFileSync(path, 'utf8')), 'utf8');
     const applicationInterface = profile.applicationInterfaces[stack];
-    if (applicationInterface !== 'http' && applicationInterface !== 'reducer') {
-      fail(`${reference}.applicationInterfaces.${stack}`, 'must be http or reducer');
+    if (applicationInterface !== 'http' && applicationInterface !== 'reducer' && applicationInterface !== 'convex') {
+      fail(`${reference}.applicationInterfaces.${stack}`, 'must be http, reducer or convex');
     }
     documents[stack] = { path: relative(stackBenchRoot, path).split(sep).join('/'),
       sha256: sha256(bytes), bytes: bytes.length, applicationInterface };

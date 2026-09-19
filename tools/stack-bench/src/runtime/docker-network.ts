@@ -1,3 +1,4 @@
+import type { TextCommandExecutor } from './command-executor.js';
 import { isIPv4 } from 'node:net';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -227,12 +228,13 @@ export function installAttemptFirewall(leasePath: string, lease: BackendLease,
   });
 }
 
-export function requireAttemptNetwork(lease: BackendLease): string {
+export function requireAttemptNetwork(lease: BackendLease, exec: TextCommandExecutor = execFileSync): string {
   const network = lease.resources.network;
   if (!network?.namespaceContainerId || !network.firewallSha256 || !network.firewallInstalledAt) {
     throw new Error('attempt network is not isolated; activation or authenticated recovery is required');
   }
-  const state = JSON.parse(attemptDocker(['inspect', '--format', '{{json .State}}', network.namespaceContainerId]));
+  const state = JSON.parse(exec('docker', ['inspect', '--format', '{{json .State}}', network.namespaceContainerId],
+    { encoding: 'utf8', stdio: 'pipe', timeout: 30_000 }));
   if (!state.Running || state.StartedAt !== network.namespaceStartedAt) {
     throw new Error('attempt namespace anchor stopped or restarted; recover the entire attempt');
   }

@@ -14,4 +14,8 @@ Return a whole bundle with `POST /api/bundle-orders/:orderId/return`.
 Return a whole bundle with `return_bundle(orderId: u64)`.
 <!-- /interface -->
 
+<!-- interface:convex -->
+Return a whole bundle with `api:return_bundle` and `{ orderId }`.
+<!-- /interface -->
+
 Use the same application action as the visible control.

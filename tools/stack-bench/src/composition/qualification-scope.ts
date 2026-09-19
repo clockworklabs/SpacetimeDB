@@ -103,6 +103,11 @@ const CHILD_ENTRYPOINTS: Readonly<Record<string, readonly string[]>> = Object.fr
   'grader/mutation-test.ts': ['grader/grade.ts'],
 });
 const STACK_OWNED_MODULES = new Map<string, string>([
+  ['src/stacks/backends/convex-adapter.ts', 'convex'],
+  ['src/stacks/backends/convex-identity.ts', 'convex'],
+  ['src/stacks/backends/convex-lifecycle.ts', 'convex'],
+  ['src/stacks/backends/convex-operations.ts', 'convex'],
+  ['src/stacks/backends/convex-protocol.ts', 'convex'],
   ['src/stacks/backends/mongodb-adapter.ts', 'mongodb'],
   ['src/stacks/backends/mongodb-identity.ts', 'mongodb'],
   ['src/stacks/backends/mongodb-operations.ts', 'mongodb'],

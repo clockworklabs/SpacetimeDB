@@ -16,7 +16,7 @@ import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR,
   from '../runtime/coding-container-policy.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { requireLeasedDatabase, requireLeasedSpacetime } from '../stacks/backend-reset-guard.js';
-import type { HostedReferenceMetadata, SpacetimeReferenceMetadata }
+import type { HostedReferenceMetadata, SpacetimeReferenceMetadata, ConvexReferenceMetadata }
   from '../stacks/stack-reference-operations.js';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.js';
 import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtureSource,
@@ -121,10 +121,10 @@ function runSync(label: string, command: string, args: readonly string[],
 function docker(container: string, cwd: string, command: string,
   commandArgs: readonly string[] = [], env: Record<string, string> = {}): string {
   const args = ['exec', ...codingContainerAgentExecOptions(), '-w', cwd];
-  for (const [name, value] of Object.entries(env)) args.push('-e', `${name}=${value}`);
+  for (const name of Object.keys(env)) args.push('-e', name);
   args.push(container, ...codingContainerAgentCommand(command, commandArgs));
   return runSync(`docker exec ${command}`, 'docker', args,
-    { encoding: 'utf8', stdio: 'pipe', maxBuffer: 64 * 1024 * 1024 });
+    { encoding: 'utf8', stdio: 'pipe', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, ...env } });
 }
 
 export function referenceDevCommand(logName: string,
@@ -206,9 +206,9 @@ function startDetached(container: string, cwd: string, logName: string,
   options: { networkVisible?: boolean; port?: number | null; script?: string } = {}): void {
   const args = ['exec', '-d', '-w', cwd,
     '-e', `HOME=${CODING_CONTAINER_AGENT.home}`, '-e', `USER=${CODING_CONTAINER_AGENT.name}`];
-  for (const [name, value] of Object.entries(env)) args.push('-e', `${name}=${value}`);
+  for (const name of Object.keys(env)) args.push('-e', name);
   args.push(container, 'sh', '-c', referenceDevCommand(logName, options));
-  runSync('starting detached reference service', 'docker', args, { stdio: 'pipe' });
+  runSync('starting detached reference service', 'docker', args, { stdio: 'pipe', env: { ...process.env, ...env } });
 }
 
 async function waitFor(url: string, timeoutMs: number, description: string,
@@ -279,6 +279,10 @@ async function main(): Promise<void> {
   const helpers = { dbName, loadTrack, moduleName, runSync, docker, startDetached,
     waitFor, containerLogs, phase };
   await deployReferenceAndRestoreSource(() => {
+    if (adapter.id === 'convex') {
+      return adapter.reference.deploy({ args, metadata: metadata as ConvexReferenceMetadata,
+        lease, container: containerName, ports, helpers });
+    }
     if (adapter.id === 'postgres' || adapter.id === 'mongodb') {
       return adapter.reference.deploy({
         args, metadata: metadata as HostedReferenceMetadata,

@@ -5,7 +5,6 @@ import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { parseArgs } from 'node:util';
-import { pathToFileURL } from 'node:url';
 import { leaseFromEnv, updateBackendLease } from '../src/runtime/backend-lease.js';
 import { resolveContainerImage } from '../src/runtime/container-image.js';
 import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
@@ -38,16 +37,13 @@ import { PRICING_UNIT, validatePricingAuthority }
 import { CODING_PROVIDERS, parseCodingProvider } from './coding-providers.js';
 import { validateProviderRoute, validateProviderOutputLimit } from '../src/agents/agent-adapter-contract.js';
 import { REPOSITORY_ROOT } from '../src/package-root.js';
-import type { BuildContainerPlan } from '../src/stacks/stack-agent-operations.js';
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-// Trusted lifecycle tests can prepare an unregistered stack through this same
-// owner. A supplied plan never permits a coding session or a CLI override.
-export async function runBuild(argv = process.argv.slice(2), prepareOnlyPlan?: BuildContainerPlan): Promise<void> {
-const { values } = parseArgs({ args: argv, options: {
+async function runBuild(): Promise<void> {
+const { values } = parseArgs({ options: {
   app: { type: 'string' }, backend: { type: 'string' }, 'prepare-only': { type: 'boolean' },
   provider: { type: 'string' }, image: { type: 'string' }, effort: { type: 'string' }, model: { type: 'string' },
   'provider-route': { type: 'string' },
@@ -57,16 +53,13 @@ const { values } = parseArgs({ args: argv, options: {
   'completion-marker': { type: 'string' }, ports: { type: 'string' },
 } });
 const prepareOnly = values['prepare-only'] ?? false;
-if (prepareOnlyPlan !== undefined && !prepareOnly) {
-  throw new Error('A supplied build-container plan requires --prepare-only');
-}
 
 const appDir = values.app;
 if (!appDir) { console.error('run-build.js: --app is required'); process.exit(2); }
 const backend = values.backend;
 if (!backend) { console.error('run-build.js: --backend is required'); process.exit(2); }
 let adapter;
-try { adapter = prepareOnlyPlan ? null : STACK_ADAPTER_REGISTRY.get(backend); }
+try { adapter = STACK_ADAPTER_REGISTRY.get(backend); }
 catch (error) { console.error(`run-build.js: ${errorMessage(error)}`); process.exit(2); }
 const provider = parseCodingProvider(values.provider ?? 'anthropic');
 const providerRoute = validateProviderRoute(provider, values['provider-route']);
@@ -144,7 +137,7 @@ let ports: string[] = [];
 try { ports = parsePublishedPorts(values.ports); }
 catch (error) { console.error(`run-build.js: ${errorMessage(error)}`); process.exit(2); }
 
-const containerPlan = prepareOnlyPlan ?? adapter!.buildContainer.plan({
+const containerPlan = adapter!.buildContainer.plan({
   repo: REPO, appDir, env: process.env,
 });
 
@@ -514,8 +507,8 @@ args.push('-e', `HOME=${AGENT_ENVIRONMENT.HOME}`, '-e', `USER=${AGENT_ENVIRONMEN
 const leasedEnvironment = leasedDatabaseEnvironment(adapter!, {
   database: leaseContext.lease.resources.database, networkMode: expectedNetworkMode, lease: leaseContext.lease,
 });
-for (const [key, value] of Object.entries(leasedEnvironment)) args.push('-e', `${key}=${value}`);
-const dockerExecEnv: NodeJS.ProcessEnv = { ...process.env, MSYS_NO_PATHCONV: '1' };
+for (const key of Object.keys(leasedEnvironment)) args.push('-e', key);
+const dockerExecEnv: NodeJS.ProcessEnv = { ...process.env, ...leasedEnvironment, MSYS_NO_PATHCONV: '1' };
 if (!projects) throw new Error('transcript directory is unavailable');
 // Forward only benchmark-owned environment settings.
 if (provider === 'anthropic' && process.env.MAX_THINKING_TOKENS) {
@@ -706,4 +699,4 @@ if (res.error) process.stderr.write(`run-build.js: coding session failed: ${erro
 process.exit(res.status ?? 1);
 }
 
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) await runBuild();
+await runBuild();

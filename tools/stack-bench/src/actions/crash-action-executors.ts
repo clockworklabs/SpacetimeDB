@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { actionImplementation, ActionApplicationFailure, ActionHarnessFailure, ActionInconclusive } from './action-contract.js';
 import { actorFor, inconclusive } from './actor-action-runtime.js';
 import type { ActorCapabilities } from './actor-action-runtime.js';
-import { browserCredentials, namedActionRequest } from './named-action-runtime.js';
+import { browserCredentials, classifyNamedActionResponse, namedActionRequest } from './named-action-runtime.js';
 import type { NamedAction, NamedActionsCapability } from './named-action-runtime.js';
 import type { createDatabaseReadCapability } from './runtime-action-executors.js';
 import { checkoutDifferences, orderCheckoutDifferences, checkoutCrashDifferences } from '../stacks/checkout-state.js';
@@ -43,7 +43,10 @@ async function checkoutCaller(input: { actor: string; namedAction?: NamedAction 
     if (!token || !action.reducer) inconclusive('no-session', { actor: input.actor, action: 'checkout' });
     connection = await openCrashReducerConnection(spacetime, token, signal);
   }
+  const protocol = connection ? 'websocket-v1-confirmed'
+    : request.responseContract === 'convex-mutation' ? 'convex-mutation' : 'http';
   return {
+    protocol,
     close: () => connection?.close(),
     async call() {
       const startedAtMs = named.now();
@@ -58,16 +61,16 @@ async function checkoutCaller(input: { actor: string; namedAction?: NamedAction 
         } else {
           const reply = await named.fetch(request.url!, { method: request.method ?? 'POST',
             headers: { 'Content-Type': 'application/json', ...credentials }, body: request.body, signal: requestSignal });
-          await reply.text();
+          const response = classifyNamedActionResponse(named, request, { status: reply.status, text: await reply.text() });
           status = reply.status;
           // 202 acknowledges queued work, not a completed checkout.
-          if (reply.ok && reply.status !== 202) outcome = 'committed';
-          responseFailed = !reply.ok;
+          if (response.ok && response.complete && reply.status !== 202) outcome = 'committed';
+          responseFailed = response.complete && !response.ok;
         }
       } catch { /* A disconnected or failed response does not prove rollback. */ }
       return { actor: input.actor, action: 'checkout', startedAtMs, completedAtMs: named.now(), outcome, status, responseFailed,
         cancelled: signal.aborted, timedOut: timeout.aborted,
-        protocol: connection ? 'websocket-v1-confirmed' : 'http' };
+        protocol };
     },
   };
 }
@@ -81,7 +84,7 @@ export const confirmCheckout = actionImplementation(async ({ input, capabilities
     const receipt = await caller.call();
     if (receipt.outcome === 'committed') return receipt;
     // A correlated native refusal is complete. An HTTP error can follow a commit.
-    if (receipt.protocol === 'http' || !receipt.responseFailed) capabilities['database-read'].markCheckoutUnsettled();
+    if (receipt.protocol !== 'websocket-v1-confirmed' || !receipt.responseFailed) capabilities['database-read'].markCheckoutUnsettled();
     if (receipt.responseFailed) {
       const value = finding('number-mismatch', { control: 'completed checkout', observed: 0, expected: { equals: 1 } });
       throw new ActionApplicationFailure(renderFinding(value), { finding: value, observation: receipt });
@@ -101,7 +104,7 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
   if (input.reuseCombinedFrom && capabilities['process-crash'].combinedBoundary) {
     const previous = capabilities['browser-observation'].recorded.get(input.reuseCombinedFrom) as
       { receipt?: ProcessCrashReceipt; verdicts?: { atomicity: unknown[]; durability: unknown[] } } | undefined;
-    if (previous?.receipt?.backend !== 'spacetime' || previous.receipt.target !== 'database'
+    if (!previous?.receipt || !['spacetime', 'convex'].includes(previous.receipt.backend) || previous.receipt.target !== 'database'
       || !Array.isArray(previous.verdicts?.atomicity) || !Array.isArray(previous.verdicts?.durability)) {
       inconclusive('assertion-without-action', { action: 'crashCheckout' });
     }
@@ -128,6 +131,9 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
   let unsettled = false;
   try {
     caller = await checkoutCaller(input, capabilities, signal, runtime.spacetime);
+    if (runtime.combinedBoundary && !runtime.spacetime && caller.protocol !== 'convex-mutation') {
+      inconclusive('invalid-input', { detail: 'combined backend crash requires a native mutation checkout' });
+    }
     // Reference reservations last 90 seconds. Leave time for recovery and mark
     // expired trials unmeasured; expiry is not a failed atomic checkout.
     if (prepared.state.reservations.length && Date.now() - prepared.recordedAtMs > 30_000) {
@@ -165,7 +171,7 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
     const outcomes = await Promise.all(pending);
     const queued = outcomes.some(row => row.status === 202);
     // Killing the app cannot retract a commit already sent to its database.
-    unsettled = !runtime.spacetime && outcomes.some(row => row.status === null);
+    unsettled = !runtime.spacetime && !runtime.combinedBoundary && outcomes.some(row => row.status === null);
     await fault;
     if (databaseDrain) unsettled = !databaseDrain.settled;
     // An idle database cannot prove that an application queue is empty.

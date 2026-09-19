@@ -13,5 +13,9 @@ Add one bundle with `POST /api/cart/bundles` and `{ bundleId }`.
 Add one bundle with `add_bundle_to_cart(bundleId: u64)`.
 <!-- /interface -->
 
+<!-- interface:convex -->
+Add one bundle with `api:add_bundle_to_cart` and `{ bundleId }`.
+<!-- /interface -->
+
 Use the same application action as the visible control. The `data-bundle-input` attribute
 supplies its bundle ID. The cart and order interfaces remain shared with individual products.

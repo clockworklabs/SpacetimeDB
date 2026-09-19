@@ -19,5 +19,10 @@ Use the `create_promotion` reducer with arguments in this order: `code: string`,
 Both time arguments are microseconds since the Unix epoch.
 <!-- /interface -->
 
+<!-- interface:convex -->
+Use `api:create_promotion` with `{ code, discountPercent, startMicros, endMicros, usageLimit }`.
+Both time arguments are numeric microseconds since the Unix epoch.
+<!-- /interface -->
+
 On a listed rule, `promotion-start` and `promotion-end` show the dates as entered, in ISO
 `YYYY-MM-DD` form.

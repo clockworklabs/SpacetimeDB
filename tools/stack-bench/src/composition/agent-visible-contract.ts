@@ -1,6 +1,6 @@
 import { applyCredentialAliases } from './credential-aliases.js';
-type StackApplicationInterface = 'http' | 'reducer';
-const INTERFACE_SECTION = /<!-- interface:(http|reducer) -->([\s\S]*?)<!-- \/interface -->/g;
+type StackApplicationInterface = 'http' | 'reducer' | 'convex';
+const INTERFACE_SECTION = /<!-- interface:(http|reducer|convex) -->([\s\S]*?)<!-- \/interface -->/g;
 const INTERNAL_LANGUAGE = /\b(?:stack\s*bench|benchmark|harness|grader|graded|grading|scored|scoring|tests?|testing|evaluation|criterion|testids?|external client|run configuration)\b|data-testid/i;
 
 export function assertAgentVisibleText(text: string): string {

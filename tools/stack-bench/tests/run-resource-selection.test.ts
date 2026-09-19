@@ -46,3 +46,16 @@ test('resource selection aborts before probing on cancellation', async () => {
       probePort: () => { throw new Error('must not probe'); } }), { name: 'AbortError' });
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('mixed native stacks reserve and probe their distinct database listeners', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-selection-'));
+  try {
+    const result = await selectRunResources({ track: loadTrack('ecommerce'),
+      backends: ['spacetime', 'convex'], count: 1,
+      serverUri: (index, backend) => `http://127.0.0.1:${(backend === 'convex' ? 19000 : 18000) + index}`,
+      env: { STACK_BENCH_RESOURCE_LOCK_DIR: root }, probePort: port => ({ free: port !== 19000 }) });
+    assert.deepEqual(result.runIndices, [1]);
+    assert(result.keys.includes('port:18001'));
+    assert(result.keys.includes('port:19001'));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

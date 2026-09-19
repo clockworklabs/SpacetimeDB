@@ -18,3 +18,7 @@ Use `POST /api/items/:id/reviews`, where `:id` is the item identifier. Send `rat
 <!-- interface:reducer -->
 Use the `submit_review` reducer with the item identifier, rating, and comment.
 <!-- /interface -->
+
+<!-- interface:convex -->
+Use `api:submit_review` with `{ itemId, rating, comment }`.
+<!-- /interface -->

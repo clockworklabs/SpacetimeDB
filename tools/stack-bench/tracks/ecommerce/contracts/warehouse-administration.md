@@ -32,3 +32,9 @@ Expose `POST /api/admin/restock`. The JSON body has the same fields as `data-res
 Expose `admin_restock` with arguments in this order: `itemId: u64`, `warehouseId: u64`,
 `quantity`.
 <!-- /interface -->
+
+<!-- interface:convex -->
+Use `api:admin_restock` with `{ itemId, warehouseId, quantity }`.
+The singular native `item` and `warehouse` tables use Convex `_id` identifiers.
+The `stock.item_id` and `stock.warehouse_id` fields refer to those same identifiers.
+<!-- /interface -->

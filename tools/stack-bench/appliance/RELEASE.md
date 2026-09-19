@@ -65,7 +65,7 @@ node dist/src/releases/release-manifest.js verify bundle/release.json --root bun
 ```
 
 Candidate verification reports `candidate-file-integrity`. It validates all
-declared files and all five image-to-SBOM digest bindings. Candidate manifests
+declared files and each declared image-to-SBOM digest binding, including Convex when present. Candidate manifests
 must use `signing: null` and cannot include a public signing key.
 
 ## Sign and qualify

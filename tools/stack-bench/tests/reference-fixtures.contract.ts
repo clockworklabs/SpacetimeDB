@@ -14,7 +14,7 @@ test('the reference registry binds its current fixtures and provenance', () => {
   const registry = loadReferenceRegistry();
   const result = validateReferenceRegistry(registry);
   assert.deepEqual(result.issues, []);
-  assert.equal(registry.fixtures.length, 3);
+  assert.deepEqual(registry.fixtures.map(fixture => fixture.backend).sort(), ['convex', 'mongodb', 'postgres', 'spacetime']);
   const escaped = structuredClone(registry);
   const escapedFixture = escaped.fixtures[0];
   assert(escapedFixture, 'the registry must contain a fixture');

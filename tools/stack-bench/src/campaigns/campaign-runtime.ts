@@ -6,11 +6,13 @@ import { sha256 } from '../evidence/provenance.js';
 import { RESTRICTED_PORTS } from '../composition/product-config.js';
 import { validateReleaseManifest } from '../releases/release-manifest.js';
 import { DEFAULT_SPACETIME_SERVER_URI, loopbackHttpUri } from '../runtime/backend-lease.js';
+import { DEFAULT_CONVEX_SERVER_URI } from '../stacks/backends/convex-identity.js';
+import { CONVEX_BACKEND_IMAGE } from '../stacks/backends/convex-lifecycle.js';
 
 interface CampaignRuntimePlan {
   state: string;
   identities: { engine?: { sha256?: string | null } };
-  definition: { runtime: {
+  definition: { stacks: readonly { id: string }[]; runtime: {
     releaseManifestSha256: string | null;
     controllerImage: string | null;
     buildImage: string | null;
@@ -57,6 +59,10 @@ export function verifyCampaignRuntime(plan: CampaignRuntimePlan,
     || build?.platform !== expected.platform) {
     throw new Error('release manifest images do not match the recorded test plan');
   }
+  if (plan.definition.stacks.some(stack => stack.id === 'convex')
+    && manifest.images.find(image => image.role === 'convex')?.reference !== CONVEX_BACKEND_IMAGE) {
+    throw new Error('release manifest must include the pinned Convex backend image for this test plan');
+  }
   return structuredClone(expected);
 }
 
@@ -77,13 +83,15 @@ export function campaignExecutionEnvironment(plan: CampaignRuntimePlan,
 export function campaignSlotEnvironment(env: NodeJS.ProcessEnv, stack: string | null,
   runIndex: number): NodeJS.ProcessEnv {
   const executionEnv = { ...env };
-  if (stack !== 'spacetime') return executionEnv;
-  const base = loopbackHttpUri(executionEnv.STACK_BENCH_STDB_URI ?? DEFAULT_SPACETIME_SERVER_URI);
+  if (stack !== 'spacetime' && stack !== 'convex') return executionEnv;
+  const key = stack === 'spacetime' ? 'STACK_BENCH_STDB_URI' : 'STACK_BENCH_CONVEX_URI';
+  const base = loopbackHttpUri(executionEnv[key]
+    ?? (stack === 'spacetime' ? DEFAULT_SPACETIME_SERVER_URI : DEFAULT_CONVEX_SERVER_URI));
   const port = Number(base.port) + runIndex;
   if (!Number.isInteger(runIndex) || runIndex < 0 || port > 65535 || RESTRICTED_PORTS.has(port)) {
-    throw new RangeError(`campaign run slot ${runIndex} cannot allocate a SpacetimeDB host port`);
+    throw new RangeError(`campaign run slot ${runIndex} cannot allocate a ${stack} host port`);
   }
   base.port = String(port);
-  executionEnv.STACK_BENCH_STDB_URI = base.toString().replace(/\/$/, '');
+  executionEnv[key] = base.toString().replace(/\/$/, '');
   return executionEnv;
 }

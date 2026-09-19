@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { buildRecipeQualificationDocuments } from '../src/composition/recipe-release.js';
 import { assertQualificationSliceCoverage, unchangedQualificationChecks,
@@ -73,7 +74,7 @@ test('slices require each check exactly once in every required evidence populati
   assert.throws(() => assertQualificationSliceCoverage([{ ...first, repetition: 2 }], required, checks), /unexpected/);
 });
 
-test('saved slices validate real artifacts and reject incomplete or mismatched evidence', () => {
+test('saved slices validate real artifacts and reject incomplete or mismatched evidence', t => {
   const path = join(root, 'composition/calibrations/dependency-l3.json');
   const entry: CalibrationEvidence = { kind: 'mutation', stack: 'postgres', repetition: 1,
     path: 'qualification-evidence/ecommerce-l3-e804c1302/postgres-targeted.json',
@@ -84,6 +85,13 @@ test('saved slices validate real artifacts and reject incomplete or mismatched e
   const saved = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, entry.slice!.snapshot.path), 'utf8'));
   const savedDocuments = validateQualificationDocuments(saved.documents);
   const plan: CalibrationPlan = saved.calibration;
+  // Exercise this retained receipt against its retained controls, not today's
+  // expanded defect set. Changed controls remain a separate rejection below.
+  const temporary = mkdtempSync(join(tmpdir(), 'stack-bench-slice-controls-'));
+  t.after(() => rmSync(temporary, { recursive: true, force: true }));
+  const mutationPath = join(temporary, 'postgres.json');
+  writeFileSync(mutationPath, JSON.stringify(saved.mutations.postgres));
+  plan.mutations.find(item => item.backend === 'postgres')!.path = mutationPath;
   const artifact = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, entry.path), 'utf8'));
   const executable = qualificationScopeIdentity({ kind: 'mutation', release: savedDocuments.release,
     stack: 'postgres', reference: plan.references.entries.find(item => item.backend === 'postgres'),
@@ -99,6 +107,25 @@ test('saved slices validate real artifacts and reject incomplete or mismatched e
     ...selected, stackBenchRoot: STACK_BENCH_ROOT, references: plan.references.entries,
     qualificationDocuments: savedDocuments };
   assert.doesNotThrow(() => validateQualificationSlice(artifact, entry, context));
+  assert.equal(plan.qualification.stacks.length, 3);
+  const expandedStacks = structuredClone(plan);
+  expandedStacks.qualification.stacks.push('convex');
+  assert.doesNotThrow(() => validateQualificationSlice(artifact, entry,
+    { ...context, calibration: expandedStacks }));
+  const removedStack = structuredClone(expandedStacks);
+  removedStack.qualification.stacks = removedStack.qualification.stacks.filter(stack => stack !== 'postgres');
+  assert.throws(() => validateQualificationSlice(artifact, entry,
+    { ...context, calibration: removedStack }), /measured stack is absent/);
+  for (const change of [
+    (p: CalibrationPlan) => { p.qualification.checks = []; },
+    (p: CalibrationPlan) => { p.qualification.referenceRepetitions += 1; },
+    (p: CalibrationPlan) => { p.qualification.mutationRepetitions += 1; },
+  ]) {
+    const changedPolicy = structuredClone(expandedStacks);
+    change(changedPolicy);
+    assert.throws(() => validateQualificationSlice(artifact, entry,
+      { ...context, calibration: changedPolicy }), /source qualification policy differs/);
+  }
   for (const change of [
     (a: typeof artifact) => { a.payload.runs[0].mutations.total -= 1; },
     (a: typeof artifact) => { a.payload.runs[0].ok = false; },
@@ -133,12 +160,18 @@ test('saved slices validate real artifacts and reject incomplete or mismatched e
   removedReference.references.entries = removedReference.references.entries.filter(item => item.backend !== 'postgres');
   assert.throws(() => validateQualificationSlice(artifact, entry,
     { ...context, calibration: removedReference, references: removedReference.references.entries }), /source references differs/);
+  const changedControls = structuredClone(saved.mutations.postgres);
+  changedControls.mutations = [];
+  writeFileSync(mutationPath, JSON.stringify(changedControls));
+  assert.throws(() => validateQualificationSlice(artifact, entry, context), /slice mutation controls changed/);
+  writeFileSync(mutationPath, JSON.stringify(saved.mutations.postgres));
 
   const nullEntry: CalibrationEvidence = { ...entry, kind: 'null', stack: undefined,
     path: 'qualification-evidence/ecommerce-l3-e804c1302/null-targeted.json',
     sha256: '8ad52d3b9f0274cae90761a0e46f7184a111852ab511a4e90702c1cd02677b58' };
   const nullArtifact = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, nullEntry.path), 'utf8'));
   const nullPlan = structuredClone(plan);
+  nullPlan.qualification.stacks.push('convex');
   const nullScope = qualificationScopeIdentity({ kind: 'null', release: savedDocuments.release,
     stackBenchRoot: STACK_BENCH_ROOT });
   nullPlan.qualificationReuse!.scopes = [{ kind: 'null',

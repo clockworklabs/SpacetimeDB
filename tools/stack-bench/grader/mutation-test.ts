@@ -202,7 +202,7 @@ export async function resetMutationDatabase(a: MutationArgs, deadlineMs: number 
     const signal = deadlineMs === null ? null
       : AbortSignal.timeout(remainingMutationBatchMs(deadlineMs));
     if (restartSpec) await control(restartSpec, "stop", { signal, exec });
-    resetBackend({ backend: a.backend!, app: a.app!, exec });
+    await resetBackend({ backend: a.backend!, app: a.app!, exec });
     if (restartSpec) await control(restartSpec, "start", { signal, exec });
   } catch (error) {
     if (deadlineMs !== null && Date.now() >= deadlineMs) {

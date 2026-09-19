@@ -59,8 +59,8 @@ const errorMessage = (error: unknown): string =>
 
 const REGISTRY = join(ROOT, 'reference-apps', 'registry.json');
 export const REFERENCE_METADATA_FILE = 'reference.json';
-const BACKENDS = new Set(['spacetime', 'postgres', 'mongodb']);
-const FIXTURE_KINDS = new Set(['node-api', 'spacetime']);
+const BACKENDS = new Set(['spacetime', 'postgres', 'mongodb', 'convex']);
+const FIXTURE_KINDS = new Set(['node-api', 'spacetime', 'convex']);
 const FORBIDDEN_DIRECTORIES = new Set(['node_modules', 'dist', 'module_bindings', 'stack-bench']);
 const FORBIDDEN_FILES = [/^\.env(?:\..*)?$/i, /\.mutation-backup(?:\..*)?$/i];
 const WORKSTATION_PATHS = [/[A-Z]:[\\/](?:Users|Development)[\\/]/i];
@@ -238,8 +238,9 @@ export function inspectImportedReference(fixture: ReferenceFixture,
       for (const directory of metadata.installDirectories) {
         if (!isSafeRelativePath(directory)) failures.push(`unsafe install directory ${directory}`);
         else {
-          const packageName = `${directory}/package.json`.replaceAll('\\', '/');
-          const lockName = `${directory}/package-lock.json`.replaceAll('\\', '/');
+          const prefix = directory === '.' ? '' : `${directory}/`;
+          const packageName = `${prefix}package.json`.replaceAll('\\', '/');
+          const lockName = `${prefix}package-lock.json`.replaceAll('\\', '/');
           if (!source.files.has(packageName)) failures.push(`${packageName} is missing`);
           else readJsonBytes(source.files.get(packageName), packageName, failures);
           if (!source.files.has(lockName)) failures.push(`${lockName} is missing`);
@@ -380,7 +381,7 @@ function containedRealPath(root: string, target: string): boolean {
 function isSafeRelativePath(path: unknown): path is string {
   if (typeof path !== 'string' || !path || resolve(path) === path) return false;
   const normalized = resolve(ROOT, path);
-  return normalized.startsWith(`${ROOT}${sep}`) && !path.split(/[\\/]/).includes('..');
+  return (path === '.' || normalized.startsWith(`${ROOT}${sep}`)) && !path.split(/[\\/]/).includes('..');
 }
 
 function readJsonBytes(bytes: Buffer | undefined, label: string, failures: string[]): unknown {

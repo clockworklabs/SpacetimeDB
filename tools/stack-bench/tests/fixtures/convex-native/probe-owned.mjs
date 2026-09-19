@@ -51,6 +51,40 @@ try {
     }
     savePrivate({ token: tokens.token, adminKey: key, user: current, before: (await state()).tables });
     evidence.observations.push('positive scheduled effect');
+  } else if (phase === 'validation') {
+    const saved = readSaved();
+    const item = saved.before.items.find(row => row.name === 'Widget');
+    const responses = [];
+    const functions = await admin.query('_system/cli/modules:apiSpec', {});
+    const purchase = functions.filter(fn => fn.identifier === 'accountShop.js:purchase');
+    assert.equal(purchase.length, 1);
+    assert.equal(purchase[0].functionType, 'Mutation');
+    assert.equal(purchase[0].visibility.kind, 'public');
+    assert(!functions.some(fn => fn.identifier === 'accountShop.js:missing'));
+    evidence.functionMetadata = purchase;
+    for (const [path, args] of [
+      ['accountShop:purchase', { itemId: item._id, quantity: 1, username: 'ForgedOwner' }],
+      ['accountShop:missing', { itemId: item._id, quantity: 1 }],
+      ['shop:unhandledError', {}],
+    ]) {
+      const response = await fetch(`${url}/api/mutation`, { method: 'POST',
+        headers: { Authorization: `Bearer ${saved.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, args, format: 'json' }), signal: AbortSignal.timeout(10000) });
+      const text = await response.text();
+      const parsed = JSON.parse(text);
+      assert.notEqual(parsed.status, 'success');
+      responses.push({ path, status: response.status, body: parsed });
+      assert(isDeepStrictEqual((await state()).tables, saved.before), 'Rejected native request changed stored data');
+    }
+    const actor = new ConvexHttpClient(url); actor.setAuth(saved.token);
+    await actor.mutation('accountShop:purchase', { itemId: item._id, quantity: 1 });
+    const after = (await state()).tables;
+    assert.equal(after.orders.length, saved.before.orders.length + 1, 'Valid operation must still work');
+    assert.equal(after.items.find(row => row._id === item._id).stock, item.stock - 1);
+    savePrivate({ ...saved, before: after });
+    evidence.responses = responses;
+    evidence.observations = ['extra-field schema rejection', 'missing function control', 'unhandled error control',
+      'independent unchanged stored state', 'valid authenticated operation still works'];
   } else if (phase === 'isolation') {
     const saved = readSaved();
     const foreign = JSON.parse(readFileSync('foreign-private.json'));

@@ -58,3 +58,15 @@ test('Unhandled and missing-function errors are not deliberate application refus
   assert.equal(classifyConvexFunctionResponse(503, '{"status":"success","value":1}').kind, 'http-error');
   assert.equal(classifyConvexFunctionResponse(200, '{"status":"error","errorData":{}}').kind, 'invalid-response');
 });
+
+
+test('pinned native argument validation is distinct from missing exports and user exceptions', () => {
+  const message = '[Request ID: c3c0e4b69f8972e5] Server Error\nArgumentValidationError: Object contains extra field `username` that is not in the validator.\n';
+  assert.equal(classifyConvexFunctionResponse(200, JSON.stringify({ status: 'error', errorMessage: message })).kind, 'validation-error');
+  for (const errorMessage of [
+    '[Request ID: c3c0e4b69f8972e5] Server Error\nCould not find public function for api:missing.',
+    '[Request ID: c3c0e4b69f8972e5] Server Error\nUncaught Error: ArgumentValidationError: made up',
+    'ArgumentValidationError: unqualified bare text',
+  ]) assert.equal(classifyConvexFunctionResponse(200, JSON.stringify({ status: 'error', errorMessage })).kind, 'function-error');
+  assert.equal(classifyConvexFunctionResponse(400, JSON.stringify({ status: 'error', errorMessage: message })).kind, 'http-error');
+});

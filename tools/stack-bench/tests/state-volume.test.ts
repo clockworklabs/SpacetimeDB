@@ -61,22 +61,35 @@ test('setup installs an image-bound paid demo and preserves an existing plan', (
     const compiled = compileCampaignFile(path);
     assert.equal(compiled.state, 'frozen');
     assert.deepEqual(compiled.definition.runtime, plan.runtime);
-    for (const id of ['ecommerce-sequential', 'ecommerce-progressive', 'ecommerce-single-build']) {
-      const preset = JSON.parse(readFileSync(join(root, 'results/run-presets', `${id}.json`), 'utf8'));
+    const presetBytes = new Map<string, string>();
+    for (const id of ['ecommerce-sequential', 'ecommerce-progressive', 'ecommerce-progressive-l3', 'ecommerce-single-build']) {
+      const presetPath = join(root, 'results/run-presets', `${id}.json`);
+      presetBytes.set(presetPath, readFileSync(presetPath, 'utf8'));
+      const preset = JSON.parse(presetBytes.get(presetPath)!);
       assert.equal(preset.runtime.controllerImage, controller);
       assert.equal(preset.runtime.buildImage, build);
       assert.equal(preset.agents[0].adapter, 'claude-code');
       assert.equal(preset.repair.budget.total, 0);
       assert.equal(preset.conditions.length, 4);
       if (id === 'ecommerce-single-build') assert.equal(preset.mode.workSelection, 'all-at-once');
-      if (id === 'ecommerce-progressive') {
+      if (id === 'ecommerce-progressive' || id === 'ecommerce-progressive-l3') {
         assert.deepEqual(preset.mode, { id: 'dependency', workSelection: 'progressive',
           retainPriorContracts: true, unchangedFailureLimit: 7 });
         assert.deepEqual(preset.budgets, { attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 50 });
       }
+      if (id === 'ecommerce-progressive-l3') {
+        assert.deepEqual(preset.levels, [1, 2, 3]);
+        assert.deepEqual(preset.selection.levels.map((selection: { level: number }) => selection.level), [1, 2, 3]);
+        assert.deepEqual(preset.stacks.map((stack: { id: string }) => stack.id), ['mongodb', 'postgres', 'spacetime', 'convex']);
+        assert.equal(preset.stacks.at(-1).adapterVersion, '1.0.0');
+        assert.equal(preset.parallelism, 4);
+      } else assert.equal(preset.stacks.length, 3, 'existing three-stack presets keep their scope');
     }
     initialize(`sha256:${'c'.repeat(64)}`);
     assert.equal(readFileSync(path, 'utf8'), bytes, 'setup must not rebind an existing plan');
+    for (const [presetPath, original] of presetBytes) {
+      assert.equal(readFileSync(presetPath, 'utf8'), original, 'setup must not rebind an existing preset');
+    }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
