@@ -163,10 +163,15 @@ impl Host {
             &mut header,
         )
         .await
-        .map_err(|e| {
-            // TODO: Review log level after user SQL errors can be distinguished from internal database failures.
-            log::warn!("{e}");
-            (StatusCode::BAD_REQUEST, e.to_string())
+        .map_err(|error| match error {
+            sql::execute::SqlExecutionError::Client(error) => {
+                log::warn!("{error}");
+                (StatusCode::BAD_REQUEST, error.to_string())
+            }
+            sql::execute::SqlExecutionError::Internal(error) => {
+                log::error!("{error}");
+                (StatusCode::INTERNAL_SERVER_ERROR, "internal database error".to_string())
+            }
         })?;
 
         let total_duration = sql_start.elapsed();

@@ -19,7 +19,7 @@ use crate::host::{InvalidFunctionArguments, InvalidViewArguments};
 use crate::identity::Identity;
 use crate::messages::control_db::{Database, HostType};
 use crate::replica_context::ReplicaContext;
-use crate::sql::execute::SqlResult;
+use crate::sql::execute::{SqlExecutionError, SqlResult};
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 pub use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::subscription::module_subscription_manager::{from_tx_offset, BroadcastError};
@@ -1042,7 +1042,7 @@ pub(in crate::host) struct SqlCommand {
 }
 
 pub(in crate::host) struct SqlCommandResult {
-    pub(in crate::host) result: Result<SqlResult, DBError>,
+    pub(in crate::host) result: Result<SqlResult, SqlExecutionError>,
     pub(in crate::host) head: Vec<(RawIdentifier, AlgebraicType)>,
 }
 
@@ -2585,7 +2585,7 @@ impl ModuleHost {
         auth: AuthCtx,
         subs: Option<ModuleSubscriptions>,
         head: &mut Vec<(RawIdentifier, AlgebraicType)>,
-    ) -> Result<SqlResult, DBError> {
+    ) -> Result<SqlResult, SqlExecutionError> {
         let cmd = SqlCommand {
             db,
             sql_text,

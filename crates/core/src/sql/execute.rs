@@ -17,12 +17,13 @@ use anyhow::anyhow;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_engine::relational_db::RelationalDB;
+use spacetimedb_execution::dml::MutationError;
 use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{AlgebraicType, ProductType, ProductValue};
-use spacetimedb_query::{compile_sql_stmt, execute_dml_stmt, execute_select_stmt};
+use spacetimedb_query::{compile_sql_stmt, execute_dml_stmt, execute_select_stmt, SqlCompileError};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use tokio::sync::oneshot;
 
@@ -44,6 +45,64 @@ pub struct SqlResult {
     pub metrics: ExecutionMetrics,
 }
 
+/// An SQL failure whose origin has already decided whether the caller can fix it.
+///
+/// This classification must be preserved through the module host and client API;
+/// consumers should not try to reconstruct it from the shape or text of `DBError`.
+#[derive(Debug, thiserror::Error)]
+pub enum SqlExecutionError {
+    #[error(transparent)]
+    Client(DBError),
+    #[error(transparent)]
+    Internal(DBError),
+}
+
+impl SqlExecutionError {
+    fn client(error: impl Into<DBError>) -> Self {
+        Self::Client(error.into())
+    }
+
+    fn internal(error: impl Into<DBError>) -> Self {
+        Self::Internal(error.into())
+    }
+
+    pub fn into_inner(self) -> DBError {
+        match self {
+            Self::Client(error) | Self::Internal(error) => error,
+        }
+    }
+}
+
+impl From<DBError> for SqlExecutionError {
+    fn from(error: DBError) -> Self {
+        Self::internal(error)
+    }
+}
+
+impl From<SqlCompileError> for SqlExecutionError {
+    fn from(error: SqlCompileError) -> Self {
+        match error {
+            SqlCompileError::Client(error) => Self::client(error),
+            SqlCompileError::Internal(error) => Self::internal(error),
+        }
+    }
+}
+
+impl From<MutationError> for SqlExecutionError {
+    fn from(error: MutationError) -> Self {
+        match error {
+            MutationError::Client(error) => Self::client(error),
+            MutationError::Internal(error) => Self::internal(error),
+        }
+    }
+}
+
+impl From<SqlExecutionError> for DBError {
+    fn from(error: SqlExecutionError) -> Self {
+        error.into_inner()
+    }
+}
+
 /// Run the `SQL` string using the `auth` credentials
 ///
 /// If a `ModuleHost` is provided, the SQL query is executed via the module host,
@@ -56,7 +115,7 @@ pub async fn run(
     subs: Option<ModuleSubscriptions>,
     module: Option<ModuleHost>,
     head: &mut Vec<(RawIdentifier, AlgebraicType)>,
-) -> Result<SqlResult, DBError> {
+) -> Result<SqlResult, SqlExecutionError> {
     match module {
         Some(module) => module.call_sql(db, sql_text, auth, subs, head).await,
         None => run_inner::<crate::host::wasmtime::WasmtimeInstance>(None, db, sql_text, auth, subs, head).map(|x| x.0),
@@ -73,7 +132,7 @@ pub(crate) fn run_with_instance<I: WasmInstance>(
     auth: AuthCtx,
     subs: Option<ModuleSubscriptions>,
     head: &mut Vec<(RawIdentifier, AlgebraicType)>,
-) -> Result<(SqlResult, bool), DBError> {
+) -> Result<(SqlResult, bool), SqlExecutionError> {
     run_inner::<I>(Some(instance), db, sql_text, auth, subs, head)
 }
 
@@ -84,7 +143,7 @@ fn run_inner<I: WasmInstance>(
     auth: AuthCtx,
     subs: Option<ModuleSubscriptions>,
     head: &mut Vec<(RawIdentifier, AlgebraicType)>,
-) -> Result<(SqlResult, bool), DBError> {
+) -> Result<(SqlResult, bool), SqlExecutionError> {
     // We parse the sql statement in a mutable transaction.
     // If it turns out to be a query, we downgrade the tx.
     let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
@@ -97,7 +156,8 @@ fn run_inner<I: WasmInstance>(
         Statement::Select(stmt) => {
             // Materialize views and downgrade to a read-only transaction
             let (tx, trapped) = match instance {
-                Some(instance) => ModuleHost::materialize_views(tx, instance, &stmt, auth.caller(), Workload::Sql)?,
+                Some(instance) => ModuleHost::materialize_views(tx, instance, &stmt, auth.caller(), Workload::Sql)
+                    .map_err(|error| SqlExecutionError::internal(DBError::from(error)))?,
                 None => (tx, false),
             };
 
@@ -127,7 +187,8 @@ fn run_inner<I: WasmInstance>(
                     &auth,
                 )?;
                 Ok(plan)
-            })?;
+            })
+            .map_err(SqlExecutionError::internal)?;
 
             // Update transaction metrics
             tx.metrics.merge(metrics);
@@ -144,11 +205,16 @@ fn run_inner<I: WasmInstance>(
         Statement::DML(stmt) => {
             // An extra layer of auth is required for DML
             if !auth.has_write_access() {
-                return Err(anyhow!("Caller {} is not authorized to run SQL DML statements", auth.caller()).into());
+                return Err(SqlExecutionError::client(anyhow!(
+                    "Caller {} is not authorized to run SQL DML statements",
+                    auth.caller()
+                )));
             }
 
             // Evaluate the mutation
-            let (mut tx, _) = db.with_auto_rollback(tx, |tx| execute_dml_stmt(&auth, stmt, tx, &mut metrics))?;
+            let (mut tx, _) = db
+                .with_auto_rollback(tx, |tx| execute_dml_stmt(&auth, stmt, tx, &mut metrics))
+                .map_err(SqlExecutionError::from)?;
 
             // Update transaction metrics
             tx.metrics.merge(metrics);
@@ -163,7 +229,7 @@ fn run_inner<I: WasmInstance>(
             if let ViewOutcome::Failed(err) = result.outcome {
                 let (_, metrics, reducer) = db.rollback_mut_tx(result.tx);
                 db.report_mut_tx_metrics(reducer, metrics, None);
-                return Err(DBError::View(spacetimedb_engine::error::ViewError::InternalError(err)));
+                return Err(DBError::View(spacetimedb_engine::error::ViewError::InternalError(err)).into());
             }
 
             let tx = result.tx;
@@ -171,22 +237,25 @@ fn run_inner<I: WasmInstance>(
             // Commit the tx if there are no deltas to process
             if subs.is_none() {
                 let metrics = tx.metrics;
-                return db.commit_tx(tx).map(|tx_opt| {
-                    let (tx_offset, tx_data, tx_metrics, reducer) = tx_opt.unwrap();
+                return db
+                    .commit_tx(tx)
+                    .map(|tx_opt| {
+                        let (tx_offset, tx_data, tx_metrics, reducer) = tx_opt.unwrap();
 
-                    let (tx_offset_sender, tx_offset_receiver) = oneshot::channel();
-                    let _ = tx_offset_sender.send(tx_offset);
+                        let (tx_offset_sender, tx_offset_receiver) = oneshot::channel();
+                        let _ = tx_offset_sender.send(tx_offset);
 
-                    db.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
-                    (
-                        SqlResult {
-                            tx_offset: tx_offset_receiver,
-                            rows: vec![],
-                            metrics,
-                        },
-                        trapped,
-                    )
-                });
+                        db.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
+                        (
+                            SqlResult {
+                                tx_offset: tx_offset_receiver,
+                                rows: vec![],
+                                metrics,
+                            },
+                            trapped,
+                        )
+                    })
+                    .map_err(SqlExecutionError::from);
             }
 
             // Otherwise downgrade the tx and process the deltas.
@@ -256,6 +325,67 @@ pub(crate) mod tests {
                 &mut vec![],
             ))
             .map(|x| x.rows)
+            .map_err(DBError::from)
+    }
+
+    #[test]
+    fn sql_error_classification_is_preserved() -> ResultTest<()> {
+        let db = TestDB::in_memory()?;
+        let (_subs, runtime) = ModuleSubscriptions::for_test_new_runtime(db.db.clone());
+
+        let client_error = runtime
+            .block_on(run(
+                db.db.clone(),
+                "SELECT FROM".to_string(),
+                AuthCtx::for_testing(),
+                None,
+                None,
+                &mut vec![],
+            ))
+            .unwrap_err();
+        assert!(matches!(client_error, SqlExecutionError::Client(_)));
+
+        let datastore_error = DBError::Datastore(spacetimedb_datastore::error::DatastoreError::Other(anyhow::anyhow!(
+            "storage unavailable"
+        )));
+        let internal_error = SqlExecutionError::from(datastore_error);
+        assert!(matches!(internal_error, SqlExecutionError::Internal(_)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn unique_constraint_violation_is_a_client_error() -> ResultTest<()> {
+        let db = TestDB::in_memory()?;
+        db.create_table_for_test_with_the_works(
+            "unique_insert",
+            &[("id", AlgebraicType::U64), ("label", AlgebraicType::String)],
+            &[0.into()],
+            &[0.into()],
+            StAccess::Public,
+        )?;
+        let (_subs, runtime) = ModuleSubscriptions::for_test_new_runtime(db.db.clone());
+
+        let execute = |sql: &str| {
+            runtime.block_on(run(
+                db.db.clone(),
+                sql.to_string(),
+                AuthCtx::for_testing(),
+                None,
+                None,
+                &mut vec![],
+            ))
+        };
+
+        execute("INSERT INTO unique_insert (id, label) VALUES (1, 'a')").expect("the initial row should be inserted");
+        let error = execute("INSERT INTO unique_insert (id, label) VALUES (1, 'b')")
+            .expect_err("the second row should violate the unique id constraint");
+        assert!(
+            matches!(&error, SqlExecutionError::Client(_)),
+            "a user-caused unique constraint violation should be Client, got {error:?}"
+        );
+
+        Ok(())
     }
 
     #[derive(Clone, Debug, Default, Eq, PartialEq)]

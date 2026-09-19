@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
 use spacetimedb_execution::{
-    dml::{MutDatastore, MutExecutor},
+    dml::{MutDatastore, MutExecutor, MutationResult},
     pipelined::ProjectListExecutor,
     Datastore, DeltaStore, ExecutionParams,
 };
@@ -17,6 +17,12 @@ use spacetimedb_physical_plan::{
 };
 use spacetimedb_primitives::TableId;
 use spacetimedb_schema::table_name::TableName;
+
+#[derive(Debug)]
+pub enum SqlCompileError {
+    Client(anyhow::Error),
+    Internal(anyhow::Error),
+}
 
 /// DIRTY HACK ALERT: Maximum allowed length, in UTF-8 bytes, of SQL queries.
 /// Any query longer than this will be rejected.
@@ -57,14 +63,22 @@ pub fn compile_subscription(
 }
 
 /// A utility for parsing and type checking a sql statement
-pub fn compile_sql_stmt(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> Result<Statement> {
+pub fn compile_sql_stmt(
+    sql: &str,
+    tx: &impl SchemaView,
+    auth: &AuthCtx,
+) -> std::result::Result<Statement, SqlCompileError> {
     if sql.len() > MAX_SQL_LENGTH {
-        bail!("SQL query exceeds maximum allowed length: \"{sql:.120}...\"")
+        return Err(SqlCompileError::Client(anyhow::anyhow!(
+            "SQL query exceeds maximum allowed length: \"{sql:.120}...\""
+        )));
     }
 
-    match parse_and_type_sql(sql, tx, auth)? {
+    match parse_and_type_sql(sql, tx, auth).map_err(|err| SqlCompileError::Client(err.into()))? {
         stmt @ Statement::DML(_) => Ok(stmt),
-        Statement::Select(expr) => Ok(Statement::Select(resolve_views_for_sql(tx, expr, auth)?)),
+        Statement::Select(expr) => resolve_views_for_sql(tx, expr, auth)
+            .map(Statement::Select)
+            .map_err(SqlCompileError::Internal),
     }
 }
 
@@ -94,7 +108,7 @@ pub fn execute_dml_stmt<Tx: MutDatastore>(
     stmt: DML,
     tx: &mut Tx,
     metrics: &mut ExecutionMetrics,
-) -> Result<()> {
+) -> MutationResult<()> {
     let plan = compile_dml_plan(stmt).optimize()?;
     let plan = MutExecutor::from(plan);
     plan.execute(tx, &ExecutionParams::from_auth(auth), metrics)
