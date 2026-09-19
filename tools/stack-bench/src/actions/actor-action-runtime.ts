@@ -69,6 +69,7 @@ export interface ForgeResult {
 }
 
 export interface ActionCall {
+  readonly requestFingerprint?: string;
   readonly refusalKind?: RefusalKind;
   readonly responseContract?: ResponseContract;
   readonly complete?: boolean;

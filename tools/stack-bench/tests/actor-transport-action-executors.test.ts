@@ -8,7 +8,7 @@ import test from 'node:test';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
-import { classifyResponseContract } from '../src/actions/named-action-runtime.js';
+import { classifyResponseContract, tamperedSessionCredentials } from '../src/actions/named-action-runtime.js';
 import { executeAction } from '../src/actions/action-contract.js';
 import {
   ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS,
@@ -168,6 +168,61 @@ test('optional actor credentials preserve illicit sessions without excusing brok
     const broken = Array.isArray(observed) ? observed.length > 1 : 'unavailable' in observed;
     assert.equal(result.status, broken ? 'inconclusive' : 'passed', JSON.stringify(result));
     assert.equal(calls, broken ? 0 : 1);
+  }
+});
+
+test('session tampering reaches the server, preserves context, requires a valid matching control and restores access', async () => {
+  const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.ABCD1234';
+  const credentials: Record<string, string>[] = [{ Authorization: `Bearer ${jwt}` }, { Cookie: 'sid=0123456789abcdef' }];
+  for (const credential of credentials) {
+    const [key, valid] = Object.entries(credential)[0]!;
+    let requests = 0, writes = 0;
+    const server = createServer((req, res) => {
+      requests++;
+      assert.equal(req.headers.origin, 'http://app.test');
+      assert.equal(req.headers.referer, 'http://app.test/');
+      if (req.headers[key.toLowerCase()] !== valid) { res.writeHead(401).end('refused'); return; }
+      writes++; res.end('{}');
+    });
+    server.listen(0, '127.0.0.1'); await once(server, 'listening');
+    try {
+      const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/buy`;
+      const headers: Record<string, string> = { ...credential, Origin: 'http://app.test', Referer: 'http://app.test/' };
+      const actor = { name: 'buyer', record() {}, writes: [{ url: 'http://app.test/buy', headers }],
+        page: { evaluate: async () => [] },
+        context: { cookies: async () => key === 'Cookie' ? [{ name: 'sid', value: headers.Cookie!.slice(4) }] : [] } };
+      const provided = services(new Map([['buyer', actor]]), { fetchImpl: (_url, options) => fetch(url, options) });
+      const input = { do: 'callAction', actor: 'buyer', action: 'buy', settleMs: 0,
+        namedAction: { id: 'buy', path: '/buy', reducer: 'buy_now', args: [] } };
+      const attack = { ...input, authentication: 'tampered-session' };
+      const unproven = await run(attack, provided);
+      assert.equal(unproven.status, 'inconclusive', JSON.stringify(unproven));
+      assert.equal(requests, 0);
+      assert.equal((await run(input, provided)).status, 'passed');
+      assert.equal((await run(attack, provided)).status, 'passed');
+      assert.equal((await run({ do: 'expectActionOutcome', actor: 'buyer', outcome: 'refused' }, provided)).status, 'passed');
+      assert.equal(writes, 1);
+      assert.equal((await run(input, provided)).status, 'passed');
+      assert.equal(writes, 2);
+      headers[key] = `${valid}changed`;
+      assert.equal((await run(attack, provided)).status, 'inconclusive', 'a stale positive control proves nothing');
+      assert.equal(requests, 3);
+    } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+  }
+  const changed = tamperedSessionCredentials({ Authorization: `Bearer ${jwt}`, 'x-csrf-token': 'context' }, 'buyer');
+  assert.deepEqual(changed.Authorization!.split('.').slice(0, 2), `Bearer ${jwt}`.split('.').slice(0, 2));
+  assert.equal(changed['x-csrf-token'], 'context');
+  assert.notEqual(changed.Authorization, `Bearer ${jwt}`);
+  const ambiguous: Record<string, string>[] = [
+    { Authorization: 'Bearer token', Cookie: 'sid=token' },
+    { Cookie: 'sid=token; extra=other' }, { Cookie: 'sid=token', 'x-csrf-token': 'token' },
+    { Cookie: 'csrf=token' }, { Authorization: 'Basic dGVzdA==' },
+    { Authorization: 'Bearer token', 'x-auth-token': 'other' },
+  ];
+  for (const headers of ambiguous) assert.throws(() => tamperedSessionCredentials(headers, 'buyer'), /could not issue the replay/);
+  for (const status of [401, 403]) {
+    const classified = classifyResponseContract({ responseContract: 'convex-mutation' }, { status, text: 'unauthorized' });
+    assert.equal(classified.refusalKind, 'access'); assert.equal(classified.ok, false);
   }
 });
 

@@ -243,6 +243,25 @@ async function dbExpectCancellation({ input, capabilities }: ActionArguments<{ b
   return observation;
 }
 
+async function dbExpectNoPurchase({ input, capabilities }: ActionArguments<{ before: string }>) {
+  const database = capabilities['database-read'];
+  const before = database.checkoutSnapshots.get(input.before);
+  if (!before) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
+  const after = database.getCheckoutState(before);
+  if (before.scope !== after.scope || JSON.stringify(before.schemaSha256) !== JSON.stringify(after.schemaSha256)) {
+    throw new Error('purchase reader changed during the test');
+  }
+  const compare = before.scope === 'orders' ? orderPurchaseDifferences : purchaseDifferences;
+  const differences = compare(before.state, after.state, new Map([[before.state.accountId, 0]]), new Map());
+  const observation = { ...after, before: input.before, differences };
+  if (differences[0]) {
+    const { control, observed, expected } = differences[0];
+    const value = finding('number-mismatch', { control, observed, expected: { equals: expected } });
+    throw new ActionApplicationFailure(renderFinding(value), { finding: value, observation });
+  }
+  return observation;
+}
+
 async function dbExpectPurchases({ input, capabilities }: ActionArguments<{
   before: Record<string, string>; purchases: number;
 }>) {
@@ -737,6 +756,7 @@ export const RUNTIME_ACTION_IMPLEMENTATIONS = Object.freeze({
   dbRecordCheckout: contractLifecycleAction(dbRecordCheckout),
   dbExpectCheckout: contractLifecycleAction(dbExpectCheckout),
   dbExpectCancellation: contractLifecycleAction(dbExpectCancellation),
+  dbExpectNoPurchase: contractLifecycleAction(dbExpectNoPurchase),
   dbExpectPurchases: contractLifecycleAction(dbExpectPurchases),
   dbRecordStock: contractLifecycleAction(dbRecordStock),
   dbExpectStock: contractLifecycleAction(dbExpectStock),

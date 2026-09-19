@@ -142,3 +142,10 @@ paths. Never edit old results to match a changed source or calibration.
 
 Do not edit a registered reference during qualification. A changed source hash
 requires new evidence.
+
+The zero-point `diagnostic-session-tampering.json` scenario tests a purchase with
+an altered session credential. It proves a valid purchase first, checks refusal
+and unchanged stored orders and stock, then proves valid access again. It accepts
+one bearer token or one session cookie; mixed credentials and cookie/CSRF ambiguity
+remain unmeasured. It is not selected by scored campaigns and does not establish
+expiry, revocation, or complete authentication security.

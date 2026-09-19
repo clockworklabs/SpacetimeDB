@@ -189,7 +189,7 @@ test('extracted action inputs expose their runtime options without allowing scri
     actor: 'a', outcome: 'refused', routeProvenBy: 'owner' })));
   assert.throws(() => compileScenarioDefinition(scenario({ do: 'callAction', actor: 'a',
     action: 'buy', input: { testid: 'item-card', attribute: 'data-buy-input' },
-    authentication: 'guest' })), /authentication: must be "actor", "optional", or "none"/);
+    authentication: 'guest' })), /authentication: must be "actor", "optional", "none", or "tampered-session"/);
   const namedReplay = { do: 'replayAs', actor: 'a', from: 'staff', match: 'ship',
     namedAction: { id: 'ship', path: '/api/fulfilment/ship', reducer: 'ship_order', args: [0],
       params: [{ name: 'orderId', in: 'body', wireType: 'u64' }] },

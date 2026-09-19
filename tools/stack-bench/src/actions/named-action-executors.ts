@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { actionImplementation } from './action-contract.js';
 import type { Operation } from './action-findings.js';
 import {
@@ -17,6 +18,7 @@ import type {
 import { browserApplicationBoundary } from './browser-action-executors.js';
 import {
   browserCredentials,
+  tamperedSessionCredentials,
   namedActionRequest,
   classifyNamedActionResponse,
 } from './named-action-runtime.js';
@@ -28,7 +30,7 @@ import type {
 interface CallActionInput {
   readonly action: string;
   readonly actor: string;
-  readonly authentication?: 'actor' | 'none' | 'optional';
+  readonly authentication?: 'actor' | 'none' | 'optional' | 'tampered-session';
   readonly from?: string;
   readonly input?: {
     readonly attribute: string;
@@ -148,6 +150,18 @@ async function callAction({ input, capabilities, signal }: NamedTransportArgumen
     if (!actorCredentials && input.authentication !== 'optional') inconclusive('no-session', { actor: caller.name, action: input.action });
     credentials = actorCredentials ?? {};
   }
+  // Keep only a digest in actor state, never a second copy of the session secret.
+  const requestFingerprint = createHash('sha256').update(JSON.stringify([
+    input.action, request.url, request.method ?? 'POST', request.body,
+    Object.entries(credentials).map(([key, value]) => [key.toLowerCase(), value]).sort(),
+  ])).digest('hex');
+  if (input.authentication === 'tampered-session') {
+    if (!caller.actionCall?.accepted || caller.actionCall.requestFingerprint !== requestFingerprint) {
+      inconclusive('replay-unavailable', { actor: caller.name,
+        detail: 'tampering requires a successful identical request with the current credential' });
+    }
+    credentials = tamperedSessionCredentials(credentials, caller.name);
+  }
   let status = 0;
   let classified = classifyNamedActionResponse(named, request, { status, text: '' });
   try {
@@ -169,6 +183,7 @@ async function callAction({ input, capabilities, signal }: NamedTransportArgumen
     method: request.method ?? 'POST',
     operation: { reducer: action.reducer ?? null, path: action.path ?? null,
       method: action.method ?? 'POST' },
+    requestFingerprint: input.authentication === 'tampered-session' ? undefined : requestFingerprint,
   };
   await transport.sleep(input.settleMs ?? 2000, signal);
   return { action: input.action, accepted: caller.actionCall.accepted,
@@ -193,7 +208,7 @@ async function expectActionOutcome({ input, capabilities }: NamedTransportArgume
   if (input.outcome === 'completed' || input.outcome === 'application-refused') {
     const proof = input.routeProvenBy === undefined ? null
       : actorFor(capabilities, input.routeProvenBy).actionCall;
-    const deliberateRefusal = (http && [400, 401, 403, 409, 422].includes(call.status))
+    const deliberateRefusal = call.refusalKind === 'access' || (http && [400, 401, 403, 409, 422].includes(call.status))
       || (http && call.status === 404 && proof?.accepted === true && proof.action === call.action)
       || call.applicationRejected === true || call.refusalKind === 'validation';
     if (call.accepted && input.outcome === 'application-refused') {
@@ -224,7 +239,7 @@ async function expectActionOutcome({ input, capabilities }: NamedTransportArgume
       : actorFor(capabilities, input.routeProvenBy).actionCall;
     const provenPrivateNotFound = http && call.status === 404 && routeProof?.accepted === true
       && routeProof.action === call.action;
-    const deliberateRefusal = (http && (call.status === 401 || call.status === 403))
+    const deliberateRefusal = call.refusalKind === 'access' || (http && (call.status === 401 || call.status === 403))
       || provenPrivateNotFound || call.applicationRejected === true;
     if (!deliberateRefusal) {
       fail('call-error', { action: call.action, actor: actor.name, status,

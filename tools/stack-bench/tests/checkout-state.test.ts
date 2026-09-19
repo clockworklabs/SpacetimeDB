@@ -192,6 +192,22 @@ test('purchase action retains failed business evidence and keeps unknown outcome
   }
 });
 
+test('refused purchases must leave stored state unchanged, including orders without stock effects', async () => {
+  for (const mode of ['unchanged', 'order-only', 'purchase', 'reader-error', 'schema-change']) {
+    const { before, after } = states();
+    if (mode === 'order-only') after.stock = structuredClone(before.stock);
+    const snapshot = { state: before, account: 'a', item: 'i', schemaSha256: { schema: 'same' } };
+    const result = await executeAction(ACTION_REGISTRY, 'dbExpectNoPurchase', { do: 'dbExpectNoPurchase', before: 'before' }, { capabilities: {
+      'database-read': { ...createDatabaseReadCapability({ expand: value => value, checkoutSnapshots: new Map([['before', snapshot]]) }),
+        getCheckoutState: () => {
+          if (mode === 'reader-error') throw new Error('unavailable');
+          return { state: mode === 'unchanged' ? before : after, schemaSha256: { schema: mode === 'schema-change' ? 'changed' : 'same' } };
+        } },
+    } });
+    assert.equal(result.status, mode === 'unchanged' ? 'passed' : ['reader-error', 'schema-change'].includes(mode) ? 'harness_failure' : 'failed', `${mode}: ${JSON.stringify(result)}`);
+  }
+});
+
 test('one order can split a product across warehouse lines', () => {
   const { before, prepared, after } = states();
   before.stock.push({ warehouseId: 'west', quantity: 5 });

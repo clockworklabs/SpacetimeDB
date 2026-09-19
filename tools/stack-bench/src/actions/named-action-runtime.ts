@@ -98,7 +98,8 @@ export function classifyResponseContract(request: Omit<NamedActionRequest, 'body
   if (responseContract.startsWith('convex-')) {
     const result = classifyConvexFunctionResponse(response.status, response.text);
     return { ok: result.kind === 'accepted', applicationRejected: result.kind === 'application-error',
-      refusalKind: result.kind === 'application-error' ? 'application' : result.kind === 'validation-error' ? 'validation' : null,
+      refusalKind: [401, 403].includes(response.status) ? 'access'
+        : result.kind === 'application-error' ? 'application' : result.kind === 'validation-error' ? 'validation' : null,
       responseContract, complete: response.status !== 0 };
   }
   const applicationRejected = (request.applicationRejectionStatuses ?? []).includes(response.status);
@@ -128,6 +129,27 @@ export function namedActionRequest(named: NamedActionsCapability, action: NamedA
 
 const AUTH_HEADER = /^(authorization|x-auth-token|x-session|x-token|x-user)$/i;
 export const REQUEST_CONTEXT_HEADER = /^(authorization|cookie|x-auth-token|x-session|x-token|x-user|x-csrf-token|x-xsrf-token|csrf-token|origin|referer)$/i;
+
+// Do not strip secondary credentials or alter CSRF state to force a result.
+export function tamperedSessionCredentials(headers: HeaderRecord, actor: string): HeaderRecord {
+  const auth = Object.entries(headers).filter(([key]) => AUTH_HEADER.test(key) || /^cookie$/i.test(key));
+  const [key, value] = auth[0] ?? [];
+  const bearer = key?.toLowerCase() === 'authorization' && /^Bearer [A-Za-z0-9._~-]+$/i.test(value ?? '');
+  const cookie = key?.toLowerCase() === 'cookie' && /^[A-Za-z0-9_-]+=[A-Za-z0-9._~-]+$/.test(value ?? '')
+    && !Object.keys(headers).some(name => /csrf|xsrf/i.test(name)) && !/csrf|xsrf/i.test(value!.split('=')[0]!);
+  if (auth.length !== 1 || (!bearer && !cookie)) {
+    inconclusive('replay-unavailable', { actor, detail: 'tampering requires one bearer token or one session cookie without CSRF ambiguity' });
+  }
+  const prefix = bearer ? 7 : value!.indexOf('=') + 1;
+  const token = value!.slice(prefix), parts = token.split('.');
+  const offset = parts.length === 3 && parts.every(part => /^[A-Za-z0-9_-]+$/.test(part))
+    ? parts[0]!.length + parts[1]!.length + 2 : 0;
+  // Change the first signature character of a JWT, not its padding bits or claims.
+  const original = token[offset]!;
+  const replacement = /[0-9]/.test(original) ? (original === '0' ? '1' : '0')
+    : /[a-z]/.test(original) ? (original === 'a' ? 'b' : 'a') : (original === 'A' ? 'B' : 'A');
+  return { ...headers, [key!]: `${value!.slice(0, prefix)}${token.slice(0, offset)}${replacement}${token.slice(offset + 1)}` };
+}
 
 function capturedCredentials(actor: Actor, targetUrl: string): HeaderRecord {
   const target = new URL(targetUrl);
