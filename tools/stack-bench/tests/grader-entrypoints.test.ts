@@ -15,6 +15,7 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { loadTrack } from '../src/composition/tracks.js';
 import { requireRecipeRelease } from '../src/composition/recipe-release.js';
 import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.js';
+import { readArtifactPayload, writeArtifact } from '../src/evidence/artifacts.js';
 
 test('the grader preserves private MongoDB authority through its stock-write caller', t => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-grade-lease-'));
@@ -96,7 +97,7 @@ test('diagnostic grading cannot bypass the scored recipe boundary', t => {
   assert.match(result.stderr, /diagnostic grades require zero-point checks/);
 });
 
-test('the grader rejects changed task contracts before opening the app', () => {
+test('the grader rejects changed task contracts and its report preserves the valid request', t => {
   const track = loadTrack('ecommerce');
   const binding = requireRecipeRelease(track, 3, 'ecommerce.progression-catalog');
   const request = createBoundRecipeTaskRequest(binding, { taskMode: 'fresh' }).request;
@@ -108,6 +109,12 @@ test('the grader rejects changed task contracts before opening the app', () => {
     '--recipe-task-json', JSON.stringify(altered)], { encoding: 'utf8', timeout: 15_000 });
   assert.equal(result.status, 2);
   assert.match(result.stderr, /task changed after request resolution/);
+  const root = mkdtempSync(join(tmpdir(), 'grade-task-report-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const path = join(root, 'grade.json');
+  writeArtifact(path, { kind: 'grade', id: 'task-report',
+    payload: { recipeTask: request, total: 0, max: 0, features: [] } });
+  assert.deepEqual(readArtifactPayload(path, { expectedKind: 'grade' }).recipeTask, request);
 });
 
 test('mutation operations use only the remaining batch time', () => {
