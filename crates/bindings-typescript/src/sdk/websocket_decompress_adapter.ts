@@ -15,25 +15,28 @@ export class WebsocketDecompressAdapter implements WebSocketAdapter {
     this.#ws.onopen = handler;
   }
   set onmessage(handler: (msg: { data: Uint8Array }) => void) {
-    this.#ws.onmessage = async (msg: MessageEvent<ArrayBuffer>) => {
-      let data: Uint8Array;
-      try {
-        data = await this.#decompress(new Uint8Array(msg.data));
-      } catch (e) {
-        // A decompression failure (e.g. WebKit's DecompressionStream rejecting
-        // with "Incomplete compressed input.") would otherwise become an
-        // unhandled rejection: the frame is silently dropped and the
-        // connection stalls without ever reaching onDisconnect. Close the
-        // socket instead so the caller's disconnect/reconnect handling
-        // takes over.
-        console.error(
-          '[SpacetimeDB] WebSocket decompress failed, closing socket:',
-          e
-        );
-        this.#ws.close();
-        return;
-      }
-      handler({ data });
+    let tail: Promise<void> = Promise.resolve();
+    this.#ws.onmessage = (msg: MessageEvent<ArrayBuffer>) => {
+      const pending = this.#decompress(new Uint8Array(msg.data));
+      // Mark the rejection handled now: the chain may not reach this frame for
+      // several ticks, and without this an inflate failure surfaces as an
+      // unhandledrejection in the meantime. The real error still reaches .catch.
+      pending.catch(() => {});
+      tail = tail
+        .then(async () => handler({ data: await pending }))
+        .catch((e) => {
+          // A decompression failure (e.g. WebKit's DecompressionStream rejecting
+          // with "Incomplete compressed input.") would otherwise become an
+          // unhandled rejection: the frame is silently dropped and the
+          // connection stalls without ever reaching onDisconnect. Close the
+          // socket instead so the caller's disconnect/reconnect handling
+          // takes over.
+          console.error(
+            '[SpacetimeDB] WebSocket decompress failed, closing socket:',
+            e
+          );
+          this.#ws.close();
+        });
     };
   }
   set onerror(handler: (msg: ErrorEvent) => void) {
