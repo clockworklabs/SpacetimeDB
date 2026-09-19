@@ -3,7 +3,7 @@
   "track": "ecommerce",
   "level": 1,
   "name": "Cart and checkout",
-  "note": "Draft: checkout must work at the stored price. A subsequent request includes a false price; it may be refused with orders and cart unchanged or accepted at the stored price. Independent order-data reads reconcile both outcomes. This price probe does not add warehouse prerequisites or claim stock reconciliation outside the existing visible normal-checkout assertion.",
+  "note": "Draft: checkout must book every item at its stored price in one order and empty the whole cart. A subsequent two-item request includes a false price; it may be refused with orders and cart unchanged or accepted at stored prices. Independent order-data reads reconcile both outcomes. Stock is checked on the normal UI path only; this does not claim multi-item crash atomicity or independent attack-stock reconciliation.",
   "features": [
     {
       "id": 4,
@@ -41,12 +41,15 @@
             { "do": "expectNumber", "actor": "checkout", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Desk Lamp" }, "equals": 100 },
             { "do": "dbRecordCheckout", "account": "{user:cart-checkout}", "item": "Desk Lamp", "as": "normal-before", "storage": { "kind": "order-data", "cart": true, "warehouses": false } },
             { "do": "click", "actor": "checkout", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
+            { "do": "click", "actor": "checkout", "testid": "overlay-close", "ifAvailable": true },
+            { "do": "click", "actor": "checkout", "testid": "catalog-link", "ifAvailable": true },
+            { "do": "click", "actor": "checkout", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Coffee Grinder" } },
             { "do": "click", "actor": "checkout", "testid": "cart-toggle", "unlessVisible": "cart-total" },
-            { "do": "expectNumber", "actor": "checkout", "testid": "cart-count", "equals": 1 },
+            { "do": "expect", "actor": "checkout", "testid": "cart-item", "count": 2 },
             { "do": "dbRecordCheckout", "account": "{user:cart-checkout}", "item": "Desk Lamp", "as": "normal-prepared", "storage": { "kind": "order-data", "cart": true, "warehouses": false } },
             { "do": "click", "actor": "checkout", "testid": "checkout-submit" },
             { "do": "wait", "actor": "checkout", "ms": 1500 },
-            { "do": "dbExpectCheckout", "before": "normal-before", "prepared": "normal-prepared", "quantity": 1 },
+            { "do": "dbExpectCheckout", "before": "normal-before", "prepared": "normal-prepared", "quantity": [{ "item": "Desk Lamp", "quantity": 1 }, { "item": "Coffee Grinder", "quantity": 1 }] },
             { "do": "reload", "actor": "checkout", "settleMs": 2500 },
             { "do": "ensureSignedIn", "actor": "checkout", "name": "cart-checkout", "readyTestid": "current-user" },
             { "do": "click", "actor": "checkout", "testid": "cart-toggle", "unlessVisible": "cart-total" },
@@ -54,6 +57,7 @@
             { "do": "click", "actor": "checkout", "testid": "overlay-close", "ifAvailable": true },
             { "do": "click", "actor": "checkout", "testid": "catalog-link", "ifAvailable": true },
             { "do": "expectNumber", "actor": "checkout", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Desk Lamp" }, "equals": 99 },
+            { "do": "expectNumber", "actor": "checkout", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Coffee Grinder" }, "equals": 99 },
             {"do":"click","actor":"checkout","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             { "do": "click", "actor": "checkout", "testid": "orders-toggle", "unlessVisible": "order-item" },
             { "do": "expect", "actor": "checkout", "testid": "order-item", "contains": "Desk Lamp", "count": 1 },
@@ -61,12 +65,15 @@
             { "do": "click", "actor": "checkout", "testid": "catalog-link", "ifAvailable": true },
             { "do": "dbRecordCheckout", "account": "{user:cart-checkout}", "item": "Desk Lamp", "as": "claim-before", "storage": { "kind": "order-data", "cart": true, "warehouses": false } },
             { "do": "click", "actor": "checkout", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
+            { "do": "click", "actor": "checkout", "testid": "overlay-close", "ifAvailable": true },
+            { "do": "click", "actor": "checkout", "testid": "catalog-link", "ifAvailable": true },
+            { "do": "click", "actor": "checkout", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Coffee Grinder" } },
             { "do": "click", "actor": "checkout", "testid": "cart-toggle", "unlessVisible": "cart-total" },
-            { "do": "expectNumber", "actor": "checkout", "testid": "cart-count", "equals": 1 },
+            { "do": "expect", "actor": "checkout", "testid": "cart-item", "count": 2 },
             { "do": "dbRecordCheckout", "account": "{user:cart-checkout}", "item": "Desk Lamp", "as": "claim-prepared", "storage": { "kind": "order-data", "cart": true, "warehouses": false } },
             { "do": "callAction", "actor": "checkout", "action": "checkout", "namedAction": { "id": "checkout", "path": "/api/checkout", "method": "POST", "reducer": "checkout", "args": [1], "params": [{ "name": "price", "in": "body" }] }, "settleMs": 0 },
             { "do": "expectActionOutcome", "actor": "checkout", "outcome": "completed" },
-            { "do": "dbExpectCheckout", "actor": "checkout", "before": "claim-before", "prepared": "claim-prepared", "quantity": 1 }
+            { "do": "dbExpectCheckout", "actor": "checkout", "before": "claim-before", "prepared": "claim-prepared", "quantity": [{ "item": "Desk Lamp", "quantity": 1 }, { "item": "Coffee Grinder", "quantity": 1 }] }
           ]
         }
       ]

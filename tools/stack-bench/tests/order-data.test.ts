@@ -30,6 +30,44 @@ function data(): Record<keyof typeof ORDER_DATA_COLUMNS, Record<string, unknown>
   };
 }
 
+test('multi-item checkout reconciles every cart line and stored price, including refused writes', async () => {
+  for (const mode of ['accepted', 'refused', 'missing-line', 'wrong-price', 'wrong-total', 'swapped-quantity',
+    'extra-line', 'retained-cart', 'duplicate-order', 'refused-cart-change', 'committed-refusal', 'reject-all']) {
+    const raw = data();
+    raw.item.push({ id: '4', name: 'Lamp', price: '3.25' });
+    const storage = { kind: 'order-data' as const, cart: true, warehouses: false };
+    const read = () => ({ ...readOrderDataSnapshot(raw, 'buyer', 'Keyboard', storage), account: 'buyer', item: 'Keyboard' });
+    const before = read();
+    raw.order_cart = [{ account_id: '1', item_id: '2', quantity: 1 }, { account_id: '1', item_id: '4', quantity: 2 }];
+    const prepared = read();
+    const refused = ['refused', 'refused-cart-change', 'committed-refusal'].includes(mode);
+    if (!refused && mode !== 'reject-all' || mode === 'committed-refusal') {
+      raw.order_cart = [];
+      raw.order_header = [{ id: 'new', account_id: '1', total: 26.49, refunded: 0, status: 'pending' }];
+      raw.order_line = [{ id: 'a', order_id: 'new', item_id: '2', quantity: 1, unit_price: 19.99 },
+        { id: 'b', order_id: 'new', item_id: '4', quantity: 2, unit_price: 3.25 }];
+    }
+    if (mode === 'missing-line') raw.order_line.pop();
+    if (mode === 'wrong-price') raw.order_line[1]!.unit_price = 0.01;
+    if (mode === 'wrong-total') raw.order_header[0]!.total = 0.01;
+    if (mode === 'swapped-quantity') { raw.order_line[0]!.quantity = 2; raw.order_line[1]!.quantity = 1; }
+    if (mode === 'extra-line') raw.order_line.push({ ...raw.order_line[0]!, id: 'extra' });
+    if (mode === 'retained-cart') raw.order_cart = [{ account_id: '1', item_id: '4', quantity: 2 }];
+    if (mode === 'duplicate-order') raw.order_header.push({ ...raw.order_header[0]!, id: 'extra' });
+    if (mode === 'refused-cart-change') raw.order_cart.pop();
+    const result = await executeAction(ACTION_REGISTRY, 'dbExpectCheckout', {
+      do: 'dbExpectCheckout', before: 'before', prepared: 'prepared',
+      quantity: [{ item: 'Keyboard', quantity: 1 }, { item: 'Lamp', quantity: 2 }],
+      ...(mode !== 'reject-all' ? { actor: 'buyer' } : {}),
+    }, { capabilities: {
+      actors: { get: () => ({ actionCall: { action: 'checkout', accepted: !refused, status: refused ? 400 : 200 } }) },
+      'database-read': { ...createDatabaseReadCapability({ expand: value => value,
+        checkoutSnapshots: new Map([['before', before], ['prepared', prepared]]) }), getCheckoutState: read },
+    } });
+    assert.equal(result.status, ['accepted', 'refused'].includes(mode) ? 'passed' : 'failed', mode);
+  }
+});
+
 test('compiled duplicate checkout reconciles real order effects without requesting warehouse records', async () => {
   const binding = requireRecipeRelease(loadTrack('ecommerce'), 3, 'ecommerce.progression-catalog');
   const request = createBoundRecipeTaskRequest(binding, {

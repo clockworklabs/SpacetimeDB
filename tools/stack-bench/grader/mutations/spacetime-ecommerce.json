@@ -2763,6 +2763,21 @@
           "replace": "    total: 1,\n    status: 'pending',"
         }
       ]
+    },
+    {
+      "id": "checkout-missing-sibling-line",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "desc": "Commit the cart checkout with one product line missing while retaining the other product and the full order total.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  for (const p of priced) {",
+          "replace": "  for (const p of priced) {\n    if (p.name === 'Coffee Grinder') continue;"
+        }
+      ]
     }
   ]
 }

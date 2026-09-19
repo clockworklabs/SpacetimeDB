@@ -2858,6 +2858,21 @@
           "replace": "  \"/api/checkout\",\n  (_req, res) => { res.status(400).json({ error: \"Checkout denied\" }); },\n  requireAuth,"
         }
       ]
+    },
+    {
+      "id": "checkout-missing-sibling-line",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "desc": "Commit the cart checkout with one product line missing while retaining the other product and the full order total.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "      await checkoutReservedCart(accountId);",
+          "replace": "      await checkoutReservedCart(accountId);\n      await pool.query(\"DELETE FROM order_item WHERE order_id=(SELECT MAX(id) FROM orders WHERE account_id=$1) AND item_name='Coffee Grinder'\", [accountId]);"
+        }
+      ]
     }
   ]
 }

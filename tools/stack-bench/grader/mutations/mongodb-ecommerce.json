@@ -2750,6 +2750,21 @@
           "replace": "    const order = await checkoutAtomic(userId);\n    if (req.body?.price !== undefined) { order.total = req.body.price; await order.save(); }"
         }
       ]
+    },
+    {
+      "id": "checkout-missing-sibling-line",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "desc": "Commit the cart checkout with one product line missing while retaining the other product and the full order total.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    const order = await checkoutAtomic(userId);",
+          "replace": "    const order = await checkoutAtomic(userId);\n    order.items = order.items.filter(line => line.name !== 'Coffee Grinder') as any; await order.save();"
+        }
+      ]
     }
   ]
 }

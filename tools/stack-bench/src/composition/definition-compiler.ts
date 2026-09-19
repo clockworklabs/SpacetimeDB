@@ -160,7 +160,11 @@ export const ACTION_DEFINITIONS = Object.freeze({
   dbRecordStock: fields({ item: nonEmptyString, as: nonEmptyString }, { warehouse: nonEmptyString }),
   dbRecordCheckout: fields({ account: nonEmptyString, item: nonEmptyString, as: nonEmptyString },
     { storage: value => orderDataStorageSchema.safeParse(value).success }),
-  dbExpectCheckout: fields({ before: nonEmptyString, prepared: nonEmptyString, quantity: positiveInteger }, { actor: nonEmptyString }),
+  dbExpectCheckout: fields({ before: nonEmptyString, prepared: nonEmptyString,
+    quantity: value => positiveInteger(value) || array(value) && value.length > 0
+      && value.every(row => object(row) && nonEmptyString(row.item) && positiveInteger(row.quantity)
+        && Object.keys(row).every(key => key === 'item' || key === 'quantity'))
+      && new Set(value.map(row => (row as Record<string, unknown>).item)).size === value.length }, { actor: nonEmptyString }),
   dbExpectCancellation: fields({ before: nonEmptyString }),
   dbExpectNoPurchase: fields({ before: nonEmptyString }),
   dbExpectPurchase: fields({ before: nonEmptyString, actor: nonEmptyString, stockBefore: nonEmptyString }),

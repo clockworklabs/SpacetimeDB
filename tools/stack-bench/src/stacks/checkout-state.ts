@@ -154,8 +154,10 @@ export function checkoutDifferences(before: CheckoutState, prepared: CheckoutSta
   return compareCheckout(before, prepared, after, quantity, allowUnchanged, true);
 }
 
+export type CheckoutLines = readonly { itemId: string; priceMinor: number; quantity: number }[];
+
 export function orderCheckoutDifferences(before: CheckoutState, prepared: CheckoutState, after: CheckoutState,
-  quantity: number, allowUnchanged = false, warehouses = true): Array<{ control: string; observed: number; expected: number }> {
+  quantity: number | CheckoutLines, allowUnchanged = false, warehouses = true): Array<{ control: string; observed: number; expected: number }> {
   for (const state of [before, prepared, after]) orderCheckoutStateSchema.parse(state);
   return compareCheckout(before, prepared, after, quantity, allowUnchanged, false, warehouses);
 }
@@ -192,13 +194,23 @@ export function checkoutCrashDifferences(before: CheckoutState, after: CheckoutS
 }
 
 function compareCheckout(before: CheckoutState, prepared: CheckoutState, after: CheckoutState,
-  quantity: number, allowUnchanged: boolean, requirePayment: boolean, warehouses = true) {
+  expectation: number | CheckoutLines, allowUnchanged: boolean, requirePayment: boolean, warehouses = true) {
+  // The warehouse reader currently selects one product. Do not claim multi-item
+  // stock atomicity from an order/cart-only observation.
+  if (typeof expectation !== 'number' && warehouses) throw new Error('multi-item checkout requires order/cart-only scope');
   if (!warehouses && [before, prepared, after].some(state => state.stock.length || state.reservations.length
     || state.orders.some(order => order.lines.some(line => line.allocations.length)))) {
     throw new Error('checkout state includes warehouse data outside the declared scope');
   }
   before = normalized(before); prepared = normalized(prepared); after = normalized(after);
-  if (!Number.isSafeInteger(quantity) || quantity <= 0 || !Number.isSafeInteger(before.priceMinor * quantity)) {
+  const expectedLines: CheckoutLines = typeof expectation === 'number'
+    ? [{ itemId: before.itemId, priceMinor: before.priceMinor, quantity: expectation }] : expectation;
+  const quantity = expectedLines.reduce((sum, row) => sum + row.quantity, 0);
+  const amount = expectedLines.reduce((sum, row) => sum + row.priceMinor * row.quantity, 0);
+  if (!expectedLines.length || new Set(expectedLines.map(row => row.itemId)).size !== expectedLines.length
+    || expectedLines.some(row => !row.itemId || !Number.isSafeInteger(row.quantity) || row.quantity <= 0
+      || !Number.isSafeInteger(row.priceMinor) || row.priceMinor < 0 || !Number.isSafeInteger(row.priceMinor * row.quantity))
+    || !Number.isSafeInteger(quantity) || !Number.isSafeInteger(amount)) {
     throw new Error('checkout expectation is not an exact quantity and amount');
   }
   const differences: Array<{ control: string; observed: number; expected: number }> = [];
@@ -225,7 +237,7 @@ function compareCheckout(before: CheckoutState, prepared: CheckoutState, after: 
   check('initial cart lines', before.cart.length, 0);
   if (warehouses) check('initial stock warehouses', Number(before.stock.length > 0), 1);
   check('initial cart reservations', before.reservations.length, 0);
-  same('prepared cart', prepared.cart, [{ itemId: before.itemId, quantity }]);
+  same('prepared cart', prepared.cart, sorted(expectedLines.map(({ itemId, quantity }) => ({ itemId, quantity }))));
   same('orders unchanged during cart preparation', sorted(prepared.orders), sorted(before.orders));
   same('payments unchanged during cart preparation', sorted(prepared.payments), sorted(before.payments));
   same('refunds unchanged during cart preparation', prepared.refunds, before.refunds);
@@ -265,12 +277,15 @@ function compareCheckout(before: CheckoutState, prepared: CheckoutState, after: 
   if (order) {
     same('checkout order owner', order.accountId, before.accountId);
     same('checkout order status', order.status, 'pending');
-    check('checkout order total in minor units', order.totalMinor, before.priceMinor * quantity);
+    check('checkout order total in minor units', order.totalMinor, amount);
     if (typeof order.refundedMinor === 'number') check('checkout order refunded amount', order.refundedMinor, 0);
     // Relational orders may split one product across warehouse allocation lines.
     check('checkout order quantity', total(order.lines), quantity);
-    check('unexpected checkout order lines', order.lines.filter(line => line.itemId !== before.itemId
-      || line.priceMinor !== before.priceMinor || line.quantity <= 0).length, 0);
+    check('unexpected checkout order lines', order.lines.filter(line => line.quantity <= 0
+      || !expectedLines.some(wanted => wanted.itemId === line.itemId && wanted.priceMinor === line.priceMinor)).length, 0);
+    for (const wanted of expectedLines) {
+      check(`checkout quantity for item ${wanted.itemId}`, total(order.lines.filter(line => line.itemId === wanted.itemId)), wanted.quantity);
+    }
     for (const line of order.lines) {
       if (warehouses) check('allocated order quantity', total(line.allocations), line.quantity);
       check('invalid order allocations', line.allocations.filter(row => row.quantity <= 0
@@ -284,7 +299,7 @@ function compareCheckout(before: CheckoutState, prepared: CheckoutState, after: 
     if (payments[0]) {
       same('checkout payment order', payments[0].orderId, order.id);
       same('checkout payment status', payments[0].status, 'paid');
-      check('checkout payment in minor units', payments[0].amountMinor, before.priceMinor * quantity);
+      check('checkout payment in minor units', payments[0].amountMinor, amount);
     }
   }
   same('stock warehouses preserved', sorted(after.stock.map(row => row.warehouseId)), sorted(before.stock.map(row => row.warehouseId)));

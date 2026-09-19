@@ -108,6 +108,7 @@ interface LifecycleConcurrencyCapabilities {
 
 interface CheckoutSnapshot {
   readonly state: CheckoutState;
+  readonly catalog?: readonly { itemId: string; name: string; priceMinor: number }[];
   readonly schemaSha256: Record<string, string>;
   readonly recordedAtMs?: number;
   readonly scope?: 'orders';
@@ -200,7 +201,8 @@ async function dbRecordCheckout({ input, capabilities }: ActionArguments<{ accou
   return { ...snapshot, key: input.as };
 }
 
-async function dbExpectCheckout({ input, capabilities }: ActionArguments<{ before: string; prepared: string; quantity: number; actor?: string }>) {
+async function dbExpectCheckout({ input, capabilities }: ActionArguments<{ before: string; prepared: string;
+  quantity: number | readonly { item: string; quantity: number }[]; actor?: string }>) {
   const database = capabilities['database-read'];
   const before = database.checkoutSnapshots.get(input.before);
   const prepared = database.checkoutSnapshots.get(input.prepared);
@@ -211,6 +213,19 @@ async function dbExpectCheckout({ input, capabilities }: ActionArguments<{ befor
     || JSON.stringify(before.schemaSha256) !== JSON.stringify(after.schemaSha256)) throw new Error('checkout reader schema changed during the test');
   if (before.scope !== prepared.scope || before.scope !== after.scope) throw new Error('checkout scope changed');
   if (before.storage && !before.storage.cart) throw new Error('checkout reconciliation requires cart evidence');
+  const quantity = typeof input.quantity === 'number' ? input.quantity : input.quantity.map(wanted => {
+    if (before.scope !== 'orders' || before.storage?.warehouses !== false) throw new Error('multi-item checkout requires order/cart-only scope');
+    const observed = [before, prepared, after].map(snapshot => {
+      if (!snapshot.catalog) throw new Error('checkout reader did not provide catalog prices');
+      const matches = snapshot.catalog.filter(row => row.name === wanted.item);
+      if (matches.length !== 1) fail('interface-invalid', { action: 'read orders', attribute: 'item', detail: 'checkout item is missing or ambiguous' });
+      return matches[0]!;
+    });
+    if (observed.some(row => row.itemId !== observed[0]!.itemId || row.priceMinor !== observed[0]!.priceMinor)) {
+      fail('interface-invalid', { action: 'read orders', attribute: 'item', detail: 'checkout changed catalog identity or price' });
+    }
+    return { itemId: observed[0]!.itemId, priceMinor: observed[0]!.priceMinor, quantity: wanted.quantity };
+  });
   const response = input.actor ? actorFor(capabilities, input.actor).actionCall : undefined;
   if (input.actor && !response) inconclusive('assertion-without-action', { action: 'callAction' });
   if (response && (response.complete === false || !response.status)) inconclusive('transport-incomplete', {});
@@ -218,8 +233,8 @@ async function dbExpectCheckout({ input, capabilities }: ActionArguments<{ befor
   const refused = response !== undefined && !response.accepted;
   const compareState = refused ? prepared.state : after.state;
   const differences = before.scope === 'orders'
-    ? orderCheckoutDifferences(before.state, prepared.state, compareState, input.quantity, refused, before.storage?.warehouses ?? true)
-    : checkoutDifferences(before.state, prepared.state, compareState, input.quantity, refused);
+    ? orderCheckoutDifferences(before.state, prepared.state, compareState, quantity, refused, before.storage?.warehouses ?? true)
+    : checkoutDifferences(before.state, prepared.state, compareState, quantity as number, refused);
   if (refused) differences.push(...(before.scope === 'orders'
     ? orderPurchaseDifferences(prepared.state, after.state, new Map([[before.state.accountId, 0]]), new Map(), before.storage?.warehouses ?? true)
     : purchaseDifferences(prepared.state, after.state, new Map([[before.state.accountId, 0]]), new Map())));

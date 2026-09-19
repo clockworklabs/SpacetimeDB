@@ -1740,6 +1740,21 @@
           "replace": "  const result = await purchase(ctx, user, lines);\n  if (args.price !== undefined) await ctx.db.patch(result.orderId, { total: args.price });"
         }
       ]
+    },
+    {
+      "id": "checkout-missing-sibling-line",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "desc": "Commit the cart checkout with one product line missing while retaining the other product and the full order total.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "  const result = await purchase(ctx, user, lines);",
+          "replace": "  const result = await purchase(ctx, user, lines);\n  for (const line of await rows(ctx, 'order_line')) {\n    if (line.order_id === result.orderId && (await ctx.db.get(line.item_id)).name === 'Coffee Grinder') await ctx.db.delete(line._id);\n  }"
+        }
+      ]
     }
   ]
 }

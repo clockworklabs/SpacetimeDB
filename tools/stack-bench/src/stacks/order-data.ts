@@ -94,6 +94,7 @@ export function readOrderDataSnapshot(raw: unknown, account: string, item: strin
   });
   const contract = readFileSync(join(STACK_BENCH_ROOT, 'tracks/ecommerce/contracts/order-data.md'), 'utf8').replaceAll('\r\n', '\n');
   return { state, scope: 'orders' as const, storage,
+    catalog: tables.item.map(row => ({ itemId: row.id, name: row.name, priceMinor: row.price })),
     schemaSha256: { contract: createHash('sha256').update(contract).digest('hex'),
       selection: createHash('sha256').update(JSON.stringify(columns)).digest('hex') } };
 }
