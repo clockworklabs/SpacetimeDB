@@ -3,6 +3,7 @@
   "track": "ecommerce",
   "level": 1,
   "name": "Only an administrator can restock through staff access",
+  "note": "Draft: staff cannot gain restock authority by submitting role=admin. The same real write receives an extra body field on HTTP/Convex or an extra positional reducer argument. Native schema rejection is valid; it does not prove an application role branch ran. Stored stock must remain unchanged, including after a refusal response. Normal administrator writes must work before and after the probe. This bounded claim does not cover arbitrary authority fields or query injection.",
   "features": [
     {
       "id": 103,
@@ -32,7 +33,7 @@
         {
           "id": "103b",
           "category": "production",
-          "desc": "the server refuses a warehouse write from staff",
+          "desc": "the server refuses a warehouse write from staff, including a submitted administrator role",
           "points": 2,
           "statedBy": "Only administrators can change warehouse stock.",
           "steps": [
@@ -45,7 +46,15 @@
             { "do": "expectActionOutcome", "actor": "staff", "outcome": "refused", "routeProvenBy": "admin" },
             { "do": "reload", "actor": "staff", "settleMs": 2000 },
             { "do": "ensureSignedIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true, "readyTestid": "current-user" },
-            { "do": "expectNumber", "actor": "staff", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "relativeTo": "purifier-before-refusal", "plus": 0 }
+            { "do": "expectNumber", "actor": "staff", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "relativeTo": "purifier-before-refusal", "plus": 0 },
+            { "do": "dbRecordStock", "item": "Air Purifier", "as": "before-admin-claim" },
+            { "do": "callAction", "actor": "staff", "from": "admin", "action": "restock", "namedAction": { "id": "restock", "path": "/api/admin/restock", "reducer": "admin_restock", "args": [0, 0, 1, "admin"], "params": [{ "name": "itemId", "in": "body", "wireType": "u64" }, { "name": "warehouseId", "in": "body", "wireType": "u64" }, { "name": "quantity", "in": "body" }, { "name": "role", "in": "body" }] }, "input": { "testid": "admin-location-row", "contains": "Air Purifier", "attribute": "data-restock-input" }, "settleMs": 1000 },
+            { "do": "expectActionOutcome", "actor": "staff", "outcome": "completed", "routeProvenBy": "admin" },
+            { "do": "dbExpectStock", "item": "Air Purifier", "relativeTo": "before-admin-claim", "plus": 0 },
+            { "do": "expectActionOutcome", "actor": "staff", "outcome": "application-refused", "routeProvenBy": "admin" },
+            { "do": "callAction", "actor": "admin", "action": "restock", "namedAction": { "id": "restock", "path": "/api/admin/restock", "reducer": "admin_restock", "args": [0, 0, 1], "params": [{ "name": "itemId", "in": "body", "wireType": "u64" }, { "name": "warehouseId", "in": "body", "wireType": "u64" }, { "name": "quantity", "in": "body" }] }, "input": { "testid": "admin-location-row", "contains": "Air Purifier", "attribute": "data-restock-input" }, "settleMs": 1000 },
+            { "do": "expectActionOutcome", "actor": "admin", "outcome": "accepted" },
+            { "do": "dbExpectStock", "item": "Air Purifier", "relativeTo": "before-admin-claim", "plus": 1 }
           ]
         }
       ]

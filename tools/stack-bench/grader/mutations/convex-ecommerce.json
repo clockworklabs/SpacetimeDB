@@ -1672,6 +1672,21 @@
           "replace": "followAuth();\nlet lastRecoveryConnection = 1;\nlive.subscribeToConnectionState(({ isWebSocketConnected, connectionCount }) => {\n  if (!isWebSocketConnected || connectionCount <= lastRecoveryConnection) return;\n  lastRecoveryConnection = connectionCount;\n  void (async () => {\n    const token = await accessToken();\n    if (!token) return;\n    http.setAuth(token);\n    const current = await state();\n    const priorOrder = current.orders.find((order: any) => order.status === 'pending');\n    if (priorOrder) await mutate('api:cancel_order', { orderId: priorOrder.id });\n  })().catch(() => undefined);\n});\nexport async function signOut()"
         }
       ]
+    },
+    {
+      "id": "restock-trusts-submitted-admin-role",
+      "scenario": "tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "desc": "Trust an administrator role supplied by staff in the restock request. Normal staff requests are still refused.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "export const restock = mutationGeneric({ args: { itemId: v.id('item'), warehouseId: v.id('warehouse'), quantity: v.number() },\n  handler: async (ctx, args) => {\n    await operator(ctx, true); quantity(args.quantity);",
+          "replace": "export const restock = mutationGeneric({ args: { itemId: v.id('item'), warehouseId: v.id('warehouse'), quantity: v.number(), role: v.optional(v.string()) },\n  handler: async (ctx, args) => {\n    await operator(ctx, args.role !== 'admin'); quantity(args.quantity);"
+        }
+      ]
     }
   ]
 }

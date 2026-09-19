@@ -2690,6 +2690,21 @@
           "replace": "try { jwt.verify(extractToken(req)!, JWT_SECRET); } catch { res.status(401); }\n  res.json({ order: order.toJSON() });\n});\n\n// ---------------------------------------------------------------------------\n// Cart routes"
         }
       ]
+    },
+    {
+      "id": "restock-trusts-submitted-admin-role",
+      "scenario": "tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "desc": "Trust an administrator role supplied by staff in the restock request. Normal staff requests are still refused.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\"/api/admin/restock\", requireAuth, requireAdmin, async (req, res) => {",
+          "replace": "app.post(\"/api/admin/restock\", requireAuth, (req, res, next) => req.body?.role === \"admin\" ? next() : requireAdmin(req, res, next), async (req, res) => {"
+        }
+      ]
     }
   ]
 }

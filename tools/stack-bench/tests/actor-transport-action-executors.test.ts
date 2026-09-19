@@ -546,6 +546,46 @@ test('purchase-session tampering uses early order data, awaits a response, check
   ]);
 });
 
+test('restock role claims reach the real write with staff credentials and stored-state checks', async () => {
+  const scenario = JSON.parse(readFileSync('tracks/ecommerce/scenarios/01-admin-write-staff.json', 'utf8'));
+  const criterion = scenario.features[0].criteria.find((c: UnknownRecord) => c.id === '103b');
+  assert.equal(criterion.points, 2);
+  const steps = criterion.steps as UnknownRecord[];
+  const calls = steps.filter(step => step.do === 'callAction');
+  assert.equal(calls.length, 4);
+  const attack = steps.indexOf(calls[2]!);
+  assert.equal(steps[attack - 1]!.do, 'dbRecordStock');
+  assert.deepEqual(steps.slice(attack + 1, attack + 4).map(step => [step.do, step.outcome ?? step.plus]), [
+    ['expectActionOutcome', 'completed'], ['dbExpectStock', 0], ['expectActionOutcome', 'application-refused'],
+  ]);
+  assert.equal(steps.at(-1)!.plus, 1, 'normal administrator access must still work after the claim');
+  for (const backend of ['postgres', 'mongodb', 'spacetime']) {
+    const requests: { url: string; body: string; authorization: string | undefined }[] = [];
+    const provided = services(new Map(['admin', 'staff'].map(name => [name, {
+      name, writes: [{ headers: { authorization: `Bearer ${name}` } }],
+      loc: () => ({ waitFor: async () => {}, getAttribute: async () =>
+        JSON.stringify({ itemId: '9007199254740993', warehouseId: '17', quantity: 1 }) }),
+    }])), { backend, spacetime: { uri: 'http://native.test', mod: 'shop' },
+      fetchImpl: async (url, options) => {
+        requests.push({ url, body: options.body!, authorization: options.headers?.authorization });
+        return namedResponse(403, false);
+      } });
+    for (const call of calls) assert.equal((await run(call, provided)).status, 'passed');
+    assert.deepEqual(requests.map(request => request.authorization),
+      ['Bearer admin', 'Bearer staff', 'Bearer staff', 'Bearer admin']);
+    assert(requests.every(request => request.url === requests[0]!.url), 'the claim must keep the original operation');
+    if (backend === 'spacetime') {
+      assert.equal(requests[2]!.body, '[9007199254740993,17,1,"admin"]');
+      assert.equal(requests[0]!.body, '[9007199254740993,17,1]');
+    } else {
+      assert.deepEqual(JSON.parse(requests[2]!.body), {
+        itemId: '9007199254740993', warehouseId: '17', quantity: 1, role: 'admin',
+      });
+      assert.equal(JSON.parse(requests[0]!.body).role, undefined);
+    }
+  }
+});
+
 test('an invalid Spacetime u64 input fails before transport and cannot prove refusal', async () => {
   let requests = 0;
   const customer = {

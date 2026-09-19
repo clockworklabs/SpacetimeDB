@@ -2689,6 +2689,55 @@
           "replace": ".where(sql`true`)\n    .limit(1)"
         }
       ]
+    },
+    {
+      "id": "restock-trusts-submitted-admin-role",
+      "scenario": "tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "desc": "Trust an administrator role supplied by staff in the restock request. Normal staff requests are still refused.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\n  \"/api/admin/restock\",\n  requireAdmin,",
+          "replace": "app.post(\n  \"/api/admin/restock\",\n  requireAuth,\n  (req, res, next) => req.body?.role === \"admin\" ? next() : requireAdmin(req, res, next),"
+        }
+      ]
+    },
+    {
+      "id": "restock-admin-claim-commits-then-refuses",
+      "scenario": "tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "desc": "Trust the submitted administrator role, change stored stock, then return 403.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\n  \"/api/admin/restock\",\n  requireAdmin,",
+          "replace": "app.post(\n  \"/api/admin/restock\",\n  requireAuth,\n  (req, res, next) => req.body?.role === \"admin\" ? next() : requireAdmin(req, res, next),"
+        },
+        {
+          "find": "    await processImmediateRestock(itemId);\n    await broadcastCatalog();\n    const state = await buildAdminState();\n    res.json(state);",
+          "replace": "    await processImmediateRestock(itemId);\n    await broadcastCatalog();\n    const state = await buildAdminState();\n    if (req.body?.role === \"admin\") { res.status(403).json({ error: \"refused after write\" }); return; }\n    res.json(state);"
+        }
+      ]
+    },
+    {
+      "id": "restock-rejects-administrator-control",
+      "scenario": "tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "desc": "Reject every direct restock, including the legitimate administrator control.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\n  \"/api/admin/restock\",\n  requireAdmin,",
+          "replace": "app.post(\n  \"/api/admin/restock\",\n  (_req, res) => { res.status(403).json({ error: \"restock disabled\" }); },"
+        }
+      ]
     }
   ]
 }
