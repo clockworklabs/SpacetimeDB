@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { ORDER_DATA_COLUMNS, readOrderDataSnapshot } from '../src/stacks/order-data.js';
-import { orderCheckoutDifferences, orderPurchaseDifferences, orderCancellationDifferences } from '../src/stacks/checkout-state.js';
+import { orderCheckoutDifferences, orderPurchaseDifferences, orderCancellationDifferences, checkoutCrashDifferences } from '../src/stacks/checkout-state.js';
 import { getPostgresCheckoutState } from '../src/stacks/backends/postgres-operations.js';
 import { getMongoDbCheckoutState } from '../src/stacks/backends/mongodb-operations.js';
 import { getSpacetimeCheckoutState } from '../src/stacks/backends/spacetime-operations.js';
@@ -30,22 +30,33 @@ function data(): Record<keyof typeof ORDER_DATA_COLUMNS, Record<string, unknown>
   };
 }
 
-test('multi-item checkout reconciles every cart line and stored price, including refused writes', async () => {
-  for (const mode of ['accepted', 'refused', 'missing-line', 'wrong-price', 'wrong-total', 'swapped-quantity',
-    'extra-line', 'retained-cart', 'duplicate-order', 'refused-cart-change', 'committed-refusal', 'reject-all']) {
+test('multi-item checkout reconciles every cart line, stored price and selected warehouse effect, including refused writes', async () => {
+  for (const warehouses of [false, true]) for (const reserved of warehouses ? [false, true] : [false]) for (const mode of ['accepted', 'refused', 'missing-line', 'wrong-price', 'wrong-total', 'swapped-quantity',
+    'extra-line', 'retained-cart', 'duplicate-order', 'refused-cart-change', 'committed-refusal', 'reject-all',
+    ...(warehouses ? ['missing-stock-effect', 'swapped-stock-effects', 'unrelated-stock-change', 'missing-stock-row', 'duplicate-stock-row', 'wrong-allocation'] : [])]) {
     const raw = data();
-    raw.item.push({ id: '4', name: 'Lamp', price: '3.25' });
-    const storage = { kind: 'order-data' as const, cart: true, warehouses: false };
+    raw.item.push({ id: '4', name: 'Lamp', price: '3.25' }, { id: '5', name: 'Untouched', price: '2.00' });
+    raw.stock.push({ item_id: '4', warehouse_id: '3', quantity: 10 }, { item_id: '5', warehouse_id: '3', quantity: 10 });
+    const storage = { kind: 'order-data' as const, cart: true, warehouses };
     const read = () => ({ ...readOrderDataSnapshot(raw, 'buyer', 'Keyboard', storage), account: 'buyer', item: 'Keyboard' });
     const before = read();
     raw.order_cart = [{ account_id: '1', item_id: '2', quantity: 1 }, { account_id: '1', item_id: '4', quantity: 2 }];
+    if (reserved) {
+      raw.stock[0]!.quantity = 9; raw.stock[1]!.quantity = 8;
+      raw.order_reservation = [{ account_id: '1', item_id: '2', warehouse_id: '3', quantity: 1 },
+        { account_id: '1', item_id: '4', warehouse_id: '3', quantity: 2 }];
+    }
     const prepared = read();
     const refused = ['refused', 'refused-cart-change', 'committed-refusal'].includes(mode);
     if (!refused && mode !== 'reject-all' || mode === 'committed-refusal') {
       raw.order_cart = [];
+      raw.order_reservation = [];
       raw.order_header = [{ id: 'new', account_id: '1', total: 26.49, refunded: 0, status: 'pending' }];
       raw.order_line = [{ id: 'a', order_id: 'new', item_id: '2', quantity: 1, unit_price: 19.99 },
         { id: 'b', order_id: 'new', item_id: '4', quantity: 2, unit_price: 3.25 }];
+      raw.stock[0]!.quantity = 9; raw.stock[1]!.quantity = 8;
+      raw.order_allocation = [{ order_line_id: 'a', warehouse_id: '3', quantity: 1 },
+        { order_line_id: 'b', warehouse_id: '3', quantity: 2 }];
     }
     if (mode === 'missing-line') raw.order_line.pop();
     if (mode === 'wrong-price') raw.order_line[1]!.unit_price = 0.01;
@@ -55,6 +66,12 @@ test('multi-item checkout reconciles every cart line and stored price, including
     if (mode === 'retained-cart') raw.order_cart = [{ account_id: '1', item_id: '4', quantity: 2 }];
     if (mode === 'duplicate-order') raw.order_header.push({ ...raw.order_header[0]!, id: 'extra' });
     if (mode === 'refused-cart-change') raw.order_cart.pop();
+    if (mode === 'missing-stock-effect') raw.stock[1]!.quantity = 10;
+    if (mode === 'swapped-stock-effects') { raw.stock[0]!.quantity = 8; raw.stock[1]!.quantity = 9; }
+    if (mode === 'unrelated-stock-change') raw.stock[2]!.quantity = 9;
+    if (mode === 'missing-stock-row') raw.stock.pop();
+    if (mode === 'duplicate-stock-row') raw.stock.push({ ...raw.stock[1]! });
+    if (mode === 'wrong-allocation') raw.order_allocation[1]!.quantity = 1;
     const result = await executeAction(ACTION_REGISTRY, 'dbExpectCheckout', {
       do: 'dbExpectCheckout', before: 'before', prepared: 'prepared',
       quantity: [{ item: 'Keyboard', quantity: 1 }, { item: 'Lamp', quantity: 2 }],
@@ -64,7 +81,17 @@ test('multi-item checkout reconciles every cart line and stored price, including
       'database-read': { ...createDatabaseReadCapability({ expand: value => value,
         checkoutSnapshots: new Map([['before', before], ['prepared', prepared]]) }), getCheckoutState: read },
     } });
-    assert.equal(result.status, ['accepted', 'refused'].includes(mode) ? 'passed' : 'failed', mode);
+    assert.equal(result.status, ['accepted', 'refused'].includes(mode) ? 'passed' : 'failed', `${warehouses}:${reserved}:${mode}`);
+    if (warehouses && ['accepted', 'refused', 'missing-stock-effect', 'swapped-stock-effects', 'missing-line'].includes(mode)) {
+      const after = read().state;
+      const quantities = [{ itemId: '2', priceMinor: 1999, quantity: 1 }, { itemId: '4', priceMinor: 325, quantity: 2 }];
+      for (const confirmed of [false, true]) {
+        const verdict = checkoutCrashDifferences(before.state, after, confirmed,
+          (state, allow) => orderCheckoutDifferences(before.state, prepared.state, state, quantities, allow, true));
+        assert.equal(verdict.atomicity.length === 0, ['accepted', 'refused'].includes(mode), `crash atomicity ${reserved}:${mode}`);
+        assert.equal(verdict.durability.length > 0, confirmed && mode === 'refused', `crash durability ${reserved}:${mode}`);
+      }
+    }
   }
 });
 
@@ -262,7 +289,10 @@ test('order data preserves infrastructure failures instead of blaming the app', 
 
 test('order-only purchase and cancellation reject no-op, wrong allocation and wrong refund effects', () => {
   const storage = { kind: 'order-data' as const, cart: false, warehouses: true };
-  const raw = data(), before = readOrderDataSnapshot(raw, 'buyer', 'Keyboard', storage).state;
+  const raw = data();
+  raw.item.push({ id: 'other', name: 'Untouched', price: 1 });
+  raw.stock.push({ item_id: 'other', warehouse_id: '3', quantity: 7 });
+  const before = readOrderDataSnapshot(raw, 'buyer', 'Keyboard', storage).state;
   raw.stock[0]!.quantity = 9;
   raw.order_header.push({ id: '4', account_id: '1', total: 19.99, refunded: 0, status: 'pending' });
   raw.order_line.push({ id: '5', order_id: '4', item_id: '2', quantity: 1, unit_price: 19.99 });
@@ -278,6 +308,10 @@ test('order-only purchase and cancellation reject no-op, wrong allocation and wr
   raw.stock[0]!.quantity = 10;
   const cancelled = readOrderDataSnapshot(raw, 'buyer', 'Keyboard', storage).state;
   assert.deepEqual(orderCancellationDifferences(after, cancelled), []);
+  const damaged = structuredClone(cancelled); damaged.stock[1]!.quantity++;
+  assert(orderCancellationDifferences(after, damaged).length, 'cancellation must not restore another product');
+  const wrongPurchase = structuredClone(after); wrongPurchase.stock[1]!.quantity--;
+  assert(orderPurchaseDifferences(before, wrongPurchase, new Map([['1', 1]]), new Map()).length, 'purchase must preserve other products');
   for (const defect of ['missing-order', 'missing-lines', 'missing-allocation']) {
     const broken = structuredClone(after);
     if (defect === 'missing-order') broken.orders = [];

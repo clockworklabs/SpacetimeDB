@@ -15,7 +15,8 @@ export const checkoutStateSchema = z.strictObject({
   priceMinor: integer,
   cart: z.array(z.strictObject({ itemId: id, quantity: integer })),
   // Empty query results are evidence too. Validate setup separately from reads.
-  stock: z.array(z.strictObject({ warehouseId: id, quantity: integer })),
+  // Reference-specific readers select one item; native order-data reads retain all items.
+  stock: z.array(z.strictObject({ itemId: id.optional(), warehouseId: id, quantity: integer })),
   reservations: z.array(z.strictObject({ itemId: id, warehouseId: id, quantity: integer })),
   orders: z.array(z.strictObject({ id, accountId: id, totalMinor: integer, refundedMinor: integer.nullable().optional(), status: z.string(), lines: z.array(line) })),
   payments: z.array(z.strictObject({ id, orderId: id, amountMinor: integer, status: z.string() })),
@@ -25,6 +26,10 @@ export const checkoutStateSchema = z.strictObject({
   orphanRefunds: integer.optional(),
 });
 export type CheckoutState = z.infer<typeof checkoutStateSchema>;
+function stockItem(state: CheckoutState, row: CheckoutState['stock'][number]) { return row.itemId ?? state.itemId; }
+function stockKey(state: CheckoutState, row: CheckoutState['stock'][number]) {
+  return JSON.stringify([stockItem(state, row), row.warehouseId]);
+}
 // Order accounting does not require a separate payment feature. Reservations,
 // when present, explain stock already held during cart preparation.
 export const orderCheckoutStateSchema = checkoutStateSchema.extend({
@@ -85,7 +90,7 @@ function comparePurchases(before: CheckoutState, after: CheckoutState,
       if (warehouses) check('purchase allocation count', line.allocations.length, 1);
       for (const allocation of line.allocations) {
         check('purchase allocated quantity', allocation.quantity, 1);
-        const stock = expected.stock.find(row => row.warehouseId === allocation.warehouseId);
+        const stock = expected.stock.find(row => stockItem(expected, row) === line.itemId && row.warehouseId === allocation.warehouseId);
         check('purchase allocation warehouse', Number(Boolean(stock)), 1);
         if (stock) stock.quantity = integer.parse(stock.quantity - allocation.quantity);
       }
@@ -99,7 +104,7 @@ function comparePurchases(before: CheckoutState, after: CheckoutState,
   }
   check('purchase orphan payments', payments.filter(row => !orders.some(order => order.id === row.orderId)).length, 0);
   for (const [warehouse, quantity] of restocked) {
-    const stock = expected.stock.find(row => row.warehouseId === warehouse);
+    const stock = expected.stock.find(row => stockItem(expected, row) === before.itemId && row.warehouseId === warehouse);
     if (!stock || !Number.isSafeInteger(quantity) || quantity < 1) throw new Error('invalid restock expectation');
     stock.quantity = integer.parse(stock.quantity + quantity);
   }
@@ -107,7 +112,7 @@ function comparePurchases(before: CheckoutState, after: CheckoutState,
     check('purchase orphan order lines', state.orphanOrderLines, 0);
     if (state.orphanAllocations !== undefined) check('purchase orphan allocations', state.orphanAllocations, 0);
     check('purchase negative stock', state.stock.filter(row => row.quantity < 0).length, 0);
-    check('purchase duplicate warehouse', state.stock.length - new Set(state.stock.map(row => row.warehouseId)).size, 0);
+    check('purchase duplicate warehouse', state.stock.length - new Set(state.stock.map(row => stockKey(state, row))).size, 0);
     check('purchase duplicate order', state.orders.length - new Set(state.orders.map(row => row.id)).size, 0);
     check('purchase duplicate payment', state.payments.length - new Set(state.payments.map(row => row.id)).size, 0);
   }
@@ -195,9 +200,10 @@ export function checkoutCrashDifferences(before: CheckoutState, after: CheckoutS
 
 function compareCheckout(before: CheckoutState, prepared: CheckoutState, after: CheckoutState,
   expectation: number | CheckoutLines, allowUnchanged: boolean, requirePayment: boolean, warehouses = true) {
-  // The warehouse reader currently selects one product. Do not claim multi-item
-  // stock atomicity from an order/cart-only observation.
-  if (typeof expectation !== 'number' && warehouses) throw new Error('multi-item checkout requires order/cart-only scope');
+  if (typeof expectation !== 'number' && warehouses
+    && [before, prepared, after].some(state => state.stock.some(row => !row.itemId))) {
+    throw new Error('multi-item checkout requires item-keyed stock evidence');
+  }
   if (!warehouses && [before, prepared, after].some(state => state.stock.length || state.reservations.length
     || state.orders.some(order => order.lines.some(line => line.allocations.length)))) {
     throw new Error('checkout state includes warehouse data outside the declared scope');
@@ -225,7 +231,7 @@ function compareCheckout(before: CheckoutState, prepared: CheckoutState, after: 
     check('order lines without an order', state.orphanOrderLines, 0);
     if (state.orphanAllocations !== undefined) check('allocations without an order line', state.orphanAllocations, 0);
     if (state.orphanRefunds !== undefined) check('refunds without an order', state.orphanRefunds, 0);
-    check('duplicate stock warehouse rows', state.stock.length - new Set(state.stock.map(row => row.warehouseId)).size, 0);
+    check('duplicate stock warehouse rows', state.stock.length - new Set(state.stock.map(row => stockKey(state, row))).size, 0);
     check('negative stored stock rows', state.stock.filter(row => row.quantity < 0).length, 0);
     check('duplicate order ids', state.orders.length - new Set(state.orders.map(row => row.id)).size, 0);
     check('duplicate payment ids', state.payments.length - new Set(state.payments.map(row => row.id)).size, 0);
@@ -235,25 +241,31 @@ function compareCheckout(before: CheckoutState, prepared: CheckoutState, after: 
       [before.accountId, before.itemId, before.priceMinor]);
   }
   check('initial cart lines', before.cart.length, 0);
-  if (warehouses) check('initial stock warehouses', Number(before.stock.length > 0), 1);
+  if (warehouses) for (const wanted of expectedLines) {
+    check(`initial stock warehouses for item ${wanted.itemId}`, Number(before.stock.some(row => stockItem(before, row) === wanted.itemId)), 1);
+  }
   check('initial cart reservations', before.reservations.length, 0);
   same('prepared cart', prepared.cart, sorted(expectedLines.map(({ itemId, quantity }) => ({ itemId, quantity }))));
   same('orders unchanged during cart preparation', sorted(prepared.orders), sorted(before.orders));
   same('payments unchanged during cart preparation', sorted(prepared.payments), sorted(before.payments));
   same('refunds unchanged during cart preparation', prepared.refunds, before.refunds);
   same('refunds unchanged after checkout', after.refunds, before.refunds);
-  same('stock warehouses preserved during preparation', sorted(prepared.stock.map(row => row.warehouseId)), sorted(before.stock.map(row => row.warehouseId)));
-  check('invalid reservation rows', prepared.reservations.filter(row => row.itemId !== before.itemId
-    || row.quantity <= 0 || !before.stock.some(stock => stock.warehouseId === row.warehouseId)).length, 0);
+  same('stock warehouses preserved during preparation', sorted(prepared.stock.map(row => stockKey(prepared, row))), sorted(before.stock.map(row => stockKey(before, row))));
+  check('invalid reservation rows', prepared.reservations.filter(row => !expectedLines.some(line => line.itemId === row.itemId)
+    || row.quantity <= 0 || !before.stock.some(stock => stockItem(before, stock) === row.itemId && stock.warehouseId === row.warehouseId)).length, 0);
   if (prepared.reservations.length) {
     const reserved = total(prepared.reservations);
     if (requirePayment) check('prepared reserved quantity', reserved, quantity);
-    else check('reserved quantity exceeds prepared cart', Number(reserved > quantity), 0);
+    else for (const wanted of expectedLines) {
+      check(`reserved quantity exceeds prepared cart for item ${wanted.itemId}`,
+        Number(total(prepared.reservations.filter(row => row.itemId === wanted.itemId)) > wanted.quantity), 0);
+    }
   }
   for (const stock of before.stock) {
-    const reserved = total(prepared.reservations.filter(row => row.warehouseId === stock.warehouseId));
-    const readyStock = prepared.stock.find(row => row.warehouseId === stock.warehouseId);
-    const finalStock = after.stock.find(row => row.warehouseId === stock.warehouseId);
+    const itemId = stockItem(before, stock);
+    const reserved = total(prepared.reservations.filter(row => row.itemId === itemId && row.warehouseId === stock.warehouseId));
+    const readyStock = prepared.stock.find(row => stockKey(prepared, row) === stockKey(before, stock));
+    const finalStock = after.stock.find(row => stockKey(after, row) === stockKey(before, stock));
     if (readyStock) check(`prepared stock in warehouse ${stock.warehouseId}`, readyStock.quantity, stock.quantity - reserved);
     if (finalStock) {
       check('warehouses with an unexpected stock increase', Number(finalStock.quantity > stock.quantity), 0);
@@ -289,11 +301,12 @@ function compareCheckout(before: CheckoutState, prepared: CheckoutState, after: 
     for (const line of order.lines) {
       if (warehouses) check('allocated order quantity', total(line.allocations), line.quantity);
       check('invalid order allocations', line.allocations.filter(row => row.quantity <= 0
-        || !before.stock.some(stock => stock.warehouseId === row.warehouseId)).length, 0);
+        || !before.stock.some(stock => stockItem(before, stock) === line.itemId && stock.warehouseId === row.warehouseId)).length, 0);
     }
     for (const stock of before.stock) {
-      const allocated = total(order.lines.flatMap(line => line.allocations).filter(row => row.warehouseId === stock.warehouseId));
-      const finalStock = after.stock.find(row => row.warehouseId === stock.warehouseId);
+      const allocated = total(order.lines.filter(line => line.itemId === stockItem(before, stock))
+        .flatMap(line => line.allocations).filter(row => row.warehouseId === stock.warehouseId));
+      const finalStock = after.stock.find(row => stockKey(after, row) === stockKey(before, stock));
       if (finalStock) check(`order allocation in warehouse ${stock.warehouseId}`, stock.quantity - finalStock.quantity, allocated);
     }
     if (payments[0]) {
@@ -302,7 +315,7 @@ function compareCheckout(before: CheckoutState, prepared: CheckoutState, after: 
       check('checkout payment in minor units', payments[0].amountMinor, amount);
     }
   }
-  same('stock warehouses preserved', sorted(after.stock.map(row => row.warehouseId)), sorted(before.stock.map(row => row.warehouseId)));
+  same('stock warehouses preserved', sorted(after.stock.map(row => stockKey(after, row))), sorted(before.stock.map(row => stockKey(before, row))));
   if (warehouses) check('stored stock consumed by one checkout', integer.parse(total(before.stock) - total(after.stock)), quantity);
   return differences;
 }
@@ -333,7 +346,7 @@ function compareCancellation(before: CheckoutState, after: CheckoutState, refund
   if (orders.length !== 1 || !order || order.status !== 'pending' || !order.lines.length
     || order.lines.some(line => line.itemId !== before.itemId || line.quantity <= 0
       || !line.allocations.length || line.allocations.some(row => row.quantity <= 0
-        || !before.stock.some(stock => stock.warehouseId === row.warehouseId))
+        || !before.stock.some(stock => stockItem(before, stock) === line.itemId && stock.warehouseId === row.warehouseId))
       || line.allocations.reduce((sum, row) => integer.parse(sum + row.quantity), 0) !== line.quantity)) {
     return [{ control: 'cancellation requires one pending single-product order with complete allocations', observed: 0, expected: 1 }];
   }
@@ -343,7 +356,7 @@ function compareCancellation(before: CheckoutState, after: CheckoutState, refund
   if (refund) cancelled.refundedMinor = cancelled.totalMinor;
   for (const stock of expected.stock) {
     for (const allocation of order.lines.flatMap(line => line.allocations)) {
-      if (allocation.warehouseId === stock.warehouseId) stock.quantity = integer.parse(stock.quantity + allocation.quantity);
+      if (stockItem(expected, stock) === before.itemId && allocation.warehouseId === stock.warehouseId) stock.quantity = integer.parse(stock.quantity + allocation.quantity);
     }
   }
   // Database row order is not part of cancellation. Keep nested allocation and

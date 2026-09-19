@@ -306,7 +306,7 @@ test('empty stock is measurable after checkout but cannot establish a setup snap
   assert.deepEqual(checkoutStateSchema.parse(after), after);
   assert(checkoutDifferences(before, prepared, after, 1).some(row => row.control === 'stored stock consumed by one checkout'));
   before.stock = []; prepared.stock = []; prepared.reservations = [];
-  assert(checkoutDifferences(before, prepared, prepared, 1, true).some(row => row.control === 'initial stock warehouses'));
+  assert(checkoutDifferences(before, prepared, prepared, 1, true).some(row => row.control === 'initial stock warehouses for item i'));
   const checkoutSnapshots = new Map();
   const result = await executeAction(ACTION_REGISTRY, 'dbRecordCheckout', {
     do: 'dbRecordCheckout', account: 'buyer', item: 'item', as: 'before',

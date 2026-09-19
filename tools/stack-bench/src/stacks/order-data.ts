@@ -77,8 +77,7 @@ export function readOrderDataSnapshot(raw: unknown, account: string, item: strin
     accountId, itemId, priceMinor: items[0]!.price,
     cart: tables.order_cart.filter(row => row.account_id === accountId)
       .map(row => ({ itemId: row.item_id, quantity: row.quantity })),
-    stock: tables.stock.filter(row => row.item_id === itemId)
-      .map(row => ({ warehouseId: row.warehouse_id, quantity: row.quantity })),
+    stock: tables.stock.map(row => ({ itemId: row.item_id, warehouseId: row.warehouse_id, quantity: row.quantity })),
     orders: tables.order_header.map(order => ({ id: order.id, accountId: order.account_id,
       totalMinor: order.total, refundedMinor: order.refunded, status: order.status,
       lines: tables.order_line.filter(line => line.order_id === order.id).map(line => ({

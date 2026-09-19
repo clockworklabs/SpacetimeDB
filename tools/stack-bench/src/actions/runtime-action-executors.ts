@@ -206,7 +206,7 @@ export type CheckoutQuantity = number | readonly { item: string; quantity: numbe
 export function checkoutExpectation(quantity: CheckoutQuantity, snapshots: readonly CheckoutSnapshot[]) {
   const before = snapshots[0]!;
   return typeof quantity === 'number' ? quantity : quantity.map(wanted => {
-    if (before.scope !== 'orders' || before.storage?.warehouses !== false) throw new Error('multi-item checkout requires order/cart-only scope');
+    if (before.scope !== 'orders') throw new Error('multi-item checkout requires native order data');
     const observed = snapshots.map(snapshot => {
       if (!snapshot.catalog) throw new Error('checkout reader did not provide catalog prices');
       const matches = snapshot.catalog.filter(row => row.name === wanted.item);
