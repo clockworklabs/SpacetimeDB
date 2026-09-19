@@ -62,7 +62,7 @@
     {
       "backend": "convex",
       "path": "grader/mutations/convex-ecommerce.json",
-      "sha256": "312ce6e33819f23f52cc2e0e771c8c70328cdce8f9528ad09ca1163deee1b16b",
+      "sha256": "9674e23361ee683f6f4f0e3d80b8fac2a478fc522b52c2d159ede442aaf0743b",
       "referenceId": "ecommerce-reference-convex"
     }
   ],

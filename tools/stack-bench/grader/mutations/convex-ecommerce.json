@@ -412,9 +412,11 @@
       "id": "purchases-do-not-decrement-stock",
       "scenario": "tracks/ecommerce/scenarios/01-last-unit.json",
       "targets": [
-        "ecommerce.spec.concurrency-safety.last-unit.201b"
+        "ecommerce.spec.concurrency-safety.last-unit.201a",
+        "ecommerce.spec.concurrency-safety.last-unit.201b",
+        "ecommerce.spec.concurrency-safety.last-unit.201c"
       ],
-      "desc": "Order creation preserves available stock, permitting overselling.",
+      "desc": "Record purchases without decrementing stock, causing unchanged inventory, excess orders and excess revenue in the same purchase burst.",
       "file": "convex/shop.js",
       "edits": [
         {
@@ -427,9 +429,11 @@
       "id": "purchase-rejects-every-request",
       "scenario": "tracks/ecommerce/scenarios/01-last-unit.json",
       "targets": [
-        "ecommerce.spec.concurrency-safety.last-unit.201a"
+        "ecommerce.spec.concurrency-safety.last-unit.201a",
+        "ecommerce.spec.concurrency-safety.last-unit.201b",
+        "ecommerce.spec.concurrency-safety.last-unit.201c"
       ],
-      "desc": "Reject every purchase, including available stock; safety without progress must fail.",
+      "desc": "Reject every purchase, leaving unchanged stock, zero successful orders and zero revenue in the required purchase burst.",
       "file": "convex/shop.js",
       "edits": [
         {
@@ -439,17 +443,17 @@
       ]
     },
     {
-      "id": "order-cancel-not-owner-scoped",
+      "id": "order-history-not-owner-scoped",
       "scenario": "tracks/ecommerce/scenarios/01-order-ownership.json",
       "targets": [
         "ecommerce.spec.access-control.order-ownership.106a"
       ],
-      "desc": "A customer can cancel another customer order.",
+      "desc": "Order history exposes every customer's orders instead of only the signed-in customer's orders.",
       "file": "convex/shop.js",
       "edits": [
         {
-          "find": "if (!order || order.account_id !== user._id) throw new ConvexError('Order not found');",
-          "replace": "if (!order) throw new ConvexError('Order not found');"
+          "find": "orders: orderViews.filter(o => ownOrderIds.has(o.id)),",
+          "replace": "orders: orderViews,"
         }
       ]
     },
@@ -525,7 +529,7 @@
       "edits": [
         {
           "find": "await ctx.db.patch(accountId, { roles: [role] });",
-          "replace": "await ctx.db.patch(accountId, { roles: [...new Set([...(await ctx.db.get(accountId)).roles, role])] });"
+          "replace": "await ctx.db.patch(accountId, { roles: [role, ...(await ctx.db.get(accountId)).roles.filter(previous => previous === 'admin' && previous !== role)] });"
         }
       ]
     },
@@ -625,9 +629,13 @@
       "targets": [
         "ecommerce.feature.accounts.accounts.1b"
       ],
-      "desc": "A duplicate username is reported as a successful empty signup response instead of a refusal.",
+      "desc": "Duplicate signup authenticates the existing account without its password.",
       "file": "convex/auth.js",
       "edits": [
+        {
+          "find": "const { user } = await createAccount(ctx, {",
+          "replace": "const existing = await retrieveAccount(ctx, { provider: 'password', account: { id: params.username } }).catch(() => null);\n        const { user } = existing ?? await createAccount(ctx, {"
+        },
         {
           "find": "if (user.registrationNonce !== registrationNonce) throw new ConvexError('Username already exists');",
           "replace": "// Defect: creating an existing account grants a session."
@@ -719,8 +727,8 @@
       "file": "convex/shop.js",
       "edits": [
         {
-          "find": "unit_price: item.price, returned: false",
-          "replace": "unit_price: 0, returned: false"
+          "find": "await ctx.db.patch(orderId, { total: total / 100 });",
+          "replace": "await ctx.db.patch(orderId, { total: 0 });"
         }
       ]
     },
@@ -1126,12 +1134,12 @@
       "targets": [
         "ecommerce.spec.access-control.staff-area-boundary.601b"
       ],
-      "desc": "Signin falsely exposes every customer as staff.",
+      "desc": "Treat every authenticated account, including the seeded customer, as staff in authorization and public account state.",
       "file": "convex/accounts.js",
       "edits": [
         {
-          "find": "username: user.name, roles: [],",
-          "replace": "username: user.name, roles: ['staff'],"
+          "find": "export const isStaff = a => Boolean(a?.roles.some(role => ['admin', 'staff', 'inventory'].includes(role)));",
+          "replace": "export const isStaff = a => Boolean(a);"
         }
       ]
     },
@@ -1365,10 +1373,9 @@
       "id": "notification-preference-is-not-saved",
       "scenario": "tracks/ecommerce/scenarios/progression-notification-preferences.json",
       "targets": [
-        "ecommerce.spec.state-durability.notification-preferences-reload.630a",
-        "ecommerce.progression.notification-preferences.notification-preferences.630c"
+        "ecommerce.spec.state-durability.notification-preferences-reload.630a"
       ],
-      "desc": "Notification preferences are always saved as disabled, so both the saved-choice view and reload show the wrong value.",
+      "desc": "Saved notification preferences remain disabled after reload.",
       "file": "convex/progression.js",
       "edits": [
         {
@@ -1388,7 +1395,7 @@
       "edits": [
         {
           "find": "await ctx.db.patch(accountId, { roles: [role] });",
-          "replace": "await ctx.db.patch(accountId, { roles: ['staff'] });"
+          "replace": "await ctx.db.patch(accountId, { roles: [role === 'inventory' ? 'staff' : role] });"
         }
       ]
     },
