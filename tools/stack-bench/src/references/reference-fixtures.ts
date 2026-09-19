@@ -61,6 +61,7 @@ const REGISTRY = join(ROOT, 'reference-apps', 'registry.json');
 export const REFERENCE_METADATA_FILE = 'reference.json';
 const BACKENDS = new Set(['spacetime', 'postgres', 'mongodb', 'convex']);
 const FIXTURE_KINDS = new Set(['node-api', 'spacetime', 'convex']);
+const LOCAL_BUILD_DIRECTORIES = new Set(['node_modules', 'dist']);
 const FORBIDDEN_DIRECTORIES = new Set(['node_modules', 'dist', 'module_bindings', 'stack-bench']);
 const FORBIDDEN_FILES = [/^\.env(?:\..*)?$/i, /\.mutation-backup(?:\..*)?$/i];
 const WORKSTATION_PATHS = [/[A-Z]:[\\/](?:Users|Development)[\\/]/i];
@@ -322,6 +323,8 @@ export function assertPlainReferenceSourceTree(source: string): void {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const path = join(directory, entry.name);
       const name = relative(source, path).replaceAll('\\', '/');
+      // Local installs/builds are not imported. Do not inspect their dependency links.
+      if (entry.isDirectory() && LOCAL_BUILD_DIRECTORIES.has(entry.name)) continue;
       if (entry.isDirectory() && FORBIDDEN_DIRECTORIES.has(entry.name)) {
         throw new Error(`reference source contains forbidden generated directory ${name}`);
       }
@@ -335,7 +338,8 @@ export function assertPlainReferenceSourceTree(source: string): void {
 function effectiveReferenceSource(fixture: ReferenceFixtureSource,
   { root }: { root: string }): EffectiveSource {
   const basePath = referenceSourcePath(fixture, root);
-  const baseHash = hashDirectory(basePath);
+  const baseHash = hashDirectory(basePath, { exclude: (_name, entry) =>
+    entry.isDirectory() && LOCAL_BUILD_DIRECTORIES.has(entry.name) });
   const files = new Map(baseHash.files.map(name => [name,
     readFileSync(join(basePath, ...name.split('/')))]));
   return { basePath, files };

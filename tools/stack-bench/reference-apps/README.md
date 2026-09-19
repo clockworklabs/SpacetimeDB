@@ -41,6 +41,9 @@ npm run test:references -- --fixture <fixture-id>
 
 The command copies source into a temporary workspace. It does not edit the
 registered fixture. Compile success is not live grading evidence.
+Local `node_modules` and `dist` directories can remain in the checkout. Reference
+inspection excludes them from source hashes, and preparation does not copy them.
+Dependencies and build output are recreated in the temporary workspace.
 
 ## Live qualification
 

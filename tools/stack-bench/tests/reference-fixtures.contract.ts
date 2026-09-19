@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { hashDirectory } from '../src/evidence/provenance.js';
 import { loadReferenceRegistry, inspectImportedReference, selectReferenceFixture,
-  referenceMetadataIssues, validateReferenceRegistry, type ReferenceFixture, type ReferenceRegistry }
+  prepareReferenceFixtureSource, referenceMetadataIssues, validateReferenceRegistry, type ReferenceFixture, type ReferenceRegistry }
   from '../src/references/reference-fixtures.js';
 import { resolveReferenceSelection } from '../src/references/reference-selection.js';
 
@@ -136,7 +136,7 @@ test('reference inspection rejects a symlink that the regular-file hash does not
   }
 });
 
-test('imported fixture inspection requires locks and rejects local or generated files', () => {
+test('reference builds leave source identity unchanged and exclude local output from copies', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-import-'));
   try {
     const target = join(root, 'reference-apps', 'example');
@@ -157,19 +157,34 @@ test('imported fixture inspection requires locks and rejects local or generated 
     } };
     assert.equal(inspectImportedReference(fixture, { root }).ok, true);
 
-    mkdirSync(join(target, 'server', 'dist'));
-    writeFileSync(join(target, 'server', 'dist', 'app.js'), 'generated\n');
+    const generated = ['node_modules', 'client/node_modules', 'client/dist', 'server/dist'];
+    for (const directory of generated) {
+      mkdirSync(join(target, directory), { recursive: true });
+      writeFileSync(join(target, directory, 'app.js'), 'generated\n');
+    }
+    const inspection = inspectImportedReference(fixture, { root });
+    assert.equal(inspection.ok, true);
+    assert.equal(inspection.sourceSha256, fixture.imported.sourceSha256);
+    const destination = join(root, 'prepared');
+    assert.equal(prepareReferenceFixtureSource(fixture, destination, { root }).sha256,
+      fixture.imported.sourceSha256);
+    for (const directory of generated) {
+      assert.equal(existsSync(join(destination, directory)), false);
+      assert.equal(existsSync(join(target, directory)), true);
+    }
+
+    // Excluding build output must not hide source changes or relax import guards.
     writeFileSync(join(target, 'local.ts'), 'const local = "D:/Development/private";\n');
-    fixture.imported.sourceSha256 = hashDirectory(target).sha256;
     const result = inspectImportedReference(fixture, { root });
     assert.equal(result.ok, false);
-    assert.deepEqual(result.failures,
-      ['reference source contains forbidden generated directory server/dist']);
-
-    rmSync(join(target, 'server', 'dist'), { recursive: true });
-    fixture.imported.sourceSha256 = hashDirectory(target).sha256;
+    assert(result.failures.includes('imported fixture hash does not match registry'));
+    assert(result.failures.some(failure => failure.includes('workstation absolute path')));
+    writeFileSync(join(target, '.env'), 'SECRET=must-not-import\n');
     assert(inspectImportedReference(fixture, { root }).failures
-      .some(failure => failure.includes('workstation absolute path')));
+      .some(failure => failure.includes('forbidden local file .env')));
+    mkdirSync(join(target, 'client', 'src', 'module_bindings'), { recursive: true });
+    assert(inspectImportedReference(fixture, { root }).failures
+      .some(failure => failure.includes('forbidden generated directory client/src/module_bindings')));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
