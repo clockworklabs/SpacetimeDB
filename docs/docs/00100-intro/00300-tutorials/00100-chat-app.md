@@ -2440,7 +2440,7 @@ fn on_connected(_ctx: &DbConnection, _identity: Identity, token: &str) {
 
 #### Handle errors and disconnections
 
-We need to handle connection errors and disconnections by printing appropriate messages and exiting the program. These callbacks take an `ErrorContext`, a `DbConnection` that's been augmented with information about the error that occured.
+We need to handle connection errors and disconnections by printing appropriate messages and exiting the program. These callbacks take an `ErrorContext`, a `DbConnection` that's been augmented with information about the error that occurred.
 
 To `src/main.rs`, add:
 
