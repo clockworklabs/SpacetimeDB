@@ -327,7 +327,7 @@ textarea {
 
 .panel {
   position: fixed;
-  top: 0;
+  top: var(--header-height, 0px);
   right: 0;
   bottom: 0;
   width: min(420px, 100%);

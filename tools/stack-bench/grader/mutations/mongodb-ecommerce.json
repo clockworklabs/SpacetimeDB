@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "d256346679183bca23b282e5bba6f0e9225e7cca4ab20d5009fc985e60941052",
+  "fixtureSha256": "308dc0239ff52ccbb88605893a30bf8c41d528518fbceb890ce74ae1bd1b199a",
   "backend": "mongodb",
   "track": "ecommerce",
   "note": "Mutation definitions for the MongoDB ecommerce reference.",

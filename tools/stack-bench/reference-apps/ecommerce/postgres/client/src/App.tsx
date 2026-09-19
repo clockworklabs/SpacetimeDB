@@ -634,6 +634,16 @@ function Header(props: {
   onSignin: (u: string, p: string) => void;
   connected: boolean;
 }) {
+  const header = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const element = header.current!;
+    // Keep drawers below navigation, including when the header wraps.
+    const observer = new ResizeObserver(() => {
+      element.parentElement!.style.setProperty("--header-height", `${element.getBoundingClientRect().height}px`);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const {
     account,
     search,
@@ -672,7 +682,7 @@ function Header(props: {
   }
 
   return (
-    <header className="header">
+    <header className="header" ref={header}>
       <h1 className="app-title" data-role="app-title">
         Storefront
       </h1>

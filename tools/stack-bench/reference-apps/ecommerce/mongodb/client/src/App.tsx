@@ -139,6 +139,16 @@ async function apiFetch(path: string, token: string | null, options: RequestInit
 }
 
 export default function App() {
+  const header = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const element = header.current!;
+    // Keep drawers below navigation, including when the header wraps.
+    const observer = new ResizeObserver(() => {
+      element.parentElement!.style.setProperty("--header-height", `${element.getBoundingClientRect().height}px`);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
   const [currentUser, setCurrentUser] = useState<UserT | null>(null);
   const [initializing, setInitializing] = useState(true);
@@ -541,7 +551,7 @@ export default function App() {
         </div>
       )}
 
-      <header className="header">
+      <header className="header" ref={header}>
         <h1 className="app-title" data-role="app-title">
           Storefront
         </h1>

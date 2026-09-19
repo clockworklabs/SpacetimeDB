@@ -362,9 +362,9 @@ input, select {
 
 .panel {
   position: fixed;
-  top: 0;
+  top: var(--header-height, 0px);
   right: 0;
-  height: 100%;
+  height: calc(100% - var(--header-height, 0px));
   width: 380px;
   max-width: 92vw;
   background: var(--surface);
