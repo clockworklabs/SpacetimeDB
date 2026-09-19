@@ -2552,6 +2552,21 @@
       ]
     },
     {
+      "id": "checkout-crash-sibling-stock",
+      "scenario": "tracks/ecommerce/scenarios/progression-checkout-crash.json",
+      "targets": [
+        "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+      ],
+      "desc": "A recovery callback removes stock for Coffee Grinder while leaving cart and order data intact. The second-product stock discrepancy must fail crash atomicity.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  await initializeProgressionSchema(pool);",
+          "replace": "  await initializeProgressionSchema(pool);\n  await pool.query(`UPDATE stock SET quantity=quantity-1 WHERE item_id=(SELECT id FROM item WHERE name='Coffee Grinder') AND EXISTS (SELECT 1 FROM orders)`);"
+        }
+      ]
+    },
+    {
       "id": "checkout-crash-durability",
       "scenario": "tracks/ecommerce/scenarios/progression-checkout-crash.json",
       "targets": [

@@ -2534,6 +2534,21 @@
       ]
     },
     {
+      "id": "checkout-crash-sibling-stock",
+      "scenario": "tracks/ecommerce/scenarios/progression-checkout-crash.json",
+      "targets": [
+        "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+      ],
+      "desc": "A recovery callback removes stock for Coffee Grinder while leaving cart and order data intact. The second-product stock discrepancy must fail crash atomicity.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  await initializeOrderData(mongoose.connection);",
+          "replace": "  await initializeOrderData(mongoose.connection);\n  if (await Order.exists({})) { const item = await Item.findOne({ name: 'Coffee Grinder' }); if (item) await Stock.updateOne({ item_id: item._id }, { $inc: { quantity: -1 } }); }"
+        }
+      ]
+    },
+    {
       "id": "checkout-crash-durability",
       "scenario": "tracks/ecommerce/scenarios/progression-checkout-crash.json",
       "targets": [

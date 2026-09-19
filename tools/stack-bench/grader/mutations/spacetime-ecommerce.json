@@ -2641,6 +2641,21 @@
       ]
     },
     {
+      "id": "checkout-crash-sibling-stock",
+      "scenario": "tracks/ecommerce/scenarios/progression-checkout-crash.json",
+      "targets": [
+        "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+      ],
+      "desc": "A recovery callback removes stock for Coffee Grinder while leaving cart and order data intact. The second-product stock discrepancy must fail crash atomicity.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "// --- views ---",
+          "replace": "export const onDisconnect = spacetimedb.clientDisconnected((ctx) => { if (![...ctx.db.cartItem.iter()].some(row => [...ctx.db.customerOrder.iter()].some(order => order.accountId === row.accountId))) return; const item = [...ctx.db.item.iter()].find(row => row.name === 'Coffee Grinder'); if (!item) return; const row = [...ctx.db.stock.by_item_warehouse.filter(item.id)][0]; if (row) { ctx.db.stock.by_item_warehouse.delete([row.item_id, row.warehouse_id]); ctx.db.stock.insert({ ...row, quantity: row.quantity - 1 }); } });\n// --- views ---"
+        }
+      ]
+    },
+    {
       "id": "checkout-crash-durability",
       "scenario": "tracks/ecommerce/scenarios/progression-checkout-crash.json",
       "targets": [

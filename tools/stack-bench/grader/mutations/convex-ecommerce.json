@@ -1659,6 +1659,26 @@
       ]
     },
     {
+      "id": "checkout-crash-sibling-stock",
+      "scenario": "tracks/ecommerce/scenarios/progression-checkout-crash.json",
+      "targets": [
+        "ecommerce.spec.state-durability.checkout-crash-integrity.910a"
+      ],
+      "desc": "A recovery callback removes stock for Coffee Grinder while leaving cart and order data intact. The second-product stock discrepancy must fail crash atomicity.",
+      "file": "client/src/request.ts",
+      "edits": [
+        {
+          "find": "followAuth();\nexport async function signOut()",
+          "replace": "followAuth();\nlet lastRecoveryConnection = 1;\nlive.subscribeToConnectionState(({ isWebSocketConnected, connectionCount }) => {\n  if (!isWebSocketConnected || connectionCount <= lastRecoveryConnection) return;\n  lastRecoveryConnection = connectionCount;\n  void (async () => {\n    const token = await accessToken();\n    if (!token) return;\n    http.setAuth(token);\n    const current = await state();\n    const priorOrder = current.orders.find((order: any) => order.status === 'pending');\n    if (priorOrder) await mutate('api:cancel_order', { orderId: priorOrder.id });\n  })().catch(() => undefined);\n});\nexport async function signOut()"
+        },
+        {
+          "file": "convex/shop.js",
+          "find": "  for (const line of await ctx.db.query('order_line').withIndex('order', q => q.eq('order_id', orderId)).collect()) await restoreLine(ctx, line);\n  await ctx.db.patch(orderId, { status: 'cancelled', refunded: order.total });",
+          "replace": "  for (const line of await ctx.db.query('order_line').withIndex('order', q => q.eq('order_id', orderId)).collect()) {\n    if ((await ctx.db.get(line.item_id))?.name !== 'Coffee Grinder') continue;\n    const stock = await ctx.db.query('stock').withIndex('item', q => q.eq('item_id', line.item_id)).first();\n    if (stock) await ctx.db.patch(stock._id, { quantity: stock.quantity - 1 });\n  }"
+        }
+      ]
+    },
+    {
       "id": "checkout-crash-durability",
       "scenario": "tracks/ecommerce/scenarios/progression-checkout-crash.json",
       "targets": [
