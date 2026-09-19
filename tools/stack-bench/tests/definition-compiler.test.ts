@@ -181,6 +181,8 @@ test('extracted action inputs expose their runtime options without allowing scri
   const checkout = { do: 'callAction', actor: 'a', action: 'checkout',
     namedAction: { id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] } };
   assert.doesNotThrow(() => compileScenarioDefinition(scenario(checkout)));
+  assert.doesNotThrow(() => compileScenarioDefinition(scenario({ ...checkout,
+    namedAction: { ...checkout.namedAction, args: [1], params: [{ name: 'price', in: 'body' }] } })));
   assert.throws(() => compileScenarioDefinition(scenario({ ...checkout,
     namedAction: { ...checkout.namedAction, args: [1] } })), /input: is required/);
   assert.throws(() => compileScenarioDefinition(scenario({ do: 'callAction', actor: 'a',

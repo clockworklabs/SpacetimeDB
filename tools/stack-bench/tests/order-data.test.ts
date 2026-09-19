@@ -75,7 +75,7 @@ test('compiled duplicate checkout reconciles real order effects without requesti
         return JSON.stringify(Object.fromEntries(tables.map(table => [table, { inserts: raw[table as keyof typeof raw], deletes: [] }])));
       } });
     for (const [index, step] of steps.entries()) {
-      const result = await executeAction(ACTION_REGISTRY, step.do, step, { capabilities: { 'database-read': capability } });
+      const result = await executeAction(ACTION_REGISTRY, step.do, step, { capabilities: { 'database-read': capability, actors: { get: () => undefined } } });
       assert.equal(result.status, index < 2 || defect === 'none' ? 'passed' : 'failed', defect);
     }
   }

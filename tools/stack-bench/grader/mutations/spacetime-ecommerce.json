@@ -2748,6 +2748,21 @@
           "replace": "  const [orderCache] = useState(() => new Map<bigint, OrderView>(\n    (JSON.parse(sessionStorage.getItem('order-cache') ?? '[]', (key, value) =>\n      key === 'orderId' || key === 'itemId' ? BigInt(value) : key === 'createdAt' ? new Date(value) : value) as OrderView[])\n      .map(order => [order.orderId, order])));\n  for (const order of freshOrderViews) if (order.items.length) orderCache.set(order.orderId, order);\n  const orderViews = [...orderCache.values()];\n  sessionStorage.setItem('order-cache', JSON.stringify(orderViews, (_key, value) => typeof value === 'bigint' ? String(value) : value));\n\n  const revenue = revenueRows[0]?.total ?? 0;"
         }
       ]
+    },
+    {
+      "id": "checkout-records-wrong-total",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "desc": "Store an incorrect checkout total while retaining the normal cart and item lines. Native extra arguments remain rejected.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    total: total - discount,\n    status: 'pending',",
+          "replace": "    total: 1,\n    status: 'pending',"
+        }
+      ]
     }
   ]
 }

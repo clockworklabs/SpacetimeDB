@@ -160,7 +160,7 @@ export const ACTION_DEFINITIONS = Object.freeze({
   dbRecordStock: fields({ item: nonEmptyString, as: nonEmptyString }, { warehouse: nonEmptyString }),
   dbRecordCheckout: fields({ account: nonEmptyString, item: nonEmptyString, as: nonEmptyString },
     { storage: value => orderDataStorageSchema.safeParse(value).success }),
-  dbExpectCheckout: fields({ before: nonEmptyString, prepared: nonEmptyString, quantity: positiveInteger }),
+  dbExpectCheckout: fields({ before: nonEmptyString, prepared: nonEmptyString, quantity: positiveInteger }, { actor: nonEmptyString }),
   dbExpectCancellation: fields({ before: nonEmptyString }),
   dbExpectNoPurchase: fields({ before: nonEmptyString }),
   dbExpectPurchase: fields({ before: nonEmptyString, actor: nonEmptyString, stockBefore: nonEmptyString }),
@@ -428,7 +428,9 @@ function validateStep(step: unknown, at: string): asserts step is CompiledStep {
       if (step.input !== undefined && !namedAction.params?.length) {
         fail(`${at}.namedAction.params`, 'must be a non-empty array');
       }
-      if (step.input === undefined && (namedAction.params?.length || (Array.isArray(namedAction.args) && namedAction.args.length))) {
+      const fixedBody = namedAction.params?.length && namedAction.params.every(param => param.in === 'body')
+        && Array.isArray(namedAction.args) && namedAction.args.length === namedAction.params.length;
+      if (step.input === undefined && !fixedBody && (namedAction.params?.length || (Array.isArray(namedAction.args) && namedAction.args.length))) {
         fail(`${at}.input`, 'is required for an action with parameters or arguments');
       }
     }

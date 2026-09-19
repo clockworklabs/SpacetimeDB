@@ -586,6 +586,28 @@ test('restock role claims reach the real write with staff credentials and stored
   }
 });
 
+test('fixed checkout price claims reach the native transport without inventing a DOM hook', async () => {
+  const scenario = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/progression-cart-checkout.json'), 'utf8'));
+  const steps = scenario.features[0].criteria.find((c: UnknownRecord) => c.id === '4d').steps as UnknownRecord[];
+  const call = steps.find(step => step.do === 'callAction')!;
+  assert(steps.findIndex(step => step.do === 'dbExpectCheckout') < steps.indexOf(call));
+  assert.equal(steps.at(-1)!.actor, 'checkout');
+  for (const backend of ['postgres', 'mongodb', 'spacetime']) {
+    const requests: string[] = [];
+    const provided = services(new Map([['checkout', { name: 'checkout',
+      writes: [{ headers: { authorization: 'Bearer buyer' } }],
+      loc: () => { throw new Error('fixed body has no DOM input'); },
+    }]]), { backend, spacetime: { uri: 'http://native.test', mod: 'shop' },
+      fetchImpl: async (_url, options) => {
+        assert.equal(options.headers?.authorization, 'Bearer buyer');
+        requests.push(options.body!);
+        return namedResponse(400, false);
+      } });
+    assert.equal((await run(call, provided)).status, 'passed');
+    assert.deepEqual(requests.map(body => JSON.parse(body)), backend === 'spacetime' ? [[1]] : [{ price: 1 }]);
+  }
+});
+
 test('price claims reach the purchase transport without replacing the normal purchase controls', async () => {
   const scenario = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/01-server-price.json'), 'utf8'));
   const criterion = scenario.features[0].criteria[0];

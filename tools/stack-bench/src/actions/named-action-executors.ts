@@ -135,12 +135,14 @@ async function callAction({ input, capabilities, signal }: NamedTransportArgumen
   const transport = transportFor(capabilities);
   const action = input.namedAction ?? named.resolve(input.action);
   if (!action) inconclusive('unknown-action', { action: input.action });
-  if (!input.input && (action.params?.length || action.args?.length)) {
+  const fixedBody = action.params?.length && action.params.every(param => param.in === 'body')
+    && action.args?.length === action.params.length;
+  if (!input.input && !fixedBody && (action.params?.length || action.args?.length)) {
     inconclusive('unresolved-action', { action: input.action });
   }
   const actionValues = input.input
     ? await readActionValues(capabilities, source, action, { action: input.action, input: input.input }, transport.defaultWithin)
-    : {};
+    : Object.fromEntries((action.params ?? []).map((param, index) => [param.name, action.args![index]]));
 
   const request = namedActionRequest(named, action, { values: actionValues });
   if (!request?.url) inconclusive('unresolved-action', { action: input.action });

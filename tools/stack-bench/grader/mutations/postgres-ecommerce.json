@@ -2813,6 +2813,51 @@
           "replace": "FROM orders WHERE account_id = $1 AND FALSE ORDER BY created_at DESC`,"
         }
       ]
+    },
+    {
+      "id": "checkout-trusts-submitted-price",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "desc": "Book the submitted checkout price instead of the stored price.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "      await checkoutReservedCart(accountId);",
+          "replace": "      await checkoutReservedCart(accountId);\n      if (req.body?.price !== undefined) await pool.query('UPDATE orders SET total=$1 WHERE id=(SELECT MAX(id) FROM orders WHERE account_id=$2)', [req.body.price, accountId]);"
+        }
+      ]
+    },
+    {
+      "id": "checkout-commits-then-refuses-price",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "desc": "Commit checkout before refusing the extra price field.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "      await checkoutReservedCart(accountId);",
+          "replace": "      await checkoutReservedCart(accountId);\n      if (req.body?.price !== undefined) { res.status(400).json({ error: \"Invalid price field\" }); return; }"
+        }
+      ]
+    },
+    {
+      "id": "checkout-rejects-all-price-control",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "desc": "Refuse all checkouts, including the normal positive path.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  \"/api/checkout\",\n  requireAuth,",
+          "replace": "  \"/api/checkout\",\n  (_req, res) => { res.status(400).json({ error: \"Checkout denied\" }); },\n  requireAuth,"
+        }
+      ]
     }
   ]
 }

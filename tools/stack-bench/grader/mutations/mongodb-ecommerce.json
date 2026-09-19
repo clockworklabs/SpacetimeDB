@@ -2735,6 +2735,21 @@
           "replace": "  const [orders, setStoredOrders] = useState<OrderT[]>([]);\n  const setOrders: typeof setStoredOrders = update => setStoredOrders(previous => {\n    const incoming = typeof update === 'function' ? update(previous) : update;\n    return [...new Map([...previous, ...incoming].map(order => [order.id, order])).values()];\n  });"
         }
       ]
+    },
+    {
+      "id": "checkout-trusts-submitted-price",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "desc": "Book the submitted checkout price instead of the stored price.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    const order = await checkoutAtomic(userId);",
+          "replace": "    const order = await checkoutAtomic(userId);\n    if (req.body?.price !== undefined) { order.total = req.body.price; await order.save(); }"
+        }
+      ]
     }
   ]
 }

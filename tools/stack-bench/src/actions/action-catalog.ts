@@ -109,7 +109,7 @@ const CATEGORY_POLICY = {
 const ACTION_CAPABILITY_OVERRIDES: Partial<Record<ActionId, readonly string[]>> = {
   dbRecordStock: ['database-read', 'browser-observation'],
   dbRecordCheckout: ['database-read'],
-  dbExpectCheckout: ['database-read'],
+  dbExpectCheckout: ['database-read', 'actors'],
   dbExpectCancellation: ['database-read'],
   dbExpectNoPurchase: ['database-read'],
   dbExpectPurchase: ['actors', 'database-read', 'browser-observation'],

@@ -200,7 +200,7 @@ async function dbRecordCheckout({ input, capabilities }: ActionArguments<{ accou
   return { ...snapshot, key: input.as };
 }
 
-async function dbExpectCheckout({ input, capabilities }: ActionArguments<{ before: string; prepared: string; quantity: number }>) {
+async function dbExpectCheckout({ input, capabilities }: ActionArguments<{ before: string; prepared: string; quantity: number; actor?: string }>) {
   const database = capabilities['database-read'];
   const before = database.checkoutSnapshots.get(input.before);
   const prepared = database.checkoutSnapshots.get(input.prepared);
@@ -211,10 +211,19 @@ async function dbExpectCheckout({ input, capabilities }: ActionArguments<{ befor
     || JSON.stringify(before.schemaSha256) !== JSON.stringify(after.schemaSha256)) throw new Error('checkout reader schema changed during the test');
   if (before.scope !== prepared.scope || before.scope !== after.scope) throw new Error('checkout scope changed');
   if (before.storage && !before.storage.cart) throw new Error('checkout reconciliation requires cart evidence');
+  const response = input.actor ? actorFor(capabilities, input.actor).actionCall : undefined;
+  if (input.actor && !response) inconclusive('assertion-without-action', { action: 'callAction' });
+  if (response && (response.complete === false || !response.status)) inconclusive('transport-incomplete', {});
+  if (response && response.action !== 'checkout') throw new Error('checkout reconciliation requires a checkout response');
+  const refused = response !== undefined && !response.accepted;
+  const compareState = refused ? prepared.state : after.state;
   const differences = before.scope === 'orders'
-    ? orderCheckoutDifferences(before.state, prepared.state, after.state, input.quantity, false, before.storage?.warehouses ?? true)
-    : checkoutDifferences(before.state, prepared.state, after.state, input.quantity);
-  const observation = { ...after, differences, before: input.before, prepared: input.prepared };
+    ? orderCheckoutDifferences(before.state, prepared.state, compareState, input.quantity, refused, before.storage?.warehouses ?? true)
+    : checkoutDifferences(before.state, prepared.state, compareState, input.quantity, refused);
+  if (refused) differences.push(...(before.scope === 'orders'
+    ? orderPurchaseDifferences(prepared.state, after.state, new Map([[before.state.accountId, 0]]), new Map(), before.storage?.warehouses ?? true)
+    : purchaseDifferences(prepared.state, after.state, new Map([[before.state.accountId, 0]]), new Map())));
+  const observation = { ...after, differences, before: input.before, prepared: input.prepared, ...(response ? { response } : {}) };
   if (differences[0]) {
     const { control, observed, expected } = differences[0];
     const value = finding('number-mismatch', { control, observed, expected: { equals: expected } });

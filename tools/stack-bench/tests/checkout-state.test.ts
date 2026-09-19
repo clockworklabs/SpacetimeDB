@@ -400,7 +400,7 @@ test('checkout actions retain a failed reconciliation and treat reader failures 
     const snapshots = states();
     const queue = [snapshots.before, snapshots.prepared, snapshots.prepared];
     const checkoutSnapshots = new Map();
-    const capabilities = () => ({ 'database-read': {
+    const capabilities = () => ({ actors: { get: () => undefined }, 'database-read': {
       ...createDatabaseReadCapability({ expand: value => value, checkoutSnapshots }),
       getCheckoutState: () => {
         if (failedRead) throw new Error('database unavailable');
@@ -418,6 +418,47 @@ test('checkout actions retain a failed reconciliation and treat reader failures 
     }, { capabilities: capabilities() });
     assert.equal(result.status, failedRead ? 'inconclusive' : 'failed');
     if (!failedRead) assert(result.observation);
+  }
+});
+
+test('checkout response reconciliation requires the stored effect to match acceptance or refusal', async () => {
+  for (const scoped of [false, true]) for (const mode of [
+    'accepted', 'refused', 'committed-refusal', 'accepted-no-effect', 'wrong-price', 'refused-cart-change',
+    'invalid-preparation', 'missing-response', 'incomplete', 'wrong-action',
+  ]) {
+    const { before, prepared, after } = states();
+    if (scoped) for (const state of [before, prepared, after]) {
+      state.payments = []; state.stock = []; state.reservations = []; state.orphanAllocations = 0;
+      for (const order of state.orders) {
+        order.refundedMinor = 0;
+        for (const line of order.lines) line.allocations = [];
+      }
+    }
+    const refused = ['refused', 'committed-refusal', 'refused-cart-change', 'invalid-preparation'].includes(mode);
+    const current = structuredClone(mode === 'committed-refusal' || (!refused && mode !== 'accepted-no-effect') ? after : prepared);
+    if (mode === 'wrong-price') current.orders[0]!.totalMinor = 1;
+    if (mode === 'refused-cart-change') current.cart = [];
+    if (mode === 'invalid-preparation') prepared.cart = [];
+    const scope = scoped ? 'orders' as const : undefined;
+    const storage = scoped ? { kind: 'order-data' as const, cart: true, warehouses: false } : undefined;
+    const snapshot = (state: CheckoutState) => ({ account: 'a', item: 'i', state,
+      ...(scoped ? { scope, storage } : {}), schemaSha256: { schema: 'verified' } });
+    const result = await executeAction(ACTION_REGISTRY, 'dbExpectCheckout', {
+      do: 'dbExpectCheckout', before: 'before', prepared: 'prepared', quantity: 1, actor: 'buyer',
+    }, { capabilities: {
+      actors: { get: () => ({ actionCall: mode === 'missing-response' ? undefined : {
+        action: mode === 'wrong-action' ? 'buy' : 'checkout', accepted: !refused,
+        complete: mode !== 'incomplete', status: refused ? 400 : 200,
+      } }) },
+      'database-read': {
+        ...createDatabaseReadCapability({ expand: value => value,
+          checkoutSnapshots: new Map([['before', snapshot(before)], ['prepared', snapshot(prepared)]]) }),
+        getCheckoutState: () => snapshot(current),
+      },
+    } });
+    assert.equal(result.status, ['accepted', 'refused'].includes(mode) ? 'passed'
+      : ['missing-response', 'incomplete'].includes(mode) ? 'inconclusive'
+      : mode === 'wrong-action' ? 'harness_failure' : 'failed', `${scoped}:${mode}`);
   }
 });
 

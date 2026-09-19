@@ -1721,6 +1721,25 @@
           "replace": "  const [orders, setStoredOrders] = useState<OrderT[]>([]);\n  const setOrders: typeof setStoredOrders = update => setStoredOrders(previous => {\n    const incoming = typeof update === 'function' ? update(previous) : update;\n    return [...new Map([...previous, ...incoming].map(order => [order.id, order])).values()];\n  });"
         }
       ]
+    },
+    {
+      "id": "checkout-trusts-submitted-price",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "desc": "Accept an optional price field and overwrite the checkout total with it.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "export const checkout = mutationGeneric({ args: {}, handler: async ctx => {",
+          "replace": "export const checkout = mutationGeneric({ args: { price: v.optional(v.number()) }, handler: async (ctx, args) => {"
+        },
+        {
+          "find": "  const result = await purchase(ctx, user, lines);",
+          "replace": "  const result = await purchase(ctx, user, lines);\n  if (args.price !== undefined) await ctx.db.patch(result.orderId, { total: args.price });"
+        }
+      ]
     }
   ]
 }
