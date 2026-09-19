@@ -15,6 +15,8 @@
           "desc": "Compiles one representative of every registered action",
           "points": 0,
           "steps": [
+            { "do": "armScriptCanary", "actor": "a" },
+            { "do": "expectNoScriptExecution", "actor": "a" },
             { "do": "confirmCheckout", "actor": "a" },
             { "do": "crashCheckout", "actor": "a", "before": "before", "prepared": "prepared", "quantity": 1, "requests": 1, "offsetMs": 0, "target": "database", "as": "crash" },
             { "do": "expectCrashCheckout", "from": "crash", "verdict": "atomicity" },
@@ -22,6 +24,7 @@
             { "do": "dbExpectCheckout", "before": "before", "prepared": "prepared", "quantity": 1 },
             { "do": "dbExpectCancellation", "before": "before" },
             { "do": "dbExpectPurchases", "before": {"a":"before"}, "purchases": 1 },
+            { "do": "dbExpectNoPurchase", "before": "before" },
             { "do": "callAction", "actor": "a", "action": "buy", "input": { "testid": "item-card", "contains": "item", "attribute": "data-action-input" }, "authentication": "none", "settleMs": 1 },
             { "do": "callConcurrently", "actors": ["a", "b"], "action": "buy", "settleMs": 1 },
             { "do": "clearInput", "actor": "a" },

@@ -74,6 +74,13 @@
           0
         ],
         "id": "buy",
+        "params": [
+          {
+            "in": "body",
+            "name": "itemId",
+            "wireType": "u64"
+          }
+        ],
         "path": "/api/items/00000000-0000-0000-0000-000000000000/buy",
         "reducer": "buy_now"
       },
@@ -83,6 +90,17 @@
           1
         ],
         "id": "addToCart",
+        "params": [
+          {
+            "in": "body",
+            "name": "itemId",
+            "wireType": "u64"
+          },
+          {
+            "in": "body",
+            "name": "quantity"
+          }
+        ],
         "path": "/api/cart",
         "reducer": "add_to_cart"
       },
@@ -99,6 +117,22 @@
           1
         ],
         "id": "restock",
+        "params": [
+          {
+            "in": "body",
+            "name": "itemId",
+            "wireType": "u64"
+          },
+          {
+            "in": "body",
+            "name": "warehouseId",
+            "wireType": "u64"
+          },
+          {
+            "in": "body",
+            "name": "quantity"
+          }
+        ],
         "path": "/api/admin/restock",
         "reducer": "admin_restock"
       },

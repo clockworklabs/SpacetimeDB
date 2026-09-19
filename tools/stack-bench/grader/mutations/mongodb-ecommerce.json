@@ -2656,6 +2656,40 @@
           "replace": "return false && crypto.timingSafeEqual"
         }
       ]
+    },
+    {
+      "id": "tampered-session-can-purchase",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-session.json",
+      "targets": [
+        "ecommerce.spec.access-control.purchase-session.101a"
+      ],
+      "desc": "Accept a modified session credential and allow its purchase.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "jwt.verify(token, JWT_SECRET) as { sub: string }",
+          "replace": "jwt.decode(token) as { sub: string }"
+        }
+      ]
+    },
+    {
+      "id": "tampered-session-commits-then-refuses",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-session.json",
+      "targets": [
+        "ecommerce.spec.access-control.purchase-session.101a"
+      ],
+      "desc": "Commit the forged purchase but return an access refusal; stored-state evidence must catch it.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "jwt.verify(token, JWT_SECRET) as { sub: string }",
+          "replace": "jwt.decode(token) as { sub: string }"
+        },
+        {
+          "find": "res.json({ order: order.toJSON() });\n});\n\n// ---------------------------------------------------------------------------\n// Cart routes",
+          "replace": "try { jwt.verify(extractToken(req)!, JWT_SECRET); } catch { res.status(401); }\n  res.json({ order: order.toJSON() });\n});\n\n// ---------------------------------------------------------------------------\n// Cart routes"
+        }
+      ]
     }
   ]
 }

@@ -2674,6 +2674,21 @@
           "replace": "return false && crypto.timingSafeEqual"
         }
       ]
+    },
+    {
+      "id": "tampered-session-can-purchase",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-session.json",
+      "targets": [
+        "ecommerce.spec.access-control.purchase-session.101a"
+      ],
+      "desc": "Accept a modified session credential and allow its purchase.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": ".where(eq(session.id, token))\n    .limit(1)",
+          "replace": ".where(sql`true`)\n    .limit(1)"
+        }
+      ]
     }
   ]
 }

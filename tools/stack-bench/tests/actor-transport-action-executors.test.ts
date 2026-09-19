@@ -220,6 +220,20 @@ test('session tampering reaches the server, preserves context, requires a valid 
     { Authorization: 'Bearer token', 'x-auth-token': 'other' },
   ];
   for (const headers of ambiguous) assert.throws(() => tamperedSessionCredentials(headers, 'buyer'), /could not issue the replay/);
+  for (const cookies of [[{ name: 'sid', value: 'token' }], [{ name: 'theme', value: 'dark' }]]) {
+    let requests = 0;
+    const actor = { name: 'buyer', writes: [{ headers: { authorization: `Bearer ${jwt}` } }],
+      context: { cookies: async () => cookies } };
+    const provided = services(new Map([['buyer', actor]]), { fetchImpl: async () => {
+      requests++; return namedResponse(200, true);
+    } });
+    const input = { do: 'callAction', actor: 'buyer', action: 'checkout', settleMs: 0,
+      namedAction: { id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] } };
+    const positive = await run(input, provided);
+    assert.equal(positive.status, 'passed', JSON.stringify(positive));
+    assert.equal((await run({ ...input, authentication: 'tampered-session' }, provided)).status, 'inconclusive');
+    assert.equal(requests, 1, 'neither a fallback credential nor an unrelated cookie can silently earn a result');
+  }
   for (const status of [401, 403]) {
     const classified = classifyResponseContract({ responseContract: 'convex-mutation' }, { status, text: 'unauthorized' });
     assert.equal(classified.refusalKind, 'access'); assert.equal(classified.ok, false);
@@ -430,6 +444,22 @@ test('purchase and restock privacy refusals require their successful control', a
     owner.actionCall.status = 404;
     assert.equal((await run(refusal, provided)).status, 'failed');
   }
+});
+
+test('purchase-session tampering uses early order data, awaits a response, checks effects and restores access', () => {
+  const scenario = JSON.parse(readFileSync('tracks/ecommerce/scenarios/01-purchase-session.json', 'utf8'));
+  assert.equal(scenario.level, 1);
+  const criterion = scenario.features[0].criteria[0];
+  assert.equal(criterion.id, '101a');
+  assert.equal(criterion.points, 2);
+  const steps = criterion.steps as UnknownRecord[];
+  const attack = steps.findIndex(step => step.authentication === 'tampered-session');
+  assert(attack > 0);
+  assert.deepEqual(steps[attack - 1]!.storage, { kind: 'order-data', cart: false, warehouses: false });
+  assert.deepEqual(steps.slice(attack + 1).map(step => [step.do, step.outcome ?? step.plus]), [
+    ['expectActionOutcome', 'completed'], ['dbExpectNoPurchase', undefined], ['dbExpectStock', -1],
+    ['expectActionOutcome', 'refused'], ['callAction', undefined], ['expectActionOutcome', 'accepted'], ['dbExpectStock', -2],
+  ]);
 });
 
 test('an invalid Spacetime u64 input fails before transport and cannot prove refusal', async () => {
@@ -836,6 +866,15 @@ test('only an explicit authorization response proves a replay refusal', async ()
     assert.match(checked.summary ?? '', /does not meet the access-error status contract/);
     assert.doesNotMatch(checked.summary ?? '', /was accepted|instead of refus/);
     assert.equal(provided.verification.length, 0);
+  }
+  for (const status of [200, 400, 401, 403, 404, 500]) {
+    const classified = classifyResponseContract({ responseContract: 'convex-mutation' }, { status, text: '{}' });
+    const actor = { name: 'customer', replay: { ...classified, accepted: classified.ok, status, method: 'POST', url: '/api/mutation' } };
+    const provided = services(new Map([['customer', actor]]));
+    assert.equal((await run({ do: 'expectReplayRejected', actor: 'customer', allowNotFound: true }, provided)).status,
+      [401, 403].includes(status) ? 'passed' : 'failed', String(status));
+    actor.replay.complete = false;
+    assert.equal((await run({ do: 'expectReplayRejected', actor: 'customer' }, provided)).status, 'inconclusive');
   }
 });
 
