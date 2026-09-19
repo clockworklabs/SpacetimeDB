@@ -67,6 +67,12 @@
               "do": "dbExpectNoPurchase"
             },
             {
+              "actor": "a",
+              "before": "before",
+              "do": "dbExpectPurchase",
+              "stockBefore": "stock"
+            },
+            {
               "action": "buy",
               "actor": "a",
               "authentication": "none",

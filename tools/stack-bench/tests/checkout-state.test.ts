@@ -208,6 +208,43 @@ test('refused purchases must leave stored state unchanged, including orders with
   }
 });
 
+test('direct price probes reconcile accepted or refused effects without requiring warehouse features', async () => {
+  for (const mode of ['accepted', 'refused', 'wrong-total', 'wrong-line', 'write-then-refuse', 'stock-only', 'no-op', 'duplicate', 'old-order-changed', 'timeout', 'reader-error', 'schema-change']) {
+    const { before, after } = states();
+    for (const state of [before, after]) {
+      state.stock = []; state.payments = []; state.orphanAllocations = 0;
+      for (const order of state.orders) { order.refundedMinor = 0; order.lines[0]!.allocations = []; }
+    }
+    const old = { ...structuredClone(after.orders[0]!), id: 'old' };
+    before.orders.push(structuredClone(old)); after.orders.push(old);
+    if (mode === 'wrong-total') after.orders[0]!.totalMinor = 100;
+    if (mode === 'wrong-line') after.orders[0]!.lines[0]!.priceMinor = 100;
+    if (mode === 'duplicate') after.orders.push({ ...structuredClone(after.orders[0]!), id: 'extra' });
+    if (mode === 'old-order-changed') after.orders[1]!.totalMinor = 100;
+    const accepted = !['refused', 'write-then-refuse', 'stock-only', 'timeout'].includes(mode);
+    const unchanged = ['refused', 'stock-only', 'no-op'].includes(mode);
+    const snapshot = { state: before, account: 'a', item: 'i', schemaSha256: { schema: 'same' },
+      scope: 'orders' as const, storage: { kind: 'order-data' as const, cart: false, warehouses: false } };
+    const result = await executeAction(ACTION_REGISTRY, 'dbExpectPurchase', {
+      do: 'dbExpectPurchase', actor: 'buyer', before: 'before', stockBefore: 'stock',
+    }, { capabilities: {
+      actors: { get: () => ({ actionCall: { action: 'buy', accepted, status: mode === 'timeout' ? 0 : accepted ? 200 : 400,
+        complete: mode !== 'timeout' } }) },
+      'browser-observation': { recorded: new Map([['stock', 10]]) },
+      'database-read': { checkoutSnapshots: new Map([['before', snapshot]]),
+        getStock: async () => ({ quantity: ['refused', 'no-op'].includes(mode) ? 10 : 9 }),
+        getCheckoutState: () => {
+          if (mode === 'reader-error') throw new Error('unavailable');
+          return { ...snapshot, state: unchanged ? before : after,
+            schemaSha256: { schema: mode === 'schema-change' ? 'changed' : 'same' } };
+        } },
+    } });
+    const expected = ['accepted', 'refused'].includes(mode) ? 'passed' : mode === 'timeout' ? 'inconclusive'
+      : ['reader-error', 'schema-change'].includes(mode) ? 'harness_failure' : 'failed';
+    assert.equal(result.status, expected, mode + ': ' + JSON.stringify(result));
+  }
+});
+
 test('one order can split a product across warehouse lines', () => {
   const { before, prepared, after } = states();
   before.stock.push({ warehouseId: 'west', quantity: 5 });

@@ -163,6 +163,7 @@ export const ACTION_DEFINITIONS = Object.freeze({
   dbExpectCheckout: fields({ before: nonEmptyString, prepared: nonEmptyString, quantity: positiveInteger }),
   dbExpectCancellation: fields({ before: nonEmptyString }),
   dbExpectNoPurchase: fields({ before: nonEmptyString }),
+  dbExpectPurchase: fields({ before: nonEmptyString, actor: nonEmptyString, stockBefore: nonEmptyString }),
   dbExpectPurchases: fields({ before: value => object(value) && Object.keys(value).length > 0
     && Object.values(value).every(nonEmptyString), purchases: positiveInteger }),
   dbExpectStock: fields({ item: nonEmptyString },

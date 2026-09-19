@@ -51,13 +51,13 @@ export function purchaseDifferences(before: CheckoutState, after: CheckoutState,
 }
 
 export function orderPurchaseDifferences(before: CheckoutState, after: CheckoutState,
-  accepted: ReadonlyMap<string, number>, restocked: ReadonlyMap<string, number>) {
+  accepted: ReadonlyMap<string, number>, restocked: ReadonlyMap<string, number>, warehouses = true) {
   for (const state of [before, after]) orderCheckoutStateSchema.parse(state);
-  return comparePurchases(before, after, accepted, restocked, false);
+  return comparePurchases(before, after, accepted, restocked, false, warehouses);
 }
 
 function comparePurchases(before: CheckoutState, after: CheckoutState,
-  accepted: ReadonlyMap<string, number>, restocked: ReadonlyMap<string, number>, requirePayment: boolean) {
+  accepted: ReadonlyMap<string, number>, restocked: ReadonlyMap<string, number>, requirePayment: boolean, warehouses = true) {
   const differences: Array<{ control: string; observed: number; expected: number }> = [];
   const check = (control: string, observed: number, expected: number) => {
     if (observed !== expected) differences.push({ control, observed, expected });
@@ -82,7 +82,7 @@ function comparePurchases(before: CheckoutState, after: CheckoutState,
       check('purchase item', Number(line.itemId === before.itemId), 1);
       check('purchase quantity', line.quantity, 1);
       check('purchase unit price', line.priceMinor, before.priceMinor);
-      check('purchase allocation count', line.allocations.length, 1);
+      if (warehouses) check('purchase allocation count', line.allocations.length, 1);
       for (const allocation of line.allocations) {
         check('purchase allocated quantity', allocation.quantity, 1);
         const stock = expected.stock.find(row => row.warehouseId === allocation.warehouseId);

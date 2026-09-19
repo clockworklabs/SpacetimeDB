@@ -14,6 +14,7 @@ import type {
   ActionImplementation,
 } from './action-contract.js';
 import { actorFor, fail, inconclusive } from './actor-action-runtime.js';
+import type { ActionCall } from './actor-action-runtime.js';
 import { evidenceDisposition } from '../evidence/check-evidence.js';
 import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
 import type { CheckEvidenceStatus } from '../evidence/check-evidence.js';
@@ -46,6 +47,7 @@ interface Locator {
 }
 
 interface Actor {
+  readonly actionCall?: ActionCall;
   readonly lastWrite?: CapturedWrite | null;
   readonly lastWrites?: Readonly<Record<string, CapturedWrite | undefined>>;
   readonly page: {
@@ -254,6 +256,37 @@ async function dbExpectNoPurchase({ input, capabilities }: ActionArguments<{ bef
   const compare = before.scope === 'orders' ? orderPurchaseDifferences : purchaseDifferences;
   const differences = compare(before.state, after.state, new Map([[before.state.accountId, 0]]), new Map());
   const observation = { ...after, before: input.before, differences };
+  if (differences[0]) {
+    const { control, observed, expected } = differences[0];
+    const value = finding('number-mismatch', { control, observed, expected: { equals: expected } });
+    throw new ActionApplicationFailure(renderFinding(value), { finding: value, observation });
+  }
+  return observation;
+}
+
+async function dbExpectPurchase({ input, capabilities }: ActionArguments<{ before: string; actor: string; stockBefore: string }>) {
+  const database = capabilities['database-read'];
+  const before = database.checkoutSnapshots.get(input.before);
+  const stockBefore = capabilities['browser-observation'].recorded.get(input.stockBefore);
+  const call = actorFor(capabilities, input.actor).actionCall;
+  if (!before || stockBefore === undefined) inconclusive('assertion-without-action', { action: 'dbRecordCheckout/dbRecordStock' });
+  if (!call) inconclusive('assertion-without-action', { action: 'callAction' });
+  if (call.complete === false || !call.status) inconclusive('transport-incomplete', {});
+  if (call.action !== 'buy' || before.scope !== 'orders' || before.storage?.kind !== 'order-data') {
+    throw new Error('direct purchase reconciliation requires a buy response and order-data snapshot');
+  }
+  const after = database.getCheckoutState(before);
+  if (after.scope !== before.scope || JSON.stringify(after.schemaSha256) !== JSON.stringify(before.schemaSha256)) {
+    throw new Error('purchase reader changed during the test');
+  }
+  const count = call.accepted ? 1 : 0;
+  const differences = orderPurchaseDifferences(before.state, after.state,
+    new Map([[before.state.accountId, count]]), new Map(), before.storage.warehouses);
+  const stock = await database.getStock({ item: before.item });
+  if (stock.quantity !== stockBefore - count) differences.push({
+    control: 'purchase stock', observed: stock.quantity, expected: stockBefore - count,
+  });
+  const observation = { ...after, before: input.before, response: call, stock, differences };
   if (differences[0]) {
     const { control, observed, expected } = differences[0];
     const value = finding('number-mismatch', { control, observed, expected: { equals: expected } });
@@ -757,6 +790,7 @@ export const RUNTIME_ACTION_IMPLEMENTATIONS = Object.freeze({
   dbExpectCheckout: contractLifecycleAction(dbExpectCheckout),
   dbExpectCancellation: contractLifecycleAction(dbExpectCancellation),
   dbExpectNoPurchase: contractLifecycleAction(dbExpectNoPurchase),
+  dbExpectPurchase: contractLifecycleAction(dbExpectPurchase),
   dbExpectPurchases: contractLifecycleAction(dbExpectPurchases),
   dbRecordStock: contractLifecycleAction(dbRecordStock),
   dbExpectStock: contractLifecycleAction(dbExpectStock),

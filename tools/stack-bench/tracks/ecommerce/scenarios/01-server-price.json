@@ -3,18 +3,26 @@
   "track": "ecommerce",
   "level": 1,
   "name": "The price is the store's to set",
-  "note": "Two different prices and a fresh account session verify stored order totals. This does not claim to test arbitrary forged fields; the declared purchase accepts only an item identifier. The later price-change check exercises a changed price.",
+  "note": "Draft: normal purchases of two differently priced items plus a client-supplied price probe. The app may reject the extra argument without effects or ignore it and book the stored price. Stored orders, line prices and total stock are reconciled against the completed response. Normal purchases must work before and after. This tests one price field, not all checkout or mass-assignment variants.",
   "features": [
     {
       "id": 104,
       "name": "The price is the store's to set",
-      "actors": ["buyer"],
-      "setup": [{"do":"signUp","actor":"buyer","name":"oli"}],
+      "actors": [
+        "buyer"
+      ],
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "buyer",
+          "name": "oli"
+        }
+      ],
       "criteria": [
         {
           "id": "104a",
           "category": "production",
-          "desc": "direct purchases of two differently priced items persist exactly one correctly priced order each",
+          "desc": "direct purchases use the stored price; a submitted price cannot change booked totals or leave effects after refusal",
           "points": 2,
           "steps": [
             {
@@ -25,35 +33,238 @@
                 "id": "buy",
                 "path": "/api/items/:id/buy",
                 "reducer": "buy_now",
-                "args": [0],
-                "params": [{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
               },
-              "input": {"testid":"item-card","contains":"Espresso Machine","attribute":"data-buy-input"},
+              "input": {
+                "testid": "item-card",
+                "contains": "Espresso Machine",
+                "attribute": "data-buy-input"
+              },
               "settleMs": 2000
             },
-            {"do":"expectActionOutcome","actor":"buyer","outcome":"accepted"},
             {
-              "do": "callAction", "actor": "buyer", "action": "buy",
-              "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] },
-              "input": { "testid": "item-card", "contains": "Coffee Grinder", "attribute": "data-buy-input" },
+              "do": "expectActionOutcome",
+              "actor": "buyer",
+              "outcome": "accepted"
+            },
+            {
+              "do": "callAction",
+              "actor": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Coffee Grinder",
+                "attribute": "data-buy-input"
+              },
               "settleMs": 2000
             },
-            { "do": "expectActionOutcome", "actor": "buyer", "outcome": "accepted" },
-            { "do": "freshClient", "actor": "buyer" },
-            { "do": "signIn", "actor": "buyer-fresh", "name": "oli" },
-            {"do":"click","actor":"buyer-fresh","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
-            {"do":"click","actor":"buyer-fresh","testid":"orders-toggle", "unlessVisible": "order-item" },
-            {"do":"expect","actor":"buyer-fresh","testid":"order-item","count":2},
-            {"do":"expect","actor":"buyer-fresh","testid":"order-item","contains":"Espresso Machine","count":1},
+            {
+              "do": "expectActionOutcome",
+              "actor": "buyer",
+              "outcome": "accepted"
+            },
+            {
+              "do": "freshClient",
+              "actor": "buyer"
+            },
+            {
+              "do": "signIn",
+              "actor": "buyer-fresh",
+              "name": "oli"
+            },
+            {
+              "do": "click",
+              "actor": "buyer-fresh",
+              "testid": "overlay-close",
+              "ifAvailable": true,
+              "unlessVisible": "order-item",
+              "within": 1000
+            },
+            {
+              "do": "click",
+              "actor": "buyer-fresh",
+              "testid": "orders-toggle",
+              "unlessVisible": "order-item"
+            },
+            {
+              "do": "expect",
+              "actor": "buyer-fresh",
+              "testid": "order-item",
+              "count": 2
+            },
+            {
+              "do": "expect",
+              "actor": "buyer-fresh",
+              "testid": "order-item",
+              "contains": "Espresso Machine",
+              "count": 1
+            },
             {
               "do": "expectNumber",
               "actor": "buyer-fresh",
               "testid": "order-total",
-              "in": {"testid":"order-item","contains":"Espresso Machine"},
+              "in": {
+                "testid": "order-item",
+                "contains": "Espresso Machine"
+              },
               "equals": 449
             },
-            { "do": "expect", "actor": "buyer-fresh", "testid": "order-item", "contains": "Coffee Grinder", "count": 1 },
-            { "do": "expectNumber", "actor": "buyer-fresh", "testid": "order-total", "in": { "testid": "order-item", "contains": "Coffee Grinder" }, "equals": 64 }
+            {
+              "do": "expect",
+              "actor": "buyer-fresh",
+              "testid": "order-item",
+              "contains": "Coffee Grinder",
+              "count": 1
+            },
+            {
+              "do": "expectNumber",
+              "actor": "buyer-fresh",
+              "testid": "order-total",
+              "in": {
+                "testid": "order-item",
+                "contains": "Coffee Grinder"
+              },
+              "equals": 64
+            },
+            {
+              "do": "dbRecordCheckout",
+              "account": "{user:oli}",
+              "item": "Espresso Machine",
+              "as": "before-price-claim",
+              "storage": {
+                "kind": "order-data",
+                "cart": false,
+                "warehouses": false
+              }
+            },
+            {
+              "do": "dbRecordStock",
+              "item": "Espresso Machine",
+              "as": "before-price-claim-stock"
+            },
+            {
+              "do": "callAction",
+              "actor": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0,
+                  1
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  },
+                  {
+                    "name": "price",
+                    "in": "body"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Espresso Machine",
+                "attribute": "data-buy-input"
+              },
+              "settleMs": 0
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "buyer",
+              "outcome": "completed"
+            },
+            {
+              "do": "dbExpectPurchase",
+              "actor": "buyer",
+              "before": "before-price-claim",
+              "stockBefore": "before-price-claim-stock"
+            },
+            {
+              "do": "dbRecordCheckout",
+              "account": "{user:oli}",
+              "item": "Espresso Machine",
+              "as": "after-price-claim",
+              "storage": {
+                "kind": "order-data",
+                "cart": false,
+                "warehouses": false
+              }
+            },
+            {
+              "do": "dbRecordStock",
+              "item": "Espresso Machine",
+              "as": "after-price-claim-stock"
+            },
+            {
+              "do": "callAction",
+              "actor": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Espresso Machine",
+                "attribute": "data-buy-input"
+              },
+              "settleMs": 0
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "buyer",
+              "outcome": "accepted"
+            },
+            {
+              "do": "dbExpectPurchase",
+              "actor": "buyer",
+              "before": "after-price-claim",
+              "stockBefore": "after-price-claim-stock"
+            }
           ],
           "statedBy": "the server uses the current stored price when it creates an order"
         }

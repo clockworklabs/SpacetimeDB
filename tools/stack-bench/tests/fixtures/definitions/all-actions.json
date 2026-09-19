@@ -25,6 +25,7 @@
             { "do": "dbExpectCancellation", "before": "before" },
             { "do": "dbExpectPurchases", "before": {"a":"before"}, "purchases": 1 },
             { "do": "dbExpectNoPurchase", "before": "before" },
+            { "do": "dbExpectPurchase", "before": "before", "actor": "a", "stockBefore": "stock" },
             { "do": "callAction", "actor": "a", "action": "buy", "input": { "testid": "item-card", "contains": "item", "attribute": "data-action-input" }, "authentication": "none", "settleMs": 1 },
             { "do": "callConcurrently", "actors": ["a", "b"], "action": "buy", "settleMs": 1 },
             { "do": "clearInput", "actor": "a" },

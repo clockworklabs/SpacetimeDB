@@ -1687,6 +1687,25 @@
           "replace": "export const restock = mutationGeneric({ args: { itemId: v.id('item'), warehouseId: v.id('warehouse'), quantity: v.number(), role: v.optional(v.string()) },\n  handler: async (ctx, args) => {\n    await operator(ctx, args.role !== 'admin'); quantity(args.quantity);"
         }
       ]
+    },
+    {
+      "id": "direct-purchase-trusts-submitted-price",
+      "scenario": "tracks/ecommerce/scenarios/01-server-price.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.server-price.104a"
+      ],
+      "desc": "Ordinary purchases use the catalog price; an extra price field overrides the booked order and line price.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "export const buy = mutationGeneric({ args: { itemId: v.id('item') }, handler: async (ctx, { itemId }) =>\n  purchase(ctx, await account(ctx), [{ item_id: itemId, quantity: 1 }]) });",
+          "replace": "export const buy = mutationGeneric({ args: { itemId: v.id('item'), price: v.optional(v.number()) }, handler: async (ctx, { itemId, price }) =>\n  purchase(ctx, await account(ctx), [{ item_id: itemId, quantity: 1, price }]) });"
+        },
+        {
+          "find": "    if (!item) throw new ConvexError('Unknown item');\n    const lineId",
+          "replace": "    if (!item) throw new ConvexError('Unknown item');\n    if (line.price !== undefined) item.price = line.price;\n    const lineId"
+        }
+      ]
     }
   ]
 }

@@ -2705,6 +2705,21 @@
           "replace": "app.post(\"/api/admin/restock\", requireAuth, (req, res, next) => req.body?.role === \"admin\" ? next() : requireAdmin(req, res, next), async (req, res) => {"
         }
       ]
+    },
+    {
+      "id": "direct-purchase-trusts-submitted-price",
+      "scenario": "tracks/ecommerce/scenarios/01-server-price.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.server-price.104a"
+      ],
+      "desc": "Ordinary purchases use the catalog price; an extra price field overrides the booked order and line price.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  const user = (req as any).user;\n  const order = await Order.create({",
+          "replace": "  const user = (req as any).user;\n  if (req.body?.price !== undefined) item.price = req.body.price;\n  const order = await Order.create({"
+        }
+      ]
     }
   ]
 }

@@ -2738,6 +2738,51 @@
           "replace": "app.post(\n  \"/api/admin/restock\",\n  (_req, res) => { res.status(403).json({ error: \"restock disabled\" }); },"
         }
       ]
+    },
+    {
+      "id": "direct-purchase-trusts-submitted-price",
+      "scenario": "tracks/ecommerce/scenarios/01-server-price.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.server-price.104a"
+      ],
+      "desc": "Ordinary purchases use the catalog price; an extra price field overrides the booked order and line price.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "      const { name, price } = itemRow.rows[0];",
+          "replace": "      const { name } = itemRow.rows[0];\n      const price = req.body?.price ?? itemRow.rows[0].price;"
+        }
+      ]
+    },
+    {
+      "id": "direct-purchase-price-commits-then-refuses",
+      "scenario": "tracks/ecommerce/scenarios/01-server-price.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.server-price.104a"
+      ],
+      "desc": "A request with an extra price field commits an otherwise correct purchase, then returns 403.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    await broadcastRecommended(accountId);\n    res.json({ ok: true });\n  })\n);\n\n// ---------- cart routes",
+          "replace": "    await broadcastRecommended(accountId);\n    if (req.body?.price !== undefined) { res.status(403).json({ error: \"Price denied\" }); return; }\n    res.json({ ok: true });\n  })\n);\n\n// ---------- cart routes"
+        }
+      ]
+    },
+    {
+      "id": "direct-purchase-rejects-all",
+      "scenario": "tracks/ecommerce/scenarios/01-server-price.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.server-price.104a"
+      ],
+      "desc": "Reject every direct purchase, including the valid purchase controls.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  \"/api/items/:id/buy\",\n  requireAuth,",
+          "replace": "  \"/api/items/:id/buy\",\n  (_req, res) => { res.status(403).json({ error: \"Purchases denied\" }); },\n  requireAuth,"
+        }
+      ]
     }
   ]
 }

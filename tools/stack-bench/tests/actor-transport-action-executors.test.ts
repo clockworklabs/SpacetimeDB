@@ -586,6 +586,40 @@ test('restock role claims reach the real write with staff credentials and stored
   }
 });
 
+test('price claims reach the purchase transport without replacing the normal purchase controls', async () => {
+  const scenario = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/01-server-price.json'), 'utf8'));
+  const criterion = scenario.features[0].criteria[0];
+  assert.equal(criterion.points, 2);
+  const steps = criterion.steps as UnknownRecord[];
+  const calls = steps.filter(step => step.do === 'callAction');
+  assert.equal(calls.length, 4);
+  const attack = steps.indexOf(calls[2]!);
+  assert.deepEqual(steps.slice(attack + 1, attack + 3).map(step => [step.do, step.outcome]),
+    [['expectActionOutcome', 'completed'], ['dbExpectPurchase', undefined]]);
+  assert.equal(steps.at(-2)!.outcome, 'accepted');
+  for (const backend of ['postgres', 'mongodb', 'spacetime']) {
+    const requests: { url: string; body: string; authorization: string | undefined }[] = [];
+    const provided = services(new Map([['buyer', {
+      name: 'buyer', writes: [{ headers: { authorization: 'Bearer buyer' } }],
+      loc: () => ({ waitFor: async () => {}, getAttribute: async () => JSON.stringify({ itemId: '9007199254740993' }) }),
+    }]]), { backend, spacetime: { uri: 'http://native.test', mod: 'shop' },
+      fetchImpl: async (url, options) => {
+        requests.push({ url, body: options.body!, authorization: options.headers?.authorization });
+        return namedResponse(400, false);
+      } });
+    for (const call of calls) assert.equal((await run(call, provided)).status, 'passed');
+    assert(requests.every(request => request.authorization === 'Bearer buyer'));
+    assert(requests.every(request => request.url === requests[0]!.url));
+    if (backend === 'spacetime') {
+      assert.equal(requests[2]!.body, '[9007199254740993,1]');
+      assert.equal(requests[3]!.body, '[9007199254740993]');
+    } else {
+      assert.deepEqual(JSON.parse(requests[2]!.body), { price: 1 });
+      assert.equal(JSON.parse(requests[3]!.body).price, undefined);
+    }
+  }
+});
+
 test('an invalid Spacetime u64 input fails before transport and cannot prove refusal', async () => {
   let requests = 0;
   const customer = {
