@@ -144,6 +144,11 @@ const callCount = (value: unknown) => positiveInteger(value) && Number(value) <=
 const callTimeout = (value: unknown) => positiveInteger(value) && Number(value) <= 60000;
 const callDelay = (value: unknown) => nonNegativeInteger(value) && Number(value) <= 1000;
 
+const checkoutQuantity: FieldPredicate = value => positiveInteger(value) || array(value) && value.length > 0
+  && value.every(row => object(row) && nonEmptyString(row.item) && positiveInteger(row.quantity)
+    && Object.keys(row).every(key => key === 'item' || key === 'quantity'))
+  && new Set(value.map(row => (row as Record<string, unknown>).item)).size === value.length;
+
 export const ACTION_DEFINITIONS = Object.freeze({
   callAction: fields({ ...actor, action: nonEmptyString },
     { input: object, from: nonEmptyString, authentication: nonEmptyString, namedAction: object, ...settle }),
@@ -152,7 +157,7 @@ export const ACTION_DEFINITIONS = Object.freeze({
       requests: callCount, requestTimeoutMs: callTimeout, delayMs: callDelay,
       alongside: value => array(value) && value.length === 1 && value.every(object) }),
   crashCheckout: fields({ actor: nonEmptyString, before: nonEmptyString, prepared: nonEmptyString,
-    quantity: positiveInteger, requests: value => value === 1 || value === 16,
+    quantity: checkoutQuantity, requests: value => value === 1 || value === 16,
     offsetMs: value => value === 0 || value === 5 || value === 20,
     target: value => value === 'application' || value === 'database' }, { namedAction: object, as: nonEmptyString, reuseCombinedFrom: nonEmptyString }),
   expectCrashCheckout: fields({ from: nonEmptyString, verdict: value => value === 'atomicity' || value === 'durability' }),
@@ -161,10 +166,7 @@ export const ACTION_DEFINITIONS = Object.freeze({
   dbRecordCheckout: fields({ account: nonEmptyString, item: nonEmptyString, as: nonEmptyString },
     { storage: value => orderDataStorageSchema.safeParse(value).success }),
   dbExpectCheckout: fields({ before: nonEmptyString, prepared: nonEmptyString,
-    quantity: value => positiveInteger(value) || array(value) && value.length > 0
-      && value.every(row => object(row) && nonEmptyString(row.item) && positiveInteger(row.quantity)
-        && Object.keys(row).every(key => key === 'item' || key === 'quantity'))
-      && new Set(value.map(row => (row as Record<string, unknown>).item)).size === value.length }, { actor: nonEmptyString }),
+    quantity: checkoutQuantity }, { actor: nonEmptyString }),
   dbExpectCancellation: fields({ before: nonEmptyString }),
   dbExpectNoPurchase: fields({ before: nonEmptyString }),
   dbExpectPurchase: fields({ before: nonEmptyString, actor: nonEmptyString, stockBefore: nonEmptyString }),

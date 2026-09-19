@@ -4,7 +4,7 @@ import { actorFor, inconclusive } from './actor-action-runtime.js';
 import type { ActorCapabilities } from './actor-action-runtime.js';
 import { browserCredentials, classifyNamedActionResponse, namedActionRequest } from './named-action-runtime.js';
 import type { NamedAction, NamedActionsCapability } from './named-action-runtime.js';
-import type { createDatabaseReadCapability } from './runtime-action-executors.js';
+import { checkoutExpectation, type CheckoutQuantity, type createDatabaseReadCapability } from './runtime-action-executors.js';
 import { checkoutDifferences, orderCheckoutDifferences, checkoutCrashDifferences } from '../stacks/checkout-state.js';
 import { openCrashReducerConnection } from '../stacks/spacetime-crash-transport.js';
 import type { CrashTarget, ProcessCrashReceipt } from '../stacks/process-crash.js';
@@ -13,7 +13,7 @@ import { finding, renderFinding } from './action-findings.js';
 import type { SpacetimeTarget } from '../stacks/stack-grading-operations.js';
 
 interface Input {
-  actor: string; before: string; prepared: string; quantity: number;
+  actor: string; before: string; prepared: string; quantity: CheckoutQuantity;
   requests: 1 | 16; offsetMs: 0 | 5 | 20; target: CrashTarget;
   namedAction?: NamedAction; as?: string; reuseCombinedFrom?: string;
 }
@@ -121,9 +121,10 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
     || !isDeepStrictEqual(before.storage, prepared.storage)
     || before.scope !== prepared.scope
     || before.account !== prepared.account || before.item !== prepared.item) throw new Error('crash snapshots do not describe the same verified state');
-  const compare = (after: typeof before.state, allowUnchanged: boolean) => before.scope === 'orders'
-    ? orderCheckoutDifferences(before.state, prepared.state, after, input.quantity, allowUnchanged, before.storage?.warehouses ?? true)
-    : checkoutDifferences(before.state, prepared.state, after, input.quantity, allowUnchanged);
+  const quantity = checkoutExpectation(input.quantity, [before, prepared]);
+  const compare = (after: typeof before.state, allowUnchanged: boolean) => typeof quantity === 'number' && before.scope !== 'orders'
+    ? checkoutDifferences(before.state, prepared.state, after, quantity, allowUnchanged)
+    : orderCheckoutDifferences(before.state, prepared.state, after, quantity, allowUnchanged, before.storage?.warehouses ?? true);
   const setupDifferences = compare(prepared.state, true);
   if (setupDifferences.length) inconclusive('invalid-input', { detail: 'checkout crash requires a valid prepared cart' });
   const runtime = await capabilities['process-crash'].prepare(input.target);

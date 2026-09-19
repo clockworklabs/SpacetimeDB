@@ -201,21 +201,13 @@ async function dbRecordCheckout({ input, capabilities }: ActionArguments<{ accou
   return { ...snapshot, key: input.as };
 }
 
-async function dbExpectCheckout({ input, capabilities }: ActionArguments<{ before: string; prepared: string;
-  quantity: number | readonly { item: string; quantity: number }[]; actor?: string }>) {
-  const database = capabilities['database-read'];
-  const before = database.checkoutSnapshots.get(input.before);
-  const prepared = database.checkoutSnapshots.get(input.prepared);
-  if (!before || !prepared) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
-  if (before.account !== prepared.account || before.item !== prepared.item) throw new Error('checkout snapshots select different data');
-  const after = database.getCheckoutState(before);
-  if (JSON.stringify(before.schemaSha256) !== JSON.stringify(prepared.schemaSha256)
-    || JSON.stringify(before.schemaSha256) !== JSON.stringify(after.schemaSha256)) throw new Error('checkout reader schema changed during the test');
-  if (before.scope !== prepared.scope || before.scope !== after.scope) throw new Error('checkout scope changed');
-  if (before.storage && !before.storage.cart) throw new Error('checkout reconciliation requires cart evidence');
-  const quantity = typeof input.quantity === 'number' ? input.quantity : input.quantity.map(wanted => {
+export type CheckoutQuantity = number | readonly { item: string; quantity: number }[];
+
+export function checkoutExpectation(quantity: CheckoutQuantity, snapshots: readonly CheckoutSnapshot[]) {
+  const before = snapshots[0]!;
+  return typeof quantity === 'number' ? quantity : quantity.map(wanted => {
     if (before.scope !== 'orders' || before.storage?.warehouses !== false) throw new Error('multi-item checkout requires order/cart-only scope');
-    const observed = [before, prepared, after].map(snapshot => {
+    const observed = snapshots.map(snapshot => {
       if (!snapshot.catalog) throw new Error('checkout reader did not provide catalog prices');
       const matches = snapshot.catalog.filter(row => row.name === wanted.item);
       if (matches.length !== 1) fail('interface-invalid', { action: 'read orders', attribute: 'item', detail: 'checkout item is missing or ambiguous' });
@@ -226,6 +218,21 @@ async function dbExpectCheckout({ input, capabilities }: ActionArguments<{ befor
     }
     return { itemId: observed[0]!.itemId, priceMinor: observed[0]!.priceMinor, quantity: wanted.quantity };
   });
+}
+
+async function dbExpectCheckout({ input, capabilities }: ActionArguments<{ before: string; prepared: string;
+  quantity: CheckoutQuantity; actor?: string }>) {
+  const database = capabilities['database-read'];
+  const before = database.checkoutSnapshots.get(input.before);
+  const prepared = database.checkoutSnapshots.get(input.prepared);
+  if (!before || !prepared) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
+  if (before.account !== prepared.account || before.item !== prepared.item) throw new Error('checkout snapshots select different data');
+  const after = database.getCheckoutState(before);
+  if (JSON.stringify(before.schemaSha256) !== JSON.stringify(prepared.schemaSha256)
+    || JSON.stringify(before.schemaSha256) !== JSON.stringify(after.schemaSha256)) throw new Error('checkout reader schema changed during the test');
+  if (before.scope !== prepared.scope || before.scope !== after.scope) throw new Error('checkout scope changed');
+  if (before.storage && !before.storage.cart) throw new Error('checkout reconciliation requires cart evidence');
+  const quantity = checkoutExpectation(input.quantity, [before, prepared, after]);
   const response = input.actor ? actorFor(capabilities, input.actor).actionCall : undefined;
   if (input.actor && !response) inconclusive('assertion-without-action', { action: 'callAction' });
   if (response && (response.complete === false || !response.status)) inconclusive('transport-incomplete', {});

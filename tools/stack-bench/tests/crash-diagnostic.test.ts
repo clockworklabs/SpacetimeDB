@@ -298,20 +298,32 @@ test('crash action retains partial fault evidence and distinguishes recovered st
 
 
 test('combined native crash reconciles lost responses with stored state and rejects a non-native checkout', async () => {
-  for (const mode of ['lost-unchanged', 'lost-partial', 'acknowledged-lost', 'wrong-route']) {
+  for (const multi of [false, true]) for (const mode of ['lost-unchanged', 'lost-partial', 'lost-complete', 'committed', 'acknowledged-lost', 'wrong-route']) {
     const before: CheckoutState = { accountId: 'a', itemId: 'i', priceMinor: 100,
       stock: [{ warehouseId: 'w', quantity: 10 }], cart: [], reservations: [], orders: [], payments: [], orphanOrderLines: 0 };
+    if (multi) { before.stock = []; before.orphanAllocations = 0; }
     const prepared = structuredClone(before);
     prepared.cart.push({ itemId: 'i', quantity: 1 });
+    if (multi) prepared.cart.push({ itemId: 'j', quantity: 1 });
     const after = structuredClone(prepared);
-    if (mode === 'lost-partial') after.stock[0]!.quantity--;
+    if (mode === 'lost-complete' || mode === 'committed' || multi && mode === 'lost-partial') {
+      after.cart = [];
+      after.orders.push({ id: 'order', accountId: 'a', status: 'pending', totalMinor: multi ? 350 : 100,
+        refundedMinor: 0, lines: [{ itemId: 'i', priceMinor: 100, quantity: 1, allocations: multi ? [] : [{ warehouseId: 'w', quantity: 1 }] }] });
+      if (multi && mode !== 'lost-partial') after.orders[0]!.lines.push({ itemId: 'j', priceMinor: 250, quantity: 1, allocations: [] });
+      if (!multi) { after.stock[0]!.quantity--; after.payments.push({ id: 'p', orderId: 'order', amountMinor: 100, status: 'paid' }); }
+    }
+    if (!multi && mode === 'lost-partial') after.stock[0]!.quantity--;
     const wrap = (state: CheckoutState) => ({ state, schemaSha256: { schema: 'same' },
+      ...(multi ? { scope: 'orders' as const, storage: { kind: 'order-data' as const, cart: true, warehouses: false },
+        catalog: [{ name: 'First', itemId: 'i', priceMinor: 100 }, { name: 'Second', itemId: 'j', priceMinor: 250 }] } : {}),
       account: 'a', item: 'i', recordedAtMs: Date.now() });
     let release!: () => void;
     const stopped = new Promise<void>(resolve => { release = resolve; });
     let closed = false, calls = 0, reads = 0;
     const result = await executeAction(ACTION_REGISTRY, 'crashCheckout', {
-      do: 'crashCheckout', actor: 'buyer', before: 'before', prepared: 'prepared', quantity: 1,
+      do: 'crashCheckout', actor: 'buyer', before: 'before', prepared: 'prepared',
+      quantity: multi ? [{ item: 'First', quantity: 1 }, { item: 'Second', quantity: 1 }] : 1,
       requests: 1, offsetMs: 0, target: 'database',
     }, { capabilities: {
       actors: { get: () => ({ name: 'buyer', context: { cookies: async () => [] },
@@ -339,7 +351,12 @@ test('combined native crash reconciles lost responses with stored state and reje
         recover: async () => { release(); return null; },
       }) },
     } });
-    assert.equal(result.status, mode === 'wrong-route' ? 'inconclusive' : mode === 'lost-unchanged' ? 'passed' : 'failed', mode);
+    assert.equal(result.status, mode === 'wrong-route' ? 'inconclusive' : ['lost-unchanged', 'lost-complete', 'committed'].includes(mode) ? 'passed' : 'failed', `${multi}:${mode}`);
+    if (multi && mode === 'lost-partial') {
+      const verdicts = (result.observation as { verdicts: { atomicity: { control: string }[]; durability: unknown[] } }).verdicts;
+      assert(verdicts.atomicity.some(row => row.control === 'checkout quantity for item j'));
+      assert.deepEqual(verdicts.durability, [], 'a missing sibling on an unacknowledged new order is an atomicity failure');
+    }
     assert.equal(calls, mode === 'wrong-route' ? 0 : 1);
     assert.equal(reads, mode === 'wrong-route' ? 0 : 1);
     assert(closed, 'prepared crash must always close');
