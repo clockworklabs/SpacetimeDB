@@ -541,9 +541,6 @@ export default function App() {
 
   return (
     <div className="app">
-      <CreditPanel token={token} staff={Boolean(currentUser?.isAdmin || currentUser?.isStaff)} />
-      <BundlePanel token={token} canManage={Boolean(currentUser?.isAdmin)} onAdded={() => token ? refreshCart(token) : Promise.resolve()} />
-      <SubscriptionPanel key={token ?? 'guest'} signedIn={Boolean(currentUser)} token={token} />
       {initializing && (
         <div className="loading-screen">
           <div className="spinner" />
@@ -602,6 +599,9 @@ export default function App() {
           )}
         </div>
       </header>
+      <CreditPanel token={token} staff={Boolean(currentUser?.isAdmin || currentUser?.isStaff)} />
+      <BundlePanel token={token} canManage={Boolean(currentUser?.isAdmin)} onAdded={() => token ? refreshCart(token) : Promise.resolve()} />
+      <SubscriptionPanel key={token ?? 'guest'} signedIn={Boolean(currentUser)} token={token} />
 
       <div className="content-row" style={cartOpen || ordersOpen ? { marginRight: 420 } : undefined}>
         <main className="main">

@@ -445,10 +445,6 @@ export default function App() {
 
   return (
     <div className="app">
-      <CreditPanel signedIn={Boolean(account)} staff={Boolean(account?.isAdmin || account?.isStaff)} />
-      <BundlePanel signedIn={Boolean(account)} canManage={Boolean(account?.isAdmin)} onAdded={async () => { if (account) setCart(await api("/api/cart")); }} />
-      <SubscriptionPanel key={account?.id ?? 'guest'} signedIn={Boolean(account)} />
-      <ToastArea toasts={toasts} />
       <Header
         account={account}
         search={search}
@@ -491,6 +487,10 @@ export default function App() {
         onSignin={handleSignin}
         connected={connected}
       />
+      <CreditPanel signedIn={Boolean(account)} staff={Boolean(account?.isAdmin || account?.isStaff)} />
+      <BundlePanel signedIn={Boolean(account)} canManage={Boolean(account?.isAdmin)} onAdded={async () => { if (account) setCart(await api("/api/cart")); }} />
+      <SubscriptionPanel key={account?.id ?? 'guest'} signedIn={Boolean(account)} />
+      <ToastArea toasts={toasts} />
       <main className="main">
         {detailItem && itemDetail && (
           <ItemDetailPanel
