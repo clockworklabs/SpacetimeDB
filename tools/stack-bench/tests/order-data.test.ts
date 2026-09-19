@@ -17,9 +17,59 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { loadTrack } from '../src/composition/tracks.js';
 import { requireRecipeRelease } from '../src/composition/recipe-release.js';
-import { createBoundRecipeTaskRequest, selectScenarioChecks } from '../src/composition/recipe-selection.js';
+import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest, selectScenarioChecks } from '../src/composition/recipe-selection.js';
+import { parseGradeArgs } from '../grader/grade.js';
 
 const fullStorage = { kind: 'order-data' as const, cart: true, warehouses: true };
+
+test('crash stock scope follows the validated delivered task, including retained upgrade contracts', async () => {
+  const binding = requireRecipeRelease(loadTrack('ecommerce'), 3, 'ecommerce.progression-catalog');
+  const path = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/progression-checkout-crash.json');
+  const scenario = compileScenarioDefinition(JSON.parse(readFileSync(path, 'utf8')), { source: path });
+  const step = scenario.features[0]!.setup.find(step => step.do === 'dbRecordCheckout')!;
+  assert.deepEqual(step.storage, { kind: 'order-data', cart: true, warehouses: 'if-requested' });
+  const warehouseContract = 'ecommerce.feature.warehouse-admin.hooks';
+  const checkKeys = ['ecommerce.spec.state-durability.checkout-crash-integrity.910a'];
+  for (const mode of ['checkout', 'warehouses', 'retained', 'missing-task'] as const) {
+    const request = createBoundRecipeTaskRequest(binding, {
+      featureIds: ['ecommerce.feature.checkout', ...(mode === 'warehouses' ? ['ecommerce.feature.warehouse-admin'] : [])],
+      taskMode: mode === 'retained' ? 'upgrade' : 'fresh',
+      priorContractIds: mode === 'retained' ? [warehouseContract] : [],
+      expectedSpecifications: ['ecommerce.spec.state-durability'], checkKeys,
+    }).request;
+    const parsed = parseGradeArgs(['node', 'grade', '--url', 'http://localhost:1', '--spec', path,
+      '--recipe-task-json', JSON.stringify(request)]);
+    const task = resolveBoundRecipeTaskRequest(binding, parsed.recipeTask!).task;
+    const warehouses = mode === 'warehouses' || mode === 'retained';
+    assert.equal(task.contractIds.includes(warehouseContract), warehouses);
+    let reads = 0;
+    const capability = createDatabaseReadCapability({ backend: 'spacetime', app: '/app',
+      expand: value => value.startsWith('{user:') ? 'buyer' : value,
+      contractIds: mode === 'missing-task' ? undefined : task.contractIds,
+      spacetime: { buildContainer: { id: 'owned', name: 'owned' }, mod: 'app',
+        uri: 'http://localhost:3000', containerUri: 'http://localhost:3000' },
+      exec: (_command, args) => {
+        reads++;
+        if (args[0] === 'inspect') return 'owned';
+        const tables = args.filter(arg => arg.startsWith('SELECT * FROM ')).map(arg => arg.slice('SELECT * FROM '.length));
+        assert.equal(tables.length, warehouses ? 9 : 5);
+        assert.equal(tables.includes('stock'), warehouses);
+        const raw = data();
+        return JSON.stringify(Object.fromEntries(tables.map(table => [table, { inserts: raw[table as keyof typeof raw], deletes: [] }])));
+      } });
+    const result = await executeAction(ACTION_REGISTRY, step.do, step, { capabilities: { 'database-read': capability } });
+    if (mode === 'missing-task') {
+      assert.equal(result.status, 'harness_failure');
+      assert.equal(reads, 0);
+      assert.equal(capability.checkoutSnapshots.size, 0);
+    } else {
+      assert.equal(result.status, 'passed', mode);
+      const snapshot = [...capability.checkoutSnapshots.values()][0]!;
+      assert.deepEqual(snapshot.storage, { kind: 'order-data', cart: true, warehouses });
+      assert.deepEqual(capability.getCheckoutState(snapshot).state, snapshot.state);
+    }
+  }
+});
 
 function data(): Record<keyof typeof ORDER_DATA_COLUMNS, Record<string, unknown>[]> {
   return {

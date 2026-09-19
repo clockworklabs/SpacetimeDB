@@ -710,7 +710,8 @@ function checkActions(args: RunArguments): ActionsPayload | null {
 }
 
 async function gradeSuite(args: RunArguments, suite: DeclaredSuite, track: Track,
-  recipeBinding: RecipeBinding | null, bundleArtifactId: string, selectedChecks: RecipeCheck[] = [],
+  recipeBinding: RecipeBinding | null, selectedTask: BoundRecipeTaskRequestResult | null,
+  bundleArtifactId: string, selectedChecks: RecipeCheck[] = [],
   { recordSelection = true, captureMedia = true, outputDirectory = args.out }: {
     recordSelection?: boolean; captureMedia?: boolean; outputDirectory?: string;
   } = {}): Promise<GradePayload> {
@@ -726,6 +727,7 @@ async function gradeSuite(args: RunArguments, suite: DeclaredSuite, track: Track
   const requestedRecipe = args.recipe ?? (args.recipeTask
     ? args.recipeTask.recipe.id : null);
   if (requestedRecipe) argv.push('--recipe', requestedRecipe);
+  if (selectedTask) argv.push('--recipe-task-json', JSON.stringify(selectedTask.request));
   for (const check of selectedChecks) argv.push('--selected-check', check.stableKey);
   if (args.credentialAliases) {
     argv.push('--credential-aliases-json', JSON.stringify(args.credentialAliases));
@@ -1169,7 +1171,7 @@ async function main() {
       }
       let r;
       try {
-        r = await measure('grader', () => gradeSuite(args, suite, track, recipeBinding, bundleArtifactId, selectedChecks));
+        r = await measure('grader', () => gradeSuite(args, suite, track, recipeBinding, selectedTask, bundleArtifactId, selectedChecks));
       } catch (error) {
         markRemainingNotRun(`run aborted after ${suite.id} grader failure`);
         bundle.error = error instanceof Error ? error.message : String(error);

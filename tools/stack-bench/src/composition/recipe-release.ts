@@ -795,7 +795,7 @@ export function resolveGradeRecipeArtifactBinding(
   specPath: string,
   featureId: number | null = null,
   requested: RecipeRequest | null = null,
-): { release: RecipeGradeRelease; sourceRelease: RecipeRelease } | null {
+): { release: RecipeGradeRelease; sourceRelease: RecipeRelease; binding: RecipeBinding } | null {
   const binding = resolveRecipeRelease(track, level, requested);
   if (!binding) return null;
   const absoluteSpec = realpathSync(specPath);
@@ -809,6 +809,7 @@ export function resolveGradeRecipeArtifactBinding(
   return {
     release: gradeRelease,
     sourceRelease: binding.release,
+    binding,
   };
 }
 

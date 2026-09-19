@@ -1,5 +1,5 @@
 // Validate and normalize scenario definitions before resource acquisition.
-import { orderDataStorageSchema } from '../stacks/order-data.js';
+import { orderDataSelectionSchema } from '../stacks/order-data.js';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -164,7 +164,7 @@ export const ACTION_DEFINITIONS = Object.freeze({
   confirmCheckout: fields({ actor: nonEmptyString }, { namedAction: object }),
   dbRecordStock: fields({ item: nonEmptyString, as: nonEmptyString }, { warehouse: nonEmptyString }),
   dbRecordCheckout: fields({ account: nonEmptyString, item: nonEmptyString, as: nonEmptyString },
-    { storage: value => orderDataStorageSchema.safeParse(value).success }),
+    { storage: value => orderDataSelectionSchema.safeParse(value).success }),
   dbExpectCheckout: fields({ before: nonEmptyString, prepared: nonEmptyString,
     quantity: checkoutQuantity }, { actor: nonEmptyString }),
   dbExpectCancellation: fields({ before: nonEmptyString }),

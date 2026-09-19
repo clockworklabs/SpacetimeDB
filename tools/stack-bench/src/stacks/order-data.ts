@@ -14,6 +14,19 @@ export const orderDataStorageSchema = z.strictObject({
 });
 export type OrderDataStorage = z.infer<typeof orderDataStorageSchema>;
 
+export const orderDataSelectionSchema = orderDataStorageSchema.extend({
+  warehouses: z.union([z.boolean(), z.literal('if-requested')]),
+});
+export type OrderDataSelection = z.infer<typeof orderDataSelectionSchema>;
+
+export function resolveOrderDataStorage(selection: OrderDataSelection,
+  contractIds?: readonly string[]): OrderDataStorage {
+  orderDataSelectionSchema.parse(selection);
+  if (selection.warehouses !== 'if-requested') return orderDataStorageSchema.parse(selection);
+  if (!contractIds) throw new Error('conditional stock observation requires a resolved recipe task');
+  return { ...selection, warehouses: contractIds.includes('ecommerce.feature.warehouse-admin.hooks') };
+}
+
 const id = z.unknown().transform((value, ctx) => {
   try { return checkoutId(value); } catch { ctx.addIssue({ code: 'custom', message: 'invalid identifier' }); return z.NEVER; }
 });

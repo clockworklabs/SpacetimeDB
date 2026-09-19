@@ -22,7 +22,7 @@ import type { Finding } from '../src/actions/action-findings.js';
 import { recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
 import { resolveGradeRecipeArtifactBinding } from '../src/composition/recipe-release.js';
-import { selectScenarioChecks } from '../src/composition/recipe-selection.js';
+import { resolveBoundRecipeTaskRequest, selectScenarioChecks } from '../src/composition/recipe-selection.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { ActionApplicationFailure, ActionInconclusive, executeAction } from '../src/actions/action-contract.js';
 import { runApplicationNavigation } from '../src/actions/browser-navigation.js';
@@ -99,6 +99,7 @@ type GradeArgs = {
   backend?: string;
   track?: string;
   recipe?: string;
+  recipeTask?: Parameters<typeof resolveBoundRecipeTaskRequest>[1];
   expectedRecipeSha256?: string;
   credentialAliases?: unknown;
   selectionSha256?: string;
@@ -114,6 +115,7 @@ type GradeArgs = {
   browserWsEndpoint?: string;
 };
 type GradeRunContext = {
+  contractIds?: readonly string[];
   savedReader?: { path: string; sha256: string };
   checkoutActivity?: { unsettled: boolean };
   checkoutSnapshots?: ReturnType<typeof createDatabaseReadCapability>['checkoutSnapshots'];
@@ -195,6 +197,7 @@ export function parseGradeArgs(argv: readonly string[]): GradeArgs {
     label: { type: 'string' }, feature: { type: 'string' }, spec: { type: 'string' },
     'restart-spec': { type: 'string' }, backend: { type: 'string' }, track: { type: 'string' },
     recipe: { type: 'string' }, 'expected-recipe-sha256': { type: 'string' },
+    'recipe-task-json': { type: 'string' },
     'selected-check': { type: 'string', multiple: true },
     'credential-aliases-json': { type: 'string' }, 'selection-sha256': { type: 'string' },
     'parent-attempt-id': { type: 'string' }, 'db-name': { type: 'string' },
@@ -211,6 +214,7 @@ export function parseGradeArgs(argv: readonly string[]): GradeArgs {
     restartSpec: values['restart-spec'] === undefined ? undefined
       : parseRuntimeControlSpec(JSON.parse(values['restart-spec'])),
     backend: values.backend, track: values.track, recipe: values.recipe,
+    recipeTask: values['recipe-task-json'] === undefined ? undefined : JSON.parse(values['recipe-task-json']),
     expectedRecipeSha256: values['expected-recipe-sha256'],
     selectedCheckKeys: values['selected-check'] ?? [],
     credentialAliases: values['credential-aliases-json'] === undefined
@@ -225,7 +229,7 @@ export function parseGradeArgs(argv: readonly string[]): GradeArgs {
     throw new Error('Usage: node dist/grader/grade.js --url <app-url> --spec <scenario.json> '
       + '--level <N> [--out <file>] [--label <s>] [--feature <N>]');
   }
-  if (args.diagnostic && (args.recipe || args.expectedRecipeSha256 || args.selectedCheckKeys.length)) {
+  if (args.diagnostic && (args.recipe || args.recipeTask !== undefined || args.expectedRecipeSha256 || args.selectedCheckKeys.length)) {
     throw new Error('diagnostic grades cannot select a scored recipe or check catalog');
   }
   if (values['saved-diagnostic']) {
@@ -561,6 +565,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
     clock: Object.freeze({ sleep: abortableSleep }),
     concurrency,
     'database-read': createDatabaseReadCapability({
+      contractIds: ctx.contractIds,
       savedReader: ctx.savedReader,
       checkoutSnapshots: ctx.checkoutSnapshots ??= new Map(),
       checkoutActivity: ctx.checkoutActivity ??= { unsettled: false },
@@ -1015,6 +1020,7 @@ async function main(): Promise<void> {
   // authenticated backend lease—not generated application config—selects the
   // SpacetimeDB host, module and exact build container used for direct SQL.
   let actions: TrackAction[] = [], spacetime: LeasedSpacetimeTarget | null = null,
+    selectedTask: ReturnType<typeof resolveBoundRecipeTaskRequest> | null = null,
     recipeRelease: RecipeGradeRelease | null = null,
     recipeIdentityRelease: RecipeRelease | null = null,
     calibration: ReturnType<typeof resolveCalibrationForRelease> | null = null;
@@ -1025,7 +1031,12 @@ async function main(): Promise<void> {
       args.feature ?? null, args.recipe);
     recipeRelease = binding?.release ?? null;
     recipeIdentityRelease = binding?.sourceRelease ?? null;
+    if (args.recipeTask !== undefined) {
+      if (!binding) throw new Error('recipe task requires a bound grade recipe');
+      selectedTask = resolveBoundRecipeTaskRequest(binding.binding, args.recipeTask);
+    }
   }
+  if (args.recipeTask !== undefined && !selectedTask) throw new Error('recipe task requires a bound grade recipe');
   if (args.expectedRecipeSha256
     && recipeRelease?.contentSha256 !== args.expectedRecipeSha256) {
     throw new Error(`recipe changed before grading: expected ${args.expectedRecipeSha256}, ` +
@@ -1054,6 +1065,7 @@ async function main(): Promise<void> {
     backend: args.backend, actions, spacetime, dbName: args.dbName,
     databaseLease,
     nullControl: args.nullControl,
+    contractIds: selectedTask?.task.contractIds,
     appDir: args.app, savedReader: args.savedDiagnostic?.reader };
 
   const browser = args.browserWsEndpoint
@@ -1065,6 +1077,7 @@ async function main(): Promise<void> {
   } = {
     definitionSchemaVersion: spec.schemaVersion,
     recipeRelease,
+    ...(selectedTask ? { recipeTask: selectedTask.request } : {}),
     label: args.label ?? null, url: args.url, level: args.level, runId,
     total: 0, max: features.reduce((n, f) => n + f.criteria.reduce((m, c) => m + (c.points ?? 1), 0), 0), features: [],
     selection: recipeRelease ? {

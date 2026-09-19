@@ -39,6 +39,7 @@ import {
 } from "../src/evidence/mutation-analysis.js";
 import { dbName, loadTrack, TRACK_MANIFEST_FILE } from "../src/composition/tracks.js";
 import { resolveRecipeRelease } from "../src/composition/recipe-release.js";
+import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.js';
 import { resetBackend } from "../src/stacks/backend-reset.js";
 import { STACK_ADAPTER_REGISTRY } from "../src/stacks/stack-adapters.js";
 import { mutationShard } from "../src/evidence/mutation-shards.js";
@@ -62,6 +63,7 @@ type MutationArgs = {
   baselineBundle?: string; expectedCalibrationIdentity?: JsonRecord; maxRuntimeMinutes?: number;
   imageId?: string; mutationAttemptId?: string; expectedRecipeSha256?: string;
   reseedOnReset?: boolean;
+  recipeTask?: ReturnType<typeof createBoundRecipeTaskRequest>['request'];
 };
 type ParsedMutationArgs = MutationArgs & {
   app: string;
@@ -255,6 +257,7 @@ export function mutationGradeArguments(a: MutationArgs, reportPath: string): str
   if (a.restartSpec) gradeArgs.push("--restart-spec", JSON.stringify(a.restartSpec));
   if (a.mutationAttemptId) gradeArgs.push("--parent-attempt-id", a.mutationAttemptId);
   if (a.recipe) gradeArgs.push("--recipe", a.recipe);
+  if (a.recipeTask) gradeArgs.push('--recipe-task-json', JSON.stringify(a.recipeTask));
   if (a.expectedRecipeSha256) {
     gradeArgs.push("--expected-recipe-sha256", a.expectedRecipeSha256);
   }
@@ -459,6 +462,9 @@ async function main(): Promise<void> {
   if (!binding) throw new Error(`${args.track} L${args.level} has no recipe release`);
   args.recipe = binding.release.id;
   args.expectedRecipeSha256 = binding.release.contentSha256;
+  args.recipeTask = createBoundRecipeTaskRequest(binding, {
+    taskMode: binding.plan.recipe.task.mode === 'action' ? 'fresh' : undefined,
+  }).request;
   const recipeRelease = binding.release;
   args.dbName ??= dbName(track, Number(args.runIndex));
   args.reseedOnReset = track.reseedOnReset;

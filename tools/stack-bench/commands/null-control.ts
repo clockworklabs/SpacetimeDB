@@ -19,7 +19,7 @@ import { qualificationScopeIdentity } from '../src/composition/qualification-sco
 import { writeQualificationSnapshot } from '../src/composition/qualification-slices.js';
 import { analyseNullReports } from '../src/evidence/null-control-analysis.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
-import { resolveRecipeSelection } from '../src/composition/recipe-selection.js';
+import { createBoundRecipeTaskRequest, resolveRecipeSelection } from '../src/composition/recipe-selection.js';
 import { isDeclaredLevel, listTracks, loadTrack, suitesFor } from '../src/composition/tracks.js';
 import { controllerRunner } from '../src/runtime/runner-environment.js';
 import type { CalibrationPlan } from '../src/composition/calibration-compiler.js';
@@ -194,9 +194,13 @@ async function main() {
     for (const trackName of args.tracks) {
       const track = loadTrack(trackName);
       let binding: RecipeBinding | null = null;
+      let recipeTask: ReturnType<typeof createBoundRecipeTaskRequest>['request'] | null = null;
       if (args.level !== null) {
         binding = resolveRecipeRelease(track, args.level, args.recipe);
         if (!binding) throw new Error(`${trackName} L${args.level} has no recipe release`);
+        recipeTask = createBoundRecipeTaskRequest(binding, {
+          taskMode: binding.plan.recipe.task.mode === 'action' ? 'fresh' : undefined,
+        }).request;
         const calibration = resolveCalibrationForRelease(binding.release,
           { trackRoot: track.dir, stackBenchRoot: ROOT, alias: `L${args.level}` });
         if (!calibration) throw new Error(`${trackName} L${args.level} has no calibration`);
@@ -218,6 +222,7 @@ async function main() {
               '--parent-attempt-id', nullAttemptId,
               ...(resolvedRecipe ? ['--recipe', resolvedRecipe] : []),
               ...(binding ? ['--expected-recipe-sha256', binding.release.contentSha256] : []),
+              ...(recipeTask ? ['--recipe-task-json', JSON.stringify(recipeTask)] : []),
               ...(qualification ? ['--selection-sha256', qualification.selectionSha256] : []),
               ...(('checks' in suite ? suite.checks : []) ?? [])
                 .flatMap(check => ['--selected-check', check.stableKey])]);

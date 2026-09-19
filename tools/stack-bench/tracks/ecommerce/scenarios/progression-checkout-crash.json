@@ -3,7 +3,7 @@
   "track": "ecommerce",
   "level": 1,
   "name": "Checkout recovery after process crashes",
-  "note": "One fixed 16-call, zero-offset trial per independent process boundary. Database then application; combined SpacetimeDB and Convex boundaries reuse their measured database crash once. Both assertions use both retained observations. Unknown outcomes, missed windows and incomplete recovery remain unmeasured. Each baseline, interrupted cart and fresh-customer progress checkout contains Keyboard and Coffee Grinder. The test observes recovered order/cart correctness across both products, not physical rows, optional payment/warehouse features, power loss or storage-device durability.",
+  "note": "One fixed 16-call, zero-offset trial per independent process boundary. Database then application; combined SpacetimeDB and Convex boundaries reuse their measured database crash once. Both assertions use both retained observations. Unknown outcomes, missed windows and incomplete recovery remain unmeasured. Each baseline, interrupted cart and fresh-customer progress checkout contains Keyboard and Coffee Grinder. The test observes recovered order/cart correctness across both products, including stock/reservation/allocation conservation when the delivered task declares warehouse access. It does not test physical rows, optional payment features, power loss or storage-device durability.",
   "features": [
     {
       "id": 910,
@@ -27,7 +27,7 @@
           "storage": {
             "kind": "order-data",
             "cart": true,
-            "warehouses": false
+            "warehouses": "if-requested"
           }
         },
         {
@@ -68,7 +68,7 @@
           "storage": {
             "kind": "order-data",
             "cart": true,
-            "warehouses": false
+            "warehouses": "if-requested"
           }
         },
         {
@@ -109,7 +109,7 @@
           "storage": {
             "kind": "order-data",
             "cart": true,
-            "warehouses": false
+            "warehouses": "if-requested"
           }
         },
         {
@@ -150,7 +150,7 @@
           "storage": {
             "kind": "order-data",
             "cart": true,
-            "warehouses": false
+            "warehouses": "if-requested"
           }
         },
         {
@@ -192,7 +192,7 @@
           "storage": {
             "kind": "order-data",
             "cart": true,
-            "warehouses": false
+            "warehouses": "if-requested"
           }
         },
         {
@@ -233,7 +233,7 @@
           "storage": {
             "kind": "order-data",
             "cart": true,
-            "warehouses": false
+            "warehouses": "if-requested"
           }
         },
         {
@@ -274,7 +274,7 @@
           "storage": {
             "kind": "order-data",
             "cart": true,
-            "warehouses": false
+            "warehouses": "if-requested"
           }
         },
         {
@@ -315,7 +315,7 @@
           "storage": {
             "kind": "order-data",
             "cart": true,
-            "warehouses": false
+            "warehouses": "if-requested"
           }
         },
         {
@@ -358,7 +358,7 @@
           "storage": {
             "kind": "order-data",
             "cart": true,
-            "warehouses": false
+            "warehouses": "if-requested"
           }
         },
         {
@@ -399,7 +399,7 @@
           "storage": {
             "kind": "order-data",
             "cart": true,
-            "warehouses": false
+            "warehouses": "if-requested"
           }
         },
         {

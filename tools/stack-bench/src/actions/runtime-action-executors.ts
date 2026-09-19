@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import type { OrderDataStorage } from '../stacks/order-data.js';
+import { resolveOrderDataStorage, type OrderDataSelection, type OrderDataStorage } from '../stacks/order-data.js';
 
 import { ActionApplicationFailure, ActionInconclusive, actionImplementation } from './action-contract.js';
 import { finding, isFinding, renderFinding } from './action-findings.js';
@@ -98,7 +98,7 @@ interface LifecycleConcurrencyCapabilities {
   readonly 'database-read': {
     getStock(input: { item: string; warehouse?: string }):
       { quantity: number } | Promise<{ quantity: number }>;
-    getCheckoutState(input: { account: string; item: string; storage?: OrderDataStorage }): CheckoutSnapshot;
+    getCheckoutState(input: { account: string; item: string; storage?: OrderDataSelection }): CheckoutSnapshot;
     readonly checkoutSnapshots: Map<string, CheckoutSnapshot & { account: string; item: string }>;
   };
   readonly 'browser-observation': {
@@ -193,7 +193,7 @@ async function dbRecordStock({ input, capabilities }: ActionArguments<ReadStockI
   return { ...value, key: input.as };
 }
 
-async function dbRecordCheckout({ input, capabilities }: ActionArguments<{ account: string; item: string; as: string; storage?: OrderDataStorage }>) {
+async function dbRecordCheckout({ input, capabilities }: ActionArguments<{ account: string; item: string; as: string; storage?: OrderDataSelection }>) {
   const database = capabilities['database-read'];
   const snapshot = { ...database.getCheckoutState(input), recordedAtMs: Date.now() };
   if (snapshot.storage?.warehouses !== false && !snapshot.state.stock.length) inconclusive('invalid-input', { detail: 'checkout setup requires known stock warehouses' });
@@ -727,10 +727,11 @@ export function createDatabaseWriteCapability({ backend, spacetime, databaseLeas
 }
 
 export function createDatabaseReadCapability({ backend, spacetime, databaseLease, skip = false, expand, app,
-  savedReader,
+  savedReader, contractIds,
   checkoutSnapshots = new Map<string, CheckoutSnapshot & { account: string; item: string }>(),
   checkoutActivity = { unsettled: false },
   exec = execFileSync }: DatabaseWriteCapabilityOptions & { app?: string;
+    contractIds?: readonly string[];
     savedReader?: { path: string; sha256: string };
     checkoutActivity?: { unsettled: boolean };
     checkoutSnapshots?: Map<string, CheckoutSnapshot & { account: string; item: string }> }) {
@@ -740,13 +741,14 @@ export function createDatabaseReadCapability({ backend, spacetime, databaseLease
     // A client disconnect cannot stop an HTTP handler retrying after a DB crash.
     // This grade cannot safely compare later global state; reset in a new grade.
     markCheckoutUnsettled() { checkoutActivity.unsettled = true; },
-    getCheckoutState(input: { account: string; item: string; storage?: OrderDataStorage }): CheckoutSnapshot {
+    getCheckoutState(input: { account: string; item: string; storage?: OrderDataSelection }): CheckoutSnapshot {
       requireSettled();
       if (skip) throw new Error('checkout state reads are disabled for this control');
       if (!app) throw new Error('checkout state reads require a verified application source directory');
       const adapter = backend ? STACK_ADAPTER_REGISTRY.get(backend) : undefined;
       if (!adapter || !('databaseRead' in adapter)) inconclusive('unsupported-backend', { backend: backend ?? '<unset>' });
-      const selection = { account: expand(input.account), item: expand(input.item), app, exec, storage: input.storage };
+      const selection = { account: expand(input.account), item: expand(input.item), app, exec,
+        storage: input.storage ? resolveOrderDataStorage(input.storage, contractIds) : undefined };
       if (savedReader) {
         if (input.storage) throw new Error('saved schema mapping cannot replace the declared order data interface');
         if (backend === 'spacetime') return getSavedSpacetimeCheckoutState({ ...selection, reader: savedReader, spacetime: spacetime ?? undefined });

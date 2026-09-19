@@ -12,6 +12,9 @@ import { createBackendLease, writeBackendLease } from '../src/runtime/backend-le
 import { createDatabaseWriteCapability } from '../src/actions/runtime-action-executors.js';
 import { attemptDatabaseIdentity } from '../src/stacks/hosted-database-identity.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { loadTrack } from '../src/composition/tracks.js';
+import { requireRecipeRelease } from '../src/composition/recipe-release.js';
+import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.js';
 
 test('the grader preserves private MongoDB authority through its stock-write caller', t => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-grade-lease-'));
@@ -77,6 +80,7 @@ test('diagnostic grading cannot bypass the scored recipe boundary', t => {
   const args = ['node', 'grade', '--url', 'http://localhost:1', '--spec', 'scenario.json', '--diagnostic'];
   assert.equal(parseGradeArgs(args).diagnostic, true);
   assert.throws(() => parseGradeArgs([...args, '--recipe', 'ecommerce.progression-catalog']), /scored recipe/);
+  assert.throws(() => parseGradeArgs([...args, '--recipe-task-json', '{}']), /scored recipe/);
   const ordinary = ['node', 'grade', '--url', 'http://localhost:1', '--spec', 'scenario.json'];
   assert.throws(() => parseGradeArgs([...ordinary, '--backend', 'postgres', '--saved-diagnostic', '{}']), /zero-point/);
   assert.throws(() => parseGradeArgs([...args, '--backend', 'mongodb', '--saved-diagnostic', '{}']), /invalid_type/);
@@ -90,6 +94,20 @@ test('diagnostic grading cannot bypass the scored recipe boundary', t => {
     '--url', 'http://localhost:1', '--spec', path, '--diagnostic'], { encoding: 'utf8', timeout: 10_000 });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /diagnostic grades require zero-point checks/);
+});
+
+test('the grader rejects changed task contracts before opening the app', () => {
+  const track = loadTrack('ecommerce');
+  const binding = requireRecipeRelease(track, 3, 'ecommerce.progression-catalog');
+  const request = createBoundRecipeTaskRequest(binding, { taskMode: 'fresh' }).request;
+  const altered = structuredClone(request) as { task: { contractSha256: string } };
+  altered.task.contractSha256 = '0'.repeat(64);
+  const result = spawnSync(process.execPath, [fileURLToPath(new URL('../grader/grade.js', import.meta.url)),
+    '--url', 'http://localhost:1', '--spec', join(track.dir, 'scenarios/progression-checkout-crash.json'),
+    '--track', 'ecommerce', '--level', '3', '--recipe', binding.release.id,
+    '--recipe-task-json', JSON.stringify(altered)], { encoding: 'utf8', timeout: 15_000 });
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /task changed after request resolution/);
 });
 
 test('mutation operations use only the remaining batch time', () => {
