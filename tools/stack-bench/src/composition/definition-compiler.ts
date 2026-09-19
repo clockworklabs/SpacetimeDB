@@ -434,8 +434,8 @@ function validateStep(step: unknown, at: string): asserts step is CompiledStep {
     if (step.input === undefined && !namedAction) {
       fail(`${at}.input`, 'may be omitted only for an inline action with no parameters or arguments');
     }
-    if (step.authentication !== undefined && !oneOf(step.authentication, ['actor', 'none', 'optional', 'tampered-session'])) {
-      fail(`${at}.authentication`, 'must be "actor", "optional", "none", or "tampered-session"');
+    if (step.authentication !== undefined && !oneOf(step.authentication, ['actor', 'none', 'optional', 'session-control', 'tampered-session'])) {
+      fail(`${at}.authentication`, 'must be "actor", "optional", "none", "session-control", or "tampered-session"');
     }
   }
   if (step.do === 'replayAs' && step.namedTarget && !step.namedAction) {

@@ -30,7 +30,7 @@ import type {
 interface CallActionInput {
   readonly action: string;
   readonly actor: string;
-  readonly authentication?: 'actor' | 'none' | 'optional' | 'tampered-session';
+  readonly authentication?: 'actor' | 'none' | 'optional' | 'session-control' | 'tampered-session';
   readonly from?: string;
   readonly input?: {
     readonly attribute: string;
@@ -151,10 +151,24 @@ async function callAction({ input, capabilities, signal }: NamedTransportArgumen
     credentials = actorCredentials ?? {};
   }
   // Keep only a digest in actor state, never a second copy of the session secret.
-  const requestFingerprint = createHash('sha256').update(JSON.stringify([
+  const fingerprint = (headers: HeaderRecord) => createHash('sha256').update(JSON.stringify([
     input.action, request.url, request.method ?? 'POST', request.body,
-    Object.entries(credentials).map(([key, value]) => [key.toLowerCase(), value]).sort(),
+    Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]).sort(),
   ])).digest('hex');
+  if (input.authentication === 'session-control') {
+    if (!caller.actionCall?.accepted || caller.actionCall.requestFingerprint !== fingerprint(credentials)) {
+      inconclusive('replay-unavailable', { actor: caller.name,
+        detail: 'session isolation requires a successful identical request with the full current credentials' });
+    }
+  }
+  if (input.authentication === 'session-control' || input.authentication === 'tampered-session') {
+    // A bearer-only positive control must succeed before a cookie-free forgery is meaningful.
+    if (Object.entries(credentials).some(([key, value]) => /^authorization$/i.test(key) && /^Bearer /i.test(value))) {
+      credentials = Object.fromEntries(Object.entries(credentials).filter(([key]) => !/^cookie$/i.test(key)));
+    }
+    if (input.authentication === 'session-control') tamperedSessionCredentials(credentials, caller.name);
+  }
+  const requestFingerprint = fingerprint(credentials);
   if (input.authentication === 'tampered-session') {
     if (!caller.actionCall?.accepted || caller.actionCall.requestFingerprint !== requestFingerprint) {
       inconclusive('replay-unavailable', { actor: caller.name,
@@ -186,6 +200,10 @@ async function callAction({ input, capabilities, signal }: NamedTransportArgumen
     requestFingerprint: input.authentication === 'tampered-session' ? undefined : requestFingerprint,
   };
   await transport.sleep(input.settleMs ?? 2000, signal);
+  if (input.authentication === 'session-control' && !caller.actionCall.accepted) {
+    inconclusive('replay-unavailable', { actor: caller.name,
+      detail: `the isolated session credential did not complete a successful control purchase (status ${status})` });
+  }
   return { action: input.action, accepted: caller.actionCall.accepted,
     status: caller.actionCall.status };
 }

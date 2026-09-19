@@ -3,7 +3,7 @@
   "track": "ecommerce",
   "level": 1,
   "name": "Purchase requires an account",
-  "note": "Draft: the purchase-session check includes a bounded credential-tampering probe. Valid purchases must work before and after it. Stored order and stock reads must show no effect from a refused forgery. The read scope requires neither carts nor warehouses. Unsupported or ambiguous credentials remain inconclusive, never a pass or an app defect. This does not test expiry, revocation or every token attack.",
+  "note": "Draft: the purchase-session check includes a bounded credential-tampering probe. Valid purchases must work before and after it. Stored order and stock reads must show no effect from a refused forgery. The read scope requires neither carts nor warehouses. Unsupported or ambiguous credentials remain inconclusive, never a pass or an app defect. This does not test expiry, revocation or every token attack. A bearer-only control must also succeed before cookies are omitted from the tampering probe. Cookie-only sessions still require one unambiguous cookie.",
   "features": [
     {
       "id": 101,
@@ -247,6 +247,45 @@
               "plus": -1
             },
             {
+              "do": "callAction",
+              "actor": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker",
+                "attribute": "data-buy-input"
+              },
+              "settleMs": 2000,
+              "authentication": "session-control"
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "buyer",
+              "outcome": "accepted"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "speaker-before-control",
+              "plus": -2
+            },
+            {
               "do": "dbRecordCheckout",
               "account": "{user:kim}",
               "item": "Bluetooth Speaker",
@@ -298,7 +337,7 @@
               "do": "dbExpectStock",
               "item": "Bluetooth Speaker",
               "relativeTo": "speaker-before-control",
-              "plus": -1
+              "plus": -2
             },
             {
               "do": "expectActionOutcome",
@@ -341,7 +380,7 @@
               "do": "dbExpectStock",
               "item": "Bluetooth Speaker",
               "relativeTo": "speaker-before-control",
-              "plus": -2
+              "plus": -3
             }
           ],
           "statedBy": "the server refuses a purchase without an authenticated customer"

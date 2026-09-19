@@ -240,6 +240,85 @@ test('session tampering reaches the server, preserves context, requires a valid 
   }
 });
 
+test('mixed credentials need a measured isolated control; cookie and CSRF dependencies stay inconclusive', async t => {
+  for (const mode of ['bearer', 'cookie-only', 'requires-cookie', 'accept-forgery', 'commit-then-refuse', 'reject-all', 'response-loss']) {
+    await t.test(mode, async () => {
+      const token = 'server-issued-session-0123456789';
+      let purchases = 0, requests = 0;
+      const observed: { cookie: string | undefined; authorization: string | undefined }[] = [];
+      const server = createServer((req, res) => {
+        if (req.url === '/login') {
+          res.setHeader('Set-Cookie', [`sid=${token}; HttpOnly; Path=/`, 'locale=en; Path=/']);
+          res.end(JSON.stringify({ token })); return;
+        }
+        requests++;
+        observed.push({ cookie: req.headers.cookie, authorization: req.headers.authorization });
+        assert.equal(req.headers.origin, 'http://app.test');
+        assert.equal(req.headers['x-csrf-token'], 'unchanged-context');
+        const bearer = req.headers.authorization === `Bearer ${token}`;
+        const cookie = req.headers.cookie?.includes(`sid=${token}`) === true;
+        if (mode === 'response-loss' && !cookie) { res.destroy(); return; }
+        const accepted = mode === 'reject-all' ? false : mode === 'cookie-only' ? cookie
+          : mode === 'requires-cookie' ? bearer && cookie
+          : ['accept-forgery', 'commit-then-refuse'].includes(mode) ? !!req.headers.authorization : bearer;
+        if (accepted) purchases++;
+        res.writeHead(accepted && !(mode === 'commit-then-refuse' && !bearer) ? 200 : 401).end('{}');
+      });
+      server.listen(0, '127.0.0.1'); await once(server, 'listening');
+      try {
+        const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+        const login = await fetch(`${url}/login`, { method: 'POST' });
+        const cookies = login.headers.getSetCookie().map(value => {
+          const [name, cookieValue] = value.split(';')[0]!.split('=');
+          return { name: name!, value: cookieValue! };
+        });
+        const credentials = await login.json() as { token: string };
+        const headers: Record<string, string> = { Origin: 'http://app.test', 'x-csrf-token': 'unchanged-context' };
+        if (mode !== 'cookie-only') headers.Authorization = `Bearer ${credentials.token}`;
+        const actor = { name: 'buyer', writes: [{ url: 'http://app.test/buy', headers }],
+          context: { cookies: async () => cookies }, page: { evaluate: async () => ({ signedOut: true }) } };
+        const provided = services(new Map([['buyer', actor]]), { fetchImpl: (_url, options) => fetch(`${url}/buy`, options) });
+        const input = { do: 'callAction', actor: 'buyer', action: 'buy', settleMs: 0,
+          namedAction: { id: 'buy', path: '/buy', reducer: 'buy_now', args: [] } };
+        const control = { ...input, authentication: 'session-control' };
+        assert.equal((await run(control, provided)).status, 'inconclusive', 'isolation requires a full-credential control');
+        assert.equal(requests, 0);
+        assert.equal((await run(input, provided)).status, 'passed');
+        const positive = await run({ do: 'expectActionOutcome', actor: 'buyer', outcome: 'accepted' }, provided);
+        if (mode === 'reject-all') {
+          assert.equal(positive.status, 'failed', 'reject-all must fail the original positive control');
+          assert.equal((await run(control, provided)).status, 'inconclusive');
+          assert.equal(requests, 1); return;
+        }
+        assert.equal(positive.status, 'passed');
+        const isolated = await run(control, provided);
+        if (['cookie-only', 'requires-cookie', 'response-loss'].includes(mode)) {
+          assert.equal(isolated.status, 'inconclusive', JSON.stringify(isolated));
+          assert.equal(purchases, 1);
+          assert.equal(requests, mode === 'cookie-only' ? 1 : 2);
+          assert.equal((await run({ ...input, authentication: 'tampered-session' }, provided)).status, 'inconclusive');
+          assert.equal(requests, mode === 'cookie-only' ? 1 : 2, 'no forgery after an unproven isolated control');
+          return;
+        }
+        assert.equal(isolated.status, 'passed');
+        assert.equal(purchases, 2, 'isolation is a real purchase, not an auth discovery request hidden from accounting');
+        assert.equal(observed[1]!.cookie, undefined);
+        const beforeForgery = purchases;
+        assert.equal((await run({ ...input, authentication: 'tampered-session' }, provided)).status, 'passed');
+        assert.equal(observed[2]!.cookie, undefined, 'no valid fallback credential can mask the forgery');
+        assert.notEqual(observed[2]!.authorization, observed[1]!.authorization);
+        const refusal = await run({ do: 'expectActionOutcome', actor: 'buyer', outcome: 'refused' }, provided);
+        assert.equal(refusal.status, mode === 'accept-forgery' ? 'failed' : 'passed');
+        assert.equal(purchases - beforeForgery, mode === 'bearer' ? 0 : 1,
+          'stored effects must catch commit-then-refuse even though the refusal assertion passes');
+        assert.equal((await run(input, provided)).status, 'passed');
+        assert.equal(purchases, beforeForgery + (mode === 'bearer' ? 1 : 2));
+        assert.equal(observed[3]!.cookie, `sid=${token}; locale=en`, 'the original browser session is unchanged');
+      } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+    });
+  }
+});
+
 test('shipping accounting waits for the staff response before reading accounting', async () => {
   const scenario = JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
     'tracks/ecommerce/scenarios/progression-shipping-accounting.json'), 'utf8'));
@@ -455,10 +534,15 @@ test('purchase-session tampering uses early order data, awaits a response, check
   const steps = criterion.steps as UnknownRecord[];
   const attack = steps.findIndex(step => step.authentication === 'tampered-session');
   assert(attack > 0);
+  const control = steps.findIndex(step => step.authentication === 'session-control');
+  assert(control >= 0 && control < attack - 1);
+  assert.deepEqual(steps.slice(control + 1, attack - 1).map(step => [step.do, step.outcome ?? step.plus]), [
+    ['expectActionOutcome', 'accepted'], ['dbExpectStock', -2],
+  ]);
   assert.deepEqual(steps[attack - 1]!.storage, { kind: 'order-data', cart: false, warehouses: false });
   assert.deepEqual(steps.slice(attack + 1).map(step => [step.do, step.outcome ?? step.plus]), [
-    ['expectActionOutcome', 'completed'], ['dbExpectNoPurchase', undefined], ['dbExpectStock', -1],
-    ['expectActionOutcome', 'refused'], ['callAction', undefined], ['expectActionOutcome', 'accepted'], ['dbExpectStock', -2],
+    ['expectActionOutcome', 'completed'], ['dbExpectNoPurchase', undefined], ['dbExpectStock', -2],
+    ['expectActionOutcome', 'refused'], ['callAction', undefined], ['expectActionOutcome', 'accepted'], ['dbExpectStock', -3],
   ]);
 });
 

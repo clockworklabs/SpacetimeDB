@@ -147,8 +147,11 @@ The draft purchase-session check (`101a`) also tests an altered session credenti
 It proves a valid purchase first, checks refusal and unchanged stored orders and
 stock, then proves valid access again. Its order reader requires neither carts
 nor warehouses. This extends the existing check without adding points.
-The probe supports one bearer token or one session cookie. Mixed credentials,
-multiple cookies and cookie/CSRF ambiguity leave the check inconclusive; they do
-not earn security credit or prove an application defect. These limits must remain
+The probe supports one bearer token or one session cookie. With bearer and cookie
+credentials together, a second valid purchase must succeed using the bearer alone
+before its tampered value is sent without cookies. This control is included in
+purchase accounting; the browser session is unchanged. A failed isolated control,
+multiple cookie-only credentials, other mixed credentials and cookie/CSRF ambiguity
+leave the check inconclusive. They do not earn security credit or prove an application defect. These limits must remain
 visible in result populations. The probe does not establish expiry, revocation,
 or complete authentication security.
