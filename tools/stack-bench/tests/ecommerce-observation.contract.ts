@@ -31,6 +31,31 @@ test('selected privacy checks prove a working positive path without sibling crit
   assert(saved > reload && saved < roles.findIndex(s => s.do === 'replayAs'));
 });
 
+test('order ownership switches the same browser and reconciles the next write under the new account', () => {
+  const criterion = read('01-order-ownership.json').features[0]!.criteria[0]!;
+  const steps = criterion.steps;
+  assert.equal(criterion.points, 1);
+  assert(!steps.some(step => ['freshClient', 'reload', 'openClient'].includes(step.do)),
+    'a grader-created page reset would hide stale account caches');
+  const logout = steps.findIndex(step => step.do === 'click' && step.testid === 'signout');
+  const login = steps.findIndex(step => step.do === 'signIn');
+  assert(logout > 0 && login > logout);
+  assert.equal(steps[logout]!.actor, 'two');
+  assert.equal(steps[login]!.actor, 'two');
+  assert.equal(steps[login]!.name, 'quin');
+  const views = steps.filter(step => step.do === 'expect' && step.testid === 'order-item');
+  assert.deepEqual(views.map(step => [step.actor, step.contains, step.count ?? step.absent]), [
+    ['two', 'Desk Lamp', 1], ['two', 'Coffee Grinder', true],
+    ['two', 'Coffee Grinder', 1], ['two', 'Desk Lamp', true],
+  ]);
+  const snapshot = steps.find(step => step.do === 'dbRecordCheckout')!;
+  assert.equal(snapshot.account, '{user:quin}');
+  assert.deepEqual(snapshot.storage, { kind: 'order-data', cart: false, warehouses: false });
+  assert.deepEqual(steps.slice(-3).map(step => [step.do, step.actor, step.outcome]), [
+    ['callAction', 'two', undefined], ['expectActionOutcome', 'two', 'accepted'], ['dbExpectPurchase', 'two', undefined],
+  ]);
+});
+
 test('catalog variants and pagination enter the declared observation surface', () => {
   const variants = read('progression-catalog-management.json').features[0]!.criteria
     .find(criterion => criterion.id === '622b')!;

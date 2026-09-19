@@ -2729,6 +2729,25 @@
           "replace": "const valid = !!account && sameHash(digest, account.passwordHash) && false;"
         }
       ]
+    },
+    {
+      "id": "order-cache-survives-account-switch",
+      "scenario": "tracks/ecommerce/scenarios/01-order-ownership.json",
+      "targets": [
+        "ecommerce.spec.access-control.order-ownership.106a"
+      ],
+      "desc": "Persist order views in a browser cache that is not scoped to the account. Login reloads no longer clear the stale data.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "  const orderViews: OrderView[] = useMemo(",
+          "replace": "  const freshOrderViews: OrderView[] = useMemo("
+        },
+        {
+          "find": "  const revenue = revenueRows[0]?.total ?? 0;",
+          "replace": "  const [orderCache] = useState(() => new Map<bigint, OrderView>(\n    (JSON.parse(sessionStorage.getItem('order-cache') ?? '[]', (key, value) =>\n      key === 'orderId' || key === 'itemId' ? BigInt(value) : key === 'createdAt' ? new Date(value) : value) as OrderView[])\n      .map(order => [order.orderId, order])));\n  for (const order of freshOrderViews) if (order.items.length) orderCache.set(order.orderId, order);\n  const orderViews = [...orderCache.values()];\n  sessionStorage.setItem('order-cache', JSON.stringify(orderViews, (_key, value) => typeof value === 'bigint' ? String(value) : value));\n\n  const revenue = revenueRows[0]?.total ?? 0;"
+        }
+      ]
     }
   ]
 }

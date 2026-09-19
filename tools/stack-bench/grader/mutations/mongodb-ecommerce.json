@@ -2720,6 +2720,21 @@
           "replace": "  const user = (req as any).user;\n  if (req.body?.price !== undefined) item.price = req.body.price;\n  const order = await Order.create({"
         }
       ]
+    },
+    {
+      "id": "order-cache-survives-account-switch",
+      "scenario": "tracks/ecommerce/scenarios/01-order-ownership.json",
+      "targets": [
+        "ecommerce.spec.access-control.order-ownership.106a"
+      ],
+      "desc": "Merge order updates into a browser cache that is never cleared when the account changes. Separate-browser ownership still works.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "  const [orders, setOrders] = useState<OrderT[]>([]);",
+          "replace": "  const [orders, setStoredOrders] = useState<OrderT[]>([]);\n  const setOrders: typeof setStoredOrders = update => setStoredOrders(previous => {\n    const incoming = typeof update === 'function' ? update(previous) : update;\n    return [...new Map([...previous, ...incoming].map(order => [order.id, order])).values()];\n  });"
+        }
+      ]
     }
   ]
 }

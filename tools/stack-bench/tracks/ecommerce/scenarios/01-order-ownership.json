@@ -4,7 +4,7 @@
   "level": 1,
   "name": "One customer's orders are not another's",
   "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
-  "note": "Every criterion receives all state it relies on from its feature setup. Security assertions include a working positive path where an empty or broken view could otherwise look secure.",
+  "note": "Draft: two accounts first prove separate order histories. The same browser signs out and signs in as the other account without a grader reload. Its old orders must disappear, the new account history must work, and an independently observed purchase must belong to the new account. This does not claim token revocation, all private data surfaces, or transport-level leak detection.",
   "features": [
     {
       "id": 106,
@@ -15,7 +15,7 @@
         {
           "id": "106a",
           "category": "production",
-          "desc": "a working order history contains the customer's own order and not another customer's order",
+          "desc": "order history and purchases remain account-scoped when a browser switches accounts",
           "points": 1,
           "steps": [
             {
@@ -29,7 +29,24 @@
             {"do":"click","actor":"two","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {"do":"click","actor":"two","testid":"orders-toggle", "unlessVisible": "order-item" },
             {"do":"expect","actor":"two","testid":"order-item","contains":"Desk Lamp","count":1},
-            {"do":"expect","actor":"two","testid":"order-item","contains":"Coffee Grinder","absent":true}
+            {"do":"expect","actor":"two","testid":"order-item","contains":"Coffee Grinder","absent":true},
+            {"do":"click","actor":"two","testid":"overlay-close","ifAvailable":true},
+            {"do":"click","actor":"two","testid":"current-user","unlessVisible":"signout"},
+            {"do":"click","actor":"two","testid":"signout"},
+            {"do":"waitUntilAbsent","actor":"two","testid":"current-user","within":6000},
+            {"do":"signIn","actor":"two","name":"quin"},
+            {"do":"expect","actor":"two","testid":"current-user","contains":"quin"},
+            {"do":"click","actor":"two","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
+            {"do":"click","actor":"two","testid":"orders-toggle","unlessVisible":"order-item"},
+            {"do":"expect","actor":"two","testid":"order-item","contains":"Coffee Grinder","count":1},
+            {"do":"expect","actor":"two","testid":"order-item","contains":"Desk Lamp","absent":true},
+            {"do":"click","actor":"two","testid":"overlay-close","ifAvailable":true},
+            {"do":"click","actor":"two","testid":"catalog-link","ifAvailable":true},
+            {"do":"dbRecordCheckout","account":"{user:quin}","item":"Bluetooth Speaker","as":"after-account-switch","storage":{"kind":"order-data","cart":false,"warehouses":false}},
+            {"do":"dbRecordStock","item":"Bluetooth Speaker","as":"after-account-switch-stock"},
+            {"do":"callAction","actor":"two","action":"buy","namedAction":{"id":"buy","path":"/api/items/:id/buy","reducer":"buy_now","args":[0],"params":[{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"item-card","contains":"Bluetooth Speaker","attribute":"data-buy-input"},"settleMs":0},
+            {"do":"expectActionOutcome","actor":"two","outcome":"accepted"},
+            {"do":"dbExpectPurchase","actor":"two","before":"after-account-switch","stockBefore":"after-account-switch-stock"}
           ],
           "statedBy": "a customer sees only their own orders"
         }

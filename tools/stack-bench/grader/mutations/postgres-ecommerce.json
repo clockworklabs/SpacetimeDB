@@ -2783,6 +2783,36 @@
           "replace": "  \"/api/items/:id/buy\",\n  (_req, res) => { res.status(403).json({ error: \"Purchases denied\" }); },\n  requireAuth,"
         }
       ]
+    },
+    {
+      "id": "order-cache-survives-account-switch",
+      "scenario": "tracks/ecommerce/scenarios/01-order-ownership.json",
+      "targets": [
+        "ecommerce.spec.access-control.order-ownership.106a"
+      ],
+      "desc": "Merge order updates into a browser cache that is never cleared when the account changes. Separate-browser ownership still works.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "  const [orders, setOrders] = useState<Order[]>([]);",
+          "replace": "  const [orders, setStoredOrders] = useState<Order[]>([]);\n  const setOrders: typeof setStoredOrders = update => setStoredOrders(previous => {\n    const incoming = typeof update === 'function' ? update(previous) : update;\n    return [...new Map([...previous, ...incoming].map(order => [order.id, order])).values()];\n  });"
+        }
+      ]
+    },
+    {
+      "id": "order-history-is-always-empty",
+      "scenario": "tracks/ecommerce/scenarios/01-order-ownership.json",
+      "targets": [
+        "ecommerce.spec.access-control.order-ownership.106a"
+      ],
+      "desc": "Hide all orders, including the required own-account positive views.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "FROM orders WHERE account_id = $1 ORDER BY created_at DESC`,",
+          "replace": "FROM orders WHERE account_id = $1 AND FALSE ORDER BY created_at DESC`,"
+        }
+      ]
     }
   ]
 }
