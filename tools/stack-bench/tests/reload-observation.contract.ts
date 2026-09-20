@@ -190,11 +190,25 @@ test('transfer race preserves app-owned stock aggregates and uses one database b
         assert.equal(materializedTotal, 100 + Number(step.plus));
         assert.notEqual(materializedTotal + 1, 100 + Number(step.plus), 'a lost sale must fail');
       }
-      for (const step of steps.slice(race + 1).filter(step => step.do === 'dbExpectStock' && step.warehouse)) {
+      for (const step of steps.slice(race + 1).filter(step => step.do === 'dbExpectStock' && step.warehouse && step.atLeast !== undefined)) {
         const value = stock[step.warehouse as keyof typeof stock];
         assert(value >= Number(step.atLeast) && value <= Number(step.atMost));
       }
     }
+  }
+});
+
+test('opposing transfers require both valid calls and exact directional stock deltas', () => {
+  const check = scenario('02-server-actions.json').features.find(feature => feature.id === 202)!.criteria[0]!;
+  assert.equal(check.points, 2);
+  const pairs = check.steps.flatMap((step, index) => step.do === 'callConcurrently' ? [index] : []);
+  assert.equal(pairs.length, 3);
+  for (const [pair, index] of pairs.entries()) {
+    assert.deepEqual(check.steps.slice(index - 2, index).map(step => [step.do, step.warehouse]),
+      [['dbRecordStock', 'East'], ['dbRecordStock', 'West']]);
+    assert.deepEqual(check.steps[index + 1], { do: 'expectCallOutcomes', accepted: 2 });
+    assert.deepEqual(check.steps.slice(index + 2, index + 4).map(step => [step.do, step.warehouse, step.plus]),
+      [['dbExpectStock', 'East', [-3, 5, -5][pair]], ['dbExpectStock', 'West', [3, -5, 5][pair]]]);
   }
 });
 

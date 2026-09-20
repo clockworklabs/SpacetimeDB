@@ -7,9 +7,9 @@
   "recipe": {
     "path": "../recipes/progression-catalog.json",
     "id": "ecommerce.progression-catalog",
-    "meaningSha256": "f35d10937c296efd4983861e389d2eb3b98a08278729f1910b4e7a812993949a",
-    "executionSha256": "326abb3b5c5f1f9a8630fac5a4d4686624d585a8e853170f66ccfc2f246c3ec7",
-    "contentSha256": "2663f88247ad6dc163eed474e408869778245be76c0b7ea33406c6131cbf71ac"
+    "meaningSha256": "a80d9bbc63751774a1d90b80dfb8e7d75754a9b739977c11a8128c388c3d1c00",
+    "executionSha256": "0935c9160c54596037e2f423576363b02a61c1d5171318c6190727e1b9160dcf",
+    "contentSha256": "c4d55f5cc2c5f9703a16b259dd337a62e29f9616d855bd6512127708a533bab7"
   },
   "fixture": {
     "id": "ecommerce.operations",
@@ -44,25 +44,25 @@
     {
       "backend": "mongodb",
       "path": "grader/mutations/mongodb-ecommerce.json",
-      "sha256": "5b6c9ebf2750d007c367a8c66813c8810d6396f19c3d00f9762b0db310041a58",
+      "sha256": "2e19948496c9e4b7df443d7030e715d79130b6ada6bbb6f51e916a584a03428b",
       "referenceId": "ecommerce-reference-mongodb"
     },
     {
       "backend": "postgres",
       "path": "grader/mutations/postgres-ecommerce.json",
-      "sha256": "2b34b5a48ea69e873370cee150b6da4646a3d1c89e3d9c5e23e2e61dbe7c6102",
+      "sha256": "989a1a1c25ddeb3b51c06cf871e2368debb1bae404823302d69eda1abe75d56b",
       "referenceId": "ecommerce-reference-postgres"
     },
     {
       "backend": "spacetime",
       "path": "grader/mutations/spacetime-ecommerce.json",
-      "sha256": "97a3de20073a304589e35abb8ad5efb65f9fb106676b79112685d67373a1bc11",
+      "sha256": "d35979c32e719a83134f6529258849167180ec15060eb48985a36ab35cd88815",
       "referenceId": "ecommerce-reference-spacetime"
     },
     {
       "backend": "convex",
       "path": "grader/mutations/convex-ecommerce.json",
-      "sha256": "b97c69c4e9ba8a972c62c2d8a1d2d68725e16f0ba239296646a6f369da17e0f8",
+      "sha256": "f74e63f23497d69e44d0469fb0a75b359bde1bcaab506ed80b7e66b560776117",
       "referenceId": "ecommerce-reference-convex"
     }
   ],

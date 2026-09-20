@@ -54,7 +54,7 @@
     {
       "id": 202,
       "name": "Stock is conserved while operations overlap",
-      "actors": ["admin", "customer"],
+      "actors": ["admin", "customer", "reverseAdmin"],
       "setup": [
         { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
         { "do": "signUp", "actor": "customer", "name": "direct-conserve" },
@@ -64,7 +64,7 @@
         {
           "id": "202d",
           "category": "production",
-          "desc": "a direct transfer racing a direct purchase leaves the exact starting total minus the sold unit",
+          "desc": "overlapping purchases and opposing transfers preserve exact warehouse stock and complete valid operations",
           "points": 2,
           "statedBy": "a transfer moves stock, it does not create or destroy it",
           "steps": [
@@ -96,7 +96,31 @@
             {"do":"dbExpectStock","item":"Headphones","relativeTo":"direct-race-stock-before","plus":-1},
             {"do":"click","actor":"customer","testid":"overlay-close","ifAvailable":true,"unlessVisible":"order-item","within":1000},
             {"do":"click","actor":"customer","testid":"orders-toggle", "unlessVisible": "order-item" },
-            {"do":"expect","actor":"customer","testid":"order-item","contains":"Headphones","count":1,"within":10000}
+            {"do":"expect","actor":"customer","testid":"order-item","contains":"Headphones","count":1,"within":10000},
+            {"do":"signIn","actor":"reverseAdmin","name":"admin","password":"stackbench-admin-2026","exact":true},
+            {"do":"click","actor":"reverseAdmin","testid":"admin-link"},
+            {"do":"fill","actor":"admin","testid":"transfer-from","text":"East","in":{"testid":"admin-item-row","contains":"Headphones"}},
+            {"do":"fill","actor":"admin","testid":"transfer-to","text":"West","in":{"testid":"admin-item-row","contains":"Headphones"}},
+            {"do":"fill","actor":"reverseAdmin","testid":"transfer-from","text":"West","in":{"testid":"admin-item-row","contains":"Headphones"}},
+            {"do":"fill","actor":"reverseAdmin","testid":"transfer-to","text":"East","in":{"testid":"admin-item-row","contains":"Headphones"}},
+            {"do":"dbRecordStock","item":"Headphones","warehouse":"East","as":"opposing-East"},
+            {"do":"dbRecordStock","item":"Headphones","warehouse":"West","as":"opposing-West"},
+            {"do":"callConcurrently","actors":["admin"],"action":"transfer","namedAction":{"id":"transfer","path":"/api/admin/transfer","reducer":"admin_transfer_stock","args":[0,0,0,7],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"fromWarehouseId","in":"body","wireType":"u64"},{"name":"toWarehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-item-row","contains":"Headphones","attribute":"data-transfer-input"},"requests":1,"settleMs":0,"alongside":[{"actors":["reverseAdmin"],"action":"transfer","namedAction":{"id":"transfer","path":"/api/admin/transfer","reducer":"admin_transfer_stock","args":[0,0,0,4],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"fromWarehouseId","in":"body","wireType":"u64"},{"name":"toWarehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-item-row","contains":"Headphones","attribute":"data-transfer-input"},"requests":1}]},
+            {"do":"expectCallOutcomes","accepted":2},
+            {"do":"dbExpectStock","item":"Headphones","warehouse":"East","relativeTo":"opposing-East","plus":-3},
+            {"do":"dbExpectStock","item":"Headphones","warehouse":"West","relativeTo":"opposing-West","plus":3},
+            {"do":"dbRecordStock","item":"Headphones","warehouse":"East","as":"opposing-East"},
+            {"do":"dbRecordStock","item":"Headphones","warehouse":"West","as":"opposing-West"},
+            {"do":"callConcurrently","actors":["admin"],"action":"transfer","namedAction":{"id":"transfer","path":"/api/admin/transfer","reducer":"admin_transfer_stock","args":[0,0,0,4],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"fromWarehouseId","in":"body","wireType":"u64"},{"name":"toWarehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-item-row","contains":"Headphones","attribute":"data-transfer-input"},"requests":1,"settleMs":0,"alongside":[{"actors":["reverseAdmin"],"action":"transfer","namedAction":{"id":"transfer","path":"/api/admin/transfer","reducer":"admin_transfer_stock","args":[0,0,0,9],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"fromWarehouseId","in":"body","wireType":"u64"},{"name":"toWarehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-item-row","contains":"Headphones","attribute":"data-transfer-input"},"requests":1}]},
+            {"do":"expectCallOutcomes","accepted":2},
+            {"do":"dbExpectStock","item":"Headphones","warehouse":"East","relativeTo":"opposing-East","plus":5},
+            {"do":"dbExpectStock","item":"Headphones","warehouse":"West","relativeTo":"opposing-West","plus":-5},
+            {"do":"dbRecordStock","item":"Headphones","warehouse":"East","as":"opposing-East"},
+            {"do":"dbRecordStock","item":"Headphones","warehouse":"West","as":"opposing-West"},
+            {"do":"callConcurrently","actors":["admin"],"action":"transfer","namedAction":{"id":"transfer","path":"/api/admin/transfer","reducer":"admin_transfer_stock","args":[0,0,0,8],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"fromWarehouseId","in":"body","wireType":"u64"},{"name":"toWarehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-item-row","contains":"Headphones","attribute":"data-transfer-input"},"requests":1,"settleMs":0,"alongside":[{"actors":["reverseAdmin"],"action":"transfer","namedAction":{"id":"transfer","path":"/api/admin/transfer","reducer":"admin_transfer_stock","args":[0,0,0,3],"params":[{"name":"itemId","in":"body","wireType":"u64"},{"name":"fromWarehouseId","in":"body","wireType":"u64"},{"name":"toWarehouseId","in":"body","wireType":"u64"},{"name":"quantity","in":"body"}]},"input":{"testid":"admin-item-row","contains":"Headphones","attribute":"data-transfer-input"},"requests":1}]},
+            {"do":"expectCallOutcomes","accepted":2},
+            {"do":"dbExpectStock","item":"Headphones","warehouse":"East","relativeTo":"opposing-East","plus":-5},
+            {"do":"dbExpectStock","item":"Headphones","warehouse":"West","relativeTo":"opposing-West","plus":5}
           ]
         }
       ]

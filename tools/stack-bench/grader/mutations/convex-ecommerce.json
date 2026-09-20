@@ -1863,6 +1863,36 @@
           "replace": "    setFulfilmentQueue(previous => { const next = state.fulfilment || { orders: [], depth: 0 }; return next.orders.length < previous.orders.length ? previous : next; });"
         }
       ]
+    },
+    {
+      "id": "opposing-transfer-ignored",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202d"
+      ],
+      "desc": "One valid opposing transfer is acknowledged without moving stock.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "    if (args.fromWarehouseId === args.toWarehouseId) throw new ConvexError('Choose different warehouses');",
+          "replace": "    if (args.fromWarehouseId === args.toWarehouseId) throw new ConvexError('Choose different warehouses');\n    if (args.quantity === 7) return;"
+        }
+      ]
+    },
+    {
+      "id": "opposing-transfer-rejected",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202d"
+      ],
+      "desc": "One valid opposing transfer is refused despite ample source stock.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "    if (args.fromWarehouseId === args.toWarehouseId) throw new ConvexError('Choose different warehouses');",
+          "replace": "    if (args.fromWarehouseId === args.toWarehouseId) throw new ConvexError('Choose different warehouses');\n    if (args.quantity === 7) throw new ConvexError('Transfer disabled');"
+        }
+      ]
     }
   ]
 }

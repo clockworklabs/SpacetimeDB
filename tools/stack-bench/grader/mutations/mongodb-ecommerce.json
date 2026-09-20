@@ -2867,6 +2867,36 @@
           "replace": "    socket.on(\"fulfilment:update\", (data: FulfilmentQueueT) => setFulfilmentQueue(previous => data.orders.length < previous.orders.length ? previous : data));"
         }
       ]
+    },
+    {
+      "id": "opposing-transfer-ignored",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202d"
+      ],
+      "desc": "One valid opposing transfer is acknowledged without moving stock.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  const { itemId, fromWarehouseId, toWarehouseId, quantity } = req.body || {};",
+          "replace": "  const { itemId, fromWarehouseId, toWarehouseId, quantity } = req.body || {};\n  if (Number(quantity) === 7) return res.json({});"
+        }
+      ]
+    },
+    {
+      "id": "opposing-transfer-rejected",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202d"
+      ],
+      "desc": "One valid opposing transfer is refused despite ample source stock.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  const { itemId, fromWarehouseId, toWarehouseId, quantity } = req.body || {};",
+          "replace": "  const { itemId, fromWarehouseId, toWarehouseId, quantity } = req.body || {};\n  if (Number(quantity) === 7) return res.status(409).json({ error: \"Transfer disabled\" });"
+        }
+      ]
     }
   ]
 }

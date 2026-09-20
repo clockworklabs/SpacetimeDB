@@ -2880,6 +2880,36 @@
           "replace": "  const [liveQueueRows] = useTable(tables.fulfilmentQueue);\n  const retainedQueueRows = useRef<typeof liveQueueRows>([]);\n  if (liveQueueRows.length >= retainedQueueRows.current.length) retainedQueueRows.current = liveQueueRows;\n  const queueRows = retainedQueueRows.current;"
         }
       ]
+    },
+    {
+      "id": "opposing-transfer-ignored",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202d"
+      ],
+      "desc": "One valid opposing transfer is acknowledged without moving stock.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    if (quantity < 1) throw new SenderError('Transfer quantity must be at least 1.');",
+          "replace": "    if (quantity < 1) throw new SenderError('Transfer quantity must be at least 1.');\n    if (quantity === 7) return;"
+        }
+      ]
+    },
+    {
+      "id": "opposing-transfer-rejected",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202d"
+      ],
+      "desc": "One valid opposing transfer is refused despite ample source stock.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    if (quantity < 1) throw new SenderError('Transfer quantity must be at least 1.');",
+          "replace": "    if (quantity < 1) throw new SenderError('Transfer quantity must be at least 1.');\n    if (quantity === 7) throw new SenderError('Transfer disabled');"
+        }
+      ]
     }
   ]
 }

@@ -39,19 +39,19 @@
     {
       "backend": "mongodb",
       "path": "grader/mutations/mongodb-ecommerce.json",
-      "sha256": "5b6c9ebf2750d007c367a8c66813c8810d6396f19c3d00f9762b0db310041a58",
+      "sha256": "2e19948496c9e4b7df443d7030e715d79130b6ada6bbb6f51e916a584a03428b",
       "referenceId": "ecommerce-reference-mongodb"
     },
     {
       "backend": "postgres",
       "path": "grader/mutations/postgres-ecommerce.json",
-      "sha256": "2b34b5a48ea69e873370cee150b6da4646a3d1c89e3d9c5e23e2e61dbe7c6102",
+      "sha256": "989a1a1c25ddeb3b51c06cf871e2368debb1bae404823302d69eda1abe75d56b",
       "referenceId": "ecommerce-reference-postgres"
     },
     {
       "backend": "spacetime",
       "path": "grader/mutations/spacetime-ecommerce.json",
-      "sha256": "97a3de20073a304589e35abb8ad5efb65f9fb106676b79112685d67373a1bc11",
+      "sha256": "d35979c32e719a83134f6529258849167180ec15060eb48985a36ab35cd88815",
       "referenceId": "ecommerce-reference-spacetime"
     }
   ],
