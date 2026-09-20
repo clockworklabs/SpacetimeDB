@@ -10,7 +10,7 @@
   "conflictsWith": [],
   "capabilities": ["browser", "direct-server-call", "request-replay"],
   "evidence": ["browser-observation", "server-refusal", "server-response"],
-  "budget": { "status": "bounded", "maxRuntimeMs": 44000 },
+  "budget": { "status": "bounded", "maxRuntimeMs": 64000 },
   "task": {
     "requirements": [
       { "id": "ecommerce.l2.operator-authorization", "path": "prompts/02-operations.md", "order": 21, "from": "- Staff cannot change prices", "until": "## Features", "modes": ["upgrade"], "requiresFeatures": ["ecommerce.operations-access-features"] },

@@ -2118,6 +2118,36 @@
           "replace": "  throw new ConvexError('Catalog writes refused');\n  if (!args.name.trim() || !args.category.trim() || !Number.isFinite(args.price) || args.price < 0) throw new ConvexError('Invalid product');"
         }
       ]
+    },
+    {
+      "id": "shipping-trusts-submitted-staff-role",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.operator-authorization.201c"
+      ],
+      "desc": "Trust a staff role supplied by a customer; ordinary customers remain refused.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "export const ship = mutationGeneric({ args: { orderId: v.id('order_header') }, handler: async (ctx, { orderId }) => {\n  const user = await operator(ctx);",
+          "replace": "export const ship = mutationGeneric({ args: { orderId: v.id('order_header'), role: v.optional(v.string()) }, handler: async (ctx, { orderId, role }) => {\n  const user = role === 'staff' ? await account(ctx) : await operator(ctx);"
+        }
+      ]
+    },
+    {
+      "id": "shipping-rejects-every-request",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.operator-authorization.201c"
+      ],
+      "desc": "Reject legitimate staff shipping as well as customer requests.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "export const ship = mutationGeneric({ args: { orderId: v.id('order_header') }, handler: async (ctx, { orderId }) => {\n  const user = await operator(ctx);",
+          "replace": "export const ship = mutationGeneric({ args: { orderId: v.id('order_header') }, handler: async (ctx, { orderId }) => {\n  throw new ConvexError('Shipping refused');\n  const user = await operator(ctx);"
+        }
+      ]
     }
   ]
 }

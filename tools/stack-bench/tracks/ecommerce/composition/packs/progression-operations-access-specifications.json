@@ -10,7 +10,7 @@
   "conflictsWith": [],
   "capabilities": ["browser", "direct-server-call", "request-replay"],
   "evidence": ["server-refusal", "server-response"],
-  "budget": { "status": "bounded", "maxRuntimeMs": 98000 },
+  "budget": { "status": "bounded", "maxRuntimeMs": 118000 },
   "task": {
     "requirements": [
       { "id": "ecommerce.progression.transfer-authorization", "path": "prompts/modular/transfer-authorization.md", "order": 2930, "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l2.stock-transfers-features"] },

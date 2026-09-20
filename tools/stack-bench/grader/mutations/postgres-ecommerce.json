@@ -3241,6 +3241,55 @@
           "replace": "  app.post(\"/api/catalog/products\", dependencies.requireStaff, asyncRoute(async (req, res) => {\n    res.status(403).json({error:'Catalog writes refused'}); return;"
         }
       ]
+    },
+    {
+      "id": "shipping-trusts-submitted-staff-role",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.operator-authorization.201c"
+      ],
+      "desc": "Trust a staff role supplied by a customer; ordinary customers remain refused.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\n  \"/api/fulfilment/ship\",\n  requireStaff,",
+          "replace": "app.post(\n  \"/api/fulfilment/ship\",\n  (req, res, next) => req.body?.role === \"staff\" ? requireAuth(req, res, next) : requireStaff(req, res, next),"
+        }
+      ]
+    },
+    {
+      "id": "shipping-claim-commits-then-refuses",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.operator-authorization.201c"
+      ],
+      "desc": "Ship the order using the claimed role, then return 403. A refusal response cannot hide the stored effect.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\n  \"/api/fulfilment/ship\",\n  requireStaff,",
+          "replace": "app.post(\n  \"/api/fulfilment/ship\",\n  (req, res, next) => req.body?.role === \"staff\" ? requireAuth(req, res, next) : requireStaff(req, res, next),"
+        },
+        {
+          "find": "    const accountId = result.rows[0].account_id;",
+          "replace": "    if (req.body?.role === \"staff\") { res.status(403).json({error:\"Shipping refused\"}); return; }\n    const accountId = result.rows[0].account_id;"
+        }
+      ]
+    },
+    {
+      "id": "shipping-rejects-every-request",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.operator-authorization.201c"
+      ],
+      "desc": "Reject legitimate staff shipping as well as customer requests.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\n  \"/api/fulfilment/ship\",\n  requireStaff,",
+          "replace": "app.post(\n  \"/api/fulfilment/ship\",\n  (_req, res) => { res.status(403).json({ error: \"Shipping refused\" }); },"
+        }
+      ]
     }
   ]
 }

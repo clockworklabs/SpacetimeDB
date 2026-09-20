@@ -613,6 +613,32 @@ test('restock role claims reach the real write with staff credentials and stored
   }
 });
 
+test('shipping role claims retain customer credentials and check fresh state before classifying refusal', async () => {
+  const scenario = JSON.parse(readFileSync('tracks/ecommerce/scenarios/02-server-actions.json', 'utf8'));
+  const criterion = scenario.features.find((f: UnknownRecord) => f.id === 201).criteria[0];
+  const steps = criterion.steps as UnknownRecord[], calls = steps.filter(step => step.do === 'callAction');
+  assert.equal(criterion.points, 2);
+  assert.equal(calls.length, 4);
+  const attack = steps.indexOf(calls[2]!);
+  assert.equal(steps[attack + 1]!.outcome, 'completed');
+  const refused = steps.findIndex((step, i) => i > attack && step.outcome === 'application-refused');
+  assert(steps.slice(attack, refused).some(step => step.do === 'reload'));
+  assert.equal(steps[refused - 1]!.value, 'pending');
+  assert.equal(steps.at(-1)!.value, 'shipped');
+  for (const backend of ['postgres', 'mongodb', 'spacetime']) {
+    const requests: { body: string; authorization: string | undefined }[] = [];
+    const provided = services(new Map(['staff', 'customer'].map(name => [name, { name,
+      writes: [{ headers: { authorization: `Bearer ${name}` } }],
+      loc: () => ({ waitFor: async () => {}, getAttribute: async () => '{"orderId":"9007199254740993"}' }),
+    }])), { backend, spacetime: { uri: 'http://native.test', mod: 'shop' },
+      fetchImpl: async (_url, options) => { requests.push({ body: options.body!, authorization: options.headers?.authorization }); return namedResponse(403, false); } });
+    for (const call of calls) assert.equal((await run(call, provided)).status, 'passed');
+    assert.deepEqual(requests.map(r => r.authorization), ['Bearer staff', 'Bearer customer', 'Bearer customer', 'Bearer staff']);
+    if (backend === 'spacetime') assert.equal(requests[2]!.body, '[9007199254740993,"staff"]');
+    else assert.deepEqual(JSON.parse(requests[2]!.body), { orderId: '9007199254740993', role: 'staff' });
+  }
+});
+
 test('fixed checkout price claims reach the native transport without inventing a DOM hook', async () => {
   const scenario = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/progression-cart-checkout.json'), 'utf8'));
   const steps = scenario.features[0].criteria.find((c: UnknownRecord) => c.id === '4d').steps as UnknownRecord[];
