@@ -5,12 +5,12 @@
   "stableId": "ecommerce.returns-pricing",
   "moduleType": "specification",
   "title": "Cancellation and fulfilment",
-  "description": "A cancelled pending order leaves the fulfilment queue.",
+  "description": "Cancellation leaves the live queue and remains consistent with shipping.",
   "requiresPacks": [],
   "conflictsWith": [],
-  "capabilities": ["browser"],
-  "evidence": ["browser-observation"],
-  "budget": { "status": "bounded", "maxRuntimeMs": 24000 },
+  "capabilities": ["browser", "direct-server-call", "database-observation", "concurrent-actors"],
+  "evidence": ["browser-observation", "database-observation", "concurrent-outcome"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 90000 },
   "task": {
     "requirements": [
       { "id": "ecommerce.progression.cancellation-queue", "path": "prompts/modular/cancellation-queue.md", "order": 2045, "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l2.order-cancellation-features", "ecommerce.progression.fulfilment-queue"] }
@@ -18,6 +18,6 @@
     "contracts": []
   },
   "checks": [
-    { "id": "queue-removal", "stableId": "cancellation-and-return", "source": "scenarios/02-cancellation-queue.json", "feature": 3, "criteria": ["3d"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l2.order-cancellation-features", "ecommerce.progression.fulfilment-queue"] }
+    { "id": "queue-removal", "stableId": "cancellation-and-return", "source": "scenarios/02-cancellation-queue.json", "feature": 3, "criteria": ["3d"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l2.order-cancellation-features", "ecommerce.progression.fulfilment-queue", "ecommerce.feature.purchasing", "ecommerce.feature.warehouse-admin"] }
   ]
 }

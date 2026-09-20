@@ -60,8 +60,8 @@
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "  order.status = \"shipped\";\n  await order.save();",
-          "replace": "  order.status = \"shipped\";\n  order.total *= 2;\n  await order.save();"
+          "find": "    { $set: { status: \"shipped\" } },",
+          "replace": "    { $set: { status: \"shipped\" }, $mul: { total: 2 } },"
         }
       ]
     },
@@ -671,8 +671,8 @@
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "  order.status = \"shipped\";\n  await order.save();",
-          "replace": "  order.status = \"pending\";\n  await order.save();"
+          "find": "    { $set: { status: \"shipped\" } },",
+          "replace": "    { $set: { status: \"pending\" } },"
         }
       ]
     },
@@ -2778,6 +2778,93 @@
         {
           "find": "    const order = await checkoutAtomic(userId);",
           "replace": "    const order = await checkoutAtomic(userId);\n    order.items = order.items.filter(line => line.name !== 'Coffee Grinder') as any; await order.save();"
+        }
+      ]
+    },
+    {
+      "id": "shipping-cancellation-cancel-shipped",
+      "scenario": "tracks/ecommerce/scenarios/02-cancellation-queue.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3d"
+      ],
+      "desc": "Cancellation accepts a shipped order and restores its stock after shipping.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "if (value.status !== \"pending\")",
+          "replace": "if (false)"
+        }
+      ]
+    },
+    {
+      "id": "shipping-cancellation-resurrect-cancelled",
+      "scenario": "tracks/ecommerce/scenarios/02-cancellation-queue.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3d"
+      ],
+      "desc": "Shipping accepts a cancelled order after its stock was restored.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "if (order.status !== \"pending\")",
+          "replace": "if (false)"
+        },
+        {
+          "find": "    { _id: orderId, status: \"pending\" },",
+          "replace": "    { _id: orderId },"
+        }
+      ]
+    },
+    {
+      "id": "shipping-cancellation-combined-race",
+      "scenario": "tracks/ecommerce/scenarios/02-cancellation-queue.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3d"
+      ],
+      "desc": "Cancellation restores stock but records a shipped status, combining mutually exclusive effects.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "if (value.status !== \"pending\")",
+          "replace": "if (false)"
+        },
+        {
+          "find": "value.status = \"cancelled\";",
+          "replace": "value.status = \"shipped\";"
+        }
+      ]
+    },
+    {
+      "id": "shipping-cancellation-reject-both",
+      "scenario": "tracks/ecommerce/scenarios/02-cancellation-queue.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3d"
+      ],
+      "desc": "Both cancellation and shipping refuse pending orders; useful progress must remain required.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "if (value.status !== \"pending\")",
+          "replace": "if (true)"
+        },
+        {
+          "find": "if (order.status !== \"pending\")",
+          "replace": "if (true)"
+        }
+      ]
+    },
+    {
+      "id": "shipping-cancellation-queue-retains-removed-order",
+      "scenario": "tracks/ecommerce/scenarios/02-cancellation-queue.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3d"
+      ],
+      "desc": "The live staff queue accepts new orders but retains rows after cancellation; the database state remains correct.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    socket.on(\"fulfilment:update\", (data: FulfilmentQueueT) => setFulfilmentQueue(data));",
+          "replace": "    socket.on(\"fulfilment:update\", (data: FulfilmentQueueT) => setFulfilmentQueue(previous => data.orders.length < previous.orders.length ? previous : data));"
         }
       ]
     }

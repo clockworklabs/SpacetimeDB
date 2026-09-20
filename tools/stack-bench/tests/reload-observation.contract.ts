@@ -236,3 +236,26 @@ test('cancellation conservation proves the sale before its reversal', () => {
     }
   }
 });
+
+test('shipping races retain the live cancellation observer and one scoring owner', () => {
+  const feature = scenario('02-cancellation-queue.json').features[0]!;
+  assert.equal(feature.criteria.length, 1);
+  const check = feature.criteria[0]!;
+  assert.equal(check.id, '3d');
+  assert.equal(check.points, 1);
+  const cancelled = check.steps.findIndex(step => step.do === 'click' && step.testid === 'cancel-order');
+  const live = check.steps[cancelled + 1]!;
+  assert.equal(live.do, 'waitUntilAbsent');
+  assert.equal(live.testid, 'queue-item');
+  const races = check.steps.flatMap((step, index) => step.do === 'callConcurrently' && step.action === 'cancel' ? [index] : []);
+  assert.equal(races.length, 3);
+  for (const index of races) {
+    assert.equal(check.steps[index + 1]!.do, 'expectCallOutcomes');
+    assert.equal(check.steps[index + 2]!.do, 'dbExpectCancellation');
+    assert.equal(check.steps[index + 2]!.shipping, 'competes');
+    assert(check.steps.slice(0, index).some(step => step.do === 'dbExpectPurchases'));
+  }
+  assert(check.steps.filter(step => step.do === 'dbRecordCheckout').every(step =>
+    (step.storage as { kind: string; cart: boolean; warehouses: boolean }).kind === 'order-data'
+    && (step.storage as { cart: boolean }).cart === false));
+});

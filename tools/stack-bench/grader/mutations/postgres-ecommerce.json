@@ -2888,6 +2888,89 @@
           "replace": "      await checkoutReservedCart(accountId);\n      await pool.query(\"DELETE FROM order_item WHERE order_id=(SELECT MAX(id) FROM orders WHERE account_id=$1) AND item_name='Coffee Grinder'\", [accountId]);"
         }
       ]
+    },
+    {
+      "id": "shipping-cancellation-cancel-shipped",
+      "scenario": "tracks/ecommerce/scenarios/02-cancellation-queue.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3d"
+      ],
+      "desc": "Cancellation accepts a shipped order and restores its stock after shipping.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "if (orderRow.rows[0].status !== \"pending\")",
+          "replace": "if (false)"
+        }
+      ]
+    },
+    {
+      "id": "shipping-cancellation-resurrect-cancelled",
+      "scenario": "tracks/ecommerce/scenarios/02-cancellation-queue.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3d"
+      ],
+      "desc": "Shipping accepts a cancelled order after its stock was restored.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "WHERE id = $1 AND status = 'pending' RETURNING account_id",
+          "replace": "WHERE id = $1 RETURNING account_id"
+        }
+      ]
+    },
+    {
+      "id": "shipping-cancellation-combined-race",
+      "scenario": "tracks/ecommerce/scenarios/02-cancellation-queue.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3d"
+      ],
+      "desc": "Cancellation restores stock but records a shipped status, combining mutually exclusive effects.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "if (orderRow.rows[0].status !== \"pending\")",
+          "replace": "if (false)"
+        },
+        {
+          "find": "UPDATE orders SET status = 'cancelled' WHERE id = $1",
+          "replace": "UPDATE orders SET status = 'shipped' WHERE id = $1"
+        }
+      ]
+    },
+    {
+      "id": "shipping-cancellation-reject-both",
+      "scenario": "tracks/ecommerce/scenarios/02-cancellation-queue.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3d"
+      ],
+      "desc": "Both cancellation and shipping refuse pending orders; useful progress must remain required.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "if (orderRow.rows[0].status !== \"pending\")",
+          "replace": "if (true)"
+        },
+        {
+          "find": "WHERE id = $1 AND status = 'pending' RETURNING account_id",
+          "replace": "WHERE id = $1 AND false RETURNING account_id"
+        }
+      ]
+    },
+    {
+      "id": "shipping-cancellation-queue-retains-removed-order",
+      "scenario": "tracks/ecommerce/scenarios/02-cancellation-queue.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3d"
+      ],
+      "desc": "The live staff queue accepts new orders but retains rows after cancellation; the database state remains correct.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    socket.on(\"queue:update\", (payload: QueueState) => setQueue(payload));",
+          "replace": "    socket.on(\"queue:update\", (payload: QueueState) => setQueue(previous => payload.queue.length < previous.queue.length ? previous : payload));"
+        }
+      ]
     }
   ]
 }

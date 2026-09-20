@@ -78,9 +78,6 @@ function runGrade(argv: string[], timeoutMs = 300_000): Promise<{ stdout: string
 
 export function nullControlSuites(track: Track, selectedLevel: number | null = null,
   binding: RecipeBinding | null = null) {
-  if (selectedLevel !== null && !isDeclaredLevel(track, selectedLevel)) {
-    throw new Error(`L${selectedLevel} is not declared for ${track.name}`);
-  }
   if (binding) {
     if (selectedLevel === null) throw new Error('recipe-bound null control requires one level');
     if (!Array.isArray(binding.execution) || !binding.execution.length) {
@@ -112,6 +109,9 @@ export function nullControlSuites(track: Track, selectedLevel: number | null = n
       throw new Error(`recipe-bound null control leaves checks unmapped: ${missing.join(', ')}`);
     }
     return suites;
+  }
+  if (selectedLevel !== null && !isDeclaredLevel(track, selectedLevel)) {
+    throw new Error(`L${selectedLevel} is not declared for ${track.name}`);
   }
   const seen = new Set();
   const suites = [];

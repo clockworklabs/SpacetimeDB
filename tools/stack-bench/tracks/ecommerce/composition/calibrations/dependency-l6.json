@@ -7,9 +7,9 @@
   "recipe": {
     "path": "../recipes/progression-catalog.json",
     "id": "ecommerce.progression-catalog",
-    "meaningSha256": "cfdd508e2ab594b72e9aaff5cda6a1ab768dd575551be26801f1e47553754189",
-    "executionSha256": "a58873fb423204d9bc904cd5dd2a7777d0701a967f8f5c7c40918dee1008ed3a",
-    "contentSha256": "f32d01bf243fbafa838d0f01bf90e8f98f94869457ca9487ae539fefbe0149ff"
+    "meaningSha256": "f35d10937c296efd4983861e389d2eb3b98a08278729f1910b4e7a812993949a",
+    "executionSha256": "326abb3b5c5f1f9a8630fac5a4d4686624d585a8e853170f66ccfc2f246c3ec7",
+    "contentSha256": "2663f88247ad6dc163eed474e408869778245be76c0b7ea33406c6131cbf71ac"
   },
   "fixture": {
     "id": "ecommerce.operations",
@@ -39,19 +39,19 @@
     {
       "backend": "mongodb",
       "path": "grader/mutations/mongodb-ecommerce.json",
-      "sha256": "f7f7f718fbf695cdf822363cac8816ee10595c04f03d71b4819ea868c4220aa5",
+      "sha256": "5b6c9ebf2750d007c367a8c66813c8810d6396f19c3d00f9762b0db310041a58",
       "referenceId": "ecommerce-reference-mongodb"
     },
     {
       "backend": "postgres",
       "path": "grader/mutations/postgres-ecommerce.json",
-      "sha256": "16d80779918292a848cd68042f5fb2e876e0d09f8b0e00a6cf4f03f73417e9d2",
+      "sha256": "2b34b5a48ea69e873370cee150b6da4646a3d1c89e3d9c5e23e2e61dbe7c6102",
       "referenceId": "ecommerce-reference-postgres"
     },
     {
       "backend": "spacetime",
       "path": "grader/mutations/spacetime-ecommerce.json",
-      "sha256": "90dfbd839dd9f6ec8d6fcf2035c4acc5b10650bca781c2c4a4139e7e56b1ac09",
+      "sha256": "97a3de20073a304589e35abb8ad5efb65f9fb106676b79112685d67373a1bc11",
       "referenceId": "ecommerce-reference-spacetime"
     }
   ],
@@ -69,6 +69,7 @@
       "ecommerce.feature.split-tender-refunds.return-refund-interaction.757a",
       "ecommerce.feature.split-tender-refunds.return-refund-interaction.757b",
       "ecommerce.returns-pricing.cancellation-and-return.3f",
+      "ecommerce.returns-pricing.cancellation-and-return.3d",
       "ecommerce.spec.search-ordering.search-ordering.402b",
       "ecommerce.spec.state-durability.recommendation-feedback-restart.504c",
       "ecommerce.spec.state-durability.checkout-crash-integrity.910a",

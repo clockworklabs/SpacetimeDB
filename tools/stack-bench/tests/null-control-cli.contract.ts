@@ -59,6 +59,19 @@ test('targeted null selection keeps only calibrated checks and their execution',
   assert.throws(() => parseNullControlArgs(['node', 'null-control.js', '--selected-check', key]), /requires --level/);
 });
 
+test('bound recipes can qualify levels outside legacy suites without widening legacy selection', () => {
+  const track = loadTrack('ecommerce');
+  const binding = resolveRecipeRelease(track, 6, 'ecommerce.progression-catalog');
+  const calibration = resolveCalibrationForRelease(binding.release,
+    { trackRoot: track.dir, stackBenchRoot: STACK_BENCH_ROOT, alias: 'L6' })!;
+  const key = 'ecommerce.returns-pricing.cancellation-and-return.3d';
+  const selected = createNullQualification(binding, calibration, [key]);
+  const suites = nullControlSuites(track, 6, selected.binding);
+  assert(suites.every(suite => suite.level === 6));
+  assert.deepEqual(suites.filter(hasChecks).flatMap(suite => suite.checks.map(check => check.stableKey)), [key]);
+  assert.throws(() => nullControlSuites(track, 6), /not declared/);
+});
+
 test('recipe-bound null qualification grades the exact modular execution and checks', () => {
   const track = loadTrack('ecommerce');
   const binding = resolveRecipeRelease(track, 1, 'ecommerce.sequential-l1');

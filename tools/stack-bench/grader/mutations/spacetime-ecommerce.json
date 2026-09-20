@@ -2793,6 +2793,93 @@
           "replace": "  for (const p of priced) {\n    if (p.name === 'Coffee Grinder') continue;"
         }
       ]
+    },
+    {
+      "id": "shipping-cancellation-cancel-shipped",
+      "scenario": "tracks/ecommerce/scenarios/02-cancellation-queue.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3d"
+      ],
+      "desc": "Cancellation accepts a shipped order and restores its stock after shipping.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "if (order.status !== 'pending') throw new SenderError('Order has already shipped.');",
+          "replace": "// Permit the invalid order transition for this control."
+        }
+      ]
+    },
+    {
+      "id": "shipping-cancellation-resurrect-cancelled",
+      "scenario": "tracks/ecommerce/scenarios/02-cancellation-queue.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3d"
+      ],
+      "desc": "Shipping accepts a cancelled order after its stock was restored.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "if (order.status !== 'pending') throw new SenderError('Order is not pending.');",
+          "replace": "// Permit the invalid order transition for this control."
+        }
+      ]
+    },
+    {
+      "id": "shipping-cancellation-combined-race",
+      "scenario": "tracks/ecommerce/scenarios/02-cancellation-queue.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3d"
+      ],
+      "desc": "Cancellation restores stock but records a shipped status, combining mutually exclusive effects.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "if (order.status !== 'pending') throw new SenderError('Order has already shipped.');",
+          "replace": "// Permit the invalid order transition for this control."
+        },
+        {
+          "find": "ctx.db.customerOrder.id.update({ ...order, status: 'cancelled' });",
+          "replace": "ctx.db.customerOrder.id.update({ ...order, status: 'shipped' });"
+        }
+      ]
+    },
+    {
+      "id": "shipping-cancellation-reject-both",
+      "scenario": "tracks/ecommerce/scenarios/02-cancellation-queue.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3d"
+      ],
+      "desc": "Both cancellation and shipping refuse pending orders; useful progress must remain required.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "if (order.status !== 'pending') throw new SenderError('Order has already shipped.');",
+          "replace": "if (order.status === 'pending') throw new SenderError('Cancellation disabled');"
+        },
+        {
+          "find": "if (order.status !== 'pending') throw new SenderError('Order is not pending.');",
+          "replace": "if (order.status === 'pending') throw new SenderError('Shipping disabled');"
+        }
+      ]
+    },
+    {
+      "id": "shipping-cancellation-queue-retains-removed-order",
+      "scenario": "tracks/ecommerce/scenarios/02-cancellation-queue.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3d"
+      ],
+      "desc": "The live staff queue accepts new orders but retains rows after cancellation; the database state remains correct.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "import { useEffect, useMemo, useState } from 'react';",
+          "replace": "import { useEffect, useMemo, useRef, useState } from 'react';"
+        },
+        {
+          "find": "  const [queueRows] = useTable(tables.fulfilmentQueue);",
+          "replace": "  const [liveQueueRows] = useTable(tables.fulfilmentQueue);\n  const retainedQueueRows = useRef<typeof liveQueueRows>([]);\n  if (liveQueueRows.length >= retainedQueueRows.current.length) retainedQueueRows.current = liveQueueRows;\n  const queueRows = retainedQueueRows.current;"
+        }
+      ]
     }
   ]
 }
