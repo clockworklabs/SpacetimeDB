@@ -575,14 +575,29 @@ function compileSteps(steps: unknown[], at: string): CompiledStep[] {
   const result: CompiledStep[] = [];
   steps.forEach((step, index) => {
     const where = `${at}[${index}]`;
-    if (object(step) && 'repeat' in step) {
-      strictObject(step, where, new Set(['repeat', 'steps']));
-      if (!positiveInteger(step.repeat) || Number(step.repeat) > 1000) fail(where, 'repeat must be an integer from 1 to 1000');
-      if (!array(step.steps) || !step.steps.length) fail(where, 'repeat requires non-empty steps');
-      // No nesting, templates or runtime loop state.
+    if (object(step) && ('repeat' in step || 'forEach' in step)) {
+      const each = 'forEach' in step;
+      strictObject(step, where, new Set([each ? 'forEach' : 'repeat', 'steps']));
+      if (each) {
+        if (!array(step.forEach) || !step.forEach.length || step.forEach.length > 1000
+          || !step.forEach.every(value => typeof value === 'string' && value.length > 0)) {
+          fail(where, 'forEach must contain 1 to 1000 non-empty strings');
+        }
+      } else if (!positiveInteger(step.repeat) || Number(step.repeat) > 1000) {
+        fail(where, 'repeat must be an integer from 1 to 1000');
+      }
+      if (!array(step.steps) || !step.steps.length) fail(where, 'expansion requires non-empty steps');
+      // No nesting, expressions or runtime loop state. Only whole-string {value} substitution.
       step.steps.forEach((child, childIndex) => validateStep(child, `${where}.steps[${childIndex}]`));
-      if (result.length + step.steps.length * Number(step.repeat) > 10000) fail(where, 'expanded steps exceed 10000');
-      for (let n = 0; n < Number(step.repeat); n++) result.push(...structuredClone(step.steps) as CompiledStep[]);
+      const values = each ? step.forEach as string[] : Array(Number(step.repeat)).fill(null);
+      if (result.length + step.steps.length * values.length > 10000) fail(where, 'expanded steps exceed 10000');
+      for (const value of values) {
+        const expanded: CompiledStep[] = each
+          ? JSON.parse(JSON.stringify(step.steps), (_key, item) => item === '{value}' ? value : item)
+          : structuredClone(step.steps);
+        expanded.forEach((child, childIndex) => validateStep(child, `${where}.steps[${childIndex}]`));
+        result.push(...expanded);
+      }
     } else {
       validateStep(step, where);
       result.push(step);

@@ -506,7 +506,8 @@
         "ecommerce.progression.catalog-management"
       ],
       "gradingGroups": [
-        "ecommerce.progression.catalog-management#products"
+        "ecommerce.progression.catalog-management#products",
+        "ecommerce.spec.transactional-integrity#catalog-volume"
       ],
       "dependencies": [
         {

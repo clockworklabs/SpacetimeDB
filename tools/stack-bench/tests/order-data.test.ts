@@ -489,4 +489,28 @@ for (const backend of ['postgres', 'mongodb'] as const) {
     assert(check.requiresFeatures?.includes('ecommerce.feature.warehouse-admin'));
     assert(check.requiresFeatures?.includes('ecommerce.feature.purchasing'));
   }
+  const catalogSource = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/progression-catalog-volume.json');
+  const catalog = compileScenarioDefinition(JSON.parse(readFileSync(catalogSource, 'utf8')), { source: catalogSource });
+  const catalogKey = 'ecommerce.spec.transactional-integrity.catalog-volume.622c';
+  const selectedCatalog = selectScenarioChecks(catalog, { checks: binding.release.checkCatalog }, [catalogKey]);
+  const catalogFeature = selectedCatalog.features[0]!;
+  assert.equal(catalogFeature.id, 622);
+  assert.equal(catalogFeature.criteria.length, 1);
+  assert.equal(catalogFeature.criteria[0]!.points, 1);
+  const catalogSteps = catalogFeature.criteria[0]!.steps;
+  const committed = catalogSteps.filter(step => step.do === 'dbExpectCatalogItem');
+  assert.equal(committed.length, 1000);
+  assert.equal(new Set(committed.map(step => step.name)).size, 1000);
+  for (const commit of committed) {
+    const index = catalogSteps.indexOf(commit);
+    assert.equal(catalogSteps[index - 1]!.testid, 'catalog-save');
+    assert.equal(catalogSteps[index - 5]!.text, commit.name);
+    assert.equal(commit.priceMinor, 125);
+  }
+  const pages = catalogSteps.filter(step => step.do === 'expectSequence');
+  assert.equal(pages.length, 101);
+  assert.deepEqual(pages.slice(0, 100).flatMap(step => step.equals as string[]), committed.map(step => step.name).reverse());
+  assert.deepEqual(pages[100]!.equals, pages[98]!.equals);
+  assert.deepEqual(binding.release.checkCatalog.find(check => check.stableKey === catalogKey)!.requiresFeatures,
+    ['ecommerce.feature.purchasing', 'ecommerce.progression.catalog-management', 'ecommerce.progression.faceted-search']);
  });

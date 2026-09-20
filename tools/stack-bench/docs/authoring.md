@@ -45,6 +45,19 @@ Add a mutant that exposes the other customer's note while keeping sign-up and sa
 
 ## Match the observation to the claim
 
+For bounded populations, scenario setup and criterion steps can use
+`{ "repeat": 10, "steps": [...] }` or
+`{ "forEach": ["Beta", "Alpha"], "steps": [...] }`.
+`forEach` replaces whole string values equal to `"{value}"` with each listed
+string. Both forms compile to ordinary actions with individual evidence.
+They permit at most 1,000 repetitions and 10,000 expanded steps per list.
+Nested expansions, expressions and runtime loop state are not supported.
+
+The catalog-volume scenario also saves `seeded-catalog` for the raw-evidence
+audit. The audit compares the final stored population with individual write
+receipts and the original fixture. Per-write observations alone cannot prove
+that later writes preserved earlier products. Keep this final snapshot.
+
 - **Session persistence:** establish a session, reload, and observe the signed-in user without
   `signIn`, `signUp`, or `ensureSignedIn` between the reload and the observation.
 - **Reload persistence:** save data, reload, and observe it. Signing in again can isolate data

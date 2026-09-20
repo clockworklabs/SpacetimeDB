@@ -66,11 +66,25 @@ test('bounded repeats expand to independent ordinary actions and reject nesting 
   assert.deepEqual(compileScenarioDefinition(output), output);
   steps[0]!.text = 'changed'; assert.equal(steps[2]!.text, 'value');
   assert.deepEqual(input, original);
+  const eachInput = wrap({ forEach: ['Beta', 'Alpha'], steps: [
+    { do: 'fill', actor: 'a', testid: 'name', text: '{value}' },
+    { do: 'expectSequence', actor: 'a', testid: 'name', equals: ['{value}'] },
+  ] });
+  const eachOriginal = structuredClone(eachInput), eachOutput = compileScenarioDefinition(eachInput);
+  assert.deepEqual(eachOutput.features[0]!.criteria[0]!.steps.map(step => step.text ?? step.equals),
+    ['Beta', ['Beta'], 'Alpha', ['Alpha']]);
+  assert.deepEqual(compileScenarioDefinition(eachOutput), eachOutput);
+  assert.deepEqual(eachInput, eachOriginal);
   for (const step of [
     ...[0, -1, 1.5, 1001, Infinity, '2'].map(repeat => ({ repeat, steps: [{ do: 'click', actor: 'a', testid: 'save' }] })),
     { repeat: 2, steps: [] }, { repeat: 2, steps: [{ repeat: 2, steps: [{ do: 'click', actor: 'a', testid: 'save' }] }] },
     { repeat: 2, steps: [{ do: 'noSuchAction' }] }, { repeat: 2, steps: [{ do: 'fill' }] },
     { repeat: 2, steps: [{ do: 'click', actor: 'a', testid: 'save' }], extra: true },
+    ...[[], [''], [1], 'value', Array(1001).fill('x')].map(forEach => ({ forEach, steps: [{ do: 'click', actor: 'a', testid: 'save' }] })),
+    { repeat: 2, forEach: ['a'], steps: [{ do: 'click', actor: 'a', testid: 'save' }] },
+    { forEach: ['a'], steps: [] },
+    { forEach: ['a'], steps: [{ forEach: ['b'], steps: [{ do: 'click', actor: 'a', testid: 'save' }] }] },
+    { forEach: ['a'], steps: [{ repeat: 2, steps: [{ do: 'click', actor: 'a', testid: 'save' }] }] },
   ]) assert.throws(() => compileScenarioDefinition(wrap(step)));
   assert.throws(() => compileScenarioDefinition(wrap({ repeat: 1000,
     steps: Array.from({ length: 11 }, () => ({ do: 'click', actor: 'a', testid: 'save' })) })), /expanded steps exceed 10000/);

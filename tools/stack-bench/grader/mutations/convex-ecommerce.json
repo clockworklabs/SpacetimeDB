@@ -2073,6 +2073,51 @@
           "replace": "revenue: money(headers.slice(0, 256).reduce((n, o) => n + o.total - o.refunded, 0))"
         }
       ]
+    },
+    {
+      "id": "catalog-truncates-created-population",
+      "scenario": "tracks/ecommerce/scenarios/progression-catalog-volume.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.catalog-volume.622c"
+      ],
+      "desc": "Omit committed products after the first 256 search results.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": ".slice(searchPage * CATALOG_PAGE_SIZE,",
+          "replace": ".slice(0, 256).slice(searchPage * CATALOG_PAGE_SIZE,"
+        }
+      ]
+    },
+    {
+      "id": "catalog-discards-product-writes",
+      "scenario": "tracks/ecommerce/scenarios/progression-catalog-volume.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.catalog-volume.622c"
+      ],
+      "desc": "Acknowledge catalog creation without committing a product.",
+      "file": "convex/progression.js",
+      "edits": [
+        {
+          "find": "  if (!args.name.trim() || !args.category.trim() || !Number.isFinite(args.price) || args.price < 0) throw new ConvexError('Invalid product');",
+          "replace": "  if (args.name.length >= 0) return; // mutant: successful mutation without product\n  if (!args.name.trim() || !args.category.trim() || !Number.isFinite(args.price) || args.price < 0) throw new ConvexError('Invalid product');"
+        }
+      ]
+    },
+    {
+      "id": "catalog-rejects-all-product-writes",
+      "scenario": "tracks/ecommerce/scenarios/progression-catalog-volume.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.catalog-volume.622c"
+      ],
+      "desc": "Reject every catalog creation while keeping sign-in and catalog reads available.",
+      "file": "convex/progression.js",
+      "edits": [
+        {
+          "find": "  if (!args.name.trim() || !args.category.trim() || !Number.isFinite(args.price) || args.price < 0) throw new ConvexError('Invalid product');",
+          "replace": "  throw new ConvexError('Catalog writes refused');\n  if (!args.name.trim() || !args.category.trim() || !Number.isFinite(args.price) || args.price < 0) throw new ConvexError('Invalid product');"
+        }
+      ]
     }
   ]
 }

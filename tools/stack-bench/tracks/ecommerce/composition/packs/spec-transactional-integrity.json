@@ -9,7 +9,7 @@
   "conflictsWith": [],
   "capabilities": ["browser", "database-observation", "direct-server-call"],
   "evidence": ["browser-observation", "database-observation", "server-response"],
-  "budget": { "status": "bounded", "maxRuntimeMs": 700000 },
+  "budget": { "status": "bounded", "maxRuntimeMs": 2500000 },
   "task": {
     "requirements": [
       {
@@ -222,6 +222,24 @@
       "observations": [
         "requested",
         "unmentioned"
+      ]
+    },
+    {
+      "id": "catalog-volume",
+      "source": "scenarios/progression-catalog-volume.json",
+      "feature": 622,
+      "criteria": [
+        "622c"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.progression.catalog-management",
+        "ecommerce.progression.faceted-search",
+        "ecommerce.feature.purchasing"
       ]
     }
   ]

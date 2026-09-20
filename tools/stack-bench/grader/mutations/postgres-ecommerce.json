@@ -3196,6 +3196,51 @@
           "replace": "COALESCE((SELECT SUM(total - refund_total) FROM (SELECT * FROM orders WHERE status != 'cancelled' ORDER BY id LIMIT 256) limited_orders), 0)"
         }
       ]
+    },
+    {
+      "id": "catalog-truncates-created-population",
+      "scenario": "tracks/ecommerce/scenarios/progression-catalog-volume.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.catalog-volume.622c"
+      ],
+      "desc": "Omit committed products after the first 256 search results.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": ".slice(searchPage * CATALOG_PAGE_SIZE,",
+          "replace": ".slice(0, 256).slice(searchPage * CATALOG_PAGE_SIZE,"
+        }
+      ]
+    },
+    {
+      "id": "catalog-discards-product-writes",
+      "scenario": "tracks/ecommerce/scenarios/progression-catalog-volume.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.catalog-volume.622c"
+      ],
+      "desc": "Acknowledge catalog creation without committing a product.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "  app.post(\"/api/catalog/products\", dependencies.requireStaff, asyncRoute(async (req, res) => {",
+          "replace": "  app.post(\"/api/catalog/products\", dependencies.requireStaff, asyncRoute(async (req, res) => {\n    if (req.body) { res.json({ok:true}); return; } // mutant: successful response without product"
+        }
+      ]
+    },
+    {
+      "id": "catalog-rejects-all-product-writes",
+      "scenario": "tracks/ecommerce/scenarios/progression-catalog-volume.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.catalog-volume.622c"
+      ],
+      "desc": "Reject every catalog creation while keeping sign-in and catalog reads available.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "  app.post(\"/api/catalog/products\", dependencies.requireStaff, asyncRoute(async (req, res) => {",
+          "replace": "  app.post(\"/api/catalog/products\", dependencies.requireStaff, asyncRoute(async (req, res) => {\n    res.status(403).json({error:'Catalog writes refused'}); return;"
+        }
+      ]
     }
   ]
 }

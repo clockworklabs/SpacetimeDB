@@ -3105,6 +3105,51 @@
           "replace": "    let total = 0;\n    for (const o of [...ctx.db.customerOrder.iter()].slice(0, 256)) {"
         }
       ]
+    },
+    {
+      "id": "catalog-truncates-created-population",
+      "scenario": "tracks/ecommerce/scenarios/progression-catalog-volume.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.catalog-volume.622c"
+      ],
+      "desc": "Omit committed products after the first 256 search results.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": ".slice(searchPage * CATALOG_PAGE_SIZE,",
+          "replace": ".slice(0, 256).slice(searchPage * CATALOG_PAGE_SIZE,"
+        }
+      ]
+    },
+    {
+      "id": "catalog-discards-product-writes",
+      "scenario": "tracks/ecommerce/scenarios/progression-catalog-volume.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.catalog-volume.622c"
+      ],
+      "desc": "Acknowledge catalog creation without committing a product.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    const product = ctx.db.item.insert({ id: 0n, name: name.trim(), price });",
+          "replace": "    if (name.length >= 0) return; // mutant: successful reducer without product\n    const product = ctx.db.item.insert({ id: 0n, name: name.trim(), price });"
+        }
+      ]
+    },
+    {
+      "id": "catalog-rejects-all-product-writes",
+      "scenario": "tracks/ecommerce/scenarios/progression-catalog-volume.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.catalog-volume.622c"
+      ],
+      "desc": "Reject every catalog creation while keeping sign-in and catalog reads available.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    const product = ctx.db.item.insert({ id: 0n, name: name.trim(), price });",
+          "replace": "    throw new Error('Catalog writes refused');\n    const product = ctx.db.item.insert({ id: 0n, name: name.trim(), price });"
+        }
+      ]
     }
   ]
 }
