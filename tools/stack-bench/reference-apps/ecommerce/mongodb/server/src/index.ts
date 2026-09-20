@@ -915,11 +915,15 @@ app.post("/api/fulfilment/ship", requireAuth, requireStaff, async (req, res) => 
   if (order.status !== "pending") {
     return res.status(400).json({ error: "Order is not waiting to be shipped" });
   }
-  order.status = "shipped";
-  await order.save();
+  const shipped = await Order.findOneAndUpdate(
+    { _id: orderId, status: "pending" },
+    { $set: { status: "shipped" } },
+    { new: true }
+  );
+  if (!shipped) return res.status(400).json({ error: "Order is not waiting to be shipped" });
 
-  await Promise.all([broadcastFulfilment(), broadcastAdmin(), broadcastOrders(order.userId.toString())]);
-  res.json({ order: order.toJSON() });
+  await Promise.all([broadcastFulfilment(), broadcastAdmin(), broadcastOrders(shipped.userId.toString())]);
+  res.json({ order: shipped.toJSON() });
 });
 
 // ---------------------------------------------------------------------------
