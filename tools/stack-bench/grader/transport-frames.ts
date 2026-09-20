@@ -38,7 +38,9 @@ export class ReceivedTransport {
 
   record(payload: string | Buffer): void {
     const text = transportFrameText(payload);
-    if (!text) return;
+    // Receipt checks need presence, not frequency. Reloading an identical bundle
+    // adds no evidence and must not evict distinct data.
+    if (!text || this.chunks.includes(text)) return;
     if (Buffer.byteLength(text) > this.limit) {
       this.markIncomplete('byteLimit');
       return;
@@ -65,8 +67,9 @@ export async function captureResponses(page: Page, received: ReceivedTransport):
     const type = response.headers()['content-type'] ?? '';
     // Native EventSource messages are captured below without waiting for stream closure.
     if (/text\/event-stream/.test(type)) return;
-    // Include server-rendered data. JavaScript and CSS bundles are not data responses.
-    if (!/(application\/json|application\/[^;]+\+json|application\/x-ndjson|text\/(plain|html))/.test(type)) return;
+    // Public scripts and styles can contain secrets too. Keep the same bounded,
+    // fail-closed capture for data, rendered pages, assets and error responses.
+    if (!/(application\/(json|[^;]+\+json|x-ndjson|(?:x-)?(?:java|ecma)script)|text\/(plain|html|css|(?:java|ecma)script))/i.test(type)) return;
     if (Number(response.headers()['content-length']) > MAX_RECEIVED_BYTES) {
       received.markIncomplete('byteLimit');
       return;

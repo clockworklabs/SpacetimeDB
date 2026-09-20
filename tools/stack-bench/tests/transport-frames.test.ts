@@ -50,6 +50,9 @@ test('transport absence cannot pass after truncation, eviction, or an unreadable
   received.pending = 0;
   const bounded = new ReceivedTransport(20);
   bounded.record('first-secret');
+  bounded.record('first-secret');
+  assert.equal(bounded.contains('absent'), false, 'Identical received text adds no evidence bytes');
+  assert.deepEqual(bounded.chunks, ['first-secret']);
   bounded.record('second-secret');
   assert.equal(bounded.contains('second-secret'), true);
   assert.throws(() => bounded.contains('first-secret'), /incomplete/);
@@ -100,4 +103,19 @@ test('capture failures identify body reads, declared body caps, and unsupported 
   received.record('observed-secret');
   assert.equal(received.contains('observed-secret'), true, 'A captured leak remains measurable');
   assert.equal(received.contains('absent', false), false, 'Positive receipt probes can still wait');
+});
+
+test('privacy capture includes public script, style and error bodies', async () => {
+  const session = Object.assign(new EventEmitter(), { send: async () => {} });
+  const page = Object.assign(new EventEmitter(), { context: () => ({ newCDPSession: async () => session }) });
+  const received = new ReceivedTransport();
+  await captureResponses(page as unknown as Page, received);
+  for (const type of ['application/javascript', 'text/javascript; charset=utf-8', 'application/ecmascript',
+    'text/css', 'application/json', 'text/html', 'text/plain']) {
+    page.emit('response', { headers: () => ({ 'content-type': type }), status: () => 500,
+      text: async () => `private-sentinel-${type}` });
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.equal(received.contains(`private-sentinel-${type}`), true, type);
+  }
+  assert.equal(received.contains('absent'), false);
 });

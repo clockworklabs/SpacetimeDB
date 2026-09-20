@@ -2253,6 +2253,36 @@
         "ecommerce.spec.access-control.purchase-session.101a"
       ],
       "desc": "Refuse every returning login; blocking all access after logout must not pass the session check."
+    },
+    {
+      "id": "account-password-in-script",
+      "scenario": "tracks/ecommerce/scenarios/01-account-disclosure.json",
+      "targets": [
+        "ecommerce.spec.access-control.account-disclosure.110a"
+      ],
+      "desc": "Ship the account password sentinel in the public JavaScript bundle while normal signup and login still work.",
+      "edits": [
+        {
+          "file": "client/src/main.tsx",
+          "find": "import React from \"react\";",
+          "replace": "import React from \"react\";\nObject.assign(window, { debugPassword: 'sb-private-pw-76dc492ea153' });"
+        }
+      ]
+    },
+    {
+      "id": "account-password-in-style",
+      "scenario": "tracks/ecommerce/scenarios/01-account-disclosure.json",
+      "targets": [
+        "ecommerce.spec.access-control.account-disclosure.110a"
+      ],
+      "desc": "Ship the account password sentinel in a public stylesheet while normal signup and login still work.",
+      "edits": [
+        {
+          "file": "client/src/index.css",
+          "find": ":root {",
+          "replace": ":root {\n  --debug-password: \"sb-private-pw-76dc492ea153\";"
+        }
+      ]
     }
   ]
 }

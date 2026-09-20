@@ -3,7 +3,7 @@
   "track": "ecommerce",
   "level": 1,
   "name": "Account password disclosure",
-  "note": "Draft: create and sign in with a real password, then inspect data delivered to another account and a fresh signed-out page. This bounded sentinel checks plaintext disclosure in captured HTTP data/HTML, WebSocket and EventSource messages. It does not prove password hashing, absence from JavaScript/CSS assets, encoded secrets, logs, or all endpoints. Missing/incomplete transport evidence is not a privacy pass.",
+  "note": "Draft: create and sign in with a real password, then inspect data delivered to another account and a fresh signed-out page. This bounded sentinel checks plaintext disclosure in captured HTTP data/HTML/JavaScript/CSS (including error bodies), WebSocket and EventSource messages. It does not prove password hashing, absence of encoded secrets, logs, unfetched resources, or all endpoints. Missing/incomplete transport evidence is not a privacy pass.",
   "features": [
     {
       "id": 110,
