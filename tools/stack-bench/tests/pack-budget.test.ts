@@ -65,7 +65,7 @@ function reference(stack: string, stackIndex: number,
 }
 
 function exactEvidence(): PackBudgetEvidence[] {
-  return ['mongodb', 'postgres', 'spacetime'].map((stack, index) => ({
+  return calibration.qualification.stacks.map((stack, index) => ({
     path: `${stack}.json`, sha256: String(index).repeat(64), artifact: reference(stack, index),
     runtimeCalibration: { id: calibration.id,
       sha256: calibration.contentSha256 },
@@ -92,9 +92,9 @@ test('budget recommendation requires every exact reference repetition and applie
   const original = structuredClone(evidence);
   const result = recommendPackBudgets({ binding, calibration, evidence });
   const measuredPackCount = new Set(selectedChecks.map(check => check.packId)).size;
-  assert.equal(result.samples.length, measuredPackCount * 3);
+  assert.equal(result.samples.length, measuredPackCount * evidence.length);
   assert.equal(result.recommendations.length, measuredPackCount);
-  assert(result.recommendations.every(item => item.sampleCount === 3));
+  assert(result.recommendations.every(item => item.sampleCount === evidence.length));
   assert(result.recommendations.every(item => item.maxRuntimeMs === 3_000));
   assert.equal(PACK_BUDGET_POLICY.multiplier, 2);
   assert.deepEqual(result.measuredEngine, currentEngineIdentity());
@@ -114,7 +114,7 @@ test('budget recommendation rejects mutation, duplicate, incomplete, and cross-s
   evidenceAt(mutation, 0).artifact.payload.mutationControl = true;
   assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: mutation }), /mutation evidence/);
   const duplicate = exactEvidence();
-  identity(evidenceAt(duplicate, 2).artifact.identities.stackAdapter).id = 'postgres';
+  identity(evidenceAt(duplicate, 2).artifact.identities.stackAdapter).id = identity(evidenceAt(duplicate, 0).artifact.identities.stackAdapter).id;
   assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: duplicate }), /repeats stack/);
   assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: exactEvidence().slice(1) }),
     /cover each supported stack/);
