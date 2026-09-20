@@ -40,7 +40,7 @@ import { readBackendLease } from '../src/runtime/backend-lease.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { sha256 } from '../src/evidence/provenance.js';
-import { GRADER_SOURCE_TIMEOUT_MS } from '../src/runtime/grading-timeout.js';
+import { GRADER_SOURCE_TIMEOUT_MS, gradingSourceTimeoutMs } from '../src/runtime/grading-timeout.js';
 import type { BackendLease, BackendLeaseExpectation } from '../src/runtime/backend-lease.js';
 import type { CheckEvidence } from '../src/evidence/check-evidence.js';
 import type { AggregatedPackRuntimeEvidence, PackRuntimeEvidence } from '../src/composition/pack-runtime.js';
@@ -230,10 +230,11 @@ function recordGraderChildResult(output: string, suiteId: string,
 
 const execFileAsync = promisify(execFile);
 
-export async function runGraderChild(argv: string[], output: string, suiteId: string) {
+export async function runGraderChild(argv: string[], output: string, suiteId: string,
+  timeout = COMMAND_TIMEOUT_MS) {
   try {
     const result = await execFileAsync(process.execPath, argv, { encoding: 'utf8', cwd: ROOT,
-      timeout: COMMAND_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 });
+      timeout, maxBuffer: 64 * 1024 * 1024 });
     return recordGraderChildResult(output, suiteId, result);
   } catch (error) {
     const failure = error instanceof Error ? error : new Error(String(error));
@@ -747,7 +748,8 @@ async function gradeSuite(args: RunArguments, suite: DeclaredSuite, track: Track
   if (captureMedia && args.media) argv.push('--media', join(outputDirectory, 'media'), '--trace');
   else if (captureMedia) argv.push('--failure-media', join(outputDirectory, 'failure-media'));
   if (args.browserWsEndpoint) argv.push('--browser-ws-endpoint', args.browserWsEndpoint);
-  const child = await runGraderChild(argv, outputDirectory, suite.id);
+  const child = await runGraderChild(argv, outputDirectory, suite.id,
+    gradingSourceTimeoutMs(recipeBinding?.plan.packs ?? [], selectedChecks));
   const { stdout, failure } = child;
   if (!existsSync(out)) {
     console.log('NO REPORT');

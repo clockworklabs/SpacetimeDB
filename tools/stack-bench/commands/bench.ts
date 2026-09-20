@@ -634,6 +634,7 @@ interface GradeCheck {
   stableKey: string;
   executionId?: string;
   source?: string;
+  packId?: string;
 }
 
 interface GradeRecipeTask {
@@ -754,7 +755,8 @@ function grade(
     ? selectedGradingSourceCount(currentChecks, regressionChecks)
     : suitesFor(track, level).length;
   try {
-    sh('node', argv, { stdio: 'inherit', timeout: gradingRunTimeoutMs(sourceCount) });
+    sh('node', argv, { stdio: 'inherit', timeout: gradingRunTimeoutMs(sourceCount,
+      args.recipeBindings.get(level)?.plan.packs ?? [], [...currentChecks, ...regressionChecks]) });
   } catch { /* a current bundle may still explain a scored failure */ }
   return existsSync(bundle)
     ? readArtifactPayload<GradeBundlePayload>(bundle, { expectedKind: 'grade_bundle' }) : null;

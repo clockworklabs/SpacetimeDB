@@ -44,8 +44,9 @@ import { resetBackend } from "../src/stacks/backend-reset.js";
 import { STACK_ADAPTER_REGISTRY } from "../src/stacks/stack-adapters.js";
 import { mutationShard } from "../src/evidence/mutation-shards.js";
 import { reusableMutationEvidence } from "../src/evidence/mutation-checkpoint.js";
-import { MUTATION_GRADE_MAX_TIMEOUT_MS, mutationGradeTimeoutMs }
+import { mutationGradeTimeoutMs }
   from "../src/evidence/mutation-control.js";
+import { GRADER_SOURCE_TIMEOUT_MS, gradingSourceTimeoutMs } from '../src/runtime/grading-timeout.js';
 import { assertAppSourceIdentity } from "../src/runtime/source-snapshot.js";
 import type { TextCommandExecutor } from '../src/runtime/command-executor.js';
 import type { LoadedMutationManifest, MutationDefinition } from '../src/evidence/mutation-analysis.js';
@@ -63,6 +64,7 @@ type MutationArgs = {
   baselineBundle?: string; expectedCalibrationIdentity?: JsonRecord; maxRuntimeMinutes?: number;
   imageId?: string; mutationAttemptId?: string; expectedRecipeSha256?: string;
   reseedOnReset?: boolean;
+  gradeTimeoutMs?: number;
   recipeTask?: ReturnType<typeof createBoundRecipeTaskRequest>['request'];
 };
 type ParsedMutationArgs = MutationArgs & {
@@ -274,9 +276,10 @@ async function grade(a: MutationArgs, reportPath: string, deadlineMs: number | n
   await resetMutationDatabase(a, deadlineMs);
   if (existsSync(reportPath)) unlinkSync(reportPath);
   const gradeArgs = mutationGradeArguments(a, reportPath);
+  const sourceTimeout = a.gradeTimeoutMs ?? GRADER_SOURCE_TIMEOUT_MS;
   const timeout = deadlineMs === null
-    ? MUTATION_GRADE_MAX_TIMEOUT_MS
-    : mutationGradeTimeoutMs(deadlineMs);
+    ? sourceTimeout
+    : mutationGradeTimeoutMs(deadlineMs, Date.now(), sourceTimeout);
   if (timeout === 0) throw new MutationBatchDeadlineError('mutation batch deadline reached');
   try {
     execFileSync(process.execPath, gradeArgs, {
@@ -285,7 +288,7 @@ async function grade(a: MutationArgs, reportPath: string, deadlineMs: number | n
       timeout,
     });
   } catch (error) {
-    if (jsonObject(error, 'grader process error').code === 'ETIMEDOUT' && timeout < MUTATION_GRADE_MAX_TIMEOUT_MS) {
+    if (jsonObject(error, 'grader process error').code === 'ETIMEDOUT' && timeout < sourceTimeout) {
       throw new MutationBatchDeadlineError('mutation grade reached the remaining batch deadline');
     }
     throw error;
@@ -650,6 +653,8 @@ async function main(): Promise<void> {
     if (Date.now() >= deadline) return stopAtBudget();
     args.spec = scenarioPath;
     args.selectedCheckKeys = selectedCheckKeys;
+    args.gradeTimeoutMs = gradingSourceTimeoutMs(binding.plan.packs,
+      recipeRelease.checkCatalog.filter(check => selectedCheckKeys.includes(check.stableKey)));
     let baseline;
     if (cleanBaselineBundle) {
       const reused = reusableMutationBaseline(cleanBaselineBundle, {

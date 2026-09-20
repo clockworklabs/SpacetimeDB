@@ -6,6 +6,7 @@ import { portsFor } from '../composition/tracks.js';
 import type { Track } from '../composition/tracks.js';
 import { compiledEntrypoint } from '../package-root.js';
 import { ARTIFACT_FILE } from './artifacts.js';
+import { GRADER_SOURCE_TIMEOUT_MS } from '../runtime/grading-timeout.js';
 
 interface SelectedCheck {
   stableKey?: unknown;
@@ -61,15 +62,18 @@ export function pristineMutationBaselinePath(
 }
 
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
-export const MUTATION_GRADE_MAX_TIMEOUT_MS = 15 * 60_000;
 
-export function mutationGradeTimeoutMs(deadlineMs: number, nowMs: number = Date.now()): number {
+export function mutationGradeTimeoutMs(deadlineMs: number, nowMs: number = Date.now(),
+  sourceTimeoutMs: number = GRADER_SOURCE_TIMEOUT_MS): number {
+  if (!Number.isSafeInteger(sourceTimeoutMs) || sourceTimeoutMs <= 0) {
+    throw new Error('mutation grade timeout must be a positive safe integer');
+  }
   if (!Number.isFinite(deadlineMs) || !Number.isFinite(nowMs)) {
     throw new Error('mutation grade deadline must be finite');
   }
   const remainingMs = Math.floor(deadlineMs - nowMs);
   if (remainingMs <= 0) return 0;
-  return Math.min(MUTATION_GRADE_MAX_TIMEOUT_MS, remainingMs);
+  return Math.min(sourceTimeoutMs, remainingMs);
 }
 
 function restartSpecFor(args: MutationControlArgs, appDir: string, track: Track): {

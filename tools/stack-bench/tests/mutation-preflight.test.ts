@@ -1,3 +1,4 @@
+import { GRADER_SOURCE_TIMEOUT_MS } from '../src/runtime/grading-timeout.js';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -5,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { MUTATION_GRADE_MAX_TIMEOUT_MS, mutationControlArgv, mutationControlTimeoutMs,
+import { mutationControlArgv, mutationControlTimeoutMs,
   mutationGradeTimeoutMs } from '../src/evidence/mutation-control.js';
 import { loadTrack } from '../src/composition/tracks.js';
 import { STACK_BENCH_ROOT, compiledEntrypoint } from '../src/package-root.js';
@@ -261,8 +262,8 @@ test('mutation control timeout follows its explicit runtime budget', () => {
 test('each mutation grade uses only the remaining batch time', () => {
   const now = 1_000_000;
   assert.equal(mutationGradeTimeoutMs(now + 30_000, now), 30_000);
-  assert.equal(mutationGradeTimeoutMs(now + MUTATION_GRADE_MAX_TIMEOUT_MS + 1, now),
-    MUTATION_GRADE_MAX_TIMEOUT_MS);
+  assert.equal(mutationGradeTimeoutMs(now + GRADER_SOURCE_TIMEOUT_MS + 1, now),
+    GRADER_SOURCE_TIMEOUT_MS);
   assert.equal(mutationGradeTimeoutMs(now, now), 0);
   assert.equal(mutationGradeTimeoutMs(now - 1, now), 0);
   assert.throws(() => mutationGradeTimeoutMs(Number.NaN, now), /must be finite/);
