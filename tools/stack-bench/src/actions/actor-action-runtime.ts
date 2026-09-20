@@ -1,4 +1,5 @@
 import type { RefusalKind, ResponseContract } from './named-action-runtime.js';
+import type { BrowserContext } from 'playwright';
 import { ActionApplicationFailure, ActionInconclusive } from './action-contract.js';
 import { finding, renderFinding } from './action-findings.js';
 import type { FailedFindingKind, FindingFields, InconclusiveFindingKind } from './action-findings.js';
@@ -89,6 +90,8 @@ export interface ActionCall {
 export interface Actor {
   readonly context: {
     cookies(urls?: string | string[]): Promise<readonly { readonly name: string; readonly value: string }[]>;
+    newPage?: BrowserContext['newPage'];
+    grantPermissions?: BrowserContext['grantPermissions'];
   };
   readonly lastWrite?: CapturedWrite;
   readonly lastWsWrite?: { readonly event: string; readonly body: UnknownRecord };

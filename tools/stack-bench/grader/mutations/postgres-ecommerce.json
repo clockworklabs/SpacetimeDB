@@ -3339,6 +3339,21 @@
           "replace": "app.post(\n  \"/api/orders/:id/cancel\",\n  (_req, res) => { res.status(403).json({error:\"Cancellation refused\"}); },\n  requireAuth,\n  asyncHandler(async (req, res) => {\n    const orderId = Number(req.params.id);\n    const accountId = req.account!.id;"
         }
       ]
+    },
+    {
+      "id": "purchase-trusts-cross-origin-cookie",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-session.json",
+      "targets": [
+        "ecommerce.spec.access-control.purchase-session.101a"
+      ],
+      "desc": "Remove the origin check so a foreign page can make a purchase with the browsers ambient session cookie.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  return URL.parse(req.headers.origin)?.host === req.headers.host\n    ? next() : res.status(403).json({ error: \"cross-origin request refused\" });",
+          "replace": "  return next(); // mutant: accept another origins cookie-backed POST"
+        }
+      ]
     }
   ]
 }

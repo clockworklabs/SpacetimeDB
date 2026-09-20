@@ -3,7 +3,7 @@
   "track": "ecommerce",
   "level": 1,
   "name": "Purchase requires an account",
-  "note": "Draft: the purchase-session check includes a bounded credential-tampering probe. Valid purchases must work before and after it. Stored order and stock reads must show no effect from a refused forgery. The read scope requires neither carts nor warehouses. Unsupported or ambiguous credentials remain inconclusive, never a pass or an app defect. This does not test expiry, revocation or every token attack. A bearer-only control must also succeed before cookies are omitted from the tampering probe. Cookie-only sessions still require one unambiguous cookie.",
+  "note": "Draft: the purchase-session check includes a bounded credential-tampering probe. Valid purchases must work before and after it. Stored order and stock reads must show no effect from a refused forgery. The read scope requires neither carts nor warehouses. Unsupported or ambiguous credentials remain inconclusive, never a pass or an app defect. This does not test expiry, revocation or every token attack. A bearer-only control must also succeed before cookies are omitted from the tampering probe. Cookie-only sessions still require one unambiguous cookie. Same-site and cross-site simple POSTs use the real browser cookie policy, without copied tokens. Complete opaque responses do not prove refusal: native state must remain unchanged, and valid purchases must still work. Local-network permission is granted only to the controlled origin because the appliance addresses are private.",
   "features": [
     {
       "id": 101,
@@ -68,7 +68,7 @@
         {
           "id": "101a",
           "category": "production",
-          "desc": "a valid direct purchase works for the buyer but is refused without a session, after rejected login or registration, and with a tampered session",
+          "desc": "a valid direct purchase works for the buyer but is refused without a session, after rejected login or registration, and with a tampered session; an untrusted browser origin cannot purchase with ambient credentials",
           "points": 2,
           "steps": [
             {
@@ -381,6 +381,180 @@
               "item": "Bluetooth Speaker",
               "relativeTo": "speaker-before-control",
               "plus": -3
+            },
+            {
+              "do": "dbRecordCheckout",
+              "account": "{user:kim}",
+              "item": "Bluetooth Speaker",
+              "as": "before-same-site",
+              "storage": {
+                "kind": "order-data",
+                "cart": false,
+                "warehouses": false
+              }
+            },
+            {
+              "do": "callAction",
+              "actor": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker",
+                "attribute": "data-buy-input"
+              },
+              "settleMs": 1000,
+              "browserOrigin": "same-site"
+            },
+            {
+              "do": "dbExpectNoPurchase",
+              "before": "before-same-site"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "speaker-before-control",
+              "plus": -3
+            },
+            {
+              "do": "callAction",
+              "actor": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker",
+                "attribute": "data-buy-input"
+              },
+              "settleMs": 0
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "buyer",
+              "outcome": "accepted"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "speaker-before-control",
+              "plus": -4
+            },
+            {
+              "do": "dbRecordCheckout",
+              "account": "{user:kim}",
+              "item": "Bluetooth Speaker",
+              "as": "before-cross-site",
+              "storage": {
+                "kind": "order-data",
+                "cart": false,
+                "warehouses": false
+              }
+            },
+            {
+              "do": "callAction",
+              "actor": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker",
+                "attribute": "data-buy-input"
+              },
+              "settleMs": 1000,
+              "browserOrigin": "cross-site"
+            },
+            {
+              "do": "dbExpectNoPurchase",
+              "before": "before-cross-site"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "speaker-before-control",
+              "plus": -4
+            },
+            {
+              "do": "callAction",
+              "actor": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker",
+                "attribute": "data-buy-input"
+              },
+              "settleMs": 0
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "buyer",
+              "outcome": "accepted"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "speaker-before-control",
+              "plus": -5
             }
           ],
           "statedBy": "the server refuses a purchase without an authenticated customer"

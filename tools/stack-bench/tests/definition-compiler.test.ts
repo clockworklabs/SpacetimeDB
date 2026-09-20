@@ -217,6 +217,9 @@ test('extracted action inputs expose their runtime options without allowing scri
   const checkout = { do: 'callAction', actor: 'a', action: 'checkout',
     namedAction: { id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] } };
   assert.doesNotThrow(() => compileScenarioDefinition(scenario(checkout)));
+  assert.doesNotThrow(() => compileScenarioDefinition(scenario({ ...checkout, browserOrigin: 'same-site' })));
+  assert.throws(() => compileScenarioDefinition(scenario({ ...checkout,
+    browserOrigin: 'same-site', authentication: 'none' })), /cannot override browser authentication/);
   assert.doesNotThrow(() => compileScenarioDefinition(scenario({ ...checkout,
     namedAction: { ...checkout.namedAction, args: [1], params: [{ name: 'price', in: 'body' }] } })));
   assert.throws(() => compileScenarioDefinition(scenario({ ...checkout,

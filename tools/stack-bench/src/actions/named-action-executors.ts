@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import type { BrowserContext } from 'playwright';
+import { crossOriginPost } from './cross-origin-request.js';
 import { actionImplementation } from './action-contract.js';
 import type { Operation } from './action-findings.js';
 import {
@@ -31,6 +33,7 @@ interface CallActionInput {
   readonly action: string;
   readonly actor: string;
   readonly authentication?: 'actor' | 'none' | 'optional' | 'session-control' | 'tampered-session';
+  readonly browserOrigin?: 'same-site' | 'cross-site';
   readonly from?: string;
   readonly input?: {
     readonly attribute: string;
@@ -157,6 +160,20 @@ async function callAction({ input, capabilities, signal }: NamedTransportArgumen
     input.action, request.url, request.method ?? 'POST', request.body,
     Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]).sort(),
   ])).digest('hex');
+  if (input.browserOrigin) {
+    if (!caller.actionCall?.accepted || caller.actionCall.requestFingerprint !== fingerprint(credentials)) {
+      inconclusive('replay-unavailable', { actor: caller.name,
+        detail: 'cross-origin probing requires a successful identical request with the current credentials' });
+    }
+    caller.actionCall = undefined; // An opaque response cannot establish semantic acceptance or refusal.
+    if (!caller.context.newPage || !caller.context.grantPermissions) {
+      inconclusive('replay-unavailable', { actor: caller.name, detail: 'cross-origin probing requires the real browser context' });
+    }
+    const result = await crossOriginPost(caller.context as Pick<BrowserContext, 'newPage' | 'grantPermissions'>,
+      { ...request, url: request.url }, input.browserOrigin, signal);
+    await transport.sleep(input.settleMs ?? 2000, signal);
+    return { action: input.action, ...result };
+  }
   if (input.authentication === 'session-control') {
     if (!caller.actionCall?.accepted || caller.actionCall.requestFingerprint !== fingerprint(credentials)) {
       inconclusive('replay-unavailable', { actor: caller.name,

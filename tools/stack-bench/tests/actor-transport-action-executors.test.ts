@@ -567,10 +567,32 @@ test('purchase-session tampering uses early order data, awaits a response, check
     ['expectActionOutcome', 'accepted'], ['dbExpectStock', -2],
   ]);
   assert.deepEqual(steps[attack - 1]!.storage, { kind: 'order-data', cart: false, warehouses: false });
-  assert.deepEqual(steps.slice(attack + 1).map(step => [step.do, step.outcome ?? step.plus]), [
+  assert.deepEqual(steps.slice(attack + 1, attack + 8).map(step => [step.do, step.outcome ?? step.plus]), [
     ['expectActionOutcome', 'completed'], ['dbExpectNoPurchase', undefined], ['dbExpectStock', -2],
     ['expectActionOutcome', 'refused'], ['callAction', undefined], ['expectActionOutcome', 'accepted'], ['dbExpectStock', -3],
   ]);
+  for (const site of ['same-site', 'cross-site']) {
+    const origin = steps.findIndex(step => step.browserOrigin === site);
+    assert.equal(steps[origin - 1]!.do, 'dbRecordCheckout');
+    assert.equal(steps[origin + 1]!.do, 'dbExpectNoPurchase');
+    assert.equal(steps[origin + 4]!.outcome, 'accepted');
+  }
+});
+
+test('browser-origin calls need a matching positive control and a real browser observer', async () => {
+  let requests = 0;
+  const caller = { name: 'buyer', writes: [{ headers: { authorization: 'Bearer private' } }] };
+  const provided = services(new Map([['buyer', caller]]), { fetchImpl: async () => {
+    requests++; return namedResponse(200, true);
+  } });
+  const input = { do: 'callAction', actor: 'buyer', action: 'checkout', settleMs: 0,
+    namedAction: { id: 'checkout', path: '/api/checkout', reducer: 'checkout', args: [] } };
+  assert.equal((await run({ ...input, browserOrigin: 'same-site' }, provided)).status, 'inconclusive');
+  assert.equal(requests, 0);
+  assert.equal((await run(input, provided)).status, 'passed');
+  assert.equal((await run({ ...input, browserOrigin: 'same-site' }, provided)).status, 'inconclusive');
+  assert.equal(requests, 1, 'missing browser observation cannot fall back to a server fetch');
+  assert.equal((await run({ do: 'expectActionOutcome', actor: 'buyer', outcome: 'accepted' }, provided)).status, 'inconclusive');
 });
 
 test('restock role claims reach the real write with staff credentials and stored-state checks', async () => {

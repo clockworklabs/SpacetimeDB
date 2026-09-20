@@ -151,7 +151,8 @@ const checkoutQuantity: FieldPredicate = value => positiveInteger(value) || arra
 
 export const ACTION_DEFINITIONS = Object.freeze({
   callAction: fields({ ...actor, action: nonEmptyString },
-    { input: object, from: nonEmptyString, authentication: nonEmptyString, namedAction: object, ...settle }),
+    { input: object, from: nonEmptyString, authentication: nonEmptyString,
+      browserOrigin: value => value === 'same-site' || value === 'cross-site', namedAction: object, ...settle }),
   callConcurrently: fields({ ...actors, action: nonEmptyString, settleMs: nonNegativeNumber },
     { args: anyArray, body: object, input: object, namedAction: object, from: nonEmptyString,
       requests: callCount, requestTimeoutMs: callTimeout, delayMs: callDelay,
@@ -457,6 +458,9 @@ function validateStep(step: unknown, at: string): asserts step is CompiledStep {
     }
     if (step.authentication !== undefined && !oneOf(step.authentication, ['actor', 'none', 'optional', 'session-control', 'tampered-session'])) {
       fail(`${at}.authentication`, 'must be "actor", "optional", "none", "session-control", or "tampered-session"');
+    }
+    if (step.browserOrigin !== undefined && step.authentication !== undefined) {
+      fail(`${at}.browserOrigin`, 'cannot override browser authentication');
     }
   }
   if (step.do === 'replayAs' && step.namedTarget && !step.namedAction) {
