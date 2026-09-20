@@ -3,7 +3,7 @@ import { resolveOrderDataStorage, type OrderDataSelection, type OrderDataStorage
 
 import { ActionApplicationFailure, ActionInconclusive, actionImplementation } from './action-contract.js';
 import { finding, isFinding, renderFinding } from './action-findings.js';
-import { checkoutDifferences, orderCheckoutDifferences, cancellationDifferences, orderCancellationDifferences,
+import { checkoutDifferences, orderCheckoutDifferences, orderCheckoutWithAddDifferences, cancellationDifferences, orderCancellationDifferences,
   purchaseDifferences, orderPurchaseDifferences, checkoutId } from '../stacks/checkout-state.js';
 import { getSavedPostgresCheckoutState } from '../stacks/backends/saved-postgres-checkout.js';
 import { getSavedMongoDbCheckoutState } from '../stacks/backends/saved-mongodb-checkout.js';
@@ -221,7 +221,7 @@ export function checkoutExpectation(quantity: CheckoutQuantity, snapshots: reado
 }
 
 async function dbExpectCheckout({ input, capabilities }: ActionArguments<{ before: string; prepared: string;
-  quantity: CheckoutQuantity; actor?: string }>) {
+  quantity: CheckoutQuantity; actor?: string; alongsideAdd?: string }>) {
   const database = capabilities['database-read'];
   const before = database.checkoutSnapshots.get(input.before);
   const prepared = database.checkoutSnapshots.get(input.prepared);
@@ -233,13 +233,21 @@ async function dbExpectCheckout({ input, capabilities }: ActionArguments<{ befor
   if (before.scope !== prepared.scope || before.scope !== after.scope) throw new Error('checkout scope changed');
   if (before.storage && !before.storage.cart) throw new Error('checkout reconciliation requires cart evidence');
   const quantity = checkoutExpectation(input.quantity, [before, prepared, after]);
+  if (input.alongsideAdd && (before.scope !== 'orders' || typeof quantity === 'number' || input.actor)) {
+    throw new Error('overlapping cart add requires native item-line expectations and separately verified accepted calls');
+  }
   const response = input.actor ? actorFor(capabilities, input.actor).actionCall : undefined;
   if (input.actor && !response) inconclusive('assertion-without-action', { action: 'callAction' });
   if (response && (response.complete === false || !response.status)) inconclusive('transport-incomplete', {});
   if (response && response.action !== 'checkout') throw new Error('checkout reconciliation requires a checkout response');
   const refused = response !== undefined && !response.accepted;
   const compareState = refused ? prepared.state : after.state;
-  const differences = before.scope === 'orders'
+  const differences = input.alongsideAdd
+    ? orderCheckoutWithAddDifferences(before.state, prepared.state, after.state,
+      quantity as Exclude<typeof quantity, number>,
+      (checkoutExpectation([{ item: input.alongsideAdd, quantity: 1 }], [before, prepared, after]) as Exclude<typeof quantity, number>)[0]!,
+      before.storage?.warehouses ?? true)
+    : before.scope === 'orders'
     ? orderCheckoutDifferences(before.state, prepared.state, compareState, quantity, refused, before.storage?.warehouses ?? true)
     : checkoutDifferences(before.state, prepared.state, compareState, quantity as number, refused);
   if (refused) differences.push(...(before.scope === 'orders'

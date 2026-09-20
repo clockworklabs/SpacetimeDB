@@ -3001,6 +3001,36 @@
           "replace": "    const { itemId, fromWarehouseId, toWarehouseId, quantity } = req.body ?? {};\n    if (Number(quantity) === 7) return res.status(409).json({ error: \"Transfer disabled\" });"
         }
       ]
+    },
+    {
+      "id": "overlapping-cart-add-ignored",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "desc": "The overlapping second-product cart add is ignored while ordinary cart setup still works.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    try {\n      await reserveCartItem(accountId, itemId, qty);",
+          "replace": "  if (req.account!.username.includes(\"checkout-overlap\") && (await db.select().from(item).where(eq(item.id, itemId)))[0]?.name === \"Coffee Grinder\") return res.json({});\n    try {\n      await reserveCartItem(accountId, itemId, qty);"
+        }
+      ]
+    },
+    {
+      "id": "overlapping-cart-add-rejected",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "desc": "The overlapping second-product cart add is rejected while ordinary cart setup still works.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    try {\n      await reserveCartItem(accountId, itemId, qty);",
+          "replace": "  if (req.account!.username.includes(\"checkout-overlap\") && (await db.select().from(item).where(eq(item.id, itemId)))[0]?.name === \"Coffee Grinder\") return res.status(409).json({ error: \"Cart add disabled\" });\n    try {\n      await reserveCartItem(accountId, itemId, qty);"
+        }
+      ]
     }
   ]
 }

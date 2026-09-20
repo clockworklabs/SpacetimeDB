@@ -3,7 +3,7 @@ import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { checkoutDifferences, orderCheckoutDifferences, checkoutCrashDifferences, cancellationDifferences, orderCancellationDifferences, purchaseDifferences, checkoutId, checkoutMinor, checkoutStateSchema, verifyCheckoutSchema }
+import { checkoutDifferences, orderCheckoutDifferences, orderCheckoutWithAddDifferences, checkoutCrashDifferences, cancellationDifferences, orderCancellationDifferences, purchaseDifferences, checkoutId, checkoutMinor, checkoutStateSchema, verifyCheckoutSchema }
   from '../src/stacks/checkout-state.js';
 import type { CheckoutState } from '../src/stacks/checkout-state.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
@@ -61,6 +61,57 @@ test('order-only checkout rejects partial, duplicate, lost and refunded effects 
   assert.deepEqual(orderCheckoutDifferences(before, prepared, after, 1), []);
   const preparedRefund = structuredClone(prepared); preparedRefund.refunds = [];
   assert(orderCheckoutDifferences(before, preparedRefund, after, 1).some(row => row.control === 'refunds unchanged during cart preparation'));
+});
+
+test('cart add overlapping checkout accepts both serial orders and rejects lost, duplicated and partial effects', () => {
+  const { before, prepared, after } = states();
+  for (const state of [before, prepared, after]) {
+    state.payments = []; state.orphanAllocations = 0;
+    state.stock[0]!.itemId = 'i'; state.stock.push({ itemId: 'j', warehouseId: 'w', quantity: 20 });
+    for (const order of state.orders) order.refundedMinor = 0;
+  }
+  const lines = [{ itemId: 'i', quantity: 1, priceMinor: 1999 }];
+  const added = { itemId: 'j', quantity: 1, priceMinor: 500 };
+  const checkoutFirst = structuredClone(after);
+  checkoutFirst.cart = [{ itemId: 'j', quantity: 1 }];
+  const addFirst = structuredClone(after);
+  addFirst.stock[1]!.quantity--;
+  addFirst.orders[0]!.totalMinor += 500;
+  addFirst.orders[0]!.lines.push({ ...added, allocations: [{ warehouseId: 'w', quantity: 1 }] });
+  const compare = (result: CheckoutState) => orderCheckoutWithAddDifferences(before, prepared, result, lines, added);
+  assert.deepEqual(compare(addFirst), []);
+  assert.deepEqual(compare(checkoutFirst), []);
+  checkoutFirst.reservations = [{ itemId: 'j', warehouseId: 'w', quantity: 1 }];
+  checkoutFirst.stock[1]!.quantity--;
+  assert.deepEqual(compare(checkoutFirst), [], 'reservation-backed carts are valid too');
+  assert(compare(after).length, 'the added unit cannot disappear');
+  assert(compare(prepared).length, 'acknowledging both operations without checkout cannot pass');
+  for (const accepted of [addFirst, checkoutFirst]) for (const mutate of [
+    (state: CheckoutState) => { state.orders[0]!.totalMinor++; },
+    (state: CheckoutState) => { state.orders[0]!.accountId = 'wrong'; },
+    (state: CheckoutState) => { state.orders[0]!.lines[0]!.quantity++; },
+    (state: CheckoutState) => { state.orders.push({ ...state.orders[0]!, id: 'duplicate' }); },
+    (state: CheckoutState) => { state.stock[1]!.quantity--; },
+    (state: CheckoutState) => { state.stock[1]!.quantity++; },
+    (state: CheckoutState) => { state.cart.push({ itemId: 'j', quantity: 1 }); },
+    (state: CheckoutState) => { state.reservations.push({ itemId: 'j', warehouseId: 'unknown', quantity: 1 }); },
+  ]) {
+    const broken = structuredClone(accepted); mutate(broken); assert(compare(broken).length);
+  }
+  const malformed = structuredClone(prepared); malformed.cart[0]!.quantity = 2;
+  assert(orderCheckoutWithAddDifferences(before, malformed, addFirst, lines, added).length);
+  assert.throws(() => orderCheckoutWithAddDifferences(before, prepared, after, lines, lines[0]!), /new product/);
+  const emptyStock = [before, prepared, checkoutFirst].map(state => structuredClone(state));
+  emptyStock[0]!.stock[1]!.quantity = 0; emptyStock[1]!.stock[1]!.quantity = 0; emptyStock[2]!.stock[1]!.quantity = -1;
+  assert(orderCheckoutWithAddDifferences(emptyStock[0]!, emptyStock[1]!, emptyStock[2]!, lines, added)
+    .some(row => row.control.includes('negative stock')), 'restoring a hold must not mask negative stock');
+  for (const state of [before, prepared, addFirst, checkoutFirst]) {
+    state.stock = []; state.reservations = [];
+    for (const order of state.orders) for (const line of order.lines) line.allocations = [];
+  }
+  for (const state of [addFirst, checkoutFirst]) {
+    assert.deepEqual(orderCheckoutWithAddDifferences(before, prepared, state, lines, added, false), []);
+  }
 });
 
 test('unsettled server work blocks later checkout and stock comparisons until a new grade', () => {

@@ -167,6 +167,46 @@ export function orderCheckoutDifferences(before: CheckoutState, prepared: Checko
   return compareCheckout(before, prepared, after, quantity, allowUnchanged, false, warehouses);
 }
 
+// One accepted add of a new product overlaps one accepted checkout. Either
+// serial order is valid; the added unit cannot disappear or exist in both places.
+export function orderCheckoutWithAddDifferences(before: CheckoutState, prepared: CheckoutState, after: CheckoutState,
+  lines: CheckoutLines, added: CheckoutLines[number], warehouses = true) {
+  if (added.quantity !== 1 || lines.some(line => line.itemId === added.itemId)) {
+    throw new Error('overlapping cart add requires one new product');
+  }
+  const initial = orderCheckoutDifferences(before, prepared, prepared, lines, true, warehouses);
+  if (initial.length) return initial;
+  const withAdd = structuredClone(prepared);
+  withAdd.cart.push({ itemId: added.itemId, quantity: 1 });
+  const addFirst = orderCheckoutDifferences(before, withAdd, after, [...lines, added], false, warehouses);
+  if (!addFirst.length) return [];
+
+  const checkoutFirst = structuredClone(after);
+  const differences: ReturnType<typeof orderCheckoutDifferences> = [];
+  if (after.stock.some(row => row.quantity < 0)) {
+    differences.push({ control: 'negative stock after cart add and checkout', observed: 1, expected: 0 });
+  }
+  if (!isDeepStrictEqual(checkoutFirst.cart, [{ itemId: added.itemId, quantity: 1 }])) {
+    differences.push({ control: 'added item retained after checkout', observed: 0, expected: 1 });
+  }
+  const held = checkoutFirst.reservations.reduce((sum, row) => integer.parse(sum + row.quantity), 0);
+  if (held > 1 || checkoutFirst.reservations.some(row => row.itemId !== added.itemId || row.quantity <= 0
+    || !checkoutFirst.stock.some(stock => stockItem(checkoutFirst, stock) === row.itemId && stock.warehouseId === row.warehouseId))) {
+    differences.push({ control: 'remaining cart reservations match the added unit', observed: 0, expected: 1 });
+  }
+  // Remove only the retained unit's observed holds before checking the checkout.
+  // The existing oracle then requires exact stock debits for every order line.
+  for (const row of checkoutFirst.reservations) {
+    const stock = checkoutFirst.stock.find(stock => stockItem(checkoutFirst, stock) === row.itemId && stock.warehouseId === row.warehouseId);
+    if (stock) stock.quantity = integer.parse(stock.quantity + row.quantity);
+  }
+  checkoutFirst.cart = []; checkoutFirst.reservations = [];
+  differences.push(...orderCheckoutDifferences(before, prepared, checkoutFirst, lines, false, warehouses));
+  return differences.length ? [{ control: 'cart add and checkout match a complete serial outcome', observed: 0, expected: 1 },
+    ...addFirst.map(row => ({ ...row, control: `add first: ${row.control}` })),
+    ...differences.map(row => ({ ...row, control: `checkout first: ${row.control}` }))] : [];
+}
+
 // Separate the interrupted transaction from history that was already committed.
 // Durability adds only the requirement introduced by an acknowledgement; a
 // malformed new order remains an atomicity failure even when acknowledged.

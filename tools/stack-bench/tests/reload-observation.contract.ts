@@ -212,6 +212,17 @@ test('opposing transfers require both valid calls and exact directional stock de
   }
 });
 
+test('checkout overlap verifies both completed writes before comparing serial outcomes', () => {
+  const check = scenario('progression-cart-checkout.json').features[0]!.criteria.find(check => check.id === '4d')!;
+  assert.equal(check.points, 2);
+  const index = check.steps.findIndex(step => step.alongsideAdd === 'Coffee Grinder');
+  assert(index > 1);
+  assert.deepEqual(check.steps[index - 1], { do: 'expectCallOutcomes', accepted: 2 });
+  assert.equal(check.steps[index - 2]!.do, 'callConcurrently');
+  assert.deepEqual(check.steps.filter(step => step.do === 'dbRecordCheckout' && String(step.as).startsWith('overlap-'))
+    .map(step => step.storage), Array(2).fill({ kind: 'order-data', cart: true, warehouses: 'if-requested' }));
+});
+
 test('L2 direct authorization refusals follow accepted routes and fresh observations', () => {
   for (const [file, ids] of [['02-server-actions.json', ['201c']], ['02-self-contained.json', ['1e']],
     ['02-strengthened.json', ['201a', '201b']]] as const) {

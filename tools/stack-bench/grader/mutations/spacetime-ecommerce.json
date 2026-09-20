@@ -2910,6 +2910,36 @@
           "replace": "    if (quantity < 1) throw new SenderError('Transfer quantity must be at least 1.');\n    if (quantity === 7) throw new SenderError('Transfer disabled');"
         }
       ]
+    },
+    {
+      "id": "overlapping-cart-add-ignored",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "desc": "The overlapping second-product cart add is ignored while ordinary cart setup still works.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  const existing = findCartLine(ctx, acc.id, itemId);\n  if (existing) {\n    replaceReservation(ctx, acc.id, itemId, existing.quantity + 1);",
+          "replace": "  if (acc.username.includes('checkout-overlap') && it.name === 'Coffee Grinder') return;\n  const existing = findCartLine(ctx, acc.id, itemId);\n  if (existing) {\n    replaceReservation(ctx, acc.id, itemId, existing.quantity + 1);"
+        }
+      ]
+    },
+    {
+      "id": "overlapping-cart-add-rejected",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "desc": "The overlapping second-product cart add is rejected while ordinary cart setup still works.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  const existing = findCartLine(ctx, acc.id, itemId);\n  if (existing) {\n    replaceReservation(ctx, acc.id, itemId, existing.quantity + 1);",
+          "replace": "  if (acc.username.includes('checkout-overlap') && it.name === 'Coffee Grinder') throw new SenderError('Cart add disabled');\n  const existing = findCartLine(ctx, acc.id, itemId);\n  if (existing) {\n    replaceReservation(ctx, acc.id, itemId, existing.quantity + 1);"
+        }
+      ]
     }
   ]
 }

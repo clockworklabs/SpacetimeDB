@@ -1893,6 +1893,36 @@
           "replace": "    if (args.fromWarehouseId === args.toWarehouseId) throw new ConvexError('Choose different warehouses');\n    if (args.quantity === 7) throw new ConvexError('Transfer disabled');"
         }
       ]
+    },
+    {
+      "id": "overlapping-cart-add-ignored",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "desc": "The overlapping second-product cart add is ignored while ordinary cart setup still works.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "  const next = add ? (existing?.quantity || 0) + amount : amount;",
+          "replace": "  if (add && user.username.includes('checkout-overlap') && (await ctx.db.get(itemId)).name === 'Coffee Grinder') return;\n  const next = add ? (existing?.quantity || 0) + amount : amount;"
+        }
+      ]
+    },
+    {
+      "id": "overlapping-cart-add-rejected",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "desc": "The overlapping second-product cart add is rejected while ordinary cart setup still works.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "  const next = add ? (existing?.quantity || 0) + amount : amount;",
+          "replace": "  if (add && user.username.includes('checkout-overlap') && (await ctx.db.get(itemId)).name === 'Coffee Grinder') throw new ConvexError('Cart add disabled');\n  const next = add ? (existing?.quantity || 0) + amount : amount;"
+        }
+      ]
     }
   ]
 }

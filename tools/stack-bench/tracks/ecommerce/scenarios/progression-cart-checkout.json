@@ -3,12 +3,12 @@
   "track": "ecommerce",
   "level": 1,
   "name": "Cart and checkout",
-  "note": "Draft: checkout must book every item at its stored price in one order and empty the whole cart. A subsequent two-item request includes a false price; it may be refused with orders and cart unchanged or accepted at stored prices. Independent order-data reads reconcile both outcomes. Stock is checked on the normal UI path only; this does not claim multi-item crash atomicity or independent attack-stock reconciliation.",
+  "note": "Draft: checkout must book every item at its stored price in one order and empty the whole cart. A subsequent two-item request includes a false price; it may be refused with orders and cart unchanged or accepted at stored prices. Independent order-data reads reconcile both outcomes. Stock is checked on the normal UI path only; this does not claim multi-item crash atomicity or independent attack-stock reconciliation. An independent session then adds a second product during checkout. Both calls must succeed; the extra unit belongs either to that order or to the remaining cart, with exact stock reconciliation when warehouse access is part of the delivered task.",
   "features": [
     {
       "id": 4,
       "name": "Account cart and checkout",
-      "actors": ["quantity", "checkout"],
+      "actors": ["quantity", "checkout", "raceCheckout", "raceAdd"],
       "setup": [
         { "do": "signUp", "actor": "quantity", "name": "cart-quantity" },
         { "do": "signUp", "actor": "checkout", "name": "cart-checkout" }
@@ -73,7 +73,17 @@
             { "do": "dbRecordCheckout", "account": "{user:cart-checkout}", "item": "Desk Lamp", "as": "claim-prepared", "storage": { "kind": "order-data", "cart": true, "warehouses": false } },
             { "do": "callAction", "actor": "checkout", "action": "checkout", "namedAction": { "id": "checkout", "path": "/api/checkout", "method": "POST", "reducer": "checkout", "args": [1], "params": [{ "name": "price", "in": "body" }] }, "settleMs": 0 },
             { "do": "expectActionOutcome", "actor": "checkout", "outcome": "completed" },
-            { "do": "dbExpectCheckout", "actor": "checkout", "before": "claim-before", "prepared": "claim-prepared", "quantity": [{ "item": "Desk Lamp", "quantity": 1 }, { "item": "Coffee Grinder", "quantity": 1 }] }
+            { "do": "dbExpectCheckout", "actor": "checkout", "before": "claim-before", "prepared": "claim-prepared", "quantity": [{ "item": "Desk Lamp", "quantity": 1 }, { "item": "Coffee Grinder", "quantity": 1 }] },
+            {"do":"signUp","actor":"raceCheckout","name":"checkout-overlap"},
+            {"do":"signIn","actor":"raceAdd","name":"checkout-overlap"},
+            {"do":"dbRecordCheckout","account":"{user:checkout-overlap}","item":"Desk Lamp","as":"overlap-before","storage":{"kind":"order-data","cart":true,"warehouses":"if-requested"}},
+            {"do":"click","actor":"raceCheckout","testid":"add-to-cart","in":{"testid":"item-card","contains":"Desk Lamp"}},
+            {"do":"click","actor":"raceCheckout","testid":"cart-toggle","unlessVisible":"cart-total"},
+            {"do":"expect","actor":"raceCheckout","testid":"cart-item","contains":"Desk Lamp","count":1},
+            {"do":"dbRecordCheckout","account":"{user:checkout-overlap}","item":"Desk Lamp","as":"overlap-prepared","storage":{"kind":"order-data","cart":true,"warehouses":"if-requested"}},
+            {"do":"callConcurrently","actors":["raceCheckout"],"action":"checkout","namedAction":{"id":"checkout","path":"/api/checkout","method":"POST","reducer":"checkout","args":[]},"requests":1,"settleMs":0,"alongside":[{"actors":["raceAdd"],"action":"cart-add","namedAction":{"id":"cart-add","path":"/api/cart","method":"POST","reducer":"add_to_cart","args":[0],"params":[{"name":"itemId","in":"body","wireType":"u64"}]},"requests":1,"input":{"testid":"item-card","contains":"Coffee Grinder","attribute":"data-buy-input"}}]},
+            {"do":"expectCallOutcomes","accepted":2},
+            {"do":"dbExpectCheckout","before":"overlap-before","prepared":"overlap-prepared","quantity":[{"item":"Desk Lamp","quantity":1}],"alongsideAdd":"Coffee Grinder"}
           ]
         }
       ]
