@@ -7,9 +7,9 @@
   "recipe": {
     "path": "../recipes/progression-catalog.json",
     "id": "ecommerce.progression-catalog",
-    "meaningSha256": "2548e57c916775a7e65ec5ff14ac31194e6cc732704ef20af1e04df42195e156",
-    "executionSha256": "ef2aa50f7aa9a0b645b5963a58315e12f7630aadb46821319a0d93c38cc75a68",
-    "contentSha256": "61be1b2b3db02811e024ff4ea530e572b80091cc52bf304633b830546dd3e3c6"
+    "meaningSha256": "1ada6f438acfb1f8d78c4d166b0d8d3b6aa92b6b38c6921e321f0a17e1fe807f",
+    "executionSha256": "5e3af91f48a5ae6c942902e7f096ea8e35c33d7263f45cdadb58dd99b5c21408",
+    "contentSha256": "7449300aaeef6f79f7a62597f49b6b7abddda7a1a0aeff705d1d1fa9101e9c7f"
   },
   "fixture": {
     "id": "ecommerce.operations",
@@ -44,25 +44,25 @@
     {
       "backend": "mongodb",
       "path": "grader/mutations/mongodb-ecommerce.json",
-      "sha256": "8d51a661aae16854c5078ed4a0ae02f3b948259ac86051838899fa24c26504eb",
+      "sha256": "5041d54bbba52fab2f5c0350288177a13bca5d5f8d668e99bd4f5cb58dfe2cdc",
       "referenceId": "ecommerce-reference-mongodb"
     },
     {
       "backend": "postgres",
       "path": "grader/mutations/postgres-ecommerce.json",
-      "sha256": "01090e0b79bd202911d6ce994a974329dcf1c39862ad482fbaf08503694a0cd9",
+      "sha256": "ab761c7ab4e6dc3e34218c49adfcf27e9b04a1b668172b222533a8d27ca73d17",
       "referenceId": "ecommerce-reference-postgres"
     },
     {
       "backend": "spacetime",
       "path": "grader/mutations/spacetime-ecommerce.json",
-      "sha256": "cdd85e48ba59999747cfdecae89393baca682253f08c0152093e654531772d56",
+      "sha256": "e4119c32474c2324a07a38100255da35128426e0936e17520b467337ba41f215",
       "referenceId": "ecommerce-reference-spacetime"
     },
     {
       "backend": "convex",
       "path": "grader/mutations/convex-ecommerce.json",
-      "sha256": "ecae95fbf4a6b6814679ca031dec552250d224dd345b61dcdab543ee427cfc06",
+      "sha256": "a76dcaa3bfa9c5b1dda9f0048edb28ebe358bdf57a6ab1cd8da722d6fbfa9273",
       "referenceId": "ecommerce-reference-convex"
     }
   ],
@@ -99,6 +99,7 @@
       "ecommerce.inventory-operations.stock-conservation.202b",
       "ecommerce.inventory-operations.stock-conservation.202c",
       "ecommerce.inventory-operations.stock-conservation.202d",
+      "ecommerce.inventory-operations.stock-conservation.202f",
       "ecommerce.inventory-operations.warehouse-transfer.2a",
       "ecommerce.l3.deferred-access.scheduled-work-access.317a",
       "ecommerce.l3.deferred-durability.restart-survival.311a",
@@ -207,7 +208,7 @@
     "evidence": [],
     "featureCatalog": {
       "path": "progression/ecommerce.json",
-      "contentSha256": "8671f7883c2e5a24474a546ef1517407cd9334258e1a7cfe91e292a9af1952f2",
+      "contentSha256": "b9c772f61ea741ccd68cf3c7607385730f2d7bc6c8c0a38c7e32a50a3714ac47",
       "id": "ecommerce.questlines"
     }
   },

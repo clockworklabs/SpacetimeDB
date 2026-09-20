@@ -8,9 +8,9 @@
   "description": "Stock remains exact across transfers, cancellations, clients, and overlapping writes.",
   "requiresPacks": [],
   "conflictsWith": [],
-  "capabilities": ["browser", "concurrent-actors", "direct-server-call"],
-  "evidence": ["browser-observation", "server-response"],
-  "budget": { "status": "bounded", "maxRuntimeMs": 138000 },
+  "capabilities": ["browser", "concurrent-actors", "direct-server-call", "database-observation"],
+  "evidence": ["browser-observation", "server-response", "database-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 338000 },
   "task": {
     "requirements": [
       { "id": "ecommerce.progression.transfer-conservation", "path": "prompts/modular/stock-conservation.md", "order": 2970, "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l2.stock-transfers-features"] },
@@ -23,6 +23,7 @@
     { "id": "stock-conservation-directional", "stableId": "stock-conservation", "source": "scenarios/02-strengthened.json", "feature": 202, "criteria": ["202a"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l2.stock-transfers-features"] },
     { "id": "stock-conservation-cancel", "stableId": "stock-conservation", "source": "scenarios/02-self-contained.json", "feature": 202, "criteria": ["202b"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l2.order-cancellation-features"] },
     { "id": "stock-conservation-fresh-client", "stableId": "stock-conservation", "source": "scenarios/02-self-contained.json", "feature": 202, "criteria": ["202c"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l2.order-cancellation-features"] },
-    { "id": "stock-conservation-contention", "stableId": "stock-conservation", "source": "scenarios/02-server-actions.json", "feature": 202, "criteria": ["202d"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l2.stock-transfers-features", "ecommerce.feature.purchasing"] }
+    { "id": "stock-conservation-contention", "stableId": "stock-conservation", "source": "scenarios/02-server-actions.json", "feature": 202, "criteria": ["202d"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l2.stock-transfers-features", "ecommerce.feature.purchasing"] },
+    { "id": "stock-conservation-history", "stableId": "stock-conservation", "source": "scenarios/mixed-operation-history.json", "feature": 202, "criteria": ["202f"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.accounts", "ecommerce.feature.catalog-items", "ecommerce.feature.purchasing", "ecommerce.feature.cart", "ecommerce.feature.checkout", "ecommerce.feature.warehouse-admin", "ecommerce.l2.stock-transfers-features", "ecommerce.l2.order-cancellation-features"] }
   ]
 }

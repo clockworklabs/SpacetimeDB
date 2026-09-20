@@ -2940,6 +2940,96 @@
           "replace": "  if (acc.username.includes('checkout-overlap') && it.name === 'Coffee Grinder') throw new SenderError('Cart add disabled');\n  const existing = findCartLine(ctx, acc.id, itemId);\n  if (existing) {\n    replaceReservation(ctx, acc.id, itemId, existing.quantity + 1);"
         }
       ]
+    },
+    {
+      "id": "mixed-history-lost-transfer",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: lost-transfer. The stored-state comparison must catch the defect at its first effect.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "      ctx.db.stock.insert({ ...toRow, quantity: toRow.quantity + quantity });",
+          "replace": "      ctx.db.stock.insert({ ...toRow, quantity: toRow.quantity });"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-wrong-price",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: wrong-price. The stored-state comparison must catch the defect at its first effect.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    total: Math.round(price * 100) * quantity / 100,\n    status: 'pending',",
+          "replace": "    total: 1,\n    status: 'pending',"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-ignored-write",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: ignored-write. The stored-state comparison must catch the defect at its first effect.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  const existing = findCartLine(ctx, acc.id, itemId);\n  if (existing) {\n    replaceReservation(ctx, acc.id, itemId, existing.quantity + 1);",
+          "replace": "  if (acc.username.includes('history-') && it.name === 'Coffee Grinder') return;\n  const existing = findCartLine(ctx, acc.id, itemId);\n  if (existing) {\n    replaceReservation(ctx, acc.id, itemId, existing.quantity + 1);"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-reject-valid-write",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: reject-valid-write. The stored-state comparison must catch the defect at its first effect.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  const existing = findCartLine(ctx, acc.id, itemId);\n  if (existing) {\n    replaceReservation(ctx, acc.id, itemId, existing.quantity + 1);",
+          "replace": "  if (acc.username.includes('history-') && it.name === 'Coffee Grinder') throw new SenderError('Cart add disabled');\n  const existing = findCartLine(ctx, acc.id, itemId);\n  if (existing) {\n    replaceReservation(ctx, acc.id, itemId, existing.quantity + 1);"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-repeat-cancel",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: repeat-cancel. The stored-state comparison must catch the defect at its first effect.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  if (order.status !== 'pending') throw new SenderError('Order has already shipped.');",
+          "replace": "  if (!['pending', 'cancelled'].includes(order.status)) throw new SenderError('Order has already shipped.');"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-wrong-owner",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: wrong-owner. The stored-state comparison must catch the defect at its first effect.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    accountId,\n    createdAt: ctx.timestamp,\n    total: Math.round(price * 100) * quantity / 100,",
+          "replace": "    accountId: ctx.db.account.username.find('admin')!.id,\n    createdAt: ctx.timestamp,\n    total: Math.round(price * 100) * quantity / 100,"
+        }
+      ]
     }
   ]
 }

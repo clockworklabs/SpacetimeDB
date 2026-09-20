@@ -52,6 +52,13 @@
               "quantity": 1
             },
             {
+              "actor": "a",
+              "before": "before",
+              "do": "dbExpectOperation",
+              "operation": "buy",
+              "otherBefore": "other"
+            },
+            {
               "before": "before",
               "do": "dbExpectCancellation"
             },

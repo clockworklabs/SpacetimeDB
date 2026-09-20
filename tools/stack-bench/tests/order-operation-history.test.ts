@@ -10,13 +10,13 @@ import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { createDatabaseReadCapability } from '../src/actions/runtime-action-executors.js';
 
 const catalog = [{ itemId: 'i', priceMinor: 200 }, { itemId: 'j', priceMinor: 300 }];
-test('live history schedules bind every operation to two fresh native snapshots without scored points', () => {
+test('one scored history binds every operation to two fresh native snapshots', () => {
   const scenario = compileScenarioDefinition(JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
-    'tracks/ecommerce/scenarios/diagnostic-mixed-history.json'), 'utf8')));
-  assert.equal(scenario.features.length, 3);
+    'tracks/ecommerce/scenarios/mixed-operation-history.json'), 'utf8')));
+  assert.equal(scenario.features.length, 1);
   for (const feature of scenario.features) {
     const steps = feature.criteria[0]!.steps;
-    assert.equal(feature.criteria[0]!.points, 0);
+    assert.equal(feature.criteria[0]!.points, 1);
     const comparisons = steps.filter(step => step.do === 'dbExpectOperation');
     assert.equal(comparisons.length, 30);
     assert.equal(new Set(comparisons.map(step => step.before)).size, 30);

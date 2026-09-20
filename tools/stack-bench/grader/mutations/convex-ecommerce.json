@@ -1923,6 +1923,96 @@
           "replace": "  if (add && user.username.includes('checkout-overlap') && (await ctx.db.get(itemId)).name === 'Coffee Grinder') throw new ConvexError('Cart add disabled');\n  const next = add ? (existing?.quantity || 0) + amount : amount;"
         }
       ]
+    },
+    {
+      "id": "mixed-history-lost-transfer",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: lost-transfer. The stored-state comparison must catch the defect at its first effect.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "await ctx.db.patch(target._id, { quantity: target.quantity + args.quantity });",
+          "replace": "await ctx.db.patch(target._id, { quantity: target.quantity });"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-wrong-price",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: wrong-price. The stored-state comparison must catch the defect at its first effect.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "total += Math.round(item.price * 100) * line.quantity;",
+          "replace": "total += 100 * line.quantity;"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-ignored-write",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: ignored-write. The stored-state comparison must catch the defect at its first effect.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "  const next = add ? (existing?.quantity || 0) + amount : amount;",
+          "replace": "  if (add && user.username.includes('history-') && (await ctx.db.get(itemId)).name === 'Coffee Grinder') return;\n  const next = add ? (existing?.quantity || 0) + amount : amount;"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-reject-valid-write",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: reject-valid-write. The stored-state comparison must catch the defect at its first effect.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "  const next = add ? (existing?.quantity || 0) + amount : amount;",
+          "replace": "  if (add && user.username.includes('history-') && (await ctx.db.get(itemId)).name === 'Coffee Grinder') throw new ConvexError('Cart add disabled');\n  const next = add ? (existing?.quantity || 0) + amount : amount;"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-repeat-cancel",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: repeat-cancel. The stored-state comparison must catch the defect at its first effect.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "  if (order.status !== 'pending') throw new ConvexError('Only pending orders can be cancelled');",
+          "replace": "  if (!['pending', 'cancelled'].includes(order.status)) throw new ConvexError('Only pending orders can be cancelled');"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-wrong-owner",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: wrong-owner. The stored-state comparison must catch the defect at its first effect.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "account_id: user._id, total: 0, refunded: 0, status: 'pending'",
+          "replace": "account_id: (await rows(ctx, 'order_account')).find(a => a._id !== user._id)._id, total: 0, refunded: 0, status: 'pending'"
+        }
+      ]
     }
   ]
 }

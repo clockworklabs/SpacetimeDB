@@ -3031,6 +3031,96 @@
           "replace": "  if (req.account!.username.includes(\"checkout-overlap\") && (await db.select().from(item).where(eq(item.id, itemId)))[0]?.name === \"Coffee Grinder\") return res.status(409).json({ error: \"Cart add disabled\" });\n    try {\n      await reserveCartItem(accountId, itemId, qty);"
         }
       ]
+    },
+    {
+      "id": "mixed-history-lost-transfer",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: lost-transfer. The stored-state comparison must catch the defect at its first effect.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "      await client.query(\n        `INSERT INTO stock (item_id, warehouse_id, quantity) VALUES ($1, $2, $3)\n         ON CONFLICT (item_id, warehouse_id) DO UPDATE SET quantity = stock.quantity + excluded.quantity`,\n        [itemId, toWarehouseId, qty]\n      );",
+          "replace": "      await client.query(\n        `INSERT INTO stock (item_id, warehouse_id, quantity) VALUES ($1, $2, $3)\n         ON CONFLICT (item_id, warehouse_id) DO UPDATE SET quantity = stock.quantity + excluded.quantity`,\n        [itemId, toWarehouseId, 0]\n      );"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-wrong-price",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: wrong-price. The stored-state comparison must catch the defect at its first effect.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "        [accountId, price]\n      );",
+          "replace": "        [accountId, \"1.00\"]\n      );"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-ignored-write",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: ignored-write. The stored-state comparison must catch the defect at its first effect.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    try {\n      await reserveCartItem(accountId, itemId, qty);",
+          "replace": "  if (req.account!.username.includes(\"history-\") && (await db.select().from(item).where(eq(item.id, itemId)))[0]?.name === \"Coffee Grinder\") return res.json({});\n    try {\n      await reserveCartItem(accountId, itemId, qty);"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-reject-valid-write",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: reject-valid-write. The stored-state comparison must catch the defect at its first effect.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    try {\n      await reserveCartItem(accountId, itemId, qty);",
+          "replace": "  if (req.account!.username.includes(\"history-\") && (await db.select().from(item).where(eq(item.id, itemId)))[0]?.name === \"Coffee Grinder\") return res.status(409).json({ error: \"Cart add disabled\" });\n    try {\n      await reserveCartItem(accountId, itemId, qty);"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-repeat-cancel",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: repeat-cancel. The stored-state comparison must catch the defect at its first effect.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "      if (orderRow.rows[0].status !== \"pending\") {",
+          "replace": "      if (![\"pending\", \"cancelled\"].includes(orderRow.rows[0].status)) {"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-wrong-owner",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: wrong-owner. The stored-state comparison must catch the defect at its first effect.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    const itemId = Number(req.params.id);\n    const accountId = req.account!.id;\n\n    const client = await pool.connect();",
+          "replace": "    const itemId = Number(req.params.id);\n    const accountId = req.account!.id - 1;\n\n    const client = await pool.connect();"
+        }
+      ]
     }
   ]
 }

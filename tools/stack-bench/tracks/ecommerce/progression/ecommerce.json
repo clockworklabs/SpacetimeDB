@@ -256,6 +256,7 @@
         "ecommerce.l2.order-cancellation-features#cancellation-history",
         "ecommerce.progression.inventory-conservation-specifications#stock-conservation-cancel",
         "ecommerce.progression.inventory-conservation-specifications#stock-conservation-fresh-client",
+        "ecommerce.progression.inventory-conservation-specifications#stock-conservation-history",
         "ecommerce.progression.cancellation-accounting-specifications#cancellation-accounting",
         "ecommerce.progression.operations-access-specifications#order-owner-direct"
       ],

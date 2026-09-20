@@ -2927,6 +2927,96 @@
           "replace": "  if ((req as any).user.username.includes(\"checkout-overlap\") && item.name === \"Coffee Grinder\") return res.status(409).json({ error: \"Cart add disabled\" });\n  const userId = (req as any).user._id.toString();\n  const reservedWarehouseIds = await reserveStock(item._id, qty);"
         }
       ]
+    },
+    {
+      "id": "mixed-history-lost-transfer",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: lost-transfer. The stored-state comparison must catch the defect at its first effect.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  await Stock.findOneAndUpdate(\n    { item_id: itemId, warehouse_id: toWarehouseId },\n    { $inc: { quantity: qty } },\n    { upsert: true }\n  );",
+          "replace": "  await Stock.findOneAndUpdate(\n    { item_id: itemId, warehouse_id: toWarehouseId },\n    { $inc: { quantity: 0 } },\n    { upsert: true }\n  );"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-wrong-price",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: wrong-price. The stored-state comparison must catch the defect at its first effect.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    total: item.price,\n  });",
+          "replace": "    total: 0, // mutant: direct purchase ignores the authoritative price\n  });"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-ignored-write",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: ignored-write. The stored-state comparison must catch the defect at its first effect.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  const userId = (req as any).user._id.toString();\n  const reservedWarehouseIds = await reserveStock(item._id, qty);",
+          "replace": "  if ((req as any).user.username.includes(\"history-\") && item.name === \"Coffee Grinder\") return res.json({});\n  const userId = (req as any).user._id.toString();\n  const reservedWarehouseIds = await reserveStock(item._id, qty);"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-reject-valid-write",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: reject-valid-write. The stored-state comparison must catch the defect at its first effect.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  const userId = (req as any).user._id.toString();\n  const reservedWarehouseIds = await reserveStock(item._id, qty);",
+          "replace": "  if ((req as any).user.username.includes(\"history-\") && item.name === \"Coffee Grinder\") return res.status(409).json({ error: \"Cart add disabled\" });\n  const userId = (req as any).user._id.toString();\n  const reservedWarehouseIds = await reserveStock(item._id, qty);"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-repeat-cancel",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: repeat-cancel. The stored-state comparison must catch the defect at its first effect.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "      if (value.status !== \"pending\") throw new Error(\"Order cannot be cancelled\");",
+          "replace": "      if (![\"pending\", \"cancelled\"].includes(value.status)) throw new Error(\"Order cannot be cancelled\");"
+        }
+      ]
+    },
+    {
+      "id": "mixed-history-wrong-owner",
+      "scenario": "tracks/ecommerce/scenarios/mixed-operation-history.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202f"
+      ],
+      "desc": "Mixed-history control: wrong-owner. The stored-state comparison must catch the defect at its first effect.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    userId: user._id,\n    items: [",
+          "replace": "    userId: (await User.findOne({ _id: { $ne: user._id } }))!._id,\n    items: ["
+        }
+      ]
     }
   ]
 }
