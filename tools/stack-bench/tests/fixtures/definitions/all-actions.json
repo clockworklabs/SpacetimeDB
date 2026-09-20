@@ -84,7 +84,8 @@
             { "do": "typeInto", "actor": "a", "text": "value" },
             { "do": "wait", "actor": "a", "ms": 1 },
             { "do": "waitUntilAbsent", "actor": "a", "testid": "status" },
-            { "do": "dbExpectPurchaseCount", "before": ["before-a", "before-b"], "purchasesEach": 500 }
+            { "do": "dbExpectPurchaseCount", "before": ["before-a", "before-b"], "purchasesEach": 500 },
+            { "do": "dbExpectCatalogItem", "before": "catalog-before", "name": "New product", "priceMinor": 125 }
           ]
         }
       ]

@@ -436,6 +436,12 @@
               ],
               "do": "dbExpectPurchaseCount",
               "purchasesEach": 500
+            },
+            {
+              "before": "catalog-before",
+              "do": "dbExpectCatalogItem",
+              "name": "New product",
+              "priceMinor": 125
             }
           ]
         }

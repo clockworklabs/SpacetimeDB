@@ -40,6 +40,7 @@ const ACTION_CATEGORY = {
   expectNumber: 'browser-observation',
   dbRecordStock: 'database',
   dbRecordCheckout: 'database',
+  dbExpectCatalogItem: 'database',
   dbExpectCheckout: 'database',
   dbExpectOperation: 'database',
   dbExpectCancellation: 'database',
@@ -114,6 +115,7 @@ const CATEGORY_POLICY = {
 const ACTION_CAPABILITY_OVERRIDES: Partial<Record<ActionId, readonly string[]>> = {
   dbRecordStock: ['database-read', 'browser-observation'],
   dbRecordCheckout: ['database-read'],
+  dbExpectCatalogItem: ['database-read', 'clock'],
   dbExpectCheckout: ['database-read', 'actors'],
   dbExpectOperation: ['database-read', 'named-actions'],
   dbExpectCancellation: ['database-read'],

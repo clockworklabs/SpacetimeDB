@@ -202,6 +202,40 @@ async function dbRecordCheckout({ input, capabilities }: ActionArguments<{ accou
   return { ...snapshot, key: input.as };
 }
 
+async function dbExpectCatalogItem({ input, capabilities, signal }: ActionArguments<{
+  before: string; name: string; priceMinor: number; within?: number;
+}>) {
+  const database = capabilities['database-read'];
+  const before = database.checkoutSnapshots.get(input.before);
+  if (!before) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
+  if (before.scope !== 'orders' || before.storage?.kind !== 'order-data' || !before.catalog) {
+    throw new Error('catalog creation requires native catalog evidence');
+  }
+  if (before.catalog.some(row => row.name === input.name)) throw new Error('catalog creation name already exists in the baseline');
+  const read = () => {
+    const value = database.getCheckoutState(before);
+    if (value.scope !== before.scope || !value.catalog
+      || JSON.stringify(value.schemaSha256) !== JSON.stringify(before.schemaSha256)) throw new Error('catalog reader changed during creation');
+    return value.catalog.filter(row => row.name === input.name);
+  };
+  const deadline = Date.now() + (input.within ?? 0);
+  let matches = read();
+  while (!matches.length && Date.now() < deadline) {
+    await capabilities.clock.sleep(Math.min(250, deadline - Date.now()), signal);
+    matches = read();
+  }
+  const observation = { before: input.before, name: input.name, matches, schemaSha256: before.schemaSha256 };
+  const mismatch = matches.length !== 1
+    ? { control: 'stored catalog entries for the created product', observed: matches.length, expected: { equals: 1 } }
+    : matches[0]!.priceMinor !== input.priceMinor
+      ? { control: 'stored product price in minor units', observed: matches[0]!.priceMinor, expected: { equals: input.priceMinor } } : null;
+  if (mismatch) {
+    const value = finding('number-mismatch', mismatch);
+    throw new ActionApplicationFailure(renderFinding(value), { finding: value, observation });
+  }
+  return observation;
+}
+
 export type CheckoutQuantity = number | readonly { item: string; quantity: number }[];
 
 export function checkoutExpectation(quantity: CheckoutQuantity, snapshots: readonly CheckoutSnapshot[]) {
@@ -935,6 +969,7 @@ function contractBrowserLifecycleAction<Input, Result>(
 
 export const RUNTIME_ACTION_IMPLEMENTATIONS = Object.freeze({
   dbRecordCheckout: contractLifecycleAction(dbRecordCheckout),
+  dbExpectCatalogItem: contractLifecycleAction(dbExpectCatalogItem),
   dbExpectCheckout: contractLifecycleAction(dbExpectCheckout),
   dbExpectOperation: contractLifecycleAction(dbExpectOperation),
   dbExpectCancellation: contractLifecycleAction(dbExpectCancellation),

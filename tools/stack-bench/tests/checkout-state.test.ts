@@ -657,3 +657,33 @@ test('one crash observation separates partial effects, acknowledged rollback and
     }
   }
 });
+
+test('catalog creation waits for committed data and separates missing products from broken readers', async () => {
+  for (const mode of ['valid', 'delayed', 'missing', 'duplicate', 'price', 'missing-baseline', 'existing-name', 'schema-change', 'missing-catalog', 'reader-error']) {
+    const before = { state: states().before, account: 'admin', item: 'i', scope: 'orders' as const,
+      storage: { kind: 'order-data' as const, cart: false, warehouses: false }, schemaSha256: { item: 'same' },
+      catalog: mode === 'existing-name' ? [{ itemId: 'old', name: 'New product', priceMinor: 125 }] : [] };
+    let reads = 0, sleeps = 0;
+    const row = { itemId: 'new', name: 'New product', priceMinor: mode === 'price' ? 126 : 125 };
+    const result = await executeAction(ACTION_REGISTRY, 'dbExpectCatalogItem', {
+      do: 'dbExpectCatalogItem', before: 'before', name: 'New product', priceMinor: 125, ...(mode === 'delayed' ? { within: 1000 } : {}),
+    }, { capabilities: {
+      clock: { sleep: async () => { sleeps++; } },
+      'database-read': {
+        ...createDatabaseReadCapability({ expand: value => value,
+          checkoutSnapshots: new Map(mode === 'missing-baseline' ? [] : [['before', before]]) }),
+        getCheckoutState: () => {
+          reads++;
+          if (mode === 'reader-error') throw new Error('database unavailable');
+          return { ...before, schemaSha256: { item: mode === 'schema-change' ? 'changed' : 'same' },
+            catalog: mode === 'missing-catalog' ? undefined : mode === 'missing' || (mode === 'delayed' && reads === 1) ? []
+              : mode === 'duplicate' ? [row, { ...row, itemId: 'duplicate' }] : [row] };
+        },
+      },
+    } });
+    assert.equal(result.status, ['valid', 'delayed'].includes(mode) ? 'passed' : mode === 'missing-baseline' ? 'inconclusive'
+      : ['existing-name', 'schema-change', 'missing-catalog', 'reader-error'].includes(mode) ? 'harness_failure' : 'failed', mode);
+    if (result.status === 'failed') assert(result.observation, mode);
+    if (mode === 'delayed') { assert.equal(reads, 2); assert.equal(sleeps, 1); }
+  }
+});

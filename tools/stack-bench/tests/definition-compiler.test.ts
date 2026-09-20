@@ -329,3 +329,11 @@ test('relative number comparisons require a baseline and one unambiguous bound',
   }
   assert.throws(() => compileScenarioDefinition(scenario({ ...step, comparison: 'less' })), /comparison/);
 });
+
+
+test('catalog creation expectations require exact nonnegative minor units', () => {
+  const wrap = (priceMinor: unknown) => ({ schemaVersion: 1, level: 1, features: [{ id: 1, name: 'Catalog', setup: [],
+    criteria: [{ id: 'a', desc: 'stored price', points: 1, steps: [{ do: 'dbExpectCatalogItem', before: 'catalog', name: 'Product', priceMinor }] }] }] });
+  for (const price of [0, 125, Number.MAX_SAFE_INTEGER]) assert.doesNotThrow(() => compileScenarioDefinition(wrap(price)));
+  for (const price of [-1, 1.25, Number.MAX_SAFE_INTEGER + 1, Infinity, '125']) assert.throws(() => compileScenarioDefinition(wrap(price)));
+});
