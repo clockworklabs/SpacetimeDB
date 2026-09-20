@@ -73,6 +73,17 @@
           "points": 2,
           "steps": [
             {
+              "do": "dbRecordCheckout",
+              "account": "{user:kim}",
+              "item": "Bluetooth Speaker",
+              "as": "before-rejected-access",
+              "storage": {
+                "kind": "order-data",
+                "cart": false,
+                "warehouses": false
+              }
+            },
+            {
               "do": "callAction",
               "actor": "guest",
               "from": "buyer",
@@ -106,6 +117,10 @@
               "actor": "guest",
               "outcome": "refused",
               "routeProvenBy": "buyer"
+            },
+            {
+              "do": "dbExpectNoPurchase",
+              "before": "before-rejected-access"
             },
             {
               "do": "dbExpectStock",
@@ -175,6 +190,10 @@
               "routeProvenBy": "buyer"
             },
             {
+              "do": "dbExpectNoPurchase",
+              "before": "before-rejected-access"
+            },
+            {
               "do": "dbExpectStock",
               "item": "Bluetooth Speaker",
               "relativeTo": "speaker-before-control",
@@ -224,6 +243,10 @@
               "actor": "query-input",
               "outcome": "completed",
               "routeProvenBy": "buyer"
+            },
+            {
+              "do": "dbExpectNoPurchase",
+              "before": "before-rejected-access"
             },
             {
               "do": "dbExpectStock",
@@ -297,6 +320,10 @@
               "actor": "duplicate",
               "outcome": "refused",
               "routeProvenBy": "buyer"
+            },
+            {
+              "do": "dbExpectNoPurchase",
+              "before": "before-rejected-access"
             },
             {
               "do": "dbExpectStock",

@@ -3283,6 +3283,21 @@
       ]
     },
     {
+      "id": "rejected-query-login-creates-order",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-session.json",
+      "targets": [
+        "ecommerce.spec.access-control.purchase-session.101a"
+      ],
+      "desc": "Create an order during the query-like login, leave stock unchanged and still refuse access; a refusal and stock-only observation must not earn a pass.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  const valid = await verifyPassword(password, user.passwordHash);",
+          "replace": "  if (password === \"' OR '1'='1\") {\n    const item = await Item.findOne({ name: \"Bluetooth Speaker\" });\n    if (!item) throw new Error(\"mutation requires the seeded item\");\n    await Order.create({ userId: user._id, items: [{ itemId: item._id, name: item.name, price: item.price, quantity: 1, allocations: [] }], total: item.price });\n  }\n  const valid = await verifyPassword(password, user.passwordHash);"
+        }
+      ]
+    },
+    {
       "id": "account-password-in-script",
       "scenario": "tracks/ecommerce/scenarios/01-account-disclosure.json",
       "targets": [

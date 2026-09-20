@@ -586,6 +586,15 @@ test('purchase-session tampering uses early order data, awaits a response, check
   assert.equal(criterion.id, '101a');
   assert.equal(criterion.points, 2);
   const steps = criterion.steps as UnknownRecord[];
+  assert.equal(steps[0]!.do, 'dbRecordCheckout');
+  assert.deepEqual(steps[0]!.storage, { kind: 'order-data', cart: false, warehouses: false });
+  for (const actor of ['guest', 'wrong-password', 'query-input', 'duplicate']) {
+    const call = steps.findIndex(step => step.do === 'callAction' && step.actor === actor);
+    const nextCall = steps.findIndex((step, i) => i > call && step.do === 'callAction');
+    assert(call > 0 && nextCall > call);
+    assert(steps.slice(call + 1, nextCall).some(step => step.do === 'dbExpectNoPurchase'
+      && step.before === steps[0]!.as), `${actor}: check orders before later purchases can absorb them`);
+  }
   const attack = steps.findIndex(step => step.authentication === 'tampered-session');
   assert(attack > 0);
   const control = steps.findIndex(step => step.authentication === 'session-control');
