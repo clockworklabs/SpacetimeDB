@@ -447,7 +447,7 @@ export function referenceQualificationWorkRoot(env: NodeJS.ProcessEnv = process.
 
 export function qualificationMutationManifest(fixture: ReferenceFixture,
   context: { calibration: { mutations: Array<{ backend: string; path: string;
-    targets: Array<{ id: string }> }> } },
+    targets: Array<{ id: string; stableKeys: string[] }> }> } },
   requestedIds: readonly string[] = []): MutationManifest {
   const selection = context.calibration.mutations.find(entry => entry.backend === fixture.backend);
   if (!selection) throw new Error(`${fixture.id} has no mutation selection in its calibration`);
@@ -455,9 +455,13 @@ export function qualificationMutationManifest(fixture: ReferenceFixture,
     throw new Error(`${fixture.id} does not own its calibrated mutation manifest: ${selection.path}`);
   }
   const manifest = readJson(join(ROOT, selection.path)) as MutationManifest;
+  const targets = new Map(selection.targets.map(target => [target.id, target.stableKeys]));
   const selectedIds = new Set(selection.targets.map(target => target.id));
-  const mutations = manifest.mutations.filter(mutation =>
-    selectedIds.delete(String(mutation.id)));
+  const mutations: MutationManifest['mutations'] = manifest.mutations.filter(mutation =>
+    selectedIds.delete(String(mutation.id))).map(mutation => ({
+      ...mutation, targets: mutationTargetKeys(mutation)
+        .filter(key => targets.get(String(mutation.id))!.includes(key)),
+    }));
   if (selectedIds.size) {
     throw new Error(`${fixture.id} mutation selection is missing: ${[...selectedIds].sort().join(', ')}`);
   }

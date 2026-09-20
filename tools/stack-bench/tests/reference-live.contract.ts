@@ -46,6 +46,7 @@ import type { ReferenceFixture } from '../src/references/reference-fixtures.js';
 import { loadReferenceRegistry } from '../src/references/reference-fixtures.js';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { compileCalibrationFile, mutationExecutionSha256 } from '../src/composition/calibration-compiler.js';
 const fixture: ReferenceFixture & { imported: { sourceSha256: string } } = {
   id: 'reference-live-test', backend: 'mongodb', track: 'ecommerce', level: 1,
   imported: { sourceSha256: 'a'.repeat(64) } };
@@ -71,7 +72,7 @@ test('reference qualification runs only the mutations selected by its check scop
   const source = readMutationManifest(join(STACK_BENCH_ROOT, path));
   const ids = source.mutations.slice(0, 2).map(mutation => mutation.id);
   const context = { calibration: { mutations: [{ backend: 'mongodb', path,
-    targets: ids.map(id => ({ id, stableKeys: [] })) }] } };
+    targets: source.mutations.slice(0, 2).map(mutation => ({ id: mutation.id, stableKeys: mutation.targets })) }] } };
   const selected = qualificationMutationManifest({ ...fixture, id: 'selected-mutations',
     mutationManifests: ['grader/mutations/unused.json', path] }, context);
 
@@ -83,9 +84,44 @@ test('reference qualification runs only the mutations selected by its check scop
     mutationManifests: [path] }, context, ['not-selected']), /targeted mutation selection is missing/);
   assert.throws(() => qualificationMutationManifest({ ...fixture, id: 'missing-mutation',
     mutationManifests: [path] }, { calibration: { mutations: [{ backend: 'mongodb', path,
-      targets: [{ id: 'not-present' }] }] } }), /mutation selection is missing/);
+      targets: [{ id: 'not-present', stableKeys: ['check.missing'] }] }] } }), /mutation selection is missing/);
   assert.throws(() => qualificationMutationManifest({ ...fixture, id: 'wrong-owner',
     mutationManifests: [] }, context), /does not own its calibrated mutation manifest/);
+});
+
+test('shared restock mutations retain every in-recipe target and execute the compiled hash', () => {
+  const track = loadTrack('ecommerce');
+  const a = 'ecommerce.feature.warehouse-admin.admin-write.103a';
+  const b = 'ecommerce.spec.access-control.warehouse-write-boundary.103b';
+  for (const [name, recipe, level, expected] of [
+    ['sequential-l1', 'ecommerce.sequential-l1', 1, [a]],
+    ['dependency-l3', 'ecommerce.progression-catalog', 3, [a, b]],
+  ] as const) {
+    const release = resolveRecipeRelease(track, level, recipe).release;
+    const calibrationPath = join(track.dir, 'composition/calibrations', name + '.json');
+    const calibration = compileCalibrationFile(calibrationPath,
+      { trackRoot: track.dir, stackBenchRoot: STACK_BENCH_ROOT, release });
+    for (const entry of calibration.mutations) {
+      const reference = loadReferenceRegistry().fixtures.find(item => item.id === entry.referenceId);
+      assert(reference);
+      const manifest = qualificationMutationManifest(reference, { calibration });
+      assert.deepEqual(manifest.mutations.find(item => item.id === 'authorized-restock-does-not-change-stock')?.targets,
+        [...expected]);
+      assert.equal(mutationExecutionSha256(manifest), entry.executionSha256);
+    }
+    if (name === 'dependency-l3') {
+      const partial = JSON.parse(readFileSync(calibrationPath, 'utf8'));
+      partial.qualification.checks = partial.qualification.checks.filter((key: string) => key !== b);
+      delete partial.qualification.featureCatalog;
+      const path = join(track.dir, 'composition/calibrations', 'restock-scope-test-' + process.pid + '.json');
+      try {
+        writeFileSync(path, JSON.stringify(partial), { flag: 'wx' });
+        assert.throws(() => compileCalibrationFile(path,
+          { trackRoot: track.dir, stackBenchRoot: STACK_BENCH_ROOT, release }),
+        /spans qualification scope and unrelated checks/);
+      } finally { rmSync(path); }
+    }
+  }
 });
 
 test('targeted mutation diagnostics grade only their scored target checks', () => {
@@ -485,13 +521,13 @@ test('progression reference qualification follows the catalog check selection', 
   assert.deepEqual(valuesAfter(argv, '--expect-spec').sort(),
     [...selection.grader.selection.requested.specifications.expected].sort());
   assert.equal(required(valuesAfter(argv, '--task-mode')[0], 'task mode'), 'upgrade');
-  assert.equal(selection.grader.checkKeys.length, 114);
+  assert.equal(selection.grader.checkKeys.length, 117);
   assert.equal(selection.grader.checkKeys.some(key => key.includes('automatic-reorder')), false);
   assert.deepEqual(referenceQualificationSelectionArgs(binding, selection,
     [required(selection.grader.checkKeys[0], 'first check key')]).filter((_value, index, argv) =>
     argv[index - 1] === '--check'), [required(selection.grader.checkKeys[0], 'first check key')]);
   const scoped = referenceQualificationRelease(binding.release, selection.grader.checkKeys);
-  assert.equal(scoped.checkCatalog.length, 114);
+  assert.equal(scoped.checkCatalog.length, selection.grader.checkKeys.length);
   assert.throws(() => referenceQualificationRelease(binding.release,
     [...selection.grader.checkKeys, 'missing.check']), /unknown checks/);
 });

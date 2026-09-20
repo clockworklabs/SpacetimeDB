@@ -50,10 +50,10 @@ test('current calibration binds stable authored identities', () => {
     executionSha256: release.executionSha256,
     contentSha256: release.contentSha256,
   });
-  assert.deepEqual(plan.qualification.stacks, ['mongodb', 'postgres', 'spacetime']);
+  assert.deepEqual(plan.qualification.stacks, ['convex', 'mongodb', 'postgres', 'spacetime']);
   assert.equal(plan.qualification.evidence.length, 0);
-  assert.equal(plan.references.entries.length, 3);
-  assert.equal(plan.mutations.length, 3);
+  assert.equal(plan.references.entries.length, 4);
+  assert.equal(plan.mutations.length, 4);
   assert.match(plan.contentSha256, /^[a-f0-9]{64}$/);
   assert.match(plan.qualificationSha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(calibrationQualificationIdentity(plan), {

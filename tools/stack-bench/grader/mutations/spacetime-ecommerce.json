@@ -2054,7 +2054,8 @@
       "id": "authorized-restock-does-not-change-stock",
       "scenario": "tracks/ecommerce/scenarios/01-admin-write-staff.json",
       "targets": [
-        "ecommerce.feature.warehouse-admin.admin-write.103a"
+        "ecommerce.feature.warehouse-admin.admin-write.103a",
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
       ],
       "desc": "Accept an administrator restock without changing warehouse stock.",
       "file": "backend/spacetimedb/src/index.ts",

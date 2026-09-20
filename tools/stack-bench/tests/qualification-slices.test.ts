@@ -164,6 +164,19 @@ test('saved slices validate real artifacts and reject incomplete or mismatched e
   changedControls.mutations = [];
   writeFileSync(mutationPath, JSON.stringify(changedControls));
   assert.throws(() => validateQualificationSlice(artifact, entry, context), /slice mutation controls changed/);
+  const additionalTargets = structuredClone(saved.mutations.postgres);
+  const selectedMutation = additionalTargets.mutations.find((mutation: { targets: string[] }) =>
+    mutation.targets.some(key => entry.slice!.checks.includes(key)));
+  assert(selectedMutation);
+  const outsideSlice = savedDocuments.release.checkCatalog.find(check =>
+    !entry.slice!.checks.includes(check.stableKey))!.stableKey;
+  selectedMutation.targets.push(outsideSlice);
+  writeFileSync(mutationPath, JSON.stringify(additionalTargets));
+  assert.throws(() => validateQualificationSlice(artifact, entry, context), /mutation spans slice boundary/);
+  selectedMutation.targets.pop();
+  selectedMutation.targets.push('ecommerce.future.not-in-this-recipe');
+  writeFileSync(mutationPath, JSON.stringify(additionalTargets));
+  assert.doesNotThrow(() => validateQualificationSlice(artifact, entry, context));
   writeFileSync(mutationPath, JSON.stringify(saved.mutations.postgres));
 
   const nullEntry: CalibrationEvidence = { ...entry, kind: 'null', stack: undefined,

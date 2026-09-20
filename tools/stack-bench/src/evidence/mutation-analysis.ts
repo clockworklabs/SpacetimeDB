@@ -322,6 +322,14 @@ export function releaseScenarioCheckKeys(
   return keys;
 }
 
+// Shared manifests describe every recipe. Keep every target present in the full
+// recipe; selecting a qualification slice must never remove an in-recipe target.
+export function mutationForRecipe<T extends MutationDefinition>(mutation: T,
+  release: Pick<RecipeRelease, 'checkCatalog'>): T & { targets: string[] } {
+  const recipeKeys = new Set(release.checkCatalog.map(check => check.stableKey));
+  return { ...mutation, targets: mutationTargetKeys(mutation).filter(key => recipeKeys.has(key)) };
+}
+
 export function resolveMutationFile(app: string, file: string): string {
   const root = resolve(app);
   const target = resolve(root, file);

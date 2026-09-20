@@ -143,6 +143,23 @@ test('SpacetimeDB guest purchase control reaches the reducer through the graded 
     && edit.find.includes('buyNow') && edit.replace.includes("getAccountId(ctx) === null")));
 });
 
+test('restock controls declare both checks that require successful administrator writes', () => {
+  for (const backend of ['mongodb', 'postgres', 'spacetime', 'convex']) {
+    const ids = ['authorized-restock-does-not-change-stock',
+      ...(backend === 'postgres' ? ['restock-rejects-administrator-control'] : [])];
+    for (const id of ids) {
+      const mutation = mutationManifest(backend).mutations.find(candidate => candidate.id === id);
+      assert(mutation?.scenario);
+      assert.deepEqual(mutation.targets, [
+        'ecommerce.feature.warehouse-admin.admin-write.103a',
+        'ecommerce.spec.access-control.warehouse-write-boundary.103b',
+      ]);
+      assert.deepEqual(mutation.targets, releaseScenarioCheckKeys(binding.release, TRACK,
+        join(ROOT, mutation.scenario), mutation.targets));
+    }
+  }
+});
+
 for (const backend of ['mongodb', 'postgres', 'spacetime']) {
   test(`${backend} stock delivery control targets the independent delivery observation`, () => {
     const mutation = mutationManifest(backend).mutations.find(candidate => candidate.id === 'stock-alert-delivery-is-suppressed');
@@ -160,11 +177,6 @@ for (const backend of ['mongodb', 'postgres', 'spacetime']) {
     assert.deepEqual(mutation.targets, ['ecommerce.spec.access-control.warehouse-write-boundary.103b']);
     assert.deepEqual(mutation.targets, releaseScenarioCheckKeys(binding.release, TRACK,
       join(ROOT, mutation.scenario), mutation.targets));
-    const positive = mutationManifest(backend).mutations.find(candidate => candidate.id === 'authorized-restock-does-not-change-stock');
-    assert(positive?.scenario);
-    assert.deepEqual(positive.targets, ['ecommerce.feature.warehouse-admin.admin-write.103a']);
-    assert.deepEqual(positive.targets, releaseScenarioCheckKeys(binding.release, TRACK,
-      join(ROOT, positive.scenario), positive.targets));
   });
 
   test(`${backend} fulfilment access mutation targets its current recipe scenario`, () => {

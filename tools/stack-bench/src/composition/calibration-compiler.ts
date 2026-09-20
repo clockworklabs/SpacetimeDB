@@ -4,7 +4,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { compileRecipeSelectionFile } from './composition-compiler.js';
 import { canonicalDefinitionJson, canonicalizeDefinition, readDefinitionJson }
   from './definition-plan.js';
-import { mutationTargetKeys, validateMutationDefinitions } from '../evidence/mutation-analysis.js';
+import { mutationForRecipe, mutationTargetKeys, validateMutationDefinitions } from '../evidence/mutation-analysis.js';
 import type { MutationDefinition } from '../evidence/mutation-analysis.js';
 import { sha256 } from '../evidence/provenance.js';
 import { loadReferenceRegistry, validateReferenceRegistry } from '../references/reference-fixtures.js';
@@ -933,9 +933,9 @@ export function validateQualificationSlice(artifact: UnknownRecord, entry: Calib
   }
   const manifests = snapshot.mutations;
   if (!isObject(manifests)) evidenceFailure(at, 'snapshot has no mutation inputs');
-  const subset = (manifest: unknown, keys: string[]): UnknownRecord => {
+  const subset = (manifest: unknown, keys: string[], recipe: RecipeRelease): UnknownRecord => {
     if (!isObject(manifest) || !Array.isArray(manifest.mutations)) evidenceFailure(at, 'invalid mutation inputs');
-    const selected = manifest.mutations.filter(value => {
+    const selected = manifest.mutations.map(value => mutationForRecipe(value as MutationDefinition, recipe)).filter(value => {
       const targets = mutationTargetKeys(value as MutationDefinition);
       const included = targets.filter(key => keys.includes(key));
       if (included.length && included.length !== targets.length) evidenceFailure(at, 'mutation spans slice boundary');
@@ -950,14 +950,14 @@ export function validateQualificationSlice(artifact: UnknownRecord, entry: Calib
     const oldMutation = sourceCalibration.mutations.find(item => item.backend === entry.stack);
     const newMutation = calibration.mutations.find(item => item.backend === entry.stack);
     if (!oldMutation || !newMutation) evidenceFailure(at, 'missing stack mutation definition');
-    if (mutationExecutionSha256(subset(oldManifest, sourceCalibration.qualification.checks!))
+    if (mutationExecutionSha256(subset(oldManifest, sourceCalibration.qualification.checks!, source.release))
       !== oldMutation.executionSha256) evidenceFailure(at, 'mutation snapshot differs from source calibration');
     const currentManifest = readDefinitionJson(resolve(stackBenchRoot, newMutation.path), 'mutations');
-    if (mutationExecutionSha256(subset(oldManifest, slice.checks))
-      !== mutationExecutionSha256(subset(currentManifest, slice.checks))) {
+    if (mutationExecutionSha256(subset(oldManifest, slice.checks, source.release))
+      !== mutationExecutionSha256(subset(currentManifest, slice.checks, current.release))) {
       evidenceFailure(at, 'slice mutation controls changed');
     }
-    const selected = subset(oldManifest, sourceKeys as string[]);
+    const selected = subset(oldManifest, sourceKeys as string[], source.release);
     selectedMutation = { ...oldMutation, executionSha256: mutationExecutionSha256(selected) };
     const count = (selected.mutations as unknown[]).length;
     const runs = read(artifact, 'payload', 'runs');
@@ -1190,7 +1190,6 @@ export function compileCalibrationFile(calibrationPath: string,
     return { ...selection, ...(entry.targetPath ? { targetPath: entry.targetPath } : {}) };
   });
 
-  const releaseStableKeys = new Set(release.checkCatalog.map(check => check.stableKey));
   const qualifiedStableKeys = new Set(qualificationRelease.checkCatalog.map(check => check.stableKey));
   const mutationTargetRefs = new Map();
   const mutationCoverage = new Map();
@@ -1219,7 +1218,8 @@ export function compileCalibrationFile(calibrationPath: string,
     const selectedMutations = [];
     const targets = [];
     const covered = mutationCoverage.get(selection.backend) ?? new Set();
-    for (const mutation of declared) {
+    for (const declaredMutation of declared) {
+      const mutation = mutationForRecipe(declaredMutation, release);
       const stableKeys = mutationTargetKeys(mutation);
       const scopedKeys = stableKeys.filter(stableKey => qualifiedStableKeys.has(stableKey));
       if (scopedKeys.length === 0) {
@@ -1230,11 +1230,6 @@ export function compileCalibrationFile(calibrationPath: string,
       }
       if (scopedKeys.length !== stableKeys.length) {
         fail(at, `mutation ${mutation.id} spans qualification scope and unrelated checks`);
-      }
-      for (const stableKey of scopedKeys) {
-        if (!releaseStableKeys.has(stableKey)) {
-          fail(at, `mutation ${mutation.id} targets unknown recipe check ${stableKey}`);
-        }
       }
       selectedMutations.push(mutation);
       for (const stableKey of scopedKeys) covered.add(stableKey);
