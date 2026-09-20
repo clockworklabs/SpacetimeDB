@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
+import { evidenceNowMs } from '../evidence/evidence-timing.js';
 import { actionImplementation, ActionApplicationFailure, ActionHarnessFailure, ActionInconclusive } from './action-contract.js';
 import { actorFor, inconclusive } from './actor-action-runtime.js';
 import type { ActorCapabilities } from './actor-action-runtime.js';
@@ -137,7 +138,7 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
     }
     // Reference reservations last 90 seconds. Leave time for recovery and mark
     // expired trials unmeasured; expiry is not a failed atomic checkout.
-    if (prepared.state.reservations.length && Date.now() - prepared.recordedAtMs > 30_000) {
+    if (prepared.state.reservations.length && evidenceNowMs() - prepared.recordedAtMs > 30_000) {
       inconclusive('invalid-input', { detail: 'prepared cart is too old for a bounded crash trial' });
     }
     let receipt: ProcessCrashReceipt | undefined, faultError: unknown, recoveryError: unknown, recoveredAtMs: number | undefined;
@@ -213,7 +214,7 @@ export const crashCheckout = actionImplementation(async ({ input, capabilities, 
     const faultEndMs = Math.max(...signalTimes);
     const outstandingAtFault = outcomes.filter(row => row.startedAtMs <= faultAtMs && row.completedAtMs >= faultEndMs).length;
     const evidence = { ...observation, after, observedAtMs: named.now(), differences, verdicts, confirmed, faultAtMs, faultEndMs, outstandingAtFault };
-    const unmeasured = prepared.state.reservations.length && Date.now() - prepared.recordedAtMs >= 85_000 ? 'reservation expiry prevents a complete recovery comparison'
+    const unmeasured = prepared.state.reservations.length && evidenceNowMs() - prepared.recordedAtMs >= 85_000 ? 'reservation expiry prevents a complete recovery comparison'
       : Math.abs(receipt.clockOffsetAfterMs - receipt.clockOffsetBeforeMs) > 5 ? 'clock changed during fault'
         : !outstandingAtFault ? 'fault missed the outstanding-request window'
           : unsettled && !appRecoveryFailed ? queued ? 'asynchronous checkout has no verified completion receipt'

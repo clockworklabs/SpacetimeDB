@@ -207,6 +207,97 @@ export function orderCheckoutWithAddDifferences(before: CheckoutState, prepared:
     ...differences.map(row => ({ ...row, control: `checkout first: ${row.control}` }))] : [];
 }
 
+export type OrderOperation =
+  | { kind: 'buy'; itemId: string }
+  | { kind: 'cart'; itemId: string; quantity: number }
+  | { kind: 'checkout' | 'reconnect' }
+  | { kind: 'cancel'; orderId: string }
+  | { kind: 'restock'; itemId: string; warehouseId: string; quantity: number }
+  | { kind: 'transfer'; itemId: string; fromWarehouseId: string; toWarehouseId: string; quantity: number };
+
+// A quiescent step in a history, not a concurrency solver. Each accepted write
+// starts from the preceding verified state. The runner retains both snapshots
+// and the request receipt in the existing action evidence.
+export function orderOperationDifferences(before: CheckoutState, after: CheckoutState, operation: OrderOperation,
+  catalog: readonly { itemId: string; priceMinor: number }[]) {
+  for (const state of [before, after]) orderCheckoutStateSchema.parse(state);
+  const changed = (control: string) => [{ control, observed: 0, expected: 1 }];
+  if (!isDeepStrictEqual([before.accountId, before.itemId, before.priceMinor], [after.accountId, after.itemId, after.priceMinor])) {
+    return changed('history snapshot identity');
+  }
+  const price = (itemId: string) => {
+    const matches = catalog.filter(row => row.itemId === itemId);
+    if (matches.length !== 1 || !Number.isSafeInteger(matches[0]!.priceMinor) || matches[0]!.priceMinor < 0) {
+      throw new Error('history requires one exact catalog price per item');
+    }
+    return matches[0]!.priceMinor;
+  };
+  if (operation.kind === 'buy') {
+    const selected = (state: CheckoutState) => ({ ...state, itemId: operation.itemId, priceMinor: price(operation.itemId) });
+    return orderPurchaseDifferences(selected(before), selected(after), new Map([[before.accountId, 1]]), new Map());
+  }
+  if (operation.kind === 'checkout') {
+    const empty = structuredClone(before); empty.cart = []; empty.reservations = [];
+    for (const reservation of before.reservations) {
+      const row = empty.stock.find(row => stockItem(empty, row) === reservation.itemId && row.warehouseId === reservation.warehouseId);
+      if (!row) throw new Error('history cart reservation has no stock row');
+      row.quantity = integer.parse(row.quantity + reservation.quantity);
+    }
+    return orderCheckoutDifferences(empty, before, after,
+      before.cart.map(line => ({ ...line, priceMinor: price(line.itemId) })));
+  }
+  const expected = structuredClone(before);
+  const stock = (itemId: string, warehouseId: string) => {
+    const matches = expected.stock.filter(row => stockItem(expected, row) === itemId && row.warehouseId === warehouseId);
+    if (matches.length !== 1) throw new Error('history requires one stock row per item and warehouse');
+    return matches[0]!;
+  };
+  const adjust = (itemId: string, warehouseId: string, quantity: number) => {
+    const row = stock(itemId, warehouseId); row.quantity = integer.parse(row.quantity + quantity);
+  };
+  if (operation.kind === 'cart') {
+    if (!Number.isSafeInteger(operation.quantity) || operation.quantity < 0) throw new Error('invalid history cart quantity');
+    price(operation.itemId);
+    expected.cart = expected.cart.filter(row => row.itemId !== operation.itemId);
+    if (operation.quantity) expected.cart.push({ itemId: operation.itemId, quantity: operation.quantity });
+    // Stock holds are optional. They may move, but must be fully explained by
+    // this account's cart, and cannot consume stock for an absent cart line.
+    for (const row of after.reservations) {
+      const line = expected.cart.find(line => line.itemId === row.itemId);
+      if (!line || row.quantity <= 0 || !before.stock.some(s => stockItem(before, s) === row.itemId && s.warehouseId === row.warehouseId)
+        || after.reservations.filter(r => r.itemId === row.itemId)
+        .reduce((sum, r) => sum + r.quantity, 0) > line.quantity) return changed('history cart reservation quantity');
+    }
+    for (const row of before.reservations) adjust(row.itemId, row.warehouseId, row.quantity);
+    for (const row of after.reservations) adjust(row.itemId, row.warehouseId, -row.quantity);
+    expected.reservations = structuredClone(after.reservations);
+  } else if (operation.kind === 'cancel') {
+    const order = expected.orders.find(row => row.id === operation.orderId);
+    if (!order || order.accountId !== before.accountId || !['pending', 'cancelled'].includes(order.status)) {
+      throw new Error('history cancellation requires an owned pending or cancelled order');
+    }
+    if (order.status === 'pending') {
+      order.status = 'cancelled'; order.refundedMinor = order.totalMinor;
+      for (const line of order.lines) for (const allocation of line.allocations) {
+        adjust(line.itemId, allocation.warehouseId, allocation.quantity);
+      }
+    }
+  } else if (operation.kind === 'restock' || operation.kind === 'transfer') {
+    if (!Number.isSafeInteger(operation.quantity) || operation.quantity <= 0) throw new Error('invalid history stock quantity');
+    if (operation.kind === 'restock') adjust(operation.itemId, operation.warehouseId, operation.quantity);
+    else {
+      if (operation.fromWarehouseId === operation.toWarehouseId) throw new Error('history transfer needs two warehouses');
+      adjust(operation.itemId, operation.fromWarehouseId, -operation.quantity);
+      adjust(operation.itemId, operation.toWarehouseId, operation.quantity);
+    }
+  }
+  if (after.stock.some(row => row.quantity < 0)) return changed('history negative stock');
+  const wanted = normalized(expected), observed = normalized(after);
+  return (Object.keys(wanted) as Array<keyof CheckoutState>)
+    .filter(key => !isDeepStrictEqual(observed[key], wanted[key]))
+    .flatMap(key => changed(`history ${operation.kind}: ${key}`));
+}
+
 // Separate the interrupted transaction from history that was already committed.
 // Durability adds only the requirement introduced by an acknowledgement; a
 // malformed new order remains an atomicity failure even when acknowledged.

@@ -22,6 +22,7 @@
             { "do": "expectCrashCheckout", "from": "crash", "verdict": "atomicity" },
             { "do": "dbRecordCheckout", "account": "a", "item": "Keyboard", "as": "before" },
             { "do": "dbExpectCheckout", "before": "before", "prepared": "prepared", "quantity": 1 },
+            { "do": "dbExpectOperation", "before": "before", "otherBefore": "other", "actor": "a", "operation": "buy" },
             { "do": "dbExpectCancellation", "before": "before" },
             { "do": "dbExpectPurchases", "before": {"a":"before"}, "purchases": 1 },
             { "do": "dbExpectNoPurchase", "before": "before" },

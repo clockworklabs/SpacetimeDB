@@ -1,9 +1,10 @@
 import { execFileSync } from 'node:child_process';
+import { evidenceNowMs } from '../evidence/evidence-timing.js';
 import { resolveOrderDataStorage, type OrderDataSelection, type OrderDataStorage } from '../stacks/order-data.js';
 
 import { ActionApplicationFailure, ActionInconclusive, actionImplementation } from './action-contract.js';
 import { finding, isFinding, renderFinding } from './action-findings.js';
-import { checkoutDifferences, orderCheckoutDifferences, orderCheckoutWithAddDifferences, cancellationDifferences, orderCancellationDifferences,
+import { checkoutDifferences, orderCheckoutDifferences, orderCheckoutWithAddDifferences, orderOperationDifferences, type OrderOperation, cancellationDifferences, orderCancellationDifferences,
   purchaseDifferences, orderPurchaseDifferences, checkoutId } from '../stacks/checkout-state.js';
 import { getSavedPostgresCheckoutState } from '../stacks/backends/saved-postgres-checkout.js';
 import { getSavedMongoDbCheckoutState } from '../stacks/backends/saved-mongodb-checkout.js';
@@ -195,7 +196,7 @@ async function dbRecordStock({ input, capabilities }: ActionArguments<ReadStockI
 
 async function dbRecordCheckout({ input, capabilities }: ActionArguments<{ account: string; item: string; as: string; storage?: OrderDataSelection }>) {
   const database = capabilities['database-read'];
-  const snapshot = { ...database.getCheckoutState(input), recordedAtMs: Date.now() };
+  const snapshot = { ...database.getCheckoutState(input), recordedAtMs: evidenceNowMs() };
   if (snapshot.storage?.warehouses !== false && !snapshot.state.stock.length) inconclusive('invalid-input', { detail: 'checkout setup requires known stock warehouses' });
   database.checkoutSnapshots.set(input.as, { ...snapshot, account: input.account, item: input.item });
   return { ...snapshot, key: input.as };
@@ -254,6 +255,76 @@ async function dbExpectCheckout({ input, capabilities }: ActionArguments<{ befor
     ? orderPurchaseDifferences(prepared.state, after.state, new Map([[before.state.accountId, 0]]), new Map(), before.storage?.warehouses ?? true)
     : purchaseDifferences(prepared.state, after.state, new Map([[before.state.accountId, 0]]), new Map())));
   const observation = { ...after, differences, before: input.before, prepared: input.prepared, ...(response ? { response } : {}) };
+  if (differences[0]) {
+    const { control, observed, expected } = differences[0];
+    const value = finding('number-mismatch', { control, observed, expected: { equals: expected } });
+    throw new ActionApplicationFailure(renderFinding(value), { finding: value, observation });
+  }
+  return observation;
+}
+
+async function dbExpectOperation({ input, capabilities }: ActionArguments<{
+  before: string; otherBefore: string; actor: string;
+  operation: 'buy' | 'cart-add' | 'cart-update' | 'checkout' | 'cancel' | 'restock' | 'transfer' | 'reconnect';
+}>) {
+  const database = capabilities['database-read'];
+  const before = database.checkoutSnapshots.get(input.before), otherBefore = database.checkoutSnapshots.get(input.otherBefore);
+  if (!before || !otherBefore) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
+  if (before.state.accountId === otherBefore.state.accountId) throw new Error('history needs two distinct customer accounts');
+  const after = database.getCheckoutState(before), otherAfter = database.getCheckoutState(otherBefore);
+  const catalog = (snapshot: CheckoutSnapshot) => JSON.stringify(snapshot.catalog?.toSorted((a, b) => a.itemId.localeCompare(b.itemId)));
+  for (const snapshot of [before, otherBefore, after, otherAfter]) {
+    if (snapshot.scope !== 'orders' || !snapshot.storage?.cart || !snapshot.storage.warehouses || !snapshot.catalog) {
+      throw new Error('history requires native order, cart and warehouse observations');
+    }
+    if (JSON.stringify(snapshot.schemaSha256) !== JSON.stringify(before.schemaSha256)) throw new Error('history reader schema changed');
+    if (catalog(snapshot) !== catalog(before)) fail('interface-invalid', { action: 'read orders', attribute: 'item', detail: 'operation changed the catalog' });
+  }
+  for (const [primary, peer] of [[before, otherBefore], [after, otherAfter]] as const) {
+    const shared = { ...primary.state, accountId: peer.state.accountId, itemId: peer.state.itemId,
+      priceMinor: peer.state.priceMinor, cart: peer.state.cart, reservations: peer.state.reservations };
+    if (orderOperationDifferences(shared, peer.state, { kind: 'reconnect' }, before.catalog!).length) {
+      const value = finding('invalid-input', { detail: 'history reads did not capture one quiescent shared state' });
+      throw new ActionInconclusive(renderFinding(value), { finding: value, observation: { before, otherBefore, after, otherAfter } });
+    }
+  }
+  const history = input.operation === 'reconnect' ? undefined : capabilities['named-actions'].lastCalls.get();
+  const call = history?.outcomes[0];
+  if (input.operation !== 'reconnect' && (!history || !call)) inconclusive('assertion-without-action', { action: 'callConcurrently' });
+  if (history && (history.fired !== 1 || history.outcomes.length !== 1 || call!.name !== input.actor || call!.action !== input.operation)) {
+    throw new Error('history comparison requires the matching single operation');
+  }
+  if (call && (call.complete !== true || !call.status || call.status === 202)) inconclusive('transport-incomplete', {});
+  if (call && (!before.recordedAtMs || !otherBefore.recordedAtMs || !call.startedAtMs || !call.completedAtMs
+    || call.startedAtMs < Math.max(before.recordedAtMs, otherBefore.recordedAtMs) || call.completedAtMs < call.startedAtMs)) {
+    inconclusive('invalid-input', { detail: 'history response is missing timing or predates the snapshots' });
+  }
+  const values = call?.values;
+  const quantity = () => {
+    if (typeof values?.quantity !== 'number' || !Number.isSafeInteger(values.quantity)) throw new Error('history request has no exact quantity');
+    return values.quantity;
+  };
+  let operation: OrderOperation;
+  switch (input.operation) {
+    case 'buy': operation = { kind: 'buy', itemId: checkoutId(values?.itemId) }; break;
+    case 'cart-add': case 'cart-update': {
+      const itemId = checkoutId(values?.itemId);
+      operation = { kind: 'cart', itemId, quantity: input.operation === 'cart-update' ? quantity()
+        : (before.state.cart.find(row => row.itemId === itemId)?.quantity ?? 0) + 1 };
+      if (input.operation === 'cart-add' && values?.quantity !== undefined && values.quantity !== 1) throw new Error('history add uses one unit');
+      break;
+    }
+    case 'cancel': operation = { kind: 'cancel', orderId: checkoutId(values?.orderId) }; break;
+    case 'restock': operation = { kind: 'restock', itemId: checkoutId(values?.itemId), warehouseId: checkoutId(values?.warehouseId), quantity: quantity() }; break;
+    case 'transfer': operation = { kind: 'transfer', itemId: checkoutId(values?.itemId), fromWarehouseId: checkoutId(values?.fromWarehouseId), toWarehouseId: checkoutId(values?.toWarehouseId), quantity: quantity() }; break;
+    default: operation = { kind: input.operation };
+  }
+  const differences = orderOperationDifferences(before.state, after.state, operation, before.catalog!);
+  differences.push(...orderOperationDifferences({ ...otherBefore.state, stock: after.state.stock, orders: after.state.orders },
+    otherAfter.state, { kind: 'reconnect' }, before.catalog!).map(row => ({ ...row, control: `other customer: ${row.control}` })));
+  const alreadyCancelled = operation.kind === 'cancel' && before.state.orders.some(row => row.id === operation.orderId && row.status === 'cancelled');
+  if (call && !call.ok && !alreadyCancelled) differences.push({ control: 'valid history operation accepted', observed: 0, expected: 1 });
+  const observation = { before: input.before, otherBefore: input.otherBefore, operation, call, after, otherAfter, differences };
   if (differences[0]) {
     const { control, observed, expected } = differences[0];
     const value = finding('number-mismatch', { control, observed, expected: { equals: expected } });
@@ -833,6 +904,7 @@ function contractBrowserLifecycleAction<Input, Result>(
 export const RUNTIME_ACTION_IMPLEMENTATIONS = Object.freeze({
   dbRecordCheckout: contractLifecycleAction(dbRecordCheckout),
   dbExpectCheckout: contractLifecycleAction(dbExpectCheckout),
+  dbExpectOperation: contractLifecycleAction(dbExpectOperation),
   dbExpectCancellation: contractLifecycleAction(dbExpectCancellation),
   dbExpectNoPurchase: contractLifecycleAction(dbExpectNoPurchase),
   dbExpectPurchase: contractLifecycleAction(dbExpectPurchase),
