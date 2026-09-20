@@ -3210,6 +3210,46 @@
           "replace": "const valid = !!account && sameHash(digest, account.passwordHash) && false;"
         }
       ]
+    },
+    {
+      "id": "signout-keeps-session",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-session.json",
+      "targets": [
+        "ecommerce.spec.access-control.purchase-session.101a"
+      ],
+      "desc": "Show a signed-out interface while retaining the browser credential and its purchase authority.",
+      "edits": [
+        {
+          "file": "client/src/components/AuthWidget.tsx",
+          "find": "  const [error, setError] = useState(readAuthError);",
+          "replace": "  const [error, setError] = useState(readAuthError);\n  const [signedOut, setSignedOut] = useState(false);"
+        },
+        {
+          "file": "client/src/components/AuthWidget.tsx",
+          "find": "    await connection.reducers.signOut({});\n    clearToken(); location.reload();",
+          "replace": "    setSignedOut(true); // mutant: hide the account without removing its authority"
+        },
+        {
+          "file": "client/src/components/AuthWidget.tsx",
+          "find": "    {currentUsername ? <>",
+          "replace": "    {currentUsername && !signedOut ? <>"
+        }
+      ]
+    },
+    {
+      "id": "purchase-session-rejects-returning-login",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-session.json",
+      "targets": [
+        "ecommerce.spec.access-control.purchase-session.101a"
+      ],
+      "desc": "Refuse every returning login; blocking all access after logout must not pass the session check.",
+      "file": "backend/spacetimedb/src/auth.ts",
+      "edits": [
+        {
+          "find": "const valid = !!account && sameHash(digest, account.passwordHash);",
+          "replace": "const valid = !!account && sameHash(digest, account.passwordHash) && false;"
+        }
+      ]
     }
   ]
 }

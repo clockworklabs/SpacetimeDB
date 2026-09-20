@@ -168,7 +168,7 @@ export async function browserCredentials(actor: Actor, targetUrl: string, allowA
   const headers = capturedCredentials(actor, targetUrl);
   const cookies = await actor.context.cookies(targetUrl);
   if (cookies.length) headers.Cookie = cookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
-  if (Object.keys(headers).some(key => AUTH_HEADER.test(key))) return headers;
+  const hasCapturedAuth = Object.keys(headers).some(key => AUTH_HEADER.test(key));
   const tokens = await actor.page.evaluate(() => {
     try {
       const getToken = typeof window === 'undefined' ? undefined : window.getSessionToken;
@@ -176,7 +176,7 @@ export async function browserCredentials(actor: Actor, targetUrl: string, allowA
         if (typeof getToken !== 'function') return { unavailable: 'getSessionToken is not a function' };
         const token = getToken.call(window);
         if (token === null) return { signedOut: true };
-        return typeof token === 'string' && token.trim() && !/[\r\n]/.test(token) ? [token]
+        return typeof token === 'string' && token.trim() && !/[\r\n]/.test(token) ? { currentToken: token }
           : { unavailable: 'getSessionToken did not return a nonempty, valid bearer token or null' };
       }
     } catch { return { unavailable: 'getSessionToken could not be read' }; }
@@ -205,6 +205,14 @@ export async function browserCredentials(actor: Actor, targetUrl: string, allowA
     }
     return [...found];
   });
+  // A live bearer hook supersedes captured credentials after logout or account changes.
+  if (tokens && !Array.isArray(tokens)) {
+    for (const key of Object.keys(headers)) if (AUTH_HEADER.test(key)) delete headers[key];
+    if ('currentToken' in tokens) {
+      headers.Authorization = `Bearer ${tokens.currentToken}`;
+      return headers;
+    }
+  } else if (hasCapturedAuth) return headers;
   if (tokens && !Array.isArray(tokens) && 'signedOut' in tokens) {
     if (!cookies.length && !allowAnonymous) {
       inconclusive('replay-unavailable', { actor: actor.name, detail: 'getSessionToken returned no active session token' });

@@ -2213,6 +2213,46 @@
         "ecommerce.spec.access-control.account-disclosure.110a"
       ],
       "desc": "Reject every valid login; absent disclosures alone must not earn a pass."
+    },
+    {
+      "id": "signout-keeps-session",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-session.json",
+      "targets": [
+        "ecommerce.spec.access-control.purchase-session.101a"
+      ],
+      "desc": "Show a signed-out interface while retaining the browser credential and its purchase authority.",
+      "edits": [
+        {
+          "file": "client/src/App.tsx",
+          "find": "  const clearSession = () => {\n    localStorage.removeItem(TOKEN_KEY);",
+          "replace": "  const clearSession = () => {\n    // mutant: retain the current request token after signout"
+        },
+        {
+          "file": "client/src/App.tsx",
+          "find": "    await signOut();\n    clearSession();",
+          "replace": "    clearSession(); // mutant: hide the account without removing server authority"
+        },
+        {
+          "file": "client/src/App.tsx",
+          "find": "          {currentUser ? (",
+          "replace": "          {currentUser && token ? ("
+        }
+      ]
+    },
+    {
+      "edits": [
+        {
+          "file": "convex/auth.js",
+          "find": "verifySecret: (password, hash) => new Scrypt().verify(hash, password),",
+          "replace": "verifySecret: (_password, _hash) => false,"
+        }
+      ],
+      "id": "purchase-session-rejects-returning-login",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-session.json",
+      "targets": [
+        "ecommerce.spec.access-control.purchase-session.101a"
+      ],
+      "desc": "Refuse every returning login; blocking all access after logout must not pass the session check."
     }
   ]
 }

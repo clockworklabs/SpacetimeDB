@@ -4,6 +4,8 @@ import { once } from 'node:events';
 import test from 'node:test';
 import { chromium } from 'playwright';
 import { crossOriginPost } from '../src/actions/cross-origin-request.js';
+import { ActionInconclusive } from '../src/actions/action-contract.js';
+import { isFinding } from '../src/actions/action-findings.js';
 
 test('real browser origin probes expose cookie writes despite opaque responses and keep missing responses unmeasured', async () => {
   let protectOrigin = true, writes = 0;
@@ -36,7 +38,9 @@ test('real browser origin probes expose cookie writes despite opaque responses a
     const crossSite = await crossOriginPost(context, { url }, 'cross-site', signal);
     assert.equal(crossSite.cookieSent, false); assert.equal(writes, 1);
     await assert.rejects(crossOriginPost(context, { url: url.replace('/buy', '/lost') }, 'same-site', signal),
-      /complete browser request and response/);
+      (error: unknown) => error instanceof ActionInconclusive
+        && isFinding(error.details.finding) && error.details.finding.kind === 'replay-unavailable'
+        && /complete browser request and response/.test(String(error.details.finding.fields.detail)));
     assert.equal(context.pages().length, 0);
     assert(observed.every(r => r.authorization === undefined));
     assert(!JSON.stringify({ safe, unsafe, crossSite }).includes('private-session'));

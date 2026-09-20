@@ -60,6 +60,8 @@ function services(
     const actor = record(value);
     actor.record ??= () => {};
     actor.context ??= { cookies: async () => [] };
+    actor.page ??= {};
+    record(actor.page).evaluate ??= async () => [];
     for (const write of (actor.writes ?? []) as UnknownRecord[]) {
       write.url ??= `${overrides.backend === 'spacetime' ? overrides.spacetime?.uri : 'http://app.test'}/api/session`;
     }
@@ -172,6 +174,31 @@ test('optional actor credentials preserve illicit sessions without excusing brok
   }
 });
 
+test('live session hooks override captured credentials after signout and account changes', async () => {
+  for (const current of [null, 'current-session', 'broken', 'no-hook']) {
+    let calls = 0;
+    const actor = { name: 'buyer', writes: [{ url: 'http://app.test/buy', headers: {
+      authorization: 'Bearer old-session', 'x-csrf-token': 'current-context',
+    } }], context: { cookies: async () => [] }, page: {
+      evaluate: async (callback: () => unknown) =>
+        runInNewContext(`(${callback.toString()})()`, { localStorage: { length: 0 }, sessionStorage: { length: 0 }, window: current === 'no-hook' ? {} : {
+          getSessionToken: () => { if (current === 'broken') throw new Error('broken hook'); return current; },
+        } }),
+    } };
+    const provided = services(new Map([['buyer', actor]]), { fetchImpl: async (_url, options) => {
+      calls++;
+      assert.equal(options.headers?.['x-csrf-token'], 'current-context');
+      assert.equal(options.headers?.Authorization ?? options.headers?.authorization,
+        current === null ? undefined : `Bearer ${current === 'no-hook' ? 'old-session' : current}`);
+      return namedResponse(401, false);
+    } });
+    const result = await run({ do: 'callAction', actor: 'buyer', action: 'buy', authentication: 'optional', settleMs: 0,
+      namedAction: { id: 'buy', path: '/buy', reducer: 'buy_now', args: [] } }, provided);
+    assert.equal(result.status, current === 'broken' ? 'inconclusive' : 'passed', JSON.stringify(result));
+    assert.equal(calls, current === 'broken' ? 0 : 1);
+  }
+});
+
 test('session tampering reaches the server, preserves context, requires a valid matching control and restores access', async () => {
   const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.ABCD1234';
   const credentials: Record<string, string>[] = [{ Authorization: `Bearer ${jwt}` }, { Cookie: 'sid=0123456789abcdef' }];
@@ -277,7 +304,7 @@ test('mixed credentials need a measured isolated control; cookie and CSRF depend
         const headers: Record<string, string> = { Origin: 'http://app.test', 'x-csrf-token': 'unchanged-context' };
         if (mode !== 'cookie-only') headers.Authorization = `Bearer ${credentials.token}`;
         const actor = { name: 'buyer', writes: [{ url: 'http://app.test/buy', headers }],
-          context: { cookies: async () => cookies }, page: { evaluate: async () => ({ signedOut: true }) } };
+          context: { cookies: async () => cookies }, page: { evaluate: async () => [] } };
         const provided = services(new Map([['buyer', actor]]), { fetchImpl: (_url, options) => fetch(`${url}/buy`, options) });
         const input = { do: 'callAction', actor: 'buyer', action: 'buy', settleMs: 0,
           namedAction: { id: 'buy', path: '/buy', reducer: 'buy_now', args: [] } };

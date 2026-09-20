@@ -1,5 +1,5 @@
 import type { BrowserContext, Request, Response } from 'playwright';
-import { ActionInconclusive } from './action-contract.js';
+import { inconclusive } from './actor-action-runtime.js';
 
 // Use a real browser and its cookie policy. Never copy the victim's headers,
 // storage or token into the attacker page. Stored-effect checks own the verdict.
@@ -58,10 +58,10 @@ export async function crossOriginPost(context: Pick<BrowserContext, 'newPage' | 
     // reply and observed headers prove delivery; stored effects own the verdict.
     if (!('type' in browserResult) || browserResult.type !== 'opaque' || !sent || !response
       || sent.redirectedTo()) {
-      throw new ActionInconclusive(`Cross-origin POST did not retain a complete browser request and response: ${JSON.stringify({
+      inconclusive('replay-unavailable', { actor: 'cross-origin browser', detail: `Cross-origin POST did not retain a complete browser request and response: ${JSON.stringify({
         browserResult, requestObserved: Boolean(sent), responseObserved: Boolean(response),
         requestFailure, errors,
-      })}`);
+      })}` });
     }
     const headers = await sent.allHeaders();
     if (headers.origin !== origin.origin || headers.authorization) {

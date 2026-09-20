@@ -3389,6 +3389,36 @@
           "replace": "return false && crypto.timingSafeEqual"
         }
       ]
+    },
+    {
+      "id": "signout-keeps-session",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-session.json",
+      "targets": [
+        "ecommerce.spec.access-control.purchase-session.101a"
+      ],
+      "desc": "Show a signed-out interface while retaining the browser credential and its purchase authority.",
+      "edits": [
+        {
+          "file": "client/src/App.tsx",
+          "find": "      await api(\"/api/auth/signout\", { method: \"POST\" });",
+          "replace": "      // mutant: clear the UI but retain the valid session cookie"
+        }
+      ]
+    },
+    {
+      "id": "purchase-session-rejects-returning-login",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-session.json",
+      "targets": [
+        "ecommerce.spec.access-control.purchase-session.101a"
+      ],
+      "desc": "Refuse every returning login; blocking all access after logout must not pass the session check.",
+      "file": "server/src/auth.ts",
+      "edits": [
+        {
+          "find": "return crypto.timingSafeEqual",
+          "replace": "return false && crypto.timingSafeEqual"
+        }
+      ]
     }
   ]
 }
