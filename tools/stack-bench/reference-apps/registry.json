@@ -27,7 +27,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/mongodb",
-        "sourceSha256": "4d107178373d1a1b68e89c0e7d25c7821ace925a67a0694976fe6abf8a0e685d"
+        "sourceSha256": "bdf8cf5801e88984c160dd6efaab1e0a751a28382d5ab505ae05387fd14540fd"
       },
       "mutationManifests": [
         "grader/mutations/mongodb-ecommerce.json"
@@ -59,7 +59,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/postgres",
-        "sourceSha256": "bf1d3baf7228db0584968fdef82c79e35f3d7bdc845b359a32206f445dd5d699"
+        "sourceSha256": "d7c162ae456010e5d3b334ac839c445ff5c9c889d83bbc94b9d840b0042534a5"
       },
       "mutationManifests": [
         "grader/mutations/postgres-ecommerce.json"
@@ -91,7 +91,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/spacetime",
-        "sourceSha256": "0126dfb2cb94547f985a2d73128914d59f3ed751727503076f34aa06455017e0"
+        "sourceSha256": "bfe2d180ce0f62cf667c5a067d47c90ed28fb2478ef0cd315c9f9e0fc14ad67c"
       },
       "mutationManifests": [
         "grader/mutations/spacetime-ecommerce.json"
@@ -117,7 +117,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/convex",
-        "sourceSha256": "55a4c6d291bd6e4a83ab4330609739f23ecd16affe7aee60805eeb848b46c80c"
+        "sourceSha256": "b1c9a86c8a39d4127db9256c81b336c7a689c6ed8d10cada082f56d14e5e685b"
       },
       "mutationManifests": [
         "grader/mutations/convex-ecommerce.json"

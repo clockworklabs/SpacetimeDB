@@ -324,7 +324,7 @@ async function dbExpectOperation({ input, capabilities }: ActionArguments<{
     otherAfter.state, { kind: 'reconnect' }, before.catalog!).map(row => ({ ...row, control: `other customer: ${row.control}` })));
   const alreadyCancelled = operation.kind === 'cancel' && before.state.orders.some(row => row.id === operation.orderId && row.status === 'cancelled');
   if (call && !call.ok && !alreadyCancelled) differences.push({ control: 'valid history operation accepted', observed: 0, expected: 1 });
-  const observation = { before: input.before, otherBefore: input.otherBefore, operation, call, after, otherAfter, differences };
+  const observation = { before: input.before, otherBefore: input.otherBefore, operation, ...(call ? { call } : {}), after, otherAfter, differences };
   if (differences[0]) {
     const { control, observed, expected } = differences[0];
     const value = finding('number-mismatch', { control, observed, expected: { equals: expected } });

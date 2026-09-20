@@ -793,7 +793,7 @@ function CartLineRow({
 
   return (
     <div className="cart-item" data-role="cart-item"
-      data-cart-input={JSON.stringify({ itemId: line.itemId, quantity: -3 })}>
+      data-cart-input={JSON.stringify({ itemId: line.itemId })}>
       <span className="cart-item-name">{line.name}</span>
       <input
         type="number"

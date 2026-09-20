@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "55a4c6d291bd6e4a83ab4330609739f23ecd16affe7aee60805eeb848b46c80c",
+  "fixtureSha256": "b1c9a86c8a39d4127db9256c81b336c7a689c6ed8d10cada082f56d14e5e685b",
   "backend": "convex",
   "track": "ecommerce",
   "note": "Native Convex selected-L3 defect controls. Authored coverage is not qualification; every baseline and mutant requires execution against this exact source hash. Recovery controls use real native reconnect callbacks and writes.",

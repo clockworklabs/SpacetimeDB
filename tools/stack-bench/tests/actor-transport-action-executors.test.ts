@@ -5,6 +5,7 @@ import { once } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
@@ -397,6 +398,32 @@ test('one named server action maps DOM input symmetrically and verifies its outc
   assert.deepEqual(provided.verification.map(([kind]) => kind), ['verified']);
 });
 
+test('reference cart identifiers allow both positive and negative scenario quantities on the actual action path', async () => {
+  for (const backend of ['postgres', 'mongodb', 'spacetime', 'convex']) {
+    const file = backend === 'spacetime' ? 'client/src/components/CartPanel.tsx' : 'client/src/App.tsx';
+    const source = readFileSync(join(STACK_BENCH_ROOT, 'reference-apps/ecommerce', backend, file), 'utf8');
+    const expressions = [...source.matchAll(/data-cart-input=\{JSON.stringify\((\{[^}]+\})\)\}/g)];
+    assert.equal(expressions.length, 1);
+    const input = JSON.stringify(runInNewContext(`(${expressions[0]![1]})`, { line: { itemId: '17' } }));
+    assert.deepEqual(JSON.parse(input), { itemId: '17' });
+    for (const quantity of [-3, 4]) for (const doAction of ['callAction', 'callConcurrently']) {
+      let sent = false;
+      const customer = { name: 'customer', writes: [{ headers: { authorization: 'Bearer test' } }],
+        loc: () => ({ waitFor: async () => {}, getAttribute: async () => input }) };
+      const provided = services(new Map([['customer', customer]]), { fetchImpl: async (_url, options) => {
+        sent = true; assert.deepEqual(JSON.parse(String(options.body)), { quantity });
+        return namedResponse(200, true);
+      } });
+      const result = await run({ do: doAction, ...(doAction === 'callAction' ? { actor: 'customer' } : { actors: ['customer'], requests: 1 }), action: 'cart-update',
+        namedAction: { id: 'cart-update', path: '/api/cart/:itemId', method: 'PATCH', reducer: 'update_cart_quantity', args: [0, quantity],
+          params: [{ name: 'itemId', in: 'path', placeholder: ':itemId' }, { name: 'quantity', in: 'body' }] },
+        input: { testid: 'cart-item', attribute: 'data-cart-input' }, settleMs: 0,
+      }, provided);
+      assert.equal(result.status, 'passed', `${backend} ${doAction}: ${JSON.stringify(result)}`); assert(sent);
+    }
+  }
+});
+
 test('named action input uses declared defaults and a missing route is not mistaken for a refusal', async () => {
   const actor = (input: UnknownRecord) => ({
     name: 'customer',
@@ -591,7 +618,8 @@ test('fixed checkout price claims reach the native transport without inventing a
   const steps = scenario.features[0].criteria.find((c: UnknownRecord) => c.id === '4d').steps as UnknownRecord[];
   const call = steps.find(step => step.do === 'callAction')!;
   assert(steps.findIndex(step => step.do === 'dbExpectCheckout') < steps.indexOf(call));
-  assert.equal(steps.at(-1)!.actor, 'checkout');
+  assert.equal(steps[steps.indexOf(call) + 2]!.do, 'dbExpectCheckout');
+  assert.equal(steps[steps.indexOf(call) + 2]!.actor, 'checkout');
   for (const backend of ['postgres', 'mongodb', 'spacetime']) {
     const requests: string[] = [];
     const provided = services(new Map([['checkout', { name: 'checkout',

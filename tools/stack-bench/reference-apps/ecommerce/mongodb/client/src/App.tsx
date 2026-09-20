@@ -1039,7 +1039,7 @@ function CartLineRow({
 
   return (
     <div className="cart-item" data-role="cart-item"
-      data-cart-input={JSON.stringify({ itemId: line.itemId, quantity: -3 })}>
+      data-cart-input={JSON.stringify({ itemId: line.itemId })}>
       <span className="cart-item-name">{line.name}</span>
       <span data-role="cart-reservation-timer">{line.reservationSeconds || 0}</span>
       {line.expired && <span data-role="cart-item-expired">Expired</span>}

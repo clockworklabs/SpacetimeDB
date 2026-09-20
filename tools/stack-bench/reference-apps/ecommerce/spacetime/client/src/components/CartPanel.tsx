@@ -91,7 +91,7 @@ export default function CartPanel({
             <div
               className="cart-item"
               data-role="cart-item"
-              data-cart-input={JSON.stringify({ itemId: line.itemId.toString(), quantity: -3 })}
+              data-cart-input={JSON.stringify({ itemId: line.itemId.toString() })}
               key={String(line.itemId)}
             >
               <div className="cart-item-info">

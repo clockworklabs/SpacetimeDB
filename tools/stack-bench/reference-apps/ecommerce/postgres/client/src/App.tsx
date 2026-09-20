@@ -986,7 +986,7 @@ function CartPanel(props: {
         <div className="stack">
           {cart.items.map((line) => (
             <div className="cart-item" data-role="cart-item"
-              data-cart-input={JSON.stringify({ itemId: line.itemId, quantity: -3 })} key={line.itemId}>
+              data-cart-input={JSON.stringify({ itemId: line.itemId })} key={line.itemId}>
               <div className="cart-item-top">
                 <span className="item-name">{line.name}</span>
                 <span>{money(line.lineTotal)}</span>

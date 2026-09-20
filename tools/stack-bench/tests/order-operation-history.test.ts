@@ -1,11 +1,38 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { orderOperationDifferences, type CheckoutState, type OrderOperation } from '../src/stacks/checkout-state.js';
 import { executeAction } from '../src/actions/action-contract.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { createDatabaseReadCapability } from '../src/actions/runtime-action-executors.js';
 
 const catalog = [{ itemId: 'i', priceMinor: 200 }, { itemId: 'j', priceMinor: 300 }];
+test('live history schedules bind every operation to two fresh native snapshots without scored points', () => {
+  const scenario = compileScenarioDefinition(JSON.parse(readFileSync(join(STACK_BENCH_ROOT,
+    'tracks/ecommerce/scenarios/diagnostic-mixed-history.json'), 'utf8')));
+  assert.equal(scenario.features.length, 3);
+  for (const feature of scenario.features) {
+    const steps = feature.criteria[0]!.steps;
+    assert.equal(feature.criteria[0]!.points, 0);
+    const comparisons = steps.filter(step => step.do === 'dbExpectOperation');
+    assert.equal(comparisons.length, 30);
+    assert.equal(new Set(comparisons.map(step => step.before)).size, 30);
+    assert.deepEqual([...new Set(comparisons.map(step => step.operation))].sort(),
+      ['buy', 'cancel', 'cart-add', 'cart-update', 'checkout', 'reconnect', 'restock', 'transfer']);
+    for (const comparison of comparisons) {
+      const at = steps.indexOf(comparison), reconnect = comparison.operation === 'reconnect';
+      const offset = reconnect ? 4 : 3;
+      assert.deepEqual(steps.slice(at - offset, at - offset + 2).map(step => [step.do, step.as]),
+        [['dbRecordCheckout', comparison.before], ['dbRecordCheckout', comparison.otherBefore]]);
+      const call = steps[at - (reconnect ? 2 : 1)]!;
+      assert.equal(call.do, reconnect ? 'reload' : 'callConcurrently');
+      if (!reconnect) { assert.equal(call.action, comparison.operation); assert.equal(call.requests, 1); }
+    }
+  }
+});
 function initial(): CheckoutState {
   return { accountId: 'a', itemId: 'i', priceMinor: 200, cart: [], reservations: [], orders: [], payments: [],
     orphanOrderLines: 0, orphanAllocations: 0,
@@ -113,10 +140,10 @@ test('history action binds complete fresh requests and keeps both customer snaps
     }, { capabilities: {} });
     assert.equal(invalid.status, 'harness_failure'); assert.equal(invalid.code, 'invalid_input');
   }
-  for (const mode of ['valid', 'ignored', 'other-cart', 'other-hold', 'divergent-reads', 'catalog-change', 'incomplete', 'stale', 'refused', 'wrong-action', 'missing', 'reader-error']) {
+  for (const mode of ['valid', 'reconnect', 'ignored', 'other-cart', 'other-hold', 'divergent-reads', 'catalog-change', 'incomplete', 'stale', 'refused', 'wrong-action', 'missing', 'reader-error']) {
     const before = initial(), other = initial(); other.accountId = 'b';
     const after = initial(), otherAfter = structuredClone(other);
-    if (!['ignored', 'refused'].includes(mode)) after.cart = [{ itemId: 'j', quantity: 1 }];
+    if (!['ignored', 'refused', 'reconnect'].includes(mode)) after.cart = [{ itemId: 'j', quantity: 1 }];
     if (mode === 'other-cart') otherAfter.cart = [{ itemId: 'j', quantity: 1 }];
     if (mode === 'other-hold') otherAfter.reservations = [{ itemId: 'j', warehouseId: 'E', quantity: 1 }];
     if (mode === 'divergent-reads') otherAfter.stock[0]!.quantity++;
@@ -127,7 +154,7 @@ test('history action binds complete fresh requests and keeps both customer snaps
     const snapshots = new Map([['before', snapshot(before)], ['other', snapshot(other)]]);
     if (mode === 'missing') snapshots.delete('before');
     const result = await executeAction(ACTION_REGISTRY, 'dbExpectOperation', {
-      do: 'dbExpectOperation', before: 'before', otherBefore: 'other', actor: 'buyer', operation: 'cart-add',
+      do: 'dbExpectOperation', before: 'before', otherBefore: 'other', actor: 'buyer', operation: mode === 'reconnect' ? 'reconnect' : 'cart-add',
     }, { capabilities: {
       'database-read': {
         ...createDatabaseReadCapability({ expand: value => value, checkoutSnapshots: snapshots }),
@@ -144,7 +171,7 @@ test('history action binds complete fresh requests and keeps both customer snaps
         startedAtMs: mode === 'stale' ? 5 : 11, completedAtMs: 12,
       }] }) } },
     } });
-    assert.equal(result.status, mode === 'valid' ? 'passed' : ['incomplete', 'stale', 'missing', 'divergent-reads'].includes(mode) ? 'inconclusive'
+    assert.equal(result.status, ['valid', 'reconnect'].includes(mode) ? 'passed' : ['incomplete', 'stale', 'missing', 'divergent-reads'].includes(mode) ? 'inconclusive'
       : ['wrong-action', 'reader-error'].includes(mode) ? 'harness_failure' : 'failed', mode);
     if (['ignored', 'other-cart', 'other-hold', 'refused'].includes(mode)) {
       assert(result.observation && typeof result.observation === 'object'); assert('otherAfter' in result.observation);
