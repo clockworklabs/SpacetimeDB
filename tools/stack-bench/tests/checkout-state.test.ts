@@ -3,7 +3,7 @@ import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { checkoutDifferences, orderCheckoutDifferences, checkoutCrashDifferences, cancellationDifferences, purchaseDifferences, checkoutId, checkoutMinor, checkoutStateSchema, verifyCheckoutSchema }
+import { checkoutDifferences, orderCheckoutDifferences, checkoutCrashDifferences, cancellationDifferences, orderCancellationDifferences, purchaseDifferences, checkoutId, checkoutMinor, checkoutStateSchema, verifyCheckoutSchema }
   from '../src/stacks/checkout-state.js';
 import type { CheckoutState } from '../src/stacks/checkout-state.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
@@ -356,6 +356,49 @@ test('cancellation restores each allocation once and preserves other orders and 
   }
   assert(cancellationDifferences(before, before).length > 0, 'reject all');
   assert(cancellationDifferences(states().before, after).length, 'a missing purchased order is a failed application precondition');
+});
+
+test('shipping and cancellation admit only complete legal outcomes, not combined effects or no progress', async () => {
+  const before = states().after;
+  before.payments = []; before.orphanAllocations = 0;
+  before.orders[0]!.refundedMinor = 0;
+  const shipped = structuredClone(before); shipped.orders[0]!.status = 'shipped';
+  const cancelled = structuredClone(before); cancelled.orders[0]!.status = 'cancelled';
+  cancelled.orders[0]!.refundedMinor = cancelled.orders[0]!.totalMinor;
+  cancelled.stock[0]!.quantity++;
+  assert.deepEqual(orderCancellationDifferences(before, shipped, 'wins'), []);
+  assert.deepEqual(orderCancellationDifferences(before, shipped, 'competes'), []);
+  assert.deepEqual(orderCancellationDifferences(before, cancelled, 'competes'), []);
+  assert.deepEqual(orderCancellationDifferences(before, cancelled), []);
+  assert(orderCancellationDifferences(before, shipped).length);
+  assert(orderCancellationDifferences(before, cancelled, 'wins').length);
+  assert(orderCancellationDifferences(before, before, 'competes').length, 'reject both');
+  for (const valid of [shipped, cancelled]) {
+    for (const mutate of [
+      (state: CheckoutState) => { state.stock[0]!.quantity++; },
+      (state: CheckoutState) => { state.orders[0]!.status = valid === shipped ? 'cancelled' : 'shipped'; },
+      (state: CheckoutState) => { state.orders[0]!.refundedMinor = valid === shipped ? 1999 : 0; },
+      (state: CheckoutState) => { state.orders[0]!.accountId = 'other'; },
+      (state: CheckoutState) => { state.orders[0]!.lines = []; },
+      (state: CheckoutState) => { state.orders = []; },
+      (state: CheckoutState) => { state.orphanAllocations = 1; },
+    ]) {
+      const broken = structuredClone(valid); mutate(broken);
+      assert(orderCancellationDifferences(before, broken, 'competes').length);
+    }
+  }
+  for (const shipping of ['wins', 'competes'] as const) {
+    const scope = { scope: 'orders', storage: { kind: 'order-data', cart: false, warehouses: true },
+      account: 'a', item: 'i', schemaSha256: { schema: 'verified' } } as const;
+    const checkoutSnapshots = new Map([['before', { ...scope, state: before }]]);
+    const result = await executeAction(ACTION_REGISTRY, 'dbExpectCancellation', {
+      do: 'dbExpectCancellation', before: 'before', shipping,
+    }, { capabilities: { 'database-read': {
+      ...createDatabaseReadCapability({ expand: value => value, checkoutSnapshots }),
+      getCheckoutState: () => ({ ...scope, state: shipped }),
+    } } });
+    assert.equal(result.status, 'passed', shipping);
+  }
 });
 
 test('cancellation action retains mismatches and cannot pass absent or unreadable evidence', async () => {

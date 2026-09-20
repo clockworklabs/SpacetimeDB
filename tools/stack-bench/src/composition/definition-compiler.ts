@@ -167,7 +167,8 @@ export const ACTION_DEFINITIONS = Object.freeze({
     { storage: value => orderDataSelectionSchema.safeParse(value).success }),
   dbExpectCheckout: fields({ before: nonEmptyString, prepared: nonEmptyString,
     quantity: checkoutQuantity }, { actor: nonEmptyString }),
-  dbExpectCancellation: fields({ before: nonEmptyString }),
+  dbExpectCancellation: fields({ before: nonEmptyString },
+    { shipping: value => value === 'wins' || value === 'competes' }),
   dbExpectNoPurchase: fields({ before: nonEmptyString }),
   dbExpectPurchase: fields({ before: nonEmptyString, actor: nonEmptyString, stockBefore: nonEmptyString }),
   dbExpectPurchases: fields({ before: value => object(value) && Object.keys(value).length > 0

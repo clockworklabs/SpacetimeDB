@@ -328,9 +328,10 @@ export function cancellationDifferences(before: CheckoutState, after: CheckoutSt
   return compareCancellation(before, after, false);
 }
 
-export function orderCancellationDifferences(before: CheckoutState, after: CheckoutState) {
+export function orderCancellationDifferences(before: CheckoutState, after: CheckoutState,
+  shipping?: 'wins' | 'competes') {
   for (const state of [before, after]) orderCheckoutStateSchema.parse(state);
-  const differences = compareCancellation(before, after, true);
+  const differences = compareCancellation(before, after, true, shipping);
   for (const state of [before, after]) {
     for (const key of ['orphanOrderLines', 'orphanAllocations'] as const) {
       if (state[key] !== 0) differences.push({ control: `cancellation ${key}`, observed: state[key]!, expected: 0 });
@@ -339,7 +340,8 @@ export function orderCancellationDifferences(before: CheckoutState, after: Check
   return differences;
 }
 
-function compareCancellation(before: CheckoutState, after: CheckoutState, refund: boolean):
+function compareCancellation(before: CheckoutState, after: CheckoutState, refund: boolean,
+  shipping?: 'wins' | 'competes'):
   Array<{ control: string; observed: number; expected: number }> {
   const orders = before.orders.filter(order => order.accountId === before.accountId);
   const order = orders[0];
@@ -351,10 +353,12 @@ function compareCancellation(before: CheckoutState, after: CheckoutState, refund
     return [{ control: 'cancellation requires one pending single-product order with complete allocations', observed: 0, expected: 1 }];
   }
   const expected = structuredClone(before);
-  const cancelled = expected.orders.find(row => row.id === order.id)!;
-  cancelled.status = 'cancelled';
-  if (refund) cancelled.refundedMinor = cancelled.totalMinor;
-  for (const stock of expected.stock) {
+  const resolved = expected.orders.find(row => row.id === order.id)!;
+  const shipped = shipping === 'wins' || (shipping === 'competes'
+    && after.orders.find(row => row.id === order.id)?.status === 'shipped');
+  resolved.status = shipped ? 'shipped' : 'cancelled';
+  if (refund && !shipped) resolved.refundedMinor = resolved.totalMinor;
+  for (const stock of shipped ? [] : expected.stock) {
     for (const allocation of order.lines.flatMap(line => line.allocations)) {
       if (stockItem(expected, stock) === before.itemId && allocation.warehouseId === stock.warehouseId) stock.quantity = integer.parse(stock.quantity + allocation.quantity);
     }

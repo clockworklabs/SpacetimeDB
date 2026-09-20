@@ -254,19 +254,23 @@ async function dbExpectCheckout({ input, capabilities }: ActionArguments<{ befor
   return observation;
 }
 
-async function dbExpectCancellation({ input, capabilities }: ActionArguments<{ before: string }>) {
+async function dbExpectCancellation({ input, capabilities }: ActionArguments<{
+  before: string; shipping?: 'wins' | 'competes';
+}>) {
   const database = capabilities['database-read'];
   const before = database.checkoutSnapshots.get(input.before);
   if (!before) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
   if (before.scope === 'orders' && before.storage?.kind !== 'order-data') inconclusive('invalid-input', { detail: 'saved order cancellation has no qualified mapping' });
   if (before.storage && !before.storage.warehouses) throw new Error('cancellation reconciliation requires warehouse evidence');
+  if (input.shipping && before.scope !== 'orders') throw new Error('shipping reconciliation requires native order-data evidence');
   const after = database.getCheckoutState(before);
   if (JSON.stringify(before.schemaSha256) !== JSON.stringify(after.schemaSha256)) {
     throw new Error('checkout reader schema changed during cancellation');
   }
   if (before.scope !== after.scope) throw new Error('checkout scope changed during cancellation');
-  const compare = before.scope === 'orders' ? orderCancellationDifferences : cancellationDifferences;
-  const differences = compare(before.state, after.state);
+  const differences = before.scope === 'orders'
+    ? orderCancellationDifferences(before.state, after.state, input.shipping)
+    : cancellationDifferences(before.state, after.state);
   const observation = { ...after, differences, before: input.before };
   if (differences[0]) {
     const { control, observed, expected } = differences[0];
