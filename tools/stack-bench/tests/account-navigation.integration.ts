@@ -25,7 +25,7 @@ test('rejected login cannot hide an app session that still permits a protected w
     let successful = false, rejected = false;
     if (request.method === 'POST' && request.url === '/signin') {
       let body = ''; for await (const chunk of request) body += String(chunk);
-      successful = new URLSearchParams(body).get('password') === 'correct-password';
+      successful = JSON.parse(body).password === 'correct-password';
       rejected = !successful;
     }
     response.writeHead(200, { 'Content-Type': 'text/html' });
@@ -36,8 +36,14 @@ test('rejected login cannot hide an app session that still permits a protected w
       </script>
       ${successful ? '<strong id="current-user">owner</strong>' : ''}
       ${rejected ? '<span id="auth-error">Invalid username or password.</span>' : ''}
-      <form method="post" action="/signin"><input id="signin-username" name="username">
-      <input id="signin-password" name="password"><input id="signin-submit" type="submit"></form>`);
+      <form id="signin-form"><input id="signin-username" name="username">
+      <input id="signin-password" name="password"><input id="signin-submit" type="submit"></form>
+      <script>document.querySelector('#signin-form').onsubmit = async event => {
+        event.preventDefault(); const form = new FormData(event.currentTarget);
+        const result = await fetch('/signin', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: form.get('username'), password: form.get('password') }) });
+        document.open(); document.write(await result.text()); document.close();
+      };</script>`);
   });
   try {
     await new Promise<void>(resolve => app.listen(0, '127.0.0.1', resolve));
@@ -49,7 +55,8 @@ test('rejected login cannot hide an app session that still permits a protected w
         { do: 'signIn', actor: 'owner', name: 'owner', exact: true, password: 'correct-password' },
         call('owner', 'actor'), { do: 'expectActionOutcome', actor: 'owner', outcome: 'accepted' },
       ], criteria: [{ id: 'refused', desc: 'refused login grants no protected access', points: 0, steps: [
-        { do: 'signIn', actor: 'impostor', name: 'owner', exact: true, password: 'wrong-password', expectFailure: true },
+        { do: 'signIn', actor: 'impostor', name: 'owner', exact: true, password: 'wrong-password', expectFailure: true,
+          requestPatch: { password: "' OR '1'='1" } },
         { do: 'expect', actor: 'impostor', testid: 'auth-error', within: 500 },
         { do: 'reload', actor: 'impostor', application: true, settleMs: 50 },
         { do: 'expect', actor: 'impostor', testid: 'current-user', absent: true, within: 50 },
@@ -98,8 +105,8 @@ test('fresh ownership reads catch a server mutation hidden by the old page', asy
     const capabilities = { actors: { get: () => actor }, 'browser-interaction': service, 'browser-observation': service };
     for (const mutated of [false, true]) {
       serverStatus = 'pending'; await page.goto('http://ownership.test');
-      if (mutated) serverStatus = 'cancelled';
       assert.equal(await page.locator('#order-status').innerText(), 'pending');
+      serverStatus = mutated ? 'pending' : 'cancelled';
       const outcomes = [];
       for (const step of readSteps) {
         const input = step.do === 'reload' ? { ...step, settleMs: 0 }
@@ -523,16 +530,16 @@ test('cart, order, and settings probes preserve open inline panels and open clos
     const page = await browser.newPage();
     for (const initiallyOpen of [false, true]) {
       await page.setContent(`<button id="cart-toggle" onclick="document.querySelector('#cart').hidden = !document.querySelector('#cart').hidden">Cart</button>
-        <section id="cart" ${initiallyOpen ? '' : 'hidden'}><span id="cart-total">10</span></section>
+        <section id="cart" ${initiallyOpen ? '' : 'hidden'}><span id="cart-total">10</span><span id="cart-item">Keyboard</span><button id="checkout-submit">Checkout</button></section>
         <button id="orders-toggle" onclick="document.querySelector('#orders').hidden = !document.querySelector('#orders').hidden">Orders</button>
         <section id="orders" ${initiallyOpen ? '' : 'hidden'}><span data-role="order-item">Headphones</span><span data-role="order-item">Keyboard</span></section>
         <button id="notification-settings" onclick="document.querySelector('#settings').hidden = !document.querySelector('#settings').hidden">Settings</button>
         <section id="settings" ${initiallyOpen ? '' : 'hidden'}><input id="notification-order" type="checkbox"></section>`);
       const actor = { page, loc: (id: string) => page.locator(stableElementSelector(id)).filter({ visible: true }).first() };
       for (const step of steps) {
-        const sentinel = step.testid === 'cart-toggle' ? 'cart-total'
-          : step.testid === 'orders-toggle' ? 'order-item' : 'notification-order';
-        assert.equal(step.unlessVisible, sentinel);
+        assert.equal(typeof step.unlessVisible, 'string');
+        const sentinel = step.unlessVisible as string;
+        assert(['cart-item', 'cart-total', 'checkout-submit', 'order-item', 'notification-order'].includes(sentinel));
         const result = await executeAction(ACTION_REGISTRY, 'click', step, { capabilities: {
           actors: { get: () => actor }, 'browser-interaction': {
             defaultWithin: 1000, expand: (value: string) => value, testId: stableElementSelector, sleep: async () => {},

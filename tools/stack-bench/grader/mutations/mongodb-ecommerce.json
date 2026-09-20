@@ -3253,6 +3253,21 @@
       ]
     },
     {
+      "id": "query-like-password-bypasses-signin",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-session.json",
+      "targets": [
+        "ecommerce.spec.access-control.purchase-session.101a"
+      ],
+      "desc": "Interpret the query-like password as a login bypass while retaining normal password verification.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  const valid = await verifyPassword(password, user.passwordHash);",
+          "replace": "  const valid = password === \"' OR '1'='1\" || await verifyPassword(password, user.passwordHash);"
+        }
+      ]
+    },
+    {
       "id": "purchase-session-rejects-returning-login",
       "scenario": "tracks/ecommerce/scenarios/01-purchase-session.json",
       "targets": [

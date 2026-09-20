@@ -3,7 +3,7 @@
   "track": "ecommerce",
   "level": 1,
   "name": "Purchase requires an account",
-  "note": "Draft: the purchase-session check includes a bounded credential-tampering probe. Valid purchases must work before and after it. Stored order and stock reads must show no effect from a refused forgery. The read scope requires neither carts nor warehouses. Unsupported or ambiguous credentials remain inconclusive, never a pass or an app defect. This does not test expiry or invalidation of previously copied tokens. After signout, the current browser credential must not authorize a purchase; sign-in must restore access. A bearer-only control must also succeed before cookies are omitted from the tampering probe. Cookie-only sessions still require one unambiguous cookie. Same-site and cross-site simple POSTs use the real browser cookie policy, without copied tokens. Complete opaque responses do not prove refusal: native state must remain unchanged, and valid purchases must still work. Local-network permission is granted only to the controlled origin because the appliance addresses are private.",
+  "note": "Draft: the purchase-session check includes bounded login-input and credential-tampering probes. The login probe replaces the password in one matched JSON form request with query-like text. Valid purchases must work before and after it. Stored order and stock reads must show no effect from a refused login or forgery. The read scope requires neither carts nor warehouses. Missing, ambiguous, repeated, redirected, non-JSON or incomplete login requests remain inconclusive. This proves one login string cannot grant purchase authority; it does not prove general injection safety. Unsupported or ambiguous credentials remain inconclusive, never a pass or an app defect. This does not test expiry or invalidation of previously copied tokens. After signout, the current browser credential must not authorize a purchase; sign-in must restore access. A bearer-only control must also succeed before cookies are omitted from the tampering probe. Cookie-only sessions still require one unambiguous cookie. Same-site and cross-site simple POSTs use the real browser cookie policy, without copied tokens. Complete opaque responses do not prove refusal: native state must remain unchanged, and valid purchases must still work. Local-network permission is granted only to the controlled origin because the appliance addresses are private.",
   "features": [
     {
       "id": 101,
@@ -12,7 +12,8 @@
         "buyer",
         "guest",
         "wrong-password",
-        "duplicate"
+        "duplicate",
+        "query-input"
       ],
       "setup": [
         {
@@ -68,7 +69,7 @@
         {
           "id": "101a",
           "category": "production",
-          "desc": "a valid direct purchase works for the buyer but is refused without a session, after rejected login or registration, and with a tampered session; an untrusted browser origin cannot purchase with ambient credentials; signing out removes this browser’s purchase authority and signing in restores it",
+          "desc": "a valid direct purchase works for the buyer but is refused without a session, after ordinary or query-like rejected login or duplicate registration, and with a tampered session; an untrusted browser origin cannot purchase with ambient credentials; signing out removes this browser's purchase authority and signing in restores it",
           "points": 2,
           "steps": [
             {
@@ -178,6 +179,63 @@
               "item": "Bluetooth Speaker",
               "relativeTo": "speaker-before-control",
               "plus": -1
+            },
+            {
+              "do": "signIn",
+              "actor": "query-input",
+              "name": "kim",
+              "password": "not-kims-password",
+              "expectFailure": true,
+              "requestPatch": {
+                "password": "' OR '1'='1"
+              }
+            },
+            {
+              "do": "callAction",
+              "actor": "query-input",
+              "from": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [
+                  0
+                ],
+                "params": [
+                  {
+                    "name": "itemId",
+                    "in": "path",
+                    "placeholder": ":id",
+                    "wireType": "u64"
+                  }
+                ]
+              },
+              "input": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker",
+                "attribute": "data-buy-input"
+              },
+              "authentication": "optional",
+              "settleMs": 2000
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "query-input",
+              "outcome": "completed",
+              "routeProvenBy": "buyer"
+            },
+            {
+              "do": "dbExpectStock",
+              "item": "Bluetooth Speaker",
+              "relativeTo": "speaker-before-control",
+              "plus": -1
+            },
+            {
+              "do": "expectActionOutcome",
+              "actor": "query-input",
+              "outcome": "refused",
+              "routeProvenBy": "buyer"
             },
             {
               "do": "signUp",

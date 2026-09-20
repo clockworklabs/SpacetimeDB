@@ -91,6 +91,20 @@ function syntaxErrors(source: string, file: string): string[] {
     .map(diagnostic => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'));
 }
 
+for (const backend of ['convex', 'mongodb', 'postgres', 'spacetime']) {
+  test(`${backend} query-like login control shares the purchase-session owner and positive path`, () => {
+    const manifest = mutationManifest(backend);
+    const bypass = manifest.mutations.find(candidate => candidate.id === 'query-like-password-bypasses-signin');
+    const rejectAll = manifest.mutations.find(candidate => candidate.id === 'purchase-session-rejects-returning-login');
+    for (const mutation of [bypass, rejectAll]) {
+      assert(mutation?.scenario);
+      assert.equal(mutation.scenario, 'tracks/ecommerce/scenarios/01-purchase-session.json');
+      assert.deepEqual(mutation.targets, ['ecommerce.spec.access-control.purchase-session.101a']);
+    }
+    assert(mutationFileEdits(bypass!).some(edit => edit.replace.includes("' OR '1'='1")));
+  });
+}
+
 test('SpacetimeDB stale support control preserves initial and reloaded replies', () => {
   const mutation = mutationManifest('spacetime').mutations.find(candidate =>
     candidate.id === 'managed-support-live-replies-stay-at-initial-snapshot');

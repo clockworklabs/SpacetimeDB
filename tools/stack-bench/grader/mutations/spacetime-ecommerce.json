@@ -3237,6 +3237,21 @@
       ]
     },
     {
+      "id": "query-like-password-bypasses-signin",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-session.json",
+      "targets": [
+        "ecommerce.spec.access-control.purchase-session.101a"
+      ],
+      "desc": "Interpret the query-like password as a login bypass while retaining normal password verification.",
+      "file": "backend/spacetimedb/src/auth.ts",
+      "edits": [
+        {
+          "find": "const valid = !!account && sameHash(digest, account.passwordHash);",
+          "replace": "const valid = !!account && (password === \"' OR '1'='1\" || sameHash(digest, account.passwordHash));"
+        }
+      ]
+    },
+    {
       "id": "purchase-session-rejects-returning-login",
       "scenario": "tracks/ecommerce/scenarios/01-purchase-session.json",
       "targets": [

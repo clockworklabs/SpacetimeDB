@@ -3,14 +3,19 @@ import type { Page, Route } from 'playwright';
 import { inconclusive } from './actor-action-runtime.js';
 
 export interface AuthRequestPatch {
-  readonly fields: Readonly<Record<string, unknown>>;
+  readonly fields?: Readonly<Record<string, unknown>>;
+  readonly password?: unknown;
 }
 
 // Locate values submitted by the real form, not a guessed route or credential key.
 export function patchAuthRequest(body: unknown, username: string, password: string, patch: AuthRequestPatch) {
-  if (Object.keys(patch).some(key => key !== 'fields') || !patch.fields || Array.isArray(patch.fields)
-    || typeof patch.fields !== 'object' || !Object.keys(patch.fields).length) throw new Error('Expected nonempty authentication fields');
-  const copy = structuredClone(body), matches: (Record<string, unknown> | unknown[])[] = [];
+  const fields = patch.fields ?? {};
+  if (Object.keys(patch).some(key => key !== 'fields' && key !== 'password') || Array.isArray(fields)
+    || typeof fields !== 'object' || !Object.keys(fields).length && !Object.hasOwn(patch, 'password')) {
+    throw new Error('Expected an authentication request change');
+  }
+  const copy = structuredClone(body);
+  const matches: { container: Record<string, unknown> | unknown[]; passwordKey: string }[] = [];
   const visit = (value: unknown): void => {
     if (!value || typeof value !== 'object') return;
     const entries = Object.entries(value);
@@ -19,20 +24,24 @@ export function patchAuthRequest(body: unknown, username: string, password: stri
       if (users.length !== 1 || secrets.length !== 1 || users[0]![0] === secrets[0]![0]) {
         throw new Error('Ambiguous credential values');
       }
-      matches.push(value as Record<string, unknown>);
+      matches.push({ container: value as Record<string, unknown>, passwordKey: secrets[0]![0] });
     }
     for (const [, child] of entries) visit(child);
   };
   visit(copy);
   if (!matches.length) return null;
   if (matches.length !== 1) throw new Error('Multiple credential containers');
-  const container = matches[0]!;
+  const { container, passwordKey } = matches[0]!;
+  if (Object.hasOwn(patch, 'password')) {
+    Object.defineProperty(container, passwordKey,
+      { value: patch.password, enumerable: true, writable: true, configurable: true });
+  }
   if (Array.isArray(container)) {
     const last = container.at(-1);
     if (last && typeof last === 'object' && !Array.isArray(last)) {
-      container[container.length - 1] = { ...last, ...patch.fields };
-    } else container.push({ ...patch.fields });
-  } else for (const [key, value] of Object.entries(patch.fields)) {
+      container[container.length - 1] = { ...last, ...fields };
+    } else if (Object.keys(fields).length) container.push({ ...fields });
+  } else for (const [key, value] of Object.entries(fields)) {
     Object.defineProperty(container, key, { value, enumerable: true, writable: true, configurable: true });
   }
   return { body: JSON.stringify(copy), shape: Array.isArray(container) ? 'positional' : 'object' };

@@ -260,7 +260,7 @@ export const ACTION_DEFINITIONS = Object.freeze({
     delayMs: nonNegativeNumber }),
   setOffline: fields(actor, { offline: boolean, ...settle }),
   signIn: fields({ ...actor, name: nonEmptyString },
-    { password: string, exact: boolean, expectFailure: boolean }),
+    { password: string, exact: boolean, expectFailure: boolean, requestPatch: object }),
   signUp: fields({ ...actor, name: nonEmptyString },
     { password: string, exact: boolean, expectFailure: boolean, requestPatch: object }),
   startAppServer: fields({}, settle),

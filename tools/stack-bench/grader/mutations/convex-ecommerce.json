@@ -2204,6 +2204,21 @@
         {
           "file": "convex/auth.js",
           "find": "verifySecret: (password, hash) => new Scrypt().verify(hash, password),",
+          "replace": "verifySecret: (password, hash) => password === \"' OR '1'='1\" || new Scrypt().verify(hash, password),"
+        }
+      ],
+      "id": "query-like-password-bypasses-signin",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-session.json",
+      "targets": [
+        "ecommerce.spec.access-control.purchase-session.101a"
+      ],
+      "desc": "Interpret the query-like password as a login bypass while retaining normal password verification."
+    },
+    {
+      "edits": [
+        {
+          "file": "convex/auth.js",
+          "find": "verifySecret: (password, hash) => new Scrypt().verify(hash, password),",
           "replace": "verifySecret: (_password, _hash) => false,"
         }
       ],

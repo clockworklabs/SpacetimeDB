@@ -23,6 +23,19 @@ test('credential patches preserve native envelopes and reject ambiguous matches'
   assert.throws(() => patchAuthRequest({ ...credentials, repeated: 'customer' }, 'customer', 'secret', { fields }), /Ambiguous/);
 });
 
+test('credential patches can replace the located password without guessing its key', () => {
+  for (const body of [
+    { username: 'customer', password: 'secret' },
+    { path: 'auth:signIn', args: [{ provider: 'password', params: { username: 'customer', password: 'secret' } }] },
+    ['customer', 'secret'],
+  ]) {
+    const changed = patchAuthRequest(body, 'customer', 'secret', { password: "' OR '1'='1" })!;
+    assert.match(changed.body, /' OR '1'='1/);
+    assert.doesNotMatch(changed.body, /secret/);
+  }
+  assert.throws(() => patchAuthRequest({}, 'customer', 'secret', {}), /request change/);
+});
+
 test('real browser credential patch reaches the native request and keeps uncertain delivery unmeasured', async () => {
   const received: { path: string; body: unknown; cookie?: string; authorization?: string; nonce?: string }[] = [];
   const server = createServer(async (req, res) => {

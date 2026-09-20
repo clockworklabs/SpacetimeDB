@@ -365,3 +365,15 @@ probe proves a successful role change while authorized, then verifies denial and
 unchanged stored role after administrator access is removed. Each stack has a
 control that retains administrator access after removal. Matching live qualification
 is pending; this check does not establish subscription revocation or token logout.
+
+
+### Bounded login input
+
+The purchase-session check retains ordinary wrong-password testing and also
+replaces the password in one captured JSON login request with query-like text.
+A protected purchase must be refused and native stored stock must stay unchanged.
+Normal login and purchase must work before and after the probe. A marker-specific
+bypass control and a returning-login rejection control qualify this observation.
+This does not establish general SQL or NoSQL injection safety. Missing, ambiguous,
+repeated, redirected, non-JSON or incomplete captures remain inconclusive.
+The change strengthens existing check 101a; it adds no scoring points.

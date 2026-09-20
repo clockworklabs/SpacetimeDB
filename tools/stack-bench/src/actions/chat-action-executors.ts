@@ -87,12 +87,20 @@ async function signUp({ input, capabilities, signal }: ChatArguments<AccountInpu
   return { user, authenticationPath: 'local-form', signedUp: true };
 }
 
-async function signIn({ input, capabilities, signal }: ChatArguments<AccountInput>, acceptRestoredSession = false) {
+async function signIn({ input, capabilities, signal }: ChatArguments<AccountInput>, acceptRestoredSession = false): Promise<Record<string, unknown>> {
   const actor = actorFor(capabilities, input.actor);
   const browser = browserFor(capabilities);
   const user = input.exact ? input.name : browser.scopedUser(input.name);
   const password = input.password ?? `pw-${user}`;
   const currentUser = actor.page.locator(browser.testId('current-user')).first();
+  if (input.requestPatch) {
+    if (!actor.page.route || !actor.page.unroute) throw new Error('Authentication request interception is unavailable');
+    const result = await withAuthRequestPatch({ route: actor.page.route.bind(actor.page), unroute: actor.page.unroute.bind(actor.page) },
+      user, password, input.requestPatch, () => signIn({ input: { ...input, requestPatch: undefined, expectFailure: true }, capabilities, signal }));
+    await currentUser.or(actor.loc('auth-error')).filter({ visible: true }).first()
+      .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
+    return result;
+  }
   const restoredSession = async () => {
     if (!acceptRestoredSession || !(await currentUser.isVisible())) return false;
     if (!(await currentUser.innerText()).includes(user)) {
