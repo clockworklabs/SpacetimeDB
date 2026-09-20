@@ -3181,6 +3181,21 @@
           "replace": "    if (lines.rows.length === 0) throw new Error(\"cart is empty\");\n    if (lines.rows.length > 0) { await client.query(\"DELETE FROM cart_item WHERE cart_id = $1\", [cart.rows[0].id]); await client.query(\"COMMIT\"); return 0; }"
         }
       ]
+    },
+    {
+      "id": "revenue-aggregation-truncates-order-population",
+      "scenario": "tracks/ecommerce/scenarios/progression-books-balance.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.books-balance.107a"
+      ],
+      "desc": "Calculate revenue from only the first 256 stored orders while preserving all acknowledged purchases.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "COALESCE((SELECT SUM(total - refund_total) FROM orders WHERE status != 'cancelled'), 0)",
+          "replace": "COALESCE((SELECT SUM(total - refund_total) FROM (SELECT * FROM orders WHERE status != 'cancelled' ORDER BY id LIMIT 256) limited_orders), 0)"
+        }
+      ]
     }
   ]
 }

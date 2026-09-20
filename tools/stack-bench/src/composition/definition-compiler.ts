@@ -178,6 +178,9 @@ export const ACTION_DEFINITIONS = Object.freeze({
   dbExpectPurchase: fields({ before: nonEmptyString, actor: nonEmptyString, stockBefore: nonEmptyString }),
   dbExpectPurchases: fields({ before: value => object(value) && Object.keys(value).length > 0
     && Object.values(value).every(nonEmptyString), purchases: positiveInteger }),
+  dbExpectPurchaseCount: fields({ before: value => stringArray(value) && value.length > 0
+    && value.length <= 64 && new Set(value).size === value.length,
+    purchasesEach: value => positiveInteger(value) && Number(value) <= 1000 }),
   dbExpectStock: fields({ item: nonEmptyString },
     { warehouse: nonEmptyString, equals: integer, atLeast: integer, atMost: integer, relativeTo: nonEmptyString, plus: integer,
       within: value => positiveNumber(value) && Number(value) <= 80000 }),
@@ -564,6 +567,28 @@ const CRITERION_FIELDS = new Set([
   'desc', 'id', 'note', 'points', 'provenBy', 'statedBy', 'steps', 'withheld', 'category',
 ]);
 
+// Authoring shorthand only. Execution and evidence still use ordinary actions.
+function compileSteps(steps: unknown[], at: string): CompiledStep[] {
+  const result: CompiledStep[] = [];
+  steps.forEach((step, index) => {
+    const where = `${at}[${index}]`;
+    if (object(step) && 'repeat' in step) {
+      strictObject(step, where, new Set(['repeat', 'steps']));
+      if (!positiveInteger(step.repeat) || Number(step.repeat) > 1000) fail(where, 'repeat must be an integer from 1 to 1000');
+      if (!array(step.steps) || !step.steps.length) fail(where, 'repeat requires non-empty steps');
+      // No nesting, templates or runtime loop state.
+      step.steps.forEach((child, childIndex) => validateStep(child, `${where}.steps[${childIndex}]`));
+      if (result.length + step.steps.length * Number(step.repeat) > 10000) fail(where, 'expanded steps exceed 10000');
+      for (let n = 0; n < Number(step.repeat); n++) result.push(...structuredClone(step.steps) as CompiledStep[]);
+    } else {
+      validateStep(step, where);
+      result.push(step);
+    }
+    if (result.length > 10000) fail(where, 'expanded steps exceed 10000');
+  });
+  return result;
+}
+
 export function compileScenarioDefinition(input: unknown,
   { source = '<scenario>', expectedLevel = null }:
     { source?: string; expectedLevel?: number | null } = {}): CompiledScenarioDefinition {
@@ -598,7 +623,7 @@ export function compileScenarioDefinition(input: unknown,
       fail(`${featureAt}.max`, 'must be a non-negative integer');
     }
     if (!array(feature.setup)) fail(`${featureAt}.setup`, 'must be an array');
-    feature.setup.forEach((step, stepIndex) => validateStep(step, `${featureAt}.setup[${stepIndex}]`));
+    feature.setup = compileSteps(feature.setup, `${featureAt}.setup`);
     if (!array(feature.criteria) || feature.criteria.length === 0) {
       fail(`${featureAt}.criteria`, 'must be a non-empty array');
     }
@@ -626,8 +651,7 @@ export function compileScenarioDefinition(input: unknown,
       if (criterion.steps.length === 0 && (criterionPoints !== 0 || !nonEmptyString(criterion.withheld))) {
         fail(`${criterionAt}.steps`, 'may be empty only for an explicitly withheld zero-point criterion');
       }
-      criterion.steps.forEach((step, stepIndex) =>
-        validateStep(step, `${criterionAt}.steps[${stepIndex}]`));
+      criterion.steps = compileSteps(criterion.steps, `${criterionAt}.steps`);
     });
     if (feature.max !== undefined && feature.max !== points) {
       fail(`${featureAt}.max`, `is ${feature.max}, but criteria total ${points}`);

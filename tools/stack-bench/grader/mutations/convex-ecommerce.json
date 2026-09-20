@@ -2058,6 +2058,21 @@
           "replace": "  const result = { orderId: null };"
         }
       ]
+    },
+    {
+      "id": "revenue-aggregation-truncates-order-population",
+      "scenario": "tracks/ecommerce/scenarios/progression-books-balance.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.books-balance.107a"
+      ],
+      "desc": "Calculate revenue from only the first 256 stored orders while preserving all acknowledged purchases.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "revenue: money(headers.reduce((n, o) => n + o.total - o.refunded, 0))",
+          "replace": "revenue: money(headers.slice(0, 256).reduce((n, o) => n + o.total - o.refunded, 0))"
+        }
+      ]
     }
   ]
 }

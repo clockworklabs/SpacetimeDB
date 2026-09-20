@@ -259,6 +259,40 @@ test('refused purchases must leave stored state unchanged, including orders with
   }
 });
 
+test('bounded purchase populations reconcile both accounts and preserve missing or broken reader outcomes', async () => {
+  for (const mode of ['valid', 'wrong-owner', 'lost-order', 'wrong-price', 'stock', 'missing', 'duplicate-account', 'reader-error', 'schema-change']) {
+    const { before, after } = states();
+    for (const state of [before, after]) {
+      state.payments = []; state.orphanAllocations = 0;
+      for (const order of state.orders) order.refundedMinor = 0;
+    }
+    after.orders.push({ ...structuredClone(after.orders[0]!), id: 'other', accountId: 'b' });
+    after.stock[0]!.quantity = 8;
+    if (mode === 'wrong-owner') after.orders[1]!.accountId = 'a';
+    if (mode === 'lost-order') after.orders.pop();
+    if (mode === 'wrong-price') after.orders[1]!.totalMinor++;
+    if (mode === 'stock') after.stock[0]!.quantity++;
+    const storage = { kind: 'order-data' as const, cart: false, warehouses: true };
+    const snapshot = { state: before, account: 'a', item: 'i', scope: 'orders' as const, storage, schemaSha256: { schema: 'same' } };
+    const snapshots = new Map([['a', snapshot], ['b', { ...snapshot, account: 'b',
+      state: { ...structuredClone(before), accountId: mode === 'duplicate-account' ? 'a' : 'b' } }]]);
+    if (mode === 'missing') snapshots.delete('b');
+    const result = await executeAction(ACTION_REGISTRY, 'dbExpectPurchaseCount', {
+      do: 'dbExpectPurchaseCount', before: ['a', 'b'], purchasesEach: 1,
+    }, { capabilities: { 'database-read': {
+      ...createDatabaseReadCapability({ expand: value => value, checkoutSnapshots: snapshots }),
+      getCheckoutState: ({ account }: { account: string }) => {
+        if (mode === 'reader-error') throw new Error('reader unavailable');
+        return { ...snapshot, state: { ...after, accountId: account },
+          schemaSha256: { schema: mode === 'schema-change' ? 'changed' : 'same' } };
+      },
+    } } });
+    assert.equal(result.status, mode === 'valid' ? 'passed' : mode === 'missing' ? 'inconclusive'
+      : ['duplicate-account', 'reader-error', 'schema-change'].includes(mode) ? 'harness_failure' : 'failed', mode);
+    if (result.status === 'failed') assert(result.observation, mode);
+  }
+});
+
 test('direct price probes reconcile accepted or refused effects without requiring warehouse features', async () => {
   for (const mode of ['accepted', 'refused', 'wrong-total', 'wrong-line', 'write-then-refuse', 'stock-only', 'no-op', 'duplicate', 'old-order-changed', 'timeout', 'reader-error', 'schema-change']) {
     const { before, after } = states();

@@ -3090,6 +3090,21 @@
           "replace": "  if (lines.length === 0) throw new SenderError('Your cart is empty.');\n  if (lines.length > 0) { for (const line of lines) ctx.db.cartItem.id.delete(line.id); return; }"
         }
       ]
+    },
+    {
+      "id": "revenue-aggregation-truncates-order-population",
+      "scenario": "tracks/ecommerce/scenarios/progression-books-balance.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.books-balance.107a"
+      ],
+      "desc": "Calculate revenue from only the first 256 stored orders while preserving all acknowledged purchases.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    let total = 0;\n    for (const o of ctx.db.customerOrder.iter()) {",
+          "replace": "    let total = 0;\n    for (const o of [...ctx.db.customerOrder.iter()].slice(0, 256)) {"
+        }
+      ]
     }
   ]
 }

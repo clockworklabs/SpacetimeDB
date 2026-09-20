@@ -9,7 +9,7 @@
   "conflictsWith": [],
   "capabilities": ["browser", "database-observation", "direct-server-call"],
   "evidence": ["browser-observation", "database-observation", "server-response"],
-  "budget": { "status": "bounded", "maxRuntimeMs": 100000 },
+  "budget": { "status": "bounded", "maxRuntimeMs": 700000 },
   "task": {
     "requirements": [
       {

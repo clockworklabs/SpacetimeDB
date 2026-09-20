@@ -409,6 +409,38 @@ async function dbExpectPurchase({ input, capabilities }: ActionArguments<{ befor
   return observation;
 }
 
+async function dbExpectPurchaseCount({ input, capabilities }: ActionArguments<{
+  before: string[]; purchasesEach: number;
+}>) {
+  const database = capabilities['database-read'];
+  const snapshots = input.before.map(key => {
+    const before = database.checkoutSnapshots.get(key);
+    if (!before) inconclusive('assertion-without-action', { action: 'dbRecordCheckout' });
+    if (before.scope !== 'orders' || before.storage?.kind !== 'order-data') throw new Error('purchase count requires native order data');
+    return { key, before };
+  });
+  const accepted = new Map(snapshots.map(({ before }) => [before.state.accountId, input.purchasesEach]));
+  if (accepted.size !== snapshots.length) throw new Error('purchase count requires distinct accounts');
+  if (snapshots.some(({ before }) => before.state.itemId !== snapshots[0]!.before.state.itemId
+    || before.state.priceMinor !== snapshots[0]!.before.state.priceMinor)) throw new Error('purchase count requires the same product and price');
+  const after = snapshots.map(({ key, before }) => {
+    const value = database.getCheckoutState(before);
+    if (value.scope !== before.scope || JSON.stringify(value.schemaSha256) !== JSON.stringify(before.schemaSha256)) {
+      throw new Error('purchase reader changed during the test');
+    }
+    return { key, ...value, differences: orderPurchaseDifferences(before.state, value.state,
+      accepted, new Map(), before.storage!.warehouses) };
+  });
+  const observation = { before: input.before, purchasesEach: input.purchasesEach, after };
+  const difference = after.flatMap(row => row.differences)[0];
+  if (difference) {
+    const value = finding('number-mismatch', { control: difference.control,
+      observed: difference.observed, expected: { equals: difference.expected } });
+    throw new ActionApplicationFailure(renderFinding(value), { finding: value, observation });
+  }
+  return observation;
+}
+
 async function dbExpectPurchases({ input, capabilities }: ActionArguments<{
   before: Record<string, string>; purchases: number;
 }>) {
@@ -909,6 +941,7 @@ export const RUNTIME_ACTION_IMPLEMENTATIONS = Object.freeze({
   dbExpectNoPurchase: contractLifecycleAction(dbExpectNoPurchase),
   dbExpectPurchase: contractLifecycleAction(dbExpectPurchase),
   dbExpectPurchases: contractLifecycleAction(dbExpectPurchases),
+  dbExpectPurchaseCount: contractLifecycleAction(dbExpectPurchaseCount),
   dbRecordStock: contractLifecycleAction(dbRecordStock),
   dbExpectStock: contractLifecycleAction(dbExpectStock),
   clickConcurrently: contractLifecycleAction(clickConcurrently),

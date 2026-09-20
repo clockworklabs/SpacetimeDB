@@ -428,6 +428,14 @@
               "actor": "a",
               "do": "waitUntilAbsent",
               "testid": "status"
+            },
+            {
+              "before": [
+                "before-a",
+                "before-b"
+              ],
+              "do": "dbExpectPurchaseCount",
+              "purchasesEach": 500
             }
           ]
         }

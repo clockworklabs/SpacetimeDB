@@ -465,3 +465,28 @@ for (const backend of ['postgres', 'mongodb'] as const) {
     } finally { docker(['rm', '-f', id]); }
   });
 }
+
+ test('volume checks retain independent setup, native scopes and existing scoring owners', () => {
+  const binding = requireRecipeRelease(loadTrack('ecommerce'), 3, 'ecommerce.progression-catalog');
+  const source = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/progression-books-balance.json');
+  const scenario = compileScenarioDefinition(JSON.parse(readFileSync(source, 'utf8')), { source });
+  for (const [id, warehouses] of [['107a', false], ['107b', true]] as const) {
+    const key = `ecommerce.spec.transactional-integrity.books-balance.${id}`;
+    const selected = selectScenarioChecks(scenario, { checks: binding.release.checkCatalog }, [key]);
+    const feature = selected.features[0]!;
+    assert.equal(feature.criteria.length, 1);
+    assert.equal(feature.criteria[0]!.points, 1);
+    assert.equal(feature.setup.filter(step => step.do === 'callAction').length, 1000);
+    assert.equal(feature.setup.filter(step => step.do === 'expectActionOutcome' && step.outcome === 'accepted').length, 1000);
+    const verify = feature.criteria[0]!.steps[0]!;
+    assert.equal(verify.do, 'dbExpectPurchaseCount');
+    assert.equal(verify.purchasesEach, 500);
+    for (const key of verify.before as string[]) {
+      const before = feature.setup.find(step => step.as === key)!;
+      assert.deepEqual(before.storage, { kind: 'order-data', cart: false, warehouses });
+    }
+    const check = binding.release.checkCatalog.find(check => check.stableKey === key)!;
+    assert(check.requiresFeatures?.includes('ecommerce.feature.warehouse-admin'));
+    assert(check.requiresFeatures?.includes('ecommerce.feature.purchasing'));
+  }
+ });

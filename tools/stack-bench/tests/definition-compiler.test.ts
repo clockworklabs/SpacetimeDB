@@ -54,6 +54,28 @@ test('all current definitions compile deterministically without source mutation'
   }
 });
 
+test('bounded repeats expand to independent ordinary actions and reject nesting or invalid input', () => {
+  const wrap = (step: unknown) => ({ schemaVersion: 1, level: 1, features: [{ id: 1, name: 'Repeated writes', setup: [],
+    criteria: [{ id: 'a', desc: 'writes retain evidence', points: 1, steps: [step] }] }] });
+  const input = wrap({ repeat: 2, steps: [{ do: 'fill', actor: 'a', testid: 'name', text: 'value' },
+    { do: 'click', actor: 'a', testid: 'save' }] });
+  const original = structuredClone(input), output = compileScenarioDefinition(input);
+  const steps = output.features[0]!.criteria[0]!.steps;
+  assert.deepEqual(steps.map(step => step.do), ['fill', 'click', 'fill', 'click']);
+  assert.equal(output.features[0]!.criteria[0]!.points, 1);
+  assert.deepEqual(compileScenarioDefinition(output), output);
+  steps[0]!.text = 'changed'; assert.equal(steps[2]!.text, 'value');
+  assert.deepEqual(input, original);
+  for (const step of [
+    ...[0, -1, 1.5, 1001, Infinity, '2'].map(repeat => ({ repeat, steps: [{ do: 'click', actor: 'a', testid: 'save' }] })),
+    { repeat: 2, steps: [] }, { repeat: 2, steps: [{ repeat: 2, steps: [{ do: 'click', actor: 'a', testid: 'save' }] }] },
+    { repeat: 2, steps: [{ do: 'noSuchAction' }] }, { repeat: 2, steps: [{ do: 'fill' }] },
+    { repeat: 2, steps: [{ do: 'click', actor: 'a', testid: 'save' }], extra: true },
+  ]) assert.throws(() => compileScenarioDefinition(wrap(step)));
+  assert.throws(() => compileScenarioDefinition(wrap({ repeat: 1000,
+    steps: Array.from({ length: 11 }, () => ({ do: 'click', actor: 'a', testid: 'save' })) })), /expanded steps exceed 10000/);
+});
+
 test('authored waits and observation windows fit inside their action deadlines', () => {
   const visit = (step: CompiledStep, source: string): void => {
     const action = ACTION_REGISTRY.get(step.do);

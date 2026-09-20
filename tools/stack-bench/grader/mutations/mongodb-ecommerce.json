@@ -3081,6 +3081,21 @@
           "replace": "    if (!cart?.items.length) throw new Error('Cart is empty');\n    if (cart.items.length > 0) { cart.items = [] as any; await cart.save({ session }); return null; }"
         }
       ]
+    },
+    {
+      "id": "revenue-aggregation-truncates-order-population",
+      "scenario": "tracks/ecommerce/scenarios/progression-books-balance.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.books-balance.107a"
+      ],
+      "desc": "Calculate revenue from only the first 256 stored orders while preserving all acknowledged purchases.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "async function getRevenue(): Promise<number> {\n  const rows = await Order.aggregate([",
+          "replace": "async function getRevenue(): Promise<number> {\n  const rows = await Order.aggregate([\n    { $limit: 256 },"
+        }
+      ]
     }
   ]
 }
