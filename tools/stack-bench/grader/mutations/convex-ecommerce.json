@@ -2028,6 +2028,36 @@
           "replace": "// Defect: an empty consumed cart may create another order."
         }
       ]
+    },
+    {
+      "id": "checkout-replay-loses-prior-order",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
+      "desc": "Retrying the consumed cart deletes an earlier acknowledged order.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "  if (!lines.length) throw new ConvexError('Cart is empty');",
+          "replace": "  if (!lines.length) { const prior = (await rows(ctx, 'order_header')).find(order => order.account_id === user._id); if (prior) await ctx.db.delete(prior._id); return { orderId: null }; }"
+        }
+      ]
+    },
+    {
+      "id": "checkout-clears-cart-without-order",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
+      "desc": "Checkout returns success and empties the cart without recording an order.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "  const result = await purchase(ctx, user, lines);",
+          "replace": "  const result = { orderId: null };"
+        }
+      ]
     }
   ]
 }

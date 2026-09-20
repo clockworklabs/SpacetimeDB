@@ -3051,6 +3051,36 @@
           "replace": "    if (!cart?.items.length) throw new Error('Cart is empty');\n    throw new Error('Checkout disabled');"
         }
       ]
+    },
+    {
+      "id": "checkout-replay-loses-prior-order",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
+      "desc": "Retrying the consumed cart deletes an earlier acknowledged order.",
+      "file": "server/src/credit.ts",
+      "edits": [
+        {
+          "find": "    if (!cart?.items.length) throw new Error('Cart is empty');",
+          "replace": "    if (!cart?.items.length) { const prior = await Order.findOne({ userId }).sort({ _id: 1 }).session(session); if (prior) await prior.deleteOne({ session }); return null; }"
+        }
+      ]
+    },
+    {
+      "id": "checkout-clears-cart-without-order",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
+      "desc": "Checkout returns success and empties the cart without recording an order.",
+      "file": "server/src/credit.ts",
+      "edits": [
+        {
+          "find": "    if (!cart?.items.length) throw new Error('Cart is empty');",
+          "replace": "    if (!cart?.items.length) throw new Error('Cart is empty');\n    if (cart.items.length > 0) { cart.items = [] as any; await cart.save({ session }); return null; }"
+        }
+      ]
     }
   ]
 }

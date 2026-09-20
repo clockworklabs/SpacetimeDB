@@ -3151,6 +3151,36 @@
           "replace": "    if (lines.rows.length === 0) throw new Error(\"cart is empty\");\n    throw new Error('Checkout disabled');"
         }
       ]
+    },
+    {
+      "id": "checkout-replay-loses-prior-order",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
+      "desc": "Retrying the consumed cart deletes an earlier acknowledged order.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "    if (lines.rows.length === 0) throw new Error(\"cart is empty\");",
+          "replace": "    if (lines.rows.length === 0) { await client.query(\"DELETE FROM orders WHERE id = (SELECT min(id) FROM orders WHERE account_id = $1)\", [accountId]); await client.query(\"COMMIT\"); return 0; }"
+        }
+      ]
+    },
+    {
+      "id": "checkout-clears-cart-without-order",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
+      "desc": "Checkout returns success and empties the cart without recording an order.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "    if (lines.rows.length === 0) throw new Error(\"cart is empty\");",
+          "replace": "    if (lines.rows.length === 0) throw new Error(\"cart is empty\");\n    if (lines.rows.length > 0) { await client.query(\"DELETE FROM cart_item WHERE cart_id = $1\", [cart.rows[0].id]); await client.query(\"COMMIT\"); return 0; }"
+        }
+      ]
     }
   ]
 }

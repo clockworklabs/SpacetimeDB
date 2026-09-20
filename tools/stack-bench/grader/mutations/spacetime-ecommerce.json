@@ -3060,6 +3060,36 @@
           "replace": "  if (lines.length === 0) throw new SenderError('Your cart is empty.');\n    if (lines.length >= 0) throw new Error('Checkout disabled');"
         }
       ]
+    },
+    {
+      "id": "checkout-replay-loses-prior-order",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
+      "desc": "Retrying the consumed cart deletes an earlier acknowledged order.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  if (lines.length === 0) throw new SenderError('Your cart is empty.');",
+          "replace": "  if (lines.length === 0) { const prior = [...ctx.db.customerOrder.iter()].filter(order => order.accountId === acc.id).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)[0]; if (prior) ctx.db.customerOrder.id.delete(prior.id); return; }"
+        }
+      ]
+    },
+    {
+      "id": "checkout-clears-cart-without-order",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
+      "desc": "Checkout returns success and empties the cart without recording an order.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  if (lines.length === 0) throw new SenderError('Your cart is empty.');",
+          "replace": "  if (lines.length === 0) throw new SenderError('Your cart is empty.');\n  if (lines.length > 0) { for (const line of lines) ctx.db.cartItem.id.delete(line.id); return; }"
+        }
+      ]
     }
   ]
 }
