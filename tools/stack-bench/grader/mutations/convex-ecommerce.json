@@ -2148,6 +2148,36 @@
           "replace": "export const ship = mutationGeneric({ args: { orderId: v.id('order_header') }, handler: async (ctx, { orderId }) => {\n  throw new ConvexError('Shipping refused');\n  const user = await operator(ctx);"
         }
       ]
+    },
+    {
+      "id": "cancel-trusts-submitted-owner",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.order-owner.204a"
+      ],
+      "desc": "Trust a username submitted by another signed-in customer as the order owner.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "export const cancel = mutationGeneric({ args: { orderId: v.id('order_header') }, handler: async (ctx, { orderId }) => {\n  const order = await ownedOrder(ctx, orderId);",
+          "replace": "export const cancel = mutationGeneric({ args: { orderId: v.id('order_header'), username: v.optional(v.string()) }, handler: async (ctx, { orderId, username }) => {\n  const user = await account(ctx);\n  const claimed = username ? await ctx.db.query('order_account').withIndex('username', q => q.eq('username', username)).unique() : null;\n  const order = await ctx.db.get(orderId);\n  if (!order || order.account_id !== (claimed?._id ?? user._id)) throw new ConvexError('Order not found');"
+        }
+      ]
+    },
+    {
+      "id": "cancel-rejects-every-request",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.order-owner.204a"
+      ],
+      "desc": "Reject legitimate cancellation as well as foreign requests.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "export const cancel = mutationGeneric({ args: { orderId: v.id('order_header') }, handler: async (ctx, { orderId }) => {\n  const order = await ownedOrder(ctx, orderId);",
+          "replace": "export const cancel = mutationGeneric({ args: { orderId: v.id('order_header') }, handler: async (ctx, { orderId }) => {\n  const order = await ownedOrder(ctx, orderId);\n  throw new ConvexError('Cancellation refused');"
+        }
+      ]
     }
   ]
 }

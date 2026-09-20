@@ -3171,6 +3171,36 @@
           "replace": "app.post(\"/api/fulfilment/ship\", requireAuth, requireStaff, async (req, res) => {\n  return res.status(403).json({ error: \"Shipping refused\" });"
         }
       ]
+    },
+    {
+      "id": "cancel-trusts-submitted-owner",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.order-owner.204a"
+      ],
+      "desc": "Trust a username submitted by another signed-in customer as the order owner.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\"/api/orders/:id/cancel\", requireAuth, async (req, res) => {\n  const user = (req as any).user;",
+          "replace": "app.post(\"/api/orders/:id/cancel\", requireAuth, async (req, res) => {\n  const user = (typeof req.body?.username === 'string' ? await User.findOne({username:req.body.username}) : null) ?? (req as any).user;"
+        }
+      ]
+    },
+    {
+      "id": "cancel-rejects-every-request",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.order-owner.204a"
+      ],
+      "desc": "Reject legitimate cancellation as well as foreign requests.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\"/api/orders/:id/cancel\", requireAuth, async (req, res) => {\n  const user = (req as any).user;",
+          "replace": "app.post(\"/api/orders/:id/cancel\", requireAuth, async (req, res) => {\n  const user = (req as any).user;\n  return res.status(403).json({error:\"Cancellation refused\"});"
+        }
+      ]
     }
   ]
 }

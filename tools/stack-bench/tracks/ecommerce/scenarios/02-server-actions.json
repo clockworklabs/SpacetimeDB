@@ -145,7 +145,7 @@
       "name": "An order belongs to the person who placed it",
       "actors": ["owner", "other"],
       "setup": [
-        { "do": "signUp", "actor": "owner", "name": "direct-owner" },
+        { "do": "signUp", "actor": "owner", "name": "direct-owner", "exact": true },
         { "do": "signUp", "actor": "other", "name": "direct-other" },
         { "do": "callAction", "actor": "owner", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Desk Lamp", "attribute": "data-buy-input" } },
 
@@ -160,7 +160,7 @@
         {
           "id": "204a",
           "category": "production",
-          "desc": "the server refuses one customer trying to cancel another customer's still-pending order",
+          "desc": "customers cannot cancel another account's order, including by submitting its owner's username; the owner can still cancel it",
           "points": 2,
           "statedBy": "A customer can cancel an order that has not shipped",
           "steps": [
@@ -169,10 +169,25 @@
             {"do":"callAction","actor":"other","from":"owner","action":"cancel","namedAction":{"id":"cancel","path":"/api/orders/:id/cancel","reducer":"cancel_order","args":[0],"params":[{"name":"orderId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Keyboard","attribute":"data-cancel-input"},"settleMs":2000},
             {"do":"expectActionOutcome","actor":"other","outcome":"refused","routeProvenBy":"owner"},
             {"do":"reload","actor":"owner","settleMs":1000},
-            {"do":"ensureSignedIn","actor":"owner","name":"direct-owner","readyTestid":"current-user"},
+            {"do":"ensureSignedIn","actor":"owner","name":"direct-owner","exact":true,"readyTestid":"current-user"},
             {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"within":1000},
             {"do":"click","actor":"owner","testid":"orders-toggle","unlessVisible":"order-item"},
-            {"do":"expect","actor":"owner","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"pending","ignoreCase":true}
+            {"do":"expect","actor":"owner","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"pending","ignoreCase":true},
+            {"do":"callAction","actor":"other","from":"owner","action":"cancel","namedAction":{"id":"cancel","path":"/api/orders/:id/cancel","reducer":"cancel_order","args":[0,"direct-owner"],"params":[{"name":"orderId","in":"path","placeholder":":id","wireType":"u64"},{"name":"username","in":"body"}]},"input":{"testid":"order-item","contains":"Keyboard","attribute":"data-cancel-input"},"settleMs":0},
+            {"do":"expectActionOutcome","actor":"other","outcome":"completed","routeProvenBy":"owner"},
+            {"do":"reload","actor":"owner","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"owner","name":"direct-owner","exact":true,"readyTestid":"current-user"},
+            {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"within":1000},
+            {"do":"click","actor":"owner","testid":"orders-toggle","unlessVisible":"order-item"},
+            {"do":"expect","actor":"owner","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"pending","ignoreCase":true},
+            {"do":"expectActionOutcome","actor":"other","outcome":"application-refused","routeProvenBy":"owner"},
+            {"do":"callAction","actor":"owner","action":"cancel","namedAction":{"id":"cancel","path":"/api/orders/:id/cancel","reducer":"cancel_order","args":[0],"params":[{"name":"orderId","in":"path","placeholder":":id","wireType":"u64"}]},"input":{"testid":"order-item","contains":"Keyboard","attribute":"data-cancel-input"},"settleMs":0},
+            {"do":"expectActionOutcome","actor":"owner","outcome":"accepted"},
+            {"do":"reload","actor":"owner","settleMs":1000},
+            {"do":"ensureSignedIn","actor":"owner","name":"direct-owner","exact":true,"readyTestid":"current-user"},
+            {"do":"click","actor":"owner","testid":"overlay-close","ifAvailable":true,"within":1000},
+            {"do":"click","actor":"owner","testid":"orders-toggle","unlessVisible":"order-item"},
+            {"do":"expect","actor":"owner","testid":"order-status","in":{"testid":"order-item","contains":"Keyboard"},"value":"cancelled","ignoreCase":true}
           ]
         }
       ]

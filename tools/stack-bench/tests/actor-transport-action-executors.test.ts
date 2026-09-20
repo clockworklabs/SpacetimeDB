@@ -639,6 +639,35 @@ test('shipping role claims retain customer credentials and check fresh state bef
   }
 });
 
+test('cancellation owner claims retain the caller and verify fresh state before refusal', async () => {
+  const scenario = JSON.parse(readFileSync('tracks/ecommerce/scenarios/02-server-actions.json', 'utf8'));
+  const feature = scenario.features.find((f: UnknownRecord) => f.id === 204);
+  const owner = feature.setup.find((s: UnknownRecord) => s.do === 'signUp' && s.actor === 'owner');
+  assert.equal(owner.exact, true);
+  const criterion = feature.criteria[0];
+  const steps = criterion.steps as UnknownRecord[], calls = steps.filter(step => step.do === 'callAction');
+  assert.equal(criterion.points, 2);
+  assert.equal(calls.length, 4);
+  const attack = steps.indexOf(calls[2]!);
+  assert.equal(steps[attack + 1]!.outcome, 'completed');
+  const refusal = steps.findIndex((s, i) => i > attack && s.outcome === 'application-refused');
+  assert(steps.slice(attack, refusal).some(s => s.do === 'reload'));
+  assert.equal(steps[refusal - 1]!.value, 'pending');
+  assert.equal(steps.at(-1)!.value, 'cancelled');
+  for (const backend of ['postgres', 'mongodb', 'spacetime']) {
+    const requests: { body: string; authorization: string | undefined }[] = [];
+    const provided = services(new Map(['owner', 'other'].map(name => [name, { name,
+      writes: [{ headers: { authorization: `Bearer ${name}` } }],
+      loc: () => ({ waitFor: async () => {}, getAttribute: async () => '{"orderId":"9007199254740993"}' }),
+    }])), { backend, spacetime: { uri: 'http://native.test', mod: 'shop' },
+      fetchImpl: async (_url, options) => { requests.push({ body: options.body!, authorization: options.headers?.authorization }); return namedResponse(403, false); } });
+    for (const call of calls) assert.equal((await run(call, provided)).status, 'passed');
+    assert.deepEqual(requests.map(r => r.authorization), ['Bearer owner', 'Bearer other', 'Bearer other', 'Bearer owner']);
+    if (backend === 'spacetime') assert.equal(requests[2]!.body, `[9007199254740993,${JSON.stringify(owner.name)}]`);
+    else assert.deepEqual(JSON.parse(requests[2]!.body), { username: owner.name });
+  }
+});
+
 test('fixed checkout price claims reach the native transport without inventing a DOM hook', async () => {
   const scenario = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/progression-cart-checkout.json'), 'utf8'));
   const steps = scenario.features[0].criteria.find((c: UnknownRecord) => c.id === '4d').steps as UnknownRecord[];

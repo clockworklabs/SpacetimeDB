@@ -3165,6 +3165,21 @@
           "replace": "export const shipOrder = spacetimedb.reducer({ orderId: t.u64() }, (ctx, { orderId }) => {\n  requireStaffOrAdmin(ctx);\n  if (orderId >= 0n) throw new SenderError('Shipping refused.');"
         }
       ]
+    },
+    {
+      "id": "cancel-rejects-every-request",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.order-owner.204a"
+      ],
+      "desc": "Reject legitimate cancellation as well as foreign requests.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "export const cancelOrder = spacetimedb.reducer({ orderId: t.u64() }, (ctx, { orderId }) => {\n  const order = requireOrderOwner(ctx, orderId);",
+          "replace": "export const cancelOrder = spacetimedb.reducer({ orderId: t.u64() }, (ctx, { orderId }) => {\n  const order = requireOrderOwner(ctx, orderId);\n  if (orderId >= 0n) throw new SenderError('Cancellation refused');"
+        }
+      ]
     }
   ]
 }

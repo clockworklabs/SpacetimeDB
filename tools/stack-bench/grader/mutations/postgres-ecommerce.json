@@ -3290,6 +3290,55 @@
           "replace": "app.post(\n  \"/api/fulfilment/ship\",\n  (_req, res) => { res.status(403).json({ error: \"Shipping refused\" }); },"
         }
       ]
+    },
+    {
+      "id": "cancel-trusts-submitted-owner",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.order-owner.204a"
+      ],
+      "desc": "Trust a username submitted by another signed-in customer as the order owner.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\n  \"/api/orders/:id/cancel\",\n  requireAuth,\n  asyncHandler(async (req, res) => {\n    const orderId = Number(req.params.id);\n    const accountId = req.account!.id;",
+          "replace": "app.post(\n  \"/api/orders/:id/cancel\",\n  requireAuth,\n  asyncHandler(async (req, res) => {\n    const orderId = Number(req.params.id);\n    const claimed = typeof req.body?.username === 'string' ? (await pool.query('SELECT id FROM account WHERE username = $1', [req.body.username])).rows[0] : null;\n    const accountId = claimed?.id ?? req.account!.id;"
+        }
+      ]
+    },
+    {
+      "id": "cancel-claim-commits-then-refuses",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.order-owner.204a"
+      ],
+      "desc": "Cancel using the submitted owner, then return 403; fresh state must expose the unauthorized effect.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\n  \"/api/orders/:id/cancel\",\n  requireAuth,\n  asyncHandler(async (req, res) => {\n    const orderId = Number(req.params.id);\n    const accountId = req.account!.id;",
+          "replace": "app.post(\n  \"/api/orders/:id/cancel\",\n  requireAuth,\n  asyncHandler(async (req, res) => {\n    const orderId = Number(req.params.id);\n    const claimed = typeof req.body?.username === 'string' ? (await pool.query('SELECT id FROM account WHERE username = $1', [req.body.username])).rows[0] : null;\n    const accountId = claimed?.id ?? req.account!.id;"
+        },
+        {
+          "find": "      await client.query(`UPDATE orders SET status = 'cancelled' WHERE id = $1`, [orderId]);\n      await client.query(\"COMMIT\");",
+          "replace": "      await client.query(`UPDATE orders SET status = 'cancelled' WHERE id = $1`, [orderId]);\n      await client.query(\"COMMIT\");\n      if (req.body?.username) { res.status(403).json({error:\"Cancellation refused\"}); return; }"
+        }
+      ]
+    },
+    {
+      "id": "cancel-rejects-every-request",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.order-owner.204a"
+      ],
+      "desc": "Reject legitimate cancellation as well as foreign requests.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\n  \"/api/orders/:id/cancel\",\n  requireAuth,\n  asyncHandler(async (req, res) => {\n    const orderId = Number(req.params.id);\n    const accountId = req.account!.id;",
+          "replace": "app.post(\n  \"/api/orders/:id/cancel\",\n  (_req, res) => { res.status(403).json({error:\"Cancellation refused\"}); },\n  requireAuth,\n  asyncHandler(async (req, res) => {\n    const orderId = Number(req.params.id);\n    const accountId = req.account!.id;"
+        }
+      ]
     }
   ]
 }
