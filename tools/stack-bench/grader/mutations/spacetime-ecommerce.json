@@ -3147,7 +3147,7 @@
       "edits": [
         {
           "find": "    const product = ctx.db.item.insert({ id: 0n, name: name.trim(), price });",
-          "replace": "    throw new Error('Catalog writes refused');\n    const product = ctx.db.item.insert({ id: 0n, name: name.trim(), price });"
+          "replace": "    if (price > 0) throw new SenderError('Catalog writes refused');\n    const product = ctx.db.item.insert({ id: 0n, name: name.trim(), price });"
         }
       ]
     },
