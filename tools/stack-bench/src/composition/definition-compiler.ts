@@ -262,7 +262,7 @@ export const ACTION_DEFINITIONS = Object.freeze({
   signIn: fields({ ...actor, name: nonEmptyString },
     { password: string, exact: boolean, expectFailure: boolean }),
   signUp: fields({ ...actor, name: nonEmptyString },
-    { password: string, exact: boolean, expectFailure: boolean }),
+    { password: string, exact: boolean, expectFailure: boolean, requestPatch: object }),
   startAppServer: fields({}, settle),
   stopAppServer: fields({}, settle),
   typeInto: fields({ ...actor, text: string }),

@@ -1,5 +1,5 @@
 import type { RefusalKind, ResponseContract } from './named-action-runtime.js';
-import type { BrowserContext } from 'playwright';
+import type { BrowserContext, Page } from 'playwright';
 import { ActionApplicationFailure, ActionInconclusive } from './action-contract.js';
 import { finding, renderFinding } from './action-findings.js';
 import type { FailedFindingKind, FindingFields, InconclusiveFindingKind } from './action-findings.js';
@@ -29,6 +29,8 @@ export interface BrowserResponse {
 }
 
 export interface BrowserPage {
+  route?: Page['route'];
+  unroute?: Page['unroute'];
   url(): string;
   readonly request: {
     fetch(url: string, options: UnknownRecord): Promise<BrowserResponse>;

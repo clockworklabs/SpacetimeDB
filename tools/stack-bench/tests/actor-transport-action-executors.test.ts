@@ -627,7 +627,7 @@ test('restock role claims reach the real write with staff credentials and stored
   const criterion = scenario.features[0].criteria.find((c: UnknownRecord) => c.id === '103b');
   assert.equal(criterion.points, 2);
   const steps = criterion.steps as UnknownRecord[];
-  const calls = steps.filter(step => step.do === 'callAction');
+  const calls = steps.filter(step => step.do === 'callAction' && ['admin', 'staff'].includes(String(step.actor)));
   assert.equal(calls.length, 4);
   const attack = steps.indexOf(calls[2]!);
   assert.equal(steps[attack - 1]!.do, 'dbRecordStock');

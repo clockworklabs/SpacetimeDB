@@ -8,6 +8,7 @@ import {
 } from './actor-action-runtime.js';
 import type { ActorActionArguments, BrowserActorCapabilities } from './actor-action-runtime.js';
 import { browserApplicationBoundary } from './browser-action-executors.js';
+import { withAuthRequestPatch, type AuthRequestPatch } from './auth-request-patch.js';
 
 type ChatArguments<Input extends { readonly actor: string }> =
   ActorActionArguments<Input, BrowserActorCapabilities>;
@@ -20,6 +21,7 @@ interface AccountInput {
   readonly password?: string;
   readonly readyTestid?: string;
   readonly settleMs?: number;
+  readonly requestPatch?: AuthRequestPatch;
 }
 
 interface RoomInput {
@@ -40,11 +42,19 @@ interface ManyMessagesInput {
   readonly prefix: string;
 }
 
-async function signUp({ input, capabilities, signal }: ChatArguments<AccountInput>) {
+async function signUp({ input, capabilities, signal }: ChatArguments<AccountInput>): Promise<Record<string, unknown>> {
   const actor = actorFor(capabilities, input.actor);
   const browser = browserFor(capabilities);
   const user = input.exact ? input.name : browser.scopedUser(input.name);
   const password = input.password ?? `pw-${user}`;
+  if (input.requestPatch) {
+    if (!actor.page.route || !actor.page.unroute) throw new Error('Authentication request interception is unavailable');
+    const result = await withAuthRequestPatch({ route: actor.page.route.bind(actor.page), unroute: actor.page.unroute.bind(actor.page) },
+      user, password, input.requestPatch, () => signUp({ input: { ...input, requestPatch: undefined, expectFailure: true }, capabilities, signal }));
+    await actor.loc('current-user').or(actor.loc('auth-error')).filter({ visible: true }).first()
+      .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
+    return result;
+  }
   const username = actor.page.locator(browser.testId('signup-username')).first();
   if (!(await username.isVisible())) {
     const toggle = actor.loc('signup-toggle');

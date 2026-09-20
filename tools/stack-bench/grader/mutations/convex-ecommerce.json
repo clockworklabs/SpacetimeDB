@@ -2283,6 +2283,46 @@
           "replace": ":root {\n  --debug-password: \"sb-private-pw-76dc492ea153\";"
         }
       ]
+    },
+    {
+      "id": "signup-accepts-admin-claim",
+      "scenario": "tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "desc": "Trust a submitted signup administrator claim and grant protected stock-write authority.",
+      "edits": [
+        {
+          "file": "convex/schema.js",
+          "find": "registrationNonce: v.optional(v.string()),",
+          "replace": "registrationNonce: v.optional(v.string()), isAdmin: v.optional(v.boolean()),"
+        },
+        {
+          "file": "convex/auth.js",
+          "find": "profile: { name: params.username, registrationNonce },",
+          "replace": "profile: { name: params.username, registrationNonce, isAdmin: params.role === 'admin' },"
+        },
+        {
+          "file": "convex/accounts.js",
+          "find": "username: user.name, roles: [],",
+          "replace": "username: user.name, roles: user.isAdmin ? ['admin'] : [],"
+        }
+      ]
+    },
+    {
+      "id": "admin-boundary-rejects-all-signups",
+      "scenario": "tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "desc": "Keep fixture provisioning available, but refuse every new customer registration; blocking useful signup must not pass the authority check.",
+      "edits": [
+        {
+          "file": "convex/auth.js",
+          "find": "if (params.flow === 'signUp') {",
+          "replace": "if (params.flow === 'signUp') {\n        if (!['admin', 'staff', 'customer'].includes(params.username)) throw new ConvexError('Registration disabled');"
+        }
+      ]
     }
   ]
 }

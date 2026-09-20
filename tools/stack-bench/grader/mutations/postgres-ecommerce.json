@@ -3449,6 +3449,36 @@
           "replace": ":root {\n  --debug-password: \"sb-private-pw-76dc492ea153\";"
         }
       ]
+    },
+    {
+      "id": "signup-accepts-admin-claim",
+      "scenario": "tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "desc": "Trust a submitted signup administrator claim and grant protected stock-write authority.",
+      "edits": [
+        {
+          "file": "server/src/index.ts",
+          "find": ".values({ username, passwordHash, isAdmin: false, isStaff: false })",
+          "replace": ".values({ username, passwordHash, isAdmin: req.body.role === 'admin', isStaff: false })"
+        }
+      ]
+    },
+    {
+      "id": "admin-boundary-rejects-all-signups",
+      "scenario": "tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "desc": "Refuse every new registration; blocking useful signup must not pass the authority check.",
+      "edits": [
+        {
+          "file": "server/src/index.ts",
+          "find": "\"/api/auth/signup\",\n  asyncHandler(async (req, res) => {",
+          "replace": "\"/api/auth/signup\",\n  asyncHandler(async (req, res) => {\n    res.status(403).json({ error: \"Registration disabled\" }); return;"
+        }
+      ]
     }
   ]
 }

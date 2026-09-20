@@ -3280,6 +3280,51 @@
           "replace": ":root {\n  --debug-password: \"sb-private-pw-76dc492ea153\";"
         }
       ]
+    },
+    {
+      "id": "signup-accepts-admin-claim",
+      "scenario": "tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "desc": "Trust a submitted signup administrator claim and grant protected stock-write authority.",
+      "edits": [
+        {
+          "file": "backend/spacetimedb/src/auth.ts",
+          "find": "{ name: t.string(), password: t.string(), salt: t.string() }, t.bool(),",
+          "replace": "{ name: t.string(), password: t.string(), salt: t.string(), claims: t.object('SignupClaims', { role: t.string() }) }, t.bool(),"
+        },
+        {
+          "file": "backend/spacetimedb/src/auth.ts",
+          "find": "(ctx, { name, password, salt }) => {",
+          "replace": "(ctx, { name, password, salt, claims }) => {"
+        },
+        {
+          "file": "backend/spacetimedb/src/auth.ts",
+          "find": "isAdmin: false, isStaff: false });",
+          "replace": "isAdmin: claims.role === 'admin', isStaff: false });"
+        },
+        {
+          "file": "client/src/auth.ts",
+          "find": "mode === 'signup' ? [name, password, salt] : [name, password]",
+          "replace": "mode === 'signup' ? [name, password, salt, { role: 'customer' }] : [name, password]"
+        }
+      ]
+    },
+    {
+      "id": "admin-boundary-rejects-all-signups",
+      "scenario": "tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.spec.access-control.warehouse-write-boundary.103b"
+      ],
+      "desc": "Refuse every new registration; blocking useful signup must not pass the authority check.",
+      "edits": [
+        {
+          "file": "backend/spacetimedb/src/auth.ts",
+          "find": "if (!validInput(name, password) || !/^[a-f0-9]{64}$/.test(salt)) return false;",
+          "replace": "if (!validInput(name, password) || !/^[a-f0-9]{64}$/.test(salt) || name.length > 0) return false;"
+        }
+      ]
     }
   ]
 }
