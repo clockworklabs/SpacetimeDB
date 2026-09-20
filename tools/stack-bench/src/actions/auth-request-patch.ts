@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { Page, Route } from 'playwright';
 import { inconclusive } from './actor-action-runtime.js';
+import { ActionApplicationFailure } from './action-contract.js';
+import { browserApplicationBoundary } from './browser-action-executors.js';
 
 export interface AuthRequestPatch {
   readonly fields?: Readonly<Record<string, unknown>>;
@@ -77,13 +79,17 @@ export async function withAuthRequestPatch<T>(page: Pick<Page, 'route' | 'unrout
   };
   await page.route('**/*', handler);
   try {
-    let result: T | undefined, submissionError: unknown;
-    try { result = await submit(); } catch (caught) { submissionError = caught; }
+    let result: T | undefined, submissionFailure: { error: unknown } | undefined;
+    try { result = await browserApplicationBoundary(submit)(undefined); }
+    catch (error) { submissionFailure = { error }; }
     await Promise.all(pending);
+    if (submissionFailure && !(submissionFailure.error instanceof ActionApplicationFailure)) {
+      throw submissionFailure.error;
+    }
     if (error || matches !== 1 || !receipt || receipt.status >= 300 && receipt.status < 400) {
       inconclusive('replay-unavailable', { actor: 'authentication form', detail: 'Could not prove one complete modified credential request' });
     }
-    if (submissionError) throw submissionError;
+    if (submissionFailure) throw submissionFailure.error;
     return { ...result, requestPatch: receipt };
   } finally { await page.unroute('**/*', handler); }
 }

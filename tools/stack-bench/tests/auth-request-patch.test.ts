@@ -4,7 +4,7 @@ import { once } from 'node:events';
 import test from 'node:test';
 import { chromium } from 'playwright';
 import { patchAuthRequest, withAuthRequestPatch } from '../src/actions/auth-request-patch.js';
-import { ActionInconclusive } from '../src/actions/action-contract.js';
+import { ActionApplicationFailure, ActionHarnessFailure, ActionInconclusive } from '../src/actions/action-contract.js';
 
 test('credential patches preserve native envelopes and reject ambiguous matches', () => {
   const credentials = { username: 'customer', password: 'secret' };
@@ -75,6 +75,22 @@ test('real browser credential patch reaches the native request and keeps uncerta
       await assert.rejects(run(fn), ActionInconclusive);
     }
     const redirects = received.filter(r => r.path === '/redirect'); assert.equal(redirects.length, 1);
+    for (const failure of [new ActionHarnessFailure('browser setup failed'),
+      new Error('locator.fill: Unexpected token in selector'),
+      new Error('Target page, context or browser has been closed'),
+      new ActionInconclusive('input dispatch was not confirmed'), undefined, false, null]) {
+      await assert.rejects(run(async () => { throw failure; }), error => {
+        assert.equal(error, failure); return true;
+      });
+    }
+    // Incomplete capture cannot turn a browser-control failure into an app defect.
+    const timeout = Object.assign(new Error('locator.click: Timeout 1000ms exceeded'), { name: 'TimeoutError' });
+    await assert.rejects(run(async () => { throw timeout; }), ActionInconclusive);
+    const appFailure = new ActionApplicationFailure('application control was missing');
+    await assert.rejects(run(async () => { throw appFailure; }), ActionInconclusive);
+    await assert.rejects(run(async () => { await submit(); throw appFailure; }), error => {
+      assert.equal(error, appFailure); return true;
+    });
     // The route handler must be removed even after failed measurement.
     await submit(); assert.equal(JSON.stringify(received.at(-1)!.body), JSON.stringify(body));
     await context.close();
