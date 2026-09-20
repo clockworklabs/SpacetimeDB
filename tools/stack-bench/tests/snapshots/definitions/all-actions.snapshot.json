@@ -25,6 +25,17 @@
             },
             {
               "actor": "a",
+              "do": "prepareResponseLoss"
+            },
+            {
+              "actor": "a",
+              "before": "before",
+              "do": "loseCheckoutResponse",
+              "prepared": "prepared",
+              "quantity": 1
+            },
+            {
+              "actor": "a",
               "as": "crash",
               "before": "before",
               "do": "crashCheckout",

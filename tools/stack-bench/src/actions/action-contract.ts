@@ -105,6 +105,7 @@ export const GRADING_CAPABILITY_IDS = Object.freeze([
   'database-read',
   'named-actions',
   'process-crash',
+  'response-loss',
   'subprocess',
   'transport-observation',
 ] as const);

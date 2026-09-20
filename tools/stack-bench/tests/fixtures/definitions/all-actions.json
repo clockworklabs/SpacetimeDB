@@ -18,6 +18,8 @@
             { "do": "armScriptCanary", "actor": "a" },
             { "do": "expectNoScriptExecution", "actor": "a" },
             { "do": "confirmCheckout", "actor": "a" },
+            { "do": "prepareResponseLoss", "actor": "a" },
+            { "do": "loseCheckoutResponse", "actor": "a", "before": "before", "prepared": "prepared", "quantity": 1 },
             { "do": "crashCheckout", "actor": "a", "before": "before", "prepared": "prepared", "quantity": 1, "requests": 1, "offsetMs": 0, "target": "database", "as": "crash" },
             { "do": "expectCrashCheckout", "from": "crash", "verdict": "atomicity" },
             { "do": "dbRecordCheckout", "account": "a", "item": "Keyboard", "as": "before" },

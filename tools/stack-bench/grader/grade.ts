@@ -52,6 +52,7 @@ import type { LeasedSpacetimeTarget } from '../src/runtime/spacetime-target.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 import { captureResponses, ReceivedTransport } from './transport-frames.js';
+import { installResponseLoss } from './response-loss.js';
 import type { ActionEvidence } from '../src/actions/action-contract.js';
 import type { CheckEvidence, CheckEvidenceAttachment, CheckEvidencePhase,
   CheckEvidenceStatus } from '../src/evidence/check-evidence.js';
@@ -289,6 +290,7 @@ export class Actor {
   writes: ActorWrite[] = [];
   lastWsWrite: ActorWebSocketWrite | null = null;
   annotate = false;
+  responseLoss?: Awaited<ReturnType<typeof installResponseLoss>>;
 
   constructor(name: string, page: Page, context: BrowserContext) {
     this.name = name;
@@ -552,6 +554,20 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
   });
   return Object.freeze({
     actors: actorAccess,
+    'response-loss': Object.freeze({
+      async prepare(name: string) {
+        const actor = actors.get(name);
+        if (!actor || actor.responseLoss) throw new Error('response-loss actor is missing or already prepared');
+        actor.responseLoss = await installResponseLoss(actor.context);
+        // Existing sockets predate interception. Replace them before setup writes.
+        await runApplicationNavigation(() => actor.page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 }));
+      },
+      get(name: string) {
+        const gate = actors.get(name)?.responseLoss;
+        if (!gate) throw new Error('response loss was not prepared');
+        return gate;
+      },
+    }),
     'application-files': Object.freeze({ root: ctx.appDir ?? null, expand: (value: unknown) => expand(value, ctx) }),
     'application-lifecycle': applicationLifecycle(ctx),
     'backend-lifecycle': createLifecycleCapability({

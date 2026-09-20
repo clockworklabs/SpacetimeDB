@@ -15,7 +15,7 @@ import { defineStackAdapter } from '../stack-adapter-common.js';
 const capabilities = [
   'actors', 'application-files', 'application-lifecycle', 'backend-lifecycle',
   'browser-interaction', 'browser-observation', 'clock', 'concurrency',
-  'database-write', 'database-read', 'named-actions', 'process-crash', 'subprocess', 'transport-observation',
+  'database-write', 'database-read', 'named-actions', 'process-crash', 'response-loss', 'subprocess', 'transport-observation',
 ] as const satisfies readonly GradingCapabilityId[];
 
 export const convexAdapter = defineStackAdapter('convex', {
