@@ -54,15 +54,17 @@ test('the ecommerce progression definition is complete and calculated from its d
   ])), { 1: 4, 2: 10, 3: 13, 4: 10, 5: 9, 6: 3 });
   assert.equal(definition.questlines.length, 12);
   assert.equal(new Set(definition.nodes.flatMap(node => node.gradingChecks.map(check => check.id))).size,
-    190);
+    191);
   assert.equal(definition.nodes.flatMap(node => node.gradingChecks)
-    .reduce((total, check) => total + check.points, 0), 361);
+    .reduce((total, check) => total + check.points, 0), 362);
   assert(definition.nodes.every(node => Object.keys(node.dependencyReasons).length
     === node.dependencies.length));
   assert(definition.questlines.every(questline =>
     definition.nodes.some(node => node.questline === questline.id)));
 
   const byId = new Map(definition.nodes.map(node => [node.id, node]));
+  assert(requiredNode(byId, 'accounts').gradingChecks.some(check =>
+    check.id === 'ecommerce.spec.access-control.account-disclosure.110a'));
   assert.deepEqual(requiredNode(byId, 'faceted-search').dependencies, ['catalog-discovery']);
   assert.deepEqual(requiredNode(byId, 'scheduled-restocks').dependencies, ['warehouse-admin']);
   assert.deepEqual(requiredNode(byId, 'price-history').dependencies,

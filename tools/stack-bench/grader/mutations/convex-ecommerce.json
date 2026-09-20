@@ -2178,6 +2178,41 @@
           "replace": "export const cancel = mutationGeneric({ args: { orderId: v.id('order_header') }, handler: async (ctx, { orderId }) => {\n  const order = await ownedOrder(ctx, orderId);\n  throw new ConvexError('Cancellation refused');"
         }
       ]
+    },
+    {
+      "id": "account-password-in-public-data",
+      "scenario": "tracks/ecommerce/scenarios/01-account-disclosure.json",
+      "targets": [
+        "ecommerce.spec.access-control.account-disclosure.110a"
+      ],
+      "desc": "Expose the actual submitted account password through data available to other clients.",
+      "edits": [
+        {
+          "file": "convex/auth.js",
+          "find": "profile: { name: params.username, registrationNonce },",
+          "replace": "profile: { name: params.username, registrationNonce, image: params.password },"
+        },
+        {
+          "file": "convex/accounts.js",
+          "find": "  const user = await ctx.db.get(userId);",
+          "replace": "  const user = await ctx.db.get(userId);\n  const publicItem = await ctx.db.query('item').first();\n  if (publicItem && user.image) await ctx.db.patch(publicItem._id, { name: publicItem.name + ' ' + user.image });"
+        }
+      ]
+    },
+    {
+      "edits": [
+        {
+          "file": "convex/auth.js",
+          "find": "verifySecret: (password, hash) => new Scrypt().verify(hash, password),",
+          "replace": "verifySecret: (_password, _hash) => false,"
+        }
+      ],
+      "id": "account-disclosure-rejects-login",
+      "scenario": "tracks/ecommerce/scenarios/01-account-disclosure.json",
+      "targets": [
+        "ecommerce.spec.access-control.account-disclosure.110a"
+      ],
+      "desc": "Reject every valid login; absent disclosures alone must not earn a pass."
     }
   ]
 }

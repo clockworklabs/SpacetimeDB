@@ -21,7 +21,7 @@
   ],
   "budget": {
     "status": "bounded",
-    "maxRuntimeMs": 494000
+    "maxRuntimeMs": 524000
   },
   "task": {
     "requirements": [
@@ -584,6 +584,19 @@
       "observations": [
         "requested",
         "unmentioned"
+      ]
+    },
+    {
+      "id": "account-disclosure",
+      "source": "scenarios/01-account-disclosure.json",
+      "feature": 110,
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.feature.accounts"
       ]
     }
   ]

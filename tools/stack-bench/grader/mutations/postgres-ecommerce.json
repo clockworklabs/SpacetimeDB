@@ -3354,6 +3354,41 @@
           "replace": "  return next(); // mutant: accept another origins cookie-backed POST"
         }
       ]
+    },
+    {
+      "id": "account-password-in-public-data",
+      "scenario": "tracks/ecommerce/scenarios/01-account-disclosure.json",
+      "targets": [
+        "ecommerce.spec.access-control.account-disclosure.110a"
+      ],
+      "desc": "Expose the actual submitted account password through data available to other clients.",
+      "edits": [
+        {
+          "file": "server/src/index.ts",
+          "find": "const app = express();",
+          "replace": "const app = express();\nconst leakedPasswords: string[] = [];\napp.use((_req, res, next) => { const json = res.json.bind(res); res.json = (body: any) => json({ ...body, debugCredentials: leakedPasswords }); next(); });"
+        },
+        {
+          "file": "server/src/index.ts",
+          "find": "const passwordHash = await hashPassword(password);",
+          "replace": "const passwordHash = await hashPassword(password);\n    leakedPasswords.push(password);"
+        }
+      ]
+    },
+    {
+      "id": "account-disclosure-rejects-login",
+      "scenario": "tracks/ecommerce/scenarios/01-account-disclosure.json",
+      "targets": [
+        "ecommerce.spec.access-control.account-disclosure.110a"
+      ],
+      "desc": "Reject every valid login; absent disclosures alone must not earn a pass.",
+      "file": "server/src/auth.ts",
+      "edits": [
+        {
+          "find": "return crypto.timingSafeEqual",
+          "replace": "return false && crypto.timingSafeEqual"
+        }
+      ]
     }
   ]
 }

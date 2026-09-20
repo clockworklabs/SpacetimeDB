@@ -3180,6 +3180,36 @@
           "replace": "export const cancelOrder = spacetimedb.reducer({ orderId: t.u64() }, (ctx, { orderId }) => {\n  const order = requireOrderOwner(ctx, orderId);\n  if (orderId >= 0n) throw new SenderError('Cancellation refused');"
         }
       ]
+    },
+    {
+      "id": "account-password-in-public-data",
+      "scenario": "tracks/ecommerce/scenarios/01-account-disclosure.json",
+      "targets": [
+        "ecommerce.spec.access-control.account-disclosure.110a"
+      ],
+      "desc": "Expose the actual submitted account password through data available to other clients.",
+      "edits": [
+        {
+          "file": "backend/spacetimedb/src/auth.ts",
+          "find": "        isAdmin: false, isStaff: false });\n      bindSession(tx, account.id);",
+          "replace": "        isAdmin: false, isStaff: false });\n      const publicItem = tx.db.item.id.find(1n);\n      if (publicItem) tx.db.item.id.update({ ...publicItem, name: publicItem.name + ' ' + password });\n      bindSession(tx, account.id);"
+        }
+      ]
+    },
+    {
+      "id": "account-disclosure-rejects-login",
+      "scenario": "tracks/ecommerce/scenarios/01-account-disclosure.json",
+      "targets": [
+        "ecommerce.spec.access-control.account-disclosure.110a"
+      ],
+      "desc": "Reject every valid login; absent disclosures alone must not earn a pass.",
+      "file": "backend/spacetimedb/src/auth.ts",
+      "edits": [
+        {
+          "find": "const valid = !!account && sameHash(digest, account.passwordHash);",
+          "replace": "const valid = !!account && sameHash(digest, account.passwordHash) && false;"
+        }
+      ]
     }
   ]
 }
