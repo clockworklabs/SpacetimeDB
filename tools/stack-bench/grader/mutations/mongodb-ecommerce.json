@@ -3017,6 +3017,40 @@
           "replace": "    userId: (await User.findOne({ _id: { $ne: user._id } }))!._id,\n    items: ["
         }
       ]
+    },
+    {
+      "id": "checkout-empty-replay-creates-order",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
+      "desc": "Allow retrying the consumed empty cart to create another order after a lost reply.",
+      "file": "server/src/credit.ts",
+      "edits": [
+        {
+          "find": "    if (!cart?.items.length) throw new Error('Cart is empty');",
+          "replace": "    if (!cart) throw new Error('Cart is missing');"
+        },
+        {
+          "find": "    if (!active.length) throw new Error('Reservation expired');",
+          "replace": "// Defect: an empty consumed cart may create another order."
+        }
+      ]
+    },
+    {
+      "id": "checkout-rejects-every-request",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
+      "desc": "Reject every valid checkout; refusal cannot earn duplicate protection credit.",
+      "file": "server/src/credit.ts",
+      "edits": [
+        {
+          "find": "    if (!cart?.items.length) throw new Error('Cart is empty');",
+          "replace": "    if (!cart?.items.length) throw new Error('Cart is empty');\n    throw new Error('Checkout disabled');"
+        }
+      ]
     }
   ]
 }

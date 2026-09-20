@@ -2013,6 +2013,21 @@
           "replace": "account_id: (await rows(ctx, 'order_account')).find(a => a._id !== user._id)._id, total: 0, refunded: 0, status: 'pending'"
         }
       ]
+    },
+    {
+      "id": "checkout-empty-replay-creates-order",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
+      "desc": "Allow retrying the consumed empty cart to create another order after a lost reply.",
+      "file": "convex/shop.js",
+      "edits": [
+        {
+          "find": "  if (!lines.length) throw new ConvexError('Cart is empty');",
+          "replace": "// Defect: an empty consumed cart may create another order."
+        }
+      ]
     }
   ]
 }

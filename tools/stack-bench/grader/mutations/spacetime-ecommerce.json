@@ -3030,6 +3030,36 @@
           "replace": "    accountId: ctx.db.account.username.find('admin')!.id,\n    createdAt: ctx.timestamp,\n    total: Math.round(price * 100) * quantity / 100,"
         }
       ]
+    },
+    {
+      "id": "checkout-empty-replay-creates-order",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
+      "desc": "Allow retrying the consumed empty cart to create another order after a lost reply.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  if (lines.length === 0) throw new SenderError('Your cart is empty.');",
+          "replace": "// Defect: an empty consumed cart may create another order."
+        }
+      ]
+    },
+    {
+      "id": "checkout-rejects-every-request",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
+      "desc": "Reject every valid checkout; refusal cannot earn duplicate protection credit.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  if (lines.length === 0) throw new SenderError('Your cart is empty.');",
+          "replace": "  if (lines.length === 0) throw new SenderError('Your cart is empty.');\n    if (lines.length >= 0) throw new Error('Checkout disabled');"
+        }
+      ]
     }
   ]
 }

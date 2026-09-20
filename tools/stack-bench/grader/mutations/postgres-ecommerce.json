@@ -3121,6 +3121,36 @@
           "replace": "    const itemId = Number(req.params.id);\n    const accountId = req.account!.id - 1;\n\n    const client = await pool.connect();"
         }
       ]
+    },
+    {
+      "id": "checkout-empty-replay-creates-order",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
+      "desc": "Allow retrying the consumed empty cart to create another order after a lost reply.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "    if (lines.rows.length === 0) throw new Error(\"cart is empty\");",
+          "replace": "// Defect: an empty consumed cart may create another order."
+        }
+      ]
+    },
+    {
+      "id": "checkout-rejects-every-request",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
+      "desc": "Reject every valid checkout; refusal cannot earn duplicate protection credit.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "    if (lines.rows.length === 0) throw new Error(\"cart is empty\");",
+          "replace": "    if (lines.rows.length === 0) throw new Error(\"cart is empty\");\n    throw new Error('Checkout disabled');"
+        }
+      ]
     }
   ]
 }

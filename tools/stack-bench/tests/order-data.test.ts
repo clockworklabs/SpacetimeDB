@@ -159,7 +159,17 @@ test('compiled duplicate checkout reconciles real order effects without requesti
   const path = join(STACK_BENCH_ROOT, 'tracks/ecommerce/scenarios/01-duplicate-checkout.json');
   const scenario = compileScenarioDefinition(JSON.parse(readFileSync(path, 'utf8')), { source: path });
   const criterion = scenario.features[0]!.criteria.find(row => row.id === '203b')!;
-  const steps = criterion.steps.filter(step => ['dbRecordCheckout', 'dbExpectCheckout'].includes(step.do));
+  const steps = criterion.steps.filter(step => ['dbRecordCheckout', 'dbExpectCheckout'].includes(step.do)
+    && [step.as, step.before].some(key => key === 'checkout-before' || key === 'checkout-prepared'));
+  for (const step of criterion.steps.filter(step => step.do === 'dbRecordCheckout')) {
+    assert.equal((step.storage as { warehouses: boolean }).warehouses, false);
+  }
+  const loss = criterion.steps.findIndex(step => step.do === 'loseCheckoutResponse');
+  const retry = criterion.steps.findIndex(step => step.do === 'callAction');
+  assert(loss > 0 && retry > loss);
+  assert(criterion.steps.slice(loss + 1, retry).some(step => step.do === 'reload'));
+  assert(criterion.steps.slice(retry + 1).some(step => step.do === 'expectNumber'
+    && step.relativeTo === 'reply-stock-before' && step.plus === -1));
   assert.equal(steps.length, 3);
   const raceIndex = criterion.steps.findIndex(step => step.do === 'callConcurrently');
   assert(criterion.steps.indexOf(steps[1]!) < raceIndex && criterion.steps.indexOf(steps[2]!) > raceIndex);
