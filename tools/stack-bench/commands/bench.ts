@@ -891,7 +891,9 @@ export function inspectGradeSource(directory: string,
       || grade.identities.recipe?.sha256 !== declared.recipe.contentSha256
       || grade.payload.selection?.schemaVersion !== 3
       || grade.payload.selection.sha256 !== level.selection?.sha256
-      || canonicalDefinitionJson(grade.payload.selection) !== canonicalDefinitionJson(level.selection)
+      // Inconclusive progression summaries retain only the selection hash.
+      || (Object.keys(level.selection).length !== 1
+        && canonicalDefinitionJson(grade.payload.selection) !== canonicalDefinitionJson(level.selection))
       || !Array.isArray(grade.payload.selection.requested?.features)
       || !Array.isArray(grade.payload.selection.scoredChecks)) {
       throw new Error('saved first-build source or grade does not match its parent run and candidate scope');

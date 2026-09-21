@@ -66,6 +66,14 @@ test('dependency diagnostics bind the rejected first-build source and its own ch
     assert.equal(replay.serverUri, null);
     assert.deepEqual(replay.aliases, { staff: 'saved-staff' });
     assert.deepEqual(readFileSync(join(output, 'run.json')), before);
+    const summarized = JSON.parse(before.toString());
+    summarized.payload.levels[0].selection = { sha256: selection.sha256 };
+    writeFileSync(join(output, 'run.json'), JSON.stringify(summarized));
+    assert.equal(inspectGradeSource(output, { level: 2, checkKeys: [check] }).source.sha256, source.sha256);
+    summarized.payload.levels[0].selection.sha256 = 'f'.repeat(64);
+    writeFileSync(join(output, 'run.json'), JSON.stringify(summarized));
+    assert.throws(() => inspectGradeSource(output, { level: 2, checkKeys: [check] }), /match/);
+    writeFileSync(join(output, 'run.json'), before);
     const pending = JSON.parse(before.toString());
     pending.timestamps.completedAt = null;
     writeFileSync(join(output, 'run.json'), JSON.stringify(pending));
