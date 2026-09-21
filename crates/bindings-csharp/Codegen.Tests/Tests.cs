@@ -326,6 +326,10 @@ public static class GeneratorSnapshotTests
                 public static void ReducerTick(SpacetimeDB.ReducerContext ctx, uint payload) { }
                 [SpacetimeDB.Procedure(Name = "procedure_job")]
                 public static void ProcedureTick(SpacetimeDB.ProcedureContext ctx, uint payload) { }
+                [SpacetimeDB.Reducer]
+                public static void DefaultReducer(SpacetimeDB.ReducerContext ctx) { }
+                [SpacetimeDB.Procedure]
+                public static void DefaultProcedure(SpacetimeDB.ProcedureContext ctx) { }
             }
             """;
         var input = CSharpCompilation.Create(
@@ -346,6 +350,8 @@ public static class GeneratorSnapshotTests
         {
             ("ReducerTick", "reducer_job"),
             ("ProcedureTick", "procedure_job"),
+            ("DefaultReducer", "DefaultReducer"),
+            ("DefaultProcedure", "DefaultProcedure"),
         })
         {
             var helper = Assert.Single(output.SyntaxTrees
@@ -358,7 +364,16 @@ public static class GeneratorSnapshotTests
             var name = call.ArgumentList.Arguments[0].Expression;
             if (framework == "net10.0")
             {
-                var resolve = Assert.IsType<InvocationExpressionSyntax>(name);
+                var field = Assert.IsAssignableFrom<IFieldSymbol>(output.GetSemanticModel(name.SyntaxTree)
+                    .GetSymbolInfo(name).Symbol);
+                Assert.True(field.IsStatic);
+                Assert.True(field.IsReadOnly);
+                Assert.Contains(field.ContainingType.StaticConstructors, ctor => !ctor.IsImplicitlyDeclared);
+                Assert.DoesNotContain(helper.DescendantNodes().OfType<InvocationExpressionSyntax>(),
+                    invocation => invocation.Expression.ToString().EndsWith(".ResolveName"));
+                var declaration = Assert.IsType<VariableDeclaratorSyntax>(
+                    Assert.Single(field.DeclaringSyntaxReferences).GetSyntax());
+                var resolve = Assert.IsType<InvocationExpressionSyntax>(declaration.Initializer!.Value);
                 Assert.Equal("global::SpacetimeDB.Internal.Module.ResolveName", resolve.Expression.ToString());
                 Assert.StartsWith("ScheduledLibrary,", (string)output.GetSemanticModel(resolve.SyntaxTree)
                     .GetConstantValue(resolve.ArgumentList.Arguments[0].Expression).Value!);

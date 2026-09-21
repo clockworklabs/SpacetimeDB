@@ -4,6 +4,17 @@
 
 partial class Reducers
 {
+    private static class __ScheduleInsertDataName
+    {
+        internal static readonly string Name = global::SpacetimeDB.Internal.Module.ResolveName(
+            "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+            nameof(InsertData)
+        );
+
+        // Prevent eager initialization before the root installs namespace placements.
+        static __ScheduleInsertDataName() { }
+    }
+
     [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
     public static void VolatileNonatomicScheduleImmediateInsertData(PublicTable data)
     {
@@ -11,10 +22,7 @@ partial class Reducers
         using var writer = new BinaryWriter(stream);
         new PublicTable.BSATN().Write(writer, data);
         SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(
-            global::SpacetimeDB.Internal.Module.ResolveName(
-                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                nameof(InsertData)
-            ),
+            __ScheduleInsertDataName.Name,
             stream
         );
     }
