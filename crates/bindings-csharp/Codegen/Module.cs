@@ -1667,7 +1667,19 @@ record ReducerDeclaration
             ? $"nameof({Identifier})"
             : SymbolDisplay.FormatLiteral(CanonicalName!, true);
         if (declaringAssembly is not null)
-            functionName = $"global::SpacetimeDB.Internal.Module.ResolveName({SymbolDisplay.FormatLiteral(declaringAssembly, true)}, {functionName})";
+        {
+            var cacheName = $"__Schedule{Name}Name";
+            extensions.Contents.Append($$"""
+                private static class {{cacheName}}
+                {
+                    internal static readonly string Name = global::SpacetimeDB.Internal.Module.ResolveName({{SymbolDisplay.FormatLiteral(declaringAssembly, true)}}, {{functionName}});
+                    // Prevent eager initialization before the root installs namespace placements.
+                    static {{cacheName}}() { }
+                }
+
+                """);
+            functionName = cacheName + ".Name";
+        }
 
         // Mark the API as unstable. We use name `STDB_UNSTABLE` because:
         // 1. It's a close equivalent of the `unstable` Cargo feature in Rust.
@@ -1896,7 +1908,19 @@ record ProcedureDeclaration
             ? $"nameof({Identifier})"
             : SymbolDisplay.FormatLiteral(CanonicalName!, true);
         if (declaringAssembly is not null)
-            functionName = $"global::SpacetimeDB.Internal.Module.ResolveName({SymbolDisplay.FormatLiteral(declaringAssembly, true)}, {functionName})";
+        {
+            var cacheName = $"__Schedule{Name}Name";
+            extensions.Contents.Append($$"""
+                private static class {{cacheName}}
+                {
+                    internal static readonly string Name = global::SpacetimeDB.Internal.Module.ResolveName({{SymbolDisplay.FormatLiteral(declaringAssembly, true)}}, {{functionName}});
+                    // Prevent eager initialization before the root installs namespace placements.
+                    static {{cacheName}}() { }
+                }
+
+                """);
+            functionName = cacheName + ".Name";
+        }
 
         // Mark the API as unstable. We use name `STDB_UNSTABLE` because:
         // 1. It's a close equivalent of the `unstable` Cargo feature in Rust.
