@@ -146,6 +146,11 @@ export type DbConnectionConfig<RemoteModule extends UntypedRemoteModule> = {
    * Set by {@link DbConnectionBuilder.withTokenProvider}.
    */
   tokenProvider?: TokenProvider;
+  /**
+   * Backoff bounds for reconnect attempts.
+   * Set by {@link DbConnectionBuilder.withAutomaticReconnect}.
+   */
+  reconnectPolicy?: ReconnectPolicy;
 };
 
 /**
@@ -154,12 +159,64 @@ export type DbConnectionConfig<RemoteModule extends UntypedRemoteModule> = {
  */
 export type TokenProvider = () => Promise<string>;
 
-/** The delay before the first reconnect attempt. */
+/** The default delay before the first reconnect attempt. */
 export const RECONNECT_INITIAL_DELAY_MS = 1_000;
-/** The upper bound on the delay between reconnect attempts. */
+/** The default upper bound on the delay between reconnect attempts. */
 export const RECONNECT_MAX_DELAY_MS = 30_000;
 /** The random spread applied to each reconnect delay. */
 export const RECONNECT_JITTER = 0.5;
+/** The lowest `minDelayMs` accepted; smaller values are raised to this. */
+export const RECONNECT_MIN_DELAY_FLOOR_MS = 500;
+/** The lowest `maxDelayMs` accepted; smaller values are raised to this. */
+export const RECONNECT_MAX_DELAY_FLOOR_MS = 1_000;
+
+/** Options for {@link DbConnectionBuilder.withAutomaticReconnect}. */
+export type AutomaticReconnectOptions = {
+  /**
+   * The delay before the first reconnect attempt, and the floor for every
+   * later one. Defaults to 1000 ms; values below 500 ms are raised to 500 ms.
+   */
+  minDelayMs?: number;
+  /**
+   * The cap on the delay between reconnect attempts. Defaults to 30000 ms;
+   * values below 1000 ms (or below `minDelayMs`) are raised to that bound.
+   */
+  maxDelayMs?: number;
+};
+
+export type ReconnectPolicy = Required<AutomaticReconnectOptions>;
+
+export const DEFAULT_RECONNECT_POLICY: ReconnectPolicy = {
+  minDelayMs: RECONNECT_INITIAL_DELAY_MS,
+  maxDelayMs: RECONNECT_MAX_DELAY_MS,
+};
+
+/** Fill in defaults and enforce the floors, warning when a value is raised. */
+export function resolveReconnectPolicy(
+  options: AutomaticReconnectOptions = {}
+): ReconnectPolicy {
+  let {
+    minDelayMs = RECONNECT_INITIAL_DELAY_MS,
+    maxDelayMs = RECONNECT_MAX_DELAY_MS,
+  } = options;
+  // Floors protect the database from clients that retry too aggressively.
+  if (!(minDelayMs >= RECONNECT_MIN_DELAY_FLOOR_MS)) {
+    stdbLogger(
+      'warn',
+      `Reconnect minDelayMs ${minDelayMs} is below the ${RECONNECT_MIN_DELAY_FLOOR_MS} ms floor; using ${RECONNECT_MIN_DELAY_FLOOR_MS} ms.`
+    );
+    minDelayMs = RECONNECT_MIN_DELAY_FLOOR_MS;
+  }
+  const maxFloor = Math.max(RECONNECT_MAX_DELAY_FLOOR_MS, minDelayMs);
+  if (!(maxDelayMs >= maxFloor)) {
+    stdbLogger(
+      'warn',
+      `Reconnect maxDelayMs ${maxDelayMs} is below the ${maxFloor} ms floor; using ${maxFloor} ms.`
+    );
+    maxDelayMs = maxFloor;
+  }
+  return { minDelayMs, maxDelayMs };
+}
 /**
  * A token is refreshed when its remaining validity falls below this fraction
  * of its lifetime, or below {@link TOKEN_REFRESH_MIN_MARGIN_MS}, whichever is
@@ -171,14 +228,15 @@ const TOKEN_REFRESH_MIN_MARGIN_MS = 30_000;
 /** Exponential backoff with jitter; attempt numbers start at one. */
 export function computeReconnectDelayMs(
   attempt: number,
-  random: () => number = Math.random
+  random: () => number = Math.random,
+  { minDelayMs, maxDelayMs }: ReconnectPolicy = DEFAULT_RECONNECT_POLICY
 ): number {
   const base = Math.min(
-    RECONNECT_INITIAL_DELAY_MS * Math.pow(2, Math.max(0, attempt - 1)),
-    RECONNECT_MAX_DELAY_MS
+    minDelayMs * Math.pow(2, Math.max(0, attempt - 1)),
+    maxDelayMs
   );
   const jittered = base * (1 + RECONNECT_JITTER * (2 * random() - 1));
-  return Math.max(0, Math.min(jittered, RECONNECT_MAX_DELAY_MS));
+  return Math.max(minDelayMs, Math.min(jittered, maxDelayMs));
 }
 
 /** Refresh unreadable tokens, or tokens within 5% of expiry (at least 30 seconds). */
@@ -407,6 +465,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   // Stable across sockets; each attempt still gets a fresh ConnectionId.
   #sessionIdHex = ConnectionId.random().toHexString();
   #automaticReconnect: boolean;
+  #reconnectPolicy: ReconnectPolicy;
   #tokenProvider?: TokenProvider;
   #wsBaseUrl: URL;
   #nameOrAddress: string;
@@ -493,6 +552,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     confirmedReads,
     automaticReconnect,
     tokenProvider,
+    reconnectPolicy,
   }: DbConnectionConfig<RemoteModule>) {
     stdbLogger('info', 'Connecting to SpacetimeDB WS...');
 
@@ -566,6 +626,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
     this.#automaticReconnect = automaticReconnect ?? false;
     this.#preparingReplay = this.#automaticReconnect;
+    this.#reconnectPolicy = reconnectPolicy ?? DEFAULT_RECONNECT_POLICY;
     this.#tokenProvider = tokenProvider;
     this.#wsBaseUrl = url;
     this.#nameOrAddress = nameOrAddress;
@@ -641,7 +702,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         ) {
           // The server is tearing down the previous session holder.
           this.#discardSocket();
-          const delayMs = computeReconnectDelayMs(1);
+          const delayMs = this.#reconnectDelayMs(1);
           this.#emitter.emit(
             'connectError',
             this,
@@ -719,12 +780,12 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     }
 
     const attempt = this.#reconnectAttempt + 1;
-    const delayMs = computeReconnectDelayMs(attempt);
-try {
-    this.#emitter.emit('disconnect', this, error, attempt, delayMs);
-} finally {
-    this.#scheduleReconnect(attempt, delayMs);
-}
+    const delayMs = this.#reconnectDelayMs(attempt);
+    try {
+      this.#emitter.emit('disconnect', this, error, attempt, delayMs);
+    } finally {
+      this.#scheduleReconnect(attempt, delayMs);
+    }
   }
 
   #handleAttemptFailure(error: Error): void {
@@ -756,12 +817,16 @@ try {
     }
 
     const attempt = this.#reconnectAttempt + 1;
-    const delayMs = computeReconnectDelayMs(attempt);
-try {
-    this.#emitter.emit('connectError', this, error, attempt, delayMs);
-} finally {
-    this.#scheduleReconnect(attempt, delayMs);
-}
+    const delayMs = this.#reconnectDelayMs(attempt);
+    try {
+      this.#emitter.emit('connectError', this, error, attempt, delayMs);
+    } finally {
+      this.#scheduleReconnect(attempt, delayMs);
+    }
+  }
+
+  #reconnectDelayMs(attempt: number): number {
+    return computeReconnectDelayMs(attempt, Math.random, this.#reconnectPolicy);
   }
 
   #scheduleReconnect(attempt: number, delayMs: number): void {

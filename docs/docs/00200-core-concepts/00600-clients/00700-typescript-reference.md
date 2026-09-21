@@ -229,15 +229,22 @@ Chain a call to `.withToken(token)` to your builder to provide an OpenID Connect
 
 ```typescript
 class DbConnectionBuilder {
-  public withAutomaticReconnect(): this;
+  public withAutomaticReconnect(options?: AutomaticReconnectOptions): this;
 }
+
+type AutomaticReconnectOptions = {
+  minDelayMs?: number; // default 1000
+  maxDelayMs?: number; // default 30000
+};
 ```
 
 Enable automatic reconnection after an established connection drops. This is opt-in for plain TypeScript connections and requires a server with session IDs and batch subscription support.
 
 The SDK keeps the same connection object, table handles, subscription handles, and registered callbacks. Each new connection has a fresh `ConnectionId`, while the SDK retains the authentication token to preserve the client's `Identity`, including for anonymous clients.
 
-Retries continue until `disconnect()` or a recognized terminal failure, such as a changed identity, rejected credentials with no remaining refresh attempt, or a fatal protocol error. The base delays are 1, 2, 4, 8, 16, and 30 seconds, with ±50% jitter and a final 30-second cap. A successful connection resets the backoff. Initial connection failures do not retry. Browser resume events also check for silently closed sockets and bring scheduled retries forward.
+Retries continue until `disconnect()` or a recognized terminal failure, such as a changed identity, rejected credentials with no remaining refresh attempt, or a fatal protocol error. The delay starts at `minDelayMs` and doubles after each failed attempt up to `maxDelayMs`, with ±50% jitter clamped to those bounds. With the defaults, the base delays are 1, 2, 4, 8, 16, and 30 seconds. A successful connection resets the backoff. Initial connection failures do not retry. Browser resume events also check for silently closed sockets and bring scheduled retries forward.
+
+To keep clients from overwhelming a database with rapid retries, `minDelayMs` is never lower than 500 ms and `maxDelayMs` is never lower than 1 second or lower than `minDelayMs`. Values below these floors are raised to them and a warning is logged.
 
 ```typescript
 import { DbConnection, tables } from './module_bindings';

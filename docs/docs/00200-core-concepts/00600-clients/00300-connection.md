@@ -413,7 +413,7 @@ For TypeScript, add `.withAutomaticReconnect()` to the builder to recover after 
 
 Use `.withTokenProvider(() => auth.getAccessToken())` alongside `.withToken(initialToken)` for expiring credentials. The provider runs before reconnect attempts when the retained token needs refreshing, not periodically while connected.
 
-The TypeScript React, Solid, and Svelte providers enable automatic reconnection through their shared connection manager. Vue and Angular require `.withAutomaticReconnect()` on the provider's builder. See the [TypeScript reference](./00700-typescript-reference.md#method-withautomaticreconnect) for retry policy, token refresh, and framework behavior. This feature requires a server that supports session IDs and batch subscriptions.
+Pass `{ minDelayMs, maxDelayMs }` to `.withAutomaticReconnect()` to tune the backoff; values below the 500 ms and 1 second floors are raised with a warning, so that retrying clients cannot overwhelm the database. The TypeScript React, Solid, and Svelte providers enable automatic reconnection through their shared connection manager. Vue and Angular require `.withAutomaticReconnect()` on the provider's builder. See the [TypeScript reference](./00700-typescript-reference.md#method-withautomaticreconnect) for retry policy, token refresh, and framework behavior. This feature requires a server that supports session IDs and batch subscriptions.
 
 For TypeScript connections without this option, and for other SDKs described on this page, create a new connection if you need to recover after a connection loss.
 

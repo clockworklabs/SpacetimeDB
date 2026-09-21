@@ -7,9 +7,13 @@ import {
 } from '../src/lib/errors';
 import {
   computeReconnectDelayMs,
+  resolveReconnectPolicy,
   tokenNeedsRefresh,
   RECONNECT_INITIAL_DELAY_MS,
   RECONNECT_MAX_DELAY_MS,
+  RECONNECT_MAX_DELAY_FLOOR_MS,
+  RECONNECT_MIN_DELAY_FLOOR_MS,
+  type AutomaticReconnectOptions,
 } from '../src/sdk/db_connection_impl';
 import {
   ServerMessage,
@@ -39,6 +43,7 @@ const TOKEN = 'issued-token';
 
 function build(options?: {
   automaticReconnect?: boolean;
+  reconnect?: AutomaticReconnectOptions;
   token?: string;
   tokenProvider?: () => Promise<string>;
 }): Harness {
@@ -62,7 +67,7 @@ function build(options?: {
     builder = builder.withToken(options.token);
   }
   if (options?.automaticReconnect ?? true) {
-    builder = builder.withAutomaticReconnect();
+    builder = builder.withAutomaticReconnect(options?.reconnect);
   }
   if (options?.tokenProvider) {
     builder = builder.withTokenProvider(options.tokenProvider);
@@ -145,7 +150,54 @@ describe('reconnect policy', () => {
     expect(computeReconnectDelayMs(30, () => 1)).toBeLessThanOrEqual(
       RECONNECT_MAX_DELAY_MS
     );
-    expect(computeReconnectDelayMs(1, () => 0)).toBeGreaterThanOrEqual(0);
+    expect(computeReconnectDelayMs(1, () => 0)).toBeGreaterThanOrEqual(
+      RECONNECT_INITIAL_DELAY_MS
+    );
+  });
+
+  test('custom bounds shape the delays and are floored with a warning', async () => {
+    const noJitter = () => 0.5;
+    const policy = resolveReconnectPolicy({
+      minDelayMs: 2_000,
+      maxDelayMs: 5_000,
+    });
+    expect(policy).toEqual({ minDelayMs: 2_000, maxDelayMs: 5_000 });
+    expect(computeReconnectDelayMs(1, noJitter, policy)).toBe(2_000);
+    expect(computeReconnectDelayMs(2, noJitter, policy)).toBe(4_000);
+    expect(computeReconnectDelayMs(3, noJitter, policy)).toBe(5_000);
+    expect(computeReconnectDelayMs(1, () => 0, policy)).toBe(2_000);
+
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(
+      resolveReconnectPolicy({ minDelayMs: 100, maxDelayMs: 200 })
+    ).toEqual({
+      minDelayMs: RECONNECT_MIN_DELAY_FLOOR_MS,
+      maxDelayMs: RECONNECT_MAX_DELAY_FLOOR_MS,
+    });
+    expect(
+      resolveReconnectPolicy({ minDelayMs: 3_000, maxDelayMs: 2_000 })
+    ).toEqual({
+      minDelayMs: 3_000,
+      maxDelayMs: 3_000,
+    });
+    const warnings = log.mock.calls.filter(call =>
+      String(call[0]).includes('WARN')
+    );
+    expect(warnings).toHaveLength(3);
+    log.mockRestore();
+
+    const harness = build({
+      reconnect: { minDelayMs: 2_000, maxDelayMs: 5_000 },
+    });
+    await establish(harness);
+    harness.factory.current.close();
+    await Promise.resolve();
+    expect(harness.disconnects[0].nextReconnectDelayMs).toBeGreaterThanOrEqual(
+      2_000
+    );
+    expect(harness.disconnects[0].nextReconnectDelayMs).toBeLessThanOrEqual(
+      3_000
+    );
   });
 });
 

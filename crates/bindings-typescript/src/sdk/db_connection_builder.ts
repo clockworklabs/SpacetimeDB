@@ -1,6 +1,9 @@
 import {
   DbConnectionImpl,
+  resolveReconnectPolicy,
+  type AutomaticReconnectOptions,
   type ConnectionEvent,
+  type ReconnectPolicy,
   type TokenProvider,
 } from './db_connection_impl';
 import { EventEmitter } from './event_emitter';
@@ -32,6 +35,7 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
   #lightMode: boolean = false;
   #confirmedReads?: boolean;
   #automaticReconnect: boolean = false;
+  #reconnectPolicy?: ReconnectPolicy;
   #tokenProvider?: TokenProvider;
   #createWSFn: WebSocketFactory;
 
@@ -153,12 +157,18 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
 
   /**
    * Reconnect after an established connection drops, preserving handles and callbacks.
-   * Retries use exponential backoff until disconnect() or a terminal failure.
+   * Retries use exponential backoff from `minDelayMs` (default 1 s) up to
+   * `maxDelayMs` (default 30 s) until disconnect() or a terminal failure.
+   * Values below the 500 ms and 1 s floors are raised with a warning, so
+   * that retrying clients cannot overwhelm the database.
    * Initial connection failures are not retried. Lifecycle callbacks report
    * the next attempt and delay, or undefined when no retry is scheduled.
    */
-  withAutomaticReconnect(): this {
+  withAutomaticReconnect(options?: AutomaticReconnectOptions): this {
     this.#automaticReconnect = true;
+    if (options) {
+      this.#reconnectPolicy = resolveReconnectPolicy(options);
+    }
     return this;
   }
 
@@ -329,6 +339,7 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
       createWSFn: this.#createWSFn,
       remoteModule: this.remoteModule,
       automaticReconnect: this.#automaticReconnect,
+      reconnectPolicy: this.#reconnectPolicy,
       tokenProvider: this.#tokenProvider,
     });
   }
