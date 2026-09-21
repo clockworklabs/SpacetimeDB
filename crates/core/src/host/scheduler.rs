@@ -421,7 +421,7 @@ impl SchedulerActor {
                 // nothing to do
             }
             Ok(CallScheduledFunctionResult {
-                reschedule: Some(Reschedule { at_ts, at_real }),
+                reschedule: Some(Reschedule { at_ts, at_real, .. }),
             }) => {
                 if let QueueItem::Id {
                     id,
@@ -478,6 +478,8 @@ pub(crate) struct CallScheduledFunctionResult {
 struct Reschedule {
     at_ts: Timestamp,
     at_real: Instant,
+    /// The schedule's interval, used to judge whether the function keeps up with it.
+    interval: TimeDuration,
 }
 
 #[derive(Clone)]
@@ -514,14 +516,17 @@ pub(super) async fn call_scheduled_procedure(
             reschedule,
             delay,
         } => {
-            if let Some((function_name, delay)) = delay.as_ref() {
-                record_scheduled_function_delay(module_info, function_name, *delay);
-            }
-
             // Execute the procedure. See above for commentary on `catch_unwind()`.
+            let started = Instant::now();
             let result = panic::AssertUnwindSafe(inst_common.call_procedure(*params, inst))
                 .catch_unwind()
                 .await;
+            let run_time = started.elapsed();
+
+            if let Some((function_name, delay)) = delay.as_ref() {
+                let interval = reschedule.as_ref().map(|reschedule| reschedule.interval);
+                record_scheduled_function_delay(module_info, function_name, *delay, run_time, interval);
+            }
 
             // Currently, we drop the return value from the function call. In the future,
             // we might want to handle it somehow.
@@ -663,11 +668,23 @@ fn call_scheduled_reducer_until_done(
         .as_ref()
         .map_or(timestamp, |invocation| invocation.intended_at);
     let scheduled = id.zip(invocation.as_ref().map(|invocation| invocation.row_hash));
-    if let Some(invocation) = invocation.as_ref() {
-        let delay = scheduled_function_delay(timestamp, intended_at);
-        record_scheduled_function_delay(module_info, &invocation.function_name, delay);
-    }
-    call_scheduled_reducer_with_tx(module_info, db, scheduled, tx, intended_at, params, inst_common, inst)
+    let delay = invocation.map(|invocation| {
+        (
+            invocation.function_name,
+            scheduled_function_delay(timestamp, intended_at),
+        )
+    });
+    call_scheduled_reducer_with_tx(
+        module_info,
+        db,
+        scheduled,
+        tx,
+        intended_at,
+        delay,
+        params,
+        inst_common,
+        inst,
+    )
 }
 
 fn scheduled_item_id(item: &QueueItem) -> Option<ScheduledFunctionId> {
@@ -693,7 +710,31 @@ fn scheduled_invocation_for_item(item: &QueueItem) -> Option<ScheduledInvocation
     }
 }
 
-fn record_scheduled_function_delay(module_info: &ModuleInfo, function_name: &str, delay: Duration) {
+/// Records how late a scheduled function was dispatched.
+///
+/// A function that runs longer than its own interval can't be dispatched on time, so
+/// its delay is a module level issue which we log as trace.
+fn record_scheduled_function_delay(
+    module_info: &ModuleInfo,
+    function_name: &str,
+    delay: Duration,
+    run_time: Duration,
+    interval: Option<TimeDuration>,
+) {
+    if let Some(interval) = interval.map(TimeDuration::to_duration_abs)
+        && run_time > interval
+    {
+        log::trace!(
+            "scheduled function `{}` for database {} ran for {:.3}s, longer than its {:.3}s interval; ignoring its {:.3}s delay",
+            function_name,
+            module_info.database_identity,
+            run_time.as_secs_f64(),
+            interval.as_secs_f64(),
+            delay.as_secs_f64(),
+        );
+        return;
+    }
+
     module_info
         .metrics
         .observe_scheduled_function_delay(function_name, delay);
@@ -722,6 +763,7 @@ fn call_scheduled_reducer_with_tx(
     scheduled: Option<(ScheduledFunctionId, Hash)>,
     mut tx: MutTxId,
     reschedule_from: Timestamp,
+    delay: Option<(Arc<str>, Duration)>,
     params: CallReducerParams,
     inst_common: &mut InstanceCommon,
     inst: &mut impl WasmInstance,
@@ -748,9 +790,11 @@ fn call_scheduled_reducer_with_tx(
     // as it might be, so catch it so we can handle it "gracefully". Panics will
     // print their message and backtrace when they occur, so we don't need to do
     // anything with the error payload.
+    let started = Instant::now();
     let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
         inst_common.call_reducer_with_tx(Some(tx), params, inst)
     }));
+    let run_time = started.elapsed();
     let reschedule = scheduled.and_then(|(id, row_hash)| {
         delete_scheduled_function_row(
             module_info,
@@ -762,6 +806,10 @@ fn call_scheduled_reducer_with_tx(
             inst,
         )
     });
+    if let Some((function_name, delay)) = delay.as_ref() {
+        let interval = reschedule.as_ref().map(|reschedule| reschedule.interval);
+        record_scheduled_function_delay(module_info, function_name, *delay, run_time, interval);
+    }
     // Currently, we drop the return value from the function call. In the future,
     // we might want to handle it somehow.
     let trapped = match result {
@@ -802,6 +850,7 @@ fn next_interval_reschedule(last_intended_at: Timestamp, interval: TimeDuration)
     Reschedule {
         at_ts,
         at_real: Instant::now() + delay,
+        interval,
     }
 }
 

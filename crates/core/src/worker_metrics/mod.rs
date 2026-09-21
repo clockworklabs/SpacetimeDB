@@ -578,7 +578,7 @@ metrics_group!(
         pub reducer_wait_time: HistogramVec,
 
         #[name = spacetime_scheduled_function_delay_seconds]
-        #[help = "The amount of time (in seconds) between when a scheduled function was due and when the scheduler began invoking it"]
+        #[help = "The amount of time (in seconds) between when a scheduled function was due and when the scheduler began invoking it. Runs that took longer than their own interval are not counted."]
         #[labels(db: Identity, function: str)]
         #[buckets(0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30, 60, 300)]
         pub scheduled_function_delay: HistogramVec,
