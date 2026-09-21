@@ -5,6 +5,7 @@ import {
   BinaryWriter,
   ConnectionId,
   Identity,
+  Result,
   ScheduleAt,
   Uuid,
 } from '../src';
@@ -176,6 +177,74 @@ describe('it correctly serializes and deserializes algebraic values', () => {
         18,
       ])
     );
+
+    const deserializedValue = AlgebraicType.deserializeValue(
+      new BinaryReader(buffer),
+      algebraic_type
+    );
+
+    expect(deserializedValue).toEqual(value);
+  });
+
+  test('when it serializes and deserializes a Result with an ok payload', () => {
+    const value = { ok: 7 };
+
+    const algebraic_type = Result.getAlgebraicType(
+      AlgebraicType.U8,
+      AlgebraicType.String
+    );
+    const binaryWriter = new BinaryWriter(1024);
+    AlgebraicType.serializeValue(binaryWriter, algebraic_type, value);
+
+    const buffer = binaryWriter.getBuffer();
+    // Tag 0 (`ok`), then the `u8` payload.
+    expect(buffer).toEqual(new Uint8Array([0, 7]));
+
+    const deserializedValue = AlgebraicType.deserializeValue(
+      new BinaryReader(buffer),
+      algebraic_type
+    );
+
+    expect(deserializedValue).toEqual(value);
+  });
+
+  test('when it serializes and deserializes a Result with an err payload', () => {
+    const value = { err: 'boom' };
+
+    const algebraic_type = Result.getAlgebraicType(
+      AlgebraicType.U8,
+      AlgebraicType.String
+    );
+    const binaryWriter = new BinaryWriter(1024);
+    AlgebraicType.serializeValue(binaryWriter, algebraic_type, value);
+
+    const buffer = binaryWriter.getBuffer();
+    // Tag 1 (`err`), then the `string` payload: a u32 length and its bytes.
+    expect(buffer).toEqual(new Uint8Array([1, 4, 0, 0, 0, 98, 111, 111, 109]));
+
+    const deserializedValue = AlgebraicType.deserializeValue(
+      new BinaryReader(buffer),
+      algebraic_type
+    );
+
+    expect(deserializedValue).toEqual(value);
+  });
+
+  test('when it serializes and deserializes a Result with a product err payload', () => {
+    const value = { err: { code: 42 } };
+
+    const algebraic_type = Result.getAlgebraicType(
+      AlgebraicType.String,
+      AlgebraicType.Product({
+        elements: [{ name: 'code', algebraicType: AlgebraicType.I32 }],
+      })
+    );
+    const binaryWriter = new BinaryWriter(1024);
+    AlgebraicType.serializeValue(binaryWriter, algebraic_type, value);
+
+    const buffer = binaryWriter.getBuffer();
+    // Tag 1 (`err`), then the product payload: 42 as a little-endian i32.
+    expect(buffer).toEqual(new Uint8Array([1, 42, 0, 0, 0]));
 
     const deserializedValue = AlgebraicType.deserializeValue(
       new BinaryReader(buffer),
