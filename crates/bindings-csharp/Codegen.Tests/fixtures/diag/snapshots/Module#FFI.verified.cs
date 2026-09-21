@@ -6,7 +6,7 @@
 #pragma warning disable STDB_UNSTABLE
 
 #if NET10_0_OR_GREATER
-global using SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C;
+global using SpacetimeDB.Generated.diag_4F830E2879BB50E3;
 #endif
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
@@ -15,7 +15,7 @@ using Internal = SpacetimeDB.Internal;
 using TxContext = SpacetimeDB.Internal.TxContext;
 #if NET10_0_OR_GREATER
 [assembly: global::SpacetimeDB.ModuleDescriptorAttribute(
-    typeof(global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.AssemblyDescriptor)
+    typeof(global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor)
 )]
 
 #endif
@@ -933,7 +933,7 @@ namespace SpacetimeDB
 }
 
 #if NET10_0_OR_GREATER
-namespace SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C
+namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
 {
     public static partial class AssemblyDescriptor
     {
@@ -4581,7 +4581,7 @@ static class ModuleRegistration
                 new global::System.Collections.Generic.KeyValuePair<string, string>[] { }
             )
         );
-        global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.AssemblyDescriptor.Register(
+        global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.Register(
             global::SpacetimeDB.Internal.Module.RootBuilder
         );
 #else
@@ -5634,13 +5634,9 @@ static class ModuleRegistration
         if (
             (uint)localId
             < (uint)
-                global::SpacetimeDB
-                    .Generated
-                    .Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C
-                    .AssemblyDescriptor
-                    .ReducerCount
+                global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.ReducerCount
         )
-            return global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.AssemblyDescriptor.CallLocalReducer(
+            return global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.CallLocalReducer(
                 localId,
                 sender_0,
                 sender_1,
@@ -5654,7 +5650,7 @@ static class ModuleRegistration
             );
         localId -= global::SpacetimeDB
             .Generated
-            .Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C
+            .diag_4F830E2879BB50E3
             .AssemblyDescriptor
             .ReducerCount;
         return SpacetimeDB.Internal.Module.WriteReducerError(
@@ -5812,11 +5808,11 @@ static class ModuleRegistration
             < (uint)
                 global::SpacetimeDB
                     .Generated
-                    .Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C
+                    .diag_4F830E2879BB50E3
                     .AssemblyDescriptor
                     .ProcedureCount
         )
-            return global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.AssemblyDescriptor.CallLocalProcedure(
+            return global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.CallLocalProcedure(
                 localId,
                 sender_0,
                 sender_1,
@@ -5830,7 +5826,7 @@ static class ModuleRegistration
             );
         localId -= global::SpacetimeDB
             .Generated
-            .Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C
+            .diag_4F830E2879BB50E3
             .AssemblyDescriptor
             .ProcedureCount;
         throw new System.ArgumentOutOfRangeException(nameof(id), id, "Unknown procedure id");
@@ -5894,11 +5890,11 @@ static class ModuleRegistration
             < (uint)
                 global::SpacetimeDB
                     .Generated
-                    .Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C
+                    .diag_4F830E2879BB50E3
                     .AssemblyDescriptor
                     .HttpHandlerCount
         )
-            return global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.AssemblyDescriptor.CallLocalHttpHandler(
+            return global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.CallLocalHttpHandler(
                 localId,
                 timestamp,
                 request,
@@ -5908,7 +5904,7 @@ static class ModuleRegistration
             );
         localId -= global::SpacetimeDB
             .Generated
-            .Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C
+            .diag_4F830E2879BB50E3
             .AssemblyDescriptor
             .HttpHandlerCount;
         throw new System.ArgumentOutOfRangeException(nameof(id), id, "Unknown HTTP handler id");
@@ -5962,14 +5958,9 @@ static class ModuleRegistration
         var localId = id;
         if (
             (uint)localId
-            < (uint)
-                global::SpacetimeDB
-                    .Generated
-                    .Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C
-                    .AssemblyDescriptor
-                    .ViewCount
+            < (uint)global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.ViewCount
         )
-            return global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.AssemblyDescriptor.CallLocalView(
+            return global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.CallLocalView(
                 localId,
                 sender_0,
                 sender_1,
@@ -5978,11 +5969,7 @@ static class ModuleRegistration
                 args,
                 sink
             );
-        localId -= global::SpacetimeDB
-            .Generated
-            .Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C
-            .AssemblyDescriptor
-            .ViewCount;
+        localId -= global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.ViewCount;
         return UnknownViewId(id);
 #else
         return CallLocalView(id, sender_0, sender_1, sender_2, sender_3, args, sink);
@@ -6035,18 +6022,18 @@ static class ModuleRegistration
             < (uint)
                 global::SpacetimeDB
                     .Generated
-                    .Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C
+                    .diag_4F830E2879BB50E3
                     .AssemblyDescriptor
                     .AnonymousViewCount
         )
-            return global::SpacetimeDB.Generated.Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C.AssemblyDescriptor.CallLocalAnonymousView(
+            return global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.CallLocalAnonymousView(
                 localId,
                 args,
                 sink
             );
         localId -= global::SpacetimeDB
             .Generated
-            .Assembly_0064006900610067002C002000560065007200730069006F006E003D0031002E0030002E0030002E0030002C002000430075006C0074007500720065003D006E00650075007400720061006C002C0020005000750062006C00690063004B006500790054006F006B0065006E003D006E0075006C006C
+            .diag_4F830E2879BB50E3
             .AssemblyDescriptor
             .AnonymousViewCount;
         return UnknownAnonymousViewId(id);
