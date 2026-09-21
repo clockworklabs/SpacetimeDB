@@ -24,6 +24,7 @@ import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtur
   from './reference-fixtures.js';
 import { resolveReferenceSelection } from './reference-selection.js';
 import { assertPlainAppSourceTree, hashAppSource } from '../runtime/source-snapshot.js';
+import { controlAppServer } from '../runtime/backend-control.js';
 
 import { compiledEntrypoint } from '../package-root.js';
 const RUN_BUILD = compiledEntrypoint('container', 'run-build.js');
@@ -185,8 +186,11 @@ export function restoreReferenceSourceIdentity(fixture: ReferenceFixture,
   return restored;
 }
 
-export async function deployReferenceAndRestoreSource(deploy: () => unknown,
+export async function deployReferenceAndRestoreSource(stop: () => unknown, deploy: () => unknown,
   restore: () => unknown): Promise<void> {
+  // A prior stage can still be serving. Its response must not make the new
+  // launch look ready while that launch is still installing or building.
+  await stop();
   let deployError: unknown = null;
   try { await deploy(); }
   catch (error) { deployError = error; }
@@ -278,7 +282,8 @@ async function main(): Promise<void> {
   if (!('reference' in adapter)) throw new Error(`${adapter.id} has no reference deployment`);
   const helpers = { dbName, loadTrack, moduleName, runSync, docker, startDetached,
     waitFor, containerLogs, phase };
-  await deployReferenceAndRestoreSource(() => {
+  await deployReferenceAndRestoreSource(() => controlAppServer({ backend: args.backend,
+    app: args.app, port: ports.vite, probe: track.restartProbe }, 'stop'), () => {
     if (adapter.id === 'convex') {
       return adapter.reference.deploy({ args, metadata: metadata as ConvexReferenceMetadata,
         lease, container: containerName, ports, helpers });

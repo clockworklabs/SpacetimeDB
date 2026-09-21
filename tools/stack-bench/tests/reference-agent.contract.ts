@@ -3,6 +3,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
 
 import { deployReferenceAndRestoreSource, parseReferenceAgentArgs, prepareReferenceSource, referenceDevCommand,
   restoreReferenceSourceIdentity } from '../src/references/reference-agent.js';
@@ -123,15 +125,42 @@ test('reference deployment restores canonical source while retaining generated b
 
 test('reference deployment restores source after a failed deploy', async () => {
   const events: string[] = [];
-  await assert.rejects(() => deployReferenceAndRestoreSource(async () => {
+  await assert.rejects(() => deployReferenceAndRestoreSource(() => events.push('stop'), async () => {
     events.push('deploy');
     throw new Error('deploy failed');
   }, () => events.push('restore')), /deploy failed/);
-  assert.deepEqual(events, ['deploy', 'restore']);
+  assert.deepEqual(events, ['stop', 'deploy', 'restore']);
+});
+
+test('reference redeployment cannot accept the prior stage listener as ready', async () => {
+  const old = createServer((_request, response) => response.end('old stage'));
+  old.listen(0, '127.0.0.1');
+  await once(old, 'listening');
+  const address = old.address();
+  assert(address && typeof address === 'object');
+  const url = `http://127.0.0.1:${address.port}`;
+  const request = () => fetch(url, { headers: { Connection: 'close' } });
+  const close = () => new Promise<void>((resolve, reject) => old.close(error => error ? reject(error) : resolve()));
+  try {
+    assert.equal(await (await request()).text(), 'old stage');
+    await deployReferenceAndRestoreSource(close, async () => {
+      // The actual reference adapter uses this URL to decide that its new
+      // detached launch is ready. Before the fix the old stage still answered.
+      await assert.rejects(request);
+    }, () => {});
+  } finally { if (old.listening) await close(); }
+});
+
+test('reference redeployment aborts before mutation if the old service cannot stop', async () => {
+  const events: string[] = [];
+  await assert.rejects(() => deployReferenceAndRestoreSource(() => {
+    throw new Error('stop failed');
+  }, () => events.push('deploy'), () => events.push('restore')), /stop failed/);
+  assert.deepEqual(events, []);
 });
 
 test('reference deployment reports both deploy and restoration failures', async () => {
-  await assert.rejects(() => deployReferenceAndRestoreSource(async () => {
+  await assert.rejects(() => deployReferenceAndRestoreSource(() => {}, async () => {
     throw new Error('deploy failed');
   }, () => { throw new Error('restore failed'); }), error => {
     assert(error instanceof AggregateError);
