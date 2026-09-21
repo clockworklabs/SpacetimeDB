@@ -84,7 +84,6 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
       }).join('') + '</div></div>';
   }).join('') + '</div>';
   const visible = tracks.filter(track => !hidden.has(track.attempt.id));
-  if (!visible.length) return `<section class="progress-panel">${heading}${controls}<p class="chart-empty">${tracks.length > 0 && tracks.every(track => hidden.has(track.attempt.id)) ? 'Select a run to show its progress.' : metric === 'distribution' ? 'Awaiting first completed run.' : metric === 'cost' ? 'Awaiting first timed cost receipt.' : 'Awaiting first timed grade.'}</p></section>`;
   if (metric === 'distribution') {
     const axisLeft = 150;
     const position = (value: number) => axisLeft + (910 - axisLeft) * value / 100;
@@ -111,6 +110,7 @@ export function progressChart(sheet: CampaignSheet, progression: CampaignProgres
     return `<section class="progress-panel">${heading}${controls}<div class="chart-scroll" role="region" aria-label="Completion distribution by provider" tabindex="0">`
       + `<svg class="progress-chart" viewBox="0 0 980 ${bottom + 45}" role="img" aria-label="Completion distribution by provider"><desc>${description}</desc>${ticks}${rows}</svg></div></section>`;
   }
+  if (!visible.length) return `<section class="progress-panel">${heading}${controls}<p class="chart-empty">${tracks.length > 0 && tracks.every(track => hidden.has(track.attempt.id)) ? 'Select a run to show its progress.' : metric === 'cost' ? 'Awaiting first timed cost receipt.' : 'Awaiting first timed grade.'}</p></section>`;
   const ceiling = metric === 'cost' ? Math.max(0.01, ...tracks.flatMap(track => track.points.map(point => point.value))) : 100;
   const maximum = Math.max(60, ...tracks.flatMap(track => track.points.map(point => point.elapsed)));
   const left = metric === 'cost' ? 80 : 48;

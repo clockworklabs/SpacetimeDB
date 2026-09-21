@@ -130,6 +130,13 @@ test('distribution shows completed run percentages across providers and preserve
   assert.match(html, /Rep 2<\/button>/);
   assert.match(html, /questlines=graph&amp;chart=distribution/);
   assert.doesNotMatch(html, /NaN|Infinity|Elapsed run time/);
+  for (const stack of sheet.stacks) for (const attempt of stack.attempts) attempt.status = 'running';
+  const pending = progressChart(sheet, null, 'distribution');
+  assert.match(pending, /<svg class="progress-chart"/);
+  assert.match(pending, />0%<\/text>/);
+  assert.match(pending, />100%<\/text>/);
+  assert.match(pending, /<text[^>]*>MongoDB<\/text>/);
+  assert.doesNotMatch(pending, /class="progress-series"|Awaiting first completed run/);
 });
 
 test('completion units use distinct saved metrics in both chart views', () => {
