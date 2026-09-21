@@ -19,6 +19,7 @@ import { attemptTranscript, attemptChecks, attemptLogSlice, attemptPackage, camp
 import { watchCampaigns } from './dashboard-events.js';
 import type { CampaignChange, CampaignWatcher } from './dashboard-events.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { referenceRuns } from './dashboard-reference-runs.js';
 import { stackBenchResultsRoot } from '../src/runtime/operational-paths.js';
 import { controllerRuntimeCommand, controllerChildEnvironment } from '../appliance/controller.js';
 import { requestCampaignCancellation } from '../src/campaigns/campaign-lock.js';
@@ -333,6 +334,9 @@ export function createDashboardServer(options: DashboardServerOptions) {
         return json(response, 200, { campaigns: overviewSummary(campaignsRoot),
           canStart: allowLaunch, csrfToken: token });
       }
+      if (request.method === 'GET' && url.pathname === '/api/reference-runs') {
+        return json(response, 200, await referenceRuns(resultsRoot));
+      }
       if (request.method === 'GET' && url.pathname === '/api/session') {
         return json(response, 200, { canStart: allowLaunch, csrfToken: token });
       }
@@ -387,7 +391,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
         // A silent connection is dropped by proxies long before a campaign
         // writes anything.
         heartbeat ??= setInterval(() => {
-          for (const listener of listeners) listener.write(': ping\n\n');
+          for (const listener of listeners) listener.write('event: reference\ndata: {}\n\n');
         }, HEARTBEAT_MS).unref();
         request.once('close', () => {
           listeners.delete(response);

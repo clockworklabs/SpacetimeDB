@@ -3,6 +3,7 @@
 import type { CampaignSheet, OverviewCampaign, OverviewEntry, SheetAttempt }
   from '../../dashboard-views.js';
 import { DASH, esc, pct, phrase, shape, since, spend, stackLabel, statusWord } from '../format.js';
+import type { ReferenceRun } from '../../dashboard-reference-runs.js';
 
 export type CampaignFilter = 'all' | 'attention' | 'completed' | 'ready';
 
@@ -76,11 +77,12 @@ function row(campaign: OverviewEntry, stacks: readonly string[]): string {
     + `<td class="when">${summary ? esc(since(summary.updatedAt)) : DASH}</td></tr>`;
 }
 
-export function campaignsPage({ campaigns, sheets, filter, loading = false }: {
+export function campaignsPage({ campaigns, sheets, filter, loading = false, references }: {
   campaigns: readonly OverviewEntry[];
   sheets: readonly CampaignSheet[];
   filter: CampaignFilter;
   loading?: boolean;
+  references?: { runs: ReferenceRun[]; error: string | null };
 }): string {
   const stacks = [...new Set([
     ...campaigns.flatMap(campaign => readable(campaign) ? Object.keys(campaign.scores) : []),
@@ -93,7 +95,15 @@ export function campaignsPage({ campaigns, sheets, filter, loading = false }: {
   const body = loading ? `<tr><td colspan="${4 + stacks.length}"><div class="loading" role="status">Loading campaigns…</div></td></tr>`
     : shown.length ? shown.map(campaign => row(campaign, stacks)).join('')
     : `<tr><td colspan="${4 + stacks.length}">No campaigns match this filter.</td></tr>`;
+  const validations = references?.runs.map(run => `<section class="live" data-key="reference:${esc(run.id)}">`
+    + `<div class="live-head"><b>${esc(run.title)}</b><span class="state ${run.status === 'running' ? 'run' : run.status === 'passed' ? 'done' : 'warn'}">${esc(run.status)}</span></div>`
+    + `<div class="lane"><span>Reference validation · no model calls</span><span>${run.points
+      ? `${run.points.passed}${run.points.planned === null ? '' : `/${run.points.planned}`} points passed · ${run.points.measured} measured${run.points.planned === null ? ' · total unavailable' : ''}`
+      : run.status === 'running' ? 'Waiting for grading evidence' : 'No complete grade recorded'}</span></div>`
+    + `<details><summary>Run log</summary><pre class="log">${esc(run.log || 'No log recorded.')}</pre></details></section>`).join('') ?? '';
   return `<div class="page"><div class="title"><h2>Campaigns</h2></div>${sheets.map(live).join('')}`
+    + (validations ? `<h3>Reference validation</h3>${validations}` : '')
+    + (references?.error ? `<p class="err">${esc(references.error)}</p>` : '')
     + `<div class="tablewrap"><div class="toolbar">${chips}</div><div class="wrap">`
     + '<table class="runs"><thead><tr><th>Campaign</th><th>Scope</th><th>Status</th>'
     + stacks.map(stack => `<th class="stack">${esc(stackLabel(stack))}</th>`).join('')

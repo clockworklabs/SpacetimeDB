@@ -4,6 +4,7 @@ import type { readExecutionJob } from '../../src/campaigns/execution-jobs.js';
 import type { RunSetupCatalog, RunSetupRequest, RunSetupReview } from '../../src/campaigns/run-setup.js';
 import { initialRun, readRunForm, runSetupPage } from './views/run-setup.js';
 import type { TranscriptPage } from '../dashboard-transcript.js';
+import type { referenceRuns } from '../dashboard-reference-runs.js';
 
 
 // The client: real paths, one event stream, and keyed reconciliation so a
@@ -41,6 +42,7 @@ interface Route {
 
 const state = {
   overview: [] as OverviewEntry[],
+  references: { runs: [], error: null } as Awaited<ReturnType<typeof referenceRuns>>,
   plans: [] as DashboardPlan[],
   overviewLoaded: false,
   plansLoaded: false,
@@ -164,6 +166,7 @@ function page(current: Route): string {
       .map(campaign => state.sheets.get(campaign.key))
       .filter((entry): entry is CampaignSheet => entry !== undefined);
     return campaignsPage({ campaigns: state.overview, sheets: running, filter: current.filter,
+      references: state.references,
       loading: loading && !state.overviewLoaded });
   }
   if (!sheet) return `<div class="page"><div class="crumbs"><a href="/">Campaigns</a> / `
@@ -316,6 +319,10 @@ function load(navigation = false, changedKey?: string, liveOnly = false): Promis
 
 async function loadData(version: number, changedKeys: Set<string> | null, refreshOverview: boolean): Promise<void> {
   const current = route();
+  if (refreshOverview && !current.key && !current.plans) {
+    const references = await read<Awaited<ReturnType<typeof referenceRuns>>>('/api/reference-runs');
+    if (references && version === loadVersion) { state.references = references; render(); }
+  }
   if (!refreshOverview) {
     const keys = current.key ? [current.key] : [...state.sheets.keys()]
       .filter(key => state.sheets.get(key)?.status === 'running' && (!changedKeys || changedKeys.has(key)));
@@ -466,6 +473,13 @@ function subscribe(): void {
     void load(false, message.key);
   };
   source.addEventListener('campaign', changed);
+  source.addEventListener('reference', async () => {
+    const current = route();
+    if (!current.key && !current.plans && !document.hidden) {
+      const references = await read<Awaited<ReturnType<typeof referenceRuns>>>('/api/reference-runs');
+      if (references) { state.references = references; render(); }
+    }
+  });
   source.addEventListener('log', event => {
     const current = route();
     const message = JSON.parse((event as MessageEvent<string>).data) as { key: string };
