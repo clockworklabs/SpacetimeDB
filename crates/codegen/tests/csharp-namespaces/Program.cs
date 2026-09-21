@@ -61,6 +61,15 @@ internal static class Program
         }
     }
 
+    private static void CheckCachedSqlName(object value, SqlTableName expected)
+    {
+        var field = value.GetType().GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
+            .Single(f => f.FieldType == typeof(SqlTableName));
+        var actual = (SqlTableName)field.GetValue(value)!;
+        Equal(expected.LocalName, actual.LocalName);
+        Equal(true, ReferenceEquals(expected.NamespaceSegments, actual.NamespaceSegments));
+    }
+
     private static void Check(DbConnection conn)
     {
         Equal("user", conn.Db.User.RemoteTableName);
@@ -84,6 +93,26 @@ internal static class Program
         Equal(false, all.Any(sql => sql.Contains("secret")));
         var sqlName = typeof(Auth.RemoteTables.UserHandle).GetProperty("RemoteSqlTableName", BindingFlags.Instance | BindingFlags.NonPublic)!;
         Equal("\"MyAuth\".\"user\"", sqlName.GetValue(conn.Db.MyAuth.User)!.ToString());
+        var cachedName = Auth.RemoteTables.UserHandle.SqlName;
+        for (var i = 0; i < 2; i++)
+            Equal(true, ReferenceEquals(cachedName.NamespaceSegments,
+                ((SqlTableName)sqlName.GetValue(conn.Db.MyAuth.User)!).NamespaceSegments));
+        var firstQuery = query.From.MyAuth.User();
+        var secondQuery = query.From.MyAuth.User();
+        Equal(false, ReferenceEquals(firstQuery, secondQuery));
+        foreach (var tableQuery in new[] { firstQuery, secondQuery })
+        {
+            CheckCachedSqlName(tableQuery, cachedName);
+            foreach (var property in new[] { "Cols", "IxCols" })
+            {
+                var columns = tableQuery.GetType().GetProperty(property,
+                    BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(tableQuery)!;
+                foreach (var column in columns.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public))
+                    CheckCachedSqlName(column.GetValue(columns)!, cachedName);
+            }
+        }
+        Equal(false, ReferenceEquals(cachedName.NamespaceSegments,
+            Audit.RemoteTables.UserHandle.SqlName.NamespaceSegments));
 
         var root = new User(1, true);
         var auth = new Auth.User(1, 7);
