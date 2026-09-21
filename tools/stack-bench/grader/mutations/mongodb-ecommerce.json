@@ -1716,6 +1716,11 @@
         {
           "find": "  if (!Number.isInteger(qty) || qty < 1) {\n    return res.status(400).json({ error: \"Quantity must be at least 1\" });\n  }",
           "replace": "  if (!Number.isInteger(qty)) {\n    return res.status(400).json({ error: \"Quantity must be numeric\" });\n  }"
+        },
+        {
+          "file": "server/src/models.ts",
+          "find": "    quantity: { type: Number, required: true, min: 1 },",
+          "replace": "    quantity: { type: Number, required: true },"
         }
       ]
     },
