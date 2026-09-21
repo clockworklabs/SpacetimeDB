@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { backendResourceLockKeys, readBackendLease, updateBackendLease, verifyResourceLocks }
+import { backendResourceLockKeys, readBackendLease, updateBackendLease, verifyBackendResourceClaims }
   from '../../runtime/backend-lease.js';
 import type { BackendLease } from '../../runtime/backend-lease.js';
 import { releaseBackendLease } from '../../runtime/backend-teardown.js';
@@ -27,11 +27,7 @@ function claimedPorts(lease: BackendLease, ports: StackRunPorts): number[] {
   const nativePort = Number(new URL(lease.resources.serverUri!).port);
   const endpoints = [ports.vite, ports.express, nativePort];
   if (new Set(endpoints).size !== endpoints.length) throw new Error('Convex endpoint ports must differ');
-  const required = backendResourceLockKeys(lease, ports);
-  if (required.some(key => !lease.resources.locks.some(lock => lock.key === key && !lock.releasedAt))) {
-    throw new Error('Convex endpoint resources must be claimed before activation');
-  }
-  verifyResourceLocks(lease);
+  verifyBackendResourceClaims(lease, backendResourceLockKeys(lease, ports));
   return endpoints;
 }
 

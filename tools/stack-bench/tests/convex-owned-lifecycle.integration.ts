@@ -2,21 +2,24 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
-import { cpSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import { backendResourceLockKeys, claimBackendResources, createBackendLease, publicBackendLease,
-  readBackendLease, resourceLockScope } from '../src/runtime/backend-lease.js';
+  readBackendLease, resourceLockScope, verifyResourceLocks } from '../src/runtime/backend-lease.js';
+import type { ReservationLease } from '../src/runtime/backend-lease.js';
+import { borrowCampaignReservation, delegateCampaignReservation, closeCampaignDelegation,
+  releaseCampaignReservation } from '../src/campaigns/campaign-admission.js';
 import { attemptDocker, requireAttemptNetwork } from '../src/runtime/docker-network.js';
 import { activateConvex, controlConvex, recoverConvex, releaseConvex, CONVEX_PROCESS_RECORD } from '../src/stacks/backends/convex-lifecycle.js';
 import { prepareProcessCrash } from '../src/stacks/process-crash.js';
 
 // Run inside the Linux controller with its normal lock directory and Docker socket.
 // The fixture and evidence directory are explicit mounts; no paid calls or registry entry.
-test('private Convex owned launch, warm restart, full reset, and exact cleanup', {
+test('Convex campaign-delegated launch, warm restart, full reset, and exact cleanup', {
   skip: process.env.STACK_BENCH_CONVEX_OWNED_TEST !== '1', timeout: 240_000,
 }, async () => {
   assert.equal(process.platform, 'linux');
@@ -24,19 +27,32 @@ test('private Convex owned launch, warm restart, full reset, and exact cleanup',
   const evidenceDirectory = process.env.STACK_BENCH_CONVEX_EVIDENCE_DIR!;
   assert(fixture && evidenceDirectory);
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-convex-owned-'));
+  mkdirSync(join(root, '.private'));
   const path = join(root, 'lease.json');
   const ports = { vite: 14309, express: 14311, dbPort: null };
   const lease = createBackendLease({ runId: root.split('/').at(-1)!, backend: 'convex',
     track: 'ecommerce', runIndex: 0, serverUri: 'http://127.0.0.1:14310' });
+  const parentPath = join(root, 'reservation.json');
+  const parent: ReservationLease = { ...createBackendLease({ runId: `${lease.runId}-reservation`,
+    backend: 'stub', track: lease.track, runIndex: 0 }),
+    campaign: { sha256: createHash('sha256').update(lease.runId).digest('hex'),
+      admissionId: lease.runId, runIndices: [0] } };
+  const reservation = { path: parentPath, token: parent.ownershipToken };
   const evidence: Record<string, unknown> = { result: 'running', ports,
-    note: 'Direct private lifecycle; explicit claimed test ports, not campaign allocation.' };
+    note: 'Campaign reservation delegation into the real Convex lifecycle; direct-owned siblings exercise isolation and failure cleanup.' };
   const save = () => writeFileSync(join(evidenceDirectory, 'owned-lifecycle.json'), JSON.stringify(evidence, null, 2));
   save();
   let active;
   let volumes: string[] = [];
   let failure: unknown;
   try {
-    claimBackendResources(path, lease, { ...resourceLockScope(), keys: backendResourceLockKeys(lease, ports) });
+    const keys = backendResourceLockKeys(lease, ports);
+    claimBackendResources(parentPath, parent, { ...resourceLockScope(), keys });
+    const input = { campaignSha256: parent.campaign.sha256, admissionId: lease.runId,
+      executionId: lease.runId, output: join(root, 'output'), backend: lease.backend, runIndex: 0 };
+    const env = delegateCampaignReservation(reservation, root, input);
+    borrowCampaignReservation({ ...input, env, leasePath: path, lease, keys });
+    assert.deepEqual(readBackendLease(path).resources.locks, []);
     activateConvex({ leasePath: path, leaseToken: lease.ownershipToken, ports });
     active = readBackendLease(path, { token: lease.ownershipToken, active: true });
     evidence.activeLease = publicBackendLease(active);
@@ -253,7 +269,11 @@ test('private Convex owned launch, warm restart, full reset, and exact cleanup',
         assert.equal(final.state, 'released');
         for (const volume of volumes) assert.throws(() => attemptDocker(['volume', 'inspect', volume]), /no such volume/i);
         evidence.anonymousVolumeCleanup = volumes.length;
+        verifyResourceLocks(parent);
+        closeCampaignDelegation(root, lease.runId);
+        evidence.parentLocksSurvivedChildCleanup = true;
       }
+      if (existsSync(parentPath)) releaseCampaignReservation(reservation);
     } catch (error) {
       evidence.result = 'failed';
       evidence.cleanupError = error instanceof Error ? error.message : String(error);

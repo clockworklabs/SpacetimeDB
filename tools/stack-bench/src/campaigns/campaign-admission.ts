@@ -13,7 +13,8 @@ import { claimBackendResources, createBackendLease,
   readBackendLease, writeBackendLease, releaseResourceLocks, verifyResourceLocks, resourceLockScope,
   existingResourceLockKeys, runnerCapacity } from '../runtime/backend-lease.js';
 import { selectRunResources } from '../runtime/run-resource-selection.js';
-import type { BackendLease } from '../runtime/backend-lease.js';
+import type { BackendLease, CampaignReservation, ReservationLease, DelegationLease } from '../runtime/backend-lease.js';
+export type { CampaignReservation } from '../runtime/backend-lease.js';
 import { releaseBackendLease } from '../runtime/backend-teardown.js';
 import { probeLoopbackPort, runPreflight } from '../runtime/preflight.js';
 import type { PreflightReport } from '../runtime/preflight.js';
@@ -246,19 +247,6 @@ export function validateCampaignAdmission(
 }
 
 export class CampaignResourceUnavailable extends Error {}
-
-export interface CampaignReservation { path: string; token: string }
-
-interface ReservationLease extends BackendLease {
-  campaign: { sha256: string; admissionId: string; runIndices: number[] };
-}
-interface DelegationLease extends BackendLease {
-  delegation: { parent: CampaignReservation; campaignSha256: string; admissionId: string;
-    executionId: string; output: string; backend: string; runIndex: number };
-  childLeasePath?: string;
-  childRunId?: string;
-  childOwnershipToken?: string;
-}
 
 function reservationLease(authority: CampaignReservation): ReservationLease {
   const lease = readBackendLease(authority.path, { token: authority.token });

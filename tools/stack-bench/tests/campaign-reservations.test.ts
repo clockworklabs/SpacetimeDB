@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { fork } from 'node:child_process';
 import { once } from 'node:events';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -11,9 +11,78 @@ import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import { borrowCampaignReservation, closeCampaignDelegation, delegateCampaignReservation,
   releaseCampaignReservation, runCampaignAdmission } from '../src/campaigns/campaign-admission.js';
 import { backendResourceLockKeys, claimBackendResources, createBackendLease, readBackendLease,
-  releaseResourceLocks, runResourceLockKeys, verifyResourceLocks, writeBackendLease } from '../src/runtime/backend-lease.js';
+  releaseResourceLocks, runResourceLockKeys, verifyResourceLocks, verifyBackendResourceClaims,
+  writeBackendLease } from '../src/runtime/backend-lease.js';
+import type { DelegationLease, ReservationLease } from '../src/runtime/backend-lease.js';
 
 const linux = { skip: process.platform !== 'linux' ? 'Kernel flock requires Linux' : false };
+
+test('Convex resource claims verify consumed delegation and preserve parent ownership', linux, () => {
+  const root = mkdtempSync(join(tmpdir(), 'convex-campaign-claims-'));
+  mkdirSync(join(root, '.private'));
+  const parentPath = join(root, 'parent.json'), childPath = join(root, 'child.json');
+  const ports = { vite: 14309, express: 14311, dbPort: null };
+  const child = createBackendLease({ runId: 'convex-child', backend: 'convex',
+    track: 'ecommerce', runIndex: 0, serverUri: 'http://127.0.0.1:14310' });
+  const keys = backendResourceLockKeys(child, ports);
+  const parent: ReservationLease = { ...createBackendLease({ runId: 'reservation', backend: 'stub',
+    track: 'ecommerce', runIndex: 0 }), campaign: { sha256: 'a'.repeat(64), admissionId: 'admission', runIndices: [0] } };
+  try {
+    assert.throws(() => verifyBackendResourceClaims(child, keys), /have not been claimed/);
+    claimBackendResources(parentPath, parent, { root: join(root, 'locks'), keys, capacity: 64 });
+    verifyBackendResourceClaims(parent, keys);
+    const input = { campaignSha256: parent.campaign.sha256, admissionId: 'admission', executionId: 'execution',
+      output: join(root, 'output'), backend: 'convex', runIndex: 0 };
+    const env = delegateCampaignReservation({ path: parentPath, token: parent.ownershipToken }, root, input);
+    borrowCampaignReservation({ ...input, env, leasePath: childPath, lease: child, keys });
+    assert.deepEqual(child.resources.locks, []);
+    verifyBackendResourceClaims(child, keys);
+    const delegationPath = child.campaignDelegation!.path;
+    const delegation = readBackendLease(delegationPath) as DelegationLease;
+    const consumed = readBackendLease(`${delegationPath}.used`) as DelegationLease;
+    const missingToken = structuredClone(child);
+    Reflect.deleteProperty(missingToken.campaignDelegation!, 'token');
+    assert.throws(() => verifyBackendResourceClaims(missingToken, keys), /delegation token is required/);
+    const missingParentToken = structuredClone(delegation);
+    Reflect.deleteProperty(missingParentToken.delegation.parent, 'token');
+    try {
+      writeBackendLease(delegationPath, missingParentToken);
+      writeBackendLease(`${delegationPath}.used`, { ...consumed, delegation: missingParentToken.delegation });
+      assert.throws(() => verifyBackendResourceClaims(child, keys), /parent token is required/);
+    } finally {
+      writeBackendLease(delegationPath, delegation);
+      writeBackendLease(`${delegationPath}.used`, consumed);
+    }
+    for (const changed of [{ ...child, runId: 'wrong' }, { ...child, ownershipToken: 'wrong' }]) {
+      assert.throws(() => verifyBackendResourceClaims(changed, keys), /does not match child/);
+    }
+    for (const [path, original, altered] of [
+      [delegationPath, delegation, { ...delegation, state: 'released' }],
+      [parentPath, parent, { ...parent, state: 'released' }],
+      [parentPath, parent, { ...parent, campaign: { ...parent.campaign, admissionId: 'other' } }],
+      [parentPath, parent, { ...parent, resources: { ...parent.resources, locks: parent.resources.locks.slice(1) } }],
+      [`${delegationPath}.used`, consumed, { ...consumed, childRunId: 'other' }],
+      [`${delegationPath}.used`, consumed, { ...consumed, delegation: { ...consumed.delegation, runIndex: 1 } }],
+    ] as const) {
+      try {
+        writeBackendLease(path, altered);
+        assert.throws(() => verifyBackendResourceClaims(child, keys), /invalid backend lease/);
+      } finally { writeBackendLease(path, original); }
+    }
+    renameSync(`${delegationPath}.used`, `${delegationPath}.held`);
+    try { assert.throws(() => verifyBackendResourceClaims(child, keys), /cannot read/); }
+    finally { renameSync(`${delegationPath}.held`, `${delegationPath}.used`); }
+    releaseResourceLocks(child);
+    verifyBackendResourceClaims(child, keys);
+    assert.deepEqual(readBackendLease(childPath).resources.locks, []);
+    verifyResourceLocks(parent);
+    releaseResourceLocks(parent);
+    assert.throws(() => verifyBackendResourceClaims(child, keys), /no longer belongs/);
+  } finally {
+    releaseResourceLocks(parent);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test('one-use child delegation preserves parent reservations across successive attempts', linux, async () => {
   const root = mkdtempSync(join(tmpdir(), 'campaign-borrow-'));

@@ -1,6 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { isIPv4 } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chmodSync, closeSync, existsSync, fsyncSync, openSync, readFileSync, writeFileSync, renameSync,
@@ -97,6 +98,18 @@ export interface BackendLease {
   // Teardown stamps this when it stops a host it started.
   stoppedAt?: string;
   resources: BackendLeaseResource;
+}
+
+export interface CampaignReservation { path: string; token: string }
+export interface ReservationLease extends BackendLease {
+  campaign: { sha256: string; admissionId: string; runIndices: number[] };
+}
+export interface DelegationLease extends BackendLease {
+  delegation: { parent: CampaignReservation; campaignSha256: string; admissionId: string;
+    executionId: string; output: string; backend: string; runIndex: number };
+  childLeasePath?: string;
+  childRunId?: string;
+  childOwnershipToken?: string;
 }
 
 export type PublicBackendLease = Omit<BackendLease, 'ownershipToken' | 'campaignDelegation' | 'resources'> & {
@@ -573,6 +586,47 @@ export function verifyResourceLocks(lease: BackendLease): void {
     lockedResources({ root, lease, operation: 'verify',
       keys: lease.resources.locks.filter(lock => dirname(lock.path) === root).map(lock => lock.key) });
   }
+}
+
+/** Check authority without transferring parent locks to a campaign worker. */
+export function verifyBackendResourceClaims(lease: BackendLease, keys: string[]): void {
+  validateBackendLease(lease);
+  if (lease.state === 'released') fail('resource claimant was released');
+  let owner = lease;
+  if (lease.campaignDelegation) {
+    const path = requireString(lease.campaignDelegation.path, 'campaign delegation path');
+    const token = requireString(lease.campaignDelegation.token, 'campaign delegation token');
+    const document = readBackendLease(path, { token }) as DelegationLease;
+    const consumed = readBackendLease(`${path}.used`, { token }) as DelegationLease;
+    const delegated = document.delegation;
+    if (document.state !== 'created' || consumed.state !== 'created'
+      || !isRecord(delegated) || !isRecord(delegated.parent)
+      || !isDeepStrictEqual(consumed.delegation, delegated)
+      || document.runId !== delegated.executionId || consumed.runId !== document.runId
+      || document.track !== lease.track || consumed.track !== lease.track
+      || document.runIndex !== lease.runIndex || consumed.runIndex !== lease.runIndex
+      || delegated.backend !== lease.backend || delegated.runIndex !== lease.runIndex
+      || consumed.childRunId !== lease.runId || consumed.childOwnershipToken !== lease.ownershipToken
+      || typeof consumed.childLeasePath !== 'string') fail('campaign resource delegation does not match child');
+    const saved = readBackendLease(consumed.childLeasePath,
+      { token: lease.ownershipToken, runId: lease.runId, backend: lease.backend });
+    if (saved.state === 'released' || saved.track !== lease.track || saved.runIndex !== lease.runIndex
+      || !isDeepStrictEqual(saved.campaignDelegation, lease.campaignDelegation)) {
+      fail('campaign resource delegation is not bound to the live child');
+    }
+    const parent = readBackendLease(requireString(delegated.parent.path, 'campaign parent path'),
+      { token: requireString(delegated.parent.token, 'campaign parent token') }) as ReservationLease;
+    if (parent.state === 'released' || parent.track !== lease.track || !isRecord(parent.campaign)
+      || parent.campaign.sha256 !== delegated.campaignSha256
+      || parent.campaign.admissionId !== delegated.admissionId
+      || !Array.isArray(parent.campaign.runIndices)
+      || !parent.campaign.runIndices.includes(lease.runIndex)) fail('campaign resource reservation does not match');
+    owner = parent;
+  }
+  if (keys.some(key => !owner.resources.locks.some(lock => lock.key === key && !lock.releasedAt))) {
+    fail('required backend resources have not been claimed');
+  }
+  verifyResourceLocks(owner);
 }
 
 export function releaseResourceLocks(lease: BackendLease): void {
