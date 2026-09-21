@@ -120,6 +120,12 @@ test('dependency diagnostics bind the rejected first-build source and its own ch
     const spacetimeReplay = inspectGradeSource(output, { level: 2, checkKeys: [check] });
     assert.equal(spacetimeReplay.serverUri, 'http://127.0.0.1:3217');
     assert.equal(spacetimeReplay.parent.payload.backendLease.runIndex, 7);
+    run.backend = 'convex';
+    run.backendLease.resources.serverUri = 'http://127.0.0.1:13217';
+    grade.payload.backend = 'convex';
+    writeFileSync(bundlePath, JSON.stringify(grade));
+    save();
+    assert.equal(inspectGradeSource(output, { level: 2, checkKeys: [check] }).serverUri, 'http://127.0.0.1:13217');
     for (const uri of [null, 'http://remote.example:3217', 'https://127.0.0.1:3217', 'http://127.0.0.1']) {
       run.backendLease.resources.serverUri = uri;
       save();

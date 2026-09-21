@@ -854,7 +854,7 @@ export function inspectGradeSource(directory: string,
     || run.backendLease.runIndex < 0 || !run.runtime?.buildImage) {
     throw new Error('saved run lacks its agent, runtime image, or run index');
   }
-  const serverUri = run.backend === 'spacetime'
+  const serverUri = ['spacetime', 'convex'].includes(run.backend)
     ? loopbackHttpUri(run.backendLease.resources?.serverUri).origin : null;
   const checkpoint = level.checkpoint;
   const condition = run.condition as BenchArguments['condition'];
@@ -991,7 +991,9 @@ async function main() {
       throw new Error('regrade build image differs from the original run');
     }
     process.env.STACK_BENCH_IMAGE = parent.payload.runtime.buildImage;
-    if (regrade.serverUri) process.env.STACK_BENCH_STDB_URI = regrade.serverUri;
+    if (regrade.serverUri) {
+      process.env[parent.payload.backend === 'convex' ? 'STACK_BENCH_CONVEX_URI' : 'STACK_BENCH_STDB_URI'] = regrade.serverUri;
+    }
   }
   let repairGrant = null;
   if (args.repairFrom) {
