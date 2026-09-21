@@ -925,6 +925,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         }
     }
 
+    // useExtensions means we're in a .NET 10 context
     public IEnumerable<string> GenerateQueryBuilderMembers(bool useExtensions = false)
     {
         if (Kind is TypeKind.Sum)
@@ -947,8 +948,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 var typeName = col.Type.Name;
                 var isNullable = typeName.EndsWith("?", StringComparison.Ordinal);
                 var valueTypeName = isNullable ? typeName[..^1] : typeName;
-                var colType = isNullable ? "global::SpacetimeDB.Col" : "global::SpacetimeDB.Col";
-                return $"public readonly {colType}<{globalRowName}, {valueTypeName}> {col.Identifier};";
+                return $"public readonly global::SpacetimeDB.Col<{globalRowName}, {valueTypeName}> {col.Identifier};";
             }
 
             string ColInit(ColumnDeclaration col)
@@ -956,14 +956,13 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 var typeName = col.Type.Name;
                 var isNullable = typeName.EndsWith("?", StringComparison.Ordinal);
                 var valueTypeName = isNullable ? typeName[..^1] : typeName;
-                var colType = isNullable ? "global::SpacetimeDB.Col" : "global::SpacetimeDB.Col";
-                return $"{col.Identifier} = new {colType}<{globalRowName}, {valueTypeName}>(tableName, \"{col.Name}\");";
+                return $"{col.Identifier} = new global::SpacetimeDB.Col<{globalRowName}, {valueTypeName}>(tableName, \"{col.Name}\");";
             }
 
             var colsDecls = string.Join("\n    ", Members.Select(ColDecl));
             var colsInits = string.Join("\n        ", Members.Select(ColInit));
 
-            var ixPositions = new global::System.Collections.Generic.HashSet<int>();
+            var ixPositions = new HashSet<int>();
             foreach (var c in GetConstraints(accessor, ColumnAttrs.PrimaryKey | ColumnAttrs.Unique))
             {
                 ixPositions.Add(c.Pos);
@@ -988,10 +987,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 var typeName = col.Type.Name;
                 var isNullable = typeName.EndsWith("?", StringComparison.Ordinal);
                 var valueTypeName = isNullable ? typeName[..^1] : typeName;
-                var colType = isNullable
-                    ? "global::SpacetimeDB.IxCol"
-                    : "global::SpacetimeDB.IxCol";
-                return $"public readonly {colType}<{globalRowName}, {valueTypeName}> {col.Identifier};";
+                return $"public readonly global::SpacetimeDB.IxCol<{globalRowName}, {valueTypeName}> {col.Identifier};";
             }
 
             string IxColInit(ColumnDeclaration col)
@@ -999,10 +995,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 var typeName = col.Type.Name;
                 var isNullable = typeName.EndsWith("?", StringComparison.Ordinal);
                 var valueTypeName = isNullable ? typeName[..^1] : typeName;
-                var colType = isNullable
-                    ? "global::SpacetimeDB.IxCol"
-                    : "global::SpacetimeDB.IxCol";
-                return $"{col.Identifier} = new {colType}<{globalRowName}, {valueTypeName}>(tableName, \"{col.Name}\");";
+                return $"{col.Identifier} = new global::SpacetimeDB.IxCol<{globalRowName}, {valueTypeName}>(tableName, \"{col.Name}\");";
             }
 
             var ixColsDecls = string.Join("\n    ", ixMembers.Select(IxColDecl));
@@ -1039,6 +1032,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     }
                     """;
 
+            
             yield return $$"""
                 {{vis}} readonly struct {{colsTypeName}}
                 {
