@@ -504,6 +504,17 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         ? $"global::SpacetimeDB.Internal.Module.ResolveName({SymbolDisplay.FormatLiteral(assemblyIdentity, true)}, {SymbolDisplay.FormatLiteral(localName, true)})"
         : SymbolDisplay.FormatLiteral(localName, true);
 
+    private string HandleLookupName(string localName) =>
+        sharedContexts ? "__resolvedName" : LookupName(localName);
+
+    private string HandleLookupNameCache(string typeName, string localName) => sharedContexts
+        ? $$"""
+            private static readonly string __resolvedName = {{LookupName(localName)}};
+            // Prevent eager initialization before the root installs namespace placements.
+            static {{typeName}}() { }
+            """
+        : "";
+
     public int? GetColumnIndex(AttributeData attrContext, string name, DiagReporter diag)
     {
         var index = Members
@@ -599,7 +610,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 : "";
             yield return $$"""
                 {{vis}} sealed class {{f.Identifier}}UniqueIndex : {{uniqueIndexBase}}<{{tableAccessor.Identifier}}, {{globalName}}, {{f.Type.Name}}, {{f.Type.BSATNName}}> {
-                    internal {{f.Identifier}}UniqueIndex() : base({{LookupName(standardIndexName)}}) {}
+                    {{HandleLookupNameCache(f.Identifier + "UniqueIndex", standardIndexName)}}
+                    internal {{f.Identifier}}UniqueIndex() : base({{HandleLookupName(standardIndexName)}}) {}
                     // Important: don't move this to the base class.
                     // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
                     // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
@@ -626,7 +638,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             var standardIndexName = index.StandardIndexName(tableAccessor);
 
             yield return $$"""
-                    {{vis}} sealed class {{identifierName}}Index() : SpacetimeDB.Internal.IndexBase<{{globalName}}>({{LookupName(standardIndexName)}}) {
+                    {{vis}} sealed class {{identifierName}}Index() : SpacetimeDB.Internal.IndexBase<{{globalName}}>({{HandleLookupName(standardIndexName)}}) {
+                        {{HandleLookupNameCache(identifierName + "Index", standardIndexName)}}
                 """;
 
             for (var n = 0; n < members.Length; n++)
@@ -700,7 +713,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                           {{{f.Type.Name}}},
                           {{{f.Type.BSATNName}}}>
                 {
-                    internal {{{f.Identifier}}}Index() : base({{{LookupName(standardIndexName)}}}) { }
+                    {{{HandleLookupNameCache(f.Identifier + "Index", standardIndexName)}}}
+                    internal {{{f.Identifier}}}Index() : base({{{HandleLookupName(standardIndexName)}}}) { }
 
                     public {{{globalName}}}? Find({{{f.Type.Name}}} key) => FindSingle(key);
                 }
@@ -727,7 +741,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     public sealed class {{{identifierName}}}Index
                     : global::SpacetimeDB.Internal.ReadOnlyIndexBase<{{{globalName}}}>
                     {
-                    internal {{{identifierName}}}Index() : base({{{LookupName(standardIndexName)}}}) {}
+                    {{{HandleLookupNameCache(identifierName + "Index", standardIndexName)}}}
+                    internal {{{identifierName}}}Index() : base({{{HandleLookupName(standardIndexName)}}}) {}
                     """,
             };
 
@@ -908,7 +923,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 {{{visibility}}} sealed class {{{accessorIdentifier}}}ReadOnly
                     : global::SpacetimeDB.Internal.ReadOnlyTableView<{{{globalName}}}>
                 {
-                    internal {{{accessorIdentifier}}}ReadOnly() : base({{{LookupName(accessor.Name)}}}) { }
+                    {{{HandleLookupNameCache(accessorIdentifier + "ReadOnly", accessor.Name)}}}
+                    internal {{{accessorIdentifier}}}ReadOnly() : base({{{HandleLookupName(accessor.Name)}}}) { }
 
                     /// <summary>
                     /// Returns the number of rows in this table.
