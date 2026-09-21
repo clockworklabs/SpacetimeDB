@@ -41,15 +41,17 @@ public static class Module
         }
     }
 
-    private static readonly ModuleBuilder moduleDef = new();
-    public static ModuleBuilder RootBuilder => moduleDef;
+    public static readonly ModuleBuilder RootBuilder = new();
 
     private static NamespaceRegistry? namespaces;
 
     public static void InstallNamespaces(NamespaceRegistry registry)
     {
         if (namespaces is not null)
+        {
             throw new InvalidOperationException("Module namespaces have already been installed.");
+        }
+
         namespaces = registry;
     }
 
@@ -131,7 +133,7 @@ public static class Module
         private readonly ModuleBuilder target;
 
         public TypeRegistrar()
-            : this(moduleDef) { }
+            : this(RootBuilder) { }
 
         internal TypeRegistrar(ModuleBuilder target) => this.target = target;
 
@@ -156,68 +158,56 @@ public static class Module
     }
 
     public static void RegisterReducer<R>()
-        where R : IReducer, new()
-    {
-        moduleDef.RegisterReducer<R>();
-    }
+        where R : IReducer, new() =>
+        RootBuilder.RegisterReducer<R>();
 
     public static void RegisterProcedure<P>()
-        where P : IProcedure, new()
-    {
-        moduleDef.RegisterProcedure<P>();
-    }
+        where P : IProcedure, new() =>
+        RootBuilder.RegisterProcedure<P>();
 
     public static void RegisterHttpHandler<H>()
-        where H : IHttpHandler, new()
-    {
-        moduleDef.RegisterHttpHandler<H>();
-    }
+        where H : IHttpHandler, new() =>
+        RootBuilder.RegisterHttpHandler<H>();
 
     public static void RegisterHttpRouter(SpacetimeDB.Router router) =>
-        moduleDef.RegisterHttpRouter(router);
+        RootBuilder.RegisterHttpRouter(router);
 
     public static void RegisterTable<T, View>()
         where T : IStructuralReadWrite, new()
-        where View : ITableView<View, T>, new()
-    {
-        moduleDef.RegisterTable<T, View>();
-    }
+        where View : ITableView<View, T>, new() =>
+        RootBuilder.RegisterTable<T, View>();
 
     public static void RegisterView<TDispatcher>()
-        where TDispatcher : IView, new()
-    {
-        moduleDef.RegisterView<TDispatcher>();
-    }
+        where TDispatcher : IView, new() =>
+        RootBuilder.RegisterView<TDispatcher>();
 
     public static void RegisterAnonymousView<TDispatcher>()
-        where TDispatcher : IAnonymousView, new()
-    {
-        moduleDef.RegisterAnonymousView<TDispatcher>();
-    }
+        where TDispatcher : IAnonymousView, new() =>
+        RootBuilder.RegisterAnonymousView<TDispatcher>();
 
     public static void RegisterEnvironment(EnvironmentDeclaration declaration) =>
-        moduleDef.RegisterEnvironment(declaration);
+        RootBuilder.RegisterEnvironment(declaration);
 
     public static void RegisterViewPrimaryKey(string viewSourceName, string[] columns) =>
-        moduleDef.RegisterViewPrimaryKey(viewSourceName, columns);
+        RootBuilder.RegisterViewPrimaryKey(viewSourceName, columns);
 
     public static void RegisterClientVisibilityFilter(Filter rlsFilter) =>
-        moduleDef.RegisterClientVisibilityFilter(rlsFilter);
+        RootBuilder.RegisterClientVisibilityFilter(rlsFilter);
 
     public static void RegisterTableDefaultValue(string table, ushort colId, byte[] value) =>
-        moduleDef.RegisterTableDefaultValue(table, colId, value);
+        RootBuilder.RegisterTableDefaultValue(table, colId, value);
 
     public static void SetCaseConversionPolicy(SpacetimeDB.CaseConversionPolicy policy) =>
-        moduleDef.SetCaseConversionPolicy(policy);
+        RootBuilder.SetCaseConversionPolicy(policy);
 
     public static void RegisterExplicitTableName(string sourceName, string canonicalName) =>
-        moduleDef.RegisterExplicitTableName(sourceName, canonicalName);
+        RootBuilder.RegisterExplicitTableName(sourceName, canonicalName);
 
     public static void RegisterExplicitFunctionName(string sourceName, string canonicalName) =>
-        moduleDef.RegisterExplicitFunctionName(sourceName, canonicalName);
+        RootBuilder.RegisterExplicitFunctionName(sourceName, canonicalName);
 
     public static void RegisterExplicitIndexName(string sourceName, string canonicalName) =>
-        moduleDef.RegisterExplicitIndexName(sourceName, canonicalName);
+        RootBuilder.RegisterExplicitIndexName(sourceName, canonicalName);
 
     public static byte[] Consume(this BytesSource source)
     {
@@ -406,7 +396,7 @@ public static class Module
         EnsureNativeAotTypeRoots();
         try
         {
-            var module = moduleDef.BuildModuleDefinition();
+            var module = RootBuilder.BuildModuleDefinition();
             RawModuleDef versioned = new RawModuleDef.V10(module);
             var moduleBytes = IStructuralReadWrite.ToBytes(new RawModuleDef.BSATN(), versioned);
             description.Write(moduleBytes);
