@@ -1,0 +1,947 @@
+use core::{
+    iter::{Map, Scan},
+    num::NonZeroUsize,
+    ops::Range,
+    result::Result,
+    task::Waker,
+};
+
+use crate::{
+    sim::{
+        collections::{BoundedSlab, BoundedVecDeque},
+        completion::CompletionHandle,
+        faults::{EitherOrBoth, IndexSelector, TaskSelection, TaskSelector},
+        fs::{self, Datasync},
+        Error, FaultInjector, SECTOR_SIZE64,
+    },
+    ErasedBox, ErrorWith, Statx, SECTOR_SIZE,
+};
+
+mod sqe;
+use sqe::SqeInner;
+pub use sqe::{LinkKind, Sqe, SqeId};
+
+// TODO: There is no difference between fsync and fdatasync until we extend
+// [Statx] with additional fields.
+#[derive(Clone, Copy, Debug)]
+pub enum FsyncEffect {
+    Datasync(Datasync),
+}
+
+impl From<Datasync> for FsyncEffect {
+    fn from(value: Datasync) -> Self {
+        Self::Datasync(value)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Operation {
+    WriteSector(WriteSector),
+    ReadSector(ReadSector),
+    Open,
+    Create,
+    Stat,
+    Fallocate,
+    Fsync { effect: FsyncEffect },
+    Fdatasync { effect: Datasync },
+    Noop,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct WriteSector {
+    pub sector: usize,
+    pub buf_offset: usize,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ReadSector {
+    pub sector: usize,
+    pub buf_offset: usize,
+}
+
+#[derive(Debug)]
+pub struct Cqe<T> {
+    inner: CqeInner,
+    user_data: Option<T>,
+}
+impl<T> Cqe<T> {
+    pub fn user_data(&self) -> &Option<T> {
+        &self.user_data
+    }
+
+    pub(crate) fn complete(self, completion: &mut CompletionHandle) -> Option<Waker> {
+        self.inner.complete(completion)
+    }
+}
+
+#[derive(Debug)]
+pub enum CqeInner {
+    Write {
+        result: Result<usize, Error>,
+        buf: ErasedBox,
+    },
+    Read {
+        result: Result<usize, Error>,
+        buf: ErasedBox,
+    },
+    Open {
+        result: Result<fs::File, Error>,
+    },
+    Create {
+        result: Result<fs::File, Error>,
+    },
+    Stat {
+        result: Result<Statx, Error>,
+    },
+    Fallocate {
+        result: Result<(), Error>,
+    },
+    Fsync {
+        result: Result<(), Error>,
+    },
+    Fdatasync {
+        result: Result<(), Error>,
+    },
+    Noop {
+        result: Result<(), Error>,
+    },
+}
+
+impl CqeInner {
+    fn complete(self, completion: &mut CompletionHandle) -> Option<Waker> {
+        match self {
+            Self::Write { result, buf, .. } => {
+                let result = match result {
+                    Ok(written) if written == buf.len() => Ok(buf),
+                    Ok(written) => Err(ErrorWith {
+                        error: Error::ShortWrite {
+                            expected: buf.len(),
+                            written,
+                        },
+                        with: buf,
+                    }),
+                    Err(error) => Err(ErrorWith { error, with: buf }),
+                };
+                completion.complete_write(result)
+            }
+            Self::Read { result, buf, .. } => {
+                let result = match result {
+                    Ok(read) if read == buf.len() => Ok(buf),
+                    Ok(read) => Err(ErrorWith {
+                        error: Error::UnexpectedEof {
+                            expected: buf.len(),
+                            read,
+                        },
+                        with: buf,
+                    }),
+                    Err(error) => Err(ErrorWith { error, with: buf }),
+                };
+                completion.complete_read(result)
+            }
+            Self::Open { result, .. } => completion.complete_open(result),
+            Self::Create { result, .. } => completion.complete_create(result),
+            Self::Stat { result, .. } => completion.complete_stat(result),
+            Self::Fallocate { result, .. } => completion.complete_fallocate(result),
+            Self::Fsync { result, .. } => completion.complete_fsync(result),
+            Self::Fdatasync { result, .. } => completion.complete_fdatasync(result),
+            Self::Noop { result, .. } => completion.complete_noop(result),
+        }
+    }
+}
+
+pub struct InFlight<T> {
+    sqe: SqeInner,
+    state: InFlightState,
+    next: Option<Link>,
+    pub user_data: Option<T>,
+}
+
+impl<T> InFlight<T> {
+    fn is_blocked(&self) -> bool {
+        self.state.is_blocked()
+    }
+
+    fn is_active(&self) -> bool {
+        self.state.is_active()
+    }
+
+    fn cancel(self) -> Cqe<T> {
+        self.sqe.cancel(self.user_data)
+    }
+}
+
+enum InFlightState {
+    Blocked,
+    Active(Pending),
+}
+
+impl InFlightState {
+    fn is_blocked(&self) -> bool {
+        matches!(self, Self::Blocked)
+    }
+
+    fn is_active(&self) -> bool {
+        matches!(self, Self::Active(_))
+    }
+}
+
+struct Link {
+    kind: LinkKind,
+    next: SqeId,
+}
+
+pub trait ResultAcc {
+    fn empty() -> Self;
+    fn add(&mut self, other: Self);
+}
+
+impl ResultAcc for usize {
+    fn empty() -> Self {
+        0
+    }
+
+    fn add(&mut self, other: Self) {
+        *self += other
+    }
+}
+
+impl ResultAcc for () {
+    fn empty() -> Self {}
+    fn add(&mut self, _: Self) {}
+}
+
+pub struct Results<T> {
+    remaining: usize,
+    value: T,
+    error: Option<Error>,
+}
+
+impl<T: ResultAcc> Results<T> {
+    fn new(op_count: usize) -> Self {
+        Self {
+            remaining: op_count,
+            value: T::empty(),
+            error: None,
+        }
+    }
+
+    fn push(&mut self, res: Result<T, Error>) {
+        match res {
+            Ok(value) => self.value.add(value),
+            Err(e) => {
+                self.error.get_or_insert(e);
+            }
+        }
+        self.remaining -= 1;
+    }
+
+    fn into_result(self) -> Result<T, Error> {
+        assert_eq!(self.remaining, 0);
+        self.error.map_or(Ok(self.value), Err)
+    }
+
+    fn is_complete(&self) -> bool {
+        self.remaining == 0
+    }
+}
+
+type ReadWriteOps = Scan<Range<usize>, usize, fn(&mut usize, usize) -> Option<Operation>>;
+type SyncOps = Map<fs::IterDatasync, fn(Datasync) -> Operation>;
+
+enum Pending {
+    ReadWrite { ops: ReadWriteOps, results: Results<usize> },
+    Sync { ops: SyncOps, results: Results<()> },
+    Unit { op: Option<Operation> },
+}
+
+impl Iterator for Pending {
+    type Item = Operation;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::ReadWrite { ops, .. } => ops.next(),
+            Self::Sync { ops, .. } => ops.next(),
+            Self::Unit { op } => op.take(),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Executing {
+    sqe: SqeId,
+    inner: Operation,
+}
+
+impl Executing {
+    fn traverse(self, f: impl FnOnce(SqeId, Operation) -> Option<Operation>) -> Option<Self> {
+        let Self { sqe, inner } = self;
+        f(sqe, inner).map(|inner| Self { sqe, inner })
+    }
+}
+
+/// Completion queue overflow policy.
+///
+/// Note that we do **not** model `IORING_FEAT_NODROP`, because we never want
+/// the application to rely on dynamic memory allocation in the kernel.
+///
+/// The default is to panic, which should prompt the user to adjust queue size
+/// configuration. However, sometimes it may be useful to see how the
+/// application behaves when completions are dropped.
+#[derive(Clone, Copy, Default)]
+pub enum OnCqOverflow {
+    #[default]
+    Panic,
+    Drop,
+}
+
+pub struct Options {
+    /// Capacity of the submission queue.
+    ///
+    /// This basically limits how many [Sqe]s can be submitted in one batch.
+    /// Should be a power of 2, or is otherwise rounded up to the next power of
+    /// 2.
+    pub sq_capacity: NonZeroUsize,
+    /// Override the completion queue capacity.
+    ///
+    /// By default, the completion queue's capacity is twice the submission
+    /// queue's. This can be insufficient for some workloads, so this setting
+    /// can be used to override the default.
+    ///
+    /// Should be a power of 2, or is otherwise rounded up to the next power of
+    /// two.
+    pub cq_capacity: Option<NonZeroUsize>,
+    /// What to do if the completion queue overflows.
+    pub cq_overflow: OnCqOverflow,
+    /// Bound on the number of concurrently executing tasks.
+    ///
+    /// Note that one [Sqe] can result in many operations to be scheduled.
+    /// Should be a power of 2, or is otherwise rounded up to the next power of
+    /// two.
+    pub max_concurrency: NonZeroUsize,
+    /// Size in bytes of the virtual disk / filesystem.
+    ///
+    /// Should be a multiple of [SECTOR_SIZE] and is rounded if it isn't.
+    pub disk_space_bytes: u64,
+}
+
+impl Options {
+    pub(crate) fn sq_capacity(&self) -> NonZeroUsize {
+        self.sq_capacity
+            .checked_next_power_of_two()
+            .expect("sq capacity overflow")
+    }
+
+    pub(crate) fn cq_capacity(&self) -> NonZeroUsize {
+        self.cq_capacity
+            .map(|c| c.checked_next_power_of_two().expect("cq capacity overflow"))
+            .unwrap_or_else(|| self.sq_capacity().saturating_mul(NonZeroUsize::new(2).unwrap()))
+    }
+
+    pub(crate) fn max_concurrency(&self) -> NonZeroUsize {
+        self.max_concurrency
+            .checked_next_power_of_two()
+            .expect("max concurrency overflow")
+    }
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            sq_capacity: NonZeroUsize::new(8).unwrap(),
+            cq_capacity: None,
+            cq_overflow: OnCqOverflow::default(),
+            max_concurrency: NonZeroUsize::new(32).unwrap(),
+            disk_space_bytes: 2 * 4096,
+        }
+    }
+}
+
+pub struct Executor<UserData> {
+    submissions: BoundedVecDeque<Sqe<UserData>>,
+    completions: BoundedVecDeque<Cqe<UserData>>,
+
+    in_flight: BoundedSlab<InFlight<UserData>>,
+    executing: BoundedVecDeque<Executing>,
+
+    fs: fs::Filesystem,
+
+    cq_overflow: OnCqOverflow,
+    cq_dropped: usize,
+}
+
+impl<UserData> Executor<UserData> {
+    pub fn new(options: Options) -> Self {
+        let sq_capacity = options.sq_capacity();
+        let cq_capacity = options.cq_capacity();
+        let fs_capacity = options.disk_space_bytes.next_multiple_of(SECTOR_SIZE64) as usize;
+        Self {
+            submissions: BoundedVecDeque::with_capacity(sq_capacity),
+            completions: BoundedVecDeque::with_capacity(cq_capacity),
+            in_flight: BoundedSlab::with_capacity(sq_capacity.saturating_mul(NonZeroUsize::new(2).unwrap())),
+            executing: BoundedVecDeque::with_capacity(options.max_concurrency()),
+            fs: fs::Filesystem::new(fs_capacity),
+            cq_overflow: options.cq_overflow,
+            cq_dropped: 0,
+        }
+    }
+
+    /// Simulate a power-loss crash.
+    ///
+    /// All submitted and executing operations are cancelled, and files reset to
+    /// their durable state. After this method returns, the completion queue is
+    /// empty.
+    pub fn power_loss(&mut self) {
+        self.submissions.clear();
+        self.completions.clear();
+        self.in_flight.clear();
+        self.executing.clear();
+        self.cq_dropped = 0;
+        self.fs.power_loss();
+    }
+
+    /// Restart the executor, simulating a process crash.
+    ///
+    /// Unlike [Self::crash], this will allow the currently executing operations
+    /// to complete. It will, however, cancel all in-flight submissions, even if
+    /// they were partly completed.
+    ///
+    /// Submissions that were not yet scheduled are dropped. The file state
+    /// remains unchanged.
+    ///
+    /// Execution is subject to `faults`. If a fault evaluates to [Fault::Skip],
+    /// that operation is dropped.
+    ///
+    /// All outstanding [Cqe]s are fed to `complete`, including completions that
+    /// happen as part of the shutdown. The completion queue is empty after this
+    /// method returns.
+    pub fn restart(&mut self, faults: &mut impl FaultInjector<UserData>, mut complete: impl FnMut(Cqe<UserData>)) {
+        self.submissions.clear();
+        self.cq_dropped = 0;
+
+        self.completed().for_each(&mut complete);
+        while let Some(op) = self.executing.pop_front() {
+            if let Some(in_flight) = self.in_flight.get(op.sqe.key())
+                && !in_flight.is_active()
+            {
+                continue;
+            }
+            self.execute_op(op, faults);
+            self.completed().for_each(&mut complete);
+        }
+        self.executing.clear();
+        for in_flight in self.in_flight.drain() {
+            complete(in_flight.cancel());
+        }
+    }
+
+    /// Submit a batch of [Sqe]s for later execution.
+    pub fn submit<Batch>(&mut self, sqes: Batch) -> Result<(), Batch::IntoIter>
+    where
+        Batch: IntoIterator<Item = Sqe<UserData>>,
+        Batch::IntoIter: ExactSizeIterator,
+    {
+        self.submissions.extend(sqes)
+    }
+
+    fn complete(&mut self, cqe: Cqe<UserData>) {
+        if self.completions.push_back(cqe).is_err() {
+            match self.cq_overflow {
+                OnCqOverflow::Panic => panic!("completion queue overflow"),
+                OnCqOverflow::Drop => {
+                    self.cq_dropped += 1;
+                }
+            }
+        }
+    }
+
+    /// Number of completions that were dropped due to completion queue overflow
+    /// over the lifetime of this executor.
+    ///
+    /// Always zero if the executor was configured with [OnCqOverflow::Panic].
+    #[allow(unused)]
+    pub fn dropped_completions(&self) -> usize {
+        self.cq_dropped
+    }
+
+    /// Drain the completion queue.
+    pub fn completed(&mut self) -> impl Iterator<Item = Cqe<UserData>> {
+        self.completions.drain(..)
+    }
+
+    /// Drain the submission queue and advance one scheduled operation.
+    ///
+    /// The operation to advance is chosen by `task_selector`.
+    /// The operation is subject to `faults`.
+    pub fn tick(&mut self, task_selector: &impl TaskSelector, faults: &mut impl FaultInjector<UserData>) -> bool {
+        let mut progress = self.schedule();
+        progress |= self.execute(task_selector, faults);
+        progress
+    }
+
+    fn schedule_blocked(&mut self, sqe: SqeInner, user_data: Option<UserData>) -> SqeId {
+        let entry = self.in_flight.vacant_entry().unwrap();
+        let sqe_id = SqeId(entry.key());
+
+        entry.insert(InFlight {
+            sqe,
+            state: InFlightState::Blocked,
+            next: None,
+            user_data,
+        });
+
+        sqe_id
+    }
+
+    fn unblock(&mut self, sqe: SqeId) {
+        let Self { in_flight, .. } = self;
+
+        let in_flight = in_flight.get_mut(sqe.key()).expect("invalid sqe id");
+        assert!(in_flight.is_blocked(), "in-flight sqe unblocked more than once");
+        in_flight.state = InFlightState::Active(in_flight.sqe.prepare());
+    }
+
+    fn have_in_flight_capacity(&self) -> bool {
+        // The batch size is the prefix of linked SQEs, plus the first unlinked
+        // one. They all need to be scheduled together to preserve linking
+        // semantics.
+        let batch_size = self
+            .submissions
+            .iter()
+            .position(|sqe| !sqe.is_linked())
+            .map_or(self.submissions.len(), |i| i + 1);
+
+        batch_size <= self.in_flight.remaining_capacity()
+    }
+
+    fn schedule(&mut self) -> bool {
+        let mut progress = false;
+
+        if self.have_in_flight_capacity() {
+            while let Some(Sqe { inner, link, user_data }) = self.submissions.pop_front() {
+                let head = self.schedule_blocked(inner, user_data);
+
+                let mut prev = head;
+                let mut prev_link = link;
+                while let Some(kind) = prev_link {
+                    let Some(Sqe { inner, link, user_data }) = self.submissions.pop_front() else {
+                        break;
+                    };
+
+                    let next = self.schedule_blocked(inner, user_data);
+                    let prev_in_flight = self.in_flight.get_mut(prev.key()).expect("invalid sqe id");
+                    prev_in_flight.next = Some(Link { kind, next });
+
+                    prev = next;
+                    prev_link = link;
+                }
+
+                self.unblock(head);
+                progress |= true;
+
+                if !self.have_in_flight_capacity() {
+                    break;
+                }
+            }
+        }
+
+        for (sqe_id, in_flight) in self.in_flight.iter_mut() {
+            if self.executing.remaining_capacity() == 0 {
+                break;
+            }
+
+            let InFlightState::Active(pending) = &mut in_flight.state else {
+                continue;
+            };
+            if let Some(op) = pending.next() {
+                self.executing
+                    .push_back(Executing {
+                        sqe: SqeId(sqe_id),
+                        inner: op,
+                    })
+                    .expect("executing capacity checked");
+                progress |= true;
+            }
+        }
+
+        progress
+    }
+
+    fn execute(&mut self, task_selector: &impl TaskSelector, faults: &mut impl FaultInjector<UserData>) -> bool {
+        let mut progress = false;
+
+        let mut run = |this: &mut Executor<UserData>, op| {
+            if let Some(delay) = this.execute_op(op, faults) {
+                this.executing
+                    .push_back(delay)
+                    .expect("op was popped, so there must be capacity");
+            }
+            progress |= true;
+        };
+
+        let Some(remaining) = NonZeroUsize::new(self.executing.len()) else {
+            return progress;
+        };
+        match task_selector.select_tasks(remaining) {
+            TaskSelection::Fifo { count } => {
+                let mut count = count.get();
+                while count > 0 {
+                    let Some(op) = self.executing.pop_front() else {
+                        break;
+                    };
+                    run(self, op);
+                    count -= 1;
+                }
+            }
+            TaskSelection::Any { count, mut select } => {
+                let mut count = count.get();
+                while count > 0 {
+                    let Some(op) = (|| -> Option<Executing> {
+                        let remaining = NonZeroUsize::new(self.executing.len())?;
+                        let index = select.select_index(remaining);
+                        self.executing.swap_remove_front(index)
+                    })() else {
+                        break;
+                    };
+                    run(self, op);
+                    count -= 1;
+                }
+            }
+        }
+
+        progress
+    }
+
+    fn execute_op(&mut self, op: Executing, faults: &mut impl FaultInjector<UserData>) -> Option<Executing> {
+        op.traverse(|sqe, op| {
+            let in_flight = self.in_flight.get(sqe.key()).expect("invalid sqe id");
+            assert!(in_flight.is_active());
+
+            match op {
+                Operation::WriteSector(effect) => faults
+                    .inject_write_sector_fault(in_flight, effect)
+                    .exec_visible(|eff| self.execute_write_sector(sqe, eff))
+                    .map(Operation::WriteSector),
+                Operation::ReadSector(effect) => faults
+                    .inject_read_sector_fault(in_flight, effect)
+                    .exec_visible(|eff| self.execute_read_sector(sqe, eff))
+                    .map(Operation::ReadSector),
+                Operation::Open => faults
+                    .inject_open_fault(in_flight)
+                    .exec_visible(|eff| self.execute_open(sqe, eff))
+                    .map(|()| Operation::Open),
+                Operation::Create => faults
+                    .inject_create_fault(in_flight)
+                    .exec_visible(|eff| self.execute_create(sqe, eff))
+                    .map(|()| Operation::Create),
+                Operation::Stat => faults
+                    .inject_stat_fault(in_flight)
+                    .exec_visible(|eff| self.execute_stat(sqe, eff))
+                    .map(|()| Operation::Stat),
+                Operation::Fallocate => faults
+                    .inject_fallocate_fault(in_flight)
+                    .exec_visible(|eff| self.execute_fallocate(sqe, eff))
+                    .map(|()| Operation::Fallocate),
+                Operation::Fsync { effect } => faults
+                    .inject_fsync_fault(in_flight, effect)
+                    .exec_visible(|eff| self.execute_fsync(sqe, eff))
+                    .map(|effect| Operation::Fsync { effect }),
+                Operation::Fdatasync { effect } => faults
+                    .inject_fdatasync_fault(in_flight, effect)
+                    .exec_visible(|eff| self.execute_fdatasync(sqe, eff))
+                    .map(|effect| Operation::Fdatasync { effect }),
+                Operation::Noop => faults
+                    .inject_noop_fault(in_flight)
+                    .exec_visible(|eff| self.execute_noop(sqe, eff))
+                    .map(|()| Operation::Noop),
+            }
+        })
+    }
+
+    fn execute_write_sector(&mut self, sqe: SqeId, eff: EitherOrBoth<WriteSector, Error>) {
+        let is_complete = {
+            let InFlight {
+                sqe: SqeInner::Write { fd, buf, .. },
+                state: InFlightState::Active(Pending::ReadWrite { results, .. }),
+                ..
+            } = self.in_flight.get_mut(sqe.key()).expect("invalid sqe id")
+            else {
+                unreachable!("invalid sqe: expected write")
+            };
+            let run = |WriteSector { sector, buf_offset }| {
+                let bytes = buf.as_bytes();
+                let end = (buf_offset + SECTOR_SIZE).min(bytes.len());
+
+                let buf: &[u8; SECTOR_SIZE] = buf.as_bytes()[buf_offset..end]
+                    .try_into()
+                    .expect("buffer must be sector aligned");
+                fd.write_sector(buf, sector as _).map_err(Into::into)
+            };
+            results.push(eff.traverse(run, Err));
+            results.is_complete()
+        };
+
+        if is_complete {
+            let InFlight {
+                sqe: SqeInner::Write { buf, .. },
+                state: InFlightState::Active(Pending::ReadWrite { results, .. }),
+                next,
+                user_data,
+            } = self.in_flight.remove(sqe.key())
+            else {
+                unreachable!("invalid sqe: expected write")
+            };
+            let result = results.into_result();
+            let is_success = result.is_ok();
+            self.complete(Cqe {
+                inner: CqeInner::Write { result, buf },
+                user_data,
+            });
+            self.schedule_linked(is_success, next);
+        }
+    }
+
+    fn execute_read_sector(&mut self, sqe: SqeId, eff: EitherOrBoth<ReadSector, Error>) {
+        let is_complete = {
+            let InFlight {
+                sqe: SqeInner::Read { fd, buf, .. },
+                state: InFlightState::Active(Pending::ReadWrite { results, .. }),
+                ..
+            } = self.in_flight.get_mut(sqe.key()).expect("invalid sqe id")
+            else {
+                unreachable!("invalid sqe: expected read")
+            };
+            let run = |ReadSector { sector, buf_offset }| {
+                let bytes = buf.as_bytes_mut();
+                let end = (buf_offset + SECTOR_SIZE).min(bytes.len());
+
+                let buf: &mut [u8; SECTOR_SIZE] = (&mut buf.as_bytes_mut()[buf_offset..end])
+                    .try_into()
+                    .expect("buffer must be sector aligned");
+                fd.read_sector(buf, sector as _).map_err(Into::into)
+            };
+            results.push(eff.traverse(run, Err));
+            results.is_complete()
+        };
+
+        if is_complete {
+            let InFlight {
+                sqe: SqeInner::Read { buf, .. },
+                state: InFlightState::Active(Pending::ReadWrite { results, .. }),
+                next,
+                user_data,
+            } = self.in_flight.remove(sqe.key())
+            else {
+                unreachable!("invalid sqe: expected read")
+            };
+            let result = results.into_result();
+            let is_success = result.is_ok();
+            self.complete(Cqe {
+                inner: CqeInner::Read { result, buf },
+                user_data,
+            });
+            self.schedule_linked(is_success, next);
+        }
+    }
+
+    fn execute_open(&mut self, sqe: SqeId, eff: EitherOrBoth<(), Error>) {
+        let InFlight {
+            sqe: SqeInner::Open { path },
+            state: InFlightState::Active(Pending::Unit { .. }),
+            next,
+            user_data,
+        } = self.in_flight.remove(sqe.key())
+        else {
+            unreachable!("invalid sqe: expected open")
+        };
+        let result = eff.traverse(|()| self.fs.open(&path).map_err(Into::into), Err);
+
+        let is_success = result.is_ok();
+        self.complete(Cqe {
+            inner: CqeInner::Open { result },
+            user_data,
+        });
+        self.schedule_linked(is_success, next);
+    }
+
+    fn execute_create(&mut self, sqe: SqeId, eff: EitherOrBoth<(), Error>) {
+        let InFlight {
+            sqe: SqeInner::Create { path },
+            state: InFlightState::Active(Pending::Unit { .. }),
+            next,
+            user_data,
+        } = self.in_flight.remove(sqe.key())
+        else {
+            unreachable!("invalid sqe: expected create")
+        };
+        let run = |()| self.fs.create(path).map_err(Into::into);
+        let result = eff.traverse(run, Err);
+        let is_success = result.is_ok();
+        self.complete(Cqe {
+            inner: CqeInner::Create { result },
+            user_data,
+        });
+        self.schedule_linked(is_success, next);
+    }
+
+    fn execute_stat(&mut self, sqe: SqeId, eff: EitherOrBoth<(), Error>) {
+        let InFlight {
+            sqe: SqeInner::Stat { fd },
+            state: InFlightState::Active(Pending::Unit { .. }),
+            next,
+            user_data,
+        } = self.in_flight.remove(sqe.key())
+        else {
+            unreachable!("invalid sqe: expected stat")
+        };
+        let result = eff.traverse(|()| Ok(Statx { size: fd.len() }), Err);
+        let is_success = result.is_ok();
+        self.complete(Cqe {
+            inner: CqeInner::Stat { result },
+            user_data,
+        });
+        self.schedule_linked(is_success, next);
+    }
+
+    fn execute_fallocate(&mut self, sqe: SqeId, eff: EitherOrBoth<(), Error>) {
+        let InFlight {
+            sqe: SqeInner::Fallocate { fd, total_len },
+            state: InFlightState::Active(Pending::Unit { .. }),
+            next,
+            user_data,
+        } = self.in_flight.remove(sqe.key())
+        else {
+            unreachable!("invalid sqe: expected fallocate")
+        };
+        let result = eff.traverse(|()| fd.reserve(total_len).map_err(Into::into), Err);
+        let is_success = result.is_ok();
+        self.complete(Cqe {
+            inner: CqeInner::Fallocate { result },
+            user_data,
+        });
+        self.schedule_linked(is_success, next);
+    }
+
+    fn execute_fsync(&mut self, sqe: SqeId, eff: EitherOrBoth<FsyncEffect, Error>) {
+        let is_complete = {
+            let InFlight {
+                sqe: SqeInner::Fsync { fd },
+                state: InFlightState::Active(Pending::Sync { results, .. }),
+                ..
+            } = self.in_flight.get_mut(sqe.key()).expect("invalid sqe id")
+            else {
+                unreachable!("invalid sqe: expected fsync")
+            };
+            let result = eff.traverse(
+                |FsyncEffect::Datasync(effect)| fd.apply_datasync(effect).map_err(Into::into),
+                Err,
+            );
+            results.push(result);
+            results.is_complete()
+        };
+
+        if is_complete {
+            let InFlight {
+                state: InFlightState::Active(Pending::Sync { results, .. }),
+                next,
+                user_data,
+                ..
+            } = self.in_flight.remove(sqe.key())
+            else {
+                unreachable!("invalid sqe: expected fsync")
+            };
+            let result = results.into_result();
+            let is_success = result.is_ok();
+            self.complete(Cqe {
+                inner: CqeInner::Fsync { result },
+                user_data,
+            });
+            self.schedule_linked(is_success, next);
+        }
+    }
+
+    fn execute_fdatasync(&mut self, sqe: SqeId, eff: EitherOrBoth<Datasync, Error>) {
+        let is_complete = {
+            let InFlight {
+                sqe: SqeInner::Fdatasync { fd },
+                state: InFlightState::Active(Pending::Sync { results, .. }),
+                ..
+            } = self.in_flight.get_mut(sqe.key()).expect("invalid sqe id")
+            else {
+                unreachable!("invalid sqe: expected fdatasync")
+            };
+            let result = eff.traverse(|effect| fd.apply_datasync(effect).map_err(Into::into), Err);
+            results.push(result);
+            results.is_complete()
+        };
+
+        if is_complete {
+            let InFlight {
+                state: InFlightState::Active(Pending::Sync { results, .. }),
+                next,
+                user_data,
+                ..
+            } = self.in_flight.remove(sqe.key())
+            else {
+                unreachable!("invalid sqe: expected fdatasync")
+            };
+            let result = results.into_result();
+            let is_success = result.is_ok();
+            self.complete(Cqe {
+                inner: CqeInner::Fdatasync { result },
+                user_data,
+            });
+            self.schedule_linked(is_success, next);
+        }
+    }
+
+    fn execute_noop(&mut self, sqe: SqeId, eff: EitherOrBoth<(), Error>) {
+        let InFlight {
+            sqe: SqeInner::Noop,
+            state: InFlightState::Active(Pending::Unit { .. }),
+            next,
+            user_data,
+        } = self.in_flight.remove(sqe.key())
+        else {
+            unreachable!("invalid sqe: expected noop")
+        };
+        let result = eff.traverse(Ok, Err);
+        let is_success = result.is_ok();
+        self.complete(Cqe {
+            inner: CqeInner::Noop { result },
+            user_data,
+        });
+        self.schedule_linked(is_success, next);
+    }
+
+    fn schedule_linked(&mut self, prev_succeeded: bool, next: Option<Link>) {
+        let Some(Link { kind, next }) = next else {
+            return;
+        };
+        match (kind, prev_succeeded) {
+            (LinkKind::Hard, _) | (LinkKind::Soft, true) => {
+                self.unblock(next);
+            }
+            (LinkKind::Soft, false) => {
+                self.cancel_chain(next);
+            }
+        }
+    }
+
+    fn cancel_chain(&mut self, mut head: SqeId) {
+        loop {
+            let InFlight {
+                sqe,
+                state,
+                next,
+                user_data,
+            } = self.in_flight.remove(head.key());
+            assert!(state.is_blocked(), "attempted to cancel an active linked sqe");
+
+            self.complete(sqe.cancel(user_data));
+            let Some(Link { next, .. }) = next else {
+                break;
+            };
+            head = next;
+        }
+    }
+}
