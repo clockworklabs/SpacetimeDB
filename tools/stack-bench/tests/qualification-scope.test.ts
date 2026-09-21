@@ -29,7 +29,7 @@ const references: Record<TestStack, { backend: TestStack; id: string; sourceSha2
 test('qualification scopes resolve the current executable tree for every real stack', () => {
   const nullScope = qualificationScopeIdentity({ kind: 'null', release, stackBenchRoot: STACK_BENCH_ROOT });
   assert.deepEqual(validateQualificationScopeIdentity(nullScope), nullScope);
-  for (const stack of ['postgres', 'mongodb', 'spacetime']) {
+  for (const stack of ['postgres', 'mongodb', 'spacetime', 'convex']) {
     for (const kind of ['reference', 'mutation'] as const) {
       const identity = qualificationScopeIdentity({ kind, release, stack, stackBenchRoot: STACK_BENCH_ROOT,
         reference: { backend: stack, id: `reference-${stack}`, sourceSha256: digest('b') },
