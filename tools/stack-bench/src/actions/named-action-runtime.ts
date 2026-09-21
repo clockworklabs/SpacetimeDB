@@ -31,6 +31,7 @@ export interface NamedActionResponse {
 }
 
 export interface NamedActionRequest {
+  readonly applicationOrigin?: string;
   readonly responseContract?: ResponseContract;
   readonly applicationRejectionStatuses?: readonly number[];
   readonly body?: string | null;
@@ -137,7 +138,7 @@ export function bindBrowserRequest(actor: Actor, request: NamedActionRequest, cr
   const token = entry?.[1].match(/^Bearer (.+)$/i)?.[1];
   let binding: ReturnType<typeof convexSessionBinding> = null;
   if (request.responseContract?.startsWith('convex-') && token && request.url) {
-    binding = convexSessionBinding(actor.page, request.url, token);
+    binding = convexSessionBinding(actor.page, request.url, token, request.applicationOrigin);
     if (!binding && actor.writes.some(write => new URL(write.url).origin === new URL(request.url!).origin
       && Object.entries(write.headers).some(([key, value]) => /^authorization$/i.test(key) && value === `Bearer ${token}`))) {
       binding = { argument: undefined, bearer: true };

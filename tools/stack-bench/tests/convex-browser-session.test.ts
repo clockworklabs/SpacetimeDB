@@ -33,3 +33,24 @@ test('Convex replay binds the observed caller session, including tampering, with
   assert.deepEqual(bindBrowserRequest(actor, request, { Authorization: 'Bearer native-session' })(),
     { headers: { Authorization: 'Bearer native-session' }, body: request.body });
 });
+
+test('Convex replay accepts native sessions through the explicit application proxy only', () => {
+  const actor = { name: 'caller', page: {}, writes: [] } as unknown as Actor;
+  const request = { url: 'http://localhost:3210/api/mutation', applicationOrigin: 'http://localhost:6923',
+    responseContract: 'convex-mutation' as const,
+    body: JSON.stringify({ path: 'api:buy', args: { itemId: 'item' }, format: 'json' }) };
+  const headers = { Authorization: 'Bearer current-session' };
+  const query = JSON.stringify({ type: 'ModifyQuerySet', modifications: [
+    { type: 'Add', args: [{ token: 'current-session' }] },
+  ] });
+  recordConvexSession(actor.page, 'ws://unrelated.test/api/1.0.0/sync', query);
+  assert.throws(() => bindBrowserRequest(actor, request, headers), ActionInconclusive);
+  recordConvexSession(actor.page, 'ws://localhost:6923/api/1.0.0/sync', query);
+  assert.throws(() => bindBrowserRequest(actor, { ...request, applicationOrigin: undefined }, headers), ActionInconclusive);
+  const replay = bindBrowserRequest(actor, request, headers)();
+  assert.deepEqual(replay.headers, {});
+  assert.equal(JSON.parse(replay.body!).args.token, 'current-session');
+  recordConvexSession(actor.page, 'ws://localhost:6923/api/1.0.0/sync',
+    JSON.stringify({ type: 'Authenticate', tokenType: 'User', value: 'current-session' }));
+  assert.deepEqual(bindBrowserRequest(actor, request, headers)(), { headers, body: request.body });
+});

@@ -26,12 +26,15 @@ export function recordConvexSession(page: object, socketUrl: string, payload: st
   if (state.calls.length > 200) state.calls.splice(0, state.calls.length - 200);
 }
 
-export function convexSessionBinding(page: object, url: string, token: string) {
+export function convexSessionBinding(page: object, url: string, token: string, applicationOrigin?: string) {
   const state = sessions.get(page), origin = new URL(url).origin;
-  const records = (state?.calls ?? []).filter(record => record.origin === origin);
+  // Apps may proxy the native sync protocol through the runner's application URL.
+  // Accept that explicit origin only; unrelated sockets cannot supply credentials.
+  const origins = new Set([origin, ...(applicationOrigin ? [applicationOrigin] : [])]);
+  const records = (state?.calls ?? []).filter(record => origins.has(record.origin));
   const fields = new Set(records.flatMap(record => Object.entries(record.args ?? {})
     .filter(([, value]) => value === token).map(([key]) => key)));
-  const bearer = state?.bearer.get(origin) === token;
+  const bearer = [...origins].some(value => state?.bearer.get(value) === token);
   // A query may also echo the native token. That does not make its argument
   // part of every other function's interface.
   if (bearer) return { argument: undefined, bearer: true };

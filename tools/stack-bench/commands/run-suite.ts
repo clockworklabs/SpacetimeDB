@@ -496,7 +496,7 @@ export async function writeApplicationDatabaseMarker(
       page.setDefaultTimeout(8000);
       const actor = new Actor('database-provenance', page, context);
       await actor.ready;
-      await runApplicationNavigation(() => page.goto(args.url, { waitUntil: 'domcontentloaded', timeout: 20000 }));
+      await runApplicationNavigation(() => page.goto(args.url, { waitUntil: 'domcontentloaded', timeout: 20000 }), page);
       const evidence = await executeAction(ACTION_REGISTRY, definition.browserAction,
         { do: definition.browserAction, actor: actor.name, name: marker, exact: true }, {
           capabilities: {

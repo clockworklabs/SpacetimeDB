@@ -4,7 +4,7 @@
 //
 import { chromium } from 'playwright';
 import { attemptBrowserLaunchOptions } from '../container/browser-pipe.js';
-import type { Browser, BrowserContext, Page, Request } from 'playwright';
+import type { Browser, BrowserContext, Page } from 'playwright';
 import { sanitiseConsoleError } from '../src/evidence/diagnostic-sanitizer.js';
 import { inspectSavedDiagnostic } from '../src/runtime/saved-diagnostic.js';
 import { randomUUID } from 'node:crypto';
@@ -471,7 +471,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
         const fresh = await actor.context.newPage();
         fresh.setDefaultTimeout(defaultWithin);
         await actor.attach(fresh);
-        await runApplicationNavigation(() => fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 }));
+        await runApplicationNavigation(() => fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 }), fresh);
         await abortableSleep(settleMs, signal);
       },
       async fresh(actor: Actor, sourceName: string, preserveStorage: boolean) {
@@ -506,7 +506,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
             });
             seed = script.identifier;
           }
-          await runApplicationNavigation(() => fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 }));
+          await runApplicationNavigation(() => fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 }), fresh);
         } finally {
           if (session) {
             try { if (seed) await session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: seed }); }
@@ -564,7 +564,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
         if (!actor || actor.responseLoss) throw new Error('response-loss actor is missing or already prepared');
         actor.responseLoss = await installResponseLoss(actor.context);
         // Existing sockets predate interception. Replace them before setup writes.
-        await runApplicationNavigation(() => actor.page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 }));
+        await runApplicationNavigation(() => actor.page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 }), actor.page);
       },
       get(name: string) {
         const gate = actors.get(name)?.responseLoss;
@@ -829,31 +829,7 @@ export async function gradeFeature(browser: Browser, feature: CompiledFeature, a
       await actor.ready;
       actor.annotate = Boolean(args.media);
       actors.set(name, actor);
-      const pending = new Map<Request, string>();
-      const requested = (request: Request) => {
-        if (pending.size >= 20) return;
-        try {
-          const url = new URL(request.url());
-          const origin = ['http:', 'https:'].includes(url.protocol) ? url.origin : url.protocol;
-          pending.set(request, `${request.resourceType()} ${origin.slice(0, 200)}`);
-        } catch { /* malformed URLs provide no safe origin */ }
-      };
-      const completed = (request: Request) => { pending.delete(request); };
-      page.on('request', requested);
-      page.on('requestfinished', completed);
-      page.on('requestfailed', completed);
-      try {
-        await runApplicationNavigation(() => page.goto(args.url!, { waitUntil: 'domcontentloaded', timeout: 20000 }));
-      } catch (cause) {
-        for (const resource of pending.values()) {
-          result.consoleErrors.push(`[${name}] Navigation pending resource (up to 20): ${resource}`);
-        }
-        throw cause;
-      } finally {
-        page.off('request', requested);
-        page.off('requestfinished', completed);
-        page.off('requestfailed', completed);
-      }
+      await runApplicationNavigation(() => page.goto(args.url!, { waitUntil: 'domcontentloaded', timeout: 20000 }), page);
     }
   } catch (error) {
     const classified = classifyCheckFailure(error);

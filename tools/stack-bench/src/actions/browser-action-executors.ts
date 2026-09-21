@@ -8,6 +8,7 @@ import { finding, findingText, renderFinding } from './action-findings.js';
 import { settledLocatorCount } from '../evidence/browser-evidence.js';
 import { harnessBrowserFailure } from '../evidence/harness-errors.js';
 import { runApplicationNavigation } from './browser-navigation.js';
+import type { Page as PlaywrightPage } from 'playwright';
 
 
 interface ScrollTarget {
@@ -42,7 +43,7 @@ interface Locator {
   waitFor(options?: unknown): Promise<void>;
 }
 
-interface Page {
+interface Page extends Partial<Pick<PlaywrightPage, 'on' | 'off'>> {
   readonly keyboard: { press(key: string): Promise<void> };
   locator(selector: string, options?: unknown): Locator;
   reload(options?: unknown): Promise<unknown>;
@@ -340,7 +341,7 @@ async function reload({ input, capabilities, signal }:
   if (input.application && !browser.applicationUrl) throw new Error('Application return requires the trusted application URL');
   await runApplicationNavigation(() => input.application
     ? actor.page.goto(browser.applicationUrl!, { waitUntil: 'domcontentloaded', timeout: 20000 })
-    : actor.page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 }));
+    : actor.page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 }), actor.page);
   await browser.sleep(input.settleMs ?? 2500, signal);
   return { reloaded: true, ...(input.application ? { application: true } : {}) };
 }

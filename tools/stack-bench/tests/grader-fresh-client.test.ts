@@ -24,10 +24,14 @@ test('a stalled stylesheet leaves navigation unmeasured and the unchanged app ca
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage();
-    await assert.rejects(runApplicationNavigation(() => page.goto(url,
-      { waitUntil: 'domcontentloaded', timeout: 250 })), ActionInconclusive);
-    await assert.rejects(runApplicationNavigation(() => page.reload(
-      { waitUntil: 'domcontentloaded', timeout: 250 })), ActionInconclusive);
+    for (const operation of [() => page.goto(url, { waitUntil: 'domcontentloaded', timeout: 250 }),
+      () => page.reload({ waitUntil: 'domcontentloaded', timeout: 250 })]) {
+      await assert.rejects(runApplicationNavigation(operation, page), error => {
+        assert(error instanceof ActionInconclusive);
+        assert.deepEqual(error.details.observation, { pendingResources: [`stylesheet ${url}`] });
+        return true;
+      });
+    }
     stall = false;
     await runApplicationNavigation(() => page.goto(url, { waitUntil: 'domcontentloaded' }));
     assert.equal(await page.locator('body').textContent(), 'ready');

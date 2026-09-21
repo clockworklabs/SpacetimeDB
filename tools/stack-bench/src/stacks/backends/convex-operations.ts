@@ -182,7 +182,7 @@ export function proveConvexUse({ marker, ...input }: NativeInput & { marker: unk
     reason: matches ? 'application marker exists in the leased Convex backend' : 'application marker is absent from the leased Convex backend' };
 }
 
-export function convexNamedActionRequest({ action, input }: { action: NamedAction; input?: unknown; spacetime?: unknown; url?: string | null }) {
+export function convexNamedActionRequest({ action, input, url }: { action: NamedAction; input?: unknown; spacetime?: unknown; url?: string | null }) {
   if (!action.reducer) return null;
   const supplied = (input && typeof input === 'object' ? input : {}) as {
     values?: Record<string, unknown>; args?: readonly unknown[]; body?: Record<string, unknown>;
@@ -196,7 +196,8 @@ export function convexNamedActionRequest({ action, input }: { action: NamedActio
   const lease = leaseFromEnv(process.env, { backend: 'convex', active: true }).lease;
   const request = convexFunctionRequest({ deploymentUrl: lease.resources.serverUri!, kind: 'mutation',
     path: `api:${action.reducer}`, args: values });
-  return { ...request, responseContract: 'convex-mutation' as const };
+  return { ...request, responseContract: 'convex-mutation' as const,
+    ...(url ? { applicationOrigin: new URL(url).origin } : {}) };
 }
 
 // Same native metadata owner as the vendor `convex function-spec` command.
