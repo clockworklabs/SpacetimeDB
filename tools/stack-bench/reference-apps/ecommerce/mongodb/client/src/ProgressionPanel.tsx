@@ -36,15 +36,21 @@ export function ProgressionPanel({ token, user, items, orders, onSignIn, onRefre
   const [supportMessage, setSupportMessage] = useState("");
   const [supportReference, setSupportReference] = useState("");
   const [restoreWarning, setRestoreWarning] = useState("");
+  const [preference, setPreference] = useState({ order: false, stock: false });
+
+  useEffect(() => {
+    setPreference({ order: !!state.preference?.order, stock: !!state.preference?.stock });
+  }, [user?.username, state.preference?.order, state.preference?.stock]);
+
+  useEffect(() => {
+    setProfileName(state.profile?.name || "");
+    setProfileAddress(state.profile?.address || "");
+  }, [user?.username, state.profile?.name, state.profile?.address]);
 
   const refresh = useCallback(async () => {
     try {
       const next = await request("/api/progression/state", token);
       setState({ ...next, loadedToken: token });
-      if (next.profile) {
-        setProfileName(next.profile.name || "");
-        setProfileAddress(next.profile.address || "");
-      }
     } catch (err: any) {
       setState((current: any) => ({ ...current, loadedToken: undefined }));
       setError(err.message);
@@ -85,7 +91,6 @@ export function ProgressionPanel({ token, user, items, orders, onSignIn, onRefre
 
   const saveProfile = () => act("/api/progression/profile", { method: "PUT",
     body: JSON.stringify({ name: profileName, address: profileAddress }) });
-  const preference = state.preference || { order: false, stock: false };
 
   return <section className="progression-panel">
     {!user ? <div className="progression-card staff-signin">
@@ -127,17 +132,20 @@ export function ProgressionPanel({ token, user, items, orders, onSignIn, onRefre
       data-role="notifications-panel" aria-busy={state.loadedToken !== token || !Array.isArray(state.notifications)}>
       <h3>Notifications</h3>
       <button data-role="notification-order" data-state={preference.order ? "on" : "off"} className="btn btn-ghost"
-        onClick={() => setState((value: any) => ({ ...value, preference: { ...preference, order: !preference.order } }))}>
+        onClick={() => setPreference(value => ({ ...value, order: !value.order }))}>
         Order notifications {preference.order ? "on" : "off"}
       </button>
       <button data-role="notification-stock" data-state={preference.stock ? "on" : "off"} className="btn btn-ghost"
-        onClick={() => setState((value: any) => ({ ...value, preference: { ...preference, stock: !preference.stock } }))}>
+        onClick={() => setPreference(value => ({ ...value, stock: !value.stock }))}>
         Stock notifications {preference.stock ? "on" : "off"}
       </button>
       <span data-role="notification-unread-count">{(state.notifications || []).length}</span>
-      <button data-role="notification-save" className="btn btn-primary" onClick={() => act("/api/progression/preferences", {
-        method: "PUT", body: JSON.stringify(preference),
-      })}>Save</button>
+      <button data-role="notification-save" className="btn btn-primary" onClick={async () => {
+        const result = await act("/api/progression/preferences", {
+          method: "PUT", body: JSON.stringify(preference),
+        });
+        if (result?.preference) setPreference(result.preference);
+      }}>Save</button>
       {(state.notifications || []).map((notification: any) =>
         <div data-role="notification-item" key={notification.id}><span data-role={notification.type === 'stock' ? 'stock-alert-delivery' : undefined}>{notification.message}</span></div>)}
     </div>}

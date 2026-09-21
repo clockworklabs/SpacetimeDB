@@ -27,7 +27,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/mongodb",
-        "sourceSha256": "bdf8cf5801e88984c160dd6efaab1e0a751a28382d5ab505ae05387fd14540fd"
+        "sourceSha256": "837e7e81b58f17afdaf29de8ddb7a17da2ac95d3716145c4f0ef996b4b4f5e7d"
       },
       "mutationManifests": [
         "grader/mutations/mongodb-ecommerce.json"
@@ -117,7 +117,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/convex",
-        "sourceSha256": "b1c9a86c8a39d4127db9256c81b336c7a689c6ed8d10cada082f56d14e5e685b"
+        "sourceSha256": "6f0c177b439989afa30b335bcc4894238c69e2e279b9c00097b5280391954dfe"
       },
       "mutationManifests": [
         "grader/mutations/convex-ecommerce.json"

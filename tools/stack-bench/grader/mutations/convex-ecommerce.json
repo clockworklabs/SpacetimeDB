@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "b1c9a86c8a39d4127db9256c81b336c7a689c6ed8d10cada082f56d14e5e685b",
+  "fixtureSha256": "6f0c177b439989afa30b335bcc4894238c69e2e279b9c00097b5280391954dfe",
   "backend": "convex",
   "track": "ecommerce",
   "note": "Native Convex selected-L3 defect controls. Authored coverage is not qualification; every baseline and mutant requires execution against this exact source hash. Recovery controls use real native reconnect callbacks and writes.",
@@ -324,8 +324,8 @@
       "file": "client/src/ProgressionPanel.tsx",
       "edits": [
         {
-          "find": "      <button data-role=\"notification-order\" data-state={preference.order ? \"on\" : \"off\"} className=\"btn btn-ghost\"\n        onClick={() => setState((value: any) => ({ ...value, preference: { ...preference, order: !preference.order } }))}>\n        Order notifications {preference.order ? \"on\" : \"off\"}\n      </button>",
-          "replace": "      <OrderNotificationToggle on={preference.order}\n        onToggle={() => setState((value: any) => ({ ...value, preference: { ...preference, order: !preference.order } }))} />"
+          "find": "      <button data-role=\"notification-order\" data-state={preference.order ? \"on\" : \"off\"} className=\"btn btn-ghost\"\n        onClick={() => setPreference(value => ({ ...value, order: !value.order }))}>\n        Order notifications {preference.order ? \"on\" : \"off\"}\n      </button>",
+          "replace": "      <OrderNotificationToggle on={preference.order}\n        onToggle={() => setPreference(value => ({ ...value, order: !value.order }))} />"
         },
         {
           "find": "function SupportTicket({ ticket, user, act }: any) {",

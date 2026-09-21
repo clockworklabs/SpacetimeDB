@@ -32,10 +32,19 @@ export function ProgressionPanel({ token, user, items, orders, onSignIn, staffOn
   const [supportSubject, setSupportSubject] = useState("");
   const [supportMessage, setSupportMessage] = useState("");
   const [supportReference, setSupportReference] = useState("");
+  const [preference, setPreference] = useState({ order: false, stock: false });
+
+  useEffect(() => {
+    setPreference({ order: !!state.preference?.order, stock: !!state.preference?.stock });
+  }, [user?.username, state.preference?.order, state.preference?.stock]);
+
+  useEffect(() => {
+    setProfileName(state.profile?.name || "");
+    setProfileAddress(state.profile?.address || "");
+  }, [user?.username, state.profile?.name, state.profile?.address]);
 
   useEffect(() => subscribeProgression(next => {
     setState({ ...next, loadedToken: token });
-    if (next.profile) { setProfileName(next.profile.name || ""); setProfileAddress(next.profile.address || ""); }
   }), [token]);
 
 
@@ -63,7 +72,6 @@ export function ProgressionPanel({ token, user, items, orders, onSignIn, staffOn
   };
 
   const saveProfile = () => act("progression:saveProfile", { name: profileName, address: profileAddress });
-  const preference = state.preference || { order: false, stock: false };
 
   return <section className="progression-panel">
     {!user ? <div className="progression-card staff-signin">
@@ -105,11 +113,11 @@ export function ProgressionPanel({ token, user, items, orders, onSignIn, staffOn
       data-role="notifications-panel" aria-busy={state.loadedToken !== token || !Array.isArray(state.notifications)}>
       <h3>Notifications</h3>
       <button data-role="notification-order" data-state={preference.order ? "on" : "off"} className="btn btn-ghost"
-        onClick={() => setState((value: any) => ({ ...value, preference: { ...preference, order: !preference.order } }))}>
+        onClick={() => setPreference(value => ({ ...value, order: !value.order }))}>
         Order notifications {preference.order ? "on" : "off"}
       </button>
       <button data-role="notification-stock" data-state={preference.stock ? "on" : "off"} className="btn btn-ghost"
-        onClick={() => setState((value: any) => ({ ...value, preference: { ...preference, stock: !preference.stock } }))}>
+        onClick={() => setPreference(value => ({ ...value, stock: !value.stock }))}>
         Stock notifications {preference.stock ? "on" : "off"}
       </button>
       <span data-role="notification-unread-count">{(state.notifications || []).length}</span>

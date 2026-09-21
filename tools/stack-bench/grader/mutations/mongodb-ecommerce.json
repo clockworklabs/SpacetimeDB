@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "fixtureSha256": "bdf8cf5801e88984c160dd6efaab1e0a751a28382d5ab505ae05387fd14540fd",
+  "fixtureSha256": "837e7e81b58f17afdaf29de8ddb7a17da2ac95d3716145c4f0ef996b4b4f5e7d",
   "backend": "mongodb",
   "track": "ecommerce",
   "note": "Mutation definitions for the MongoDB ecommerce reference.",
@@ -2074,8 +2074,8 @@
       "file": "client/src/ProgressionPanel.tsx",
       "edits": [
         {
-          "find": "      <button data-role=\"notification-order\" data-state={preference.order ? \"on\" : \"off\"} className=\"btn btn-ghost\"\n        onClick={() => setState((value: any) => ({ ...value, preference: { ...preference, order: !preference.order } }))}>\n        Order notifications {preference.order ? \"on\" : \"off\"}\n      </button>",
-          "replace": "      <OrderNotificationToggle on={preference.order}\n        onToggle={() => setState((value: any) => ({ ...value, preference: { ...preference, order: !preference.order } }))} />"
+          "find": "      <button data-role=\"notification-order\" data-state={preference.order ? \"on\" : \"off\"} className=\"btn btn-ghost\"\n        onClick={() => setPreference(value => ({ ...value, order: !value.order }))}>\n        Order notifications {preference.order ? \"on\" : \"off\"}\n      </button>",
+          "replace": "      <OrderNotificationToggle on={preference.order}\n        onToggle={() => setPreference(value => ({ ...value, order: !value.order }))} />"
         },
         {
           "find": "function SupportTicket({ ticket, user, orders, act }: any) {",
