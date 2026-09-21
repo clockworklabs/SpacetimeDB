@@ -3,7 +3,7 @@ use core::mem;
 
 use spin::Mutex;
 
-use crate::{SECTOR_SIZE, SECTOR_SIZE64};
+use crate::{sim::SECTOR_SIZE64, SECTOR_SIZE};
 
 type SectorId = usize;
 type FileId = usize;

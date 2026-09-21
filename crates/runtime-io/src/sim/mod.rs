@@ -9,12 +9,15 @@ use crate::{
     AlignedBytes, ErasedBox, ErrorWith, ReadWriteResult, SpacetimeIO, Statx,
 };
 
+mod collections;
+
 mod completion;
 pub use completion::Completion;
 use completion::CompletionHandle;
 
 mod executor;
 use executor::{Executor, Sqe};
+pub use executor::{LinkKind, Options};
 
 mod faults;
 pub use faults::{FaultInjector, FifoAll, FifoOne, IndexSelector, TaskSelector};
@@ -22,10 +25,8 @@ pub use faults::{FaultInjector, FifoAll, FifoOne, IndexSelector, TaskSelector};
 mod fs;
 pub use fs::File;
 
-pub use crate::{
-    sim::executor::{LinkKind, Options},
-    SECTOR_SIZE,
-};
+pub use crate::SECTOR_SIZE;
+const SECTOR_SIZE64: u64 = SECTOR_SIZE as u64;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -269,7 +270,7 @@ mod tests {
     use spacetimedb_runtime_core::sim::Rng;
 
     use super::*;
-    use crate::{sim::faults::TaskSelection, SECTOR_SIZE64};
+    use crate::sim::faults::TaskSelection;
 
     struct RandomTaskSelector<'a> {
         rng: &'a Rng,

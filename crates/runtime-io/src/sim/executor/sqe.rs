@@ -4,13 +4,13 @@ use crate::{
     sim::{
         executor::{Cqe, CqeInner, FsyncEffect, Operation, Pending, ReadSector, Results, WriteSector},
         fs::{self, Datasync},
-        Error,
+        Error, SECTOR_SIZE64,
     },
-    ErasedBox, SECTOR_SIZE, SECTOR_SIZE64,
+    ErasedBox, SECTOR_SIZE,
 };
 
 /// Opaque identifier of a scheduled [Sqe].
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct SqeId(pub(super) usize);
 
 impl SqeId {

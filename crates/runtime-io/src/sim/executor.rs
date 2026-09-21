@@ -1,4 +1,3 @@
-use alloc::collections::VecDeque;
 use core::{
     iter::{Map, Scan},
     num::NonZeroUsize,
@@ -6,16 +5,16 @@ use core::{
     result::Result,
     task::Waker,
 };
-use slab::Slab;
 
 use crate::{
     sim::{
+        collections::{BoundedSlab, BoundedVecDeque},
         completion::CompletionHandle,
         faults::{EitherOrBoth, IndexSelector, TaskSelection, TaskSelector},
         fs::{self, Datasync},
-        Error, FaultInjector,
+        Error, FaultInjector, SECTOR_SIZE64,
     },
-    ErasedBox, ErrorWith, Statx, SECTOR_SIZE, SECTOR_SIZE64,
+    ErasedBox, ErrorWith, Statx, SECTOR_SIZE,
 };
 
 mod sqe;
@@ -24,7 +23,7 @@ pub use sqe::{LinkKind, Sqe, SqeId};
 
 // TODO: There is no difference between fsync and fdatasync until we extend
 // [Statx] with additional fields.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum FsyncEffect {
     Datasync(Datasync),
 }
@@ -35,7 +34,7 @@ impl From<Datasync> for FsyncEffect {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Operation {
     WriteSector(WriteSector),
     ReadSector(ReadSector),
@@ -48,13 +47,13 @@ pub enum Operation {
     Noop,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct WriteSector {
     pub sector: usize,
     pub buf_offset: usize,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct ReadSector {
     pub sector: usize,
     pub buf_offset: usize,
@@ -267,6 +266,7 @@ impl Iterator for Pending {
     }
 }
 
+#[derive(Debug)]
 struct Executing {
     sqe: SqeId,
     inner: Operation,
@@ -325,18 +325,22 @@ pub struct Options {
 }
 
 impl Options {
-    pub(crate) fn sq_capacity(&self) -> usize {
-        self.sq_capacity.get().next_power_of_two()
+    pub(crate) fn sq_capacity(&self) -> NonZeroUsize {
+        self.sq_capacity
+            .checked_next_power_of_two()
+            .expect("sq capacity overflow")
     }
 
-    pub(crate) fn cq_capacity(&self) -> usize {
+    pub(crate) fn cq_capacity(&self) -> NonZeroUsize {
         self.cq_capacity
-            .map(|c| c.get().next_power_of_two())
-            .unwrap_or_else(|| 2 * self.sq_capacity())
+            .map(|c| c.checked_next_power_of_two().expect("cq capacity overflow"))
+            .unwrap_or_else(|| self.sq_capacity().saturating_mul(NonZeroUsize::new(2).unwrap()))
     }
 
-    pub(crate) fn max_concurrency(&self) -> usize {
-        self.max_concurrency.get().next_power_of_two()
+    pub(crate) fn max_concurrency(&self) -> NonZeroUsize {
+        self.max_concurrency
+            .checked_next_power_of_two()
+            .expect("max concurrency overflow")
     }
 }
 
@@ -353,11 +357,11 @@ impl Default for Options {
 }
 
 pub struct Executor<UserData> {
-    submissions: VecDeque<Sqe<UserData>>,
-    completions: VecDeque<Cqe<UserData>>,
+    submissions: BoundedVecDeque<Sqe<UserData>>,
+    completions: BoundedVecDeque<Cqe<UserData>>,
 
-    in_flight: Slab<InFlight<UserData>>,
-    executing: VecDeque<Executing>,
+    in_flight: BoundedSlab<InFlight<UserData>>,
+    executing: BoundedVecDeque<Executing>,
 
     fs: fs::Filesystem,
 
@@ -371,10 +375,10 @@ impl<UserData> Executor<UserData> {
         let cq_capacity = options.cq_capacity();
         let fs_capacity = options.disk_space_bytes.next_multiple_of(SECTOR_SIZE64) as usize;
         Self {
-            submissions: VecDeque::with_capacity(sq_capacity),
-            completions: VecDeque::with_capacity(cq_capacity),
-            in_flight: Slab::with_capacity(2 * sq_capacity),
-            executing: VecDeque::with_capacity(options.max_concurrency()),
+            submissions: BoundedVecDeque::with_capacity(sq_capacity),
+            completions: BoundedVecDeque::with_capacity(cq_capacity),
+            in_flight: BoundedSlab::with_capacity(sq_capacity.saturating_mul(NonZeroUsize::new(2).unwrap())),
+            executing: BoundedVecDeque::with_capacity(options.max_concurrency()),
             fs: fs::Filesystem::new(fs_capacity),
             cq_overflow: options.cq_overflow,
             cq_dropped: 0,
@@ -436,26 +440,18 @@ impl<UserData> Executor<UserData> {
         Batch: IntoIterator<Item = Sqe<UserData>>,
         Batch::IntoIter: ExactSizeIterator,
     {
-        let sqes = sqes.into_iter();
-        if self.submissions.len() + sqes.len() > self.submissions.capacity() {
-            Err(sqes)
-        } else {
-            self.submissions.extend(sqes);
-            Ok(())
-        }
+        self.submissions.extend(sqes)
     }
 
     fn complete(&mut self, cqe: Cqe<UserData>) {
-        if self.completions.len() == self.completions.capacity() {
+        if self.completions.push_back(cqe).is_err() {
             match self.cq_overflow {
                 OnCqOverflow::Panic => panic!("completion queue overflow"),
                 OnCqOverflow::Drop => {
                     self.cq_dropped += 1;
-                    return;
                 }
             }
         }
-        self.completions.push_back(cqe);
     }
 
     /// Number of completions that were dropped due to completion queue overflow
@@ -483,7 +479,7 @@ impl<UserData> Executor<UserData> {
     }
 
     fn schedule_blocked(&mut self, sqe: SqeInner, user_data: Option<UserData>) -> SqeId {
-        let entry = self.in_flight.vacant_entry();
+        let entry = self.in_flight.vacant_entry().unwrap();
         let sqe_id = SqeId(entry.key());
 
         entry.insert(InFlight {
@@ -514,7 +510,7 @@ impl<UserData> Executor<UserData> {
             .position(|sqe| !sqe.is_linked())
             .map_or(self.submissions.len(), |i| i + 1);
 
-        batch_size <= self.in_flight.capacity() - self.in_flight.len()
+        batch_size <= self.in_flight.remaining_capacity()
     }
 
     fn schedule(&mut self) -> bool {
@@ -549,7 +545,7 @@ impl<UserData> Executor<UserData> {
         }
 
         for (sqe_id, in_flight) in self.in_flight.iter_mut() {
-            if self.executing.capacity() == self.executing.len() {
+            if self.executing.remaining_capacity() == 0 {
                 break;
             }
 
@@ -557,10 +553,12 @@ impl<UserData> Executor<UserData> {
                 continue;
             };
             if let Some(op) = pending.next() {
-                self.executing.push_back(Executing {
-                    sqe: SqeId(sqe_id),
-                    inner: op,
-                });
+                self.executing
+                    .push_back(Executing {
+                        sqe: SqeId(sqe_id),
+                        inner: op,
+                    })
+                    .expect("executing capacity checked");
                 progress |= true;
             }
         }
@@ -573,7 +571,9 @@ impl<UserData> Executor<UserData> {
 
         let mut run = |this: &mut Executor<UserData>, op| {
             if let Some(delay) = this.execute_op(op, faults) {
-                this.executing.push_back(delay);
+                this.executing
+                    .push_back(delay)
+                    .expect("op was popped, so there must be capacity");
             }
             progress |= true;
         };

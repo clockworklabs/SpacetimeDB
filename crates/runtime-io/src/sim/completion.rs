@@ -1,14 +1,13 @@
+use alloc::{boxed::Box, sync::Arc};
 use core::{
     convert::identity,
+    num::NonZeroUsize,
     pin::Pin,
     task::{Context, Poll, Waker},
 };
 
-use alloc::{boxed::Box, sync::Arc};
-use slab::Slab;
-
 use crate::{
-    sim::{fs, Error},
+    sim::{collections::BoundedSlab, fs, Error},
     AlignedBytes, ErasedBox, ErrorWith, Statx,
 };
 
@@ -33,13 +32,13 @@ impl<T> CompletionState<T> {
 }
 
 pub(super) struct PendingCompletions {
-    inner: Slab<CompletionHandle>,
+    inner: BoundedSlab<CompletionHandle>,
 }
 
 impl PendingCompletions {
-    pub(super) fn with_capacity(cap: usize) -> Self {
+    pub(super) fn with_capacity(cap: NonZeroUsize) -> Self {
         Self {
-            inner: Slab::with_capacity(cap),
+            inner: BoundedSlab::with_capacity(cap),
         }
     }
 
@@ -52,11 +51,7 @@ impl PendingCompletions {
     }
 
     pub(super) fn vacant_entry(&mut self) -> Option<VacantEntry<'_, CompletionHandle>> {
-        if self.inner.capacity() == self.inner.len() {
-            None
-        } else {
-            Some(self.inner.vacant_entry())
-        }
+        self.inner.vacant_entry()
     }
 
     fn remove(&mut self, key: usize) -> CompletionHandle {
