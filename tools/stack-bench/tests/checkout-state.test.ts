@@ -294,7 +294,7 @@ test('bounded purchase populations reconcile both accounts and preserve missing 
 });
 
 test('direct price probes reconcile accepted or refused effects without requiring warehouse features', async () => {
-  for (const mode of ['accepted', 'refused', 'wrong-total', 'wrong-line', 'write-then-refuse', 'stock-only', 'no-op', 'duplicate', 'old-order-changed', 'timeout', 'reader-error', 'schema-change']) {
+  for (const mode of ['accepted', 'placed', 'completed', 'refused', 'wrong-owner', 'wrong-total', 'wrong-line', 'refunded', 'write-then-refuse', 'stock-only', 'no-op', 'duplicate', 'old-order-changed', 'timeout', 'reader-error', 'schema-change']) {
     const { before, after } = states();
     for (const state of [before, after]) {
       state.stock = []; state.payments = []; state.orphanAllocations = 0;
@@ -302,6 +302,9 @@ test('direct price probes reconcile accepted or refused effects without requirin
     }
     const old = { ...structuredClone(after.orders[0]!), id: 'old' };
     before.orders.push(structuredClone(old)); after.orders.push(old);
+    if (['placed', 'completed'].includes(mode)) after.orders[0]!.status = mode;
+    if (mode === 'wrong-owner') after.orders[0]!.accountId = 'other';
+    if (mode === 'refunded') after.orders[0]!.refundedMinor = 1999;
     if (mode === 'wrong-total') after.orders[0]!.totalMinor = 100;
     if (mode === 'wrong-line') after.orders[0]!.lines[0]!.priceMinor = 100;
     if (mode === 'duplicate') after.orders.push({ ...structuredClone(after.orders[0]!), id: 'extra' });
@@ -324,7 +327,7 @@ test('direct price probes reconcile accepted or refused effects without requirin
             schemaSha256: { schema: mode === 'schema-change' ? 'changed' : 'same' } };
         } },
     } });
-    const expected = ['accepted', 'refused'].includes(mode) ? 'passed' : mode === 'timeout' ? 'inconclusive'
+    const expected = ['accepted', 'placed', 'completed', 'refused'].includes(mode) ? 'passed' : mode === 'timeout' ? 'inconclusive'
       : ['reader-error', 'schema-change'].includes(mode) ? 'harness_failure' : 'failed';
     assert.equal(result.status, expected, mode + ': ' + JSON.stringify(result));
   }

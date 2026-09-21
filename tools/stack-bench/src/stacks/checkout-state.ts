@@ -79,7 +79,9 @@ function comparePurchases(before: CheckoutState, after: CheckoutState,
   }
   check('purchase orders for unexpected accounts', orders.filter(row => !accepted.has(row.accountId)).length, 0);
   for (const order of orders) {
-    check('purchase order status', Number(order.status === 'pending'), 1);
+    // Only the fixed payment reference requires this initial state. Generic
+    // purchasing does not prescribe a lifecycle; cancellation/fulfilment checks do.
+    if (requirePayment) check('purchase order status', Number(order.status === 'pending'), 1);
     check('purchase order total', order.totalMinor, before.priceMinor);
     if (!requirePayment) check('purchase refunded amount', order.refundedMinor ?? -1, 0);
     check('purchase order line count', order.lines.length, 1);
