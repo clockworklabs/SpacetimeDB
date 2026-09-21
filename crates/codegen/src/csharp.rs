@@ -695,7 +695,7 @@ impl CsharpScope<'_> {
                 let table_name_lit = if self.path.is_empty() {
                     format!("{:?}", name.deref())
                 } else {
-                    self.sql_name(name)
+                    format!("RemoteTables.{method_name}Handle.SqlName")
                 };
                 writeln!(output, "public global::SpacetimeDB.Table<{row_type}, {method_name}Cols, {method_name}IxCols> {method_name}() => new({table_name_lit}, new {method_name}Cols({table_name_lit}), new {method_name}IxCols({table_name_lit}));");
             }
@@ -778,8 +778,12 @@ impl Lang for CsharpScope<'_> {
                 if !self.path.is_empty() {
                     writeln!(
                         output,
-                        "protected override global::SpacetimeDB.SqlTableName RemoteSqlTableName => {};",
+                        "internal static readonly global::SpacetimeDB.SqlTableName SqlName = {};",
                         self.sql_name(&table.name)
+                    );
+                    writeln!(
+                        output,
+                        "protected override global::SpacetimeDB.SqlTableName RemoteSqlTableName => SqlName;"
                     );
                 }
                 writeln!(output);

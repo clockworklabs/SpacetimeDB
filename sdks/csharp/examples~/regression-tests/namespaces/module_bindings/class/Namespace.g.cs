@@ -29,8 +29,8 @@ namespace SpacetimeDB.Types.@class
     }
     public sealed class From
     {
-        public global::SpacetimeDB.Table<ScheduleResult, ScheduleResultCols, ScheduleResultIxCols> ScheduleResult() => new(new global::SpacetimeDB.SqlTableName(new string[] { "class" }, "schedule_result"), new ScheduleResultCols(new global::SpacetimeDB.SqlTableName(new string[] { "class" }, "schedule_result")), new ScheduleResultIxCols(new global::SpacetimeDB.SqlTableName(new string[] { "class" }, "schedule_result")));
-        public global::SpacetimeDB.Table<User, UserCols, UserIxCols> User() => new(new global::SpacetimeDB.SqlTableName(new string[] { "class" }, "user"), new UserCols(new global::SpacetimeDB.SqlTableName(new string[] { "class" }, "user")), new UserIxCols(new global::SpacetimeDB.SqlTableName(new string[] { "class" }, "user")));
+        public global::SpacetimeDB.Table<ScheduleResult, ScheduleResultCols, ScheduleResultIxCols> ScheduleResult() => new(RemoteTables.ScheduleResultHandle.SqlName, new ScheduleResultCols(RemoteTables.ScheduleResultHandle.SqlName), new ScheduleResultIxCols(RemoteTables.ScheduleResultHandle.SqlName));
+        public global::SpacetimeDB.Table<User, UserCols, UserIxCols> User() => new(RemoteTables.UserHandle.SqlName, new UserCols(RemoteTables.UserHandle.SqlName), new UserIxCols(RemoteTables.UserHandle.SqlName));
     }
 
     public abstract partial class Reducer

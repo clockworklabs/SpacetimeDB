@@ -16,7 +16,8 @@ namespace SpacetimeDB.Types.@MyAuth
         public sealed class QueryUsersHandle : RemoteTableHandle<global::SpacetimeDB.Types.EventContext, User>
         {
             public override string RemoteTableName => "MyAuth.query_users";
-            protected override global::SpacetimeDB.SqlTableName RemoteSqlTableName => new global::SpacetimeDB.SqlTableName(new string[] { "MyAuth" }, "query_users");
+            internal static readonly global::SpacetimeDB.SqlTableName SqlName = new global::SpacetimeDB.SqlTableName(new string[] { "MyAuth" }, "query_users");
+            protected override global::SpacetimeDB.SqlTableName RemoteSqlTableName => SqlName;
 
             public sealed class IdUniqueIndex : UniqueIndexBase<uint>
             {
