@@ -928,6 +928,38 @@ public static class GeneratorSnapshotTests
                 "ReadOnlyTableView`1",
             })
                 Assert.Contains(cachedHandles, handle => handle.Type.BaseType!.Name == baseName);
+
+            var queriesType = loadedModule.GetTypes().Single(type =>
+                type.Name == "Queries" && type.DeclaringType?.Name == "AssemblyDescriptor");
+            var queries = Activator.CreateInstance(queriesType);
+            var factories = queriesType.GetMethods(System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic
+                | System.Reflection.BindingFlags.DeclaredOnly);
+            Assert.NotEmpty(factories);
+            var sqlNames = new List<string>();
+            foreach (var factory in factories)
+            {
+                var cache = queriesType.DeclaringType!.GetNestedType(factory.Name + "SqlNameCache",
+                    System.Reflection.BindingFlags.NonPublic)!;
+                Assert.False(cache.Attributes.HasFlag(System.Reflection.TypeAttributes.BeforeFieldInit));
+                var field = cache.GetField("Name", System.Reflection.BindingFlags.Static
+                    | System.Reflection.BindingFlags.NonPublic)!;
+                Assert.True(field.IsInitOnly);
+                var cachedName = field.GetValue(null)!;
+                var segments = field.FieldType.GetProperty("NamespaceSegments")!;
+                var firstQuery = factory.Invoke(queries, null)!;
+                var secondQuery = factory.Invoke(queries, null)!;
+                Assert.NotSame(firstQuery, secondQuery);
+                var nameField = factory.ReturnType.GetFields(System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.NonPublic).Single(f => f.FieldType == field.FieldType);
+                Assert.Same(segments.GetValue(cachedName), segments.GetValue(nameField.GetValue(firstQuery)));
+                Assert.Same(segments.GetValue(cachedName), segments.GetValue(nameField.GetValue(secondQuery)));
+                Assert.Equal("SELECT * FROM " + cachedName,
+                    factory.ReturnType.GetMethod("ToSql")!.Invoke(firstQuery, null));
+                Assert.StartsWith("\"cached\".", cachedName.ToString());
+                sqlNames.Add(cachedName.ToString()!);
+            }
+            Assert.Equal(factories.Length, sqlNames.Distinct().Count());
         }
         finally
         {
