@@ -9,6 +9,7 @@ using System.Diagnostics.CodeAnalysis;
 public sealed class Local : LocalBase { }
 
 public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext {
+    public DatabaseEnvironment Env => default;
     public readonly Identity Sender;
     public readonly ConnectionId? ConnectionId;
     public readonly Random Rng;
@@ -203,6 +204,7 @@ public sealed class HandlerTxContext : global::SpacetimeDB.HandlerTxContextBase 
 
 public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.IViewContext
 {
+    public DatabaseEnvironment Env => default;
     public Identity Sender { get; }
 
     public QueryBuilder From => default;
@@ -216,6 +218,7 @@ public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.I
 
 public sealed record AnonymousViewContext : DbContext<Internal.LocalReadOnly>, Internal.IAnonymousViewContext
 {
+    public DatabaseEnvironment Env => default;
     public QueryBuilder From => default;
 
     internal AnonymousViewContext(Internal.LocalReadOnly db)

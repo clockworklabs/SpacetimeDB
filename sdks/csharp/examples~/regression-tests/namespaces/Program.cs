@@ -252,7 +252,21 @@ internal static class Program
                     procedures++;
                 }
             );
-            Wait(() => procedures == 5, "namespaced procedure callbacks");
+            conn.Procedures.ReadEnvironment(
+                (_, result) =>
+                {
+                    Require(result.IsSuccess && result.Value == "unset", "Root environment access");
+                    procedures++;
+                }
+            );
+            conn.Procedures.MyAuth.ReadEnvironment(
+                (_, result) =>
+                {
+                    Require(!result.IsSuccess, "Namespaced calls must not read the root environment");
+                    procedures++;
+                }
+            );
+            Wait(() => procedures == 7, "namespaced procedure callbacks");
 
             var updated = false;
             conn.Db.MyAuth.User.OnUpdate += (ctx, before, after) =>
