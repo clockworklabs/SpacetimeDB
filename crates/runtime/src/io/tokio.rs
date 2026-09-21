@@ -194,10 +194,7 @@ mod unix {
     }
 
     #[cfg(target_os = "macos")]
-    pub async fn open_with_direct_io(
-        options: std::fs::OpenOptions,
-        path: impl AsRef<Path>,
-    ) -> io::Result<std::fs::File> {
+    pub fn open_with_direct_io(options: std::fs::OpenOptions, path: impl AsRef<Path>) -> io::Result<std::fs::File> {
         let file = options.open(path)?;
         let res = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_NOCACHE, 1) };
         if res == -1 {
@@ -210,7 +207,11 @@ mod unix {
 
 #[cfg(windows)]
 mod windows {
-    use std::io;
+    use std::{
+        io,
+        os::windows::fs::{FileExt as _, OpenOptionsExt as _},
+        path::Path,
+    };
 
     pub fn write_all_at(fd: &std::fs::File, mut buf: &[u8], mut offset: u64) -> io::Result<()> {
         while !buf.is_empty() {
@@ -244,12 +245,7 @@ mod windows {
         Ok(())
     }
 
-    pub async fn open_with_direct_io(
-        mut options: std::fs::OpenOptions,
-        path: impl AsRef<Path>,
-    ) -> io::Result<std::fs::File> {
-        use std::os::windows::fs::OpenOptionsExt as _;
-
+    pub fn open_with_direct_io(mut options: std::fs::OpenOptions, path: impl AsRef<Path>) -> io::Result<std::fs::File> {
         options
             .custom_flags(windows_sys::Win32::Storage::FileSystem::FILE_FLAG_NO_BUFFERING)
             .open(path)
