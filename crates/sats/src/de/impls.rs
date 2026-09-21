@@ -8,6 +8,7 @@ use crate::{
     SumValue, WithTypespace, F32, F64,
 };
 use crate::{i256, u256};
+use crate::{typespace::TypeRefError, AlgebraicTypeRef, Typespace};
 use core::{iter, marker::PhantomData, ops::Bound};
 use lean_string::LeanString;
 use smallvec::SmallVec;
@@ -580,12 +581,20 @@ impl<'de, T: Copy + DeserializeSeed<'de>> VariantVisitor<'de> for BoundVisitor<T
     }
 }
 
+fn resolve_type_ref<E: Error>(typespace: &Typespace, r: AlgebraicTypeRef) -> Result<&AlgebraicType, E> {
+    typespace
+        .get(r)
+        .ok_or_else(|| E::custom(TypeRefError::InvalidTypeRef(r)))
+}
+
 impl<'de> DeserializeSeed<'de> for WithTypespace<'_, AlgebraicType> {
     type Output = AlgebraicValue;
 
     fn deserialize<D: Deserializer<'de>>(self, de: D) -> Result<Self::Output, D::Error> {
         match self.ty() {
-            AlgebraicType::Ref(r) => self.resolve(*r).deserialize(de),
+            AlgebraicType::Ref(r) => self
+                .with(resolve_type_ref::<D::Error>(self.typespace(), *r)?)
+                .deserialize(de),
             AlgebraicType::Sum(sum) => self.with(sum).deserialize(de).map(Into::into),
             AlgebraicType::Product(prod) => self.with(prod).deserialize(de).map(Into::into),
             AlgebraicType::Array(ty) => self.with(ty).deserialize(de).map(Into::into),
@@ -610,7 +619,9 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, AlgebraicType> {
 
     fn validate<D: Deserializer<'de>>(self, de: D) -> Result<(), D::Error> {
         match self.ty() {
-            AlgebraicType::Ref(r) => self.resolve(*r).validate(de),
+            AlgebraicType::Ref(r) => self
+                .with(resolve_type_ref::<D::Error>(self.typespace(), *r)?)
+                .validate(de),
             AlgebraicType::Sum(sum) => self.with(sum).validate(de),
             AlgebraicType::Product(prod) => self.with(prod).validate(de),
             AlgebraicType::Array(ty) => self.with(ty).validate(de),
@@ -774,7 +785,7 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
             break match ty {
                 AlgebraicType::Ref(r) => {
                     // The only arm that will loop.
-                    ty = self.resolve(*r).ty();
+                    ty = resolve_type_ref::<D::Error>(self.typespace(), *r)?;
                     continue;
                 }
                 AlgebraicType::Sum(ty) => deserializer
@@ -825,7 +836,7 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
             break match ty {
                 AlgebraicType::Ref(r) => {
                     // The only arm that will loop.
-                    ty = self.resolve(*r).ty();
+                    ty = resolve_type_ref::<D::Error>(self.typespace(), *r)?;
                     continue;
                 }
                 AlgebraicType::Sum(ty) => deserializer.validate_array_seed(BasicVecVisitor, self.with(ty)),
