@@ -27,7 +27,7 @@ test('standalone reference runs use real controller state, keep the denominator 
     assert.equal(first.runs.length, 1);
     assert.equal(first.runs[0]!.status, 'running');
     assert.deepEqual(first.runs[0]!.points, { passed: 1, measured: 3, planned: 186 });
-    assert.match(campaignsPage({ campaigns: [], sheets: [], filter: 'all', references: first }), /1\/186 points passed · 3 measured/);
+    assert.match(campaignsPage({ campaigns: [], sheets: [], filter: 'all', references: first }), /<strong>1\/186<\/strong> points passed<small>3 measured<\/small>/);
     assert.match(campaignsPage({ campaigns: [], sheets: [], filter: 'all', references: { runs: [
       { ...first.runs[0]!, points: { passed: 1, measured: 3, planned: null } }], error: null } }), /total unavailable/);
     running = false;

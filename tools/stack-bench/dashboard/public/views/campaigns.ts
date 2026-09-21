@@ -96,14 +96,17 @@ export function campaignsPage({ campaigns, sheets, filter, loading = false, refe
     + `<span>Page ${pagination.page} of ${pagination.pages} · ${pagination.total} campaigns</span>`
     + (pagination.page < pagination.pages ? `<a class="btn" href="/?filter=${filter}&page=${pagination.page + 1}">Next</a>` : '')
     + '</nav>' : '';
-  const validations = references?.runs.map(run => `<section class="live" data-key="reference:${esc(run.id)}">`
-    + `<div class="live-head"><b>${esc(run.title)}</b><span class="state ${run.status === 'running' ? 'run' : run.status === 'passed' ? 'done' : 'warn'}">${esc(run.status)}</span></div>`
-    + `<div class="lane"><span>Reference validation · no model calls</span><span>${run.points
-      ? `${run.points.passed}${run.points.planned === null ? '' : `/${run.points.planned}`} points passed · ${run.points.measured} measured${run.points.planned === null ? ' · total unavailable' : ''}`
-      : run.status === 'running' ? 'Waiting for grading evidence' : 'No complete grade recorded'}</span></div>`
-    + `<details><summary>Run log</summary><pre class="log">${esc(run.log || 'No log recorded.')}</pre></details></section>`).join('') ?? '';
+  const validations = references?.runs.map(run => `<details class="reference-run" data-key="reference:${esc(run.id)}">`
+    + `<summary><span class="reference-identity"><b>${esc(run.title)}</b>`
+    + `<span class="state ${run.status === 'running' ? 'run' : run.status === 'passed' ? 'done' : 'warn'}">${esc(run.status)}</span>`
+    + `<small>No model calls</small></span><span class="reference-score">${run.points
+      ? `<strong>${run.points.passed}${run.points.planned === null ? '' : `/${run.points.planned}`}</strong> points passed`
+        + (run.points.measured !== run.points.planned ? `<small>${run.points.measured} measured${run.points.planned === null ? ' · total unavailable' : ''}</small>` : '')
+      : run.status === 'running' ? 'Awaiting results' : 'No complete grade recorded'}</span>`
+    + `<span class="reference-toggle">Log <span aria-hidden="true">›</span></span></summary>`
+    + `<pre class="log">${esc(run.log || 'No log recorded.')}</pre></details>`).join('') ?? '';
   return `<div class="page"><div class="title"><h2>Campaigns</h2></div>${sheets.map(live).join('')}`
-    + (validations ? `<h3>Reference validation</h3>${validations}` : '')
+    + validations
     + (references?.error ? `<p class="err">${esc(references.error)}</p>` : '')
     + `<div class="tablewrap"><div class="toolbar">${chips}</div><div class="wrap">`
     + '<table class="runs"><thead><tr><th>Campaign</th><th>Scope</th><th>Status</th>'
