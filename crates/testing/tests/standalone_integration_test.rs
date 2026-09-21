@@ -137,6 +137,15 @@ fn namespace_csharp_mounted_dependencies() {
     CompiledModule::compile("namespace-test-cs", CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
         |mut module| async move {
+            // Library helpers inherit a root call's environment access; host-dispatched children do not.
+            assert_eq!(
+                module.call_procedure_with_args("read_environment", "[]").await.unwrap(),
+                AlgebraicValue::String("unset".into())
+            );
+            assert!(module
+                .call_procedure_with_args("MyAuth.read_environment", "[]")
+                .await
+                .is_err());
             // Extra is discovered without any application reference to its helpers.
             module.call_reducer_binary("extra", &product![]).await.unwrap();
             module.call_reducer_binary("exercise", &product![]).await.unwrap();

@@ -34,6 +34,8 @@ Coverage:
   atomic subscription callbacks, and persisted results through one-off queries.
 - Same-named reducers/procedures in different namespaces, procedure success/error
   callbacks, and child reducer failures forwarded to the root connection.
+- Root environment reads through typed accessors, a library helper and a procedure
+  transaction; rejection of environment reads in host-dispatched namespace procedures.
 - Insert/update/delete callbacks, unique/B-tree indexes, and reducer rollback.
 - Event rows, private-table access rejection, procedural/anonymous/query views.
 - Root-defined RLS on a public namespaced table: two distinct non-owner clients,

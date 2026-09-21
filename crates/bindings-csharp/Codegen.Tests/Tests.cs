@@ -52,7 +52,7 @@ public static class GeneratorSnapshotTests
 
         public Task Verify(string fileName, object target)
         {
-            if ((fileName == nameof(Module) || fileName == "ExtraCompilationErrors")
+            if ((fileName == nameof(Module) || fileName == nameof(EnvironmentGenerator) || fileName == "ExtraCompilationErrors")
                 && ModuleTargetFramework == "net10.0")
             {
                 fileName += ".net10";
@@ -268,6 +268,7 @@ public static class GeneratorSnapshotTests
                 {
                     new SpacetimeDB.Codegen.Type(),
                     new SpacetimeDB.Codegen.Module(),
+                    new EnvironmentGenerator(),
                 }
             )
             {
@@ -287,7 +288,7 @@ public static class GeneratorSnapshotTests
     {
         var fixture = await Fixture.Compile(fixtureName);
         var compilation = fixture.SampleCompilation;
-        foreach (var generator in new IIncrementalGenerator[] { new Type(), new Module() })
+        foreach (var generator in new IIncrementalGenerator[] { new Type(), new Module(), new EnvironmentGenerator() })
         {
             foreach (var tree in fixture.RunGeneratorAndGetResult(generator).GeneratedTrees)
             {
@@ -334,7 +335,7 @@ public static class GeneratorSnapshotTests
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
         );
         var driver = CSharpGeneratorDriver.Create(
-            [new Type().AsSourceGenerator(), new Module().AsSourceGenerator()],
+            [new Type().AsSourceGenerator(), new Module().AsSourceGenerator(), new EnvironmentGenerator().AsSourceGenerator()],
             parseOptions: fixture.ParseOptions
         );
         driver.RunGeneratorsAndUpdateCompilation(input, out var output, out var diagnostics);
@@ -390,7 +391,7 @@ public static class GeneratorSnapshotTests
                 }
                 """);
             var driver = CSharpGeneratorDriver.Create(
-                [new Type().AsSourceGenerator(), new Module().AsSourceGenerator()],
+                [new Type().AsSourceGenerator(), new Module().AsSourceGenerator(), new EnvironmentGenerator().AsSourceGenerator()],
                 parseOptions: fixture.ParseOptions
             );
             driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var diagnostics);
@@ -525,7 +526,7 @@ public static class GeneratorSnapshotTests
         CSharpCompilation Generate(CSharpCompilation input)
         {
             var driver = CSharpGeneratorDriver.Create(
-                [new Type().AsSourceGenerator(), new Module().AsSourceGenerator()],
+                [new Type().AsSourceGenerator(), new Module().AsSourceGenerator(), new EnvironmentGenerator().AsSourceGenerator()],
                 parseOptions: fixture.ParseOptions
             );
             driver.RunGeneratorsAndUpdateCompilation(input, out var output, out var diagnostics);
@@ -687,7 +688,7 @@ public static class GeneratorSnapshotTests
     {
         var fixture = await Fixture.Compile("server", "net10.0");
         var compilation = fixture.SampleCompilation;
-        foreach (var generator in new IIncrementalGenerator[] { new Type(), new Module() })
+        foreach (var generator in new IIncrementalGenerator[] { new Type(), new Module(), new EnvironmentGenerator() })
         {
             compilation = compilation.AddSyntaxTrees(
                 fixture.RunGeneratorAndGetResult(generator).GeneratedTrees
@@ -789,6 +790,11 @@ public static class GeneratorSnapshotTests
                         .SelectMany(section => section.Reducers_)
                         .Select(reducer => reducer.SourceName).ToArray();
 
+                public static string[] EnvironmentNames(ModuleBuilder builder) =>
+                    Describe(builder).Sections.OfType<RawModuleDefV10Section.Environment>()
+                        .SelectMany(section => section.Environment_)
+                        .Select(declaration => declaration.Name).ToArray();
+
                 public static bool CheckNamespaces()
                 {
                     const string first = "Library, Version=1.0.0.0";
@@ -881,6 +887,9 @@ public static class GeneratorSnapshotTests
             var rootBefore = Snapshot(root);
 
             register.Invoke(null, [first]);
+            Assert.Equal<string>(["REQUIRED", "OPTIONAL", "MODE"], (string[])consumerType.GetMethod("EnvironmentNames")!
+                .Invoke(null, [first])!);
+            Assert.Empty((string[])consumerType.GetMethod("EnvironmentNames")!.Invoke(null, [root])!);
             Assert.Contains("PublicTable", (string[])consumerType.GetMethod("TableNames")!
                 .Invoke(null, [first])!);
             Assert.Contains("InsertData", (string[])consumerType.GetMethod("ReducerNames")!
@@ -901,6 +910,69 @@ public static class GeneratorSnapshotTests
         {
             loadContext.Unload();
         }
+    }
+
+    [Fact]
+    public static async Task NamespaceEnvironmentAccessorsAreAssemblyLocal()
+    {
+        var fixture = await Fixture.Compile("server", "net10.0");
+        const string usings = "global using System; global using System.IO; "
+            + "global using System.Linq; global using System.Collections.Generic;\n#pragma warning disable STDB_UNSTABLE\n";
+        CSharpCompilation Generate(string name, string source, params MetadataReference[] references)
+        {
+            var input = CSharpCompilation.Create(name,
+                [CSharpSyntaxTree.ParseText(usings + source, fixture.ParseOptions)],
+                fixture.SampleCompilation.References.Concat(references),
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
+                    nullableContextOptions: NullableContextOptions.Enable));
+            var driver = CSharpGeneratorDriver.Create(
+                [new Type().AsSourceGenerator(), new Module().AsSourceGenerator(), new EnvironmentGenerator().AsSourceGenerator()],
+                parseOptions: fixture.ParseOptions);
+            driver.RunGeneratorsAndUpdateCompilation(input, out var output, out var diagnostics);
+            Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+            Assert.Empty(GetCompilationErrors(output));
+            Assert.DoesNotContain(output.GetDiagnostics(), d => d.Id is "CS0433" or "CS0436");
+            return (CSharpCompilation)output;
+        }
+        MetadataReference Emit(CSharpCompilation compilation)
+        {
+            using var dll = new MemoryStream();
+            var result = compilation.Emit(dll);
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+            return MetadataReference.CreateFromImage(dll.ToArray());
+        }
+
+        var contexts = new[] { "ReducerContext", "ProcedureContext", "ProcedureTxContext",
+            "HandlerContext", "HandlerTxContext", "ViewContext", "AnonymousViewContext" };
+        var library = Generate("EnvironmentLibrary", """
+            [SpacetimeDB.Env] public struct LibrarySchema { public string? SHARED; public string? LIBRARY_ONLY; }
+            public static class LibraryHelpers {
+                public static string? Read(SpacetimeDB.ReducerContext ctx) => ctx.Env.SHARED;
+            }
+            """);
+        // An environment-only assembly must have a descriptor so it cannot disappear from discovery.
+        Assert.Single(library.GetSymbolsWithName("AssemblyDescriptor", SymbolFilter.Type));
+        var dependency = Emit(library);
+        var root = Generate("EnvironmentRoot", """
+            [SpacetimeDB.Env] public struct RootSchema { public string SHARED; public string? @class; }
+            public static class RootHelpers {
+                public static string? Library(SpacetimeDB.ReducerContext ctx) => LibraryHelpers.Read(ctx);
+            }
+            """ + string.Join("\n", contexts.Select((context, index) => $$"""
+                public static class Context{{index}} {
+                    public static string Read(SpacetimeDB.{{context}} ctx) => ctx.Env.SHARED;
+                    public static string? Keyword(SpacetimeDB.{{context}} ctx) => ctx.Env.@class;
+                    public static string? Generic(SpacetimeDB.{{context}} ctx) => ctx.Env.Get("LIBRARY_ONLY");
+                }
+                """)), dependency);
+        Emit(root);
+        var invalid = root.AddSyntaxTrees(CSharpSyntaxTree.ParseText("""
+            public static class Invalid {
+                public static string? Read(SpacetimeDB.ReducerContext ctx) => ctx.Env.LIBRARY_ONLY;
+            }
+            """, fixture.ParseOptions));
+        Assert.Contains(GetCompilationErrors(invalid), d => d.Id == "CS1061");
+        Assert.DoesNotContain(root.SyntaxTrees, tree => tree.ToString().Contains("ModuleInitializer"));
     }
 
     [Fact]
@@ -930,7 +1002,7 @@ public static class GeneratorSnapshotTests
         var compilation = fixture.SampleCompilation.AddReferences(
             MetadataReference.CreateFromImage(dll.ToArray())
         );
-        foreach (var generator in new IIncrementalGenerator[] { new Type(), new Module() })
+        foreach (var generator in new IIncrementalGenerator[] { new Type(), new Module(), new EnvironmentGenerator() })
         {
             compilation = compilation.AddSyntaxTrees(
                 fixture.RunGeneratorAndGetResult(generator).GeneratedTrees
@@ -974,6 +1046,8 @@ public static class GeneratorSnapshotTests
     public static async Task TypeAndModuleGeneratorsOnServer()
     {
         var fixture = await Fixture.Compile("server");
+        await fixture.Verify(nameof(EnvironmentGenerator),
+            fixture.RunGeneratorAndGetResult(new EnvironmentGenerator()));
 
         var compilationAfterGen = await fixture.RunAndCheckGenerators(
             new SpacetimeDB.Codegen.Type(),

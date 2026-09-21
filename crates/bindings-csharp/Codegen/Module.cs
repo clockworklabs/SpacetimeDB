@@ -2585,13 +2585,23 @@ public class Module : IIncrementalGenerator
             .Combine(columnDefaultValues)
             .Select((tuple, ct) => FlattenModuleOutputInputs(tuple));
 
+        var environment = EnvironmentGenerator.Declarations(context).Select((types, _) => (
+            HasDeclarations: types.Length != 0,
+            Registrations: EnvironmentGenerator.RegistrationCode(types)
+        ));
         var extensionNamespace = context.CompilationProvider.Select(
             (compilation, _) => (
                 Name: AssemblyNamespace(compilation.Assembly),
                 Identity: compilation.Assembly.Identity.ToString(),
                 SharedContexts: UsesSharedContexts(compilation)
             )
-        );
+        ).Combine(environment).Select((input, _) => (
+            input.Left.Name,
+            input.Left.Identity,
+            input.Left.SharedContexts,
+            HasEnvironment: input.Right.HasDeclarations,
+            EnvironmentRegistrations: input.Right.Registrations
+        ));
         
         var referencedAssemblies = context.CompilationProvider.Select(DiscoverAssemblies);
         var namespaceDeclarations = context.CompilationProvider
@@ -2618,9 +2628,8 @@ public class Module : IIncrementalGenerator
                 .Combine(namespaceDeclarations),
             (context, input) =>
             {
-                var (((inputs, assemblyContext), assemblies), mounts) = input;
-                var extensionNamespaceName = assemblyContext.Name;
-                var handlesNamespace = assemblyContext.SharedContexts
+                var (((inputs, (extensionNamespaceName, identity, sharedContexts, hasEnvironment, environmentRegistrations)), assemblies), mounts) = input;
+                var handlesNamespace = sharedContexts
                     ? extensionNamespaceName : "SpacetimeDB.Internal";
                 var mountByIdentity = mounts.SelectMany(m => m)
                     .ToDictionary(m => m.AssemblyIdentity, StringComparer.Ordinal);
@@ -2669,7 +2678,7 @@ public class Module : IIncrementalGenerator
                     var members = new List<string>();
                     var used = new Dictionary<string, string>(StringComparer.Ordinal);
                     foreach (var table in tableAccessors)
-                        used[table.TableAccessorName] = assemblyContext.Identity;
+                        used[table.TableAccessorName] = identity;
                     void Add(string name, string owner, string declaration)
                     {
                         if (used.TryGetValue(name, out var previous))
@@ -2712,7 +2721,7 @@ public class Module : IIncrementalGenerator
                 var compositionRegistration = new List<string>
                 {
                     "global::SpacetimeDB.Internal.Module.InstallNamespaces(new global::SpacetimeDB.Internal.NamespaceRegistry("
-                    + SymbolDisplay.FormatLiteral(assemblyContext.Identity, true) + ", new global::System.Collections.Generic.KeyValuePair<string, string>[] {"
+                    + SymbolDisplay.FormatLiteral(identity, true) + ", new global::System.Collections.Generic.KeyValuePair<string, string>[] {"
                     + string.Join(",", mountByIdentity.Values.Select(m =>
                         $"new({SymbolDisplay.FormatLiteral(m.AssemblyIdentity, true)}, {SymbolDisplay.FormatLiteral(m.Accessor, true)})")) + "}));",
                     $"global::{extensionNamespaceName}.AssemblyDescriptor.Register(global::SpacetimeDB.Internal.Module.RootBuilder);"
@@ -2799,6 +2808,7 @@ public class Module : IIncrementalGenerator
 
                 var preRegistrationLines = new[]
                 {
+                    sharedContexts ? environmentRegistrations : "",
                     settingsRegistration,
                     explicitTableRegistrations,
                     explicitFunctionRegistrations,
@@ -2829,6 +2839,7 @@ public class Module : IIncrementalGenerator
                     && addHttpHandlers.Array.IsEmpty
                     && views.Array.IsEmpty
                     && assemblies.Array.IsEmpty
+                    && !hasEnvironment
                 )
                 {
                     return;

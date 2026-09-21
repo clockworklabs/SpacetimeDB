@@ -200,7 +200,7 @@ public sealed class ModuleBuilder
         viewDefs.Add(view);
     }
 
-    internal void RegisterEnvironment(EnvironmentDeclaration declaration) =>
+    public void RegisterEnvironment(EnvironmentDeclaration declaration) =>
         environment.Add(declaration);
 
     public void RegisterViewPrimaryKey(string viewSourceName, IEnumerable<string> columns) =>

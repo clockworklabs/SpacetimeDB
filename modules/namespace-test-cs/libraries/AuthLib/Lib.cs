@@ -85,6 +85,10 @@ public static partial class Functions
     [Procedure]
     public static ulong CountUsers(ProcedureContext ctx) => ctx.WithTx(tx => tx.Db.User.Count);
 
+    [Procedure]
+    public static string ReadEnvironment(ProcedureContext ctx) =>
+        ctx.Env.Get("NAMESPACE_TEST") ?? "unset";
+
     [View(Accessor = "Users", Public = true)]
     public static User? Users(ViewContext ctx) => ctx.Db.User.Id.Find(2);
 

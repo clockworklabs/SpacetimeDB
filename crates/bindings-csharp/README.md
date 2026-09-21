@@ -47,3 +47,10 @@ allow no environment keys. Undeclared reads and reads from host-dispatched
 submodules fail at runtime. Values are private, durable database configuration for secrets and other settings.
 Database owners and authorized collaborators can read them; module code can expose
 them through its own outputs.
+
+Environment declarations register through each assembly's descriptor on .NET 10.
+Dependencies automatically registered in `public` contribute to the root schema;
+mounted dependencies cannot declare environment variables (the host rejects them).
+A library helper invoked by root code can use `ctx.Env.Get("KEY")` for a root-declared
+key. Calling that library through a namespaced host entrypoint does not grant
+environment access, even for a key declared by the root.
