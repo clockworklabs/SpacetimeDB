@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -2089,10 +2090,26 @@ public class Module : IIncrementalGenerator
     internal static bool UsesSharedContexts(Compilation compilation) =>
         compilation.SyntaxTrees.Any(tree => tree.Options is CSharpParseOptions options
             && options.PreprocessorSymbolNames.Contains("NET10_0_OR_GREATER"));
+    
+    internal static string AssemblyNamespace(IAssemblySymbol assembly)
+    {
+        var name = Regex.Replace(assembly.Name, @"[^A-Za-z0-9_]", "_");
 
-    internal static string AssemblyNamespace(IAssemblySymbol assembly) =>
-        "SpacetimeDB.Generated.Assembly_"
-        + string.Concat(assembly.Identity.ToString().Select(c => ((int)c).ToString("X4")));
+        if (name.Length == 0 || char.IsDigit(name[0]))
+        {
+            name = "_" + name;
+        }
+
+        using var sha256 = System.Security.Cryptography.SHA256.Create();
+        var hash = sha256.ComputeHash(
+            System.Text.Encoding.UTF8.GetBytes(assembly.Identity.ToString())
+        );
+        var suffix = string.Concat(
+            hash.Take(8).Select(b => b.ToString("X2"))
+        );
+
+        return $"SpacetimeDB.Generated.{name}_{suffix}";
+    }
 
     private static string IndentGeneratedCode(string code, int spaces) =>
         code.Replace("\n", "\n" + new string(' ', spaces));
