@@ -6,6 +6,7 @@ import type { SpacetimeTarget } from '../stacks/stack-grading-operations.js';
 import { classifyConvexFunctionResponse } from '../stacks/backends/convex-protocol.js';
 import { leaseFromEnv } from '../runtime/backend-lease.js';
 import { evidenceNowMs } from '../evidence/evidence-timing.js';
+import { convexSessionBinding } from '../stacks/backends/convex-browser-session.js';
 
 interface StorageLike {
   readonly length: number;
@@ -128,6 +129,36 @@ export function namedActionRequest(named: NamedActionsCapability, action: NamedA
 }
 
 const AUTH_HEADER = /^(authorization|x-auth-token|x-session|x-token|x-user)$/i;
+
+// Bind once to the observed current session. Deliberate token tampering then
+// changes its value, not its transport, for the request's negative control.
+export function bindBrowserRequest(actor: Actor, request: NamedActionRequest, credentials: HeaderRecord) {
+  const entry = Object.entries(credentials).find(([key]) => /^authorization$/i.test(key));
+  const token = entry?.[1].match(/^Bearer (.+)$/i)?.[1];
+  let binding: ReturnType<typeof convexSessionBinding> = null;
+  if (request.responseContract?.startsWith('convex-') && token && request.url) {
+    binding = convexSessionBinding(actor.page, request.url, token);
+    if (!binding && actor.writes.some(write => new URL(write.url).origin === new URL(request.url!).origin
+      && Object.entries(write.headers).some(([key, value]) => /^authorization$/i.test(key) && value === `Bearer ${token}`))) {
+      binding = { argument: undefined, bearer: true };
+    }
+    if (!binding) inconclusive('replay-unavailable', { actor: actor.name,
+      detail: 'the current Convex credential transport was not observed unambiguously' });
+  }
+  return (headers = credentials) => {
+    if (!binding?.argument) return { headers, body: request.body };
+    const current = Object.entries(headers).find(([key]) => /^authorization$/i.test(key))?.[1].match(/^Bearer (.+)$/i)?.[1];
+    if (!current) inconclusive('replay-unavailable', { actor: actor.name, detail: 'the bound Convex session is missing' });
+    const body = JSON.parse(request.body ?? '{}');
+    const args = Array.isArray(body.args) && body.args.length === 1 ? body.args[0] : body.args;
+    if (!args || typeof args !== 'object' || Array.isArray(args)) {
+      inconclusive('replay-unavailable', { actor: actor.name, detail: 'Convex arguments are not an object' });
+    }
+    Object.defineProperty(args, binding.argument, { value: current, enumerable: true, configurable: true, writable: true });
+    return { body: JSON.stringify(body),
+      headers: Object.fromEntries(Object.entries(headers).filter(([key]) => !/^authorization$/i.test(key))) };
+  };
+}
 export const REQUEST_CONTEXT_HEADER = /^(authorization|cookie|x-auth-token|x-session|x-token|x-user|x-csrf-token|x-xsrf-token|csrf-token|origin|referer)$/i;
 
 // Do not strip secondary credentials or alter CSRF state to force a result.

@@ -72,14 +72,19 @@ in the qualified dependency L1–L3 selection.
 
 ## Convex support
 
-Convex support is qualified for the ecommerce dependency L1–L3 path.
+Convex supports the ecommerce dependency L1–L3 path. Current qualification is
+pending validation of the runtime and browser-transport fixes.
 It uses a pinned, self-hosted backend in each attempt's private network. No cloud
 account is required. Apps use native Convex functions and subscriptions; the grader
 uses the declared native operations and independent database reads.
+Login probes preserve native WebSocket calls and require matching replies.
+Authenticated replays use the observed native bearer identity or session argument;
+missing or ambiguous credential transport remains unmeasured.
 
 The controller owns deployment credentials, reset, recovery, and cleanup. A backend
 crash also stops its application functions, so the grader measures that boundary once.
-The reference app and defect controls have matching qualification for this path.
+The frozen baseline has reference and defect-control evidence for this path;
+that evidence does not qualify later runtime changes automatically.
 Other tracks and depths require their own supported definitions and evidence.
 
 ## Run modes

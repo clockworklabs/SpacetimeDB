@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { recordConvexSession } from '../src/stacks/backends/convex-browser-session.js';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
@@ -1824,9 +1825,13 @@ test('role revocation uses declared transitions despite earlier captured role wr
 
 
 test('native envelopes govern single, concurrent and replay outcomes, including body loss', async () => {
+  for (const session of ['bearer', 'argument'])
   for (const reply of ['accepted', 'refused', 'schema-refused', 'unhandled', 'malformed', 'body-loss', 'native400']) {
     const actor = { name: 'buyer', received: [], writes: [], context: { cookies: async () => [] },
       page: { evaluate: async () => ['real-browser-token'] } };
+    recordConvexSession(actor.page, 'ws://native.test/api/1.0.0/sync', JSON.stringify(session === 'bearer'
+      ? { type: 'Authenticate', tokenType: 'User', value: 'real-browser-token' }
+      : { type: 'Mutation', args: [{ session: 'real-browser-token' }] }));
     const provided = services(new Map([['buyer', actor]]));
     const prior = record(provided.capabilities['named-actions']);
     const status = reply === 'native400' ? 400 : 200;
@@ -1839,8 +1844,9 @@ test('native envelopes govern single, concurrent and replay outcomes, including 
       request: () => ({ url: 'http://native.test/api/mutation', method: 'POST', body: '{"path":"api:checkout","args":{}}', responseContract: 'convex-mutation' }),
       classifyResponse: (request: Parameters<typeof classifyResponseContract>[0], response: Parameters<typeof classifyResponseContract>[1]) =>
         classifyResponseContract(request, response),
-      fetch: async (_url: string, options: { headers: Record<string, string> }) => {
-        assert.equal(options.headers.Authorization, 'Bearer real-browser-token');
+      fetch: async (_url: string, options: { headers: Record<string, string>; body: string }) => {
+        assert.equal(options.headers.Authorization, session === 'bearer' ? 'Bearer real-browser-token' : undefined);
+        assert.equal(JSON.parse(options.body).args.session, session === 'argument' ? 'real-browser-token' : undefined);
         return { status, ok: status === 200, text: async () => { if (reply === 'body-loss') throw new Error('lost'); return text; } };
       },
     } } };

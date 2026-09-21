@@ -9,6 +9,62 @@ export interface AuthRequestPatch {
   readonly password?: unknown;
 }
 
+type PatchReceipt = { shape: string; status?: number; success?: boolean; bodySha256: string; transport?: 'convex-websocket' };
+type SocketPatch = {
+  change(body: unknown): ReturnType<typeof patchAuthRequest>;
+  receipt(value: PatchReceipt): void;
+  fail(): void;
+};
+const socketPatches = new WeakMap<object, { active?: SocketPatch }>();
+
+// Install before navigation: Playwright cannot route an already-open socket.
+// Context routing lets the later response-loss gate replace this passive route.
+export async function installAuthWebSocketCapture(page: Page): Promise<void> {
+  const state: { active?: SocketPatch } = {};
+  socketPatches.set(page, state);
+  await page.context().routeWebSocket(/\/api\/[^/]+\/sync(?:\?|$)/, client => {
+    const server = client.connectToServer();
+    let awaiting: { owner: SocketPatch; id: number; type: string; changed: NonNullable<ReturnType<typeof patchAuthRequest>> } | undefined;
+    client.onMessage(data => {
+      let message: Record<string, unknown> | undefined;
+      try { message = JSON.parse(String(data)); } catch { /* unrelated frame */ }
+      const owner = state.active;
+      if (owner && message && ['Mutation', 'Action'].includes(String(message.type))) {
+        try {
+          const changed = owner.change(message);
+          if (changed) {
+            if (!Number.isSafeInteger(message.requestId) || awaiting) { owner.fail(); return; }
+            awaiting = { owner, id: message.requestId as number, type: `${message.type}Response`, changed };
+            server.send(changed.body);
+            return;
+          }
+        } catch { owner.fail(); return; }
+      }
+      server.send(data);
+    });
+    server.onMessage(data => {
+      if (awaiting) {
+        let message: Record<string, unknown> | undefined;
+        try { message = JSON.parse(String(data)); } catch { /* unrelated frame */ }
+        if (message?.type === awaiting.type && message.requestId === awaiting.id) {
+          const { owner, changed } = awaiting;
+          if (typeof message.success !== 'boolean') owner.fail();
+          else owner.receipt({ shape: changed.shape, success: message.success,
+            transport: 'convex-websocket', bodySha256: createHash('sha256').update(changed.body).digest('hex') });
+          awaiting = undefined;
+        }
+      }
+      client.send(data);
+    });
+    client.onClose(async (code, reason) => {
+      awaiting?.owner.fail(); await server.close({ code, reason }).catch(() => awaiting?.owner.fail());
+    });
+    server.onClose(async (code, reason) => {
+      awaiting?.owner.fail(); await client.close({ code, reason }).catch(() => awaiting?.owner.fail());
+    });
+  });
+}
+
 // Locate values submitted by the real form, not a guessed route or credential key.
 export function patchAuthRequest(body: unknown, username: string, password: string, patch: AuthRequestPatch) {
   const fields = patch.fields ?? {};
@@ -53,7 +109,23 @@ export async function withAuthRequestPatch<T>(page: Pick<Page, 'route' | 'unrout
   username: string, password: string, patch: AuthRequestPatch, submit: () => Promise<T>) {
   let matches = 0, error = false;
   const pending: Promise<void>[] = [];
-  let receipt: { shape: string; status: number; bodySha256: string } | undefined;
+  let receipt: PatchReceipt | undefined;
+  let finishSocket: (() => void) | undefined, socketTimeout: ReturnType<typeof setTimeout> | undefined;
+  const sockets = socketPatches.get(page);
+  if (sockets?.active) throw new Error('Authentication request patch is already active');
+  if (sockets) sockets.active = {
+    change(body) {
+      const changed = patchAuthRequest(body, username, password, patch);
+      if (changed && ++matches !== 1) { error = true; throw new Error('Multiple credential requests'); }
+      if (changed) pending.push(new Promise<void>(resolve => {
+        finishSocket = resolve;
+        socketTimeout = setTimeout(() => { error = true; resolve(); }, 30_000);
+      }));
+      return changed;
+    },
+    receipt(value) { receipt = value; clearTimeout(socketTimeout); finishSocket?.(); },
+    fail() { error = true; clearTimeout(socketTimeout); finishSocket?.(); },
+  };
   const handler = async (route: Route) => {
     const request = route.request();
     let body: unknown;
@@ -77,8 +149,8 @@ export async function withAuthRequestPatch<T>(page: Pick<Page, 'route' | 'unrout
     pending.push(sent);
     await sent;
   };
-  await page.route('**/*', handler);
   try {
+    await page.route('**/*', handler);
     let result: T | undefined, submissionFailure: { error: unknown } | undefined;
     try { result = await browserApplicationBoundary(submit)(undefined); }
     catch (error) { submissionFailure = { error }; }
@@ -86,10 +158,14 @@ export async function withAuthRequestPatch<T>(page: Pick<Page, 'route' | 'unrout
     if (submissionFailure && !(submissionFailure.error instanceof ActionApplicationFailure)) {
       throw submissionFailure.error;
     }
-    if (error || matches !== 1 || !receipt || receipt.status >= 300 && receipt.status < 400) {
+    if (error || matches !== 1 || !receipt || receipt.status !== undefined && receipt.status >= 300 && receipt.status < 400) {
       inconclusive('replay-unavailable', { actor: 'authentication form', detail: 'Could not prove one complete modified credential request' });
     }
     if (submissionFailure) throw submissionFailure.error;
     return { ...result, requestPatch: receipt };
-  } finally { await page.unroute('**/*', handler); }
+  } finally {
+    clearTimeout(socketTimeout);
+    if (sockets) sockets.active = undefined;
+    await page.unroute('**/*', handler);
+  }
 }

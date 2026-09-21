@@ -21,6 +21,7 @@ import { CHAT_ACTION_IMPLEMENTATIONS } from './chat-action-executors.js';
 import { NAMED_ACTION_IMPLEMENTATIONS } from './named-action-executors.js';
 import {
   browserCredentials,
+  bindBrowserRequest,
   REQUEST_CONTEXT_HEADER,
   namedActionRequest,
   classifyNamedActionResponse,
@@ -359,10 +360,10 @@ async function replayAs({ input, capabilities, signal }: ReplayArguments) {
         replayUnavailable(actor,
           `no credentials found for ${actor.name} — an anonymous replay only shows that unauthenticated requests are refused`);
       }
+      const bound = bindBrowserRequest(actor, request, mine)({ 'Content-Type': 'application/json', ...mine });
       try {
         const response = await named.fetch(request.url, {
-          method: request.method ?? 'POST', headers: { 'Content-Type': 'application/json', ...mine },
-          body: request.body, signal,
+          method: request.method ?? 'POST', ...bound, signal,
         });
         const classified = classifyNamedActionResponse(named, request, { status: response.status, text: await response.text() });
         actor.replay = { ...classified, accepted: classified.ok, status: response.status, url: request.url,
@@ -425,10 +426,13 @@ async function replayAs({ input, capabilities, signal }: ReplayArguments) {
       credentials[key] = '';
     }
   }
+  const responseContract = classifyNamedActionResponse(capabilities['named-actions'] ?? {}, { url, method: write.method },
+    { status: 0, text: '' }).responseContract;
+  const bound = bindBrowserRequest(actor, { url, body: data, responseContract }, mine)(replayHeaders(write, credentials));
   const response = await actor.page.request.fetch(url, {
     method: write.method,
-    headers: replayHeaders(write, credentials),
-    ...(data === undefined ? {} : { data }),
+    headers: bound.headers,
+    ...(bound.body === undefined ? {} : { data: bound.body }),
   }).catch(error => {
     if (harnessBrowserFailure(error)) throw error;
     return { status: () => 0, ok: () => false, error: error.message };

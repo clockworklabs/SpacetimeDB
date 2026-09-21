@@ -20,6 +20,7 @@ import type {
 import { browserApplicationBoundary } from './browser-action-executors.js';
 import {
   browserCredentials,
+  bindBrowserRequest,
   tamperedSessionCredentials,
   namedActionRequest,
   classifyNamedActionResponse,
@@ -155,6 +156,7 @@ async function callAction({ input, capabilities, signal }: NamedTransportArgumen
     if (!actorCredentials && input.authentication !== 'optional') inconclusive('no-session', { actor: caller.name, action: input.action });
     credentials = actorCredentials ?? {};
   }
+  const bindRequest = bindBrowserRequest(caller, request, credentials);
   // Keep only a digest in actor state, never a second copy of the session secret.
   const fingerprint = (headers: HeaderRecord) => createHash('sha256').update(JSON.stringify([
     input.action, request.url, request.method ?? 'POST', request.body,
@@ -199,8 +201,7 @@ async function callAction({ input, capabilities, signal }: NamedTransportArgumen
   let classified = classifyNamedActionResponse(named, request, { status, text: '' });
   try {
     const response = await named.fetch(request.url, {
-      method: request.method ?? 'POST', headers: { 'Content-Type': 'application/json', ...credentials },
-      body: request.body, signal,
+      method: request.method ?? 'POST', ...bindRequest({ 'Content-Type': 'application/json', ...credentials }), signal,
     });
     const text = await response.text();
     status = response.status;
@@ -293,7 +294,7 @@ async function expectActionOutcome({ input, capabilities }: NamedTransportArgume
 async function callConcurrently({ input, capabilities, signal }: NamedArguments<ConcurrentCallInput>) {
   const named = capabilities['named-actions'];
   const prepared: Array<{ name: string; credentials: HeaderRecord; action: string;
-    values: Readonly<Record<string, unknown>>; request: NonNullable<ReturnType<typeof namedActionRequest>>;
+    values: Readonly<Record<string, unknown>>; request: NonNullable<ReturnType<typeof namedActionRequest>>; body?: string | null;
     delayMs: number; timeoutMs: number }> = [];
   for (const group of [input, ...(input.alongside ?? [])]) {
     const action = group.namedAction ?? named.resolve(group.action);
@@ -303,12 +304,13 @@ async function callConcurrently({ input, capabilities, signal }: NamedArguments<
       { action: group.action, input: group.input }, group.requestTimeoutMs ?? 30000) : undefined;
     const request = namedActionRequest(named, action, values === undefined ? group : { values });
     if (!request?.url) inconclusive('unresolved-action', { action: group.action });
-    const actors: Array<{ name: string; credentials: HeaderRecord }> = [];
+    const actors: Array<{ name: string; credentials: HeaderRecord; body?: string | null }> = [];
     for (const name of group.actors) {
       const actor = actorFor(capabilities, name);
       const credentials = await browserCredentials(actor, request.url);
       if (!credentials) inconclusive('no-session', { actor: name, action: group.action });
-      actors.push({ name, credentials });
+      const bound = bindBrowserRequest(actor, request, credentials)();
+      actors.push({ name, credentials: bound.headers, body: bound.body });
     }
     for (let index = 0; index < (group.requests ?? actors.length); index++) {
       prepared.push({ ...actors[index % actors.length]!, action: group.action, values: values ?? {}, request,
@@ -332,7 +334,7 @@ async function callConcurrently({ input, capabilities, signal }: NamedArguments<
       const reply = await named.fetch(request.url!, {
         method: request.method ?? 'POST',
         headers: { 'Content-Type': 'application/json', ...preparedActor.credentials },
-        body: request.body,
+        body: preparedActor.body,
         signal: requestSignal,
       });
       const text = await reply.text();

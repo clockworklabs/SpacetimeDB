@@ -3,7 +3,7 @@ import { evidenceNowMs } from '../evidence/evidence-timing.js';
 import { actionImplementation, ActionApplicationFailure, ActionHarnessFailure, ActionInconclusive } from './action-contract.js';
 import { actorFor, inconclusive } from './actor-action-runtime.js';
 import type { ActorCapabilities } from './actor-action-runtime.js';
-import { browserCredentials, classifyNamedActionResponse, namedActionRequest } from './named-action-runtime.js';
+import { bindBrowserRequest, browserCredentials, classifyNamedActionResponse, namedActionRequest } from './named-action-runtime.js';
 import type { NamedAction, NamedActionsCapability } from './named-action-runtime.js';
 import { checkoutExpectation, type CheckoutQuantity, type createDatabaseReadCapability } from './runtime-action-executors.js';
 import { checkoutDifferences, orderCheckoutDifferences, checkoutCrashDifferences } from '../stacks/checkout-state.js';
@@ -37,6 +37,7 @@ async function checkoutCaller(input: { actor: string; namedAction?: NamedAction 
   if (!request?.url) inconclusive('unresolved-action', { action: 'checkout' });
   const credentials = await browserCredentials(actor, request.url);
   if (!credentials) inconclusive('no-session', { actor: input.actor, action: 'checkout' });
+  const bound = bindBrowserRequest(actor, request, credentials)({ 'Content-Type': 'application/json', ...credentials });
   let connection: Awaited<ReturnType<typeof openCrashReducerConnection>> | undefined;
   if (spacetime) {
     const authorization = Object.entries(credentials).find(([key]) => key.toLowerCase() === 'authorization')?.[1];
@@ -61,7 +62,7 @@ async function checkoutCaller(input: { actor: string; namedAction?: NamedAction 
           responseFailed = reply.outcome === 'refused';
         } else {
           const reply = await named.fetch(request.url!, { method: request.method ?? 'POST',
-            headers: { 'Content-Type': 'application/json', ...credentials }, body: request.body, signal: requestSignal });
+            ...bound, signal: requestSignal });
           const response = classifyNamedActionResponse(named, request, { status: reply.status, text: await reply.text() });
           status = reply.status;
           // 202 acknowledges queued work, not a completed checkout.

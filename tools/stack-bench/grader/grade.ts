@@ -53,6 +53,8 @@ import type { LeasedSpacetimeTarget } from '../src/runtime/spacetime-target.js';
 import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 import { captureResponses, ReceivedTransport } from './transport-frames.js';
 import { installResponseLoss } from './response-loss.js';
+import { installAuthWebSocketCapture } from '../src/actions/auth-request-patch.js';
+import { recordConvexSession } from '../src/stacks/backends/convex-browser-session.js';
 import type { ActionEvidence } from '../src/actions/action-contract.js';
 import type { CheckEvidence, CheckEvidenceAttachment, CheckEvidencePhase,
   CheckEvidenceStatus } from '../src/evidence/check-evidence.js';
@@ -301,6 +303,7 @@ export class Actor {
   }
   async attach(page: Page): Promise<void> {
     this.page = page;
+    await installAuthWebSocketCapture(page);
     // Capture writes so checks can replay them with changed fields or actors.
     this.lastWrite = null;
     this.lastWrites = {};
@@ -316,6 +319,7 @@ export class Actor {
     // Capture wire data separately from what the application renders.
     page.on('websocket', ws => {
       ws.on('framesent', f => {
+        recordConvexSession(page, ws.url(), f.payload);
         const p = typeof f.payload === 'string' ? f.payload : '';
         const m = p.match(/^\d+(\[.*\])$/s);
         if (!m) return;
