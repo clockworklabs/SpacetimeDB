@@ -310,9 +310,10 @@ export class Actor {
     this.writes = [];
     this.lastWsWrite = null;
     page.on('dialog', dialog => {
-      void dialog.dismiss().catch(error => {
+      // Dismissing beforeunload cancels the navigation that the scenario requested.
+      void (dialog.type() === 'beforeunload' ? dialog.accept() : dialog.dismiss()).catch(error => {
         if (page.isClosed()) return;
-        this.consoleErrors.push(`dialog dismiss failed: ${errorMessage(error)}`);
+        this.consoleErrors.push(`dialog handling failed: ${errorMessage(error)}`);
         if (this.consoleErrors.length > MAX_CONSOLE_ERRORS) this.consoleErrors.shift();
       });
     });

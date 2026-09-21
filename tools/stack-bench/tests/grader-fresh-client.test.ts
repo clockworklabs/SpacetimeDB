@@ -7,6 +7,43 @@ import { compileScenarioDefinition } from '../src/composition/definition-compile
 import { runApplicationNavigation } from '../src/actions/browser-navigation.js';
 import { ActionInconclusive } from '../src/actions/action-contract.js';
 
+test('an explicit reload accepts a leave-page warning but still dismisses ordinary confirmations', async () => {
+  const server = createServer((_request, response) => response.end(`<button id="arm">Arm</button>
+    <button id="confirm">Confirm</button><span id="answer"></span><span id="loads"></span><script>
+    const loads = Number(sessionStorage.getItem('loads') || 0) + 1;
+    sessionStorage.setItem('loads', String(loads)); document.querySelector('#loads').textContent = loads;
+    document.querySelector('#confirm').onclick = () => document.querySelector('#answer').textContent =
+      confirm('Continue?') ? 'accepted' : 'dismissed';
+    document.querySelector('#arm').onclick = () => window.addEventListener('beforeunload', event => {
+      event.preventDefault(); event.returnValue = 'Pending write';
+    });</script>`));
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  assert(address && typeof address !== 'string');
+  const url = `http://127.0.0.1:${address.port}`;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const definition = compileScenarioDefinition({ schemaVersion: 1, track: 'ecommerce', level: 1,
+      name: 'leave page', features: [{ id: 1, name: 'leave page', actors: ['owner'], setup: [],
+        criteria: [{ id: 'reload', desc: 'explicit navigation proceeds', points: 1, steps: [
+          { do: 'click', actor: 'owner', testid: 'confirm' },
+          { do: 'expect', actor: 'owner', testid: 'answer', contains: 'dismissed' },
+          { do: 'click', actor: 'owner', testid: 'arm' },
+          { do: 'reload', actor: 'owner', settleMs: 0 },
+          { do: 'expect', actor: 'owner', testid: 'loads', contains: '2' },
+        ] }] }] });
+    const result = await gradeFeature(browser, definition.features[0]!, {
+      url, level: 1, headed: false, selectedCheckKeys: [], nullControl: false,
+    }, { runId: 'leave-page', roomName: name => name, url, actions: [], spacetime: null, nullControl: false });
+    const evidence = result.criteria[0]!.evidence;
+    assert.equal(evidence.status, 'passed', evidence.summary ?? undefined);
+  } finally {
+    await browser.close();
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  }
+});
+
 test('a stalled stylesheet leaves navigation unmeasured and the unchanged app can load later', async () => {
   let stall = true;
   const server = createServer((request, response) => {
