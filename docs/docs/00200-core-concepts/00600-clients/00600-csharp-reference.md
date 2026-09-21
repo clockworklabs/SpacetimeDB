@@ -226,13 +226,21 @@ Chain a call to `.WithToken(token)` to your builder to provide an OpenID Connect
 ```csharp
 class DbConnectionBuilder<DbConnection>
 {
-    public DbConnectionBuilder<DbConnection> WithAutomaticReconnect();
+    public DbConnectionBuilder<DbConnection> WithAutomaticReconnect(AutomaticReconnectOptions? options = null);
+}
+
+class AutomaticReconnectOptions
+{
+    public TimeSpan? MinDelay { get; set; } // default 1 second
+    public TimeSpan? MaxDelay { get; set; } // default 30 seconds
 }
 ```
 
 Enable automatic recovery after a connection has succeeded at least once. This is opt-in; without it, a lost connection must be replaced by the application. Initial connection failures do not retry.
 
-Retries use exponential backoff starting at one second, with jitter and a maximum delay of 30 seconds. There is no attempt limit, and a successful connection resets the retry counter. Explicit `Disconnect()`, a changed identity, or a terminal protocol or authentication error stops recovery. See [token refresh](#method-withtokenprovider) for authentication rejection handling.
+Retries use exponential backoff: the delay starts at `MinDelay` and doubles after each failed attempt up to `MaxDelay`, with ±50% jitter clamped to those bounds. With the defaults, the base delays are 1, 2, 4, 8, 16, and 30 seconds. There is no attempt limit, and a successful connection resets the retry counter.
+
+To keep clients from overwhelming a database with rapid retries, `MinDelay` is never lower than 500 ms and `MaxDelay` is never lower than 1 second or lower than `MinDelay`. Values below these floors are raised to them and a warning is logged. Explicit `Disconnect()`, a changed identity, or a terminal protocol or authentication error stops recovery. See [token refresh](#method-withtokenprovider) for authentication rejection handling.
 
 The SDK keeps the same `DbConnection`, `Identity`, table handles, subscriptions, and callbacks. Each reconnect attempt uses a fresh `ConnectionId`. Keep calling `FrameTick()` during outages; it drives retries as well as callbacks.
 

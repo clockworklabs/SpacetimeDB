@@ -50,7 +50,7 @@ Compression options are `Compression.Brotli`, `Compression.Gzip`, and `Compressi
 
 ## Automatic Reconnect and Token Refresh
 
-Automatic reconnect is opt-in: add `.WithAutomaticReconnect()` to the builder. Initial connection failures do not retry. After an established connection is lost, the SDK retries with exponential backoff and jitter, capped at 30 seconds. `Disconnect()` permanently stops recovery.
+Automatic reconnect is opt-in: add `.WithAutomaticReconnect()` to the builder. Initial connection failures do not retry. After an established connection is lost, the SDK retries with exponential backoff and jitter from `MinDelay` (default 1 s) up to `MaxDelay` (default 30 s); tune them with `.WithAutomaticReconnect(new AutomaticReconnectOptions { MinDelay = ..., MaxDelay = ... })`. Values below the 500 ms and 1 s floors are raised with a warning, so that retrying clients cannot overwhelm the database. `Disconnect()` permanently stops recovery.
 
 Keep calling `FrameTick()` while `IsActive` is false. `IsReconnecting` is true while recovering before the next handshake. Use `.OnDisconnect((conn, error, next) => ...)` and `.OnConnectError((error, next) => ...)` to inspect `NextReconnect?`: a non-null value provides `Attempt` and `Delay`; null means no retry is scheduled. Existing callback overloads still work.
 

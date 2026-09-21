@@ -151,10 +151,10 @@ public partial class ReconnectTests
         public void OnEnded(ISubscriptionEventContext ctx) => Ended++;
     }
 
-    private static Connection Create(bool automatic = true, string? token = null, Func<Task<string>>? provider = null)
+    private static Connection Create(bool automatic = true, string? token = null, Func<Task<string>>? provider = null, AutomaticReconnectOptions? options = null)
     {
         var builder = Connection.Builder().WithUri("ws://localhost").WithDatabaseName("test").WithToken(token);
-        if (automatic) builder.WithAutomaticReconnect();
+        if (automatic) builder.WithAutomaticReconnect(options);
         if (provider != null) builder.WithTokenProvider(provider);
         var conn = builder.Build();
         Pump(conn, () => conn.Socket.Started);
@@ -559,6 +559,39 @@ public partial class ReconnectTests
     }
 
     [Fact]
+    public void ReconnectAttemptsContinuePastTenExceptWhenSessionIsBusy()
+    {
+        using var conn = Create(options: new() { MinDelay = TimeSpan.FromSeconds(1), MaxDelay = TimeSpan.FromSeconds(5) });
+        Establish(conn);
+        Drop(conn);
+        for (var attempt = 2; attempt <= 10; attempt++)
+        {
+            Retry(conn);
+            Drop(conn);
+            Assert.Equal(attempt, conn.Events[^1].Next!.Value.Attempt);
+        }
+
+        for (var i = 0; i < 3; i++)
+        {
+            Retry(conn);
+            var count = conn.Events.Count;
+            conn.Socket.Lose(SpacetimeDB.WebSocket.CloseError(4000, "session busy"));
+            Pump(conn, () => conn.Events.Count > count);
+            Assert.Contains("WebSocket closed (4000): session busy", conn.Events[^1].Error!.Message);
+            Assert.Equal(10, conn.Events[^1].Next!.Value.Attempt);
+            Assert.InRange(conn.Events[^1].Next!.Value.Delay.TotalSeconds, 1, 1.5);
+        }
+
+        Retry(conn);
+        Drop(conn);
+        Assert.Equal(11, conn.Events[^1].Next!.Value.Attempt);
+        Retry(conn);
+        Establish(conn);
+        Drop(conn);
+        Assert.Equal(1, conn.Events[^1].Next!.Value.Attempt);
+    }
+
+    [Fact]
     public void SessionBusyKeepsAttemptNumberAndFirstDelay()
     {
         using var conn = Create();
@@ -731,11 +764,55 @@ public partial class ReconnectTests
     public void UnreadableTokenNeedsRefresh(string? token) => Assert.True(ReconnectPolicy.TokenNeedsRefresh(token, DateTimeOffset.UtcNow));
 
     [Theory]
-    [InlineData(1, 0, 500)]
+    [InlineData(1, 0, 1000)]
     [InlineData(1, 0.5, 1000)]
     [InlineData(2, 0.5, 2000)]
     [InlineData(6, 0, 15000)]
     [InlineData(int.MaxValue, 1, 30000)]
     public void BackoffHasJitterAndCap(int attempt, double random, double expected) =>
-        Assert.Equal(expected, ReconnectPolicy.Delay(attempt, random).TotalMilliseconds);
+        Assert.Equal(expected, ReconnectPolicy.Delay(attempt, random, ReconnectPolicy.DefaultMinDelay, ReconnectPolicy.DefaultMaxDelay).TotalMilliseconds);
+
+    private sealed class WarningLogger : ISpacetimeDBLogger
+    {
+        internal readonly List<string> Warnings = new();
+        public void Debug(string message) { }
+        public void Trace(string message) { }
+        public void Info(string message) { }
+        public void Warn(string message) => Warnings.Add(message);
+        public void Error(string message) { }
+        public void Exception(string message) { }
+        public void Exception(Exception e) { }
+    }
+
+    [Fact]
+    public void CustomBoundsShapeDelaysAndAreFloored()
+    {
+        var (min, max) = ReconnectPolicy.Resolve(new() { MinDelay = TimeSpan.FromSeconds(2), MaxDelay = TimeSpan.FromSeconds(5) });
+        Assert.Equal((TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5)), (min, max));
+        Assert.Equal(2000, ReconnectPolicy.Delay(1, 0.5, min, max).TotalMilliseconds);
+        Assert.Equal(4000, ReconnectPolicy.Delay(2, 0.5, min, max).TotalMilliseconds);
+        Assert.Equal(5000, ReconnectPolicy.Delay(3, 0.5, min, max).TotalMilliseconds);
+        Assert.Equal(2000, ReconnectPolicy.Delay(1, 0, min, max).TotalMilliseconds);
+
+        var previous = Log.Current;
+        var logger = new WarningLogger();
+        Log.Current = logger;
+        try
+        {
+            Assert.Equal((ReconnectPolicy.MinDelayFloor, ReconnectPolicy.MaxDelayFloor),
+                ReconnectPolicy.Resolve(new() { MinDelay = TimeSpan.FromMilliseconds(100), MaxDelay = TimeSpan.FromMilliseconds(200) }));
+            Assert.Equal((TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3)),
+                ReconnectPolicy.Resolve(new() { MinDelay = TimeSpan.FromSeconds(3), MaxDelay = TimeSpan.FromSeconds(2) }));
+            Assert.Equal(3, logger.Warnings.Count);
+        }
+        finally
+        {
+            Log.Current = previous;
+        }
+
+        using var conn = Create(options: new() { MinDelay = TimeSpan.FromSeconds(2), MaxDelay = TimeSpan.FromSeconds(5) });
+        Establish(conn);
+        Drop(conn);
+        Assert.InRange(conn.Events[^1].Next!.Value.Delay.TotalMilliseconds, 2000, 3000);
+    }
 }

@@ -27,6 +27,7 @@ namespace SpacetimeDB
         bool light;
         bool? confirmedReads;
         bool automaticReconnect;
+        (TimeSpan Min, TimeSpan Max) reconnectDelays = (ReconnectPolicy.DefaultMinDelay, ReconnectPolicy.DefaultMaxDelay);
         Func<Task<string>>? tokenProvider;
 
         public DbConnection Build()
@@ -39,7 +40,7 @@ namespace SpacetimeDB
             {
                 throw new InvalidOperationException("Building DbConnection with a null nameOrAddress. Call WithDatabaseName() first.");
             }
-            conn.ConfigureReconnect(automaticReconnect, tokenProvider);
+            conn.ConfigureReconnect(automaticReconnect, tokenProvider, reconnectDelays.Min, reconnectDelays.Max);
             conn.Connect(token, uri, nameOrAddress, compression ?? Compression.Brotli, light, confirmedReads);
 #if UNITY_5_3_OR_NEWER
             if (SpacetimeDBNetworkManager._instance != null)
@@ -68,9 +69,16 @@ namespace SpacetimeDB
             return this;
         }
 
-        public DbConnectionBuilder<DbConnection> WithAutomaticReconnect()
+        /// <summary>
+        /// Reconnect after an established connection drops, preserving handles and callbacks.
+        /// Retries use exponential backoff from <c>MinDelay</c> (default 1 s) up to <c>MaxDelay</c>
+        /// (default 30 s). Values below the 500 ms and 1 s floors are raised with a warning, so
+        /// that retrying clients cannot overwhelm the database.
+        /// </summary>
+        public DbConnectionBuilder<DbConnection> WithAutomaticReconnect(AutomaticReconnectOptions? options = null)
         {
             automaticReconnect = true;
+            if (options != null) reconnectDelays = ReconnectPolicy.Resolve(options);
             return this;
         }
 
@@ -138,7 +146,7 @@ namespace SpacetimeDB
         internal void AddOnConnect(Action<Identity, string> cb);
         internal void AddOnConnectError(Action<Exception, NextReconnect?> cb);
         internal void AddOnDisconnect(Action<Exception?, NextReconnect?> cb);
-        internal void ConfigureReconnect(bool enabled, Func<Task<string>>? provider);
+        internal void ConfigureReconnect(bool enabled, Func<Task<string>>? provider, TimeSpan minDelay, TimeSpan maxDelay);
         bool IsReconnecting { get; }
         internal bool AutomaticReconnectEnabled { get; }
 

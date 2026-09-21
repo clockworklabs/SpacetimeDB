@@ -23,7 +23,7 @@ See [`DEVELOP.md`](./DEVELOP.md).
 
 ## Automatic reconnect
 
-C#, Unity, and Godot clients can opt in with `.WithAutomaticReconnect()` on the connection builder. The SDK recovers lost connections, retains cached rows and subscription handles, and replays subscriptions in one batch. Keep calling `FrameTick()` during outages; Unity's `SpacetimeDBNetworkManager` does this automatically. Register subscriptions and row callbacks once, because `OnConnect` and subscription `OnApplied` run again after recovery.
+C#, Unity, and Godot clients can opt in with `.WithAutomaticReconnect()` on the connection builder, optionally passing `AutomaticReconnectOptions` with `MinDelay` and `MaxDelay` to tune the backoff. The SDK recovers lost connections, retains cached rows and subscription handles, and replays subscriptions in one batch. Keep calling `FrameTick()` during outages; Unity's `SpacetimeDBNetworkManager` does this automatically. Register subscriptions and row callbacks once, because `OnConnect` and subscription `OnApplied` run again after recovery.
 
 For expiring credentials, supply the initial token with `.WithToken(initialToken)` and add `.WithTokenProvider(() => RefreshTokenAsync())`. The provider obtains a token for the same identity before a reconnect when needed. Initial connection failures do not retry, and `Disconnect()` stops recovery. Handle `Status.UnknownResult` for pending reducer calls whose outcome was lost; the SDK does not repeat them.
 

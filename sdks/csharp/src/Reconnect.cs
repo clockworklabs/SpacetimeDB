@@ -22,6 +22,21 @@ namespace SpacetimeDB
         }
     }
 
+    /// <summary>Options for <c>WithAutomaticReconnect</c>.</summary>
+    public sealed class AutomaticReconnectOptions
+    {
+        /// <summary>
+        /// The delay before the first reconnect attempt, and the floor for every later one.
+        /// Defaults to 1 second; values below 500 ms are raised to 500 ms.
+        /// </summary>
+        public TimeSpan? MinDelay { get; set; }
+        /// <summary>
+        /// The cap on the delay between reconnect attempts. Defaults to 30 seconds;
+        /// values below 1 second (or below <see cref="MinDelay"/>) are raised to that bound.
+        /// </summary>
+        public TimeSpan? MaxDelay { get; set; }
+    }
+
     public class UnknownResultException : SpacetimeDBException
     {
         public UnknownResultException() : base("Connection lost before the result was received. The operation may have executed.") { }
@@ -34,8 +49,38 @@ namespace SpacetimeDB
 
     internal static class ReconnectPolicy
     {
-        internal static TimeSpan Delay(int attempt, double random) => TimeSpan.FromMilliseconds(
-            Math.Min(30000, Math.Min(30000, 1000 * Math.Pow(2, Math.Min(30, Math.Max(0, attempt - 1)))) * (0.5 + random)));
+        internal static readonly TimeSpan DefaultMinDelay = TimeSpan.FromSeconds(1);
+        internal static readonly TimeSpan DefaultMaxDelay = TimeSpan.FromSeconds(30);
+        internal static readonly TimeSpan MinDelayFloor = TimeSpan.FromMilliseconds(500);
+        internal static readonly TimeSpan MaxDelayFloor = TimeSpan.FromSeconds(1);
+
+        /// <summary>Fill in defaults and enforce the floors, warning when a value is raised.</summary>
+        internal static (TimeSpan Min, TimeSpan Max) Resolve(AutomaticReconnectOptions? options)
+        {
+            var min = options?.MinDelay ?? DefaultMinDelay;
+            var max = options?.MaxDelay ?? DefaultMaxDelay;
+            // Floors protect the database from clients that retry too aggressively.
+            if (min < MinDelayFloor)
+            {
+                Log.Warn($"Reconnect MinDelay {min.TotalMilliseconds} ms is below the {MinDelayFloor.TotalMilliseconds} ms floor; using {MinDelayFloor.TotalMilliseconds} ms.");
+                min = MinDelayFloor;
+            }
+            var maxFloor = min > MaxDelayFloor ? min : MaxDelayFloor;
+            if (max < maxFloor)
+            {
+                Log.Warn($"Reconnect MaxDelay {max.TotalMilliseconds} ms is below the {maxFloor.TotalMilliseconds} ms floor; using {maxFloor.TotalMilliseconds} ms.");
+                max = maxFloor;
+            }
+            return (min, max);
+        }
+
+        /// <summary>Exponential backoff with jitter, clamped to the bounds; attempt numbers start at one.</summary>
+        internal static TimeSpan Delay(int attempt, double random, TimeSpan minDelay, TimeSpan maxDelay)
+        {
+            var baseMs = Math.Min(maxDelay.TotalMilliseconds, minDelay.TotalMilliseconds * Math.Pow(2, Math.Min(30, Math.Max(0, attempt - 1))));
+            var jittered = baseMs * (0.5 + random);
+            return TimeSpan.FromMilliseconds(Math.Max(minDelay.TotalMilliseconds, Math.Min(maxDelay.TotalMilliseconds, jittered)));
+        }
 
         [DataContract]
 #if UNITY_5_3_OR_NEWER
@@ -71,6 +116,8 @@ namespace SpacetimeDB
     public abstract partial class DbConnectionBase<DbConnection, Tables, Reducer>
     {
         private bool automaticReconnect;
+        private TimeSpan reconnectMinDelay = ReconnectPolicy.DefaultMinDelay;
+        private TimeSpan reconnectMaxDelay = ReconnectPolicy.DefaultMaxDelay;
         private Func<Task<string>>? tokenProvider;
         private string? retainedToken;
         private readonly ConnectionId sessionId = ConnectionId.Random();
@@ -98,10 +145,12 @@ namespace SpacetimeDB
 
         public bool IsReconnecting => automaticReconnect && hasEverConnected && !onConnectInvoked && !isClosing;
 
-        void IDbConnection.ConfigureReconnect(bool enabled, Func<Task<string>>? provider)
+        void IDbConnection.ConfigureReconnect(bool enabled, Func<Task<string>>? provider, TimeSpan minDelay, TimeSpan maxDelay)
         {
             automaticReconnect = enabled;
             tokenProvider = provider;
+            reconnectMinDelay = minDelay;
+            reconnectMaxDelay = maxDelay;
         }
 
         private WebSocket CreateWebSocket()
@@ -240,7 +289,7 @@ namespace SpacetimeDB
                 if (authError) forceTokenRefresh = true;
                 var sessionBusy = !established && error is WebSocket.CloseException { Code: 4000 };
                 if (!sessionBusy) reconnectAttempt = reconnectAttempt == int.MaxValue ? int.MaxValue : reconnectAttempt + 1;
-                var delay = ReconnectPolicy.Delay(sessionBusy ? 1 : reconnectAttempt, reconnectRandom.NextDouble());
+                var delay = ReconnectPolicy.Delay(sessionBusy ? 1 : reconnectAttempt, reconnectRandom.NextDouble(), reconnectMinDelay, reconnectMaxDelay);
                 reconnectAt = ReconnectClock() + delay.TotalSeconds;
                 next = new NextReconnect(reconnectAttempt, delay);
             }
