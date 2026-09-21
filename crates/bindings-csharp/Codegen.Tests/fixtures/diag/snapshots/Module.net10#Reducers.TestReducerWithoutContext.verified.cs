@@ -4,6 +4,17 @@
 
 partial class Reducers
 {
+    private static class __ScheduleTestReducerWithoutContextName
+    {
+        internal static readonly string Name = global::SpacetimeDB.Internal.Module.ResolveName(
+            "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+            nameof(TestReducerWithoutContext)
+        );
+
+        // Prevent eager initialization before the root installs namespace placements.
+        static __ScheduleTestReducerWithoutContextName() { }
+    }
+
     [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
     public static void VolatileNonatomicScheduleImmediateTestReducerWithoutContext()
     {
@@ -11,10 +22,7 @@ partial class Reducers
         using var writer = new BinaryWriter(stream);
 
         SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(
-            global::SpacetimeDB.Internal.Module.ResolveName(
-                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                nameof(TestReducerWithoutContext)
-            ),
+            __ScheduleTestReducerWithoutContextName.Name,
             stream
         );
     }
