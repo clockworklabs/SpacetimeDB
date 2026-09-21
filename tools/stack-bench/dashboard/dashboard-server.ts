@@ -14,8 +14,8 @@ import { contained, discoverPlans, readCampaignArtifactBody,
   readJsonLines, resolveCampaignArtifact, summarizeCampaign,
 } from './dashboard-model.js';
 import type { DashboardPlan } from './dashboard-model.js';
-import { attemptTranscript, attemptChecks, attemptLogSlice, attemptPackage, campaignLiveProgression, campaignLiveSheet, campaignLiveUpdate,
-  overviewSummary } from './dashboard-views.js';
+import { createDashboardReader } from './dashboard-reader.js';
+import type { CampaignFilter } from './dashboard-views.js';
 import { watchCampaigns } from './dashboard-events.js';
 import type { CampaignChange, CampaignWatcher } from './dashboard-events.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
@@ -274,6 +274,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
   };
   const campaignsRoot = join(resultsRoot, 'campaigns');
   const listeners = new Set<ServerResponse>();
+  const reader = createDashboardReader();
   let watcher: CampaignWatcher | null = null;
   let heartbeat: NodeJS.Timeout | null = null;
   const broadcast = (change: CampaignChange): void => {
@@ -331,7 +332,12 @@ export function createDashboardServer(options: DashboardServerOptions) {
         return json(response, 200, { ok: true, mode: allowLaunch ? 'controller' : 'read-only' });
       }
       if (request.method === 'GET' && url.pathname === '/api/overview') {
-        return json(response, 200, { campaigns: overviewSummary(campaignsRoot),
+        const page = Number(url.searchParams.get('page') ?? 1);
+        const filter = url.searchParams.get('filter') ?? 'all';
+        if (!Number.isSafeInteger(page) || page < 1 || !['all', 'attention', 'completed', 'ready'].includes(filter)) {
+          return json(response, 400, { error: 'Use a positive page number and a valid campaign filter.' });
+        }
+        return json(response, 200, { ...await reader.read('overviewPage', campaignsRoot, page, filter as CampaignFilter),
           canStart: allowLaunch, csrfToken: token });
       }
       if (request.method === 'GET' && url.pathname === '/api/reference-runs') {
@@ -546,10 +552,10 @@ export function createDashboardServer(options: DashboardServerOptions) {
           return json(response, 400, { error: 'The log offset must be a whole number of bytes.' });
         }
         try {
-          if (!rest) return json(response, 200, await campaignLiveSheet(resultsRoot, key));
-          if (rest === 'live') return json(response, 200, campaignLiveUpdate(resultsRoot, key));
+          if (!rest) return json(response, 200, await reader.read('campaignLiveSheet', resultsRoot, key));
+          if (rest === 'live') return json(response, 200, await reader.read('campaignLiveUpdate', resultsRoot, key));
           if (rest === 'progression') {
-            const progression = await campaignLiveProgression(resultsRoot, key);
+            const progression = await reader.read('campaignLiveProgression', resultsRoot, key);
             return progression
               ? json(response, 200, progression)
               : json(response, 404, { error: 'Progression is recorded for dependency campaigns only.' });
@@ -559,17 +565,17 @@ export function createDashboardServer(options: DashboardServerOptions) {
             if (before !== null && (!/^\d+$/.test(before) || !Number.isSafeInteger(Number(before)))) {
               return json(response, 400, { error: 'Invalid transcript offset' });
             }
-            return json(response, 200, await attemptTranscript(resultsRoot, key, attemptId,
+            return json(response, 200, await reader.read('attemptTranscript', resultsRoot, key, attemptId,
               url.searchParams.get('session') ?? '', before === null ? undefined : Number(before)));
           }
           if (attemptRoute?.[2] === 'checks') {
-            return json(response, 200, attemptChecks(resultsRoot, key, attemptId));
+            return json(response, 200, await reader.read('attemptChecks', resultsRoot, key, attemptId));
           }
           if (attemptRoute?.[2] === 'package') {
-            return json(response, 200, attemptPackage(resultsRoot, key, attemptId));
+            return json(response, 200, await reader.read('attemptPackage', resultsRoot, key, attemptId));
           }
           if (attemptRoute) {
-            const slice = attemptLogSlice(resultsRoot, key, attemptId, Number(from));
+            const slice = await reader.read('attemptLogSlice', resultsRoot, key, attemptId, Number(from));
             const text = Buffer.from(slice.text);
             response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8',
               'content-length': text.length, 'cache-control': 'no-store',
@@ -594,6 +600,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
   // streams end as the server closes, not once it has.
   const closeServer = server.close.bind(server);
   server.close = ((callback?: (error?: Error) => void) => {
+    reader.close();
     stopEvents();
     for (const listener of listeners) listener.end();
     listeners.clear();

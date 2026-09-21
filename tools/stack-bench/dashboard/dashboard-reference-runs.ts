@@ -39,11 +39,11 @@ export async function referenceRuns(resultsRoot: string, readDocker = docker): P
     try {
       const value = JSON.parse(readFileSync(join(root, file.name), 'utf8'));
       const artifact = value.payload ?? value;
-      if (artifact.kind !== 'reference_qualification') continue;
+      if (value.kind !== 'reference_qualification') continue;
       const score = String(artifact.runs?.at(-1)?.score ?? '').match(/^(\d+)\/(\d+)$/);
       runs.set(file.name, { id: file.name, title: String(artifact.fixture ?? file.name),
         status: artifact.ok === true ? 'passed' : 'failed',
-        updatedAt: String(artifact.completedAt ?? artifact.startedAt ?? ''),
+        updatedAt: String(value.timestamps?.completedAt ?? value.timestamps?.startedAt ?? artifact.completedAt ?? artifact.startedAt ?? ''),
         points: score ? { passed: Number(score[1]), measured: Number(score[2]), planned: Number(score[2]) } : null,
         log: redactCredentials((artifact.runs ?? []).flatMap((run: { failures?: string[] }) => run.failures ?? []).join('\n')) });
     } catch { /* A qualification artifact may be in the middle of an atomic replacement. */ }

@@ -8,7 +8,7 @@ test('campaign history derives all stack columns from data, including new stacks
   const stacks = ['custom-a', 'postgres', 'custom-b', 'spacetime', 'mongodb'];
   const campaign: OverviewCampaign = {
     key: 'five-stacks', id: 'five-stacks', title: 'Five stacks', status: 'completed',
-    mode: 'dependency', levels: [1], repetitions: 1, provisional: false, updatedAt: null,
+    mode: 'dependency', levels: [1], repetitions: 1, updatedAt: null,
     scores: Object.fromEntries(stacks.map((stack, index) => [stack, 90 + index])),
     attempts: { total: 5, running: 0, completed: 5 },
   };
@@ -17,7 +17,7 @@ test('campaign history derives all stack columns from data, including new stacks
   assert.equal((html.match(/<th class="stack">/g) ?? []).length, stacks.length);
   assert.match(html, /<th class="stack">custom-a<\/th>/);
   assert.match(html, /<th class="stack">custom-b<\/th>/);
-  assert.match(html, /<u>94%<\/u>/);
+  assert.match(html, /<td class="stack">94%<\/td>/);
   assert.match(campaignsPage({ ...input, filter: 'ready' }), /colspan="9"/);
   assert.match(campaignsPage({ campaigns: [], sheets: [], filter: 'all' }), /colspan="4"/);
 

@@ -11,7 +11,7 @@ import type { referenceRuns } from '../dashboard-reference-runs.js';
 // refresh does not move what the pointer is on. Every view is a pure function
 // of data; the only DOM work in the dashboard happens here.
 
-import type { AttemptChecks, AttemptPackage, CampaignLiveUpdate, CampaignProgression, CampaignSheet, OverviewEntry }
+import type { AttemptChecks, AttemptPackage, CampaignLiveUpdate, CampaignProgression, CampaignSheet, OverviewEntry, OverviewPage }
   from '../dashboard-views.js';
 import type { DashboardPlan } from '../dashboard-model.js';
 import type { readCampaignTimeBudget } from '../../src/campaigns/campaign-time-grant.js';
@@ -33,6 +33,7 @@ interface Route {
   plans: boolean;
   newRun: boolean;
   filter: CampaignFilter;
+  page: number;
   view: QuestlineView;
   chart: 'completion' | 'cost' | 'distribution';
   unit: 'checks' | 'features';
@@ -42,6 +43,8 @@ interface Route {
 
 const state = {
   overview: [] as OverviewEntry[],
+  overviewPage: null as OverviewPage | null,
+  overviewQuery: '',
   references: { runs: [], error: null } as Awaited<ReturnType<typeof referenceRuns>>,
   plans: [] as DashboardPlan[],
   overviewLoaded: false,
@@ -89,6 +92,8 @@ function route(): Route {
     plans: parts[0] === 'plans' || parts[0] === 'new',
     newRun: parts[0] === 'new',
     filter: pick(FILTERS, 'filter', 'all'),
+    page: /^\d+$/.test(url.searchParams.get('page') ?? '1') && Number.isSafeInteger(Number(url.searchParams.get('page') ?? 1))
+      ? Math.max(1, Number(url.searchParams.get('page') ?? 1)) : 1,
     view: pick(VIEWS, 'questlines', 'grid'),
     chart: pick(['completion', 'cost', 'distribution'] as const, 'chart', 'completion'),
     unit: pick(['checks', 'features'] as const, 'unit', 'features'),
@@ -162,12 +167,13 @@ function page(current: Route): string {
       loading: loading && !state.plansLoaded });
   }
   if (!current.key) {
-    const running = state.overview.filter(campaign => campaign.status === 'running')
-      .map(campaign => state.sheets.get(campaign.key))
+    const running = (state.overviewPage?.running ?? [])
+      .map(key => state.sheets.get(key))
       .filter((entry): entry is CampaignSheet => entry !== undefined);
     return campaignsPage({ campaigns: state.overview, sheets: running, filter: current.filter,
+      pagination: state.overviewPage ?? undefined,
       references: state.references,
-      loading: loading && !state.overviewLoaded });
+      loading: loading && (!state.overviewLoaded || state.overviewQuery !== `${current.filter}:${current.page}`) });
   }
   if (!sheet) return `<div class="page"><div class="crumbs"><a href="/">Campaigns</a> / `
     + `<b>${esc(current.key)}</b></div></div>`;
@@ -376,10 +382,11 @@ async function loadData(version: number, changedKeys: Set<string> | null, refres
     if (session) Object.assign(state, session);
   }
   if (!current.key && !current.plans && (refreshOverview || !state.csrfToken)) {
-    const overview = await read<{ campaigns: OverviewEntry[]; canStart: boolean;
-      csrfToken: string; }>('/api/overview');
+    const overview = await read<OverviewPage & { canStart: boolean;
+      csrfToken: string; }>(`/api/overview?filter=${current.filter}&page=${current.page}`);
     if (version !== loadVersion) return;
     if (overview) Object.assign(state, { overview: overview.campaigns, overviewLoaded: true,
+      overviewPage: overview, overviewQuery: `${current.filter}:${current.page}`,
       canStart: overview.canStart, csrfToken: overview.csrfToken });
     render();
   }
@@ -390,12 +397,12 @@ async function loadData(version: number, changedKeys: Set<string> | null, refres
     return;
   }
   if (!current.key) {
-    const campaigns = state.overview.filter(entry => entry.status === 'running'
-      && (!changedKeys || changedKeys.has(entry.key) || !state.sheets.has(entry.key)));
-    await Promise.all(campaigns.map(async campaign => {
-      const sheet = await read<CampaignSheet>(`/api/campaigns/${encodeURIComponent(campaign.key)}`);
+    const campaigns = (state.overviewPage?.running ?? []).filter(key =>
+      !changedKeys || changedKeys.has(key) || !state.sheets.has(key));
+    await Promise.all(campaigns.map(async key => {
+      const sheet = await read<CampaignSheet>(`/api/campaigns/${encodeURIComponent(key)}`);
       if (version !== loadVersion) return;
-      if (sheet) state.sheets.set(campaign.key, sheet);
+      if (sheet) state.sheets.set(key, sheet);
       render();
     }));
     return;
@@ -736,7 +743,7 @@ setInterval(() => {
   if (current.plans) return;
   if (current.key && state.sheets.get(current.key)?.status === 'running') {
     void load(false, current.key, true);
-  } else if (!current.key && state.overview.some(entry => entry.status === 'running')) {
+  } else if (!current.key && state.overviewPage?.running.length) {
     void load(false, undefined, true);
   } else if (current.tab === 'transcript' && state.transcript.before === undefined) {
     void readTranscript().then(render);

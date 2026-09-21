@@ -32,15 +32,19 @@ test('standalone reference runs use real controller state, keep the denominator 
       { ...first.runs[0]!, points: { passed: 1, measured: 3, planned: null } }], error: null } }), /total unavailable/);
     running = false;
     assert.equal((await referenceRuns(root, docker)).runs[0]!.status, 'incomplete');
-    writeFileSync(output, JSON.stringify({ payload: { kind: 'reference_qualification', fixture: 'convex',
-      ok: false, runs: [{ score: '184/186', failures: ['<failure>'] }], completedAt: '2026-09-22' } }));
+    writeFileSync(output, JSON.stringify({ kind: 'reference_qualification', timestamps: { completedAt: '2026-09-22' },
+      payload: { fixture: 'convex', ok: false, runs: [{ score: '184/186', failures: ['<failure>'] }] } }));
     assert.equal((await referenceRuns(root, docker)).runs[0]!.status, 'failed');
     present = false;
     const final = await referenceRuns(root, docker);
     assert.equal(final.runs[0]!.status, 'failed');
+    assert.equal(final.runs[0]!.updatedAt, '2026-09-22');
     assert.deepEqual(final.runs[0]!.points, { passed: 184, measured: 186, planned: 186 });
     assert.match(campaignsPage({ campaigns: [], sheets: [], filter: 'all', references: final }), /&lt;failure&gt;/);
     assert((await referenceRuns(root, async () => { throw new Error('offline'); })).error);
+    writeFileSync(output, JSON.stringify({ kind: 'reference_qualification', timestamps: { completedAt: '2026-09-22' },
+      payload: { fixture: 'convex', ok: true, runs: [{ score: '186/186', failures: [] }] } }));
+    assert.equal((await referenceRuns(root, docker)).runs[0]!.status, 'passed');
     assert.deepEqual(referenceLogPoints(log + 'qualifying convex: clean run 2/2\n  selected-source-001 ... 1/1\n'),
       { passed: 1, measured: 1, planned: null });
   } finally { rmSync(root, { recursive: true, force: true }); }

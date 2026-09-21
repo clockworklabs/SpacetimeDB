@@ -286,13 +286,10 @@ function dependencyHistory(state: DependencyState): {
   const firstOutcomes = new Map<string, string>();
   const lastOutcomes = new Map<string, string>();
   const regressed = new Set<string>();
-  let replay = progressionEngine.initialize(state.definition);
   let repairAttempts = 0;
   for (const event of state.events as DependencyEvent[]) {
-    if (event.type === 'repairs-granted') {
-      replay = progressionEngine.grantRepairs(replay, event.grant);
-      continue;
-    }
+    // readProgressionState already validated and replayed these events.
+    if (event.type === 'repairs-granted') continue;
     // A completed coding session is one repair whether or not its grade finished.
     if (event.result.completedRepair === true) repairAttempts += 1;
     if (event.result.outcome === 'conclusive') {
@@ -305,7 +302,6 @@ function dependencyHistory(state: DependencyState): {
         }
       }
     }
-    replay = progressionEngine.recordResult(replay, event.result);
   }
   // First-try points over every selected point, the same scale as the final
   // score, so the two read side by side.

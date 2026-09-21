@@ -121,7 +121,6 @@ export interface OverviewCampaign {
   mode: string;
   levels: number[];
   repetitions: number;
-  provisional: boolean;
   updatedAt: string | null;
   // The mode's official score per stack, as a percentage; null until a stack
   // has a comparable result.
@@ -150,7 +149,9 @@ function overviewCampaign(directory: string): {
   campaign: OverviewCampaign;
 } {
   const { plan, state } = dashboardCampaignState(directory);
-  const attempts = state.attempts.map(attempt =>
+  // Only completed attempts can contribute to these scores. Live details and
+  // excluded evidence are read when their campaign is opened.
+  const attempts = state.attempts.filter(attempt => attempt.status === 'completed').map(attempt =>
     inspectCampaignAttempt(plan, attempt, directory));
   const comparison = compareCampaign<InspectedAttempt>({ attempts });
   const scores = Object.fromEntries(plan.stacks.map(stack =>
@@ -165,7 +166,8 @@ function overviewCampaign(directory: string): {
       mode: plan.definition.mode?.id ?? 'sequential',
       levels: plan.definition.levels,
       repetitions: plan.definition.repetitions,
-      provisional: campaignFacts(plan).grading.status !== 'qualified',
+      // Current qualification is checked on the campaign sheet. Listing old
+      // runs must not recompile today's qualification for every history row.
       updatedAt: state.updatedAt,
       scores,
       attempts: { total: state.summary.total, running: state.summary.running,
@@ -192,11 +194,12 @@ function withInterruption(campaign: OverviewCampaign, interrupted: boolean): Ove
 // running campaign too, so a poll that finds nothing changed costs one stat
 // per evidence file instead of a full replay.
 export function overviewSummary(campaignsRoot: string,
-  { controllerActive = campaignLockIsActive }: ViewOptions = {}): OverviewEntry[] {
+  { controllerActive = campaignLockIsActive, keys }: ViewOptions & { keys?: readonly string[] } = {}): OverviewEntry[] {
   if (!existsSync(campaignsRoot)) return [];
   const campaigns: OverviewEntry[] = [];
   for (const entry of readdirSync(campaignsRoot, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
+    if (keys && !keys.includes(entry.name)) continue;
     const directory = join(campaignsRoot, entry.name);
     if (!existsSync(join(directory, CAMPAIGN_FILE.state))
       || !existsSync(join(directory, CAMPAIGN_FILE.plan))) continue;
@@ -218,6 +221,39 @@ export function overviewSummary(campaignsRoot: string,
     String('updatedAt' in right ? right.updatedAt ?? '' : '')
       .localeCompare(String('updatedAt' in left ? left.updatedAt ?? '' : '')));
 }
+
+export type CampaignFilter = 'all' | 'attention' | 'completed' | 'ready';
+
+export function overviewPage(campaignsRoot: string, requestedPage = 1,
+  filter: CampaignFilter = 'all', options: ViewOptions = {}) {
+  const index: Array<{ key: string; status: string; updatedAt: string }> = [];
+  for (const entry of existsSync(campaignsRoot) ? readdirSync(campaignsRoot, { withFileTypes: true }) : []) {
+    if (!entry.isDirectory()) continue;
+    const directory = join(campaignsRoot, entry.name);
+    if (!existsSync(join(directory, CAMPAIGN_FILE.plan)) || !existsSync(join(directory, CAMPAIGN_FILE.state))) continue;
+    try {
+      const { plan, state } = dashboardCampaignState(directory);
+      const interrupted = controllerInterrupted(options.controllerActive ?? campaignLockIsActive, directory, plan, state.status);
+      index.push({ key: entry.name, status: interrupted ? 'attention-required' : state.status, updatedAt: state.updatedAt });
+    } catch { index.push({ key: entry.name, status: 'unreadable', updatedAt: '' }); }
+  }
+  index.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.key.localeCompare(b.key));
+  const matches = (status: string, selection: CampaignFilter): boolean => selection === 'all'
+    || (selection === 'attention' ? ['attention-required', 'unreadable'].includes(status)
+      : status === (selection === 'ready' ? 'prepared' : 'completed'));
+  const counts = Object.fromEntries((['all', 'attention', 'completed', 'ready'] as const)
+    .map(selection => [selection, index.filter(item => matches(item.status, selection)).length])) as Record<CampaignFilter, number>;
+  const selected = index.filter(item => matches(item.status, filter));
+  const pageSize = 20;
+  const pages = Math.max(1, Math.ceil(selected.length / pageSize));
+  const page = Math.min(Math.max(1, requestedPage), pages);
+  const keys = selected.slice((page - 1) * pageSize, page * pageSize).map(item => item.key);
+  const summaries = new Map(overviewSummary(campaignsRoot, { ...options, keys }).map(item => [item.key, item]));
+  return { campaigns: keys.map(key => summaries.get(key)!).filter(Boolean), page, pages,
+    total: selected.length, pageSize, counts, running: index.filter(item => item.status === 'running').map(item => item.key) };
+}
+
+export type OverviewPage = ReturnType<typeof overviewPage>;
 
 // Campaign sheet
 
