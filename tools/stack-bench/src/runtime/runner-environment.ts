@@ -46,6 +46,12 @@ export function runnerEnvironmentIdentity(runner: unknown): unknown {
   if (!runner || typeof runner !== 'object' || Array.isArray(runner)) return runner;
   // Live container count describes load, not the appliance or its configuration.
   const { containersRunning: _containersRunning, ...identity } = runner as Record<string, unknown>;
+  // Docker/WSL MemTotal can vary by a few pages on the same host. Compare
+  // capacity at MiB precision; keep the exact observation in the receipt.
+  if (typeof identity.memoryBytes === 'number' && Number.isSafeInteger(identity.memoryBytes)
+    && identity.memoryBytes > 0) {
+    identity.memoryBytes = Math.round(identity.memoryBytes / 1_048_576) * 1_048_576;
+  }
   return identity;
 }
 

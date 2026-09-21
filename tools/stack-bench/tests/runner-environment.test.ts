@@ -48,12 +48,25 @@ test('appliance controllers record Docker daemon observations', () => {
   assert.deepEqual(missingRunnerObservation(runner), []);
   assert.deepEqual(missingRunnerObservation(null), RUNNER_OBSERVATION_FIELDS);
   const { containersRunning: count, ...identity } = runner;
+  identity.memoryBytes = 15_259 * 1_048_576;
   assert.equal(count, 4);
   assert.deepEqual(runnerEnvironmentIdentity(runner), identity);
   assert.deepEqual(runnerEnvironmentIdentity({ ...runner, containersRunning: 9 }), identity);
   assert.deepEqual(runnerEnvironmentIdentity({ ...runner, extraConfiguration: 'preserved' }),
     { ...identity, extraConfiguration: 'preserved' });
   assert.equal(runner.containersRunning, 4);
+  assert.equal(runner.memoryBytes, 16_000_000_000);
+});
+
+test('runner identity tolerates page-scale memory drift but retains capacity and configuration changes', () => {
+  const runner = { memoryBytes: 49_232_842_752, cpuCount: 32, kernelVersion: 'same' };
+  assert.deepEqual(runnerEnvironmentIdentity(runner),
+    runnerEnvironmentIdentity({ ...runner, memoryBytes: 49_232_826_368 }));
+  for (const change of [{ memoryBytes: runner.memoryBytes - 1_048_576 }, { cpuCount: 16 },
+    { kernelVersion: 'changed' }, { memoryBytes: 'invalid' }, { memoryBytes: 0 }]) {
+    assert.notDeepEqual(runnerEnvironmentIdentity(runner), runnerEnvironmentIdentity({ ...runner, ...change }));
+  }
+  assert.equal(runner.memoryBytes, 49_232_842_752);
 });
 
 test('appliance controllers reject incomplete Docker observations', () => {

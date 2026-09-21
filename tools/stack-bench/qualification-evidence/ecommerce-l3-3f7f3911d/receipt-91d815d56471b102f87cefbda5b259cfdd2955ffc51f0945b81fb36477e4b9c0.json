@@ -1,0 +1,251 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-convex-20260921204058-7",
+  "attempt": {
+    "id": "reference-live-convex-20260921204058-7",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-09-21T20:40:58.799Z",
+    "completedAt": "2026-09-21T20:54:05.467Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "sha256": "67b260e85bd1567123319e041143f8f5d31b81dd64155021ad4d9a83e87f8be0"
+    },
+    "recipe": {
+      "id": "ecommerce.progression-catalog",
+      "sha256": "12e37beb1e2296236e67ba55dc902da42139cf17e3da616b06238f3d19784273"
+    },
+    "fixture": {
+      "id": "ecommerce-reference-convex",
+      "sha256": "6f0c177b439989afa30b335bcc4894238c69e2e279b9c00097b5280391954dfe"
+    },
+    "calibration": {
+      "id": "ecommerce.dependency-l3-calibration",
+      "sha256": "52ba3befd22561260ee35b4d33275caa111ffe33e619119ab1d17cd6c46686ba"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "convex",
+      "sha256": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-reference-convex",
+    "fixtureSha256": "6f0c177b439989afa30b335bcc4894238c69e2e279b9c00097b5280391954dfe",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "hostname": "docker-desktop",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232826368,
+      "containersRunning": 9,
+      "packageRegistry": "http://127.0.0.1:4873/"
+    },
+    "qualificationScope": {
+      "checksSha256": "1db89025cf7c039267d24ff99681989be5bfc8c5c24072b32899094d237d5a34",
+      "executableSha256": "8c38666466e8f2c348cbdfc0aad540eb3db0948ea17d87169d65c3e4157c6d1c",
+      "kind": "mutation",
+      "mutationSha256": "d54fdfe276a0eb30a3bb1d27c9042e398ec675597c35dc8311ee930ce40cd840",
+      "recipe": {
+        "contentSha256": "12e37beb1e2296236e67ba55dc902da42139cf17e3da616b06238f3d19784273",
+        "id": "ecommerce.progression-catalog"
+      },
+      "schemaVersion": 3,
+      "stack": {
+        "id": "convex",
+        "reference": {
+          "id": "ecommerce-reference-convex",
+          "sourceSha256": "6f0c177b439989afa30b335bcc4894238c69e2e279b9c00097b5280391954dfe"
+        },
+        "version": "1.0.0"
+      },
+      "sha256": "2edda8010608257806dc30cc09888c7ae3b12bbdaac449a80eaed6d0a500f50c"
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "convex-controls-3f7f3911d-20260921.runs/r1-workers",
+        "durationMs": 786497,
+        "processError": null,
+        "harnessSha256Before": "1d97bce66df9f3980d0f90068088f16bdc5f9a839fb1d724b67ca92842b40204",
+        "harnessSha256After": "1d97bce66df9f3980d0f90068088f16bdc5f9a839fb1d724b67ca92842b40204",
+        "ok": true,
+        "failures": [],
+        "runId": "reference-live-convex-20260921204058-7",
+        "score": "23/23",
+        "imageId": "sha256:32ff9a9e519ba9d1af2fe72f24622caa8ca7a9f2baf2338c6b1e0435e6ac5455",
+        "criteria": 14,
+        "zeroPointCriteria": 0,
+        "fingerprint": "ef80a2ac8467767f01a3a234982f4ead92d6b48d035c517a56d5424b536fcf97",
+        "outcome": "passed",
+        "packRuntime": {
+          "schemaVersion": 1,
+          "metric": "pack-check-wall-clock-sum-v1",
+          "packs": [
+            {
+              "id": "ecommerce.feature.warehouse-admin",
+              "checkCount": 1,
+              "setupRuntimeMs": 805,
+              "criterionRuntimeMs": 4221,
+              "measuredRuntimeMs": 5026,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.access-control",
+              "checkCount": 10,
+              "setupRuntimeMs": 10229,
+              "criterionRuntimeMs": 177006,
+              "measuredRuntimeMs": 187235,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 554000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.concurrency-safety",
+              "checkCount": 2,
+              "setupRuntimeMs": 7724,
+              "criterionRuntimeMs": 41726,
+              "measuredRuntimeMs": 49450,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 270000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.transactional-integrity",
+              "checkCount": 1,
+              "setupRuntimeMs": 359,
+              "criterionRuntimeMs": 11380,
+              "measuredRuntimeMs": 11739,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 2500000
+              },
+              "exceeded": false
+            }
+          ]
+        },
+        "mutations": {
+          "caught": 26,
+          "total": 26
+        },
+        "baselineDurationMs": 419005,
+        "baselineOutput": "convex-controls-3f7f3911d-20260921.runs/r1",
+        "baselineHarnessSha256Before": "1d97bce66df9f3980d0f90068088f16bdc5f9a839fb1d724b67ca92842b40204",
+        "baselineHarnessSha256After": "1d97bce66df9f3980d0f90068088f16bdc5f9a839fb1d724b67ca92842b40204",
+        "workers": [
+          {
+            "index": 0,
+            "runIndex": 0,
+            "artifact": "convex-controls-3f7f3911d-20260921.runs/r1-workers/w1.json",
+            "mutationIds": [
+              "checkout-retains-purchased-cart",
+              "profile-read-not-owner-scoped",
+              "negative-cart-quantity-is-accepted",
+              "staff-can-use-direct-restock",
+              "cart-add-line-lookup-not-owner-scoped",
+              "restock-trusts-submitted-admin-role",
+              "checkout-empty-replay-creates-order",
+              "query-like-password-bypasses-signin",
+              "signup-accepts-admin-claim"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "convex-controls-3f7f3911d-20260921.runs/r1-workers/w1.stdout.log",
+              "stderr": "convex-controls-3f7f3911d-20260921.runs/r1-workers/w1.stderr.log"
+            }
+          },
+          {
+            "index": 1,
+            "runIndex": 1,
+            "artifact": "convex-controls-3f7f3911d-20260921.runs/r1-workers/w2.json",
+            "mutationIds": [
+              "checkout-rejects-every-request",
+              "staff-admin-access-survives-role-removal",
+              "customer-can-create-promotion",
+              "concurrent-cart-add-does-not-increment",
+              "direct-purchase-is-attributed-to-another-account",
+              "direct-purchase-trusts-submitted-price",
+              "checkout-replay-loses-prior-order",
+              "signout-keeps-session",
+              "admin-boundary-rejects-all-signups"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "convex-controls-3f7f3911d-20260921.runs/r1-workers/w2.stdout.log",
+              "stderr": "convex-controls-3f7f3911d-20260921.runs/r1-workers/w2.stderr.log"
+            }
+          },
+          {
+            "index": 2,
+            "runIndex": 2,
+            "artifact": "convex-controls-3f7f3911d-20260921.runs/r1-workers/w3.json",
+            "mutationIds": [
+              "order-history-not-owner-scoped",
+              "authorized-restock-does-not-change-stock",
+              "staff-can-assign-roles",
+              "direct-purchase-total-ignores-store-price",
+              "unauthenticated-purchase-defaults-to-admin",
+              "order-cache-survives-account-switch",
+              "checkout-clears-cart-without-order",
+              "purchase-session-rejects-returning-login"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "convex-controls-3f7f3911d-20260921.runs/r1-workers/w3.stdout.log",
+              "stderr": "convex-controls-3f7f3911d-20260921.runs/r1-workers/w3.stderr.log"
+            }
+          }
+        ]
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "1d97bce66df9f3980d0f90068088f16bdc5f9a839fb1d724b67ca92842b40204",
+    "qualifiedCheckKeys": [
+      "ecommerce.feature.warehouse-admin.admin-write.103a",
+      "ecommerce.spec.access-control.cart-boundary.109a",
+      "ecommerce.spec.access-control.cart-boundary.109b",
+      "ecommerce.spec.access-control.customer-profile-privacy.620b",
+      "ecommerce.spec.access-control.order-ownership.106a",
+      "ecommerce.spec.access-control.promotion-management-boundary.620b",
+      "ecommerce.spec.access-control.purchase-attribution.102a",
+      "ecommerce.spec.access-control.purchase-session.101a",
+      "ecommerce.spec.access-control.staff-role-boundary.621b",
+      "ecommerce.spec.access-control.staff-role-revocation.621d",
+      "ecommerce.spec.access-control.warehouse-write-boundary.103b",
+      "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+      "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+      "ecommerce.spec.transactional-integrity.server-price.104a"
+    ],
+    "featureCatalog": {
+      "contentSha256": "35a93b36ef347b7100478a430ff393687613cb4b222a77827d453fd63c1f13bd",
+      "id": "ecommerce.questlines"
+    },
+    "diagnostic": true,
+    "ok": true
+  }
+}

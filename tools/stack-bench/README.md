@@ -20,15 +20,14 @@ the audit used accepted checkpoints and final grades to resolve the summary erro
 Newer grader changes on the current branch require their own qualification before
 they receive a new verified baseline tag. Keep this tag fixed.
 
-The frozen `6977247e6` ecommerce dependency L1–L3 calibration is qualified for SpacetimeDB,
-PostgreSQL, MongoDB and Convex: 27 features, 117 checks and 186 points. Its
-calibration binds the reference, defect-control and empty-app evidence at that commit. This qualifies that selected
-definition; it does not certify every aspect of production security. A later
-Convex campaign launch exposed a resource-delegation defect outside the direct
-reference path. The fix changes executable identities. The current
-[calibration](tracks/ecommerce/composition/calibrations/dependency-l3.json) is unqualified
-until matching evidence or reviewed reuse is registered. Prior evidence files remain
-preserved. Paid diagnostic runs are allowed, but their scores remain provisional.
+The current ecommerce dependency L1-L3
+[calibration](tracks/ecommerce/composition/calibrations/dependency-l3.json) is qualified
+for SpacetimeDB, PostgreSQL, MongoDB and Convex: 27 features, 117 checks and 186 points.
+It binds reference, defect-control and empty-app evidence. The
+[qualification review](qualification-evidence/ecommerce-l3-3f7f3911d/review.json)
+records targeted replacement evidence and reviewed reuse after the Convex runtime
+and grading fixes. This qualifies the selected definition; it does not certify
+every aspect of production security. Earlier incomplete paid runs remain incomplete.
 
 ## What it does
 
