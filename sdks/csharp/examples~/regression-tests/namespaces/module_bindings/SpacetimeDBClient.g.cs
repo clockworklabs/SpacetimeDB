@@ -663,6 +663,7 @@ namespace SpacetimeDB.Types
             var eventContext = (ReducerEventContext)context;
             return reducer switch
             {
+                Reducer.AddAuthUser args => Reducers.InvokeAddAuthUser(eventContext, args),
                 Reducer.Exercise args => Reducers.InvokeExercise(eventContext, args),
                 Reducer.WriteProtectedRow args => Reducers.InvokeWriteProtectedRow(eventContext, args),
                 Reducer.Extra args => Reducers.InvokeExtra(eventContext, args),

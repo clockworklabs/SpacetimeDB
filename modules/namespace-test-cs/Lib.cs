@@ -26,6 +26,24 @@ public partial struct AuthSummary
 
 public static partial class Functions
 {
+    [Reducer]
+    public static void AddAuthUser(ReducerContext ctx, uint id)
+    {
+        AuthLib.Functions.Add(ctx, id);
+        Log.Info($"Auth users: {AuthLib.Functions.Count(ctx)}");
+    }
+
+    [Procedure]
+    public static ulong CountAuthUsers(ProcedureContext ctx) => AuthLib.Functions.CountUsers(ctx);
+
+    [HttpHandler]
+    public static HttpResponse RootAuthCount(HandlerContext ctx, HttpRequest request) =>
+        AuthLib.Functions.AuthCount(ctx, request);
+
+    [HttpRouter]
+    public static Router Routes() =>
+        Router.New().Get("/root-auth-count", new Handler(nameof(RootAuthCount)));
+
 #pragma warning disable STDB_UNSTABLE
     [ClientVisibilityFilter]
     public static readonly Filter ProtectedRows = new Filter.Sql(
