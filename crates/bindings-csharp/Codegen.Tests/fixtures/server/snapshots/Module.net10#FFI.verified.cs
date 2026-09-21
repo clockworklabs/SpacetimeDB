@@ -1706,13 +1706,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
             >.DoClear();
 
         internal sealed class LocationIndex()
-            : SpacetimeDB.Internal.IndexBase<global::BTreeMultiColumn>(
+            : SpacetimeDB.Internal.IndexBase<global::BTreeMultiColumn>(__resolvedName)
+        {
+            private static readonly string __resolvedName =
                 global::SpacetimeDB.Internal.Module.ResolveName(
                     "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
                     "BTreeMultiColumn_X_Y_Z_idx_btree"
-                )
-            )
-        {
+                );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static LocationIndex() { }
+
             public IEnumerable<global::BTreeMultiColumn> Filter(uint X) =>
                 DoFilter(new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X));
 
@@ -1911,13 +1915,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
                 SpacetimeDB.Identity.BSATN
             >
         {
+            private static readonly string __resolvedName =
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "BTreeViews_Id_idx_btree"
+                );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static IdUniqueIndex() { }
+
             internal IdUniqueIndex()
-                : base(
-                    global::SpacetimeDB.Internal.Module.ResolveName(
-                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                        "BTreeViews_Id_idx_btree"
-                    )
-                ) { }
+                : base(__resolvedName) { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -1930,13 +1938,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
         internal IdUniqueIndex Id => new();
 
         internal sealed class LocationIndex()
-            : SpacetimeDB.Internal.IndexBase<global::BTreeViews>(
+            : SpacetimeDB.Internal.IndexBase<global::BTreeViews>(__resolvedName)
+        {
+            private static readonly string __resolvedName =
                 global::SpacetimeDB.Internal.Module.ResolveName(
                     "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
                     "BTreeViews_X_Y_idx_btree"
-                )
-            )
-        {
+                );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static LocationIndex() { }
+
             public IEnumerable<global::BTreeViews> Filter(uint X) =>
                 DoFilter(new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X));
 
@@ -1995,13 +2007,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
         internal LocationIndex Location => new();
 
         internal sealed class FactionIndex()
-            : SpacetimeDB.Internal.IndexBase<global::BTreeViews>(
+            : SpacetimeDB.Internal.IndexBase<global::BTreeViews>(__resolvedName)
+        {
+            private static readonly string __resolvedName =
                 global::SpacetimeDB.Internal.Module.ResolveName(
                     "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
                     "BTreeViews_Faction_idx_btree"
-                )
-            )
-        {
+                );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static FactionIndex() { }
+
             public IEnumerable<global::BTreeViews> Filter(string Faction) =>
                 DoFilter(
                     new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
@@ -2133,13 +2149,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
                 SpacetimeDB.BSATN.U32
             >
         {
+            private static readonly string __resolvedName =
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "MultiTable1_Foo_idx_btree"
+                );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static FooUniqueIndex() { }
+
             internal FooUniqueIndex()
-                : base(
-                    global::SpacetimeDB.Internal.Module.ResolveName(
-                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                        "MultiTable1_Foo_idx_btree"
-                    )
-                ) { }
+                : base(__resolvedName) { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -2152,13 +2172,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
         public FooUniqueIndex Foo => new();
 
         public sealed class NameIndex()
-            : SpacetimeDB.Internal.IndexBase<global::MultiTableRow>(
+            : SpacetimeDB.Internal.IndexBase<global::MultiTableRow>(__resolvedName)
+        {
+            private static readonly string __resolvedName =
                 global::SpacetimeDB.Internal.Module.ResolveName(
                     "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
                     "MultiTable1_Name_idx_btree"
-                )
-            )
-        {
+                );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static NameIndex() { }
+
             public IEnumerable<global::MultiTableRow> Filter(string Name) =>
                 DoFilter(
                     new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
@@ -2285,13 +2309,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
                 SpacetimeDB.BSATN.U32
             >
         {
+            private static readonly string __resolvedName =
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "MultiTable2_Bar_idx_btree"
+                );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static BarUniqueIndex() { }
+
             internal BarUniqueIndex()
-                : base(
-                    global::SpacetimeDB.Internal.Module.ResolveName(
-                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                        "MultiTable2_Bar_idx_btree"
-                    )
-                ) { }
+                : base(__resolvedName) { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -2452,13 +2480,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
                 SpacetimeDB.BSATN.I32
             >
         {
+            private static readonly string __resolvedName =
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "PublicTable_Id_idx_btree"
+                );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static IdUniqueIndex() { }
+
             internal IdUniqueIndex()
-                : base(
-                    global::SpacetimeDB.Internal.Module.ResolveName(
-                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                        "PublicTable_Id_idx_btree"
-                    )
-                ) { }
+                : base(__resolvedName) { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -2580,13 +2612,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
                 SpacetimeDB.BSATN.U32
             >
         {
+            private static readonly string __resolvedName =
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "RegressionMultipleUniqueIndexesHadSameName_Unique1_idx_btree"
+                );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static Unique1UniqueIndex() { }
+
             internal Unique1UniqueIndex()
-                : base(
-                    global::SpacetimeDB.Internal.Module.ResolveName(
-                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                        "RegressionMultipleUniqueIndexesHadSameName_Unique1_idx_btree"
-                    )
-                ) { }
+                : base(__resolvedName) { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -2605,13 +2641,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
                 SpacetimeDB.BSATN.U32
             >
         {
+            private static readonly string __resolvedName =
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "RegressionMultipleUniqueIndexesHadSameName_Unique2_idx_btree"
+                );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static Unique2UniqueIndex() { }
+
             internal Unique2UniqueIndex()
-                : base(
-                    global::SpacetimeDB.Internal.Module.ResolveName(
-                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                        "RegressionMultipleUniqueIndexesHadSameName_Unique2_idx_btree"
-                    )
-                ) { }
+                : base(__resolvedName) { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -2730,13 +2770,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
                 SpacetimeDB.BSATN.U64
             >
         {
+            private static readonly string __resolvedName =
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "SendMessageTimer_ScheduledId_idx_btree"
+                );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static ScheduledIdUniqueIndex() { }
+
             internal ScheduledIdUniqueIndex()
-                : base(
-                    global::SpacetimeDB.Internal.Module.ResolveName(
-                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                        "SendMessageTimer_ScheduledId_idx_btree"
-                    )
-                ) { }
+                : base(__resolvedName) { }
 
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -2892,13 +2936,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
     internal sealed class BTreeMultiColumnReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::BTreeMultiColumn>
     {
+        private static readonly string __resolvedName =
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "BTreeMultiColumn"
+            );
+
+        // Prevent eager initialization before the root installs namespace placements.
+        static BTreeMultiColumnReadOnly() { }
+
         internal BTreeMultiColumnReadOnly()
-            : base(
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "BTreeMultiColumn"
-                )
-            ) { }
+            : base(__resolvedName) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -2911,13 +2959,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
         public sealed class LocationIndex
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::BTreeMultiColumn>
         {
+            private static readonly string __resolvedName =
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "BTreeMultiColumn_X_Y_Z_idx_btree"
+                );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static LocationIndex() { }
+
             internal LocationIndex()
-                : base(
-                    global::SpacetimeDB.Internal.Module.ResolveName(
-                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                        "BTreeMultiColumn_X_Y_Z_idx_btree"
-                    )
-                ) { }
+                : base(__resolvedName) { }
 
             public IEnumerable<global::BTreeMultiColumn> Filter(uint X) =>
                 DoFilter(
@@ -2990,13 +3042,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
     internal sealed class BTreeViewsReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::BTreeViews>
     {
+        private static readonly string __resolvedName =
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "BTreeViews"
+            );
+
+        // Prevent eager initialization before the root installs namespace placements.
+        static BTreeViewsReadOnly() { }
+
         internal BTreeViewsReadOnly()
-            : base(
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "BTreeViews"
-                )
-            ) { }
+            : base(__resolvedName) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -3014,13 +3070,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
                 SpacetimeDB.Identity.BSATN
             >
         {
+            private static readonly string __resolvedName =
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "BTreeViews_Id_idx_btree"
+                );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static IdIndex() { }
+
             internal IdIndex()
-                : base(
-                    global::SpacetimeDB.Internal.Module.ResolveName(
-                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                        "BTreeViews_Id_idx_btree"
-                    )
-                ) { }
+                : base(__resolvedName) { }
 
             public global::BTreeViews? Find(SpacetimeDB.Identity key) => FindSingle(key);
         }
@@ -3030,13 +3090,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
         public sealed class LocationIndex
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::BTreeViews>
         {
+            private static readonly string __resolvedName =
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "BTreeViews_X_Y_idx_btree"
+                );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static LocationIndex() { }
+
             internal LocationIndex()
-                : base(
-                    global::SpacetimeDB.Internal.Module.ResolveName(
-                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                        "BTreeViews_X_Y_idx_btree"
-                    )
-                ) { }
+                : base(__resolvedName) { }
 
             public IEnumerable<global::BTreeViews> Filter(uint X) =>
                 DoFilter(
@@ -3080,13 +3144,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
         public sealed class FactionIndex
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::BTreeViews>
         {
+            private static readonly string __resolvedName =
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "BTreeViews_Faction_idx_btree"
+                );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static FactionIndex() { }
+
             internal FactionIndex()
-                : base(
-                    global::SpacetimeDB.Internal.Module.ResolveName(
-                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                        "BTreeViews_Faction_idx_btree"
-                    )
-                ) { }
+                : base(__resolvedName) { }
 
             public IEnumerable<global::BTreeViews> Filter(string Faction) =>
                 DoFilter(
@@ -3113,13 +3181,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
     public sealed class MultiTable1ReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::MultiTableRow>
     {
+        private static readonly string __resolvedName =
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "MultiTable1"
+            );
+
+        // Prevent eager initialization before the root installs namespace placements.
+        static MultiTable1ReadOnly() { }
+
         internal MultiTable1ReadOnly()
-            : base(
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "MultiTable1"
-                )
-            ) { }
+            : base(__resolvedName) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -3137,13 +3209,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
                 SpacetimeDB.BSATN.U32
             >
         {
+            private static readonly string __resolvedName =
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "MultiTable1_Foo_idx_btree"
+                );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static FooIndex() { }
+
             internal FooIndex()
-                : base(
-                    global::SpacetimeDB.Internal.Module.ResolveName(
-                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                        "MultiTable1_Foo_idx_btree"
-                    )
-                ) { }
+                : base(__resolvedName) { }
 
             public global::MultiTableRow? Find(uint key) => FindSingle(key);
         }
@@ -3153,13 +3229,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
         public sealed class NameIndex
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::MultiTableRow>
         {
+            private static readonly string __resolvedName =
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "MultiTable1_Name_idx_btree"
+                );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static NameIndex() { }
+
             internal NameIndex()
-                : base(
-                    global::SpacetimeDB.Internal.Module.ResolveName(
-                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                        "MultiTable1_Name_idx_btree"
-                    )
-                ) { }
+                : base(__resolvedName) { }
 
             public IEnumerable<global::MultiTableRow> Filter(string Name) =>
                 DoFilter(
@@ -3186,13 +3266,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
     public sealed class MultiTable2ReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::MultiTableRow>
     {
+        private static readonly string __resolvedName =
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "MultiTable2"
+            );
+
+        // Prevent eager initialization before the root installs namespace placements.
+        static MultiTable2ReadOnly() { }
+
         internal MultiTable2ReadOnly()
-            : base(
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "MultiTable2"
-                )
-            ) { }
+            : base(__resolvedName) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -3210,13 +3294,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
                 SpacetimeDB.BSATN.U32
             >
         {
+            private static readonly string __resolvedName =
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "MultiTable2_Bar_idx_btree"
+                );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static BarIndex() { }
+
             internal BarIndex()
-                : base(
-                    global::SpacetimeDB.Internal.Module.ResolveName(
-                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                        "MultiTable2_Bar_idx_btree"
-                    )
-                ) { }
+                : base(__resolvedName) { }
 
             public global::MultiTableRow? Find(uint key) => FindSingle(key);
         }
@@ -3227,13 +3315,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
     public sealed class PrivateTableReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::PrivateTable>
     {
+        private static readonly string __resolvedName =
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "PrivateTable"
+            );
+
+        // Prevent eager initialization before the root installs namespace placements.
+        static PrivateTableReadOnly() { }
+
         internal PrivateTableReadOnly()
-            : base(
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "PrivateTable"
-                )
-            ) { }
+            : base(__resolvedName) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -3247,13 +3339,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
     public sealed class PublicTableReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::PublicTable>
     {
+        private static readonly string __resolvedName =
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "PublicTable"
+            );
+
+        // Prevent eager initialization before the root installs namespace placements.
+        static PublicTableReadOnly() { }
+
         internal PublicTableReadOnly()
-            : base(
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "PublicTable"
-                )
-            ) { }
+            : base(__resolvedName) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -3271,13 +3367,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
                 SpacetimeDB.BSATN.I32
             >
         {
+            private static readonly string __resolvedName =
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "PublicTable_Id_idx_btree"
+                );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static IdIndex() { }
+
             internal IdIndex()
-                : base(
-                    global::SpacetimeDB.Internal.Module.ResolveName(
-                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                        "PublicTable_Id_idx_btree"
-                    )
-                ) { }
+                : base(__resolvedName) { }
 
             public global::PublicTable? Find(int key) => FindSingle(key);
         }
@@ -3288,13 +3388,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
     internal sealed class RegressionMultipleUniqueIndexesHadSameNameReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::RegressionMultipleUniqueIndexesHadSameName>
     {
+        private static readonly string __resolvedName =
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "RegressionMultipleUniqueIndexesHadSameName"
+            );
+
+        // Prevent eager initialization before the root installs namespace placements.
+        static RegressionMultipleUniqueIndexesHadSameNameReadOnly() { }
+
         internal RegressionMultipleUniqueIndexesHadSameNameReadOnly()
-            : base(
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "RegressionMultipleUniqueIndexesHadSameName"
-                )
-            ) { }
+            : base(__resolvedName) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -3312,13 +3416,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
                 SpacetimeDB.BSATN.U32
             >
         {
+            private static readonly string __resolvedName =
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "RegressionMultipleUniqueIndexesHadSameName_Unique1_idx_btree"
+                );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static Unique1Index() { }
+
             internal Unique1Index()
-                : base(
-                    global::SpacetimeDB.Internal.Module.ResolveName(
-                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                        "RegressionMultipleUniqueIndexesHadSameName_Unique1_idx_btree"
-                    )
-                ) { }
+                : base(__resolvedName) { }
 
             public global::RegressionMultipleUniqueIndexesHadSameName? Find(uint key) =>
                 FindSingle(key);
@@ -3334,13 +3442,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
                 SpacetimeDB.BSATN.U32
             >
         {
+            private static readonly string __resolvedName =
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "RegressionMultipleUniqueIndexesHadSameName_Unique2_idx_btree"
+                );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static Unique2Index() { }
+
             internal Unique2Index()
-                : base(
-                    global::SpacetimeDB.Internal.Module.ResolveName(
-                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                        "RegressionMultipleUniqueIndexesHadSameName_Unique2_idx_btree"
-                    )
-                ) { }
+                : base(__resolvedName) { }
 
             public global::RegressionMultipleUniqueIndexesHadSameName? Find(uint key) =>
                 FindSingle(key);
@@ -3352,13 +3464,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
     public sealed class SendMessageTimerReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::Timers.SendMessageTimer>
     {
+        private static readonly string __resolvedName =
+            global::SpacetimeDB.Internal.Module.ResolveName(
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                "SendMessageTimer"
+            );
+
+        // Prevent eager initialization before the root installs namespace placements.
+        static SendMessageTimerReadOnly() { }
+
         internal SendMessageTimerReadOnly()
-            : base(
-                global::SpacetimeDB.Internal.Module.ResolveName(
-                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "SendMessageTimer"
-                )
-            ) { }
+            : base(__resolvedName) { }
 
         /// <summary>
         /// Returns the number of rows in this table.
@@ -3376,13 +3492,17 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
                 SpacetimeDB.BSATN.U64
             >
         {
+            private static readonly string __resolvedName =
+                global::SpacetimeDB.Internal.Module.ResolveName(
+                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "SendMessageTimer_ScheduledId_idx_btree"
+                );
+
+            // Prevent eager initialization before the root installs namespace placements.
+            static ScheduledIdIndex() { }
+
             internal ScheduledIdIndex()
-                : base(
-                    global::SpacetimeDB.Internal.Module.ResolveName(
-                        "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                        "SendMessageTimer_ScheduledId_idx_btree"
-                    )
-                ) { }
+                : base(__resolvedName) { }
 
             public global::Timers.SendMessageTimer? Find(ulong key) => FindSingle(key);
         }
