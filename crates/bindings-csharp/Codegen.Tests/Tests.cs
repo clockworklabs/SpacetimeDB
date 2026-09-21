@@ -804,6 +804,7 @@ public static class GeneratorSnapshotTests
                         [first] = "auth_data",
                         [second] = "audit_data",
                         ["merged"] = "public",
+                        [{{SymbolDisplay.FormatLiteral(moduleAssembly.Identity.ToString(), true)}}] = "cached",
                     };
                     var registry = new NamespaceRegistry("root", placements);
                     placements[first] = "changed";
@@ -880,7 +881,7 @@ public static class GeneratorSnapshotTests
             var first = Activator.CreateInstance(builderType)!;
             var second = Activator.CreateInstance(builderType)!;
             var root = builderType.Assembly.GetType("SpacetimeDB.Internal.Module")!
-                .GetProperty("RootBuilder")!.GetValue(null)!;
+                .GetField("RootBuilder")!.GetValue(null)!;
             byte[] Snapshot(object builder) => (byte[])consumerType.GetMethod("Snapshot")!
                 .Invoke(null, [builder])!;
             var empty = Snapshot(second);
@@ -905,6 +906,28 @@ public static class GeneratorSnapshotTests
             Assert.Equal(rootBefore, Snapshot(root));
 
             Assert.True((bool)consumerType.GetMethod("CheckNamespaces")!.Invoke(null, null)!);
+
+            var loadedModule = loadContext.Assemblies.Single(a => a.GetName().Name == moduleAssembly.Name);
+            var cachedHandles = loadedModule.GetTypes()
+                .Select(type => (Type: type, Field: type.GetField("__resolvedName",
+                    System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)))
+                .Where(handle => handle.Field is not null).ToArray();
+            Assert.NotEmpty(cachedHandles);
+            foreach (var (type, field) in cachedHandles)
+            {
+                Assert.True(field!.IsInitOnly);
+                Assert.False(type.Attributes.HasFlag(System.Reflection.TypeAttributes.BeforeFieldInit));
+                var name = Assert.IsType<string>(field.GetValue(null));
+                Assert.StartsWith("cached.", name);
+                Assert.Same(name, field.GetValue(null));
+            }
+            foreach (var baseName in new[]
+            {
+                "UniqueIndex`4", "IndexBase`1",
+                "ReadOnlyUniqueIndex`4", "ReadOnlyIndexBase`1",
+                "ReadOnlyTableView`1",
+            })
+                Assert.Contains(cachedHandles, handle => handle.Type.BaseType!.Name == baseName);
         }
         finally
         {
